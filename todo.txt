@@ -1,0 +1,47 @@
+
+- menu : missing sub-menus
+    x refractor the menu in it is own file
+    x activate menu with F10 keyboard
+    - add below Close Query:
+        - Save
+        - Save As...
+    - add below View->Object Explorer
+        - Object Explorer Details
+    - in Query menu 
+        - remove Connect
+        - remove New Query
+        - add below divider
+            - Cancel Executing Query
+            - Results To Text
+            - Results To Grid
+            - Results To File
+        - add Below Execute
+            - Execute Selection
+        - add on Tools 
+            - Query List
+    -
+- status bar: based on the current query window : Connected | server | user | db | 00:00 | Row: x, Row y | 0 rows
+- double charactrer type
+- modal windows background 
+
+- edit cursor non blinking
+- suggest refractoring / make architecture better? -> test with chatgpt
+
+- connect dialog
+
+- is there any functionality missing in gosmo?
+- the database queries should run async
+
+----- later -------
+- connect dialog: add at the top "recent connections" section.
+    - it keeps  in a list the distinct last 10 connections. 
+    - it is a combo box. 
+    - elements are shown as server,port or instance, databse name 
+
+----- done -------
+
+x chekc/fix tui layout :
+x fix the initial errors
+x fix gosmo -> v0.0.3
+    x let claude analyze it
+x upload the new go.mod file -> check for implications
