@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod *)",
+      "Bash(gofmt -l internal/tui internal/query)",
+      "Bash(gofmt -w internal/query/executor.go)",
+      "Bash(gofmt -l internal/query internal/tui internal/db cmd)",
+      "Bash(gofmt -l /home/radu/go/gosmo/sequence_synonym.go)",
+      "Bash(gofmt -l internal/tui internal/query internal/db internal/config)",
+      "Bash(gofmt -w internal/tui/explorer_loaders.go)",
+      "Bash(gofmt -l internal/tui)",
+      "Bash(gofmt -l internal/tuikit/controls/datagrid.go)",
+      "Bash(go doc *)",
+      "Bash(gofmt -l internal/tuikit/controls/datagrid.go internal/tuikit/controls/datagrid_test.go)",
+      "Bash(grep -n \"BackupAction\\\\|type.*string$\" /home/radu/go/gosmo/types.go)",
+      "Bash(gofmt -d table.go security.go)",
+      "Bash(gofmt -l internal/tui/tasks.go internal/tui/tasks_test.go internal/tui/tasks_dialog.go internal/tui/app_tasks_actions.go internal/tui/app_explorer_data.go internal/tui/properties_dialog.go internal/tui/app.go internal/tui/menu.go internal/tui/dialog_stack_test.go)"
+    ]
+  }
+}

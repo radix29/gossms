@@ -1,0 +1,39 @@
+clean history
+
+gossms project preparing to release version v0.0.2.
+update README.md and the diagrams
+create a CHANGELOG.md with detailed changes from now on
+create a RELEASE.md with the changes from release to release but at high level, not detail
+
+- commit & create tag
+- create release- hcek actions / workflow
+
+fable: review both projects for: bugs, refractoring, best practices optimizations and create a plan. 
+do not execute the plan as i would switch the model beforehand
+
+properties dialogs: test functionality and missing functionality
+
+- readme 
+    - add some pictures
+
+show execution plan menu option
+    where to show this checkbox?
+    it will create a new panel like result and messages in the query window
+    create a TUI control that can be reused
+    have an button to open the execution plan in a new panle like the query panel and object explorer detail
+    the execution plan can be scrolled in all directions
+    there vizualizations options, can switch the type of vizualization from the controil itself
+        first, the default, is the classic SQL Server plan explorer view (provide a mockup)
+        second is like a tree view with a table (see the oracle execution plan, can provide a mockup)
+        third show the XML plan (readonly allow mark and copy like a editor.)
+
+--------- later ------
+
+- check keyboard shortcuts consistency, terminal dependence etc
+
+- syntax autocomplete -> Ctrl+R reload
+
+- main statusbar : open a windowwith the history of the messages shown there with timestamp
+
+---
+

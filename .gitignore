@@ -1,0 +1,29 @@
+# Build output
+dist/
+gossms
+gossms.exe
+gossms-linux
+gossms-darwin
+gossms-darwin-arm64
+gossms-windows.exe
+
+# Logs
+*.log
+gossms.log
+
+# Go
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Test coverage
+coverage.out
+coverage.html

@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    env:
+      APP_NAME: gossms
+      MAIN_PACKAGE: ./cmd/gossms
+      CGO_ENABLED: "0"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(git describe --tags --abbrev=0)"
+          fi
+
+          if [ -z "${VERSION}" ]; then
+            echo "Error: no Git tag found. Create a tag first, for example: git tag v0.0.2" >&2
+            exit 1
+          fi
+
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "Using release version: ${VERSION}"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binaries for all Go-supported targets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          COMMIT="${GITHUB_SHA}"
+          DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          while read -r target; do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+
+            echo "Building ${APP_NAME} ${VERSION} for ${GOOS}/${GOARCH}"
+
+            output_dir="dist/${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}"
+            mkdir -p "${output_dir}"
+
+            binary_name="${APP_NAME}"
+            if [ "${GOOS}" = "windows" ]; then
+              binary_name="${APP_NAME}.exe"
+            fi
+
+            GOOS="${GOOS}" GOARCH="${GOARCH}" CGO_ENABLED=0 \
+              go build \
+                -trimpath \
+                -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+                -o "${output_dir}/${binary_name}" \
+                "${MAIN_PACKAGE}"
+
+            if [ -f README.md ]; then
+              cp README.md "${output_dir}/"
+            fi
+
+            if [ -f LICENSE ]; then
+              cp LICENSE "${output_dir}/"
+            fi
+
+            if [ "${GOOS}" = "windows" ]; then
+              (cd dist && zip -q -r "${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}.zip" "${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}")
+            else
+              tar -C dist -czf "dist/${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}.tar.gz" "${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}"
+            fi
+
+            rm -rf "${output_dir}"
+          done < <(go tool dist list)
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums with cosign
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign-blob \
+            --yes \
+            --bundle dist/checksums.txt.bundle \
+            dist/checksums.txt
+
+      - name: Create GitHub release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: gossms ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

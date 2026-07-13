@@ -1,0 +1,2 @@
+2026/07/10 20:17:20 gossms error: init screen: open /dev/tty: no such device or address
+2026/07/11 19:44:26 fetchChildren [22]: gosmo: list agent jobs: mssql: Invalid column name 'job_state'.
