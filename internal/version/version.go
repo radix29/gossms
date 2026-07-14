@@ -1,13 +1,25 @@
 // Package version holds gossms's own version metadata, mirroring the same
-// pattern gosmo/version/version.go uses. Commit/Date are filled in
-// automatically at build time from the VCS info the Go toolchain embeds in
-// every binary (see init, below) — no ldflags or Makefile required. Version/
-// Commit/Date remain vars, not consts, so a packaging build without a .git
-// checkout can still override them at link time via:
+// pattern gosmo/version/version.go uses. Version/Commit/Date are never
+// hand-edited — they resolve automatically, in priority order:
 //
-//	-ldflags "-X github.com/radix29/gossms/internal/version.Version=... \
-//	          -X github.com/radix29/gossms/internal/version.Commit=...  \
-//	          -X github.com/radix29/gossms/internal/version.Date=..."
+//  1. -ldflags -X, set by .github/workflows/release.yml from the pushed git
+//     tag ($GITHUB_REF_NAME / git describe):
+//
+//     -ldflags "-X github.com/radix29/gossms/internal/version.Version=... \
+//     -X github.com/radix29/gossms/internal/version.Commit=...  \
+//     -X github.com/radix29/gossms/internal/version.Date=..."
+//
+//  2. debug.BuildInfo.Main.Version, which Go itself populates when someone
+//     runs `go install github.com/radix29/gossms/cmd/gossms@<tag>` (or
+//     @latest) — checked in init, below, only when ldflags didn't already
+//     set Version.
+//
+//  3. The literal "(devel)" default, left alone for a plain `git clone &&
+//     go build`/`go run` with no ldflags — matching the same convention
+//     `go version -m` itself uses for an unresolved main-module version.
+//     Commit/Date still populate from the VCS info the Go toolchain embeds
+//     in every binary built from a checkout (go help buildvcs) even in
+//     this case, so the About dialog still shows commit + build date.
 //
 // Shared between cmd/gossms and internal/tui (the About dialog).
 package version
@@ -21,20 +33,23 @@ import (
 const Name = "gossms"
 
 var (
-	Version = "v0.0.2"
+	Version = "(devel)"
 	Commit  = "unknown"
 	Date    = "unknown"
 )
 
-// init fills Commit/Date from the build info the Go toolchain stamps into
-// every binary built from a VCS checkout (go help buildvcs) — the commit
-// revision and commit time, plus whether the tree had uncommitted changes.
-// Left alone (at "unknown") when that info isn't present, or when -ldflags
-// -X already set one of them, so that override path still wins.
+// init resolves Version from debug.BuildInfo.Main.Version (source 2 above)
+// and Commit/Date from the VCS info the Go toolchain stamps into every
+// binary built from a checkout (go help buildvcs) — the commit revision and
+// commit time, plus whether the tree had uncommitted changes. Each is left
+// alone when -ldflags -X already set it, so that override path always wins.
 func init() {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return
+	}
+	if Version == "(devel)" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = info.Main.Version
 	}
 	var revision string
 	var dirty bool

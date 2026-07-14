@@ -7,7 +7,8 @@ to the rest of the docs rather than repeating them.
 
 goSSMS is a portable, cross-platform terminal TUI reimplementation of SQL
 Server Management Studio, written in Go 1.26. Runs on Linux/macOS/Windows
-with no OS-specific code, no CGO. Current version: `v0.0.2`.
+with no OS-specific code, no CGO. Version is resolved automatically from
+the pushed git tag — see `internal/version/version.go` — never hand-edited.
 
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
 - Depends on `github.com/radix29/gosmo` (`v0.0.4`), the author's own
@@ -54,9 +55,12 @@ No Makefile — this project uses the plain `go` toolchain only. Use these
 directly rather than eyeballing correctness; a real shell is available
 here.
 
-Version/Commit/Date (`internal/version`) can optionally be stamped at
-build time via `-ldflags -X ...`; the hardcoded defaults in
-`internal/version/version.go` are fine for day-to-day work.
+Version/Commit/Date (`internal/version`) resolve automatically, in priority
+order: `-ldflags -X` (set by `.github/workflows/release.yml` from the
+pushed git tag) → `debug.BuildInfo.Main.Version` (populated by `go install
+.../cmd/gossms@<tag>`) → the literal `"(devel)"` default for a plain
+`git clone && go build`/`go run`. Nothing here is hand-edited before a
+release.
 
 Ignore the folder todo and its content.
 
@@ -155,5 +159,8 @@ file — don't retype by hand.
 
 ## Current state
 
-Version `v0.0.2`. `go.mod` points at the tagged `gosmo v0.0.4`.
+`go.mod` points at the tagged `gosmo v0.0.4`. The release workflow
+(`.github/workflows/release.yml`) builds for windows/linux/darwin ×
+amd64/arm64 only — see "Build & verify" above for how the app's own
+version gets set.
 
