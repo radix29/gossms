@@ -68,4 +68,3 @@ func (d *AlertDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
-

@@ -30,4 +30,3 @@ func (r Rect) Contains(x, y int) bool {
 
 // IsZero reports whether the rect is empty.
 func (r Rect) IsZero() bool { return r.W == 0 && r.H == 0 }
-

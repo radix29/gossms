@@ -8,27 +8,8 @@ It requires no SQL client tools or SQL Server drivers to be installed — connec
 
 Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ File  Edit  View  Query  Tools  Help                   🆕 | 🟢 ▶⬚ 🔴 🌳🔍 🌳✓ │
-├────────────────────┬────────────────────────────────────────────────────────┤
-│ Object Explorer    │  [Query 1] [Object Explorer Details] [v]               │
-│                    ├────────────────────────────────────────────────────────┤
-│ [-] ◉ myserver     │  SELECT TOP 1000 *                                     │
-│   [-] ▾ Databases  │  FROM [dbo].[Orders]                                   │
-│     [+] ▸ System Databases                                                  │
-│     [-] ⬢ AdventureWorks                                                    │
-│       [+] Tables   │ ─── Results ─── Messages ─── (drag or Ctrl+Up/Down) ─── │
-│       [+] Views    │  OrderID  | CustomerID | OrderDate  | Total            │
-│       [+] Procs    │  ──────── | ────────── | ────────── | ─────────        │
-│   [+] Security     │  1001     | C-001      | 2024-01-05 | 1250.00          │
-│   [+] Server Obj.  │  1002     | C-007      | 2024-01-06 | 89.99            │
-│                    │                                                        │
-│                    │  00:00:00.012 | Row: 2, Col: 4 | 2 rows                │
-├────────────────────┴────────────────────────────────────────────────────────┤
-│ Connected to myserver  |  SQL Server 2022 (16.0.x) Developer Edition        │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+![Demo](demo.gif)
+
 
 ## Known Issues
 

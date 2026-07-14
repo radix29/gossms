@@ -88,6 +88,14 @@ func (a *App) closePanelByPointer(p layout.Panel) {
 	}
 }
 
+// panelHosted reports whether p is still one of App's live panels — used by
+// an async operation (e.g. connectForQueryPanel) that captured a panel
+// pointer before its background goroutine started, to detect that the
+// panel was closed while the operation was still in flight.
+func (a *App) panelHosted(p layout.Panel) bool {
+	return a.panels.FindIndex(func(x layout.Panel) bool { return x == p }) >= 0
+}
+
 // requestClosePanel implements Ctrl+W / File > Close and a tab's [x]
 // button: closes the panel at i outright, unless it's a QueryPanel with
 // unsaved changes, in which case it asks whether to save first. A panel

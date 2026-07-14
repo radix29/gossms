@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -303,5 +305,33 @@ func TestMessagesTabKeysRouteToMessagesEditorNotGrid(t *testing.T) {
 	}
 	if qp.results.HasSelection() {
 		t.Errorf("results grid gained a selection; Ctrl+A should not have reached it")
+	}
+}
+
+// TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets pins the CSV shape
+// Results To File relies on: one header + data rows per set, a blank line
+// between sets, and a returned count of data rows only (headers excluded).
+func TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.csv")
+	sets := []query.ResultSet{
+		{Columns: []string{"a", "b"}, Rows: [][]string{{"1", "2"}, {"3", "4"}}},
+		{Columns: []string{"x"}, Rows: [][]string{{"y"}}},
+	}
+
+	n, err := writeCSV(path, sets)
+	if err != nil {
+		t.Fatalf("writeCSV: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("n = %d, want 3 (data rows only, headers excluded)", n)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	want := "a,b\n1,2\n3,4\n\nx\ny\n"
+	if string(data) != want {
+		t.Errorf("file content = %q, want %q", data, want)
 	}
 }

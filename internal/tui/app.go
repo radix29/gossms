@@ -156,7 +156,20 @@ func (a *App) drainPending() {
 // deadlock (the loop can't read EventQ while it's mid-dispatch). Mirrors
 // the postEvent+EventInterrupt handoff every other background operation
 // here uses (see app_connections.go, tasks.go, query_panel.go).
+//
+// A no-op when a.screen is nil, which every App built by the tui package's
+// own newTestApp helper is — "no screen, no event loop" by design. Without
+// this guard, a background goroutine from an async action exercised in such
+// a test (connectForQueryPanel, startTask/postTaskDone, ...) can still be
+// running after its test function has already returned, and calling this
+// then would panic on the nil screen — nothing waits for these goroutines
+// to finish, so whether that happens before or after the test binary exits
+// is a timing accident, one `go test -race` (which slows everything down)
+// made an intermittent, hard-to-reproduce crash.
 func (a *App) wakeEventLoop() {
+	if a.screen == nil {
+		return
+	}
 	a.screen.EventQ() <- tcell.NewEventInterrupt(nil)
 }
 

@@ -419,6 +419,13 @@ func (p *QueryPanel) runQuery(queryText string) {
 	p.messages.SetText("") // clear stale messages from any previous run
 	p.messageErrorLines = nil
 	sc := p.conn
+	// Results To File wants every row a query actually returns, not just
+	// what the grid would show — captured now (like sc above) since
+	// p.resultsMode can change via the Query menu while this goroutine runs.
+	maxRows := p.app.cfg.MaxResultRows
+	if p.resultsMode == ResultsModeFile {
+		maxRows = 0
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 	p.resultsNotice = ""
@@ -430,8 +437,11 @@ func (p *QueryPanel) runQuery(queryText string) {
 	go p.tickExecuting(done)
 
 	go func() {
-		res := query.Execute(ctx, sc.Server.DB(), p.database, queryText)
+		res := query.Execute(ctx, sc.Server.DB(), p.database, queryText, maxRows)
+		// cancelled must be read before cancel() — calling cancel sets
+		// ctx.Err() itself, which would make this always true otherwise.
 		cancelled := ctx.Err() != nil
+		cancel() // release ctx's resources now that the query is done, whether or not CancelExecution ever ran
 		close(done)
 		p.app.postEvent(func() {
 			p.executing = false
@@ -712,33 +722,39 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 
 // writeCSV writes every result set to path as CSV — a header row then data
 // rows per set, sets separated by a blank line — returning the total number
-// of data rows written.
-func writeCSV(path string, sets []query.ResultSet) (int, error) {
+// of data rows written. A failing Close (e.g. a disk-full flush error the OS
+// only reports at close time) is reported too, not silently dropped, unless
+// an earlier error already explains the failure.
+func writeCSV(path string, sets []query.ResultSet) (n int, err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
-	n := 0
 	w := csv.NewWriter(f)
 	for i, set := range sets {
 		if i > 0 {
 			w.Flush()
-			if _, err := f.WriteString("\n"); err != nil {
+			if _, err = f.WriteString("\n"); err != nil {
 				return n, err
 			}
 		}
-		if err := w.Write(set.Columns); err != nil {
+		if err = w.Write(set.Columns); err != nil {
 			return n, err
 		}
 		for _, row := range set.Rows {
-			if err := w.Write(row); err != nil {
+			if err = w.Write(row); err != nil {
 				return n, err
 			}
 			n++
 		}
 	}
 	w.Flush()
-	return n, w.Error()
+	err = w.Error()
+	return n, err
 }

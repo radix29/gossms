@@ -151,6 +151,7 @@ type Config struct {
 	Connections   []Connection `json:"connections"`
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
+	MaxResultRows int          `json:"max_result_rows"`
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell displays
@@ -158,6 +159,13 @@ type Config struct {
 // Load applies it to a zero (unset, or predating this field) MaxCellLength
 // so every other reader of *Config always sees a usable value.
 const DefaultMaxCellLength = 24
+
+// DefaultMaxResultRows is how many rows a single result set keeps for the
+// Grid/Text results view, absent an Options dialog override — Load applies
+// it to a zero (unset, or predating this field) MaxResultRows the same way
+// it does for MaxCellLength. Results To File ignores this cap; it writes
+// every row a query actually returns.
+const DefaultMaxResultRows = 100000
 
 // configPath returns the path to the config file.
 func configPath() string {
@@ -179,6 +187,7 @@ func Load() *Config {
 	if err != nil {
 		cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
 		cfg.MaxCellLength = DefaultMaxCellLength
+		cfg.MaxResultRows = DefaultMaxResultRows
 		return cfg
 	}
 	cfg := new(Config)
@@ -187,6 +196,9 @@ func Load() *Config {
 	}
 	if cfg.MaxCellLength <= 0 {
 		cfg.MaxCellLength = DefaultMaxCellLength
+	}
+	if cfg.MaxResultRows <= 0 {
+		cfg.MaxResultRows = DefaultMaxResultRows
 	}
 
 	key, err := loadOrCreateKey(filepath.Dir(path))
@@ -209,7 +221,13 @@ func Load() *Config {
 func (c *Config) Save() error {
 	path := configPath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// 0700, matching loadOrCreateKey's own MkdirAll (secret.go) — since
+	// Save runs before that call and MkdirAll never chmods an
+	// already-existing directory, whichever of the two ran first on a
+	// fresh install used to decide the directory's real permissions; this
+	// used to leave it 0755 (world-listable) instead of the owner-only
+	// posture the encryption key's directory is documented to have.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
@@ -221,6 +239,7 @@ func (c *Config) Save() error {
 		Connections:   make([]Connection, len(c.Connections)),
 		IconStyle:     c.IconStyle,
 		MaxCellLength: c.MaxCellLength,
+		MaxResultRows: c.MaxResultRows,
 	}
 	for i, conn := range c.Connections {
 		enc, err := encryptPassword(key, conn.Password)

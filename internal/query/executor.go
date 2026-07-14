@@ -84,7 +84,14 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 // batch is reported in Messages and execution continues with the next batch,
 // matching SSMS. Cancelling ctx stops between (and inside) batches; the
 // partial Result is still returned.
-func Execute(ctx context.Context, db *sql.DB, database, script string) *Result {
+//
+// maxRows caps how many rows each result set keeps in memory (0 or negative
+// means unlimited) — a query is still executed and drained to completion
+// either way, so row/rows-affected counts and later batches are unaffected;
+// rows past the cap are simply not scanned or retained, and a Messages
+// notice reports the truncation. Meant for the interactive Grid/Text views;
+// pass 0 for a caller (e.g. Results To File) that wants every row.
+func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows int) *Result {
 	start := time.Now()
 	res := &Result{}
 
@@ -111,7 +118,7 @@ func Execute(ctx context.Context, db *sql.DB, database, script string) *Result {
 		if ctx.Err() != nil {
 			break
 		}
-		runBatch(ctx, conn, b, res)
+		runBatch(ctx, conn, b, res, maxRows)
 	}
 
 	if ctx.Err() != nil {
@@ -141,8 +148,9 @@ func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
 // runBatch executes one GO batch and drains the sqlexp message stream,
 // appending result sets and messages to res. SQL errors are messages, not
 // early returns — later statements in the batch may still have produced
-// output, and SSMS reports it all.
-func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result) {
+// output, and SSMS reports it all. maxRows is passed straight to
+// scanResultSet — see Execute's doc comment.
+func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, maxRows int) {
 	retmsg := &sqlexp.ReturnMessage{}
 	rows, err := conn.QueryContext(ctx, sqlText, retmsg)
 	if err != nil {
@@ -164,11 +172,14 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result) 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
-			rs, err := scanResultSet(rows)
+			rs, truncated, err := scanResultSet(rows, maxRows)
 			if err != nil {
 				res.addError(err)
 			} else {
 				res.Sets = append(res.Sets, rs)
+				if truncated {
+					res.addNotice(fmt.Sprintf("Only the first %d row(s) are shown — increase Max Result Rows in Tools > Options to see more.", maxRows))
+				}
 			}
 		case sqlexp.MsgNextResultSet:
 			active = rows.NextResultSet()
@@ -179,15 +190,23 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result) 
 	}
 }
 
-// scanResultSet reads the current result set of rows into string cells.
-func scanResultSet(rows *sql.Rows) (ResultSet, error) {
+// scanResultSet reads the current result set of rows into string cells, up
+// to maxRows of them (0 or negative means unlimited) — reporting whether
+// the result set actually had more than that. rows.Next() is still called
+// until the driver's row stream for this set is exhausted regardless of
+// the cap; only the (comparatively expensive) Scan, string-formatting, and
+// retention past the cap are skipped, so the sqlexp message-based
+// iteration runBatch drives — which expects a result set fully drained
+// before the next message can be read — still behaves correctly, and a
+// huge SELECT can't grow one ResultSet past what the cap allows.
+func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 	cols, err := rows.Columns()
 	if err != nil {
-		return ResultSet{}, err
+		return ResultSet{}, false, err
 	}
 	types, err := rows.ColumnTypes()
 	if err != nil {
-		return ResultSet{}, err
+		return ResultSet{}, false, err
 	}
 	rs := ResultSet{Columns: cols}
 
@@ -206,9 +225,14 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 			ptrs[i] = &vals[i]
 		}
 	}
+	truncated := false
 	for rows.Next() {
+		if maxRows > 0 && len(rs.Rows) >= maxRows {
+			truncated = true
+			continue // keep draining the stream without scanning/retaining
+		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return rs, err
+			return rs, truncated, err
 		}
 		row := make([]string, len(cols))
 		for i := range cols {
@@ -220,7 +244,7 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 		}
 		rs.Rows = append(rs.Rows, row)
 	}
-	return rs, nil
+	return rs, truncated, nil
 }
 
 // formatGUID renders a uniqueidentifier as SSMS does: NULL, or the canonical

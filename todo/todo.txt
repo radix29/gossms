@@ -1,7 +1,6 @@
-- commit & create tag
-- create release- hcek actions / workflow
 
-fable: review both projects for: bugs, refractoring, best practices optimizations and create a plan. 
+fable: 
+review both projects for: bugs, refractoring, best practices optimizations and create a plan. 
 do not execute the plan as i would switch the model beforehand
 
 properties dialogs: test functionality and missing functionality

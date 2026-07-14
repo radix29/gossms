@@ -110,4 +110,3 @@ func EvRune(ev interface{ Str() string }) rune {
 	}
 	return 0
 }
-

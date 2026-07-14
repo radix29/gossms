@@ -23,4 +23,3 @@ func Init() (tcell.Screen, error) {
 	s.SetStyle(theme.StyleDefault())
 	return s, nil
 }
-

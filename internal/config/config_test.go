@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,32 @@ func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
 	if len(cfg.Connections) != 0 {
 		t.Errorf("len(Connections) = %d, want 0", len(cfg.Connections))
 	}
+	if cfg.MaxResultRows != DefaultMaxResultRows {
+		t.Errorf("MaxResultRows = %d, want default %d", cfg.MaxResultRows, DefaultMaxResultRows)
+	}
+}
+
+// TestLoadCoercesNonPositiveMaxResultRows confirms a zero (predating this
+// field) or negative (hand-edited) max_result_rows in config.json is
+// coerced back to the default, the same way MaxCellLength already is —
+// every other reader of *Config must always see a usable, positive cap.
+func TestLoadCoercesNonPositiveMaxResultRows(t *testing.T) {
+	for _, raw := range []int{0, -5} {
+		dir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		cfgDir := filepath.Join(dir, "gossms")
+		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		data := fmt.Sprintf(`{"max_result_rows": %d}`, raw)
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := Load()
+		if cfg.MaxResultRows != DefaultMaxResultRows {
+			t.Errorf("raw %d: MaxResultRows = %d, want default %d", raw, cfg.MaxResultRows, DefaultMaxResultRows)
+		}
+	}
 }
 
 func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
@@ -138,7 +165,8 @@ func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{
@@ -154,6 +182,19 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	})
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save(): %v", err)
+	}
+
+	// The config directory (holding both config.json and the encryption
+	// key) must end up owner-only, matching loadOrCreateKey's own
+	// MkdirAll — Save used to create it 0755 on a fresh install since it
+	// runs (and calls MkdirAll) before loadOrCreateKey does, and MkdirAll
+	// never chmods an already-existing directory.
+	info, err := os.Stat(filepath.Join(xdgDir, "gossms"))
+	if err != nil {
+		t.Fatalf("stat config dir: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Errorf("config dir permissions = %o, want 0700", perm)
 	}
 
 	loaded := Load()

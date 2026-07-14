@@ -136,4 +136,3 @@ func SetPalette(p Palette) { active = p }
 
 // Active returns the currently active palette.
 func Active() *Palette { return &active }
-

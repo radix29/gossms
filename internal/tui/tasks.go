@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -83,32 +82,34 @@ func (a *App) startTask(label string) (*Task, context.Context) {
 
 // postProgress schedules a progress update on t to run on the main
 // goroutine, then wakes the event loop so it draws immediately — the same
-// postEvent+EventInterrupt handoff every other background operation in
+// postEvent+wakeEventLoop handoff every other background operation in
 // this codebase uses (see query_panel.go, app_connections.go).
 func (a *App) postProgress(t *Task, progress int, message string) {
 	a.postEvent(func() {
 		t.Progress = progress
 		t.Message = message
 	})
-	a.screen.EventQ() <- tcell.NewEventInterrupt(nil)
+	a.wakeEventLoop()
 }
 
 // postTaskDone marks t finished (err nil on success) on the main goroutine,
-// updates the status bar to match (every task consumer wants this, the same
-// way query execution always reports its own completion), and wakes the
-// event loop.
+// releases its context (the task's work is done either way, whether or not
+// Cancel was ever called), updates the status bar to match (every task
+// consumer wants this, the same way query execution always reports its own
+// completion), and wakes the event loop.
 func (a *App) postTaskDone(t *Task, err error) {
 	a.postEvent(func() {
 		t.Done = true
 		t.Err = err
 		t.Finished = time.Now()
+		t.Cancel()
 		if err != nil {
 			a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, err))
 		} else {
 			a.setStatus(t.Label + " completed")
 		}
 	})
-	a.screen.EventQ() <- tcell.NewEventInterrupt(nil)
+	a.wakeEventLoop()
 }
 
 // runningTaskCount reports how many tasks are still in flight, for the

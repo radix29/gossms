@@ -148,9 +148,11 @@ gosmo's own conventions, so new additions blend in:
   `scriptObject`, `QueryPanel.runQuery`, `DetailBrowser.ShowNodeDetails`,
   `PropertiesDialog.ShowDependencies`) except the ones already using
   `wakeEventLoop()` (`clipboard.go`) or the equivalent inline pattern
-  (`tasks.go`'s `postProgress`/`postTaskDone`) — see `wakeEventLoop`'s doc
-  comment in `app.go` and `PropDialog.post`'s in `prop_dialog.go`, which
-  already explained the trap correctly but wasn't followed everywhere.
+  (`tasks.go`'s `postProgress`/`postTaskDone`, later consolidated onto
+  `wakeEventLoop()` itself once it grew a nil-`a.screen` guard for
+  screen-less test `App`s) — see `wakeEventLoop`'s doc comment in `app.go`
+  and `PropDialog.post`'s in `prop_dialog.go`, which already explained the
+  trap correctly but wasn't followed everywhere.
 
 When splitting a file that's grown too large: one file per type/group,
 `common.go`, `doc.go`, and extract each section by exact line range and

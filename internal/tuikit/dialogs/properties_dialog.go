@@ -113,4 +113,3 @@ func (d *PropertiesDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
-

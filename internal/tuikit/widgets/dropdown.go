@@ -28,7 +28,12 @@ func (d *DropDown) SetSelected(i int) {
 		d.selected = i
 	}
 }
-func (d *DropDown) Focus(v bool) { d.focused = v; if !v { d.open = false } }
+func (d *DropDown) Focus(v bool) {
+	d.focused = v
+	if !v {
+		d.open = false
+	}
+}
 func (d *DropDown) Value() string {
 	if d.selected >= 0 && d.selected < len(d.items) {
 		return d.items[d.selected]

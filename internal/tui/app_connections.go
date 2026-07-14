@@ -70,6 +70,13 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 				a.setStatus(fmt.Sprintf("Connection failed: %v", err))
 				return
 			}
+			if !a.panelHosted(qp) {
+				// qp was closed while this connection was still resolving —
+				// nothing else references newConn, so close it here or it
+				// leaks for the rest of the process's lifetime.
+				newConn.Close()
+				return
+			}
 			qp.conn = newConn
 			qp.database = resolvedDB
 			a.setStatus(fmt.Sprintf("Connected to %s", opts.Server))

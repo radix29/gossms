@@ -184,7 +184,7 @@ func DrawBoxTitle(s tcell.Screen, r Rect, title string, borderStyle, titleStyle 
 		return
 	}
 	titleStr := " " + title + " "
-	tx := r.X + (r.W-len(titleStr))/2
+	tx := r.X + (r.W-DisplayWidth(titleStr))/2
 	if tx < r.X+1 {
 		tx = r.X + 1
 	}
