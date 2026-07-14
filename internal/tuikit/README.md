@@ -18,11 +18,12 @@ tuikit/
 │             — panel.go, panel_manager.go, splitter.go
 ├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog
 │             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go
-├── controls/   MenuBar+ContextMenu, TreeView, DataGrid, ListBox, Editor (+ SQL highlighter)
-│             — one file per group: menu.go, treeview.go, datagrid.go, listbox.go;
+├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, Editor (+ SQL highlighter/statement select)
+│             — one file per group: menu.go, toolbar.go, treeview.go, datagrid.go, listbox.go;
 │               Editor is split across editor.go (state/options/undo),
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
-│               editor_input.go, editor_actions.go, sql_highlighter.go
+│               editor_input.go, editor_actions.go, sql_highlighter.go,
+│               sql_statement.go (T-SQL statement/batch boundary detection)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go, sheet.go
 ```

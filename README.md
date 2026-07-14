@@ -10,7 +10,7 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ File  Edit  View  Query  Tools  Help                                        │
+│ File  Edit  View  Query  Tools  Help                   🆕 | 🟢 ▶⬚ 🔴 🌳🔍 🌳✓ │
 ├────────────────────┬────────────────────────────────────────────────────────┤
 │ Object Explorer    │  [Query 1] [Object Explorer Details] [v]               │
 │                    ├────────────────────────────────────────────────────────┤
@@ -18,13 +18,13 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 │   [-] ▾ Databases  │  FROM [dbo].[Orders]                                   │
 │     [+] ▸ System Databases                                                  │
 │     [-] ⬢ AdventureWorks                                                    │
-│       [+] Tables   │ ─── Results ─── (drag or Ctrl+Up/Down to resize) ─── │
+│       [+] Tables   │ ─── Results ─── Messages ─── (drag or Ctrl+Up/Down) ─── │
 │       [+] Views    │  OrderID  | CustomerID | OrderDate  | Total            │
 │       [+] Procs    │  ──────── | ────────── | ────────── | ─────────        │
 │   [+] Security     │  1001     | C-001      | 2024-01-05 | 1250.00          │
 │   [+] Server Obj.  │  1002     | C-007      | 2024-01-06 | 89.99            │
 │                    │                                                        │
-│                    │  2 rows returned                                       │
+│                    │  00:00:00.012 | Row: 2, Col: 4 | 2 rows                │
 ├────────────────────┴────────────────────────────────────────────────────────┤
 │ Connected to myserver  |  SQL Server 2022 (16.0.x) Developer Edition        │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -46,7 +46,9 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 - **Database context per query window** — New Query on a database (or Select Top 1000 Rows on its tables/views) runs in that database, not the login's default
 - **Detail Browser** — shows properties of the selected tree node
 - **Resizable splitters** — drag or keyboard-resize the explorer width and editor/results split
-- **SQL syntax highlighting** — keywords, strings, comments, numbers
+- **Toolbar** — icon-only quick-action row sharing the menu bar's line, right-aligned (New Query, Execute, Execute Selection, Stop Execution); hover shows a tooltip styled like SSMS's query-status bar
+- **SQL editor** — syntax highlighting (keywords, strings, comments, numbers), optional word-wrap, line duplicate/move/indent/comment, word-aware navigation and deletion, undo/redo, and `Ctrl+Enter` T-SQL statement selection (splits on `;` and `GO` batches, skipping comments/strings)
+- **Results grid status bar** — SSMS-style bar under each results tab showing elapsed time, selected row/column, and row count (live-updating while a query executes)
 - **Modal dialogs** — Connect (with a read-only connection-string preview), Options, Help, Key Diagnostics (shows tcell's decoded Key/Modifiers/rune for every keypress — useful for diagnosing a terminal that isn't delivering an expected shortcut), Background Tasks, About
 - **Server / Database / Login Properties** — multi-page, editable SSMS-style properties dialogs (page list on the left, OK/Cancel/Apply/Script Changes below); each page loads asynchronously the first time it's shown, F5 refreshes the current page, edited values are cached only while the dialog is open, any value can be copied to the clipboard, and Script Changes opens the SQL for the pending edits in a new query window instead of running it
 - **Context menus** — right-click any tree node for contextual actions, or `Shift+F10`/the `Menu` key for the keyboard equivalent
@@ -150,13 +152,18 @@ gossms/
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm
-│   │   ├── controls/                # MenuBar, ContextMenu, TreeView, DataGrid, ListBox, Editor (+SQL highlighter)
+│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TreeView, DataGrid, ListBox, Editor (+SQL highlighter)
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
+│       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
+│       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping
+│       ├── app_explorer_data.go  # background fetch orchestration, context menus, Script object, View Dependencies, Back Up Database/Rebuild All Indexes task consumers
+│       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Server/Database/Login Properties
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help) + About dialog
+│       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row
 │       ├── tree_node.go          # NodeType enum + style-aware icon lookup (Emoji/Symbols/Portable/None) + name lookup
 │       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
 │       ├── explorer_loaders.go   # childLoader registry (NodeType → fetch func) + shared loader helpers
@@ -164,9 +171,9 @@ gossms/
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles
 │       ├── explorer_management.go # loaders: Server Objects folder — Agent Jobs, Linked Servers
-│       ├── app_explorer_data.go  # background fetch orchestration, context menus, Script object, View Dependencies
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
-│       ├── app_tasks_actions.go  # real task consumers — Back Up Database, Rebuild All Indexes
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields
+│       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
 │       ├── query_panel.go        # editor + results (tabbed grids + Messages), implements layout.Panel
 │       ├── detail_browser.go     # object details, implements layout.Panel
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview

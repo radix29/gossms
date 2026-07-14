@@ -7,10 +7,10 @@ to the rest of the docs rather than repeating them.
 
 goSSMS is a portable, cross-platform terminal TUI reimplementation of SQL
 Server Management Studio, written in Go 1.26. Runs on Linux/macOS/Windows
-with no OS-specific code, no CGO. Current version: `v0.0.1`.
+with no OS-specific code, no CGO. Current version: `v0.0.2`.
 
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
-- Depends on `github.com/radix29/gosmo` (`v0.0.3`), the author's own
+- Depends on `github.com/radix29/gosmo` (`v0.0.4`), the author's own
   companion library for SQL Server management objects —
   https://github.com/radix29/gosmo — and `github.com/gdamore/tcell/v3`
   (`v3.4.0`) for the TUI backend.
@@ -155,8 +155,5 @@ file — don't retype by hand.
 
 ## Current state
 
-Version `v0.0.1`.
-
-before release i will deploy the latest version of gosmo and change the 
-go.mod file
+Version `v0.0.2`. `go.mod` points at the tagged `gosmo v0.0.4`.
 
