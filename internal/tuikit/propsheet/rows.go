@@ -24,18 +24,25 @@ const selectControlWidth = 22
 // Section — non-focusable heading with an underline
 // ---------------------------------------------------------------------------
 
-type sectionRow struct {
+// SectionRow is a non-focusable heading with an underline. Most callers
+// only need Section's returned Row; SetTitle is for the rare page whose
+// heading must reflect a later selection (e.g. "Explicit permissions for
+// <principal>" once a principal is picked in a grid above it).
+type SectionRow struct {
 	title   string
 	x, y, w int
 }
 
 // Section returns a non-focusable, non-editable heading row.
-func Section(title string) Row { return &sectionRow{title: title} }
+func Section(title string) *SectionRow { return &SectionRow{title: title} }
 
-func (r *sectionRow) Height(w int) int   { return 2 }
-func (r *sectionRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
-func (r *sectionRow) Focusable() bool    { return false }
-func (r *sectionRow) Draw(s tcell.Screen, focused bool) {
+// SetTitle changes the heading text in place.
+func (r *SectionRow) SetTitle(title string) { r.title = title }
+
+func (r *SectionRow) Height(w int) int   { return 2 }
+func (r *SectionRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
+func (r *SectionRow) Focusable() bool    { return false }
+func (r *SectionRow) Draw(s tcell.Screen, focused bool) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text).Bold(true)
 	core.DrawText(s, r.x, r.y, st, r.title)

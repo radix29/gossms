@@ -91,7 +91,21 @@ func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if d.Type == NodeColumn && d.IsPrimaryKey {
 		return primaryKeyIcon(style)
 	}
+	if d.Type == NodeDatabase && d.IsOffline {
+		return offlineDatabaseIcon(style)
+	}
 	return objectIcon(d.Type, style)
+}
+
+// offlineDatabaseIcon returns the glyph substituted for a NodeDatabase
+// that's currently offline — a hollow hexagon in the geometric styles
+// (vs. the filled '⬢' an online database uses), a "powered off" glyph
+// for Emoji.
+func offlineDatabaseIcon(style config.IconStyle) rune {
+	if style == config.IconStyleEmoji {
+		return '📴'
+	}
+	return '⬡'
 }
 
 // primaryKeyIcon returns the glyph substituted for a primary-key column's
@@ -311,5 +325,6 @@ type nodeData struct {
 	DBName       string
 	Loaded       bool
 	IsPrimaryKey bool
+	IsOffline    bool
 	conn         *db.ServerConn
 }

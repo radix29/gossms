@@ -394,12 +394,16 @@ func (cm *ContextMenu) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyEscape:
 		cm.Hide()
 	case tcell.KeyUp:
-		if cm.hover > 0 {
-			cm.hover--
+		if cm.hover < 0 {
+			cm.hover = firstSelectableItem(cm.items)
+		} else {
+			cm.hover = stepSelectableItem(cm.items, cm.hover, -1)
 		}
 	case tcell.KeyDown:
-		if cm.hover < len(cm.items)-1 {
-			cm.hover++
+		if cm.hover < 0 {
+			cm.hover = firstSelectableItem(cm.items)
+		} else {
+			cm.hover = stepSelectableItem(cm.items, cm.hover, 1)
 		}
 	case tcell.KeyEnter:
 		if cm.hover >= 0 && cm.hover < len(cm.items) {

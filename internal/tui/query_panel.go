@@ -42,16 +42,17 @@ const (
 // the tuikit/layout.Panel interface so it can be hosted by a
 // layout.PanelManager.
 type QueryPanel struct {
-	rect     core.Rect
-	title    string
-	editor   *controls.Editor
-	results  *controls.DataGrid
-	messages *controls.Editor // read-only; backs the Messages tab (see onMessagesTab)
-	splitter *layout.Splitter
-	active   bool
-	conn     *db.ServerConn // nil = none; may outlive a disconnect
-	database string         // "" = connection default database
-	app      *App
+	rect        core.Rect
+	title       string
+	editor      *controls.Editor
+	results     *controls.DataGrid
+	messages    *controls.Editor // read-only; backs the Messages tab (see onMessagesTab)
+	resultsText *controls.Editor // read-only; backs Results To Text (see renderActiveTab, textTabActive)
+	splitter    *layout.Splitter
+	active      bool
+	conn        *db.ServerConn // nil = none; may outlive a disconnect
+	database    string         // "" = connection default database
+	app         *App
 
 	filePath    string      // last path used by Save; "" if never saved
 	savedText   string      // editor text as of the last save/load; compared by Dirty
@@ -115,6 +116,8 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	})
 	p.messages = controls.NewEditor(p.messagesHighlighter)
 	p.messages.SetReadOnly(true)
+	p.resultsText = controls.NewEditor(nil)
+	p.resultsText.SetReadOnly(true)
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
 	return p
 }
@@ -177,16 +180,19 @@ func (p *QueryPanel) layoutChildren() {
 	bottom := p.splitter.SecondRect()
 	p.editor.SetBounds(top.X, top.Y, top.W, top.H)
 	// Once a result exists, the first row of the results area is its tab bar.
-	// results and messages share the same rect below it — only one of the
-	// two is ever drawn/routed to at a time, see onMessagesTab.
+	// results, messages, and resultsText share the same rect below it — only
+	// one of the three is ever drawn/routed to at a time, see onMessagesTab
+	// and textTabActive.
 	if p.result != nil && bottom.H > 1 {
 		p.tabRect = core.Rect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: 1}
 		p.results.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
 		p.messages.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
+		p.resultsText.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
 	} else {
 		p.tabRect = core.Rect{}
 		p.results.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
 		p.messages.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
+		p.resultsText.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
 	}
 }
 
@@ -196,6 +202,15 @@ func (p *QueryPanel) layoutChildren() {
 // at any given time.
 func (p *QueryPanel) onMessagesTab() bool {
 	return p.result != nil && p.activeTab >= len(p.result.Sets)
+}
+
+// textTabActive reports whether the active tab is a result set being
+// rendered as plain text (Query > Results To Text) rather than the grid —
+// results, messages, and resultsText occupy the same rect (see
+// layoutChildren), so exactly one of them is drawn, and routed keys/mouse,
+// at any given time.
+func (p *QueryPanel) textTabActive() bool {
+	return !p.onMessagesTab() && p.resultsMode == ResultsModeText && p.result != nil
 }
 
 // SetActive marks this panel as focused.
@@ -238,9 +253,12 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	p.splitter.Draw(s)
 	p.drawTabBar(s)
 	p.updateResultsStatus()
-	if p.onMessagesTab() {
+	switch {
+	case p.onMessagesTab():
 		p.messages.Draw(s)
-	} else {
+	case p.textTabActive():
+		p.resultsText.Draw(s)
+	default:
 		p.results.Draw(s)
 		p.results.DrawOverlay(s)
 	}
@@ -277,7 +295,7 @@ func (p *QueryPanel) updateResultsStatus() {
 	switch {
 	case p.executing:
 		p.results.SetStatus(formatElapsedHMS(time.Since(p.execStart)) + " | Executing...")
-	case p.result != nil && !p.onMessagesTab():
+	case p.result != nil && !p.onMessagesTab() && !p.textTabActive():
 		set := p.result.Sets[p.activeTab]
 		row, col := 0, 0
 		if len(set.Rows) > 0 {
@@ -504,8 +522,8 @@ func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 	}
 }
 
-// renderActiveTab loads the active tab's content into the grid, honouring
-// the panel's Grid/Text results mode.
+// renderActiveTab loads the active tab's content into the results grid or
+// resultsText editor, honouring the panel's Grid/Text results mode.
 func (p *QueryPanel) renderActiveTab() {
 	res := p.result
 	if res == nil {
@@ -535,23 +553,54 @@ func (p *QueryPanel) renderActiveTab() {
 	}
 	set := res.Sets[p.activeTab]
 	if p.resultsMode == ResultsModeText {
-		// Flatten to a single pipe-delimited column — a distinct, genuinely
-		// plain-text-shaped presentation without a separate text widget.
-		textRows := make([][]string, len(set.Rows))
-		for i, row := range set.Rows {
-			textRows[i] = []string{strings.Join(row, " | ")}
-		}
-		p.results.SetData([]string{"Row (" + strings.Join(set.Columns, ", ") + ")"}, textRows)
+		p.resultsText.SetText(formatResultsAsText(set))
 		return
 	}
 	p.results.SetData(set.Columns, set.Rows)
+}
+
+// formatResultsAsText renders set as SSMS's Results To Text look: a header
+// row, a dashed separator, then one line per data row, each column padded
+// to its widest value so columns visually line up like a real table.
+func formatResultsAsText(set query.ResultSet) string {
+	widths := make([]int, len(set.Columns))
+	for i, c := range set.Columns {
+		widths[i] = core.DisplayWidth(c)
+	}
+	for _, row := range set.Rows {
+		for i, cell := range row {
+			if w := core.DisplayWidth(cell); w > widths[i] {
+				widths[i] = w
+			}
+		}
+	}
+	var sb strings.Builder
+	writeRow := func(cells []string) {
+		for i, cell := range cells {
+			if i > 0 {
+				sb.WriteByte(' ')
+			}
+			sb.WriteString(core.PadRight(cell, widths[i]))
+		}
+		sb.WriteByte('\n')
+	}
+	writeRow(set.Columns)
+	seps := make([]string, len(widths))
+	for i, w := range widths {
+		seps[i] = strings.Repeat("-", w)
+	}
+	writeRow(seps)
+	for _, row := range set.Rows {
+		writeRow(row)
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // promptWriteResults implements Results To File: asks for a path, writes
 // every result set as CSV, and reports the outcome as an extra message on
 // the result (so it shows up in the Messages tab too).
 func (p *QueryPanel) promptWriteResults(res *query.Result) {
-	p.app.pathPrompt.Prompt("Results To File", "results.csv", func(path string) {
+	p.app.fileDialog.ShowSave("Results To File", "results.csv", func(path string) {
 		n, err := writeCSV(path, res.Sets)
 		msg := query.Message{Text: fmt.Sprintf("%d row(s) written to %s", n, path)}
 		if err != nil {
@@ -577,7 +626,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// (see controls.DataGrid.DrawOverlay), independent of resultsFocused, so
 	// without this check their keys (Shift+arrows, Ctrl+A, Escape) would
 	// fall through to the editor instead whenever the editor holds focus.
-	if !p.onMessagesTab() && p.results.OverlayActive() {
+	if !p.onMessagesTab() && !p.textTabActive() && p.results.OverlayActive() {
 		return p.results.HandleKey(ev)
 	}
 	if ev.Key() == tcell.KeyF5 {
@@ -616,12 +665,19 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 		p.layoutChildren()
 		return true
 	}
-	if p.onMessagesTab() {
+	switch {
+	case p.onMessagesTab():
 		if p.messages.HandleKey(ev) {
 			return true
 		}
-	} else if p.results.HandleKey(ev) {
-		return true
+	case p.textTabActive():
+		if p.resultsText.HandleKey(ev) {
+			return true
+		}
+	default:
+		if p.results.HandleKey(ev) {
+			return true
+		}
 	}
 	if ev.Key() == tcell.KeyEscape {
 		p.setResultsFocused(false)
@@ -639,28 +695,28 @@ func (p *QueryPanel) setResultsFocused(v bool) {
 }
 
 // HandleMouse routes mouse events to the splitter (drag), result tabs,
-// editor, or results grid.
+// editor, results grid, or results-text view.
 func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// Same reasoning as the OverlayActive check at the top of HandleKey:
 	// the popup/menu can visually overlap the editor's rect, so it must get
 	// every mouse event — including the drag-release that follows a
 	// click-drag selection inside it — before any position-based routing
 	// below gets a chance to hand the click to the editor instead.
-	if !p.onMessagesTab() && p.results.OverlayActive() {
+	if !p.onMessagesTab() && !p.textTabActive() && p.results.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.results.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
 	// Always forward release events — regardless of position — to the
-	// splitter, the query editor, the messages view, and the results grid,
-	// so an in-progress splitter drag, text-selection drag, or cell-block
-	// selection drag terminates cleanly even if the cursor has moved
-	// outside this panel's column (or out of whichever of those four
-	// widgets started the drag) before the button was released. Without
-	// forwarding to results too, its own drag-tracking flag never resets,
-	// so every click after the very first one in the grid's lifetime gets
-	// mistaken for a continued drag from that first click's anchor instead
-	// of a fresh single-cell selection.
+	// splitter, the query editor, the messages view, the results-text view,
+	// and the results grid, so an in-progress splitter drag, text-selection
+	// drag, or cell-block selection drag terminates cleanly even if the
+	// cursor has moved outside this panel's column (or out of whichever of
+	// those widgets started the drag) before the button was released.
+	// Without forwarding to results too, its own drag-tracking flag never
+	// resets, so every click after the very first one in the grid's
+	// lifetime gets mistaken for a continued drag from that first click's
+	// anchor instead of a fresh single-cell selection.
 	if ev.Buttons() == tcell.ButtonNone {
 		handled := false
 		if p.splitter.HandleMouse(ev) {
@@ -671,6 +727,9 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 			handled = true
 		}
 		if p.messages.HandleMouse(ev) {
+			handled = true
+		}
+		if p.resultsText.HandleMouse(ev) {
 			handled = true
 		}
 		if p.results.HandleMouse(ev) {
@@ -700,12 +759,18 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 			p.setResultsFocused(false)
 			return true
 		}
-		if p.onMessagesTab() {
+		switch {
+		case p.onMessagesTab():
 			if p.messages.HandleMouse(ev) {
 				p.setResultsFocused(true)
 				return true
 			}
-		} else if p.results.HandleMouse(ev) {
+		case p.textTabActive():
+			if p.resultsText.HandleMouse(ev) {
+				p.setResultsFocused(true)
+				return true
+			}
+		case p.results.HandleMouse(ev):
 			p.setResultsFocused(true)
 			return true
 		}
@@ -714,10 +779,14 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	if p.editor.HandleMouse(ev) {
 		return true
 	}
-	if p.onMessagesTab() {
+	switch {
+	case p.onMessagesTab():
 		return p.messages.HandleMouse(ev)
+	case p.textTabActive():
+		return p.resultsText.HandleMouse(ev)
+	default:
+		return p.results.HandleMouse(ev)
 	}
-	return p.results.HandleMouse(ev)
 }
 
 // writeCSV writes every result set to path as CSV — a header row then data

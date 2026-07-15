@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"slices"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -175,6 +174,17 @@ func bitsToAffinity(bits []bool) int64 {
 	return mask
 }
 
+// numaNodeOf renders logical CPU i's NUMA node from a
+// gosmo.ProcessorInfo.CPUNUMANode slice, or "N/A" if the server reported
+// fewer online schedulers than affinity-mask CPUs (e.g. a CPU disabled by
+// the OS but still counted in cpu_count).
+func numaNodeOf(cpuNUMANode []int, i int) string {
+	if i < 0 || i >= len(cpuNUMANode) {
+		return "N/A"
+	}
+	return strconv.Itoa(cpuNUMANode[i])
+}
+
 func pageServerGeneral(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "General",
@@ -199,9 +209,14 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				propsheet.Static("Product", "Microsoft SQL Server"),
 				propsheet.Static("Version", info.ProductVersion),
 				propsheet.Static("Edition", info.Edition),
+				propsheet.Static("Engine edition", engineEditionName(info.EngineEdition)),
 				propsheet.Static("Collation", info.Collation),
 				propsheet.Static("Language", "English"),
 				propsheet.Static("Platform", info.OSVersion),
+				propsheet.Section("Availability"),
+				propsheet.Static("Is clustered", boolStr(info.IsClustered)),
+				propsheet.Static("HADR enabled", boolStr(info.IsHADREnabled)),
+				propsheet.Static("Single-user mode", boolStr(info.IsSingleUser)),
 				propsheet.Section("Security"),
 				propsheet.Static("Authentication", sec.AuthenticationMode),
 				propsheet.Section("Resources"),
@@ -257,6 +272,10 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				return nil, nil, err
 			}
 			info := sc.Server.Info()
+			proc, err := sc.Server.ProcessorInfoContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 
 			var intRows []configRow
 			var boolRows []configBoolRow
@@ -276,18 +295,26 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 			}
 			cpuAff := affinityBits(affMask, cpuCount)
 			ioAff := affinityBits(ioMask, cpuCount)
+			autoAffinity := propsheet.Check("Automatically set processor affinity mask for all processors", affMask == 0)
+			autoIOAffinity := propsheet.Check("Automatically set I/O affinity mask for all processors", ioMask == 0)
 
 			text := make([][]string, cpuCount)
 			values := make([][]bool, cpuCount)
 			for i := 0; i < cpuCount; i++ {
-				text[i] = []string{"Processor " + strconv.Itoa(i)}
+				text[i] = []string{"Processor " + strconv.Itoa(i), numaNodeOf(proc.CPUNUMANode, i)}
 				values[i] = []bool{cpuAff[i], ioAff[i]}
 			}
-			affinityGrid := propsheet.NewToggleGrid([]string{"CPU", "Affinity", "I/O Affinity"}, []int{1, 2}, min(cpuCount+3, 12))
+			affinityGrid := propsheet.NewToggleGrid([]string{"CPU", "Affinity", "I/O Affinity", "NUMA"}, []int{1, 2}, min(cpuCount+3, 12))
 			affinityGrid.SetRows(text, values)
 
 			f := propsheet.NewForm(
+				propsheet.Section("Processor information"),
+				propsheet.Static("Processors", strconv.Itoa(proc.CPUCount)),
+				propsheet.Static("NUMA nodes", strconv.Itoa(proc.NUMANodeCount)),
+				propsheet.Static("Hyperthread ratio", strconv.Itoa(proc.HyperthreadRatio)),
 				propsheet.Section("Processor affinity"),
+				autoAffinity,
+				autoIOAffinity,
 				affinityGrid,
 				propsheet.Section("Threads"),
 				cfgInt("max worker threads", "Maximum worker threads", ""),
@@ -303,32 +330,38 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				if err != nil {
 					return err
 				}
-				if affinityGrid.Dirty() {
-					newCPUAff := make([]bool, cpuCount)
-					newIOAff := make([]bool, cpuCount)
-					for i, v := range affinityGrid.Values() {
-						newCPUAff[i], newIOAff[i] = v[0], v[1]
+				newCPUAff := make([]bool, cpuCount)
+				newIOAff := make([]bool, cpuCount)
+				for i, v := range affinityGrid.Values() {
+					newCPUAff[i], newIOAff[i] = v[0], v[1]
+				}
+				wantAffMask := bitsToAffinity(newCPUAff)
+				if autoAffinity.Checked() {
+					wantAffMask = 0
+				}
+				if wantAffMask != affMask {
+					opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity mask")
+					if err != nil {
+						return err
 					}
-					if !slices.Equal(newCPUAff, cpuAff) {
-						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity mask")
-						if err != nil {
-							return err
-						}
-						if err := opt.SetValueContext(ctx, bitsToAffinity(newCPUAff)); err != nil {
-							return err
-						}
-						changed = true
+					if err := opt.SetValueContext(ctx, wantAffMask); err != nil {
+						return err
 					}
-					if !slices.Equal(newIOAff, ioAff) {
-						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity I/O mask")
-						if err != nil {
-							return err
-						}
-						if err := opt.SetValueContext(ctx, bitsToAffinity(newIOAff)); err != nil {
-							return err
-						}
-						changed = true
+					changed = true
+				}
+				wantIOMask := bitsToAffinity(newIOAff)
+				if autoIOAffinity.Checked() {
+					wantIOMask = 0
+				}
+				if wantIOMask != ioMask {
+					opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity I/O mask")
+					if err != nil {
+						return err
 					}
+					if err := opt.SetValueContext(ctx, wantIOMask); err != nil {
+						return err
+					}
+					changed = true
 				}
 				if changed {
 					return sc.Server.ReconfigureContext(ctx, false)
@@ -362,6 +395,7 @@ func pageServerSecurity(sc *db.ServerConn) propPage {
 				propsheet.Section("Options"),
 				cfgBool("contained database authentication", "Allow contained database authentication"),
 				cfgBool("cross db ownership chaining", "Cross database ownership chaining"),
+				cfgBool("c2 audit mode", "Enable C2 audit tracing"),
 				propsheet.Note("Login auditing and the server proxy account are read from the registry, which this build does not access — see SQL Server's own security policy tooling for those."),
 			)
 			return f, configApply(sc, nil, boolRows), nil
@@ -391,6 +425,14 @@ func pageServerConnections(sc *db.ServerConn) propPage {
 				cfgBool("remote proc trans", "Require distributed transactions"),
 				cfgInt("remote query timeout (s)", "Remote query timeout", "sec"),
 				cfgInt("remote login timeout (s)", "Remote login timeout", "sec"),
+				propsheet.Section("Query governor"),
+				cfgInt("query governor cost limit", "Estimated query cost limit", ""),
+				propsheet.Section("Default connection options"),
+				cfgInt("network packet size (B)", "Network packet size", "bytes"),
+				propsheet.Section("User defaults"),
+				cfgInt("default language", "Default language", ""),
+				cfgInt("default full-text language", "Default full-text language", ""),
+				cfgInt("two digit year cutoff", "Two digit year cutoff", ""),
 				propsheet.Note("A value of 0 for maximum connections means SQL Server automatically manages the limit."),
 			)
 			return f, configApply(sc, intRows, boolRows), nil
@@ -427,7 +469,10 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 			f := propsheet.NewForm(
 				propsheet.Section("Default database settings"),
 				cfgInt("fill factor (%)", "Default index fill factor", "%"),
+				propsheet.Section("Backup and restore"),
+				cfgInt("media retention", "Backup media retention", "days"),
 				cfgBool("backup compression default", "Backup compression default"),
+				cfgBool("backup checksum default", "Backup checksum default"),
 				propsheet.Section("Default locations"),
 				propsheet.Static("Data", info.DefaultDataPath),
 				propsheet.Static("Log", info.DefaultLogPath),
@@ -464,6 +509,11 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 	}
 }
 
+// pageServerAdvanced groups the sp_configure options that have no more
+// specific home elsewhere (Memory/Processors/Connections/Database
+// Settings/Security already cover the rest) into editable rows, then
+// lists every remaining option — including ones this build doesn't expose
+// individually — in a read-only grid underneath for full visibility.
 func pageServerAdvanced(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Advanced",
@@ -472,6 +522,12 @@ func pageServerAdvanced(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
+
+			var intRows []configRow
+			var boolRows []configBoolRow
+			cfgInt := newConfigEditor(configs, &intRows)
+			cfgBool := newConfigBoolEditor(configs, &boolRows)
+
 			rows := make([][]string, len(configs))
 			for i, c := range configs {
 				rows[i] = []string{c.Name, strconv.FormatInt(c.ValueInUse, 10), c.Description}
@@ -481,11 +537,31 @@ func pageServerAdvanced(sc *db.ServerConn) propPage {
 			grid.SetCellCursor(true)
 
 			f := propsheet.NewForm(
+				propsheet.Section("Miscellaneous"),
+				cfgBool("optimize for ad hoc workloads", "Optimize for ad hoc workloads"),
+				cfgInt("blocked process threshold (s)", "Blocked process threshold", "sec"),
+				cfgInt("cursor threshold", "Cursor threshold", ""),
+				cfgInt("in-doubt xact resolution", "In-doubt xact resolution", ""),
+				cfgBool("scan for startup procs", "Scan for startup procs"),
+				propsheet.Section("Security"),
+				cfgBool("common criteria compliance enabled", "Common criteria compliance enabled"),
+				cfgBool("default trace enabled", "Default trace enabled"),
+				propsheet.Section("Server Configuration"),
+				cfgBool("Ad Hoc Distributed Queries", "Ad Hoc Distributed Queries"),
+				cfgBool("Agent XPs", "Agent XPs"),
+				cfgBool("clr enabled", "CLR enabled"),
+				cfgBool("clr strict security", "CLR strict security"),
+				cfgBool("Database Mail XPs", "Database Mail XPs"),
+				cfgBool("external scripts enabled", "External scripts enabled"),
+				cfgBool("Ole Automation Procedures", "Ole Automation Procedures"),
+				cfgBool("remote admin connections", "Remote admin connections"),
+				cfgBool("show advanced options", "Show advanced options"),
+				cfgBool("xp_cmdshell", "xp_cmdshell"),
 				propsheet.Section("All server configuration options (sys.configurations)"),
 				propsheet.NewGridRow(grid, 10),
-				propsheet.Note("Read-only here — edit a specific option from its own page (Memory, Processors, Connections, Database Settings)."),
+				propsheet.Note("The grid above is read-only — edit an option from its group above, or from its own page (Memory, Processors, Connections, Database Settings, Security), if it has one."),
 			)
-			return f, nil, nil
+			return f, configApply(sc, intRows, boolRows), nil
 		},
 	}
 }
@@ -498,6 +574,15 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
+			logins, err := sc.Server.LoginsContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			roles, err := sc.Server.ServerRolesContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+
 			entries := make([]permEntry, len(perms))
 			for i, p := range perms {
 				entries[i] = permEntry{
@@ -505,7 +590,15 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 					Grantor: p.Grantor, Permission: p.Permission, State: p.State,
 				}
 			}
-			f, apply := buildPermissionsForm("Server-level permissions", entries, 10,
+			principals := make([]permPrincipal, 0, len(logins)+len(roles))
+			for _, l := range logins {
+				principals = append(principals, permPrincipal{Name: l.Name, Type: l.LoginType})
+			}
+			for _, r := range roles {
+				principals = append(principals, permPrincipal{Name: r.Name, Type: "SERVER_ROLE"})
+			}
+
+			f, apply := buildPermissionsMatrix(principals, gosmo.ServerPermissionNames(), entries, 8, 12,
 				sc.Server.GrantServerPermissionContext,
 				sc.Server.DenyServerPermissionContext,
 				sc.Server.RevokeServerPermissionContext,

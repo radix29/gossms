@@ -112,6 +112,61 @@ func (oe *ObjectExplorer) RemoveRootByConn(sc *db.ServerConn) {
 	}
 }
 
+// RefreshDatabasesFolder refreshes sc's "Databases" folder node — used
+// after an action that changes the database list from outside Object
+// Explorer's own expand/refresh flow (e.g. New Database). A folder that's
+// never been loaded (the server node hasn't been expanded yet, or the
+// Databases folder itself hasn't) needs no action: its next expand fetches
+// the current list anyway.
+func (oe *ObjectExplorer) RefreshDatabasesFolder(sc *db.ServerConn) {
+	for _, r := range oe.roots {
+		if r.data.conn != sc {
+			continue
+		}
+		for _, c := range r.children {
+			if c.data.Type == NodeDatabases {
+				c.data.Loaded = false
+				c.children = nil
+				if c.expanded {
+					oe.app.loadChildren(c)
+				}
+				return
+			}
+		}
+		return
+	}
+}
+
+// RefreshLoginsFolder refreshes sc's Security > Logins folder node — used
+// after an action that changes the login list from outside Object
+// Explorer's own expand/refresh flow (e.g. New Login). Mirrors
+// RefreshDatabasesFolder, one level deeper: Databases sits directly under
+// the server root, Logins sits under Security.
+func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
+	for _, r := range oe.roots {
+		if r.data.conn != sc {
+			continue
+		}
+		for _, c := range r.children {
+			if c.data.Type != NodeSecurity {
+				continue
+			}
+			for _, gc := range c.children {
+				if gc.data.Type == NodeLogins {
+					gc.data.Loaded = false
+					gc.children = nil
+					if gc.expanded {
+						oe.app.loadChildren(gc)
+					}
+					return
+				}
+			}
+			return
+		}
+		return
+	}
+}
+
 func (oe *ObjectExplorer) removeSubtree(n *explorerNode) {
 	delete(oe.byID, n.id)
 	for _, c := range n.children {

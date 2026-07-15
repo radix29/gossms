@@ -326,13 +326,50 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		e.desiredCol = col
 		return true
 	}
-	if ev.Buttons() == tcell.WheelUp && e.scrollRow > 0 {
-		e.scrollRow--
+	switch ev.Buttons() {
+	case tcell.WheelUp:
+		// Shift+wheel is the common desktop convention for horizontal
+		// scroll; some terminals report it as WheelUp/WheelDown with a
+		// Shift modifier rather than as WheelLeft/WheelRight below, so
+		// honour both — matches DataGrid's identical convention.
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			e.scrollColBy(-horizontalWheelChars)
+		} else if e.scrollRow > 0 {
+			e.scrollRow--
+		}
 		return true
-	}
-	if ev.Buttons() == tcell.WheelDown && e.scrollRow < len(e.lines)-1 {
-		e.scrollRow++
+	case tcell.WheelDown:
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			e.scrollColBy(horizontalWheelChars)
+		} else if e.scrollRow < len(e.lines)-1 {
+			e.scrollRow++
+		}
+		return true
+	case tcell.WheelLeft:
+		e.scrollColBy(-horizontalWheelChars)
+		return true
+	case tcell.WheelRight:
+		e.scrollColBy(horizontalWheelChars)
 		return true
 	}
 	return false
+}
+
+// horizontalWheelChars is how many characters a single horizontal wheel
+// tick (WheelLeft/WheelRight, or Shift+WheelUp/WheelDown) scrolls — only
+// meaningful outside wrapMode, where scrollCol is a character offset
+// rather than unused.
+const horizontalWheelChars = 4
+
+// scrollColBy shifts scrollCol by delta (negative scrolls left), clamped so
+// it can't scroll past showing at least the last character of the buffer's
+// longest line.
+func (e *Editor) scrollColBy(delta int) {
+	longest := 0
+	for _, l := range e.lines {
+		if len(l) > longest {
+			longest = len(l)
+		}
+	}
+	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, longest-1))
 }

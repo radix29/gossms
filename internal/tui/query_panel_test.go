@@ -308,6 +308,62 @@ func TestMessagesTabKeysRouteToMessagesEditorNotGrid(t *testing.T) {
 	}
 }
 
+// TestResultsToTextRendersAlignedTable confirms Query > Results To Text
+// renders into qp.resultsText (a read-only Editor) as a header row, a
+// dashed separator, and one line per data row — each column padded to its
+// widest value so they line up like a real table — rather than being
+// flattened into the grid the way it used to be.
+func TestResultsToTextRendersAlignedTable(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	res := &query.Result{Sets: []query.ResultSet{{
+		Columns: []string{"ID", "Name"},
+		Rows: [][]string{
+			{"1", "Alice"},
+			{"22", "Bob"},
+		},
+	}}}
+	qp.setResult(res, false)
+
+	if qp.onMessagesTab() {
+		t.Fatal("expected the Results tab, not Messages, to be active")
+	}
+	if !qp.textTabActive() {
+		t.Fatal("expected textTabActive() = true in ResultsModeText")
+	}
+	want := "ID Name \n-- -----\n1  Alice\n22 Bob  "
+	if got := qp.resultsText.Text(); got != want {
+		t.Errorf("resultsText.Text() = %q, want %q", got, want)
+	}
+}
+
+// TestResultsToTextKeysRouteToResultsTextNotGrid confirms that once Results
+// To Text is active, keys handed to the results sub-region land on
+// qp.resultsText, not the (now hidden) qp.results grid — the same rect
+// backs both, so misrouting would be invisible until Select All/Copy or
+// scrolling silently acted on the wrong widget (mirrors
+// TestMessagesTabKeysRouteToMessagesEditorNotGrid).
+func TestResultsToTextKeysRouteToResultsTextNotGrid(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	qp.setResult(newTestResult(1, false), false)
+	qp.setResultsFocused(true)
+
+	if !qp.HandleKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModNone)) {
+		t.Fatalf("Ctrl+A not consumed while on the Results To Text tab")
+	}
+	if !qp.resultsText.HasSelection() {
+		t.Errorf("expected Ctrl+A to select all in the results-text editor")
+	}
+	if qp.results.HasSelection() {
+		t.Errorf("results grid gained a selection; Ctrl+A should not have reached it")
+	}
+}
+
 // TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets pins the CSV shape
 // Results To File relies on: one header + data rows per set, a blank line
 // between sets, and a returned count of data rows only (headers excluded).

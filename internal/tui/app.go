@@ -9,6 +9,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/gdamore/tcell/v3"
@@ -37,16 +38,18 @@ type App struct {
 	statusText    string
 	queryPanelCnt int
 
-	connectDialog   *ConnectDialog
-	helpDialog      *HelpDialog
-	keyDiagDialog   *KeyDiagnosticsDialog
-	propsDialog     *PropertiesDialog
-	propDialog      *PropDialog
-	pathPrompt      *PathPromptDialog
-	queryListDialog *QueryListDialog
-	optionsDialog   *OptionsDialog
-	tasksDialog     *TasksDialog
-	confirmDialog   *dialogs.ConfirmDialog
+	connectDialog     *ConnectDialog
+	helpDialog        *HelpDialog
+	keyDiagDialog     *KeyDiagnosticsDialog
+	propsDialog       *PropertiesDialog
+	propDialog        *PropDialog
+	newDatabaseDialog *NewDatabaseDialog
+	newLoginDialog    *NewLoginDialog
+	fileDialog        *dialogs.FileDialog
+	queryListDialog   *QueryListDialog
+	optionsDialog     *OptionsDialog
+	tasksDialog       *TasksDialog
+	confirmDialog     *dialogs.ConfirmDialog
 
 	// allDialogs lists every dialog exactly once, for syncDialogStack to
 	// scan; dialogStack is the live z-order (see dialog_stack.go).
@@ -197,7 +200,18 @@ func (a *App) buildUI() {
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
 	a.propsDialog = NewPropertiesDialog(a)
 	a.propDialog = NewPropDialog(a)
-	a.pathPrompt = NewPathPromptDialog(a)
+	a.newDatabaseDialog = NewNewDatabaseDialog(a)
+	a.newLoginDialog = NewNewLoginDialog(a)
+	a.fileDialog = dialogs.NewFileDialog(a.screen)
+	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
+		a.confirmDialog.ShowConfirm("Confirm Save As",
+			filepath.Base(path)+" already exists. Overwrite it?",
+			func(confirmed bool) {
+				if confirmed {
+					proceed()
+				}
+			})
+	}
 	a.queryListDialog = NewQueryListDialog(a)
 	a.optionsDialog = NewOptionsDialog(a)
 	a.tasksDialog = NewTasksDialog(a)
@@ -208,7 +222,8 @@ func (a *App) buildUI() {
 	// is one synchronous call from one key/menu action); see syncDialogStack.
 	a.allDialogs = []Dialog{
 		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.propsDialog, a.propDialog,
-		a.pathPrompt, a.queryListDialog, a.optionsDialog, a.tasksDialog,
+		a.newDatabaseDialog, a.newLoginDialog,
+		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
 		a.confirmDialog,
 	}
 }

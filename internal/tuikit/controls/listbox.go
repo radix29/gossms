@@ -27,8 +27,16 @@ func NewListBox() *ListBox {
 	return new(ListBox{})
 }
 
-// SetBounds positions the list box.
-func (l *ListBox) SetBounds(x, y, w, h int) { l.rect = core.Rect{X: x, Y: y, W: w, H: h} }
+// SetBounds positions the list box. Also re-clamps scroll against the new
+// height: Show() selects the first page (and scrolls it into view) before
+// the first Draw/Layout pass ever assigns real bounds, so ensureVisible's
+// very first call runs against a zero-value rect.H and can scroll one row
+// too far — re-running it here once real bounds are known self-corrects
+// that, and keeps the selection in view across any later resize too.
+func (l *ListBox) SetBounds(x, y, w, h int) {
+	l.rect = core.Rect{X: x, Y: y, W: w, H: h}
+	l.ensureVisible()
+}
 
 // SetItems replaces the item list, clamping selection/scroll into range.
 func (l *ListBox) SetItems(items []string) {

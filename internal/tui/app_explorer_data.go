@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -63,27 +64,75 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			newQuery,
 			{Divider: true},
 			{Label: "Disconnect", Action: func() { a.disconnectActive() }},
-			refresh,
 			{Divider: true},
+			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			{Divider: true},
+			refresh,
 			{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
 		}
+	case NodeDatabases:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
 	case NodeDatabase:
+		offlineLabel := "Take Database Offline"
+		if node.data.IsOffline {
+			offlineLabel = "Bring Database Online"
+		}
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
 			{Label: "Back Up Database...", Action: func() { a.backupDatabase(sc, node.data.DBName) }},
+			{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
 			{Divider: true},
 			refresh,
-			{Divider: true},
 			{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+		}
+	case NodeLogins:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
+			{Divider: true},
+			refresh,
 		}
 	case NodeLogin:
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
 			refresh,
-			{Divider: true},
 			{Label: "Properties...", Action: func() { a.showLoginProperties(sc, node.data.Name) }},
+		}
+	case NodeUser:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showUserPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeDatabaseRole:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showRolePropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeSchema:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showSchemaPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
 		}
 	case NodeTable:
 		tableFQN := fqn(node.data.Schema, node.data.Name)
@@ -92,9 +141,6 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			{Label: "Select Top 1000 Rows", Action: func() {
 				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+tableFQN)
-			}},
-			{Label: "Edit Top 200 Rows", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 200 *\nFROM "+tableFQN)
 			}},
 			{Divider: true},
 			{Label: "Script Table as CREATE", Action: func() { a.scriptObject(node, "CREATE") }},
@@ -106,6 +152,9 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
 			{Divider: true},
 			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showTablePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+			}},
 		}
 	case NodeView:
 		viewFQN := fqn(node.data.Schema, node.data.Name)
@@ -207,7 +256,7 @@ func (a *App) backupDatabase(sc *db.ServerConn, dbName string) {
 		a.setStatus("Not connected — use File > Connect")
 		return
 	}
-	a.pathPrompt.Prompt("Back Up Database", dbName+".bak", func(path string) {
+	a.fileDialog.ShowSave("Back Up Database", dbName+".bak", func(path string) {
 		stmt, err := gosmo.BuildBackupStatement(gosmo.BackupOptions{
 			Database: dbName,
 			Devices:  []string{path},
@@ -219,4 +268,66 @@ func (a *App) backupDatabase(sc *db.ServerConn, dbName string) {
 		}
 		a.openQueryWithText(sc, dbName, stmt)
 	})
+}
+
+// toggleDatabaseOffline takes node's database offline, or brings it back
+// online if it's already offline — Object Explorer's "Take Database
+// Offline"/"Bring Database Online" action. Unlike backupDatabase, this
+// runs for real immediately rather than only generating a script, so
+// going offline (which rolls back every existing connection to the
+// database) is confirmed first; coming back online is not, since it's
+// non-destructive. On success, only this one node's icon needs updating —
+// no Databases-folder reload, since nothing was added, removed, or
+// renamed.
+func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	dbName := node.data.DBName
+	goOffline := !node.data.IsOffline
+
+	run := func() {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			defer cancel()
+			d := sc.Server.Database(dbName)
+			var err error
+			if goOffline {
+				err = d.SetOfflineContext(ctx)
+			} else {
+				err = d.SetOnlineContext(ctx)
+			}
+			a.postEvent(func() {
+				if err != nil {
+					word := "online"
+					if goOffline {
+						word = "offline"
+					}
+					a.setStatus(fmt.Sprintf("Failed to take %q %s: %v", dbName, word, err))
+					return
+				}
+				node.data.IsOffline = goOffline
+				a.explorer.rebuild()
+				word := "online"
+				if goOffline {
+					word = "offline"
+				}
+				a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
+			})
+			a.wakeEventLoop()
+		}()
+	}
+
+	if goOffline {
+		a.confirmDialog.ShowConfirm("Take Database Offline",
+			fmt.Sprintf("Take %q offline? Existing connections to it will be rolled back immediately.", dbName),
+			func(confirmed bool) {
+				if confirmed {
+					run()
+				}
+			})
+		return
+	}
+	run()
 }

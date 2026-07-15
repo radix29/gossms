@@ -8,12 +8,13 @@ import "github.com/radix29/gossms/internal/tuikit/controls"
 // Execution Plan" have no Action yet — see todo/todo.txt.
 func (a *App) buildToolbar() []controls.ToolbarButton {
 	return []controls.ToolbarButton{
-		{Icon: "🆕", Tooltip: "New Query", Action: func() { a.newQueryPanel() }},
+		{Icon: "✚", Tooltip: "New Query", Action: func() { a.newQueryPanel() }},
 		{Divider: true, Icon: "|"},
-		{Icon: "🟢", Tooltip: "Execute", Action: func() { a.executeActiveQuery() }},
-		{Icon: "▶⬚", Tooltip: "Execute Selection", Action: func() { a.executeSelectedQuery() }},
-		{Icon: "🔴", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() }},
-		{Icon: "🌳🔍", Tooltip: "Show Estimated Execution Plan"},
-		{Icon: "🌳✓", Tooltip: "Show Execution Plan"},
+		{Icon: "▶", Tooltip: "Execute", Action: func() { a.executeActiveQuery() }},
+		{Icon: "▷", Tooltip: "Execute Selection", Action: func() { a.executeSelectedQuery() }},
+		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() }},
+		{Divider: true, Icon: "|"},
+		{Icon: "≈⎇", Tooltip: "Show Estimated Execution Plan"},
+		{Icon: "⎇", Tooltip: "Show Execution Plan"},
 	}
 }

@@ -27,8 +27,11 @@ type clipboardTarget interface {
 // right now can participate (e.g. plain Object Explorer focus).
 func (a *App) activeClipboardTarget() clipboardTarget {
 	switch {
-	case a.pathPrompt.Visible():
-		return a.pathPrompt.field
+	case a.fileDialog.Visible():
+		if f := a.fileDialog.FocusedField(); f != nil {
+			return f
+		}
+		return nil
 	case a.propDialog.Visible():
 		return a.propDialog.PropertySheet
 	case a.connectDialog.Visible():
@@ -47,6 +50,11 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		// priority next — see QueryPanel.onMessagesTab.
 		if qp.onMessagesTab() {
 			return qp.messages
+		}
+		// Results To Text's read-only view, while showing, takes priority
+		// next too — see QueryPanel.textTabActive.
+		if qp.textTabActive() {
+			return qp.resultsText
 		}
 		// The results grid's built-in "Show Value" content viewer, while
 		// open, takes priority over the SQL editor — see

@@ -49,7 +49,7 @@ func (a *App) openQueryWithText(sc *db.ServerConn, database, text string) {
 // active one, matching "Open...opens a file as a new Query"). The panel's
 // title then tracks the opened file's name, via QueryPanel.Title().
 func (a *App) openQueryFile() {
-	a.pathPrompt.Prompt("Open Query File", "", func(path string) {
+	a.fileDialog.ShowOpen("Open Query File", "", func(path string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			a.setStatus(fmt.Sprintf("Open failed: %v", err))
@@ -203,7 +203,7 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 	if saveAs {
 		title = "Save Query As"
 	}
-	a.pathPrompt.Prompt(title, initial, func(path string) {
+	a.fileDialog.ShowSave(title, initial, func(path string) {
 		if a.writeQueryFile(qp, path) && then != nil {
 			then()
 		}
@@ -271,6 +271,17 @@ func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
 	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes", serverPropPages(sc))
 }
 
+// showNewDatabaseDialog opens New Database for a known connection — the
+// shared entry point for the Object Explorer context menu on both the
+// server node and the "Databases" folder node.
+func (a *App) showNewDatabaseDialog(sc *db.ServerConn) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.newDatabaseDialog.show(sc)
+}
+
 // showDatabaseProperties runs Tools > Database Properties, using whichever
 // database the currently selected Object Explorer node belongs to (the
 // node itself, or any of its descendants — nodeData.DBName is propagated
@@ -296,6 +307,17 @@ func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 		databasePropPages(sc, dbName))
 }
 
+// showNewLoginDialog opens New Login for a known connection — the Object
+// Explorer context menu's entry point for Security > Logins (mirrors
+// showNewDatabaseDialog).
+func (a *App) showNewLoginDialog(sc *db.ServerConn) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.newLoginDialog.show(sc)
+}
+
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 	if !a.isConnected(sc) {
@@ -304,4 +326,52 @@ func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 	}
 	a.propDialog.show(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
 		loginPropPages(sc, loginName))
+}
+
+// showTablePropertiesFor opens Table Properties for a known connection,
+// database, and schema-qualified table — the Object Explorer context
+// menu's entry point (mirrors showLoginProperties/showDatabasePropertiesFor).
+func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+fqn(schema, name), "Database: "+dbName,
+		tablePropPages(sc, dbName, schema, name))
+}
+
+// showRolePropertiesFor opens Database Role Properties for a known
+// connection, database, and role name — the Object Explorer context
+// menu's entry point (mirrors showTablePropertiesFor).
+func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
+		rolePropPages(sc, dbName, roleName))
+}
+
+// showUserPropertiesFor opens Database User Properties for a known
+// connection, database, and user name — the Object Explorer context
+// menu's entry point (mirrors showRolePropertiesFor).
+func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
+		userPropPages(sc, dbName, userName))
+}
+
+// showSchemaPropertiesFor opens Schema Properties for a known connection,
+// database, and schema name — the Object Explorer context menu's entry
+// point (mirrors showRolePropertiesFor).
+func (a *App) showSchemaPropertiesFor(sc *db.ServerConn, dbName, schemaName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,
+		schemaPropPages(sc, dbName, schemaName))
 }

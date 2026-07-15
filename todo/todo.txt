@@ -1,15 +1,5 @@
 
-fable: 
-review both projects for: bugs, refractoring, best practices optimizations and create a plan. 
-do not execute the plan as i would switch the model beforehand
-
-properties dialogs: test functionality and missing functionality
-
-- readme 
-    - add some pictures
-
 show execution plan menu option
-    where to show this checkbox?
     it will create a new panel like result and messages in the query window
     create a TUI control that can be reused
     have an button to open the execution plan in a new panle like the query panel and object explorer detail
@@ -18,6 +8,12 @@ show execution plan menu option
         first, the default, is the classic SQL Server plan explorer view (provide a mockup)
         second is like a tree view with a table (see the oracle execution plan, can provide a mockup)
         third show the XML plan (readonly allow mark and copy like a editor.)
+
+drag and drop from object tree in query window: db name, db objects, no folders. use quotes
+
+backup dialog
+
+restore database dialog
 
 --------- later ------
 

@@ -1,0 +1,2 @@
+ffmpeg -i "C:\temp\input.mp4" -vf "fps=5,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=32[a];[b][a]paletteuse" -loop 0 c:\temp\demo.gif
+

@@ -210,23 +210,41 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// HandleMouse routes wheel scroll to the form itself, gives the focused
-// row first refusal (so a click on its open dropdown overlay — which
-// visually extends below the row's own band — still reaches it), then
-// falls back to whichever row's band contains the click.
+// HandleMouse gives the row under the pointer first refusal on wheel
+// scroll — a GridRow's DataGrid has its own rows to scroll through and
+// must do so instead of the wheel always scrolling the form around it —
+// then falls back to scrolling the form itself. For every other button,
+// it gives the focused row first refusal (so a click on its open dropdown
+// overlay — which visually extends below the row's own band — still
+// reaches it), then falls back to whichever row's band contains the click.
 func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	switch ev.Buttons() {
-	case tcell.WheelUp:
-		f.scroll = core.Max(0, f.scroll-3)
-		return true
-	case tcell.WheelDown:
-		f.scroll = core.Min(core.Max(0, len(f.rows)-1), f.scroll+3)
+	case tcell.WheelUp, tcell.WheelDown:
+		if row, ok := f.rowAt(ev); ok {
+			if mh, isHandler := row.(MouseHandler); isHandler && mh.HandleMouse(ev) {
+				return true
+			}
+		}
+		if ev.Buttons() == tcell.WheelUp {
+			f.scroll = core.Max(0, f.scroll-3)
+		} else {
+			f.scroll = core.Min(core.Max(0, len(f.rows)-1), f.scroll+3)
+		}
 		return true
 	}
 	if row := f.Focused(); row != nil {
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {
 			return true
 		}
+	}
+	if ev.Buttons() == tcell.ButtonNone {
+		// A plain hover/motion event (no button down) must not fall through
+		// to the click-routing below — tcell delivers these continuously as
+		// the mouse moves, and band-matching on one would shift focus to
+		// whatever row the pointer happens to be over, blurring (and thus
+		// closing) an open DropDown the moment the user moves toward its
+		// own open list to click an item in it.
+		return false
 	}
 	mx, my := ev.Position()
 	if mx < f.rect.X || mx >= f.rect.Right() {
@@ -250,6 +268,21 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	return false
+}
+
+// rowAt returns the row whose band contains ev's position, if any.
+func (f *Form) rowAt(ev *tcell.EventMouse) (Row, bool) {
+	mx, my := ev.Position()
+	if mx < f.rect.X || mx >= f.rect.Right() {
+		return nil, false
+	}
+	for _, b := range f.bands {
+		if my < b.y || my >= b.y+b.h {
+			continue
+		}
+		return f.rows[b.row], true
+	}
+	return nil, false
 }
 
 // Dirty reports whether any row's value differs from its loaded baseline.

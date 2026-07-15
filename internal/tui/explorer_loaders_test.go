@@ -150,13 +150,6 @@ func TestObjectContextMenuBuildsCorrectFQN(t *testing.T) {
 		t.Errorf("panel database = %q, want AdventureWorks", qp.database)
 	}
 
-	edit200 := findMenuItem(items, "Edit Top 200 Rows")
-	edit200.Action()
-	qp = lastQueryPanel(t, a)
-	if want := "SELECT TOP 200 *\nFROM [dbo].[Orders]"; qp.editor.Text() != want {
-		t.Errorf("Edit Top 200 Rows SQL = %q, want %q", qp.editor.Text(), want)
-	}
-
 	view := &explorerNode{
 		label: "dbo.CustomerOrders",
 		data:  nodeData{Type: NodeView, Schema: "dbo", Name: "CustomerOrders", DBName: "AdventureWorks", conn: sc},

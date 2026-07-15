@@ -1,2 +1,4 @@
 2026/07/10 20:17:20 gossms error: init screen: open /dev/tty: no such device or address
 2026/07/11 19:44:26 fetchChildren [22]: gosmo: list agent jobs: mssql: Invalid column name 'job_state'.
+2026/07/15 14:37:13 fetchChildren [26]: gosmo: list agent jobs: mssql: Invalid column name 'job_state'.
+2026/07/15 17:07:42 fetchChildren [4]: gosmo: list tables in "claude_offline_expand_test": gosmo: USE claude_offline_expand_test: mssql: Database 'claude_offline_expand_test' cannot be opened because it is offline.

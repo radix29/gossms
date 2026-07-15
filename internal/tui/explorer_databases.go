@@ -26,7 +26,9 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 			hasSystem = true
 			continue
 		}
-		userDBs = append(userDBs, l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name()))
+		n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
+		n.data.IsOffline = d.State() != "ONLINE"
+		userDBs = append(userDBs, n)
 	}
 	if !hasSystem {
 		return userDBs, nil
@@ -43,14 +45,25 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	var out []*explorerNode
 	for _, d := range dbs {
 		if d.IsSystem() {
-			out = append(out, l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name()))
+			n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
+			n.data.IsOffline = d.State() != "ONLINE"
+			out = append(out, n)
 		}
 	}
 	return out, nil
 }
 
-// loadDatabaseChildren returns one database's object-family folders.
+// loadDatabaseChildren returns one database's object-family folders, or a
+// single explanatory leaf if the database is offline. SQL Server can't run
+// any metadata query against an offline database (USE fails outright), so
+// showing the normal folder list would just let the user expand each of
+// Tables/Views/.../Security in turn only to hit the same "cannot open
+// database" error eight separate times — this short-circuits straight to
+// one clear leaf instead.
 func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	if node.data.IsOffline {
+		return []*explorerNode{l.node("(Database is offline)", NodeError, "", "", node.data.DBName)}, nil
+	}
 	dbName := node.data.DBName
 	return []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),

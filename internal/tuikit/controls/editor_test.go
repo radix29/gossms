@@ -698,3 +698,46 @@ func TestEditorShiftDownSelectsToEndOfLineThenToSameColumn(t *testing.T) {
 			start, end, ok)
 	}
 }
+
+// TestEditorHorizontalWheelScroll confirms WheelLeft/WheelRight, and
+// Shift+WheelUp/WheelDown as the common desktop-convention alias for them,
+// all move scrollCol, clamped so the last character of the longest line
+// stays reachable — mirrors DataGrid's identical convention
+// (TestDataGridHorizontalWheelScroll).
+func TestEditorHorizontalWheelScroll(t *testing.T) {
+	e := newTestEditor("0123456789abcdefghijklmnopqrstuvwxyz")
+	e.SetBounds(0, 0, 10, 5)
+
+	e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelRight, tcell.ModNone))
+	if e.scrollCol != horizontalWheelChars {
+		t.Fatalf("scrollCol after WheelRight = %d, want %d", e.scrollCol, horizontalWheelChars)
+	}
+	// Enough further ticks to overshoot the line's end regardless of step size.
+	for range len(e.lines[0]) {
+		e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelRight, tcell.ModNone))
+	}
+	want := len(e.lines[0]) - 1
+	if e.scrollCol != want {
+		t.Fatalf("scrollCol after repeated WheelRight = %d, want %d (clamped to the last character)", e.scrollCol, want)
+	}
+	e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelLeft, tcell.ModNone))
+	if e.scrollCol != want-horizontalWheelChars {
+		t.Fatalf("scrollCol after WheelLeft = %d, want %d", e.scrollCol, want-horizontalWheelChars)
+	}
+
+	e.scrollCol = 0
+	e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelDown, tcell.ModShift))
+	if e.scrollCol != horizontalWheelChars {
+		t.Fatalf("scrollCol after Shift+WheelDown = %d, want %d", e.scrollCol, horizontalWheelChars)
+	}
+	e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelUp, tcell.ModShift))
+	if e.scrollCol != 0 {
+		t.Fatalf("scrollCol after Shift+WheelUp = %d, want 0", e.scrollCol)
+	}
+
+	// Plain WheelUp/WheelDown (no Shift) still scroll rows, not columns.
+	e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelDown, tcell.ModNone))
+	if e.scrollCol != 0 {
+		t.Fatalf("plain WheelDown must not touch scrollCol, got %d", e.scrollCol)
+	}
+}
