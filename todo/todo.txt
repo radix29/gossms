@@ -1,13 +1,4 @@
-
-show execution plan menu option
-    it will create a new panel like result and messages in the query window
-    create a TUI control that can be reused
-    have an button to open the execution plan in a new panle like the query panel and object explorer detail
-    the execution plan can be scrolled in all directions
-    there vizualizations options, can switch the type of vizualization from the controil itself
-        first, the default, is the classic SQL Server plan explorer view (provide a mockup)
-        second is like a tree view with a table (see the oracle execution plan, can provide a mockup)
-        third show the XML plan (readonly allow mark and copy like a editor.)
+integrate the plan explorer in gossms
 
 drag and drop from object tree in query window: db name, db objects, no folders. use quotes
 
