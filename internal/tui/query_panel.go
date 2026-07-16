@@ -2,17 +2,15 @@ package tui
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/tui/planview"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
@@ -46,8 +44,9 @@ type QueryPanel struct {
 	title       string
 	editor      *controls.Editor
 	results     *controls.DataGrid
-	messages    *controls.Editor // read-only; backs the Messages tab (see onMessagesTab)
-	resultsText *controls.Editor // read-only; backs Results To Text (see renderActiveTab, textTabActive)
+	messages    *controls.Editor   // read-only; backs the Messages tab (see onMessagesTab)
+	resultsText *controls.Editor   // read-only; backs Results To Text (see renderActiveTab, textTabActive)
+	planView    *planview.PlanView // nil until the first Show Estimated/Actual Execution Plan; see planTabActive
 	splitter    *layout.Splitter
 	active      bool
 	conn        *db.ServerConn // nil = none; may outlive a disconnect
@@ -122,18 +121,6 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	return p
 }
 
-// messagesHighlighter colors an entire line in the Messages tab red when it
-// belongs to an error message (see query.Message.IsError and the parallel
-// messageErrorLines slice built in renderActiveTab).
-func (p *QueryPanel) messagesHighlighter(lines [][]rune, idx int) []controls.ColorRun {
-	if idx >= len(p.messageErrorLines) || !p.messageErrorLines[idx] {
-		return nil
-	}
-	pal := theme.Active()
-	errStyle := tcell.StyleDefault.Background(pal.EditorBg).Foreground(pal.Error)
-	return []controls.ColorRun{{Start: 0, Len: len(lines[idx]), Style: errStyle}}
-}
-
 // Title returns the panel's tab/window title. If the panel is associated
 // with a file — opened via File > Open, or saved at least once via
 // File > Save/Save As — the file's base name is shown instead of the
@@ -179,38 +166,23 @@ func (p *QueryPanel) layoutChildren() {
 	top := p.splitter.FirstRect()
 	bottom := p.splitter.SecondRect()
 	p.editor.SetBounds(top.X, top.Y, top.W, top.H)
-	// Once a result exists, the first row of the results area is its tab bar.
-	// results, messages, and resultsText share the same rect below it — only
-	// one of the three is ever drawn/routed to at a time, see onMessagesTab
-	// and textTabActive.
-	if p.result != nil && bottom.H > 1 {
+	// Once a result or plan exists, the first row of the results area is its
+	// tab bar. results, messages, resultsText, and planView share the same
+	// rect below it — only one of the four is ever drawn/routed to at a
+	// time, see onMessagesTab, textTabActive, and planTabActive.
+	respY, respH := bottom.Y, bottom.H
+	if (p.result != nil || p.planView != nil) && bottom.H > 1 {
 		p.tabRect = core.Rect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: 1}
-		p.results.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
-		p.messages.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
-		p.resultsText.SetBounds(bottom.X, bottom.Y+1, bottom.W, bottom.H-1)
+		respY, respH = bottom.Y+1, bottom.H-1
 	} else {
 		p.tabRect = core.Rect{}
-		p.results.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
-		p.messages.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
-		p.resultsText.SetBounds(bottom.X, bottom.Y, bottom.W, bottom.H)
 	}
-}
-
-// onMessagesTab reports whether the active tab is Messages rather than a
-// result-set grid — results and messages occupy the same rect (see
-// layoutChildren), so exactly one of them is drawn, and routed keys/mouse,
-// at any given time.
-func (p *QueryPanel) onMessagesTab() bool {
-	return p.result != nil && p.activeTab >= len(p.result.Sets)
-}
-
-// textTabActive reports whether the active tab is a result set being
-// rendered as plain text (Query > Results To Text) rather than the grid —
-// results, messages, and resultsText occupy the same rect (see
-// layoutChildren), so exactly one of them is drawn, and routed keys/mouse,
-// at any given time.
-func (p *QueryPanel) textTabActive() bool {
-	return !p.onMessagesTab() && p.resultsMode == ResultsModeText && p.result != nil
+	p.results.SetBounds(bottom.X, respY, bottom.W, respH)
+	p.messages.SetBounds(bottom.X, respY, bottom.W, respH)
+	p.resultsText.SetBounds(bottom.X, respY, bottom.W, respH)
+	if p.planView != nil {
+		p.planView.SetBounds(bottom.X, respY, bottom.W, respH)
+	}
 }
 
 // SetActive marks this panel as focused.
@@ -236,6 +208,9 @@ func (p *QueryPanel) syncFocusVisuals() {
 	p.editor.SetActive(p.editorHasFocus())
 	p.results.Focus(p.resultsHasFocus())
 	p.messages.SetActive(p.resultsHasFocus())
+	if p.planView != nil {
+		p.planView.SetActive(p.resultsHasFocus())
+	}
 }
 
 // Draw renders the title bar, editor, splitter, results tab bar, and grid.
@@ -256,6 +231,8 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	switch {
 	case p.onMessagesTab():
 		p.messages.Draw(s)
+	case p.planTabActive():
+		p.planView.Draw(s)
 	case p.textTabActive():
 		p.resultsText.Draw(s)
 	default:
@@ -295,7 +272,7 @@ func (p *QueryPanel) updateResultsStatus() {
 	switch {
 	case p.executing:
 		p.results.SetStatus(formatElapsedHMS(time.Since(p.execStart)) + " | Executing...")
-	case p.result != nil && !p.onMessagesTab() && !p.textTabActive():
+	case p.result != nil && !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive():
 		set := p.result.Sets[p.activeTab]
 		row, col := 0, 0
 		if len(set.Rows) > 0 {
@@ -318,302 +295,6 @@ func formatElapsedHMS(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d:%02d", h, m, sec)
 }
 
-// drawTabBar renders the result-set/Messages tabs, styled like the
-// PanelManager's panel tabs.
-func (p *QueryPanel) drawTabBar(s tcell.Screen) {
-	if p.tabRect.H != 1 {
-		return
-	}
-	pal := theme.Active()
-	barStyle := theme.StyleMenuBar()
-	core.FillRect(s, p.tabRect, ' ', barStyle)
-	col := p.tabRect.X + 1
-	for i, label := range p.resultTabs() {
-		tabStyle := barStyle
-		if i == p.activeTab {
-			tabStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
-		}
-		text := " " + label + " "
-		w := core.DisplayWidth(text)
-		if col+w > p.tabRect.Right() {
-			break
-		}
-		core.DrawText(s, col, p.tabRect.Y, tabStyle, text)
-		col += w + 1
-	}
-}
-
-// resultTabs returns the tab labels for the last result: one per result
-// set ("Results" alone when there's only one), plus Messages.
-func (p *QueryPanel) resultTabs() []string {
-	if p.result == nil {
-		return nil
-	}
-	tabs := make([]string, 0, len(p.result.Sets)+1)
-	if len(p.result.Sets) == 1 {
-		tabs = append(tabs, "Results")
-	} else {
-		for i := range p.result.Sets {
-			tabs = append(tabs, fmt.Sprintf("Results %d", i+1))
-		}
-	}
-	return append(tabs, "Messages")
-}
-
-// setActiveTab switches the results area to tab i, if it exists.
-func (p *QueryPanel) setActiveTab(i int) {
-	if i < 0 || i >= len(p.resultTabs()) || i == p.activeTab {
-		return
-	}
-	p.activeTab = i
-	p.renderActiveTab()
-}
-
-// tabAt returns the tab index at screen column mx on the tab bar, or -1.
-// The segment walk mirrors drawTabBar exactly so hits line up with pixels.
-func (p *QueryPanel) tabAt(mx int) int {
-	col := p.tabRect.X + 1
-	for i, label := range p.resultTabs() {
-		w := core.DisplayWidth(" " + label + " ")
-		if mx >= col && mx < col+w {
-			return i
-		}
-		col += w + 1
-	}
-	return -1
-}
-
-// Execute runs the query against the connected server. If the editor has
-// an active text selection, only the selected text is run; otherwise the
-// full editor content is run. This is what both the Query > Execute menu
-// item and F5 call.
-func (p *QueryPanel) Execute() {
-	if sel := p.editor.SelectedText(); sel != "" {
-		p.runQuery(sel)
-		return
-	}
-	p.runQuery(p.editor.Text())
-}
-
-// ExecuteSelection runs only the editor's selected text, doing nothing but
-// setting a status message if there is no active selection — the
-// toolbar's dedicated "Execute Selection" button, as distinct from
-// Execute, which falls back to running the whole script.
-func (p *QueryPanel) ExecuteSelection() {
-	if sel := p.editor.SelectedText(); sel != "" {
-		p.runQuery(sel)
-		return
-	}
-	p.app.setStatus("No selection to execute")
-}
-
-// CancelExecution cancels the in-flight query, if one is running.
-func (p *QueryPanel) CancelExecution() {
-	if p.executing && p.cancel != nil {
-		p.cancel()
-		p.app.setStatus("Cancelling query...")
-	} else {
-		p.app.setStatus("No query is currently executing")
-	}
-}
-
-// runQuery is the shared execution path for Execute. The heavy lifting —
-// GO batch splitting, the USE database switch, result sets, and the
-// message stream — lives in internal/query.
-func (p *QueryPanel) runQuery(queryText string) {
-	if queryText == "" {
-		p.resultsNotice = "No query to execute"
-		return
-	}
-	if !p.app.isConnected(p.conn) {
-		p.resultsNotice = "Not connected — use File > Connect"
-		p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
-		return
-	}
-	if p.executing {
-		p.app.setStatus("A query is already executing in this panel")
-		return
-	}
-	p.messages.SetText("") // clear stale messages from any previous run
-	p.messageErrorLines = nil
-	sc := p.conn
-	// Results To File wants every row a query actually returns, not just
-	// what the grid would show — captured now (like sc above) since
-	// p.resultsMode can change via the Query menu while this goroutine runs.
-	maxRows := p.app.cfg.MaxResultRows
-	if p.resultsMode == ResultsModeFile {
-		maxRows = 0
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	p.cancel = cancel
-	p.resultsNotice = ""
-	p.executing = true
-	p.execStart = time.Now()
-	p.app.setStatus("Executing query...")
-
-	done := make(chan struct{})
-	go p.tickExecuting(done)
-
-	go func() {
-		res := query.Execute(ctx, sc.Server.DB(), p.database, queryText, maxRows)
-		// cancelled must be read before cancel() — calling cancel sets
-		// ctx.Err() itself, which would make this always true otherwise.
-		cancelled := ctx.Err() != nil
-		cancel() // release ctx's resources now that the query is done, whether or not CancelExecution ever ran
-		close(done)
-		p.app.postEvent(func() {
-			p.executing = false
-			p.cancel = nil
-			p.setResult(res, cancelled)
-		})
-		p.app.wakeEventLoop()
-	}()
-}
-
-// tickExecuting wakes the event loop once a second while a query runs, so
-// updateResultsStatus's live elapsed-time counter visibly ticks instead of
-// only updating once the query finishes. Exits as soon as done closes.
-func (p *QueryPanel) tickExecuting(done chan struct{}) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			p.app.wakeEventLoop()
-		}
-	}
-}
-
-// setResult installs a finished execution: picks the initial tab (first
-// grid, or Messages when there are no grids or the run had errors — same
-// as SSMS), makes room for the tab bar, and renders.
-func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
-	// A mid-script "USE otherdb" changes the session's database out from
-	// under p.database — res.Database (read off the same connection right
-	// after the script ran; see query.Execute) is the source of truth from
-	// here on, so the connection-info bar and the next Execute's own USE
-	// stay in sync with it instead of the stale value from before this run.
-	if res.Database != "" {
-		p.database = res.Database
-	}
-	p.result = res
-	p.activeTab = 0
-	if len(res.Sets) == 0 || res.HasErrors() {
-		p.activeTab = len(res.Sets) // Messages tab
-	}
-	p.layoutChildren()
-
-	if p.resultsMode == ResultsModeFile && len(res.Sets) > 0 {
-		p.promptWriteResults(res)
-	}
-	p.renderActiveTab()
-
-	elapsed := res.Elapsed.Round(time.Millisecond)
-	switch {
-	case cancelled:
-		p.app.setStatus("Query cancelled")
-	case res.HasErrors():
-		p.app.setStatus(fmt.Sprintf("Query completed with errors in %v — see Messages", elapsed))
-	default:
-		p.app.setStatus(fmt.Sprintf("Query completed in %v — %d row(s), %d message(s)",
-			elapsed, res.TotalRows(), len(res.Messages)))
-	}
-}
-
-// renderActiveTab loads the active tab's content into the results grid or
-// resultsText editor, honouring the panel's Grid/Text results mode.
-func (p *QueryPanel) renderActiveTab() {
-	res := p.result
-	if res == nil {
-		return
-	}
-	// +2 to convert the Options dialog's "max cell length" (a character
-	// count) into a column-width clamp, matching computeColWidths's own
-	// header-width convention of content width + 1 column of padding on
-	// each side.
-	p.results.SetMaxCellWidth(p.app.cfg.MaxCellLength + 2)
-	if p.onMessagesTab() {
-		// A message's Text may itself span multiple lines (a detailed SQL
-		// Server error, say) — split each one so messageErrorLines stays a
-		// per-rendered-line slice in lockstep with what SetText below will
-		// actually produce (Editor.SetText splits on "\n" the same way).
-		var textLines []string
-		var errLines []bool
-		for _, m := range res.Messages {
-			for _, l := range strings.Split(m.Text, "\n") {
-				textLines = append(textLines, l)
-				errLines = append(errLines, m.IsError)
-			}
-		}
-		p.messageErrorLines = errLines
-		p.messages.SetText(strings.Join(textLines, "\n"))
-		return
-	}
-	set := res.Sets[p.activeTab]
-	if p.resultsMode == ResultsModeText {
-		p.resultsText.SetText(formatResultsAsText(set))
-		return
-	}
-	p.results.SetData(set.Columns, set.Rows)
-}
-
-// formatResultsAsText renders set as SSMS's Results To Text look: a header
-// row, a dashed separator, then one line per data row, each column padded
-// to its widest value so columns visually line up like a real table.
-func formatResultsAsText(set query.ResultSet) string {
-	widths := make([]int, len(set.Columns))
-	for i, c := range set.Columns {
-		widths[i] = core.DisplayWidth(c)
-	}
-	for _, row := range set.Rows {
-		for i, cell := range row {
-			if w := core.DisplayWidth(cell); w > widths[i] {
-				widths[i] = w
-			}
-		}
-	}
-	var sb strings.Builder
-	writeRow := func(cells []string) {
-		for i, cell := range cells {
-			if i > 0 {
-				sb.WriteByte(' ')
-			}
-			sb.WriteString(core.PadRight(cell, widths[i]))
-		}
-		sb.WriteByte('\n')
-	}
-	writeRow(set.Columns)
-	seps := make([]string, len(widths))
-	for i, w := range widths {
-		seps[i] = strings.Repeat("-", w)
-	}
-	writeRow(seps)
-	for _, row := range set.Rows {
-		writeRow(row)
-	}
-	return strings.TrimSuffix(sb.String(), "\n")
-}
-
-// promptWriteResults implements Results To File: asks for a path, writes
-// every result set as CSV, and reports the outcome as an extra message on
-// the result (so it shows up in the Messages tab too).
-func (p *QueryPanel) promptWriteResults(res *query.Result) {
-	p.app.fileDialog.ShowSave("Results To File", "results.csv", func(path string) {
-		n, err := writeCSV(path, res.Sets)
-		msg := query.Message{Text: fmt.Sprintf("%d row(s) written to %s", n, path)}
-		if err != nil {
-			msg = query.Message{Text: fmt.Sprintf("write results: %v", err), IsError: true}
-		}
-		res.Messages = append(res.Messages, msg)
-		if p.result == res {
-			p.renderActiveTab()
-		}
-		p.app.setStatus(msg.Text)
-	})
-}
-
 // HandleKey routes keys to result tab switching (Ctrl+PgUp/PgDn), F5
 // execute, or whichever of the editor/results grid last got a mouse click
 // (see resultsFocused). The splitter's Ctrl+Up/Down resize only gets first
@@ -626,7 +307,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// (see controls.DataGrid.DrawOverlay), independent of resultsFocused, so
 	// without this check their keys (Shift+arrows, Ctrl+A, Escape) would
 	// fall through to the editor instead whenever the editor holds focus.
-	if !p.onMessagesTab() && !p.textTabActive() && p.results.OverlayActive() {
+	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		return p.results.HandleKey(ev)
 	}
 	if ev.Key() == tcell.KeyF5 {
@@ -648,7 +329,7 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// the Ctrl modifier on these keys is only reported by terminals with a
 	// modern keyboard protocol; elsewhere they stay plain PgUp/PgDn and
 	// fall through to the editor.
-	if p.result != nil && ev.Modifiers()&tcell.ModCtrl != 0 {
+	if (p.result != nil || p.planView != nil) && ev.Modifiers()&tcell.ModCtrl != 0 {
 		switch ev.Key() {
 		case tcell.KeyPgUp:
 			p.setActiveTab(p.activeTab - 1)
@@ -668,6 +349,10 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	switch {
 	case p.onMessagesTab():
 		if p.messages.HandleKey(ev) {
+			return true
+		}
+	case p.planTabActive():
+		if p.planView.HandleKey(ev) {
 			return true
 		}
 	case p.textTabActive():
@@ -702,21 +387,21 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// every mouse event — including the drag-release that follows a
 	// click-drag selection inside it — before any position-based routing
 	// below gets a chance to hand the click to the editor instead.
-	if !p.onMessagesTab() && !p.textTabActive() && p.results.OverlayActive() {
+	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.results.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
 	// Always forward release events — regardless of position — to the
 	// splitter, the query editor, the messages view, the results-text view,
-	// and the results grid, so an in-progress splitter drag, text-selection
-	// drag, or cell-block selection drag terminates cleanly even if the
-	// cursor has moved outside this panel's column (or out of whichever of
-	// those widgets started the drag) before the button was released.
-	// Without forwarding to results too, its own drag-tracking flag never
-	// resets, so every click after the very first one in the grid's
-	// lifetime gets mistaken for a continued drag from that first click's
-	// anchor instead of a fresh single-cell selection.
+	// the execution plan view, and the results grid, so an in-progress
+	// splitter drag, text-selection drag, or cell-block selection drag
+	// terminates cleanly even if the cursor has moved outside this panel's
+	// column (or out of whichever of those widgets started the drag) before
+	// the button was released. Without forwarding to results too, its own
+	// drag-tracking flag never resets, so every click after the very first
+	// one in the grid's lifetime gets mistaken for a continued drag from
+	// that first click's anchor instead of a fresh single-cell selection.
 	if ev.Buttons() == tcell.ButtonNone {
 		handled := false
 		if p.splitter.HandleMouse(ev) {
@@ -733,6 +418,9 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 			handled = true
 		}
 		if p.results.HandleMouse(ev) {
+			handled = true
+		}
+		if p.planView != nil && p.planView.HandleMouse(ev) {
 			handled = true
 		}
 		return handled
@@ -765,6 +453,11 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 				p.setResultsFocused(true)
 				return true
 			}
+		case p.planTabActive():
+			if p.planView.HandleMouse(ev) {
+				p.setResultsFocused(true)
+				return true
+			}
 		case p.textTabActive():
 			if p.resultsText.HandleMouse(ev) {
 				p.setResultsFocused(true)
@@ -782,48 +475,11 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	switch {
 	case p.onMessagesTab():
 		return p.messages.HandleMouse(ev)
+	case p.planTabActive():
+		return p.planView.HandleMouse(ev)
 	case p.textTabActive():
 		return p.resultsText.HandleMouse(ev)
 	default:
 		return p.results.HandleMouse(ev)
 	}
-}
-
-// writeCSV writes every result set to path as CSV — a header row then data
-// rows per set, sets separated by a blank line — returning the total number
-// of data rows written. A failing Close (e.g. a disk-full flush error the OS
-// only reports at close time) is reported too, not silently dropped, unless
-// an earlier error already explains the failure.
-func writeCSV(path string, sets []query.ResultSet) (n int, err error) {
-	f, err := os.Create(path)
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-	}()
-
-	w := csv.NewWriter(f)
-	for i, set := range sets {
-		if i > 0 {
-			w.Flush()
-			if _, err = f.WriteString("\n"); err != nil {
-				return n, err
-			}
-		}
-		if err = w.Write(set.Columns); err != nil {
-			return n, err
-		}
-		for _, row := range set.Rows {
-			if err = w.Write(row); err != nil {
-				return n, err
-			}
-			n++
-		}
-	}
-	w.Flush()
-	err = w.Error()
-	return n, err
 }

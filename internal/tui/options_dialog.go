@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"log"
 	"strconv"
 
 	"github.com/gdamore/tcell/v3"
@@ -227,7 +226,7 @@ func (d *OptionsDialog) apply() {
 		d.app.cfg.MaxResultRows = config.DefaultMaxResultRows
 	}
 	if err := d.app.cfg.Save(); err != nil {
-		log.Printf("save config: %v", err)
+		d.app.logStatus("save config: %v", err)
 	}
 	d.app.explorer.rebuild()
 }

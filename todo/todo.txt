@@ -1,6 +1,3 @@
-integrate the plan explorer in gossms
-
-drag and drop from object tree in query window: db name, db objects, no folders. use quotes
 
 backup dialog
 
@@ -8,11 +5,8 @@ restore database dialog
 
 --------- later ------
 
-- check keyboard shortcuts consistency, terminal dependence etc
-
 - syntax autocomplete -> Ctrl+R reload
 
-- main statusbar : open a windowwith the history of the messages shown there with timestamp
 
 ---
 

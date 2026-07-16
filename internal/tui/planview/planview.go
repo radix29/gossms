@@ -26,11 +26,11 @@ var tabLabels = [...]string{"Plan", "Tree", "XML"}
 // PlanView renders a parsed execution plan as a tabbed control: a
 // graphical plan, an expandable tree, and the raw XML. See doc.go.
 type PlanView struct {
-	rect        core.Rect
-	tabRect     core.Rect
-	stmtRect    core.Rect
-	contentRect core.Rect
-	openBtnRect core.Rect // zero when OnOpenInPanel is nil
+	rect          core.Rect
+	tabRect       core.Rect
+	stmtRect      core.Rect
+	contentRect   core.Rect
+	expandBtnRect core.Rect // zero when OnExpand is nil
 
 	plan      *showplan.Plan
 	err       error // set by SetPlanXML on a parse failure
@@ -80,10 +80,10 @@ type PlanView struct {
 	graphPropsRect       core.Rect
 	graphPropsScroll     int
 
-	// OnOpenInPanel, when set, shows a "[Open in Panel]" button in the tab
-	// bar and is called when it's clicked — the host decides what "open in
-	// a new panel" means. Hidden entirely while nil.
-	OnOpenInPanel func()
+	// OnExpand, when set, shows a "[ Expand ]" button in the tab bar and is
+	// called when it's clicked — the host decides what "open in a new
+	// panel" means. Hidden entirely while nil.
+	OnExpand func()
 	// OnStatus, when set, is called with a one-line status message on
 	// notable actions (statement switch, tab switch, ...).
 	OnStatus func(msg string)
@@ -119,7 +119,7 @@ func (v *PlanView) SetPlanXML(xml string) error {
 }
 
 // SetPlan installs a plan the caller has already parsed, avoiding a
-// re-parse (used by "Open in Panel" to hand the same *showplan.Plan to a
+// re-parse (used by "[ Expand ]" to hand the same *showplan.Plan to a
 // freshly created PlanView).
 func (v *PlanView) SetPlan(p *showplan.Plan) {
 	v.installPlan(p)
@@ -237,6 +237,16 @@ func (v *PlanView) layout() {
 	v.xml.SetBounds(v.contentRect.X, v.contentRect.Y, v.contentRect.W, v.contentRect.H)
 	v.layoutTree()
 	v.layoutGraphTab()
+	// installPlan calls selectFirstNode (which sets selectedID but can't
+	// scroll anything into view yet — SetPlanXML/SetPlan are routinely
+	// called before the host's first SetBounds, so graphCanvasRect/
+	// treePaneRect are still zero at that point) before its own layout()
+	// call, so the very first real rect this control ever gets needs to
+	// re-apply "scroll the current selection into view" itself, once
+	// there's an actual rect to scroll within. Cheap and correct on every
+	// later resize too: a no-op whenever the selection is already visible.
+	v.ensureTreeRowVisible()
+	v.ensureTileVisible(v.selectedID)
 }
 
 // SetActive marks the control as focused, showing the XML editor's cursor
@@ -316,42 +326,48 @@ func (v *PlanView) drawMessage(s tcell.Screen, msg string) {
 	}
 }
 
-// drawTabBar renders the Plan/Tree/XML tabs and, when OnOpenInPanel is
-// set, a right-aligned "[Open in Panel]" button.
+// tabSegments computes each Plan/Tree/XML tab's on-screen extent. Draw and
+// hit-test both build their column math from this same call so hits line up
+// with what's actually on screen.
+func (v *PlanView) tabSegments() [][]controls.TabSegment {
+	widths := make([][]int, len(tabLabels))
+	for i, label := range tabLabels {
+		widths[i] = []int{controls.TabLabelWidth(label)}
+	}
+	return controls.TabStripSegments(v.tabRect.X+1, widths, v.tabRect.Right())
+}
+
+// drawTabBar renders the Plan/Tree/XML tabs and, when OnExpand is set, a
+// right-aligned "[ Expand ]" button.
 func (v *PlanView) drawTabBar(s tcell.Screen) {
 	pal := theme.Active()
 	bar := theme.StyleMenuBar()
 	core.FillRect(s, v.tabRect, ' ', bar)
 	col := v.tabRect.X + 1
-	for i, label := range tabLabels {
+	for i, seg := range v.tabSegments() {
 		st := bar
 		if Tab(i) == v.activeTab {
 			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
 		}
-		text := " " + label + " "
-		w := core.DisplayWidth(text)
-		if col+w > v.tabRect.Right() {
-			break
-		}
-		core.DrawText(s, col, v.tabRect.Y, st, text)
-		col += w + 1
+		core.DrawText(s, seg[0].X, v.tabRect.Y, st, " "+tabLabels[i]+" ")
+		col = seg[0].X + seg[0].W + 1
 	}
-	v.openBtnRect = core.Rect{}
+	v.expandBtnRect = core.Rect{}
 	if search := v.searchIndicatorText(); search != "" {
 		w := core.DisplayWidth(search)
 		x := v.tabRect.Right() - w - 1
 		if x > col {
 			core.DrawText(s, x, v.tabRect.Y, bar, search)
 		}
-		return // the search indicator takes priority over Open in Panel
+		return // the search indicator takes priority over Expand
 	}
-	if v.OnOpenInPanel != nil {
-		label := "[Open in Panel]"
+	if v.OnExpand != nil {
+		label := "[ Expand ]"
 		w := core.DisplayWidth(label)
 		x := v.tabRect.Right() - w - 1
 		if x > col {
 			core.DrawText(s, x, v.tabRect.Y, bar, label)
-			v.openBtnRect = core.Rect{X: x, Y: v.tabRect.Y, W: w, H: 1}
+			v.expandBtnRect = core.Rect{X: x, Y: v.tabRect.Y, W: w, H: 1}
 		}
 	}
 }
@@ -370,15 +386,11 @@ func (v *PlanView) searchIndicatorText() string {
 }
 
 // tabAt returns the tab index at screen column mx on the tab bar, or -1.
-// The segment walk mirrors drawTabBar exactly so hits line up with pixels.
 func (v *PlanView) tabAt(mx int) int {
-	col := v.tabRect.X + 1
-	for i, label := range tabLabels {
-		w := core.DisplayWidth(" " + label + " ")
-		if mx >= col && mx < col+w {
+	for i, seg := range v.tabSegments() {
+		if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
 			return i
 		}
-		col += w + 1
 	}
 	return -1
 }
@@ -464,8 +476,8 @@ func (v *PlanView) HandleKey(ev *tcell.EventKey) bool {
 	}
 }
 
-// HandleMouse routes clicks to the tab bar, the "Open in Panel" button,
-// the statement selector's ◀/▶ arrows, or the XML editor.
+// HandleMouse routes clicks to the tab bar, the "[ Expand ]" button, the
+// statement selector's ◀/▶ arrows, or the XML editor.
 func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	// Always forward release events to the XML editor, regardless of
@@ -486,9 +498,9 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	if v.tabRect.H == 1 && my == v.tabRect.Y && ev.Buttons() == tcell.Button1 {
-		if v.openBtnRect.W > 0 && v.openBtnRect.Contains(mx, my) {
-			if v.OnOpenInPanel != nil {
-				v.OnOpenInPanel()
+		if v.expandBtnRect.W > 0 && v.expandBtnRect.Contains(mx, my) {
+			if v.OnExpand != nil {
+				v.OnExpand()
 			}
 			return true
 		}

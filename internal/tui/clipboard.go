@@ -51,6 +51,11 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		if qp.onMessagesTab() {
 			return qp.messages
 		}
+		// The Execution Plan view, while showing, takes priority next too —
+		// see QueryPanel.planTabActive.
+		if qp.planTabActive() {
+			return qp.planView
+		}
 		// Results To Text's read-only view, while showing, takes priority
 		// next too — see QueryPanel.textTabActive.
 		if qp.textTabActive() {

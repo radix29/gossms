@@ -164,6 +164,12 @@ func (e *Editor) SetBounds(x, y, w, h int) { e.rect = core.Rect{X: x, Y: y, W: w
 // SetActive sets focus state.
 func (e *Editor) SetActive(v bool) { e.active = v }
 
+// Bounds returns the editor's current screen rect, set by SetBounds — lets
+// a caller outside the package hit-test a screen coordinate against the
+// editor without duplicating its geometry (e.g. Object Explorer's
+// drag-and-drop drop-target check in app_events.go).
+func (e *Editor) Bounds() core.Rect { return e.rect }
+
 // Focus sets focus state, mirroring the widgets package's Focus(bool)
 // convention so Editor can be Tab-cycled alongside InputField, DropDown,
 // and CheckBox by callers that key off that method name.

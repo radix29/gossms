@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/showplan"
 )
 
 func namedKey(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
@@ -26,6 +27,52 @@ func TestTree_DefaultSelectionIsRoot(t *testing.T) {
 	}
 	if len(v.treeSt.rows) != 12 {
 		t.Fatalf("len(treeSt.rows) = %d, want 12 (fully expanded)", len(v.treeSt.rows))
+	}
+}
+
+// TestTreeRowText_ErrorBadgeTakesPriorityOverWarning checks the ❌ (expensive
+// operator, cost >= expensiveCostThreshold) badge wins over ⚠ (warning) when
+// both apply, the same priority the border/text color switches already use.
+func TestTreeRowText_ErrorBadgeTakesPriorityOverWarning(t *testing.T) {
+	v := newTreeTabView(t)
+	st := v.currentStatement()
+	n := &showplan.Node{
+		ID:             9001,
+		PhysicalOp:     "Expensive Scan",
+		EstSubtreeCost: st.SubTreeCost, // 100% of the statement, well over the threshold
+		Warnings:       []string{"Missing Index"},
+	}
+	text := v.treeRowText(treeRow{node: n})
+	if !strings.Contains(text, "❌") {
+		t.Errorf("treeRowText = %q, want a ❌ badge for a node over expensiveCostThreshold", text)
+	}
+	if strings.Contains(text, "⚠") {
+		t.Errorf("treeRowText = %q, should not also show ⚠ when ❌ applies", text)
+	}
+}
+
+// TestTreeRowText_WarningBadgeWhenNotExpensive checks ⚠ still shows for a
+// warned node that isn't over the cost threshold.
+func TestTreeRowText_WarningBadgeWhenNotExpensive(t *testing.T) {
+	v := newTreeTabView(t)
+	n := &showplan.Node{ID: 9002, PhysicalOp: "Cheap Scan", Warnings: []string{"Missing Index"}}
+	text := v.treeRowText(treeRow{node: n})
+	if !strings.Contains(text, "⚠") {
+		t.Errorf("treeRowText = %q, want a ⚠ badge for a warned, inexpensive node", text)
+	}
+	if strings.Contains(text, "❌") {
+		t.Errorf("treeRowText = %q, should not show ❌ under the cost threshold", text)
+	}
+}
+
+// TestTreeRowText_ParallelIcon checks ⇄ shows for a parallel operator,
+// independent of the error/warning badge.
+func TestTreeRowText_ParallelIcon(t *testing.T) {
+	v := newTreeTabView(t)
+	n := &showplan.Node{ID: 9003, PhysicalOp: "Gather Streams", Parallel: true}
+	text := v.treeRowText(treeRow{node: n})
+	if !strings.Contains(text, "⇄") {
+		t.Errorf("treeRowText = %q, want a ⇄ parallelism icon", text)
 	}
 }
 

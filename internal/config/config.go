@@ -176,6 +176,19 @@ func configPath() string {
 	return filepath.Join(dir, "gossms", "config.json")
 }
 
+// LogFilePath returns the path cmd/gossms's main should open its log file
+// at — next to the config file, not the process's current working
+// directory, so where gossms is launched from doesn't determine where (or
+// whether writably) its log ends up. The directory is created if it
+// doesn't exist yet, matching Config.Save's own MkdirAll.
+func LogFilePath() (string, error) {
+	dir := filepath.Dir(configPath())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "gossms.log"), nil
+}
+
 // Load reads the config from disk, returning an empty config on error.
 // Saved passwords are decrypted back to plaintext in the returned Config
 // (see secret.go) — if the key can't be read/created, or a given password

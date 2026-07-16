@@ -192,6 +192,7 @@ func (oe *ObjectExplorer) Selected() *explorerNode {
 func (oe *ObjectExplorer) RefreshSelected() {
 	n := oe.Selected()
 	if n == nil {
+		oe.app.setStatus("Select an item in Object Explorer first")
 		return
 	}
 	n.data.Loaded = false

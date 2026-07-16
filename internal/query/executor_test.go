@@ -101,6 +101,63 @@ func TestAddErrorNonSQL(t *testing.T) {
 	}
 }
 
+// TestErrorMessagesSQLServer mirrors TestAddErrorSQLServer but calls
+// ErrorMessages directly — the entry point QueryPanel's execution-plan
+// paths use, since they capture errors from gosmo calls outside Execute.
+func TestErrorMessagesSQLServer(t *testing.T) {
+	msgs := ErrorMessages(fmt.Errorf("capture execution plan: %w", mssql.Error{
+		Number:  208,
+		State:   1,
+		Class:   16,
+		LineNo:  4,
+		Message: "Invalid object name 'foo'.",
+	}))
+
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2: %+v", len(msgs), msgs)
+	}
+	if want := "Msg 208, Level 16, State 1, Line 4"; msgs[0].Text != want {
+		t.Errorf("header = %q, want %q", msgs[0].Text, want)
+	}
+	if msgs[1].Text != "Invalid object name 'foo'." {
+		t.Errorf("message = %q", msgs[1].Text)
+	}
+	for i, m := range msgs {
+		if !m.IsError {
+			t.Errorf("msgs[%d].IsError = false, want true", i)
+		}
+	}
+}
+
+// TestErrorMessagesNonSQL keeps a plain Go error as a single message.
+func TestErrorMessagesNonSQL(t *testing.T) {
+	msgs := ErrorMessages(errFake("boom"))
+	if len(msgs) != 1 || msgs[0].Text != "boom" || !msgs[0].IsError {
+		t.Fatalf("msgs = %+v, want single IsError 'boom'", msgs)
+	}
+}
+
+// TestIsShowplanResultSet checks the column-name match ExecuteWithPlan
+// relies on to separate a captured execution plan (SET STATISTICS XML ON's
+// extra result set) from a query's own real result sets.
+func TestIsShowplanResultSet(t *testing.T) {
+	tests := []struct {
+		name string
+		cols []string
+		want bool
+	}{
+		{"showplan column alone", []string{showplanColumnName}, true},
+		{"real single column, different name", []string{"DoctorID"}, false},
+		{"showplan name alongside another column", []string{showplanColumnName, "Extra"}, false},
+		{"no columns", nil, false},
+	}
+	for _, tt := range tests {
+		if got := isShowplanResultSet(tt.cols); got != tt.want {
+			t.Errorf("%s: isShowplanResultSet(%v) = %v, want %v", tt.name, tt.cols, got, tt.want)
+		}
+	}
+}
+
 type errFake string
 
 func (e errFake) Error() string { return string(e) }

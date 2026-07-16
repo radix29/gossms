@@ -355,6 +355,25 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
+// SetCursorFromScreen moves the cursor to the document position under the
+// screen coordinate (x, y) and clears any active selection — the same
+// targeting math HandleMouse's Button1 case uses for a fresh click, exposed
+// for callers that need to place the cursor without synthesizing a mouse
+// event (e.g. Object Explorer's drag-and-drop, which already knows the drop
+// point from the release event it's handling at the App level).
+func (e *Editor) SetCursorFromScreen(x, y int) {
+	contentX := e.rect.X + e.gutterWidth()
+	row := core.Clamp(e.scrollRow+(y-e.rect.Y), 0, len(e.lines)-1)
+	col := core.Max(0, e.scrollCol+(x-contentX))
+	if row < len(e.lines) && col > len(e.lines[row]) {
+		col = len(e.lines[row])
+	}
+	e.cursorRow, e.cursorCol = row, col
+	e.selecting, e.selBlock, e.mouseDragging = false, false, false
+	e.desiredCol = col
+	e.ensureCursorVisible()
+}
+
 // horizontalWheelChars is how many characters a single horizontal wheel
 // tick (WheelLeft/WheelRight, or Shift+WheelUp/WheelDown) scrolls — only
 // meaningful outside wrapMode, where scrollCol is a character offset

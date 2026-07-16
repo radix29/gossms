@@ -87,6 +87,20 @@ func TestTasksDialogParticipatesInStack(t *testing.T) {
 	}
 }
 
+// TestStatusHistoryDialogParticipatesInStack is the same guard as
+// TestTasksDialogParticipatesInStack, for the status-bar click-to-view
+// history dialog.
+func TestStatusHistoryDialogParticipatesInStack(t *testing.T) {
+	a := &App{cfg: &config.Config{}}
+	a.buildUI()
+
+	a.statusHistoryDialog.Show()
+	a.syncDialogStack()
+	if got := a.topDialog(); got != a.statusHistoryDialog {
+		t.Errorf("topDialog after showing statusHistoryDialog = %v, want statusHistoryDialog", got)
+	}
+}
+
 // TestDialogStackRoutesInputToTopOnly confirms only the frontmost dialog
 // ever receives input — the invariant handleKey/handleMouse rely on.
 func TestDialogStackRoutesInputToTopOnly(t *testing.T) {

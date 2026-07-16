@@ -42,6 +42,12 @@ type Result struct {
 	// mid-script "USE otherdb" is reflected back to the caller. Empty if
 	// it couldn't be read (e.g. the query was cancelled first).
 	Database string
+
+	// PlanXML holds one complete <ShowPlanXML> document per statement/batch
+	// whose execution plan was captured, in execution order — the actual
+	// plan from ExecuteWithPlan, or the estimated (compile-only) plan from
+	// ExecuteEstimatedPlan. Execute itself never populates this.
+	PlanXML []string
 }
 
 // TotalRows sums the row counts of all result sets.
@@ -64,19 +70,37 @@ func (r *Result) HasErrors() bool {
 }
 
 func (r *Result) addError(err error) {
-	// SQL Server errors get the SSMS treatment: the "Msg 208, Level 16,
-	// State 1, Line 4" status line and the message text on separate lines,
-	// so the Messages pane matches SSMS and the line number is visible.
+	r.Messages = append(r.Messages, ErrorMessages(err)...)
+}
+
+// ErrorMessages formats err the way SSMS's Messages pane shows a failed
+// batch: a SQL Server error becomes the "Msg 208, Level 16, State 1, Line 4"
+// status line and the message text as two separate messages; anything else
+// becomes a single message from err.Error(). Exported so a caller that talks
+// to gosmo directly instead of through Execute (QueryPanel's execution-plan
+// paths) can report an error identically.
+func ErrorMessages(err error) []Message {
 	if se, ok := gosmo.AsSQLError(err); ok {
-		r.Messages = append(r.Messages, Message{Text: se.Header(), IsError: true})
+		msgs := []Message{{Text: se.Header(), IsError: true}}
 		if se.Message != "" {
-			r.Messages = append(r.Messages, Message{Text: se.Message, IsError: true})
+			msgs = append(msgs, Message{Text: se.Message, IsError: true})
 		}
-		return
+		return msgs
 	}
-	r.Messages = append(r.Messages, Message{Text: err.Error(), IsError: true})
+	return []Message{{Text: err.Error(), IsError: true}}
 }
 func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{Text: s}) }
+
+// planCapture selects whether execute additionally captures an execution
+// plan alongside a script's ordinary batches, and if so, in which SQL
+// Server mode.
+type planCapture int
+
+const (
+	planCaptureNone      planCapture = iota
+	planCaptureActual                // SET STATISTICS XML ON — batches really run
+	planCaptureEstimated             // SET SHOWPLAN_XML ON — nothing really runs
+)
 
 // Execute runs script against db, SSMS-style. If database is non-empty the
 // connection switches to it first ("USE [database]"), so the script runs in
@@ -92,6 +116,31 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 // notice reports the truncation. Meant for the interactive Grid/Text views;
 // pass 0 for a caller (e.g. Results To File) that wants every row.
 func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows int) *Result {
+	return execute(ctx, db, database, script, maxRows, planCaptureNone)
+}
+
+// ExecuteWithPlan behaves like Execute but additionally runs with SET
+// STATISTICS XML ON, so the script's actual execution plan — captured
+// after it really runs, not just compiled — comes back in Result.PlanXML.
+// Everything else (GO-batch splitting, message capture, row scanning,
+// cancellation) is identical to Execute.
+func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string, maxRows int) *Result {
+	return execute(ctx, db, database, script, maxRows, planCaptureActual)
+}
+
+// ExecuteEstimatedPlan behaves like Execute but runs with SET SHOWPLAN_XML
+// ON instead of actually running the script — SQL Server compiles every GO
+// batch and returns its estimated plan in Result.PlanXML without executing
+// it, matching SSMS's "Display Estimated Execution Plan". GO-batch
+// splitting and cancellation are identical to Execute; unlike Execute/
+// ExecuteWithPlan, nothing in the script produces real rows or "rows
+// affected" messages while SHOWPLAN_XML is on, so there's no meaningful
+// row cap to accept.
+func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
+	return execute(ctx, db, database, script, 0, planCaptureEstimated)
+}
+
+func execute(ctx context.Context, db *sql.DB, database, script string, maxRows int, capture planCapture) *Result {
 	start := time.Now()
 	res := &Result{}
 
@@ -111,6 +160,21 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 		}
 	}
 
+	if capture != planCaptureNone {
+		setOpt, label := "STATISTICS XML", "actual"
+		if capture == planCaptureEstimated {
+			setOpt, label = "SHOWPLAN_XML", "estimated"
+		}
+		if _, err := conn.ExecContext(ctx, "SET "+setOpt+" ON"); err != nil {
+			res.addError(fmt.Errorf("enable %s execution plan capture: %w", label, err))
+			res.Elapsed = time.Since(start)
+			return res
+		}
+		// Error discarded on cleanup — matches gosmo's own capturePlan,
+		// which does the same for its SET ... OFF.
+		defer conn.ExecContext(context.Background(), "SET "+setOpt+" OFF")
+	}
+
 	for _, b := range batch.Split(script, "GO") {
 		if strings.TrimSpace(b) == "" {
 			continue
@@ -127,7 +191,10 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 		if name, err := currentDatabase(ctx, conn); err == nil {
 			res.Database = name
 		}
-		if len(res.Sets) == 0 && !res.HasErrors() {
+		// planCaptureEstimated never really executes anything — "Commands
+		// completed successfully" would be misleading there, not merely
+		// redundant, since nothing did.
+		if len(res.Sets) == 0 && !res.HasErrors() && capture != planCaptureEstimated {
 			res.addNotice("Commands completed successfully.")
 		}
 	}
@@ -172,6 +239,21 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
+			cols, err := rows.Columns()
+			if err != nil {
+				res.addError(err)
+				break
+			}
+			if isShowplanResultSet(cols) {
+				xml, err := scanPlanXML(rows)
+				switch {
+				case err != nil:
+					res.addError(err)
+				case xml != "":
+					res.PlanXML = append(res.PlanXML, xml)
+				}
+				break
+			}
 			rs, truncated, err := scanResultSet(rows, maxRows)
 			if err != nil {
 				res.addError(err)
@@ -245,6 +327,29 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 		rs.Rows = append(rs.Rows, row)
 	}
 	return rs, truncated, nil
+}
+
+// showplanColumnName is the fixed column name SQL Server has used for
+// SET STATISTICS XML / SHOWPLAN_XML output since SQL Server 2005 — mirrors
+// gosmo's own (unexported) showplanColumn constant.
+const showplanColumnName = "Microsoft SQL Server 2005 XML Showplan"
+
+// isShowplanResultSet reports whether cols is the single-column shape SQL
+// Server uses for execution-plan output, rather than a real result set.
+func isShowplanResultSet(cols []string) bool {
+	return len(cols) == 1 && cols[0] == showplanColumnName
+}
+
+// scanPlanXML reads the current (single-column, showplan) result set into
+// one XML string — mirrors gosmo's capturePlan scan loop.
+func scanPlanXML(rows *sql.Rows) (string, error) {
+	var xml string
+	for rows.Next() {
+		if err := rows.Scan(&xml); err != nil {
+			return "", err
+		}
+	}
+	return xml, rows.Err()
 }
 
 // formatGUID renders a uniqueidentifier as SSMS does: NULL, or the canonical

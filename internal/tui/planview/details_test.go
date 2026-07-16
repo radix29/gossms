@@ -74,6 +74,84 @@ func TestDetailsPane_WheelScrolls(t *testing.T) {
 	}
 }
 
+// TestNodePropsForDisplay_PrependsWarnings checks the bottom Properties
+// section's own row list — separate from n.Props, which mirrors the plan
+// XML's attributes literally and never contains Warnings (decodeWarnings
+// consumes the <Warnings> element into n.Warnings instead) — surfaces a
+// node's warning text as its first row.
+func TestNodePropsForDisplay_PrependsWarnings(t *testing.T) {
+	v := newTreeTabView(t)
+	n := v.currentStatement().Nodes()[5]
+	n.Warnings = []string{"Test Warning"}
+
+	kvs := nodePropsForDisplay(n)
+	if len(kvs) != len(n.Props)+1 {
+		t.Fatalf("nodePropsForDisplay returned %d rows, want len(Props)+1 = %d", len(kvs), len(n.Props)+1)
+	}
+	if kvs[0].Key != "Warnings" || kvs[0].Value != "Test Warning" {
+		t.Errorf("nodePropsForDisplay[0] = %+v, want {Warnings Test Warning}", kvs[0])
+	}
+}
+
+// TestNodePropsForDisplay_NoWarningsIsJustProps checks a warning-free node
+// gets exactly n.Props back, unmodified — no synthetic row, no copy.
+func TestNodePropsForDisplay_NoWarningsIsJustProps(t *testing.T) {
+	v := newTreeTabView(t)
+	n := v.currentStatement().Nodes()[5]
+	n.Warnings = nil
+
+	kvs := nodePropsForDisplay(n)
+	if len(kvs) != len(n.Props) {
+		t.Fatalf("nodePropsForDisplay returned %d rows, want len(Props) = %d", len(kvs), len(n.Props))
+	}
+	for _, kv := range kvs {
+		if kv.Key == "Warnings" {
+			t.Errorf("nodePropsForDisplay includes a Warnings row for a node with none: %+v", kvs)
+		}
+	}
+}
+
+func TestNodePropsForDisplay_NilNode(t *testing.T) {
+	if kvs := nodePropsForDisplay(nil); kvs != nil {
+		t.Errorf("nodePropsForDisplay(nil) = %v, want nil", kvs)
+	}
+}
+
+// TestBottomProperties_WheelScrolls checks the bottom Properties section's
+// scroll offset is actually reachable — propsSt.scroll existed as a field
+// before this fix, but nothing ever wheel-scrolled it, so any node with
+// more attributes than the fixed-height bottom section was permanently
+// unreachable past the last visible row.
+func TestBottomProperties_WheelScrolls(t *testing.T) {
+	v := newTreeTabView(t)
+	v.cycleBottomMode() // bottomHidden -> bottomProperties
+	if v.bottomMode != bottomProperties {
+		t.Fatalf("bottomMode = %v, want bottomProperties", v.bottomMode)
+	}
+	n := v.currentStatement().Nodes()[5]
+	n.Warnings = []string{"Test Warning"}
+	v.selectNode(n.ID)
+
+	total := len(nodePropsForDisplay(v.selectedNode()))
+	if total <= v.bottomRect.H {
+		t.Fatalf("node has %d display rows, bottom section fits %d — test needs an overflow to be meaningful", total, v.bottomRect.H)
+	}
+
+	mx, my := v.bottomRect.X+1, v.bottomRect.Y+1
+	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelDown, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelDown) over the bottom Properties section returned false")
+	}
+	if v.propsSt.scroll != 1 {
+		t.Errorf("propsSt.scroll = %d after WheelDown, want 1", v.propsSt.scroll)
+	}
+	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelUp, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelUp) over the bottom Properties section returned false")
+	}
+	if v.propsSt.scroll != 0 {
+		t.Errorf("propsSt.scroll = %d after WheelUp, want back to 0", v.propsSt.scroll)
+	}
+}
+
 func TestDetailsHeaderText_ShowsScrollIndicatorOnlyWhenNeeded(t *testing.T) {
 	if got := detailsHeaderText("Operator Details", 40, false, false); got != "Operator Details" {
 		t.Errorf("detailsHeaderText(no overflow) = %q, want plain title", got)

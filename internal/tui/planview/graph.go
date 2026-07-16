@@ -145,7 +145,7 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	switch {
 	case selected:
 		borderStyle = theme.StyleActiveBorder()
-	case costPct >= 0.30:
+	case costPct >= expensiveCostThreshold:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 	case len(t.node.Warnings) > 0:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
@@ -172,11 +172,27 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 
 	metrics := fmt.Sprintf("%.0f%%  %s", costPct*100, v.tileRowsText(t.node))
+	if t.node.Parallel {
+		metrics += "  ⇄"
+	}
 	core.DrawTextClipped(s, inner.X, inner.Y+2, inner.W, textStyle, metrics)
 
-	if len(t.node.Warnings) > 0 {
-		warnStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
-		core.DrawText(s, inner.Right()-1, inner.Y, warnStyle, "⚠")
+	// Corner badge: at most one of error/warning, same priority as the
+	// border color switch above. Right-aligned by the glyph's own display
+	// width (not a fixed 1-column offset) since ❌ is double-width and ⚠
+	// isn't — a fixed offset would push ❌ into the border column.
+	var badge string
+	var badgeStyle tcell.Style
+	switch {
+	case costPct >= expensiveCostThreshold:
+		badge = "❌"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
+	case len(t.node.Warnings) > 0:
+		badge = "⚠"
+		badgeStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+	}
+	if badge != "" {
+		core.DrawText(s, inner.Right()-core.DisplayWidth(badge), inner.Y, badgeStyle, badge)
 	}
 }
 

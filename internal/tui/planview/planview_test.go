@@ -7,6 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func loadTestPlan(t *testing.T) *showplan.Plan {
@@ -163,17 +164,37 @@ func TestStatementSelector_MultiStatement(t *testing.T) {
 	}
 }
 
-func TestOpenInPanelButton_ClickNoopWithoutCallback(t *testing.T) {
+func TestExpandButton_ClickNoopWithoutCallback(t *testing.T) {
 	v := New()
 	v.SetBounds(0, 0, 80, 24)
 	v.SetPlan(loadTestPlan(t))
-	// openBtnRect is zero until Draw runs (untested here — tcell v3 has no
-	// SimulationScreen, so Draw itself isn't exercised by any test in this
-	// codebase; see controls/editor_test.go for the same state-only
+	// expandBtnRect is zero until Draw runs (untested here — tcell v3 has
+	// no SimulationScreen, so Draw itself isn't exercised by any test in
+	// this codebase; see controls/editor_test.go for the same state-only
 	// convention). Clicking where the button would be must still be a
-	// harmless tab-bar click, not a panic, with OnOpenInPanel nil.
+	// harmless tab-bar click, not a panic, with OnExpand nil.
 	if v.HandleMouse(newClick(1, 0)) == false {
 		t.Fatal("HandleMouse on the tab bar row returned false, want true (tab click)")
+	}
+}
+
+// TestExpandButton_ClickFiresCallback checks a click landing inside
+// expandBtnRect calls OnExpand exactly once — expandBtnRect is normally
+// only populated by drawTabBar (see the no-SimulationScreen note above),
+// so it's set directly here to simulate the post-Draw state.
+func TestExpandButton_ClickFiresCallback(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 80, 24)
+	v.SetPlan(loadTestPlan(t))
+	v.expandBtnRect = core.Rect{X: 60, Y: 0, W: 10, H: 1}
+	calls := 0
+	v.OnExpand = func() { calls++ }
+
+	if !v.HandleMouse(newClick(62, 0)) {
+		t.Fatal("HandleMouse inside expandBtnRect returned false, want true")
+	}
+	if calls != 1 {
+		t.Errorf("OnExpand called %d times, want 1", calls)
 	}
 }
 

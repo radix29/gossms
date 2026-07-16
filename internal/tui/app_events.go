@@ -187,6 +187,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 
 func (a *App) handleMouse(ev *tcell.EventMouse) {
 	mx, my := ev.Position()
+	_, h := a.screen.Size()
 
 	if top := a.topDialog(); top != nil {
 		top.HandleMouse(ev)
@@ -218,6 +219,36 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		a.menuBar.Close()
 	}
 
+	if my == h-1 {
+		if ev.Buttons() == tcell.Button1 {
+			a.statusHistoryDialog.Show()
+		}
+		return
+	}
+
+	// Object Explorer → query editor drag-and-drop: once a.dragNode is
+	// armed (below), it must get absolute first refusal on every event,
+	// ahead of even the splitter — otherwise a drag path that happens to
+	// cross the splitter's column arms *its* resize drag too, and a drag
+	// path that lingers inside Object Explorer keeps reaching
+	// TreeView.HandleMouse, which reselects (or, worse, toggles
+	// expand/collapse on) whatever row the pointer passes over. While
+	// armed, every Button1 event is swallowed outright — the drag always
+	// refers to the node it started on, never whatever's currently under
+	// the cursor — and only a release is acted on.
+	if a.dragNode != nil {
+		switch ev.Buttons() {
+		case tcell.ButtonNone:
+			a.dropExplorerNode(mx, my)
+			a.dragNode = nil
+		case tcell.Button1:
+			// swallow motion; nothing else may react while a drop is pending
+		default:
+			a.dragNode = nil
+		}
+		return
+	}
+
 	// Explorer/panel splitter drag
 	if a.explorerSplit.HandleMouse(ev) {
 		a.layoutAll()
@@ -230,6 +261,11 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 			a.focusExplorer()
 		}
 		a.explorer.HandleMouse(ev)
+		if ev.Buttons() == tcell.Button1 {
+			if n := a.explorer.Selected(); n != nil && isDraggableNode(n.data.Type) {
+				a.dragNode = n
+			}
+		}
 		return
 	}
 	if a.focus != "panels" {

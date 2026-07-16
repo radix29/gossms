@@ -89,3 +89,91 @@ func TestPanelClosableDefaultsTrueWithoutInterface(t *testing.T) {
 		t.Fatalf("panelClosable = false for Closable() == true")
 	}
 }
+
+// activatablePanel is a fakePanel that also implements Activatable, so
+// RemovePanel tests can assert exactly which panel(s) got a SetActive call.
+type activatablePanel struct {
+	fakePanel
+	active bool
+}
+
+func (p *activatablePanel) SetActive(v bool) { p.active = v }
+
+// TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt
+// removes a panel to the left of the active one — the active panel's index
+// must shift down by one so the same panel stays active. Before the fix,
+// pm.active kept its old numeric value and silently ended up pointing at
+// whichever panel now occupies that slot instead.
+func TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt(t *testing.T) {
+	pm := NewPanelManager()
+	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
+	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
+	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
+	d := &activatablePanel{fakePanel: fakePanel{title: "D"}}
+	pm.AddPanel(a)
+	pm.AddPanel(b)
+	pm.AddPanel(c)
+	pm.AddPanel(d)
+	pm.SetActive(2) // C
+	c.active = true
+
+	pm.RemovePanel(0) // remove A, to the left of active
+
+	if got := pm.ActivePanel(); got != Panel(c) {
+		t.Fatalf("ActivePanel() = %v, want C to remain active", got)
+	}
+	if pm.ActiveIndex() != 1 {
+		t.Fatalf("ActiveIndex() = %d, want 1 (C shifted down after A's removal)", pm.ActiveIndex())
+	}
+	if d.active {
+		t.Fatalf("SetActive(true) fired on D, which was never made active")
+	}
+}
+
+// TestPanelManagerRemovePanelActivatesNeighborWhenActiveIsRemoved covers
+// removing the active panel itself: a neighbor must become active and get
+// a SetActive(true) call.
+func TestPanelManagerRemovePanelActivatesNeighborWhenActiveIsRemoved(t *testing.T) {
+	pm := NewPanelManager()
+	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
+	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
+	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
+	pm.AddPanel(a)
+	pm.AddPanel(b)
+	pm.AddPanel(c)
+	pm.SetActive(1) // B
+	b.active = true
+
+	pm.RemovePanel(1) // remove B, the active panel
+
+	if got := pm.ActivePanel(); got != Panel(c) {
+		t.Fatalf("ActivePanel() = %v, want C (index 1 after removal)", got)
+	}
+	if !c.active {
+		t.Fatalf("SetActive(true) never fired on C after it became active")
+	}
+}
+
+// TestPanelManagerRemovePanelAfterActiveDoesNotChangeActive removes a
+// panel to the right of the active one, which shouldn't move the active
+// index at all.
+func TestPanelManagerRemovePanelAfterActiveDoesNotChangeActive(t *testing.T) {
+	pm := NewPanelManager()
+	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
+	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
+	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
+	pm.AddPanel(a)
+	pm.AddPanel(b)
+	pm.AddPanel(c)
+	pm.SetActive(1) // B
+	b.active = true
+
+	pm.RemovePanel(2) // remove C, to the right of active
+
+	if got := pm.ActivePanel(); got != Panel(b) {
+		t.Fatalf("ActivePanel() = %v, want B to remain active", got)
+	}
+	if pm.ActiveIndex() != 1 {
+		t.Fatalf("ActiveIndex() = %d, want 1 (unchanged)", pm.ActiveIndex())
+	}
+}

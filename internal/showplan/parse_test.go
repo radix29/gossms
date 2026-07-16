@@ -182,6 +182,39 @@ func TestParseEstimatedPlan(t *testing.T) {
 	}
 }
 
+// TestParse_BooleanAttrsAcceptXSDOneZeroForm checks Warnings' boolean
+// attributes and Parallel accept the "1"/"0" XSD boolean lexical form,
+// not just "true"/"false" — a real SQL Server 17.0.4055.5 build was
+// observed emitting NoJoinPredicate="1" and Parallel="0" for the same
+// plan that other builds/attributes represent as "true"/"false", and the
+// "1" form was previously silently dropped (a real CROSS JOIN's warning
+// went missing from the UI with no error).
+func TestParse_BooleanAttrsAcceptXSDOneZeroForm(t *testing.T) {
+	const xmlDoc = `<ShowPlanXML Version="1.599" Build="17.0.4055.5">
+<BatchSequence><Batch><Statements>
+<StmtSimple StatementText="x">
+<QueryPlan><RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" Parallel="1">
+<Warnings NoJoinPredicate="1"></Warnings>
+</RelOp></QueryPlan>
+</StmtSimple>
+</Statements></Batch></BatchSequence></ShowPlanXML>`
+
+	plan, err := Parse([]byte(xmlDoc))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	root := plan.Statements[0].Root
+	if root == nil {
+		t.Fatal("Root = nil")
+	}
+	if !root.Parallel {
+		t.Error("root.Parallel = false, want true for Parallel=\"1\"")
+	}
+	if len(root.Warnings) != 1 || root.Warnings[0] != "NoJoinPredicate" {
+		t.Errorf("root.Warnings = %v, want [NoJoinPredicate]", root.Warnings)
+	}
+}
+
 func TestParse_InvalidDocument(t *testing.T) {
 	if _, err := Parse([]byte("<NotAPlan/>")); err == nil {
 		t.Error("Parse(garbage) returned nil error, want an error")

@@ -2,6 +2,7 @@ package layout
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -19,6 +20,17 @@ const tabCloseGlyph = "[x]"
 func panelClosable(p Panel) bool {
 	c, ok := p.(Closable)
 	return !ok || c.Closable()
+}
+
+// tabLabelText returns a panel's tab-bar title: truncated to 20 columns,
+// with a trailing "*" when the panel implements Dirty and reports unsaved
+// changes.
+func tabLabelText(p Panel) string {
+	title := core.Truncate(p.Title(), 20)
+	if dp, ok := p.(Dirty); ok && dp.Dirty() {
+		title += "*"
+	}
+	return title
 }
 
 // PanelManager manages a stack of overlapping Panels displayed one at a time.
@@ -80,6 +92,13 @@ func (pm *PanelManager) RemovePanel(i int) {
 	}
 	wasActive := i == pm.active
 	pm.panels = append(pm.panels[:i], pm.panels[i+1:]...)
+	// Removing a panel to the left of the active one shifts every later
+	// index down by one — without this, pm.active would keep its old
+	// numeric value and silently end up pointing at a different panel than
+	// the one that was actually active a moment ago.
+	if i < pm.active {
+		pm.active--
+	}
 	pm.active = core.Clamp(pm.active, 0, len(pm.panels)-1)
 	// If the removed panel was the active one, a different panel (or none)
 	// now occupies the active slot — fire its Activatable hook.
@@ -166,6 +185,26 @@ func (pm *PanelManager) relayout() {
 	}
 }
 
+// tabMaxX returns the first column the tab row must not draw into —
+// truncated short of the combo arrow at the right edge.
+func (pm *PanelManager) tabMaxX() int { return pm.rect.X + pm.rect.W - 5 }
+
+// tabSegments computes each panel's tab-bar layout: segment 0 is the label,
+// segment 1 the close-button glyph (zero-width when the panel isn't
+// closable). Draw and HandleMouse both build their column math from this
+// same call so hits line up with what's actually on screen.
+func (pm *PanelManager) tabSegments() [][]controls.TabSegment {
+	widths := make([][]int, len(pm.panels))
+	for i, panel := range pm.panels {
+		closeW := 0
+		if panelClosable(panel) {
+			closeW = core.DisplayWidth(tabCloseGlyph)
+		}
+		widths[i] = []int{controls.TabLabelWidth(tabLabelText(panel)), closeW}
+	}
+	return controls.TabStripSegments(pm.rect.X+1, widths, pm.tabMaxX())
+}
+
 // Draw renders the tab bar and the active panel.
 func (pm *PanelManager) Draw(s tcell.Screen) {
 	p := theme.Active()
@@ -175,34 +214,21 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 	if len(pm.panels) == 0 {
 		core.DrawText(s, pm.rect.X+1, pm.rect.Y, barStyle, "(no panels open — Ctrl+N for a new query)")
 	} else {
-		col := pm.rect.X + 1
-		for i, panel := range pm.panels {
+		for i, seg := range pm.tabSegments() {
+			panel := pm.panels[i]
 			tabStyle := barStyle
 			if i == pm.active {
 				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
 			}
-			title := core.Truncate(panel.Title(), 20)
-			if dp, ok := panel.(Dirty); ok && dp.Dirty() {
-				title += "*"
-			}
-			label := " " + title + " "
-			labelW := core.DisplayWidth(label)
-			closeW := 0
-			if panelClosable(panel) {
-				closeW = core.DisplayWidth(tabCloseGlyph)
-			}
-			if col+labelW+closeW > pm.rect.X+pm.rect.W-5 {
-				break
-			}
-			core.DrawText(s, col, pm.rect.Y, tabStyle, label)
-			if closeW > 0 {
+			label := " " + tabLabelText(panel) + " "
+			core.DrawText(s, seg[0].X, pm.rect.Y, tabStyle, label)
+			if seg[1].W > 0 {
 				closeStyle := tabStyle
 				if i != pm.active {
 					closeStyle = tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
 				}
-				core.DrawText(s, col+labelW, pm.rect.Y, closeStyle, tabCloseGlyph)
+				core.DrawText(s, seg[1].X, pm.rect.Y, closeStyle, tabCloseGlyph)
 			}
-			col += labelW + closeW + 1
 		}
 		// Combo arrow
 		arrowStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
@@ -282,35 +308,24 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 
-	// Tab row click. This walk mirrors Draw's tab loop exactly (label text,
-	// close-button glyph, and the same width math) so hits line up with
-	// what's actually on screen.
+	// Tab row click. Segments come from the same tabSegments call Draw uses,
+	// so hits line up with what's actually on screen.
 	if my == pm.rect.Y && ev.Buttons() == tcell.Button1 {
-		col := pm.rect.X + 1
-		for i, panel := range pm.panels {
-			title := core.Truncate(panel.Title(), 20)
-			if dp, ok := panel.(Dirty); ok && dp.Dirty() {
-				title += "*"
-			}
-			label := " " + title + " "
-			labelW := core.DisplayWidth(label)
-			closeW := 0
-			if panelClosable(panel) {
-				closeW = core.DisplayWidth(tabCloseGlyph)
-			}
-			if closeW > 0 && mx >= col+labelW && mx < col+labelW+closeW {
+		for i, seg := range pm.tabSegments() {
+			closeSeg := seg[1]
+			if closeSeg.W > 0 && mx >= closeSeg.X && mx < closeSeg.X+closeSeg.W {
 				if pm.OnCloseTab != nil {
 					pm.OnCloseTab(i)
 				}
 				pm.comboOpen = false
 				return true
 			}
-			if mx >= col && mx < col+labelW {
+			labelSeg := seg[0]
+			if mx >= labelSeg.X && mx < labelSeg.X+labelSeg.W {
 				pm.setActiveIndex(i)
 				pm.comboOpen = false
 				return true
 			}
-			col += labelW + closeW + 1
 		}
 	}
 

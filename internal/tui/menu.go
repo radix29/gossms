@@ -59,6 +59,9 @@ func (a *App) buildMenus() []controls.Menu {
 			}},
 			{Label: "Cancel Executing Query", Action: func() { a.cancelExecutingQuery() }},
 			{Divider: true},
+			{Label: "Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() }},
+			{Label: actualExecutionPlanMenuLabel(a.actualPlanEnabled), Action: func() { a.toggleActualExecutionPlan() }},
+			{Divider: true},
 			{Label: "Results To Text", Action: func() { a.setResultsMode(ResultsModeText) }},
 			{Label: "Results To Grid", Action: func() { a.setResultsMode(ResultsModeGrid) }},
 			{Label: "Results To File", Action: func() { a.setResultsMode(ResultsModeFile) }},
@@ -66,6 +69,7 @@ func (a *App) buildMenus() []controls.Menu {
 		{Label: "Tools", Items: []controls.MenuItem{
 			{Label: "Server Properties", Action: func() { a.showServerProperties() }},
 			{Label: "Database Properties", Action: func() { a.showDatabaseProperties() }},
+			{Label: "Activity Monitor", Action: func() { a.showActivityMonitor() }},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},
 			{Divider: true},
@@ -78,6 +82,17 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "About goSSMS", Action: func() { a.showAbout() }},
 		}},
 	}
+}
+
+// actualExecutionPlanMenuLabel mirrors actualPlanToggleIcon's state text
+// for the Query menu item — MenuItem has no separate "checked" visual, so
+// state is folded into the label itself instead of adding one (the toolbar
+// button, always visible in the same row, is the primary indicator).
+func actualExecutionPlanMenuLabel(on bool) string {
+	if on {
+		return "Actual Execution Plan (ON)"
+	}
+	return "Actual Execution Plan (OFF)"
 }
 
 // editorAction runs fn against the active query panel's editor, if any —

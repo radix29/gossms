@@ -64,6 +64,36 @@ func Parse(data []byte) (*Plan, error) {
 	return plan, nil
 }
 
+// ParseAll parses multiple ShowPlanXML documents — one per statement, the
+// shape SET STATISTICS XML ON produces for a multi-statement actual-plan
+// capture (an extra result set after each statement's own, unlike SET
+// SHOWPLAN_XML ON's single document covering the whole batch) — into one
+// combined Plan whose Statements holds every document's statements, in
+// order. Version/Build are taken from the first document; XML is every
+// document's own decoded text joined for display purposes only — it is not
+// reparsed as a single document.
+func ParseAll(docs []string) (*Plan, error) {
+	if len(docs) == 0 {
+		return nil, errors.New("showplan: no documents to parse")
+	}
+	combined := new(Plan{})
+	texts := make([]string, 0, len(docs))
+	for i, doc := range docs {
+		p, err := Parse([]byte(doc))
+		if err != nil {
+			return nil, fmt.Errorf("showplan: parse statement %d: %w", i+1, err)
+		}
+		if i == 0 {
+			combined.Version = p.Version
+			combined.Build = p.Build
+		}
+		combined.Statements = append(combined.Statements, p.Statements...)
+		texts = append(texts, p.XML)
+	}
+	combined.XML = strings.Join(texts, "\n")
+	return combined, nil
+}
+
 // newStatement builds a Statement from a Stmt* element's attributes.
 func newStatement(el xml.StartElement) *Statement {
 	st := new(Statement{
@@ -139,7 +169,7 @@ func decodeRelOp(dec *xml.Decoder, start xml.StartElement) (*Node, error) {
 		EstCPU:         attrF(start, "EstimateCPU"),
 		EstSubtreeCost: attrF(start, "EstimatedTotalSubtreeCost"),
 		AvgRowSize:     attrF(start, "AvgRowSize"),
-		Parallel:       attrOf(start, "Parallel") == "true",
+		Parallel:       attrBool(start, "Parallel"),
 		ExecMode:       attrOf(start, "EstimatedExecutionMode"),
 	})
 	n.Props = appendAttrs(n.Props, start)
@@ -303,7 +333,7 @@ func decodeColumnList(dec *xml.Decoder) ([]string, error) {
 func decodeWarnings(dec *xml.Decoder, start xml.StartElement) ([]string, error) {
 	var ws []string
 	for _, a := range start.Attr {
-		if a.Value == "true" {
+		if a.Value == "true" || a.Value == "1" {
 			ws = append(ws, a.Name.Local)
 		}
 	}
@@ -460,6 +490,21 @@ func attrF(el xml.StartElement, name string) float64 {
 func attrI(el xml.StartElement, name string) int64 {
 	v, _ := strconv.ParseInt(attrOf(el, name), 10, 64)
 	return v
+}
+
+// attrBool returns the named attribute as a bool. XSD's boolean lexical
+// space allows both {true, false} and {1, 0} — different ShowPlan XML
+// producers use either for the same attribute (e.g. NoJoinPredicate="1"
+// vs. Parallel="true" have both been observed from real SQL Server
+// builds), so both forms must be accepted or a real warning/flag reads
+// back as silently absent.
+func attrBool(el xml.StartElement, name string) bool {
+	switch attrOf(el, name) {
+	case "true", "1":
+		return true
+	default:
+		return false
+	}
 }
 
 // decodeText converts raw plan bytes to a UTF-8 string, honouring a

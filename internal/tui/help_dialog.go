@@ -33,6 +33,7 @@ var helpLines = []string{
 	"  (in menu)   Left/Right switch menus, Up/Down select an item,",
 	"              Enter activates, Escape/F10 closes",
 	"  Ctrl+Q      Quit",
+	"  Click status bar  Show message history",
 	"  Ctrl+Shift+O Connect to server",
 	"  Ctrl+O      Open a .sql file as a new query",
 	"  Ctrl+N      New query panel",

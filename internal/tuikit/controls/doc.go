@@ -9,6 +9,9 @@
 //     (datagrid.go)
 //   - Editor — multi-line text editor with optional syntax highlighting,
 //     including the built-in SQLHighlighter (editor.go)
+//   - TabStripSegments — shared column-layout math for horizontal tab bars,
+//     used by every tab strip in the app so draw and hit-test code can't
+//     drift apart (tabstrip.go)
 //
 // Controls depend on core, theme, and widgets but not on any application
 // types.  The application layer passes data in and reads state out;

@@ -9,6 +9,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"sync"
 
@@ -30,26 +31,39 @@ type App struct {
 
 	explorerSplit *layout.Splitter
 
-	explorer      *ObjectExplorer
-	panels        *layout.PanelManager
+	explorer *ObjectExplorer
+	panels   *layout.PanelManager
+
+	// dragNode is the Object Explorer node currently being dragged toward
+	// the query editor (armed by a Button1 press over a draggable node,
+	// cleared on release) — nil when no drag is in progress. See
+	// handleMouse/dropExplorerNode.
+	dragNode *explorerNode
+
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
 	contextMenu   *controls.ContextMenu
 	statusText    string
 	queryPanelCnt int
 
-	connectDialog     *ConnectDialog
-	helpDialog        *HelpDialog
-	keyDiagDialog     *KeyDiagnosticsDialog
-	propsDialog       *PropertiesDialog
-	propDialog        *PropDialog
-	newDatabaseDialog *NewDatabaseDialog
-	newLoginDialog    *NewLoginDialog
-	fileDialog        *dialogs.FileDialog
-	queryListDialog   *QueryListDialog
-	optionsDialog     *OptionsDialog
-	tasksDialog       *TasksDialog
-	confirmDialog     *dialogs.ConfirmDialog
+	// actualPlanEnabled is the "Include Actual Execution Plan" toolbar
+	// toggle's state — off by default. Read by QueryPanel.runQuery to
+	// decide between query.Execute and query.ExecuteWithPlan.
+	actualPlanEnabled bool
+
+	connectDialog       *ConnectDialog
+	helpDialog          *HelpDialog
+	keyDiagDialog       *KeyDiagnosticsDialog
+	statusHistoryDialog *StatusHistoryDialog
+	propsDialog         *PropertiesDialog
+	propDialog          *PropDialog
+	newDatabaseDialog   *NewDatabaseDialog
+	newLoginDialog      *NewLoginDialog
+	fileDialog          *dialogs.FileDialog
+	queryListDialog     *QueryListDialog
+	optionsDialog       *OptionsDialog
+	tasksDialog         *TasksDialog
+	confirmDialog       *dialogs.ConfirmDialog
 
 	// allDialogs lists every dialog exactly once, for syncDialogStack to
 	// scan; dialogStack is the live z-order (see dialog_stack.go).
@@ -75,7 +89,7 @@ type App struct {
 func NewApp() *App {
 	return new(App{
 		focus:      "explorer",
-		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  Ctrl+O Connect  |  Ctrl+Q Quit",
+		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  Ctrl+Shift+O Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
 }
@@ -198,6 +212,7 @@ func (a *App) buildUI() {
 	a.connectDialog = NewConnectDialog(a)
 	a.helpDialog = NewHelpDialog(a)
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
+	a.statusHistoryDialog = NewStatusHistoryDialog(a)
 	a.propsDialog = NewPropertiesDialog(a)
 	a.propDialog = NewPropDialog(a)
 	a.newDatabaseDialog = NewNewDatabaseDialog(a)
@@ -221,7 +236,7 @@ func (a *App) buildUI() {
 	// somehow became visible in the same tick (today, never — each Show()
 	// is one synchronous call from one key/menu action); see syncDialogStack.
 	a.allDialogs = []Dialog{
-		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.propsDialog, a.propDialog,
+		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
 		a.confirmDialog,
@@ -351,11 +366,11 @@ func (a *App) draw() {
 	statusStyle := theme.StyleStatusBar()
 	core.FillRect(s, core.Rect{X: 0, Y: h - statusH, W: w, H: statusH}, ' ', statusStyle)
 	connInfo := ""
-	if len(a.connections) > 0 {
-		connInfo = fmt.Sprintf("  |  %d connection(s)", len(a.connections))
+	if n := len(a.connections); n > 0 {
+		connInfo = fmt.Sprintf("  |  %d server%s connected", n, pluralSuffix(n))
 	}
 	if n := a.runningTaskCount(); n > 0 {
-		connInfo += fmt.Sprintf("  |  %d task(s) running", n)
+		connInfo += fmt.Sprintf("  |  %d task%s running", n, pluralSuffix(n))
 	}
 	core.DrawTextClipped(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 
@@ -373,5 +388,40 @@ func (a *App) draw() {
 	s.Show()
 }
 
-func (a *App) quit()                { a.screen.Fini() }
-func (a *App) setStatus(msg string) { a.statusText = msg }
+func (a *App) quit() { a.screen.Fini() }
+
+func (a *App) setStatus(msg string) {
+	a.statusText = msg
+	// statusHistoryDialog is nil for the minimal *App some tests build by
+	// hand (see newTestApp in app_connections_test.go) without going
+	// through buildUI — guard rather than require every such helper to
+	// construct the full dialog set just to call setStatus.
+	if a.statusHistoryDialog != nil {
+		a.statusHistoryDialog.Record(msg)
+	}
+}
+
+// logStatus records msg in both the log file (matching the log.Printf
+// calls it replaces) and the status-history dialog, but — unlike
+// setStatus — never touches the single-line a.statusText the status bar
+// currently shows. Used for background/diagnostic detail (a config-save
+// failure after an already-successful connect, a child-node fetch error
+// that's already surfaced via a visible error tree node) that shouldn't
+// clobber whatever the status bar is currently displaying.
+func (a *App) logStatus(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Print(msg)
+	if a.statusHistoryDialog != nil {
+		a.statusHistoryDialog.Record(msg)
+	}
+}
+
+// pluralSuffix returns "" for n == 1 and "s" otherwise, for simple
+// singular/plural status-bar wording ("1 server connected" vs "2 servers
+// connected").
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}

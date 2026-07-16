@@ -83,6 +83,22 @@ Built as designed, with a few adjustments made during implementation:
   now open from first load (`graphSt.detailOpen` defaults `true`); Enter
   still toggles it. `summaryHeaderStyleAndText` dropped its `cycleHint`
   bool parameter (Plan tab was its only other caller).
+- **Status/parallelism icons added (2026-07-16, same session, third
+  follow-up)** — see 3.4: ❌ for an expensive node (cost ≥ 30% at the
+  time, since bumped — see next bullet — but the existing red border/text
+  color threshold it reused), ⚠ for a warned node (unchanged from before,
+  just formalized as one arm of the same priority switch), and an
+  independent ⇄ whenever `n.Parallel` is true — across both the Plan
+  tab's tiles and the Tree tab's rows.
+- **Expensive-cost threshold raised to 80% (2026-07-16, same session,
+  fourth follow-up):** the ≥30% cutoff — used by the ❌ badge above and
+  the pre-existing red border/text color it was built to match — was
+  raised to 80%. Extracted into one named constant,
+  `expensiveCostThreshold` (tree.go, next to `nodeCostPct`), replacing 4
+  separate `0.30` literals across `graph.go` (border color, ❌ badge) and
+  `tree.go` (row color, ❌ badge) — the duplication is exactly why a
+  second threshold change would have been easy to apply inconsistently
+  had this not been consolidated the first time it needed to move.
 
 ---
 
@@ -442,11 +458,25 @@ SSMS-classic node-and-edge layout, per `exec.png`:
 
 - Derived inline from `theme.Active()` at each draw site (tree.go's
   `drawTreePane`, graph.go's `drawTile`) — no new Palette fields:
-  expensive node (cost ≥ 30%) → `Error`; warnings → `Warning`; selected →
-  `TreeSelected`/`BorderActive` (double border on the graph tab). No
-  separate "healthy" or "parallel" color was added — nothing in the
-  parsed model currently distinguishes a parallel operator from the DOP
-  already shown in the statement header.
+  expensive node (cost ≥ `expensiveCostThreshold`, 80%) → `Error`;
+  warnings → `Warning`; selected → `TreeSelected`/`BorderActive` (double
+  border on the graph tab).
+- **Status/parallelism icons (2026-07-16, per a `todo/todo.txt` ask):**
+  every operator in both the Plan tab's tiles (`drawTile`) and the Tree
+  tab's rows (`treeRowText`) shows at most one status icon — ❌ (U+274C)
+  for an expensive node (cost ≥ `expensiveCostThreshold`, 80%), else ⚠
+  (U+26A0) if it has warnings — same priority as the existing color
+  switch, plus an independent ⇄
+  (U+21C4) whenever `n.Parallel` is true. On the graph tile the status
+  icon sits in the top-right corner, right-aligned by the glyph's own
+  `core.DisplayWidth` rather than a fixed 1-column offset — ❌ is
+  double-width and ⚠ isn't, so a fixed offset would push ❌ into the
+  border column; the parallel icon is appended inline to the cost%/rows
+  metrics line instead, since the corner is already spoken for. In the
+  tree row both icons are appended inline after the cost% (like the
+  original single-⚠ marker was). Not touched: `summary.go`'s Status
+  column (Tree-tab-only Operator Summary grid, not "the plan and tree")
+  and `details.go`'s Properties text fields.
 - **Estimated vs actual:** a tile's row-count line shows the actual count
   when `Runtime` is present, unless `p` (`showEstimated` on `PlanView`)
   asks for the estimate regardless — toggling always changes what's

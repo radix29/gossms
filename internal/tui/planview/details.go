@@ -55,6 +55,19 @@ func (v *PlanView) scrollDetails(delta int) {
 	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, max)
 }
 
+// scrollBottomProps shifts the Tree tab's bottom Properties section's
+// scroll offset by delta rows, clamped to its (Warnings-inclusive) row
+// count — mirrors scrollDetails for the "Operator Details" pane. Was
+// previously unreachable: propsSt.scroll existed but nothing ever wheel-
+// scrolled it, so any node with more attributes than the bottom section's
+// fixed height — including, notably, its synthetic Warnings row above —
+// was simply unreachable past the last visible row.
+func (v *PlanView) scrollBottomProps(delta int) {
+	total := len(nodePropsForDisplay(v.selectedNode()))
+	max := core.Max(0, total-v.bottomRect.H)
+	v.propsSt.scroll = core.Clamp(v.propsSt.scroll+delta, 0, max)
+}
+
 // drawDetails renders the Operator Details pane's aligned key/value lines
 // for n, scrolled by scroll rows — shared by the Tree tab's right-hand pane
 // and the Plan tab's "Selected Operator" detail strip.
@@ -173,20 +186,45 @@ func formatCount(f float64) string {
 	return fmt.Sprintf("%.0f", f)
 }
 
+// nodePropsForDisplay returns n's raw attribute list with a synthetic
+// "Warnings" entry prepended when n has any. n.Props is a literal mirror
+// of the plan XML's attributes (decodeWarnings consumes the <Warnings>
+// element into n.Warnings instead, so it never lands in Props on its
+// own) — kept that way since other code relies on Props being exactly
+// what the XML said. This is the bottom Properties section's own display
+// list, built fresh at render/scroll time instead.
+func nodePropsForDisplay(n *showplan.Node) []showplan.KV {
+	if n == nil {
+		return nil
+	}
+	if len(n.Warnings) == 0 {
+		return n.Props
+	}
+	kvs := make([]showplan.KV, 0, len(n.Props)+1)
+	kvs = append(kvs, showplan.KV{Key: "Warnings", Value: strings.Join(n.Warnings, ", ")})
+	return append(kvs, n.Props...)
+}
+
 // drawProperties renders n's full ordered attribute list — the bottom
 // section's "Properties" mode — starting at row scroll.
 func drawProperties(s tcell.Screen, rect core.Rect, n *showplan.Node, scroll int) {
+	pal := theme.Active()
 	bg := theme.StylePanel()
 	core.FillRect(s, rect, ' ', bg)
 	if n == nil || rect.H <= 0 || rect.W <= 0 {
 		return
 	}
+	kvs := nodePropsForDisplay(n)
 	for row := 0; row < rect.H; row++ {
 		idx := scroll + row
-		if idx >= len(n.Props) {
+		if idx >= len(kvs) {
 			break
 		}
-		kv := n.Props[idx]
-		core.DrawTextClipped(s, rect.X+1, rect.Y+row, rect.W-2, bg, kv.Key+" : "+kv.Value)
+		kv := kvs[idx]
+		style := bg
+		if kv.Key == "Warnings" && len(n.Warnings) > 0 {
+			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
+		}
+		core.DrawTextClipped(s, rect.X+1, rect.Y+row, rect.W-2, style, kv.Key+" : "+kv.Value)
 	}
 }

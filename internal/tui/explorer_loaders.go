@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"log"
 	"strings"
 
 	"github.com/radix29/gossms/internal/db"
@@ -90,7 +89,7 @@ func (a *App) fetchChildren(ctx context.Context, node *explorerNode) []*explorer
 	}
 	children, err := loader(loaderCtx{ctx: ctx, sc: sc}, node)
 	if err != nil {
-		log.Printf("fetchChildren [%v]: %v", node.data.Type, err)
+		a.logStatus("fetchChildren [%v]: %v", node.data.Type, err)
 		return []*explorerNode{errExplorerNode(err)}
 	}
 	return children

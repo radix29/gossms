@@ -3,7 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 
 	"github.com/radix29/gossms/internal/config"
@@ -38,7 +37,7 @@ func (a *App) connectServer(opts config.Connection) {
 			// dialog's server-field autocomplete.
 			a.cfg.AddOrUpdate(opts)
 			if err := a.cfg.Save(); err != nil {
-				log.Printf("save config: %v", err)
+				a.logStatus("save config: %v", err)
 			}
 		})
 		a.wakeEventLoop()
@@ -101,11 +100,15 @@ func defaultDatabaseName(sc *db.ServerConn) string {
 func (a *App) disconnectActive() {
 	node := a.explorer.Selected()
 	if node == nil {
+		a.setStatus("Select a connected server in Object Explorer first")
 		return
 	}
-	if sc := resolveConn(node); sc != nil {
-		a.disconnect(sc)
+	sc := resolveConn(node)
+	if sc == nil {
+		a.setStatus("Select a connected server in Object Explorer first")
+		return
 	}
+	a.disconnect(sc)
 }
 
 // disconnect closes sc and removes it from the connection list and the

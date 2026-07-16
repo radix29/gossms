@@ -67,6 +67,8 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 			{Divider: true},
+			{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
 		}
@@ -208,7 +210,9 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
 
 	go func() {
-		dbObj, err := sc.Server.DatabaseByName(dbName)
+		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		defer cancel()
+		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 		if err != nil {
 			a.postEvent(func() { a.setStatus(fmt.Sprintf("Script error: %v", err)) })
 			a.wakeEventLoop()
@@ -220,13 +224,13 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 		var ddl string
 		switch node.data.Type {
 		case NodeTable:
-			ddl, err = scripter.ScriptTable(schema, name)
+			ddl, err = scripter.ScriptTableContext(ctx, schema, name)
 		case NodeView:
-			ddl, err = scripter.ScriptView(schema, name)
+			ddl, err = scripter.ScriptViewContext(ctx, schema, name)
 		case NodeStoredProcedure:
-			ddl, err = scripter.ScriptStoredProcedure(schema, name)
+			ddl, err = scripter.ScriptStoredProcedureContext(ctx, schema, name)
 		case NodeFunction:
-			ddl, err = scripter.ScriptFunction(schema, name)
+			ddl, err = scripter.ScriptFunctionContext(ctx, schema, name)
 		default:
 			ddl = fmt.Sprintf("-- Script %s not implemented for this object type\n", action)
 		}

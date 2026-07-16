@@ -115,6 +115,12 @@ func (v *PlanView) layoutTree() {
 	}
 }
 
+// expensiveCostThreshold is the cost-percentage cutoff, shared by the Plan
+// tab's tiles and the Tree tab's rows, above which an operator is flagged
+// as expensive (❌ badge, red border/text) — matching real SSMS's own
+// "expensive operator" highlight convention.
+const expensiveCostThreshold = 0.80
+
 // nodeCostPct returns n's own cost as a fraction of the current
 // statement's total — 0 if there's no current statement.
 func (v *PlanView) nodeCostPct(n *showplan.Node) float64 {
@@ -195,7 +201,7 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 		switch {
 		case tr.node.ID == v.selectedID:
 			style = theme.StyleSelected()
-		case v.nodeCostPct(tr.node) >= 0.30:
+		case v.nodeCostPct(tr.node) >= expensiveCostThreshold:
 			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Error)
 		case len(tr.node.Warnings) > 0:
 			style = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
@@ -212,7 +218,7 @@ func (v *PlanView) drawTreePane(s tcell.Screen) {
 
 // treeRowText builds one row's text: ancestor continuation bars, this
 // node's own connector, an expand/collapse chevron (only for operators
-// with children), the operator name, cost%, and warning marker.
+// with children), the operator name, cost%, and status/parallelism icons.
 func (v *PlanView) treeRowText(tr treeRow) string {
 	var sb strings.Builder
 	for _, cont := range tr.continuation {
@@ -243,8 +249,14 @@ func (v *PlanView) treeRowText(tr treeRow) string {
 		sb.WriteByte(')')
 	}
 	fmt.Fprintf(&sb, " (%.0f%%)", v.nodeCostPct(tr.node)*100)
-	if len(tr.node.Warnings) > 0 {
+	switch {
+	case v.nodeCostPct(tr.node) >= expensiveCostThreshold:
+		sb.WriteString(" ❌")
+	case len(tr.node.Warnings) > 0:
 		sb.WriteString(" ⚠")
+	}
+	if tr.node.Parallel {
+		sb.WriteString(" ⇄")
 	}
 	if !tr.node.Object.IsZero() {
 		sb.WriteString("  ")
@@ -265,7 +277,14 @@ func (v *PlanView) drawBottomSection(s tcell.Screen) {
 		hs, title = v.summaryHeaderStyleAndText()
 	}
 	core.FillRect(s, v.bottomHeaderRect, ' ', hs)
-	core.DrawTextClipped(s, v.bottomHeaderRect.X+1, v.bottomHeaderRect.Y, v.bottomHeaderRect.W-2, hs, title)
+	text := title
+	if v.bottomMode == bottomProperties {
+		total := len(nodePropsForDisplay(v.selectedNode()))
+		canUp := v.propsSt.scroll > 0
+		canDown := v.propsSt.scroll+v.bottomRect.H < total
+		text = detailsHeaderText(title, v.bottomHeaderRect.W-2, canUp, canDown)
+	}
+	core.DrawTextClipped(s, v.bottomHeaderRect.X+1, v.bottomHeaderRect.Y, v.bottomHeaderRect.W-2, hs, text)
 	switch v.bottomMode {
 	case bottomProperties:
 		drawProperties(s, v.bottomRect, v.selectedNode(), v.propsSt.scroll)
@@ -441,6 +460,10 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			v.scrollDetails(-1)
 			return true
 		}
+		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
+			v.scrollBottomProps(-1)
+			return true
+		}
 	case tcell.WheelDown:
 		if v.treePaneRect.Contains(mx, my) && v.treeSt.scroll < len(v.treeSt.rows)-v.treePaneRect.H {
 			v.treeSt.scroll++
@@ -448,6 +471,10 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		}
 		if v.detailsPaneRect.Contains(mx, my) {
 			v.scrollDetails(1)
+			return true
+		}
+		if v.bottomMode == bottomProperties && v.bottomRect.Contains(mx, my) {
+			v.scrollBottomProps(1)
 			return true
 		}
 	case tcell.ButtonNone:

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
@@ -71,10 +72,18 @@ func (a *App) openQueryFile() {
 
 // closePanelAt removes the panel at index i, closing its dedicated
 // connection first if it's a QueryPanel — every query panel owns its own
-// connection (see connectForQueryPanel), so nothing else references it.
+// connection (see connectForQueryPanel), so nothing else references it. Also
+// cancels an in-flight query/plan fetch, if any — otherwise it keeps running
+// server-side until completion and its postEvent completion closure fires
+// against a panel that's no longer hosted (guarded there via panelHosted).
 func (a *App) closePanelAt(i int) {
-	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok && qp.conn != nil {
-		qp.conn.Close()
+	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
+		if qp.executing && qp.cancel != nil {
+			qp.cancel()
+		}
+		if qp.conn != nil {
+			qp.conn.Close()
+		}
 	}
 	a.panels.RemovePanel(i)
 }
@@ -153,6 +162,43 @@ func (a *App) activeQueryPanel() *QueryPanel {
 		}
 	}
 	return nil
+}
+
+// showEstimatedExecutionPlan runs the toolbar's "Show Estimated Execution
+// Plan" button.
+func (a *App) showEstimatedExecutionPlan() {
+	if qp := a.activeQueryPanel(); qp != nil {
+		qp.ShowEstimatedPlan()
+	} else {
+		a.setStatus("No active query panel")
+	}
+}
+
+// toggleActualExecutionPlan flips whether Execute captures the actual
+// (post-run) execution plan alongside a query's normal results — see
+// App.actualPlanEnabled and QueryPanel.setResultPlan. Rebuilds the toolbar
+// and Query menu so both immediately reflect the new state, mirroring how
+// buildToolbar/buildMenus are populated once at startup (see Run) — nothing
+// else currently mutates either afterward.
+func (a *App) toggleActualExecutionPlan() {
+	a.actualPlanEnabled = !a.actualPlanEnabled
+	a.toolbar.SetButtons(a.buildToolbar())
+	a.menuBar.SetMenus(a.buildMenus())
+	a.layoutAll()
+	state := "off"
+	if a.actualPlanEnabled {
+		state = "on"
+	}
+	a.setStatus("Include Actual Execution Plan: " + state)
+}
+
+// openPlanPanel opens a new detached panel showing plan, titled title —
+// the Execution Plan tab's "[ Expand ]" button's action (see
+// QueryPanel.newPlanView). Every call adds a brand-new panel, same as
+// newQueryPanel; nothing is reused across calls.
+func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
+	a.panels.SetActive(a.panels.AddPanel(NewPlanPanel(title, plan)))
+	a.focusPanels()
 }
 
 // cancelExecutingQuery runs Query > Cancel Executing Query.
@@ -243,6 +289,38 @@ func (a *App) showQueryList() {
 	a.queryListDialog.Show()
 }
 
+// showActivityMonitor runs Tools > Activity Monitor and the toolbar's 📈
+// button, using whichever server the currently selected Object Explorer
+// node belongs to (falling back to the first connection) — same
+// resolution as showServerProperties.
+func (a *App) showActivityMonitor() {
+	var sc *db.ServerConn
+	if node := a.explorer.Selected(); node != nil {
+		sc = resolveConn(node)
+	}
+	if sc == nil {
+		if len(a.connections) == 0 {
+			a.setStatus("Not connected — use File > Connect")
+			return
+		}
+		sc = a.connections[0]
+	}
+	a.showActivityMonitorFor(sc)
+}
+
+// showActivityMonitorFor opens Activity Monitor for a known connection —
+// the shared entry point for the Tools menu/toolbar (via
+// showActivityMonitor, which resolves sc first) and the Object Explorer
+// server node's context menu (which already has sc in hand). Not
+// implemented yet.
+func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.setStatus("Activity Monitor is not yet implemented")
+}
+
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }
 
 func (a *App) showServerProperties() {
@@ -252,6 +330,7 @@ func (a *App) showServerProperties() {
 	}
 	if sc == nil {
 		if len(a.connections) == 0 {
+			a.setStatus("Not connected — use File > Connect")
 			return
 		}
 		sc = a.connections[0]
