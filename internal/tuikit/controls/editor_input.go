@@ -27,6 +27,14 @@ func readOnlySafeKey(ev *tcell.EventKey) bool {
 
 // HandleKey handles keyboard input.
 func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
+	// The completion popup, if open, gets first refusal of list-navigation,
+	// commit, and dismiss keys — see handleCompletionKey's doc comment.
+	// Every other key (typing, Backspace/Delete, arrows that should close
+	// it, ...) falls through to the normal handling below, which calls
+	// updateCompletion at the end to keep the popup in sync.
+	if e.completionOpen && e.handleCompletionKey(ev) {
+		return true
+	}
 	if e.readOnly && !readOnlySafeKey(ev) {
 		return false
 	}
@@ -36,6 +44,22 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	ctrlHeld := mods&tcell.ModCtrl != 0
 	shiftHeld := mods&tcell.ModShift != 0
 	altHeld := mods&tcell.ModAlt != 0
+
+	// typedChar marks a plainly typed character — the only kind of key that
+	// can start a fresh completion session from closed, subject to
+	// canAutoOpenCompletion's word-start gate below. Everything else —
+	// Backspace/Delete, Enter, Tab, undo/redo, cursor movement — only
+	// re-syncs a popup that's already open; deleting or undoing never
+	// summons IntelliSense on its own.
+	typedChar := false
+	switch ev.Key() {
+	case tcell.KeyEnter, tcell.KeyBackspace, tcell.KeyBackspace2, tcell.KeyDelete,
+		tcell.KeyTab, tcell.KeyCtrlZ, tcell.KeyCtrlY:
+	default:
+		if r := core.EvRune(ev); r != 0 && !ctrlHeld && !altHeld {
+			typedChar = true
+		}
+	}
 
 	isArrowKey := false
 	isMovementKey := false
@@ -219,12 +243,15 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			dropSelection = false
 			break
 		}
-		// Ctrl+Space is the keyboard equivalent of right-clicking the
-		// editor — opens the same Cut/Copy/Paste context menu as
-		// OnRightClick's mouse path, positioned at the text cursor instead
-		// of a click position.
+		// Ctrl+Space is SSMS's IntelliSense trigger when a completion
+		// provider is installed (the SQL query editor); otherwise it's the
+		// keyboard equivalent of right-clicking the editor — opens the same
+		// Cut/Copy/Paste context menu as OnRightClick's mouse path,
+		// positioned at the text cursor instead of a click position.
 		if ctrlHeld && r == ' ' {
-			if e.OnRightClick != nil {
+			if e.completionProvider != nil {
+				e.triggerCompletionExplicit()
+			} else if e.OnRightClick != nil {
 				x, y := e.cursorScreenPos()
 				e.OnRightClick(x, y)
 			}
@@ -259,11 +286,25 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.desiredCol = e.cursorCol
 	}
 	e.ensureCursorVisible()
+	// A typed character may only pop the popup open fresh (from closed)
+	// when the cursor sits at the end of a word being typed that starts
+	// with a letter or '[' — see canAutoOpenCompletion. While the popup is
+	// already open, every key that reaches here re-syncs it regardless.
+	if e.completionOpen || (typedChar && e.canAutoOpenCompletion()) {
+		e.updateCompletion()
+	}
 	return true
 }
 
 // HandleMouse handles mouse events.
 func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
+	// Same reasoning as the completionOpen check at the top of HandleKey:
+	// the popup floats independently of the editor's own rect, so it must
+	// get first refusal of every mouse event before any position-based
+	// routing below gets a chance to misinterpret a click meant for it.
+	if e.completionOpen && e.handleCompletionMouse(ev) {
+		return true
+	}
 	// Always process a release first, regardless of position, so a drag
 	// that ends outside the editor's bounds (e.g. dragged into the
 	// results pane below) still terminates cleanly instead of leaving

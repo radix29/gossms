@@ -17,6 +17,7 @@ const (
 	zoneIconStyle optionsZone = iota
 	zoneMaxCellLen
 	zoneMaxResultRows
+	zoneIntelliSense
 	zoneOptButtons
 )
 
@@ -29,6 +30,7 @@ type OptionsDialog struct {
 	rbIconStyle    *widgets.RadioBox
 	fMaxCellLen    *widgets.InputField
 	fMaxResultRows *widgets.InputField
+	cbIntelliSense *widgets.CheckBox
 
 	zone     optionsZone
 	btnFocus int // 0=OK 1=Cancel
@@ -37,7 +39,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 50, 15)
+	d.InitModal(app.screen, "Options", 50, 17)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -48,6 +50,7 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 
 	d.fMaxCellLen = widgets.NewInputField("Max cell length (Query Results):", 5, false)
 	d.fMaxResultRows = widgets.NewInputField("Max result rows (Query Results):", 8, false)
+	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	return d
 }
 
@@ -63,6 +66,7 @@ func (d *OptionsDialog) Show() {
 	}
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
 	d.fMaxResultRows.SetValue(strconv.Itoa(d.app.cfg.MaxResultRows))
+	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setZone(zoneIconStyle)
 	d.ModalDialog.Show()
 }
@@ -72,6 +76,7 @@ func (d *OptionsDialog) setZone(z optionsZone) {
 	d.rbIconStyle.Focus(z == zoneIconStyle)
 	d.fMaxCellLen.Focus(z == zoneMaxCellLen)
 	d.fMaxResultRows.Focus(z == zoneMaxResultRows)
+	d.cbIntelliSense.Focus(z == zoneIntelliSense)
 }
 
 // Draw renders the dialog.
@@ -89,6 +94,9 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 
 	d.fMaxResultRows.SetBounds(inner.X+1, inner.Y+8)
 	d.fMaxResultRows.Draw(s)
+
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+10)
+	d.cbIntelliSense.Draw(s)
 
 	d.DrawSeparator(s)
 	activeIdx := -1
@@ -129,9 +137,24 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		}
 		switch ev.Key() {
 		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneOptButtons)
+			d.setZone(zoneIntelliSense)
 		case tcell.KeyBacktab, tcell.KeyUp:
 			d.setZone(zoneMaxCellLen)
+		case tcell.KeyEnter:
+			d.doButton()
+		default:
+			return false
+		}
+		return true
+	case zoneIntelliSense:
+		if d.cbIntelliSense.HandleKey(ev) {
+			return true
+		}
+		switch ev.Key() {
+		case tcell.KeyTab, tcell.KeyDown:
+			d.setZone(zoneOptButtons)
+		case tcell.KeyBacktab, tcell.KeyUp:
+			d.setZone(zoneMaxResultRows)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -146,10 +169,10 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 			if d.btnFocus > 0 {
 				d.btnFocus--
 			} else {
-				d.setZone(zoneMaxResultRows)
+				d.setZone(zoneIntelliSense)
 			}
 		case tcell.KeyUp:
-			d.setZone(zoneMaxResultRows)
+			d.setZone(zoneIntelliSense)
 		case tcell.KeyEnter:
 			d.doButton()
 		}
@@ -194,6 +217,11 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.setZone(zoneIconStyle)
 		return true
 	}
+	if mx, my := ev.Position(); my == d.cbIntelliSense.RectY() && mx >= d.cbIntelliSense.RectX() && mx < d.cbIntelliSense.RectX()+3 {
+		d.cbIntelliSense.SetChecked(!d.cbIntelliSense.Checked())
+		d.setZone(zoneIntelliSense)
+		return true
+	}
 	return true
 }
 
@@ -225,6 +253,7 @@ func (d *OptionsDialog) apply() {
 	} else {
 		d.app.cfg.MaxResultRows = config.DefaultMaxResultRows
 	}
+	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
 	if err := d.app.cfg.Save(); err != nil {
 		d.app.logStatus("save config: %v", err)
 	}

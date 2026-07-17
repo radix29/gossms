@@ -30,6 +30,7 @@ func (a *App) connectServer(opts config.Connection) {
 			a.explorer.AddRoot(sc.Label(), sc)
 			info := sc.Server.Info()
 			a.setStatus(fmt.Sprintf("Connected to %s  |  %s %s", opts.Server, info.Edition, info.ProductVersion))
+			a.ensureSysCompletionInventory(sc)
 
 			// Only a successful connection is worth remembering — save it
 			// (auto-named "server,user,database", most-recently-used,
@@ -79,6 +80,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 			qp.conn = newConn
 			qp.database = resolvedDB
 			a.setStatus(fmt.Sprintf("Connected to %s", opts.Server))
+			a.ensureSysCompletionInventory(newConn)
 		})
 		a.wakeEventLoop()
 	}()

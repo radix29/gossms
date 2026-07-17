@@ -152,6 +152,11 @@ type Config struct {
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
 	MaxResultRows int          `json:"max_result_rows"`
+	// IntelliSenseDisabled turns off the SQL editor's autocomplete. Stored
+	// inverted (rather than an "IntelliSenseEnabled" flag) so Go's bool
+	// zero value keeps the feature on by default for both a fresh install
+	// and a config.json written before this option existed.
+	IntelliSenseDisabled bool `json:"intellisense_disabled"`
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell displays
@@ -249,10 +254,11 @@ func (c *Config) Save() error {
 		return err
 	}
 	onDisk := Config{
-		Connections:   make([]Connection, len(c.Connections)),
-		IconStyle:     c.IconStyle,
-		MaxCellLength: c.MaxCellLength,
-		MaxResultRows: c.MaxResultRows,
+		Connections:          make([]Connection, len(c.Connections)),
+		IconStyle:            c.IconStyle,
+		MaxCellLength:        c.MaxCellLength,
+		MaxResultRows:        c.MaxResultRows,
+		IntelliSenseDisabled: c.IntelliSenseDisabled,
 	}
 	for i, conn := range c.Connections {
 		enc, err := encryptPassword(key, conn.Password)
@@ -272,7 +278,7 @@ func (c *Config) Save() error {
 
 // MaxSavedConnections caps how many recent connections Config keeps. The
 // Connect dialog persists a successful connection here automatically.
-const MaxSavedConnections = 15
+const MaxSavedConnections = 30
 
 // AddOrUpdate saves a successful connection. Its Name is overwritten with
 // the auto-generated ConnectionName(Server, Port, Database, User), which

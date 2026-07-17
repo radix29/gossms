@@ -64,6 +64,8 @@ type App struct {
 	optionsDialog       *OptionsDialog
 	tasksDialog         *TasksDialog
 	confirmDialog       *dialogs.ConfirmDialog
+	backupDialog        *BackupDialog
+	restoreDialog       *RestoreDialog
 
 	// allDialogs lists every dialog exactly once, for syncDialogStack to
 	// scan; dialogStack is the live z-order (see dialog_stack.go).
@@ -77,6 +79,22 @@ type App struct {
 
 	connections []*db.ServerConn
 	cfg         *config.Config
+
+	// completionInventories caches one metadata snapshot per server+login+
+	// database (see completionInventoryKey), shared by every query panel
+	// connected to that same database — see completion_inventory.go. Only
+	// ever read/written from the UI goroutine (direct calls, or inside a
+	// postEvent closure), same convention as every other App field.
+	completionInventories map[string]*completionInventory
+
+	// sysCompletionInventories caches one "sys" schema catalog-view
+	// snapshot per server+login (see sysCompletionInventoryKey) — unlike
+	// completionInventories this is server-scoped, not per-database, since
+	// sys.tables/sys.columns/... are defined identically in every database
+	// on a server and only need loading once per connection. Populated
+	// proactively at connect time (see connectServer/connectForQueryPanel)
+	// rather than lazily on first keystroke.
+	sysCompletionInventories map[string]*completionInventory
 
 	// Focus: "explorer" | "panels"
 	focus string
@@ -231,6 +249,8 @@ func (a *App) buildUI() {
 	a.optionsDialog = NewOptionsDialog(a)
 	a.tasksDialog = NewTasksDialog(a)
 	a.confirmDialog = dialogs.NewConfirmDialog(a.screen)
+	a.backupDialog = NewBackupDialog(a)
+	a.restoreDialog = NewRestoreDialog(a)
 
 	// Registration order only matters as a tie-break for dialogs that
 	// somehow became visible in the same tick (today, never — each Show()
@@ -239,7 +259,7 @@ func (a *App) buildUI() {
 		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
-		a.confirmDialog,
+		a.confirmDialog, a.backupDialog, a.restoreDialog,
 	}
 }
 

@@ -114,6 +114,26 @@ type Editor struct {
 
 	undoStack []editorState
 	redoStack []editorState
+
+	// Completion: see editor_completion.go. completionProvider is nil for
+	// every Editor except the SQL query editor, so every other Editor's
+	// behavior (Ctrl+Space opening OnRightClick's menu, no popup ever
+	// appearing) is completely unaffected.
+	completionProvider CompletionProvider
+	completionOpen     bool
+	completionItems    []CompletionItem
+	completionSel      int
+	completionScroll   int
+	completionFrom     int // column where the replaced span starts; valid only while completionOpen
+
+	// completionSuppressed, set by Escape, stops the popup reopening at the
+	// same token the user just dismissed it at — completionSuppressRow/Col
+	// pin that token's start position; moving off it (row change, or the
+	// token's own start column shifting) clears the suppression, same as
+	// SSMS's "Escape closes IntelliSense for this word" behavior.
+	completionSuppressed  bool
+	completionSuppressRow int
+	completionSuppressCol int
 }
 
 // NewEditor creates an Editor. Pass a Highlighter or nil.
@@ -161,8 +181,14 @@ func (e *Editor) SetReadOnly(v bool) { e.readOnly = v }
 // SetBounds positions the editor.
 func (e *Editor) SetBounds(x, y, w, h int) { e.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 
-// SetActive sets focus state.
-func (e *Editor) SetActive(v bool) { e.active = v }
+// SetActive sets focus state. Losing focus closes the completion popup, if
+// open — it would otherwise linger on screen while keys route elsewhere.
+func (e *Editor) SetActive(v bool) {
+	if !v && e.completionOpen {
+		e.closeCompletion()
+	}
+	e.active = v
+}
 
 // Bounds returns the editor's current screen rect, set by SetBounds — lets
 // a caller outside the package hit-test a screen coordinate against the
@@ -201,6 +227,8 @@ func (e *Editor) SetText(text string) {
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
 	e.selecting, e.selBlock, e.mouseDragging = false, false, false
 	e.undoStack, e.redoStack = nil, nil
+	e.closeCompletion()
+	e.completionSuppressed = false
 }
 
 func (e *Editor) clampCursor() {

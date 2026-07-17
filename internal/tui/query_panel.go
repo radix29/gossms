@@ -118,6 +118,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	p.resultsText = controls.NewEditor(nil)
 	p.resultsText.SetReadOnly(true)
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
+	p.editor.SetCompletionProvider(p.newCompletionProvider())
 	return p
 }
 
@@ -239,6 +240,9 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 		p.results.Draw(s)
 		p.results.DrawOverlay(s)
 	}
+	// Drawn last, after the results grid's own overlay — see the "overlays
+	// drawn last" rule in tuikit/README.md.
+	p.editor.DrawOverlay(s)
 }
 
 // connInfoText builds the bar above the editor: "server | user | db",
@@ -310,8 +314,23 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		return p.results.HandleKey(ev)
 	}
+	// Same reasoning, for the SQL editor's own completion popup: it floats
+	// over the editor's rect independently of resultsFocused, so it must
+	// get every key before F5/Ctrl+PgUp/splitter routing below gets a
+	// chance to misroute one meant for it.
+	if p.editor.CompletionActive() {
+		return p.editor.HandleKey(ev)
+	}
 	if ev.Key() == tcell.KeyF5 {
 		p.Execute()
+		return true
+	}
+	// Ctrl+R reloads this panel's autocomplete inventory — only while the
+	// editor holds focus, matching Ctrl+Up/Down's identical resultsFocused
+	// gating just below, so it doesn't collide with a future results-grid
+	// binding on the same key.
+	if ev.Key() == tcell.KeyCtrlR && !p.resultsFocused {
+		p.refreshCompletionCache()
 		return true
 	}
 	// Ctrl+Enter selects the T-SQL statement at the cursor (see
@@ -390,6 +409,10 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.results.HandleMouse(ev)
+	}
+	// Same reasoning, for the SQL editor's own completion popup.
+	if p.editor.CompletionActive() {
+		return p.editor.HandleMouse(ev)
 	}
 	mx, my := ev.Position()
 	// Always forward release events — regardless of position — to the

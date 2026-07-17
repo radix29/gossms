@@ -210,6 +210,15 @@ func (a *App) cancelExecutingQuery() {
 	}
 }
 
+// refreshCompletionCache runs Query > Refresh IntelliSense Cache.
+func (a *App) refreshCompletionCache() {
+	if qp := a.activeQueryPanel(); qp != nil {
+		qp.refreshCompletionCache()
+	} else {
+		a.setStatus("No active query panel")
+	}
+}
+
 // setResultsMode runs Query > Results To Grid/Text/File.
 func (a *App) setResultsMode(mode ResultsMode) {
 	if qp := a.activeQueryPanel(); qp != nil {
@@ -395,6 +404,28 @@ func (a *App) showNewLoginDialog(sc *db.ServerConn) {
 		return
 	}
 	a.newLoginDialog.show(sc)
+}
+
+// showBackupDialog opens Back Up Database for a known connection — the
+// shared entry point for the Object Explorer context menu on both an
+// individual database node and the "Databases" folder node (dbName "").
+func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.backupDialog.show(sc, dbName)
+}
+
+// showRestoreDialog opens Restore Database for a known connection — the
+// shared entry point for the Object Explorer context menu on both an
+// individual database node and the "Databases" folder node (dbName "").
+func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.restoreDialog.show(sc, dbName)
 }
 
 // showLoginProperties opens Login Properties for a login on sc.

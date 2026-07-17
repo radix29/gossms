@@ -20,9 +20,10 @@ type focusable interface {
 
 // maxServerMatches caps how many rows of the server-field autocomplete
 // list are drawn/hit-tested at once. Matches beyond this many simply
-// aren't shown — the list doesn't scroll — which is fine given
-// config.MaxSavedConnections is only 15 to begin with.
-const maxServerMatches = 6
+// aren't shown — the list doesn't scroll — so with up to
+// config.MaxSavedConnections (30) saved entries, typing a longer prefix
+// is how the rest are reached.
+const maxServerMatches = 10
 
 // ConnectDialog is the "Connect to Server" modal dialog. It embeds
 // dialogs.ModalDialog (focus trap, overlay, button row) and composes
@@ -69,7 +70,9 @@ type ConnectDialog struct {
 	// Server-field autocomplete: saved connections (config.Config,
 	// most-recently-used and capped — see config.MaxSavedConnections)
 	// whose Server matches what's currently typed in fServer, shown as a
-	// list beneath it once at least 4 characters have been typed. A
+	// list beneath it once at least 4 characters have been typed — or
+	// immediately on a mouse click in the field, whatever its content
+	// (see openMatchesForClick). A
 	// connection is saved automatically, auto-named
 	// "server,port,database,user", the moment it actually succeeds (see
 	// App.connectServer).
@@ -201,6 +204,22 @@ func (d *ConnectDialog) updateMatches() {
 		return
 	}
 	d.matches = d.app.cfg.MatchByServer(typed)
+	if len(d.matches) == 0 {
+		d.matchOpen = false
+		return
+	}
+	if d.matchSel < 0 || d.matchSel >= len(d.matches) {
+		d.matchSel = 0
+	}
+	d.matchOpen = true
+}
+
+// openMatchesForClick opens the saved-connections list on a mouse click in
+// the server field, regardless of how much has been typed — an empty field
+// lists every saved connection. Typing afterwards re-filters through
+// updateMatches, which restores its usual 4-character threshold.
+func (d *ConnectDialog) openMatchesForClick() {
+	d.matches = d.app.cfg.MatchByServer(d.fServer.Value())
 	if len(d.matches) == 0 {
 		d.matchOpen = false
 		return
@@ -539,7 +558,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			// point, not just switch focus to the field.
 			f.HandleMouse(ev)
 			if f == d.fServer {
-				d.updateMatches()
+				d.openMatchesForClick()
 			}
 			return true
 		}

@@ -78,6 +78,9 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 			{Divider: true},
+			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
+			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
+			{Divider: true},
 			refresh,
 		}
 	case NodeDatabase:
@@ -88,7 +91,8 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "Back Up Database...", Action: func() { a.backupDatabase(sc, node.data.DBName) }},
+			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
 			{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
 			{Divider: true},
 			refresh,
@@ -248,30 +252,6 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 		})
 		a.wakeEventLoop()
 	}()
-}
-
-// backupDatabase prompts for a backup device path, generates the BACKUP
-// DATABASE statement for it, and opens that in a new query — the same
-// "generate a script, let the user review and run it" pattern as Execute
-// Stored Procedure and Rebuild All Indexes, rather than running the backup
-// itself.
-func (a *App) backupDatabase(sc *db.ServerConn, dbName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
-		return
-	}
-	a.fileDialog.ShowSave("Back Up Database", dbName+".bak", func(path string) {
-		stmt, err := gosmo.BuildBackupStatement(gosmo.BackupOptions{
-			Database: dbName,
-			Devices:  []string{path},
-			Init:     true,
-		})
-		if err != nil {
-			a.setStatus(fmt.Sprintf("Backup script error: %v", err))
-			return
-		}
-		a.openQueryWithText(sc, dbName, stmt)
-	})
 }
 
 // toggleDatabaseOffline takes node's database offline, or brings it back

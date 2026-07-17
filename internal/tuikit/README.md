@@ -22,7 +22,8 @@ tuikit/
 │             — one file per group: menu.go, toolbar.go, treeview.go, datagrid.go, listbox.go;
 │               Editor is split across editor.go (state/options/undo),
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
-│               editor_input.go, editor_actions.go, sql_highlighter.go,
+│               editor_input.go, editor_actions.go, editor_completion.go
+│               (generic completion/IntelliSense popup), sql_highlighter.go,
 │               sql_statement.go (T-SQL statement/batch boundary detection)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go, sheet.go
@@ -116,6 +117,19 @@ background-to-UI handoff in `internal/tui`. A `Form`'s rows unify under a
 small `Row` interface plus optional capability interfaces (`Editable`,
 `Copyable`, `KeyHandler`, …) — see `propsheet/common.go` — so adding a new
 row kind never requires touching `Form` itself.
+
+**Overlays are drawn last and get first refusal of input.** A widget whose
+open state floats independently of its own `SetBounds` rect — `DropDown`'s
+open list, `DataGrid`'s right-click menu/"Show Value" popup, `Editor`'s
+completion popup (`CompletionActive()`/`DrawOverlay`, `editor_completion.go`)
+— exposes a `DrawOverlay(s tcell.Screen)` that the host must call *after*
+every other widget sharing that screen space has drawn, so nothing paints
+over it. The same widget must also get exclusive first refusal of every
+key/mouse event while that state is open, checked at the top of the host's
+own `HandleKey`/`HandleMouse` (see `DataGrid.OverlayActive()` and
+`QueryPanel.HandleKey`/`HandleMouse` in `internal/tui`) — otherwise a click
+or keypress meant for the floating overlay gets routed by position/focus to
+whatever widget normally owns those screen coordinates instead.
 
 **Theming is global but swappable.** `theme.Active()` returns the live
 palette; call `theme.SetPalette(p)` once at start-up to reskin every widget

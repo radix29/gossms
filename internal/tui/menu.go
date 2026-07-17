@@ -59,6 +59,8 @@ func (a *App) buildMenus() []controls.Menu {
 			}},
 			{Label: "Cancel Executing Query", Action: func() { a.cancelExecutingQuery() }},
 			{Divider: true},
+			{Label: "Refresh IntelliSense Cache", Shortcut: "Ctrl+R", Action: func() { a.refreshCompletionCache() }},
+			{Divider: true},
 			{Label: "Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() }},
 			{Label: actualExecutionPlanMenuLabel(a.actualPlanEnabled), Action: func() { a.toggleActualExecutionPlan() }},
 			{Divider: true},

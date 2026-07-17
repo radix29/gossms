@@ -1,12 +1,30 @@
+use the statement boundary detection to implement the selection of the current statement in the Execute at cursor action (select current statement)
 
-backup dialog
+menu bar: when a menu is open do not auto close it if the mouse hover outside the menu. only if the mouse is outside and there is a click event.
+when the menu is open no other control gets mouse events or can get focus
 
-restore database dialog
+under the node views, Stored Procedures and Functions add a floder called System Views, System Procedures and System Functions
+these are the objectcs from the sys schema already loaded centrally for the intellisense (they are the same for all databases)
+add them to the tree only when first time the system nodes are openened.
+for a menu selection to happen with the mouse, the menu item must be selected and the mouse should be on it. if the menu item is selected but the mouse click outside the menu it will close the menu.
 
---------- later ------
+make the option dialow wider to not have text spilling out
 
-- syntax autocomplete -> Ctrl+R reload
+- Activity monitor
+    - tabbed: dashboard history , dasboard, sp_whoisactive (all/active), sp_block
+    - history -> options, default 5 min, refresh 3 sec, scale display 
+    - counters in memory only
+    - mockup from S1
 
+reports
+    - server
+    - database
+        - top tables
+        - disk usage
 
----
+- Availability Groups stuff
+
+Obejct Explorer Detail
+    add a lower pane with summary
+    add async info loading
 

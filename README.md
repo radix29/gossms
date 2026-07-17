@@ -29,6 +29,7 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 - **Resizable splitters** — drag or keyboard-resize the explorer width and editor/results split
 - **Toolbar** — icon-only quick-action row sharing the menu bar's line, right-aligned (New Query, Execute, Execute Selection, Stop Execution); hover shows a tooltip styled like SSMS's query-status bar
 - **SQL editor** — syntax highlighting (keywords, strings, comments, numbers), optional word-wrap, line duplicate/move/indent/comment, word-aware navigation and deletion, undo/redo, and `Ctrl+Enter` T-SQL statement selection (splits on `;` and `GO` batches, skipping comments/strings)
+- **IntelliSense (autocomplete)** — suggests schemas, tables, views, and columns as you type (opens once a word starts — a letter or `[` — so a bare space, `.`, digit, or blank line never pops it open on its own), or on demand with `Ctrl+Space`; understands `schema.`/`alias.` dot-qualifiers, unterminated `[bracket` identifiers, and FROM-clause alias resolution against the whole current statement, not just what's typed before the cursor — so `SELECT |` above a `FROM Customers c` typed later in the same statement still resolves. Statement boundaries are recognised at `;`, a bare `GO` line, and a new top-level `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`MERGE`/`WITH` — so several ad hoc queries stacked in the editor with no `;` between them (SSMS never requires one) don't leak each other's columns, while `UNION`/`EXCEPT`/`INTERSECT`, a CTE's own main query, and `INSERT ... SELECT` are correctly kept as one statement. The table/column inventory is fetched once per opened database (not persisted), shared by every query panel on that database, and reloaded with `Ctrl+R`; the `sys` schema's catalog views (`sys.tables`, `sys.columns`, `sys.objects`, ...) are fetched once per server connection instead, since they're identical in every database (`Ctrl+R` retries that one only if its load failed). Enabled by default — toggle it off in Tools > Options
 - **Results grid status bar** — SSMS-style bar under each results tab showing elapsed time, selected row/column, and row count (live-updating while a query executes)
 - **Modal dialogs** — Connect (with a read-only connection-string preview), Options, Help, Key Diagnostics (shows tcell's decoded Key/Modifiers/rune for every keypress — useful for diagnosing a terminal that isn't delivering an expected shortcut), Background Tasks, About
 - **Server / Database / Login Properties** — multi-page, editable SSMS-style properties dialogs (page list on the left, OK/Cancel/Apply/Script Changes below); each page loads asynchronously the first time it's shown, F5 refreshes the current page, edited values are cached only while the dialog is open, any value can be copied to the clipboard, and Script Changes opens the SQL for the pending edits in a new query window instead of running it
@@ -101,6 +102,10 @@ On first launch the screen is empty. Press **Ctrl+Shift+O** or use **File → Co
 | `Ctrl+Down` | Shrink query editor (grow results) |
 | `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab (result grids and Messages); tabs are also clickable |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo in editor |
+| `Ctrl+Space` (query editor) | Open/force IntelliSense suggestions — auto-completes immediately if there's exactly one match. Elsewhere (or in an editor with no completion provider), opens the Cut/Copy/Paste context menu instead |
+| `Tab` / `Enter` (suggestions open) | Accept the selected suggestion |
+| `Escape` (suggestions open) | Dismiss — won't reopen for that word until the cursor moves off it |
+| `Ctrl+R` (query editor) | Refresh the cached table/column list for the panel's database |
 | `Shift+Arrow` | Select text (F5 then runs only the selection). `Shift+Up`/`Shift+Down` extend from the cursor to the end/start of the line and on to the same column on the next/previous line — Notepad++/Scintilla-style, remembering that column across shorter in-between lines |
 | Click + drag | Select text with the mouse (editor and dialog fields) |
 | Mouse wheel (results grid) | Scroll rows. `Shift+wheel`, or a wheel/trackpad that reports `WheelLeft`/`WheelRight` directly, scrolls columns instead |
@@ -156,9 +161,11 @@ gossms/
 │       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
 │       ├── query_panel.go        # editor + results (tabbed grids + Messages), implements layout.Panel
+│       ├── completion_inventory.go # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
+│       ├── completion_provider.go  # SQL-aware tokenizer/context resolver feeding the editor's completion popup
 │       ├── detail_browser.go     # object details, implements layout.Panel
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
-│       ├── options_dialog.go     # Tools > Options — Object Explorer icon style (RadioBox), saved to config.json
+│       ├── options_dialog.go     # Tools > Options — icon style, cell/row limits, IntelliSense on/off, saved to config.json
 │       ├── path_prompt_dialog.go # File path entry (File > Save/Save As, Query > Results To File)
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
 │       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel
@@ -211,10 +218,12 @@ list below it; arrow keys + Enter or a click fills the whole form from the
 selected one.
 
 Tools > Options sets the Object Explorer tree's icon style — Emoji
-(default), Symbols, Portable, or None — saved to the config file's
-`icon_style` field and applied immediately.
+(default), Symbols, Portable, or None — the query results grid's max cell
+length and max result rows, and whether the SQL editor's IntelliSense is
+enabled (default: on) — all saved to the config file and applied
+immediately.
 
-Connection profiles and the icon style live in:
+Connection profiles and these settings live in:
 
 - **Linux/macOS**: `~/.config/gossms/config.json`  
 - **Windows**: `%APPDATA%\gossms\config.json`
