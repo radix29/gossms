@@ -39,6 +39,14 @@ type TreeView struct {
 	scroll int
 	active bool
 
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold over the same row — mirrors MenuBar's/DataGrid's/Editor's field
+	// of the same name and purpose. Without it, tcell's all-motion mouse
+	// tracking resends Buttons()==Button1 on every cursor motion while the
+	// button stays down, so a click that so much as twitches re-fires the
+	// click handling on every resent event instead of once per press.
+	mouseDragging bool
+
 	// Callbacks — set by the application layer
 	OnExpand     func(nodeID TreeNodeID) // called when a node is expanded
 	OnCollapse   func(nodeID TreeNodeID) // called when a node is collapsed
@@ -232,6 +240,9 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 // HandleMouse handles mouse events.
 func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	if ev.Buttons() == tcell.ButtonNone {
+		tv.mouseDragging = false
+	}
 	if !tv.rect.Contains(mx, my) {
 		return false
 	}
@@ -246,11 +257,26 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.Button1:
-		if tv.sel == idx {
-			tv.toggleExpand()
-		} else {
+		if tv.mouseDragging {
+			// Still the same physical press (or the same drag toward the
+			// query editor, see explorer_drag.go) — do not re-select or
+			// re-toggle on every resent motion event.
+			return true
+		}
+		tv.mouseDragging = true
+		node := &tv.nodes[idx]
+		// Only the "[+]"/"[-]" expander glyph toggles expand/collapse — a
+		// click anywhere else on the row just (re)selects it. This is what
+		// lets a node be click-dragged into the query editor without also
+		// flipping its expand state: dragging always starts on the label,
+		// never the expander glyph.
+		onExpander := node.HasKids && mx >= inner.X+node.Depth*2 && mx < inner.X+node.Depth*2+4
+		if tv.sel != idx {
 			tv.sel = idx
 			tv.fireSelect()
+		}
+		if onExpander {
+			tv.toggleExpand()
 		}
 		return true
 	case tcell.Button2: // tcell v3: Button2 is Secondary (right-click); Button3 is Middle.

@@ -39,7 +39,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 50, 17)
+	d.InitModal(app.screen, "Options", 60, 17)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))

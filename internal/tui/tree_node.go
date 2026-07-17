@@ -40,10 +40,13 @@ const (
 	NodeStatistic
 	NodeViews
 	NodeView
+	NodeSystemViews
 	NodeStoredProcedures
 	NodeStoredProcedure
+	NodeSystemProcedures
 	NodeFunctions
 	NodeFunction
+	NodeSystemFunctions
 	NodeSecurity
 	NodeLogins
 	NodeLogin
@@ -124,8 +127,9 @@ func primaryKeyIcon(style config.IconStyle) rune {
 func isContainerNode(t NodeType) bool {
 	switch t {
 	case NodeDatabases, NodeSystemDatabases, NodeTables, NodeColumns, NodeKeys, NodeIndexes,
-		NodeStatistics, NodeViews,
-		NodeStoredProcedures, NodeFunctions, NodeSecurity, NodeLogins,
+		NodeStatistics, NodeViews, NodeSystemViews,
+		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
+		NodeSecurity, NodeLogins,
 		NodeServerRoles, NodeManagement, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks:

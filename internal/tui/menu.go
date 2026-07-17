@@ -81,6 +81,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Help", Shortcut: "F1", Action: func() { a.helpDialog.Show() }},
 			{Label: "Key Diagnostics", Action: func() { a.keyDiagDialog.Show() }},
 			{Divider: true},
+			{Label: "Check for Updates", Action: func() { a.checkForUpdates() }},
 			{Label: "About goSSMS", Action: func() { a.showAbout() }},
 		}},
 	}

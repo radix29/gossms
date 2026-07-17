@@ -197,26 +197,23 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		a.contextMenu.HandleMouse(ev)
 		return
 	}
+	if a.menuBar.IsOpen() {
+		// A dropdown gets absolute first refusal on every mouse event, on
+		// any row — nothing else (toolbar, explorer, panels, splitter) may
+		// react or take focus until it closes. MenuBar itself decides
+		// whether the event closes it (only an outside click does).
+		a.menuBar.HandleMouse(ev)
+		return
+	}
 	if my == 0 {
 		// Toolbar occupies the right-aligned end of the same row MenuBar
 		// draws into; MenuBar is still given every event first so its own
 		// hover state clears when the mouse moves off a label into the
 		// toolbar's region (see MenuBar.HandleMouse, which is a no-op for
-		// columns outside its labels). If the toolbar then claims the
-		// event, any dropdown MenuBar left open is closed — clicking the
-		// toolbar has the same "click elsewhere closes the menu" effect a
-		// click anywhere else in the app already has (line 207 below).
+		// columns outside its labels).
 		a.menuBar.HandleMouse(ev)
-		if a.toolbar.HandleMouse(ev) && a.menuBar.IsOpen() {
-			a.menuBar.Close()
-		}
+		a.toolbar.HandleMouse(ev)
 		return
-	}
-	if a.menuBar.IsOpen() {
-		if a.menuBar.HandleMouse(ev) {
-			return
-		}
-		a.menuBar.Close()
 	}
 
 	if my == h-1 {
@@ -243,6 +240,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 			a.dragNode = nil
 		case tcell.Button1:
 			// swallow motion; nothing else may react while a drop is pending
+			a.dragX, a.dragY = mx, my
 		default:
 			a.dragNode = nil
 		}
@@ -264,6 +262,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		if ev.Buttons() == tcell.Button1 {
 			if n := a.explorer.Selected(); n != nil && isDraggableNode(n.data.Type) {
 				a.dragNode = n
+				a.dragX, a.dragY = mx, my
 			}
 		}
 		return

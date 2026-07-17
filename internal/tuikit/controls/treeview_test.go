@@ -13,6 +13,80 @@ func newTestTreeView() *TreeView {
 	return tv
 }
 
+// newTestTreeViewExpandable returns a tree with one collapsed, expandable
+// node. SetNodes clamps sel to a valid index, so this single node starts out
+// selected — matching the common real-world case a click-drag begins from
+// (an already-selected row).
+func newTestTreeViewExpandable() *TreeView {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)
+	tv.SetNodes([]TreeNode{{ID: 1, Label: "root", HasKids: true}})
+	return tv
+}
+
+// TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle pins the fix for a real
+// bug: dragging an already-selected object (e.g. a table) from Object
+// Explorer into the query editor toggled its expand state as a side effect,
+// because the old code toggled on any click landing on the already-selected
+// row, regardless of column. Only the "[+]"/"[-]" expander glyph should
+// toggle — dragging always starts from the label, never the glyph.
+func TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	if tv.nodes[0].Expanded {
+		t.Fatalf("test setup: node starts expanded, want collapsed")
+	}
+
+	handled := tv.HandleMouse(tcell.NewEventMouse(10, 1, tcell.Button1, tcell.ModNone))
+	if !handled {
+		t.Fatalf("HandleMouse() = false, want true")
+	}
+	if tv.nodes[0].Expanded {
+		t.Fatalf("clicking the label of an already-selected row toggled expand; want it to only select/arm a drag")
+	}
+}
+
+func TestTreeViewClickOnExpanderTogglesRow(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+
+	// Column 1 falls inside the "[+] " glyph for a depth-0 row (inner.X=1).
+	handled := tv.HandleMouse(tcell.NewEventMouse(1, 1, tcell.Button1, tcell.ModNone))
+	if !handled {
+		t.Fatalf("HandleMouse() = false, want true")
+	}
+	if !tv.nodes[0].Expanded {
+		t.Fatalf("clicking the expander glyph did not toggle expand")
+	}
+}
+
+// TestTreeViewHeldButtonOverExpanderDoesNotReToggle pins the fix for the
+// open-then-immediately-close flicker: tcell's all-motion mouse tracking
+// resends Buttons()==Button1 on every cursor motion while the button stays
+// down, so a click on the expander that so much as twitches before release
+// used to re-toggle the node right back closed.
+func TestTreeViewHeldButtonOverExpanderDoesNotReToggle(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+
+	tv.HandleMouse(tcell.NewEventMouse(1, 1, tcell.Button1, tcell.ModNone))
+	if !tv.nodes[0].Expanded {
+		t.Fatalf("press on expander did not expand the node")
+	}
+
+	handled := tv.HandleMouse(tcell.NewEventMouse(2, 1, tcell.Button1, tcell.ModNone))
+	if !handled {
+		t.Fatalf("HandleMouse() = false, want true while still over the row")
+	}
+	if !tv.nodes[0].Expanded {
+		t.Fatalf("node collapsed on a held-button move over the same expander; want it to stay expanded")
+	}
+
+	// Release, then a genuine new press, does toggle it again.
+	tv.HandleMouse(tcell.NewEventMouse(2, 1, tcell.ButtonNone, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(2, 1, tcell.Button1, tcell.ModNone))
+	if tv.nodes[0].Expanded {
+		t.Fatalf("a fresh press after release did not collapse the node")
+	}
+}
+
 // TestTreeViewRightClickUsesButton2 pins tcell v3's mouse button mapping:
 // Button2 is Secondary (right-click), Button3 is Middle. A prior regression
 // used Button3 for right-click, matching tcell v1/v2's convention instead,

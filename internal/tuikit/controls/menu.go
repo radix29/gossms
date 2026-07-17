@@ -35,6 +35,15 @@ type MenuBar struct {
 	openMenu     int // -1 = closed
 	hoverMenu    int
 	selectedItem int // index within menus[openMenu].Items currently highlighted
+
+	// mouseDragging distinguishes a fresh Button1 press (toggle the header)
+	// from a continued hold over the same header — mirrors DataGrid's and
+	// Editor's field of the same name and purpose. Without it, the mouse
+	// tracking mode gossms enables (core.NewScreen's EnableMouse()) resends
+	// Buttons()==Button1 on every motion while the button stays down, so a
+	// click that so much as twitches before release re-toggles the header
+	// it just opened, right back closed — a visible open/close flicker.
+	mouseDragging bool
 }
 
 // NewMenuBar creates a MenuBar.
@@ -207,25 +216,15 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 }
 
 // HandleMouse processes mouse events for the bar and any open dropdown.
+// While a dropdown is open, every mouse event is swallowed (return true) so
+// nothing underneath can react or take focus; a hover outside the dropdown
+// never closes it, only a click does.
 func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	wasOpen := mb.openMenu >= 0
 
-	if mb.openMenu >= 0 && my != mb.rect.Y {
-		if mb.dropdownContains(mx, my) {
-			// Track hover so keyboard (Up/Down) and mouse stay in sync.
-			if itemIdx := my - (mb.rect.Y + 2); itemIdx >= 0 && itemIdx < len(mb.menus[mb.openMenu].Items) {
-				if !mb.menus[mb.openMenu].Items[itemIdx].Divider {
-					mb.selectedItem = itemIdx
-				}
-			}
-			if ev.Buttons() == tcell.Button1 {
-				mb.handleDropdownClick(my)
-				return true
-			}
-			return true
-		}
-		mb.openMenu = -1
-		return false
+	if ev.Buttons() == tcell.ButtonNone {
+		mb.mouseDragging = false
 	}
 
 	if my == mb.rect.Y {
@@ -236,19 +235,43 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 			labelW := core.DisplayWidth(label)
 			if mx >= col && mx < col+labelW {
 				mb.hoverMenu = i
-				if ev.Buttons() == tcell.Button1 {
+				if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
+					mb.mouseDragging = true
 					if mb.openMenu == i {
 						mb.openMenu = -1
 					} else {
 						mb.openMenu = i
 						mb.selectedItem = firstSelectableItem(m.Items)
 					}
-					return true
 				}
-				break
+				return true
 			}
 			col += labelW
 		}
+		// On the bar row but off every label (e.g. over the toolbar): a
+		// click still dismisses an open menu, but the event itself is
+		// swallowed either way.
+		if wasOpen && ev.Buttons() == tcell.Button1 {
+			mb.openMenu = -1
+		}
+		return wasOpen
+	}
+
+	if wasOpen {
+		if mb.dropdownContains(mx, my) {
+			// Track hover so keyboard (Up/Down) and mouse stay in sync.
+			if itemIdx := my - (mb.rect.Y + 2); itemIdx >= 0 && itemIdx < len(mb.menus[mb.openMenu].Items) {
+				if !mb.menus[mb.openMenu].Items[itemIdx].Divider {
+					mb.selectedItem = itemIdx
+				}
+			}
+			if ev.Buttons() == tcell.Button1 {
+				mb.handleDropdownClick(my)
+			}
+		} else if ev.Buttons() == tcell.Button1 {
+			mb.openMenu = -1
+		}
+		return true
 	}
 	return false
 }

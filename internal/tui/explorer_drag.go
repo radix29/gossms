@@ -1,6 +1,12 @@
 package tui
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/theme"
+)
 
 // isDraggableNode reports whether t is a concrete SQL Server object that can
 // be dragged from Object Explorer into a query editor — every node except
@@ -66,4 +72,21 @@ func (a *App) dropExplorerNode(mx, my int) {
 	qp.editor.Paste(text)
 	a.focusPanels()
 	a.setStatus(fmt.Sprintf("Inserted %s", text))
+}
+
+// drawDragGhost renders the dragged node's quoted identifier next to the
+// mouse cursor while a drag is in progress, so it looks like the object's
+// text is being picked up and carried toward the drop target.
+func (a *App) drawDragGhost(s tcell.Screen, screenW int) {
+	if a.dragNode == nil {
+		return
+	}
+	text := explorerDragText(a.dragNode)
+	x := a.dragX + 1
+	if x >= screenW {
+		x = core.Max(0, a.dragX-core.DisplayWidth(text))
+	}
+	if maxW := screenW - x; maxW > 0 {
+		core.DrawTextClipped(s, x, a.dragY, maxW, theme.StyleSelected(), text)
+	}
 }

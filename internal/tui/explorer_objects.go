@@ -148,34 +148,97 @@ func loadStatisticsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 		})
 }
 
+// loadViewsChildren returns a database's user views, plus a "System Views"
+// folder listed first — matching the "System Databases" precedent in
+// loadDatabasesChildren. The System Views folder's own contents (the
+// sys-schema catalog views, identical in every database on the server) are
+// only fetched once it's actually expanded — see loadSystemViewsChildren.
 func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.View, error) { return dbObj.ViewsContext(l.ctx) },
+	views, err := listChildren(func() ([]*gosmo.View, error) { return dbObj.ViewsContext(l.ctx) },
+		func(v *gosmo.View) *explorerNode {
+			return l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
+		})
+	if err != nil {
+		return nil, err
+	}
+	sysFolder := l.node("System Views", NodeSystemViews, "", "", node.data.DBName)
+	return append([]*explorerNode{sysFolder}, views...), nil
+}
+
+// loadSystemViewsChildren returns the "sys" schema's own catalog views —
+// see loadViewsChildren.
+func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.View, error) { return dbObj.SystemViewsContext(l.ctx) },
 		func(v *gosmo.View) *explorerNode {
 			return l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
 		})
 }
 
+// loadStoredProceduresChildren returns a database's user stored procedures,
+// plus a "System Procedures" folder listed first — see loadViewsChildren.
 func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.StoredProcedure, error) { return dbObj.StoredProceduresContext(l.ctx) },
+	procs, err := listChildren(func() ([]*gosmo.StoredProcedure, error) { return dbObj.StoredProceduresContext(l.ctx) },
+		func(p *gosmo.StoredProcedure) *explorerNode {
+			return l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
+		})
+	if err != nil {
+		return nil, err
+	}
+	sysFolder := l.node("System Procedures", NodeSystemProcedures, "", "", node.data.DBName)
+	return append([]*explorerNode{sysFolder}, procs...), nil
+}
+
+// loadSystemProceduresChildren returns the "sys" schema's own stored
+// procedures — see loadViewsChildren.
+func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.StoredProcedure, error) { return dbObj.SystemStoredProceduresContext(l.ctx) },
 		func(p *gosmo.StoredProcedure) *explorerNode {
 			return l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
 		})
 }
 
+// loadFunctionsChildren returns a database's user functions, plus a
+// "System Functions" folder listed first — see loadViewsChildren.
 func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return dbObj.UserDefinedFunctionsContext(l.ctx) },
+	funcs, err := listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return dbObj.UserDefinedFunctionsContext(l.ctx) },
+		func(f *gosmo.UserDefinedFunction) *explorerNode {
+			return l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+		})
+	if err != nil {
+		return nil, err
+	}
+	sysFolder := l.node("System Functions", NodeSystemFunctions, "", "", node.data.DBName)
+	return append([]*explorerNode{sysFolder}, funcs...), nil
+}
+
+// loadSystemFunctionsChildren returns the "sys" schema's own functions —
+// see loadViewsChildren.
+func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return dbObj.SystemFunctionsContext(l.ctx) },
 		func(f *gosmo.UserDefinedFunction) *explorerNode {
 			return l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
 		})

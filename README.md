@@ -95,7 +95,7 @@ On first launch the screen is empty. Press **Ctrl+Shift+O** or use **File → Co
 | `Tab` | Switch focus explorer ↔ panels |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle to next / previous panel |
 | `F5` | Execute query — runs only the selected text if there is a selection, otherwise the whole query. Also refreshes the selected Object Explorer node, or the current page of an open Properties dialog. |
-| `Ctrl+Enter` | Select the T-SQL statement at the cursor (separated by `;` or a `GO` batch separator) — does not execute it. Only reported as distinct from plain `Enter` on terminals with a modern keyboard protocol; elsewhere use Query > Execute at Cursor instead. |
+| `Ctrl+Enter` | Select the T-SQL statement at the cursor — boundaries are `;`, a `GO` batch separator, and a top-level `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`MERGE`/`WITH` (so stacked ad hoc statements with no `;` between them still split correctly; `UNION`/`EXCEPT`/`INTERSECT` chains, a CTE's own main query, and `INSERT ... SELECT` stay one statement) — does not execute it. Only reported as distinct from plain `Enter` on terminals with a modern keyboard protocol; elsewhere use Query > Execute at Cursor instead. |
 | `Ctrl+Left` | Narrow object explorer |
 | `Ctrl+Right` | Widen object explorer |
 | `Ctrl+Up` | Grow query editor (shrink results) |

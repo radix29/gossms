@@ -37,8 +37,12 @@ type App struct {
 	// dragNode is the Object Explorer node currently being dragged toward
 	// the query editor (armed by a Button1 press over a draggable node,
 	// cleared on release) — nil when no drag is in progress. See
-	// handleMouse/dropExplorerNode.
+	// handleMouse/dropExplorerNode. dragX/dragY track the mouse position
+	// while a drag is in progress, so draw can render a ghost of the
+	// dragged object's text following the cursor.
 	dragNode *explorerNode
+	dragX    int
+	dragY    int
 
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
@@ -54,6 +58,7 @@ type App struct {
 	connectDialog       *ConnectDialog
 	helpDialog          *HelpDialog
 	keyDiagDialog       *KeyDiagnosticsDialog
+	updateDialog        *UpdateDialog
 	statusHistoryDialog *StatusHistoryDialog
 	propsDialog         *PropertiesDialog
 	propDialog          *PropDialog
@@ -230,6 +235,7 @@ func (a *App) buildUI() {
 	a.connectDialog = NewConnectDialog(a)
 	a.helpDialog = NewHelpDialog(a)
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
+	a.updateDialog = NewUpdateDialog(a)
 	a.statusHistoryDialog = NewStatusHistoryDialog(a)
 	a.propsDialog = NewPropertiesDialog(a)
 	a.propDialog = NewPropDialog(a)
@@ -256,7 +262,7 @@ func (a *App) buildUI() {
 	// somehow became visible in the same tick (today, never — each Show()
 	// is one synchronous call from one key/menu action); see syncDialogStack.
 	a.allDialogs = []Dialog{
-		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
+		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
 		a.confirmDialog, a.backupDialog, a.restoreDialog,
@@ -399,6 +405,7 @@ func (a *App) draw() {
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
 	a.contextMenu.Draw(s)
+	a.drawDragGhost(s, w)
 
 	// Modal dialogs — highest z-order; dialogStack is kept current by
 	// syncDialogStack (see Run), so drawing it bottom-to-top here is
