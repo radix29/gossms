@@ -44,6 +44,12 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 - **Object Dependencies** — View Dependencies on a table/view/procedure lists what it depends on and what depends on it
 - **Cross-platform** — Linux, macOS, Windows (pure Go, no CGO)
 
+## Future Plans
+
+- **Activity Monitor** — SSMS's live view of current sessions, blocking chains, and resource waits
+- **Reports** — a handful of the most useful built-in SSMS reports, not the full set
+- **Always On Availability Groups (AAG)** — viewing and managing availability group topology and health
+
 ## Prerequisites
 
 - Go 1.26 or later

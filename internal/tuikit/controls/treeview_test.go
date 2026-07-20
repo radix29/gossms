@@ -24,6 +24,46 @@ func newTestTreeViewExpandable() *TreeView {
 	return tv
 }
 
+// TestSelectIDSelectsAndFiresOnSelect confirms SelectID both moves the
+// visual selection to the requested node and invokes OnSelect — unlike
+// SetNodes, whose sel-clamping alone doesn't mean "select this node" and
+// fires nothing. This is what a caller that adds a node programmatically
+// (e.g. ObjectExplorer.AddRoot for a newly connected server) needs so the
+// rest of the app reacts the same way a manual click/arrow-key selection
+// would.
+func TestSelectIDSelectsAndFiresOnSelect(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)
+	tv.SetNodes([]TreeNode{{ID: 1, Label: "a"}, {ID: 2, Label: "b"}, {ID: 3, Label: "c"}})
+
+	var fired TreeNodeID
+	calls := 0
+	tv.OnSelect = func(id TreeNodeID) { fired = id; calls++ }
+
+	tv.SelectID(3)
+
+	if tv.sel != 2 {
+		t.Errorf("sel after SelectID(3) = %d, want 2 (the index of ID 3)", tv.sel)
+	}
+	if calls != 1 || fired != 3 {
+		t.Errorf("OnSelect calls = %d, fired = %d; want exactly one call with ID 3", calls, fired)
+	}
+}
+
+// TestSelectIDUnknownIDIsNoOp confirms an ID absent from the current node
+// list leaves selection and OnSelect untouched, rather than e.g. clamping
+// to some arbitrary index.
+func TestSelectIDUnknownIDIsNoOp(t *testing.T) {
+	tv := newTestTreeView()
+	tv.OnSelect = func(TreeNodeID) { t.Error("OnSelect fired for an ID not present in the tree") }
+
+	tv.SelectID(999)
+
+	if tv.sel != 0 {
+		t.Errorf("sel after SelectID(unknown) = %d, want unchanged 0", tv.sel)
+	}
+}
+
 // TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle pins the fix for a real
 // bug: dragging an already-selected object (e.g. a table) from Object
 // Explorer into the query editor toggled its expand state as a side effect,

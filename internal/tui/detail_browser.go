@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/db"
+	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -21,16 +21,38 @@ type DetailBrowser struct {
 
 	// seq guards against a slow, superseded fetch (see ShowNodeDetails)
 	// overwriting the grid with results for a node that's no longer
-	// selected — incremented on every call, and the async result is only
-	// applied if it's still the most recent one requested.
+	// selected — incremented on every call, and any async result (partial
+	// or final) is only applied if it's still the most recent one
+	// requested.
 	seq int
+
+	// currentNode is the node ShowNodeDetails last displayed — tracked so
+	// Invalidate can tell whether the node it's invalidating needs an
+	// immediate refetch (it's what's on screen right now) or can just be
+	// dropped from cache for next time it's selected.
+	currentNode *explorerNode
+
+	// cache holds the completed result of the last successful fetch per
+	// node, so reselecting a node already shown doesn't re-hit the network —
+	// only a Refresh action (see Invalidate) or a fresh node (a folder
+	// reload replaces its children with new *explorerNode values, which
+	// naturally miss the cache) forces a refetch. Never populated with
+	// partial/in-progress results, only the final one.
+	cache map[*explorerNode]*detailResult
+}
+
+// detailResult is a cached or in-flight-result payload for one node.
+type detailResult struct {
+	cols []string
+	rows [][]string
+	err  error
 }
 
 // NewDetailBrowser creates a detail browser.
 func NewDetailBrowser(title string) *DetailBrowser {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
-	return new(DetailBrowser{title: title, grid: grid})
+	return new(DetailBrowser{title: title, grid: grid, cache: make(map[*explorerNode]*detailResult)})
 }
 
 // Title returns the panel title (Panel interface).
@@ -51,16 +73,27 @@ func (db *DetailBrowser) SetActive(v bool) { db.active = v }
 func (db *DetailBrowser) Closable() bool { return false }
 
 // ShowNodeDetails loads detail data for the given explorer node,
-// asynchronously — every case in fetchNodeDetails is a real network round
-// trip, and this fires on every tree-selection change, so running it
-// inline on the UI goroutine would freeze the whole app on each arrow-key
-// press against a slow or remote server.
+// asynchronously — every fetch here is a real network round trip, and this
+// fires on every tree-selection change, so running it inline on the UI
+// goroutine would freeze the whole app on each arrow-key press against a
+// slow or remote server. A node already shown once is served from cache
+// instead of refetching — see Invalidate for how a Refresh action forces a
+// fresh copy. Nil-safe like Invalidate, so a minimal test App built without
+// a DetailBrowser (see newTestApp in app_connections_test.go) can still
+// exercise ObjectExplorer/onNodeSelected paths that now call this on every
+// selection change (including AddRoot selecting a newly connected server's
+// root) without wiring one up.
 func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
+	if db == nil {
+		return
+	}
 	db.seq++
 	seq := db.seq
+	db.currentNode = node
 
 	if node == nil {
 		db.title = "Object Explorer Details"
+		db.grid.SetFillLastColumn(false)
 		db.grid.SetData([]string{"Name", "Type"}, nil)
 		return
 	}
@@ -69,64 +102,127 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	sc := resolveConn(node)
 
 	if !app.isConnected(sc) {
+		db.grid.SetFillLastColumn(true)
 		db.grid.SetData([]string{"Property", "Value"}, [][]string{{"Status", "Not connected"}})
 		return
 	}
-	db.grid.SetStatus("Loading...")
 
-	go func() {
-		cols, rows, err := fetchNodeDetails(sc, node)
-		app.postEvent(func() {
-			if seq != db.seq {
-				return // a newer selection superseded this fetch
-			}
-			if err != nil {
-				db.grid.SetError(err)
-				return
-			}
-			db.grid.SetData(cols, rows)
-		})
-		app.wakeEventLoop()
-	}()
+	if cached, ok := db.cache[node]; ok {
+		db.applyResult(cached)
+		return
+	}
+
+	db.grid.SetStatus("Loading...")
+	db.fetch(app, sc, node, seq)
+}
+
+// applyResult renders a completed (cached or freshly finished) result.
+func (db *DetailBrowser) applyResult(r *detailResult) {
+	if r.err != nil {
+		db.grid.SetError(r.err)
+		return
+	}
+	db.grid.SetFillLastColumn(isPropertyValueColumns(r.cols))
+	db.grid.SetData(r.cols, r.rows)
+}
+
+// isPropertyValueColumns reports whether cols is the Property/Value pair
+// shape used for a single-record detail view (Server, Database, and the
+// generic default node) rather than a list of many similar rows (the
+// Databases/Logins folders, Tables, Views, …) — used to decide whether the
+// grid's Value column should stretch to fill the panel instead of just
+// fitting its own content.
+func isPropertyValueColumns(cols []string) bool {
+	return len(cols) == 2 && cols[0] == "Property" && cols[1] == "Value"
+}
+
+// Invalidate drops any cached detail data for node — called by every
+// Refresh action (F5, right-click Refresh, the Databases/Logins folder
+// reload helpers) so a forced refresh reaches the Detail Browser too, not
+// just the Object Explorer tree. If node is the one currently on screen,
+// it's also refetched immediately rather than waiting for a reselect.
+// Nil-safe like dbconn.ServerConn.Close, so call sites (and tests that build an
+// App without a DetailBrowser) don't need their own nil check.
+func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
+	if db == nil {
+		return
+	}
+	delete(db.cache, node)
+	if db.currentNode == node {
+		db.ShowNodeDetails(app, node)
+	}
+}
+
+// fetch dispatches to a per-node-type loader. Node types with more than one
+// round trip worth fetching (NodeServer, NodeDatabases, NodeLogins) show
+// their fast fields first and backfill the rest progressively; everything
+// else goes through the single-shot fetchNodeDetails.
+func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	switch node.data.Type {
+	case NodeServer:
+		db.loadServerDetails(app, sc, node, seq)
+	case NodeDatabases:
+		db.loadDatabasesFolderDetails(app, sc, node, seq)
+	case NodeLogins:
+		db.loadLoginsDetails(app, sc, node, seq)
+	case NodeTables:
+		db.loadTablesFolderDetails(app, sc, node, seq)
+	default:
+		go func() {
+			cols, rows, err := fetchNodeDetails(sc, node)
+			db.postFinal(app, node, seq, cols, rows, err)
+		}()
+	}
+}
+
+// postPartial displays cols/rows immediately if node/seq is still current,
+// without caching — used by progressive loaders for their fast-arriving
+// first stage, before slower fields have landed.
+func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]string) {
+	app.postEvent(func() {
+		if seq != db.seq {
+			return
+		}
+		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
+		db.grid.SetData(cols, rows)
+	})
+	app.wakeEventLoop()
+}
+
+// postFinal caches the completed result for node and displays it if still
+// current. Called exactly once per fetch, whether single-shot or the last
+// stage of a progressive loader.
+func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
+	result := &detailResult{cols: cols, rows: rows, err: err}
+	app.postEvent(func() {
+		db.cache[node] = result
+		if seq != db.seq {
+			return
+		}
+		db.applyResult(result)
+	})
+	app.wakeEventLoop()
+}
+
+// cacheOnly caches the completed result for node without touching the
+// grid — used by a progressive loader's last stage (see
+// loadDatabasesFolderDetails) once every row has already been updated in
+// place: calling postFinal there instead would call SetData and reset the
+// user's scroll position right after the progressive fill worked to avoid
+// exactly that.
+func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, cols []string, rows [][]string, err error) {
+	app.postEvent(func() {
+		db.cache[node] = &detailResult{cols: cols, rows: rows, err: err}
+	})
+	app.wakeEventLoop()
 }
 
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called
 // from a background goroutine (see ShowNodeDetails) — it must not touch
 // DetailBrowser or any other UI state directly, only return data for the
 // caller to apply via postEvent.
-func fetchNodeDetails(sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	switch node.data.Type {
-	case NodeServer:
-		info := sc.Server.Info()
-		return []string{"Property", "Value"}, [][]string{
-			{"Server", sc.Opts.Server},
-			{"Version", info.ProductVersion},
-			{"Edition", info.Edition},
-			{"OS Version", info.OSVersion},
-			{"Collation", info.Collation},
-			{"Data Path", info.DefaultDataPath},
-			{"Log Path", info.DefaultLogPath},
-		}, nil
-
-	case NodeDatabases:
-		dbs, err := sc.Server.Databases()
-		if err != nil {
-			return nil, nil, err
-		}
-		// Size is omitted from this list view (it would need a separate
-		// SpaceUsed() query per database). See NodeDatabase below for the
-		// single-database properties view, which includes it. System
-		// databases are excluded here — they're listed under the System
-		// Databases node instead, mirroring the tree.
-		rows := make([][]string, 0, len(dbs))
-		for _, d := range dbs {
-			if d.IsSystem() {
-				continue
-			}
-			rows = append(rows, []string{d.Name(), d.State(), string(d.RecoveryModel())})
-		}
-		return []string{"Name", "State", "Recovery"}, rows, nil
-
 	case NodeSystemDatabases:
 		dbs, err := sc.Server.Databases()
 		if err != nil {
@@ -145,9 +241,10 @@ func fetchNodeDetails(sc *db.ServerConn, node *explorerNode) ([]string, [][]stri
 		if err != nil {
 			return nil, nil, err
 		}
-		sizeStr := "N/A"
+		sizeStr, dataStr, logStr, availLogStr := "N/A", "N/A", "N/A", "N/A"
 		if space, err := d.SpaceUsed(); err == nil {
-			sizeStr = fmt.Sprintf("%.2f", space.TotalMB)
+			sizeStr, dataStr, logStr = formatMB(space.TotalMB), formatMB(space.DataMB), formatMB(space.LogMB)
+			availLogStr = formatMB(space.AvailLogMB)
 		}
 		return []string{"Property", "Value"}, [][]string{
 			{"Name", d.Name()},
@@ -158,22 +255,10 @@ func fetchNodeDetails(sc *db.ServerConn, node *explorerNode) ([]string, [][]stri
 			{"Create Date", formatSQLDate(d.CreateDate())},
 			{"Read Only", fmt.Sprintf("%v", d.IsReadOnly())},
 			{"Size (MB)", sizeStr},
+			{"Data (MB)", dataStr},
+			{"Log (MB)", logStr},
+			{"Avail. Log (MB)", availLogStr},
 		}, nil
-
-	case NodeTables:
-		dbObj, err := sc.Server.DatabaseByName(node.data.DBName)
-		if err != nil {
-			return nil, nil, err
-		}
-		tables, err := dbObj.Tables()
-		if err != nil {
-			return nil, nil, err
-		}
-		rows := make([][]string, 0, len(tables))
-		for _, t := range tables {
-			rows = append(rows, []string{t.Schema + "." + t.Name, "User Table"})
-		}
-		return []string{"Name", "Type"}, rows, nil
 
 	case NodeViews:
 		dbObj, err := sc.Server.DatabaseByName(node.data.DBName)

@@ -87,7 +87,12 @@ func (oe *ObjectExplorer) Draw(s tcell.Screen)                   { oe.view.Draw(
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
 
-// AddRoot adds a new server root node.
+// AddRoot adds a new server root node, selecting it — so Object Explorer
+// Details populates immediately after a successful connect, the same as if
+// the user had clicked the new node themselves, rather than sitting empty
+// until the next manual selection change (SetNodes' tv.sel clamp keeps the
+// tree's *previous* selection in bounds, it doesn't mean "select this new
+// node" — see controls.TreeView.SelectID).
 func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode {
 	n := &explorerNode{
 		id:    oe.allocID(),
@@ -97,6 +102,7 @@ func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode
 	oe.roots = append(oe.roots, n)
 	oe.byID[n.id] = n
 	oe.rebuild()
+	oe.view.SelectID(n.id)
 	return n
 }
 
@@ -130,6 +136,7 @@ func (oe *ObjectExplorer) RefreshDatabasesFolder(sc *db.ServerConn) {
 				if c.expanded {
 					oe.app.loadChildren(c)
 				}
+				oe.app.detailBrowser.Invalidate(oe.app, c)
 				return
 			}
 		}
@@ -158,6 +165,7 @@ func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
 					if gc.expanded {
 						oe.app.loadChildren(gc)
 					}
+					oe.app.detailBrowser.Invalidate(oe.app, gc)
 					return
 				}
 			}
@@ -200,6 +208,7 @@ func (oe *ObjectExplorer) RefreshSelected() {
 	if n.expanded {
 		oe.app.loadChildren(n)
 	}
+	oe.app.detailBrowser.Invalidate(oe.app, n)
 }
 
 // SetChildren installs the loaded children for a node (called from the

@@ -74,6 +74,23 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	tv.sel = core.Clamp(tv.sel, 0, core.Max(0, len(nodes)-1))
 }
 
+// SelectID selects the node with the given ID, if present, and fires
+// OnSelect — unlike SetNodes, whose tv.sel clamp is a pure bounds check with
+// no notion of "this is the node the caller means." Use this when a node is
+// added or replaced programmatically (e.g. a newly connected server's root)
+// and should end up both visually selected and reported through OnSelect,
+// the same as a manual click or arrow-key selection would.
+func (tv *TreeView) SelectID(id TreeNodeID) {
+	for i, n := range tv.nodes {
+		if n.ID == id {
+			tv.sel = i
+			tv.ensureVisible(tv.rect.Inner(1).H)
+			tv.fireSelect()
+			return
+		}
+	}
+}
+
 // SelectedNode returns the currently highlighted node, or nil.
 func (tv *TreeView) SelectedNode() *TreeNode {
 	if tv.sel >= 0 && tv.sel < len(tv.nodes) {

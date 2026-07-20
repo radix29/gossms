@@ -26,6 +26,25 @@ func addTestConn(a *App, server string) *db.ServerConn {
 	return sc
 }
 
+// AddRoot must select the node it just added — not merely add it and leave
+// the tree's previous selection (or its zero-value default) in place.
+// Object Explorer Details is driven entirely by TreeView's OnSelect
+// callback (see onNodeSelected), so a server that's added without
+// selecting it never populates its own detail view until the user manually
+// clicks away and back — the exact bug this pins down.
+func TestAddRootSelectsNewNode(t *testing.T) {
+	a := newTestApp()
+	sc1 := addTestConn(a, "server-one")
+	if got := a.explorer.Selected(); got == nil || got.data.conn != sc1 {
+		t.Fatalf("Selected() after first AddRoot = %+v, want the new root (sc1)", got)
+	}
+
+	sc2 := addTestConn(a, "server-two")
+	if got := a.explorer.Selected(); got == nil || got.data.conn != sc2 {
+		t.Fatalf("Selected() after second AddRoot = %+v, want the newest root (sc2), not the first", got)
+	}
+}
+
 // Disconnecting one connection must not re-bind query panels that point at
 // another: with index-based references, removing connection 0 shifted every
 // later index so a panel bound to connection 1 silently targeted the wrong
@@ -65,8 +84,10 @@ func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 }
 
 // disconnectActive resolves the connection from the selected tree node.
-// After SetNodes the TreeView selection defaults to the first row, i.e.
-// the first server root.
+// AddRoot selects the newly connected server's own root (see its doc
+// comment) — matching SSMS, where connecting a server always focuses it in
+// Object Explorer — so after connecting sc1 then sc2, sc2's root is what's
+// selected and disconnectActive acts on it.
 func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -74,11 +95,11 @@ func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 
 	a.disconnectActive()
 
-	if len(a.connections) != 1 || a.connections[0] != sc2 {
-		t.Fatalf("connections after disconnectActive = %v, want [sc2]", a.connections)
+	if len(a.connections) != 1 || a.connections[0] != sc1 {
+		t.Fatalf("connections after disconnectActive = %v, want [sc1]", a.connections)
 	}
-	if a.isConnected(sc1) {
-		t.Errorf("sc1 still reported connected after disconnectActive")
+	if a.isConnected(sc2) {
+		t.Errorf("sc2 still reported connected after disconnectActive")
 	}
 }
 

@@ -158,6 +158,22 @@ func TestIsShowplanResultSet(t *testing.T) {
 	}
 }
 
+// TestAddNotice confirms a notice lands as a non-error Message, unlike
+// addError — HasErrors must stay false after only notices are added.
+func TestAddNotice(t *testing.T) {
+	r := &Result{}
+	r.addNotice("(1 row affected)")
+	if len(r.Messages) != 1 || r.Messages[0].Text != "(1 row affected)" {
+		t.Fatalf("messages = %+v, want single '(1 row affected)'", r.Messages)
+	}
+	if r.Messages[0].IsError {
+		t.Error("addNotice message must not be IsError")
+	}
+	if r.HasErrors() {
+		t.Error("HasErrors = true after only a notice, want false")
+	}
+}
+
 type errFake string
 
 func (e errFake) Error() string { return string(e) }

@@ -97,6 +97,71 @@ func TestComputeColWidthsSamplesOnlyFirstRows(t *testing.T) {
 	}
 }
 
+// TestRefreshColumnWidthsRecomputesWithoutResettingSelection confirms
+// RefreshColumnWidths picks up cells mutated in place (the pattern a
+// progressive background loader uses — see internal/tui's DetailBrowser)
+// without resetting scroll position or selection the way calling SetData
+// again would.
+func TestRefreshColumnWidthsRecomputesWithoutResettingSelection(t *testing.T) {
+	g := newTestDataGrid()
+	rows := [][]string{{"a"}, {"b"}, {"c"}}
+	g.SetData([]string{"Col"}, rows)
+	g.SetSelectedRow(2)
+
+	if g.colWidths[0] != 6 {
+		t.Fatalf("colWidths[0] before mutation = %d, want 6 (clamped minimum)", g.colWidths[0])
+	}
+
+	rows[1][0] = strings.Repeat("w", 100)
+	g.RefreshColumnWidths()
+
+	if g.colWidths[0] != 40 {
+		t.Errorf("colWidths[0] after RefreshColumnWidths = %d, want 40 (clamped maximum)", g.colWidths[0])
+	}
+	if g.selRow != 2 {
+		t.Errorf("selRow after RefreshColumnWidths = %d, want 2 (unchanged)", g.selRow)
+	}
+}
+
+// TestSetFillLastColumnGrowsToFillRemainingWidth confirms a two-column
+// Property/Value-shaped grid stretches its narrow, content-clamped Value
+// column out to the rect's edge once fillLastColumn is enabled, and shrinks
+// back to its content width when disabled again.
+func TestSetFillLastColumnGrowsToFillRemainingWidth(t *testing.T) {
+	g := newTestDataGrid() // 40 wide
+	g.SetData([]string{"Property", "Value"}, [][]string{{"Name", "x"}})
+
+	contentWidth := g.colWidths[1]
+	if contentWidth >= 30 {
+		t.Fatalf("colWidths[1] = %d before fill, want small enough to leave room to grow", contentWidth)
+	}
+
+	g.SetFillLastColumn(true)
+	want := g.rect.W - g.colWidths[0]
+	if g.colWidths[1] != want {
+		t.Errorf("colWidths[1] after SetFillLastColumn(true) = %d, want %d (rect width minus col 0)", g.colWidths[1], want)
+	}
+
+	g.SetFillLastColumn(false)
+	if g.colWidths[1] != contentWidth {
+		t.Errorf("colWidths[1] after SetFillLastColumn(false) = %d, want back to %d", g.colWidths[1], contentWidth)
+	}
+}
+
+// TestSetFillLastColumnNoOpWhenContentAlreadyWider confirms fillLastColumn
+// never shrinks a column whose sampled content already exceeds the rect's
+// remaining width — it only grows, never clamps down.
+func TestSetFillLastColumnNoOpWhenContentAlreadyWider(t *testing.T) {
+	g := newTestDataGrid() // 40 wide
+	g.SetData([]string{"Property", "Value"}, [][]string{{"Name", strings.Repeat("w", 100)}})
+	contentWidth := g.colWidths[1] // clamped to defaultMaxCellWidth (40)
+
+	g.SetFillLastColumn(true)
+	if g.colWidths[1] != contentWidth {
+		t.Errorf("colWidths[1] = %d, want unchanged %d (already wider than available space)", g.colWidths[1], contentWidth)
+	}
+}
+
 // TestDataGridSetErrorUsesRowSource confirms SetError's single error row
 // goes through the same RowSource plumbing rather than a raw slice field.
 func TestDataGridSetErrorUsesRowSource(t *testing.T) {

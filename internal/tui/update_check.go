@@ -113,3 +113,27 @@ func parseVersionParts(v string) [3]int {
 	}
 	return parts
 }
+
+// isReleaseVersion reports whether v looks like a parseable
+// "vMAJOR.MINOR.PATCH"-style release tag, as opposed to version.Version's
+// own "(devel)" placeholder for a plain `git clone && go build`/`go run`
+// with no ldflags (see internal/version's doc comment for exactly when
+// "(devel)" applies). Used to avoid comparing an unresolved dev build
+// against a real release and reporting a misleading "new version
+// available"/"newer than latest" claim — every numeric segment parses to 0
+// for "(devel)", which compareVersions would otherwise read as v0.0.0.
+func isReleaseVersion(v string) bool {
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return false
+	}
+	for _, seg := range strings.SplitN(v, ".", 3) {
+		if _, err := strconv.Atoi(seg); err != nil {
+			return false
+		}
+	}
+	return true
+}

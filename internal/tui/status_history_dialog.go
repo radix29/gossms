@@ -30,6 +30,7 @@ type StatusHistoryDialog struct {
 	dialogs.ModalDialog
 	lines  []string
 	editor *controls.Editor
+	dirty  bool // lines changed since the editor's text was last rebuilt
 }
 
 // NewStatusHistoryDialog creates the status history dialog.
@@ -42,23 +43,49 @@ func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 	return d
 }
 
-// Record prepends a timestamped line and refreshes the editor's content.
-// Newest-first: controls.Editor.SetText always resets scroll/cursor to
-// (0,0) and has no "scroll to end" API, so newest-first is what makes the
-// most recent message visible on open without any extra plumbing.
+// Record prepends a timestamped line to the history. Newest-first:
+// controls.Editor.SetText always resets scroll/cursor to (0,0) and has no
+// "scroll to end" API, so newest-first is what makes the most recent
+// message visible on open without any extra plumbing.
 //
-// d.editor is nil for a zero-value StatusHistoryDialog{} — the
-// construction style this dialog's own tests use — so the SetText call is
-// guarded to keep Record() usable without a real screen/editor.
+// setStatus/logStatus call this for every status-bar message, so the
+// editor's text (a full strings.Join + SetText of up to
+// maxStatusHistoryLines lines) is only rebuilt immediately while the dialog
+// is actually visible; otherwise the rebuild is deferred to the next Show()
+// via the dirty flag, so a busy session doesn't pay that cost for messages
+// nobody is looking at.
 func (d *StatusHistoryDialog) Record(msg string) {
 	line := time.Now().Format("15:04:05") + "  " + msg
 	d.lines = append([]string{line}, d.lines...)
 	if len(d.lines) > maxStatusHistoryLines {
 		d.lines = d.lines[:maxStatusHistoryLines]
 	}
+	d.dirty = true
+	if d.Visible() {
+		d.syncEditorText()
+	}
+}
+
+// syncEditorText rebuilds the editor's content from d.lines and clears the
+// dirty flag. d.editor is nil for a zero-value StatusHistoryDialog{} — the
+// construction style this dialog's own tests use — so this is a no-op
+// without a real editor.
+func (d *StatusHistoryDialog) syncEditorText() {
 	if d.editor != nil {
 		d.editor.SetText(strings.Join(d.lines, "\n"))
 	}
+	d.dirty = false
+}
+
+// Show rebuilds the editor's content first if it fell behind while the
+// dialog was hidden (see Record), then displays it. Unlike
+// KeyDiagnosticsDialog, the history itself is never reset here — it
+// accumulates across the whole session.
+func (d *StatusHistoryDialog) Show() {
+	if d.dirty {
+		d.syncEditorText()
+	}
+	d.ModalDialog.Show()
 }
 
 // Draw renders the dialog.

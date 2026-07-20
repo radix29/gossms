@@ -33,6 +33,17 @@ type Toolbar struct {
 	starts  []int // starts[i] is the column button i begins at
 	widths  []int // widths[i] is button i's total width (icon + padding)
 	hover   int   // index of the hovered button, -1 = none
+
+	// mouseDragging distinguishes a fresh Button1 press (fire the button's
+	// Action) from a continued hold over the same button — mirrors
+	// MenuBar's and TreeView's field of the same name and purpose. Without
+	// it, the mouse tracking mode gossms enables (core.NewScreen's
+	// EnableMouse()) resends Buttons()==Button1 on every motion event while
+	// the button stays down, so a click that so much as twitches before
+	// release fires Action again — visibly flickering a toggle button
+	// (e.g. Include Actual Execution Plan) back and forth instead of
+	// flipping it once.
+	mouseDragging bool
 }
 
 // NewToolbar creates an empty Toolbar.
@@ -129,6 +140,9 @@ func (tb *Toolbar) DrawOverlay(s tcell.Screen) {
 // tell its region apart from MenuBar's, which occupies the rest of the
 // same row.
 func (tb *Toolbar) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		tb.mouseDragging = false
+	}
 	mx, my := ev.Position()
 	if !tb.rect.Contains(mx, my) {
 		tb.hover = -1
@@ -136,7 +150,8 @@ func (tb *Toolbar) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	idx := tb.buttonAt(mx)
 	tb.hover = idx
-	if idx >= 0 && ev.Buttons() == tcell.Button1 {
+	if idx >= 0 && ev.Buttons() == tcell.Button1 && !tb.mouseDragging {
+		tb.mouseDragging = true
 		if b := tb.buttons[idx]; b.Action != nil {
 			b.Action()
 		}

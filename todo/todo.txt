@@ -1,5 +1,8 @@
 
-- Activity monitor
+
+---------
+
+Activity monitor
     - tabbed: dashboard history , dasboard, sp_whoisactive (all/active), sp_block
     - history -> options, default 5 min, refresh 3 sec, scale display 
     - counters in memory only
@@ -11,9 +14,6 @@ reports
         - top tables
         - disk usage
 
+-------------
+
 - Availability Groups stuff
-
-Obejct Explorer Detail
-    add a lower pane with summary
-    add async info loading
-

@@ -110,6 +110,12 @@ type DataGrid struct {
 	// upper clamp (see SetMaxCellWidth); 0 means "use the default".
 	maxCellWidth int
 
+	// fillLastColumn stretches the last column past its content-based width
+	// (and past maxCellWidthOrDefault's clamp) to consume the rect's full
+	// remaining width, instead of leaving dead space to the right — see
+	// SetFillLastColumn.
+	fillLastColumn bool
+
 	// ctxMenu is the right-click "Show Value" menu (see HandleMouse's
 	// Button2 case) — offered on any cell whose grid doesn't define
 	// OnActivateCell (i.e. a read-only grid), never on an editable one.
@@ -147,8 +153,14 @@ func NewDataGrid() *DataGrid {
 	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil)})
 }
 
-// SetBounds positions the grid.
-func (g *DataGrid) SetBounds(x, y, w, h int) { g.rect = core.Rect{X: x, Y: y, W: w, H: h} }
+// SetBounds positions the grid. Recomputes column widths so a resize keeps
+// a fillLastColumn grid's Value column matching the new width — for every
+// other grid this just recomputes the same content-based widths, since
+// those don't depend on rect.W.
+func (g *DataGrid) SetBounds(x, y, w, h int) {
+	g.rect = core.Rect{X: x, Y: y, W: w, H: h}
+	g.computeColWidths()
+}
 
 // SetData populates the grid from a fully materialized slice of rows —
 // the common case. It's a thin wrapper over SetSource for callers that
@@ -168,6 +180,16 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.status = core.Itoa(rows.Len()) + " rows"
 }
 
+// RefreshColumnWidths recomputes column widths from the grid's current
+// data without resetting scroll position or selection, unlike SetData/
+// SetSource. Call after mutating row cells in place — e.g. a progressive
+// background fetch backfilling columns one row at a time — where calling
+// SetData again on every update would visually reset the user's scroll
+// position each time.
+func (g *DataGrid) RefreshColumnWidths() {
+	g.computeColWidths()
+}
+
 // SetError shows an error row.
 func (g *DataGrid) SetError(err error) {
 	g.columns = []string{"Error"}
@@ -180,6 +202,9 @@ func (g *DataGrid) SetError(err error) {
 
 // SetStatus sets the status bar text.
 func (g *DataGrid) SetStatus(msg string) { g.status = msg }
+
+// Status returns the current status bar text.
+func (g *DataGrid) Status() string { return g.status }
 
 // SetStatusStyle overrides the status bar's background/foreground, in
 // place of the theme's default GridHeader/TextDim look. Only this grid is
@@ -247,6 +272,17 @@ func (g *DataGrid) SetRowNumbers(v bool) { g.showRowNumbers = v }
 // maxCellLength+2. n <= 0 restores the default.
 func (g *DataGrid) SetMaxCellWidth(n int) { g.maxCellWidth = n }
 
+// SetFillLastColumn enables or disables stretching the last column to fill
+// the grid's remaining width — used for a two-column Property/Value detail
+// view, where a narrow, content-clamped Value column wastes most of a wide
+// panel. Off by default, since it would misalign a grid with several
+// similarly-important columns (e.g. a results grid or a Databases-folder
+// list) by giving the last one outsized, arbitrary width.
+func (g *DataGrid) SetFillLastColumn(v bool) {
+	g.fillLastColumn = v
+	g.computeColWidths()
+}
+
 // maxCellWidthOrDefault returns the effective column-width clamp.
 func (g *DataGrid) maxCellWidthOrDefault() int {
 	if g.maxCellWidth > 0 {
@@ -287,6 +323,25 @@ func (g *DataGrid) computeColWidths() {
 	maxW := g.maxCellWidthOrDefault()
 	for i := range g.colWidths {
 		g.colWidths[i] = core.Clamp(g.colWidths[i], 6, maxW)
+	}
+	if g.fillLastColumn && len(g.colWidths) > 0 {
+		g.growLastColumnToFill()
+	}
+}
+
+// growLastColumnToFill widens the last column to consume whatever width is
+// left over once the rect and every other column's own width are accounted
+// for, bypassing maxCellWidthOrDefault's clamp (that cap exists to keep an
+// ordinary column from swallowing the grid; here it's exactly the point).
+func (g *DataGrid) growLastColumnToFill() {
+	avail := g.rect.W - g.gutterWidth()
+	last := len(g.colWidths) - 1
+	used := 0
+	for _, w := range g.colWidths[:last] {
+		used += w
+	}
+	if rem := avail - used; rem > g.colWidths[last] {
+		g.colWidths[last] = rem
 	}
 }
 

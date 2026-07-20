@@ -36,11 +36,7 @@ func (a *App) loadChildren(node *explorerNode) {
 
 func (a *App) onNodeSelected(node *explorerNode) {
 	a.setStatus(FormatNodePath(node))
-	if p := a.panels.ActivePanel(); p != nil {
-		if browser, ok := p.(*DetailBrowser); ok {
-			browser.ShowNodeDetails(a, node)
-		}
-	}
+	a.detailBrowser.ShowNodeDetails(a, node)
 }
 
 func (a *App) showContextMenu(node *explorerNode, x, y int) {
@@ -56,6 +52,7 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 		if node.expanded {
 			a.loadChildren(node)
 		}
+		a.detailBrowser.Invalidate(a, node)
 	}}
 
 	switch node.data.Type {

@@ -21,7 +21,13 @@ type UpdateDialog struct {
 // NewUpdateDialog creates the Check for Updates dialog.
 func NewUpdateDialog(app *App) *UpdateDialog {
 	d := &UpdateDialog{app: app}
-	d.InitModal(app.screen, "Check for Updates", 74, 13)
+	// H=15 (2 more than a single-line message needs): the dev-build result
+	// (see ShowResult) spans two lines instead of one, and at H=13 that
+	// pushed the link row down onto the same screen row as DrawSeparator's
+	// line, which is drawn after the content and painted right over it —
+	// the link was there but invisible. 15 leaves a two-row margin so the
+	// content and the separator never land on the same row.
+	d.InitModal(app.screen, "Check for Updates", 74, 15)
 	return d
 }
 
@@ -59,6 +65,16 @@ func (d *UpdateDialog) ShowResult(installed string, rel githubRelease, err error
 		"",
 	}
 	switch {
+	case !isReleaseVersion(installed):
+		// installed is "(devel)" (a plain git clone && go build/go run, see
+		// internal/version's doc comment) or some other unresolved build —
+		// comparing it against a real release would read as v0.0.0 and
+		// always falsely claim an update is available. Split across two
+		// lines (like the request-failed branch above) — the dialog draws
+		// each d.lines entry as one clipped row, not word-wrapped.
+		d.lines = append(d.lines,
+			"You are running a development build, not a tagged release —",
+			"comparison against the latest release isn't meaningful.")
 	case compareVersions(installed, rel.TagName) < 0:
 		d.lines = append(d.lines, "A new version of goSSMS is available.")
 	case compareVersions(installed, rel.TagName) > 0:

@@ -6,7 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/clipperhouse/displaywidth v0.11.0
-	github.com/gdamore/tcell/v3 v3.4.0
+	github.com/gdamore/tcell/v3 v3.4.1
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/radix29/gosmo v0.0.4

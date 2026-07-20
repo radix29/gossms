@@ -451,6 +451,10 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
+			vols, err := sc.Server.DiskVolumesContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
 
 			var intRows []configRow
 			var boolRows []configBoolRow
@@ -466,7 +470,7 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 				filestream = propsheet.Select("FILESTREAM access level", []string{"N/A"}, 0)
 			}
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Default database settings"),
 				cfgInt("fill factor (%)", "Default index fill factor", "%"),
 				propsheet.Section("Backup and restore"),
@@ -477,12 +481,21 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 				propsheet.Static("Data", info.DefaultDataPath),
 				propsheet.Static("Log", info.DefaultLogPath),
 				propsheet.Static("Backup", info.DefaultBackupPath),
+			}
+			if len(vols) > 0 {
+				rows = append(rows, propsheet.Section("Disk space"))
+				for i, v := range vols {
+					rows = append(rows, propsheet.Static(diskVolumeLabel(i, v), diskVolumeValue(v)))
+				}
+			}
+			rows = append(rows,
 				propsheet.Section("Recovery"),
 				cfgInt("recovery interval (min)", "Recovery interval", "min"),
 				propsheet.Section("FILESTREAM"),
 				filestream,
 				propsheet.Note("A fill factor of 0 uses the server default."),
 			)
+			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
 				changed, err := applyConfigRows(ctx, sc, intRows, boolRows)

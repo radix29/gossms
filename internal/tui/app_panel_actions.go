@@ -327,7 +327,7 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 		a.setStatus("Not connected — use File > Connect")
 		return
 	}
-	a.setStatus("Activity Monitor is not yet implemented")
+	a.alertDialog.ShowAlert("Activity Monitor", "Feature not implemented yet. Coming soon!")
 }
 
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }

@@ -102,6 +102,27 @@ func JoinPath(parts []string) string {
 	return strings.Join(parts, " > ")
 }
 
+// FormatThousands renders n in base 10 with "," every three digits, e.g.
+// 1234567 -> "1,234,567".
+func FormatThousands(n int64) string {
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	digits := Itoa(int(n))
+	var sb strings.Builder
+	if neg {
+		sb.WriteByte('-')
+	}
+	for i := 0; i < len(digits); i++ {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteByte(digits[i])
+	}
+	return sb.String()
+}
+
 // EvRune extracts the first rune from a tcell v3 EventKey.
 // In tcell v3, Rune() was replaced with Str() which returns a string.
 func EvRune(ev interface{ Str() string }) rune {

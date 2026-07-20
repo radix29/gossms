@@ -34,6 +34,12 @@ type App struct {
 	explorer *ObjectExplorer
 	panels   *layout.PanelManager
 
+	// detailBrowser is the single, always-present Object Explorer Details
+	// panel (see DetailBrowser.Closable) — kept as its own field, not just
+	// found via panels.ActivePanel(), so refresh actions can invalidate its
+	// cache even when some other panel is the active tab.
+	detailBrowser *DetailBrowser
+
 	// dragNode is the Object Explorer node currently being dragged toward
 	// the query editor (armed by a Button1 press over a draggable node,
 	// cleared on release) — nil when no drag is in progress. See
@@ -69,6 +75,7 @@ type App struct {
 	optionsDialog       *OptionsDialog
 	tasksDialog         *TasksDialog
 	confirmDialog       *dialogs.ConfirmDialog
+	alertDialog         *dialogs.AlertDialog
 	backupDialog        *BackupDialog
 	restoreDialog       *RestoreDialog
 
@@ -222,7 +229,8 @@ func (a *App) buildUI() {
 	a.explorerSplit.SetRatio(0.3)
 
 	a.panels = layout.NewPanelManager()
-	a.panels.AddPanel(NewDetailBrowser("Object Explorer Details"))
+	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
+	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
 
 	a.menuBar = controls.NewMenuBar()
@@ -255,6 +263,7 @@ func (a *App) buildUI() {
 	a.optionsDialog = NewOptionsDialog(a)
 	a.tasksDialog = NewTasksDialog(a)
 	a.confirmDialog = dialogs.NewConfirmDialog(a.screen)
+	a.alertDialog = dialogs.NewAlertDialog(a.screen)
 	a.backupDialog = NewBackupDialog(a)
 	a.restoreDialog = NewRestoreDialog(a)
 
@@ -265,7 +274,7 @@ func (a *App) buildUI() {
 		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
-		a.confirmDialog, a.backupDialog, a.restoreDialog,
+		a.confirmDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
 	}
 }
 
