@@ -11,14 +11,19 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 	return []controls.ToolbarButton{
 		{Icon: "✚", Tooltip: "New Query", Action: func() { a.newQueryPanel() }},
 		{Divider: true, Icon: "|"},
-		{Icon: "▶", Tooltip: "Execute", Action: func() { a.executeActiveQuery() }},
-		{Icon: "▷", Tooltip: "Execute Selection", Action: func() { a.executeSelectedQuery() }},
-		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() }},
+		{Icon: "▶", Tooltip: "Execute", Action: func() { a.executeActiveQuery() },
+			Enabled: func() bool { return a.activeQueryPanel() != nil }},
+		{Icon: "▷", Tooltip: "Execute Selection", Action: func() { a.executeSelectedQuery() },
+			Enabled: func() bool { return a.activeQueryPanel() != nil }},
+		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() },
+			Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
 		{Divider: true, Icon: "|"},
-		{Icon: "≈⎇ Est. Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() }},
+		{Icon: "≈⎇ Est. Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
+			Enabled: func() bool { return a.activeQueryPanel() != nil }},
 		{Icon: actualPlanToggleIcon(a.actualPlanEnabled), Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }},
 		{Divider: true, Icon: "|"},
-		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() }},
+		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
+			Enabled: func() bool { return len(a.connections) > 0 }},
 	}
 }
 

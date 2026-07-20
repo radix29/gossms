@@ -22,6 +22,9 @@ func StyleActiveBorder() tcell.Style {
 func StyleMenuBar() tcell.Style {
 	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.Text)
 }
+func StyleDisabled() tcell.Style {
+	return tcell.StyleDefault.Background(active.MenuBar).Foreground(active.TextDisabled)
+}
 func StyleStatusBar() tcell.Style {
 	return tcell.StyleDefault.Background(active.StatusBar).Foreground(tcell.ColorWhite)
 }

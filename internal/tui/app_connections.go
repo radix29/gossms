@@ -100,17 +100,23 @@ func defaultDatabaseName(sc *db.ServerConn) string {
 }
 
 func (a *App) disconnectActive() {
-	node := a.explorer.Selected()
-	if node == nil {
-		a.setStatus("Select a connected server in Object Explorer first")
-		return
-	}
-	sc := resolveConn(node)
+	sc := a.selectedServerConn()
 	if sc == nil {
 		a.setStatus("Select a connected server in Object Explorer first")
 		return
 	}
 	a.disconnect(sc)
+}
+
+// selectedServerConn resolves the *db.ServerConn owning the currently
+// selected Object Explorer node, or nil if nothing is selected or the
+// selection doesn't resolve to one.
+func (a *App) selectedServerConn() *db.ServerConn {
+	node := a.explorer.Selected()
+	if node == nil {
+		return nil
+	}
+	return resolveConn(node)
 }
 
 // disconnect closes sc and removes it from the connection list and the

@@ -16,10 +16,15 @@ tuikit/
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox — one file per widget
 ├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
 │             — panel.go, panel_manager.go, splitter.go
-├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog
-│             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go
-├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, Editor (+ SQL highlighter/statement select)
-│             — one file per group: menu.go, toolbar.go, treeview.go, datagrid.go, listbox.go;
+├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, FileDialog
+│             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go,
+│               file_dialog.go (browse/save-as, list+path entry, used for every
+│               file path prompt in internal/tui)
+├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL highlighter/statement select)
+│             — one file per group: menu.go, toolbar.go, treeview.go, listbox.go, tabstrip.go;
+│               DataGrid is split across datagrid.go (state/data source/column
+│               widths), datagrid_draw.go, datagrid_input.go, and
+│               datagrid_overlay.go (right-click menu, "Show Value" popup);
 │               Editor is split across editor.go (state/options/undo),
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
 │               editor_input.go, editor_actions.go, editor_completion.go
@@ -197,5 +202,8 @@ func (d *MyDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 ```
 
-This is exactly the pattern `ConnectDialog`, `PathPromptDialog`, and
-`HelpDialog` follow in `internal/tui`.
+This is exactly the pattern `ConnectDialog` and `HelpDialog` follow in
+`internal/tui`; `dialogs.FileDialog` (any file path prompt — Open, Save,
+Save As, Results To File) is the same idea one level down, built directly
+in `tuikit/dialogs` rather than `internal/tui` since it needs no SQL Server
+domain knowledge at all.

@@ -14,10 +14,10 @@ import (
 // tabCloseGlyph is the per-tab close button drawn after each tab's label.
 const tabCloseGlyph = "[x]"
 
-// panelClosable reports whether p's tab should get a close button — true
+// PanelClosable reports whether p's tab should get a close button — true
 // unless p implements Closable and returns false (see that interface's doc
 // comment).
-func panelClosable(p Panel) bool {
+func PanelClosable(p Panel) bool {
 	c, ok := p.(Closable)
 	return !ok || c.Closable()
 }
@@ -197,7 +197,7 @@ func (pm *PanelManager) tabSegments() [][]controls.TabSegment {
 	widths := make([][]int, len(pm.panels))
 	for i, panel := range pm.panels {
 		closeW := 0
-		if panelClosable(panel) {
+		if PanelClosable(panel) {
 			closeW = core.DisplayWidth(tabCloseGlyph)
 		}
 		widths[i] = []int{controls.TabLabelWidth(tabLabelText(panel)), closeW}

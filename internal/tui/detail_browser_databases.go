@@ -59,20 +59,26 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 				defer wg.Done()
 				dCtx, dCancel := context.WithTimeout(context.Background(), childFetchTimeout)
 				defer dCancel()
-				if space, err := d.SpaceUsedContext(dCtx); err == nil {
-					rows[i][3] = formatMB(space.TotalMB)
-					rows[i][4] = formatMB(space.DataMB)
-					rows[i][5] = formatMB(space.LogMB)
-					rows[i][6] = formatMB(space.UnallocatedMB)
-					rows[i][7] = formatMB(space.AvailLogMB)
-				} else {
-					for c := 3; c <= 7; c++ {
-						rows[i][c] = "N/A"
-					}
-				}
+				space, spaceErr := d.SpaceUsedContext(dCtx)
+				// rows[i] is only ever written here, inside the postEvent
+				// closure, so every write lands on the UI goroutine — the
+				// same one Draw() runs on — rather than racing a redraw
+				// triggered by some other row's own completion or an
+				// unrelated event arriving mid-fetch.
 				app.postEvent(func() {
 					if seq != db.seq {
 						return
+					}
+					if spaceErr == nil {
+						rows[i][3] = formatMB(space.TotalMB)
+						rows[i][4] = formatMB(space.DataMB)
+						rows[i][5] = formatMB(space.LogMB)
+						rows[i][6] = formatMB(space.UnallocatedMB)
+						rows[i][7] = formatMB(space.AvailLogMB)
+					} else {
+						for c := 3; c <= 7; c++ {
+							rows[i][c] = "N/A"
+						}
 					}
 					db.grid.RefreshColumnWidths()
 				})

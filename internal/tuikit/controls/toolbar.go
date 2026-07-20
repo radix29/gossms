@@ -12,8 +12,14 @@ import (
 type ToolbarButton struct {
 	Icon    string
 	Tooltip string
-	Action  func() // nil still renders and hovers normally, but clicking is a no-op
-	Divider bool   // renders Icon as static text (e.g. "|"); never hovers, tooltips, or clicks
+	Action  func()      // nil still renders and hovers normally, but clicking is a no-op
+	Divider bool        // renders Icon as static text (e.g. "|"); never hovers, tooltips, or clicks
+	Enabled func() bool // nil means always enabled
+}
+
+// enabled reports whether b can be activated right now.
+func (b ToolbarButton) enabled() bool {
+	return b.Enabled == nil || b.Enabled()
 }
 
 // toolbarButtonPad is the number of blank columns either side of a
@@ -78,9 +84,11 @@ func (tb *Toolbar) SetBounds(x, y, w int) {
 	tb.starts = starts
 }
 
-// buttonAt returns the index of the clickable button containing column mx,
-// or -1 — dividers occupy a column range like any other entry but are
-// never returned, so they never hover, tooltip, or click.
+// buttonAt returns the index of the button containing column mx, or -1 —
+// dividers occupy a column range like any other entry but are never
+// returned, so they never hover, tooltip, or click. A disabled (but
+// non-divider) button IS returned, so it still hovers and shows its
+// tooltip; HandleMouse is what actually withholds firing its Action.
 func (tb *Toolbar) buttonAt(mx int) int {
 	for i, start := range tb.starts {
 		if tb.buttons[i].Divider {
@@ -97,9 +105,13 @@ func (tb *Toolbar) buttonAt(mx int) int {
 func (tb *Toolbar) Draw(s tcell.Screen) {
 	barStyle := theme.StyleMenuBar()
 	hoverStyle := tcell.StyleDefault.Background(theme.Active().MenuSelected).Foreground(tcell.ColorWhite)
+	disabledStyle := theme.StyleDisabled()
 	for i, b := range tb.buttons {
 		st := barStyle
-		if i == tb.hover {
+		switch {
+		case !b.Divider && !b.enabled():
+			st = disabledStyle
+		case i == tb.hover:
 			st = hoverStyle
 		}
 		x := tb.starts[i]
@@ -152,7 +164,7 @@ func (tb *Toolbar) HandleMouse(ev *tcell.EventMouse) bool {
 	tb.hover = idx
 	if idx >= 0 && ev.Buttons() == tcell.Button1 && !tb.mouseDragging {
 		tb.mouseDragging = true
-		if b := tb.buttons[idx]; b.Action != nil {
+		if b := tb.buttons[idx]; b.Action != nil && b.enabled() {
 			b.Action()
 		}
 	}

@@ -69,7 +69,7 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 }
 
 // fakePanelNoClosable is a Panel that doesn't implement Closable at all —
-// used to check panelClosable's default (see TestPanelClosableDefaultsTrueWithoutInterface).
+// used to check PanelClosable's default (see TestPanelClosableDefaultsTrueWithoutInterface).
 type fakePanelNoClosable struct{ title string }
 
 func (p fakePanelNoClosable) SetBounds(x, y, w, h int)              {}
@@ -79,14 +79,14 @@ func (p fakePanelNoClosable) HandleMouse(ev *tcell.EventMouse) bool { return fal
 func (p fakePanelNoClosable) Title() string                         { return p.title }
 
 func TestPanelClosableDefaultsTrueWithoutInterface(t *testing.T) {
-	if !panelClosable(fakePanelNoClosable{title: "x"}) {
-		t.Fatalf("panelClosable = false for a panel not implementing Closable, want true (default)")
+	if !PanelClosable(fakePanelNoClosable{title: "x"}) {
+		t.Fatalf("PanelClosable = false for a panel not implementing Closable, want true (default)")
 	}
-	if panelClosable(&fakePanel{title: "x", closable: false}) {
-		t.Fatalf("panelClosable = true for Closable() == false")
+	if PanelClosable(&fakePanel{title: "x", closable: false}) {
+		t.Fatalf("PanelClosable = true for Closable() == false")
 	}
-	if !panelClosable(&fakePanel{title: "x", closable: true}) {
-		t.Fatalf("panelClosable = false for Closable() == true")
+	if !PanelClosable(&fakePanel{title: "x", closable: true}) {
+		t.Fatalf("PanelClosable = false for Closable() == true")
 	}
 }
 

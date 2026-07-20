@@ -53,21 +53,26 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 				defer tCancel()
 				rowCount, rcErr := t.RowCountContext(tCtx)
 				space, spErr := t.SpaceUsedContext(tCtx)
-				if rcErr == nil {
-					rows[i][1] = core.FormatThousands(rowCount)
-				} else {
-					rows[i][1] = "N/A"
-				}
-				if spErr == nil {
-					rows[i][2] = formatMB(float64(space.DataKB) / 1024)
-					rows[i][3] = formatMB(float64(space.IndexKB) / 1024)
-					rows[i][4] = formatMB(float64(space.UnusedKB) / 1024)
-				} else {
-					rows[i][2], rows[i][3], rows[i][4] = "N/A", "N/A", "N/A"
-				}
+				// rows[i] is only ever written here, inside the postEvent
+				// closure, so every write lands on the UI goroutine — the
+				// same one Draw() runs on — rather than racing a redraw
+				// triggered by some other row's own completion or an
+				// unrelated event arriving mid-fetch.
 				app.postEvent(func() {
 					if seq != db.seq {
 						return
+					}
+					if rcErr == nil {
+						rows[i][1] = core.FormatThousands(rowCount)
+					} else {
+						rows[i][1] = "N/A"
+					}
+					if spErr == nil {
+						rows[i][2] = formatMB(float64(space.DataKB) / 1024)
+						rows[i][3] = formatMB(float64(space.IndexKB) / 1024)
+						rows[i][4] = formatMB(float64(space.UnusedKB) / 1024)
+					} else {
+						rows[i][2], rows[i][3], rows[i][4] = "N/A", "N/A", "N/A"
 					}
 					db.grid.RefreshColumnWidths()
 				})

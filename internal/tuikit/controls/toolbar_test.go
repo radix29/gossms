@@ -73,3 +73,38 @@ func TestToolbarDragOffAndBackDoesNotRefire(t *testing.T) {
 		t.Errorf("Action calls after drag off and back without release = %d, want 1", calls)
 	}
 }
+
+// newTestDisabledToolbar mirrors newTestToolbar but the button is always
+// disabled — the shared fixture for the Enabled-gating tests below.
+func newTestDisabledToolbar(action func()) *Toolbar {
+	tb := NewToolbar()
+	tb.SetButtons([]ToolbarButton{{Icon: "Toggle", Tooltip: "Toggle", Action: action, Enabled: func() bool { return false }}})
+	tb.SetBounds(0, 0, 8)
+	return tb
+}
+
+func TestToolbarClickOnDisabledButtonDoesNotFire(t *testing.T) {
+	calls := 0
+	tb := newTestDisabledToolbar(func() { calls++ })
+
+	tb.HandleMouse(tcell.NewEventMouse(1, 0, tcell.Button1, tcell.ModNone))
+
+	if calls != 0 {
+		t.Fatalf("Action calls = %d, want 0 for a disabled button", calls)
+	}
+}
+
+// TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip pins down the
+// resolved "does the tooltip still show for a disabled button" question:
+// yes — hovering must still set tb.hover (which DrawOverlay keys its
+// tooltip render off of) even though the button won't fire on click, so
+// the user can still see what the greyed-out icon is for.
+func TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip(t *testing.T) {
+	tb := newTestDisabledToolbar(nil)
+
+	tb.HandleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonNone, tcell.ModNone))
+
+	if tb.hover != 0 {
+		t.Fatalf("hover = %d, want 0 (disabled button still tracked for hover/tooltip)", tb.hover)
+	}
+}

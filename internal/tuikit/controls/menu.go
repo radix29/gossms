@@ -14,8 +14,14 @@ import (
 type MenuItem struct {
 	Label    string
 	Shortcut string
-	Divider  bool   // renders as a ──── separator
-	Action   func() // called when the item is activated
+	Divider  bool        // renders as a ──── separator
+	Action   func()      // called when the item is activated
+	Enabled  func() bool // nil means always enabled
+}
+
+// enabled reports whether it can be selected or activated right now.
+func (it MenuItem) enabled() bool {
+	return it.Enabled == nil || it.Enabled()
 }
 
 // Menu is a top-level menu header with its items.
@@ -77,20 +83,26 @@ func (mb *MenuBar) Open() {
 	}
 }
 
-// firstSelectableItem returns the index of the first non-divider item, or
-// -1 if the menu has no selectable items.
+// menuItemSkippable reports whether an item must be skipped by keyboard/
+// mouse selection — a divider, or one whose Enabled predicate says no.
+func menuItemSkippable(it MenuItem) bool {
+	return it.Divider || !it.enabled()
+}
+
+// firstSelectableItem returns the index of the first selectable item, or
+// -1 if the menu has none.
 func firstSelectableItem(items []MenuItem) int {
 	for i, it := range items {
-		if !it.Divider {
+		if !menuItemSkippable(it) {
 			return i
 		}
 	}
 	return -1
 }
 
-// stepSelectableItem returns the next selectable (non-divider) item index
-// starting from `from`, moving by `dir` (+1 or -1) and wrapping around.
-// Returns -1 if the menu has no selectable items at all.
+// stepSelectableItem returns the next selectable item index starting from
+// `from`, moving by `dir` (+1 or -1) and wrapping around. Returns -1 if the
+// menu has no selectable items at all.
 func stepSelectableItem(items []MenuItem, from, dir int) int {
 	n := len(items)
 	if n == 0 {
@@ -99,7 +111,7 @@ func stepSelectableItem(items []MenuItem, from, dir int) int {
 	i := from
 	for range n {
 		i = (i + dir + n) % n
-		if !items[i].Divider {
+		if !menuItemSkippable(items[i]) {
 			return i
 		}
 	}
@@ -169,7 +181,11 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 		}
 		itemStyle := ddStyle
 		shortcutStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
-		if i == mb.selectedItem {
+		switch {
+		case !item.enabled():
+			itemStyle = theme.StyleDisabled()
+			shortcutStyle = itemStyle
+		case i == mb.selectedItem:
 			itemStyle = theme.StyleSelected()
 			shortcutStyle = tcell.StyleDefault.Background(p.TreeSelected).Foreground(p.TextHighlight)
 			core.FillRect(s, core.Rect{X: col + 1, Y: y, W: w - 2, H: 1}, ' ', itemStyle)
@@ -207,7 +223,7 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 		mb.openMenu = -1
 		if mb.selectedItem >= 0 && mb.selectedItem < len(items) {
 			item := items[mb.selectedItem]
-			if !item.Divider && item.Action != nil {
+			if !item.Divider && item.Action != nil && item.enabled() {
 				item.Action()
 			}
 		}
@@ -261,7 +277,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 		if mb.dropdownContains(mx, my) {
 			// Track hover so keyboard (Up/Down) and mouse stay in sync.
 			if itemIdx := my - (mb.rect.Y + 2); itemIdx >= 0 && itemIdx < len(mb.menus[mb.openMenu].Items) {
-				if !mb.menus[mb.openMenu].Items[itemIdx].Divider {
+				if it := mb.menus[mb.openMenu].Items[itemIdx]; !it.Divider && it.enabled() {
 					mb.selectedItem = itemIdx
 				}
 			}
@@ -316,7 +332,7 @@ func (mb *MenuBar) handleDropdownClick(my int) {
 	mb.openMenu = -1
 	if itemIdx >= 0 && itemIdx < len(menu.Items) {
 		item := menu.Items[itemIdx]
-		if !item.Divider && item.Action != nil {
+		if !item.Divider && item.Action != nil && item.enabled() {
 			item.Action()
 		}
 	}

@@ -112,7 +112,7 @@ func (a *App) panelHosted(p layout.Panel) bool {
 // Details) can't be closed at all — the tab bar already omits its [x], this
 // is just Ctrl+W's own backstop.
 func (a *App) requestClosePanel(i int) {
-	if c, ok := a.panels.PanelAt(i).(layout.Closable); ok && !c.Closable() {
+	if !layout.PanelClosable(a.panels.PanelAt(i)) {
 		return
 	}
 	qp, ok := a.panels.PanelAt(i).(*QueryPanel)
@@ -140,6 +140,8 @@ func (a *App) closeActivePanel() {
 func (a *App) executeActiveQuery() {
 	if qp := a.activeQueryPanel(); qp != nil {
 		qp.Execute()
+	} else {
+		a.setStatus("No active query panel")
 	}
 }
 
@@ -303,10 +305,7 @@ func (a *App) showQueryList() {
 // node belongs to (falling back to the first connection) — same
 // resolution as showServerProperties.
 func (a *App) showActivityMonitor() {
-	var sc *db.ServerConn
-	if node := a.explorer.Selected(); node != nil {
-		sc = resolveConn(node)
-	}
+	sc := a.selectedServerConn()
 	if sc == nil {
 		if len(a.connections) == 0 {
 			a.setStatus("Not connected — use File > Connect")
@@ -333,10 +332,7 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }
 
 func (a *App) showServerProperties() {
-	var sc *db.ServerConn
-	if node := a.explorer.Selected(); node != nil {
-		sc = resolveConn(node)
-	}
+	sc := a.selectedServerConn()
 	if sc == nil {
 		if len(a.connections) == 0 {
 			a.setStatus("Not connected — use File > Connect")

@@ -11,10 +11,10 @@ with no OS-specific code, no CGO. Version is resolved automatically from
 the pushed git tag — see `internal/version/version.go` — never hand-edited.
 
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
-- Depends on `github.com/radix29/gosmo` (`v0.0.4`), the author's own
+- Depends on `github.com/radix29/gosmo` (`v0.0.5`), the author's own
   companion library for SQL Server management objects —
   https://github.com/radix29/gosmo — and `github.com/gdamore/tcell/v3`
-  (`v3.4.0`) for the TUI backend.
+  (`v3.4.1`) for the TUI backend.
 - The author's local layout has both repos as siblings: `~/go/gossms` and
   `~/go/gosmo`.
 
@@ -161,7 +161,7 @@ file — don't retype by hand.
 
 ## Current state
 
-`go.mod` points at the tagged `gosmo v0.0.4`. The release workflow
+`go.mod` points at the tagged `gosmo v0.0.5`. The release workflow
 (`.github/workflows/release.yml`) builds for windows/linux/darwin ×
 amd64/arm64 only — see "Build & verify" above for how the app's own
 version gets set.
