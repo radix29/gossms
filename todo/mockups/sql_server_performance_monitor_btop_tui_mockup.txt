@@ -1,0 +1,312 @@
+SQL SERVER PERFORMANCE MONITOR — EMBEDDED BTOP/HTOP-STYLE TUI MOCKUP
+Scope: SQL Server performance monitoring using SQL Server functionality only.
+Container: embedded inside another TUI application.
+Style: dense htop/btop-inspired terminal panels, square borders only, always-visible left navigation.
+Excluded: COM, WMI, registry reads, Windows Service Control Manager, PerfMon remote APIs, file-system log readers, shell commands, PowerShell, xp_cmdshell, OLE automation, SQL-DMO, and non-SQL host instrumentation.
+Time context: 2026-07-21 15:37:34 Europe/Zurich
+
+Design changes applied:
+- No footer.
+- No status bar.
+- No rounded panels.
+- Left navigation is always visible.
+- Mockup is suitable for embedding inside a larger TUI shell.
+- Kept pages only: Main Dashboard, Sessions, Requests, Waits, CPU / Schedulers, Memory, tempdb, Database I/O, Query Store.
+
+Color tags represent terminal colors:
+[green]healthy[/green], [cyan]info[/cyan], [yellow]warning[/yellow], [red]critical[/red], [magenta]blocked/special[/magenta]
+
+
+PAGE 1 — MAIN DASHBOARD
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Instance SQLMI-PROD.database.windows.net       Login monitor_ro       Refresh 2s              │
+│ embedded mode       │ Version SQL Server 2022 / Azure SQL MI         Uptime 34d 06:12:44    2026-07-21 15:37:34      │
+├─────────────────────┼──────────────────────────────────────────────┬───────────────────────────────────────────────┤
+│ [cyan]▸ Overview[/cyan]          │ CPU / Schedulers                            │ Memory / Grants                              │
+│   Sessions          │ SQL CPU        [green]██████████░░░░░░░░░░[/green]  49%   │ Target memory        28.0 GB                 │
+│   Requests          │ Runnable tasks [yellow]██████░░░░░░░░░░░░░░[/yellow]  12    │ Total server memory  24.2 GB                 │
+│   Waits             │ Workers active [cyan]███░░░░░░░░░░░░░░░░░[/cyan]  74    │ Buffer pool          [green]██████████████░░░░[/green] 19.8 GB │
+│   CPU / Schedulers  │ Online sched   16       Idle sched 3         │ Memory grants used   [yellow]██████████░░░░░░░░[/yellow] 68%    │
+│   Memory            │ Signal wait    [yellow]18.6%[/yellow]   Ctx switches 88k/min │ Waiting grants       [red]█████░░░░░░░░░░░░░[/red] 5       │
+│   tempdb            │ Trend          ▂▃▆▇▅▆▇█▅▃▃▄▇█▆▅▂▂▃▆▇▆▅▃ │ Page life expectancy [green]14720 sec[/green]              │
+│   Database I/O      │                                              │ Trend                ▃▃▄▅▅▆▆▇▇▆▆▅▅▄▅▆▇█▇▆▅▄▃ │
+│   Query Store       ├──────────────────────────────────────────────┼───────────────────────────────────────────────┤
+│                     │ Activity                                     │ Waits now                                      │
+│                     │ Batch req/sec   [green]███████████░░░░░░░[/green] 1,842 │ 1 PAGEIOLATCH_SH     [yellow]████████████░░░░░[/yellow] 31.2% │
+│                     │ Transactions/s  [green]█████████░░░░░░░░░[/green] 967   │ 2 CXPACKET           [cyan]███████░░░░░░░░░░[/cyan] 18.4% │
+│                     │ Compilations/s  [yellow]██████░░░░░░░░░░░░[/yellow] 118 │ 3 LCK_M_X            [red]██████░░░░░░░░░░░[/red] 15.1% │
+│                     │ Recompiles/s    [green]█░░░░░░░░░░░░░░░░░[/green] 7    │ 4 WRITELOG           [yellow]████░░░░░░░░░░░░[/yellow] 9.6% │
+│                     │ Active sessions [cyan]██████░░░░░░░░░░░░[/cyan] 143    │ 5 RESOURCE_SEMAPHORE [red]███░░░░░░░░░░░░░░[/red] 7.5%  │
+│                     │ Running reqs    [yellow]████████░░░░░░░░░░[/yellow] 38  │ Waiting tasks 51    Blocked sessions [red]7[/red]       │
+│                     │ Blocked reqs    [red]███░░░░░░░░░░░░░░░░[/red] 7       │ Trend ▂▂▃▃▄▇█▇▅▄▃▃▅▆█▇▆▅▄▃▂▂▃▃          │
+│                     ├──────────────────────────────────────────────┴───────────────────────────────────────────────┤
+│                     │ Database I/O                                                                                 │
+│                     │ Database        Reads/s   Writes/s  Read lat  Write lat  Log MB/s  Data size  State          │
+│                     │ SalesDW         12,884    3,224     [yellow]18 ms[/yellow]    [green]5 ms[/green]      42.8      812 GB     online         │
+│                     │ Billing         4,218     1,730     [green]7 ms[/green]     [yellow]16 ms[/yellow]     19.3      287 GB     online         │
+│                     │ tempdb          33,905    28,604    [red]41 ms[/red]    [yellow]22 ms[/yellow]     8.9       96 GB      contention     │
+│                     │ master          12        3         [green]1 ms[/green]     [green]1 ms[/green]      0.0       512 MB     online         │
+│                     │ Read latency    ▂▂▃▃▄▆▇█▇▅▄▃▃▄▅▇█▇▆▄▃▃▂▂                                                  │
+│                     ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │ Top live requests                                                                            │
+│                     │ PID Status     CPU ms   Elapsed  Wait                 Block Reads     Writes DB       Command │
+│                     │ 87  running    184220   12:44    CXPACKET             .     4281912   0      SalesDW  SELECT  │
+│                     │ 112 suspended  91442    08:31    [red]LCK_M_X[/red]              78    928114    13208  Billing UPDATE  │
+│                     │ 78  suspended  77103    05:18    [yellow]PAGEIOLATCH_SH[/yellow]      .     2104881   0      SalesDW  SELECT  │
+│                     │ 121 runnable   35881    02:04    SOS_SCHEDULER_YIELD .     850118    0      SalesDW  SELECT  │
+│                     │ 144 suspended  20778    01:55    [red]RESOURCE_SEMAPHORE[/red]  .     0         0      SalesDW  SELECT  │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 2 — SESSIONS
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Sessions       Filter all user sessions     Sort CPU desc     Rows 143                       │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ System sessions hidden [x]     Sleepers hidden [ ]     Include blocking sleepers [x]          │
+│ [cyan]▸ Sessions[/cyan]          ├──────┬────────────┬──────────────┬───────────┬────────────┬──────────┬────────────┬──────────┤
+│   Requests          │ SPID │ Login      │ Host/App     │ Status    │ CPU        │ Memory   │ Open tran  │ Database │
+│   Waits             ├──────┼────────────┼──────────────┼───────────┼────────────┼──────────┼────────────┼──────────┤
+│   CPU / Schedulers  │ 87   │ app_report │ api-reports  │ running   │ [red]184220 ms[/red] │ 128 MB   │ 0          │ SalesDW  │
+│   Memory            │ 112  │ billingapp │ bill-worker  │ sleeping  │ [yellow]91442 ms[/yellow]  │ 42 MB    │ [red]1[/red]          │ Billing  │
+│   tempdb            │ 78   │ analyst01  │ SSMS         │ running   │ 77103 ms   │ 80 MB    │ 0          │ SalesDW  │
+│   Database I/O      │ 121  │ app_web    │ web-14       │ running   │ 35881 ms   │ 17 MB    │ 0          │ SalesDW  │
+│   Query Store       │ 144  │ app_web    │ web-09       │ suspended │ 20778 ms   │ [yellow]612 MB[/yellow]  │ 0          │ SalesDW  │
+│                     │ 156  │ monitor_ro │ sqltop       │ running   │ 18005 ms   │ 24 MB    │ 0          │ msdb     │
+│                     │ 166  │ app_web    │ web-31       │ suspended │ 12112 ms   │ [yellow]488 MB[/yellow]  │ 0          │ SalesDW  │
+│                     │ 213  │ app_web    │ web-22       │ suspended │ 2231 ms    │ 31 MB    │ 0          │ Billing  │
+│                     ├──────┴────────────┴──────────────┴───────────┴────────────┴──────────┴────────────┴──────────┤
+│                     │ Selected SPID 112                                                                              │
+│                     │ Login billingapp    Host bill-worker-03    Program BillingProcessor    Isolation read committed │
+│                     │ Login time 13:04:12    Last batch 15:14:14    Open transactions [red]1[/red]                   │
+│                     │ This sleeping session is blocking active requests through an open transaction.                  │
+│                     │ SQL handle available [green]yes[/green]    Input buffer available [green]yes[/green]           │
+│                     │ Actions available to host app: show SQL text, show blocking tree, generate KILL statement.      │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 3 — REQUESTS
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Requests       Live active requests from SQL Server DMVs                                      │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Source: sys.dm_exec_requests, sys.dm_exec_sessions, sys.dm_exec_sql_text, sys.dm_exec_query_plan│
+│   Sessions          ├──────┬───────────┬──────────┬─────────┬─────────┬────────────────────┬───────┬──────────────┤
+│ [cyan]▸ Requests[/cyan]          │ SPID │ Status    │ Command  │ CPU     │ Elapsed │ Wait               │ Block │ Statement    │
+│   Waits             ├──────┼───────────┼──────────┼─────────┼─────────┼────────────────────┼───────┼──────────────┤
+│   CPU / Schedulers  │ 87   │ running   │ SELECT   │ [red]184 s[/red]   │ 12m44s  │ CXPACKET           │ .     │ SELECT c...  │
+│   Memory            │ 78   │ suspended │ SELECT   │ 77 s    │ 5m18s   │ [yellow]PAGEIOLATCH_SH[/yellow]    │ .     │ SELECT SUM  │
+│   tempdb            │ 144  │ suspended │ SELECT   │ 20 s    │ 1m55s   │ [red]RESOURCE_SEMAPHORE[/red] │ .     │ SELECT *    │
+│   Database I/O      │ 205  │ running   │ BACKUP   │ 8 s     │ 18m12s  │ .                  │ .     │ BACKUP DB    │
+│   Query Store       │ 213  │ suspended │ UPDATE   │ 2 s     │ 48s     │ [red]LCK_M_U[/red]            │ 112   │ UPDATE dbo  │
+│                     │ 231  │ suspended │ SELECT   │ 1 s     │ 37s     │ [red]LCK_M_S[/red]            │ 112   │ SELECT dbo  │
+│                     │ 244  │ suspended │ UPDATE   │ 1 s     │ 22s     │ [red]LCK_M_X[/red]            │ 112   │ UPDATE dbo  │
+│                     ├──────┴───────────┴──────────┴─────────┴─────────┴────────────────────┴───────┴──────────────┤
+│                     │ Selected request 87                                                                            │
+│                     │ CPU 184220 ms    Elapsed 764004 ms    Logical reads 4281912    Writes 0                       │
+│                     │ DOP 8            Grant 512 MB        Used grant 338 MB       Wait CXPACKET 18203 ms            │
+│                     │                                                                                              │
+│                     │ SELECT c.CustomerID, SUM(f.TotalAmount) AS Revenue                                            │
+│                     │ FROM dbo.FactOrders AS f                                                                       │
+│                     │ JOIN dbo.DimCustomer AS c ON c.CustomerID = f.CustomerID                                      │
+│                     │ WHERE f.OrderDate >= @FromDate                                                                │
+│                     │ GROUP BY c.CustomerID;                                                                         │
+│                     │                                                                                              │
+│                     │ Actions available to host app: plan XML, Query Store history, waits, generate KILL statement.  │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 4 — WAITS
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Waits        Current sample delta over 2s     Excluding benign waits [x]                      │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Current wait profile                                                                            │
+│   Sessions          ├──────────────────────┬────────────┬─────────┬──────────┬─────────────────────────────────────┤
+│   Requests          │ Category / Wait      │ Wait time  │ Tasks   │ Avg wait │ Trend                               │
+│ [cyan]▸ Waits[/cyan]             ├──────────────────────┼────────────┼─────────┼──────────┼─────────────────────────────────────┤
+│   CPU / Schedulers  │ IO / PAGEIOLATCH_SH  │ [yellow]6.2 s[/yellow]      │ 18      │ 344 ms   │ ▂▃▅▆█▇▅▄▃▃▄▆█▇▆▅                  │
+│   Memory            │ CPU / CXPACKET       │ 3.6 s      │ 12      │ 300 ms   │ ▃▄▅▇█▆▅▃▂▃▄▅▆▇█▇                  │
+│   tempdb            │ Lock / LCK_M_X       │ [red]3.0 s[/red]      │ 4       │ 750 ms   │ ▂▂▂▃▄▆▇█▇▅▄▃▃▂▂▂                  │
+│   Database I/O      │ Log / WRITELOG       │ 1.9 s      │ 9       │ 211 ms   │ ▁▂▂▃▄▆▇▆▄▃▂▂▃▄▅▆                  │
+│   Query Store       │ Memory / RESOURCE... │ [red]1.5 s[/red]      │ 5       │ 300 ms   │ ▁▁▂▃▅▇█▇▆▄▃▂▂▃▄▅                  │
+│                     │ Parallel / CXCONSUMER│ 0.8 s      │ 8       │ 100 ms   │ ▁▂▃▃▄▅▆▆▅▄▃▂▂▂▃▄                  │
+│                     ├──────────────────────┴────────────┴─────────┴──────────┴─────────────────────────────────────┤
+│                     │ Cumulative waits since startup                                                                 │
+│                     │ SOS_SCHEDULER_YIELD  21.8%  ████████████████████░░░░░░░░░░                                    │
+│                     │ PAGEIOLATCH_SH       18.2%  ████████████████░░░░░░░░░░░░                                      │
+│                     │ CXPACKET             14.7%  █████████████░░░░░░░░░░░░░░░                                      │
+│                     │ WRITELOG             10.9%  █████████░░░░░░░░░░░░░░░░░░░                                      │
+│                     │ LCK_M_X               6.1%  █████░░░░░░░░░░░░░░░░░░░░░░░                                      │
+│                     │ RESOURCE_SEMAPHORE    4.8%  ████░░░░░░░░░░░░░░░░░░░░░░░                                      │
+│                     ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │ Blocking waits                                                                                 │
+│                     │ Root blocker [red]112[/red] billingapp / bill-worker-03, sleeping with open transaction 1.     │
+│                     │ Blocked sessions: 213 LCK_M_U, 231 LCK_M_S, 244 LCK_M_X.                                      │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 5 — CPU / SCHEDULERS
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ CPU / Schedulers      SQL-visible scheduler pressure only                                     │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Note: host-wide OS CPU is excluded because this embedded tool does not use WMI/COM/PerfMon APIs.│
+│   Sessions          │ SQL CPU and pressure are inferred from SQL Server DMVs, scheduler queues, workers, and requests.│
+│   Requests          ├───────────┬──────────────┬──────────┬─────────────┬────────────┬─────────────────────────────┤
+│   Waits             │ Scheduler │ Status       │ Runnable │ Active work │ Pending IO │ Load                        │
+│ [cyan]▸ CPU / Schedulers[/cyan]  ├───────────┼──────────────┼──────────┼─────────────┼────────────┼─────────────────────────────┤
+│   Memory            │ 0         │ visible      │ 0        │ 4           │ 1          │ [green]███░░░░░░░░░░░░░░░[/green] 18%       │
+│   tempdb            │ 1         │ visible      │ 1        │ 5           │ 0          │ [green]████░░░░░░░░░░░░░░[/green] 23%       │
+│   Database I/O      │ 2         │ visible      │ [yellow]5[/yellow]        │ 9           │ 4          │ [yellow]████████████░░░░░░[/yellow] 66%       │
+│   Query Store       │ 3         │ visible      │ [yellow]6[/yellow]        │ 11          │ 7          │ [yellow]██████████████░░░░[/yellow] 74%       │
+│                     │ 4         │ visible      │ 0        │ 2           │ 0          │ [green]██░░░░░░░░░░░░░░░░[/green] 11%       │
+│                     │ 5         │ visible      │ 0        │ 3           │ 0          │ [green]███░░░░░░░░░░░░░░░[/green] 16%       │
+│                     │ 6         │ visible      │ 0        │ 2           │ 0          │ [green]██░░░░░░░░░░░░░░░░[/green] 10%       │
+│                     │ 7         │ visible      │ 2        │ 6           │ 2          │ [cyan]██████░░░░░░░░░░░░[/cyan] 34%       │
+│                     ├───────────┴──────────────┴──────────┴─────────────┴────────────┴─────────────────────────────┤
+│                     │ Aggregates                                                                                     │
+│                     │ Online schedulers 16     Visible schedulers 16     Idle schedulers 3                           │
+│                     │ Runnable tasks 12        Active workers 74        Current workers 311                          │
+│                     │ Signal wait ratio [yellow]18.6%[/yellow]     Context switches 88k/min                         │
+│                     │ Pressure trend ▂▃▆▇▅▆▇█▅▃▃▄▇█▆▅▂▂▃▆▇▆▅▃                                      │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 6 — MEMORY
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Memory       SQL Server memory, clerks, cache, and grants                                     │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Target server memory 28.0 GB     Total server memory 24.2 GB     Max server memory 28.0 GB     │
+│   Sessions          │ Memory pressure [yellow]medium[/yellow]          Grants waiting [red]5[/red]         Grants pending [red]5[/red]             │
+│   Requests          ├──────────────────────┬──────────────────────────────────────────┬────────────────────────────┤
+│   Waits             │ Buffer pool          │ [green]███████████████████░░░░░░[/green] 19.8 GB       │ PLE [green]14720 sec[/green]          │
+│   CPU / Schedulers  │ Plan cache           │ [cyan]████░░░░░░░░░░░░░░░░░░░░[/cyan] 3.4 GB          │ Entries 884,221             │
+│ [cyan]▸ Memory[/cyan]            │ Columnstore objects  │ [cyan]██░░░░░░░░░░░░░░░░░░░░░[/cyan] 1.2 GB          │ Segments 19,402             │
+│   tempdb            │ Lock memory          │ [green]░░░░░░░░░░░░░░░░░░░░░░[/green] 88 MB            │ Locks 41,201                │
+│   Database I/O      │ Query grants         │ [yellow]███████░░░░░░░░░░░░░░░[/yellow] 4.7 GB reserved │ Waiting [red]5[/red]                  │
+│   Query Store       ├──────────────────────┴──────────────────────────────────────────┴────────────────────────────┤
+│                     │ Memory clerks                                                                                 │
+│                     │ MEMORYCLERK_SQLBUFFERPOOL       19.8 GB  ██████████████████████████░░░░                       │
+│                     │ CACHESTORE_SQLCP                 1.7 GB  ███░░░░░░░░░░░░░░░░░░░░░░░░░░                       │
+│                     │ MEMORYCLERK_COLUMNSTORE          1.2 GB  ██░░░░░░░░░░░░░░░░░░░░░░░░░░░                       │
+│                     │ CACHESTORE_OBJCP                 1.1 GB  ██░░░░░░░░░░░░░░░░░░░░░░░░░░░                       │
+│                     │ MEMORYCLERK_SQLQUERYEXEC         812 MB  █░░░░░░░░░░░░░░░░░░░░░░░░░░░                       │
+│                     ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │ Pending memory grants                                                                          │
+│                     │ SPID Login      Requested  Granted  Wait time  Query                                          │
+│                     │ 144  app_web    1024 MB    0 MB     01:55      SELECT * FROM dbo.FactOrders                   │
+│                     │ 166  app_web    768 MB     0 MB     01:12      SELECT CustomerID, SUM(...)                    │
+│                     │ 188  analyst02  512 MB     0 MB     00:44      SELECT TOP 1000000 ...                         │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 7 — TEMPDB
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ tempdb       Space, file activity, allocation pressure, and top consumers                      │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Data files 8     Total size 96 GB     Used 61 GB     Version store 18.4 GB                     │
+│   Sessions          │ User objects 29.2 GB     Internal objects 13.4 GB     Allocation contention [yellow]medium[/yellow]       │
+│   Requests          ├────────┬──────────┬──────────┬─────────┬─────────┬──────────┬─────────┬──────────────────────┤
+│   Waits             │ File   │ Size     │ Used     │ Growth  │ Reads/s │ Writes/s │ Latency │ Usage                │
+│   CPU / Schedulers  ├────────┼──────────┼──────────┼─────────┼─────────┼──────────┼─────────┼──────────────────────┤
+│   Memory            │ temp1  │ 12 GB    │ 7.6 GB   │ 512 MB  │ 4141    │ 3701     │ [red]41 ms[/red]   │ ██████████████░░░░░░ │
+│ [cyan]▸ tempdb[/cyan]            │ temp2  │ 12 GB    │ 7.7 GB   │ 512 MB  │ 4206    │ 3668     │ [red]40 ms[/red]   │ ██████████████░░░░░░ │
+│   Database I/O      │ temp3  │ 12 GB    │ 7.8 GB   │ 512 MB  │ 4301    │ 3551     │ [red]42 ms[/red]   │ ███████████████░░░░░ │
+│   Query Store       │ temp4  │ 12 GB    │ 7.4 GB   │ 512 MB  │ 4011    │ 3490     │ [yellow]31 ms[/yellow]   │ ██████████████░░░░░░ │
+│                     │ temp5  │ 12 GB    │ 7.5 GB   │ 512 MB  │ 4088    │ 3522     │ [yellow]29 ms[/yellow]   │ ██████████████░░░░░░ │
+│                     │ temp6  │ 12 GB    │ 7.6 GB   │ 512 MB  │ 4117    │ 3599     │ [yellow]30 ms[/yellow]   │ ██████████████░░░░░░ │
+│                     ├────────┴──────────┴──────────┴─────────┴─────────┴──────────┴─────────┴──────────────────────┤
+│                     │ Top tempdb consumers                                                                           │
+│                     │ SPID Login       User objects  Internal objects  Version store  Request / batch                │
+│                     │ 87   app_report  11.2 GB       2.1 GB            0 MB           customer revenue aggregate     │
+│                     │ 144  app_web     0 MB          4.8 GB            0 MB           hash join waiting for grant    │
+│                     │ 112  billingapp  42 MB         12 MB             18.4 GB        sleeping open transaction      │
+│                     ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │ tempdb wait indicators                                                                         │
+│                     │ PAGELATCH_UP [yellow]elevated[/yellow]   PAGELATCH_EX [yellow]elevated[/yellow]   WRITELOG normal   VERSION_STORE high     │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 8 — DATABASE I/O
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Database I/O       Sampled deltas from SQL Server virtual file stats                          │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Source: sys.dm_io_virtual_file_stats, sys.master_files, sys.databases                          │
+│   Sessions          ├────────────┬───────────┬──────────┬───────────┬─────────┬──────────┬──────────┬──────────────┤
+│   Requests          │ Database   │ File type │ Size     │ Read MB/s │ Write/s │ Read ms  │ Write ms │ Trend        │
+│   Waits             ├────────────┼───────────┼──────────┼───────────┼─────────┼──────────┼──────────┼──────────────┤
+│   CPU / Schedulers  │ SalesDW    │ ROWS      │ 812 GB   │ 488.4     │ 31.2    │ [yellow]18[/yellow]       │ [green]5[/green]        │ ▂▃▄▆█▇▅▄▃▃▄▆ │
+│   Memory            │ SalesDW    │ LOG       │ 96 GB    │ 0.4       │ 42.8    │ 2        │ [yellow]14[/yellow]       │ ▁▂▂▄▅▇█▆▄▃▂▂ │
+│   tempdb            │ Billing    │ ROWS      │ 287 GB   │ 112.9     │ 7.7     │ [green]7[/green]        │ [yellow]16[/yellow]       │ ▁▂▃▃▄▆▆▇▆▄▃▂ │
+│ [cyan]▸ Database I/O[/cyan]      │ Billing    │ LOG       │ 42 GB    │ 0.2       │ 19.3    │ 1        │ [green]6[/green]        │ ▁▁▂▂▃▄▅▆▅▄▃▂ │
+│   Query Store       │ tempdb     │ ROWS      │ 96 GB    │ 890.1     │ 811.2   │ [red]41[/red]       │ [yellow]22[/yellow]       │ ▃▄▅▇█▇▆▅▄▃▃▄ │
+│                     │ master     │ ROWS      │ 512 MB   │ 0.1       │ 0.0     │ [green]1[/green]        │ [green]1[/green]        │ ▁▁▁▁▁▁▁▁▁▁▁▁ │
+│                     ├────────────┴───────────┴──────────┴───────────┴─────────┴──────────┴──────────┴──────────────┤
+│                     │ I/O summary                                                                                    │
+│                     │ Highest read throughput: tempdb ROWS 890.1 MB/s                                                │
+│                     │ Highest read latency: tempdb ROWS [red]41 ms[/red]                                             │
+│                     │ Highest log write throughput: SalesDW LOG 42.8 MB/s                                            │
+│                     │ Latency alert: tempdb exceeds 30 ms read-latency threshold for 6 consecutive samples.           │
+│                     ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │ Read latency trend                                                                              │
+│                     │ SalesDW  ▂▃▄▆█▇▅▄▃▃▄▆▇▇▅▄▃▂                                                                   │
+│                     │ Billing  ▁▂▃▃▄▆▆▇▆▄▃▂▂▃▄▅                                                                   │
+│                     │ tempdb   ▃▄▅▇█▇▆▅▄▃▃▄▆█▇▅                                                                   │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+PAGE 9 — QUERY STORE
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ SQL Server Monitor  │ Query Store       Regressions and top resource consumers                                      │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│   Overview          │ Database SalesDW     Window last 1 hour     Query Store state read/write                       │
+│   Sessions          │ Runtime stats interval active     Plan forcing available if permissions allow                  │
+│   Requests          ├──────┬──────────┬─────────┬──────────────┬────────────┬──────────┬────────────┬──────────────┤
+│   Waits             │ Rank │ Query ID │ Plan ID │ Avg duration │ CPU total  │ Reads    │ Regression │ Text         │
+│   CPU / Schedulers  ├──────┼──────────┼─────────┼──────────────┼────────────┼──────────┼────────────┼──────────────┤
+│   Memory            │ 1    │ 98241    │ 311884  │ [red]14.2 s[/red]       │ 9812 s     │ 1.2B     │ [red]+412%[/red]      │ SELECT c...  │
+│   tempdb            │ 2    │ 88312    │ 298112  │ [yellow]4.8 s[/yellow]        │ 2204 s     │ 380M     │ [yellow]+88%[/yellow]       │ SELECT SUM  │
+│   Database I/O      │ 3    │ 76550    │ 287441  │ 2.1 s        │ 1338 s     │ 95M      │ stable     │ EXEC usp...  │
+│ [cyan]▸ Query Store[/cyan]       │ 4    │ 91004    │ 304412  │ 1.8 s        │ 888 s      │ 42M      │ improved   │ SELECT TOP  │
+│                     │ 5    │ 91882    │ 308331  │ 1.2 s        │ 771 s      │ 29M      │ stable     │ UPDATE dbo  │
+│                     │ 6    │ 90102    │ 301119  │ 0.9 s        │ 622 s      │ 18M      │ improved   │ SELECT ...  │
+│                     ├──────┴──────────┴─────────┴──────────────┴────────────┴──────────┴────────────┴──────────────┤
+│                     │ Selected query 98241                                                                           │
+│                     │ Regression +412%      Last good plan 288104      Current plan 311884                           │
+│                     │ Avg duration from 2.8 s to 14.2 s     CPU/call from 620 ms to 3110 ms                           │
+│                     │ Logical reads/call from 120k to 820k                                                           │
+│                     │                                                                                              │
+│                     │ SQL text preview                                                                               │
+│                     │ SELECT c.CustomerID, SUM(f.TotalAmount) AS Revenue                                            │
+│                     │ FROM dbo.FactOrders AS f JOIN dbo.DimCustomer AS c ON ...                                     │
+│                     │ WHERE f.OrderDate >= @FromDate GROUP BY c.CustomerID;                                         │
+│                     │                                                                                              │
+│                     │ Actions available to host app: view SQL text, view plan XML, runtime stats, force/unforce plan.│
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+SQL-ONLY IMPLEMENTATION NOTES
+
+┌─────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Area                │ SQL Server sources                                                                            │
+├─────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Sessions            │ sys.dm_exec_sessions, sys.dm_exec_connections, sys.dm_exec_input_buffer                       │
+│ Requests            │ sys.dm_exec_requests, sys.dm_exec_sql_text, sys.dm_exec_query_plan, sys.dm_exec_query_stats   │
+│ Waits               │ sys.dm_os_wait_stats, sys.dm_os_waiting_tasks, sampled deltas                                 │
+│ CPU / Schedulers    │ sys.dm_os_schedulers, sys.dm_os_workers, request CPU deltas                                   │
+│ Memory              │ sys.dm_os_process_memory, sys.dm_os_memory_clerks, sys.dm_os_memory_cache_counters            │
+│ Memory grants       │ sys.dm_exec_query_memory_grants, resource governor DMVs where enabled                         │
+│ tempdb              │ sys.dm_db_file_space_usage, sys.dm_db_session_space_usage, sys.dm_db_task_space_usage          │
+│ Database I/O        │ sys.dm_io_virtual_file_stats, sys.master_files, sys.databases                                 │
+│ Query Store         │ sys.query_store_query, sys.query_store_plan, sys.query_store_runtime_stats                    │
+└─────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Explicit exclusions: COM, WMI, PerfMon APIs, Windows Event Log readers, registry reads, shell commands, PowerShell, xp_cmdshell, OLE automation, Windows Service Control Manager, file-system SQL ERRORLOG parsing, OS process inventory, OS drive free-space checks, antivirus state, and any non-SQL host collector.
+
+END OF MOCKUP

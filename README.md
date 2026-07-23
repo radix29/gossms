@@ -6,7 +6,7 @@ It runs entirely in the terminal — no GUI, no X11, no CGO, no installation —
 It is just one executable file without dependencies.
 It requires no SQL client tools or SQL Server drivers to be installed — connectivity is pure Go.
 
-Open Source SQL Serever Management Studio for Linux, macOS and Windows.
+Open Source SQL Server Management Studio for Linux, macOS and Windows.
 
 ![Demo](demo.gif)
 
@@ -15,8 +15,9 @@ Open Source SQL Serever Management Studio for Linux, macOS and Windows.
 
 - Windows 10 terminal (PowerShell, cmd) double character inputs
 - Some Linux terminals (e.g. xfce4-terminal) eat some key shortcuts
-- Windows and Entra authentication not tested at the moment — no infrastructure available to test against
+- Entra authentication not tested at the moment — no infrastructure available to test against
 - Not tested on macOS yet — no Mac available
+- Executables are not signed. They are built by GitHub, but I don't have the possibility to sign them. Checksums are available.
 
 ## Features
 

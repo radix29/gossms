@@ -8,6 +8,7 @@ import (
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // propFetchTimeout bounds a single property page's load — long enough for
@@ -137,6 +138,45 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 			d.SetPageForm(page, seq, form)
 		})
 	}()
+}
+
+// runPageAction runs fn on a background goroutine (a real network round
+// trip) and reports its result back on the UI goroutine via onDone — the
+// shared "immediate action" pattern for a Properties page's own buttons
+// (Check Syntax, Estimate Rows, Rebuild, Reorganize, Update Statistics, ...)
+// that run for real immediately, independent of OK/Cancel/Apply. Unlike
+// runApply/runScript, this isn't tied to any page's dirty state — the page
+// itself decides when its own action buttons are relevant. Callers that
+// need a result value out of fn capture it in an outer variable from
+// within fn, the same way asyncStatusButton's caller does.
+func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), propFetchTimeout)
+		defer cancel()
+		err := fn(ctx)
+		d.post(func() { onDone(err) })
+	}()
+}
+
+// asyncStatusButton returns a button that runs fn via runPageAction,
+// showing busyText in statusRow while it's in flight and either fn's
+// returned text or "Error: ..." once it completes.
+func (d *PropDialog) asyncStatusButton(label string, statusRow *propsheet.StaticRow, busyText string, fn func(ctx context.Context) (string, error)) *widgets.Button {
+	return widgets.NewButton(label, func() {
+		statusRow.SetValue(busyText)
+		var result string
+		d.runPageAction(func(ctx context.Context) error {
+			r, err := fn(ctx)
+			result = r
+			return err
+		}, func(err error) {
+			if err != nil {
+				statusRow.SetValue("Error: " + err.Error())
+				return
+			}
+			statusRow.SetValue(result)
+		})
+	})
 }
 
 // onConfirmDiscard prompts before Refresh discards a dirty page's edits,

@@ -13,10 +13,11 @@ import (
 // ModalDialog is the foundation for all pop-up windows.
 // Embed this struct and call InitModal() from your constructor.
 type ModalDialog struct {
-	rect    core.Rect
-	title   string
-	visible bool
-	screen  tcell.Screen // needed for Size() during recentre
+	rect       core.Rect
+	reqW, reqH int // last size passed to InitModal/SetSize, pre-clamp
+	title      string
+	visible    bool
+	screen     tcell.Screen // needed for Size() during recentre
 }
 
 // InitModal sets up the dialog for the given screen, title, and size.
@@ -24,8 +25,7 @@ type ModalDialog struct {
 func (d *ModalDialog) InitModal(s tcell.Screen, title string, w, h int) {
 	d.screen = s
 	d.title = title
-	d.rect.W = w
-	d.rect.H = h
+	d.reqW, d.reqH = w, h
 	d.recentre()
 }
 
@@ -33,17 +33,27 @@ func (d *ModalDialog) InitModal(s tcell.Screen, title string, w, h int) {
 // grows with the screen (see propsheet.PropertySheet) call this from Show
 // or Draw with a size computed from the current screen dimensions.
 func (d *ModalDialog) SetSize(w, h int) {
-	d.rect.W = w
-	d.rect.H = h
+	d.reqW, d.reqH = w, h
 	d.recentre()
 }
 
-// recentre repositions the dialog in the centre of the screen.
+// recentre repositions the dialog in the centre of the screen, clamping its
+// size to fit first — a dialog wider or taller than the terminal (a narrow
+// window, or a fixed-size dialog like ConfirmDialog on a small screen)
+// would otherwise draw its right/bottom border, and anything docked to it
+// (e.g. DrawButtons' right-aligned button row), off-screen entirely. The
+// clamp is recomputed from reqW/reqH (the last size actually requested via
+// InitModal/SetSize) rather than applied to rect.W/H in place, so a dialog
+// shown small on a cramped terminal still returns to its full requested
+// size the next time it's shown on a larger one, instead of the clamp
+// sticking permanently.
 func (d *ModalDialog) recentre() {
 	if d.screen == nil {
 		return
 	}
 	sw, sh := d.screen.Size()
+	d.rect.W = core.Min(d.reqW, sw)
+	d.rect.H = core.Min(d.reqH, sh)
 	d.rect.X = core.Max(0, (sw-d.rect.W)/2)
 	d.rect.Y = core.Max(0, (sh-d.rect.H)/2)
 }

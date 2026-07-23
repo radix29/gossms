@@ -17,7 +17,7 @@ func (a *App) newQueryPanel() {
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc, database := a.selectedConnTarget(); sc != nil {
-		a.connectForQueryPanel(qp, sc, database)
+		a.connectForQueryPanel(qp, sc, database, nil)
 	}
 }
 
@@ -30,7 +30,7 @@ func (a *App) newQueryPanelForConn(sc *db.ServerConn, database string) {
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc != nil {
-		a.connectForQueryPanel(qp, sc, database)
+		a.connectForQueryPanel(qp, sc, database, nil)
 	}
 }
 
@@ -41,7 +41,23 @@ func (a *App) openQueryWithText(sc *db.ServerConn, database, text string) {
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()
 	if sc != nil {
-		a.connectForQueryPanel(qp, sc, database)
+		a.connectForQueryPanel(qp, sc, database, nil)
+	}
+}
+
+// openQueryWithTextAndExecute is openQueryWithText plus an immediate run:
+// the query panel opens, connects, and executes text the moment the
+// connection resolves — for actions like "View Backup History" that hand
+// the user a live result set instead of just a query to review. If sc is
+// nil, the panel opens disconnected like any other and nothing runs.
+func (a *App) openQueryWithTextAndExecute(sc *db.ServerConn, database, text string) {
+	a.queryPanelCnt++
+	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
+	qp.editor.SetText(text)
+	a.panels.SetActive(a.panels.AddPanel(qp))
+	a.focusPanels()
+	if sc != nil {
+		a.connectForQueryPanel(qp, sc, database, func() { qp.Execute() })
 	}
 }
 
@@ -65,7 +81,7 @@ func (a *App) openQueryFile() {
 		a.focusPanels()
 		a.setStatus("Opened " + path)
 		if sc, database := a.selectedConnTarget(); sc != nil {
-			a.connectForQueryPanel(qp, sc, database)
+			a.connectForQueryPanel(qp, sc, database, nil)
 		}
 	})
 }
@@ -207,6 +223,15 @@ func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
 func (a *App) cancelExecutingQuery() {
 	if qp := a.activeQueryPanel(); qp != nil {
 		qp.CancelExecution()
+	} else {
+		a.setStatus("No active query panel")
+	}
+}
+
+// reconnectActiveQuery runs Query > Reconnect.
+func (a *App) reconnectActiveQuery() {
+	if qp := a.activeQueryPanel(); qp != nil {
+		qp.Reconnect()
 	} else {
 		a.setStatus("No active query panel")
 	}
@@ -424,6 +449,19 @@ func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 	a.restoreDialog.show(sc, dbName)
 }
 
+// showBackupHistoryFor opens a new query window, scoped to msdb (where the
+// backup catalog actually lives, regardless of which database the menu was
+// opened from), pre-filled with backupHistoryQuery(dbName) and running it
+// immediately — the Object Explorer context menu's "View Backup
+// History...", database node only.
+func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.openQueryWithTextAndExecute(sc, "msdb", backupHistoryQuery(dbName))
+}
+
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 	if !a.isConnected(sc) {
@@ -446,6 +484,58 @@ func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name str
 		tablePropPages(sc, dbName, schema, name))
 }
 
+// showIndexPropertiesFor opens Index Properties for a known connection,
+// database, and schema-qualified table/index — the Object Explorer context
+// menu's entry point (mirrors showTablePropertiesFor).
+func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, index string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, "Table: "+fqn(schema, table),
+		indexPropPages(a.propDialog, sc, dbName, schema, table, index))
+}
+
+// showStatisticPropertiesFor opens Statistics Properties for a known
+// connection, database, and schema-qualified table/statistic — the Object
+// Explorer context menu's entry point (mirrors showIndexPropertiesFor).
+func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, table, stat string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, "Table: "+fqn(schema, table),
+		statisticPropPages(a.propDialog, sc, dbName, schema, table, stat))
+}
+
+// showForeignKeyPropertiesFor opens the read-only Foreign Key Properties
+// for a known connection, database, and schema-qualified table/foreign
+// key — the Object Explorer context menu's entry point (mirrors
+// showIndexPropertiesFor).
+func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, fk string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+fqn(schema, table),
+		fkPropPages(sc, dbName, schema, table, fk))
+}
+
+// showKeyPropertiesFor opens Primary/Unique Key Properties for a known
+// connection, database, and schema-qualified table/key — the Object
+// Explorer context menu's entry point (mirrors showIndexPropertiesFor).
+// isPrimaryKey picks the dialog title; it's read off the tree node's own
+// nodeData rather than re-fetched, since loadKeysChildren already knows it.
+func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	title := keyTypeName(isPrimaryKey) + " Properties"
+	a.propDialog.show(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
+		keyPropPages(a.propDialog, sc, dbName, schema, table, key))
+}
+
 // showRolePropertiesFor opens Database Role Properties for a known
 // connection, database, and role name — the Object Explorer context
 // menu's entry point (mirrors showTablePropertiesFor).
@@ -456,6 +546,19 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 	}
 	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
 		rolePropPages(sc, dbName, roleName))
+}
+
+// showServerRolePropertiesFor opens Server Role Properties for a known
+// connection and role name — the Object Explorer context menu's entry
+// point (mirrors showLoginProperties, the other server-level-principal
+// Properties dialog with no dbName of its own).
+func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
+	a.propDialog.show(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
+		serverRolePropPages(sc, roleName))
 }
 
 // showUserPropertiesFor opens Database User Properties for a known

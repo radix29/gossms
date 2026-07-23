@@ -20,6 +20,7 @@ vendor/
 *.swp
 *.swo
 *~
+.claude/
 
 # macOS
 .DS_Store

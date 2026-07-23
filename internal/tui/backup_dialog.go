@@ -27,7 +27,7 @@ const (
 )
 
 // backupFormButtons is the form mode's button row.
-var backupFormButtons = []string{"Start Backup", "Validate", "Cancel"}
+var backupFormButtons = []string{"Start Backup", "Script", "Validate", "Cancel"}
 
 // BackupDialog is the Back Up Database dialog (Object Explorer, database
 // node, "Back Up Database..."). The backup itself runs as a background
@@ -289,6 +289,21 @@ func (d *BackupDialog) validate() {
 	d.setStatusMsg("Valid — "+stmt, false)
 }
 
+// script builds the BACKUP statement from the current options and opens it
+// in a new query window for review — SSMS's "Script Action to New Query
+// Window" convention, applied to Back Up Database. Unlike Validate, which
+// only checks the options build cleanly, this hands the T-SQL to the user
+// to inspect, tweak, or run themselves.
+func (d *BackupDialog) script() {
+	opts := d.currentOptions()
+	stmt, err := gosmo.BuildBackupStatement(opts)
+	if err != nil {
+		d.setStatusMsg(err.Error(), true)
+		return
+	}
+	d.app.openQueryWithText(d.sc, "", stmt)
+}
+
 // currentOptions assembles gosmo.BackupOptions from the form fields.
 func (d *BackupDialog) currentOptions() gosmo.BackupOptions {
 	opts := gosmo.BackupOptions{
@@ -358,8 +373,10 @@ func (d *BackupDialog) doFormButton() {
 	case 0:
 		d.startBackup()
 	case 1:
-		d.validate()
+		d.script()
 	case 2:
+		d.validate()
+	case 3:
 		d.Hide()
 	}
 }

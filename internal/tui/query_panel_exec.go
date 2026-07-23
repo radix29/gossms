@@ -44,6 +44,39 @@ func (p *QueryPanel) CancelExecution() {
 	}
 }
 
+// Reconnect re-dials this panel's connection using the same server/login it
+// was last connected with (whatever database it's currently in, not
+// necessarily the connection's original default — see connectForQueryPanel),
+// replacing whatever connection it currently holds. This is the query
+// window's escape hatch for a connection silently dropped out from under it
+// — an idle firewall/NAT timeout, the server killing the session, a
+// failover — distinct from File > Disconnect, which the user only reaches
+// via Object Explorer and which this panel doesn't share a connection with
+// anyway (see connectForQueryPanel's own doc comment). A no-op if this
+// panel was never connected to begin with, since there's no Opts to
+// reconnect with.
+//
+// p.conn is deliberately left as the (now-closed) old connection rather than
+// nilled out here: connectForQueryPanel only reads its Opts, and if the
+// redial itself fails, leaving p.conn non-nil keeps this the exact same
+// state as any other query window with a dropped connection — isConnected
+// still (correctly) reports false, but the Reconnect menu item stays
+// enabled and its Opts stay around for the user to simply try again,
+// instead of the panel getting permanently stuck with no Opts to redial.
+func (p *QueryPanel) Reconnect() {
+	if p.conn == nil {
+		p.app.setStatus("Nothing to reconnect — this query window was never connected")
+		return
+	}
+	if p.executing {
+		p.app.setStatus("Cannot reconnect while a query is executing")
+		return
+	}
+	old := p.conn
+	old.Close()
+	p.app.connectForQueryPanel(p, old, p.database, nil)
+}
+
 // runQuery is the shared execution path for Execute. The heavy lifting —
 // GO batch splitting, the USE database switch, result sets, and the
 // message stream — lives in internal/query.
@@ -53,7 +86,7 @@ func (p *QueryPanel) runQuery(queryText string) {
 		return
 	}
 	if !p.app.isConnected(p.conn) {
-		p.resultsNotice = "Not connected — use File > Connect"
+		p.resultsNotice = p.notConnectedMessage()
 		p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
 		return
 	}

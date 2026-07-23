@@ -1,15 +1,14 @@
 
-
 ---------
 
 Activity monitor
-    - tabbed: dashboard history , dasboard, sp_whoisactive (all/active), sp_block
+    - tabbed: dashboard history , dasboard, sp_whoisactive (all/active), sp_block, azure stats (managed instance sps)
     - history -> options, default 5 min, refresh 3 sec, scale display 
     - counters in memory only
     - mockup from S1
 
 reports
-    - server
+    - serverw
     - database
         - top tables
         - disk usage
@@ -17,3 +16,12 @@ reports
 -------------
 
 - Availability Groups stuff
+
+
+--------------
+
+sp_blitz & index with reference built in
+
+
+review both projects and check for bugs, inconsistencies and optimizations
+

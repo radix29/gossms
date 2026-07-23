@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 )
 
@@ -389,5 +391,66 @@ func TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 	want := "a,b\n1,2\n3,4\n\nx\ny\n"
 	if string(data) != want {
 		t.Errorf("file content = %q, want %q", data, want)
+	}
+}
+
+// TestReconnectNeverConnectedNoOp confirms Reconnect on a panel that never
+// had a connection (p.conn == nil, e.g. "New Query" with nothing selected
+// in Object Explorer) just reports status — there's no Opts to redial with,
+// and nothing else about the panel should change.
+func TestReconnectNeverConnectedNoOp(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+
+	qp.Reconnect()
+
+	if qp.conn != nil {
+		t.Errorf("conn = %+v, want nil", qp.conn)
+	}
+	if a.statusText != "Nothing to reconnect — this query window was never connected" {
+		t.Errorf("status = %q, want the never-connected notice", a.statusText)
+	}
+}
+
+// TestReconnectWhileExecutingNoOp confirms Reconnect refuses to tear down
+// the connection a query is actively running on.
+func TestReconnectWhileExecutingNoOp(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	sc := &db.ServerConn{Opts: config.Connection{Server: "fake-server"}}
+	qp.conn = sc
+	qp.executing = true
+
+	qp.Reconnect()
+
+	if qp.conn != sc {
+		t.Errorf("conn = %+v, want unchanged (sc)", qp.conn)
+	}
+	if !sc.IsOpen() {
+		t.Error("sc was closed despite the panel still executing")
+	}
+	if a.statusText != "Cannot reconnect while a query is executing" {
+		t.Errorf("status = %q, want the executing notice", a.statusText)
+	}
+}
+
+// TestNotConnectedMessageDistinguishesNeverConnected confirms
+// notConnectedMessage points at Query > Reconnect only when there's an
+// actual (if now-closed) connection to redial with — a panel that was never
+// connected at all has nothing for Reconnect to act on, so it still points
+// at File > Connect.
+func TestNotConnectedMessageDistinguishesNeverConnected(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+
+	if got := qp.notConnectedMessage(); got != "Not connected — use File > Connect" {
+		t.Errorf("notConnectedMessage() with nil conn = %q, want the File > Connect notice", got)
+	}
+
+	sc := &db.ServerConn{Opts: config.Connection{Server: "fake-server"}}
+	sc.Close()
+	qp.conn = sc
+	if got := qp.notConnectedMessage(); got != "Not connected — use Query > Reconnect" {
+		t.Errorf("notConnectedMessage() with a dropped conn = %q, want the Reconnect notice", got)
 	}
 }

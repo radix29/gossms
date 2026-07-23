@@ -3,14 +3,26 @@ package tui
 import gosmo "github.com/radix29/gosmo"
 
 // loadServerChildren returns a connected server's top-level folders:
-// Databases, Security, and Server Objects (Agent jobs, linked servers).
+// Databases, Security, Server Objects (linked servers), and SQL Server
+// Agent — a sibling of Databases here rather than nested under Server
+// Objects, matching SSMS's own top-level placement. Kept a static, no-query
+// loader (unlike loadDatabasesChildren etc.) so it stays safe to call
+// directly in tests; the Agent node's " (Stopped)" label suffix is instead
+// filled in by a follow-up async check — see refreshAgentRootLabel in
+// app_explorer_data.go.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
 		l.node("Server Objects", NodeManagement, "", "", ""),
+		l.node(agentRootLabel, NodeAgentJobs, "", "", ""),
 	}, nil
 }
+
+// agentRootLabel is the "SQL Server Agent" node's base label — the literal
+// string refreshAgentRootLabel matches against when appending " (Stopped)"
+// so the two stay in sync.
+const agentRootLabel = "SQL Server Agent"
 
 // loadDatabasesChildren lists user databases, with a "System Databases"
 // folder listed first if the server has any — matching SSMS.

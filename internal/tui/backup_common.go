@@ -156,3 +156,37 @@ func yesNo(b bool) string {
 	}
 	return "No"
 }
+
+// sqlStringLiteral renders s as a T-SQL N'...' literal, doubling embedded
+// single quotes — the one escaping rule that matters for a plain
+// identifier-shaped value like a database name.
+func sqlStringLiteral(s string) string {
+	return "N'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// backupHistoryQuery returns the msdb query behind "View Backup History"
+// (Object Explorer, database node) — the same backupset/backupmediafamily
+// join gosmo.Server.BackupHistoryContext runs, but as literal T-SQL opened
+// in a query window instead of parsed into Go structs, so the user gets a
+// live, re-runnable result set rather than a fixed report.
+func backupHistoryQuery(dbName string) string {
+	return fmt.Sprintf(`SELECT bs.database_name          AS [Database],
+       bs.backup_start_date      AS [Start Date],
+       bs.backup_finish_date     AS [Finish Date],
+       CASE bs.type
+           WHEN 'D' THEN 'Full'
+           WHEN 'I' THEN 'Differential'
+           WHEN 'L' THEN 'Transaction Log'
+           WHEN 'F' THEN 'File/Filegroup'
+           ELSE bs.type
+       END                       AS [Type],
+       bs.backup_size / 1048576.0 AS [Size (MB)],
+       bmf.physical_device_name  AS [Device],
+       bs.user_name              AS [User],
+       bs.server_name            AS [Server]
+FROM   msdb.dbo.backupset bs
+JOIN   msdb.dbo.backupmediafamily bmf ON bmf.media_set_id = bs.media_set_id
+WHERE  bs.database_name = %s
+ORDER  BY bs.backup_finish_date DESC;
+`, sqlStringLiteral(dbName))
+}

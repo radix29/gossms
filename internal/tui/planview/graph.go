@@ -420,8 +420,8 @@ func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
 }
 
 // handleGraphTabMouse handles wheel scrolling over the canvas (Shift+wheel
-// for horizontal) and the Properties block, dragging graphSplit, and
-// clicking a tile to select it.
+// or WheelLeft/WheelRight for horizontal) and the Properties block,
+// dragging graphSplit, and clicking a tile to select it.
 func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	if v.graphSt.detailOpen {
@@ -458,6 +458,11 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
+		// Shift+wheel is the common desktop convention for horizontal
+		// scroll; some terminals report it as WheelUp/WheelDown with a
+		// Shift modifier rather than as WheelLeft/WheelRight below, so
+		// honour both — matches DataGrid's and Editor's identical
+		// convention.
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			v.graphSt.scrollX = core.Max(0, v.graphSt.scrollX-4)
 		} else {
@@ -470,6 +475,12 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		} else {
 			v.graphSt.scrollY++
 		}
+		return true
+	case tcell.WheelLeft:
+		v.graphSt.scrollX = core.Max(0, v.graphSt.scrollX-4)
+		return true
+	case tcell.WheelRight:
+		v.graphSt.scrollX += 4
 		return true
 	case tcell.Button1:
 		cx := mx - v.graphCanvasRect.X + v.graphSt.scrollX

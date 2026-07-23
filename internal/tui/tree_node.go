@@ -54,7 +54,23 @@ const (
 	NodeServerRole
 	NodeManagement
 	NodeAgentJobs
+	NodeAgentJobsFolder
+	NodeAgentUserJobs
+	NodeAgentSystemJobs
 	NodeAgentJob
+	NodeAgentJobActivity
+	NodeAgentJobHistory
+	NodeAgentJobCategories
+	NodeAgentSchedules
+	NodeAgentSchedule
+	NodeAgentAlerts
+	NodeAgentEventAlerts
+	NodeAgentAlert
+	NodeAgentAlertCategories
+	NodeAgentOperators
+	NodeAgentOperator
+	NodeAgentAdmin
+	NodeAgentReport
 	NodeLinkedServers
 	NodeLinkedServer
 	NodeDatabaseSecurity
@@ -81,12 +97,19 @@ const (
 // expanded only affects container ("folder") node types, which show a
 // different glyph open vs. closed. style == config.IconStyleNone always
 // returns 0 (no icon), which TreeView's Draw treats as "don't draw one".
-// d.IsPrimaryKey overrides the normal NodeColumn glyph with the primary-key
-// glyph, since that's per-column data, not something the node's Type alone
-// can express.
+// NodeAgentJobs (the "SQL Server Agent" node) gets a fixed stopwatch glyph
+// instead of the generic folder icon its container status would otherwise
+// give it — every other container node type has no specific identity of its
+// own, but SQL Server Agent does, the same way SSMS gives it a distinct icon
+// rather than a plain folder. d.IsPrimaryKey overrides the normal NodeColumn
+// glyph with the primary-key glyph, since that's per-column data, not
+// something the node's Type alone can express.
 func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if style == config.IconStyleNone {
 		return 0
+	}
+	if d.Type == NodeAgentJobs {
+		return '⏱'
 	}
 	if isContainerNode(d.Type) {
 		return folderIcon(style, expanded)
@@ -132,7 +155,10 @@ func isContainerNode(t NodeType) bool {
 		NodeSecurity, NodeLogins,
 		NodeServerRoles, NodeManagement, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
-		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks:
+		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
+		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
+		NodeAgentSchedules, NodeAgentAlerts, NodeAgentEventAlerts,
+		NodeAgentOperators, NodeAgentAdmin:
 		return true
 	}
 	return false
@@ -195,6 +221,20 @@ func objectIconEmoji(t NodeType) rune {
 		return '🎭'
 	case NodeAgentJob:
 		return '⏱'
+	case NodeAgentSchedule:
+		return '📅'
+	case NodeAgentAlert:
+		return '🔔'
+	case NodeAgentOperator:
+		return '📞'
+	case NodeAgentJobActivity:
+		return '📈'
+	case NodeAgentJobHistory:
+		return '🕒'
+	case NodeAgentJobCategories, NodeAgentAlertCategories:
+		return '🗂'
+	case NodeAgentReport:
+		return '📋'
 	case NodeLinkedServer:
 		return '🔗'
 	case NodeTrigger:
@@ -248,6 +288,20 @@ func objectIconSymbols(t NodeType) rune {
 		return '▣'
 	case NodeAgentJob:
 		return '▶'
+	case NodeAgentSchedule:
+		return '◷'
+	case NodeAgentAlert:
+		return '◈'
+	case NodeAgentOperator:
+		return '☏'
+	case NodeAgentJobActivity:
+		return '▲'
+	case NodeAgentJobHistory:
+		return '↺'
+	case NodeAgentJobCategories, NodeAgentAlertCategories:
+		return '▨'
+	case NodeAgentReport:
+		return '≡'
 	case NodeLinkedServer:
 		return '⇄'
 	case NodeTrigger:
@@ -311,6 +365,10 @@ func hasChildren(t NodeType) bool {
 	case NodeColumn, NodeLogin, NodeUser, NodeServerRole, NodeDatabaseRole,
 		NodeSchema, NodeForeignKey, NodeCheck, NodeSequence, NodeSynonym,
 		NodeIndex, NodeTrigger, NodeKey, NodeStatistic,
+		NodeView, NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,
+		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
+		NodeAgentSchedule, NodeAgentAlert, NodeAgentAlertCategories,
+		NodeAgentOperator, NodeAgentReport,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -321,14 +379,31 @@ func hasChildren(t NodeType) bool {
 // controls.TreeNode via its Tag field. Name is the object's bare name
 // (schema-free) — the one thing that must never be recovered by slicing
 // Label, which is presentation-only and free to include the schema
-// prefix, an icon, or anything else display wants.
+// prefix, an icon, or anything else display wants. TableName is the owning
+// table's bare name for a node scoped under a table (NodeIndex,
+// NodeStatistic, NodeKey, NodeForeignKey) — Schema/Name on those already
+// point at the index's, statistic's, or key's own schema/name, not the
+// table's, so the table name would otherwise be lost once
+// loadIndexesChildren/loadStatisticsChildren/loadKeysChildren flatten
+// their parent folder node away. IsPrimaryKey is likewise dual-purpose: for
+// NodeColumn it overrides
+// the column's icon (see nodeIcon); for NodeKey it's set from the backing
+// index's IsPrimaryKey so showKeyPropertiesFor can title the dialog
+// "Primary Key Properties" vs. "Unique Key Properties" without a second
+// round trip to the server.
 type nodeData struct {
 	Type         NodeType
 	Schema       string
 	Name         string
+	TableName    string
 	DBName       string
 	Loaded       bool
 	IsPrimaryKey bool
 	IsOffline    bool
-	conn         *db.ServerConn
+	// IsEnabled mirrors a SQL Server Agent job/schedule/alert/operator's
+	// own Enabled flag — set at load time so the context menu can offer a
+	// single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the
+	// same single-flag-drives-one-label idiom).
+	IsEnabled bool
+	conn      *db.ServerConn
 }

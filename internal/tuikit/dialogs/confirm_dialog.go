@@ -21,7 +21,7 @@ type ConfirmDialog struct {
 // NewConfirmDialog creates a ConfirmDialog.
 func NewConfirmDialog(s tcell.Screen) *ConfirmDialog {
 	d := new(ConfirmDialog{})
-	d.InitModal(s, "Confirm", 48, 9)
+	d.InitModal(s, "Confirm", 78, 9)
 	return d
 }
 

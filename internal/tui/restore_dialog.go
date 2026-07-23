@@ -31,7 +31,7 @@ const (
 const maxHistorySets = 10
 
 var (
-	restoreFormButtons    = []string{"Analyze Backup", "Start Restore", "Cancel"}
+	restoreFormButtons    = []string{"Analyze Backup", "Script", "Start Restore", "Cancel"}
 	restoreInspectButtons = []string{"Restore", "Back"}
 )
 
@@ -258,8 +258,10 @@ func (d *RestoreDialog) doFormButton() {
 	case 0:
 		d.analyze()
 	case 1:
-		d.startRestore()
+		d.script()
 	case 2:
+		d.startRestore()
+	case 3:
 		d.Hide()
 	}
 }

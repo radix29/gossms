@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/radix29/gosmo"
@@ -198,6 +199,104 @@ func buildPermissionsMatrix(
 		return nil
 	}
 	return f, apply
+}
+
+// pagePrincipalServerPermissions builds a "Securables" page listing every
+// server-scoped permission (gosmo.ServerPermissionNames) with a
+// Grant/Deny/(none) state cyclable per row, scoped to one principal — a
+// login or server role. Shared by Login Properties and Server Role
+// Properties, both server-level principals that can hold explicit
+// server-scoped GRANT/DENY entries the same way. Unlike
+// buildPermissionsMatrix (Server Properties' own Permissions page,
+// server_props.go), which browses every principal at once, this only ever
+// shows principalName's own entries — no principal picker.
+func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) propPage {
+	return propPage{
+		title: "Securables",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			perms, err := sc.Server.ServerPermissionsContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			states := make(map[string]string, len(perms))
+			for _, p := range perms {
+				if p.Principal == principalName {
+					states[p.Permission] = p.State
+				}
+			}
+
+			catalog := gosmo.ServerPermissionNames()
+			edits := make([]*permEdit, len(catalog))
+			for i, perm := range catalog {
+				state := states[perm]
+				entry := permEntry{Principal: principalName, Permission: perm, State: state}
+				edits[i] = &permEdit{entry: entry, orig: state, current: state}
+			}
+
+			rowsFor := func() [][]string {
+				rows := make([][]string, len(edits))
+				for i, e := range edits {
+					rows[i] = []string{e.entry.Permission, displayPermState(e.current)}
+				}
+				return rows
+			}
+			grid := controls.NewDataGrid()
+			grid.SetData([]string{"Permission", "State"}, rowsFor())
+			grid.SetCellCursor(true)
+			grid.OnActivateCell = func(row, col int) {
+				if col != 1 || row < 0 || row >= len(edits) {
+					return
+				}
+				edits[row].current = nextPermState(edits[row].current)
+				grid.SetData([]string{"Permission", "State"}, rowsFor())
+				grid.SetSelectedRow(row)
+			}
+
+			gridRow := propsheet.NewGridRow(grid, 12)
+			gridRow.DirtyFn = func() bool {
+				for _, e := range edits {
+					if e.current != e.orig {
+						return true
+					}
+				}
+				return false
+			}
+			gridRow.RevertFn = func() {
+				for _, e := range edits {
+					e.current = e.orig
+				}
+				grid.SetData([]string{"Permission", "State"}, rowsFor())
+			}
+
+			f := propsheet.NewForm(
+				propsheet.Section("Explicit server-level permissions"),
+				gridRow,
+				propsheet.Note("Space/Enter (or click) on State cycles Grant → Deny → (none). Database and endpoint securables aren't modeled here yet."),
+			)
+
+			apply := func(ctx context.Context) error {
+				for _, e := range edits {
+					if e.current == e.orig {
+						continue
+					}
+					var err error
+					switch e.current {
+					case "GRANT":
+						err = sc.Server.GrantServerPermissionContext(ctx, e.entry.Permission, principalName)
+					case "DENY":
+						err = sc.Server.DenyServerPermissionContext(ctx, e.entry.Permission, principalName)
+					case "":
+						err = sc.Server.RevokeServerPermissionContext(ctx, e.entry.Permission, principalName)
+					}
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			return f, apply, nil
+		},
+	}
 }
 
 // boolStr renders a bool as "True"/"False", the Static-row convention used
@@ -448,6 +547,47 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		return nil
 	}
 	return f, apply
+}
+
+// buildFilterInfoForm builds the read-only Filter page shared by Index and
+// Statistics Properties: SQL Server only accepts a filtered predicate at
+// CREATE time, so on an existing index/statistic it's shown read-only here
+// rather than editable, with Check Syntax/Estimate Rows running the real
+// predicate against the table live via t's own CheckWhereSyntax/CountWhere.
+func buildFilterInfoForm(d *PropDialog, t *gosmo.Table, hasFilter bool, filterDef string) *propsheet.Form {
+	statusRow := propsheet.Static("Status", "Not checked")
+	rowsRow := propsheet.Static("Estimated qualifying rows", "")
+
+	checkBtn := d.asyncStatusButton("Check Syntax", statusRow, "Checking...", func(ctx context.Context) (string, error) {
+		if filterDef == "" {
+			return "", fmt.Errorf("no filter expression to check")
+		}
+		if err := t.CheckWhereSyntaxContext(ctx, filterDef); err != nil {
+			return "", err
+		}
+		return "Valid", nil
+	})
+	estimateBtn := d.asyncStatusButton("Estimate Rows", rowsRow, "Estimating...", func(ctx context.Context) (string, error) {
+		if filterDef == "" {
+			return "", fmt.Errorf("no filter expression to estimate")
+		}
+		n, err := t.CountWhereContext(ctx, filterDef)
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatInt(n, 10), nil
+	})
+
+	return propsheet.NewForm(
+		propsheet.Section("Filtered predicate"),
+		propsheet.Static("Filtered", boolStr(hasFilter)),
+		propsheet.Section("Filter expression"),
+		propsheet.Static("Expression", orDefault(filterDef, "(none)")),
+		propsheet.Section("Validation"),
+		statusRow, rowsRow,
+		propsheet.Buttons(checkBtn, estimateBtn),
+		propsheet.Note("The predicate can only be set when the index or statistic is created — use Script Changes, or DROP + CREATE, to change it. Check Syntax and Estimate Rows run the expression against the live table."),
+	)
 }
 
 // securable identifies one thing a database role's Securables page can

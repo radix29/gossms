@@ -154,8 +154,10 @@ func (d *RestoreDialog) analyze() {
 	}()
 }
 
-// startRestore validates the form, switches to the progress view, and runs
-// the restore as a background Task.
+// startRestore validates the form, then checks whether the target database
+// already exists — if so, the restore would overwrite it, so beginRestore
+// only runs after confirmOverwrite's typed confirmation. A brand new
+// target needs no such gate.
 func (d *RestoreDialog) startRestore() {
 	dev := d.deviceForRestore()
 	target := strings.TrimSpace(d.fTarget.Value())
@@ -167,6 +169,69 @@ func (d *RestoreDialog) startRestore() {
 		d.setStatusMsg("Target database name is required.", true)
 		return
 	}
+
+	d.setStatusMsg("Checking target database...", false)
+	d.loadSeq++
+	seq := d.loadSeq
+	app, sc := d.app, d.sc
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		defer cancel()
+		dbs, err := sc.Server.DatabasesContext(ctx)
+		app.postEvent(func() {
+			if seq != d.loadSeq || !d.Visible() {
+				return
+			}
+			if err != nil {
+				d.setStatusMsg(fmt.Sprintf("Check target database: %v", err), true)
+				return
+			}
+			d.setStatusMsg("Ready", false)
+			exists := false
+			for _, dbo := range dbs {
+				if strings.EqualFold(dbo.Name(), target) {
+					exists = true
+					break
+				}
+			}
+			if exists {
+				d.confirmOverwrite(target, func() { d.beginRestore(dev, target) })
+				return
+			}
+			d.beginRestore(dev, target)
+		})
+		app.wakeEventLoop()
+	}()
+}
+
+// confirmOverwrite gates a restore that would overwrite an existing
+// database behind retyping its first 4 characters — SSMS itself just asks
+// a plain Yes/No here, but this is a largely irreversible, destructive
+// action, so it gets the same extra friction as any other "type to
+// confirm" prompt in this app.
+func (d *RestoreDialog) confirmOverwrite(target string, proceed func()) {
+	runes := []rune(target)
+	prefix := target
+	if len(runes) > 4 {
+		prefix = string(runes[:4])
+	}
+	d.app.confirmTypedDialog.ShowTypedConfirm(
+		"Confirm Overwrite",
+		fmt.Sprintf("Database %q already exists. Restoring will overwrite it.", target),
+		prefix,
+		func(confirmed bool) {
+			if confirmed {
+				proceed()
+			}
+		},
+	)
+}
+
+// beginRestore switches to the progress view and runs the restore as a
+// background Task — the part of startRestore that actually does the work,
+// run either immediately (new target) or once confirmOverwrite's typed
+// confirmation succeeds (existing target).
+func (d *RestoreDialog) beginRestore(dev, target string) {
 	recovery := d.rbRecovery.Selected() == 0
 	replace := d.cbReplace.Checked()
 	verify := d.cbVerify.Checked()
@@ -204,14 +269,10 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	}
 
 	app.postProgress(task, -1, "Reading backup metadata...")
-	headers, err := srv.BackupHeadersContext(ctx, dev)
+	ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace)
 	if err != nil {
 		return err
 	}
-	if len(headers) == 0 {
-		return fmt.Errorf("no backup sets found on %s", dev)
-	}
-	source := headers[0].DatabaseName
 
 	dbs, err := srv.DatabasesContext(ctx)
 	if err != nil {
@@ -225,6 +286,44 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 		}
 	}
 
+	if closeConns && exists {
+		app.postProgress(task, -1, "Closing existing connections...")
+		if err := srv.Database(target).SetUserAccessContext(ctx, "SINGLE_USER"); err != nil {
+			return err
+		}
+	}
+
+	app.postProgress(task, -1, "Restoring...")
+	ropts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
+	if err := srv.RestoreContext(ctx, ropts); err != nil {
+		if closeConns && exists {
+			// Best effort: don't leave the still-existing database stuck in
+			// SINGLE_USER after a failed restore. Fresh context — ctx may
+			// already be cancelled.
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			defer cancel()
+			_ = srv.Database(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
+		}
+		return err
+	}
+	return nil
+}
+
+// buildRestoreOptions resolves dev/target into a gosmo.RestoreOptions,
+// including the file relocation MOVE clauses a renamed target needs — the
+// read-only metadata lookup shared by runRestore (which goes on to execute
+// the result) and script() (which only renders it as T-SQL for review).
+func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace bool) (gosmo.RestoreOptions, error) {
+	srv := d.sc.Server
+	headers, err := srv.BackupHeadersContext(ctx, dev)
+	if err != nil {
+		return gosmo.RestoreOptions{}, err
+	}
+	if len(headers) == 0 {
+		return gosmo.RestoreOptions{}, fmt.Errorf("no backup sets found on %s", dev)
+	}
+	source := headers[0].DatabaseName
+
 	// Restoring under a different name: MOVE every file out of the paths
 	// recorded in the backup (still owned by the source database) into the
 	// server's default directories, named after the target.
@@ -232,7 +331,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	if !strings.EqualFold(source, target) {
 		files, err := srv.BackupFileListContext(ctx, dev)
 		if err != nil {
-			return err
+			return gosmo.RestoreOptions{}, err
 		}
 		info := srv.Info()
 		for _, f := range files {
@@ -253,33 +352,58 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 		}
 	}
 
-	if closeConns && exists {
-		app.postProgress(task, -1, "Closing existing connections...")
-		if err := srv.Database(target).SetUserAccessContext(ctx, "SINGLE_USER"); err != nil {
-			return err
-		}
-	}
-
-	app.postProgress(task, -1, "Restoring...")
-	ropts := gosmo.RestoreOptions{
+	return gosmo.RestoreOptions{
 		Database:      target,
 		Devices:       []string{dev},
 		RelocateFiles: relocate,
 		Recovery:      recovery,
 		NoRecovery:    !recovery,
 		Replace:       replace,
-		Progress:      func(pct int, msg string) { app.postProgress(task, pct, msg) },
+	}, nil
+}
+
+// script builds the RESTORE statement's T-SQL — including the same file
+// relocation this dialog would perform for a renamed target — and opens it
+// in a new query window for review. Only the read-only metadata lookup
+// buildRestoreOptions needs (backup headers/file list) touches the server;
+// nothing is executed or changed.
+func (d *RestoreDialog) script() {
+	dev := d.deviceForRestore()
+	target := strings.TrimSpace(d.fTarget.Value())
+	if dev == "" {
+		d.setStatusMsg("Select a backup file or history entry first.", true)
+		return
 	}
-	if err := srv.RestoreContext(ctx, ropts); err != nil {
-		if closeConns && exists {
-			// Best effort: don't leave the still-existing database stuck in
-			// SINGLE_USER after a failed restore. Fresh context — ctx may
-			// already be cancelled.
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
-			defer cancel()
-			_ = srv.Database(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
+	if target == "" {
+		d.setStatusMsg("Target database name is required.", true)
+		return
+	}
+	recovery := d.rbRecovery.Selected() == 0
+	replace := d.cbReplace.Checked()
+
+	d.setStatusMsg("Building script...", false)
+	d.loadSeq++
+	seq := d.loadSeq
+	app, sc := d.app, d.sc
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		defer cancel()
+		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace)
+		var stmt string
+		if err == nil {
+			stmt, err = gosmo.BuildRestoreStatement(ropts)
 		}
-		return err
-	}
-	return nil
+		app.postEvent(func() {
+			if seq != d.loadSeq || !d.Visible() {
+				return
+			}
+			if err != nil {
+				d.setStatusMsg(err.Error(), true)
+				return
+			}
+			d.setStatusMsg("Ready", false)
+			app.openQueryWithText(sc, "", stmt)
+		})
+		app.wakeEventLoop()
+	}()
 }

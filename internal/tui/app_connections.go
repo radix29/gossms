@@ -50,8 +50,11 @@ func (a *App) connectServer(opts config.Connection) {
 // distinct from (and outliving) whichever one Object Explorer used to
 // resolve it. database, if non-empty, overrides which database the new
 // connection starts in. Connecting is async, same as connectServer; qp.conn
-// is nil (and the panel shows as disconnected) until it resolves.
-func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string) {
+// is nil (and the panel shows as disconnected) until it resolves. onConnected,
+// if non-nil, runs once qp.conn is set — e.g. openQueryWithTextAndExecute
+// uses it to run the panel's query the moment the connection is usable,
+// since qp.Execute() before then would just report "Not connected".
+func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string, onConnected func()) {
 	opts := sc.Opts
 	if database != "" {
 		opts.Database = database
@@ -81,6 +84,9 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 			qp.database = resolvedDB
 			a.setStatus(fmt.Sprintf("Connected to %s", opts.Server))
 			a.ensureSysCompletionInventory(newConn)
+			if onConnected != nil {
+				onConnected()
+			}
 		})
 		a.wakeEventLoop()
 	}()

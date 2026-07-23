@@ -87,6 +87,51 @@ func TestInvalidateNilReceiverIsSafe(t *testing.T) {
 	db.Invalidate(a, node) // must not panic
 }
 
+// TestFetchNodeDetailsFallsBackToChildList checks the "if not explicitly
+// defined, just list the child objects" fallback: a folder node type with
+// no purpose-built case in fetchNodeDetails (Server Objects, here) shows its
+// children's labels instead of the leaf-style Property/Value grid that made
+// no sense for a folder.
+func TestFetchNodeDetailsFallsBackToChildList(t *testing.T) {
+	sc := &dbconn.ServerConn{}
+	node := &explorerNode{label: "Server Objects", data: nodeData{Type: NodeManagement, conn: sc}}
+
+	cols, rows, err := fetchNodeDetails(sc, node)
+	if err != nil {
+		t.Fatalf("fetchNodeDetails: %v", err)
+	}
+	if len(cols) != 1 || cols[0] != "Name" {
+		t.Fatalf("cols = %v, want [Name]", cols)
+	}
+	var gotLinkedServers bool
+	for _, r := range rows {
+		if len(r) == 1 && r[0] == "Linked Servers" {
+			gotLinkedServers = true
+		}
+	}
+	if !gotLinkedServers {
+		t.Errorf("rows = %v, want a \"Linked Servers\" row (Server Objects' only child now)", rows)
+	}
+}
+
+// TestFetchNodeDetailsLeafKeepsPropertyValue checks a genuine leaf type
+// (no children) still gets the original Property/Value grid, not the
+// child-list fallback — mirrors newConnectedNode's own "never touches
+// sc.Server" comment above, since a leaf must not call into childLoaders
+// at all.
+func TestFetchNodeDetailsLeafKeepsPropertyValue(t *testing.T) {
+	sc := &dbconn.ServerConn{}
+	node := &explorerNode{label: "my_col", data: nodeData{Type: NodeColumn, conn: sc}}
+
+	cols, _, err := fetchNodeDetails(sc, node)
+	if err != nil {
+		t.Fatalf("fetchNodeDetails: %v", err)
+	}
+	if len(cols) != 2 || cols[0] != "Property" || cols[1] != "Value" {
+		t.Fatalf("cols = %v, want [Property Value]", cols)
+	}
+}
+
 func TestShowNodeDetailsNotConnected(t *testing.T) {
 	a := newTestApp()
 	sc := &dbconn.ServerConn{}

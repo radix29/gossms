@@ -169,6 +169,30 @@ func TestGraph_PropertiesWheelScrolls(t *testing.T) {
 	}
 }
 
+// TestGraph_CanvasWheelLeftRightScrollsHorizontally checks the canvas
+// honours WheelLeft/WheelRight directly, not just Shift+WheelUp/WheelDown —
+// some terminals (reported on Windows) send the former for a horizontal
+// scroll gesture instead of the latter, which the canvas didn't handle.
+func TestGraph_CanvasWheelLeftRightScrollsHorizontally(t *testing.T) {
+	v := newGraphTabView(t)
+	mx, my := v.graphCanvasRect.X+1, v.graphCanvasRect.Y+1
+
+	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelRight, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelRight) over the canvas returned false")
+	}
+	if v.graphSt.scrollX <= 0 {
+		t.Errorf("scrollX = %d after WheelRight, want > 0", v.graphSt.scrollX)
+	}
+
+	before := v.graphSt.scrollX
+	if !v.HandleMouse(tcell.NewEventMouse(mx, my, tcell.WheelLeft, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelLeft) over the canvas returned false")
+	}
+	if v.graphSt.scrollX >= before {
+		t.Errorf("scrollX = %d after WheelLeft, want less than %d", v.graphSt.scrollX, before)
+	}
+}
+
 func TestGraph_SelectionSharedWithTreeTab(t *testing.T) {
 	v := newGraphTabView(t)
 	v.HandleKey(namedKey(tcell.KeyRight))

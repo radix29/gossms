@@ -84,6 +84,11 @@ func (a *App) buildMenus() []controls.Menu {
 			}, Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Cancel Executing Query", Action: func() { a.cancelExecutingQuery() },
 				Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
+			{Label: "Reconnect", Action: func() { a.reconnectActiveQuery() },
+				Enabled: func() bool {
+					qp := a.activeQueryPanel()
+					return qp != nil && qp.conn != nil && !qp.executing
+				}},
 			{Divider: true},
 			{Label: "Refresh IntelliSense Cache", Shortcut: "Ctrl+R", Action: func() { a.refreshCompletionCache() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},

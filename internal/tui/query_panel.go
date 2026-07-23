@@ -264,6 +264,19 @@ func (p *QueryPanel) connInfoText() string {
 	return text
 }
 
+// notConnectedMessage is runQuery/runEstimatedPlan's resultsNotice when
+// isConnected(p.conn) is false — distinguishing a panel that was connected
+// and then had its connection silently dropped (p.conn is still this
+// panel's own *db.ServerConn, just no longer open — see Reconnect) from one
+// that was never connected in the first place, since Query > Reconnect only
+// has anything to redial in the former case.
+func (p *QueryPanel) notConnectedMessage() string {
+	if p.conn != nil {
+		return "Not connected — use Query > Reconnect"
+	}
+	return "Not connected — use File > Connect"
+}
+
 // updateResultsStatus refreshes the results grid's status bar, recomputed
 // on every Draw so it tracks row/column navigation and, while a query is
 // executing, ticks live off execStart (see tickExecuting). resultsNotice,

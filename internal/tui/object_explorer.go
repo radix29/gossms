@@ -175,6 +175,45 @@ func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
 	}
 }
 
+// RefreshFolderByType refreshes sc's first descendant folder node of type
+// t (depth-first) — used after an action that changes a SQL Server Agent
+// collection from outside Object Explorer's own expand/refresh flow (e.g.
+// New Job/Schedule/Alert/Operator). Unlike RefreshDatabasesFolder/
+// RefreshLoginsFolder, which hand-walk one fixed path each, Agent folders
+// sit at varying depths under SQL Server Agent (Jobs > User Jobs is three
+// levels down, Schedules is two), so this is one generic search instead of
+// one hand-written walk per folder.
+func (oe *ObjectExplorer) RefreshFolderByType(sc *db.ServerConn, t NodeType) {
+	for _, r := range oe.roots {
+		if r.data.conn != sc {
+			continue
+		}
+		if n := findDescendantByType(r, t); n != nil {
+			n.data.Loaded = false
+			n.children = nil
+			if n.expanded {
+				oe.app.loadChildren(n)
+			}
+			oe.app.detailBrowser.Invalidate(oe.app, n)
+		}
+		return
+	}
+}
+
+// findDescendantByType searches n's subtree depth-first for the first node
+// of type t, not including n itself.
+func findDescendantByType(n *explorerNode, t NodeType) *explorerNode {
+	for _, c := range n.children {
+		if c.data.Type == t {
+			return c
+		}
+		if found := findDescendantByType(c, t); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
 func (oe *ObjectExplorer) removeSubtree(n *explorerNode) {
 	delete(oe.byID, n.id)
 	for _, c := range n.children {

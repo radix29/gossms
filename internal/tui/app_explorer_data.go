@@ -29,6 +29,43 @@ func (a *App) loadChildren(node *explorerNode) {
 				return // superseded by a newer fetch for this node
 			}
 			a.explorer.SetChildren(node, children)
+			if node.data.Type == NodeServer {
+				a.refreshAgentRootLabel(node)
+			}
+		})
+		a.wakeEventLoop()
+	}()
+}
+
+// refreshAgentRootLabel appends " (Stopped)" to the just-shown "SQL Server
+// Agent" child's label once a background AgentInfoContext check confirms
+// the service isn't running. Split out of loadServerChildren (which stays
+// a static, no-query loader — see its doc comment) rather than querying
+// there, so this DB round trip never blocks the rest of the server's
+// top-level folders from appearing. A failed or inconclusive check (e.g.
+// the DMV isn't queryable) leaves the label alone rather than guessing.
+func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
+	var agentNode *explorerNode
+	for _, c := range serverNode.children {
+		if c.data.Type == NodeAgentJobs {
+			agentNode = c
+			break
+		}
+	}
+	sc := serverNode.data.conn
+	if agentNode == nil || sc == nil || sc.Server == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		defer cancel()
+		status, err := sc.Server.AgentInfoContext(ctx)
+		a.postEvent(func() {
+			if err != nil || status.StatusText == "" || status.StatusText == "Unknown" || status.Running {
+				return
+			}
+			agentNode.label = agentRootLabel + " (Stopped)"
+			a.explorer.rebuild()
 		})
 		a.wakeEventLoop()
 	}()
@@ -90,6 +127,7 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
 			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+			{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
 			{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
 			{Divider: true},
 			refresh,
@@ -118,6 +156,13 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Label: "Properties...", Action: func() {
 				a.showUserPropertiesFor(sc, node.data.DBName, node.data.Name)
 			}},
+		}
+	case NodeServerRole:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showServerRolePropertiesFor(sc, node.data.Name) }},
 		}
 	case NodeDatabaseRole:
 		return []controls.MenuItem{
@@ -173,6 +218,82 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			refresh,
 		}
+	case NodeKey:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name, node.data.IsPrimaryKey)
+			}},
+		}
+	case NodeForeignKey:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showForeignKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+			}},
+		}
+	case NodeIndex:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+			}},
+		}
+	case NodeStatistic:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showStatisticPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+			}},
+		}
+	case NodeAgentUserJobs:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeAgentSchedules:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeAgentEventAlerts:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeAgentOperators:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeAgentJob:
+		return agentJobMenuItems(a, sc, node, refresh)
+	case NodeAgentSchedule:
+		return agentScheduleMenuItems(a, sc, node, refresh)
+	case NodeAgentAlert:
+		return agentAlertMenuItems(a, sc, node, refresh)
+	case NodeAgentOperator:
+		return agentOperatorMenuItems(a, sc, node, refresh)
 	case NodeStoredProcedure:
 		procFQN := fqn(node.data.Schema, node.data.Name)
 		return []controls.MenuItem{
@@ -245,7 +366,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 			qp.editor.SetText(ddl)
 			a.panels.SetActive(a.panels.AddPanel(qp))
 			a.focusPanels()
-			a.connectForQueryPanel(qp, sc, dbName)
+			a.connectForQueryPanel(qp, sc, dbName, nil)
 		})
 		a.wakeEventLoop()
 	}()

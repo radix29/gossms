@@ -73,8 +73,17 @@ var childLoaders = map[NodeType]childLoader{
 	NodeServerRoles: loadServerRolesChildren,
 
 	NodeManagement:    loadManagementChildren,
-	NodeAgentJobs:     loadAgentJobsChildren,
 	NodeLinkedServers: loadLinkedServersChildren,
+
+	NodeAgentJobs:        loadAgentRootChildren,
+	NodeAgentJobsFolder:  loadAgentJobsFolderChildren,
+	NodeAgentUserJobs:    loadAgentUserJobsChildren,
+	NodeAgentSystemJobs:  loadAgentSystemJobsChildren,
+	NodeAgentSchedules:   loadAgentSchedulesChildren,
+	NodeAgentAlerts:      loadAgentAlertsChildren,
+	NodeAgentEventAlerts: loadAgentEventAlertsChildren,
+	NodeAgentOperators:   loadAgentOperatorsChildren,
+	NodeAgentAdmin:       loadAgentAdminChildren,
 }
 
 // fetchChildren looks up and runs the loader for node.data.Type. Runs on a

@@ -84,7 +84,10 @@ func loadKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) 
 	out := make([]*explorerNode, 0, len(indexes))
 	for _, idx := range indexes {
 		if idx.IsPrimaryKey || idx.IsUniqueConstraint {
-			out = append(out, l.node(idx.Name, NodeKey, node.data.Schema, idx.Name, node.data.DBName))
+			n := l.node(idx.Name, NodeKey, node.data.Schema, idx.Name, node.data.DBName)
+			n.data.TableName = node.data.Name
+			n.data.IsPrimaryKey = idx.IsPrimaryKey
+			out = append(out, n)
 		}
 	}
 	fks, err := table.ForeignKeysContext(l.ctx)
@@ -92,7 +95,9 @@ func loadKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) 
 		return nil, err
 	}
 	for _, fk := range fks {
-		out = append(out, l.node(fk.Name, NodeForeignKey, node.data.Schema, fk.Name, node.data.DBName))
+		n := l.node(fk.Name, NodeForeignKey, node.data.Schema, fk.Name, node.data.DBName)
+		n.data.TableName = node.data.Name
+		out = append(out, n)
 	}
 	return out, nil
 }
@@ -131,7 +136,9 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 			unique = ", Unique"
 		}
 		label := fmt.Sprintf("%s (%s%s)", idx.Name, kind, unique)
-		out = append(out, l.node(label, NodeIndex, node.data.Schema, idx.Name, node.data.DBName))
+		n := l.node(label, NodeIndex, node.data.Schema, idx.Name, node.data.DBName)
+		n.data.TableName = node.data.Name
+		out = append(out, n)
 	}
 	return out, nil
 }
@@ -144,7 +151,9 @@ func loadStatisticsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 	}
 	return listChildren(func() ([]*gosmo.Statistic, error) { return table.StatisticsContext(l.ctx) },
 		func(st *gosmo.Statistic) *explorerNode {
-			return l.node(st.Name, NodeStatistic, node.data.Schema, st.Name, node.data.DBName)
+			n := l.node(st.Name, NodeStatistic, node.data.Schema, st.Name, node.data.DBName)
+			n.data.TableName = node.data.Name
+			return n
 		})
 }
 

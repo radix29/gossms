@@ -111,6 +111,58 @@ func TestTableChildrenAreStaticFolders(t *testing.T) {
 	}
 }
 
+// TestSQLServerAgentIsSiblingOfDatabases pins down SQL Server Agent's tree
+// position: a direct child of the server root, alongside Databases, not
+// nested under the Server Objects (Management) folder — matching SSMS's own
+// top-level placement.
+func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	l := loaderCtx{ctx: context.Background(), sc: sc}
+
+	serverChildren, err := childLoaders[NodeServer](l, &explorerNode{data: nodeData{Type: NodeServer, conn: sc}})
+	if err != nil {
+		t.Fatalf("loadServerChildren: %v", err)
+	}
+	var sawAgent bool
+	for _, c := range serverChildren {
+		if c.label == "SQL Server Agent" {
+			if c.data.Type != NodeAgentJobs {
+				t.Errorf("SQL Server Agent child has Type %v, want NodeAgentJobs", c.data.Type)
+			}
+			sawAgent = true
+		}
+	}
+	if !sawAgent {
+		t.Fatal(`loadServerChildren didn't include "SQL Server Agent"`)
+	}
+
+	mgmtChildren, err := childLoaders[NodeManagement](l, &explorerNode{data: nodeData{Type: NodeManagement, conn: sc}})
+	if err != nil {
+		t.Fatalf("loadManagementChildren: %v", err)
+	}
+	for _, c := range mgmtChildren {
+		if c.label == "SQL Server Agent" {
+			t.Error(`Server Objects (Management) folder still contains "SQL Server Agent" — it should only be under the server root now`)
+		}
+	}
+}
+
+// TestViewsStoredProceduresFunctionsAreLeaves pins down that these node
+// types no longer show a tree expand arrow — they have no childLoaders
+// entry, so an arrow that expands to nothing was misleading ("cannot be
+// opened").
+func TestViewsStoredProceduresFunctionsAreLeaves(t *testing.T) {
+	for _, nt := range []NodeType{NodeView, NodeStoredProcedure, NodeFunction} {
+		if hasChildren(nt) {
+			t.Errorf("hasChildren(%v) = true, want false (leaf, no childLoaders entry)", nt)
+		}
+		if _, ok := childLoaders[nt]; ok {
+			t.Errorf("childLoaders has an entry for %v, but hasChildren says it's a leaf — inconsistent", nt)
+		}
+	}
+}
+
 // findMenuItem returns the item with the given label, or nil.
 func findMenuItem(items []controls.MenuItem, label string) *controls.MenuItem {
 	for i := range items {

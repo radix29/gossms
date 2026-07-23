@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
@@ -223,6 +224,26 @@ func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, cols []string, 
 // caller to apply via postEvent.
 func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	switch node.data.Type {
+	case NodeAgentJobs:
+		return agentServerDetail(sc)
+	case NodeAgentJob:
+		return agentJobDetail(sc, node)
+	case NodeAgentSchedule:
+		return agentScheduleDetail(sc, node)
+	case NodeAgentAlert:
+		return agentAlertDetail(sc, node)
+	case NodeAgentOperator:
+		return agentOperatorDetail(sc, node)
+	case NodeAgentJobActivity:
+		return agentJobActivityDetail(sc)
+	case NodeAgentJobHistory:
+		return agentJobHistoryDetail(sc)
+	case NodeAgentJobCategories:
+		return agentJobCategoriesDetail(sc)
+	case NodeAgentAlertCategories:
+		return agentAlertCategoriesDetail(sc)
+	case NodeAgentReport:
+		return agentReportDetail(sc, node.data.Name)
 	case NodeSystemDatabases:
 		dbs, err := sc.Server.Databases()
 		if err != nil {
@@ -291,6 +312,9 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 		return []string{"Name", "Created", "Modified"}, rows, nil
 
 	default:
+		if hasChildren(node.data.Type) {
+			return fetchChildObjectsDetail(sc, node)
+		}
 		return []string{"Property", "Value"}, [][]string{
 			{"Name", node.label},
 			{"Type", nodeTypeName(node.data.Type)},
@@ -298,6 +322,29 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 			{"Schema", node.data.Schema},
 		}, nil
 	}
+}
+
+// fetchChildObjectsDetail is the fallback detail view for any node type with
+// children but no richer, purpose-built view above: it just lists the child
+// objects, the same way SSMS's Object Explorer Details falls back to a
+// folder's contents. Reuses the same childLoaders entry the tree itself
+// expands with, so a new NodeType wired into childLoaders picks up a
+// reasonable detail view for free rather than defaulting to the leaf-style
+// Property/Value grid, which doesn't fit a folder.
+func fetchChildObjectsDetail(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	loader, ok := childLoaders[node.data.Type]
+	if !ok {
+		return []string{"Name"}, nil, nil
+	}
+	children, err := loader(loaderCtx{ctx: context.Background(), sc: sc}, node)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows := make([][]string, 0, len(children))
+	for _, c := range children {
+		rows = append(rows, []string{c.label})
+	}
+	return []string{"Name"}, rows, nil
 }
 
 // Draw renders the title bar and the data grid.

@@ -70,11 +70,16 @@ type App struct {
 	propDialog          *PropDialog
 	newDatabaseDialog   *NewDatabaseDialog
 	newLoginDialog      *NewLoginDialog
+	newJobDialog        *NewJobDialog
+	newScheduleDialog   *NewScheduleDialog
+	newAlertDialog      *NewAlertDialog
+	newOperatorDialog   *NewOperatorDialog
 	fileDialog          *dialogs.FileDialog
 	queryListDialog     *QueryListDialog
 	optionsDialog       *OptionsDialog
 	tasksDialog         *TasksDialog
 	confirmDialog       *dialogs.ConfirmDialog
+	confirmTypedDialog  *dialogs.TypedConfirmDialog
 	alertDialog         *dialogs.AlertDialog
 	backupDialog        *BackupDialog
 	restoreDialog       *RestoreDialog
@@ -249,6 +254,10 @@ func (a *App) buildUI() {
 	a.propDialog = NewPropDialog(a)
 	a.newDatabaseDialog = NewNewDatabaseDialog(a)
 	a.newLoginDialog = NewNewLoginDialog(a)
+	a.newJobDialog = NewNewJobDialog(a)
+	a.newScheduleDialog = NewNewScheduleDialog(a)
+	a.newAlertDialog = NewNewAlertDialog(a)
+	a.newOperatorDialog = NewNewOperatorDialog(a)
 	a.fileDialog = dialogs.NewFileDialog(a.screen)
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
 		a.confirmDialog.ShowConfirm("Confirm Save As",
@@ -263,6 +272,7 @@ func (a *App) buildUI() {
 	a.optionsDialog = NewOptionsDialog(a)
 	a.tasksDialog = NewTasksDialog(a)
 	a.confirmDialog = dialogs.NewConfirmDialog(a.screen)
+	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(a.screen)
 	a.alertDialog = dialogs.NewAlertDialog(a.screen)
 	a.backupDialog = NewBackupDialog(a)
 	a.restoreDialog = NewRestoreDialog(a)
@@ -273,8 +283,9 @@ func (a *App) buildUI() {
 	a.allDialogs = []Dialog{
 		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
+		a.newJobDialog, a.newScheduleDialog, a.newAlertDialog, a.newOperatorDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
-		a.confirmDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
+		a.confirmDialog, a.confirmTypedDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
 	}
 }
 

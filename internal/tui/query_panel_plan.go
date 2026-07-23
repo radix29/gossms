@@ -33,7 +33,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 		return
 	}
 	if !p.app.isConnected(p.conn) {
-		p.resultsNotice = "Not connected — use File > Connect"
+		p.resultsNotice = p.notConnectedMessage()
 		p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
 		return
 	}

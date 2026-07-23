@@ -144,21 +144,13 @@ func execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 	start := time.Now()
 	res := &Result{}
 
-	conn, err := db.Conn(ctx)
+	conn, err := acquireConn(ctx, db, database)
 	if err != nil {
 		res.addError(err)
 		res.Elapsed = time.Since(start)
 		return res
 	}
 	defer conn.Close()
-
-	if database != "" {
-		if _, err := conn.ExecContext(ctx, "USE "+gosmo.QuoteName(database)); err != nil {
-			res.addError(fmt.Errorf("switch to database %s: %w", database, err))
-			res.Elapsed = time.Since(start)
-			return res
-		}
-	}
 
 	if capture != planCaptureNone {
 		setOpt, label := "STATISTICS XML", "actual"
@@ -200,6 +192,75 @@ func execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 	}
 	res.Elapsed = time.Since(start)
 	return res
+}
+
+// acquireConnRetryAttempts is the total number of tries (initial + retries)
+// acquireConn makes when its connection-liveness prologue fails transiently
+// — mirrors gosmo's own readRetryAttempts (gosmo/retry.go), the same
+// tuning already trusted for gosmo's Database.query/queryRow.
+const acquireConnRetryAttempts = 3
+
+// acquireConnRetryDelay is the backoff before the nth retry (1-based) —
+// mirrors gosmo's own readRetryDelay.
+func acquireConnRetryDelay(attempt int) time.Duration {
+	return time.Duration(attempt) * 50 * time.Millisecond
+}
+
+// acquireConn returns a live pinned *sql.Conn for execute to run a script's
+// GO batches on, already switched to database (via "USE") if non-empty —
+// retrying against a fresh connection when the pool hands back one that's
+// dead. A batch script needs one dedicated connection for its whole run
+// (temp tables and SET options must survive across batches — see execute),
+// so unlike every other call in this package it can't just go through db's
+// own pool-level Query/ExecContext, which retries a dead pooled connection
+// automatically; a *sql.Conn pinned via db.Conn gets none of that —
+// database/sql's automatic bad-connection retry only covers *sql.DB-level
+// calls, never one already pinned out of the pool. Without this, a
+// connection silently dropped while idle (a firewall/NAT timeout, the
+// server killing an idle session, a failover) surfaced as an outright
+// failure on the very next Execute, and only the one after that (which
+// happened to dial a fresh connection) succeeded — this closes that gap
+// the same way gosmo's own Database.query/queryRow already do for reads.
+//
+// Only this function's own USE/SELECT-1 prologue is ever retried, never one
+// of the caller's actual batches — those still fail outright if the
+// connection dies mid-script, exactly as before, since silently re-running
+// arbitrary user SQL against a fresh connection could re-apply side effects
+// that already partially ran.
+func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, error) {
+	prologue := "SELECT 1"
+	if database != "" {
+		prologue = "USE " + gosmo.QuoteName(database)
+	}
+	wrapErr := func(err error) error {
+		if database != "" {
+			return fmt.Errorf("switch to database %s: %w", database, err)
+		}
+		return err
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= acquireConnRetryAttempts; attempt++ {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := conn.ExecContext(ctx, prologue); err != nil {
+			conn.Close() // dead — evicted from the pool via driver.Validator.IsValid
+			lastErr = err
+			if ctx.Err() != nil || attempt == acquireConnRetryAttempts || !gosmo.IsRetryable(err) {
+				return nil, wrapErr(err)
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(acquireConnRetryDelay(attempt)):
+			}
+			continue
+		}
+		return conn, nil
+	}
+	return nil, wrapErr(lastErr)
 }
 
 // currentDatabase reads DB_NAME() off conn — the same connection the
