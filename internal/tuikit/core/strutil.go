@@ -105,6 +105,37 @@ func PadRight(s string, n int) string {
 	return s + strings.Repeat(" ", n-w)
 }
 
+// PadLeft pads s to exactly n display columns with leading spaces, for a
+// right-aligned fixed-width column (e.g. a byte size next to a name). If s
+// is already n columns or wider, it returns s truncated to n columns
+// (without an ellipsis) so the result always occupies exactly n columns.
+func PadLeft(s string, n int) string {
+	w := displaywidth.String(s)
+	if w == n {
+		return s
+	}
+	if w > n {
+		// Hard-clip to n columns without an ellipsis, for fixed-width cells.
+		var sb strings.Builder
+		width := 0
+		g := displaywidth.StringGraphemes(s)
+		for g.Next() {
+			gw := g.Width()
+			if width+gw > n {
+				break
+			}
+			sb.WriteString(g.Value())
+			width += gw
+		}
+		for width < n { // pad any remainder if the last wide grapheme didn't fit
+			sb.WriteByte(' ')
+			width++
+		}
+		return sb.String()
+	}
+	return strings.Repeat(" ", n-w) + s
+}
+
 // Itoa converts n to a decimal string without importing strconv.
 func Itoa(n int) string {
 	if n == 0 {

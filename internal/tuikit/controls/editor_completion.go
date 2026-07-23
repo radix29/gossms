@@ -95,6 +95,7 @@ func (e *Editor) closeCompletion() {
 	e.completionItems = nil
 	e.completionSel = 0
 	e.completionScroll = 0
+	e.completionMouseDown = false
 }
 
 // updateCompletion re-queries the provider at the current cursor position
@@ -361,6 +362,9 @@ func (e *Editor) ensureCompletionVisible() {
 func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 	rect := e.completionRect()
 	mx, my := ev.Position()
+	if ev.Buttons() == tcell.ButtonNone {
+		e.completionMouseDown = false
+	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if rect.Contains(mx, my) {
@@ -387,6 +391,12 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 			e.closeCompletion()
 			return false
 		}
+		if e.completionMouseDown {
+			// Still the same physical press — do not re-commit on every
+			// resent motion event.
+			return true
+		}
+		e.completionMouseDown = true
 		idx := e.completionScroll + (my - rect.Y)
 		if idx < 0 || idx >= len(e.completionItems) || e.completionItems[idx].Placeholder {
 			return true

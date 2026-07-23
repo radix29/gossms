@@ -203,6 +203,14 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 			g.selRow = row
 			if g.cellCursor {
 				if col, ok := g.colAt(mx); ok {
+					if g.mouseDragging && row == g.toggleRow && col == g.toggleCol {
+						// Still the same cell as the last press/drag-move
+						// event — do not re-toggle on every resent motion
+						// event from one physical, stationary click.
+						return true
+					}
+					g.mouseDragging = true
+					g.toggleRow, g.toggleCol = row, col
 					g.selCol = col
 					g.activateCell()
 					return true

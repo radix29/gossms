@@ -51,6 +51,11 @@ func (r *GridRow) HandleMouse(ev *tcell.EventMouse) bool { return r.Grid.HandleM
 // instead of GridRow.Draw drawing it inline.
 func (r *GridRow) DrawOverlay(s tcell.Screen) { r.Grid.DrawOverlay(s) }
 
+// OverlayActive implements propsheet.OverlayActiver, so Form/PropertySheet
+// give the grid's "Show Value" popup first refusal ahead of position-based
+// click routing — see controls.DataGrid.OverlayActive.
+func (r *GridRow) OverlayActive() bool { return r.Grid.OverlayActive() }
+
 // CopyText returns the selected cell (cell-cursor mode) or the whole
 // selected row, tab-joined (plain row-selection mode).
 func (r *GridRow) CopyText() string {

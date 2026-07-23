@@ -1,7 +1,8 @@
 // Package controls provides higher-level, reusable TUI controls:
 //
-//   - MenuBar / ContextMenu — application menu bar and floating right-click
-//     popup menu (menu.go)
+//   - MenuBar / ContextMenu — application menu bar (menu_bar.go) and
+//     floating right-click popup menu (context_menu.go); their shared
+//     MenuItem/Menu types live in menu_item.go
 //   - Toolbar — row of icon-only buttons with hover tooltips (toolbar.go)
 //   - TreeView — collapsible/expandable tree with generic node data
 //     (treeview.go)

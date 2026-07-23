@@ -436,7 +436,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 			group = "LOG"
 		}
 		core.DrawTextClipped(s, lx, row, w, labelStyle,
-			fmt.Sprintf("%-28s %-12s %10s", f.LogicalName, group, formatBytes(f.Size)))
+			core.PadRight(f.LogicalName, 28)+" "+core.PadRight(group, 12)+" "+core.PadLeft(formatBytes(f.Size), 10))
 		row++
 	}
 
@@ -630,16 +630,12 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 
-	if i := d.ButtonClicked(ev, restoreFormButtons); i >= 0 {
-		d.btnFocus = i
-		d.doFormButton()
-		return true
-	}
-
 	histMode := d.rbSource.Selected() == 1
 
 	// An open dropdown's list is an overlay drawn last, so it gets first
-	// refusal of every click.
+	// refusal of every click — ahead of ButtonClicked below, which would
+	// otherwise steal a click landing on an open list row that happens to
+	// visually overlap the button row.
 	if histMode {
 		if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
 			d.focusTo(dd)
@@ -647,6 +643,13 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	}
+
+	if i := d.ButtonClicked(ev, restoreFormButtons); i >= 0 {
+		d.btnFocus = i
+		d.doFormButton()
+		return true
+	}
+
 	if d.rbSource.HandleMouse(ev) {
 		d.focusTo(d.rbSource)
 		d.syncSourceState()

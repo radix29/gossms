@@ -344,3 +344,42 @@ func TestSheetHasNoSelectionOutsideFormZone(t *testing.T) {
 		t.Fatal("HasSelection() = true while the page list (not the form) has focus")
 	}
 }
+
+// TestSheetHandleMouseForwardsReleaseToPageList pins the fix for a real
+// bug: PropertySheet.HandleMouse's "forward a release to a latch-bearing
+// child before any early return" branch (see the ButtonNone block at the
+// top of HandleMouse) used to forward only to the current page's Form, not
+// to pageList — even though pageList (a controls.ListBox) gained its own
+// mouseDragging latch in the same change. A release landing outside the
+// whole dialog (consumed by ConsumeOutsideClick) would leave that latch
+// stuck, silently swallowing pageList's next press. Uses pageList's own
+// HandleMouse directly to arm/observe the latch, since giving the
+// embedded dialogs.ModalDialog a real (non-zero) rect would require an
+// actual tcell.Screen, unavailable in this package's unit tests.
+func TestSheetHandleMouseForwardsReleaseToPageList(t *testing.T) {
+	p := newTestSheet("General", "Memory")
+	p.pageList.SetBounds(0, 0, 20, 10)
+	p.Show()
+
+	var selected []int
+	p.pageList.OnSelect = func(i int) { selected = append(selected, i) }
+
+	// Arm the page list's latch: a press on row 1 ("Memory").
+	p.pageList.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	if want := []int{1}; len(selected) != 1 || selected[0] != want[0] {
+		t.Fatalf("selected = %v after first press, want %v", selected, want)
+	}
+
+	// A release landing far outside the dialog must still reach the page
+	// list and clear its latch.
+	p.HandleMouse(tcell.NewEventMouse(-100, -100, tcell.ButtonNone, tcell.ModNone))
+
+	// A genuine second press on a different row must register. If the
+	// release above hadn't reached pageList, ListBox.HandleMouse's
+	// mouseDragging check swallows *every* Button1 press while armed —
+	// regardless of row — so this would otherwise silently do nothing.
+	p.pageList.HandleMouse(tcell.NewEventMouse(0, 0, tcell.Button1, tcell.ModNone))
+	if want := []int{1, 0}; len(selected) != 2 || selected[1] != want[1] {
+		t.Fatalf("selected = %v after second press, want %v (release must clear the page list's latch)", selected, want)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func key(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }
@@ -271,6 +272,54 @@ func TestCommonPrefixHelper(t *testing.T) {
 		if got := commonPrefix(tt.in); got != tt.want {
 			t.Errorf("commonPrefix(%v) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate pins the fix
+// for tcell's all-motion mouse tracking resending Buttons()==Button1 on
+// every motion event while the button stays down. Without listMouseDragging,
+// a single physical click on a not-yet-selected row would set d.sel to that
+// row, and the very next resent event — same physical click, no release —
+// would then see idx == d.sel (just set) and mistake it for a second click
+// on an already-selected row, auto-activating (choosing) a file the user
+// only meant to select once.
+func TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate(t *testing.T) {
+	d, dir := newTestFileDialog(t)
+	var chosen string
+	d.ShowOpen("Open Query File", filepath.Join(dir, "README.md"), func(path string) { chosen = path })
+	d.rect = core.Rect{X: 0, Y: 0, W: 60, H: 20}
+
+	// Entries: "..", "docs", "src", "main.go", "README.md" (see
+	// TestFileDialogLoadDirSortsDirsBeforeFiles). ShowOpen preselects
+	// README.md (index 4), so main.go (index 3) starts out unselected.
+	const mainGoIdx = 3
+	if d.entries[mainGoIdx].name != "main.go" {
+		t.Fatalf("entries[%d] = %q, want main.go", mainGoIdx, d.entries[mainGoIdx].name)
+	}
+	lr := d.listRect()
+	x, y := lr.X+1, lr.Y+mainGoIdx
+
+	// A single physical click selects the row but must not activate it.
+	d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	if d.sel != mainGoIdx {
+		t.Fatalf("sel = %d, want %d", d.sel, mainGoIdx)
+	}
+	if chosen != "" {
+		t.Fatal("a single click on a previously-unselected row must not activate it")
+	}
+
+	// Resent Button1 with no release in between must not auto-activate.
+	d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	if chosen != "" {
+		t.Fatal("a resent Button1 with no release must not auto-activate the row it just selected")
+	}
+
+	// A genuine second click, after a release, does activate it.
+	d.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+	d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	want := filepath.Join(dir, "main.go")
+	if chosen != want {
+		t.Fatalf("chosen = %q, want %q after a genuine second click", chosen, want)
 	}
 }
 

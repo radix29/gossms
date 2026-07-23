@@ -61,13 +61,39 @@ func TestListBoxClickSameRowActivates(t *testing.T) {
 	if l.Selected() != 1 || selectedCalls != 1 {
 		t.Fatalf("after click on row 1: selected=%d calls=%d, want 1,1", l.Selected(), selectedCalls)
 	}
-	// Clicking the already-selected row activates instead of re-selecting.
+	// Release, then a genuine second press on the already-selected row
+	// activates instead of re-selecting — the release in between is what
+	// distinguishes this from tcell's resent Button1 while a button stays
+	// held (see mouseDragging's doc comment), which must NOT re-activate.
+	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.ButtonNone, tcell.ModNone))
 	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
 	if activated != 1 {
 		t.Fatalf("activated = %d, want 1", activated)
 	}
 	if selectedCalls != 1 {
 		t.Fatalf("OnSelect fired %d times on the activating click, want no extra call", selectedCalls)
+	}
+}
+
+// TestListBoxHeldButtonOnSameRowDoesNotReActivate pins the fix for tcell's
+// all-motion mouse tracking resending Buttons()==Button1 on every cursor
+// motion while the button stays down: a single physical click on an
+// already-selected row that so much as twitches used to fire OnActivate
+// twice, since ListBox had no mouseDragging-style latch (unlike every
+// other click-position widget in the package).
+func TestListBoxHeldButtonOnSameRowDoesNotReActivate(t *testing.T) {
+	l := newTestListBox("a", "b", "c")
+	l.SetSelected(1)
+	var activateCount int
+	l.OnActivate = func(i int) { activateCount++ }
+
+	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	if activateCount != 1 {
+		t.Fatalf("activateCount after first press = %d, want 1", activateCount)
+	}
+	l.HandleMouse(tcell.NewEventMouse(0, 1, tcell.Button1, tcell.ModNone))
+	if activateCount != 1 {
+		t.Fatalf("activateCount after resent Button1 (no release) = %d, want 1 (still the same physical press)", activateCount)
 	}
 }
 

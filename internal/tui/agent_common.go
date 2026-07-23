@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // agent_common.go holds small helpers shared across the SQL Server Agent
@@ -87,7 +88,11 @@ func refreshExplorerNode(a *App, n *explorerNode) {
 // goroutine, then updates node's cached IsEnabled flag and redraws the tree
 // and detail view on success — the shared body behind every Agent entity's
 // Enable/Disable toggle.
-func (a *App) setAgentEnabled(node *explorerNode, enable bool, run func(ctx context.Context) error) {
+func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool, run func(ctx context.Context) error) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
 		defer cancel()
@@ -114,7 +119,11 @@ func (a *App) setAgentEnabled(node *explorerNode, enable bool, run func(ctx cont
 // Agent entity's Delete action. On success, the parent folder (whose
 // children list still includes the now-deleted node) is refreshed so the
 // tree drops it without waiting for a manual Refresh.
-func (a *App) deleteAgentEntity(node *explorerNode, title, message string, run func(ctx context.Context) error) {
+func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, message string, run func(ctx context.Context) error) {
+	if !a.isConnected(sc) {
+		a.setStatus("Not connected — use File > Connect")
+		return
+	}
 	a.confirmDialog.ShowConfirm(title, message, func(confirmed bool) {
 		if !confirmed {
 			return

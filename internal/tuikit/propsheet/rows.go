@@ -332,6 +332,7 @@ func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
 	r.dd.Draw(s)
 }
 func (r *SelectRow) DrawOverlay(s tcell.Screen)            { r.dd.DrawOverlay(s) }
+func (r *SelectRow) OverlayActive() bool                   { return r.dd.IsOpen() }
 func (r *SelectRow) HandleKey(ev *tcell.EventKey) bool     { return r.dd.HandleKey(ev) }
 func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool { return r.dd.HandleMouse(ev) }
 func (r *SelectRow) CopyText() string                      { return r.dd.Value() }

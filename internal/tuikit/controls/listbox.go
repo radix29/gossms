@@ -14,10 +14,19 @@ type ListBox struct {
 	scroll  int
 	focused bool
 
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold over the same row — mirrors TreeView's/DataGrid's field of the
+	// same name and purpose. Without it, tcell's all-motion mouse tracking
+	// resends Buttons()==Button1 on every cursor motion while the button
+	// stays down, so a single physical click on an already-selected row
+	// would re-fire OnActivate on every resent event instead of once.
+	mouseDragging bool
+
 	// OnSelect fires whenever the selected index changes (arrow keys,
-	// click). OnActivate fires on Enter or a click that lands on an
-	// already-selected row (double-activation semantics are the caller's
-	// choice — ListBox itself fires on every click that changes nothing).
+	// click). OnActivate fires once per physical click that lands on an
+	// already-selected row (double-activation semantics for successive
+	// physical clicks are the caller's choice — ListBox itself only
+	// guards against tcell's resent-while-held events, not real repeats).
 	OnSelect   func(i int)
 	OnActivate func(i int)
 }
@@ -146,12 +155,21 @@ func (l *ListBox) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse clicks and wheel scroll.
 func (l *ListBox) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		l.mouseDragging = false
+	}
 	mx, my := ev.Position()
 	if !l.rect.Contains(mx, my) {
 		return false
 	}
 	switch ev.Buttons() {
 	case tcell.Button1:
+		if l.mouseDragging {
+			// Still the same physical press — do not re-select or
+			// re-activate on every resent motion event.
+			return true
+		}
+		l.mouseDragging = true
 		idx := l.scroll + (my - l.rect.Y)
 		if idx >= 0 && idx < len(l.items) {
 			same := idx == l.sel

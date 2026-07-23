@@ -16,12 +16,15 @@ tuikit/
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox — one file per widget
 ├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
 │             — panel.go, panel_manager.go, splitter.go
-├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, FileDialog
+├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, TypedConfirmDialog, FileDialog
 │             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go,
-│               file_dialog.go (browse/save-as, list+path entry, used for every
-│               file path prompt in internal/tui)
+│               typed_confirm_dialog.go (retype-to-confirm); FileDialog (browse/
+│               save-as, list+path entry, used for every file path prompt in
+│               internal/tui) is split across file_dialog.go (state), file_dialog_draw.go,
+│               file_dialog_input.go, and file_dialog_complete.go (path completion)
 ├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL highlighter/statement select)
-│             — one file per group: menu.go, toolbar.go, treeview.go, listbox.go, tabstrip.go;
+│             — one file per group: menu_bar.go/context_menu.go (+ shared MenuItem/Menu
+│               types in menu_item.go), toolbar.go, treeview.go, listbox.go, tabstrip.go;
 │               DataGrid is split across datagrid.go (state/data source/column
 │               widths), datagrid_draw.go, datagrid_input.go, and
 │               datagrid_overlay.go (right-click menu, "Show Value" popup);
@@ -31,7 +34,9 @@ tuikit/
 │               (generic completion/IntelliSense popup), sql_highlighter.go,
 │               sql_statement.go (T-SQL statement/batch boundary detection)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
-              — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go, sheet.go
+              — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go;
+                PropertySheet itself is split across sheet.go (state/page list),
+                sheet_draw.go, sheet_input.go, and sheet_clipboard.go
 ```
 
 Every tuikit sub-package follows the same convention: one file per type or

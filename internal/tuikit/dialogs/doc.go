@@ -14,4 +14,8 @@
 //   - properties_dialog.go  — PropertiesDialog (generic key/value viewer)
 //   - alert_dialog.go       — AlertDialog (single-button info message)
 //   - confirm_dialog.go     — ConfirmDialog (two-button yes/no)
+//   - typed_confirm_dialog.go — TypedConfirmDialog (retype-to-confirm)
+//   - file_dialog.go        — FileDialog (Open/Save file picker); split
+//     across file_dialog_draw.go (rendering), file_dialog_input.go
+//     (key/mouse handling), and file_dialog_complete.go (path completion)
 package dialogs

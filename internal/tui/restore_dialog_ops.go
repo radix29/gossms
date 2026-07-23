@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -81,10 +82,8 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			d.history = hist
 			labels := make([]string, len(hist))
 			for i, b := range hist {
-				labels[i] = fmt.Sprintf("%s  %-15s %s",
-					b.BackupFinish.Format("2006-01-02 15:04"),
-					backupTypeLabel(b.BackupType),
-					serverPathBase(b.DeviceName))
+				labels[i] = b.BackupFinish.Format("2006-01-02 15:04") + "  " +
+					core.PadRight(backupTypeLabel(b.BackupType), 15) + " " + serverPathBase(b.DeviceName)
 			}
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, 48)
 			d.rebuildFocusable()

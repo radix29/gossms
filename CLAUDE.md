@@ -20,8 +20,11 @@ the pushed git tag — see `internal/version/version.go` — never hand-edited.
 
 ## Read next
 
-1. `README.md` — features, keyboard reference, architecture, file tree.
-2. `internal/tuikit/README.md` — the TUI library's package map, dependency
+1. `README.md` — features and keyboard reference, user-facing.
+2. `ARCHITECTURE.md` — package map, file tree, the `tuikit`/`tui` split
+   rationale, the `mouseDragging` and `postEvent`/`wakeEventLoop` idioms,
+   local gosmo dev workflow. Developer-facing.
+3. `internal/tuikit/README.md` — the TUI library's package map, dependency
    direction, and design rules (callbacks-only, `core.Rect` geometry,
    `core.DisplayWidth` not `len()`, overlays drawn last). Required reading
    before touching anything under `internal/tuikit`.

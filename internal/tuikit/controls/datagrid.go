@@ -102,6 +102,16 @@ type DataGrid struct {
 	// cursor) — mirrors Editor's own field of the same name and purpose.
 	mouseDragging bool
 
+	// toggleRow/toggleCol record the last cell an editable toggle grid's
+	// click-drag activated (see blockSelecting's doc comment above), so a
+	// resent Button1 event at that same cell — tcell resends on every
+	// cursor motion while the button stays down, even without the mouse
+	// actually leaving the cell — doesn't call OnActivateCell a second
+	// time for one physical, stationary click. A drag that moves to a
+	// genuinely different cell still activates it, preserving the
+	// paint-as-you-drag behavior.
+	toggleRow, toggleCol int
+
 	// showRowNumbers prepends a non-selectable, unlabelled row-number
 	// column (see SetRowNumbers) — used by the query-results grid.
 	showRowNumbers bool

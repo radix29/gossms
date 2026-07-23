@@ -189,6 +189,19 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	mx, my := ev.Position()
 	_, h := a.screen.Size()
 
+	// freshPress is true only for the Button1 event that actually begins a
+	// gesture — false for every resent Button1 while the button stays down
+	// (tcell's all-motion tracking resends it on each motion event),
+	// however far the cursor has since drifted from wherever the gesture
+	// started. See mouseButtonDown's doc comment.
+	freshPress := ev.Buttons() == tcell.Button1 && !a.mouseButtonDown
+	switch ev.Buttons() {
+	case tcell.Button1:
+		a.mouseButtonDown = true
+	case tcell.ButtonNone:
+		a.mouseButtonDown = false
+	}
+
 	if top := a.topDialog(); top != nil {
 		top.HandleMouse(ev)
 		return
@@ -205,6 +218,52 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		a.menuBar.HandleMouse(ev)
 		return
 	}
+
+	// Object Explorer → query editor drag-and-drop: once a.dragNode is
+	// armed (below), it must get absolute first refusal on every event,
+	// ahead of the menu/toolbar row, the status row, and the splitter —
+	// otherwise a drag path that happens to cross row 0 pops a menu (or
+	// crosses the status row and pops the Status History dialog) mid-drag,
+	// and a release landing on either row never reaches dropExplorerNode,
+	// leaving dragNode stuck armed. While armed, every Button1 event is
+	// swallowed outright — the drag always refers to the node it started
+	// on, never whatever's currently under the cursor — and only a
+	// release is acted on.
+	if a.dragNode != nil {
+		switch ev.Buttons() {
+		case tcell.ButtonNone:
+			a.dropExplorerNode(mx, my)
+			a.dragNode = nil
+		case tcell.Button1:
+			// swallow motion; nothing else may react while a drop is pending
+			a.dragX, a.dragY = mx, my
+		default:
+			a.dragNode = nil
+		}
+		return
+	}
+
+	// A release can arrive after the cursor has drifted onto the menu/
+	// toolbar row or the status row mid-drag (tcell's all-motion tracking
+	// resends Button1 on every motion event while a button stays down) —
+	// broadcast it to every latch-owning widget, ahead of any positional
+	// branching below, so a selection/resize drag started in one of them
+	// terminates cleanly instead of leaving its latch stuck. Each of these
+	// is a verified no-op (beyond resetting its own latch) for a release
+	// outside its own bounds: MenuBar/Toolbar clear their drag flag and
+	// bail when off their row; Splitter clears dragging and returns; the
+	// explorer's TreeView clears its own latch before its bounds check;
+	// PanelManager forwards any release to the active panel regardless of
+	// position by design (see PanelManager.HandleMouse).
+	if ev.Buttons() == tcell.ButtonNone {
+		a.menuBar.HandleMouse(ev)
+		a.toolbar.HandleMouse(ev)
+		a.explorerSplit.HandleMouse(ev)
+		a.explorer.HandleMouse(ev)
+		a.panels.HandleMouse(ev)
+		return
+	}
+
 	if my == 0 {
 		// Toolbar occupies the right-aligned end of the same row MenuBar
 		// draws into; MenuBar is still given every event first so its own
@@ -217,32 +276,12 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	}
 
 	if my == h-1 {
-		if ev.Buttons() == tcell.Button1 {
+		// freshPress (not just ev.Buttons()==Button1) so a drag that
+		// started elsewhere and merely drifts across the status row mid-
+		// gesture — tcell resends Button1 on every motion event while
+		// held — doesn't pop this dialog; only a press beginning here does.
+		if freshPress {
 			a.statusHistoryDialog.Show()
-		}
-		return
-	}
-
-	// Object Explorer → query editor drag-and-drop: once a.dragNode is
-	// armed (below), it must get absolute first refusal on every event,
-	// ahead of even the splitter — otherwise a drag path that happens to
-	// cross the splitter's column arms *its* resize drag too, and a drag
-	// path that lingers inside Object Explorer keeps reaching
-	// TreeView.HandleMouse, which reselects (or, worse, toggles
-	// expand/collapse on) whatever row the pointer passes over. While
-	// armed, every Button1 event is swallowed outright — the drag always
-	// refers to the node it started on, never whatever's currently under
-	// the cursor — and only a release is acted on.
-	if a.dragNode != nil {
-		switch ev.Buttons() {
-		case tcell.ButtonNone:
-			a.dropExplorerNode(mx, my)
-			a.dragNode = nil
-		case tcell.Button1:
-			// swallow motion; nothing else may react while a drop is pending
-			a.dragX, a.dragY = mx, my
-		default:
-			a.dragNode = nil
 		}
 		return
 	}

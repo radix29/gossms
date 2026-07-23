@@ -60,6 +60,27 @@ func TestPadRight(t *testing.T) {
 	}
 }
 
+func TestPadLeft(t *testing.T) {
+	cases := []struct {
+		s    string
+		n    int
+		want string
+	}{
+		{"ab", 5, "   ab"},  // padded with leading spaces
+		{"ab", 2, "ab"},     // exact width, unchanged
+		{"abcde", 3, "abc"}, // hard-clipped, no ellipsis
+		{"你好", 3, "你 "},     // wide rune that doesn't fit is dropped, remainder padded
+	}
+	for _, c := range cases {
+		if got := PadLeft(c.s, c.n); got != c.want {
+			t.Errorf("PadLeft(%q, %d) = %q, want %q", c.s, c.n, got, c.want)
+		}
+		if got := DisplayWidth(PadLeft(c.s, c.n)); got != c.n {
+			t.Errorf("DisplayWidth(PadLeft(%q, %d)) = %d, want exactly %d", c.s, c.n, got, c.n)
+		}
+	}
+}
+
 func TestItoa(t *testing.T) {
 	cases := []struct {
 		n    int

@@ -24,6 +24,40 @@ func newTestTreeViewExpandable() *TreeView {
 	return tv
 }
 
+// TestSetNodesClampsScrollWhenListShrinks pins the fix for a real bug: a
+// collapse or refresh that shrinks the flat node list below the current
+// scroll offset used to leave scroll pointing past the end of nodes —
+// Draw's render loop (idx := tv.scroll + row; if idx >= len(tv.nodes) {
+// break}) exits on its very first iteration in that case, rendering Object
+// Explorer completely blank until the next arrow-key press recomputed
+// scroll via ensureVisible as a side effect. SetNodes now calls
+// ensureVisible itself so this can't happen.
+func TestSetNodesClampsScrollWhenListShrinks(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.H = 8
+
+	nodes := make([]TreeNode, 30)
+	for i := range nodes {
+		nodes[i] = TreeNode{ID: TreeNodeID(i + 1)}
+	}
+	tv.SetNodes(nodes)
+
+	// Jump to the last node, scrolling deep into the 30-node list (an
+	// 8-row view can't show it without scrolling).
+	tv.HandleKey(tcell.NewEventKey(tcell.KeyEnd, "", tcell.ModNone))
+	if tv.scroll == 0 {
+		t.Fatalf("scroll did not advance after jumping to the last of %d nodes in an 8-row view", len(nodes))
+	}
+	deepScroll := tv.scroll
+
+	// A collapse elsewhere in the tree rebuilds the flat node list via
+	// SetNodes, shrinking it well below the old scroll offset.
+	tv.SetNodes(nodes[:3])
+	if tv.scroll >= len(tv.nodes) {
+		t.Fatalf("scroll = %d after SetNodes shrank the list from 30 to %d nodes (scroll was %d beforehand) — Draw's render loop would show nothing", tv.scroll, len(tv.nodes), deepScroll)
+	}
+}
+
 // TestSelectIDSelectsAndFiresOnSelect confirms SelectID both moves the
 // visual selection to the requested node and invokes OnSelect — unlike
 // SetNodes, whose sel-clamping alone doesn't mean "select this node" and

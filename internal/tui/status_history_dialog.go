@@ -131,11 +131,21 @@ func (d *StatusHistoryDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// A release must reach d.editor even when it lands outside the dialog
+	// (consumed below) — otherwise its next press is swallowed as a
+	// continuation of the stale drag. Editor.HandleMouse returns false on
+	// ButtonNone, so this has no effect beyond resetting the latch.
+	if ev.Buttons() == tcell.ButtonNone && d.editor != nil {
+		d.editor.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
 	if d.ButtonClicked(ev, []string{"Close"}) == 0 {
 		d.Hide()
+		return true
+	}
+	if ev.Buttons() == tcell.ButtonNone {
 		return true
 	}
 	d.editor.HandleMouse(ev)

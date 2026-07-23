@@ -72,6 +72,12 @@ func (tv *TreeView) SetActive(v bool) { tv.active = v }
 func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	tv.nodes = nodes
 	tv.sel = core.Clamp(tv.sel, 0, core.Max(0, len(nodes)-1))
+	// A collapse/refresh that shrinks the flat node list below the old
+	// scroll offset would otherwise leave scroll pointing past the end of
+	// nodes — Draw's render loop breaks on its first iteration in that
+	// case, rendering nothing until the next arrow-key press recomputes
+	// scroll via ensureVisible as a side effect.
+	tv.ensureVisible(tv.rect.Inner(1).H)
 }
 
 // SelectID selects the node with the given ID, if present, and fires

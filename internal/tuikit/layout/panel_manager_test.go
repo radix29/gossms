@@ -37,6 +37,7 @@ func TestPanelManagerNonClosablePanelNeverFiresOnCloseTab(t *testing.T) {
 	pm.OnCloseTab = func(i int) { closed = i }
 
 	for x := 0; x < 40; x++ {
+		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.ButtonNone, tcell.ModNone))
 		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone))
 	}
 	if closed == 0 {
@@ -56,8 +57,14 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 	closed := -1
 	pm.OnCloseTab = func(i int) { closed = i }
 
+	// Each x is a separate fresh press (release first) — mouseDragging
+	// would otherwise treat this sweep as one held drag and swallow every
+	// position after the first, since it has no bearing on cursor motion
+	// speed/distance, only on whether a release was seen since the last
+	// press.
 	found := false
 	for x := 0; x < 60 && !found; x++ {
+		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.ButtonNone, tcell.ModNone))
 		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone))
 		if closed == 1 {
 			found = true
@@ -65,6 +72,44 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("OnCloseTab never fired for panel 1, which is closable")
+	}
+}
+
+// TestPanelManagerHeldButtonOnCloseDoesNotReFire pins the fix for tcell's
+// all-motion mouse tracking resending Buttons()==Button1 on every cursor
+// motion while the button stays down: a single physical click on a tab's
+// [x] that so much as twitches used to fire OnCloseTab twice, which could
+// stack duplicate "save this Dirty panel?" prompts for one click.
+func TestPanelManagerHeldButtonOnCloseDoesNotReFire(t *testing.T) {
+	pm := NewPanelManager()
+	pm.AddPanel(&fakePanel{title: "Object Explorer Details", closable: false})
+	pm.AddPanel(&fakePanel{title: "Query 1", closable: true})
+	pm.SetBounds(0, 0, 80, 24)
+
+	closeCount := 0
+	pm.OnCloseTab = func(i int) {
+		if i == 1 {
+			closeCount++
+		}
+	}
+
+	closeX := -1
+	for x := 0; x < 60 && closeX < 0; x++ {
+		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.ButtonNone, tcell.ModNone))
+		pm.HandleMouse(tcell.NewEventMouse(x, 0, tcell.Button1, tcell.ModNone))
+		if closeCount == 1 {
+			closeX = x
+		}
+	}
+	if closeX < 0 {
+		t.Fatal("could not locate panel 1's close button to set up the test")
+	}
+
+	// A resent Button1 at the same spot, with no release in between, must
+	// not fire OnCloseTab again.
+	pm.HandleMouse(tcell.NewEventMouse(closeX, 0, tcell.Button1, tcell.ModNone))
+	if closeCount != 1 {
+		t.Fatalf("closeCount after resent Button1 (no release) = %d, want 1 (still the same physical press)", closeCount)
 	}
 }
 

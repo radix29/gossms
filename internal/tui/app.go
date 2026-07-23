@@ -50,6 +50,17 @@ type App struct {
 	dragX    int
 	dragY    int
 
+	// mouseButtonDown tracks whether Button1 is currently held, regardless
+	// of where the gesture started or which widget is under the cursor
+	// right now — unlike the per-widget mouseDragging latches (Toolbar,
+	// TreeView, MenuBar, ModalDialog), which only catch a resend *staying
+	// within the same widget*, this is what lets handleMouse recognise a
+	// drag that started elsewhere (e.g. a text selection in the query
+	// editor) and merely drifted across the status row mid-gesture,
+	// distinguishing it from a genuine fresh press starting there. See
+	// handleMouse's use for opening the Status History dialog.
+	mouseButtonDown bool
+
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
 	contextMenu   *controls.ContextMenu

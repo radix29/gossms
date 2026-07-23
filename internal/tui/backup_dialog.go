@@ -621,19 +621,22 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 
+	// The database dropdown's open list is an overlay drawn last, so it
+	// gets first refusal of every click — ahead of ButtonClicked below,
+	// which would otherwise steal a click landing on an open list row that
+	// happens to visually overlap the button row.
+	if d.ddDatabase.HandleMouse(ev) {
+		d.focusTo(d.ddDatabase)
+		d.syncAutoDest()
+		return true
+	}
+
 	if i := d.ButtonClicked(ev, backupFormButtons); i >= 0 {
 		d.btnFocus = i
 		d.doFormButton()
 		return true
 	}
 
-	// The database dropdown's open list is an overlay drawn last, so it
-	// gets first refusal of every click.
-	if d.ddDatabase.HandleMouse(ev) {
-		d.focusTo(d.ddDatabase)
-		d.syncAutoDest()
-		return true
-	}
 	if d.rbType.HandleMouse(ev) {
 		d.focusTo(d.rbType)
 		d.syncAutoDest()

@@ -171,6 +171,13 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.visible {
 		return false
 	}
+	// A release must reach d.input even when it lands outside the dialog
+	// (consumed below) — otherwise its next press is swallowed as a
+	// continuation of the stale drag. HandleMouse returns false on
+	// ButtonNone, so this has no effect beyond resetting the latch.
+	if ev.Buttons() == tcell.ButtonNone {
+		d.input.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -179,7 +186,6 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if ev.Buttons() == tcell.ButtonNone {
-		d.input.HandleMouse(ev)
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

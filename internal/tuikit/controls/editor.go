@@ -134,6 +134,14 @@ type Editor struct {
 	completionSuppressed  bool
 	completionSuppressRow int
 	completionSuppressCol int
+
+	// completionMouseDown distinguishes a fresh Button1 press on the popup
+	// from a continued hold over the same row — mirrors mouseDragging's
+	// purpose for the editor body. Without it, tcell's all-motion mouse
+	// tracking resends Buttons()==Button1 on every cursor motion while the
+	// button stays down, so a single click on an already-selected item can
+	// call commitSelectedCompletion() more than once.
+	completionMouseDown bool
 }
 
 // NewEditor creates an Editor. Pass a Highlighter or nil.

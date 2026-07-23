@@ -78,3 +78,10 @@ type ClipboardRow interface {
 type OverlayDrawer interface {
 	DrawOverlay(s tcell.Screen)
 }
+
+// OverlayActiver is implemented by rows whose popup can currently be open
+// (SelectRow's dropdown list, GridRow's full-cell-content popup) — see
+// Form.OverlayActive.
+type OverlayActiver interface {
+	OverlayActive() bool
+}

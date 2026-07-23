@@ -43,6 +43,15 @@ type PanelManager struct {
 	comboOpen  bool
 	comboHover int
 
+	// mouseDragging distinguishes a fresh Button1 press on the combo arrow
+	// or tab row from a continued hold over the same spot — mirrors
+	// TreeView's/MenuBar's/Toolbar's field of the same name and purpose.
+	// Without it, tcell's all-motion mouse tracking resends
+	// Buttons()==Button1 on every cursor motion while the button stays
+	// down, so a single click can toggle the combo open/closed twice (net
+	// no-op flicker) or fire OnCloseTab twice for one physical click.
+	mouseDragging bool
+
 	// OnCloseTab, if set, is called instead of RemovePanel when the user
 	// clicks a tab's [x] button — the application decides whether (and how)
 	// to actually close it, e.g. prompting to save a Dirty panel first.
@@ -291,6 +300,7 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	// active panel). Always forward release events to the active panel so
 	// drags terminate cleanly instead of getting stuck.
 	if ev.Buttons() == tcell.ButtonNone {
+		pm.mouseDragging = false
 		if p := pm.ActivePanel(); p != nil {
 			return p.HandleMouse(ev)
 		}
@@ -303,6 +313,12 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	// Combo toggle arrow
 	if my == pm.rect.Y && mx >= pm.rect.X+pm.rect.W-4 {
 		if ev.Buttons() == tcell.Button1 {
+			if pm.mouseDragging {
+				// Still the same physical press — do not re-toggle on
+				// every resent motion event.
+				return true
+			}
+			pm.mouseDragging = true
 			pm.comboOpen = !pm.comboOpen
 			return true
 		}
@@ -311,6 +327,13 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 	// Tab row click. Segments come from the same tabSegments call Draw uses,
 	// so hits line up with what's actually on screen.
 	if my == pm.rect.Y && ev.Buttons() == tcell.Button1 {
+		if pm.mouseDragging {
+			// Still the same physical press — do not re-fire on every
+			// resent motion event (in particular OnCloseTab, which may
+			// prompt to save a Dirty panel).
+			return true
+		}
+		pm.mouseDragging = true
 		for i, seg := range pm.tabSegments() {
 			closeSeg := seg[1]
 			if closeSeg.W > 0 && mx >= closeSeg.X && mx < closeSeg.X+closeSeg.W {

@@ -59,7 +59,7 @@ func pageDatabaseExtendedProperties(sc *db.ServerConn, dbName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			props, err := d.DatabaseExtendedProperties()
+			props, err := d.DatabaseExtendedPropertiesContext(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

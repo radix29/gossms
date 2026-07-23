@@ -187,6 +187,22 @@ func (f *Form) DrawOverlays(s tcell.Screen) {
 	}
 }
 
+// OverlayActive reports whether the focused row currently has an open
+// overlay (SelectRow's dropdown list, GridRow's "Show Value" popup) drawn
+// on top of the form — see DrawOverlays. A host laying the form out
+// alongside other position-routed elements (PropertySheet's button row and
+// page list) must check this and give the form first refusal of every
+// click while true, the same "overlay drawn last gets first refusal"
+// contract DataGrid.OverlayActive/QueryPanel already follow.
+func (f *Form) OverlayActive() bool {
+	row := f.Focused()
+	if row == nil {
+		return false
+	}
+	oa, ok := row.(OverlayActiver)
+	return ok && oa.OverlayActive()
+}
+
 // HandleKey forwards to the focused row first; if it doesn't consume the
 // event, Tab/Backtab/Up/Down move focus and PgUp/PgDn scroll.
 func (f *Form) HandleKey(ev *tcell.EventKey) bool {
