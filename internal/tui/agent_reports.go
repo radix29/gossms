@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -16,38 +17,38 @@ import (
 
 // agentReportDetail dispatches a NodeAgentReport leaf's title to its
 // report builder.
-func agentReportDetail(sc *db.ServerConn, title string) ([]string, [][]string, error) {
+func agentReportDetail(ctx context.Context, sc *db.ServerConn, title string) ([]string, [][]string, error) {
 	switch title {
 	case "Agent Metadata Summary":
-		return agentMetadataSummaryReport(sc)
+		return agentMetadataSummaryReport(ctx, sc)
 	case "Job Execution Summary":
-		return jobExecutionSummaryReport(sc)
+		return jobExecutionSummaryReport(ctx, sc)
 	case "Failed Job Runs":
-		return failedJobRunsReport(sc)
+		return failedJobRunsReport(ctx, sc)
 	case "Disabled Jobs":
-		return disabledJobsReport(sc)
+		return disabledJobsReport(ctx, sc)
 	case "Jobs Without Schedules":
-		return jobsWithoutSchedulesReport(sc)
+		return jobsWithoutSchedulesReport(ctx, sc)
 	case "Jobs Without Notifications":
-		return jobsWithoutNotificationsReport(sc)
+		return jobsWithoutNotificationsReport(ctx, sc)
 	case "Recently Modified Jobs":
-		return recentlyModifiedJobsReport(sc)
+		return recentlyModifiedJobsReport(ctx, sc)
 	default:
 		return nil, nil, fmt.Errorf("unknown SQL Server Agent report %q", title)
 	}
 }
 
-func agentMetadataSummaryReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func agentMetadataSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	schedules, schErr := sc.Server.Schedules()
-	alerts, aErr := sc.Server.Alerts()
-	eventAlerts, eaErr := sc.Server.EventAlerts()
-	operators, oErr := sc.Server.Operators()
-	jobCats, jcErr := sc.Server.Categories(gosmo.CategoryClassJob)
-	alertCats, acErr := sc.Server.Categories(gosmo.CategoryClassAlert)
+	schedules, schErr := sc.Server.SchedulesContext(ctx)
+	alerts, aErr := sc.Server.AlertsContext(ctx)
+	eventAlerts, eaErr := sc.Server.EventAlertsContext(ctx)
+	operators, oErr := sc.Server.OperatorsContext(ctx)
+	jobCats, jcErr := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassJob)
+	alertCats, acErr := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
 
 	enabled, disabled := 0, 0
 	for _, j := range jobs {
@@ -59,7 +60,7 @@ func agentMetadataSummaryReport(sc *db.ServerConn) ([]string, [][]string, error)
 	}
 
 	statusText := "Unknown"
-	if status, err := sc.Server.AgentInfo(); err == nil {
+	if status, err := sc.Server.AgentInfoContext(ctx); err == nil {
 		statusText = status.StatusText
 	}
 
@@ -78,8 +79,8 @@ func agentMetadataSummaryReport(sc *db.ServerConn) ([]string, [][]string, error)
 	return []string{"Property", "Value"}, rows, nil
 }
 
-func jobExecutionSummaryReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func jobExecutionSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -93,8 +94,8 @@ func jobExecutionSummaryReport(sc *db.ServerConn) ([]string, [][]string, error) 
 	return []string{"Job Name", "Enabled", "Category", "Last Outcome", "Last Run", "Next Run"}, rows, nil
 }
 
-func failedJobRunsReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func failedJobRunsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,8 +109,8 @@ func failedJobRunsReport(sc *db.ServerConn) ([]string, [][]string, error) {
 	return []string{"Job Name", "Category", "Last Run", "Duration"}, rows, nil
 }
 
-func disabledJobsReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func disabledJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -126,14 +127,14 @@ func disabledJobsReport(sc *db.ServerConn) ([]string, [][]string, error) {
 // jobsWithoutSchedulesReport fetches each job's attached schedules to
 // determine whether it has any — one round trip per job, acceptable for
 // the modest job counts a single SQL Server Agent instance typically has.
-func jobsWithoutSchedulesReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	rows := make([][]string, 0)
 	for _, j := range jobs {
-		scheds, err := j.Schedules()
+		scheds, err := j.SchedulesContext(ctx)
 		if err != nil || len(scheds) > 0 {
 			continue
 		}
@@ -142,8 +143,8 @@ func jobsWithoutSchedulesReport(sc *db.ServerConn) ([]string, [][]string, error)
 	return []string{"Job Name", "Category", "Enabled"}, rows, nil
 }
 
-func jobsWithoutNotificationsReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func jobsWithoutNotificationsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,8 +158,8 @@ func jobsWithoutNotificationsReport(sc *db.ServerConn) ([]string, [][]string, er
 	return []string{"Job Name", "Category", "Enabled"}, rows, nil
 }
 
-func recentlyModifiedJobsReport(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func recentlyModifiedJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

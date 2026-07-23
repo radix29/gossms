@@ -583,6 +583,20 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// A release must reach every mouseDragging-latched widget even when it
+	// lands outside the dialog (consumed below) or in progress mode (early
+	// return above) — otherwise its next press is swallowed as a
+	// continuation of the stale drag. Each returns false on ButtonNone, so
+	// this has no effect beyond resetting the latch.
+	if ev.Buttons() == tcell.ButtonNone {
+		d.ddDatabase.HandleMouse(ev)
+		d.rbType.HandleMouse(ev)
+		d.btnBrowse.HandleMouse(ev)
+		d.cbCompress.HandleMouse(ev)
+		d.cbVerify.HandleMouse(ev)
+		d.cbChecksum.HandleMouse(ev)
+		d.cbCopyOnly.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -630,14 +644,13 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	mx, my := ev.Position()
 	for _, cb := range []*widgets.CheckBox{d.cbCompress, d.cbVerify, d.cbChecksum, d.cbCopyOnly} {
-		if my == cb.RectY() && mx >= cb.RectX() && mx < cb.RectX()+3 {
-			cb.SetChecked(!cb.Checked())
+		if cb.HandleMouse(ev) {
 			d.focusTo(cb)
 			return true
 		}
 	}
+	mx, my := ev.Position()
 	if d.fDest.HitTest(mx, my) {
 		d.focusTo(d.fDest)
 		d.fDest.HandleMouse(ev)

@@ -63,10 +63,10 @@ type noteRow struct {
 // Note returns a non-focusable row of word-wrapped, dimmed text.
 func Note(text string) Row { return &noteRow{text: text} }
 
-func (r *noteRow) Height(w int) int { return len(wrapText(r.text, w)) }
+func (r *noteRow) Height(w int) int { return len(core.WrapText(r.text, w)) }
 func (r *noteRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
-	r.lines = wrapText(r.text, w)
+	r.lines = core.WrapText(r.text, w)
 }
 func (r *noteRow) Focusable() bool { return false }
 func (r *noteRow) Draw(s tcell.Screen, focused bool) {
@@ -75,28 +75,6 @@ func (r *noteRow) Draw(s tcell.Screen, focused bool) {
 	for i, line := range r.lines {
 		core.DrawText(s, r.x, r.y+i, st, line)
 	}
-}
-
-// wrapText greedily word-wraps text to at most w display columns per line.
-func wrapText(text string, w int) []string {
-	if w <= 0 {
-		return []string{text}
-	}
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{""}
-	}
-	lines := make([]string, 0, 4)
-	cur := words[0]
-	for _, word := range words[1:] {
-		if core.DisplayWidth(cur+" "+word) > w {
-			lines = append(lines, cur)
-			cur = word
-		} else {
-			cur = cur + " " + word
-		}
-	}
-	return append(lines, cur)
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +260,6 @@ type CheckRow struct {
 	box   *widgets.CheckBox
 	label string
 	orig  bool
-	x, y  int
 }
 
 // Check returns an editable checkbox row.
@@ -300,7 +277,6 @@ func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 
 func (r *CheckRow) Height(w int) int { return 1 }
 func (r *CheckRow) Layout(x, y, w int) {
-	r.x, r.y = x, y
 	r.box.SetBounds(x, y)
 }
 func (r *CheckRow) Focusable() bool { return true }
@@ -310,12 +286,7 @@ func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
 }
 func (r *CheckRow) HandleKey(ev *tcell.EventKey) bool { return r.box.HandleKey(ev) }
 func (r *CheckRow) HandleMouse(ev *tcell.EventMouse) bool {
-	mx, my := ev.Position()
-	if ev.Buttons() != tcell.Button1 || my != r.y || mx < r.x || mx >= r.x+core.DisplayWidth(r.label)+4 {
-		return false
-	}
-	r.box.SetChecked(!r.box.Checked())
-	return true
+	return r.box.HandleMouse(ev)
 }
 func (r *CheckRow) CopyText() string {
 	if r.box.Checked() {

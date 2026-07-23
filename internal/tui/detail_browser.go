@@ -170,7 +170,9 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
 		go func() {
-			cols, rows, err := fetchNodeDetails(sc, node)
+			ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			defer cancel()
+			cols, rows, err := fetchNodeDetails(ctx, sc, node)
 			db.postFinal(app, node, seq, cols, rows, err)
 		}()
 	}
@@ -221,31 +223,33 @@ func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, cols []string, 
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called
 // from a background goroutine (see ShowNodeDetails) — it must not touch
 // DetailBrowser or any other UI state directly, only return data for the
-// caller to apply via postEvent.
-func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+// caller to apply via postEvent. ctx bounds the whole call (see the
+// caller's childFetchTimeout) so a hung server leaves the goroutine and its
+// connection to time out instead of blocking forever.
+func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	switch node.data.Type {
 	case NodeAgentJobs:
-		return agentServerDetail(sc)
+		return agentServerDetail(ctx, sc)
 	case NodeAgentJob:
-		return agentJobDetail(sc, node)
+		return agentJobDetail(ctx, sc, node)
 	case NodeAgentSchedule:
-		return agentScheduleDetail(sc, node)
+		return agentScheduleDetail(ctx, sc, node)
 	case NodeAgentAlert:
-		return agentAlertDetail(sc, node)
+		return agentAlertDetail(ctx, sc, node)
 	case NodeAgentOperator:
-		return agentOperatorDetail(sc, node)
+		return agentOperatorDetail(ctx, sc, node)
 	case NodeAgentJobActivity:
-		return agentJobActivityDetail(sc)
+		return agentJobActivityDetail(ctx, sc)
 	case NodeAgentJobHistory:
-		return agentJobHistoryDetail(sc)
+		return agentJobHistoryDetail(ctx, sc)
 	case NodeAgentJobCategories:
-		return agentJobCategoriesDetail(sc)
+		return agentJobCategoriesDetail(ctx, sc)
 	case NodeAgentAlertCategories:
-		return agentAlertCategoriesDetail(sc)
+		return agentAlertCategoriesDetail(ctx, sc)
 	case NodeAgentReport:
-		return agentReportDetail(sc, node.data.Name)
+		return agentReportDetail(ctx, sc, node.data.Name)
 	case NodeSystemDatabases:
-		dbs, err := sc.Server.Databases()
+		dbs, err := sc.Server.DatabasesContext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -258,12 +262,12 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 		return []string{"Name", "State", "Recovery"}, rows, nil
 
 	case NodeDatabase:
-		d, err := sc.Server.DatabaseByName(node.data.DBName)
+		d, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
 		if err != nil {
 			return nil, nil, err
 		}
 		sizeStr, dataStr, logStr, availLogStr := "N/A", "N/A", "N/A", "N/A"
-		if space, err := d.SpaceUsed(); err == nil {
+		if space, err := d.SpaceUsedContext(ctx); err == nil {
 			sizeStr, dataStr, logStr = formatMB(space.TotalMB), formatMB(space.DataMB), formatMB(space.LogMB)
 			availLogStr = formatMB(space.AvailLogMB)
 		}
@@ -282,11 +286,11 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 		}, nil
 
 	case NodeViews:
-		dbObj, err := sc.Server.DatabaseByName(node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
 		if err != nil {
 			return nil, nil, err
 		}
-		views, err := dbObj.Views()
+		views, err := dbObj.ViewsContext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -297,11 +301,11 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 		return []string{"Name", "Created"}, rows, nil
 
 	case NodeStoredProcedures:
-		dbObj, err := sc.Server.DatabaseByName(node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
 		if err != nil {
 			return nil, nil, err
 		}
-		procs, err := dbObj.StoredProcedures()
+		procs, err := dbObj.StoredProceduresContext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -313,7 +317,7 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 
 	default:
 		if hasChildren(node.data.Type) {
-			return fetchChildObjectsDetail(sc, node)
+			return fetchChildObjectsDetail(ctx, sc, node)
 		}
 		return []string{"Property", "Value"}, [][]string{
 			{"Name", node.label},
@@ -331,12 +335,12 @@ func fetchNodeDetails(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]
 // expands with, so a new NodeType wired into childLoaders picks up a
 // reasonable detail view for free rather than defaulting to the leaf-style
 // Property/Value grid, which doesn't fit a folder.
-func fetchChildObjectsDetail(sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	loader, ok := childLoaders[node.data.Type]
 	if !ok {
 		return []string{"Name"}, nil, nil
 	}
-	children, err := loader(loaderCtx{ctx: context.Background(), sc: sc}, node)
+	children, err := loader(loaderCtx{ctx: ctx, sc: sc}, node)
 	if err != nil {
 		return nil, nil, err
 	}

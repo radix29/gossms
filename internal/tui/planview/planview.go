@@ -87,6 +87,16 @@ type PlanView struct {
 	// OnStatus, when set, is called with a one-line status message on
 	// notable actions (statement switch, tab switch, ...).
 	OnStatus func(msg string)
+
+	// mouseDragging distinguishes a fresh Button1 press on the tab bar or
+	// statement selector from a continued hold — mirrors Toolbar's/
+	// TreeView's/MenuBar's field of the same name and purpose. Without it,
+	// tcell's all-motion mouse tracking resends Buttons()==Button1 on
+	// every motion event while the button stays down, so a click that so
+	// much as twitches before release would re-fire OnExpand (opening a
+	// second panel), switch tabs again, or step the statement selector
+	// again, on every resent event instead of once per physical click.
+	mouseDragging bool
 }
 
 // New creates an empty PlanView. Call SetPlanXML or SetPlan to load a plan.
@@ -476,6 +486,20 @@ func (v *PlanView) HandleKey(ev *tcell.EventKey) bool {
 	}
 }
 
+// routeToContent forwards ev to whichever tab is currently active (XML
+// editor, Tree, or Plan/graph) — shared by HandleMouse's release branch,
+// its already-latched tab/stmt branches, and its own default case.
+func (v *PlanView) routeToContent(ev *tcell.EventMouse) bool {
+	switch {
+	case v.activeTab == TabXML:
+		return v.xml.HandleMouse(ev)
+	case v.activeTab == TabTree:
+		return v.handleTreeTabMouse(ev)
+	default: // TabPlan
+		return v.handleGraphTabMouse(ev)
+	}
+}
+
 // HandleMouse routes clicks to the tab bar, the "[ Expand ]" button, the
 // statement selector's ◀/▶ arrows, or the XML editor.
 func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
@@ -485,19 +509,22 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 	// even if the cursor has moved outside this control before release —
 	// same reasoning as QueryPanel.HandleMouse.
 	if ev.Buttons() == tcell.ButtonNone {
-		switch {
-		case v.activeTab == TabXML:
-			return v.xml.HandleMouse(ev)
-		case v.activeTab == TabTree:
-			return v.handleTreeTabMouse(ev)
-		default: // TabPlan
-			return v.handleGraphTabMouse(ev)
-		}
+		v.mouseDragging = false
+		return v.routeToContent(ev)
 	}
 	if !v.rect.Contains(mx, my) {
 		return false
 	}
 	if v.tabRect.H == 1 && my == v.tabRect.Y && ev.Buttons() == tcell.Button1 {
+		// A drag that started in the content area (e.g. an XML text
+		// selection) resends Button1 on every motion event while held —
+		// if the cursor drifts up into the tab row mid-drag, mouseDragging
+		// is already true from that press, so forward to the content
+		// handler instead of misfiring a tab switch/Expand/statement step.
+		if v.mouseDragging {
+			return v.routeToContent(ev)
+		}
+		v.mouseDragging = true
 		if v.expandBtnRect.W > 0 && v.expandBtnRect.Contains(mx, my) {
 			if v.OnExpand != nil {
 				v.OnExpand()
@@ -510,6 +537,10 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if v.stmtRect.H == 1 && my == v.stmtRect.Y && ev.Buttons() == tcell.Button1 {
+		if v.mouseDragging {
+			return v.routeToContent(ev)
+		}
+		v.mouseDragging = true
 		prev, next := v.arrowRects()
 		switch {
 		case prev.Contains(mx, my):
@@ -519,14 +550,10 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
-	switch {
-	case v.activeTab == TabXML:
-		return v.xml.HandleMouse(ev)
-	case v.activeTab == TabTree:
-		return v.handleTreeTabMouse(ev)
-	default: // TabPlan
-		return v.handleGraphTabMouse(ev)
+	if ev.Buttons() == tcell.Button1 {
+		v.mouseDragging = true
 	}
+	return v.routeToContent(ev)
 }
 
 // HasSelection, SelectedText, Cut, Paste, and SelectAll let a host wire

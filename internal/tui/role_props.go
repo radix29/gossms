@@ -19,14 +19,24 @@ import (
 // yet) and the mockup's search/filter boxes, WITH GRANT OPTION, Column
 // Permissions, and Effective Permissions modals aren't built — same
 // deferrals as every other Properties dialog this pass.
+// roleName is boxed in a *string shared by every page below: renaming a
+// role is the one edit in this dialog that changes the identity every
+// other page's lookup depends on, so pageRoleGeneral's apply closure
+// updates *roleName in place on success — otherwise Apply (which reloads
+// every page via PropDialog.InvalidateAll) would send the very next reload
+// looking for a role name that no longer exists. Same bug class as Key
+// Properties' pageKeyGeneral and Server Role Properties'
+// pageServerRoleGeneral (see server_role_props.go). dbName never changes,
+// so it stays a plain string.
 func rolePropPages(sc *db.ServerConn, dbName, roleName string) []propPage {
+	namePtr := &roleName
 	return []propPage{
-		pageRoleGeneral(sc, dbName, roleName),
-		pageRoleMembers(sc, dbName, roleName),
-		pageRoleOwnedSchemas(sc, dbName, roleName),
-		pageRoleOwnedRoles(sc, dbName, roleName),
-		pageRoleSecurables(sc, dbName, roleName),
-		pageRoleExtendedProperties(sc, dbName, roleName),
+		pageRoleGeneral(sc, dbName, namePtr),
+		pageRoleMembers(sc, dbName, namePtr),
+		pageRoleOwnedSchemas(sc, dbName, namePtr),
+		pageRoleOwnedRoles(sc, dbName, namePtr),
+		pageRoleSecurables(sc, dbName, namePtr),
+		pageRoleExtendedProperties(sc, dbName, namePtr),
 	}
 }
 
@@ -63,7 +73,7 @@ func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
 	return names
 }
 
-func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -71,7 +81,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			role, err := d.RoleByNameContext(ctx, roleName)
+			role, err := d.RoleByNameContext(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -87,20 +97,20 @@ func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			securables, err := d.PermissionsForPrincipalContext(ctx, roleName)
+			securables, err := d.PermissionsForPrincipalContext(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			ownedSchemas := 0
 			for _, s := range schemas {
-				if s.Owner == roleName {
+				if s.Owner == *roleName {
 					ownedSchemas++
 				}
 			}
 			ownedRoles := 0
 			for _, r := range roles {
-				if r.Owner == roleName {
+				if r.Owner == *roleName {
 					ownedRoles++
 				}
 			}
@@ -155,7 +165,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
 			var apply propApply
 			if !builtin {
 				apply = func(ctx context.Context) error {
-					role, err := findRole(ctx, sc, dbName, roleName)
+					role, err := findRole(ctx, sc, dbName, *roleName)
 					if err != nil {
 						return err
 					}
@@ -168,6 +178,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
 						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
 							return err
 						}
+						*roleName = nameRow.Value()
 					}
 					return nil
 				}
@@ -177,7 +188,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName, roleName string) propPage {
 	}
 }
 
-func pageRoleMembers(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "Members",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -185,7 +196,7 @@ func pageRoleMembers(sc *db.ServerConn, dbName, roleName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			members, err := d.RoleMembersContext(ctx, roleName)
+			members, err := d.RoleMembersContext(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -250,7 +261,7 @@ func pageRoleMembers(sc *db.ServerConn, dbName, roleName string) propPage {
 				}
 			}
 			for _, r := range roles {
-				if r.Name != roleName && !memberNames[r.Name] {
+				if r.Name != *roleName && !memberNames[r.Name] {
 					candidates = append(candidates, r.Name)
 				}
 			}
@@ -322,11 +333,11 @@ func pageRoleMembers(sc *db.ServerConn, dbName, roleName string) propPage {
 				for _, e := range edits {
 					switch {
 					case e.pendingRemove && !e.isNew:
-						if err := d.RemoveRoleMemberContext(ctx, roleName, e.name); err != nil {
+						if err := d.RemoveRoleMemberContext(ctx, *roleName, e.name); err != nil {
 							return err
 						}
 					case e.isNew && !e.pendingRemove:
-						if err := d.AddRoleMemberContext(ctx, roleName, e.name); err != nil {
+						if err := d.AddRoleMemberContext(ctx, *roleName, e.name); err != nil {
 							return err
 						}
 					}
@@ -338,7 +349,7 @@ func pageRoleMembers(sc *db.ServerConn, dbName, roleName string) propPage {
 	}
 }
 
-func pageRoleOwnedSchemas(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleOwnedSchemas(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "Owned Schemas",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -368,7 +379,7 @@ func pageRoleOwnedSchemas(sc *db.ServerConn, dbName, roleName string) propPage {
 			}
 			var edits []*schemaEdit
 			for _, s := range allSchemas {
-				if s.Owner != roleName {
+				if s.Owner != *roleName {
 					continue
 				}
 				count, err := s.ObjectCountContext(ctx)
@@ -464,7 +475,7 @@ func pageRoleOwnedSchemas(sc *db.ServerConn, dbName, roleName string) propPage {
 	}
 }
 
-func pageRoleOwnedRoles(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "Owned Roles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -489,7 +500,7 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName, roleName string) propPage {
 			}
 			var edits []*ownedRoleEdit
 			for _, r := range allRoles {
-				if r.Owner == roleName {
+				if r.Owner == *roleName {
 					edits = append(edits, &ownedRoleEdit{role: r, origOwner: r.Owner, newOwner: r.Owner})
 				}
 			}
@@ -577,7 +588,7 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName, roleName string) propPage {
 	}
 }
 
-func pageRoleSecurables(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleSecurables(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "Securables",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -585,7 +596,7 @@ func pageRoleSecurables(sc *db.ServerConn, dbName, roleName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			entries, err := d.PermissionsForPrincipalContext(ctx, roleName)
+			entries, err := d.PermissionsForPrincipalContext(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -632,13 +643,13 @@ func pageRoleSecurables(sc *db.ServerConn, dbName, roleName string) propPage {
 
 			f, apply := buildSecurablesMatrix(initial, entries, available, 8, 12,
 				func(ctx context.Context, s securable, permission string) error {
-					return grantSecurable(ctx, d, s, permission, roleName)
+					return grantSecurable(ctx, d, s, permission, *roleName)
 				},
 				func(ctx context.Context, s securable, permission string) error {
-					return denySecurable(ctx, d, s, permission, roleName)
+					return denySecurable(ctx, d, s, permission, *roleName)
 				},
 				func(ctx context.Context, s securable, permission string) error {
-					return revokeSecurable(ctx, d, s, permission, roleName)
+					return revokeSecurable(ctx, d, s, permission, *roleName)
 				},
 			)
 			return f, apply, nil
@@ -646,7 +657,7 @@ func pageRoleSecurables(sc *db.ServerConn, dbName, roleName string) propPage {
 	}
 }
 
-func pageRoleExtendedProperties(sc *db.ServerConn, dbName, roleName string) propPage {
+func pageRoleExtendedProperties(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
 		title: "Extended Properties",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -657,8 +668,8 @@ func pageRoleExtendedProperties(sc *db.ServerConn, dbName, roleName string) prop
 			// Database roles are classed as USER in
 			// sp_addextendedproperty/sp_updateextendedproperty level names —
 			// they're database principals like users, not a level of their own.
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: roleName}
-			props, err := d.ExtendedProperties(level)
+			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *roleName}
+			props, err := d.ExtendedPropertiesContext(ctx, level)
 			if err != nil {
 				return nil, nil, err
 			}

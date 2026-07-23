@@ -12,6 +12,15 @@ type Button struct {
 	label   string
 	focused bool
 	OnClick func()
+
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold over the button — mirrors Toolbar's/TreeView's/MenuBar's field
+	// of the same name and purpose. Without it, tcell's all-motion mouse
+	// tracking resends Buttons()==Button1 on every motion event while the
+	// button stays down, so a click that so much as twitches before
+	// release fires OnClick again on every resent event instead of once
+	// per physical click.
+	mouseDragging bool
 }
 
 // NewButton creates a Button.
@@ -50,13 +59,20 @@ func (b *Button) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse events.
 func (b *Button) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		b.mouseDragging = false
+		return false
+	}
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
 	mx, my := ev.Position()
 	if my == b.rect.Y && mx >= b.rect.X && mx < b.rect.X+b.Width() {
-		if b.OnClick != nil {
-			b.OnClick()
+		if !b.mouseDragging {
+			b.mouseDragging = true
+			if b.OnClick != nil {
+				b.OnClick()
+			}
 		}
 		return true
 	}

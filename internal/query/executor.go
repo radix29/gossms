@@ -357,16 +357,25 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 	// would render as hex in the wrong byte order. Scan them into
 	// NullUniqueIdentifier instead so they display as the canonical dashed
 	// GUID (and NULL survives), matching SSMS.
+	//
+	// decimal/numeric/money/smallmoney columns also scan as []byte, but
+	// unlike uniqueidentifier the driver already decodes them into the
+	// literal ASCII digit string (e.g. "0.070312") rather than a binary
+	// blob — formatValue must render that []byte as a plain string, not hex.
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	guids := make([]*mssql.NullUniqueIdentifier, len(cols))
+	decimalLike := make([]bool, len(cols))
 	for i := range cols {
-		if types[i].DatabaseTypeName() == "UNIQUEIDENTIFIER" {
+		switch types[i].DatabaseTypeName() {
+		case "UNIQUEIDENTIFIER":
 			guids[i] = &mssql.NullUniqueIdentifier{}
 			ptrs[i] = guids[i]
-		} else {
-			ptrs[i] = &vals[i]
+			continue
+		case "DECIMAL", "MONEY", "SMALLMONEY":
+			decimalLike[i] = true
 		}
+		ptrs[i] = &vals[i]
 	}
 	truncated := false
 	for rows.Next() {
@@ -382,7 +391,7 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 			if g := guids[i]; g != nil {
 				row[i] = formatGUID(*g)
 			} else {
-				row[i] = formatValue(vals[i])
+				row[i] = formatValue(vals[i], decimalLike[i])
 			}
 		}
 		rs.Rows = append(rs.Rows, row)
@@ -424,7 +433,10 @@ func formatGUID(g mssql.NullUniqueIdentifier) string {
 
 // formatValue renders one cell the way SSMS displays it: NULL for nil,
 // 1/0 for bit, 0x… for binary, "2006-01-02 15:04:05.000" for datetimes.
-func formatValue(v any) string {
+// isDecimalLike marks a []byte cell that actually holds a decoded
+// decimal/money ASCII digit string rather than binary data (see
+// scanResultSet), so it's rendered as text instead of hex.
+func formatValue(v any, isDecimalLike bool) string {
 	switch x := v.(type) {
 	case nil:
 		return "NULL"
@@ -434,6 +446,9 @@ func formatValue(v any) string {
 		}
 		return "0"
 	case []byte:
+		if isDecimalLike {
+			return string(x)
+		}
 		return "0x" + strings.ToUpper(hex.EncodeToString(x))
 	case time.Time:
 		return x.Format("2006-01-02 15:04:05.000")

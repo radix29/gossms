@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -96,9 +97,13 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 // in when config.Connection.Database was left empty — the login's real
 // default database — so the query panel's connection bar and Execute both
 // use it instead of showing/USE-ing nothing. Falls back to "master" if the
-// server can't be asked (e.g. DB_NAME() fails for some reason).
+// server can't be asked (e.g. DB_NAME() fails for some reason). Bounded by
+// childFetchTimeout so a hung server can't leave this background goroutine
+// blocked forever (see connectForQueryPanel, its only caller).
 func defaultDatabaseName(sc *db.ServerConn) string {
-	name, err := sc.Server.CurrentDatabase()
+	ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+	defer cancel()
+	name, err := sc.Server.CurrentDatabaseContext(ctx)
 	if err != nil || name == "" {
 		return "master"
 	}

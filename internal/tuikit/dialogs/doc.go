@@ -10,6 +10,7 @@
 // the tui package and embed ModalDialog from here.
 //
 //   - modal.go              — ModalDialog base type
+//   - common.go             — helpers shared across more than one dialog file
 //   - properties_dialog.go  — PropertiesDialog (generic key/value viewer)
 //   - alert_dialog.go       — AlertDialog (single-button info message)
 //   - confirm_dialog.go     — ConfirmDialog (two-button yes/no)

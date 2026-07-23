@@ -44,6 +44,37 @@ func Truncate(s string, n int) string {
 	return sb.String()
 }
 
+// WrapText greedily word-wraps text to at most w display columns per line.
+func WrapText(text string, w int) []string {
+	if w <= 0 {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	lines := make([]string, 0, 4)
+	cur := words[0]
+	for _, word := range words[1:] {
+		if DisplayWidth(cur+" "+word) > w {
+			lines = append(lines, cur)
+			cur = word
+		} else {
+			cur = cur + " " + word
+		}
+	}
+	return append(lines, cur)
+}
+
+// CenterOffset returns the left padding needed to center content of width
+// contentW within a field of width fieldW, clamped to 0 if contentW >= fieldW.
+func CenterOffset(fieldW, contentW int) int {
+	if contentW >= fieldW {
+		return 0
+	}
+	return (fieldW - contentW) / 2
+}
+
 // PadRight pads s to exactly n display columns with trailing spaces.
 // If s is already n columns or wider, it returns s truncated to n columns
 // (without an ellipsis) so the result always occupies exactly n columns.

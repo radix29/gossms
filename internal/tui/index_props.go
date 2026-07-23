@@ -406,7 +406,7 @@ func pageIndexExtendedProperties(sc *db.ServerConn, dbName, schema, table string
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "INDEX", Level2Name: *name,
 			}
-			props, err := d.ExtendedProperties(level)
+			props, err := d.ExtendedPropertiesContext(ctx, level)
 			if err != nil {
 				return nil, nil, err
 			}

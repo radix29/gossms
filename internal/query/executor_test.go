@@ -11,21 +11,23 @@ import (
 func TestFormatValue(t *testing.T) {
 	ts := time.Date(2024, 1, 5, 13, 45, 30, 123_000_000, time.UTC)
 	tests := []struct {
-		in   any
-		want string
+		in            any
+		isDecimalLike bool
+		want          string
 	}{
-		{nil, "NULL"},
-		{true, "1"},
-		{false, "0"},
-		{[]byte{0xDE, 0xAD}, "0xDEAD"},
-		{ts, "2024-01-05 13:45:30.123"},
-		{"plain", "plain"},
-		{int64(42), "42"},
-		{3.14, "3.14"},
+		{nil, false, "NULL"},
+		{true, false, "1"},
+		{false, false, "0"},
+		{[]byte{0xDE, 0xAD}, false, "0xDEAD"},
+		{[]byte("0.070312"), true, "0.070312"},
+		{ts, false, "2024-01-05 13:45:30.123"},
+		{"plain", false, "plain"},
+		{int64(42), false, "42"},
+		{3.14, false, "3.14"},
 	}
 	for _, tt := range tests {
-		if got := formatValue(tt.in); got != tt.want {
-			t.Errorf("formatValue(%v) = %q, want %q", tt.in, got, tt.want)
+		if got := formatValue(tt.in, tt.isDecimalLike); got != tt.want {
+			t.Errorf("formatValue(%v, %v) = %q, want %q", tt.in, tt.isDecimalLike, got, tt.want)
 		}
 	}
 }

@@ -15,13 +15,23 @@ import (
 // loginPropPages builds the page set for Login Properties. Securables
 // only models the single SERVER-scope securable for now (see its own
 // comment) — every page is editable.
+//
+// loginName is boxed in a *string shared by every page below: renaming a
+// login is the one edit in this dialog that changes the identity every
+// other page's lookup depends on, so pageLoginGeneral's apply closure
+// updates *loginName in place on success — otherwise Apply (which reloads
+// every page via PropDialog.InvalidateAll) would send the very next reload
+// looking for a login name that no longer exists. Same bug class as Key
+// Properties' pageKeyGeneral and Server Role Properties'
+// pageServerRoleGeneral (see server_role_props.go).
 func loginPropPages(sc *db.ServerConn, loginName string) []propPage {
+	namePtr := &loginName
 	return []propPage{
-		pageLoginGeneral(sc, loginName),
-		pageLoginServerRoles(sc, loginName),
-		pageLoginUserMapping(sc, loginName),
-		pageLoginSecurables(sc, loginName),
-		pageLoginStatus(sc, loginName),
+		pageLoginGeneral(sc, namePtr),
+		pageLoginServerRoles(sc, namePtr),
+		pageLoginUserMapping(sc, namePtr),
+		pageLoginSecurables(sc, namePtr),
+		pageLoginStatus(sc, namePtr),
 	}
 }
 
@@ -34,11 +44,11 @@ func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Logi
 
 const noneItem = "(None)"
 
-func pageLoginGeneral(sc *db.ServerConn, loginName string) propPage {
+func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			l, err := findLogin(ctx, sc, loginName)
+			l, err := findLogin(ctx, sc, *loginName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -136,7 +146,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName string) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				l, err := findLogin(ctx, sc, loginName)
+				l, err := findLogin(ctx, sc, *loginName)
 				if err != nil {
 					return err
 				}
@@ -144,6 +154,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName string) propPage {
 					if err := l.RenameContext(ctx, nameRow.Value()); err != nil {
 						return err
 					}
+					*loginName = nameRow.Value()
 				}
 				if isSQLLogin && passwordRow.Value() != "" {
 					if err := l.ChangePasswordWithOptionsContext(ctx, passwordRow.Value(), mustChangeRow.Checked(), unlockRow.Checked()); err != nil {
@@ -184,7 +195,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName string) propPage {
 	}
 }
 
-func pageLoginServerRoles(sc *db.ServerConn, loginName string) propPage {
+func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "Server Roles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -200,7 +211,7 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName string) propPage {
 					impact = "Low"
 				}
 				text[i] = []string{r.Name, impact}
-				values[i] = []bool{slices.Contains(r.Members, loginName)}
+				values[i] = []bool{slices.Contains(r.Members, *loginName)}
 			}
 			rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role", "Impact"}, []int{0}, 10)
 			rolesGrid.SetRows(text, values)
@@ -234,13 +245,13 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName string) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				l, err := findLogin(ctx, sc, loginName)
+				l, err := findLogin(ctx, sc, *loginName)
 				if err != nil {
 					return err
 				}
 				for i, v := range rolesGrid.Values() {
 					member := v[0]
-					wasMember := slices.Contains(roles[i].Members, loginName)
+					wasMember := slices.Contains(roles[i].Members, *loginName)
 					if member == wasMember {
 						continue
 					}
@@ -285,11 +296,11 @@ func mapCell(mapped bool) string {
 	return "[ ]"
 }
 
-func pageLoginUserMapping(sc *db.ServerConn, loginName string) propPage {
+func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "User Mapping",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			l, err := findLogin(ctx, sc, loginName)
+			l, err := findLogin(ctx, sc, *loginName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -312,7 +323,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName string) propPage {
 					continue
 				}
 				m, isMapped := mappingByDB[d.Name()]
-				user := loginName
+				user := *loginName
 				schema := "dbo"
 				if isMapped {
 					user = m.User
@@ -445,7 +456,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName string) propPage {
 
 			apply := func(ctx context.Context) error {
 				commitCurrent()
-				l, err := findLogin(ctx, sc, loginName)
+				l, err := findLogin(ctx, sc, *loginName)
 				if err != nil {
 					return err
 				}
@@ -516,17 +527,22 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName string) propPage {
 	}
 }
 
-func pageLoginSecurables(sc *db.ServerConn, loginName string) propPage {
-	return pagePrincipalServerPermissions(sc, loginName)
+func pageLoginSecurables(sc *db.ServerConn, loginName *string) propPage {
+	return propPage{
+		title: "Securables",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			return pagePrincipalServerPermissions(sc, *loginName).load(ctx)
+		},
+	}
 }
 
 var connectPermissionItems = []string{"Grant", "Deny", "Default"}
 
-func pageLoginStatus(sc *db.ServerConn, loginName string) propPage {
+func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "Status",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			l, err := findLogin(ctx, sc, loginName)
+			l, err := findLogin(ctx, sc, *loginName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -549,7 +565,7 @@ func pageLoginStatus(sc *db.ServerConn, loginName string) propPage {
 			}
 			activeSessions := 0
 			for _, s := range sessions {
-				if s.LoginName == loginName {
+				if s.LoginName == *loginName {
 					activeSessions++
 				}
 			}
@@ -583,22 +599,22 @@ func pageLoginStatus(sc *db.ServerConn, loginName string) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				l, err := findLogin(ctx, sc, loginName)
+				l, err := findLogin(ctx, sc, *loginName)
 				if err != nil {
 					return err
 				}
 				if connectRow.Dirty() {
 					switch connectRow.Selected() {
 					case 0:
-						if err := sc.Server.GrantServerPermissionContext(ctx, "CONNECT SQL", loginName); err != nil {
+						if err := sc.Server.GrantServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					case 1:
-						if err := sc.Server.DenyServerPermissionContext(ctx, "CONNECT SQL", loginName); err != nil {
+						if err := sc.Server.DenyServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					case 2:
-						if err := sc.Server.RevokeServerPermissionContext(ctx, "CONNECT SQL", loginName); err != nil {
+						if err := sc.Server.RevokeServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					}

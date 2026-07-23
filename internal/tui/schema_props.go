@@ -292,7 +292,7 @@ func pageSchemaExtendedProperties(sc *db.ServerConn, dbName, schemaName string) 
 				return nil, nil, err
 			}
 			level := gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schemaName}
-			props, err := d.ExtendedProperties(level)
+			props, err := d.ExtendedPropertiesContext(ctx, level)
 			if err != nil {
 				return nil, nil, err
 			}

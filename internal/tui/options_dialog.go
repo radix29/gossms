@@ -196,6 +196,15 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// A release that lands outside the dialog is consumed by
+	// ConsumeOutsideClick below before rbIconStyle/cbIntelliSense's own
+	// HandleMouse calls further down ever see it, leaving their
+	// mouseDragging latch set and swallowing the next press. Reset it here
+	// first; each returns false on ButtonNone so this has no other effect.
+	if ev.Buttons() == tcell.ButtonNone {
+		d.rbIconStyle.HandleMouse(ev)
+		d.cbIntelliSense.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -217,8 +226,7 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.setZone(zoneIconStyle)
 		return true
 	}
-	if mx, my := ev.Position(); my == d.cbIntelliSense.RectY() && mx >= d.cbIntelliSense.RectX() && mx < d.cbIntelliSense.RectX()+3 {
-		d.cbIntelliSense.SetChecked(!d.cbIntelliSense.Checked())
+	if d.cbIntelliSense.HandleMouse(ev) {
 		d.setZone(zoneIntelliSense)
 		return true
 	}

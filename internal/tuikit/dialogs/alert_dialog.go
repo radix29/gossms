@@ -10,23 +10,37 @@ import (
 // AlertDialog — single-button info message
 // ---------------------------------------------------------------------------
 
+// alertDialogMinW/alertDialogBaseH are AlertDialog's original fixed size —
+// now the floor fitMessage never shrinks below, and the height with the
+// message on a single line.
+const (
+	alertDialogMinW  = 44
+	alertDialogBaseH = 9
+)
+
 // AlertDialog shows a message with a single OK button.
 type AlertDialog struct {
 	ModalDialog
-	message string
+	message  string
+	msgLines []string
 }
 
 // NewAlertDialog creates an AlertDialog.
 func NewAlertDialog(s tcell.Screen) *AlertDialog {
 	d := new(AlertDialog{})
-	d.InitModal(s, "Alert", 44, 9)
+	d.InitModal(s, "Alert", alertDialogMinW, alertDialogBaseH)
 	return d
 }
 
-// ShowAlert shows a message.
+// ShowAlert shows a message. The dialog grows to show it on one line where
+// that fits within 2/3 of the screen's width, or word-wraps onto more
+// lines (growing taller instead) when it doesn't — see fitMessage.
 func (d *AlertDialog) ShowAlert(title, message string) {
 	d.SetTitle(title)
 	d.message = message
+	w, h, lines := d.fitMessage(message, alertDialogMinW, alertDialogBaseH)
+	d.msgLines = lines
+	d.SetSize(w, h)
 	d.ModalDialog.Show()
 }
 
@@ -39,7 +53,11 @@ func (d *AlertDialog) Draw(s tcell.Screen) {
 	p := theme.Active()
 	msgStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
 	inner := d.InnerRect()
-	core.DrawTextClipped(s, inner.X+1, inner.Y+2, inner.W-2, msgStyle, d.message)
+	contentW := inner.W - 2
+	for i, line := range d.msgLines {
+		x := inner.X + 1 + core.CenterOffset(contentW, core.DisplayWidth(line))
+		core.DrawTextClipped(s, x, inner.Y+2+i, contentW, msgStyle, line)
+	}
 	d.DrawSeparator(s)
 	d.DrawButtons(s, []string{"OK"}, 0)
 }

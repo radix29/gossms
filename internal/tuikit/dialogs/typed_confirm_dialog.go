@@ -36,6 +36,7 @@ const (
 type TypedConfirmDialog struct {
 	ModalDialog
 	message  string
+	msgLines []string
 	required string
 	status   string
 	input    *widgets.InputField
@@ -53,7 +54,11 @@ func NewTypedConfirmDialog(s tcell.Screen) *TypedConfirmDialog {
 
 // ShowTypedConfirm shows the dialog: message explains the action, required
 // is the exact text (matched case-insensitively, surrounding whitespace
-// ignored) the user must type before Confirm proceeds.
+// ignored) the user must type before Confirm proceeds. The dialog grows
+// to show message on one line where that fits within 2/3 of the screen's
+// width, or word-wraps onto more lines (growing taller, and pushing the
+// required-text line/input down to make room) when it doesn't — see
+// fitMessage.
 func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, onConfirm func(bool)) {
 	d.SetTitle(title)
 	d.message = message
@@ -63,6 +68,9 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 	d.focus = typedConfirmFocusInput
 	d.syncFocus()
 	d.OnConfirm = onConfirm
+	w, h, lines := d.fitMessage(message, typedConfirmW, typedConfirmH)
+	d.msgLines = lines
+	d.SetSize(w, h)
 	d.ModalDialog.Show()
 }
 
@@ -101,9 +109,13 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 	inner := d.InnerRect()
 	lx, w := inner.X+1, inner.W-2
 
-	core.DrawTextClipped(s, lx, inner.Y+1, w, msgStyle, d.message)
-	core.DrawTextClipped(s, lx, inner.Y+2, w, msgStyle, "Type \""+d.required+"\" to confirm:")
-	d.input.SetBounds(lx, inner.Y+3)
+	for i, line := range d.msgLines {
+		x := lx + core.CenterOffset(w, core.DisplayWidth(line))
+		core.DrawTextClipped(s, x, inner.Y+1+i, w, msgStyle, line)
+	}
+	extra := len(d.msgLines) - 1
+	core.DrawTextClipped(s, lx, inner.Y+2+extra, w, msgStyle, "Type \""+d.required+"\" to confirm:")
+	d.input.SetBounds(lx, inner.Y+3+extra)
 	d.input.Draw(s)
 
 	if d.status != "" {

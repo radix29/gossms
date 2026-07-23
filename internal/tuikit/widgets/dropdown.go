@@ -14,6 +14,15 @@ type DropDown struct {
 	focused  bool
 	label    string
 	open     bool
+
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold — mirrors Toolbar's/TreeView's/MenuBar's field of the same name
+	// and purpose. Without it, tcell's all-motion mouse tracking resends
+	// Buttons()==Button1 on every motion event while the button stays
+	// down, so a click that so much as twitches before release would
+	// re-toggle open/closed (or re-pick whatever item the pointer drifted
+	// onto) on every resent event instead of once per physical click.
+	mouseDragging bool
 }
 
 // NewDropDown creates a DropDown.
@@ -132,19 +141,29 @@ func (d *DropDown) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse processes mouse events.
 func (d *DropDown) HandleMouse(ev *tcell.EventMouse) bool {
-	mx, my := ev.Position()
-	ix := d.inputX()
+	if ev.Buttons() == tcell.ButtonNone {
+		d.mouseDragging = false
+		return false
+	}
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
+	mx, my := ev.Position()
+	ix := d.inputX()
 	if my == d.rect.Y && mx >= ix && mx <= ix+d.rect.W+1 {
-		d.open = !d.open
+		if !d.mouseDragging {
+			d.mouseDragging = true
+			d.open = !d.open
+		}
 		return true
 	}
 	if d.open && my >= d.rect.Y+1 && my < d.rect.Y+1+len(d.items) &&
 		mx >= ix+1 && mx <= ix+d.rect.W {
-		d.selected = my - d.rect.Y - 1
-		d.open = false
+		if !d.mouseDragging {
+			d.mouseDragging = true
+			d.selected = my - d.rect.Y - 1
+			d.open = false
+		}
 		return true
 	}
 	if d.open {

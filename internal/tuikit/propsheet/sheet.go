@@ -496,6 +496,17 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	if !p.Visible() {
 		return false
 	}
+	// A release that lands outside the dialog is consumed by
+	// ConsumeOutsideClick below before the current page's Form (and any
+	// mouseDragging-latched Button/CheckBox row it hosts) ever sees it,
+	// leaving the latch set and swallowing the next press. Reset it here
+	// first; HandleMouse returns false on ButtonNone so this has no other
+	// effect.
+	if ev.Buttons() == tcell.ButtonNone {
+		if f := p.PageForm(p.current); f != nil {
+			f.HandleMouse(ev)
+		}
+	}
 	if p.ConsumeOutsideClick(ev) {
 		return true
 	}

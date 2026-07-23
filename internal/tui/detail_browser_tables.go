@@ -27,7 +27,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
 		defer cancel()
 
-		dbObj, err := sc.Server.DatabaseByName(node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return

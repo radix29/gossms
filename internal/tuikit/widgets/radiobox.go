@@ -15,6 +15,16 @@ type RadioBox struct {
 	options  []string
 	selected int
 	focused  bool
+
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold over the same option — mirrors Toolbar's/TreeView's/MenuBar's
+	// field of the same name and purpose. Without it, tcell's all-motion
+	// mouse tracking resends Buttons()==Button1 on every motion event
+	// while the button stays down, so a click that so much as twitches
+	// before release keeps reassigning the selection to whatever option
+	// the pointer drifts over instead of a single, physical-radio-button-
+	// style pick at press time.
+	mouseDragging bool
 }
 
 // NewRadioBox creates a RadioBox with the given options. Selection starts at
@@ -107,6 +117,10 @@ func (r *RadioBox) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse selects the option clicked.
 func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		r.mouseDragging = false
+		return false
+	}
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
@@ -115,7 +129,10 @@ func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
 	for i := range r.options {
 		y := r.optionsY() + i
 		if my == y && mx >= r.rect.X && mx < r.rect.X+w {
-			r.selected = i
+			if !r.mouseDragging {
+				r.mouseDragging = true
+				r.selected = i
+			}
 			return true
 		}
 	}

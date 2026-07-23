@@ -23,5 +23,5 @@ reports
 sp_blitz & index with reference built in
 
 
-review both projects and check for bugs, inconsistencies and optimizations
+review both projects and check for bugs, inconsistencies, optimizations and refractoring. plan only, ask before implementing to switch models. do not commit to git
 

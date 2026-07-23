@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
 	dbconn "github.com/radix29/gossms/internal/db"
@@ -96,7 +97,7 @@ func TestFetchNodeDetailsFallsBackToChildList(t *testing.T) {
 	sc := &dbconn.ServerConn{}
 	node := &explorerNode{label: "Server Objects", data: nodeData{Type: NodeManagement, conn: sc}}
 
-	cols, rows, err := fetchNodeDetails(sc, node)
+	cols, rows, err := fetchNodeDetails(context.Background(), sc, node)
 	if err != nil {
 		t.Fatalf("fetchNodeDetails: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestFetchNodeDetailsLeafKeepsPropertyValue(t *testing.T) {
 	sc := &dbconn.ServerConn{}
 	node := &explorerNode{label: "my_col", data: nodeData{Type: NodeColumn, conn: sc}}
 
-	cols, _, err := fetchNodeDetails(sc, node)
+	cols, _, err := fetchNodeDetails(context.Background(), sc, node)
 	if err != nil {
 		t.Fatalf("fetchNodeDetails: %v", err)
 	}

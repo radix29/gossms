@@ -374,7 +374,7 @@ func pageStatisticExtendedProperties(sc *db.ServerConn, dbName, schema, table, n
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "STATISTICS", Level2Name: name,
 			}
-			props, err := d.ExtendedProperties(level)
+			props, err := d.ExtendedPropertiesContext(ctx, level)
 			if err != nil {
 				return nil, nil, err
 			}

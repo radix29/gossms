@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -26,20 +27,20 @@ func countOrDash(n int, err error) string {
 
 // agentServerDetail builds the "SQL Server Agent" root's detail view: its
 // run status plus a quick census of every child collection.
-func agentServerDetail(sc *db.ServerConn) ([]string, [][]string, error) {
+func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	statusText := "Unknown"
 	lastStartup := ""
-	if status, err := sc.Server.AgentInfo(); err == nil {
+	if status, err := sc.Server.AgentInfoContext(ctx); err == nil {
 		statusText = status.StatusText
 		if !status.LastStartupTime.IsZero() {
 			lastStartup = formatSQLDate(status.LastStartupTime)
 		}
 	}
 
-	jobs, jErr := sc.Server.Jobs()
-	schedules, schErr := sc.Server.Schedules()
-	alerts, aErr := sc.Server.EventAlerts()
-	operators, oErr := sc.Server.Operators()
+	jobs, jErr := sc.Server.JobsContext(ctx)
+	schedules, schErr := sc.Server.SchedulesContext(ctx)
+	alerts, aErr := sc.Server.EventAlertsContext(ctx)
+	operators, oErr := sc.Server.OperatorsContext(ctx)
 
 	rows := [][]string{
 		{"Status", statusText},
@@ -56,8 +57,8 @@ func agentServerDetail(sc *db.ServerConn) ([]string, [][]string, error) {
 
 // agentJobDetail builds a job's detail view, matching the mockup's
 // "SELECTED NODE MOCKUP — JOB".
-func agentJobDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	j, err := sc.Server.JobByName(node.data.Name)
+func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	j, err := sc.Server.JobByNameContext(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,12 +96,12 @@ func agentJobDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]string
 
 // agentScheduleDetail builds a schedule's detail view, matching the
 // mockup's "SELECTED NODE MOCKUP — SCHEDULE".
-func agentScheduleDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	sch, err := sc.Server.ScheduleByName(node.data.Name)
+func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	sch, err := sc.Server.ScheduleByNameContext(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
-	jobs, jErr := sch.Jobs()
+	jobs, jErr := sch.JobsContext(ctx)
 
 	endDate := "No end date"
 	if !sch.ActiveEndDate.IsZero() {
@@ -120,8 +121,8 @@ func agentScheduleDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]s
 
 // agentAlertDetail builds an alert's detail view, matching the mockup's
 // "SELECTED NODE MOCKUP — SQL SERVER EVENT ALERT".
-func agentAlertDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	al, err := sc.Server.AlertByName(node.data.Name)
+func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	al, err := sc.Server.AlertByNameContext(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -154,7 +155,7 @@ func agentAlertDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]stri
 		{"Category", al.Category},
 		{"Last occurrence", lastOccurrence},
 	}
-	if notifs, err := al.Notifications(); err == nil {
+	if notifs, err := al.NotificationsContext(ctx); err == nil {
 		for _, n := range notifs {
 			rows = append(rows, []string{"Notify operator", n.OperatorName + " (" + n.Method.String() + ")"})
 		}
@@ -167,8 +168,8 @@ func agentAlertDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]stri
 
 // agentOperatorDetail builds an operator's detail view, matching the
 // mockup's "SELECTED NODE MOCKUP — OPERATOR".
-func agentOperatorDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	o, err := sc.Server.OperatorByName(node.data.Name)
+func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	o, err := sc.Server.OperatorByNameContext(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -195,12 +196,12 @@ func agentOperatorDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]s
 		{"Category", o.Category},
 		{"Last email", lastEmail},
 	}
-	if alerts, err := o.NotifyingAlerts(); err == nil {
+	if alerts, err := o.NotifyingAlertsContext(ctx); err == nil {
 		for _, n := range alerts {
 			rows = append(rows, []string{"Notifies (alert)", n.AlertName + " — " + n.Method.String()})
 		}
 	}
-	if jobs, err := o.NotifyingJobs(); err == nil {
+	if jobs, err := o.NotifyingJobsContext(ctx); err == nil {
 		for _, n := range jobs {
 			rows = append(rows, []string{"Notifies (job)", n.JobName + " — " + formatNotifyLevel(n.Level)})
 		}
@@ -210,8 +211,8 @@ func agentOperatorDetail(sc *db.ServerConn, node *explorerNode) ([]string, [][]s
 
 // agentJobActivityDetail builds the "Job Activity" leaf's detail view,
 // matching the mockup's "SELECTED NODE MOCKUP — JOB ACTIVITY".
-func agentJobActivityDetail(sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.Jobs()
+func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -234,8 +235,8 @@ func agentJobActivityDetail(sc *db.ServerConn) ([]string, [][]string, error) {
 
 // agentJobHistoryDetail builds the "Job History" leaf's detail view: the
 // most recent job-level outcome across every job.
-func agentJobHistoryDetail(sc *db.ServerConn) ([]string, [][]string, error) {
-	history, err := sc.Server.JobHistory(100)
+func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	history, err := sc.Server.JobHistoryContext(ctx, 100)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,8 +251,8 @@ func agentJobHistoryDetail(sc *db.ServerConn) ([]string, [][]string, error) {
 
 // agentCategoriesDetail lists every category of the given class — shared
 // by the "Job Categories" and "Alert Categories" leaves.
-func agentCategoriesDetail(sc *db.ServerConn, class gosmo.CategoryClass) ([]string, [][]string, error) {
-	cats, err := sc.Server.Categories(class)
+func agentCategoriesDetail(ctx context.Context, sc *db.ServerConn, class gosmo.CategoryClass) ([]string, [][]string, error) {
+	cats, err := sc.Server.CategoriesContext(ctx, class)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,11 +266,11 @@ func agentCategoriesDetail(sc *db.ServerConn, class gosmo.CategoryClass) ([]stri
 // agentJobCategoriesDetail is agentCategoriesDetail for job categories —
 // a thin wrapper so detail_browser.go's dispatch doesn't need to import
 // gosmo just to name gosmo.CategoryClassJob.
-func agentJobCategoriesDetail(sc *db.ServerConn) ([]string, [][]string, error) {
-	return agentCategoriesDetail(sc, gosmo.CategoryClassJob)
+func agentJobCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	return agentCategoriesDetail(ctx, sc, gosmo.CategoryClassJob)
 }
 
 // agentAlertCategoriesDetail is agentCategoriesDetail for alert categories.
-func agentAlertCategoriesDetail(sc *db.ServerConn) ([]string, [][]string, error) {
-	return agentCategoriesDetail(sc, gosmo.CategoryClassAlert)
+func agentAlertCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
+	return agentCategoriesDetail(ctx, sc, gosmo.CategoryClassAlert)
 }

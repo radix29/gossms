@@ -471,6 +471,16 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
+	// A release must reach every mouseDragging-latched widget even when it
+	// lands outside the dialog (consumed below) or the widget isn't the
+	// currently focused one — otherwise its next press is swallowed as a
+	// continuation of the stale drag. Each returns false on ButtonNone, so
+	// this has no effect beyond resetting the latch.
+	if ev.Buttons() == tcell.ButtonNone {
+		d.cbTrust.HandleMouse(ev)
+		d.cbEncrypt.HandleMouse(ev)
+		d.ddAuth.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -515,14 +525,11 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	mx, my := ev.Position()
-	if my == d.cbTrust.RectY() && mx >= d.cbTrust.RectX() && mx < d.cbTrust.RectX()+3 {
-		d.cbTrust.SetChecked(!d.cbTrust.Checked())
+	if d.cbTrust.HandleMouse(ev) {
 		d.refreshConnStrPreview()
 		return true
 	}
-	if my == d.cbEncrypt.RectY() && mx >= d.cbEncrypt.RectX() && mx < d.cbEncrypt.RectX()+3 {
-		d.cbEncrypt.SetChecked(!d.cbEncrypt.Checked())
+	if d.cbEncrypt.HandleMouse(ev) {
 		d.refreshConnStrPreview()
 		return true
 	}
@@ -542,6 +549,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 
+	mx, my := ev.Position()
 	fields := []*widgets.InputField{
 		d.fServer, d.fPort, d.fDatabase, d.fUser, d.fPassword,
 		d.fTenantID, d.fClientID,

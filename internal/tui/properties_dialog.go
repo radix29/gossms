@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/radix29/gossms/internal/db"
@@ -54,7 +55,9 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
 	go func() {
-		rows, err := fetchDependencyRows(sc, dbName, schema, name)
+		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		defer cancel()
+		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)
 		app.postEvent(func() {
 			if seq != d.seq || !d.Visible() {
 				return
@@ -71,17 +74,19 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 
 // fetchDependencyRows runs the gosmo dependency queries for the
 // Dependencies dialog. Called from a background goroutine (see
-// ShowDependencies) — must not touch any UI state directly.
-func fetchDependencyRows(sc *db.ServerConn, dbName, schema, name string) ([]PropertyRow, error) {
-	dbObj, err := sc.Server.DatabaseByName(dbName)
+// ShowDependencies) — must not touch any UI state directly. ctx bounds the
+// whole call (see the caller's childFetchTimeout) so a hung server leaves
+// the goroutine and its connection to time out instead of blocking forever.
+func fetchDependencyRows(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) ([]PropertyRow, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	deps, err := dbObj.Dependencies(schema, name)
+	deps, err := dbObj.DependenciesContext(ctx, schema, name)
 	if err != nil {
 		return nil, err
 	}
-	dependents, err := dbObj.Dependents(schema, name)
+	dependents, err := dbObj.DependentsContext(ctx, schema, name)
 	if err != nil {
 		return nil, err
 	}

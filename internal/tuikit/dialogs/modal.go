@@ -18,6 +18,19 @@ type ModalDialog struct {
 	title      string
 	visible    bool
 	screen     tcell.Screen // needed for Size() during recentre
+
+	// mouseDragging distinguishes a fresh Button1 press on the button row
+	// from a continued hold — mirrors Toolbar's/TreeView's/MenuBar's field
+	// of the same name and purpose. Without it, tcell's all-motion mouse
+	// tracking resends Buttons()==Button1 on every motion event while the
+	// button stays down, so a click that so much as twitches before
+	// release fires the button's action again on every resent event
+	// instead of once per physical click. Reset in ConsumeOutsideClick
+	// (see its doc comment) rather than in ButtonClicked itself, since
+	// every embedding dialog's HandleMouse calls ConsumeOutsideClick first
+	// regardless of mode, while some only reach ButtonClicked via a
+	// mode-gated branch that a plain release event never takes.
+	mouseDragging bool
 }
 
 // InitModal sets up the dialog for the given screen, title, and size.
@@ -83,7 +96,17 @@ func (d *ModalDialog) ContainsMouse(mx, my int) bool {
 
 // ConsumeOutsideClick returns true if the mouse event originated outside
 // the dialog. The dialog is always visible when this is called.
+//
+// As a side effect, a ButtonNone (release/hover) event always clears
+// mouseDragging here — regardless of position, the same way Toolbar
+// resets its own field before any bounds check — since this is the one
+// call every embedding dialog's HandleMouse makes unconditionally before
+// its own mode-specific branching, including for a mouse-up that lands
+// outside the dialog's rect.
 func (d *ModalDialog) ConsumeOutsideClick(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		d.mouseDragging = false
+	}
 	if !d.visible {
 		return false
 	}
@@ -164,7 +187,10 @@ func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int
 	}
 }
 
-// ButtonClicked returns the index of the button clicked, or -1.
+// ButtonClicked returns the index of the button clicked, or -1. Guards
+// against tcell's held-motion Button1 resend via mouseDragging (see that
+// field's doc comment) so a click that twitches before release fires once,
+// not once per resent event.
 func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 	if ev.Buttons() != tcell.Button1 {
 		return -1
@@ -178,6 +204,10 @@ func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 		text := "[ " + label + " ]"
 		w := core.DisplayWidth(text)
 		if mx >= col && mx < col+w {
+			if d.mouseDragging {
+				return -1
+			}
+			d.mouseDragging = true
 			return i
 		}
 		col += w + 2

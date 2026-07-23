@@ -20,13 +20,23 @@ import (
 // aren't built — this environment has neither (contained database
 // authentication is disabled server-wide, and there's no Azure AD auth
 // here to test against).
+// userName is boxed in a *string shared by every page below: renaming a
+// user is the one edit in this dialog that changes the identity every
+// other page's lookup depends on, so pageUserGeneral's apply closure
+// updates *userName in place on success — otherwise Apply (which reloads
+// every page via PropDialog.InvalidateAll) would send the very next reload
+// looking for a user name that no longer exists. Same bug class as Key
+// Properties' pageKeyGeneral and Server Role Properties'
+// pageServerRoleGeneral (see server_role_props.go). dbName never changes,
+// so it stays a plain string.
 func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
+	namePtr := &userName
 	return []propPage{
-		pageUserGeneral(sc, dbName, userName),
-		pageUserOwnedSchemas(sc, dbName, userName),
-		pageUserMembership(sc, dbName, userName),
-		pageUserSecurables(sc, dbName, userName),
-		pageUserExtendedProperties(sc, dbName, userName),
+		pageUserGeneral(sc, dbName, namePtr),
+		pageUserOwnedSchemas(sc, dbName, namePtr),
+		pageUserMembership(sc, dbName, namePtr),
+		pageUserSecurables(sc, dbName, namePtr),
+		pageUserExtendedProperties(sc, dbName, namePtr),
 	}
 }
 
@@ -54,7 +64,7 @@ func isSystemUser(name string) bool {
 	}
 }
 
-func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
+func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -62,7 +72,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			u, err := d.UserByNameContext(ctx, userName)
+			u, err := d.UserByNameContext(ctx, *userName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -74,7 +84,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			securables, err := d.PermissionsForPrincipalContext(ctx, userName)
+			securables, err := d.PermissionsForPrincipalContext(ctx, *userName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -85,13 +95,13 @@ func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
 
 			ownedSchemas := 0
 			for _, s := range schemas {
-				if s.Owner == userName {
+				if s.Owner == *userName {
 					ownedSchemas++
 				}
 			}
 			memberships := 0
 			for _, r := range roles {
-				if r.Name != "public" && slices.Contains(r.Members, userName) {
+				if r.Name != "public" && slices.Contains(r.Members, *userName) {
 					memberships++
 				}
 			}
@@ -186,7 +196,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
 			var apply propApply
 			if !builtin {
 				apply = func(ctx context.Context) error {
-					u, err := findUser(ctx, sc, dbName, userName)
+					u, err := findUser(ctx, sc, dbName, *userName)
 					if err != nil {
 						return err
 					}
@@ -204,6 +214,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName, userName string) propPage {
 						if err := u.RenameContext(ctx, nameRow.Value()); err != nil {
 							return err
 						}
+						*userName = nameRow.Value()
 					}
 					return nil
 				}
@@ -223,7 +234,7 @@ func loginDisabledStr(u *gosmo.User) string {
 	return boolStr(u.LoginDisabled)
 }
 
-func pageUserOwnedSchemas(sc *db.ServerConn, dbName, userName string) propPage {
+func pageUserOwnedSchemas(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title: "Owned Schemas",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -253,7 +264,7 @@ func pageUserOwnedSchemas(sc *db.ServerConn, dbName, userName string) propPage {
 			}
 			var edits []*schemaEdit
 			for _, s := range allSchemas {
-				if s.Owner != userName {
+				if s.Owner != *userName {
 					continue
 				}
 				count, err := s.ObjectCountContext(ctx)
@@ -349,7 +360,7 @@ func pageUserOwnedSchemas(sc *db.ServerConn, dbName, userName string) propPage {
 	}
 }
 
-func pageUserMembership(sc *db.ServerConn, dbName, userName string) propPage {
+func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title: "Membership",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -376,7 +387,7 @@ func pageUserMembership(sc *db.ServerConn, dbName, userName string) propPage {
 			values := make([][]bool, len(roles))
 			for i, r := range roles {
 				text[i] = []string{r.Name, fixedRoleDescriptions[r.Name]}
-				values[i] = []bool{slices.Contains(r.Members, userName)}
+				values[i] = []bool{slices.Contains(r.Members, *userName)}
 			}
 			rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role", "Description"}, []int{0}, 10)
 			rolesGrid.SetRows(text, values)
@@ -420,16 +431,16 @@ func pageUserMembership(sc *db.ServerConn, dbName, userName string) propPage {
 				}
 				for i, v := range rolesGrid.Values() {
 					member := v[0]
-					wasMember := slices.Contains(roles[i].Members, userName)
+					wasMember := slices.Contains(roles[i].Members, *userName)
 					if member == wasMember {
 						continue
 					}
 					if member {
-						if err := d.AddRoleMemberContext(ctx, roles[i].Name, userName); err != nil {
+						if err := d.AddRoleMemberContext(ctx, roles[i].Name, *userName); err != nil {
 							return err
 						}
 					} else {
-						if err := d.RemoveRoleMemberContext(ctx, roles[i].Name, userName); err != nil {
+						if err := d.RemoveRoleMemberContext(ctx, roles[i].Name, *userName); err != nil {
 							return err
 						}
 					}
@@ -441,7 +452,7 @@ func pageUserMembership(sc *db.ServerConn, dbName, userName string) propPage {
 	}
 }
 
-func pageUserSecurables(sc *db.ServerConn, dbName, userName string) propPage {
+func pageUserSecurables(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title: "Securables",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -449,7 +460,7 @@ func pageUserSecurables(sc *db.ServerConn, dbName, userName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			entries, err := d.PermissionsForPrincipalContext(ctx, userName)
+			entries, err := d.PermissionsForPrincipalContext(ctx, *userName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -496,13 +507,13 @@ func pageUserSecurables(sc *db.ServerConn, dbName, userName string) propPage {
 
 			f, apply := buildSecurablesMatrix(initial, entries, available, 8, 12,
 				func(ctx context.Context, s securable, permission string) error {
-					return grantSecurable(ctx, d, s, permission, userName)
+					return grantSecurable(ctx, d, s, permission, *userName)
 				},
 				func(ctx context.Context, s securable, permission string) error {
-					return denySecurable(ctx, d, s, permission, userName)
+					return denySecurable(ctx, d, s, permission, *userName)
 				},
 				func(ctx context.Context, s securable, permission string) error {
-					return revokeSecurable(ctx, d, s, permission, userName)
+					return revokeSecurable(ctx, d, s, permission, *userName)
 				},
 			)
 			return f, apply, nil
@@ -510,7 +521,7 @@ func pageUserSecurables(sc *db.ServerConn, dbName, userName string) propPage {
 	}
 }
 
-func pageUserExtendedProperties(sc *db.ServerConn, dbName, userName string) propPage {
+func pageUserExtendedProperties(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title: "Extended Properties",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
@@ -518,8 +529,8 @@ func pageUserExtendedProperties(sc *db.ServerConn, dbName, userName string) prop
 			if err != nil {
 				return nil, nil, err
 			}
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: userName}
-			props, err := d.ExtendedProperties(level)
+			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *userName}
+			props, err := d.ExtendedPropertiesContext(ctx, level)
 			if err != nil {
 				return nil, nil, err
 			}
