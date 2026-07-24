@@ -172,7 +172,11 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			d.nameField.HandleMouse(ev)
 			return true
 		}
-		if lr := d.listRect(); lr.Contains(mx, my) {
+		lr := d.listRect()
+		if d.ScrollbarDrag(ev, lr.Right()-1, lr.Y, lr.H, len(d.entries), &d.scroll) {
+			return true
+		}
+		if lr.Contains(mx, my) {
 			if d.listMouseDragging {
 				// Still the same physical press — do not re-activate on
 				// every resent motion event.

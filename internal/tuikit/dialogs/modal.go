@@ -31,6 +31,13 @@ type ModalDialog struct {
 	// regardless of mode, while some only reach ButtonClicked via a
 	// mode-gated branch that a plain release event never takes.
 	mouseDragging bool
+
+	// sbDragging is true while the user is dragging a content scrollbar an
+	// embedding dialog draws (see ScrollbarDrag) — a separate flag from
+	// mouseDragging since it targets a different screen region (the
+	// scrollbar column vs. the button row) and the two must not be
+	// conflated. Reset in ConsumeOutsideClick alongside mouseDragging.
+	sbDragging bool
 }
 
 // InitModal sets up the dialog for the given screen, title, and size.
@@ -106,12 +113,27 @@ func (d *ModalDialog) ContainsMouse(mx, my int) bool {
 func (d *ModalDialog) ConsumeOutsideClick(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		d.mouseDragging = false
+		d.sbDragging = false
 	}
 	if !d.visible {
 		return false
 	}
 	mx, my := ev.Position()
 	return !d.rect.Contains(mx, my)
+}
+
+// ScrollbarDrag handles a click or drag on a vertical scrollbar an
+// embedding dialog draws at trackX (normally Rect().Right()-1) spanning
+// [trackY, trackY+trackH) — the mouse-side counterpart of
+// core.DrawScrollbar, which every embedding dialog calls with the same
+// trackY/trackH/total/visible(==trackH) tuple from Draw. Returns true (and
+// updates *scroll) for a Button1 press that lands on the bar, or any
+// continuation of an already-started drag regardless of x — the mouse can
+// drift off the bar's exact column while dragging. Call this before the
+// dialog's own row hit-testing, since the bar can be drawn over a column
+// that would otherwise resolve to a content row.
+func (d *ModalDialog) ScrollbarDrag(ev *tcell.EventMouse, trackX, trackY, trackH, total int, scroll *int) bool {
+	return core.HandleScrollbarDrag(ev, trackX, trackY, trackH, total, &d.sbDragging, scroll)
 }
 
 // dialogDimNum/dialogDimDen fade the underlying UI toward the overlay colour

@@ -102,7 +102,7 @@ type PlanView struct {
 // New creates an empty PlanView. Call SetPlanXML or SetPlan to load a plan.
 func New() *PlanView {
 	v := new(PlanView{activeTab: TabPlan, selectedID: -1})
-	v.xml = controls.NewEditor(nil)
+	v.xml = controls.NewEditor(controls.XMLHighlighter(theme.Active()))
 	v.xml.SetReadOnly(true)
 	v.treeSplit = layout.NewVerticalSplitter()
 	v.treeSplit.SetRatio(0.55) // tree gets more room than the details pane

@@ -98,12 +98,11 @@ func visualIndexForCursor(vls []visualLine, row, col int) int {
 
 // handleMouseWrapped implements HandleMouse's Button1-click/drag and
 // wheel-scroll behavior for word-wrap mode, where scrollRow and the
-// mouse's Y position map to visual rows (buildVisualLines) rather than
-// directly to logical lines.
-func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int) bool {
-	contentW := e.rect.W - e.gutterWidth()
-	vls := e.buildVisualLines(contentW)
-
+// mouse's Y position map to visual rows (vls, from buildVisualLines)
+// rather than directly to logical lines. vls is precomputed by the caller
+// (HandleMouse) rather than recomputed here, since it's already needed
+// there for the scrollbar hit-test on Button1 events.
+func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, vls []visualLine) bool {
 	if ev.Buttons() == tcell.Button1 {
 		vi := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)
 		vl := vls[vi]

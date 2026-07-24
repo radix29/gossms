@@ -31,6 +31,14 @@ type Form struct {
 	formFocused bool
 	rect        core.Rect
 	bands       []band
+
+	// sbDragging is true while the user is dragging the form's own
+	// scrollbar thumb (see HandleMouse) — mirrors DataGrid's/TreeView's/
+	// ListBox's/Editor's field of the same name and purpose. Checked only
+	// after the focused row's own HandleMouse has had first refusal, so a
+	// focused GridRow whose DataGrid shares this same rightmost column
+	// still scrolls its own rows, not the form's, while it has focus.
+	sbDragging bool
 }
 
 // NewForm creates a Form from an initial set of rows (order = tab order =
@@ -260,7 +268,12 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		// whatever row the pointer happens to be over, blurring (and thus
 		// closing) an open DropDown the moment the user moves toward its
 		// own open list to click an item in it.
+		f.sbDragging = false
 		return false
+	}
+	w := f.contentWidth()
+	if f.totalHeight(w) > f.rect.H && core.HandleScrollbarDrag(ev, f.rect.Right()-1, f.rect.Y, f.rect.H, len(f.rows), &f.sbDragging, &f.scroll) {
+		return true
 	}
 	mx, my := ev.Position()
 	if mx < f.rect.X || mx >= f.rect.Right() {

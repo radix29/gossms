@@ -43,6 +43,11 @@ type treeState struct {
 	rows      []treeRow
 	scroll    int
 	collapsed map[int]bool // NodeID -> collapsed; absent = expanded (default)
+
+	// sbDragging is true while the user is dragging the tree pane's
+	// scrollbar thumb — see controls.DataGrid's field of the same name and
+	// purpose for the rationale.
+	sbDragging bool
 }
 
 // rebuildTreeRows re-flattens the current statement's operator tree,
@@ -478,6 +483,7 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	case tcell.ButtonNone:
+		v.treeSt.sbDragging = false
 		// The splitter needs to see its own drag-release event to clear
 		// sp.dragging — otherwise it stays stuck true and the next plain
 		// click anywhere in the tab (not just on the bar) gets misread as a
@@ -490,6 +496,13 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 	case tcell.Button1:
 		if v.treeSplit.HandleMouse(ev) {
 			v.layoutTree()
+			return true
+		}
+		// Scrollbar drag/click takes priority over row hit-testing below —
+		// the bar is drawn at treePaneRect.Right()-1 (see drawTreePane),
+		// which without this check first would otherwise be read as a
+		// click on whatever row sits in that screen column.
+		if core.HandleScrollbarDrag(ev, v.treePaneRect.Right()-1, v.treePaneRect.Y, v.treePaneRect.H, len(v.treeSt.rows), &v.treeSt.sbDragging, &v.treeSt.scroll) {
 			return true
 		}
 		if v.treePaneRect.Contains(mx, my) {

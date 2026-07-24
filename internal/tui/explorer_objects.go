@@ -57,11 +57,12 @@ func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	}
 	out := make([]*explorerNode, 0, len(cols))
 	for _, c := range cols {
-		nullable := ""
-		if c.IsNullable {
-			nullable = " NULL"
+		nullWord := "null"
+		if !c.IsNullable {
+			nullWord = "not null"
 		}
-		label := fmt.Sprintf("%s (%s%s)", c.Name, c.DataType, nullable)
+		typ := formatDataTypeLen(string(c.DataType), c.MaxLength, c.Precision, c.Scale)
+		label := fmt.Sprintf("%s (%s, %s)", c.Name, typ, nullWord)
 		n := l.node(label, NodeColumn, node.data.Schema, c.Name, node.data.DBName)
 		n.data.IsPrimaryKey = c.IsPrimaryKey
 		out = append(out, n)

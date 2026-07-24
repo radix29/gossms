@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -132,6 +133,32 @@ func TestTreeViewClickOnExpanderTogglesRow(t *testing.T) {
 	}
 }
 
+// TestTreeViewClickOnExpanderTogglesRowWhileScrolled pins a real bug: the
+// expander hit-test in HandleMouse compared the click's screen column
+// directly against the expander's virtual column (node.Depth*2..+4, see
+// Draw's row-line layout), so it only matched at scrollX==0 — once the tree
+// was scrolled horizontally, a still-visible "[+]"/"[-]" glyph silently
+// stopped responding to clicks anywhere but its original, no-longer-true,
+// unscrolled screen position.
+func TestTreeViewClickOnExpanderTogglesRowWhileScrolled(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.X = 1, inner.W = 38
+	tv.SetNodes([]TreeNode{{ID: 1, Label: strings.Repeat("x", 100), Depth: 5, HasKids: true}})
+
+	// The depth-5 expander's virtual columns are 10..14; at scrollX=8 that
+	// lands on-screen at column 1+(10-8)..1+(14-8) = 3..7, still well within
+	// the panel and clearly not the unscrolled position.
+	tv.scrollX = 8
+
+	handled := tv.HandleMouse(tcell.NewEventMouse(4, 1, tcell.Button1, tcell.ModNone))
+	if !handled {
+		t.Fatalf("HandleMouse() = false, want true")
+	}
+	if !tv.nodes[0].Expanded {
+		t.Fatalf("clicking the visibly-scrolled expander glyph did not toggle expand")
+	}
+}
+
 // TestTreeViewHeldButtonOverExpanderDoesNotReToggle pins the fix for the
 // open-then-immediately-close flicker: tcell's all-motion mouse tracking
 // resends Buttons()==Button1 on every cursor motion while the button stays
@@ -237,5 +264,89 @@ func TestTreeViewCtrlSpaceOpensContextMenu(t *testing.T) {
 	}
 	if !fired {
 		t.Fatal("OnRightClick did not fire on Ctrl+Space")
+	}
+}
+
+// TestSetNodesComputesContentWForHorizontalScroll checks contentW picks up
+// the widest row's full rendered width (indent + expander + icon + label),
+// not just the label — the horizontal scrollbar in Draw only appears once
+// contentW exceeds inner.W, so an under-count would hide it for rows that
+// are wide only because of deep nesting or a wide icon.
+func TestSetNodesComputesContentWForHorizontalScroll(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.W = 38
+	tv.SetNodes([]TreeNode{
+		{ID: 1, Label: "short"},
+		{ID: 2, Label: "a_much_longer_column_label_here", Depth: 2, HasKids: true},
+	})
+	want := 2*2 + 4 + len("a_much_longer_column_label_here")
+	if tv.contentW != want {
+		t.Errorf("contentW = %d, want %d", tv.contentW, want)
+	}
+}
+
+// TestWheelLeftRightScrollsHorizontally checks WheelLeft/WheelRight move
+// scrollX directly, and that scrollRight clamps at contentW-inner.W so the
+// scrollbar thumb can never run past the end of the track.
+func TestWheelLeftRightScrollsHorizontally(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.W = 38
+	tv.SetNodes([]TreeNode{{ID: 1, Label: strings.Repeat("x", 100)}})
+
+	if !tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelRight, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelRight) returned false")
+	}
+	if tv.scrollX != 4 {
+		t.Errorf("scrollX = %d after one WheelRight, want 4", tv.scrollX)
+	}
+
+	if !tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelLeft, tcell.ModNone)) {
+		t.Fatal("HandleMouse(WheelLeft) returned false")
+	}
+	if tv.scrollX != 0 {
+		t.Errorf("scrollX = %d after WheelRight then WheelLeft, want back to 0", tv.scrollX)
+	}
+
+	maxScroll := tv.contentW - tv.rect.Inner(1).W
+	for i := 0; i < 100; i++ {
+		tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelRight, tcell.ModNone))
+	}
+	if tv.scrollX != maxScroll {
+		t.Errorf("scrollX = %d after scrolling far past the end, want clamped to %d", tv.scrollX, maxScroll)
+	}
+}
+
+// TestShiftWheelUpDownScrollsHorizontally checks the Shift+WheelUp/WheelDown
+// fallback some terminals use instead of WheelLeft/WheelRight — matches
+// DataGrid's/Editor's/PlanView's identical convention.
+func TestShiftWheelUpDownScrollsHorizontally(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)
+	tv.SetNodes([]TreeNode{{ID: 1, Label: strings.Repeat("x", 100)}})
+
+	tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelDown, tcell.ModShift))
+	if tv.scrollX != 4 {
+		t.Errorf("scrollX = %d after Shift+WheelDown, want 4", tv.scrollX)
+	}
+	tv.HandleMouse(tcell.NewEventMouse(5, 1, tcell.WheelUp, tcell.ModShift))
+	if tv.scrollX != 0 {
+		t.Errorf("scrollX = %d after Shift+WheelUp, want back to 0", tv.scrollX)
+	}
+}
+
+// TestHorizontalScrollbarDragMovesScrollX checks a Button1 press on the
+// horizontal scrollbar's track — drawn over the bottom border row, outside
+// the row range HandleMouse's row-based hit-testing otherwise assumes —
+// updates scrollX, mirroring the vertical scrollbar's existing drag support.
+func TestHorizontalScrollbarDragMovesScrollX(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // rect.Bottom()-1 = 9, inner.X..inner.X+inner.W = 1..39
+	tv.SetNodes([]TreeNode{{ID: 1, Label: strings.Repeat("x", 100)}})
+
+	if !tv.HandleMouse(tcell.NewEventMouse(20, 9, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("HandleMouse(Button1) on the horizontal scrollbar track returned false")
+	}
+	if tv.scrollX == 0 {
+		t.Error("scrollX did not move after dragging the horizontal scrollbar thumb")
 	}
 }

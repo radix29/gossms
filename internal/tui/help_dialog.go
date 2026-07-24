@@ -165,13 +165,16 @@ func (d *HelpDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.Hide()
 		return true
 	}
+	dataH := d.InnerRect().H - 2
+	if d.ScrollbarDrag(ev, d.Rect().Right()-1, d.InnerRect().Y+1, dataH, len(helpLines), &d.scroll) {
+		return true
+	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if d.scroll > 0 {
 			d.scroll--
 		}
 	case tcell.WheelDown:
-		dataH := d.InnerRect().H - 2
 		if d.scroll+dataH < len(helpLines) {
 			d.scroll++
 		}

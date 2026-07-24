@@ -3,10 +3,14 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/showplan"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/layout"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // ---- Panel actions ----
@@ -77,6 +81,9 @@ func (a *App) openQueryFile() {
 		qp.editor.SetText(string(data))
 		qp.savedText = string(data)
 		qp.filePath = path
+		if strings.EqualFold(filepath.Ext(path), ".xml") {
+			qp.editor.SetHighlighter(controls.XMLHighlighter(theme.Active()))
+		}
 		a.panels.SetActive(a.panels.AddPanel(qp))
 		a.focusPanels()
 		a.setStatus("Opened " + path)

@@ -112,6 +112,14 @@ type Editor struct {
 	selAnchorCol  int
 	mouseDragging bool
 
+	// sbDragging is true while the user is dragging the scrollbar thumb
+	// (see HandleMouse and drawScrollbar) — a separate flag from
+	// mouseDragging since the two gestures target different screen
+	// regions and must not be conflated: once a scrollbar drag starts,
+	// every subsequent Button1 event controls it regardless of x, instead
+	// of being read as a text click/selection-drag.
+	sbDragging bool
+
 	undoStack []editorState
 	redoStack []editorState
 
@@ -142,6 +150,11 @@ type Editor struct {
 	// button stays down, so a single click on an already-selected item can
 	// call commitSelectedCompletion() more than once.
 	completionMouseDown bool
+
+	// completionSbDragging is the popup scrollbar's equivalent of
+	// completionMouseDown — see Editor's own sbDragging for why this is a
+	// separate flag from the click-tracking one above.
+	completionSbDragging bool
 }
 
 // NewEditor creates an Editor. Pass a Highlighter or nil.
@@ -151,6 +164,11 @@ func NewEditor(h Highlighter) *Editor {
 		highlight: h,
 	})
 }
+
+// SetHighlighter replaces the syntax highlighter — e.g. switching a query
+// editor between SQL and XML highlighting depending on which kind of file
+// was just opened into it. Pass nil to disable highlighting.
+func (e *Editor) SetHighlighter(h Highlighter) { e.highlight = h }
 
 // SetGutterVisible shows or hides the line-number gutter. Editors default
 // to a visible gutter (matching the SQL query editor); pass false for
@@ -233,7 +251,7 @@ func (e *Editor) SetText(text string) {
 		e.lines[i] = []rune(p)
 	}
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
-	e.selecting, e.selBlock, e.mouseDragging = false, false, false
+	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
 	e.undoStack, e.redoStack = nil, nil
 	e.closeCompletion()
 	e.completionSuppressed = false

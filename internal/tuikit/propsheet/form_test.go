@@ -36,6 +36,42 @@ func TestFormFocusNextSkipsNonFocusableAndDisabled(t *testing.T) {
 	}
 }
 
+// TestFormScrollbarDragScrolls confirms dragging the form's own scrollbar
+// scrolls it instead of being read as a click that shifts focus to whatever
+// row sits under it.
+func TestFormScrollbarDragScrolls(t *testing.T) {
+	rows := make([]Row, 30)
+	for i := range rows {
+		rows[i] = Static("Label", "value")
+	}
+	f := NewForm(rows...)
+	f.SetBounds(0, 0, 40, 10)
+
+	w := f.contentWidth()
+	if f.totalHeight(w) <= f.rect.H {
+		t.Fatalf("test needs totalHeight > rect.H (%d) to exercise scrolling", f.rect.H)
+	}
+
+	sbX := f.rect.Right() - 1
+	if !f.HandleMouse(tcell.NewEventMouse(sbX, f.rect.Y+f.rect.H-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("HandleMouse on the scrollbar column should be handled")
+	}
+	if !f.sbDragging {
+		t.Fatal("sbDragging should be true after pressing on the scrollbar")
+	}
+	if f.scroll == 0 {
+		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
+	}
+	if f.focus != -1 {
+		t.Errorf("focus = %d, clicking the scrollbar must not shift row focus", f.focus)
+	}
+
+	f.HandleMouse(tcell.NewEventMouse(sbX, f.rect.Y, tcell.ButtonNone, tcell.ModNone))
+	if f.sbDragging {
+		t.Error("sbDragging should reset on release")
+	}
+}
+
 func TestFormFocusPrev(t *testing.T) {
 	f := NewForm(Static("A", "1"), Static("B", "2"), Static("C", "3"))
 	f.SetBounds(0, 0, 60, 20)

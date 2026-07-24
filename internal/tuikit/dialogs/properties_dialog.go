@@ -73,6 +73,11 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 		s.SetContent(inner.X+keyW+2, y, '|', nil, valStyle)
 		core.DrawTextClipped(s, inner.X+keyW+4, y, inner.W-keyW-4, valStyle, pr.Value)
 	}
+	if len(d.rows) > dataH {
+		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		core.DrawScrollbar(s, d.Rect().Right()-1, inner.Y+2, dataH, len(d.rows), dataH, d.scroll, sbStyle, sbThumb)
+	}
 
 	d.DrawSeparator(s)
 	d.DrawButtons(s, []string{"Close"}, 0)
@@ -110,6 +115,22 @@ func (d *PropertiesDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if d.ButtonClicked(ev, []string{"Close"}) == 0 {
 		d.Hide()
+		return true
+	}
+	inner := d.InnerRect()
+	dataH := inner.H - 3
+	if d.ScrollbarDrag(ev, d.Rect().Right()-1, inner.Y+2, dataH, len(d.rows), &d.scroll) {
+		return true
+	}
+	switch ev.Buttons() {
+	case tcell.WheelUp:
+		if d.scroll > 0 {
+			d.scroll--
+		}
+	case tcell.WheelDown:
+		if d.scroll+dataH < len(d.rows) {
+			d.scroll++
+		}
 	}
 	return true
 }

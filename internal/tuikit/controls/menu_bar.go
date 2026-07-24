@@ -112,30 +112,7 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 
 	for i, item := range menu.Items {
 		y := mb.rect.Y + 2 + i
-		if item.Divider {
-			for x := col + 1; x < col+w-1; x++ {
-				s.SetContent(x, y, '─', nil, borderStyle)
-			}
-			s.SetContent(col, y, '├', nil, borderStyle)
-			s.SetContent(col+w-1, y, '┤', nil, borderStyle)
-			continue
-		}
-		itemStyle := ddStyle
-		shortcutStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.TextDim)
-		switch {
-		case !item.enabled():
-			itemStyle = theme.StyleDisabled()
-			shortcutStyle = itemStyle
-		case i == mb.selectedItem:
-			itemStyle = theme.StyleSelected()
-			shortcutStyle = tcell.StyleDefault.Background(p.TreeSelected).Foreground(p.TextHighlight)
-			core.FillRect(s, core.Rect{X: col + 1, Y: y, W: w - 2, H: 1}, ' ', itemStyle)
-		}
-		core.DrawTextClipped(s, col+2, y, w-4, itemStyle, item.Label)
-		if item.Shortcut != "" {
-			sx := col + w - 1 - core.DisplayWidth(item.Shortcut) - 1
-			core.DrawText(s, sx, y, shortcutStyle, item.Shortcut)
-		}
+		drawMenuRow(s, col, y, w, item, i == mb.selectedItem, borderStyle)
 	}
 }
 
@@ -239,16 +216,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 func (mb *MenuBar) dropdownGeometry(idx int) (col, w, h int) {
 	menu := mb.menus[idx]
 	col = mb.menuHeaderOffset(idx)
-	w = 28
-	for _, item := range menu.Items {
-		// +6, not +4: 2 columns of border/inset padding plus a guaranteed
-		// 2-column gap between label and shortcut for whichever item ends
-		// up defining w — without the extra margin, that widest item's own
-		// label and shortcut land flush against each other with no gap.
-		if n := core.DisplayWidth(item.Label) + core.DisplayWidth(item.Shortcut) + 6; n > w {
-			w = n
-		}
-	}
+	w = menuContentWidth(menu.Items, 28)
 	if col+w > mb.rect.X+mb.rect.W {
 		col = mb.rect.X + mb.rect.W - w
 	}

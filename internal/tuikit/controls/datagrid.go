@@ -102,6 +102,15 @@ type DataGrid struct {
 	// cursor) — mirrors Editor's own field of the same name and purpose.
 	mouseDragging bool
 
+	// sbDragging is true while the user is dragging the scrollbar thumb
+	// (see HandleMouse) — set on a fresh Button1 press that lands on the
+	// scrollbar column, cleared on release. Separate from mouseDragging
+	// since the two gestures target different screen regions and must not
+	// be conflated: once a scrollbar drag starts, HandleMouse gives every
+	// subsequent Button1 event to it regardless of x, without falling
+	// through to row/cell hit-testing.
+	sbDragging bool
+
 	// toggleRow/toggleCol record the last cell an editable toggle grid's
 	// click-drag activated (see blockSelecting's doc comment above), so a
 	// resent Button1 event at that same cell — tcell resends on every
@@ -185,7 +194,7 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.columns = columns
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
-	g.blockSelecting, g.mouseDragging = false, false
+	g.blockSelecting, g.mouseDragging, g.sbDragging = false, false, false
 	g.computeColWidths()
 	g.status = core.Itoa(rows.Len()) + " rows"
 }
@@ -206,7 +215,7 @@ func (g *DataGrid) SetError(err error) {
 	g.rows = SliceRowSource{{err.Error()}}
 	g.colWidths = []int{g.rect.W - 2}
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
-	g.blockSelecting, g.mouseDragging = false, false
+	g.blockSelecting, g.mouseDragging, g.sbDragging = false, false, false
 	g.status = "Error"
 }
 

@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"strings"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -39,6 +41,13 @@ type TreeView struct {
 	scroll int
 	active bool
 
+	// scrollX is the horizontal scroll offset, in display columns, applied
+	// to every row's rendered content (indent + expander + icon + label).
+	// contentW is the widest row across all of tv.nodes, recomputed by
+	// SetNodes — the horizontal counterpart of scroll/len(tv.nodes) above.
+	scrollX  int
+	contentW int
+
 	// mouseDragging distinguishes a fresh Button1 press from a continued
 	// hold over the same row — mirrors MenuBar's/DataGrid's/Editor's field
 	// of the same name and purpose. Without it, tcell's all-motion mouse
@@ -46,6 +55,12 @@ type TreeView struct {
 	// button stays down, so a click that so much as twitches re-fires the
 	// click handling on every resent event instead of once per press.
 	mouseDragging bool
+
+	// sbDragging is true while the user is dragging the scrollbar thumb —
+	// see DataGrid's field of the same name and purpose for the rationale
+	// on why this is a separate flag from mouseDragging.
+	sbDragging  bool
+	sbDraggingX bool // same, for the horizontal scrollbar thumb
 
 	// Callbacks — set by the application layer
 	OnExpand     func(nodeID TreeNodeID) // called when a node is expanded
@@ -78,6 +93,26 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	// case, rendering nothing until the next arrow-key press recomputes
 	// scroll via ensureVisible as a side effect.
 	tv.ensureVisible(tv.rect.Inner(1).H)
+
+	tv.contentW = 0
+	for _, n := range nodes {
+		if w := tv.lineWidth(n); w > tv.contentW {
+			tv.contentW = w
+		}
+	}
+	tv.scrollX = core.Clamp(tv.scrollX, 0, core.Max(0, tv.contentW-tv.rect.Inner(1).W))
+}
+
+// lineWidth returns n's rendered row width in display columns: indent (2
+// per depth level) + the 4-column expander field + icon (width-aware, plus
+// its separating space) if present + the label.
+func (tv *TreeView) lineWidth(n TreeNode) int {
+	w := n.Depth*2 + 4
+	if n.Icon != 0 {
+		w += core.Max(1, core.DisplayWidth(string(n.Icon))) + 1
+	}
+	w += core.DisplayWidth(n.Label)
+	return w
 }
 
 // SelectID selects the node with the given ID, if present, and fires
@@ -141,37 +176,19 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 		}
 		core.FillRect(s, core.Rect{X: inner.X, Y: y, W: inner.W, H: 1}, ' ', style)
 
-		col := inner.X
-		// Indent
-		for i := 0; i < node.Depth*2 && col < inner.Right(); i++ {
-			s.SetContent(col, y, ' ', nil, style)
-			col++
+		// The whole row — indent, expander, icon, label — is built as one
+		// logical line and drawn through DrawTextOffset so tv.scrollX shifts
+		// it sideways uniformly; width-aware (wide/CJK glyphs, wide icons)
+		// because DrawTextOffset measures by display column, not by rune.
+		var line strings.Builder
+		line.WriteString(strings.Repeat(" ", node.Depth*2))
+		line.WriteString(expander)
+		if node.Icon != 0 {
+			line.WriteRune(node.Icon)
+			line.WriteByte(' ')
 		}
-		// Expander
-		for _, r := range expander {
-			if col >= inner.Right() {
-				break
-			}
-			s.SetContent(col, y, r, nil, style)
-			col++
-		}
-		// Icon — width-aware because some icon styles (emoji) render as
-		// double-width glyphs; the second cell of a wide glyph is left
-		// untouched for the terminal to fill in, matching core.DrawText's
-		// putGrapheme convention.
-		if node.Icon != 0 && col < inner.Right() {
-			iconW := core.Max(1, core.DisplayWidth(string(node.Icon)))
-			s.SetContent(col, y, node.Icon, nil, style)
-			col += iconW
-			if col < inner.Right() {
-				s.SetContent(col, y, ' ', nil, style)
-				col++
-			}
-		}
-		// Label (width-aware: clips correctly on wide/CJK glyphs)
-		if col < inner.Right() {
-			core.DrawTextClipped(s, col, y, inner.Right()-col, style, node.Label)
-		}
+		line.WriteString(node.Label)
+		core.DrawTextOffset(s, inner.X, y, tv.scrollX, inner.W, style, line.String())
 	}
 
 	if len(tv.nodes) > inner.H {
@@ -179,6 +196,12 @@ func (tv *TreeView) Draw(s tcell.Screen) {
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
 		core.DrawScrollbar(s, tv.rect.Right()-1, inner.Y, inner.H,
 			len(tv.nodes), inner.H, tv.scroll, sbStyle, sbThumb)
+	}
+	if tv.contentW > inner.W {
+		sbStyle := tcell.StyleDefault.Background(p.PanelBg).Foreground(p.Border)
+		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+		core.DrawScrollbarH(s, inner.X, tv.rect.Bottom()-1, inner.W,
+			tv.contentW, inner.W, tv.scrollX, sbStyle, sbThumb)
 	}
 }
 
@@ -265,15 +288,34 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	if ev.Buttons() == tcell.ButtonNone {
 		tv.mouseDragging = false
+		tv.sbDragging = false
+		tv.sbDraggingX = false
 	}
 	if !tv.rect.Contains(mx, my) {
 		return false
 	}
 	inner := tv.rect.Inner(1)
+
+	// Scrollbar drag/click takes priority over row hit-testing below — the
+	// vertical bar is drawn over the right border column (tv.rect.Right()-1)
+	// spanning inner's rows, and the horizontal bar over the bottom border
+	// row (tv.rect.Bottom()-1) spanning inner's columns (see Draw). The
+	// latter sits outside the row range the row-based hit-testing below
+	// checks for, so both scrollbar checks must run before that check, not
+	// after it as a plain "does x/y already look like a node row" filter
+	// would otherwise require.
+	if core.HandleScrollbarDrag(ev, tv.rect.Right()-1, inner.Y, inner.H, len(tv.nodes), &tv.sbDragging, &tv.scroll) {
+		return true
+	}
+	if core.HandleScrollbarDragH(ev, inner.X, tv.rect.Bottom()-1, inner.W, tv.contentW, &tv.sbDraggingX, &tv.scrollX) {
+		return true
+	}
+
 	row := my - inner.Y
 	if row < 0 || row >= inner.H {
 		return false
 	}
+
 	idx := tv.scroll + row
 	if idx < 0 || idx >= len(tv.nodes) {
 		return false
@@ -292,8 +334,12 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		// click anywhere else on the row just (re)selects it. This is what
 		// lets a node be click-dragged into the query editor without also
 		// flipping its expand state: dragging always starts on the label,
-		// never the expander glyph.
-		onExpander := node.HasKids && mx >= inner.X+node.Depth*2 && mx < inner.X+node.Depth*2+4
+		// never the expander glyph. mx is a screen column, but the expander's
+		// own position is virtual (depth*2..depth*2+4, see Draw's row-line
+		// layout) — it must be translated back through tv.scrollX before
+		// comparing, or this only matches at scrollX==0.
+		vcol := mx - inner.X + tv.scrollX
+		onExpander := node.HasKids && vcol >= node.Depth*2 && vcol < node.Depth*2+4
 		if tv.sel != idx {
 			tv.sel = idx
 			tv.fireSelect()
@@ -309,17 +355,44 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	case tcell.WheelUp:
-		if tv.scroll > 0 {
+		// Shift+wheel is the common desktop convention for horizontal
+		// scroll; some terminals report it as WheelUp/WheelDown with a
+		// Shift modifier rather than as WheelLeft/WheelRight below, so
+		// honour both — matches DataGrid's/Editor's/PlanView's identical
+		// convention.
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			tv.scrollLeft()
+		} else if tv.scroll > 0 {
 			tv.scroll--
 		}
 		return true
 	case tcell.WheelDown:
-		if tv.scroll < len(tv.nodes)-inner.H {
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			tv.scrollRight()
+		} else if tv.scroll < len(tv.nodes)-inner.H {
 			tv.scroll++
 		}
 		return true
+	case tcell.WheelLeft:
+		tv.scrollLeft()
+		return true
+	case tcell.WheelRight:
+		tv.scrollRight()
+		return true
 	}
 	return false
+}
+
+// scrollLeft/scrollRight nudge the horizontal scroll offset by 4 columns,
+// clamped to [0, contentW-inner.W] so the scrollbar thumb never runs past
+// either end of the track.
+func (tv *TreeView) scrollLeft() {
+	tv.scrollX = core.Max(0, tv.scrollX-4)
+}
+
+func (tv *TreeView) scrollRight() {
+	maxScroll := core.Max(0, tv.contentW-tv.rect.Inner(1).W)
+	tv.scrollX = core.Min(maxScroll, tv.scrollX+4)
 }
 
 // toggleExpand flips the selected node's Expanded state and fires
@@ -380,7 +453,11 @@ func (tv *TreeView) openContextMenuAtSelection() {
 		return
 	}
 	inner := tv.rect.Inner(1)
-	x := inner.X + n.Depth*2
+	// n.Depth*2 is a virtual column (see Draw's row-line layout); translate
+	// it back through tv.scrollX like the mouse-click expander hit-test
+	// does, clamped so a node scrolled left of the panel still pops the
+	// menu on-screen rather than off its left edge.
+	x := inner.X + core.Max(0, n.Depth*2-tv.scrollX)
 	y := inner.Y + (tv.sel - tv.scroll)
 	tv.OnRightClick(n.ID, x, y)
 }

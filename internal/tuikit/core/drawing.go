@@ -45,6 +45,37 @@ func DrawTextClipped(s tcell.Screen, x, y, maxW int, style tcell.Style, text str
 	}
 }
 
+// DrawTextOffset draws text horizontally scrolled by startCol display
+// columns — graphemes whose virtual column falls before startCol are
+// skipped entirely, then up to maxW columns are drawn starting at (x,y). A
+// grapheme straddling the startCol boundary is dropped rather than
+// partially rendered, matching DrawTextClipped's treatment of the maxW
+// boundary. Used for content, like a TreeView row, that scrolls sideways
+// instead of wrapping or clipping only from the left.
+func DrawTextOffset(s tcell.Screen, x, y, startCol, maxW int, style tcell.Style, text string) {
+	if maxW <= 0 {
+		return
+	}
+	vcol := 0
+	g := displaywidth.StringGraphemes(text)
+	for g.Next() {
+		w := g.Width()
+		if w <= 0 {
+			continue
+		}
+		if vcol < startCol {
+			vcol += w
+			continue
+		}
+		col := x + (vcol - startCol)
+		if col+w > x+maxW {
+			break
+		}
+		putGrapheme(s, col, y, g.Value(), style)
+		vcol += w
+	}
+}
+
 // DrawTextRight draws text right-aligned within w display columns, ending at x+w.
 func DrawTextRight(s tcell.Screen, x, y, w int, style tcell.Style, text string) {
 	text = Truncate(text, w)
@@ -206,4 +237,82 @@ func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, t
 	for i := 0; i < thumbH && thumbY+i < y+h; i++ {
 		s.SetContent(x, thumbY+i, '█', nil, thumbStyle)
 	}
+}
+
+// ScrollOffsetForDrag returns the scroll offset a mouse click or drag at
+// track-relative row y (0 at the track's first row, matching the y..y+h
+// span DrawScrollbar was called with) should jump the view to, given the
+// same h/total/visible passed to that DrawScrollbar call — the inverse of
+// the thumbY math above. HandleScrollbarDrag below is the higher-level
+// helper most callers want; this is exposed separately for the rare caller
+// that needs the offset math without the button/latch handling.
+func ScrollOffsetForDrag(y, h, total, visible int) int {
+	if h <= 0 || total <= visible {
+		return 0
+	}
+	y = Clamp(y, 0, h-1)
+	return Clamp(y*total/h, 0, total-visible)
+}
+
+// DrawScrollbarH draws a horizontal scrollbar at y spanning [x, x+w) — the
+// horizontal counterpart of DrawScrollbar above, for content (like
+// PlanView's operator graph canvas) that scrolls sideways.
+func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, thumbStyle tcell.Style) {
+	for i := 0; i < w; i++ {
+		s.SetContent(x+i, y, '─', nil, style)
+	}
+	if total <= visible || total == 0 {
+		return
+	}
+	thumbW := Max(1, w*visible/total)
+	thumbX := x + offset*w/total
+	for i := 0; i < thumbW && thumbX+i < x+w; i++ {
+		s.SetContent(thumbX+i, y, '█', nil, thumbStyle)
+	}
+}
+
+// HandleScrollbarDrag is the generic mouse-side counterpart of
+// DrawScrollbar: given the same x/y/h/total tuple a caller passed to
+// DrawScrollbar, it handles a Button1 press or drag on that bar. Unlike
+// DrawScrollbar, this takes a single h serving as both track length and
+// visible count (every current caller passes DrawScrollbar the same value
+// for both) — a caller with a genuinely different visible count would need
+// its own drag math instead of reusing this helper as-is.
+// *dragging latches for the whole gesture — set true here on the
+// qualifying initial press, left untouched thereafter so every subsequent
+// call while the button stays down keeps controlling *scroll even once the
+// mouse drifts off the bar's exact column; the caller clears *dragging on
+// release (typically alongside whatever else it resets there, e.g.
+// DataGrid/TreeView/ListBox/Editor's own mouseDragging, or
+// ModalDialog.ConsumeOutsideClick doing it for every embedding dialog at
+// once). Returns false (writing nothing) for anything that isn't a
+// qualifying Button1 event, so callers can chain it before their own
+// position-based hit-testing without special-casing the return.
+func HandleScrollbarDrag(ev *tcell.EventMouse, x, y, h, total int, dragging *bool, scroll *int) bool {
+	if ev.Buttons() != tcell.Button1 || total <= h || h <= 0 {
+		return false
+	}
+	mx, my := ev.Position()
+	if !*dragging && (mx != x || my < y || my >= y+h) {
+		return false
+	}
+	*dragging = true
+	*scroll = ScrollOffsetForDrag(my-y, h, total, h)
+	return true
+}
+
+// HandleScrollbarDragH is HandleScrollbarDrag's horizontal counterpart —
+// for a bar drawn by DrawScrollbarH at a fixed row y spanning [x, x+w). Same
+// h/visible-conflation caveat as HandleScrollbarDrag applies to w here.
+func HandleScrollbarDragH(ev *tcell.EventMouse, x, y, w, total int, dragging *bool, scroll *int) bool {
+	if ev.Buttons() != tcell.Button1 || total <= w || w <= 0 {
+		return false
+	}
+	mx, my := ev.Position()
+	if !*dragging && (my != y || mx < x || mx >= x+w) {
+		return false
+	}
+	*dragging = true
+	*scroll = ScrollOffsetForDrag(mx-x, w, total, w)
+	return true
 }

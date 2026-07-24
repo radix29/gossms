@@ -310,8 +310,9 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	// results pane below) still terminates cleanly instead of leaving
 	// mouseDragging stuck true.
 	if ev.Buttons() == tcell.ButtonNone {
-		wasDragging := e.mouseDragging
+		wasDragging := e.mouseDragging || e.sbDragging
 		e.mouseDragging = false
+		e.sbDragging = false
 		return wasDragging
 	}
 
@@ -329,8 +330,34 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
+
+	// Scrollbar drag/click takes priority over text-click/selection
+	// handling below — the bar is drawn over the rightmost content column
+	// (see drawScrollbar), which without this check first would otherwise
+	// be read as a click positioning the cursor at the end of that line.
+	// total mirrors what drawScrollbar passed to core.DrawScrollbar: visual
+	// row count in wrap mode, logical line count otherwise. vls is reused
+	// below by handleMouseWrapped instead of it recomputing the same
+	// O(document length) slice a second time for this event.
+	var vls []visualLine
+	haveVLS := false
+	if ev.Buttons() == tcell.Button1 {
+		total := len(e.lines)
+		if e.wrapMode {
+			vls = e.buildVisualLines(e.rect.W - e.gutterWidth())
+			haveVLS = true
+			total = len(vls)
+		}
+		if core.HandleScrollbarDrag(ev, e.rect.Right()-1, e.rect.Y, e.rect.H, total, &e.sbDragging, &e.scrollRow) {
+			return true
+		}
+	}
+
 	if e.wrapMode {
-		return e.handleMouseWrapped(ev, mx, my, contentX)
+		if !haveVLS {
+			vls = e.buildVisualLines(e.rect.W - e.gutterWidth())
+		}
+		return e.handleMouseWrapped(ev, mx, my, contentX, vls)
 	}
 	if ev.Buttons() == tcell.Button1 {
 		row := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(e.lines)-1)
@@ -410,7 +437,7 @@ func (e *Editor) SetCursorFromScreen(x, y int) {
 		col = len(e.lines[row])
 	}
 	e.cursorRow, e.cursorCol = row, col
-	e.selecting, e.selBlock, e.mouseDragging = false, false, false
+	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
 	e.desiredCol = col
 	e.ensureCursorVisible()
 }

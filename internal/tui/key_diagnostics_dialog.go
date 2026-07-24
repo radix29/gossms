@@ -133,6 +133,9 @@ func (d *KeyDiagnosticsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	dataH := d.InnerRect().H - 2
+	if d.ScrollbarDrag(ev, d.Rect().Right()-1, d.InnerRect().Y+1, dataH, len(d.lines), &d.scroll) {
+		return true
+	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if d.scroll > 0 {

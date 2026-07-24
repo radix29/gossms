@@ -170,12 +170,22 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	// "focused row gets first refusal" contract (see tuikit/README.md).
 	if ev.Buttons() == tcell.ButtonNone {
 		g.mouseDragging = false
+		g.sbDragging = false
 	}
 	mx, my := ev.Position()
 	if !g.rect.Contains(mx, my) {
 		return false
 	}
 	dataH := g.rect.H - 3
+
+	// Scrollbar drag/click takes priority over row/cell hit-testing below —
+	// the bar is drawn at rect.Right()-1 (see Draw), which without this
+	// check first would otherwise be read as a click on whatever row/cell
+	// happens to sit in that screen column.
+	if core.HandleScrollbarDrag(ev, g.rect.Right()-1, g.rect.Y+2, dataH, g.rows.Len(), &g.sbDragging, &g.scrollRow) {
+		return true
+	}
+
 	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
 	switch ev.Buttons() {
 	case tcell.Button1:

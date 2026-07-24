@@ -16,6 +16,14 @@ type graphState struct {
 	scrollX    int
 	scrollY    int
 	detailOpen bool
+
+	// sbDraggingX/sbDraggingY are true while the user is dragging the
+	// canvas's horizontal/vertical scrollbar thumb, respectively — see
+	// controls.DataGrid's sbDragging field for the rationale; two separate
+	// latches since the canvas can show either bar independently of the
+	// other.
+	sbDraggingX bool
+	sbDraggingY bool
 }
 
 // rebuildGraphLayout re-lays-out the current statement's operator tree
@@ -99,7 +107,7 @@ func (v *PlanView) drawGraphCanvas(s tcell.Screen) {
 	if v.graphSt.layout.canvasW > r.W {
 		sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
 		sbThumb := tcell.StyleDefault.Background(pal.BorderActive).Foreground(pal.BorderActive)
-		core.DrawScrollbar(s, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, r.W, v.graphSt.scrollX, sbStyle, sbThumb)
+		core.DrawScrollbarH(s, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, r.W, v.graphSt.scrollX, sbStyle, sbThumb)
 	}
 	if v.graphSt.layout.canvasH > r.H {
 		sbStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Border)
@@ -424,6 +432,10 @@ func (v *PlanView) handleGraphTabKey(ev *tcell.EventKey) bool {
 // dragging graphSplit, and clicking a tile to select it.
 func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	if ev.Buttons() == tcell.ButtonNone {
+		v.graphSt.sbDraggingX = false
+		v.graphSt.sbDraggingY = false
+	}
 	if v.graphSt.detailOpen {
 		if ev.Buttons() == tcell.ButtonNone {
 			// The splitter needs its own drag-release event to clear
@@ -483,6 +495,18 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		v.graphSt.scrollX += 4
 		return true
 	case tcell.Button1:
+		r := v.graphCanvasRect
+		// Scrollbar drag/click takes priority over tile selection below —
+		// the bars are drawn over the canvas's own bottom row/right column
+		// (see drawGraphCanvas), which without this check first would
+		// otherwise be read as a click positioned past every real tile
+		// (harmless) or, worse, directly on one that happens to sit there.
+		if core.HandleScrollbarDragH(ev, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, &v.graphSt.sbDraggingX, &v.graphSt.scrollX) {
+			return true
+		}
+		if core.HandleScrollbarDrag(ev, r.Right()-1, r.Y, r.H, v.graphSt.layout.canvasH, &v.graphSt.sbDraggingY, &v.graphSt.scrollY) {
+			return true
+		}
 		cx := mx - v.graphCanvasRect.X + v.graphSt.scrollX
 		cy := my - v.graphCanvasRect.Y + v.graphSt.scrollY
 		for _, t := range v.graphSt.layout.tiles {

@@ -14,6 +14,58 @@ func newGraphTabView(t *testing.T) *PlanView {
 	return v // TabPlan is the default active tab
 }
 
+// TestGraphScrollbarDragScrolls confirms dragging either of the canvas's
+// scrollbars (horizontal along the bottom edge, vertical along the right
+// edge) scrolls the canvas instead of being read as a click that selects
+// whatever tile sits under it.
+func TestGraphScrollbarDragScrolls(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 20, 6) // small enough that the 12-tile layout overflows both axes
+	v.SetPlan(loadTestPlan(t))
+
+	r := v.graphCanvasRect
+	if v.graphSt.layout.canvasW <= r.W {
+		t.Fatalf("test needs canvasW (%d) > graphCanvasRect.W (%d) to exercise horizontal scrolling", v.graphSt.layout.canvasW, r.W)
+	}
+	if v.graphSt.layout.canvasH <= r.H {
+		t.Fatalf("test needs canvasH (%d) > graphCanvasRect.H (%d) to exercise vertical scrolling", v.graphSt.layout.canvasH, r.H)
+	}
+	selBefore := v.selectedID
+
+	// Horizontal bar: bottom row of the canvas.
+	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.X+r.W-1, r.Bottom()-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("handling a click on the horizontal scrollbar row should return true")
+	}
+	if !v.graphSt.sbDraggingX {
+		t.Fatal("graphSt.sbDraggingX should be true after pressing on the horizontal scrollbar")
+	}
+	if v.graphSt.scrollX == 0 {
+		t.Error("graphSt.scrollX should have jumped forward when clicking near the right of the track")
+	}
+	v.handleGraphTabMouse(tcell.NewEventMouse(r.X, r.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
+	if v.graphSt.sbDraggingX {
+		t.Error("graphSt.sbDraggingX should reset on release")
+	}
+
+	// Vertical bar: right column of the canvas, one row shy of the very
+	// bottom — that exact corner cell is where both bars meet, and favors
+	// the horizontal one (checked first in handleGraphTabMouse), same as
+	// many real GUIs' scrollbar corner box.
+	if !v.handleGraphTabMouse(tcell.NewEventMouse(r.Right()-1, r.Bottom()-2, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("handling a click on the vertical scrollbar column should return true")
+	}
+	if !v.graphSt.sbDraggingY {
+		t.Fatal("graphSt.sbDraggingY should be true after pressing on the vertical scrollbar")
+	}
+	if v.graphSt.scrollY == 0 {
+		t.Error("graphSt.scrollY should have jumped forward when clicking near the bottom of the track")
+	}
+
+	if v.selectedID != selBefore {
+		t.Errorf("selectedID changed, dragging either scrollbar must not select a tile")
+	}
+}
+
 func TestGraph_DefaultSelectionIsRoot(t *testing.T) {
 	v := newGraphTabView(t)
 	root := v.currentStatement().Root

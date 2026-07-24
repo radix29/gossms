@@ -128,12 +128,15 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
+	inner := d.InnerRect()
+	dataH := inner.H - 2
+	if d.ScrollbarDrag(ev, d.Rect().Right()-1, inner.Y+1, dataH, len(d.titles), &d.scroll) {
+		return true
+	}
 	if ev.Buttons() != tcell.Button1 {
 		return true
 	}
 	mx, my := ev.Position()
-	inner := d.InnerRect()
-	dataH := inner.H - 2
 	if mx >= inner.X && mx < inner.X+inner.W {
 		row := my - (inner.Y + 1)
 		if row >= 0 && row < dataH {

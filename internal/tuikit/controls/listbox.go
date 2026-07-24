@@ -22,6 +22,11 @@ type ListBox struct {
 	// would re-fire OnActivate on every resent event instead of once.
 	mouseDragging bool
 
+	// sbDragging is true while the user is dragging the scrollbar thumb —
+	// see DataGrid's field of the same name and purpose for the rationale
+	// on why this is a separate flag from mouseDragging.
+	sbDragging bool
+
 	// OnSelect fires whenever the selected index changes (arrow keys,
 	// click). OnActivate fires once per physical click that lands on an
 	// already-selected row (double-activation semantics for successive
@@ -157,11 +162,21 @@ func (l *ListBox) HandleKey(ev *tcell.EventKey) bool {
 func (l *ListBox) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		l.mouseDragging = false
+		l.sbDragging = false
 	}
 	mx, my := ev.Position()
 	if !l.rect.Contains(mx, my) {
 		return false
 	}
+
+	// Scrollbar drag/click takes priority over row hit-testing below — the
+	// bar is drawn at rect.Right()-1 (see Draw), which without this check
+	// first would otherwise be read as a click on whatever item sits in
+	// that screen column.
+	if core.HandleScrollbarDrag(ev, l.rect.Right()-1, l.rect.Y, l.rect.H, len(l.items), &l.sbDragging, &l.scroll) {
+		return true
+	}
+
 	switch ev.Buttons() {
 	case tcell.Button1:
 		if l.mouseDragging {

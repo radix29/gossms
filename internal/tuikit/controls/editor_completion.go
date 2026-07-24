@@ -96,6 +96,7 @@ func (e *Editor) closeCompletion() {
 	e.completionSel = 0
 	e.completionScroll = 0
 	e.completionMouseDown = false
+	e.completionSbDragging = false
 }
 
 // updateCompletion re-queries the provider at the current cursor position
@@ -364,7 +365,17 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	if ev.Buttons() == tcell.ButtonNone {
 		e.completionMouseDown = false
+		e.completionSbDragging = false
 	}
+
+	// Scrollbar drag/click takes priority over the item hit-testing below
+	// — the bar is drawn over the rightmost popup column (see Draw), which
+	// without this check first would otherwise be read as a click on
+	// whatever item sits in that screen row.
+	if core.HandleScrollbarDrag(ev, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), &e.completionSbDragging, &e.completionScroll) {
+		return true
+	}
+
 	switch ev.Buttons() {
 	case tcell.WheelUp:
 		if rect.Contains(mx, my) {

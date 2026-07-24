@@ -69,6 +69,8 @@ func (e *Editor) Draw(s tcell.Screen) {
 		}
 	}
 
+	e.drawScrollbar(s, p, len(e.lines))
+
 	if e.active {
 		curX, curY := e.cursorScreenPos()
 		if curY >= e.rect.Y && curY < e.rect.Y+e.rect.H &&
@@ -76,6 +78,22 @@ func (e *Editor) Draw(s tcell.Screen) {
 			s.ShowCursor(curX, curY)
 		}
 	}
+}
+
+// drawScrollbar renders a DataGrid-style vertical scrollbar over the
+// editor's rightmost screen column when the content (total lines in plain
+// mode, visual rows in wrap mode — see drawWrapped) doesn't fit in the
+// visible height. There's no reserved border column here (same as
+// DataGrid), so this overdraws whatever was in that column; only called
+// when there's actually something to scroll, matching
+// DataGrid/TreeView/ListBox's own call-site guard.
+func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
+	if total <= e.rect.H || e.rect.H <= 0 {
+		return
+	}
+	sbStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Border)
+	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	core.DrawScrollbar(s, e.rect.Right()-1, e.rect.Y, e.rect.H, total, e.rect.H, e.scrollRow, sbStyle, sbThumb)
 }
 
 // cursorScreenPos returns the screen coordinates of the text cursor (valid
@@ -143,6 +161,8 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 			s.SetContent(contentX+col, y, ch, nil, st)
 		}
 	}
+
+	e.drawScrollbar(s, p, len(vls))
 
 	if e.active {
 		vi := visualIndexForCursor(vls, e.cursorRow, e.cursorCol)

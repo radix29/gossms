@@ -19,6 +19,41 @@ func newTreeTabView(t *testing.T) *PlanView {
 	return v
 }
 
+// TestTreeScrollbarDragScrolls confirms dragging the tree pane's scrollbar
+// scrolls it instead of being read as a click that selects whatever row
+// sits under it.
+func TestTreeScrollbarDragScrolls(t *testing.T) {
+	v := New()
+	v.SetBounds(0, 0, 120, 8) // short enough that all 12 rows can't fit
+	v.SetPlan(loadTestPlan(t))
+	v.setActiveTab(TabTree)
+
+	r := v.treePaneRect
+	if len(v.treeSt.rows) <= r.H {
+		t.Fatalf("test needs more tree rows than treePaneRect.H (%d) to exercise scrolling, got %d rows", r.H, len(v.treeSt.rows))
+	}
+	selBefore := v.selectedID
+
+	sbX := r.Right() - 1
+	if !v.handleTreeTabMouse(tcell.NewEventMouse(sbX, r.Y+r.H-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("handling a click on the tree pane's scrollbar column should return true")
+	}
+	if !v.treeSt.sbDragging {
+		t.Fatal("treeSt.sbDragging should be true after pressing on the scrollbar")
+	}
+	if v.treeSt.scroll == 0 {
+		t.Error("treeSt.scroll should have jumped forward when clicking near the bottom of the track")
+	}
+	if v.selectedID != selBefore {
+		t.Errorf("selectedID changed, clicking the scrollbar must not select a node")
+	}
+
+	v.handleTreeTabMouse(tcell.NewEventMouse(sbX, r.Y, tcell.ButtonNone, tcell.ModNone))
+	if v.treeSt.sbDragging {
+		t.Error("treeSt.sbDragging should reset on release")
+	}
+}
+
 func TestTree_DefaultSelectionIsRoot(t *testing.T) {
 	v := newTreeTabView(t)
 	root := v.currentStatement().Root

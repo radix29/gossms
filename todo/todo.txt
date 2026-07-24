@@ -17,6 +17,8 @@ reports
 
 - Availability Groups stuff
 
+- query editor word wrap (display only, line numbers)
+
 
 --------------
 

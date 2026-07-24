@@ -49,3 +49,36 @@ func TestModalDialogRestoresFullSizeOnLargerScreen(t *testing.T) {
 		t.Errorf("rect.X = %d, want %d", d.rect.X, wantX)
 	}
 }
+
+func TestModalDialogScrollbarDrag(t *testing.T) {
+	scr := &sizedScreen{w: 80, h: 24}
+	d := &ModalDialog{}
+	d.InitModal(scr, "Test", 40, 12)
+
+	trackX, trackY, trackH, total := d.Rect().Right()-1, d.Rect().Y+1, 10, 30
+	var scroll int
+
+	miss := tcell.NewEventMouse(d.Rect().X+2, trackY, tcell.Button1, tcell.ModNone)
+	if d.ScrollbarDrag(miss, trackX, trackY, trackH, total, &scroll) {
+		t.Fatal("press off the bar's column should not be handled")
+	}
+
+	press := tcell.NewEventMouse(trackX, trackY+trackH-1, tcell.Button1, tcell.ModNone)
+	if !d.ScrollbarDrag(press, trackX, trackY, trackH, total, &scroll) {
+		t.Fatal("press on the bar should be handled")
+	}
+	if !d.sbDragging {
+		t.Fatal("sbDragging should be true after a qualifying press")
+	}
+	if scroll == 0 {
+		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
+	}
+
+	// ConsumeOutsideClick resets sbDragging on release, same as
+	// mouseDragging — every embedding dialog calls it unconditionally.
+	release := tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone)
+	d.ConsumeOutsideClick(release)
+	if d.sbDragging {
+		t.Error("sbDragging should reset on release via ConsumeOutsideClick")
+	}
+}

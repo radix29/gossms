@@ -259,6 +259,46 @@ func TestFileDialogTabCompletionNoMatchReturnsFalse(t *testing.T) {
 	}
 }
 
+// TestFileDialogScrollbarDragScrolls confirms dragging the file list's own
+// scrollbar scrolls the listing instead of being read as a click that
+// selects/activates whatever entry sits under it.
+func TestFileDialogScrollbarDragScrolls(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 20; i++ {
+		name := filepath.Join(dir, "file"+string(rune('a'+i))+".txt")
+		if err := os.WriteFile(name, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d := NewFileDialog(nil)
+	d.ShowOpen("Open File", filepath.Join(dir, "filea.txt"), func(string) {})
+	d.rect = core.Rect{X: 0, Y: 0, W: 60, H: 20}
+	if len(d.entries) <= fileListRows {
+		t.Fatalf("test needs more entries than fileListRows (%d) to exercise scrolling, got %d", fileListRows, len(d.entries))
+	}
+	selBefore := d.sel
+
+	lr := d.listRect()
+	sbX := lr.Right() - 1
+	if !d.HandleMouse(tcell.NewEventMouse(sbX, lr.Y+lr.H-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("HandleMouse on the list's scrollbar column should be handled")
+	}
+	if !d.sbDragging {
+		t.Fatal("sbDragging should be true after pressing on the scrollbar")
+	}
+	if d.scroll == 0 {
+		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
+	}
+	if d.sel != selBefore {
+		t.Errorf("sel changed to %d, clicking the scrollbar must not select an entry", d.sel)
+	}
+
+	d.HandleMouse(tcell.NewEventMouse(sbX, lr.Y, tcell.ButtonNone, tcell.ModNone))
+	if d.sbDragging {
+		t.Error("sbDragging should reset on release")
+	}
+}
+
 func TestCommonPrefixHelper(t *testing.T) {
 	tests := []struct {
 		in   []string
