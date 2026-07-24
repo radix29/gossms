@@ -222,7 +222,7 @@ func (d *BackupDialog) loadDatabases() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
 		app.postEvent(func() {
@@ -338,7 +338,7 @@ func (d *BackupDialog) startBackup() {
 	verify := d.cbVerify.Checked()
 	dest := opts.Devices[0]
 
-	task, ctx := d.app.startTask("Backup " + opts.Database)
+	task, ctx := d.app.startTask(d.sc.Context(), "Backup "+opts.Database)
 	d.task = task
 	d.taskDB = opts.Database
 	d.taskType = backupTypeLabel(opts.Action)

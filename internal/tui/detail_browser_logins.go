@@ -12,7 +12,7 @@ import (
 // nothing to backfill progressively.
 func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
 		logins, err := sc.Server.LoginsContext(ctx)

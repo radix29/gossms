@@ -63,6 +63,8 @@ or drivers required.
 - Entra authentication not tested at the moment — no infrastructure available
 - Not tested on macOS yet — no Mac available
 - Executables are built by GitHub but not signed; checksums are available
+- Database Restore dialog needs a rework
+- SQL Agent needs a complete rework
 
 ## Prerequisites
 

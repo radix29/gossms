@@ -67,13 +67,18 @@ func (t *Task) statusText() string {
 // startTask registers a new background task under label and returns it
 // along with a context the caller's goroutine should run its work under —
 // cancelled the moment Task.Cancel is called (from the Tasks dialog, or
-// anywhere else that has the Task). The caller reports progress via
-// App.postProgress and completion via App.postTaskDone; both must be used
-// instead of touching the Task directly, since the work itself runs on a
-// background goroutine (see the Task doc comment).
-func (a *App) startTask(label string) (*Task, context.Context) {
+// anywhere else that has the Task), or the moment parent itself is
+// cancelled. Callers whose work is scoped to a *db.ServerConn should pass
+// sc.Context() as parent, so disconnecting cancels a long-running task
+// (e.g. a RESTORE) too, instead of leaving it to run unbounded; callers
+// with nothing connection-scoped to tie it to can pass context.Background().
+// The caller reports progress via App.postProgress and completion via
+// App.postTaskDone; both must be used instead of touching the Task
+// directly, since the work itself runs on a background goroutine (see the
+// Task doc comment).
+func (a *App) startTask(parent context.Context, label string) (*Task, context.Context) {
 	a.taskSeq++
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	t := &Task{ID: a.taskSeq, Label: label, Progress: -1, Started: time.Now(), cancel: cancel}
 	a.tasks = append(a.tasks, t)
 	a.pruneFinishedTasks()

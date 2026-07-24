@@ -12,8 +12,8 @@ import (
 func TestStartTaskAssignsIncrementingIDs(t *testing.T) {
 	a := newTestApp()
 
-	t1, ctx1 := a.startTask("Backup")
-	t2, _ := a.startTask("Rebuild")
+	t1, ctx1 := a.startTask(context.Background(), "Backup")
+	t2, _ := a.startTask(context.Background(), "Rebuild")
 
 	if t1.ID == t2.ID {
 		t.Fatalf("both tasks got ID %d, want distinct IDs", t1.ID)
@@ -31,7 +31,7 @@ func TestStartTaskAssignsIncrementingIDs(t *testing.T) {
 // Rebuild) checks via ctx.Err() to stop its work early.
 func TestTaskCancelStopsItsContext(t *testing.T) {
 	a := newTestApp()
-	task, ctx := a.startTask("Backup")
+	task, ctx := a.startTask(context.Background(), "Backup")
 
 	task.Cancel()
 	if ctx.Err() != context.Canceled {
@@ -57,8 +57,8 @@ func TestTaskCancelOnNilCancelIsNoop(t *testing.T) {
 // TestRunningTaskCount confirms finished tasks don't count as running.
 func TestRunningTaskCount(t *testing.T) {
 	a := newTestApp()
-	t1, _ := a.startTask("Backup")
-	_, _ = a.startTask("Rebuild")
+	t1, _ := a.startTask(context.Background(), "Backup")
+	_, _ = a.startTask(context.Background(), "Rebuild")
 
 	if got := a.runningTaskCount(); got != 2 {
 		t.Fatalf("runningTaskCount = %d, want 2", got)
@@ -78,10 +78,10 @@ func TestPruneFinishedTasksKeepsRunningAndCapsHistory(t *testing.T) {
 
 	// One running task registered first — must survive pruning no matter
 	// how many finished tasks pile up after it.
-	oldestRunning, _ := a.startTask("still running")
+	oldestRunning, _ := a.startTask(context.Background(), "still running")
 
 	for i := 0; i < maxTaskHistory+10; i++ {
-		task, _ := a.startTask("finished")
+		task, _ := a.startTask(context.Background(), "finished")
 		task.Done = true
 	}
 

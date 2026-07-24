@@ -94,7 +94,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		err := run(ctx)
 		a.postEvent(func() {
@@ -129,7 +129,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 			return
 		}
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			err := run(ctx)
 			a.postEvent(func() {

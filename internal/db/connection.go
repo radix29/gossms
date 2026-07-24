@@ -2,12 +2,29 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
+)
+
+// maxOpenConns and maxIdleConns bound the pool gosmo opens per connection.
+// Several Object Explorer detail panels (Databases, Tables) deliberately
+// fan out one dedicated connection per row concurrently so one slow
+// row doesn't hold up the rest — uncapped, a server with hundreds of
+// databases/tables would open hundreds of raw connections at once, and
+// gosmo's own default MaxIdleConns (2) would tear nearly all of them back
+// down again right after, paying full TCP+TLS+login setup cost on every
+// refresh. These caps bound that fan-out without changing the "don't let
+// one slow row block the rest" behavior — sql.DB queues acquisitions past
+// MaxOpenConns rather than erroring — and let connections survive between
+// refreshes instead of being rebuilt from scratch each time.
+const (
+	maxOpenConns = 20
+	maxIdleConns = 10
 )
 
 // ConnectionError is a typed error returned by Connect.
@@ -26,6 +43,23 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
+	// Login is the server login the connection is actually authenticated
+	// as (SUSER_NAME()), fetched once at Connect time. It's the real
+	// identity behind the connection — for Windows/Entra auth, Opts.User
+	// is often empty or just a UPN/client ID, not the resolved login name
+	// SQL Server ends up using. Left empty if the best-effort fetch fails,
+	// so callers should fall back to Opts.User.
+	Login string
+
+	// ctx is cancelled by Close, so every background load scoped to this
+	// connection (see Context) gets torn down promptly on disconnect
+	// instead of idling out on its own timeout — closing the underlying
+	// *sql.DB alone doesn't cancel a query already in flight on a checked-
+	// out connection; that connection (and its live SQL Server session)
+	// would otherwise stay open until the query itself finishes.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	closed bool
 }
 
@@ -40,6 +74,8 @@ func Connect(opts config.Connection) (*ServerConn, error) {
 		Auth:                   toGosmoAuth(opts.AuthMethod),
 		TenantID:               opts.TenantID,
 		ClientID:               opts.ClientID,
+		MaxOpenConns:           maxOpenConns,
+		MaxIdleConns:           maxIdleConns,
 	}
 	if opts.Database != "" {
 		co.Database = opts.Database
@@ -49,15 +85,37 @@ func Connect(opts config.Connection) (*ServerConn, error) {
 	if err != nil {
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error()}
 	}
-	return &ServerConn{Opts: opts, Server: srv}, nil
+	login, _ := srv.CurrentLogin()
+	ctx, cancel := context.WithCancel(context.Background())
+	return &ServerConn{Opts: opts, Server: srv, Login: login, ctx: ctx, cancel: cancel}, nil
 }
 
-// Close disconnects from SQL Server.
+// Close disconnects from SQL Server. Cancelling ctx first — before closing
+// the pool — is what lets any background load in flight against this
+// connection (see Context) notice promptly and let go of its checked-out
+// connection, rather than lingering until that load's own timeout expires.
 func (sc *ServerConn) Close() {
+	if sc.cancel != nil {
+		sc.cancel()
+	}
 	if sc.Server != nil {
 		sc.Server.Close()
 	}
 	sc.closed = true
+}
+
+// Context returns the context governing sc's lifetime, cancelled once
+// Close runs. Background loads scoped to this connection should derive
+// their own per-call timeout from this (via context.WithTimeout) instead
+// of context.Background(), so disconnecting actually cancels them instead
+// of leaving them to idle out on their own. Never nil — not for a nil sc,
+// nor for a zero-value ServerConn (e.g. one built directly in a test) —
+// falls back to context.Background() so callers don't need a nil check.
+func (sc *ServerConn) Context() context.Context {
+	if sc == nil || sc.ctx == nil {
+		return context.Background()
+	}
+	return sc.ctx
 }
 
 // IsOpen reports whether sc is a non-nil connection that hasn't been
@@ -88,7 +146,13 @@ func (sc *ServerConn) Label() string {
 		name += fmt.Sprintf(",%d", port)
 	}
 
-	user := sc.Opts.User
+	// Prefer the server's own SUSER_NAME() over the configured Opts.User:
+	// for Windows/Entra auth Opts.User is often empty or not the resolved
+	// login name, so sc.Login (set at Connect time) is the accurate one.
+	user := sc.Login
+	if user == "" {
+		user = sc.Opts.User
+	}
 	if user == "" {
 		user = config.AuthMethodName(sc.Opts.AuthMethod)
 	}

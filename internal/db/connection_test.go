@@ -120,44 +120,57 @@ func TestBuildConnectionStringCommaPort(t *testing.T) {
 
 func TestServerConnLabel(t *testing.T) {
 	cases := []struct {
-		name string
-		opts config.Connection
-		want string
+		name  string
+		opts  config.Connection
+		login string
+		want  string
 	}{
 		{
 			"default instance, default port",
 			config.Connection{Server: "myserver", User: "sa"},
+			"",
 			"myserver (sa, SQL Server )",
+		},
+		{
+			"resolved login takes precedence over Opts.User",
+			config.Connection{Server: "myserver", User: "app-client-id"},
+			"CONTOSO\\alice",
+			"myserver (CONTOSO\\alice, SQL Server )",
 		},
 		{
 			"named instance",
 			config.Connection{Server: `myserver\SQLEXPRESS`, User: "sa"},
+			"",
 			`myserver\SQLEXPRESS (sa, SQL Server )`,
 		},
 		{
 			"custom port, no instance",
 			config.Connection{Server: "myserver", Port: 1434, User: "sa"},
+			"",
 			"myserver,1434 (sa, SQL Server )",
 		},
 		{
 			"comma port embedded directly in Server",
 			config.Connection{Server: "myserver,1434", User: "sa"},
+			"",
 			"myserver,1434 (sa, SQL Server )",
 		},
 		{
 			"default port not shown",
 			config.Connection{Server: "myserver", Port: 1433, User: "sa"},
+			"",
 			"myserver (sa, SQL Server )",
 		},
 		{
 			"no user falls back to auth method name",
 			config.Connection{Server: "myserver", AuthMethod: config.AuthWindows},
+			"",
 			"myserver (Windows Authentication, SQL Server )",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sc := &ServerConn{Opts: c.opts}
+			sc := &ServerConn{Opts: c.opts, Login: c.login}
 			if got := sc.Label(); got != c.want {
 				t.Errorf("Label() = %q, want %q", got, c.want)
 			}

@@ -13,7 +13,7 @@ import (
 func TestExplorerNodeBeginEndLoad(t *testing.T) {
 	n := &explorerNode{}
 
-	ctx1, seq1 := n.beginLoad(time.Minute)
+	ctx1, seq1 := n.beginLoad(context.Background(), time.Minute)
 	if seq1 != 1 {
 		t.Fatalf("first beginLoad seq = %d, want 1", seq1)
 	}
@@ -21,7 +21,7 @@ func TestExplorerNodeBeginEndLoad(t *testing.T) {
 		t.Fatalf("ctx1 already done before being superseded: %v", ctx1.Err())
 	}
 
-	ctx2, seq2 := n.beginLoad(time.Minute)
+	ctx2, seq2 := n.beginLoad(context.Background(), time.Minute)
 	if seq2 != 2 {
 		t.Fatalf("second beginLoad seq = %d, want 2", seq2)
 	}

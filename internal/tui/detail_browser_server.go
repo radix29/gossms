@@ -41,7 +41,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 		cols := []string{"Property", "Value"}
 		db.postPartial(app, seq, cols, rows)
 
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
 		if mem, err := sc.Server.MemoryStatsContext(ctx); err == nil {

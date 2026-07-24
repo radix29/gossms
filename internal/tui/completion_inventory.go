@@ -118,10 +118,31 @@ func (p *QueryPanel) refreshCompletionCache() {
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string) {
 	srv := sc.Server
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), completionInventoryTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), completionInventoryTimeout)
 		defer cancel()
 		cat, err := srv.Database(database).CatalogContext(ctx)
 		a.postEvent(func() {
+			if err != nil && !sc.IsOpen() {
+				// This key's cache is shared by every ServerConn that
+				// resolves to the same server+login+database (Object
+				// Explorer's connection and every query panel's own
+				// dedicated one) — sc merely happened to be the one whose
+				// ensureCompletionInventory call started this fetch. sc
+				// having been closed mid-fetch says nothing about whether
+				// some other connection sharing the key is still alive and
+				// wants the result, and err's exact shape here depends on a
+				// race (a context-cancellation error if sc.Close() ran
+				// while the query already held a checked-out connection, or
+				// a plain "database is closed" if it ran before one was
+				// even acquired — sql.DB.Conn checks its closed flag before
+				// context cancellation) — checking sc.IsOpen() directly
+				// instead of matching either error shape covers both. Drop
+				// the entry instead of poisoning it with sc's own teardown
+				// error, so the next lookup (from any connection) just
+				// retries fresh.
+				delete(a.completionInventories, key)
+				return
+			}
 			var inv *completionInventory
 			if err != nil {
 				inv = &completionInventory{err: err}
@@ -212,10 +233,16 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string) {
 	srv := sc.Server
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), completionInventoryTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), completionInventoryTimeout)
 		defer cancel()
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
 		a.postEvent(func() {
+			if err != nil && !sc.IsOpen() {
+				// Same shared-cache reasoning as loadCompletionInventory's
+				// equivalent branch, above, but keyed at server level.
+				delete(a.sysCompletionInventories, key)
+				return
+			}
 			if err != nil {
 				a.sysCompletionInventories[key] = &completionInventory{err: err}
 				a.setStatus(fmt.Sprintf("System-catalog autocomplete unavailable: %v (Ctrl+R in a query editor retries)", err))

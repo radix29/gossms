@@ -1,4 +1,6 @@
 
+restore backup -> move files, error messages, text trimming etc
+
 ---------
 
 Activity monitor

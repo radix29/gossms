@@ -199,7 +199,8 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 					mb.selectedItem = itemIdx
 				}
 			}
-			if ev.Buttons() == tcell.Button1 {
+			if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
+				mb.mouseDragging = true
 				mb.handleDropdownClick(my)
 			}
 		} else if ev.Buttons() == tcell.Button1 {

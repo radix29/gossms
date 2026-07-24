@@ -55,7 +55,7 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)
 		app.postEvent(func() {

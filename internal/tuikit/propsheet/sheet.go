@@ -165,7 +165,16 @@ func (p *PropertySheet) PageState(i int) PageState {
 }
 
 // SelectPage switches the visible page, kicking off its load if it hasn't
-// loaded yet.
+// loaded yet and no Apply/OK/Script is currently running. Navigating to an
+// already-loaded (or still-loading) page is always safe and always allowed
+// — it's specifically starting a *new* load that isn't, while applying:
+// a dirty page's apply closure runs on its own background goroutine and,
+// for pages built around a shared rename pointer (see e.g. user_props.go's
+// *userName), writes to it — a concurrent OnLoadPage dispatch for a
+// not-yet-loaded page can read that same pointer from a second goroutine
+// with no synchronization between the two. Deferred rather than dropped:
+// SetApplying(false) starts the load then, if the page is still selected
+// and still unloaded.
 func (p *PropertySheet) SelectPage(i int) {
 	if i < 0 || i >= len(p.pages) {
 		return
@@ -173,7 +182,7 @@ func (p *PropertySheet) SelectPage(i int) {
 	p.current = i
 	p.pageList.SetSelected(i)
 	p.message = ""
-	if p.pages[i].state == PageNotLoaded {
+	if p.pages[i].state == PageNotLoaded && !p.applying {
 		p.startLoad(i)
 	}
 }
@@ -290,8 +299,16 @@ func (p *PropertySheet) SetMessage(msg string, isErr bool) {
 
 // SetApplying marks whether an Apply/OK is in flight — while true, the
 // button row ignores further activation, so a slow Apply can't be fired
-// twice.
-func (p *PropertySheet) SetApplying(v bool) { p.applying = v }
+// twice, and SelectPage won't start a new page load (see its doc comment).
+// Turning it back off retries the currently-selected page's load if the
+// user navigated to a not-yet-loaded page while applying and is still on
+// it — SelectPage deferred that load rather than dropping it.
+func (p *PropertySheet) SetApplying(v bool) {
+	p.applying = v
+	if !v && p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].state == PageNotLoaded {
+		p.startLoad(p.current)
+	}
+}
 
 func (p *PropertySheet) setZone(z focusZone) {
 	if f := p.PageForm(p.current); f != nil {

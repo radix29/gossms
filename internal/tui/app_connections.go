@@ -22,8 +22,10 @@ func (a *App) connectServer(opts config.Connection) {
 			if err != nil {
 				if dbErr, ok := errors.AsType[*db.ConnectionError](err); ok {
 					a.setStatus(fmt.Sprintf("Connection error [%s]: %s", dbErr.Server, dbErr.Cause))
+					a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %s", dbErr.Server, dbErr.Cause))
 				} else {
 					a.setStatus(fmt.Sprintf("Connection failed: %v", err))
+					a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %v", opts.Server, err))
 				}
 				return
 			}
@@ -101,7 +103,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 // childFetchTimeout so a hung server can't leave this background goroutine
 // blocked forever (see connectForQueryPanel, its only caller).
 func defaultDatabaseName(sc *db.ServerConn) string {
-	ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+	ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 	defer cancel()
 	name, err := sc.Server.CurrentDatabaseContext(ctx)
 	if err != nil || name == "" {

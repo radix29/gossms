@@ -17,7 +17,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
 		app.postEvent(func() {
@@ -65,7 +65,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	app, sc := d.app, d.sc
 	d.setStatusMsg("Loading backup history for "+dbName+"...", false)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		hist, err := sc.Server.BackupHistoryContext(ctx, dbName)
 		app.postEvent(func() {
@@ -123,7 +123,7 @@ func (d *RestoreDialog) analyze() {
 	seq := d.loadSeq
 	app, srv := d.app, d.sc.Server
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
 		headers, err := srv.BackupHeadersContext(ctx, dev)
 		var files []*gosmo.BackupFile
@@ -174,7 +174,7 @@ func (d *RestoreDialog) startRestore() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
 		app.postEvent(func() {
@@ -236,7 +236,7 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 	verify := d.cbVerify.Checked()
 	closeConns := d.cbClose.Checked()
 
-	task, ctx := d.app.startTask("Restore " + target)
+	task, ctx := d.app.startTask(d.sc.Context(), "Restore "+target)
 	d.task = task
 	d.taskTarget = target
 	d.taskSource = serverPathBase(dev)
@@ -297,9 +297,11 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	if err := srv.RestoreContext(ctx, ropts); err != nil {
 		if closeConns && exists {
 			// Best effort: don't leave the still-existing database stuck in
-			// SINGLE_USER after a failed restore. Fresh context — ctx may
-			// already be cancelled.
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			// SINGLE_USER after a failed restore. Fresh timeout off the
+			// connection's own context, not ctx (the task's), which may
+			// already be cancelled — e.g. by the task's own Cancel button,
+			// which doesn't cancel the connection itself.
+			cleanupCtx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 			defer cancel()
 			_ = srv.Database(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
 		}
@@ -385,7 +387,7 @@ func (d *RestoreDialog) script() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace)
 		var stmt string

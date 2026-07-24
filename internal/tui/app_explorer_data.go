@@ -21,7 +21,7 @@ const childFetchTimeout = 30 * time.Second
 // it and its result — even if it arrives late — is discarded by endLoad,
 // so it can never clobber the newer one.
 func (a *App) loadChildren(node *explorerNode) {
-	ctx, seq := node.beginLoad(childFetchTimeout)
+	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
 	go func() {
 		children := a.fetchChildren(ctx, node)
 		a.postEvent(func() {
@@ -57,7 +57,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		status, err := sc.Server.AgentInfoContext(ctx)
 		a.postEvent(func() {
@@ -332,7 +332,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 		if err != nil {
@@ -391,7 +391,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 
 	run := func() {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			d := sc.Server.Database(dbName)
 			var err error

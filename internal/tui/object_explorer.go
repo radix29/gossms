@@ -32,15 +32,17 @@ type explorerNode struct {
 
 // beginLoad cancels whatever fetch is already in flight for this node (a
 // fast double-expand, or a Refresh before the initial load returned) and
-// starts a new timeout-bound one. The caller must pass seq to endLoad once
-// the fetch completes, so a stale result can recognize itself and refuse
-// to overwrite fresher children.
-func (n *explorerNode) beginLoad(timeout time.Duration) (ctx context.Context, seq int) {
+// starts a new timeout-bound one, derived from parent — the owning
+// connection's own Context(), so disconnecting cancels this fetch too
+// instead of leaving it to idle out on its own timeout. The caller must
+// pass seq to endLoad once the fetch completes, so a stale result can
+// recognize itself and refuse to overwrite fresher children.
+func (n *explorerNode) beginLoad(parent context.Context, timeout time.Duration) (ctx context.Context, seq int) {
 	if n.cancelLoad != nil {
 		n.cancelLoad()
 	}
 	n.loadSeq++
-	ctx, n.cancelLoad = context.WithTimeout(context.Background(), timeout)
+	ctx, n.cancelLoad = context.WithTimeout(parent, timeout)
 	return ctx, n.loadSeq
 }
 

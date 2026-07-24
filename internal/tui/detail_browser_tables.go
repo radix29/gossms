@@ -24,7 +24,7 @@ var tablesFolderColumns = []string{
 // loadDatabasesFolderDetails' per-row backfill pattern.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
@@ -49,7 +49,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			wg.Add(1)
 			go func(i int, t *gosmo.Table) {
 				defer wg.Done()
-				tCtx, tCancel := context.WithTimeout(context.Background(), childFetchTimeout)
+				tCtx, tCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 				defer tCancel()
 				rowCount, rcErr := t.RowCountContext(tCtx)
 				space, spErr := t.SpaceUsedContext(tCtx)

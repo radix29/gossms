@@ -137,7 +137,7 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 	}
 	name := node.data.Name
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)
 		if err == nil {
@@ -162,7 +162,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 	}
 	name := node.data.Name
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)
 		if err == nil {

@@ -32,7 +32,7 @@ func formatMB(mb float64) string {
 // them all concurrently means one slow database doesn't hold up the rest.
 func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
 		all, err := sc.Server.DatabasesContext(ctx)
@@ -57,7 +57,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 			wg.Add(1)
 			go func(i int, d *gosmo.Database) {
 				defer wg.Done()
-				dCtx, dCancel := context.WithTimeout(context.Background(), childFetchTimeout)
+				dCtx, dCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 				defer dCancel()
 				space, spaceErr := d.SpaceUsedContext(dCtx)
 				// rows[i] is only ever written here, inside the postEvent

@@ -170,7 +170,7 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), childFetchTimeout)
+			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			cols, rows, err := fetchNodeDetails(ctx, sc, node)
 			db.postFinal(app, node, seq, cols, rows, err)

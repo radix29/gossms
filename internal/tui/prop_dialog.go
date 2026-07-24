@@ -79,7 +79,7 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.database = database
 	d.pages = pages
@@ -151,7 +151,7 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 // within fn, the same way asyncStatusButton's caller does.
 func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), propFetchTimeout)
+		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
 		defer cancel()
 		err := fn(ctx)
 		d.post(func() { onDone(err) })
