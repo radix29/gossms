@@ -58,8 +58,7 @@ or drivers required.
 
 ## Known Issues
 
-- Windows 10 terminal (PowerShell, cmd) double character inputs
-- Some Linux terminals (e.g. xfce4-terminal) eat some key shortcuts
+- Some terminals (e.g. xfce4-terminal) eat some key shortcuts
 - Entra authentication not tested at the moment — no infrastructure available
 - Not tested on macOS yet — no Mac available
 - Executables are built by GitHub but not signed; checksums are available

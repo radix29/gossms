@@ -29,48 +29,23 @@ These continue for the life of the project, release or not:
 
 ## Next up (working priority order)
 
-1. **Harmonize menus, context menus, and shortcuts** — audit the top menu
-   bar, every right-click context menu, and the keyboard shortcuts behind
-   them for consistency: same action should have the same shortcut and
-   the same wording everywhere it appears (menu, context menu, and
-   status/help text).
+1. **Database Restore** dialog needs a complete rework
 
-2. **Properties dialogs pass** (Server/Database/Login today):
-   - Check each existing page against what SSMS actually shows — find
-     gaps.
-   - Add the missing SSMS functionality.
-   - Add genuinely useful functionality SSMS itself doesn't have (this is
-     a from-scratch reimplementation, not a pixel clone — improvements
-     are fair game).
-   - Add the property dialogs that don't exist yet (Table, View,
-     Stored Procedure, Index, and the rest of the object tree beyond
-     Server/Database/Login).
+2. **SQL Agent** needs a complete rework
 
-3. **Execution plan viewer.** New capability, roughly:
-   - Shows as a new panel in the query window alongside Results and
-     Messages (same tab row).
-   - Backed by a reusable `tuikit` control (not query-window-specific),
-     consistent with how `DataGrid`/`Editor` are built — see
-     `internal/tuikit/README.md` for the pattern to follow.
-   - Also reachable as its own standalone panel (like Object Explorer
-     Detail), not just embedded in the query window.
-   - Scrollable in all directions.
-   - Switchable visualization modes, chosen from within the control
-     itself:
-     1. **Graphical plan** (default) — classic SQL Server Management
-        Studio execution-plan-tree look.
-     2. **Tree/table view** — flat tree-with-columns layout, closer to
-        Oracle's execution plan explain output.
-     3. **XML plan** — read-only, selectable/copyable text (same
-        selection UX as the existing `Editor` control), no rendering.
-   - Mockups for (1) and (2) to be sketched before implementation starts.
+3. **Database Reports** - some useful reports at database level: disk 
+   usage, top tables etc
 
-4. **Authentication testing** — no infrastructure currently available for
+4. **Activity Monitor** - monitor the current and panst n minutes activity
+   of the SQL Server. Includes output from sp_whoiactive and other goodies
+
+5. **Availability Groups** functionality to manage Availability Groups.
+
+6. **Authentication testing** — no infrastructure currently available for
    any of these; blocked until access exists, not a code problem:
-   - Windows Integrated Authentication.
    - Entra ID authentication against Managed Instances and Azure SQL DB.
 
-5. **Platform testing** — build and exercise on macOS (no Mac available
+6. **Platform testing** — build and exercise on macOS (no Mac available
    yet; blocked on hardware/CI access, same as above).
 
 ## Feature backlog (later, no particular order)
@@ -82,8 +57,7 @@ These continue for the life of the project, release or not:
 - SQL editor autocomplete (`Ctrl+Space` or similar), plus a `Ctrl+R`-style
   metadata reload so autocomplete stays in sync with the connected
   database.
-- README polish: add screenshots, and an explicit "built with AI
-  assistance" disclaimer.
+- Implement Word Wrap option in the query editor
 
 ## Known issues to close out before/around release
 
@@ -91,11 +65,9 @@ Carried from `README.md`'s Known Issues section — resolving these (or at
 least confirming root cause) is part of getting to a genuinely usable
 v1, not just documentation:
 
-- Windows 10 terminals (PowerShell, cmd) double-inputting characters.
-- Some Linux terminals (e.g. xfce4-terminal) eating specific key
+- Some  terminals (e.g. xfce4-terminal) eating specific key
   shortcuts.
-- Windows Authentication and Entra ID authentication untested (see
-  Authentication testing above).
+- Entra ID authentication untested (see Authentication testing above).
 - macOS untested (see Platform testing above).
 
 ## Non-goals for v1
