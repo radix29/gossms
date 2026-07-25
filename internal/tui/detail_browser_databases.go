@@ -26,10 +26,12 @@ func formatMB(mb float64) string {
 
 // loadDatabasesFolderDetails shows the Databases folder's Name/State/
 // Recovery columns as soon as the single, fast database-list query
-// returns, then backfills each row's size columns as its own
+// returns, then backfills each row's size columns — up to
+// maxRowFetchConcurrency databases at a time — as its own
 // SpaceUsedContext round trip completes. Sizes can't be answered from that
-// first query — each database needs its own USE-scoped query — and firing
-// them all concurrently means one slow database doesn't hold up the rest.
+// first query — each database needs its own USE-scoped query — and running
+// them concurrently (bounded by maxRowFetchConcurrency) means one slow
+// database doesn't hold up the rest.
 func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
@@ -53,10 +55,13 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 		db.postPartial(app, seq, databasesFolderColumns, rows)
 
 		var wg sync.WaitGroup
+		sem := rowFetchSemaphore()
 		for i, d := range dbs {
 			wg.Add(1)
 			go func(i int, d *gosmo.Database) {
 				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				dCtx, dCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 				defer dCancel()
 				space, spaceErr := d.SpaceUsedContext(dCtx)
@@ -86,6 +91,6 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 			}(i, d)
 		}
 		wg.Wait()
-		db.cacheOnly(app, node, databasesFolderColumns, rows, nil)
+		db.cacheOnly(app, node, seq, databasesFolderColumns, rows, nil)
 	}()
 }

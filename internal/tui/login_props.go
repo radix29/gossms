@@ -371,7 +371,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				}
 				edits[row].mapped = !edits[row].mapped
 				grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-				grid.SetSelectedRow(row)
+				grid.SetSelectedCell(row, col)
 			}
 
 			dbStatic := propsheet.Static("Database", "")

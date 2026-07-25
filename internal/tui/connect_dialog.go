@@ -514,14 +514,19 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.matchOpen = false
 	}
 
-	if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i >= 0 {
-		d.btnFocus = i
-		d.doButton()
+	// The auth dropdown's open list is an overlay drawn last, so it gets
+	// first refusal of every click — ahead of ButtonClicked below, which
+	// would otherwise steal a click landing on an open list row that
+	// happens to visually overlap the button row (see backup_dialog.go/
+	// restore_dialog.go's identical ordering fix).
+	if d.ddAuth.HandleMouse(ev) {
+		d.refreshConnStrPreview()
 		return true
 	}
 
-	if d.ddAuth.HandleMouse(ev) {
-		d.refreshConnStrPreview()
+	if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i >= 0 {
+		d.btnFocus = i
+		d.doButton()
 		return true
 	}
 

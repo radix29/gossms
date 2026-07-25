@@ -142,7 +142,7 @@ func buildSecurablesMatrix(
 		}
 		edits[row].current = nextPermState(edits[row].current)
 		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(edits))
-		permGrid.SetSelectedRow(row)
+		permGrid.SetSelectedCell(row, col)
 	}
 
 	availableLabels := make([]string, len(available))

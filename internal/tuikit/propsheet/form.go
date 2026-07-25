@@ -225,9 +225,20 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyBacktab, tcell.KeyUp:
 		return f.FocusPrev()
 	case tcell.KeyPgDn:
+		if f.OverlayActive() {
+			// Scrolling the row list out from under an open dropdown leaves
+			// its list floating at a stale position — DrawOverlays draws
+			// every row's overlay every frame regardless of whether that
+			// row is still within [f.scroll, ...] and got a fresh Layout
+			// this frame. Swallow the key instead of scrolling underneath it.
+			return true
+		}
 		f.scroll = core.Min(core.Max(0, len(f.rows)-1), f.scroll+core.Max(1, f.rect.H/2))
 		return true
 	case tcell.KeyPgUp:
+		if f.OverlayActive() {
+			return true
+		}
 		f.scroll = core.Max(0, f.scroll-core.Max(1, f.rect.H/2))
 		return true
 	}
@@ -248,6 +259,11 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 			if mh, isHandler := row.(MouseHandler); isHandler && mh.HandleMouse(ev) {
 				return true
 			}
+		}
+		if f.OverlayActive() {
+			// Same reasoning as PgUp/PgDn above: don't scroll the row list
+			// out from under a dropdown that's open elsewhere on the form.
+			return true
 		}
 		if ev.Buttons() == tcell.WheelUp {
 			f.scroll = core.Max(0, f.scroll-3)

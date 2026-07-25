@@ -215,7 +215,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		}
 		rows[row].mapped = !rows[row].mapped
 		grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-		grid.SetSelectedRow(row)
+		grid.SetSelectedCell(row, col)
 	}
 
 	dbStatic := propsheet.Static("Database", "")
@@ -370,7 +370,7 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 		}
 		edits[row].current = nextPermState(edits[row].current)
 		grid.SetData([]string{"Permission", "State"}, rowsFor())
-		grid.SetSelectedRow(row)
+		grid.SetSelectedCell(row, col)
 	}
 
 	gridRow := propsheet.NewGridRow(grid, 12)

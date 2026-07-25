@@ -120,7 +120,20 @@ func (v *PlanView) jumpToMatch(delta int) {
 		return
 	}
 	v.searchSt.idx = ((v.searchSt.idx+delta)%n + n) % n
-	v.selectNode(v.searchSt.matches[v.searchSt.idx])
+	v.revealAndSelect(v.searchSt.matches[v.searchSt.idx])
+}
+
+// revealAndSelect expands any collapsed ancestor standing between the
+// current statement's root and id, so the Tree tab's flattened row list
+// (rebuildTreeRows) actually contains it before selectNode scrolls to it —
+// without this, selectNode's ensureTreeRowVisible silently no-ops for a
+// match/warning hidden under a collapsed node: Operator Details/Properties
+// update, but nothing moves or highlights in the Tree pane.
+func (v *PlanView) revealAndSelect(id int) {
+	if st := v.currentStatement(); st != nil && v.expandAncestorsOf(st.Root, id) {
+		v.rebuildTreeRows()
+	}
+	v.selectNode(id)
 }
 
 // jumpToWarning selects the next/previous operator with a warning,
@@ -144,7 +157,7 @@ func (v *PlanView) jumpToWarning(delta int) {
 	for step := 1; step <= len(nodes); step++ {
 		i := ((start+step*delta)%len(nodes) + len(nodes)) % len(nodes)
 		if len(nodes[i].Warnings) > 0 {
-			v.selectNode(nodes[i].ID)
+			v.revealAndSelect(nodes[i].ID)
 			return
 		}
 	}

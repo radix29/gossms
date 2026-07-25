@@ -142,7 +142,7 @@ func (d *NewLoginDialog) show(sc *db.ServerConn) {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.forms = [5]*propsheet.Form{}
@@ -154,20 +154,9 @@ func (d *NewLoginDialog) show(sc *db.ServerConn) {
 	d.Show()
 }
 
-func (d *NewLoginDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
-	}
-}
+func (d *NewLoginDialog) onClose() { cancelIfSet(d.cancel) }
 
-// post schedules fn to run on the UI goroutine, then wakes the event loop
-// immediately — the wake must happen here, on the calling background
-// goroutine, not nested inside fn. See wakeEventLoop's doc comment in
-// app.go and PropDialog.post, which this mirrors exactly.
-func (d *NewLoginDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *NewLoginDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 // onLoadPage answers PropertySheet's per-page load contract. The first
 // call (always page 0, General, triggered by Show()) does the one real

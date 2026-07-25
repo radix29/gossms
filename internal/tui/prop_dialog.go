@@ -95,24 +95,18 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.Show()
 }
 
-func (d *PropDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
+func (d *PropDialog) onClose() { cancelIfSet(d.cancel) }
+
+// cancelIfSet calls cancel if it's non-nil — the shared body behind every
+// property/creation dialog's OnClose, cancelling whatever background fetch
+// or apply is still in flight for the session that's closing.
+func cancelIfSet(cancel context.CancelFunc) {
+	if cancel != nil {
+		cancel()
 	}
 }
 
-// post schedules fn to run on the UI goroutine (via App.postEvent), then
-// wakes the event loop immediately so it runs without waiting for an
-// unrelated key press or mouse move to arrive first. The wake must happen
-// here, on the calling (background) goroutine — not from inside fn —
-// since fn only runs once the loop is already awake and processing
-// pending callbacks; a wake nested inside fn can't unblock the very loop
-// iteration fn is waiting to run in. Mirrors postProgress/postTaskDone in
-// tasks.go, the one existing caller that already gets this right.
-func (d *PropDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *PropDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 // onLoadPage runs page's loader on a background goroutine and reports the
 // result back on the UI goroutine, guarded by seq the same way every other

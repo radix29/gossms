@@ -63,15 +63,26 @@ func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
 }
 
 // commonPrefix returns the longest string every element of strs starts
-// with. strs is never empty when called.
+// with. strs is never empty when called. Compares rune by rune, not byte by
+// byte — a multi-byte UTF-8 filename that shares only part of another's
+// encoded character would otherwise let the trimmed byte-prefix end mid-
+// rune, producing an invalid UTF-8 tail that InputField.SetValue's
+// []rune(v) conversion turns into a stray replacement character.
 func commonPrefix(strs []string) string {
-	prefix := strs[0]
+	prefix := []rune(strs[0])
 	for _, s := range strs[1:] {
-		for len(prefix) > 0 && !strings.HasPrefix(s, prefix) {
-			prefix = prefix[:len(prefix)-1]
+		r := []rune(s)
+		n := len(prefix)
+		if len(r) < n {
+			n = len(r)
 		}
+		i := 0
+		for i < n && prefix[i] == r[i] {
+			i++
+		}
+		prefix = prefix[:i]
 	}
-	return prefix
+	return string(prefix)
 }
 
 // formatFileSize renders n bytes as a short human-readable size (e.g.

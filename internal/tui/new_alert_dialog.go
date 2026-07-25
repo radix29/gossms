@@ -102,7 +102,7 @@ func (d *NewAlertDialog) show(sc *db.ServerConn) {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.forms = [2]*propsheet.Form{}
@@ -114,16 +114,9 @@ func (d *NewAlertDialog) show(sc *db.ServerConn) {
 	d.Show()
 }
 
-func (d *NewAlertDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
-	}
-}
+func (d *NewAlertDialog) onClose() { cancelIfSet(d.cancel) }
 
-func (d *NewAlertDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *NewAlertDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 func (d *NewAlertDialog) onLoadPage(page, seq int) {
 	if d.prefetch != nil {

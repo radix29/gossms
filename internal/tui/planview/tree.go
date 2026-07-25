@@ -389,6 +389,31 @@ func (v *PlanView) toggleSelectedExpand() {
 	v.rebuildTreeRows()
 }
 
+// expandAncestorsOf clears the collapsed flag on every ancestor of the
+// node with the given id (found by walking down from n), so that node
+// becomes reachable in rebuildTreeRows' flattened row list — a search/
+// warning jump (see search.go's jumpToMatch/jumpToWarning) can land on any
+// operator regardless of clause, including one currently hidden under a
+// collapsed ancestor. The target node itself is left as-is: rebuildTreeRows
+// always emits a node's own row, collapsed or not — only its children are
+// hidden by its own collapsed flag. Reports whether id was found in n's
+// subtree; callers should rebuildTreeRows afterward if it returns true.
+func (v *PlanView) expandAncestorsOf(n *showplan.Node, id int) bool {
+	if n == nil {
+		return false
+	}
+	if n.ID == id {
+		return true
+	}
+	for _, c := range n.Children {
+		if v.expandAncestorsOf(c, id) {
+			delete(v.treeSt.collapsed, n.ID)
+			return true
+		}
+	}
+	return false
+}
+
 // handleTreeTabKey handles navigation, expand/collapse, and the bottom
 // section's own key handling while the Tree tab is active.
 //

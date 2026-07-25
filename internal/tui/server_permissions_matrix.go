@@ -139,7 +139,7 @@ func buildPermissionsMatrix(
 		}
 		edits[row].current = nextPermState(edits[row].current)
 		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(edits))
-		permGrid.SetSelectedRow(row)
+		permGrid.SetSelectedCell(row, col)
 	}
 
 	principalsRow := propsheet.NewGridRow(principalGrid, principalsHeight)
@@ -246,7 +246,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				}
 				edits[row].current = nextPermState(edits[row].current)
 				grid.SetData([]string{"Permission", "State"}, rowsFor())
-				grid.SetSelectedRow(row)
+				grid.SetSelectedCell(row, col)
 			}
 
 			gridRow := propsheet.NewGridRow(grid, 12)

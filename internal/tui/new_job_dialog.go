@@ -122,7 +122,7 @@ func (d *NewJobDialog) show(sc *db.ServerConn) {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.forms = [4]*propsheet.Form{}
@@ -136,16 +136,9 @@ func (d *NewJobDialog) show(sc *db.ServerConn) {
 	d.Show()
 }
 
-func (d *NewJobDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
-	}
-}
+func (d *NewJobDialog) onClose() { cancelIfSet(d.cancel) }
 
-func (d *NewJobDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *NewJobDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 func (d *NewJobDialog) onLoadPage(page, seq int) {
 	if d.prefetch != nil {

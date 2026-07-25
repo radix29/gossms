@@ -90,7 +90,7 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 	}
 	t.values[row][j] = !t.values[row][j]
 	t.render()
-	t.Grid.SetSelectedRow(row)
+	t.Grid.SetSelectedCell(row, col)
 	if t.OnToggle != nil {
 		t.OnToggle(row, j, t.values[row][j])
 	}

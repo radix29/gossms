@@ -143,6 +143,13 @@ func (v *PlanView) installPlan(p *showplan.Plan) {
 	v.xml.SetText(showplan.Indent(p.XML))
 	v.bottomMode = bottomHidden
 	v.treeSt.collapsed = make(map[int]bool)
+	// searchSt.matches holds NodeIDs, which SQL Server assigns per statement
+	// starting at 0 — near-certain to collide with unrelated operators in a
+	// different plan (a re-run after an edit, an Estimated<->Actual toggle,
+	// or QueryPanel simply reusing this same *PlanView for a new query).
+	// Without resetting here, n/N after a plan swap can silently jump to
+	// whatever operator now happens to own the stale ID.
+	v.searchSt = searchState{}
 	v.selectFirstNode()
 	v.layout()
 	v.syncFocus()
@@ -291,6 +298,13 @@ func (v *PlanView) stepStatement(delta int) {
 	n := len(v.plan.Statements)
 	v.stmtIdx = ((v.stmtIdx+delta)%n + n) % n
 	v.selectFirstNode()
+	// selectFirstNode alone can leave the new statement's root scrolled out
+	// of view (an unbalanced tree's root tile isn't necessarily near (0,0),
+	// and the Tree pane's prior scroll offset isn't reset by a rebuild that
+	// still fits within it) — see layout's identical follow-up after its
+	// own selectFirstNode call, which this mirrors for the stepping case.
+	v.ensureTreeRowVisible()
+	v.ensureTileVisible(v.selectedID)
 }
 
 // statementCostPct returns statement i's share of the batch's total

@@ -378,9 +378,13 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 // runs for real immediately rather than only generating a script, so
 // going offline (which rolls back every existing connection to the
 // database) is confirmed first; coming back online is not, since it's
-// non-destructive. On success, only this one node's icon needs updating —
-// no Databases-folder reload, since nothing was added, removed, or
-// renamed.
+// non-destructive. On success, node's own icon/state updates, and its
+// subtree is refreshed via refreshExplorerNode: an offline database's
+// expanded children are the single "(Database is offline)" placeholder
+// leaf (see explorer_databases.go) which must not linger once the database
+// is back online, and symmetrically an online database's real Tables/
+// Views/etc. subtree must not linger stale (and get re-queried against a
+// now-offline database) once it's taken offline.
 func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	if !a.isConnected(sc) {
 		a.setStatus("Not connected — use File > Connect")
@@ -410,7 +414,8 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 					return
 				}
 				node.data.IsOffline = goOffline
-				a.explorer.rebuild()
+				refreshExplorerNode(a, node)
+				a.explorer.rebuild() // repaint node's own icon immediately even when it's collapsed (refreshExplorerNode only rebuilds once an expanded reload completes)
 				word := "online"
 				if goOffline {
 					word = "offline"

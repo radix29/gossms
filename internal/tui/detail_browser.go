@@ -40,6 +40,17 @@ type DetailBrowser struct {
 	// naturally miss the cache) forces a refetch. Never populated with
 	// partial/in-progress results, only the final one.
 	cache map[*explorerNode]*detailResult
+
+	// pending records, per node, the seq of the most recently dispatched
+	// fetch for it — set by fetch, checked by postFinal/cacheOnly before
+	// writing cache. Reselecting the same node while its fetch is still
+	// in flight (cache not yet populated) dispatches a second, newer fetch
+	// for that same node pointer; without this check, whichever of the two
+	// finishes last would win the cache write regardless of which was
+	// dispatched more recently, letting a slower/older fetch silently
+	// overwrite a newer, correct result (or good data with a stale
+	// transient error).
+	pending map[*explorerNode]int
 }
 
 // detailResult is a cached or in-flight-result payload for one node.
@@ -53,7 +64,12 @@ type detailResult struct {
 func NewDetailBrowser(title string) *DetailBrowser {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
-	return new(DetailBrowser{title: title, grid: grid, cache: make(map[*explorerNode]*detailResult)})
+	return new(DetailBrowser{
+		title:   title,
+		grid:    grid,
+		cache:   make(map[*explorerNode]*detailResult),
+		pending: make(map[*explorerNode]int),
+	})
 }
 
 // Title returns the panel title (Panel interface).
@@ -159,6 +175,7 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 // their fast fields first and backfill the rest progressively; everything
 // else goes through the single-shot fetchNodeDetails.
 func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	db.pending[node] = seq
 	switch node.data.Type {
 	case NodeServer:
 		db.loadServerDetails(app, sc, node, seq)
@@ -192,13 +209,17 @@ func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]
 	app.wakeEventLoop()
 }
 
-// postFinal caches the completed result for node and displays it if still
-// current. Called exactly once per fetch, whether single-shot or the last
-// stage of a progressive loader.
+// postFinal caches the completed result for node — unless a newer fetch for
+// this same node has since been dispatched (see pending), in which case
+// this one is stale and must not clobber the newer fetch's eventual result
+// — and displays it if still current. Called exactly once per fetch,
+// whether single-shot or the last stage of a progressive loader.
 func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
 	result := &detailResult{cols: cols, rows: rows, err: err}
 	app.postEvent(func() {
-		db.cache[node] = result
+		if db.pending[node] == seq {
+			db.cache[node] = result
+		}
 		if seq != db.seq {
 			return
 		}
@@ -212,12 +233,31 @@ func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols [
 // loadDatabasesFolderDetails) once every row has already been updated in
 // place: calling postFinal there instead would call SetData and reset the
 // user's scroll position right after the progressive fill worked to avoid
-// exactly that.
-func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, cols []string, rows [][]string, err error) {
+// exactly that. Gated by pending the same way postFinal is — see there.
+func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
 	app.postEvent(func() {
-		db.cache[node] = &detailResult{cols: cols, rows: rows, err: err}
+		if db.pending[node] == seq {
+			db.cache[node] = &detailResult{cols: cols, rows: rows, err: err}
+		}
 	})
 	app.wakeEventLoop()
+}
+
+// maxRowFetchConcurrency bounds how many per-row backfill goroutines a
+// progressive loader (loadDatabasesFolderDetails, loadTablesFolderDetails)
+// runs at once. Firing one per row unbounded means a database/table folder
+// with hundreds of entries opens hundreds of connections against the pool
+// simultaneously (db.Connect's own MaxOpenConns is 20 — see
+// internal/db/connection.go) and queues a redraw+RefreshColumnWidths for
+// each; capping concurrency keeps "one slow row doesn't block the rest"
+// while not trying to do them all at once.
+const maxRowFetchConcurrency = 8
+
+// rowFetchSemaphore returns a token bucket for bounding a progressive
+// loader's per-row fan-out to maxRowFetchConcurrency at a time. Acquire by
+// sending to it, release by receiving.
+func rowFetchSemaphore() chan struct{} {
+	return make(chan struct{}, maxRowFetchConcurrency)
 }
 
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called

@@ -19,9 +19,9 @@ var tablesFolderColumns = []string{
 
 // loadTablesFolderDetails shows the Tables folder's Name column as soon as
 // the single, fast table-list query returns, then backfills each row's row
-// count and space columns — one table at a time, concurrently — as its own
-// RowCountContext/SpaceUsedContext round trips complete, mirroring
-// loadDatabasesFolderDetails' per-row backfill pattern.
+// count and space columns — up to maxRowFetchConcurrency tables at a time —
+// as its own RowCountContext/SpaceUsedContext round trips complete,
+// mirroring loadDatabasesFolderDetails' per-row backfill pattern.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
@@ -45,10 +45,13 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 		db.postPartial(app, seq, tablesFolderColumns, rows)
 
 		var wg sync.WaitGroup
+		sem := rowFetchSemaphore()
 		for i, t := range tables {
 			wg.Add(1)
 			go func(i int, t *gosmo.Table) {
 				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				tCtx, tCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 				defer tCancel()
 				rowCount, rcErr := t.RowCountContext(tCtx)
@@ -80,6 +83,6 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			}(i, t)
 		}
 		wg.Wait()
-		db.cacheOnly(app, node, tablesFolderColumns, rows, nil)
+		db.cacheOnly(app, node, seq, tablesFolderColumns, rows, nil)
 	}()
 }

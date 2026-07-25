@@ -252,6 +252,21 @@ func (g *DataGrid) SetSelectedRow(i int) {
 	g.ensureVisible(g.rect.H - 3)
 }
 
+// SetSelectedCell sets the selected row and column (both clamped) and
+// scrolls both into view — the cell-cursor analogue of SetSelectedRow, for
+// a caller (e.g. ToggleGridRow.activateCell) that rebuilds the grid's rows
+// via SetData/SetSource, which resets selCol to 0 same as selRow. Does not
+// fire OnSelectRow.
+func (g *DataGrid) SetSelectedCell(row, col int) {
+	if g.rows.Len() == 0 {
+		return
+	}
+	g.selRow = core.Clamp(row, 0, g.rows.Len()-1)
+	g.selCol = core.Clamp(col, 0, core.Max(0, len(g.columns)-1))
+	g.ensureVisible(g.rect.H - 3)
+	g.ensureVisibleCol()
+}
+
 // Focus sets the focused state, dimming the selection highlight when false
 // (mirrors the convention other tuikit controls use for a focus ring).
 func (g *DataGrid) Focus(v bool) { g.active = v }

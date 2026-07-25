@@ -162,9 +162,18 @@ func execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 			res.Elapsed = time.Since(start)
 			return res
 		}
-		// Error discarded on cleanup — matches gosmo's own capturePlan,
-		// which does the same for its SET ... OFF.
-		defer conn.ExecContext(context.Background(), "SET "+setOpt+" OFF")
+		// Cleanup must still run (and return conn to the pool in a known
+		// state) even if ctx is already canceled by the time execute
+		// returns — context.WithoutCancel keeps ctx's values without its
+		// cancellation, and the timeout bounds how long a genuinely
+		// unresponsive connection can block it, unlike context.Background()
+		// which never times out. Mirrors gosmo's own capturePlan
+		// (executionplan.go), error discarded on cleanup same as there.
+		defer func() {
+			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			conn.ExecContext(cctx, "SET "+setOpt+" OFF")
+		}()
 	}
 
 	for _, b := range batch.Split(script, "GO") {

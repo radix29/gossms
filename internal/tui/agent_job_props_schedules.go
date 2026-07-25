@@ -179,7 +179,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				}
 				edits[row].attached = !edits[row].attached
 				grid.SetData(cols, rowsFor())
-				grid.SetSelectedRow(row)
+				grid.SetSelectedCell(row, col)
 			}
 
 			nameStatic := propsheet.Static("Name", "")

@@ -33,7 +33,14 @@ func NewPropertiesDialog(app *App) *PropertiesDialog {
 }
 
 // ShowGenericProperties shows arbitrary key-value pairs (e.g. About box).
+// Bumps seq like ShowDependencies does on every new show — this dialog is a
+// single shared instance reused for both features, so a Dependencies fetch
+// still in flight when the dialog is repurposed here (e.g. Escape out of
+// Object Dependencies, then Help > About before the fetch lands) must not
+// be allowed to land later and silently overwrite these rows with stale
+// dependency data.
 func (d *PropertiesDialog) ShowGenericProperties(title string, rows []PropertyRow) {
+	d.seq++
 	d.ShowProperties(title, rows)
 }
 

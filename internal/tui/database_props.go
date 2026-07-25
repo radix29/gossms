@@ -11,6 +11,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
+// unknownOwnerItem is the Owner dropdown's sentinel entry for a database
+// whose owner_sid doesn't resolve to any login on this server — SUSER_SNAME
+// returns NULL (gosmo's opts.Owner comes back "") for a database restored
+// from elsewhere, or one whose owning login has since been dropped. Without
+// it, indexOf's 0-fallback would silently select and display an unrelated
+// real login as if it were the actual owner.
+const unknownOwnerItem = "(unresolved owner)"
+
 // databasePropPages builds the page set for Database Properties. General
 // is mostly a read-only info page, aside from Owner/Recovery model; every
 // other page is fully or partially editable — Files/Filegroups support
@@ -83,7 +91,12 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				}
 			}
 
-			ownerRow := propsheet.Select("Owner", loginNames, indexOf(loginNames, opts.Owner))
+			ownerItems, ownerIdx := loginNames, indexOf(loginNames, opts.Owner)
+			if opts.Owner == "" {
+				ownerItems = append([]string{unknownOwnerItem}, loginNames...)
+				ownerIdx = 0
+			}
+			ownerRow := propsheet.Select("Owner", ownerItems, ownerIdx)
 			recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel())))
 

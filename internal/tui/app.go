@@ -12,6 +12,7 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
@@ -129,6 +130,33 @@ type App struct {
 
 	pendingMu sync.Mutex
 	pending   []func()
+
+	// wakePending coalesces wakeEventLoop calls: true from the moment an
+	// EventInterrupt has been sent until the event loop next wakes for any
+	// event and clears it. A background goroutine that finds it already
+	// true skips sending its own interrupt — the callback it just queued via
+	// postEvent is still guaranteed to run, because drainPending() drains
+	// the whole a.pending queue (not just the callback that triggered the
+	// interrupt actually in flight) the next time the loop wakes for any
+	// reason. Without this, a burst of near-simultaneous background
+	// completions (e.g. the bounded per-row fetches in
+	// loadDatabasesFolderDetails/loadTablesFolderDetails) each queue their
+	// own EventInterrupt, and the loop pays for a full drainPending +
+	// syncDialogStack + draw() per one even though the first one already
+	// picked up every callback queued by then.
+	wakePending atomic.Bool
+
+	// quitMu serializes wakeEventLoop's channel send against quit's call to
+	// screen.Fini(), which closes EventQ() — see quit's and wakeEventLoop's
+	// doc comments. A plain "check quitting, then send" (even with an
+	// atomic bool) would still race: Fini() could close the channel between
+	// the check and the send. Holding quitMu across both the quitting flag
+	// and the send itself (in wakeEventLoop) and across setting the flag
+	// and calling Fini() (in quit) makes the two mutually exclusive, so a
+	// send either fully completes before Fini() closes the channel, or
+	// never happens at all.
+	quitMu   sync.Mutex
+	quitting bool
 }
 
 // NewApp constructs the application.
@@ -158,6 +186,13 @@ func (a *App) Run() error {
 	// channel is closed by Fini(), so `for ev := range` exits automatically
 	// on quit instead of needing a nil-event sentinel check.
 	for ev := range s.EventQ() {
+		// Cleared before draining (not after) so a postEvent+wakeEventLoop
+		// call racing this exact instant still gets a wake of its own: if
+		// its append to a.pending happens after drainPending's mutex-
+		// protected read below, wakePending is already false again by then,
+		// so its CompareAndSwap succeeds and queues a fresh EventInterrupt
+		// instead of the callback silently waiting for some unrelated event.
+		a.wakePending.Store(false)
 		a.drainPending()
 		a.syncDialogStack()
 
@@ -197,6 +232,19 @@ func (a *App) Run() error {
 	return nil
 }
 
+// postAndWake queues fn to run on the UI goroutine (via postEvent) and
+// immediately wakes the event loop to run it, without waiting for an
+// unrelated key press or mouse move to arrive first. Call it from a
+// background goroutine, after any other work it needs to do — never from
+// the UI goroutine itself (see wakeEventLoop's doc comment). This is the
+// shared body behind PropDialog.post and every New*Dialog.post — a
+// background operation's completion handoff, wired through OnClose's cancel
+// the same way across all of them.
+func (a *App) postAndWake(fn func()) {
+	a.postEvent(fn)
+	a.wakeEventLoop()
+}
+
 func (a *App) postEvent(fn func()) {
 	a.pendingMu.Lock()
 	a.pending = append(a.pending, fn)
@@ -229,8 +277,22 @@ func (a *App) drainPending() {
 // to finish, so whether that happens before or after the test binary exits
 // is a timing accident, one `go test -race` (which slows everything down)
 // made an intermittent, hard-to-reproduce crash.
+//
+// Also a no-op if wakePending is already set (see its doc comment on App —
+// coalesces a burst of concurrent callers into one interrupt) or if the app
+// is quitting (see quit's doc comment — quitMu makes the two mutually
+// exclusive, so this either sends before Fini() closes EventQ() or not at
+// all, never after).
 func (a *App) wakeEventLoop() {
 	if a.screen == nil {
+		return
+	}
+	if !a.wakePending.CompareAndSwap(false, true) {
+		return
+	}
+	a.quitMu.Lock()
+	defer a.quitMu.Unlock()
+	if a.quitting {
 		return
 	}
 	a.screen.EventQ() <- tcell.NewEventInterrupt(nil)
@@ -446,7 +508,21 @@ func (a *App) draw() {
 	s.Show()
 }
 
-func (a *App) quit() { a.screen.Fini() }
+// quit tears down the screen, which closes EventQ() — Run()'s `for ev :=
+// range` loop exits as a result, and s.EventQ() is unusable from then on.
+// quitMu is held across setting quitting and calling Fini() so a
+// wakeEventLoop call racing this from a background goroutine (e.g.
+// tickExecuting's ticker, still running because closePanelAt only cancels a
+// panel's own in-flight query on close, not on quit) either completes its
+// send before Fini() closes EventQ(), or sees quitting and skips sending
+// entirely — never sends after the channel is already closed, which would
+// panic.
+func (a *App) quit() {
+	a.quitMu.Lock()
+	defer a.quitMu.Unlock()
+	a.quitting = true
+	a.screen.Fini()
+}
 
 func (a *App) setStatus(msg string) {
 	a.statusText = msg

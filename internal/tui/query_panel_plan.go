@@ -45,7 +45,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	// p.database, which could change while it's running.
 	sc := p.conn
 	database := p.database
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(sc.Context())
 	p.cancel = cancel
 	p.resultsNotice = ""
 	p.executing = true

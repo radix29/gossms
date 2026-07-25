@@ -82,7 +82,7 @@ func (d *NewOperatorDialog) show(sc *db.ServerConn) {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.form = nil
@@ -94,16 +94,9 @@ func (d *NewOperatorDialog) show(sc *db.ServerConn) {
 	d.Show()
 }
 
-func (d *NewOperatorDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
-	}
-}
+func (d *NewOperatorDialog) onClose() { cancelIfSet(d.cancel) }
 
-func (d *NewOperatorDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *NewOperatorDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 func (d *NewOperatorDialog) onLoadPage(page, seq int) {
 	if d.prefetch != nil {

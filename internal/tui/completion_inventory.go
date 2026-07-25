@@ -246,6 +246,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string) {
 			if err != nil {
 				a.sysCompletionInventories[key] = &completionInventory{err: err}
 				a.setStatus(fmt.Sprintf("System-catalog autocomplete unavailable: %v (Ctrl+R in a query editor retries)", err))
+				a.refreshSysCompletionPopups(key)
 				return
 			}
 			a.sysCompletionInventories[key] = newCompletionInventory(cat)

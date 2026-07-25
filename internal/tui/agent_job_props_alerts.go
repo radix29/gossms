@@ -63,7 +63,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 				}
 				edits[row].linked = !edits[row].linked
 				grid.SetData(cols, rowsFor())
-				grid.SetSelectedRow(row)
+				grid.SetSelectedCell(row, col)
 			}
 
 			nameStatic := propsheet.Static("Name", "")

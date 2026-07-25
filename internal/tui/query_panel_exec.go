@@ -108,7 +108,7 @@ func (p *QueryPanel) runQuery(queryText string) {
 	// Execution Plan" toggle can change via the toolbar/Query menu while
 	// this goroutine runs.
 	capturePlan := p.app.actualPlanEnabled
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(sc.Context())
 	p.cancel = cancel
 	p.resultsNotice = ""
 	p.executing = true

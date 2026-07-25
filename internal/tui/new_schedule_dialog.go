@@ -78,7 +78,7 @@ func (d *NewScheduleDialog) show(sc *db.ServerConn) {
 	if d.cancel != nil {
 		d.cancel()
 	}
-	d.ctx, d.cancel = context.WithCancel(context.Background())
+	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
 	d.forms = [2]*propsheet.Form{}
@@ -90,16 +90,9 @@ func (d *NewScheduleDialog) show(sc *db.ServerConn) {
 	d.Show()
 }
 
-func (d *NewScheduleDialog) onClose() {
-	if d.cancel != nil {
-		d.cancel()
-	}
-}
+func (d *NewScheduleDialog) onClose() { cancelIfSet(d.cancel) }
 
-func (d *NewScheduleDialog) post(fn func()) {
-	d.app.postEvent(fn)
-	d.app.wakeEventLoop()
-}
+func (d *NewScheduleDialog) post(fn func()) { d.app.postAndWake(fn) }
 
 func (d *NewScheduleDialog) onLoadPage(page, seq int) {
 	if d.prefetch != nil {

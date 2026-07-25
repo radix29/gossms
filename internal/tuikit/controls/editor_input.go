@@ -112,15 +112,16 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if ctrlHeld {
 			if e.cursorCol > 0 {
 				e.cursorCol = core.WordBoundaryLeft(e.lines[e.cursorRow], e.cursorCol)
-			} else if e.cursorRow > 0 {
+			} else if e.cursorRow > 0 && !e.selBlock {
+				// Column selection never crosses lines via Left/Right — only
+				// Up/Down changes a block selection's row range. Applies to
+				// the word-jump above the same as the plain move below it.
 				e.cursorRow--
 				e.cursorCol = len(e.lines[e.cursorRow])
 			}
 		} else if e.cursorCol > 0 {
 			e.cursorCol--
 		} else if e.cursorRow > 0 && !e.selBlock {
-			// Column selection never crosses lines via Left/Right — only
-			// Up/Down changes a block selection's row range.
 			e.cursorRow--
 			e.cursorCol = len(e.lines[e.cursorRow])
 		}
@@ -128,7 +129,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if ctrlHeld {
 			if e.cursorRow < len(e.lines) && e.cursorCol < len(e.lines[e.cursorRow]) {
 				e.cursorCol = core.WordBoundaryRight(e.lines[e.cursorRow], e.cursorCol)
-			} else if e.cursorRow < len(e.lines)-1 {
+			} else if e.cursorRow < len(e.lines)-1 && !e.selBlock {
 				e.cursorRow++
 				e.cursorCol = 0
 			}
