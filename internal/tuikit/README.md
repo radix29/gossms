@@ -22,7 +22,7 @@ tuikit/
 │               save-as, list+path entry, used for every file path prompt in
 │               internal/tui) is split across file_dialog.go (state), file_dialog_draw.go,
 │               file_dialog_input.go, and file_dialog_complete.go (path completion)
-├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL highlighter/statement select)
+├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL/XML highlighters, statement select)
 │             — one file per group: menu_bar.go/context_menu.go (+ shared MenuItem/Menu
 │               types in menu_item.go), toolbar.go, treeview.go, listbox.go, tabstrip.go;
 │               DataGrid is split across datagrid.go (state/data source/column
@@ -32,7 +32,8 @@ tuikit/
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
 │               editor_input.go, editor_actions.go, editor_completion.go
 │               (generic completion/IntelliSense popup), sql_highlighter.go,
-│               sql_statement.go (T-SQL statement/batch boundary detection)
+│               sql_statement.go (T-SQL statement/batch boundary detection),
+│               xml_highlighter.go (used by planview's XML tab)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go;
                 PropertySheet itself is split across sheet.go (state/page list),

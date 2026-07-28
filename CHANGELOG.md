@@ -4,6 +4,106 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.4] - 2026-07-28
+
+### Added
+
+- **XML syntax highlighting** for the Execution Plan Viewer's XML tab
+  (`controls.xml_highlighter.go`) — tags, attribute names/values, comments,
+  and CDATA sections are now colour-highlighted instead of plain text.
+- **`TypedConfirmDialog`** promoted to a reusable `tuikit/dialogs` control
+  (retype-to-confirm), backing the app's confirm-typed flows from a single
+  shared instance instead of ad-hoc per-caller logic.
+- **File dialog path tab-completion** — completes the current path segment
+  against matching entries in the directory being browsed.
+- **`PropertySheet` clipboard support** — copy/paste text directly in a
+  Properties form field.
+- **"SQL Server Agent (Stopped)" label** on the Object Explorer root —
+  a background `AgentInfoContext` check appends it once the service is
+  confirmed not running; a failed or inconclusive check leaves the label
+  alone rather than guessing.
+- Cell-level selection (`DataGrid.SetCellCursor`) extended to more result
+  and detail grids that previously only supported whole-row selection.
+- **`ServerConn.Login`** — the real server login a connection authenticated
+  as (`SUSER_NAME()`), fetched once at connect time and now shown in the
+  connection label instead of just the configured (often empty, for
+  Windows/Entra auth) `Opts.User`.
+- **Connection pool caps and per-connection cancellation** —
+  `MaxOpenConns`/`MaxIdleConns` (20/10) bound the pool a connection opens,
+  and the new `ServerConn.Context()` is cancelled by `Close`, so
+  disconnecting now promptly cancels every background load still scoped to
+  that connection instead of leaving it to idle out on its own timeout.
+
+### Changed
+
+- `internal/tuikit/controls`' `menu.go` split and rebuilt into
+  `menu_bar.go`, `context_menu.go`, and `menu_item.go` — `MenuBar` and
+  right-click `ContextMenu`s (Object Explorer and tree nodes) now share one
+  `MenuItem`/`Menu` model instead of separate implementations.
+- `internal/tuikit/dialogs` split further: `file_dialog.go` (state) now
+  has `file_dialog_draw.go`/`file_dialog_input.go`/`file_dialog_complete.go`
+  siblings, and a new `common.go` holds `fitMessage`, the shared
+  message-driven dialog-sizing logic `AlertDialog`/`ConfirmDialog` both use.
+- `propsheet.PropertySheet` split further: `sheet.go` (state/page list) now
+  has `sheet_draw.go`/`sheet_input.go`/`sheet_clipboard.go` siblings.
+- The `mouseDragging` idiom (see `ARCHITECTURE.md`) extended to
+  `Button`/`CheckBox`/`DropDown`/`RadioBox` in `tuikit/widgets` — the same
+  tcell all-motion resend issue already fixed elsewhere could fire these
+  widgets' actions more than once per physical click.
+- Background loads — tree-node expand (`loadChildren`), the IntelliSense
+  completion inventory, and Detail Browser fetches — now derive their
+  context from the owning `ServerConn.Context()` instead of
+  `context.Background()`, so a disconnect actually cancels them.
+- Detail Browser and completion-inventory loaders now track a per-entry
+  sequence number so an older in-flight fetch can never overwrite a newer
+  one's already-landed result.
+- Per-row detail backfill (Databases/Tables folders) and other row-level
+  fan-out loaders are now bounded by a shared `maxRowFetchConcurrency` (8)
+  semaphore instead of unbounded per-row goroutine fan-out.
+- `gosmo` dependency updated `v0.0.5` → `v0.0.6` — completes SQL Server
+  Agent (alerts, operators, shared schedules, categories, and a rounded-out
+  Job surface: rename/description/category/owner/start step/auto-delete/
+  completion-email, in-place step edit, cross-job history); fixes a
+  connection-pool leak where every rows-returning read permanently
+  consumed one connection (an app capping `MaxOpenConns` would wedge
+  completely; an uncapped one grew connections without bound), extends
+  automatic retry to server-level reads and to failures single-row reads
+  previously couldn't catch, and adds index/statistics administration and
+  diagnostics, server-role administration parity, and DDL-value validation
+  wherever a value has to be spliced into SQL text.
+
+### Fixed
+
+- **Stale in-flight fetch could win a race** — reselecting a tree node (or
+  refreshing IntelliSense) while its previous fetch was still in flight let
+  the older fetch's result land after the newer one's, silently overwriting
+  good data with stale or erroneous data. Fixed in both the Detail Browser
+  and the completion-inventory loader with the sequence-number guard above.
+- **`ConnectDialog`'s auth-method dropdown** didn't get first refusal of
+  clicks landing on its open list where it visually overlapped the
+  Connect/Cancel button row — the same overlay-ordering fix already applied
+  to the Backup/Restore dialogs.
+- **`Button`/`CheckBox`/`DropDown`/`RadioBox`** could fire their action more
+  than once from a single click, because tcell resends `Button1` on every
+  motion event while the mouse button stays physically down.
+- **Database Properties Owner field** showed an unrelated real login as the
+  owner when a database's `owner_sid` didn't resolve to any login on the
+  server (`SUSER_SNAME` returns NULL) — now shows a clear
+  "(unresolved owner)" placeholder instead.
+- **Database User Properties stale name after rename** — renaming a user
+  left every other page looking up the old, now-nonexistent name on the
+  next reload; same bug class already fixed in Key Properties and Server
+  Role Properties, now fixed here too.
+- **File dialog path completion** computed the common prefix of matching
+  names byte-by-byte instead of rune-by-rune, which could cut a multi-byte
+  UTF-8 filename mid-character.
+- **`PropertySheet` `Form`** let `PgUp`/`PgDn` scroll the row list out from
+  under an open dropdown or "Show Value" popup, leaving it floating at a
+  stale position instead of tracking its row.
+- **Take/Bring Database Offline/Online** didn't refresh the Object
+  Explorer node's own state immediately — it caught up only on the next
+  unrelated refresh.
+
 ## [0.0.3] - 2026-07-20
 
 ### Added

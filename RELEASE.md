@@ -4,6 +4,17 @@ High-level summary of what changed in each goSSMS release, one entry per
 version. For the detailed, file-by-file changes behind each entry, see
 [CHANGELOG.md](CHANGELOG.md).
 
+## v0.0.4 — 2026-07-28
+
+An interaction and reliability pass: a shared `ContextMenu`/`MenuBar`
+control now backs every right-click and top-menu, the Execution Plan
+Viewer's XML tab gets syntax highlighting, and file dialogs gained path
+tab-completion. Connections now carry their real login identity and a
+lifecycle tied to disconnect, fixing a stale-fetch race in the Detail
+Browser and IntelliSense cache along with several double-firing widgets
+and smaller Properties bugs. Updates `gosmo` to v0.0.6 (SQL Server Agent
+completed; a connection-pool leak fixed).
+
 ## v0.0.3 — 2026-07-20
 
 The big one so far: a full Execution Plan Viewer (estimated and actual,

@@ -38,7 +38,7 @@ gossms/
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog
-│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL highlighter)
+│   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)

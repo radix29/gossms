@@ -72,35 +72,9 @@ Ignore the folder todo and its content.
 `gosmo` is the author's own library, not a third-party dependency — add
 or change functionality in it when gossms needs something it doesn't
 have yet, rather than working around a missing capability inside gossms.
-
-To work on both repos together: uncomment the
-`replace github.com/radix29/gosmo => ../gosmo` line near the bottom of
-`go.mod` (and the matching `ignore ../gosmo` line above it) so `go build`
-picks up local edits from `~/go/gosmo` instead of the tagged `v0.0.3`.
-Build and test there too (`go build ./...`, `go test ./...` inside
-`~/go/gosmo`) before relying on the change from gossms. Once a change is
-tagged and pushed, comment the `replace` back out and bump the version in
-`go.mod`'s `require` line to match.
-
-The "verify against real source" rule above still applies to gosmo itself
-— match its existing conventions (methods, not fields; `DatabaseByName`-
-style naming) rather than inventing a new pattern.
-
-gosmo's own conventions, so new additions blend in:
-- **One file per SMO object family** at the repo root (`table.go`,
-  `index.go`, `backup.go`, `security.go`, …), not one-per-type — e.g.
-  `Table`, `Column`, `Index`, `ForeignKey`, and `CheckConstraint` all live
-  in `table.go` because they're all part of a table's structure.
-- **Every method that hits the database comes in a pair**: `Foo(...)` is
-  a one-line convenience wrapper (`return d.FooContext(context.Background(),
-  ...)`), `FooContext(ctx, ...)` holds the real implementation. Always add
-  both, never just one.
-- **`iter.go`** re-exposes the main `Foo()`/`FooContext()` collection
-  methods as `FooSeq() iter.Seq2[*T, error]` for `range`-based iteration.
-  Add a `Seq` variant alongside any new collection-returning method.
-- **Errors are wrapped `"gosmo: <verb phrase>: %w"`**, e.g. `fmt.Errorf("gosmo:
-  list views in %q: %w", d.name, err)` — match this prefix style rather
-  than an ad-hoc message.
+For the local dev workflow (the `replace` directive, build/test-in-gosmo
+steps, and gosmo's own file-layout/method-pair/Seq/error-wrapping
+conventions), see the `dev-with-local-gosmo` skill.
 
 ## Coding conventions
 
@@ -161,12 +135,5 @@ When splitting a file that's grown too large: one file per type/group,
 `common.go`, `doc.go`, and extract each section by exact line range and
 diff it byte-for-byte against the original before deleting the source
 file — don't retype by hand.
-
-## Current state
-
-`go.mod` points at the tagged `gosmo v0.0.5`. The release workflow
-(`.github/workflows/release.yml`) builds for windows/linux/darwin ×
-amd64/arm64 only — see "Build & verify" above for how the app's own
-version gets set.
 
 

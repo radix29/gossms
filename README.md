@@ -25,7 +25,8 @@ or drivers required.
   type, understands table aliases and multi-statement scripts, and can be
   toggled off in Options.
 - **Execution Plan Viewer** — view estimated or actual execution plans as a
-  cost-weighted operator graph, an expandable tree, or raw XML.
+  cost-weighted operator graph, an expandable tree, or syntax-highlighted
+  raw XML.
 - **Properties dialogs** — multi-page, editable SSMS-style Properties for
   Server, Database, Login, Table, Schema, Server Role, Database Role,
   Database User, Index/Statistics, Key, and Foreign Key, plus New Database /
