@@ -272,15 +272,34 @@ release.
 
 `gosmo` is a separate repository
 ([github.com/radix29/gosmo](https://github.com/radix29/gosmo)) that goSSMS
-depends on as a regular tagged module — no local sibling checkout is needed
-for a normal build. To work on both repos together, `go.mod` keeps a
-commented-out `replace github.com/radix29/gosmo => ../gosmo` directive
-(and a matching `ignore ../gosmo` line above it): uncomment both so `go
-build` picks up local edits from a `../gosmo` sibling checkout instead of
-the tagged release. Build and test there too (`go build ./...`, `go test
-./...` inside `gosmo`) before relying on a change from gossms. Once a change
-is tagged and pushed, comment the `replace`/`ignore` pair back out and bump
-the version in `go.mod`'s `require` line to match.
+depends on as a tagged module, but the two are developed together, so
+`go.mod` normally has the pair
+
+```
+ignore ../gosmo
+replace github.com/radix29/gosmo => ../gosmo
+```
+
+**active** — this is the intended state during development, not an
+oversight. Builds therefore resolve gosmo from the `../gosmo` sibling
+checkout, and the version in `require` is only a floor: `HEAD` of gossms
+routinely calls gosmo code that isn't tagged yet, so a clone without the
+sibling checkout may not build. Anyone working on gossms is expected to have
+both repos checked out side by side.
+
+Consequences worth keeping in mind:
+
+- A gossms behavior that looks wrong may be coming from uncommitted or
+  untagged gosmo code. Check `git -C ../gosmo status`/`log` before
+  attributing it to the pinned release.
+- Build and test inside `gosmo` itself (`go build ./...`, `go test ./...`)
+  before relying on a change from gossms — a gossms-side build only
+  compiles the packages it imports.
+
+Only at release time does the pair get commented back out: tag and push
+gosmo, bump `go.mod`'s `require` to the new tag, comment out
+`replace`/`ignore`, and confirm gossms builds and tests clean against the
+tagged module before tagging gossms itself.
 
 ## Dependencies
 
