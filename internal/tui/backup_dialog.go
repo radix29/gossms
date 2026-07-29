@@ -225,7 +225,7 @@ func (d *BackupDialog) loadDatabases() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -241,7 +241,6 @@ func (d *BackupDialog) loadDatabases() {
 			}
 			d.setDatabaseItems(names)
 		})
-		app.wakeEventLoop()
 	}()
 }
 
@@ -264,9 +263,8 @@ func (d *BackupDialog) setDatabaseItems(names []string) {
 }
 
 // browseDest opens the shared file dialog to pick the destination path.
-// The path is used on the server, but browsing the local filesystem is
-// still the best available picker (and the two are the same machine for a
-// locally-run instance).
+// The path is used on the server, but browsing the local filesystem is the
+// best available picker.
 func (d *BackupDialog) browseDest() {
 	start := strings.TrimSpace(d.fDest.Value())
 	if start == "" {
@@ -290,10 +288,9 @@ func (d *BackupDialog) validate() {
 }
 
 // script builds the BACKUP statement from the current options and opens it
-// in a new query window for review — SSMS's "Script Action to New Query
-// Window" convention, applied to Back Up Database. Unlike Validate, which
-// only checks the options build cleanly, this hands the T-SQL to the user
-// to inspect, tweak, or run themselves.
+// in a new query window for review — "Script Action to New Query Window"
+// applied to Back Up Database. Validate only checks that the options build
+// cleanly; this hands the T-SQL over to inspect, tweak, or run.
 func (d *BackupDialog) script() {
 	opts := d.currentOptions()
 	stmt, err := gosmo.BuildBackupStatement(opts)

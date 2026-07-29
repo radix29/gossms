@@ -129,10 +129,10 @@ func TestSetEstimatedPlanCancelledShowsFriendlyMessage(t *testing.T) {
 	}
 }
 
-// TestSetEstimatedPlanSuccessDespiteCancelFlag is a regression test for the
-// cancelled/success precedence: like query.Execute's own res/cancelled
-// split, a plan that did come back must still be installed and shown even
-// if the fetch happened to race a cancel signal.
+// TestSetEstimatedPlanSuccessDespiteCancelFlag pins down cancelled/success
+// precedence: like query.Execute's own res/cancelled split, a plan that did
+// come back is still installed and shown even if the fetch raced a cancel
+// signal.
 func TestSetEstimatedPlanSuccessDespiteCancelFlag(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")

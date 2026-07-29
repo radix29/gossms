@@ -35,6 +35,10 @@ const (
 	zoneButtons
 )
 
+// zoneNone is not a focusable zone — it's the "no gesture in progress"
+// value of PropertySheet.dragZone.
+const zoneNone focusZone = -1
+
 var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
 
 const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+C Copy   Esc Cancel"
@@ -56,6 +60,16 @@ type PropertySheet struct {
 
 	zone     focusZone
 	btnFocus int
+
+	// dragZone is the zone that claimed the Button1 press currently being
+	// held, or zoneNone between gestures. tcell resends Button1 on every
+	// motion event while the button is down, so without this a drag armed
+	// inside the form (its own scrollbar thumb, a GridRow's DataGrid
+	// selection) that wanders down onto the button row three lines below
+	// would activate OK/Cancel/Apply mid-gesture — ModalDialog's own
+	// mouseDragging latch can't stop that, since it's only armed by a press
+	// that lands on a button. Cleared on the ButtonNone release.
+	dragZone focusZone
 
 	headerLeft, headerRight string
 	hints                   string
@@ -88,7 +102,7 @@ type PropertySheet struct {
 // NewPropertySheet creates an empty PropertySheet. Call SetPages,
 // SetHeader, and wire the On* callbacks before the first Show.
 func NewPropertySheet(s tcell.Screen, title string) *PropertySheet {
-	p := &PropertySheet{screen: s, current: -1, hints: defaultHints}
+	p := &PropertySheet{screen: s, current: -1, hints: defaultHints, dragZone: zoneNone}
 	p.InitModal(s, title, 90, 28)
 	p.pageList = controls.NewListBox()
 	p.pageList.OnSelect = func(i int) { p.SelectPage(i) }
@@ -129,6 +143,9 @@ func (p *PropertySheet) Show() {
 	p.zone = zonePages
 	p.btnFocus = 0
 	p.message = ""
+	// A button action that hides the sheet (OK) leaves the gesture armed —
+	// the release lands while invisible and HandleMouse returns early.
+	p.dragZone = zoneNone
 	p.pageList.Focus(true)
 	p.ModalDialog.Show()
 	if len(p.pages) > 0 {
@@ -340,7 +357,18 @@ func (p *PropertySheet) activateButton(i int) {
 	}
 }
 
-func (p *PropertySheet) cancel() {
+func (p *PropertySheet) cancel() { p.Dismiss() }
+
+// Dismiss closes the sheet and notifies its owner via OnClose. Every path
+// that closes the sheet from the inside — Cancel, Escape, and an OK
+// handler that closes once its save succeeded — must go through here
+// rather than calling Hide, which is ModalDialog's and only takes the
+// dialog off screen. The owner's OnClose is what releases the per-showing
+// resources: for PropDialog and every New* dialog that means cancelling
+// the context their page loads run under, so a fetch still in flight when
+// OK is pressed is dropped instead of running on to its own 30s timeout
+// holding a pooled connection.
+func (p *PropertySheet) Dismiss() {
 	p.Hide()
 	if p.OnClose != nil {
 		p.OnClose()

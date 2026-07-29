@@ -109,27 +109,48 @@ conventions), see the `dev-with-local-gosmo` skill.
   checked at the top of `QueryPanel.HandleKey`/`HandleMouse`. Any future
   host that lays an overlay-owning widget next to another focusable one
   needs the same check.
-- A background goroutine that reports its result via `App.postEvent(fn)`
-  must send the `a.screen.EventQ() <- tcell.NewEventInterrupt(nil)` wakeup
-  (or call `a.wakeEventLoop()`, the named helper for it) **outside** the
-  `postEvent` closure — right after the `postEvent(...)` call, still on the
-  background goroutine. `Run()`'s event loop only drains queued callbacks
-  (`drainPending()`) when it wakes up for *some* event on `EventQ()`; if the
-  wakeup send is nested inside the very closure that's waiting to be
-  drained, nothing will ever wake the loop up to drain it; the result sits
-  queued, invisible, until an unrelated keypress happens to arrive and
-  drains it as a side effect. This was a real, shipped bug — expanding an
-  Object Explorer tree node showed "Loading..." forever until any other key
-  was pressed — that turned out to be present in every async operation in
-  `internal/tui` (`connectServer`, `connectForQueryPanel`, `loadChildren`,
-  `scriptObject`, `QueryPanel.runQuery`, `DetailBrowser.ShowNodeDetails`,
-  `PropertiesDialog.ShowDependencies`) except the ones already using
-  `wakeEventLoop()` (`clipboard.go`) or the equivalent inline pattern
-  (`tasks.go`'s `postProgress`/`postTaskDone`, later consolidated onto
-  `wakeEventLoop()` itself once it grew a nil-`a.screen` guard for
-  screen-less test `App`s) — see `wakeEventLoop`'s doc comment in `app.go`
-  and `PropDialog.post`'s in `prop_dialog.go`, which already explained the
-  trap correctly but wasn't followed everywhere.
+- **A mouse gesture belongs to whatever claimed its first press, start to
+  finish.** tcell resends `Button1` on every motion event while the button
+  is held, so any router that dispatches by screen position must record the
+  region that took the fresh press and replay every later event to it until
+  the release — otherwise a drag that merely wanders somewhere else is acted
+  on there. All three routers do this the same way: `App.gestureOwner`
+  (`app_events.go`), `QueryPanel.dragZone` (`query_panel.go`), and
+  `propsheet.PropertySheet.dragZone` (`sheet_input.go`), each with an
+  `armGesture`/`armDrag` at every branch that claims a press and a
+  `routeGesture`/`routeDrag` that replays to the owner. Every one of these
+  was a real, reproduced bug: a selection drag out of the SQL editor resized
+  the panes and flipped the results tab, one leftward out of the editor
+  armed an Object Explorer drag-and-drop, and a scrollbar drag in a
+  Properties dialog fired Script Changes. Also snapshot the modal layer
+  (`App.gestureOverlay`) — a dialog opened mid-gesture sees the held button
+  as a fresh press, since it saw nothing before it existed. A new router, or
+  a new region inside an existing one, needs the same treatment.
+- **A latch must not survive into the next showing of the same widget.** The
+  flip side of the rule above: a dialog button closes its dialog on the
+  *press*, so `ConsumeOutsideClick`'s reset never runs for the matching
+  release — `HandleMouse` bails on `!visible`, and `App` has already dropped
+  the dialog from `dialogStack`. `ModalDialog.mouseDragging` therefore stayed
+  latched, and `ButtonClicked` silently refused the first click of every
+  *re*-opening; the dialog looked frozen until an unrelated release cleared
+  it. Fixed by clearing both latches in `ModalDialog.Show()`. Any widget that
+  can be hidden mid-gesture by its own click handler needs the same.
+- A background goroutine reports its result with **`App.postAndWake(fn)`**.
+  Don't hand-write its two halves (`a.postEvent(fn)` then
+  `a.wakeEventLoop()`) — the helper exists so the ordering can't be got
+  wrong. The wakeup has to be sent **outside** the `postEvent` closure,
+  right after the `postEvent(...)` call, still on the background goroutine:
+  `Run()`'s event loop only drains queued callbacks (`drainPending()`) when
+  it wakes up for *some* event on `EventQ()`, so a wakeup nested inside the
+  very closure that's waiting to be drained can never fire, and the result
+  sits queued, invisible, until an unrelated keypress drains it as a side
+  effect. This was a real, shipped bug — expanding an Object Explorer tree
+  node showed "Loading..." forever until any other key was pressed — and it
+  was present in every async operation in `internal/tui` at the time.
+  `QueryPanel`'s elapsed-timer tick is the one legitimate bare
+  `wakeEventLoop()` caller: it has no callback to post, only a redraw to
+  ask for. See `postAndWake`'s and `wakeEventLoop`'s doc comments in
+  `app.go`.
 
 When splitting a file that's grown too large: one file per type/group,
 `common.go`, `doc.go`, and extract each section by exact line range and

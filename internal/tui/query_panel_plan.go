@@ -22,7 +22,7 @@ func (p *QueryPanel) ShowEstimatedPlan() {
 // runEstimatedPlan is runQuery's plan-fetching counterpart: same guards,
 // same p.executing/p.cancel single-flight fields (so Stop Execution and
 // Cancel Executing Query also cancel an in-flight plan fetch for free), same
-// postEvent/wakeEventLoop completion pattern. Uses query.ExecuteEstimatedPlan
+// postAndWake completion pattern. Uses query.ExecuteEstimatedPlan
 // rather than talking to gosmo directly, so a script containing GO batch
 // separators is split the same way Execute splits it — gosmo's own
 // EstimatedPlanContext takes one statement at a time and would otherwise
@@ -62,7 +62,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 		cancelled := ctx.Err() != nil
 		cancel()
 		close(done)
-		p.app.postEvent(func() {
+		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil
 			if !p.app.panelHosted(p) {
@@ -70,7 +70,6 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 			}
 			p.setEstimatedPlan(res, cancelled)
 		})
-		p.app.wakeEventLoop()
 	}()
 }
 
@@ -84,13 +83,10 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 //
 // On any failure (a SQL error, an empty or unparseable plan, or a genuine
 // cancellation), res itself becomes p.result instead — with a Messages
-// entry explaining why — which resultTabs naturally reduces to a single
-// "Messages" tab, the same fallback a normal Execute failure gets from
-// setResult. This also clears p.planView, so a previous run's plan can't
-// stay browsable next to an unrelated new failure's Messages — the tab
-// would otherwise still say "Execution Plan" and show stale (or, on the
-// very first-ever failure, simply empty) content instead of nothing to
-// show at all.
+// entry explaining why — which resultTabs reduces to a single "Messages"
+// tab, the same fallback setResult gives a normal Execute failure. It also
+// clears p.planView, so a previous run's plan can't stay browsable next to
+// an unrelated new failure's Messages.
 func (p *QueryPanel) setEstimatedPlan(res *query.Result, cancelled bool) {
 	p.result = nil // mutual exclusion — see setResult's p.planView = nil
 

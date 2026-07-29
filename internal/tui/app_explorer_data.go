@@ -24,7 +24,7 @@ func (a *App) loadChildren(node *explorerNode) {
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
 	go func() {
 		children := a.fetchChildren(ctx, node)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if !node.endLoad(seq) {
 				return // superseded by a newer fetch for this node
 			}
@@ -33,17 +33,15 @@ func (a *App) loadChildren(node *explorerNode) {
 				a.refreshAgentRootLabel(node)
 			}
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 // refreshAgentRootLabel appends " (Stopped)" to the just-shown "SQL Server
 // Agent" child's label once a background AgentInfoContext check confirms
-// the service isn't running. Split out of loadServerChildren (which stays
-// a static, no-query loader — see its doc comment) rather than querying
-// there, so this DB round trip never blocks the rest of the server's
-// top-level folders from appearing. A failed or inconclusive check (e.g.
-// the DMV isn't queryable) leaves the label alone rather than guessing.
+// the service isn't running. Split out of loadServerChildren, which stays a
+// static no-query loader, so this round trip never blocks the rest of the
+// server's top-level folders from appearing. A failed or inconclusive
+// check leaves the label alone.
 func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	var agentNode *explorerNode
 	for _, c := range serverNode.children {
@@ -60,14 +58,13 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		status, err := sc.Server.AgentInfoContext(ctx)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil || status.StatusText == "" || status.StatusText == "Unknown" || status.Running {
 				return
 			}
 			agentNode.label = agentRootLabel + " (Stopped)"
 			a.explorer.rebuild()
 		})
-		a.wakeEventLoop()
 	}()
 }
 
@@ -336,8 +333,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 		defer cancel()
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 		if err != nil {
-			a.postEvent(func() { a.setStatus(fmt.Sprintf("Script error: %v", err)) })
-			a.wakeEventLoop()
+			a.postAndWake(func() { a.setStatus(fmt.Sprintf("Script error: %v", err)) })
 			return
 		}
 		opts := gosmo.DefaultScriptOptions()
@@ -356,7 +352,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 		default:
 			ddl = fmt.Sprintf("-- Script %s not implemented for this object type\n", action)
 		}
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Script error: %v", err))
 				return
@@ -368,26 +364,21 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 			a.focusPanels()
 			a.connectForQueryPanel(qp, sc, dbName, nil)
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 // toggleDatabaseOffline takes node's database offline, or brings it back
 // online if it's already offline — Object Explorer's "Take Database
-// Offline"/"Bring Database Online" action. Unlike backupDatabase, this
-// runs for real immediately rather than only generating a script, so
-// going offline (which rolls back every existing connection to the
-// database) is confirmed first; coming back online is not, since it's
-// non-destructive. On success, node's own icon/state updates, and its
-// subtree is refreshed via refreshExplorerNode: an offline database's
-// expanded children are the single "(Database is offline)" placeholder
-// leaf (see explorer_databases.go) which must not linger once the database
-// is back online, and symmetrically an online database's real Tables/
-// Views/etc. subtree must not linger stale (and get re-queried against a
-// now-offline database) once it's taken offline.
+// Offline"/"Bring Database Online" action. This runs for real immediately,
+// so going offline (which rolls back every existing connection to the
+// database) is confirmed first; coming back online is not. On success
+// node's icon/state updates and its subtree is refreshed via
+// refreshExplorerNode: an offline database's expanded children are the
+// single "(Database is offline)" placeholder leaf (see
+// explorer_databases.go), and an online one's real Tables/Views subtree
+// must not linger stale and get re-queried against a now-offline database.
 func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	dbName := node.data.DBName
@@ -404,7 +395,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 			} else {
 				err = d.SetOnlineContext(ctx)
 			}
-			a.postEvent(func() {
+			a.postAndWake(func() {
 				if err != nil {
 					word := "online"
 					if goOffline {
@@ -422,7 +413,6 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 				}
 				a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
 			})
-			a.wakeEventLoop()
 		}()
 	}
 

@@ -60,8 +60,7 @@ type fromRef struct {
 // FROM, JOIN, INTO, UPDATE, or DELETE, each optionally schema-qualified and
 // optionally aliased (bare "AS alias" or just a trailing identifier).
 // Subquery contents (inside parentheses) are skipped rather than
-// mis-parsed — a documented v1 limitation, not a bug: see the package doc
-// comment above.
+// mis-parsed — a documented limitation, see the package doc comment above.
 func parseFromScope(tokens []sqlToken) []fromRef {
 	var refs []fromRef
 	depth := 0
@@ -115,8 +114,7 @@ func parseFromScope(tokens []sqlToken) []fromRef {
 
 // dmlStatementLeaders are the T-SQL keywords that can only ever begin a
 // new statement — used by dmlStatementStarts to split multiple statements
-// stacked in the editor with no ';' between them, the common way ad hoc
-// scripts get written in SSMS (a trailing ';' is optional, not required).
+// stacked in the editor with no ';' between them.
 var dmlStatementLeaders = map[string]bool{
 	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true,
 	"MERGE": true, "WITH": true,
@@ -134,8 +132,7 @@ var dmlStatementLeaders = map[string]bool{
 //     (CTE's SELECT, INSERT ... SELECT), not a new one — only WITH/INSERT
 //     itself is the boundary; an INSERT ... VALUES has no such SELECT to
 //     suppress, so a later, genuinely separate SELECT stacked right after
-//     it with no ';' is (rarely) missed — a known best-effort limitation,
-//     not a full parser, matching parseFromScope's own documented ones
+//     it with no ';' is (rarely) missed — a known limitation
 //
 // Combined with the ';'/GO boundaries statementStartOffset/
 // statementEndOffset already apply, this narrows FROM-scope/clause

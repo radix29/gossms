@@ -11,11 +11,11 @@ import (
 
 // agent_schedule_form.go is the schedule-frequency editing UI shared by New
 // Schedule (new_schedule_dialog.go) and Schedule Properties
-// (agent_schedule_props.go) — both need the identical Occurs/Recurs-every/
-// Day-of-month/Weekdays/Relative/Daily-frequency/Duration fields, previously
-// duplicated between the two. The package-level vars/helpers this file
-// builds on (scheduleOccursItems, weekdayNames, defaultWeekdayMask,
-// parseAgentClock, atLeast1, ...) live in agent_job_props_schedules.go.
+// (agent_schedule_props.go): the Occurs/Recurs-every/Day-of-month/Weekdays/
+// Relative/Daily-frequency/Duration fields. The package-level vars and
+// helpers it builds on (scheduleOccursItems, weekdayNames,
+// defaultWeekdayMask, parseAgentClock, atLeast1, ...) live in
+// agent_job_props_schedules.go.
 
 // scheduleFreqForm bundles every row of a schedule's own definition plus
 // the read/write helpers both callers need.
@@ -63,10 +63,8 @@ func newScheduleFreqForm() *scheduleFreqForm {
 	f.startTimeField.SetValidate(validateAgentClock)
 	f.endTimeField.SetValidate(validateAgentClock)
 	f.startDateField.SetValidate(validateAgentDate)
-	// endDateField's own text is ignored by readActiveRange whenever "No
-	// end date" is checked (see there) — so its validator defers to the
-	// checkbox too, rather than blocking Apply over stray text in a field
-	// that isn't actually going to be read.
+	// endDateField's text is ignored by readActiveRange whenever "No end
+	// date" is checked, so its validator defers to the checkbox too.
 	f.endDateField.SetValidate(func(s string) error {
 		if f.noEndDateCheck.Checked() {
 			return nil
@@ -78,11 +76,9 @@ func newScheduleFreqForm() *scheduleFreqForm {
 
 // validateAgentClock and validateAgentDate adapt parseAgentClock/
 // parseAgentDate's (value, error) shape to TextRow.SetValidate's plain
-// func(string) error — without these, readActiveRange's own dropped parse
-// errors let an invalid time/date field (e.g. a stray letter typed while
-// editing) silently fall back to 00:00:00 or "no end date" and reach the
-// server unnoticed, since Form.Validate only ever runs a row's installed
-// validator.
+// func(string) error, so Form.Validate rejects an invalid time/date field
+// instead of readActiveRange silently falling back to 00:00:00 or "no end
+// date".
 func validateAgentClock(s string) error {
 	_, err := parseAgentClock(s)
 	return err
@@ -95,9 +91,7 @@ func validateAgentDate(s string) error {
 
 // rows returns the Frequency/Daily frequency/Duration section rows, ready
 // to splice into a Form. Callers place nameField/enabledCheck in their own
-// identity section first — New Schedule's "Schedule identity" and Schedule
-// Properties' equivalent section differ slightly (the latter also has an
-// Owner row), so the two rows aren't bundled into this slice.
+// identity section first — Schedule Properties' also carries an Owner row.
 func (f *scheduleFreqForm) rows() []propsheet.Row {
 	return []propsheet.Row{
 		propsheet.Section("Frequency"),
@@ -135,13 +129,10 @@ func (f *scheduleFreqForm) name() string  { return strings.TrimSpace(f.nameField
 func (f *scheduleFreqForm) enabled() bool { return f.enabledCheck.Checked() }
 
 // populate fills every row from an existing schedule — used by Schedule
-// Properties. Every field not relevant to sch.FreqType is defaulted to a
-// safe, in-range value instead of showing sch.FreqInterval's raw,
-// differently-scoped value — FreqInterval's meaning is entirely
+// Properties. Fields not relevant to sch.FreqType are defaulted to a safe,
+// in-range value rather than showing sch.FreqInterval raw: its meaning is
 // FreqType-dependent (a Weekly bitmask, a Monthly day-of-month, a
-// MonthlyRelative day code, or unused). Mirrors the FreqType-gated sync
-// fixed in agent_job_props_schedules.go, see
-// sql-agent-job-props-review-2026-07 memory (Bug 3).
+// MonthlyRelative day code, or unused).
 func (f *scheduleFreqForm) populate(sch *gosmo.Schedule) {
 	f.nameField.SetValue(sch.Name)
 	f.enabledCheck.SetChecked(sch.Enabled)
@@ -188,9 +179,7 @@ func (f *scheduleFreqForm) populate(sch *gosmo.Schedule) {
 }
 
 // readFrequency builds a gosmo.ScheduleFrequency from the current field
-// values, gated by the selected Occurs (FreqType) — mirrors what
-// new_schedule_dialog.go's generalApply and agent_job_props_schedules.go's
-// commitCurrent each used to compute inline.
+// values, gated by the selected Occurs (FreqType).
 func (f *scheduleFreqForm) readFrequency() gosmo.ScheduleFrequency {
 	freq := gosmo.ScheduleFrequency{}
 	idx := f.occursSelect.Selected()
@@ -246,10 +235,9 @@ func (f *scheduleFreqForm) readActiveRange() (startDate, endDate time.Time, star
 }
 
 // frequencyDirty reports whether any field feeding readFrequency changed —
-// used by Schedule Properties to gate SetFrequencyContext behind real
-// per-row dirtiness rather than "the page is dirty" (see Bug 1 in
-// sql-agent-job-props-review-2026-07: a page-level dirty gate can trigger
-// an unrelated write with a phantom value).
+// used by Schedule Properties to gate SetFrequencyContext on real per-row
+// dirtiness rather than page-level dirtiness, which would write a phantom
+// value when an unrelated row on the page was the one edited.
 func (f *scheduleFreqForm) frequencyDirty() bool {
 	return f.occursSelect.Dirty() || f.recurEveryField.Dirty() || f.dayOfMonthField.Dirty() ||
 		f.weekdaysGrid.Dirty() || f.relativeSelect.Dirty() || f.relativeDaySelect.Dirty() ||

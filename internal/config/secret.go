@@ -5,7 +5,10 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -35,10 +38,24 @@ const keyFileName = "gossms.key"
 
 // loadOrCreateKey reads the encryption key from dir, generating and
 // persisting a new random 256-bit key on first run.
+//
+// A key file that exists but isn't 32 bytes is an error, not a reason to
+// generate a fresh one: overwriting it would permanently destroy the only
+// thing that can decrypt the passwords already in config.json, turning a
+// recoverable truncated write into unrecoverable data loss. Failing here
+// instead leaves the file in place to be restored or removed by hand —
+// Load treats that as "no saved passwords" and still loads everything else.
 func loadOrCreateKey(dir string) ([]byte, error) {
 	path := filepath.Join(dir, keyFileName)
-	if key, err := os.ReadFile(path); err == nil && len(key) == 32 {
+	switch key, err := os.ReadFile(path); {
+	case err == nil && len(key) == 32:
 		return key, nil
+	case err == nil:
+		return nil, fmt.Errorf("config: key file %s is %d bytes, expected 32 — "+
+			"restore it from a backup or delete it to start over (saved passwords will be lost)",
+			path, len(key))
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, err
 	}
 
 	key := make([]byte, 32)

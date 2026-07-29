@@ -57,11 +57,7 @@ func (v *PlanView) scrollDetails(delta int) {
 
 // scrollBottomProps shifts the Tree tab's bottom Properties section's
 // scroll offset by delta rows, clamped to its (Warnings-inclusive) row
-// count — mirrors scrollDetails for the "Operator Details" pane. Was
-// previously unreachable: propsSt.scroll existed but nothing ever wheel-
-// scrolled it, so any node with more attributes than the bottom section's
-// fixed height — including, notably, its synthetic Warnings row above —
-// was simply unreachable past the last visible row.
+// count — mirrors scrollDetails for the "Operator Details" pane.
 func (v *PlanView) scrollBottomProps(delta int) {
 	total := len(nodePropsForDisplay(v.selectedNode()))
 	max := core.Max(0, total-v.bottomRect.H)
@@ -187,12 +183,10 @@ func formatCount(f float64) string {
 }
 
 // nodePropsForDisplay returns n's raw attribute list with a synthetic
-// "Warnings" entry prepended when n has any. n.Props is a literal mirror
-// of the plan XML's attributes (decodeWarnings consumes the <Warnings>
-// element into n.Warnings instead, so it never lands in Props on its
-// own) — kept that way since other code relies on Props being exactly
-// what the XML said. This is the bottom Properties section's own display
-// list, built fresh at render/scroll time instead.
+// "Warnings" entry prepended when n has any. n.Props stays a literal mirror
+// of the plan XML's attributes — decodeWarnings consumes the <Warnings>
+// element into n.Warnings, so it never lands in Props — so this display
+// list is built fresh at render/scroll time instead.
 func nodePropsForDisplay(n *showplan.Node) []showplan.KV {
 	if n == nil {
 		return nil

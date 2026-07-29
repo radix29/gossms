@@ -109,3 +109,28 @@ func TestLoadOrCreateKeyDifferentDirsGetDifferentKeys(t *testing.T) {
 		t.Error("two independently generated keys collided; RNG or generation logic is broken")
 	}
 }
+
+// TestLoadOrCreateKeyRejectsWrongSizedKeyFile confirms an existing but
+// malformed key file is an error rather than a reason to generate a fresh
+// one — overwriting it would permanently destroy the only thing that can
+// decrypt the passwords already saved alongside it.
+func TestLoadOrCreateKeyRejectsWrongSizedKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, keyFileName)
+	truncated := []byte("only-sixteen-byt")
+	if err := os.WriteFile(path, truncated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadOrCreateKey(dir); err == nil {
+		t.Fatal("loadOrCreateKey() = nil error, want a refusal for a wrong-sized key file")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(truncated) {
+		t.Errorf("key file was rewritten (%d bytes), want it left untouched for manual recovery", len(after))
+	}
+}

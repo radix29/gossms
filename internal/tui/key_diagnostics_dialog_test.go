@@ -7,9 +7,9 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// TestKeyDiagnosticsRecordKeyPrependsNewest is a regression test: the most
-// recently pressed key must appear first, so a user pressing one key and
-// glancing at the dialog immediately sees the right line without scrolling.
+// TestKeyDiagnosticsRecordKeyPrependsNewest pins down newest-first
+// ordering, so pressing one key and glancing at the dialog shows the right
+// line without scrolling.
 func TestKeyDiagnosticsRecordKeyPrependsNewest(t *testing.T) {
 	d := &KeyDiagnosticsDialog{}
 	d.RecordKey(tcell.NewEventKey(tcell.KeyLeft, "", tcell.ModNone))
@@ -26,8 +26,8 @@ func TestKeyDiagnosticsRecordKeyPrependsNewest(t *testing.T) {
 	}
 }
 
-// TestKeyDiagnosticsRecordKeyCapsAtMax is a regression test: the log must
-// not grow without bound during a long diagnostic session.
+// TestKeyDiagnosticsRecordKeyCapsAtMax pins down that the log doesn't grow
+// without bound during a long diagnostic session.
 func TestKeyDiagnosticsRecordKeyCapsAtMax(t *testing.T) {
 	d := &KeyDiagnosticsDialog{}
 	for i := 0; i < maxKeyDiagLines+10; i++ {

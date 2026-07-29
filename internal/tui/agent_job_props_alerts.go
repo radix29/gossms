@@ -11,10 +11,9 @@ import (
 )
 
 // jobAlertLink tracks one SQL Server event alert's "does it respond to
-// this job" state — linked toggles via a grid cell exactly like login_props
-// .go's User Mapping page toggles a database's Map cell, since an alert's
-// job response (sysalerts.job_id) is a single boolean-ish relationship to
-// one job, not a list needing its own Add/Remove rows.
+// this job" state, toggled through a grid cell: an alert's job response
+// (sysalerts.job_id) is a single relationship to one job, not a list
+// needing its own Add/Remove rows.
 type jobAlertLink struct {
 	alert      *gosmo.Alert
 	origLinked bool
@@ -23,10 +22,8 @@ type jobAlertLink struct {
 
 // pageJobAlerts is the Alerts page: every SQL Server event alert (SQL-only
 // scope, same as the Alerts folder — WMI alerts excluded), toggled linked
-// or not to this job's response. New Alert/Edit Alert from the mockup are
-// left out — full alert authoring belongs to its own Alert Properties
-// dialog, which doesn't exist yet (a later phase); this page only manages
-// the job-response link on alerts that already exist.
+// or not to this job's response. It only manages that link; alert
+// authoring lives in Alert Properties (agent_alert_props.go).
 func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Alerts",
@@ -177,8 +174,8 @@ func notifyConditionIndex(level gosmo.NotifyLevel) int {
 
 // pageJobNotifications is the Notifications page: e-mail operator/condition
 // and automatic-delete condition are real, editable msdb state; net send,
-// pager, and Windows event log are shown disabled to clarify they're
-// excluded from SQL-only scope, matching the mockup exactly.
+// pager, and Windows event log are shown disabled — they're outside
+// SQL-only scope.
 func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Notifications",
@@ -221,14 +218,12 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				// Each write is gated behind whether ITS OWN rows are
-				// dirty, not just whether the page as a whole is dirty
-				// (PropertySheet.DirtyPages only tracks page-level
-				// dirtiness) — otherwise touching only the unrelated
-				// Delete Job section would still unconditionally rewrite
-				// the e-mail operator, which can be a phantom value
-				// (indexOf falls back to index 0 — an arbitrary real
-				// operator — when the job has none configured).
+				// Each write is gated on whether ITS OWN rows are dirty,
+				// not just on the page (PropertySheet.DirtyPages is only
+				// page-level) — otherwise editing the Delete Job section
+				// alone would rewrite the e-mail operator with indexOf's
+				// index-0 fallback, which is an arbitrary real operator
+				// when the job has none configured.
 				if emailCheck.Dirty() || operatorSelect.Dirty() || conditionSelect.Dirty() {
 					emailLevel := gosmo.NotifyNever
 					if emailCheck.Checked() {

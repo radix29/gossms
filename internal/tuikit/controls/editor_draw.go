@@ -28,7 +28,7 @@ func (e *Editor) Draw(s tcell.Screen) {
 		return
 	}
 
-	for row := 0; row < e.rect.H; row++ {
+	for row := 0; row < e.contentH(); row++ {
 		lineIdx := e.scrollRow + row
 		y := e.rect.Y + row
 
@@ -70,10 +70,11 @@ func (e *Editor) Draw(s tcell.Screen) {
 	}
 
 	e.drawScrollbar(s, p, len(e.lines))
+	e.drawScrollbarH(s, p)
 
 	if e.active {
 		curX, curY := e.cursorScreenPos()
-		if curY >= e.rect.Y && curY < e.rect.Y+e.rect.H &&
+		if curY >= e.rect.Y && curY < e.rect.Y+e.contentH() &&
 			curX >= contentX && curX < contentX+contentW {
 			s.ShowCursor(curX, curY)
 		}
@@ -88,12 +89,74 @@ func (e *Editor) Draw(s tcell.Screen) {
 // when there's actually something to scroll, matching
 // DataGrid/TreeView/ListBox's own call-site guard.
 func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
-	if total <= e.rect.H || e.rect.H <= 0 {
+	h := e.contentH()
+	if total <= h || h <= 0 {
 		return
 	}
 	sbStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Border)
 	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-	core.DrawScrollbar(s, e.rect.Right()-1, e.rect.Y, e.rect.H, total, e.rect.H, e.scrollRow, sbStyle, sbThumb)
+	core.DrawScrollbar(s, e.rect.Right()-1, e.rect.Y, h, total, h, e.scrollRow, sbStyle, sbThumb)
+}
+
+// hScrollbar returns the horizontal scrollbar's screen span and the
+// total/visible/offset describing it, or ok false when the longest line
+// already fits (or there's no room for a bar). The unit throughout is rune
+// columns, matching the editor's own horizontal model — scrollCol, cursorCol
+// and the draw loop all index lines by rune, one screen cell each — rather
+// than display width. That makes the track width and the visible count the
+// same number, which is why core.HandleScrollbarDragH can drive it directly.
+func (e *Editor) hScrollbar() (x, y, w, total, offset int, ok bool) {
+	if e.wrapMode || e.rect.H < 2 {
+		// Word wrap never scrolls sideways — buildVisualLines guarantees no
+		// segment is wider than the content area.
+		return 0, 0, 0, 0, 0, false
+	}
+	gw := e.gutterWidth()
+	w = e.rect.W - gw
+	total = e.longestLineLen()
+	if w <= 0 || total <= w {
+		return 0, 0, 0, 0, 0, false
+	}
+	return e.rect.X + gw, e.rect.Y + e.rect.H - 1, w, total, e.scrollCol, true
+}
+
+// hScrollbarVisible reports whether the bottom row is currently a scrollbar
+// rather than a line of text — see contentH.
+func (e *Editor) hScrollbarVisible() bool {
+	_, _, _, _, _, ok := e.hScrollbar()
+	return ok
+}
+
+// longestLineLen is the rune length of the longest line, measured over the
+// whole buffer rather than just the visible window: a bar sized off only
+// what's on screen would resize itself, and appear and vanish, as the
+// editor scrolled vertically. Each line's length is O(1), so this is a
+// cheap scan even for a large Messages buffer.
+func (e *Editor) longestLineLen() int {
+	longest := 0
+	for _, line := range e.lines {
+		if len(line) > longest {
+			longest = len(line)
+		}
+	}
+	return longest
+}
+
+// drawScrollbarH renders the horizontal scrollbar along the editor's bottom
+// row when the longest line doesn't fit. Unlike the vertical bar — which
+// overdraws the rightmost content column — this one gets a row of its own
+// (see contentH): a whole line of hidden text is too much to give up, and
+// the bar is what tells the user there's more text off to the right at all.
+// The gutter keeps its own column range; the track starts where the text
+// does, so the thumb's position matches the text it describes.
+func (e *Editor) drawScrollbarH(s tcell.Screen, p *theme.Palette) {
+	x, y, w, total, offset, ok := e.hScrollbar()
+	if !ok {
+		return
+	}
+	sbStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Border)
+	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	core.DrawScrollbarH(s, x, y, w, total, w, offset, sbStyle, sbThumb)
 }
 
 // cursorScreenPos returns the screen coordinates of the text cursor (valid

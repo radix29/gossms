@@ -113,12 +113,9 @@ func formatAgentDate(t time.Time) string {
 }
 
 // jobScheduleAttach tracks one shared schedule's "is it attached to this
-// job" state — mirrors agent_job_props_alerts.go's jobAlertLink, since
-// attaching/detaching a shared schedule is the same shape of relationship
-// as linking an alert's job response: a toggle against the full list of
-// schedules that exist, not a page-local editor of the schedule's own
-// definition (that's Schedule Properties, agent_schedule_props.go, reached
-// from the Schedules folder).
+// job" state — a toggle against the full list of schedules that exist, not
+// an editor of the schedule's own definition (that's Schedule Properties,
+// agent_schedule_props.go).
 type jobScheduleAttach struct {
 	sch          *gosmo.Schedule
 	origAttached bool
@@ -127,13 +124,8 @@ type jobScheduleAttach struct {
 
 // pageJobSchedules is the Schedules page: every shared schedule on the
 // server, toggled attached or not to this job, plus a read-only "selected
-// schedule" detail panel. Previously this page only listed schedules
-// already attached with no way to see what else was available to attach
-// (a real gap — SchedulesContext() only returns attached rows) and edited
-// a schedule's own definition inline; that edit surface moved to Schedule
-// Properties so a shared schedule's definition has exactly one place it's
-// edited, matching how Schedule Properties' own read-only Jobs page points
-// back here rather than duplicating the attach control.
+// schedule" detail panel. A schedule's own definition is edited only in
+// Schedule Properties, whose read-only Jobs page points back here.
 func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Schedules",
@@ -264,9 +256,8 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 }
 
 // atLeast1 clamps n to at least 1, the minimum every "recurs every" spinner
-// (agent_schedule_form.go) accepts — a freshly loaded schedule with a
-// stored 0 (unused for its FreqType) would otherwise show a field value
-// below the row's own declared minimum.
+// (agent_schedule_form.go) accepts — a stored 0, unused for its FreqType,
+// would otherwise fall below the row's declared minimum.
 func atLeast1(n int) int {
 	if n < 1 {
 		return 1

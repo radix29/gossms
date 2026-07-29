@@ -14,10 +14,9 @@ import (
 // tablePropPages builds the page set for Table Properties. General,
 // Columns, and Storage are read-only info pages; Change Tracking,
 // Permissions, and Extended Properties are editable. Temporal, Ledger,
-// Memory Optimization, FileTable, External Table, and Stretch — the
-// mockup's remaining, version-sensitive pages — aren't built: nothing on
-// this build's test databases uses any of them, and each needs its own
-// new gosmo DDL/query support with no way to verify it live.
+// Memory Optimization, FileTable, External Table, and Stretch aren't
+// built — each is version-sensitive and needs its own gosmo DDL/query
+// support.
 func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 	return []propPage{
 		pageTableGeneral(sc, dbName, schema, name),
@@ -25,7 +24,12 @@ func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 		pageTableStorage(sc, dbName, schema, name),
 		pageTableChangeTracking(sc, dbName, schema, name),
 		pageTablePermissions(sc, dbName, schema, name),
-		pageTableExtendedProperties(sc, dbName, schema, name),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{
+				Level0Type: "SCHEMA", Level0Name: schema,
+				Level1Type: "TABLE", Level1Name: name,
+			}
+		}),
 	}
 }
 
@@ -98,11 +102,9 @@ func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 	}
 }
 
-// pageTableColumns is a read-only grid (matching the mockup's own framing
-// of Columns as "effectively a read-only summary") with a "selected
-// column" detail section below it, rather than a separate popup modal —
-// the same inline-detail convention Files/Extended Properties already use
-// instead of introducing new modal infrastructure.
+// pageTableColumns is a read-only grid with a "selected column" detail
+// section below it rather than a popup modal — the same inline-detail
+// convention Files/Extended Properties use.
 func pageTableColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 	return propPage{
 		title: "Columns",
@@ -333,25 +335,6 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 					return d.RevokePermissionContext(ctx, schema, name, gosmo.ObjectPermission(permission), principal)
 				},
 			)
-			return f, apply, nil
-		},
-	}
-}
-
-func pageTableExtendedProperties(sc *db.ServerConn, dbName, schema, name string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schema, Level1Type: "TABLE", Level1Name: name}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
 			return f, apply, nil
 		},
 	}

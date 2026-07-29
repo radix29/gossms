@@ -3,10 +3,9 @@ package tui
 import "github.com/radix29/gossms/internal/tuikit/controls"
 
 // buildToolbar assembles the icon-only toolbar embedded in the menu bar
-// row, right-aligned (see App.layoutAll/App.draw). Icons are chosen in
-// todo/icons_toolbar.md. Called once at startup and again by
-// toggleActualExecutionPlan whenever the last button's ON/OFF state
-// changes — see that method's doc comment.
+// row, right-aligned (see App.layoutAll/App.draw). Called once at startup
+// and again by toggleActualExecutionPlan whenever the last button's ON/OFF
+// state changes.
 func (a *App) buildToolbar() []controls.ToolbarButton {
 	return []controls.ToolbarButton{
 		{Icon: "✚", Tooltip: "New Query", Action: func() { a.newQueryPanel() }},

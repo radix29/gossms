@@ -2,6 +2,7 @@ package layout
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -227,7 +228,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 			panel := pm.panels[i]
 			tabStyle := barStyle
 			if i == pm.active {
-				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+				tabStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
 			}
 			label := " " + tabLabelText(panel) + " "
 			core.DrawText(s, seg[0].X, pm.rect.Y, tabStyle, label)

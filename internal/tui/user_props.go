@@ -14,20 +14,15 @@ import (
 
 // userPropPages builds the page set for Database User Properties. General
 // is editable except for the fixed system users (dbo/guest/sys/
-// INFORMATION_SCHEMA, verified live to reject ALTER USER entirely); Owned
-// Schemas, Membership, Securables, and Extended Properties are always
-// editable. Contained/password users and external Microsoft Entra users
-// aren't built — this environment has neither (contained database
-// authentication is disabled server-wide, and there's no Azure AD auth
-// here to test against).
+// INFORMATION_SCHEMA, which reject ALTER USER entirely); Owned Schemas,
+// Membership, Securables, and Extended Properties are always editable.
+// Contained/password users and external Microsoft Entra users aren't built.
+//
 // userName is boxed in a *string shared by every page below: renaming a
-// user is the one edit in this dialog that changes the identity every
-// other page's lookup depends on, so pageUserGeneral's apply closure
-// updates *userName in place on success — otherwise Apply (which reloads
-// every page via PropDialog.InvalidateAll) would send the very next reload
-// looking for a user name that no longer exists. Same bug class as Key
-// Properties' pageKeyGeneral and Server Role Properties'
-// pageServerRoleGeneral (see server_role_props.go). dbName never changes,
+// user changes the identity every other page's lookup depends on, so
+// pageUserGeneral's apply closure updates *userName in place on success —
+// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
+// would look up a user name that no longer exists. dbName never changes,
 // so it stays a plain string.
 func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
@@ -35,8 +30,10 @@ func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
 		pageUserGeneral(sc, dbName, namePtr),
 		pageUserOwnedSchemas(sc, dbName, namePtr),
 		pageUserMembership(sc, dbName, namePtr),
-		pageUserSecurables(sc, dbName, namePtr),
-		pageUserExtendedProperties(sc, dbName, namePtr),
+		pageDatabasePrincipalSecurables(sc, dbName, namePtr),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
+		}),
 	}
 }
 
@@ -50,11 +47,11 @@ func findUser(ctx context.Context, sc *db.ServerConn, dbName, userName string) (
 	return d.UserByNameContext(ctx, userName)
 }
 
-// isSystemUser reports whether a user's name/login/default schema can't
-// be changed — verified live that ALTER USER on any of these fails
-// ("Cannot rename the user 'guest'.", "Cannot alter the user 'dbo'.",
-// same for sys/INFORMATION_SCHEMA), unlike the ordinary permission errors
-// other ALTER USER failures produce.
+// isSystemUser reports whether a user's name/login/default schema can't be
+// changed: ALTER USER on any of these fails outright ("Cannot rename the
+// user 'guest'.", "Cannot alter the user 'dbo'.", same for
+// sys/INFORMATION_SCHEMA), unlike the ordinary permission errors other
+// ALTER USER failures produce.
 func isSystemUser(name string) bool {
 	switch name {
 	case "dbo", "guest", "sys", "INFORMATION_SCHEMA":
@@ -117,10 +114,10 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 					userType = "SQL user with login"
 				} else {
 					// A genuine CREATE USER ... WITHOUT LOGIN reports
-					// authentication_type_desc = NONE, not INSTANCE
-					// (verified live) — INSTANCE with no matching login
-					// only happens when a FOR LOGIN user's login was
-					// later dropped out from under it, i.e. orphaned.
+					// authentication_type_desc = NONE, not INSTANCE:
+					// INSTANCE with no matching login only happens when a
+					// FOR LOGIN user's login was dropped out from under
+					// it, i.e. orphaned.
 					userType = "SQL user with login (not found)"
 				}
 			case "DATABASE":
@@ -447,94 +444,6 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 				}
 				return nil
 			}
-			return f, apply, nil
-		},
-	}
-}
-
-func pageUserSecurables(sc *db.ServerConn, dbName string, userName *string) propPage {
-	return propPage{
-		title: "Securables",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			entries, err := d.PermissionsForPrincipalContext(ctx, *userName)
-			if err != nil {
-				return nil, nil, err
-			}
-			tables, err := d.TablesContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			views, err := d.ViewsContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			schemas, err := d.SchemasContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			seen := make(map[string]bool)
-			var initial []securable
-			for _, e := range entries {
-				s := securable{Type: e.SecurableType, Schema: e.Schema, Name: e.Name}
-				if !seen[s.key()] {
-					seen[s.key()] = true
-					initial = append(initial, s)
-				}
-			}
-
-			var available []securable
-			addIfNew := func(s securable) {
-				if !seen[s.key()] {
-					seen[s.key()] = true
-					available = append(available, s)
-				}
-			}
-			addIfNew(securable{Type: "DATABASE"})
-			for _, s := range schemas {
-				addIfNew(securable{Type: "SCHEMA", Name: s.Name})
-			}
-			for _, t := range tables {
-				addIfNew(securable{Type: "TABLE", Schema: t.Schema, Name: t.Name})
-			}
-			for _, v := range views {
-				addIfNew(securable{Type: "VIEW", Schema: v.Schema, Name: v.Name})
-			}
-
-			f, apply := buildSecurablesMatrix(initial, entries, available, 8, 12,
-				func(ctx context.Context, s securable, permission string) error {
-					return grantSecurable(ctx, d, s, permission, *userName)
-				},
-				func(ctx context.Context, s securable, permission string) error {
-					return denySecurable(ctx, d, s, permission, *userName)
-				},
-				func(ctx context.Context, s securable, permission string) error {
-					return revokeSecurable(ctx, d, s, permission, *userName)
-				},
-			)
-			return f, apply, nil
-		},
-	}
-}
-
-func pageUserExtendedProperties(sc *db.ServerConn, dbName string, userName *string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *userName}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
 			return f, apply, nil
 		},
 	}

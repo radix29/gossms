@@ -185,10 +185,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 
 	// The config directory (holding both config.json and the encryption
-	// key) must end up owner-only, matching loadOrCreateKey's own
-	// MkdirAll — Save used to create it 0755 on a fresh install since it
-	// runs (and calls MkdirAll) before loadOrCreateKey does, and MkdirAll
-	// never chmods an already-existing directory.
+	// key) must end up owner-only, matching loadOrCreateKey's own MkdirAll.
+	// Save runs (and calls MkdirAll) first on a fresh install, and MkdirAll
+	// never chmods an already-existing directory, so Save's own mode is
+	// what sticks.
 	info, err := os.Stat(filepath.Join(xdgDir, "gossms"))
 	if err != nil {
 		t.Fatalf("stat config dir: %v", err)
@@ -249,5 +249,95 @@ func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "s3cr3t!") {
 		t.Error("config.json contains the plaintext password; it should be AES-GCM encrypted")
+	}
+}
+
+// TestSaveIsAtomic confirms Save never leaves a partially written
+// config.json behind: the write goes to a temp file in the same directory
+// and is renamed into place. A plain in-place truncate+write would let a
+// crash mid-write produce invalid JSON, which Load discards wholesale —
+// silently losing every saved connection.
+func TestSaveIsAtomic(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfg := &Config{}
+	cfg.AddOrUpdate(Connection{Server: "myserver", Port: 1433, User: "sa", Password: "hunter2"})
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() = %v", err)
+	}
+
+	dir := filepath.Dir(configPath())
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp") {
+			t.Errorf("Save left a temp file behind: %s", e.Name())
+		}
+	}
+
+	// The renamed-into-place file must still be owner-only, not whatever
+	// permissions CreateTemp happened to give the temp file.
+	info, err := os.Stat(configPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("config.json mode = %04o, want 0600", perm)
+	}
+
+	if got := Load(); len(got.Connections) != 1 || got.Connections[0].Password != "hunter2" {
+		t.Errorf("Load() after atomic Save didn't round-trip: %+v", got.Connections)
+	}
+}
+
+// TestSaveCarriesFieldsItDoesNotNameExplicitly confirms Save copies the
+// whole Config rather than re-listing its fields — the hand-written literal
+// it replaced silently dropped any field added to Config later.
+func TestSaveCarriesUnnamedFields(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	cfg := &Config{
+		IconStyle:            IconStylePortable,
+		MaxCellLength:        123,
+		MaxResultRows:        456,
+		IntelliSenseDisabled: true,
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() = %v", err)
+	}
+	got := Load()
+	if got.IconStyle != IconStylePortable || got.MaxCellLength != 123 ||
+		got.MaxResultRows != 456 || !got.IntelliSenseDisabled {
+		t.Errorf("round-tripped config = %+v, want every field preserved", got)
+	}
+}
+
+// TestLoadCorruptFileKeepsACopy confirms a config.json that exists but
+// doesn't parse is preserved under .corrupt before being discarded — the
+// passwords are unrecoverable either way, but the server/user/database
+// fields are readable by hand.
+func TestLoadCorruptFileKeepsACopy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "gossms")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"connections":[{"server":"myserver"`) // truncated mid-write
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	Load()
+
+	saved, err := os.ReadFile(filepath.Join(cfgDir, "config.json.corrupt"))
+	if err != nil {
+		t.Fatalf("no .corrupt copy kept: %v", err)
+	}
+	if string(saved) != string(raw) {
+		t.Errorf(".corrupt copy = %q, want the original bytes %q", saved, raw)
 	}
 }

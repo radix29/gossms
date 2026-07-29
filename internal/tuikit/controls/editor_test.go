@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -96,13 +97,13 @@ func TestEditorDeleteLines(t *testing.T) {
 	}
 }
 
-// TestEditorDuplicateDeleteLinesCollapseSelectionWhenCalledDirectly is a
-// regression test: DuplicateLines/DeleteLines must collapse an active
-// selection themselves, matching their doc comments. Before the fix, only
-// HandleKey's post-switch dropSelection cleanup did this — invoking them
-// directly (the Edit menu's path, see menu.go) left a selection with a
-// stale anchor row, which for DeleteLines could point past the new
-// buffer's end and panic on the next SelectedText call.
+// TestEditorDuplicateDeleteLinesCollapseSelectionWhenCalledDirectly pins
+// down that DuplicateLines/DeleteLines collapse an active selection
+// themselves, matching their doc comments, rather than relying on
+// HandleKey's post-switch dropSelection cleanup: invoked directly (the Edit
+// menu's path, see menu.go) they would otherwise leave a stale anchor row,
+// which for DeleteLines can point past the new buffer's end and panic on
+// the next SelectedText call.
 func TestEditorDuplicateDeleteLinesCollapseSelectionWhenCalledDirectly(t *testing.T) {
 	e := newTestEditor("one\ntwo\nthree")
 	e.selecting, e.selBlock = true, false
@@ -243,11 +244,9 @@ func TestEditorCaseConversion(t *testing.T) {
 	}
 }
 
-// TestEditorSelectionDeletedByBackspace is a regression test: selecting
-// text then pressing Backspace/Delete must actually remove it. Before the
-// HandleKey restructure, the pre-switch "drop selection" assignment ran
-// before deleteSelection() could see it, silently leaving the selected
-// text in place.
+// TestEditorSelectionDeletedByBackspace pins down that selecting text then
+// pressing Backspace/Delete removes it — dropping the selection before
+// deleteSelection() can see it silently leaves the text in place.
 func TestEditorSelectionDeletedByBackspace(t *testing.T) {
 	e := newTestEditor("abcdef")
 	for i := 0; i < 3; i++ {
@@ -419,13 +418,13 @@ func TestEditorCtrlSpaceFiresRightClickAtCursor(t *testing.T) {
 	}
 }
 
-// TestEditorSetTextResetsSelectionAndUndo is a regression test: SetText
-// must clear any active selection and the undo/redo stacks, which refer to
-// the document being replaced. Before the fix, a stale selection anchor
-// left past the new (shorter) buffer's end made SelectedText panic, and
-// Undo could restore text from the document that existed before SetText —
-// both reachable via connect_dialog.go's fExtraProps.SetText when applying
-// a saved connection.
+// TestEditorSetTextResetsSelectionAndUndo pins down that SetText clears any
+// active selection and the undo/redo stacks, which refer to the document
+// being replaced: a stale selection anchor past the new (shorter) buffer's
+// end makes SelectedText panic, and Undo could otherwise restore text from
+// the document that existed before SetText — both reachable via
+// connect_dialog.go's fExtraProps.SetText when applying a saved
+// connection.
 func TestEditorSetTextResetsSelectionAndUndo(t *testing.T) {
 	e := newTestEditor("a long original line")
 	e.HandleKey(key(tcell.KeyRight, tcell.ModShift))
@@ -467,12 +466,11 @@ func TestEditorWordDelete(t *testing.T) {
 	}
 }
 
-// TestEditorUndoStackCapped is a regression test for the bounded undo
-// stack: pushUndo must drop the oldest snapshot once maxUndoSteps is
-// exceeded, rather than growing without limit. Typing maxUndoSteps+5
-// characters pushes maxUndoSteps+5 snapshots, but only the newest
-// maxUndoSteps survive; undoing all of them can only rewind 5 characters
-// short of empty.
+// TestEditorUndoStackCapped covers the bounded undo stack: pushUndo drops
+// the oldest snapshot once maxUndoSteps is exceeded rather than growing
+// without limit. Typing maxUndoSteps+5 characters pushes maxUndoSteps+5
+// snapshots, but only the newest maxUndoSteps survive; undoing all of them
+// rewinds to 5 characters short of empty.
 func TestEditorUndoStackCapped(t *testing.T) {
 	e := newTestEditor("")
 	for i := 0; i < maxUndoSteps+5; i++ {
@@ -492,10 +490,10 @@ func TestEditorUndoStackCapped(t *testing.T) {
 	}
 }
 
-// TestEditorShiftClickExtendsFromCursorWhenNoSelection is a regression
-// test: Shift+Click on a fresh click (no active selection yet) must
-// extend from the cursor's current position, not re-anchor at the click
-// point the way a plain click does.
+// TestEditorShiftClickExtendsFromCursorWhenNoSelection pins down that
+// Shift+Click with no active selection yet extends from the cursor's
+// current position, rather than re-anchoring at the click point the way a
+// plain click does.
 func TestEditorShiftClickExtendsFromCursorWhenNoSelection(t *testing.T) {
 	e := newTestEditor("hello world")
 	e.SetBounds(0, 0, 40, 5)
@@ -511,10 +509,10 @@ func TestEditorShiftClickExtendsFromCursorWhenNoSelection(t *testing.T) {
 	}
 }
 
-// TestEditorShiftClickExtendsExistingSelection is a regression test:
-// Shift+Click with a selection already active must keep the existing
-// anchor and only move the cursor, rather than collapsing to a fresh
-// selection anchored at the click point.
+// TestEditorShiftClickExtendsExistingSelection pins down that Shift+Click
+// with a selection already active keeps the existing anchor and only moves
+// the cursor, rather than collapsing to a fresh selection anchored at the
+// click point.
 func TestEditorShiftClickExtendsExistingSelection(t *testing.T) {
 	e := newTestEditor("hello world")
 	e.SetBounds(0, 0, 40, 5)
@@ -740,4 +738,126 @@ func TestEditorHorizontalWheelScroll(t *testing.T) {
 	if e.scrollCol != 0 {
 		t.Fatalf("plain WheelDown must not touch scrollCol, got %d", e.scrollCol)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Horizontal scrollbar
+// ---------------------------------------------------------------------------
+
+func TestEditorHScrollbarOnlyWhenALineOverflows(t *testing.T) {
+	e := newTestEditor("short\nalso short")
+	e.SetBounds(0, 0, 40, 6)
+	if e.hScrollbarVisible() {
+		t.Fatal("bar drawn even though every line fits")
+	}
+	if got := e.contentH(); got != 6 {
+		t.Fatalf("contentH with no bar = %d, want the full height 6", got)
+	}
+
+	e.SetText("short\n" + strings.Repeat("x", 200))
+	if !e.hScrollbarVisible() {
+		t.Fatal("no bar for a buffer whose longest line is far wider than the editor")
+	}
+	if got := e.contentH(); got != 5 {
+		t.Fatalf("contentH with a bar = %d, want 5 — the bottom row belongs to the bar", got)
+	}
+}
+
+// Word wrap has no horizontal scrolling at all, so it must never give up a
+// row to a bar it would then never draw.
+func TestEditorHScrollbarNeverInWrapMode(t *testing.T) {
+	e := newTestEditor(strings.Repeat("x", 200))
+	e.SetBounds(0, 0, 40, 6)
+	e.SetWrapMode(true)
+	if e.hScrollbarVisible() {
+		t.Fatal("bar reported in wrap mode")
+	}
+	if got := e.contentH(); got != 6 {
+		t.Fatalf("contentH in wrap mode = %d, want the full height 6", got)
+	}
+}
+
+func TestEditorHScrollbarDragScrollsSideways(t *testing.T) {
+	e := newTestEditor(strings.Repeat("x", 200))
+	e.SetBounds(0, 0, 40, 6)
+	x, y, w, _, _, ok := e.hScrollbar()
+	if !ok {
+		t.Fatal("expected a horizontal scrollbar")
+	}
+
+	// Press two-thirds along the track, then release.
+	e.HandleMouse(tcell.NewEventMouse(x+w*2/3, y, tcell.Button1, tcell.ModNone))
+	if e.scrollCol == 0 {
+		t.Fatal("dragging the thumb two-thirds along left scrollCol at 0")
+	}
+	scrolled := e.scrollCol
+	e.HandleMouse(tcell.NewEventMouse(x+w*2/3, y, tcell.ButtonNone, tcell.ModNone))
+	if e.sbDraggingX {
+		t.Error("sbDraggingX still latched after the release")
+	}
+
+	// Back to the far left.
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	if e.scrollCol != 0 {
+		t.Fatalf("scrollCol after dragging to the far left = %d, want 0 (was %d)", e.scrollCol, scrolled)
+	}
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+// wideTestEditor is 20 long lines in a 40x6 rect — wide enough and tall
+// enough that both scrollbars are showing.
+func wideTestEditor() *Editor {
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = strings.Repeat("x", 200)
+	}
+	e := newTestEditor(strings.Join(lines, "\n"))
+	e.SetBounds(0, 0, 40, 6)
+	return e
+}
+
+// The bar's row is not a line of text: nothing may put the cursor on the
+// line that would otherwise have been drawn there. SetCursorFromScreen is
+// the reachable path — the app layer calls it with the drop coordinates of
+// an Object Explorer drag-and-drop, which can land anywhere in the rect.
+func TestEditorCursorFromScreenSkipsScrollbarRow(t *testing.T) {
+	e := wideTestEditor()
+	_, y, _, _, _, ok := e.hScrollbar()
+	if !ok {
+		t.Fatal("expected a horizontal scrollbar")
+	}
+	if y != 5 {
+		t.Fatalf("bar row = %d, want the rect's bottom row 5", y)
+	}
+
+	e.SetCursorFromScreen(e.rect.X+e.gutterWidth(), y)
+	if e.cursorRow > 4 {
+		t.Errorf("cursorRow after dropping on the scrollbar row = %d, want at most 4 — row 5 isn't a text row", e.cursorRow)
+	}
+}
+
+// A selection dragged downward off the last text line reaches the bar's
+// row, and the track spans the whole content width — the gesture has to
+// stay with the text, not be taken over by the bar. See the gesture-
+// ownership rule in CLAUDE.md.
+func TestEditorSelectionDragIsNotStolenByHScrollbar(t *testing.T) {
+	e := wideTestEditor()
+	_, barY, _, _, _, _ := e.hScrollbar()
+	contentX := e.rect.X + e.gutterWidth()
+
+	// Press on the first text line, then drag down across the bar's row.
+	e.HandleMouse(tcell.NewEventMouse(contentX+3, 0, tcell.Button1, tcell.ModNone))
+	before := e.scrollCol
+	e.HandleMouse(tcell.NewEventMouse(contentX+20, barY, tcell.Button1, tcell.ModNone))
+
+	if e.sbDraggingX {
+		t.Error("the scrollbar latched onto a text-selection drag that merely crossed its row")
+	}
+	if e.scrollCol != before {
+		t.Errorf("scrollCol moved from %d to %d during a text-selection drag", before, e.scrollCol)
+	}
+	if !e.selecting {
+		t.Error("the text selection was dropped when the drag reached the scrollbar row")
+	}
+	e.HandleMouse(tcell.NewEventMouse(contentX+20, barY, tcell.ButtonNone, tcell.ModNone))
 }

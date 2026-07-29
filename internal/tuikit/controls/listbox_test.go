@@ -75,12 +75,11 @@ func TestListBoxClickSameRowActivates(t *testing.T) {
 	}
 }
 
-// TestListBoxHeldButtonOnSameRowDoesNotReActivate pins the fix for tcell's
-// all-motion mouse tracking resending Buttons()==Button1 on every cursor
-// motion while the button stays down: a single physical click on an
-// already-selected row that so much as twitches used to fire OnActivate
-// twice, since ListBox had no mouseDragging-style latch (unlike every
-// other click-position widget in the package).
+// TestListBoxHeldButtonOnSameRowDoesNotReActivate covers tcell's all-motion
+// mouse tracking resending Buttons()==Button1 on every cursor motion while
+// the button stays down: without ListBox's mouseDragging latch, a single
+// physical click on an already-selected row that so much as twitches fires
+// OnActivate twice.
 func TestListBoxHeldButtonOnSameRowDoesNotReActivate(t *testing.T) {
 	l := newTestListBox("a", "b", "c")
 	l.SetSelected(1)

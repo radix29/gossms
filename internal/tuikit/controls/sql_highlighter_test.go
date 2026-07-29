@@ -38,11 +38,11 @@ func highlightLineWords(t *testing.T, lines [][]rune, idx int) []string {
 	}
 }
 
-// A word starting with '@'/'#' must not be a leading character the
-// identifier-body loop itself has to consume (see the comment in
-// SQLHighlighter's Word branch) — otherwise the tokenizer never advances
-// past it and loops forever. This covers local variables, system
-// variables (@@ROWCOUNT), and temp tables (#Temp, ##Global).
+// A word starting with '@'/'#' must not be left for the identifier-body
+// loop to consume (see the comment in SQLHighlighter's Word branch) — that
+// loop's condition is already false there, so the tokenizer never advances
+// and spins forever. Covers local variables, system variables (@@ROWCOUNT),
+// and temp tables (#Temp, ##Global).
 func TestSQLHighlighterDoesNotHangOnAtOrHashPrefixedWords(t *testing.T) {
 	for _, line := range []string{
 		"DECLARE @id INT",
@@ -102,11 +102,10 @@ func TestSQLHighlighterBlockCommentSingleLine(t *testing.T) {
 	}
 }
 
-// TestSQLHighlighterBlockCommentSpansMultipleLines is the core regression
-// test for multi-line block comment support: a comment opened on one line
-// and closed two lines later must color every rune in between — including
-// entire lines that are nothing but comment body — and stop coloring once
-// the closing "*/" is reached.
+// TestSQLHighlighterBlockCommentSpansMultipleLines covers multi-line block
+// comments: one opened on one line and closed two lines later colors every
+// rune in between — including entire lines that are nothing but comment
+// body — and stops once the closing "*/" is reached.
 func TestSQLHighlighterBlockCommentSpansMultipleLines(t *testing.T) {
 	lines := [][]rune{
 		[]rune("SELECT 1 /* start"),
@@ -148,9 +147,9 @@ func TestSQLHighlighterBlockCommentSpansMultipleLines(t *testing.T) {
 }
 
 // TestSQLHighlighterUnterminatedBlockCommentDoesNotHang guards the same
-// class of bug as the @/# regression test above: an unterminated /*
-// (blockCommentEnd returning -1 forever) must not spin — every line after
-// it should just be treated as fully inside the comment.
+// class of bug as the @/# test above: an unterminated /* (blockCommentEnd
+// returning -1 forever) must not spin — every line after it is treated as
+// fully inside the comment.
 func TestSQLHighlighterUnterminatedBlockCommentDoesNotHang(t *testing.T) {
 	lines := [][]rune{
 		[]rune("SELECT 1 /* never closed"),

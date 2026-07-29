@@ -4,24 +4,24 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// keyPropPages builds the page set for Primary/Unique Key Properties — SSMS
-// as reference, no mockup for this one. A PRIMARY KEY or UNIQUE constraint
-// is implemented as a unique index (sys.indexes.is_primary_key/
-// is_unique_constraint), so most pages reuse Index Properties' own page
-// builders unchanged. Two Index Properties pages are dropped entirely:
-// Included Columns and Filter — ALTER TABLE ADD CONSTRAINT has no INCLUDE
-// or WHERE clause, so a constraint-backed index can never have either.
-// name is boxed in a *string shared by every page below: renaming a key is
-// the one edit in this dialog that changes the identity every other page's
-// findIndex lookup depends on, so pageKeyGeneral's apply closure updates
-// *name in place on success — otherwise Apply (which reloads every page via
-// PropDialog.InvalidateAll, see prop_dialog.go's runApply) would send the
-// very next reload looking for an index name that no longer exists.
+// keyPropPages builds the page set for Primary/Unique Key Properties. A
+// PRIMARY KEY or UNIQUE constraint is implemented as a unique index
+// (sys.indexes.is_primary_key/is_unique_constraint), so most pages reuse
+// Index Properties' own page builders unchanged. Included Columns and
+// Filter are left out: ALTER TABLE ADD CONSTRAINT has no INCLUDE or WHERE
+// clause, so a constraint-backed index can never have either.
+//
+// name is boxed in a *string shared by every page below: renaming a key
+// changes the identity every other page's findIndex lookup depends on, so
+// pageKeyGeneral's apply closure updates *name in place on success —
+// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
+// would look up an index name that no longer exists.
 func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	namePtr := &name
 	return []propPage{
@@ -29,7 +29,13 @@ func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name 
 		pageKeyOptions(sc, dbName, schema, table, namePtr),
 		pageIndexStorage(sc, dbName, schema, table, namePtr),
 		pageIndexFragmentation(d, sc, dbName, schema, table, namePtr),
-		pageIndexExtendedProperties(sc, dbName, schema, table, namePtr),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{
+				Level0Type: "SCHEMA", Level0Name: schema,
+				Level1Type: "TABLE", Level1Name: table,
+				Level2Type: "INDEX", Level2Name: *namePtr,
+			}
+		}),
 	}
 }
 
@@ -100,11 +106,10 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 }
 
 // pageKeyOptions mirrors Index Properties' Options page but drops Ignore
-// duplicate keys entirely — live-verified against a real PK-backed index:
-// SQL Server rejects IGNORE_DUP_KEY outright in ALTER INDEX ... SET on any
-// index enforcing a PRIMARY KEY or UNIQUE constraint, even to set it to its
-// existing value, so the option can't just be hidden-but-still-applied the
-// way it would for a no-op.
+// duplicate keys entirely: SQL Server rejects IGNORE_DUP_KEY outright in
+// ALTER INDEX ... SET on any index enforcing a PRIMARY KEY or UNIQUE
+// constraint, even to set it to its existing value, so it can't be
+// hidden-but-still-applied the way a no-op option could.
 func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{
 		title: "Options",

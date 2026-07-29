@@ -98,13 +98,10 @@ func stepNumberText(e *jobStepEdit) string {
 }
 
 // pageJobSteps is the Steps page: a grid of the job's T-SQL steps (SQL-only
-// scope — CmdExec, PowerShell, SSIS, and every other subsystem the mockup
-// excludes stay excluded here too) plus an inline "selected step" edit
-// panel, following the Add/Remove-button idiom database_props_files.go's
-// Files page established. Step reordering (SSMS's Move Up/Move Down) is
-// left out: there's no documented stored procedure for it, and the
-// mockup's own step_id-renumbering caveat on Delete signals it's genuinely
-// fiddly to get right — worth a dedicated look later rather than guessing.
+// scope — CmdExec, PowerShell, SSIS and every other subsystem excluded)
+// plus an inline "selected step" edit panel, following the
+// Add/Remove-button idiom of database_props_files.go's Files page. There
+// is no step reordering: msdb has no documented stored procedure for it.
 func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Steps",
@@ -230,12 +227,11 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {
-				// Deliberately doesn't call commitCurrent() first — see
-				// database_props_files.go's addBtn comment: nameField
-				// doubles as the previously-selected step's live edit and
-				// the new step's seed name, and committing here would
-				// misfile a freshly typed name as a rename of the wrong
-				// step instead of a new one.
+				// Deliberately doesn't call commitCurrent() first:
+				// nameField doubles as the previously-selected step's
+				// live edit and the new step's seed name, so committing
+				// here would misfile a freshly typed name as a rename of
+				// the wrong step.
 				name := nameField.Value()
 				if name == "" {
 					return
@@ -329,14 +325,12 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return err
 				}
 				// An existing step needs a fresh *gosmo.JobStep fetched
-				// under j (the job as it exists right now, under its
-				// current name) rather than e.orig directly —
+				// under j, the job under its current name:
 				// JobStep.UpdateContext/DeleteContext build their SQL
-				// from an internal job-name reference captured back when
-				// this page first loaded the step list, which goes stale
-				// the moment a same-click General rename runs first in
-				// this same Apply pipeline. Fetched lazily, once, only if
-				// an existing step actually needs it.
+				// from a job-name reference captured when this page
+				// loaded the step list, which a same-click General
+				// rename makes stale. Fetched lazily, once, only if an
+				// existing step needs it.
 				var freshSteps []*gosmo.JobStep
 				freshStep := func(stepID int) (*gosmo.JobStep, error) {
 					if freshSteps == nil {
@@ -355,12 +349,8 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				// Three fixed passes — updates, then deletes, then adds —
 				// because sp_delete_jobstep renumbers every later step's
-				// step_id down by one (live-verified: deleting step 1 of
-				// three leaves the survivors as steps 1 and 2). Interleaved
-				// in grid order, a second delete (or an update of a step
-				// after a deleted one) would target the pre-renumbering
-				// step_id and hit the wrong step. Updates run first, while
-				// every loaded step_id is still valid; deletes then run in
+				// step_id down by one. Updates run first, while every
+				// loaded step_id is still valid; deletes then run in
 				// descending step_id order, so each delete only renumbers
 				// steps already dealt with.
 				for _, e := range edits {

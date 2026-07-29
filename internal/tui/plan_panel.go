@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tui/planview"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -51,7 +52,7 @@ func (pp *PlanPanel) Draw(s tcell.Screen) {
 	pal := theme.Active()
 	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
 	if pp.active {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: pp.rect.X, Y: pp.rect.Y, W: pp.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, pp.rect.X+1, pp.rect.Y, pp.rect.W-2, titleStyle, pp.title)

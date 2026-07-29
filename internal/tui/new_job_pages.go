@@ -232,12 +232,11 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	return f, apply, stepCount
 }
 
-// buildNewJobSchedulesPage builds New Job's Schedules page: attach
-// existing shared schedules at creation time (a toggle grid, the same
-// idiom new_schedule_dialog.go's own Jobs page uses in reverse). Creating
-// a brand-new schedule inline here would duplicate that dialog's General
-// page for no real benefit — create the schedule first, then attach it,
-// either here or from the job's own Schedules page afterward.
+// buildNewJobSchedulesPage builds New Job's Schedules page: attach existing
+// shared schedules at creation time (a toggle grid, the same idiom
+// new_schedule_dialog.go's own Jobs page uses in reverse). A brand-new
+// schedule can't be created inline — create it in New Schedule first, then
+// attach it here or from the job's own Schedules page.
 func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply) {
 	grid := propsheet.NewToggleGrid([]string{"Attach", "Schedule"}, []int{0}, 12)
 	text := make([][]string, len(pf.scheduleNames))

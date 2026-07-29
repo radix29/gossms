@@ -14,10 +14,9 @@ type PropertyRow = dialogs.PropertyRow
 
 // PropertiesDialog wraps tuikit/dialogs.PropertiesDialog — the flat,
 // single-page key/value viewer used for the About box and Object
-// Dependencies. Server and Database Properties moved to the multi-page
-// PropDialog (prop_dialog.go / propsheet.PropertySheet); a page list and
-// OK/Cancel/Apply are unnecessary weight for these two single, read-only
-// lists, so they stayed on the simpler viewer.
+// Dependencies. Multi-page, editable dialogs use PropDialog
+// (prop_dialog.go / propsheet.PropertySheet) instead; a page list and
+// OK/Cancel/Apply are unnecessary weight for these two read-only lists.
 type PropertiesDialog struct {
 	*dialogs.PropertiesDialog
 
@@ -65,7 +64,7 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.seq || !d.Visible() {
 				return
 			}
@@ -75,7 +74,6 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 			}
 			d.ShowProperties(title, rows)
 		})
-		app.wakeEventLoop()
 	}()
 }
 

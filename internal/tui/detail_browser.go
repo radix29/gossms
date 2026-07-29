@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -43,13 +44,10 @@ type DetailBrowser struct {
 
 	// pending records, per node, the seq of the most recently dispatched
 	// fetch for it — set by fetch, checked by postFinal/cacheOnly before
-	// writing cache. Reselecting the same node while its fetch is still
-	// in flight (cache not yet populated) dispatches a second, newer fetch
-	// for that same node pointer; without this check, whichever of the two
-	// finishes last would win the cache write regardless of which was
-	// dispatched more recently, letting a slower/older fetch silently
-	// overwrite a newer, correct result (or good data with a stale
-	// transient error).
+	// writing cache. Reselecting a node while its fetch is still in flight
+	// dispatches a second, newer fetch for the same node pointer; without
+	// this check whichever finished last would win the cache write, letting
+	// an older fetch overwrite a newer result.
 	pending map[*explorerNode]int
 }
 
@@ -90,16 +88,14 @@ func (db *DetailBrowser) SetActive(v bool) { db.active = v }
 func (db *DetailBrowser) Closable() bool { return false }
 
 // ShowNodeDetails loads detail data for the given explorer node,
-// asynchronously — every fetch here is a real network round trip, and this
-// fires on every tree-selection change, so running it inline on the UI
-// goroutine would freeze the whole app on each arrow-key press against a
-// slow or remote server. A node already shown once is served from cache
-// instead of refetching — see Invalidate for how a Refresh action forces a
-// fresh copy. Nil-safe like Invalidate, so a minimal test App built without
-// a DetailBrowser (see newTestApp in app_connections_test.go) can still
-// exercise ObjectExplorer/onNodeSelected paths that now call this on every
-// selection change (including AddRoot selecting a newly connected server's
-// root) without wiring one up.
+// asynchronously — every fetch is a real network round trip and this fires
+// on every tree-selection change, so running it inline on the UI goroutine
+// would freeze the app on each arrow-key press against a slow server. A
+// node already shown once is served from cache — see Invalidate for how a
+// Refresh action forces a fresh copy. Nil-safe like Invalidate, so a
+// minimal test App built without a DetailBrowser (see newTestApp in
+// app_connections_test.go) can still exercise the onNodeSelected paths
+// that call this.
 func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	if db == nil {
 		return
@@ -109,9 +105,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	db.currentNode = node
 
 	if node == nil {
-		db.title = "Object Explorer Details"
-		db.grid.SetFillLastColumn(false)
-		db.grid.SetData([]string{"Name", "Type"}, nil)
+		db.showEmpty()
 		return
 	}
 
@@ -131,6 +125,13 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 
 	db.grid.SetStatus("Loading...")
 	db.fetch(app, sc, node, seq)
+}
+
+// showEmpty resets the panel to its nothing-selected state.
+func (db *DetailBrowser) showEmpty() {
+	db.title = "Object Explorer Details"
+	db.grid.SetFillLastColumn(false)
+	db.grid.SetData([]string{"Name", "Type"}, nil)
 }
 
 // applyResult renders a completed (cached or freshly finished) result.
@@ -165,8 +166,39 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 		return
 	}
 	delete(db.cache, node)
+	delete(db.pending, node)
 	if db.currentNode == node {
 		db.ShowNodeDetails(app, node)
+	}
+}
+
+// PurgeConn drops every cached and pending entry belonging to sc — called
+// by App.disconnect, since the explorer nodes those entries are keyed by
+// are about to be dropped from the tree. Without it both maps grow for the
+// life of the session, holding every disconnected server's node pointers
+// and full result rows alive. Nil-safe like Invalidate.
+func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
+	if db == nil {
+		return
+	}
+	for node := range db.cache {
+		if resolveConn(node) == sc {
+			delete(db.cache, node)
+		}
+	}
+	for node := range db.pending {
+		if resolveConn(node) == sc {
+			delete(db.pending, node)
+		}
+	}
+	if db.currentNode != nil && resolveConn(db.currentNode) == sc {
+		// Disconnecting the last server empties the tree, which fires no
+		// OnSelect — nothing else would ever repaint the grid, so it would
+		// sit there showing the disconnected server's rows. Bumping seq at
+		// the same time drops any fetch for it still in flight.
+		db.currentNode = nil
+		db.seq++
+		db.showEmpty()
 	}
 }
 
@@ -199,14 +231,13 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 // without caching — used by progressive loaders for their fast-arriving
 // first stage, before slower fields have landed.
 func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]string) {
-	app.postEvent(func() {
+	app.postAndWake(func() {
 		if seq != db.seq {
 			return
 		}
 		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
 		db.grid.SetData(cols, rows)
 	})
-	app.wakeEventLoop()
 }
 
 // postFinal caches the completed result for node — unless a newer fetch for
@@ -216,7 +247,7 @@ func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]
 // whether single-shot or the last stage of a progressive loader.
 func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
 	result := &detailResult{cols: cols, rows: rows, err: err}
-	app.postEvent(func() {
+	app.postAndWake(func() {
 		if db.pending[node] == seq {
 			db.cache[node] = result
 		}
@@ -225,32 +256,27 @@ func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols [
 		}
 		db.applyResult(result)
 	})
-	app.wakeEventLoop()
 }
 
 // cacheOnly caches the completed result for node without touching the
 // grid — used by a progressive loader's last stage (see
 // loadDatabasesFolderDetails) once every row has already been updated in
-// place: calling postFinal there instead would call SetData and reset the
-// user's scroll position right after the progressive fill worked to avoid
-// exactly that. Gated by pending the same way postFinal is — see there.
+// place, where postFinal's SetData would reset the user's scroll position.
+// Gated by pending the same way postFinal is — see there.
 func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
-	app.postEvent(func() {
+	app.postAndWake(func() {
 		if db.pending[node] == seq {
 			db.cache[node] = &detailResult{cols: cols, rows: rows, err: err}
 		}
 	})
-	app.wakeEventLoop()
 }
 
 // maxRowFetchConcurrency bounds how many per-row backfill goroutines a
 // progressive loader (loadDatabasesFolderDetails, loadTablesFolderDetails)
-// runs at once. Firing one per row unbounded means a database/table folder
-// with hundreds of entries opens hundreds of connections against the pool
-// simultaneously (db.Connect's own MaxOpenConns is 20 — see
-// internal/db/connection.go) and queues a redraw+RefreshColumnWidths for
-// each; capping concurrency keeps "one slow row doesn't block the rest"
-// while not trying to do them all at once.
+// runs at once. Unbounded, a folder with hundreds of entries would open
+// hundreds of connections against a pool whose MaxOpenConns is 20 (see
+// internal/db/connection.go) and queue a redraw for each; capping keeps
+// one slow row from blocking the rest without running them all at once.
 const maxRowFetchConcurrency = 8
 
 // rowFetchSemaphore returns a token bucket for bounding a progressive
@@ -263,7 +289,7 @@ func rowFetchSemaphore() chan struct{} {
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called
 // from a background goroutine (see ShowNodeDetails) — it must not touch
 // DetailBrowser or any other UI state directly, only return data for the
-// caller to apply via postEvent. ctx bounds the whole call (see the
+// caller to apply via postAndWake. ctx bounds the whole call (see the
 // caller's childFetchTimeout) so a hung server leaves the goroutine and its
 // connection to time out instead of blocking forever.
 func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
@@ -369,12 +395,10 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 }
 
 // fetchChildObjectsDetail is the fallback detail view for any node type with
-// children but no richer, purpose-built view above: it just lists the child
-// objects, the same way SSMS's Object Explorer Details falls back to a
-// folder's contents. Reuses the same childLoaders entry the tree itself
-// expands with, so a new NodeType wired into childLoaders picks up a
-// reasonable detail view for free rather than defaulting to the leaf-style
-// Property/Value grid, which doesn't fit a folder.
+// children but no richer, purpose-built view above: it lists the child
+// objects. Reuses the same childLoaders entry the tree expands with, so a
+// new NodeType wired into childLoaders picks up a folder-shaped detail view
+// instead of the leaf-style Property/Value grid.
 func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	loader, ok := childLoaders[node.data.Type]
 	if !ok {
@@ -396,7 +420,7 @@ func (db *DetailBrowser) Draw(s tcell.Screen) {
 	p := theme.Active()
 	titleStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
 	if db.active {
-		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: db.rect.X, Y: db.rect.Y, W: db.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, db.rect.X+1, db.rect.Y, db.rect.W-2, titleStyle, db.title)

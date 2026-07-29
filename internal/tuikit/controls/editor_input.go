@@ -155,10 +155,10 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.SelectAll()
 		dropSelection = false
 	case tcell.KeyPgUp:
-		e.cursorRow = core.Max(0, e.cursorRow-e.rect.H)
+		e.cursorRow = core.Max(0, e.cursorRow-e.contentH())
 		e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
 	case tcell.KeyPgDn:
-		e.cursorRow = core.Min(len(e.lines)-1, e.cursorRow+e.rect.H)
+		e.cursorRow = core.Min(len(e.lines)-1, e.cursorRow+e.contentH())
 		e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
 	case tcell.KeyEnter:
 		e.pushUndo()
@@ -311,10 +311,19 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	// results pane below) still terminates cleanly instead of leaving
 	// mouseDragging stuck true.
 	if ev.Buttons() == tcell.ButtonNone {
-		wasDragging := e.mouseDragging || e.sbDragging
+		wasDragging := e.mouseDragging || e.sbDragging || e.sbDraggingX
 		e.mouseDragging = false
 		e.sbDragging = false
+		e.sbDraggingX = false
 		return wasDragging
+	}
+
+	// A horizontal-scrollbar drag keeps control once started, even after the
+	// pointer leaves the editor entirely — so it's checked before the bounds
+	// test, unlike the vertical bar, whose track runs the full height of the
+	// content area and so is far harder to drag off. Mirrors DataGrid.
+	if e.hScrollbarDrag(ev) {
+		return true
 	}
 
 	mx, my := ev.Position()
@@ -349,7 +358,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 			haveVLS = true
 			total = len(vls)
 		}
-		if core.HandleScrollbarDrag(ev, e.rect.Right()-1, e.rect.Y, e.rect.H, total, &e.sbDragging, &e.scrollRow) {
+		if core.HandleScrollbarDrag(ev, e.rect.Right()-1, e.rect.Y, e.contentH(), total, &e.sbDragging, &e.scrollRow) {
 			return true
 		}
 	}
@@ -361,7 +370,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		return e.handleMouseWrapped(ev, mx, my, contentX, vls)
 	}
 	if ev.Buttons() == tcell.Button1 {
-		row := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(e.lines)-1)
+		row := core.Clamp(e.scrollRow+core.Min(my-e.rect.Y, e.contentH()-1), 0, len(e.lines)-1)
 		col := core.Max(0, e.scrollCol+(mx-contentX))
 		if row < len(e.lines) && col > len(e.lines[row]) {
 			col = len(e.lines[row])
@@ -424,6 +433,30 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
+// hScrollbarDrag handles a Button1 press or drag on the horizontal
+// scrollbar (see Editor.hScrollbar). Unlike DataGrid's equivalent this can
+// delegate to core.HandleScrollbarDragH as-is: that helper treats the
+// track's width as the visible count, and here the two really are the same
+// number of rune columns. Latches on sbDraggingX for the rest of the
+// gesture, so the thumb keeps following the pointer once it leaves the
+// bar's row. Returns false for anything that isn't a qualifying event, so
+// the caller can chain it ahead of its own hit-testing.
+func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
+	// A text-selection drag already in progress owns the rest of its
+	// gesture: the track spans the full content width, so a selection
+	// dragged downward past the last line would otherwise land on the bar's
+	// row and be taken over by it mid-drag, yanking the view sideways
+	// instead of extending the selection.
+	if e.mouseDragging && !e.sbDraggingX {
+		return false
+	}
+	x, y, w, total, _, ok := e.hScrollbar()
+	if !ok {
+		return false
+	}
+	return core.HandleScrollbarDragH(ev, x, y, w, total, &e.sbDraggingX, &e.scrollCol)
+}
+
 // SetCursorFromScreen moves the cursor to the document position under the
 // screen coordinate (x, y) and clears any active selection — the same
 // targeting math HandleMouse's Button1 case uses for a fresh click, exposed
@@ -432,13 +465,13 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 // point from the release event it's handling at the App level).
 func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
-	row := core.Clamp(e.scrollRow+(y-e.rect.Y), 0, len(e.lines)-1)
+	row := core.Clamp(e.scrollRow+core.Min(y-e.rect.Y, e.contentH()-1), 0, len(e.lines)-1)
 	col := core.Max(0, e.scrollCol+(x-contentX))
 	if row < len(e.lines) && col > len(e.lines[row]) {
 		col = len(e.lines[row])
 	}
 	e.cursorRow, e.cursorCol = row, col
-	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
+	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
 	e.desiredCol = col
 	e.ensureCursorVisible()
 }
@@ -453,11 +486,5 @@ const horizontalWheelChars = 4
 // it can't scroll past showing at least the last character of the buffer's
 // longest line.
 func (e *Editor) scrollColBy(delta int) {
-	longest := 0
-	for _, l := range e.lines {
-		if len(l) > longest {
-			longest = len(l)
-		}
-	}
-	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, longest-1))
+	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, e.longestLineLen()-1))
 }

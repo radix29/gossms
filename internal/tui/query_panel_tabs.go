@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -111,7 +112,7 @@ func (p *QueryPanel) drawTabBar(s tcell.Screen) {
 	for i, seg := range p.tabSegments(labels) {
 		tabStyle := barStyle
 		if i == p.activeTab {
-			tabStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+			tabStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
 		}
 		core.DrawText(s, seg[0].X, p.tabRect.Y, tabStyle, " "+labels[i]+" ")
 	}
@@ -183,7 +184,10 @@ func (p *QueryPanel) renderActiveTab() {
 	if p.planTabActive() {
 		return // planView draws itself; nothing to push into it
 	}
-	set := res.Sets[p.activeTab]
+	set, ok := p.activeResultSet()
+	if !ok {
+		return
+	}
 	if p.resultsMode == ResultsModeText {
 		p.resultsText.SetText(formatResultsAsText(set))
 		return

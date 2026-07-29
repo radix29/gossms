@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -70,9 +71,9 @@ type PlanView struct {
 	// Plan tab (TabPlan) state — see graph.go, graph_layout.go. The detail
 	// strip (visible from the start; graphSt.detailOpen toggles it off via
 	// Enter) is a draggable graphSplit below the canvas, defaulting to
-	// 70/30: "Properties" (detailLines for the selected node). No Operator
-	// Summary here — that stayed Tree-tab-only; its Cost % info was folded
-	// into detailKVs instead of duplicating the grid in a second tab.
+	// 70/30: "Properties" (detailLines for the selected node). There's no
+	// Operator Summary here — it's Tree-tab-only, and its Cost % info is
+	// folded into detailKVs.
 	graphSt              graphState
 	graphSplit           *layout.Splitter // divides the canvas from the Properties strip
 	graphCanvasRect      core.Rect
@@ -254,14 +255,12 @@ func (v *PlanView) layout() {
 	v.xml.SetBounds(v.contentRect.X, v.contentRect.Y, v.contentRect.W, v.contentRect.H)
 	v.layoutTree()
 	v.layoutGraphTab()
-	// installPlan calls selectFirstNode (which sets selectedID but can't
-	// scroll anything into view yet — SetPlanXML/SetPlan are routinely
-	// called before the host's first SetBounds, so graphCanvasRect/
-	// treePaneRect are still zero at that point) before its own layout()
-	// call, so the very first real rect this control ever gets needs to
-	// re-apply "scroll the current selection into view" itself, once
-	// there's an actual rect to scroll within. Cheap and correct on every
-	// later resize too: a no-op whenever the selection is already visible.
+	// installPlan calls selectFirstNode before its own layout() call, and
+	// that can't scroll anything into view yet: SetPlanXML/SetPlan are
+	// routinely called before the host's first SetBounds, so
+	// graphCanvasRect/treePaneRect are still zero. The first real rect this
+	// control gets therefore re-applies "scroll the selection into view"
+	// itself. A no-op on later resizes whenever it's already visible.
 	v.ensureTreeRowVisible()
 	v.ensureTileVisible(v.selectedID)
 }
@@ -299,10 +298,10 @@ func (v *PlanView) stepStatement(delta int) {
 	v.stmtIdx = ((v.stmtIdx+delta)%n + n) % n
 	v.selectFirstNode()
 	// selectFirstNode alone can leave the new statement's root scrolled out
-	// of view (an unbalanced tree's root tile isn't necessarily near (0,0),
+	// of view: an unbalanced tree's root tile isn't necessarily near (0,0),
 	// and the Tree pane's prior scroll offset isn't reset by a rebuild that
-	// still fits within it) — see layout's identical follow-up after its
-	// own selectFirstNode call, which this mirrors for the stepping case.
+	// still fits within it. Mirrors layout's identical follow-up after its
+	// own selectFirstNode call.
 	v.ensureTreeRowVisible()
 	v.ensureTileVisible(v.selectedID)
 }
@@ -371,7 +370,7 @@ func (v *PlanView) drawTabBar(s tcell.Screen) {
 	for i, seg := range v.tabSegments() {
 		st := bar
 		if Tab(i) == v.activeTab {
-			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+			st = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
 		}
 		core.DrawText(s, seg[0].X, v.tabRect.Y, st, " "+tabLabels[i]+" ")
 		col = seg[0].X + seg[0].W + 1

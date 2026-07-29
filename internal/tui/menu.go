@@ -30,7 +30,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Save As...", Action: func() { a.saveQuery(true) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Divider: true},
-			{Label: "Exit", Shortcut: "Ctrl+Q", Action: func() { a.quit() }},
+			{Label: "Exit", Shortcut: "Ctrl+Q", Action: func() { a.requestQuit() }},
 		}},
 		{Label: "Edit", Items: []controls.MenuItem{
 			{Label: "Undo", Shortcut: "Ctrl+Z", Action: func() { a.editorUndo() },

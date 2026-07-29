@@ -11,12 +11,10 @@ import (
 )
 
 // fkPropPages builds the page set for Foreign Key Properties — read-only,
-// per the mockup (todo/mockups/foreign_key_properties_tui_mockup.txt):
-// a foreign key's shape (columns, referenced table, actions) can only
-// change by dropping and recreating it, so there's nothing to edit in
-// place, unlike every other Properties dialog in this app. One page only —
-// no Options/Storage/Extended Properties, since there's no persisted,
-// per-object state beyond what General already shows.
+// unlike every other Properties dialog here: a foreign key's shape
+// (columns, referenced table, actions) can only change by dropping and
+// recreating it. One page only — no Options/Storage/Extended Properties,
+// since there's no persisted per-object state beyond what General shows.
 func fkPropPages(sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	return []propPage{
 		pageForeignKeyGeneral(sc, dbName, schema, table, name),

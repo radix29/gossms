@@ -26,13 +26,12 @@ func TestToolbarClickFiresAction(t *testing.T) {
 	}
 }
 
-// TestToolbarHeldButtonDoesNotRefire pins the fix for a real bug: a toggle
-// button (e.g. "Include Actual Execution Plan") flipped back and forth
-// repeatedly when the mouse so much as twitched during a click, because
-// tcell's all-motion mouse tracking resends Buttons()==Button1 on every
-// motion event while the button stays down — the same bug shape already
-// fixed for TreeView's expander and MenuBar's header toggle (see their own
-// mouseDragging fields and tests).
+// TestToolbarHeldButtonDoesNotRefire covers tcell's all-motion mouse
+// tracking resending Buttons()==Button1 on every motion event while the
+// button stays down: without the mouseDragging latch, a toggle button (e.g.
+// "Include Actual Execution Plan") flips back and forth whenever the mouse
+// twitches during a click. TreeView's expander and MenuBar's header toggle
+// carry the same latch.
 func TestToolbarHeldButtonDoesNotRefire(t *testing.T) {
 	calls := 0
 	tb := newTestToolbar(func() { calls++ })
@@ -94,11 +93,11 @@ func TestToolbarClickOnDisabledButtonDoesNotFire(t *testing.T) {
 	}
 }
 
-// TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip pins down the
-// resolved "does the tooltip still show for a disabled button" question:
-// yes — hovering must still set tb.hover (which DrawOverlay keys its
-// tooltip render off of) even though the button won't fire on click, so
-// the user can still see what the greyed-out icon is for.
+// TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip pins down that a
+// disabled button still shows its tooltip: hovering sets tb.hover (which
+// DrawOverlay keys its tooltip render off of) even though the button won't
+// fire on click, so it's still possible to see what the greyed-out icon
+// is for.
 func TestToolbarHoverOnDisabledButtonStillSetsHoverForTooltip(t *testing.T) {
 	tb := newTestDisabledToolbar(nil)
 

@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// TestStatusHistoryRecordPrependsNewest is a regression test: the most
-// recently recorded message must appear first, so a user who clicks the
-// status bar right after seeing a message sees it without scrolling.
+// TestStatusHistoryRecordPrependsNewest pins down newest-first ordering, so
+// clicking the status bar right after a message shows it without
+// scrolling.
 func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.Record("first message")
@@ -26,8 +26,8 @@ func TestStatusHistoryRecordPrependsNewest(t *testing.T) {
 	}
 }
 
-// TestStatusHistoryRecordCapsAtMax is a regression test: the history must
-// not grow without bound during a long session — only the last
+// TestStatusHistoryRecordCapsAtMax pins down that the history doesn't grow
+// without bound during a long session — only the last
 // maxStatusHistoryLines messages are kept.
 func TestStatusHistoryRecordCapsAtMax(t *testing.T) {
 	d := &StatusHistoryDialog{}
@@ -61,11 +61,10 @@ func TestStatusHistoryRecordIncludesTimestamp(t *testing.T) {
 	}
 }
 
-// TestStatusHistoryShowDoesNotResetLog is a regression test: unlike
-// KeyDiagnosticsDialog, which deliberately clears its log on every open,
-// the status history must accumulate across the whole session and only
-// reset on process restart. A future edit that copies
-// KeyDiagnosticsDialog's reset-on-Show pattern would silently break that.
+// TestStatusHistoryShowDoesNotResetLog pins down that Show() doesn't clear
+// the log: unlike KeyDiagnosticsDialog, which deliberately clears its own
+// on every open, the status history accumulates across the whole session
+// and only resets on process restart.
 func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	d.Record("hello")
@@ -77,10 +76,10 @@ func TestStatusHistoryShowDoesNotResetLog(t *testing.T) {
 	}
 }
 
-// TestStatusHistoryRecordDefersSyncWhileHidden is a regression test for the
-// dirty-flag optimization: Record must not rebuild the editor's text (the
-// expensive part) while the dialog is hidden, only mark it dirty; Show()
-// must then catch it up before display.
+// TestStatusHistoryRecordDefersSyncWhileHidden pins down the dirty flag:
+// Record must not rebuild the editor's text (the expensive part) while the
+// dialog is hidden, only mark it dirty; Show() then catches it up before
+// display.
 func TestStatusHistoryRecordDefersSyncWhileHidden(t *testing.T) {
 	d := &StatusHistoryDialog{}
 	if d.Visible() {

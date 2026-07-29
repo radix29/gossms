@@ -18,7 +18,7 @@ func (a *App) connectServer(opts config.Connection) {
 
 	go func() {
 		sc, err := db.Connect(opts)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				if dbErr, ok := errors.AsType[*db.ConnectionError](err); ok {
 					a.setStatus(fmt.Sprintf("Connection error [%s]: %s", dbErr.Server, dbErr.Cause))
@@ -44,19 +44,17 @@ func (a *App) connectServer(opts config.Connection) {
 				a.logStatus("save config: %v", err)
 			}
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 // connectForQueryPanel opens a dedicated connection for qp, cloning sc's own
-// connection options — SSMS gives every query window its own connection,
-// distinct from (and outliving) whichever one Object Explorer used to
-// resolve it. database, if non-empty, overrides which database the new
-// connection starts in. Connecting is async, same as connectServer; qp.conn
-// is nil (and the panel shows as disconnected) until it resolves. onConnected,
-// if non-nil, runs once qp.conn is set — e.g. openQueryWithTextAndExecute
-// uses it to run the panel's query the moment the connection is usable,
-// since qp.Execute() before then would just report "Not connected".
+// connection options — every query window gets its own connection, distinct
+// from (and outliving) whichever one Object Explorer used to resolve it.
+// database, if non-empty, overrides which database the new connection starts
+// in. Connecting is async, same as connectServer; qp.conn is nil (and the
+// panel shows as disconnected) until it resolves. onConnected, if non-nil,
+// runs once qp.conn is set — openQueryWithTextAndExecute uses it to run the
+// panel's query as soon as the connection is usable.
 func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string, onConnected func()) {
 	opts := sc.Opts
 	if database != "" {
@@ -71,7 +69,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 		if err == nil && resolvedDB == "" {
 			resolvedDB = defaultDatabaseName(newConn)
 		}
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Connection failed: %v", err))
 				return
@@ -91,17 +89,15 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 				onConnected()
 			}
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 // defaultDatabaseName resolves the database a connection actually landed
 // in when config.Connection.Database was left empty — the login's real
 // default database — so the query panel's connection bar and Execute both
-// use it instead of showing/USE-ing nothing. Falls back to "master" if the
-// server can't be asked (e.g. DB_NAME() fails for some reason). Bounded by
-// childFetchTimeout so a hung server can't leave this background goroutine
-// blocked forever (see connectForQueryPanel, its only caller).
+// use it. Falls back to "master" if the server can't be asked. Bounded by
+// childFetchTimeout so a hung server can't block this background goroutine
+// forever.
 func defaultDatabaseName(sc *db.ServerConn) string {
 	ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 	defer cancel()
@@ -135,11 +131,18 @@ func (a *App) selectedServerConn() *db.ServerConn {
 // disconnect closes sc and removes it from the connection list and the
 // explorer tree. Query panels bound to sc keep their reference; they show
 // "(disconnected)" in their title and refuse to execute (see runQuery).
+//
+// Both caches keyed off sc are purged too: the Detail Browser's, before
+// the tree nodes it's keyed by are dropped, and the autocomplete
+// inventories, which are keyed by server/database name rather than by
+// connection (see their doc comments).
 func (a *App) disconnect(sc *db.ServerConn) {
 	sc.Close()
 	if i := slices.Index(a.connections, sc); i >= 0 {
 		a.connections = slices.Delete(a.connections, i, i+1)
 	}
+	a.detailBrowser.PurgeConn(sc)
+	a.purgeCompletionInventories(sc)
 	a.explorer.RemoveRootByConn(sc)
 	a.setStatus("Disconnected")
 }
@@ -150,6 +153,38 @@ func (a *App) disconnect(sc *db.ServerConn) {
 // tracked in a.connections.
 func (a *App) isConnected(sc *db.ServerConn) bool {
 	return sc.IsOpen()
+}
+
+// requireConn is the guard every action needing a live connection opens
+// with: it reports whether sc is still open, setting the standard status
+// message when it isn't. Callers read as
+// `if !a.requireConn(sc) { return }`.
+func (a *App) requireConn(sc *db.ServerConn) bool {
+	if a.isConnected(sc) {
+		return true
+	}
+	a.setStatus(notConnectedMessage)
+	return false
+}
+
+// notConnectedMessage is the one wording used everywhere a connection is
+// missing — status bar and QueryPanel's results notice alike.
+const notConnectedMessage = "Not connected — use File > Connect"
+
+// connOrFirst resolves the connection a Tools-menu/toolbar action should
+// act on: whichever the Object Explorer selection belongs to, falling back
+// to the first open connection when nothing relevant is selected. Returns
+// nil (having set the status message) when there's nothing connected at
+// all, so callers read as `sc := a.connOrFirst(); if sc == nil { return }`.
+func (a *App) connOrFirst() *db.ServerConn {
+	if sc := a.selectedServerConn(); sc != nil {
+		return sc
+	}
+	if len(a.connections) > 0 {
+		return a.connections[0]
+	}
+	a.setStatus(notConnectedMessage)
+	return nil
 }
 
 // selectedConnTarget resolves what "the current Object Explorer selection"

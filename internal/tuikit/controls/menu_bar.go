@@ -2,6 +2,7 @@ package controls
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -73,7 +74,7 @@ func (mb *MenuBar) Draw(s tcell.Screen) {
 		label := " " + m.Label + " "
 		st := barStyle
 		if i == mb.openMenu || i == mb.hoverMenu {
-			st = tcell.StyleDefault.Background(p.MenuSelected).Foreground(tcell.ColorWhite)
+			st = tcell.StyleDefault.Background(p.MenuSelected).Foreground(color.White)
 		}
 		core.DrawText(s, col, mb.rect.Y, st, label)
 		col += core.DisplayWidth(label)

@@ -48,11 +48,11 @@ func TestIsReleaseVersion(t *testing.T) {
 	}
 }
 
-// TestUpdateDialogShowResultDevBuild is a regression test: version.Version's
-// own "(devel)" placeholder (see its doc comment) used to parse as v0.0.0,
-// so every plain `git clone && go build` user was told "A new version of
-// goSSMS is available" — never true "you're already on the latest" and
-// never the accurate "this isn't a comparable build" message.
+// TestUpdateDialogShowResultDevBuild pins down that version.Version's
+// "(devel)" placeholder (see its doc comment) reports "this isn't a
+// comparable build" rather than being compared numerically: it parses as
+// v0.0.0, which would tell every plain `git clone && go build` user that a
+// new version is available.
 func TestUpdateDialogShowResultDevBuild(t *testing.T) {
 	d := &UpdateDialog{}
 	d.ShowResult("(devel)", githubRelease{TagName: "v1.2.3"}, nil)

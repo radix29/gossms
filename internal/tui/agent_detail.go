@@ -11,9 +11,7 @@ import (
 
 // agent_detail.go builds Object Explorer Details grids for every SQL
 // Server Agent node type — dispatched from detail_browser.go's
-// fetchNodeDetails. Each function matches fetchNodeDetails' own shape
-// (cols, rows, err) so it plugs into the existing async fetch/cache
-// machinery with no extra plumbing.
+// fetchNodeDetails, whose (cols, rows, err) shape each function matches.
 
 // countOrDash renders a count, or an em dash if the fetch that would have
 // produced it failed — used by summary rows that shouldn't fail their
@@ -55,8 +53,7 @@ func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]st
 	return []string{"Property", "Value"}, rows, nil
 }
 
-// agentJobDetail builds a job's detail view, matching the mockup's
-// "SELECTED NODE MOCKUP — JOB".
+// agentJobDetail builds a job's detail view.
 func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	j, err := sc.Server.JobByNameContext(ctx, node.data.Name)
 	if err != nil {
@@ -119,8 +116,7 @@ func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 	return []string{"Property", "Value"}, rows, nil
 }
 
-// agentAlertDetail builds an alert's detail view, matching the mockup's
-// "SELECTED NODE MOCKUP — SQL SERVER EVENT ALERT".
+// agentAlertDetail builds an alert's detail view.
 func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	al, err := sc.Server.AlertByNameContext(ctx, node.data.Name)
 	if err != nil {
@@ -209,8 +205,7 @@ func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 	return []string{"Property", "Value"}, rows, nil
 }
 
-// agentJobActivityDetail builds the "Job Activity" leaf's detail view,
-// matching the mockup's "SELECTED NODE MOCKUP — JOB ACTIVITY".
+// agentJobActivityDetail builds the "Job Activity" leaf's detail view.
 func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {

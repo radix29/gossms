@@ -65,15 +65,19 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 				dCtx, dCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 				defer dCancel()
 				space, spaceErr := d.SpaceUsedContext(dCtx)
-				// rows[i] is only ever written here, inside the postEvent
+				// rows[i] is only ever written here, inside the posted
 				// closure, so every write lands on the UI goroutine — the
 				// same one Draw() runs on — rather than racing a redraw
-				// triggered by some other row's own completion or an
-				// unrelated event arriving mid-fetch.
-				app.postEvent(func() {
-					if seq != db.seq {
-						return
-					}
+				// from another row's own completion.
+				//
+				// The write itself is unconditional: rows is this fetch's
+				// own slice, and cacheOnly caches it once every backfill
+				// has landed. Skipping the write when the user has since
+				// selected a different node (seq != db.seq) would cache a
+				// row still showing its "…" placeholder — permanently,
+				// since reselecting is then a cache hit that never
+				// refetches. Only the redraw is conditional.
+				app.postAndWake(func() {
 					if spaceErr == nil {
 						rows[i][3] = formatMB(space.TotalMB)
 						rows[i][4] = formatMB(space.DataMB)
@@ -85,9 +89,10 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 							rows[i][c] = "N/A"
 						}
 					}
-					db.grid.RefreshColumnWidths()
+					if seq == db.seq {
+						db.grid.RefreshColumnWidths()
+					}
 				})
-				app.wakeEventLoop()
 			}(i, d)
 		}
 		wg.Wait()

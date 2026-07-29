@@ -98,99 +98,28 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 // always runs first — it's what creates the login — before Server Roles/
 // User Mapping/Securables/Status's own applies can target a login that now
 // exists, a fixed five-step sequence rather than a discovered dirty set.
-// External-provider (Entra ID/Azure AD) logins are deliberately not
-// offered — SQL Server auth and Windows auth cover every server this
-// project can live-test against, and gosmo has no support for FROM
-// EXTERNAL PROVIDER today; a real, separate gap for a future pass, the
-// same treatment given to every previously-deferred platform-conditional
-// feature in this project.
+// External-provider (Entra ID/Azure AD) logins are not offered: gosmo has
+// no support for FROM EXTERNAL PROVIDER.
 type NewLoginDialog struct {
-	*propsheet.PropertySheet
-
-	app *App
-	sc  *db.ServerConn
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	prefetch  *nloginPrefetch
-	forms     [5]*propsheet.Form
-	applyFns  [5]propApply
-	loginName func() string
-	preflight func() error
+	newObjectDialog[nloginPrefetch]
 }
 
 // NewNewLoginDialog creates the dialog and wires its callbacks.
 func NewNewLoginDialog(app *App) *NewLoginDialog {
-	d := &NewLoginDialog{
-		app:           app,
-		PropertySheet: propsheet.NewPropertySheet(app.screen, "New Login"),
-	}
-	d.OnLoadPage = d.onLoadPage
-	d.OnApply = func() { d.runApply(false) }
-	d.OnOK = func() { d.runApply(true) }
-	d.OnClose = d.onClose
-	d.ConfirmDiscard = d.onConfirmDiscard
-	d.OnScript = d.runScript
+	d := &NewLoginDialog{}
+	d.init(app, newObjectConfig[nloginPrefetch]{
+		title:          "New Login",
+		noun:           "Login",
+		pages:          []string{"General", "Server Roles", "User Mapping", "Securables", "Status"},
+		scriptDatabase: "",
+		fetch:          fetchNewLoginPrefetch,
+		build:          d.buildPages,
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshLoginsFolder(sc) },
+	})
 	return d
 }
 
-// show opens the dialog against sc, resetting all pending state — a fresh
-// page set and a fresh per-session context each time, mirroring
-// NewDatabaseDialog.show.
-func (d *NewLoginDialog) show(sc *db.ServerConn) {
-	if d.cancel != nil {
-		d.cancel()
-	}
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
-	d.sc = sc
-	d.prefetch = nil
-	d.forms = [5]*propsheet.Form{}
-	d.applyFns = [5]propApply{}
-	d.loginName = nil
-	d.preflight = nil
-	d.SetHeader("Instance: "+sc.Opts.Server, "Connected: yes")
-	d.SetPages([]string{"General", "Server Roles", "User Mapping", "Securables", "Status"})
-	d.Show()
-}
-
-func (d *NewLoginDialog) onClose() { cancelIfSet(d.cancel) }
-
-func (d *NewLoginDialog) post(fn func()) { d.app.postAndWake(fn) }
-
-// onLoadPage answers PropertySheet's per-page load contract. The first
-// call (always page 0, General, triggered by Show()) does the one real
-// network fetch and builds all five pages' forms/applies from it; every
-// later call (the user visiting another page for the first time) answers
-// instantly from the already-cached prefetch/forms — no second fetch, no
-// per-page spinner.
-func (d *NewLoginDialog) onLoadPage(page, seq int) {
-	if d.prefetch != nil {
-		d.SetPageForm(page, seq, d.forms[page])
-		return
-	}
-	sc := d.sc
-	sessionCtx := d.ctx
-	go func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-		pf, err := fetchNewLoginPrefetch(ctx, sc)
-		d.post(func() {
-			if err != nil {
-				d.SetPageError(page, seq, err)
-				return
-			}
-			d.buildPages(pf)
-			d.SetPageForm(page, seq, d.forms[page])
-		})
-	}()
-}
-
-// buildPages constructs all five pages' forms/applies from pf, once —
-// cheap and synchronous (no further IO), so there's no cost to building
-// every page immediately instead of waiting for the user to visit it.
 func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
-	d.prefetch = pf
 	sc := d.sc
 
 	generalForm, generalApply, nameField := buildNewLoginGeneralPage(sc, pf)
@@ -200,9 +129,9 @@ func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
 	securablesForm, securablesApply := buildNewLoginSecurablesPage(sc, loginName)
 	statusForm, statusApply := buildNewLoginStatusPage(sc, loginName)
 
-	d.forms = [5]*propsheet.Form{generalForm, rolesForm, mappingForm, securablesForm, statusForm}
-	d.applyFns = [5]propApply{generalApply, rolesApply, mappingApply, securablesApply, statusApply}
-	d.loginName = loginName
+	d.forms = []*propsheet.Form{generalForm, rolesForm, mappingForm, securablesForm, statusForm}
+	d.applyFns = []propApply{generalApply, rolesApply, mappingApply, securablesApply, statusApply}
+	d.objectName = loginName
 	d.preflight = func() error {
 		name := loginName()
 		if name == "" {
@@ -219,80 +148,3 @@ func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
 // rebuild whichever page is current from scratch, discarding any pending
 // edits on it) behind the same confirmation prompt PropDialog/
 // NewDatabaseDialog use.
-func (d *NewLoginDialog) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
-}
-
-// runPipeline validates, then runs every page's apply closure in a fixed
-// order (General, Server Roles, User Mapping, Securables, Status) on a
-// background goroutine — General's closure is a real network round trip
-// (the CREATE LOGIN itself) that must complete before the later pages' own
-// closures can target the login it just created.
-func (d *NewLoginDialog) runPipeline(runCtx context.Context, onSuccess func()) {
-	if d.prefetch == nil {
-		d.SetMessage("Still loading — try again in a moment.", true)
-		return
-	}
-	if err := d.preflight(); err != nil {
-		d.SelectPage(0)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-	if page, err := d.Validate(); err != nil {
-		d.SelectPage(page)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-
-	fns := d.applyFns
-	d.SetApplying(true)
-	d.SetMessage("", false)
-
-	go func() {
-		var runErr error
-		for _, fn := range fns {
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
-		d.post(func() {
-			d.SetApplying(false)
-			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
-				return
-			}
-			onSuccess()
-		})
-	}()
-}
-
-// runApply validates and creates the login for real. hideOnSuccess
-// distinguishes Apply (stay open) from OK (close once creation succeeds).
-func (d *NewLoginDialog) runApply(hideOnSuccess bool) {
-	d.runPipeline(d.ctx, func() {
-		d.app.setStatus(fmt.Sprintf("Login %q created", d.loginName()))
-		d.app.explorer.RefreshLoginsFolder(d.sc)
-		if hideOnSuccess {
-			d.Hide()
-		}
-	})
-}
-
-// runScript re-runs the same fixed apply sequence under a
-// gosmo.WithScript-derived context, capturing every write as SQL text
-// instead of executing it, then opens it in a new query window — General's
-// apply always emits at least the CREATE LOGIN statement, so there's no
-// "nothing to script" case to handle.
-func (d *NewLoginDialog) runScript() {
-	scriptCtx, script := gosmo.WithScript(d.ctx)
-	sc := d.sc
-	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "", strings.Join(script.Statements, "\n\n"))
-	})
-}

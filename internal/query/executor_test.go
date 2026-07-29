@@ -9,25 +9,51 @@ import (
 )
 
 func TestFormatValue(t *testing.T) {
-	ts := time.Date(2024, 1, 5, 13, 45, 30, 123_000_000, time.UTC)
+	ts := time.Date(2024, 1, 5, 13, 45, 30, 123_456_700, time.UTC)
 	tests := []struct {
 		in            any
 		isDecimalLike bool
+		layout        string
 		want          string
 	}{
-		{nil, false, "NULL"},
-		{true, false, "1"},
-		{false, false, "0"},
-		{[]byte{0xDE, 0xAD}, false, "0xDEAD"},
-		{[]byte("0.070312"), true, "0.070312"},
-		{ts, false, "2024-01-05 13:45:30.123"},
-		{"plain", false, "plain"},
-		{int64(42), false, "42"},
-		{3.14, false, "3.14"},
+		{nil, false, "", "NULL"},
+		{true, false, "", "1"},
+		{false, false, "", "0"},
+		{[]byte{0xDE, 0xAD}, false, "", "0xDEAD"},
+		{[]byte("0.070312"), true, "", "0.070312"},
+		{"plain", false, "", "plain"},
+		{int64(42), false, "", "42"},
+		{3.14, false, "", "3.14"},
+		// A time.Time from a column whose type named no layout still gets
+		// the datetime one, not a zero-length format string.
+		{ts, false, "", "2024-01-05 13:45:30.123"},
+		{ts, false, timeLayout("DATETIME", 3, true), "2024-01-05 13:45:30.123"},
+		{ts, false, timeLayout("DATE", 0, true), "2024-01-05"},
+		{ts, false, timeLayout("TIME", 7, true), "13:45:30.1234567"},
+		{ts, false, timeLayout("SMALLDATETIME", 0, true), "2024-01-05 13:45:30"},
+		{ts, false, timeLayout("DATETIME2", 7, true), "2024-01-05 13:45:30.1234567"},
+		{ts, false, timeLayout("DATETIMEOFFSET", 7, true), "2024-01-05 13:45:30.1234567 +00:00"},
+		// The declared scale, not the type's maximum, sets the number of
+		// fractional digits — a time(0) shows no decimal point at all.
+		{ts, false, timeLayout("TIME", 0, true), "13:45:30"},
+		{ts, false, timeLayout("DATETIME2", 3, true), "2024-01-05 13:45:30.123"},
+		{ts, false, timeLayout("DATETIMEOFFSET", 1, true), "2024-01-05 13:45:30.1 +00:00"},
+		// A driver that doesn't report the scale falls back to the maximum.
+		{ts, false, timeLayout("DATETIME2", 0, false), "2024-01-05 13:45:30.1234567"},
 	}
 	for _, tt := range tests {
-		if got := formatValue(tt.in, tt.isDecimalLike); got != tt.want {
-			t.Errorf("formatValue(%v, %v) = %q, want %q", tt.in, tt.isDecimalLike, got, tt.want)
+		if got := formatValue(tt.in, tt.isDecimalLike, tt.layout); got != tt.want {
+			t.Errorf("formatValue(%v, %v, %q) = %q, want %q", tt.in, tt.isDecimalLike, tt.layout, got, tt.want)
+		}
+	}
+}
+
+// TestTimeLayoutNonDateType pins the "" that scanResultSet relies on to
+// tell a date/time column from every other kind.
+func TestTimeLayoutNonDateType(t *testing.T) {
+	for _, name := range []string{"INT", "NVARCHAR", "DECIMAL", "UNIQUEIDENTIFIER", ""} {
+		if got := timeLayout(name, 0, false); got != "" {
+			t.Errorf("timeLayout(%q) = %q, want empty", name, got)
 		}
 	}
 }

@@ -21,9 +21,10 @@ type band struct {
 // Scroll is tracked in row-index units (like every other scrollable list
 // in this codebase — DataGrid, ListBox, QueryListDialog), not raw display
 // lines: a row that's taller than one line (Section, Note, a GridRow)
-// scrolls into and out of view as a whole unit. This trades a little
-// precision for guaranteed-simple rendering — no row is ever drawn
-// partially clipped at the top or bottom of the form.
+// scrolls into and out of view as a whole unit. Rows are therefore never
+// clipped mid-line; a row too tall for the space left is either shrunk
+// into it (Shrinkable — GridRow) or left for the next scroll position
+// (see drawHeight).
 type Form struct {
 	rows        []Row
 	focus       int // -1 = no focusable row
@@ -34,10 +35,11 @@ type Form struct {
 
 	// sbDragging is true while the user is dragging the form's own
 	// scrollbar thumb (see HandleMouse) — mirrors DataGrid's/TreeView's/
-	// ListBox's/Editor's field of the same name and purpose. Checked only
-	// after the focused row's own HandleMouse has had first refusal, so a
-	// focused GridRow whose DataGrid shares this same rightmost column
-	// still scrolls its own rows, not the form's, while it has focus.
+	// ListBox's/Editor's field of the same name and purpose. Once armed it
+	// outranks even the focused row, so the form keeps following the thumb
+	// when the pointer drifts back over a focused GridRow; it can only be
+	// armed by a press on the bar's own column, so a focused GridRow
+	// sharing that rightmost column still scrolls its own rows.
 	sbDragging bool
 }
 
@@ -125,6 +127,51 @@ func (f *Form) totalHeight(w int) int {
 	return total
 }
 
+// The scrollbar measures the form in content *lines* — the same unit
+// totalHeight and f.rect.H are in — while f.scroll is a row index, so the
+// three helpers below convert between them. Sizing the thumb in row-index
+// units instead is what left the bar drawn but empty and undraggable on
+// every page whose rows are few but tall (Permissions: two Sections and
+// two grids, 4 rows against a ~20-line form — taller than the form, yet
+// fewer rows than it has lines).
+
+// scrollLines returns how many content lines sit above the current scroll
+// position, i.e. the scrollbar offset for f.scroll.
+func (f *Form) scrollLines(w int) int {
+	lines := 0
+	for i := 0; i < f.scroll && i < len(f.rows); i++ {
+		lines += f.rows[i].Height(w)
+	}
+	return lines
+}
+
+// rowAtLine returns the index of the row containing content line n.
+func (f *Form) rowAtLine(n, w int) int {
+	y := 0
+	for i, row := range f.rows {
+		y += row.Height(w)
+		if n < y {
+			return i
+		}
+	}
+	return core.Max(0, len(f.rows)-1)
+}
+
+// maxScroll returns the largest scroll index worth reaching — the one that
+// first brings the last row into view. Scrolling past it only pushes
+// content off the top, and leaves the scrollbar thumb unable to travel to
+// the bottom of its track.
+func (f *Form) maxScroll(w int) int {
+	used := 0
+	for i := len(f.rows) - 1; i >= 0; i-- {
+		used += f.rows[i].Height(w)
+		if used > f.rect.H {
+			return core.Min(i+1, core.Max(0, len(f.rows)-1))
+		}
+	}
+	return 0
+}
+
 // ensureVisible scrolls just enough that row idx's start is within view —
 // not necessarily its entire height, which a GridRow taller than the
 // form's available space could never satisfy (see the comment in Draw).
@@ -139,17 +186,42 @@ func (f *Form) ensureVisible(idx int) {
 	}
 }
 
-// rowFits reports whether row idx's start is visible at the current
-// scroll position, given rows are laid out top-down starting at f.scroll.
+// rowFits reports whether row idx is drawn at the current scroll position,
+// given rows are laid out top-down starting at f.scroll.
 func (f *Form) rowFits(idx, w int) bool {
 	y := f.rect.Y
+	bottom := f.rect.Y + f.rect.H
 	for i := f.scroll; i <= idx; i++ {
-		if i == idx {
-			return y < f.rect.Y+f.rect.H
+		h, ok := f.drawHeight(i, w, bottom-y, i == f.scroll)
+		if !ok {
+			return false
 		}
-		y += f.rows[i].Height(w)
+		if i == idx {
+			return true
+		}
+		y += h
 	}
 	return false
+}
+
+// drawHeight returns the height row i draws at when avail lines remain
+// above the form's bottom edge, and whether it's drawn at all. A row that
+// doesn't fit is clamped into the space left if it's Shrinkable, and
+// otherwise left undrawn for the scrollbar to bring into view — except
+// when it's the first row on screen, which always draws in whatever space
+// there is rather than leaving the page blank.
+func (f *Form) drawHeight(i, w, avail int, first bool) (int, bool) {
+	h := f.rows[i].Height(w)
+	if avail <= 0 {
+		return h, false
+	}
+	if avail >= h {
+		return h, true
+	}
+	if sh, ok := f.rows[i].(Shrinkable); ok && (first || avail >= sh.MinDrawHeight()) {
+		return avail, true
+	}
+	return h, first
 }
 
 // Draw renders every row that fits below f.scroll, then rebuilds the
@@ -158,19 +230,27 @@ func (f *Form) Draw(s tcell.Screen) {
 	core.FillRect(s, f.rect, ' ', theme.StyleDialog())
 	w := f.contentWidth()
 	f.bands = f.bands[:0]
+	// Nothing re-clamps f.scroll when the form gets taller (terminal
+	// resize), which would otherwise leave the page starting mid-list with
+	// dead space below it and the thumb pinned to the bottom of its track.
+	f.scroll = core.Clamp(f.scroll, 0, f.maxScroll(w))
 
-	// A row only needs its *start* within the visible area, not its
-	// entire height — a GridRow or Note taller than the remaining space
-	// still draws (and may visually run past the form's bottom edge,
-	// clipped by the separator/buttons the sheet draws afterward) rather
-	// than vanishing outright. Requiring the full row to fit made every
-	// grid-based page render as a blank Section header on any terminal
-	// shorter than the grid's declared height.
+	// A row taller than the space left is drawn shrunk into it if it can
+	// be (drawHeight), so nothing renders past the form's bottom edge into
+	// the hint line and button row the sheet draws afterward. A row that
+	// can't shrink that far ends the pass — the form scrollbar brings it
+	// into view.
 	y := f.rect.Y
 	bottom := f.rect.Y + f.rect.H
 	for i := f.scroll; i < len(f.rows) && y < bottom; i++ {
 		row := f.rows[i]
-		h := row.Height(w)
+		h, ok := f.drawHeight(i, w, bottom-y, i == f.scroll)
+		if !ok {
+			break
+		}
+		if sh, isShrinkable := row.(Shrinkable); isShrinkable {
+			sh.SetDrawHeight(h)
+		}
 		row.Layout(f.rect.X, y, w)
 		row.Draw(s, f.formFocused && i == f.focus)
 		f.bands = append(f.bands, band{row: i, y: y, h: h})
@@ -181,7 +261,14 @@ func (f *Form) Draw(s tcell.Screen) {
 		p := theme.Active()
 		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
 		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-		core.DrawScrollbar(s, f.rect.Right()-1, f.rect.Y, f.rect.H, len(f.rows), f.rect.H, f.scroll, sbStyle, sbThumb)
+		offset := f.scrollLines(w)
+		if f.scroll >= f.maxScroll(w) {
+			// Parked on the last row: put the thumb at the very bottom of
+			// its track rather than wherever that row's first line happens
+			// to fall, so "scrolled all the way down" reads as such.
+			offset = total - f.rect.H
+		}
+		core.DrawScrollbar(s, f.rect.Right()-1, f.rect.Y, f.rect.H, total, f.rect.H, offset, sbStyle, sbThumb)
 	}
 }
 
@@ -233,7 +320,7 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 			// this frame. Swallow the key instead of scrolling underneath it.
 			return true
 		}
-		f.scroll = core.Min(core.Max(0, len(f.rows)-1), f.scroll+core.Max(1, f.rect.H/2))
+		f.scroll = core.Min(f.maxScroll(f.contentWidth()), f.scroll+core.Max(1, f.rect.H/2))
 		return true
 	case tcell.KeyPgUp:
 		if f.OverlayActive() {
@@ -268,8 +355,29 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		if ev.Buttons() == tcell.WheelUp {
 			f.scroll = core.Max(0, f.scroll-3)
 		} else {
-			f.scroll = core.Min(core.Max(0, len(f.rows)-1), f.scroll+3)
+			f.scroll = core.Min(f.maxScroll(f.contentWidth()), f.scroll+3)
 		}
+		return true
+	}
+	// The latch is dropped before anything else can claim the release —
+	// the same ordering DataGrid, Editor and TreeView use internally, and
+	// for the same reason. Below the focused row's dispatch it was
+	// unreachable whenever that row was a GridRow: DataGrid.HandleMouse
+	// returns true for any release inside its rect, so a scrollbar drag let
+	// go over the grid left sbDragging armed, and every later click in the
+	// form was then taken as a scrollbar drag that jumped the scroll to
+	// wherever it landed.
+	if ev.Buttons() == tcell.ButtonNone {
+		f.sbDragging = false
+	}
+	// An armed scrollbar drag outranks even the focused row: the gesture
+	// started on the form's own bar, so every event until release belongs
+	// to it, wherever the pointer has drifted to. Without this, the moment
+	// a drag wandered back over a focused GridRow that grid claimed the
+	// motion events and the form stopped following the thumb. sbDragging is
+	// only ever armed by a press on the bar's own column, so this can't
+	// steal a gesture that began inside a row.
+	if f.sbDragging && f.handleScrollbarDrag(ev, f.contentWidth()) {
 		return true
 	}
 	if row := f.Focused(); row != nil {
@@ -284,11 +392,10 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		// whatever row the pointer happens to be over, blurring (and thus
 		// closing) an open DropDown the moment the user moves toward its
 		// own open list to click an item in it.
-		f.sbDragging = false
 		return false
 	}
 	w := f.contentWidth()
-	if f.totalHeight(w) > f.rect.H && core.HandleScrollbarDrag(ev, f.rect.Right()-1, f.rect.Y, f.rect.H, len(f.rows), &f.sbDragging, &f.scroll) {
+	if f.handleScrollbarDrag(ev, w) {
 		return true
 	}
 	mx, my := ev.Position()
@@ -313,6 +420,28 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	return false
+}
+
+// handleScrollbarDrag is Form's own version of core.HandleScrollbarDrag,
+// which can't be reused here: that helper takes one h serving as both
+// track length and visible count, and Form's scrollbar measures lines
+// (track length f.rect.H, total f.totalHeight) while f.scroll counts rows.
+// Like the shared helper, sbDragging latches for the whole gesture so the
+// drag keeps working once the pointer drifts off the bar's column; the
+// ButtonNone branch of HandleMouse clears it on release.
+func (f *Form) handleScrollbarDrag(ev *tcell.EventMouse, w int) bool {
+	total := f.totalHeight(w)
+	if ev.Buttons() != tcell.Button1 || total <= f.rect.H || f.rect.H <= 0 {
+		return false
+	}
+	mx, my := ev.Position()
+	if !f.sbDragging && (mx != f.rect.Right()-1 || my < f.rect.Y || my >= f.rect.Y+f.rect.H) {
+		return false
+	}
+	f.sbDragging = true
+	line := core.ScrollOffsetForDrag(my-f.rect.Y, f.rect.H, total, f.rect.H)
+	f.scroll = core.Min(f.rowAtLine(line, w), f.maxScroll(w))
+	return true
 }
 
 // rowAt returns the row whose band contains ev's position, if any.

@@ -13,10 +13,9 @@ import (
 // new_job_dialog.go is the New Job creation dialog (Object Explorer's SQL
 // Server Agent > Jobs folder, "New Job..."). Four pages — General, Steps,
 // Schedules, Notifications — page builders live in new_job_pages.go.
-// Alerts, Targets, and History are left out: Alerts/Targets have nothing
-// meaningful to configure before the job exists (alert-job linking lives
-// on Job Properties' own Alerts page, matching new_alert_dialog.go's same
-// call), and History is naturally empty for a job that hasn't run yet.
+// Alerts, Targets, and History are left out: alert-job linking lives on Job
+// Properties' own Alerts page, Targets has nothing to configure before the
+// job exists, and History is empty for a job that hasn't run.
 
 // njobPrefetch holds the one fetch every New Job page is built from.
 type njobPrefetch struct {
@@ -86,85 +85,25 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 
 // NewJobDialog is the New Job creation dialog.
 type NewJobDialog struct {
-	*propsheet.PropertySheet
-
-	app *App
-	sc  *db.ServerConn
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	prefetch  *njobPrefetch
-	forms     [4]*propsheet.Form
-	applyFns  [4]propApply
-	jobName   func() string
-	enabled   func() bool
-	stepCount func() int
-	preflight func() error
+	newObjectDialog[njobPrefetch]
 }
 
 // NewNewJobDialog creates the dialog and wires its callbacks.
 func NewNewJobDialog(app *App) *NewJobDialog {
-	d := &NewJobDialog{
-		app:           app,
-		PropertySheet: propsheet.NewPropertySheet(app.screen, "New Job"),
-	}
-	d.OnLoadPage = d.onLoadPage
-	d.OnApply = func() { d.runApply(false) }
-	d.OnOK = func() { d.runApply(true) }
-	d.OnClose = d.onClose
-	d.ConfirmDiscard = d.onConfirmDiscard
-	d.OnScript = d.runScript
+	d := &NewJobDialog{}
+	d.init(app, newObjectConfig[njobPrefetch]{
+		title:          "New Job",
+		noun:           "Job",
+		pages:          []string{"General", "Steps", "Schedules", "Notifications"},
+		scriptDatabase: "msdb",
+		fetch:          fetchNewJobPrefetch,
+		build:          d.buildPages,
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentUserJobs) },
+	})
 	return d
 }
 
-func (d *NewJobDialog) show(sc *db.ServerConn) {
-	if d.cancel != nil {
-		d.cancel()
-	}
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
-	d.sc = sc
-	d.prefetch = nil
-	d.forms = [4]*propsheet.Form{}
-	d.applyFns = [4]propApply{}
-	d.jobName = nil
-	d.enabled = nil
-	d.stepCount = nil
-	d.preflight = nil
-	d.SetHeader("Instance: "+sc.Opts.Server, "Connected: yes")
-	d.SetPages([]string{"General", "Steps", "Schedules", "Notifications"})
-	d.Show()
-}
-
-func (d *NewJobDialog) onClose() { cancelIfSet(d.cancel) }
-
-func (d *NewJobDialog) post(fn func()) { d.app.postAndWake(fn) }
-
-func (d *NewJobDialog) onLoadPage(page, seq int) {
-	if d.prefetch != nil {
-		d.SetPageForm(page, seq, d.forms[page])
-		return
-	}
-	sc := d.sc
-	sessionCtx := d.ctx
-	go func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-		pf, err := fetchNewJobPrefetch(ctx, sc)
-		d.post(func() {
-			if err != nil {
-				d.SetPageError(page, seq, err)
-				return
-			}
-			d.buildPages(pf)
-			d.SetPageForm(page, seq, d.forms[page])
-		})
-	}()
-}
-
-// buildPages constructs all four pages' forms/applies from pf, once.
 func (d *NewJobDialog) buildPages(pf *njobPrefetch) {
-	d.prefetch = pf
 	sc := d.sc
 
 	generalForm, generalApply, jobName, enabled := buildNewJobGeneralPage(sc, pf)
@@ -172,11 +111,9 @@ func (d *NewJobDialog) buildPages(pf *njobPrefetch) {
 	schedulesForm, schedulesApply := buildNewJobSchedulesPage(sc, pf, jobName)
 	notificationsForm, notificationsApply := buildNewJobNotificationsPage(sc, pf, jobName)
 
-	d.forms = [4]*propsheet.Form{generalForm, stepsForm, schedulesForm, notificationsForm}
-	d.applyFns = [4]propApply{generalApply, stepsApply, schedulesApply, notificationsApply}
-	d.jobName = jobName
-	d.enabled = enabled
-	d.stepCount = stepCount
+	d.forms = []*propsheet.Form{generalForm, stepsForm, schedulesForm, notificationsForm}
+	d.applyFns = []propApply{generalApply, stepsApply, schedulesApply, notificationsApply}
+	d.objectName = jobName
 	d.preflight = func() error {
 		name := jobName()
 		if name == "" {
@@ -190,74 +127,4 @@ func (d *NewJobDialog) buildPages(pf *njobPrefetch) {
 		}
 		return nil
 	}
-}
-
-func (d *NewJobDialog) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
-}
-
-// runPipeline validates, then runs every page's apply closure in a fixed
-// order (General, Steps, Schedules, Notifications) — General's closure is
-// what creates the job (and, per gosmo.CreateJobContext, enlists it on the
-// local server) before the later pages' own closures can target it.
-func (d *NewJobDialog) runPipeline(runCtx context.Context, onSuccess func()) {
-	if d.prefetch == nil {
-		d.SetMessage("Still loading — try again in a moment.", true)
-		return
-	}
-	if err := d.preflight(); err != nil {
-		d.SelectPage(0)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-	if page, err := d.Validate(); err != nil {
-		d.SelectPage(page)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-
-	fns := d.applyFns
-	d.SetApplying(true)
-	d.SetMessage("", false)
-
-	go func() {
-		var runErr error
-		for _, fn := range fns {
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
-		d.post(func() {
-			d.SetApplying(false)
-			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
-				return
-			}
-			onSuccess()
-		})
-	}()
-}
-
-func (d *NewJobDialog) runApply(hideOnSuccess bool) {
-	d.runPipeline(d.ctx, func() {
-		d.app.setStatus(fmt.Sprintf("Job %q created", d.jobName()))
-		d.app.explorer.RefreshFolderByType(d.sc, NodeAgentUserJobs)
-		if hideOnSuccess {
-			d.Hide()
-		}
-	})
-}
-
-func (d *NewJobDialog) runScript() {
-	scriptCtx, script := gosmo.WithScript(d.ctx)
-	sc := d.sc
-	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "msdb", strings.Join(script.Statements, "\n\n"))
-	})
 }

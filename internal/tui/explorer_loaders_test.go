@@ -149,9 +149,8 @@ func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 }
 
 // TestViewsStoredProceduresFunctionsAreLeaves pins down that these node
-// types no longer show a tree expand arrow — they have no childLoaders
-// entry, so an arrow that expands to nothing was misleading ("cannot be
-// opened").
+// types show no tree expand arrow: they have no childLoaders entry, so an
+// arrow would expand to nothing.
 func TestViewsStoredProceduresFunctionsAreLeaves(t *testing.T) {
 	for _, nt := range []NodeType{NodeView, NodeStoredProcedure, NodeFunction} {
 		if hasChildren(nt) {
@@ -173,12 +172,10 @@ func findMenuItem(items []controls.MenuItem, label string) *controls.MenuItem {
 	return nil
 }
 
-// Regression test for a real bug: contextMenuItemsForNode used to build the
-// FQN as fmt.Sprintf("[%s].[%s]", node.data.Schema, node.label) — but
-// node.label for a table/view/proc is "schema.name" (set by the loader that
-// creates it), so the schema ended up duplicated: "[dbo].[dbo.Orders]",
-// which SQL Server rejects. Storing the bare name in nodeData.Name and
-// building the FQN from Schema+Name fixes it; this pins the fix down.
+// contextMenuItemsForNode must build the FQN from nodeData's Schema+Name,
+// not from node.label: a table/view/proc's label is already "schema.name",
+// so using it doubles the schema — "[dbo].[dbo.Orders]", which SQL Server
+// rejects.
 func TestObjectContextMenuBuildsCorrectFQN(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")

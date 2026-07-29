@@ -12,11 +12,10 @@ func newTestDropDown(items []string) *DropDown {
 	return d
 }
 
-// TestDropDownClosedArrowsNotConsumed is a regression test: Up/Down/Escape
-// on a closed dropdown must fall through (return false) rather than being
-// swallowed as a no-op, so a caller like propsheet.Form can move focus to
-// the next/previous row instead of a closed dropdown eating arrow
-// navigation.
+// TestDropDownClosedArrowsNotConsumed pins down that Up/Down/Escape on a
+// closed dropdown fall through (return false) rather than being swallowed
+// as a no-op, so a caller like propsheet.Form can move focus to the
+// next/previous row.
 func TestDropDownClosedArrowsNotConsumed(t *testing.T) {
 	d := newTestDropDown([]string{"a", "b", "c"})
 	for _, k := range []tcell.Key{tcell.KeyUp, tcell.KeyDown, tcell.KeyEscape} {

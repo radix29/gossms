@@ -5,6 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
@@ -14,6 +15,7 @@ func newTestApp() *App {
 	a := &App{cfg: &config.Config{}}
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
+	a.confirmDialog = dialogs.NewConfirmDialog(nil)
 	return a
 }
 
@@ -26,12 +28,10 @@ func addTestConn(a *App, server string) *db.ServerConn {
 	return sc
 }
 
-// AddRoot must select the node it just added — not merely add it and leave
-// the tree's previous selection (or its zero-value default) in place.
-// Object Explorer Details is driven entirely by TreeView's OnSelect
-// callback (see onNodeSelected), so a server that's added without
-// selecting it never populates its own detail view until the user manually
-// clicks away and back — the exact bug this pins down.
+// AddRoot must select the node it just added, not leave the tree's previous
+// selection in place: Object Explorer Details is driven entirely by
+// TreeView's OnSelect callback (see onNodeSelected), so a server added
+// without selecting it never populates its own detail view.
 func TestAddRootSelectsNewNode(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -46,9 +46,8 @@ func TestAddRootSelectsNewNode(t *testing.T) {
 }
 
 // Disconnecting one connection must not re-bind query panels that point at
-// another: with index-based references, removing connection 0 shifted every
-// later index so a panel bound to connection 1 silently targeted the wrong
-// server. Pointer identity makes that impossible; this test pins it down.
+// another. Panels hold a pointer, not an index into a.connections, so
+// removing one connection can't shift another panel's target.
 func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -84,10 +83,9 @@ func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 }
 
 // disconnectActive resolves the connection from the selected tree node.
-// AddRoot selects the newly connected server's own root (see its doc
-// comment) — matching SSMS, where connecting a server always focuses it in
-// Object Explorer — so after connecting sc1 then sc2, sc2's root is what's
-// selected and disconnectActive acts on it.
+// AddRoot selects the newly connected server's own root, so after
+// connecting sc1 then sc2, sc2's root is what's selected and
+// disconnectActive acts on it.
 func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")

@@ -20,7 +20,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -47,7 +47,6 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 			d.loadHistory(d.prevHistDB)
 			d.autoFillTarget(d.prevHistDB)
 		})
-		app.wakeEventLoop()
 	}()
 }
 
@@ -68,7 +67,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		hist, err := sc.Server.BackupHistoryContext(ctx, dbName)
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -94,7 +93,6 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 				d.setStatusMsg("Ready", false)
 			}
 		})
-		app.wakeEventLoop()
 	}()
 }
 
@@ -130,7 +128,7 @@ func (d *RestoreDialog) analyze() {
 		if err == nil {
 			files, err = srv.BackupFileListContext(ctx, dev)
 		}
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -149,7 +147,6 @@ func (d *RestoreDialog) analyze() {
 			d.SetTitle("Backup Information")
 			d.setStatusMsg("Ready", false)
 		})
-		app.wakeEventLoop()
 	}()
 }
 
@@ -177,7 +174,7 @@ func (d *RestoreDialog) startRestore() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -199,15 +196,13 @@ func (d *RestoreDialog) startRestore() {
 			}
 			d.beginRestore(dev, target)
 		})
-		app.wakeEventLoop()
 	}()
 }
 
 // confirmOverwrite gates a restore that would overwrite an existing
-// database behind retyping its first 4 characters — SSMS itself just asks
-// a plain Yes/No here, but this is a largely irreversible, destructive
-// action, so it gets the same extra friction as any other "type to
-// confirm" prompt in this app.
+// database behind retyping its first 4 characters — a largely
+// irreversible, destructive action, so it gets the same friction as every
+// other "type to confirm" prompt in this app.
 func (d *RestoreDialog) confirmOverwrite(target string, proceed func()) {
 	runes := []rune(target)
 	prefix := target
@@ -248,7 +243,7 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 	go func() {
 		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns)
 		if err == nil {
-			app.postEvent(func() { app.explorer.RefreshDatabasesFolder(sc) })
+			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })
 		}
 		app.postTaskDone(task, err)
 	}()
@@ -394,7 +389,7 @@ func (d *RestoreDialog) script() {
 		if err == nil {
 			stmt, err = gosmo.BuildRestoreStatement(ropts)
 		}
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
 			}
@@ -405,6 +400,5 @@ func (d *RestoreDialog) script() {
 			d.setStatusMsg("Ready", false)
 			app.openQueryWithText(sc, "", stmt)
 		})
-		app.wakeEventLoop()
 	}()
 }

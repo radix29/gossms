@@ -21,12 +21,10 @@ type UpdateDialog struct {
 // NewUpdateDialog creates the Check for Updates dialog.
 func NewUpdateDialog(app *App) *UpdateDialog {
 	d := &UpdateDialog{app: app}
-	// H=15 (2 more than a single-line message needs): the dev-build result
-	// (see ShowResult) spans two lines instead of one, and at H=13 that
-	// pushed the link row down onto the same screen row as DrawSeparator's
-	// line, which is drawn after the content and painted right over it —
-	// the link was there but invisible. 15 leaves a two-row margin so the
-	// content and the separator never land on the same row.
+	// H=15, two rows more than a single-line message needs: the dev-build
+	// result (see ShowResult) spans two lines, and at H=13 the link row
+	// lands on the same screen row as DrawSeparator's line, which is drawn
+	// after the content and paints over it.
 	d.InitModal(app.screen, "Check for Updates", 74, 15)
 	return d
 }

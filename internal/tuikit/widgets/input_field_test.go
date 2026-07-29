@@ -92,11 +92,10 @@ func TestInputFieldSelectionDeletedByBackspace(t *testing.T) {
 	}
 }
 
-// TestInputFieldHandleKeyReportsUnhandledKeys is a regression test: a
-// focused field must not swallow keys it doesn't act on (Up/Down, Tab/
-// Backtab, Esc, Enter) — a caller like propsheet.Form relies on the false
-// return to fall through to focus-cycling instead of the field becoming a
-// keyboard trap.
+// TestInputFieldHandleKeyReportsUnhandledKeys pins down that a focused
+// field doesn't swallow keys it doesn't act on (Up/Down, Tab/Backtab, Esc,
+// Enter): a caller like propsheet.Form relies on the false return to fall
+// through to focus-cycling, or the field becomes a keyboard trap.
 func TestInputFieldHandleKeyReportsUnhandledKeys(t *testing.T) {
 	f := newTestInputField("hello")
 	for _, k := range []tcell.Key{tcell.KeyUp, tcell.KeyDown, tcell.KeyTab, tcell.KeyBacktab, tcell.KeyEscape, tcell.KeyEnter} {

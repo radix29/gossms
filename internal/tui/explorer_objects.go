@@ -45,7 +45,7 @@ func tableFor(l loaderCtx, node *explorerNode) (*gosmo.Table, error) {
 
 // loadColumnsChildren returns one table's columns. Columns that are part of
 // the primary key get NodeColumn's icon overridden by nodeIcon (via
-// nodeData.IsPrimaryKey) with the primary-key glyph from todo/icons.md.
+// nodeData.IsPrimaryKey) with the primary-key glyph.
 func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	table, err := tableFor(l, node)
 	if err != nil {

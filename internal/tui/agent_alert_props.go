@@ -11,11 +11,9 @@ import (
 
 // agent_alert_props.go builds the Alert Properties dialog — General
 // (identity, trigger, response scope, notification) and Response
-// (operators to e-mail, response job). Field shapes mirror
-// new_alert_dialog.go's creation form; the Response page's operator-toggle
-// diffing mirrors agent_job_props_alerts.go's pageJobAlerts. Uses the same
-// shared *string name-cell pattern as agent_schedule_props.go — see that
-// file's doc comment and sql-agent-job-props-review-2026-07 (Bug 2).
+// (operators to e-mail, response job). Every page closes over a shared
+// *string name cell, so a rename on General is visible to later pages in
+// the same Apply run.
 
 // findAgentAlert is a thin wrapper over gosmo.Server.AlertByNameContext,
 // mirroring findAgentJob/findAgentSchedule.
@@ -35,8 +33,7 @@ func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 // showAlertProperties opens Alert Properties for a known connection and
 // alert name — the Object Explorer context menu's entry point.
 func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "msdb", "Alert Properties", "Alert: "+alertName, "Server: "+sc.Opts.Server,

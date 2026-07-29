@@ -226,16 +226,16 @@ func acquireConnRetryDelay(attempt int) time.Duration {
 // database/sql's automatic bad-connection retry only covers *sql.DB-level
 // calls, never one already pinned out of the pool. Without this, a
 // connection silently dropped while idle (a firewall/NAT timeout, the
-// server killing an idle session, a failover) surfaced as an outright
-// failure on the very next Execute, and only the one after that (which
-// happened to dial a fresh connection) succeeded — this closes that gap
-// the same way gosmo's own Database.query/queryRow already do for reads.
+// server killing an idle session, a failover) fails the very next Execute
+// outright, and only the one after it — which happens to dial fresh —
+// succeeds. gosmo's own Database.query/queryRow close the same gap for
+// reads.
 //
 // Only this function's own USE/SELECT-1 prologue is ever retried, never one
-// of the caller's actual batches — those still fail outright if the
-// connection dies mid-script, exactly as before, since silently re-running
-// arbitrary user SQL against a fresh connection could re-apply side effects
-// that already partially ran.
+// of the caller's actual batches: those still fail outright if the
+// connection dies mid-script, since silently re-running arbitrary user SQL
+// against a fresh connection could re-apply side effects that already
+// partially ran.
 func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, error) {
 	prologue := "SELECT 1"
 	if database != "" {
@@ -309,28 +309,14 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
-			cols, err := rows.Columns()
-			if err != nil {
-				res.addError(err)
-				break
-			}
-			if isShowplanResultSet(cols) {
-				xml, err := scanPlanXML(rows)
-				switch {
-				case err != nil:
-					res.addError(err)
-				case xml != "":
-					res.PlanXML = append(res.PlanXML, xml)
-				}
-				break
-			}
-			rs, truncated, err := scanResultSet(rows, maxRows)
-			if err != nil {
-				res.addError(err)
-			} else {
-				res.Sets = append(res.Sets, rs)
-				if truncated {
-					res.addNotice(fmt.Sprintf("Only the first %d row(s) are shown — increase Max Result Rows in Tools > Options to see more.", maxRows))
+			if !scanNext(rows, res, maxRows) {
+				// scanNext gave up part-way through the result set. The
+				// message loop can't advance past one with rows still
+				// pending, so finish reading it here. Only on this path:
+				// an extra Next() once the set is already exhausted makes
+				// the driver swallow the message retmsg is waiting for,
+				// and the result set never reaches res at all.
+				for rows.Next() {
 				}
 			}
 		case sqlexp.MsgNextResultSet:
@@ -371,12 +357,20 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 	// unlike uniqueidentifier the driver already decodes them into the
 	// literal ASCII digit string (e.g. "0.070312") rather than a binary
 	// blob — formatValue must render that []byte as a plain string, not hex.
+	//
+	// Every date/time type scans as a time.Time, so only the column type
+	// and its declared scale say how much of it SSMS actually shows — a
+	// date column has no time part to print, a time column no date part,
+	// and a datetime2(3) three fractional digits rather than seven.
+	// layouts carries that per column; see timeLayout.
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	guids := make([]*mssql.NullUniqueIdentifier, len(cols))
 	decimalLike := make([]bool, len(cols))
+	layouts := make([]string, len(cols))
 	for i := range cols {
-		switch types[i].DatabaseTypeName() {
+		typeName := types[i].DatabaseTypeName()
+		switch typeName {
 		case "UNIQUEIDENTIFIER":
 			guids[i] = &mssql.NullUniqueIdentifier{}
 			ptrs[i] = guids[i]
@@ -384,6 +378,8 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 		case "DECIMAL", "MONEY", "SMALLMONEY":
 			decimalLike[i] = true
 		}
+		_, scale, scaleKnown := types[i].DecimalSize()
+		layouts[i] = timeLayout(typeName, int(scale), scaleKnown)
 		ptrs[i] = &vals[i]
 	}
 	truncated := false
@@ -400,7 +396,7 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 			if g := guids[i]; g != nil {
 				row[i] = formatGUID(*g)
 			} else {
-				row[i] = formatValue(vals[i], decimalLike[i])
+				row[i] = formatValue(vals[i], decimalLike[i], layouts[i])
 			}
 		}
 		rs.Rows = append(rs.Rows, row)
@@ -417,6 +413,40 @@ const showplanColumnName = "Microsoft SQL Server 2005 XML Showplan"
 // Server uses for execution-plan output, rather than a real result set.
 func isShowplanResultSet(cols []string) bool {
 	return len(cols) == 1 && cols[0] == showplanColumnName
+}
+
+// scanNext consumes the result set sqlexp's MsgNext just announced,
+// appending it to res as either a showplan XML document or a grid of rows.
+// Errors are recorded on res rather than returned — a batch keeps running
+// after one, the way SSMS does — and reported as a false return, meaning
+// the set was abandoned with rows still pending for the caller to drain.
+func scanNext(rows *sql.Rows, res *Result, maxRows int) bool {
+	cols, err := rows.Columns()
+	if err != nil {
+		res.addError(err)
+		return false
+	}
+	if isShowplanResultSet(cols) {
+		xml, err := scanPlanXML(rows)
+		if err != nil {
+			res.addError(err)
+			return false
+		}
+		if xml != "" {
+			res.PlanXML = append(res.PlanXML, xml)
+		}
+		return true
+	}
+	rs, truncated, err := scanResultSet(rows, maxRows)
+	if err != nil {
+		res.addError(err)
+		return false
+	}
+	res.Sets = append(res.Sets, rs)
+	if truncated {
+		res.addNotice(fmt.Sprintf("Only the first %d row(s) are shown — increase Max Result Rows in Tools > Options to see more.", maxRows))
+	}
+	return true
 }
 
 // scanPlanXML reads the current (single-column, showplan) result set into
@@ -440,12 +470,61 @@ func formatGUID(g mssql.NullUniqueIdentifier) string {
 	return g.UUID.String()
 }
 
+// defaultTimeLayout renders a time.Time that arrived from a column whose
+// type didn't name one — a sql_variant holding a datetime, say. Matches
+// what plain "datetime" gets, the most common case by far.
+const defaultTimeLayout = "2006-01-02 15:04:05.000"
+
+// timeLayout returns the layout SSMS's grid uses for a date/time column of
+// the given SQL Server type, or "" for a type that isn't one. Each type
+// shows exactly the parts it stores and no more: a date column has no time
+// of day, a time column no date. Rendering them all as "datetime" — which
+// is what a single fixed layout does — invents a "00:00:00.000" for every
+// date column and silently truncates a datetime2's last four digits.
+//
+// datetime2, time and datetimeoffset carry a declared scale of 0-7 that
+// sets how many fractional-second digits they show, so scale comes from
+// the column's own DecimalSize (the driver reports it for exactly these
+// three types); scaleKnown false falls back to the type's 7-digit maximum.
+// The other types' precision is fixed by the type itself.
+func timeLayout(databaseTypeName string, scale int, scaleKnown bool) string {
+	if !scaleKnown {
+		scale = 7
+	}
+	switch databaseTypeName {
+	case "DATE":
+		return "2006-01-02"
+	case "TIME":
+		return "15:04:05" + fracLayout(scale)
+	case "SMALLDATETIME":
+		return "2006-01-02 15:04:05"
+	case "DATETIME":
+		return defaultTimeLayout
+	case "DATETIME2":
+		return "2006-01-02 15:04:05" + fracLayout(scale)
+	case "DATETIMEOFFSET":
+		return "2006-01-02 15:04:05" + fracLayout(scale) + " -07:00"
+	}
+	return ""
+}
+
+// fracLayout returns the fractional-second fragment of a Go time layout
+// for the given scale — "" at scale 0, which prints no decimal point at
+// all, the way SSMS shows a time(0).
+func fracLayout(scale int) string {
+	if scale <= 0 {
+		return ""
+	}
+	return "." + strings.Repeat("0", min(scale, 7))
+}
+
 // formatValue renders one cell the way SSMS displays it: NULL for nil,
-// 1/0 for bit, 0x… for binary, "2006-01-02 15:04:05.000" for datetimes.
-// isDecimalLike marks a []byte cell that actually holds a decoded
+// 1/0 for bit, 0x… for binary, and a date/time in its own column type's
+// layout. isDecimalLike marks a []byte cell that actually holds a decoded
 // decimal/money ASCII digit string rather than binary data (see
-// scanResultSet), so it's rendered as text instead of hex.
-func formatValue(v any, isDecimalLike bool) string {
+// scanResultSet), so it's rendered as text instead of hex. layout is that
+// column's time layout (see timeLayout), empty for a non-date/time column.
+func formatValue(v any, isDecimalLike bool, layout string) string {
 	switch x := v.(type) {
 	case nil:
 		return "NULL"
@@ -460,7 +539,10 @@ func formatValue(v any, isDecimalLike bool) string {
 		}
 		return "0x" + strings.ToUpper(hex.EncodeToString(x))
 	case time.Time:
-		return x.Format("2006-01-02 15:04:05.000")
+		if layout == "" {
+			layout = defaultTimeLayout
+		}
+		return x.Format(layout)
 	case string:
 		return x
 	default:

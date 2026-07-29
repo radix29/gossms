@@ -202,3 +202,37 @@ func TestContextMenuHiddenIgnoresEvents(t *testing.T) {
 		t.Fatalf("HandleKey() = true, want false when the menu isn't visible")
 	}
 }
+
+// TestContextMenuOutsideClickIsConsumed pins that a click outside an open
+// menu dismisses it *and* reports the event as handled — otherwise the same
+// click would both close the menu and activate whatever it landed on
+// (ModalDialog.ConsumeOutsideClick likewise consumes).
+func TestContextMenuOutsideClickIsConsumed(t *testing.T) {
+	cm := &ContextMenu{}
+	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
+	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+
+	// Row 0 is far above the menu, which was drawn at y=5.
+	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.Button1, tcell.ModNone)); !handled {
+		t.Error("HandleMouse(outside click) = false, want true (must not fall through)")
+	}
+	if cm.Visible() {
+		t.Error("menu still visible after an outside click")
+	}
+}
+
+// TestContextMenuOutsideMotionFallsThrough is the other half: motion with
+// no button held must still fall through while the menu is open, so hover
+// tracking elsewhere keeps working.
+func TestContextMenuOutsideMotionFallsThrough(t *testing.T) {
+	cm := &ContextMenu{}
+	cm.Show(5, 5, []MenuItem{{Label: "Open"}, {Label: "Close"}})
+	cm.Draw(&fakeMenuScreen{w: 40, h: 20})
+
+	if handled := cm.HandleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonNone, tcell.ModNone)); handled {
+		t.Error("HandleMouse(outside motion) = true, want false (must fall through)")
+	}
+	if !cm.Visible() {
+		t.Error("motion outside the menu closed it, want it left open")
+	}
+}

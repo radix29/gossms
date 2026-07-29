@@ -30,10 +30,8 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 		t.Fatalf("stack len = %d, want 1", len(a.dialogStack))
 	}
 
-	// Nesting: a second dialog opens while help is still visible (today
-	// this can't happen through normal input, since the visible dialog
-	// swallows all input — but a future dialog spawning a child, e.g.
-	// Backup > Browse, would hit exactly this path).
+	// Nesting: a second dialog opens while help is still visible — the
+	// path a dialog spawning a child takes, e.g. Backup > Browse.
 	a.optionsDialog.Show()
 	a.syncDialogStack()
 	if got := a.topDialog(); got != a.optionsDialog {
@@ -72,10 +70,9 @@ func TestDialogStackNestingAndPruning(t *testing.T) {
 
 // TestTasksDialogParticipatesInStack guards against the one mistake this
 // architecture can still make silently: adding a new dialog type without
-// remembering to append it to allDialogs in buildUI. If tasksDialog were
-// missing from that list, syncDialogStack would never notice it becoming
-// visible and it would draw over everything with no way to route input to
-// it — exactly the bug the dialog stack replaced hand-enumeration to avoid.
+// appending it to allDialogs in buildUI. If tasksDialog were missing from
+// that list, syncDialogStack would never notice it becoming visible and it
+// would draw over everything with no way to route input to it.
 func TestTasksDialogParticipatesInStack(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
 	a.buildUI()

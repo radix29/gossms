@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -101,7 +102,8 @@ func TestComputeColWidthsSamplesOnlyFirstRows(t *testing.T) {
 // RefreshColumnWidths picks up cells mutated in place (the pattern a
 // progressive background loader uses — see internal/tui's DetailBrowser)
 // without resetting scroll position or selection the way calling SetData
-// again would.
+// again would. The recompute lands on the next Draw, not on the call
+// itself — see RefreshColumnWidths.
 func TestRefreshColumnWidthsRecomputesWithoutResettingSelection(t *testing.T) {
 	g := newTestDataGrid()
 	rows := [][]string{{"a"}, {"b"}, {"c"}}
@@ -114,12 +116,47 @@ func TestRefreshColumnWidthsRecomputesWithoutResettingSelection(t *testing.T) {
 
 	rows[1][0] = strings.Repeat("w", 100)
 	g.RefreshColumnWidths()
+	g.Draw(&fakeMenuScreen{w: 40, h: 10})
 
 	if g.colWidths[0] != 40 {
-		t.Errorf("colWidths[0] after RefreshColumnWidths = %d, want 40 (clamped maximum)", g.colWidths[0])
+		t.Errorf("colWidths[0] after RefreshColumnWidths+Draw = %d, want 40 (clamped maximum)", g.colWidths[0])
 	}
 	if g.selRow != 2 {
 		t.Errorf("selRow after RefreshColumnWidths = %d, want 2 (unchanged)", g.selRow)
+	}
+}
+
+// TestRefreshColumnWidthsCoalescesUntilDraw pins the deferral itself: a
+// burst of RefreshColumnWidths calls between two frames (one per row, the
+// way a progressive backfill issues them) must cost one recompute, not one
+// per call, and a Draw with nothing pending must not recompute at all.
+func TestRefreshColumnWidthsCoalescesUntilDraw(t *testing.T) {
+	g := newTestDataGrid()
+	rows := [][]string{{"a"}, {"b"}, {"c"}}
+	g.SetData([]string{"Col"}, rows)
+	screen := &fakeMenuScreen{w: 40, h: 10}
+
+	rows[1][0] = strings.Repeat("w", 100)
+	for range 10 {
+		g.RefreshColumnWidths()
+	}
+	if g.colWidths[0] != 6 {
+		t.Errorf("colWidths[0] before Draw = %d, want 6 (recompute deferred)", g.colWidths[0])
+	}
+	if !g.widthsDirty {
+		t.Errorf("widthsDirty before Draw = false, want true")
+	}
+
+	g.Draw(screen)
+	if g.widthsDirty {
+		t.Errorf("widthsDirty after Draw = true, want false (one recompute drained the burst)")
+	}
+
+	// A second frame with nothing newly dirtied must leave the flag clear —
+	// i.e. Draw isn't recomputing unconditionally.
+	g.Draw(screen)
+	if g.widthsDirty {
+		t.Errorf("widthsDirty after idle Draw = true, want false")
 	}
 }
 
@@ -178,3 +215,108 @@ func TestDataGridSetErrorUsesRowSource(t *testing.T) {
 type errTest struct{ msg string }
 
 func (e errTest) Error() string { return e.msg }
+
+// wideTestDataGrid returns a grid whose columns are collectively far wider
+// than its rect, so horizontal scrolling — and therefore the horizontal
+// scrollbar — is in play.
+func wideTestDataGrid() *DataGrid {
+	g := newTestDataGrid() // 40 wide, 10 high
+	cols := []string{"aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee", "ffffffff"}
+	g.SetData(cols, [][]string{{"1", "2", "3", "4", "5", "6"}})
+	g.SetStatus("") // leave the whole status row to the bar
+	return g
+}
+
+// TestHScrollbarOnlyWhenColumnsOverflow confirms the horizontal scrollbar
+// appears exactly when there's something to scroll to — a grid whose
+// columns already fit gets none, which is what stops every two-column
+// property grid in the app from growing a pointless bar.
+func TestHScrollbarOnlyWhenColumnsOverflow(t *testing.T) {
+	narrow := newTestDataGrid()
+	narrow.SetData([]string{"Property", "Value"}, [][]string{{"Name", "x"}})
+	narrow.SetStatus("")
+	if _, _, _, _, _, _, ok := narrow.hScrollbar(); ok {
+		t.Errorf("hScrollbar ok = true for a grid whose columns fit, want false")
+	}
+
+	g := wideTestDataGrid()
+	x, y, w, total, visible, offset, ok := g.hScrollbar()
+	if !ok {
+		t.Fatalf("hScrollbar ok = false for an overflowing grid, want true")
+	}
+	if y != g.rect.Y+g.rect.H-1 {
+		t.Errorf("bar y = %d, want %d (the status row)", y, g.rect.Y+g.rect.H-1)
+	}
+	if x != g.rect.X || w < hScrollbarMinWidth {
+		t.Errorf("bar x/w = %d/%d, want x=%d and w >= %d", x, w, g.rect.X, hScrollbarMinWidth)
+	}
+	if total <= visible {
+		t.Errorf("total/visible = %d/%d, want total greater", total, visible)
+	}
+	if offset != 0 {
+		t.Errorf("offset at scrollCol 0 = %d, want 0", offset)
+	}
+}
+
+// TestHScrollbarDragScrollsColumns confirms dragging the thumb moves
+// scrollCol, keeps control once the pointer leaves the bar's own row, and
+// releases the latch on the mouse-up.
+func TestHScrollbarDragScrollsColumns(t *testing.T) {
+	g := wideTestDataGrid()
+	_, y, w, _, _, _, _ := g.hScrollbar()
+
+	// A press away from the bar's row must not start a drag.
+	if g.hScrollbarDrag(tcell.NewEventMouse(g.rect.X+2, y-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatalf("press off the bar's row started a horizontal scrollbar drag")
+	}
+
+	// A press at the far right of the track scrolls as far as it goes.
+	if !g.hScrollbarDrag(tcell.NewEventMouse(g.rect.X+w-1, y, tcell.Button1, tcell.ModNone)) {
+		t.Fatalf("press on the bar not consumed")
+	}
+	far := g.scrollCol
+	if far == 0 {
+		t.Fatalf("scrollCol after dragging to the end = 0, want a scrolled position")
+	}
+
+	// Still latched: an event off the bar's row keeps controlling scroll.
+	if !g.hScrollbarDrag(tcell.NewEventMouse(g.rect.X, y-3, tcell.Button1, tcell.ModNone)) {
+		t.Fatalf("drag off the bar's row not consumed while latched")
+	}
+	if g.scrollCol != 0 {
+		t.Errorf("scrollCol after dragging back to the left = %d, want 0", g.scrollCol)
+	}
+
+	g.HandleMouse(tcell.NewEventMouse(g.rect.X, y, tcell.ButtonNone, tcell.ModNone))
+	if g.sbDraggingH {
+		t.Errorf("sbDraggingH still set after the release")
+	}
+}
+
+// TestClickOnStatusRowDoesNotSelectOffscreenRow pins down that the grid's
+// bottom row belongs to the status bar (and the horizontal scrollbar
+// sharing it), not to the data: rect covers the header, its separator and
+// that row too, so an unbounded hit-test resolves a click there to
+// scrollRow+dataH — the first row below the view, selected invisibly.
+func TestClickOnStatusRowDoesNotSelectOffscreenRow(t *testing.T) {
+	g := newTestDataGrid() // 40x10 -> 7 data rows
+	rows := make([][]string, 50)
+	for i := range rows {
+		rows[i] = []string{strconv.Itoa(i)}
+	}
+	g.SetData([]string{"n"}, rows)
+
+	statusY := g.rect.Y + g.rect.H - 1
+	g.HandleMouse(tcell.NewEventMouse(g.rect.X+1, statusY, tcell.Button1, tcell.ModNone))
+	if g.selRow != 0 {
+		t.Errorf("selRow after clicking the status row = %d, want 0 (unchanged)", g.selRow)
+	}
+
+	// The last real data row still selects, so the bound isn't off by one.
+	lastDataY := g.rect.Y + 2 + (g.rect.H - 3) - 1
+	g.HandleMouse(tcell.NewEventMouse(g.rect.X, lastDataY, tcell.ButtonNone, tcell.ModNone))
+	g.HandleMouse(tcell.NewEventMouse(g.rect.X+1, lastDataY, tcell.Button1, tcell.ModNone))
+	if want := g.rect.H - 3 - 1; g.selRow != want {
+		t.Errorf("selRow after clicking the last data row = %d, want %d", g.selRow, want)
+	}
+}

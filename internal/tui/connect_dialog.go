@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
@@ -71,10 +73,9 @@ type ConnectDialog struct {
 	// most-recently-used and capped — see config.MaxSavedConnections)
 	// whose Server matches what's currently typed in fServer, shown as a
 	// list beneath it once at least 4 characters have been typed — or
-	// immediately on a mouse click in the field, whatever its content
-	// (see openMatchesForClick). A
-	// connection is saved automatically, auto-named
-	// "server,port,database,user", the moment it actually succeeds (see
+	// immediately on a mouse click in the field, whatever its content (see
+	// openMatchesForClick). A connection is saved automatically, auto-named
+	// "server,port,database,user", the moment it succeeds (see
 	// App.connectServer).
 	matches   []config.Connection
 	matchOpen bool
@@ -355,13 +356,34 @@ func (d *ConnectDialog) layoutFields() {
 	d.fConnStrPreview.SetBounds(lx, row, previewW, 4)
 }
 
+// defaultPort is the port used when the Port field is left empty — SQL
+// Server's own default.
+const defaultPort = 1433
+
+// port reads the Port field, defaulting an empty one, and reports whether
+// it parsed. A field that isn't a valid port number is rejected rather
+// than silently falling back: connecting to 1433 because "14 33" didn't
+// parse looks like the typo worked, and the failure that follows names the
+// wrong port.
+func (d *ConnectDialog) port() (int, bool) {
+	v := strings.TrimSpace(d.fPort.Value())
+	if v == "" {
+		return defaultPort, true
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 65535 {
+		return 0, false
+	}
+	return n, true
+}
+
 // currentOptions assembles a config.Connection from the dialog fields.
 // Name is left as the zero value; config.Config.AddOrUpdate fills in the
 // auto-generated name once a connection actually succeeds.
 func (d *ConnectDialog) currentOptions() config.Connection {
-	port, _ := strconv.Atoi(d.fPort.Value())
-	if port == 0 {
-		port = 1433
+	port, ok := d.port()
+	if !ok {
+		port = defaultPort
 	}
 	authMethod := config.AllAuthMethods()[d.ddAuth.Selected()]
 	return config.Connection{
@@ -457,6 +479,11 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 func (d *ConnectDialog) doButton() {
 	switch d.btnFocus {
 	case 0: // Connect
+		if _, ok := d.port(); !ok {
+			d.app.alertDialog.ShowAlert("Connect",
+				fmt.Sprintf("Port must be a number from 1 to 65535, not %q", strings.TrimSpace(d.fPort.Value())))
+			return
+		}
 		opts := d.currentOptions()
 		d.Hide()
 		d.app.connectServer(opts)
@@ -517,8 +544,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// The auth dropdown's open list is an overlay drawn last, so it gets
 	// first refusal of every click — ahead of ButtonClicked below, which
 	// would otherwise steal a click landing on an open list row that
-	// happens to visually overlap the button row (see backup_dialog.go/
-	// restore_dialog.go's identical ordering fix).
+	// happens to visually overlap the button row.
 	if d.ddAuth.HandleMouse(ev) {
 		d.refreshConnStrPreview()
 		return true

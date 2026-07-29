@@ -18,17 +18,16 @@ const completionInventoryTimeout = 30 * time.Second
 
 // completionInventory is one database's cached metadata snapshot for SQL
 // editor autocomplete (see App.completionInventories). loading is true from
-// the moment a load is kicked off until its postEvent lands; err is set if
+// the moment a load is kicked off until its result lands; err is set if
 // that load failed. byQualifiedName and bySchema are built once, right
 // after a successful load, so completion_provider.go's per-keystroke
 // lookups never re-scan catalog.Objects.
 //
 // loadSeq and cancelLoad guard this entry's in-flight background fetch —
-// the same beginLoad/endLoad pattern explorerNode uses to guard Object
-// Explorer node fetches (see object_explorer.go): loadSeq is bumped on
-// every fetch request, so a fetch whose result arrives after a newer one
-// was started for the same key can recognize itself as stale and drop
-// itself instead of clobbering fresher data; cancelLoad stops that
+// the same beginLoad/endLoad pattern explorerNode uses for Object Explorer
+// node fetches (see object_explorer.go): loadSeq is bumped on every fetch
+// request, so a result arriving after a newer fetch started for the same
+// key recognizes itself as stale and drops itself; cancelLoad stops that
 // superseded fetch's context outright.
 type completionInventory struct {
 	loading bool
@@ -45,6 +44,21 @@ type completionInventory struct {
 
 	loadSeq    int
 	cancelLoad context.CancelFunc
+
+	// serverKey is the sysCompletionInventoryKey of the server+login this
+	// entry belongs to — the same value for a database-level entry as for
+	// the sys-schema one covering the whole server. Recorded at creation so
+	// purgeCompletionInventories can find every entry for a disconnecting
+	// connection without having to take the map key apart.
+	serverKey string
+}
+
+// cancel stops this entry's in-flight load, if it has one.
+func (inv *completionInventory) cancel() {
+	if inv.cancelLoad != nil {
+		inv.cancelLoad()
+		inv.cancelLoad = nil
+	}
 }
 
 // beginLoad cancels whatever fetch is already in flight for this entry (a
@@ -53,9 +67,7 @@ type completionInventory struct {
 // pass seq to endLoad once the fetch completes, so a stale result can
 // recognize itself and refuse to overwrite fresher data.
 func (inv *completionInventory) beginLoad(parent context.Context, timeout time.Duration) (ctx context.Context, seq int) {
-	if inv.cancelLoad != nil {
-		inv.cancelLoad()
-	}
+	inv.cancel()
 	inv.loadSeq++
 	ctx, inv.cancelLoad = context.WithTimeout(parent, timeout)
 	return ctx, inv.loadSeq
@@ -118,7 +130,7 @@ func (a *App) ensureCompletionInventory(sc *db.ServerConn, database string) *com
 	if inv, ok := a.completionInventories[key]; ok {
 		return inv
 	}
-	inv := &completionInventory{loading: true}
+	inv := &completionInventory{loading: true, serverKey: sysCompletionInventoryKey(sc.Opts)}
 	if a.completionInventories == nil {
 		a.completionInventories = make(map[string]*completionInventory)
 	}
@@ -143,11 +155,35 @@ func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 	a.loadCompletionInventory(sc, database, key, inv)
 }
 
+// purgeCompletionInventories drops every cached catalog belonging to sc's
+// server+login, cancelling any load still in flight for one — called by
+// App.disconnect. The entries are keyed by server/port/database/user
+// rather than by *ServerConn, so without this a reconnect to the same
+// server would be served the catalog captured before the disconnect.
+func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
+	serverKey := sysCompletionInventoryKey(sc.Opts)
+	// Matched on the entry's own serverKey rather than by picking the
+	// database component back out of the map key: config.ConnectionName
+	// joins its four parts with commas, and a server address can itself
+	// carry one ("host,1435" — see db.resolveServer), so the key isn't
+	// safely splittable.
+	for key, inv := range a.completionInventories {
+		if inv.serverKey != serverKey {
+			continue
+		}
+		inv.cancel()
+		delete(a.completionInventories, key)
+	}
+	if inv, ok := a.sysCompletionInventories[serverKey]; ok {
+		inv.cancel()
+		delete(a.sysCompletionInventories, serverKey)
+	}
+}
+
 // refreshCompletionCache is Ctrl+R while the SQL editor has focus, and
 // Query > Refresh IntelliSense Cache: drops and reloads this panel's
 // completion inventory. A no-op (with a status message) for a panel with
-// no connection, matching the rest of the app's context-gated actions —
-// see cancelExecutingQuery for the same pattern.
+// no connection, like the rest of the app's context-gated actions.
 func (p *QueryPanel) refreshCompletionCache() {
 	if p.app.cfg.IntelliSenseDisabled {
 		p.app.setStatus("IntelliSense is disabled — enable it in Tools > Options")
@@ -163,23 +199,19 @@ func (p *QueryPanel) refreshCompletionCache() {
 }
 
 // loadCompletionInventory fetches the catalog on a background goroutine and
-// installs the result via postEvent — same shape as connectForQueryPanel
-// and runQuery. See wakeEventLoop's doc comment for why the wakeup send
-// must happen after postEvent, outside its closure, still on this
-// goroutine: Run()'s event loop only drains queued callbacks when it wakes
-// for some event on EventQ(), so a wakeup nested inside the very closure
-// waiting to be drained would never fire.
+// installs the result via postAndWake — same shape as connectForQueryPanel
+// and runQuery.
 //
 // inv.beginLoad/endLoad guard against a fast double-refresh (or a refresh
 // racing the initial load): if a newer load for the same key starts before
-// this one's result lands, this one's postEvent recognizes itself as
+// this one's result lands, this one's callback recognizes itself as
 // superseded and discards its result instead of clobbering the newer one.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
 	go func() {
 		cat, err := srv.Database(database).CatalogContext(ctx)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
 				return // superseded by a newer load for this key
 			}
@@ -187,21 +219,26 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				// This key's cache is shared by every ServerConn that
 				// resolves to the same server+login+database (Object
 				// Explorer's connection and every query panel's own
-				// dedicated one) — sc merely happened to be the one whose
-				// ensureCompletionInventory call started this fetch. sc
-				// having been closed mid-fetch says nothing about whether
-				// some other connection sharing the key is still alive and
-				// wants the result, and err's exact shape here depends on a
-				// race (a context-cancellation error if sc.Close() ran
-				// while the query already held a checked-out connection, or
-				// a plain "database is closed" if it ran before one was
-				// even acquired — sql.DB.Conn checks its closed flag before
-				// context cancellation) — checking sc.IsOpen() directly
-				// instead of matching either error shape covers both. Drop
-				// the entry instead of poisoning it with sc's own teardown
-				// error, so the next lookup (from any connection) just
-				// retries fresh.
-				delete(a.completionInventories, key)
+				// dedicated one); sc merely happened to be the one whose
+				// ensureCompletionInventory call started this fetch. Its
+				// having closed mid-fetch says nothing about whether
+				// another connection sharing the key still wants the
+				// result, and err's exact shape depends on a race — a
+				// context-cancellation error if sc.Close() ran while the
+				// query already held a checked-out connection, a plain
+				// "database is closed" if it ran before one was acquired —
+				// so sc.IsOpen() is checked instead of matching either
+				// shape. The entry is dropped rather than poisoned with
+				// sc's own teardown error, so the next lookup from any
+				// connection retries fresh — but only if it's still this
+				// entry. purgeCompletionInventories drops the whole
+				// server's entries on disconnect, so a reconnect to the
+				// same server before this lands has already put a
+				// different, live entry under this key, and deleting that
+				// one would strand its own in-flight load.
+				if a.completionInventories[key] == inv {
+					delete(a.completionInventories, key)
+				}
 				return
 			}
 			if err != nil {
@@ -214,7 +251,6 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			}
 			a.refreshCompletionPopups(key)
 		})
-		a.wakeEventLoop()
 	}()
 }
 
@@ -261,7 +297,7 @@ func (a *App) ensureSysCompletionInventory(sc *db.ServerConn) *completionInvento
 	if inv, ok := a.sysCompletionInventories[key]; ok {
 		return inv
 	}
-	inv := &completionInventory{loading: true}
+	inv := &completionInventory{loading: true, serverKey: key}
 	if a.sysCompletionInventories == nil {
 		a.sysCompletionInventories = make(map[string]*completionInventory)
 	}
@@ -272,10 +308,10 @@ func (a *App) ensureSysCompletionInventory(sc *db.ServerConn) *completionInvento
 
 // retrySysCompletionInventory reloads the sys-schema inventory for sc's
 // server only if its last load failed — part of Ctrl+R. The sys catalog
-// itself never changes while a server is up, so a successful (or still
-// loading) snapshot is deliberately kept; this is just the retry path for
-// a connect-time failure, which otherwise had none. Reuses the existing
-// entry (if any) rather than replacing it — see refreshCompletionInventory.
+// never changes while a server is up, so a successful (or still loading)
+// snapshot is kept; this is the retry path for a connect-time failure.
+// Reuses the existing entry (if any) rather than replacing it — see
+// refreshCompletionInventory.
 func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 	key := sysCompletionInventoryKey(sc.Opts)
 	inv, ok := a.sysCompletionInventories[key]
@@ -291,9 +327,9 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 }
 
 // loadSysCompletionInventory fetches the "sys" schema catalog on a
-// background goroutine and installs the result via postEvent — same shape
-// (and same wakeEventLoop-outside-the-closure and beginLoad/endLoad
-// stale-result guard) as loadCompletionInventory. The query runs against
+// background goroutine and installs the result via postAndWake — same
+// shape (and same beginLoad/endLoad stale-result guard) as
+// loadCompletionInventory. The query runs against
 // "master": any database would return the same catalog-view definitions,
 // and master is the one every login connecting to a server can reach.
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
@@ -301,7 +337,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
 	go func() {
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
 				return // superseded by a newer load for this key
 			}
@@ -321,7 +357,6 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 			inv.applyCatalog(cat)
 			a.refreshSysCompletionPopups(key)
 		})
-		a.wakeEventLoop()
 	}()
 }
 

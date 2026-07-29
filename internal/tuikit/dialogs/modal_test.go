@@ -82,3 +82,31 @@ func TestModalDialogScrollbarDrag(t *testing.T) {
 		t.Error("sbDragging should reset on release via ConsumeOutsideClick")
 	}
 }
+
+// A button click closes the dialog on the press, so the matching release
+// never reaches ConsumeOutsideClick's latch reset — HandleMouse bails on
+// !visible and the host has already stopped routing to it. Left latched,
+// ButtonClicked refuses the first click of the *next* showing, and the
+// reopened dialog looks frozen. Show has to start clean.
+func TestModalDialogLatchDoesNotSurviveIntoTheNextShowing(t *testing.T) {
+	d := &ModalDialog{}
+	d.InitModal(&sizedScreen{w: 100, h: 30}, "Confirm", 60, 10)
+	d.Show()
+
+	labels := []string{"Yes", "No"}
+	y := d.ButtonRowY()
+	x := d.buttonRowStartX(labels) + 1
+	press := func() *tcell.EventMouse {
+		return tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone)
+	}
+
+	if got := d.ButtonClicked(press(), labels); got != 0 {
+		t.Fatalf("first click = %d, want 0 (Yes)", got)
+	}
+	d.Hide() // as every button handler does, while the button is still down
+
+	d.Show() // reopened later, with no release ever delivered in between
+	if got := d.ButtonClicked(press(), labels); got != 0 {
+		t.Errorf("first click of the second showing = %d, want 0 — the latch survived Show", got)
+	}
+}

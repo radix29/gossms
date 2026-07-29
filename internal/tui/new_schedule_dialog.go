@@ -44,80 +44,25 @@ func fetchNewSchedulePrefetch(ctx context.Context, sc *db.ServerConn) (*nschedul
 
 // NewScheduleDialog is the New Schedule creation dialog.
 type NewScheduleDialog struct {
-	*propsheet.PropertySheet
-
-	app *App
-	sc  *db.ServerConn
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	prefetch     *nschedulePrefetch
-	forms        [2]*propsheet.Form
-	applyFns     [2]propApply
-	scheduleName func() string
-	preflight    func() error
+	newObjectDialog[nschedulePrefetch]
 }
 
 // NewNewScheduleDialog creates the dialog and wires its callbacks.
 func NewNewScheduleDialog(app *App) *NewScheduleDialog {
-	d := &NewScheduleDialog{
-		app:           app,
-		PropertySheet: propsheet.NewPropertySheet(app.screen, "New Schedule"),
-	}
-	d.OnLoadPage = d.onLoadPage
-	d.OnApply = func() { d.runApply(false) }
-	d.OnOK = func() { d.runApply(true) }
-	d.OnClose = d.onClose
-	d.ConfirmDiscard = d.onConfirmDiscard
-	d.OnScript = d.runScript
+	d := &NewScheduleDialog{}
+	d.init(app, newObjectConfig[nschedulePrefetch]{
+		title:          "New Schedule",
+		noun:           "Schedule",
+		pages:          []string{"General", "Jobs"},
+		scriptDatabase: "msdb",
+		fetch:          fetchNewSchedulePrefetch,
+		build:          d.buildPages,
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentSchedules) },
+	})
 	return d
 }
 
-func (d *NewScheduleDialog) show(sc *db.ServerConn) {
-	if d.cancel != nil {
-		d.cancel()
-	}
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
-	d.sc = sc
-	d.prefetch = nil
-	d.forms = [2]*propsheet.Form{}
-	d.applyFns = [2]propApply{}
-	d.scheduleName = nil
-	d.preflight = nil
-	d.SetHeader("Instance: "+sc.Opts.Server, "Connected: yes")
-	d.SetPages([]string{"General", "Jobs"})
-	d.Show()
-}
-
-func (d *NewScheduleDialog) onClose() { cancelIfSet(d.cancel) }
-
-func (d *NewScheduleDialog) post(fn func()) { d.app.postAndWake(fn) }
-
-func (d *NewScheduleDialog) onLoadPage(page, seq int) {
-	if d.prefetch != nil {
-		d.SetPageForm(page, seq, d.forms[page])
-		return
-	}
-	sc := d.sc
-	sessionCtx := d.ctx
-	go func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-		pf, err := fetchNewSchedulePrefetch(ctx, sc)
-		d.post(func() {
-			if err != nil {
-				d.SetPageError(page, seq, err)
-				return
-			}
-			d.buildPages(pf)
-			d.SetPageForm(page, seq, d.forms[page])
-		})
-	}()
-}
-
 func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
-	d.prefetch = pf
 	sc := d.sc
 
 	freqForm := newScheduleFreqForm()
@@ -173,9 +118,9 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 		return nil
 	}
 
-	d.forms = [2]*propsheet.Form{generalForm, jobsForm}
-	d.applyFns = [2]propApply{generalApply, jobsApply}
-	d.scheduleName = scheduleName
+	d.forms = []*propsheet.Form{generalForm, jobsForm}
+	d.applyFns = []propApply{generalApply, jobsApply}
+	d.objectName = scheduleName
 	d.preflight = func() error {
 		name := scheduleName()
 		if name == "" {
@@ -186,70 +131,4 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 		}
 		return nil
 	}
-}
-
-func (d *NewScheduleDialog) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
-}
-
-func (d *NewScheduleDialog) runPipeline(runCtx context.Context, onSuccess func()) {
-	if d.prefetch == nil {
-		d.SetMessage("Still loading — try again in a moment.", true)
-		return
-	}
-	if err := d.preflight(); err != nil {
-		d.SelectPage(0)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-	if page, err := d.Validate(); err != nil {
-		d.SelectPage(page)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-
-	fns := d.applyFns
-	d.SetApplying(true)
-	d.SetMessage("", false)
-
-	go func() {
-		var runErr error
-		for _, fn := range fns {
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
-		d.post(func() {
-			d.SetApplying(false)
-			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
-				return
-			}
-			onSuccess()
-		})
-	}()
-}
-
-func (d *NewScheduleDialog) runApply(hideOnSuccess bool) {
-	d.runPipeline(d.ctx, func() {
-		d.app.setStatus(fmt.Sprintf("Schedule %q created", d.scheduleName()))
-		d.app.explorer.RefreshFolderByType(d.sc, NodeAgentSchedules)
-		if hideOnSuccess {
-			d.Hide()
-		}
-	})
-}
-
-func (d *NewScheduleDialog) runScript() {
-	scriptCtx, script := gosmo.WithScript(d.ctx)
-	sc := d.sc
-	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "msdb", strings.Join(script.Statements, "\n\n"))
-	})
 }

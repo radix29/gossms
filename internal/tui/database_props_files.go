@@ -203,14 +203,10 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				// Deliberately does NOT call commitCurrent(): these fields
 				// double as the previously-selected file's live edit, and
 				// commitCurrent() writes nameField's text into that file's
-				// rename target — if the user typed a brand-new name here
-				// intending to Add, that write would silently rename the
-				// wrong file instead (Logical name is the one field this
-				// page lets you both edit-in-place and repurpose for Add,
-				// unlike Extended Properties' Name, which is never
-				// rewritten by its own commitCurrent). Any not-yet-applied
-				// edit to the previously selected file is simply left as
-				// last synced from its own selection instead.
+				// rename target, so a brand-new name typed here intending
+				// to Add would silently rename the wrong file. Any
+				// not-yet-applied edit to the previously selected file is
+				// left as last synced from its own selection.
 				name := nameField.Value()
 				if name == "" {
 					return

@@ -14,13 +14,9 @@ import (
 // (identity, owner, and the shared frequency form from
 // agent_schedule_form.go) plus a read-only Jobs page listing which jobs
 // use this schedule. Mirrors agent_job_props.go's shape, including its
-// shared *string name cell: every page closes over &scheduleName instead
-// of a frozen string, so a rename on General is visible to any later
-// page's apply in the same pipeline run, and to PropDialog.InvalidateAll's
-// post-Apply reload of the current page — see
-// sql-agent-job-props-review-2026-07 memory (Bug 2), the same bug shape
-// found and fixed in Job Properties, applied here from the start rather
-// than shipping it and fixing it later.
+// shared *string name cell: every page closes over &scheduleName, so a
+// rename on General is visible to later pages in the same pipeline run and
+// to PropDialog.InvalidateAll's post-Apply reload.
 
 // findAgentSchedule is a thin wrapper over gosmo.Server.ScheduleByNameContext,
 // mirroring findAgentJob.
@@ -38,13 +34,10 @@ func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 }
 
 // showScheduleProperties opens Schedule Properties for a known connection
-// and schedule name — the Object Explorer context menu's entry point
-// (mirrors showJobPropertiesFor). database is "msdb" so Script Changes'
-// generated query window opens there, matching every other Agent action's
-// query window.
+// and schedule name — the Object Explorer context menu's entry point.
+// database is "msdb" so Script Changes' generated query window opens there.
 func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
@@ -88,10 +81,8 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 						return err
 					}
 					// Update the shared cell immediately so the Jobs
-					// page's own load (and any reload after a successful
-					// Apply/OK, via PropDialog.InvalidateAll) re-fetches
-					// under the new name instead of one that no longer
-					// exists.
+					// page's load, and any reload after a successful
+					// Apply/OK, re-fetch under the new name.
 					*scheduleName = freqForm.name()
 				}
 				if freqForm.enabledCheck.Dirty() {

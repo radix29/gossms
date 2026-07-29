@@ -18,9 +18,8 @@ import (
 // applies when internal/query splits a script into batches to execute (see
 // internal/query/executor.go) — and, additionally, a top-level (paren-depth
 // zero) DML-leading keyword (SELECT/INSERT/UPDATE/DELETE/MERGE/WITH), so
-// scripts stacking several ad hoc statements with no ';' between them —
-// completely normal in SSMS, where a trailing ';' is optional — still split
-// correctly. A UNION/EXCEPT/INTERSECT-chained SELECT, a CTE's own main
+// scripts stacking several ad hoc statements with no ';' between them still
+// split correctly. A UNION/EXCEPT/INTERSECT-chained SELECT, a CTE's own main
 // SELECT after WITH ... AS (...), and INSERT ... SELECT are recognised as
 // continuations of the same statement, not new ones (see sqlStatementAt
 // below — the same heuristic internal/tui's IntelliSense scopes column
@@ -33,8 +32,8 @@ import (
 //
 // This is a lexical approximation, not a full T-SQL parser: only
 // INSERT ... VALUES followed by a later, genuinely separate SELECT with no
-// ';' between them is (rarely) missed — a known best-effort limitation,
-// matching dmlStatementStarts' own documented one.
+// ';' between them is (rarely) missed — a known limitation, matching
+// dmlStatementStarts' own.
 //
 // No-ops (returns false, selection untouched) if the statement at the
 // cursor is empty or all-whitespace — e.g. the cursor sits on a blank line

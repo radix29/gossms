@@ -13,9 +13,9 @@ import (
 
 // LabelWidth is the fixed display-column width reserved for a row's label
 // before its value/control begins. Every value-carrying row lines up on
-// this column so a page reads as an aligned two-column form, matching the
-// mockups. Checkbox rows are the one exception — they follow
-// widgets.CheckBox's own "[x] Label" order, not "Label [x]".
+// this column so a page reads as an aligned two-column form. Checkbox rows
+// are the one exception — they follow widgets.CheckBox's own "[x] Label"
+// order, not "Label [x]".
 const LabelWidth = 30
 
 const selectControlWidth = 22
@@ -55,13 +55,14 @@ func (r *SectionRow) Draw(s tcell.Screen, focused bool) {
 // ---------------------------------------------------------------------------
 
 type noteRow struct {
-	text    string
-	lines   []string
-	x, y, w int
+	text       string
+	lines      []string
+	x, y, w    int
+	drawHeight int
 }
 
 // Note returns a non-focusable row of word-wrapped, dimmed text.
-func Note(text string) Row { return &noteRow{text: text} }
+func Note(text string) Row { return &noteRow{text: text, drawHeight: -1} }
 
 func (r *noteRow) Height(w int) int { return len(core.WrapText(r.text, w)) }
 func (r *noteRow) Layout(x, y, w int) {
@@ -72,10 +73,19 @@ func (r *noteRow) Focusable() bool { return false }
 func (r *noteRow) Draw(s tcell.Screen, focused bool) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-	for i, line := range r.lines {
+	lines := r.lines
+	if r.drawHeight >= 0 && r.drawHeight < len(lines) {
+		lines = lines[:r.drawHeight]
+	}
+	for i, line := range lines {
 		core.DrawText(s, r.x, r.y+i, st, line)
 	}
 }
+
+// MinDrawHeight and SetDrawHeight implement Shrinkable: a note drops its
+// trailing wrapped lines rather than running past the form's bottom edge.
+func (r *noteRow) MinDrawHeight() int  { return 1 }
+func (r *noteRow) SetDrawHeight(h int) { r.drawHeight = h }
 
 // ---------------------------------------------------------------------------
 // StaticRow — focusable, read-only label/value pair

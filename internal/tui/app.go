@@ -52,15 +52,28 @@ type App struct {
 	dragY    int
 
 	// mouseButtonDown tracks whether Button1 is currently held, regardless
-	// of where the gesture started or which widget is under the cursor
-	// right now — unlike the per-widget mouseDragging latches (Toolbar,
-	// TreeView, MenuBar, ModalDialog), which only catch a resend *staying
-	// within the same widget*, this is what lets handleMouse recognise a
-	// drag that started elsewhere (e.g. a text selection in the query
-	// editor) and merely drifted across the status row mid-gesture,
-	// distinguishing it from a genuine fresh press starting there. See
-	// handleMouse's use for opening the Status History dialog.
+	// of where the gesture started or which widget is under the cursor.
+	// Unlike the per-widget mouseDragging latches (Toolbar, TreeView,
+	// MenuBar, ModalDialog), which only catch a resend staying within the
+	// same widget, this is what lets handleMouse tell a drag that started
+	// elsewhere and merely drifted across the status row from a fresh press
+	// starting there. See handleMouse's use for the Status History dialog.
 	mouseButtonDown bool
+
+	// gestureOwner is the region that claimed the Button1 press currently
+	// being held, or ownerNone between gestures — the App-level counterpart
+	// of propsheet.PropertySheet.dragZone and QueryPanel.dragZone. Without
+	// it, a drag that merely wanders out of the region it started in is
+	// handed to whatever it wanders over: leftward out of a query editor
+	// arms an Object Explorer drag-and-drop that pastes a node's SQL on
+	// release, and across the explorer/panels splitter bar resizes the two.
+	// Cleared on the release.
+	gestureOwner appGestureOwner
+
+	// gestureOverlay is the modal layer as it stood when the current
+	// gesture began, so handleMouse can tell that a dialog, context menu,
+	// or menu dropdown has opened or closed since — see its use there.
+	gestureOverlay overlayStack
 
 	menuBar       *controls.MenuBar
 	toolbar       *controls.Toolbar
@@ -133,28 +146,23 @@ type App struct {
 
 	// wakePending coalesces wakeEventLoop calls: true from the moment an
 	// EventInterrupt has been sent until the event loop next wakes for any
-	// event and clears it. A background goroutine that finds it already
-	// true skips sending its own interrupt — the callback it just queued via
-	// postEvent is still guaranteed to run, because drainPending() drains
-	// the whole a.pending queue (not just the callback that triggered the
-	// interrupt actually in flight) the next time the loop wakes for any
-	// reason. Without this, a burst of near-simultaneous background
-	// completions (e.g. the bounded per-row fetches in
-	// loadDatabasesFolderDetails/loadTablesFolderDetails) each queue their
-	// own EventInterrupt, and the loop pays for a full drainPending +
-	// syncDialogStack + draw() per one even though the first one already
-	// picked up every callback queued by then.
+	// event and clears it. A background goroutine that finds it already true
+	// skips sending its own interrupt — the callback it queued via postEvent
+	// still runs, because drainPending() drains the whole a.pending queue
+	// the next time the loop wakes for any reason. Without this, a burst of
+	// near-simultaneous background completions (the bounded per-row fetches
+	// in loadDatabasesFolderDetails/loadTablesFolderDetails) each cost a
+	// full drainPending + syncDialogStack + draw().
 	wakePending atomic.Bool
 
 	// quitMu serializes wakeEventLoop's channel send against quit's call to
 	// screen.Fini(), which closes EventQ() — see quit's and wakeEventLoop's
-	// doc comments. A plain "check quitting, then send" (even with an
-	// atomic bool) would still race: Fini() could close the channel between
-	// the check and the send. Holding quitMu across both the quitting flag
-	// and the send itself (in wakeEventLoop) and across setting the flag
-	// and calling Fini() (in quit) makes the two mutually exclusive, so a
-	// send either fully completes before Fini() closes the channel, or
-	// never happens at all.
+	// doc comments. Checking a quitting flag before sending would still
+	// race: Fini() can close the channel between the check and the send.
+	// Holding quitMu across both the flag and the send (in wakeEventLoop),
+	// and across setting the flag and calling Fini() (in quit), makes the
+	// two mutually exclusive — a send either completes before Fini() closes
+	// the channel or never happens at all.
 	quitMu   sync.Mutex
 	quitting bool
 }
@@ -186,12 +194,11 @@ func (a *App) Run() error {
 	// channel is closed by Fini(), so `for ev := range` exits automatically
 	// on quit instead of needing a nil-event sentinel check.
 	for ev := range s.EventQ() {
-		// Cleared before draining (not after) so a postEvent+wakeEventLoop
-		// call racing this exact instant still gets a wake of its own: if
-		// its append to a.pending happens after drainPending's mutex-
-		// protected read below, wakePending is already false again by then,
-		// so its CompareAndSwap succeeds and queues a fresh EventInterrupt
-		// instead of the callback silently waiting for some unrelated event.
+		// Cleared before draining, not after, so a postEvent+wakeEventLoop
+		// racing this instant still gets a wake of its own: if its append
+		// to a.pending lands after drainPending's mutex-protected read
+		// below, wakePending is already false again, so its CompareAndSwap
+		// succeeds and queues a fresh EventInterrupt.
 		a.wakePending.Store(false)
 		a.drainPending()
 		a.syncDialogStack()
@@ -221,11 +228,10 @@ func (a *App) Run() error {
 		}
 
 		// Re-sync before drawing: the event just handled may have opened or
-		// closed a dialog (a keystroke or menu click calling Show()/Hide()),
-		// and draw() renders straight from dialogStack. Without this the new
-		// dialog wouldn't appear — nor a closed one vanish — until the next
-		// event happened to arrive. The top-of-loop sync still runs so input
-		// routing sees changes made by drainPending's callbacks.
+		// closed a dialog, and draw() renders straight from dialogStack, so
+		// without this a new dialog wouldn't appear — nor a closed one
+		// vanish — until the next event arrived. The top-of-loop sync still
+		// runs so input routing sees changes made by drainPending.
 		a.syncDialogStack()
 		a.draw()
 	}
@@ -236,10 +242,13 @@ func (a *App) Run() error {
 // immediately wakes the event loop to run it, without waiting for an
 // unrelated key press or mouse move to arrive first. Call it from a
 // background goroutine, after any other work it needs to do — never from
-// the UI goroutine itself (see wakeEventLoop's doc comment). This is the
-// shared body behind PropDialog.post and every New*Dialog.post — a
-// background operation's completion handoff, wired through OnClose's cancel
-// the same way across all of them.
+// the UI goroutine itself (see wakeEventLoop's doc comment).
+//
+// This is how every background operation in internal/tui reports its
+// result, and the only way one should: writing the two calls out by hand
+// invites nesting the wakeup inside the very closure that's waiting to be
+// drained, which never fires. See wakeEventLoop for why. It's also the
+// shared body behind PropDialog.post and every New*Dialog.post.
 func (a *App) postAndWake(fn func()) {
 	a.postEvent(fn)
 	a.wakeEventLoop()
@@ -264,25 +273,35 @@ func (a *App) drainPending() {
 // wakeEventLoop nudges the event loop to run one more iteration — draining
 // callbacks queued via postEvent and redrawing. Call it from a background
 // goroutine after postEvent; calling it from the UI thread itself would
-// deadlock (the loop can't read EventQ while it's mid-dispatch). Mirrors
-// the postEvent+EventInterrupt handoff every other background operation
-// here uses (see app_connections.go, tasks.go, query_panel.go).
+// deadlock (the loop can't read EventQ while it's mid-dispatch).
 //
-// A no-op when a.screen is nil, which every App built by the tui package's
-// own newTestApp helper is — "no screen, no event loop" by design. Without
-// this guard, a background goroutine from an async action exercised in such
-// a test (connectForQueryPanel, startTask/postTaskDone, ...) can still be
-// running after its test function has already returned, and calling this
-// then would panic on the nil screen — nothing waits for these goroutines
-// to finish, so whether that happens before or after the test binary exits
-// is a timing accident, one `go test -race` (which slows everything down)
-// made an intermittent, hard-to-reproduce crash.
+// Reach for postAndWake rather than this directly. The wakeup has to be
+// sent after the postEvent call and outside its closure: Run()'s loop only
+// drains queued callbacks when it wakes for some event on EventQ(), so a
+// wakeup nested inside the very closure waiting to be drained can never
+// fire, and the result sits queued and invisible until an unrelated
+// keypress happens to drain it. That was a real shipped bug. The one
+// caller left that needs this on its own is QueryPanel's elapsed-timer
+// tick, which has no callback to post.
 //
-// Also a no-op if wakePending is already set (see its doc comment on App —
-// coalesces a burst of concurrent callers into one interrupt) or if the app
-// is quitting (see quit's doc comment — quitMu makes the two mutually
+// A no-op when a.screen is nil, as it is for every App built by newTestApp:
+// a background goroutine from an async action exercised in such a test can
+// still be running after its test function returned, and would otherwise
+// panic on the nil screen.
+//
+// Also a no-op if wakePending is already set (see its doc comment on App)
+// or if the app is quitting (see quit's — quitMu makes the two mutually
 // exclusive, so this either sends before Fini() closes EventQ() or not at
 // all, never after).
+//
+// The send is non-blocking. quitMu is held across it, and quit() takes the
+// same lock from the UI goroutine, which is then not draining EventQ(): a
+// blocking send on a full queue (tcell buffers 128, which all-motion mouse
+// tracking fills fast during a slow frame) would hold quitMu while quit()
+// waited for it, hanging Ctrl+Q. Giving up on a full queue loses nothing —
+// a full queue guarantees the loop is about to wake for those events, and
+// the top of Run()'s loop clears wakePending and calls drainPending() on
+// every iteration regardless of what woke it.
 func (a *App) wakeEventLoop() {
 	if a.screen == nil {
 		return
@@ -295,7 +314,10 @@ func (a *App) wakeEventLoop() {
 	if a.quitting {
 		return
 	}
-	a.screen.EventQ() <- tcell.NewEventInterrupt(nil)
+	select {
+	case a.screen.EventQ() <- tcell.NewEventInterrupt(nil):
+	default:
+	}
 }
 
 // buildUI creates all UI components from tuikit building blocks.
@@ -376,12 +398,11 @@ func (a *App) focusPanels() {
 
 // syncActivePanelFocus keeps the visible panel's Activatable state (title
 // bar highlight, cursor visibility) in sync with a.focus. PanelManager only
-// calls SetActive when its own active index changes (a tab switch); it has
-// no idea a.focus even exists. So anything that can leave a.focus ==
-// "explorer" while also changing which panel is active — nextPanel/
-// prevPanel in particular — must call this too, or the newly-selected panel
-// would show itself as focused while Object Explorer still holds real
-// keyboard focus.
+// calls SetActive when its own active index changes, and knows nothing
+// about a.focus — so anything that can leave a.focus == "explorer" while
+// changing which panel is active (nextPanel/prevPanel) must call this too,
+// or the newly-selected panel shows as focused while Object Explorer still
+// holds real keyboard focus.
 func (a *App) syncActivePanelFocus() {
 	if p, ok := a.panels.ActivePanel().(layout.Activatable); ok {
 		p.SetActive(a.focus == "panels")
@@ -508,40 +529,46 @@ func (a *App) draw() {
 	s.Show()
 }
 
-// quit tears down the screen, which closes EventQ() — Run()'s `for ev :=
-// range` loop exits as a result, and s.EventQ() is unusable from then on.
+// quit tears the screen down unconditionally — Fini closes EventQ(), which
+// is what ends Run's loop, and s.EventQ() is unusable from then on. Callers
+// reached from a user action want requestQuit instead, which offers to save
+// unsaved query panels first.
+//
 // quitMu is held across setting quitting and calling Fini() so a
-// wakeEventLoop call racing this from a background goroutine (e.g.
-// tickExecuting's ticker, still running because closePanelAt only cancels a
-// panel's own in-flight query on close, not on quit) either completes its
-// send before Fini() closes EventQ(), or sees quitting and skips sending
-// entirely — never sends after the channel is already closed, which would
+// wakeEventLoop call racing this from a background goroutine either
+// completes its send before Fini() closes EventQ(), or sees quitting and
+// skips sending entirely — never sends on the closed channel, which would
 // panic.
+//
+// screen is nil for the minimal *App some tests build by hand (see
+// newTestApp in app_connections_test.go) without going through Run; quitting
+// is the flag everything else keys off, so setting it is the part that has
+// to happen either way. Same reasoning as setStatus's nil check below.
 func (a *App) quit() {
 	a.quitMu.Lock()
 	defer a.quitMu.Unlock()
 	a.quitting = true
-	a.screen.Fini()
+	if a.screen != nil {
+		a.screen.Fini()
+	}
 }
 
 func (a *App) setStatus(msg string) {
 	a.statusText = msg
 	// statusHistoryDialog is nil for the minimal *App some tests build by
 	// hand (see newTestApp in app_connections_test.go) without going
-	// through buildUI — guard rather than require every such helper to
-	// construct the full dialog set just to call setStatus.
+	// through buildUI.
 	if a.statusHistoryDialog != nil {
 		a.statusHistoryDialog.Record(msg)
 	}
 }
 
-// logStatus records msg in both the log file (matching the log.Printf
-// calls it replaces) and the status-history dialog, but — unlike
-// setStatus — never touches the single-line a.statusText the status bar
-// currently shows. Used for background/diagnostic detail (a config-save
-// failure after an already-successful connect, a child-node fetch error
-// that's already surfaced via a visible error tree node) that shouldn't
-// clobber whatever the status bar is currently displaying.
+// logStatus records msg in both the log file and the status-history dialog
+// but, unlike setStatus, never touches the single-line a.statusText the
+// status bar shows. Used for background/diagnostic detail — a config-save
+// failure after an otherwise successful connect, a child-node fetch error
+// already surfaced as an error tree node — that shouldn't clobber the
+// status bar.
 func (a *App) logStatus(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	log.Print(msg)

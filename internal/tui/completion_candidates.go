@@ -97,11 +97,9 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, refs []f
 // "sys" once its inventory has loaded) and every table/view whose name
 // starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
 // context, and the fallback when a column context has no FROM-scope yet.
-// The sys-schema inventory's own objects are deliberately not mixed into
-// the unqualified list below (unlike the connected database's own tables) —
-// there are hundreds of them, so offering them only once a query actually
-// qualifies with "sys." (see memberCandidates) keeps this list from
-// drowning in system catalog views nobody typed a prefix for.
+// The sys-schema inventory's own objects are not mixed into the unqualified
+// list below: there are hundreds of them, so they're offered only once a
+// query qualifies with "sys." (see memberCandidates).
 func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem

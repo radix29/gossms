@@ -11,11 +11,10 @@ import (
 
 // agent_operator_props.go builds the Operator Properties dialog — General
 // (identity, e-mail, category) and a read-only Notifications page listing
-// which alerts/jobs notify this operator. Field shapes mirror
-// new_operator_dialog.go's creation form; Pager/Net Send stay excluded —
-// SQL-only scope, no gosmo setters. Uses the same shared *string name-cell
-// pattern as agent_schedule_props.go/agent_alert_props.go — see those
-// files' doc comments and sql-agent-job-props-review-2026-07 (Bug 2).
+// which alerts/jobs notify this operator. Pager/Net Send are excluded:
+// SQL-only scope, no gosmo setters. Every page closes over a shared
+// *string name cell, so a rename on General is visible to later pages in
+// the same Apply run.
 
 // findAgentOperator is a thin wrapper over gosmo.Server.OperatorByNameContext,
 // mirroring findAgentJob/findAgentSchedule/findAgentAlert.
@@ -35,8 +34,7 @@ func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 // showOperatorProperties opens Operator Properties for a known connection
 // and operator name — the Object Explorer context menu's entry point.
 func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,

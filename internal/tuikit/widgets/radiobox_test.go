@@ -6,10 +6,10 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// TestRadioBoxBoundaryArrowsNotConsumed is a regression test: Up at the
-// first option (and Down at the last) must fall through (return false)
-// instead of being consumed as a no-op, so a caller like propsheet.Form
-// can move focus to the next/previous row.
+// TestRadioBoxBoundaryArrowsNotConsumed pins down that Up at the first
+// option (and Down at the last) falls through (return false) instead of
+// being consumed as a no-op, so a caller like propsheet.Form can move focus
+// to the next/previous row.
 func TestRadioBoxBoundaryArrowsNotConsumed(t *testing.T) {
 	r := NewRadioBox("", []string{"one", "two"})
 	r.Focus(true)

@@ -10,12 +10,10 @@ import (
 )
 
 // loadServerDetails shows the server's connect-time-cached info (version,
-// edition, paths, CPU count, physical memory — all free, no extra round
-// trip, since gosmo.Server.Info() just returns what Connect already
-// loaded) immediately, then backfills available memory and NUMA node count
-// (one DMV query each) followed by per-volume disk free space (another
-// query, appended once it lands) — the same "System Information" facts
-// already surfaced on Server Properties' General/Memory/Processors pages.
+// edition, paths, CPU count, physical memory — no extra round trip, since
+// gosmo.Server.Info() returns what Connect already loaded) immediately,
+// then backfills available memory and NUMA node count (one DMV query each)
+// followed by per-volume disk free space, appended once it lands.
 func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// Everything below, including the "instant" first stage, runs on a
 	// background goroutine — never call postPartial/postFinal (and the
@@ -54,12 +52,11 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 		} else {
 			rows[numaRow][1] = "N/A"
 		}
-		app.postEvent(func() {
+		app.postAndWake(func() {
 			if seq == db.seq {
 				db.grid.RefreshColumnWidths()
 			}
 		})
-		app.wakeEventLoop()
 
 		// Cross-platform disk free space (sys.dm_os_volume_stats works
 		// identically on Windows and Linux). Appended once it lands, rather

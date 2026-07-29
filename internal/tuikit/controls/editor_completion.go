@@ -61,9 +61,8 @@ const (
 )
 
 // SetCompletionProvider installs p as the source of completion candidates.
-// Pass nil to disable completion entirely (the default) — every existing
-// Editor that never calls this keeps behaving exactly as before, including
-// Ctrl+Space opening OnRightClick's context menu.
+// Pass nil to disable completion entirely (the default), in which case
+// Ctrl+Space opens OnRightClick's context menu instead.
 func (e *Editor) SetCompletionProvider(p CompletionProvider) {
 	e.completionProvider = p
 	e.closeCompletion()

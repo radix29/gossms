@@ -381,13 +381,11 @@ func TestEditorCompletionRectFlipsAboveNearBottomEdge(t *testing.T) {
 	}
 }
 
-// TestEditorCompletionRectReservesDetailColumn pins a real bug: Draw and
-// completionRect independently derived the label/detail column split from
-// two different formulas, so a popup whose items had short labels but
-// non-empty Detail text (e.g. "Id  int, not null") got a rect sized as if
-// detail existed but a Draw that then computed detailW as 0 and never
-// wrote it — column type info silently never appeared. Now both read
-// completionColumnWidths, so this checks they can't disagree again.
+// TestEditorCompletionRectReservesDetailColumn pins down that Draw and
+// completionRect agree on the label/detail column split, both reading
+// completionColumnWidths. Deriving it from two separate formulas sizes the
+// rect as if detail existed while Draw computes detailW as 0 and never
+// writes it, so column type info silently never appears.
 func TestEditorCompletionRectReservesDetailColumn(t *testing.T) {
 	e := newTestEditor("")
 	e.SetCompletionProvider(func(lines [][]rune, row, col int) ([]CompletionItem, int) {

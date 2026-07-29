@@ -210,8 +210,8 @@ func TestSheetScriptButtonFiresOnScript(t *testing.T) {
 	}
 }
 
-// TestSheetEscapeClosesOpenDropdownInsteadOfCancelling is a regression
-// test: with a SelectRow's dropdown open, Escape must close the dropdown
+// TestSheetEscapeClosesOpenDropdownInsteadOfCancelling pins down that, with
+// a SelectRow's dropdown open, Escape closes the dropdown
 // (DropDown.HandleKey consumes it) rather than the whole sheet vanishing
 // out from under it.
 func TestSheetEscapeClosesOpenDropdownInsteadOfCancelling(t *testing.T) {
@@ -345,17 +345,16 @@ func TestSheetHasNoSelectionOutsideFormZone(t *testing.T) {
 	}
 }
 
-// TestSheetHandleMouseForwardsReleaseToPageList pins the fix for a real
-// bug: PropertySheet.HandleMouse's "forward a release to a latch-bearing
-// child before any early return" branch (see the ButtonNone block at the
-// top of HandleMouse) used to forward only to the current page's Form, not
-// to pageList — even though pageList (a controls.ListBox) gained its own
-// mouseDragging latch in the same change. A release landing outside the
-// whole dialog (consumed by ConsumeOutsideClick) would leave that latch
-// stuck, silently swallowing pageList's next press. Uses pageList's own
-// HandleMouse directly to arm/observe the latch, since giving the
-// embedded dialogs.ModalDialog a real (non-zero) rect would require an
-// actual tcell.Screen, unavailable in this package's unit tests.
+// TestSheetHandleMouseForwardsReleaseToPageList pins down that
+// PropertySheet.HandleMouse's "forward a release to a latch-bearing child
+// before any early return" branch (see the ButtonNone block at the top of
+// HandleMouse) reaches pageList, not just the current page's Form: pageList
+// (a controls.ListBox) has its own mouseDragging latch, and a release
+// landing outside the whole dialog — consumed by ConsumeOutsideClick —
+// would otherwise leave it stuck, swallowing pageList's next press. Uses
+// pageList's own HandleMouse directly to arm/observe the latch, since
+// giving the embedded dialogs.ModalDialog a real (non-zero) rect would
+// require an actual tcell.Screen, unavailable in this package's tests.
 func TestSheetHandleMouseForwardsReleaseToPageList(t *testing.T) {
 	p := newTestSheet("General", "Memory")
 	p.pageList.SetBounds(0, 0, 20, 10)

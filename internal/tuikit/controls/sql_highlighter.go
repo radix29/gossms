@@ -13,10 +13,8 @@ import (
 // ---------------------------------------------------------------------------
 
 // sqlKeywords is the full T-SQL keyword/built-in-function set highlighted
-// as a keyword — see todo/keywords.md (reserved words, data types,
-// constants/system variables, control flow) and todo/functions.md
-// (built-in functions by category), which are the source lists these
-// blocks mirror.
+// as a keyword: reserved words, data types, constants/system variables,
+// control flow, and built-in functions, grouped by category below.
 var sqlKeywords = map[string]bool{
 	"SELECT": true, "FROM": true, "WHERE": true, "INSERT": true, "UPDATE": true,
 	"DELETE": true, "CREATE": true, "DROP": true, "ALTER": true, "TABLE": true,
@@ -82,10 +80,10 @@ var sqlKeywords = map[string]bool{
 	"@@ERROR": true, "@@TRANCOUNT": true, "@@VERSION": true,
 	"TRY": true, "CATCH": true, "THROW": true,
 
-	// Built-in functions (todo/functions.md), by the same categories used
-	// there. Entries already listed above as reserved words or data types
-	// (CHAR, LEFT, RIGHT, NCHAR, CONVERT, TRY_CONVERT, COALESCE, NULLIF,
-	// FOR, XML, OPENXML, GEOGRAPHY, GEOMETRY) aren't repeated here.
+	// Built-in functions, by category. Entries already listed above as
+	// reserved words or data types (CHAR, LEFT, RIGHT, NCHAR, CONVERT,
+	// TRY_CONVERT, COALESCE, NULLIF, FOR, XML, OPENXML, GEOGRAPHY,
+	// GEOMETRY) aren't repeated here.
 	"AVG": true, "CHECKSUM_AGG": true, "COUNT": true, "COUNT_BIG": true,
 	"GROUPING": true, "GROUPING_ID": true, "MAX": true, "MIN": true,
 	"STDEV": true, "STDEVP": true, "STRING_AGG": true, "SUM": true, "VAR": true,

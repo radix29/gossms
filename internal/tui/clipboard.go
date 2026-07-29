@@ -6,11 +6,10 @@ import (
 )
 
 // clipboardTarget is implemented by any widget that can participate in
-// Copy/Cut/Paste. Both widgets.InputField and controls.Editor satisfy this
-// structurally (Go interfaces don't require the implementing type to know
-// about the interface), which is what lets a single set of App-level
-// methods work uniformly across every dialog field and the query editor
-// without tuikit itself needing any notion of "clipboard".
+// Copy/Cut/Paste. Both widgets.InputField and controls.Editor satisfy it
+// structurally, which lets one set of App-level methods work across every
+// dialog field and the query editor without tuikit itself needing any
+// notion of "clipboard".
 type clipboardTarget interface {
 	HasSelection() bool
 	SelectedText() string
@@ -114,17 +113,15 @@ func (a *App) writeClipboard(text string) {
 		if osClipboardWrite(text) {
 			return
 		}
-		a.postEvent(func() { a.screen.SetClipboard([]byte(text)) })
-		a.wakeEventLoop()
+		a.postAndWake(func() { a.screen.SetClipboard([]byte(text)) })
 	}()
 }
 
 // pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste). The native OS
-// clipboard read happens in a background goroutine (again, so a stalled
-// tool can't freeze the event loop — reading an X11 selection whose owner
-// is unresponsive is a classic hang), then the paste is applied on the UI
-// thread. When no native tool is available it falls back to requesting the
-// terminal clipboard; that response arrives asynchronously as an
+// clipboard read happens in a background goroutine so a stalled tool can't
+// freeze the event loop, then the paste is applied on the UI thread. When
+// no native tool is available it falls back to requesting the terminal
+// clipboard; that response arrives asynchronously as an
 // *tcell.EventClipboard, handled in Run(), which re-resolves
 // activeClipboardTarget() and calls its Paste method.
 func (a *App) pasteFromClipboard() {
@@ -133,7 +130,7 @@ func (a *App) pasteFromClipboard() {
 	}
 	go func() {
 		text, ok := osClipboardRead()
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if ok {
 				if t := a.activeClipboardTarget(); t != nil {
 					t.Paste(text)
@@ -145,7 +142,6 @@ func (a *App) pasteFromClipboard() {
 			}
 			a.screen.GetClipboard()
 		})
-		a.wakeEventLoop()
 	}()
 }
 

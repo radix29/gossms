@@ -4,10 +4,39 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
 	return tcell.NewEventKey(k, "", mod)
+}
+
+// fakeScreen is a minimal tcell.Screen fake — Size() and SetContent() are
+// all Form.Draw and the rows it draws actually call. Written cells are
+// recorded so a test can assert what actually reached the screen.
+type fakeScreen struct {
+	tcell.Screen
+	w, h  int
+	cells map[[2]int]rune
+}
+
+func (s *fakeScreen) Size() (int, int) { return s.w, s.h }
+func (s *fakeScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
+	if s.cells == nil {
+		s.cells = map[[2]int]rune{}
+	}
+	s.cells[[2]int{x, y}] = primary
+}
+
+// count returns how many cells in column x hold r.
+func (s *fakeScreen) count(x int, r rune) int {
+	n := 0
+	for pos, got := range s.cells {
+		if pos[0] == x && got == r {
+			n++
+		}
+	}
+	return n
 }
 
 func TestFormFocusNextSkipsNonFocusableAndDisabled(t *testing.T) {
@@ -72,6 +101,78 @@ func TestFormScrollbarDragScrolls(t *testing.T) {
 	}
 }
 
+// TestFormScrollbarWorksWithFewButTallRows pins down that the scrollbar
+// measures the form in content lines, not row indices: the Permissions
+// page shape — two Sections and two grids, 4 rows in a 20-line form that
+// needs 24 lines — is taller than the form yet has fewer rows than the
+// form has lines, so row-index math drew the bar with no thumb at all and
+// refused every drag on it.
+func TestFormScrollbarWorksWithFewButTallRows(t *testing.T) {
+	f := NewForm(
+		Section("Principals"),
+		NewGridRow(controls.NewDataGrid(), 10),
+		Section("Permissions"),
+		NewGridRow(controls.NewDataGrid(), 10),
+	)
+	f.SetBounds(0, 0, 40, 20)
+
+	w := f.contentWidth()
+	if f.totalHeight(w) <= f.rect.H {
+		t.Fatalf("test needs totalHeight (%d) > rect.H (%d)", f.totalHeight(w), f.rect.H)
+	}
+	if len(f.rows) >= f.rect.H {
+		t.Fatalf("test needs fewer rows (%d) than the form has lines (%d)", len(f.rows), f.rect.H)
+	}
+
+	sbX := f.rect.Right() - 1
+	if !f.HandleMouse(tcell.NewEventMouse(sbX, f.rect.Y+f.rect.H-1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("press on the scrollbar column = false, want it handled as a drag")
+	}
+	if f.scroll == 0 {
+		t.Error("scroll = 0 after dragging the thumb to the bottom of the track")
+	}
+	if f.scroll > f.maxScroll(w) {
+		t.Errorf("scroll = %d, past maxScroll %d", f.scroll, f.maxScroll(w))
+	}
+	f.HandleMouse(tcell.NewEventMouse(sbX, f.rect.Y, tcell.ButtonNone, tcell.ModNone))
+
+	// A thumb has to be drawn too, not just an empty trough — same
+	// total/visible pair, same bug.
+	f.scroll = 0
+	screen := &fakeScreen{w: 80, h: 40}
+	f.Draw(screen)
+	if screen.count(sbX, '█') == 0 {
+		t.Error("scrollbar column has no thumb cells, only an empty trough")
+	}
+}
+
+// TestFormScrollbarDragOutranksFocusedRow pins down that once a drag on
+// the form's scrollbar is armed, the focused row can't take the follow-up
+// motion events off it: a focused GridRow consumes any Button1 inside its
+// own rect, which stalled the thumb the moment the pointer drifted back
+// over the grid mid-drag.
+func TestFormScrollbarDragOutranksFocusedRow(t *testing.T) {
+	grid := controls.NewDataGrid()
+	grid.SetData([]string{"Name"}, [][]string{{"a"}, {"b"}, {"c"}})
+	f := NewForm(Section("One"), NewGridRow(grid, 10), Section("Two"), NewGridRow(controls.NewDataGrid(), 10))
+	f.SetBounds(0, 0, 40, 18)
+	f.Focus(true) // focuses the first GridRow
+
+	sbX := f.rect.Right() - 1
+	f.HandleMouse(tcell.NewEventMouse(sbX, f.rect.Y+f.rect.H-1, tcell.Button1, tcell.ModNone))
+	if f.scroll == 0 {
+		t.Fatal("press near the bottom of the track did not scroll")
+	}
+
+	// Still held, pointer now over the focused grid rather than the bar.
+	if !f.HandleMouse(tcell.NewEventMouse(f.rect.X+5, f.rect.Y+1, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("mid-drag motion over the grid = false, want the armed drag to claim it")
+	}
+	if f.scroll != 0 {
+		t.Errorf("scroll = %d after dragging the thumb back to the top, want 0 — the focused grid ate the event", f.scroll)
+	}
+}
+
 func TestFormFocusPrev(t *testing.T) {
 	f := NewForm(Static("A", "1"), Static("B", "2"), Static("C", "3"))
 	f.SetBounds(0, 0, 60, 20)
@@ -90,11 +191,11 @@ func TestFormFocusPrev(t *testing.T) {
 	}
 }
 
-// TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey is a
-// regression test: a focused TextRow (wrapping widgets.InputField) must
-// not swallow Up/Down/Tab as no-ops — Form.HandleKey needs InputField's
-// false return to fall through to FocusNext/FocusPrev, otherwise a
-// focused text field becomes a keyboard trap that only the mouse escapes.
+// TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey pins down that
+// a focused TextRow (wrapping widgets.InputField) doesn't swallow
+// Up/Down/Tab as no-ops: Form.HandleKey needs InputField's false return to
+// fall through to FocusNext/FocusPrev, or a focused text field becomes a
+// keyboard trap only the mouse escapes.
 func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 	f := NewForm(Text("A", "one", 10), Text("B", "two", 10))
 	f.SetBounds(0, 0, 60, 20)
@@ -120,32 +221,48 @@ func TestFormHandleKeyMovesFocusWhenFocusedRowDoesNotWantTheKey(t *testing.T) {
 	}
 }
 
-// TestFormRowFitsAllowsARowTallerThanTheWholeForm is a regression test: a
-// GridRow (or Note) taller than the form's entire available height must
-// still be considered "fits" once its start is in view — the old
-// require-the-whole-row check could never be satisfied for such a row,
-// which made Draw's identical check skip it forever, rendering pages with
-// a big grid (Permissions, Advanced, Files, ...) as a blank Section
-// header on any realistically-sized terminal.
-func TestFormRowFitsAllowsARowTallerThanTheWholeForm(t *testing.T) {
-	tallRow := &fakeTallRow{height: 100}
+// TestFormRowFitsAllowsAShrinkableRowTallerThanTheWholeForm pins down that
+// a GridRow taller than the form's entire available height still counts as
+// "fits": a require-the-whole-row check can never be satisfied for such a
+// row, so Draw's identical check would skip it forever, rendering pages
+// with a big grid (Permissions, Advanced, Files, ...) as a blank Section
+// header on any realistically-sized terminal. It draws clamped instead.
+func TestFormRowFitsAllowsAShrinkableRowTallerThanTheWholeForm(t *testing.T) {
+	tallRow := NewGridRow(controls.NewDataGrid(), 100)
 	f := NewForm(Static("A", "1"), tallRow)
 	f.SetBounds(0, 0, 60, 10) // the form is only 10 lines tall
 
-	f.FocusLast() // moves focus to Static("A","1"), tallRow isn't focusable
+	f.FocusFirst() // focuses Static("A","1")
 	if !f.rowFits(1, f.contentWidth()) {
-		t.Fatal("rowFits(1, ...) = false for a 100-line row in a 10-line form, want true (only its start must be visible)")
+		t.Fatal("rowFits(1, ...) = false for a 100-line grid row in a 10-line form, want true (it draws clamped)")
+	}
+	h, ok := f.drawHeight(1, f.contentWidth(), 9, false)
+	if !ok || h != 9 {
+		t.Fatalf("drawHeight for a 100-line grid row with 9 lines left = (%d, %v), want (9, true)", h, ok)
 	}
 }
 
-// fakeTallRow is a minimal non-focusable Row with a fixed, oversized
-// height, used only to exercise Form's fits/scroll logic.
-type fakeTallRow struct{ height int }
+// TestFormDrawKeepsEveryRowInsideItsBounds is the bug this clamping exists
+// for: a grid row drawn at its full declared height spilled past the form's
+// bottom edge, over the sheet's hint line and button row (reproducible on
+// Server Properties > Advanced).
+func TestFormDrawKeepsEveryRowInsideItsBounds(t *testing.T) {
+	grid := controls.NewDataGrid()
+	grid.SetData([]string{"Name", "Value"}, [][]string{{"a", "1"}, {"b", "2"}})
+	f := NewForm(Section("Heading"), NewGridRow(grid, 20))
+	f.SetBounds(0, 0, 60, 10)
 
-func (r *fakeTallRow) Height(w int) int            { return r.height }
-func (r *fakeTallRow) Layout(x, y, w int)          {}
-func (r *fakeTallRow) Draw(s tcell.Screen, _ bool) {}
-func (r *fakeTallRow) Focusable() bool             { return false }
+	f.Draw(&fakeScreen{w: 80, h: 40})
+
+	for _, b := range f.bands {
+		if b.y+b.h > 10 {
+			t.Fatalf("row %d occupies lines %d..%d, past the form's 10-line bottom edge", b.row, b.y, b.y+b.h-1)
+		}
+	}
+	if len(f.bands) != 2 {
+		t.Fatalf("drew %d rows, want 2 (heading + clamped grid)", len(f.bands))
+	}
+}
 
 func TestFormEnsureVisibleScrollsToKeepFocusInView(t *testing.T) {
 	rows := make([]Row, 30)

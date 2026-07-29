@@ -19,9 +19,8 @@ func newTestPropertiesDialog(n int) *PropertiesDialog {
 }
 
 // TestPropertiesDialogScrollbarDragScrolls confirms dragging the dialog's
-// scrollbar scrolls its row list instead of being silently ignored — the
-// dialog previously had no scrollbar or drag handling at all, unlike every
-// sibling scrollable dialog in this package.
+// scrollbar scrolls its row list instead of being silently ignored, the
+// same as every sibling scrollable dialog in this package.
 func TestPropertiesDialogScrollbarDragScrolls(t *testing.T) {
 	d := newTestPropertiesDialog(40)
 	inner := d.InnerRect()

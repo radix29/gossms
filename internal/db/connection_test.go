@@ -32,11 +32,11 @@ func TestBuildConnectionStringSQLServerAuth(t *testing.T) {
 	}
 }
 
-// TestBuildConnectionStringEscapesReservedCharacters guards against a
-// regression to the earlier implementation, which interpolated User/
-// Password/Database directly into an "sqlserver://user:pass@host" string:
-// a value containing a URL-reserved character (here "@" and "&") shifted
-// where net/url split userinfo from host, corrupting the result.
+// TestBuildConnectionStringEscapesReservedCharacters pins down that User/
+// Password/Database go through net/url rather than being interpolated
+// straight into an "sqlserver://user:pass@host" string: a value containing
+// a URL-reserved character (here "@" and "&") would otherwise shift where
+// net/url splits userinfo from host, corrupting the result.
 func TestBuildConnectionStringEscapesReservedCharacters(t *testing.T) {
 	got := BuildConnectionString(config.Connection{
 		Server:     "myserver",

@@ -210,6 +210,13 @@ func Load() *Config {
 	}
 	cfg := new(Config)
 	if err := json.Unmarshal(data, cfg); err != nil {
+		// The file exists but doesn't parse — a hand-edit, or a write
+		// interrupted partway. Falling back to an empty config discards
+		// every saved connection, so keep the bytes under a .corrupt name
+		// first: recovering a password by hand is impossible, but the
+		// server/user/database fields are readable. Best-effort — nothing
+		// here should stop the app from starting.
+		_ = os.WriteFile(path+".corrupt", data, 0o600)
 		cfg = new(Config)
 	}
 	if cfg.MaxCellLength <= 0 {
@@ -239,12 +246,11 @@ func Load() *Config {
 func (c *Config) Save() error {
 	path := configPath()
 	dir := filepath.Dir(path)
-	// 0700, matching loadOrCreateKey's own MkdirAll (secret.go) — since
-	// Save runs before that call and MkdirAll never chmods an
-	// already-existing directory, whichever of the two ran first on a
-	// fresh install used to decide the directory's real permissions; this
-	// used to leave it 0755 (world-listable) instead of the owner-only
-	// posture the encryption key's directory is documented to have.
+	// 0700, matching loadOrCreateKey's own MkdirAll (secret.go). Save runs
+	// before that call and MkdirAll never chmods an already-existing
+	// directory, so whichever runs first decides the directory's real
+	// permissions — both must ask for the owner-only posture the
+	// encryption key's directory is documented to have.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -253,13 +259,11 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	onDisk := Config{
-		Connections:          make([]Connection, len(c.Connections)),
-		IconStyle:            c.IconStyle,
-		MaxCellLength:        c.MaxCellLength,
-		MaxResultRows:        c.MaxResultRows,
-		IntelliSenseDisabled: c.IntelliSenseDisabled,
-	}
+	// Copy c wholesale, then replace Connections with an encrypted copy of
+	// its own — listing the carried-over fields one by one instead would
+	// silently drop any field added to Config later.
+	onDisk := *c
+	onDisk.Connections = make([]Connection, len(c.Connections))
 	for i, conn := range c.Connections {
 		enc, err := encryptPassword(key, conn.Password)
 		if err != nil {
@@ -273,7 +277,44 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return writeFileAtomic(path, data)
+}
+
+// writeFileAtomic writes data to path by way of a temp file in the same
+// directory plus a rename, so path is only ever replaced whole. A plain
+// os.WriteFile truncates in place: a crash, a full disk, or a power loss
+// partway through leaves invalid JSON behind, which Load then discards
+// entirely (see there) — silently taking every saved connection with it.
+// The temp file has to share path's directory for the rename to be atomic,
+// since a rename across filesystems isn't.
+func writeFileAtomic(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp) // no-op once the rename below has succeeded
+
+	// CreateTemp makes the file 0600 already; set it explicitly so the
+	// permissions don't depend on that staying true.
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	// Flush to disk before the rename, so a crash right after it can't
+	// leave the new name pointing at an empty or partial file.
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // MaxSavedConnections caps how many recent connections Config keeps. The

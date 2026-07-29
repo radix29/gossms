@@ -3,7 +3,9 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
@@ -131,9 +133,9 @@ func TestSetActiveTabBounds(t *testing.T) {
 	}
 }
 
-// TestQueryPanelCtrlUpDownReachesEditorByDefault is a regression test: the
-// splitter used to get first refusal for every key, so Ctrl+Up/Down never
-// reached the editor at all while typing — it always resized instead.
+// TestQueryPanelCtrlUpDownReachesEditorByDefault pins down that Ctrl+Up/Down
+// reaches the editor while it holds focus: giving the splitter first
+// refusal of every key would resize instead of ever reaching the editor.
 func TestQueryPanelCtrlUpDownReachesEditorByDefault(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -206,6 +208,12 @@ func TestQueryPanelClickRoutesFocusBetweenEditorAndResults(t *testing.T) {
 		t.Errorf("resultsFocused = false after clicking into results, want true")
 	}
 
+	// The release between the two clicks is what makes the second one a
+	// second click rather than the continuation of a drag out of the
+	// results grid — see QueryPanel.dragZone, which would otherwise (quite
+	// correctly) route it back to the grid.
+	qp.HandleMouse(tcell.NewEventMouse(resultsRect.X+1, resultsRect.Y+2, tcell.ButtonNone, tcell.ModNone))
+
 	editorRect := qp.splitter.FirstRect()
 	click = tcell.NewEventMouse(editorRect.X+10, editorRect.Y, tcell.Button1, tcell.ModNone)
 	if !qp.HandleMouse(click) {
@@ -216,18 +224,58 @@ func TestQueryPanelClickRoutesFocusBetweenEditorAndResults(t *testing.T) {
 	}
 }
 
-// TestQueryPanelResultsClickDoesNotAccumulateBlockSelection is a regression
-// test for a bug where clicking a cell in the results grid, releasing, and
-// then clicking a different cell produced an unwanted block selection
-// spanning from the very first click ever made instead of a fresh
-// single-cell selection: QueryPanel's HandleMouse forwarded release events
-// to the splitter/editor/messages but not to the results grid, so
-// DataGrid's mouseDragging flag (which distinguishes a fresh click from a
-// continued drag) never got reset — every click after the first one in the
-// grid's lifetime was mistaken for a continued drag from that first
-// click's anchor. Routing every click here through qp.HandleMouse
-// (including the release in between), rather than calling
-// qp.results.HandleMouse directly, is what exercises that forwarding path.
+// TestQueryPanelEditorDragDoesNotStealSplitterOrTabs pins down the gesture
+// ownership QueryPanel.dragZone establishes: a text-selection drag started
+// in the editor keeps every event until the button comes back up, even
+// once the pointer has wandered down over the splitter bar and the results
+// tab bar directly below it. Without it the splitter grabs the drag and
+// resizes the panes mid-selection, and every motion event landing on the
+// tab row flips the active results tab.
+func TestQueryPanelEditorDragDoesNotStealSplitterOrTabs(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.editor.SetText("SELECT 1\nSELECT 2\nSELECT 3\n")
+	// Two result sets, so there is more than one tab to switch between.
+	qp.setResult(newTestResult(2, false), false)
+	qp.setActiveTab(0)
+
+	ratioBefore := qp.splitter.Ratio()
+	editorRect := qp.splitter.FirstRect()
+	barY := qp.splitter.SplitPos()
+
+	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, editorRect.Y, tcell.Button1, tcell.ModNone))
+	if qp.dragZone != qZoneEditor {
+		t.Fatalf("dragZone = %v after pressing in the editor, want qZoneEditor", qp.dragZone)
+	}
+	// Drag on down across the splitter bar and the tab row below it.
+	for _, y := range []int{barY - 1, barY, qp.tabRect.Y, qp.tabRect.Y + 2} {
+		qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, y, tcell.Button1, tcell.ModNone))
+	}
+	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, qp.tabRect.Y+2, tcell.ButtonNone, tcell.ModNone))
+
+	if got := qp.splitter.Ratio(); got != ratioBefore {
+		t.Errorf("splitter ratio = %v after an editor drag crossing the bar, want %v", got, ratioBefore)
+	}
+	if qp.activeTab != 0 {
+		t.Errorf("activeTab = %d after an editor drag crossing the tab row, want 0", qp.activeTab)
+	}
+	if qp.resultsFocused {
+		t.Errorf("resultsFocused = true after a drag that started in the editor, want false")
+	}
+	if qp.dragZone != qZoneNone {
+		t.Errorf("dragZone = %v after the release, want qZoneNone", qp.dragZone)
+	}
+}
+
+// TestQueryPanelResultsClickDoesNotAccumulateBlockSelection pins down that
+// QueryPanel's HandleMouse forwards release events to the results grid, not
+// only to the splitter/editor/messages: without that, DataGrid's
+// mouseDragging flag (which distinguishes a fresh click from a continued
+// drag) never resets, and every click after the first is mistaken for a
+// drag continuing from that first click's anchor. Routing every click
+// through qp.HandleMouse, including the release in between, rather than
+// calling qp.results.HandleMouse directly, is what exercises that path.
 func TestQueryPanelResultsClickDoesNotAccumulateBlockSelection(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -312,9 +360,8 @@ func TestMessagesTabKeysRouteToMessagesEditorNotGrid(t *testing.T) {
 
 // TestResultsToTextRendersAlignedTable confirms Query > Results To Text
 // renders into qp.resultsText (a read-only Editor) as a header row, a
-// dashed separator, and one line per data row — each column padded to its
-// widest value so they line up like a real table — rather than being
-// flattened into the grid the way it used to be.
+// dashed separator, and one line per data row, each column padded to its
+// widest value so they line up like a real table.
 func TestResultsToTextRendersAlignedTable(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -452,5 +499,113 @@ func TestNotConnectedMessageDistinguishesNeverConnected(t *testing.T) {
 	qp.conn = sc
 	if got := qp.notConnectedMessage(); got != "Not connected — use Query > Reconnect" {
 		t.Errorf("notConnectedMessage() with a dropped conn = %q, want the Reconnect notice", got)
+	}
+}
+
+// The results status line used to live on the DataGrid, which isn't drawn
+// on the Messages, Results To Text or Execution Plan tabs — so elapsed
+// time, row counts and the live "Executing..." counter all vanished the
+// moment the tab changed. Every tab has to produce one.
+func TestResultsStatusTextOnEveryTab(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.setResult(newTestResult(1, false), false)
+
+	// Results grid.
+	qp.setActiveTab(0)
+	if got := qp.resultsStatusText(); !strings.Contains(got, "1 rows") || !strings.Contains(got, "Row: 1") {
+		t.Errorf("grid tab status = %q, want the row/column position and row count", got)
+	}
+
+	// Results To Text renders the same set through the editor instead.
+	qp.resultsMode = ResultsModeText
+	if !qp.textTabActive() {
+		t.Fatal("textTabActive() = false after switching to Results To Text")
+	}
+	if got := qp.resultsStatusText(); !strings.Contains(got, "1 rows") {
+		t.Errorf("text tab status = %q, want the row count", got)
+	}
+	qp.resultsMode = ResultsModeGrid
+
+	// Messages.
+	qp.setActiveTab(qp.messagesTabIndex())
+	if got := qp.resultsStatusText(); !strings.Contains(got, "message") {
+		t.Errorf("messages tab status = %q, want a message count", got)
+	}
+}
+
+// While a query runs the status is the live elapsed counter, whichever tab
+// is showing — that's the whole point of tickExecuting waking the loop.
+func TestResultsStatusTextWhileExecuting(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.setResult(newTestResult(1, false), false)
+	qp.resultsMode = ResultsModeText
+	qp.executing = true
+	qp.execStart = time.Now()
+
+	if got := qp.resultsStatusText(); !strings.Contains(got, "Executing") {
+		t.Errorf("status while executing on the text tab = %q, want the elapsed/Executing counter", got)
+	}
+}
+
+// setEstimatedPlan clears p.result; the previous run's row count must not
+// be left sitting there describing a plan it has nothing to do with.
+func TestResultsStatusTextNotStaleAfterEstimatedPlan(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.setResult(newTestResult(1, false), false)
+	stale := qp.resultsStatusText()
+
+	qp.result = nil
+	qp.planView = qp.newPlanView()
+
+	got := qp.resultsStatusText()
+	if got == stale {
+		t.Errorf("status still %q after the result was cleared", got)
+	}
+	if !strings.Contains(got, "Estimated") {
+		t.Errorf("status with a plan but no result = %q, want it to say so", got)
+	}
+}
+
+// The three non-grid tabs are laid out one row shorter so the status line
+// has somewhere to go; the grid keeps the full height and draws its own.
+func TestNonGridTabsReserveTheStatusRow(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.setResult(newTestResult(1, false), false)
+	qp.SetBounds(0, 0, 80, 24)
+
+	bottom := qp.splitter.SecondRect()
+	if qp.statusRect.H != 1 {
+		t.Fatalf("statusRect.H = %d, want 1", qp.statusRect.H)
+	}
+	if want := bottom.Bottom() - 1; qp.statusRect.Y != want {
+		t.Errorf("statusRect.Y = %d, want %d — the results area's own bottom row, the same one the grid puts its status on",
+			qp.statusRect.Y, want)
+	}
+	if qp.statusRect.X != bottom.X || qp.statusRect.W != bottom.W {
+		t.Errorf("statusRect spans %d..%d, want the full results width %d..%d",
+			qp.statusRect.X, qp.statusRect.X+qp.statusRect.W, bottom.X, bottom.X+bottom.W)
+	}
+}
+
+// Too short to spare a row: no status rather than a status where a line of
+// content should be.
+func TestNoStatusRowWhenResultsAreaIsTiny(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.setResult(newTestResult(1, false), false)
+	qp.SetBounds(0, 0, 80, 5)
+
+	if qp.splitter.SecondRect().H > 1 {
+		t.Skip("results area still has room to spare at this size")
+	}
+	if qp.statusRect.H != 0 {
+		t.Errorf("statusRect = %+v, want the zero rect in a results area with no row to spare", qp.statusRect)
 	}
 }

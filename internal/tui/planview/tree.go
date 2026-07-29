@@ -511,9 +511,9 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		v.treeSt.sbDragging = false
 		// The splitter needs to see its own drag-release event to clear
 		// sp.dragging — otherwise it stays stuck true and the next plain
-		// click anywhere in the tab (not just on the bar) gets misread as a
-		// drag continuation, silently moving the divider instead of
-		// selecting whatever was clicked. This was a real, shipped bug.
+		// click anywhere in the tab, not just on the bar, is misread as a
+		// drag continuation, moving the divider instead of selecting what
+		// was clicked.
 		if v.treeSplit.HandleMouse(ev) {
 			v.layoutTree()
 			return true

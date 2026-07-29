@@ -17,13 +17,12 @@ import (
 // comment) — every page is editable.
 //
 // loginName is boxed in a *string shared by every page below: renaming a
-// login is the one edit in this dialog that changes the identity every
-// other page's lookup depends on, so pageLoginGeneral's apply closure
-// updates *loginName in place on success — otherwise Apply (which reloads
-// every page via PropDialog.InvalidateAll) would send the very next reload
-// looking for a login name that no longer exists. Same bug class as Key
-// Properties' pageKeyGeneral and Server Role Properties'
-// pageServerRoleGeneral (see server_role_props.go).
+// login changes the identity every other page's lookup depends on, so
+// pageLoginGeneral's apply closure updates *loginName in place on success —
+// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
+// would look up a login name that no longer exists. Key Properties'
+// pageKeyGeneral and Server Role Properties' pageServerRoleGeneral box
+// their names the same way.
 func loginPropPages(sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{

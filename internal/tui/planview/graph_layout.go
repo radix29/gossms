@@ -11,9 +11,8 @@ const (
 	graphTileW = 20
 	// graphTileH must leave room for 3 interior text lines (PhysicalOp,
 	// object/LogicalOp, cost%+rows) between the top and bottom borders —
-	// 5 total, not 4: an earlier version used 4 and the third line
-	// silently overwrote the bottom border row instead of the border
-	// clipping it, since Rect.Inner(1) only had 2 interior rows to give.
+	// 5 rows, not 4: Rect.Inner(1) on a 4-row tile yields only 2 interior
+	// rows, and the third line would overwrite the bottom border.
 	graphTileH = 5
 	graphHGap  = 4 // horizontal gap between a tile and its children's column
 	graphVGap  = 1 // vertical gap between sibling tiles

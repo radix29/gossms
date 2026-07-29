@@ -24,20 +24,27 @@ type GridRow struct {
 	RevertFn func()
 
 	fixedHeight int
+	drawHeight  int
 }
 
 // NewGridRow wraps grid as a Form row occupying a fixed number of screen
 // lines (header + separator + data rows + status bar — size it the same
 // way you'd size any standalone DataGrid).
 func NewGridRow(grid *controls.DataGrid, height int) *GridRow {
-	return &GridRow{Grid: grid, fixedHeight: height}
+	return &GridRow{Grid: grid, fixedHeight: height, drawHeight: height}
 }
 
 func (r *GridRow) Height(w int) int { return r.fixedHeight }
 func (r *GridRow) Layout(x, y, w int) {
-	r.Grid.SetBounds(x, y, w, r.fixedHeight)
+	r.Grid.SetBounds(x, y, w, r.drawHeight)
 }
-func (r *GridRow) Focusable() bool { return true }
+
+// MinDrawHeight and SetDrawHeight implement Shrinkable: header, separator,
+// one data row and the status bar are the least a grid renders usefully
+// in, and anything below fixedHeight makes the grid scroll its own rows.
+func (r *GridRow) MinDrawHeight() int  { return 4 }
+func (r *GridRow) SetDrawHeight(h int) { r.drawHeight = h }
+func (r *GridRow) Focusable() bool     { return true }
 func (r *GridRow) Draw(s tcell.Screen, focused bool) {
 	r.Grid.Focus(focused)
 	r.Grid.Draw(s)

@@ -9,8 +9,7 @@ import (
 
 // TestDataGridHorizontalScrollFollowsCellCursor confirms moving the cell
 // cursor past the right edge of the grid scrolls just enough columns into
-// view to keep the selected cell visible and fully drawable — the fix for
-// scrollCol previously being tracked but never applied in Draw.
+// view to keep the selected cell visible and fully drawable.
 func TestDataGridHorizontalScrollFollowsCellCursor(t *testing.T) {
 	g := newTestDataGrid() // 40 columns wide
 	cols := []string{"C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"}
@@ -395,7 +394,7 @@ func TestDataGridRightClickBlockSelectionCopy(t *testing.T) {
 // TestDataGridGutterHeaderRightClickOffersCopyAll confirms right-clicking
 // the row-number gutter's blank header cell offers "Copy All"/"Copy All
 // with Headers" only once OnCopyRequest is wired — a grid that hasn't
-// opted in shows no menu there at all, unchanged from before this feature.
+// opted in shows no menu there at all.
 func TestDataGridGutterHeaderRightClickOffersCopyAll(t *testing.T) {
 	g := newBlockSelectGrid()
 	g.SetRowNumbers(true)

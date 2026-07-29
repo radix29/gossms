@@ -61,8 +61,7 @@ func (g *DataGrid) requestCopy(text string) {
 }
 
 // cellContextMenuItems builds the right-click (or Ctrl+Space) menu for a
-// selected cell/block: "Copy" only when OnCopyRequest is wired (so a grid
-// that hasn't opted in shows exactly what it always has), plus "Show
+// selected cell/block: "Copy" only when OnCopyRequest is wired, plus "Show
 // Value" for a single cell — a block selection has no one cell's full
 // content to show, so that item is omitted while blockSelecting is true.
 func (g *DataGrid) cellContextMenuItems() []MenuItem {

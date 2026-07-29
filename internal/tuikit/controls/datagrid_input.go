@@ -55,9 +55,9 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 	// Shift+Arrow extends a multi-cell block selection from the cell the
 	// cursor was on before this key (the anchor stays fixed across repeated
 	// Shift+Arrow presses); a plain arrow collapses back to a single cell.
-	// Only meaningful for a read-only, cell-cursor grid — an editable
-	// grid's Left/Right/Up/Down never selected a block before this feature
-	// existed and still doesn't (see the field docs on blockSelecting).
+	// Only meaningful for a read-only, cell-cursor grid — an editable grid's
+	// Left/Right/Up/Down never select a block (see blockSelecting's field
+	// doc).
 	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
 	shiftHeld := ev.Modifiers()&tcell.ModShift != 0
 	isArrowKey := false
@@ -163,16 +163,22 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	// Reset the drag-vs-fresh-click tracker on every release, regardless of
 	// where it lands or whether a block selection was even in progress —
-	// mirrors Editor's own mouseDragging reset. This is a side effect only;
-	// the actual return value below (true, unconditionally, once a release
-	// reaches the switch below without matching any case) is unchanged from
-	// before this field existed, so it doesn't disturb propsheet.Form's
-	// "focused row gets first refusal" contract (see tuikit/README.md).
+	// mirrors Editor's own mouseDragging reset. A side effect only: the
+	// return value below is unaffected, so propsheet.Form's "focused row
+	// gets first refusal" contract still holds (see tuikit/README.md).
 	if ev.Buttons() == tcell.ButtonNone {
 		g.mouseDragging = false
 		g.sbDragging = false
+		g.sbDraggingH = false
 	}
 	mx, my := ev.Position()
+	// A horizontal-scrollbar drag keeps control once started, even after the
+	// pointer leaves the grid entirely — so it's checked before the bounds
+	// test, unlike the vertical bar, whose track runs the full height of the
+	// data area and so is far harder to drag off.
+	if g.hScrollbarDrag(ev) {
+		return true
+	}
 	if !g.rect.Contains(mx, my) {
 		return false
 	}
@@ -189,7 +195,12 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
 	switch ev.Buttons() {
 	case tcell.Button1:
-		if row := g.scrollRow + (my - g.rect.Y - 2); row >= 0 && row < g.rows.Len() {
+		// rowAtY is -1 outside the data rows. The bound matters: rect covers
+		// the header, its separator, and the status bar too, and without it a
+		// click on the status bar resolves to scrollRow+dataH — the first row
+		// *below* the view — silently moving the selection somewhere the user
+		// can't see.
+		if row := g.rowAtY(my); row >= 0 {
 			if canBlockSelect {
 				if col, ok := g.colAt(mx); ok {
 					if !g.mouseDragging {
@@ -247,7 +258,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		// an existing block selection preserves it (so "Copy" copies the
 		// whole block); otherwise it collapses to just the clicked cell,
 		// matching ordinary spreadsheet right-click behavior.
-		if row := g.scrollRow + (my - g.rect.Y - 2); g.cellCursor && row >= 0 && row < g.rows.Len() {
+		if row := g.rowAtY(my); g.cellCursor && row >= 0 {
 			if col, ok := g.colAt(mx); ok {
 				if !g.selectionContains(row, col) {
 					g.selRow, g.selCol = row, col
@@ -291,6 +302,67 @@ const horizontalWheelCols = 1
 // to the valid column range.
 func (g *DataGrid) scrollColBy(delta int) {
 	g.scrollCol = core.Clamp(g.scrollCol+delta, 0, core.Max(0, len(g.columns)-1))
+}
+
+// hScrollbarDrag handles a Button1 press or drag on the horizontal
+// scrollbar (see DataGrid.hScrollbar), translating a position along the
+// track into a scrollCol. core.HandleScrollbarDragH can't serve here: it
+// treats the track's own width as the visible count, which only works when
+// both are the same unit — this track is characters wide while what it
+// scrolls is a column index. Latches on sbDraggingH for the rest of the
+// gesture, so the thumb keeps following the pointer once it leaves the
+// bar's row. Returns false for anything that isn't a qualifying event, so
+// the caller can chain it ahead of its own hit-testing.
+func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
+	if ev.Buttons() != tcell.Button1 {
+		return false
+	}
+	x, y, w, total, visible, _, ok := g.hScrollbar()
+	if !ok {
+		return false
+	}
+	mx, my := ev.Position()
+	if !g.sbDraggingH && (my != y || mx < x || mx >= x+w) {
+		return false
+	}
+	g.sbDraggingH = true
+	// ScrollOffsetForDrag gives the character offset the track position
+	// asks for, already clamped so the last screenful can't be scrolled
+	// past; colAtOffset rounds that to a column boundary, since scrollCol
+	// is a column index and Draw never splits a cell.
+	g.scrollCol = g.colAtOffset(core.ScrollOffsetForDrag(mx-x, w, total, visible))
+	return true
+}
+
+// rowAtY returns the data row index drawn at screen row y, or -1 if y
+// isn't one of the data rows — the header, its separator, the status bar,
+// and any blank filler below the last row all return -1.
+func (g *DataGrid) rowAtY(y int) int {
+	dataH := g.rect.H - 3
+	line := y - g.rect.Y - 2
+	if line < 0 || line >= dataH {
+		return -1
+	}
+	row := g.scrollRow + line
+	if row >= g.rows.Len() {
+		return -1
+	}
+	return row
+}
+
+// colAtOffset returns the last column starting at or before character
+// offset off — the inverse of the running sum hScrollbar reports as its
+// offset.
+func (g *DataGrid) colAtOffset(off int) int {
+	acc, col := 0, 0
+	for i, cw := range g.colWidths {
+		if acc > off {
+			break
+		}
+		col = i
+		acc += cw
+	}
+	return core.Clamp(col, 0, core.Max(0, len(g.colWidths)-1))
 }
 
 // colAt returns the column index whose cell contains screen x, in

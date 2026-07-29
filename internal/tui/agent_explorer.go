@@ -9,12 +9,11 @@ import (
 // agent_explorer.go loads the SQL Server Agent subtree — Jobs (User/System),
 // Schedules, Alerts (SQL Server Event Alerts only — see
 // gosmo.Server.EventAlerts), Operators, and a small set of SQL-only
-// administration reports. Matches the SQL-only Object Explorer mockup:
-// todo/mockups/sql_agent_object_explorer_sql_only_tui.txt.
+// administration reports.
 
 // agentReportTitles lists the "SQL-only administration" folder's report
-// leaves, in the order the mockup shows them. Each title doubles as the
-// lookup key agentReportDetail dispatches on — see agent_reports.go.
+// leaves, in display order. Each title doubles as the lookup key
+// agentReportDetail dispatches on — see agent_reports.go.
 var agentReportTitles = []string{
 	"Agent Metadata Summary",
 	"Job Execution Summary",
@@ -51,10 +50,9 @@ func loadAgentJobsFolderChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 }
 
 // isSystemAgentJob reports whether j is a SQL-Server-created job rather
-// than a user job — e.g. syspolicy_purge_history, created automatically
-// when Policy-Based Management history retention is configured. msdb has
-// no dedicated "is system job" flag, so this is a name-based heuristic
-// (every built-in Agent job is named with the "syspolicy_" prefix).
+// than a user job — e.g. syspolicy_purge_history. msdb has no "is system
+// job" flag, so this is a name-based heuristic: every built-in Agent job
+// uses the "syspolicy_" prefix.
 func isSystemAgentJob(j *gosmo.Job) bool {
 	return strings.HasPrefix(j.Name, "syspolicy_")
 }

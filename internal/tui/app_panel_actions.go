@@ -9,6 +9,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -143,14 +144,78 @@ func (a *App) requestClosePanel(i int) {
 		a.closePanelAt(i)
 		return
 	}
-	a.confirmDialog.ShowConfirm("Close Query",
+	// Three-way, not Yes/No: "No" here discards the panel's unsaved SQL, so
+	// Escape must not silently mean it — see ShowConfirmCancel.
+	a.confirmDialog.ShowConfirmCancel("Close Query",
 		qp.Title()+" has unsaved changes. Save before closing?",
-		func(save bool) {
-			if !save {
+		func(answer dialogs.ConfirmAnswer) {
+			switch answer {
+			case dialogs.ConfirmYes:
+				a.saveQueryPanel(qp, false, func() { a.closePanelByPointer(qp) })
+			case dialogs.ConfirmNo:
 				a.closePanelByPointer(qp)
-				return
 			}
-			a.saveQueryPanel(qp, false, func() { a.closePanelByPointer(qp) })
+			// ConfirmCancel: the panel stays open, unsaved.
+		})
+}
+
+// requestQuit implements Ctrl+Q / File > Exit: offers to save every query
+// panel with unsaved changes before tearing the screen down, and abandons
+// the quit entirely if any of those prompts is cancelled. quit() itself is
+// unconditional — without this, Ctrl+Q discarded every dirty panel at once,
+// with no prompt at all, even though closing one panel has always asked.
+func (a *App) requestQuit() (quitting bool) {
+	dirty := a.dirtyQueryPanels()
+	if len(dirty) == 0 {
+		a.quit()
+		return true
+	}
+	a.askSaveBeforeQuit(dirty, 0)
+	return false
+}
+
+// dirtyQueryPanels lists every open query panel with unsaved changes, in
+// tab order.
+func (a *App) dirtyQueryPanels() []*QueryPanel {
+	var dirty []*QueryPanel
+	for i := 0; i < a.panels.Count(); i++ {
+		if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok && qp.Dirty() {
+			dirty = append(dirty, qp)
+		}
+	}
+	return dirty
+}
+
+// askSaveBeforeQuit walks panels from index i, prompting for each one still
+// dirty and then quitting once it runs off the end. The recursion is driven
+// by the dialog's own callback rather than a loop — each prompt has to be
+// answered (and a Yes has to finish writing the file) before the next one
+// can be asked. Panels are re-checked as we reach them: an earlier Save As
+// could have been pointed at a file that another panel in the list is also
+// showing, and a panel could have been closed from the prompt chain itself.
+//
+// A cancelled prompt, or a Save the user backs out of at the file dialog
+// (saveQueryPanel only calls back on a successful write), simply stops the
+// walk — the app stays open, which is what Cancel means here.
+func (a *App) askSaveBeforeQuit(panels []*QueryPanel, i int) {
+	for i < len(panels) && (!a.panelHosted(panels[i]) || !panels[i].Dirty()) {
+		i++
+	}
+	if i >= len(panels) {
+		a.quit()
+		return
+	}
+	qp := panels[i]
+	a.confirmDialog.ShowConfirmCancel("Exit goSSMS",
+		qp.Title()+" has unsaved changes. Save before exiting?",
+		func(answer dialogs.ConfirmAnswer) {
+			switch answer {
+			case dialogs.ConfirmYes:
+				a.saveQueryPanel(qp, false, func() { a.askSaveBeforeQuit(panels, i+1) })
+			case dialogs.ConfirmNo:
+				a.askSaveBeforeQuit(panels, i+1)
+			}
+			// ConfirmCancel: abandon the quit; every panel stays as it is.
 		})
 }
 
@@ -202,9 +267,7 @@ func (a *App) showEstimatedExecutionPlan() {
 // toggleActualExecutionPlan flips whether Execute captures the actual
 // (post-run) execution plan alongside a query's normal results — see
 // App.actualPlanEnabled and QueryPanel.setResultPlan. Rebuilds the toolbar
-// and Query menu so both immediately reflect the new state, mirroring how
-// buildToolbar/buildMenus are populated once at startup (see Run) — nothing
-// else currently mutates either afterward.
+// and Query menu so both immediately reflect the new state.
 func (a *App) toggleActualExecutionPlan() {
 	a.actualPlanEnabled = !a.actualPlanEnabled
 	a.toolbar.SetButtons(a.buildToolbar())
@@ -219,8 +282,7 @@ func (a *App) toggleActualExecutionPlan() {
 
 // openPlanPanel opens a new detached panel showing plan, titled title —
 // the Execution Plan tab's "[ Expand ]" button's action (see
-// QueryPanel.newPlanView). Every call adds a brand-new panel, same as
-// newQueryPanel; nothing is reused across calls.
+// QueryPanel.newPlanView). Every call adds a brand-new panel.
 func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
 	a.panels.SetActive(a.panels.AddPanel(NewPlanPanel(title, plan)))
 	a.focusPanels()
@@ -337,15 +399,9 @@ func (a *App) showQueryList() {
 // node belongs to (falling back to the first connection) — same
 // resolution as showServerProperties.
 func (a *App) showActivityMonitor() {
-	sc := a.selectedServerConn()
-	if sc == nil {
-		if len(a.connections) == 0 {
-			a.setStatus("Not connected — use File > Connect")
-			return
-		}
-		sc = a.connections[0]
+	if sc := a.connOrFirst(); sc != nil {
+		a.showActivityMonitorFor(sc)
 	}
-	a.showActivityMonitorFor(sc)
 }
 
 // showActivityMonitorFor opens Activity Monitor for a known connection —
@@ -354,8 +410,7 @@ func (a *App) showActivityMonitor() {
 // server node's context menu (which already has sc in hand). Not
 // implemented yet.
 func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.alertDialog.ShowAlert("Activity Monitor", "Feature not implemented yet. Coming soon!")
@@ -364,15 +419,9 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }
 
 func (a *App) showServerProperties() {
-	sc := a.selectedServerConn()
-	if sc == nil {
-		if len(a.connections) == 0 {
-			a.setStatus("Not connected — use File > Connect")
-			return
-		}
-		sc = a.connections[0]
+	if sc := a.connOrFirst(); sc != nil {
+		a.showServerPropertiesFor(sc)
 	}
-	a.showServerPropertiesFor(sc)
 }
 
 // showServerPropertiesFor opens Server Properties for a known connection —
@@ -380,8 +429,7 @@ func (a *App) showServerProperties() {
 // which resolves sc first) and the Object Explorer context menu (which
 // already has sc in hand).
 func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes", serverPropPages(sc))
@@ -391,8 +439,7 @@ func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
 // shared entry point for the Object Explorer context menu on both the
 // server node and the "Databases" folder node.
 func (a *App) showNewDatabaseDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newDatabaseDialog.show(sc)
@@ -415,8 +462,7 @@ func (a *App) showDatabaseProperties() {
 // connection and database name — the shared entry point for the Tools
 // menu and the Object Explorer context menu.
 func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
@@ -427,8 +473,7 @@ func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 // Explorer context menu's entry point for Security > Logins (mirrors
 // showNewDatabaseDialog).
 func (a *App) showNewLoginDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newLoginDialog.show(sc)
@@ -438,8 +483,7 @@ func (a *App) showNewLoginDialog(sc *db.ServerConn) {
 // shared entry point for the Object Explorer context menu on both an
 // individual database node and the "Databases" folder node (dbName "").
 func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.backupDialog.show(sc, dbName)
@@ -449,8 +493,7 @@ func (a *App) showBackupDialog(sc *db.ServerConn, dbName string) {
 // shared entry point for the Object Explorer context menu on both an
 // individual database node and the "Databases" folder node (dbName "").
 func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.restoreDialog.show(sc, dbName)
@@ -462,8 +505,7 @@ func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 // immediately — the Object Explorer context menu's "View Backup
 // History...", database node only.
 func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.openQueryWithTextAndExecute(sc, "msdb", backupHistoryQuery(dbName))
@@ -471,8 +513,7 @@ func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
@@ -483,8 +524,7 @@ func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 // database, and schema-qualified table — the Object Explorer context
 // menu's entry point (mirrors showLoginProperties/showDatabasePropertiesFor).
 func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+fqn(schema, name), "Database: "+dbName,
@@ -495,8 +535,7 @@ func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name str
 // database, and schema-qualified table/index — the Object Explorer context
 // menu's entry point (mirrors showTablePropertiesFor).
 func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, index string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, "Table: "+fqn(schema, table),
@@ -507,8 +546,7 @@ func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, i
 // connection, database, and schema-qualified table/statistic — the Object
 // Explorer context menu's entry point (mirrors showIndexPropertiesFor).
 func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, table, stat string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, "Table: "+fqn(schema, table),
@@ -520,8 +558,7 @@ func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, tabl
 // key — the Object Explorer context menu's entry point (mirrors
 // showIndexPropertiesFor).
 func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, fk string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+fqn(schema, table),
@@ -534,8 +571,7 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 // isPrimaryKey picks the dialog title; it's read off the tree node's own
 // nodeData rather than re-fetched, since loadKeysChildren already knows it.
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	title := keyTypeName(isPrimaryKey) + " Properties"
@@ -547,8 +583,7 @@ func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key
 // connection, database, and role name — the Object Explorer context
 // menu's entry point (mirrors showTablePropertiesFor).
 func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
@@ -560,8 +595,7 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 // point (mirrors showLoginProperties, the other server-level-principal
 // Properties dialog with no dbName of its own).
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
@@ -572,8 +606,7 @@ func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
 // connection, database, and user name — the Object Explorer context
 // menu's entry point (mirrors showRolePropertiesFor).
 func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
@@ -584,8 +617,7 @@ func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) 
 // database, and schema name — the Object Explorer context menu's entry
 // point (mirrors showRolePropertiesFor).
 func (a *App) showSchemaPropertiesFor(sc *db.ServerConn, dbName, schemaName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.propDialog.show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,

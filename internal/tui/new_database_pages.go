@@ -106,13 +106,12 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 }
 
 // buildNewDatabaseOptionsPage reuses database_props.go's pageDatabaseOptions
-// row-building/apply idiom verbatim (dbOptSelectRow/dbOptBoolRow + a
-// tracked []dbOptRow list, applied only when a row is Dirty()), fed from
-// model's current options instead of an existing database's — since a
-// real CREATE DATABASE already inherits every one of these from model,
-// "the row is dirty" now means exactly "the user chose something other
-// than what this database would have inherited anyway," and only those
-// need an explicit follow-on ALTER DATABASE SET once dbName() exists.
+// row-building/apply idiom (dbOptSelectRow/dbOptBoolRow plus a tracked
+// []dbOptRow list, applied only when a row is Dirty()), fed from model's
+// current options instead of an existing database's. CREATE DATABASE
+// inherits all of these from model, so a dirty row means the user chose
+// something other than what would have been inherited, and only those need
+// a follow-on ALTER DATABASE SET once dbName() exists.
 func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func() string) (*propsheet.Form, propApply) {
 	o := pf.modelOptions
 	var tracked []dbOptRow
@@ -177,11 +176,10 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 }
 
 // buildNewDatabaseFilegroupsPage adapts pageDatabaseFilegroups' grid/Add/
-// Remove/default/read-only UI: seeded empty (nothing exists yet, so every
-// entry is a pending add, unlike the edit-existing version's isNew/
-// pendingRemove diffing), plus an inline "optional first file" mini-form
-// under the Add-filegroup fields, mirroring the mockup's "Add Filegroup"
-// modal inline instead of as a popup.
+// Remove/default/read-only UI: seeded empty, so every entry is a pending
+// add rather than the edit-existing version's isNew/pendingRemove diffing,
+// plus an inline "optional first file" mini-form under the Add-filegroup
+// fields.
 func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func() string) (*propsheet.Form, propApply) {
 	type fgEdit struct {
 		name         string

@@ -118,10 +118,9 @@ func TestNodePropsForDisplay_NilNode(t *testing.T) {
 }
 
 // TestBottomProperties_WheelScrolls checks the bottom Properties section's
-// scroll offset is actually reachable — propsSt.scroll existed as a field
-// before this fix, but nothing ever wheel-scrolled it, so any node with
-// more attributes than the fixed-height bottom section was permanently
-// unreachable past the last visible row.
+// scroll offset is actually reachable: without a wheel handler driving
+// propsSt.scroll, any node with more attributes than the fixed-height
+// bottom section is unreachable past the last visible row.
 func TestBottomProperties_WheelScrolls(t *testing.T) {
 	v := newTreeTabView(t)
 	v.cycleBottomMode() // bottomHidden -> bottomProperties

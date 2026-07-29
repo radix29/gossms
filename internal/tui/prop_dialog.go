@@ -138,11 +138,9 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 // trip) and reports its result back on the UI goroutine via onDone — the
 // shared "immediate action" pattern for a Properties page's own buttons
 // (Check Syntax, Estimate Rows, Rebuild, Reorganize, Update Statistics, ...)
-// that run for real immediately, independent of OK/Cancel/Apply. Unlike
-// runApply/runScript, this isn't tied to any page's dirty state — the page
-// itself decides when its own action buttons are relevant. Callers that
-// need a result value out of fn capture it in an outer variable from
-// within fn, the same way asyncStatusButton's caller does.
+// that run immediately, independent of OK/Cancel/Apply. It isn't tied to
+// any page's dirty state; the page decides when its buttons are relevant.
+// Callers needing a value out of fn capture it in an outer variable.
 func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
 	go func() {
 		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
@@ -258,7 +256,7 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 func (d *PropDialog) runApply(hideOnSuccess bool) {
 	hide := func() {
 		if hideOnSuccess {
-			d.Hide()
+			d.Dismiss()
 		}
 	}
 	d.runPipeline(d.ctx, hide, func() {

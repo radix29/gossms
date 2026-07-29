@@ -1,4 +1,3 @@
-add a global vertical scroll bars to the properties pages
 
 restore backup -> move files, error messages, text trimming etc
 

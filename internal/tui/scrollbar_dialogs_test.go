@@ -59,8 +59,8 @@ func TestQueryListDialogScrollbarDragScrolls(t *testing.T) {
 }
 
 // TestTasksDialogScrollbarDragScrolls mirrors the QueryListDialog case for
-// TasksDialog, whose row click likewise reads position without an
-// intervening scrollbar check before this fix.
+// TasksDialog, whose row click likewise reads position and so needs the
+// scrollbar checked first.
 func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 80, h: 30}

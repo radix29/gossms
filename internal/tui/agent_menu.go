@@ -10,17 +10,14 @@ import (
 
 // agent_menu.go builds the Object Explorer context menu for SQL Server
 // Agent nodes and the actions those items run — Start/Stop/Enable/Disable/
-// Delete/View History, everything already backed by gosmo as of Phase 1,
-// plus the New Job/Schedule/Alert/Operator entry points (Phase 4; dialogs
-// themselves live in new_job_dialog.go/new_schedule_dialog.go/
-// new_alert_dialog.go/new_operator_dialog.go).
+// Delete/View History, plus the New Job/Schedule/Alert/Operator entry
+// points (the dialogs live in new_{job,schedule,alert,operator}_dialog.go).
 
 // showNewJobDialog opens New Job for a known connection — the Object
 // Explorer context menu's entry point for SQL Server Agent > Jobs > User
 // Jobs (mirrors showNewLoginDialog).
 func (a *App) showNewJobDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newJobDialog.show(sc)
@@ -30,8 +27,7 @@ func (a *App) showNewJobDialog(sc *db.ServerConn) {
 // Object Explorer context menu's entry point for SQL Server Agent >
 // Schedules.
 func (a *App) showNewScheduleDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newScheduleDialog.show(sc)
@@ -41,8 +37,7 @@ func (a *App) showNewScheduleDialog(sc *db.ServerConn) {
 // Explorer context menu's entry point for SQL Server Agent > Alerts > SQL
 // Server Event Alerts.
 func (a *App) showNewAlertDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newAlertDialog.show(sc)
@@ -52,8 +47,7 @@ func (a *App) showNewAlertDialog(sc *db.ServerConn) {
 // Object Explorer context menu's entry point for SQL Server Agent >
 // Operators.
 func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.newOperatorDialog.show(sc)
@@ -131,8 +125,7 @@ func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refre
 // ---- Jobs: Start / Stop / View History ----
 
 func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	name := node.data.Name
@@ -143,7 +136,7 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 		if err == nil {
 			err = j.StartContext(ctx, "")
 		}
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Failed to start job %q: %v", name, err))
 				return
@@ -151,13 +144,11 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 			a.setStatus(fmt.Sprintf("Job %q started", name))
 			a.detailBrowser.Invalidate(a, node)
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	name := node.data.Name
@@ -168,7 +159,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 		if err == nil {
 			err = j.StopContext(ctx)
 		}
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Failed to stop job %q: %v", name, err))
 				return
@@ -176,7 +167,6 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 			a.setStatus(fmt.Sprintf("Job %q stopped", name))
 			a.detailBrowser.Invalidate(a, node)
 		})
-		a.wakeEventLoop()
 	}()
 }
 
@@ -184,8 +174,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 // with agentJobHistoryQuery(jobName) and running it immediately — mirrors
 // showBackupHistoryFor's identical pattern for a database's backup history.
 func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.openQueryWithTextAndExecute(sc, "msdb", agentJobHistoryQuery(jobName))

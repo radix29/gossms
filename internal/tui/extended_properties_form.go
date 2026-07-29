@@ -20,6 +20,34 @@ type extPropEdit struct {
 	pendingRemove bool
 }
 
+// pageExtendedProperties is the Extended Properties page as every
+// Properties dialog for an object *inside* a database uses it — schema,
+// table, index, statistic, user, database role. Only the
+// ExtendedPropertyLevel naming that object differs between them, and it's
+// supplied as a closure rather than a value because a rename on the
+// General page changes it while the dialog is open (the level literals
+// that read a *string). The database itself is the one exception, having
+// no level to name and its own read method — see
+// pageDatabaseExtendedProperties in database_props_permissions.go.
+func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo.ExtendedPropertyLevel) propPage {
+	return propPage{
+		title: "Extended Properties",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			if err != nil {
+				return nil, nil, err
+			}
+			lvl := level()
+			props, err := d.ExtendedPropertiesContext(ctx, lvl)
+			if err != nil {
+				return nil, nil, err
+			}
+			f, apply := buildExtendedPropertiesForm(sc, dbName, lvl, props)
+			return f, apply, nil
+		},
+	}
+}
+
 // buildExtendedPropertiesForm builds the Extended Properties page every
 // object-Properties dialog shares: a Name/Value grid, a "selected
 // property" field pair below it for editing, and Add/Remove — level
@@ -98,12 +126,11 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 	addBtn = widgets.NewButton("Add", func() {
 		// Deliberately does NOT call commitCurrent(): valueField doubles as
 		// the previously-selected property's live edit box, and
-		// commitCurrent() writes its text into that property's .value — if
-		// the user typed a value here meaning it for the brand-new property
-		// being Added, that write would silently overwrite the previously
-		// selected property's value instead. Any not-yet-applied edit to
-		// the previously selected property is simply left as last synced
-		// from its own selection (same trade-off as the Files page's Add).
+		// commitCurrent() writes its text into that property's .value, so a
+		// value typed here for the brand-new property being Added would
+		// overwrite the previously selected property's instead. Any
+		// not-yet-applied edit to that property is left as last synced from
+		// its own selection (same as the Files page's Add).
 		name := nameField.Value()
 		if name == "" {
 			return

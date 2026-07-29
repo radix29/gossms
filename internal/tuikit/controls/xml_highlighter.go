@@ -44,16 +44,16 @@ var (
 // editor_draw.go), and Draw runs on every event the app processes — every
 // keystroke, menu click, and mouse-move tick — for as long as the XML tab
 // stays the visible/selected one, whether or not it holds keyboard focus.
-// Naively determining whether a line starts inside an unterminated
-// <!-- --> comment or <![CDATA[ ]]> section means replaying every prior
-// line (xmlOpenBlock): O(N) per line, O(H*N) per Draw for a viewport of H
-// rows — the quadratic blowup that made large execution-plan XML sluggish.
-// The closure below caches the end-of-line state from the immediately
-// preceding call and reuses it in O(1) when the new call continues that
-// sequence (idx == lastIdx+1) — true for every row but the first in a Draw
-// pass, since nothing can mutate the document between two calls within the
-// same pass. Only the first row of a pass, or a non-contiguous jump (e.g.
-// the view just scrolled), pays the full xmlOpenBlock replay.
+// Determining whether a line starts inside an unterminated <!-- --> comment
+// or <![CDATA[ ]]> section means replaying every prior line (xmlOpenBlock):
+// O(N) per line, O(H*N) per Draw for a viewport of H rows, which is
+// noticeably slow on large execution-plan XML. The closure below caches the
+// end-of-line state from the immediately preceding call and reuses it in
+// O(1) when the new call continues that sequence (idx == lastIdx+1) — true
+// for every row but the first in a Draw pass, since nothing can mutate the
+// document between two calls within the same pass. Only the first row of a
+// pass, or a non-contiguous jump (e.g. the view just scrolled), pays the
+// full replay.
 func XMLHighlighter(p *theme.Palette) Highlighter {
 	tagStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	attrStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)

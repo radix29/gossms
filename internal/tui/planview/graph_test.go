@@ -124,9 +124,7 @@ func TestGraph_HomeSelectsRoot(t *testing.T) {
 }
 
 // TestGraph_DetailStripVisibleFromStart checks the Properties strip is open
-// as soon as a plan loads, with no Enter needed — the user's follow-up ask
-// after the strip was first built ("also make the properties panel visible
-// from begining").
+// as soon as a plan loads, with no Enter needed.
 func TestGraph_DetailStripVisibleFromStart(t *testing.T) {
 	v := newGraphTabView(t)
 	if !v.graphSt.detailOpen {
@@ -191,8 +189,7 @@ func TestGraph_DetailStripIsResizeable(t *testing.T) {
 
 // TestGraph_PropertiesBlockShowsSelectedNode checks the strip's Properties
 // block renders the same curated, aligned field list as the Tree tab's
-// Operator Details pane — the user's ask was "add the properties for the
-// selected node" matching that mockup.
+// Operator Details pane.
 func TestGraph_PropertiesBlockShowsSelectedNode(t *testing.T) {
 	v := newGraphTabView(t)
 	lines := detailLines(v.selectedNode(), v.currentStatement())
@@ -223,8 +220,7 @@ func TestGraph_PropertiesWheelScrolls(t *testing.T) {
 
 // TestGraph_CanvasWheelLeftRightScrollsHorizontally checks the canvas
 // honours WheelLeft/WheelRight directly, not just Shift+WheelUp/WheelDown —
-// some terminals (reported on Windows) send the former for a horizontal
-// scroll gesture instead of the latter, which the canvas didn't handle.
+// some terminals send the former for a horizontal scroll gesture.
 func TestGraph_CanvasWheelLeftRightScrollsHorizontally(t *testing.T) {
 	v := newGraphTabView(t)
 	mx, my := v.graphCanvasRect.X+1, v.graphCanvasRect.Y+1

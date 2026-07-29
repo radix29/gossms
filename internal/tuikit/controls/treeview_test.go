@@ -25,14 +25,12 @@ func newTestTreeViewExpandable() *TreeView {
 	return tv
 }
 
-// TestSetNodesClampsScrollWhenListShrinks pins the fix for a real bug: a
-// collapse or refresh that shrinks the flat node list below the current
-// scroll offset used to leave scroll pointing past the end of nodes —
-// Draw's render loop (idx := tv.scroll + row; if idx >= len(tv.nodes) {
-// break}) exits on its very first iteration in that case, rendering Object
-// Explorer completely blank until the next arrow-key press recomputed
-// scroll via ensureVisible as a side effect. SetNodes now calls
-// ensureVisible itself so this can't happen.
+// TestSetNodesClampsScrollWhenListShrinks pins down that SetNodes calls
+// ensureVisible itself: a collapse or refresh shrinking the flat node list
+// below the current scroll offset would otherwise leave scroll pointing
+// past the end of nodes, and Draw's render loop (idx := tv.scroll + row; if
+// idx >= len(tv.nodes) { break }) exits on its first iteration, rendering
+// the tree blank until the next arrow-key press recomputes scroll.
 func TestSetNodesClampsScrollWhenListShrinks(t *testing.T) {
 	tv := NewTreeView()
 	tv.SetBounds(0, 0, 40, 10) // inner.H = 8
@@ -99,12 +97,11 @@ func TestSelectIDUnknownIDIsNoOp(t *testing.T) {
 	}
 }
 
-// TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle pins the fix for a real
-// bug: dragging an already-selected object (e.g. a table) from Object
-// Explorer into the query editor toggled its expand state as a side effect,
-// because the old code toggled on any click landing on the already-selected
-// row, regardless of column. Only the "[+]"/"[-]" expander glyph should
-// toggle — dragging always starts from the label, never the glyph.
+// TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle pins down that only the
+// "[+]"/"[-]" expander glyph toggles expand state, not any click landing on
+// an already-selected row: dragging an object into the query editor always
+// starts from the label, and would otherwise flip its expand state on the
+// way out.
 func TestTreeViewClickOnLabelOfSelectedRowDoesNotToggle(t *testing.T) {
 	tv := newTestTreeViewExpandable()
 	if tv.nodes[0].Expanded {
@@ -133,13 +130,12 @@ func TestTreeViewClickOnExpanderTogglesRow(t *testing.T) {
 	}
 }
 
-// TestTreeViewClickOnExpanderTogglesRowWhileScrolled pins a real bug: the
-// expander hit-test in HandleMouse compared the click's screen column
-// directly against the expander's virtual column (node.Depth*2..+4, see
-// Draw's row-line layout), so it only matched at scrollX==0 — once the tree
-// was scrolled horizontally, a still-visible "[+]"/"[-]" glyph silently
-// stopped responding to clicks anywhere but its original, no-longer-true,
-// unscrolled screen position.
+// TestTreeViewClickOnExpanderTogglesRowWhileScrolled pins down that the
+// expander hit-test translates through tv.scrollX: comparing the click's
+// screen column directly against the expander's virtual column
+// (node.Depth*2..+4, see Draw's row-line layout) only matches at
+// scrollX==0, leaving a still-visible glyph unresponsive once the tree is
+// scrolled horizontally.
 func TestTreeViewClickOnExpanderTogglesRowWhileScrolled(t *testing.T) {
 	tv := NewTreeView()
 	tv.SetBounds(0, 0, 40, 10) // inner.X = 1, inner.W = 38
@@ -159,11 +155,11 @@ func TestTreeViewClickOnExpanderTogglesRowWhileScrolled(t *testing.T) {
 	}
 }
 
-// TestTreeViewHeldButtonOverExpanderDoesNotReToggle pins the fix for the
+// TestTreeViewHeldButtonOverExpanderDoesNotReToggle covers the
 // open-then-immediately-close flicker: tcell's all-motion mouse tracking
 // resends Buttons()==Button1 on every cursor motion while the button stays
-// down, so a click on the expander that so much as twitches before release
-// used to re-toggle the node right back closed.
+// down, so without the mouseDragging latch a click on the expander that
+// twitches before release re-toggles the node right back closed.
 func TestTreeViewHeldButtonOverExpanderDoesNotReToggle(t *testing.T) {
 	tv := newTestTreeViewExpandable()
 
@@ -189,9 +185,8 @@ func TestTreeViewHeldButtonOverExpanderDoesNotReToggle(t *testing.T) {
 }
 
 // TestTreeViewRightClickUsesButton2 pins tcell v3's mouse button mapping:
-// Button2 is Secondary (right-click), Button3 is Middle. A prior regression
-// used Button3 for right-click, matching tcell v1/v2's convention instead,
-// which silently broke the Object Explorer's context menu.
+// Button2 is Secondary (right-click), Button3 is Middle. Using Button3, as
+// tcell v1/v2 did, silently breaks the Object Explorer's context menu.
 func TestTreeViewRightClickUsesButton2(t *testing.T) {
 	tv := newTestTreeView()
 	var gotID TreeNodeID
@@ -251,9 +246,9 @@ func TestTreeViewMenuKeyOpensContextMenu(t *testing.T) {
 
 // TestTreeViewCtrlSpaceOpensContextMenu confirms Ctrl+Space is a third
 // keyboard equivalent for the context menu, alongside Shift+F10 and
-// KeyMenu. tcell.KeyRune + " " + ModCtrl is the real decoded shape (verified
-// live: xfce4-terminal reports Ctrl+Space this way), not a legacy KeyNUL
-// constant — see the same reasoning applied to Editor and DataGrid.
+// KeyMenu. tcell.KeyRune + " " + ModCtrl is the decoded shape terminals
+// actually report, not a legacy KeyNUL constant — Editor and DataGrid match
+// on the same key.
 func TestTreeViewCtrlSpaceOpensContextMenu(t *testing.T) {
 	tv := newTestTreeView()
 	fired := false

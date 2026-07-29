@@ -63,6 +63,11 @@ type DataGrid struct {
 	columns   []string
 	rows      RowSource
 	colWidths []int
+
+	// widthsDirty defers a RefreshColumnWidths request to the next Draw
+	// instead of recomputing on the spot — see there.
+	widthsDirty bool
+
 	selRow    int
 	scrollRow int
 	scrollCol int
@@ -90,10 +95,10 @@ type DataGrid struct {
 	// corner. blockSelecting is true while such a selection is active — set
 	// by Shift+Arrow or a mouse drag (see HandleKey/HandleMouse), cleared by
 	// a plain arrow key or a fresh, non-Shift click. Only meaningful, like
-	// selCol, in cell-cursor mode; gated in both places to a read-only grid
-	// (OnActivateCell == nil) so an editable toggle grid's click-drag keeps
-	// activating every cell it passes over, exactly as before this feature
-	// existed, instead of drawing a selection block.
+	// selCol, in cell-cursor mode, and gated in both places to a read-only
+	// grid (OnActivateCell == nil) so an editable toggle grid's click-drag
+	// keeps activating every cell it passes over instead of drawing a
+	// selection block.
 	blockSelecting             bool
 	selAnchorRow, selAnchorCol int
 
@@ -110,6 +115,11 @@ type DataGrid struct {
 	// subsequent Button1 event to it regardless of x, without falling
 	// through to row/cell hit-testing.
 	sbDragging bool
+
+	// sbDraggingH is sbDragging's counterpart for the horizontal scrollbar
+	// drawn along the status row (see hScrollbar) — a separate latch for the
+	// same reason, the two bars occupying different edges of the grid.
+	sbDraggingH bool
 
 	// toggleRow/toggleCol record the last cell an editable toggle grid's
 	// click-drag activated (see blockSelecting's doc comment above), so a
@@ -162,8 +172,7 @@ type DataGrid struct {
 	// gutter's blank header cell) is chosen. DataGrid has no OS clipboard
 	// access itself — see tuikit/README's one-way dependency rule — so the
 	// host app wires this to its own clipboard-write plumbing. Grids that
-	// leave it nil (the default) simply don't offer these menu items, same
-	// as before this feature existed.
+	// leave it nil (the default) don't offer these menu items at all.
 	OnCopyRequest func(text string)
 }
 
@@ -194,7 +203,7 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.columns = columns
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
-	g.blockSelecting, g.mouseDragging, g.sbDragging = false, false, false
+	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.computeColWidths()
 	g.status = core.Itoa(rows.Len()) + " rows"
 }
@@ -205,8 +214,15 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 // background fetch backfilling columns one row at a time — where calling
 // SetData again on every update would visually reset the user's scroll
 // position each time.
+//
+// The recompute is deferred to the next Draw rather than run here, since
+// that's the first moment the new widths could matter. Its callers are
+// exactly the progressive backfills, which call this once per row as each
+// row's own round trip lands: recomputing on the spot rescans up to
+// colWidthSampleRows rows for every one of them, when a whole burst of
+// rows arriving between two frames only ever needs one rescan.
 func (g *DataGrid) RefreshColumnWidths() {
-	g.computeColWidths()
+	g.widthsDirty = true
 }
 
 // SetError shows an error row.
@@ -215,7 +231,7 @@ func (g *DataGrid) SetError(err error) {
 	g.rows = SliceRowSource{{err.Error()}}
 	g.colWidths = []int{g.rect.W - 2}
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
-	g.blockSelecting, g.mouseDragging, g.sbDragging = false, false, false
+	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.status = "Error"
 }
 
@@ -339,6 +355,7 @@ func (g *DataGrid) Row(i int) []string {
 // colWidthSampleRows data rows — not every row, so a huge result set
 // doesn't make SetSource itself slow.
 func (g *DataGrid) computeColWidths() {
+	g.widthsDirty = false
 	g.colWidths = make([]int, len(g.columns))
 	for i, col := range g.columns {
 		g.colWidths[i] = core.DisplayWidth(col) + 2

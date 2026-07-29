@@ -12,31 +12,23 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// serverRolePropPages builds the page set for Server Role Properties — SSMS
-// as reference, no mockup for this one, same as Key Properties earlier this
-// month. A server role is a server-level principal (sys.server_principals,
-// type='R'), the direct server-scope counterpart of rolePropPages'
-// database roles, and reuses that dialog's shape everywhere the two scopes
-// actually match. Two rolePropPages pages are dropped: Owned Schemas
-// (schemas are database-scoped, a server role can't own one) and Extended
-// Properties (live-verified: sp_addextendedproperty rejects both
-// @level0type=N'SERVER ROLE' and N'LOGIN' outright — server-level
-// principals don't support extended properties at all, unlike every
-// database-scoped principal this app has a Properties dialog for).
-// Securables reuses pagePrincipalServerPermissions, the same server-scoped
-// GRANT/DENY editor Login Properties' own Securables page already uses —
-// a server role and a login are both server-level principals that can
-// hold the same kind of explicit permission entries.
+// serverRolePropPages builds the page set for Server Role Properties. A
+// server role is a server-level principal (sys.server_principals, type='R'),
+// the server-scope counterpart of rolePropPages' database roles, and reuses
+// that dialog's shape wherever the two scopes match. Two of its pages are
+// dropped: Owned Schemas (schemas are database-scoped, a server role can't
+// own one) and Extended Properties (sp_addextendedproperty rejects both
+// @level0type=N'SERVER ROLE' and N'LOGIN' — server-level principals don't
+// support extended properties at all). Securables reuses
+// pagePrincipalServerPermissions, the same server-scoped GRANT/DENY editor
+// Login Properties' Securables page uses.
 //
 // roleName is boxed in a *string shared by every page below: renaming a
-// role is the one edit in this dialog that changes the identity every
-// other page's lookup depends on, so pageServerRoleGeneral's apply closure
-// updates *roleName in place on success — otherwise Apply (which reloads
-// every page via PropDialog.InvalidateAll) would send the very next reload
-// looking for a role name that no longer exists. Live-caught: renaming
-// claude_role_a and clicking Apply failed every page's reload with
-// `server role "claude_role_a" not found` before this fix — same bug class
-// as Key Properties' pageKeyGeneral, see key_props.go.
+// role changes the identity every other page's lookup depends on, so
+// pageServerRoleGeneral's apply closure updates *roleName in place on
+// success — otherwise Apply, which reloads every page via
+// PropDialog.InvalidateAll, would look up a role name that no longer
+// exists.
 func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
@@ -54,12 +46,12 @@ func findServerRole(ctx context.Context, sc *db.ServerConn, roleName string) (*g
 }
 
 // isBuiltinServerRole reports whether a server role's name/owner can't be
-// changed: every fixed role (sysadmin, dbcreator, ...) plus public —
-// live-verified that both ALTER SERVER ROLE public WITH NAME=... and
-// ALTER AUTHORIZATION ON SERVER ROLE::public are syntax errors ("public"
-// is a reserved keyword in this position), even though public's
-// is_fixed_role is 0, mirroring the database-level public role's identical
-// restriction (see isBuiltinRole in role_props.go).
+// changed: every fixed role (sysadmin, dbcreator, ...) plus public — both
+// ALTER SERVER ROLE public WITH NAME=... and ALTER AUTHORIZATION ON SERVER
+// ROLE::public are syntax errors ("public" is a reserved keyword in this
+// position), even though public's is_fixed_role is 0. The database-level
+// public role has the same restriction (see isBuiltinRole in
+// role_props.go).
 func isBuiltinServerRole(role *gosmo.ServerRole) bool {
 	return role.IsFixedRole || role.Name == "public"
 }

@@ -315,14 +315,13 @@ func TestCommonPrefixHelper(t *testing.T) {
 	}
 }
 
-// TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate pins the fix
-// for tcell's all-motion mouse tracking resending Buttons()==Button1 on
-// every motion event while the button stays down. Without listMouseDragging,
-// a single physical click on a not-yet-selected row would set d.sel to that
-// row, and the very next resent event — same physical click, no release —
-// would then see idx == d.sel (just set) and mistake it for a second click
-// on an already-selected row, auto-activating (choosing) a file the user
-// only meant to select once.
+// TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate covers tcell's
+// all-motion mouse tracking resending Buttons()==Button1 on every motion
+// event while the button stays down. Without listMouseDragging, a single
+// physical click on a not-yet-selected row sets d.sel to that row, and the
+// next resent event — same physical click, no release — sees idx == d.sel
+// and mistakes it for a second click on an already-selected row,
+// auto-activating a file meant only to be selected.
 func TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate(t *testing.T) {
 	d, dir := newTestFileDialog(t)
 	var chosen string

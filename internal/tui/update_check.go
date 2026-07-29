@@ -37,17 +37,16 @@ func (r githubRelease) releasesURL() string {
 }
 
 // checkForUpdates opens UpdateDialog in its loading state, then fetches the
-// latest release from GitHub on a background goroutine — same
-// postEvent+wakeEventLoop handoff as connectServer (see app_connections.go).
+// latest release from GitHub on a background goroutine — same postAndWake
+// handoff as connectServer (see app_connections.go).
 func (a *App) checkForUpdates() {
 	a.updateDialog.ShowChecking(version.Version)
 
 	go func() {
 		rel, err := fetchLatestRelease()
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			a.updateDialog.ShowResult(version.Version, rel, err)
 		})
-		a.wakeEventLoop()
 	}()
 }
 

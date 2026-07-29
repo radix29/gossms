@@ -98,12 +98,9 @@ const (
 // different glyph open vs. closed. style == config.IconStyleNone always
 // returns 0 (no icon), which TreeView's Draw treats as "don't draw one".
 // NodeAgentJobs (the "SQL Server Agent" node) gets a fixed stopwatch glyph
-// instead of the generic folder icon its container status would otherwise
-// give it — every other container node type has no specific identity of its
-// own, but SQL Server Agent does, the same way SSMS gives it a distinct icon
-// rather than a plain folder. d.IsPrimaryKey overrides the normal NodeColumn
-// glyph with the primary-key glyph, since that's per-column data, not
-// something the node's Type alone can express.
+// rather than the generic folder icon its container status would give it.
+// d.IsPrimaryKey overrides the normal NodeColumn glyph with the primary-key
+// glyph, since that's per-column data, not something Type alone expresses.
 func nodeIcon(d nodeData, style config.IconStyle, expanded bool) rune {
 	if style == config.IconStyleNone {
 		return 0
@@ -135,9 +132,8 @@ func offlineDatabaseIcon(style config.IconStyle) rune {
 }
 
 // primaryKeyIcon returns the glyph substituted for a primary-key column's
-// normal NodeColumn icon — the 🗝/⚿ "Primary Key" glyph from todo/icons.md,
-// shared with NodeKey (the same glyph a Keys-folder primary/unique key entry
-// uses).
+// normal NodeColumn icon — the 🗝/⚿ "Primary Key" glyph, shared with NodeKey
+// (the same glyph a Keys-folder primary/unique key entry uses).
 func primaryKeyIcon(style config.IconStyle) rune {
 	if style == config.IconStyleEmoji {
 		return '🗝'
@@ -326,8 +322,7 @@ func objectIconSymbols(t NodeType) rune {
 }
 
 // objectIconPortable is the Symbols set with one substitution: Column uses
-// the plain '•' bullet, matching the portable glyph list in todo/icons.md,
-// since '⁞' isn't guaranteed to render everywhere.
+// the plain '•' bullet, since '⁞' isn't guaranteed to render everywhere.
 func objectIconPortable(t NodeType) rune {
 	if t == NodeColumn {
 		return '•'
@@ -375,22 +370,19 @@ func hasChildren(t NodeType) bool {
 	return true
 }
 
-// nodeData is the applicaton-specific payload attached to each
-// controls.TreeNode via its Tag field. Name is the object's bare name
-// (schema-free) — the one thing that must never be recovered by slicing
-// Label, which is presentation-only and free to include the schema
-// prefix, an icon, or anything else display wants. TableName is the owning
-// table's bare name for a node scoped under a table (NodeIndex,
-// NodeStatistic, NodeKey, NodeForeignKey) — Schema/Name on those already
-// point at the index's, statistic's, or key's own schema/name, not the
-// table's, so the table name would otherwise be lost once
-// loadIndexesChildren/loadStatisticsChildren/loadKeysChildren flatten
-// their parent folder node away. IsPrimaryKey is likewise dual-purpose: for
-// NodeColumn it overrides
-// the column's icon (see nodeIcon); for NodeKey it's set from the backing
-// index's IsPrimaryKey so showKeyPropertiesFor can title the dialog
-// "Primary Key Properties" vs. "Unique Key Properties" without a second
-// round trip to the server.
+// nodeData is the application-specific payload attached to each
+// controls.TreeNode via its Tag field. Name is the object's bare,
+// schema-free name — never recover it by slicing Label, which is
+// presentation-only and free to carry a schema prefix, an icon, or anything
+// else display wants. TableName is the owning table's bare name for a node
+// scoped under a table (NodeIndex, NodeStatistic, NodeKey, NodeForeignKey):
+// Schema/Name on those point at the index's, statistic's or key's own
+// schema/name, so the table name would be lost once
+// loadIndexesChildren/loadStatisticsChildren/loadKeysChildren flatten their
+// parent folder away. IsPrimaryKey is dual-purpose: for NodeColumn it
+// overrides the column's icon (see nodeIcon); for NodeKey it's set from the
+// backing index so showKeyPropertiesFor can title the dialog "Primary Key
+// Properties" vs. "Unique Key Properties" without another round trip.
 type nodeData struct {
 	Type         NodeType
 	Schema       string

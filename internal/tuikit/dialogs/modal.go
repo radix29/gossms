@@ -2,6 +2,7 @@ package dialogs
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -29,14 +30,15 @@ type ModalDialog struct {
 	// (see its doc comment) rather than in ButtonClicked itself, since
 	// every embedding dialog's HandleMouse calls ConsumeOutsideClick first
 	// regardless of mode, while some only reach ButtonClicked via a
-	// mode-gated branch that a plain release event never takes.
+	// mode-gated branch that a plain release event never takes — and again
+	// in Show, for the one gesture whose release never gets that far.
 	mouseDragging bool
 
 	// sbDragging is true while the user is dragging a content scrollbar an
 	// embedding dialog draws (see ScrollbarDrag) — a separate flag from
 	// mouseDragging since it targets a different screen region (the
 	// scrollbar column vs. the button row) and the two must not be
-	// conflated. Reset in ConsumeOutsideClick alongside mouseDragging.
+	// conflated. Reset alongside mouseDragging, in both places.
 	sbDragging bool
 }
 
@@ -78,9 +80,24 @@ func (d *ModalDialog) recentre() {
 	d.rect.Y = core.Max(0, (sh-d.rect.H)/2)
 }
 
-// Show makes the dialog visible and recentres it.
+// Show makes the dialog visible, recentred on the screen.
+//
+// The drag latches start clear on every showing, because the release that
+// would otherwise have cleared them never arrives: a button click closes
+// the dialog on the *press*, and by the time the matching ButtonNone comes
+// in, ConsumeOutsideClick's reset is unreachable — HandleMouse returns
+// early on !visible, and the host has already dropped the dialog from its
+// input routing anyway. mouseDragging therefore stayed latched from one
+// showing to the next, and ButtonClicked refused the first click on every
+// reopening, leaving the dialog looking frozen until some unrelated release
+// happened to clear it. Reopening is not a continuation of the gesture that
+// closed it, so clearing here is also the correct reading. A dialog that
+// opens *during* a held gesture is a different hazard, and is the host's to
+// handle — see App.gestureOverlay.
 func (d *ModalDialog) Show() {
 	d.recentre()
+	d.mouseDragging = false
+	d.sbDragging = false
 	d.visible = true
 }
 
@@ -195,7 +212,7 @@ func (d *ModalDialog) buttonRowStartX(labels []string) int {
 func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int) {
 	p := theme.Active()
 	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
-	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(tcell.ColorWhite)
+	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
 	col := d.buttonRowStartX(labels)
 	y := d.ButtonRowY()
 	for i, label := range labels {

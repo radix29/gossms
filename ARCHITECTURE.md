@@ -96,11 +96,11 @@ gossms/
 │       ├── agent_schedule_form.go       # shared Occurs/Recurs-every/Weekdays/Relative/Daily-frequency/Duration form used by both New Schedule and Schedule Properties
 │       ├── agent_alert_props.go         # Alert Properties dialog: General (identity/trigger/response scope/notification) + Response (operators to e-mail/response job)
 │       ├── agent_operator_props.go      # Operator Properties dialog: General (identity/e-mail/category) + read-only Notifications (linked alerts/jobs) page
-│       ├── new_job_dialog.go            # New Job creation dialog shell: prefetch, page wiring, validate/apply pipeline, Script Changes
+│       ├── new_job_dialog.go            # New Job — newObjectDialog config (prefetch + create) for a job
 │       ├── new_job_pages.go             # New Job's General/Steps/Schedules/Notifications page builders
-│       ├── new_schedule_dialog.go       # New Schedule creation dialog: General page from agent_schedule_form.go + a Jobs-to-attach page
-│       ├── new_alert_dialog.go          # New Alert creation dialog: General (alert definition) + Response (operators to e-mail) pages
-│       ├── new_operator_dialog.go       # New Operator creation dialog, a single General page
+│       ├── new_schedule_dialog.go       # New Schedule: General page from agent_schedule_form.go + a Jobs-to-attach page
+│       ├── new_alert_dialog.go          # New Alert: General (alert definition) + Response (operators to e-mail) pages
+│       ├── new_operator_dialog.go       # New Operator, a single General page
 │       │
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
 │       ├── options_dialog.go     # Tools > Options — icon style, cell/row limits, IntelliSense on/off, saved to config.json
@@ -113,11 +113,12 @@ gossms/
 │       ├── update_dialog.go      # UpdateDialog — shows installed vs. latest release
 │       ├── properties_dialog.go  # About + Object Dependencies (wraps dialogs.PropertiesDialog, the flat viewer)
 │       │
-│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet (async loads, Apply)
+│       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply)
+│       ├── new_object_dialog.go  # newObjectDialog — the shell behind all six New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
-│       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid, shared across Properties dialogs
+│       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
-│       ├── securables_matrix.go  # generic database-securable Grant/Deny/Revoke grid, reused by Table/Schema/Role/User Properties
+│       ├── securables_matrix.go  # generic database-securable Grant/Deny/Revoke grid + the shared Securables page for a user or database role
 │       ├── server_permissions_matrix.go # server-scope securables grid, used by Server/Login/Server Role Properties
 │       ├── server_props.go       # Server Properties: shared config-row plumbing + page registration
 │       ├── server_props_general.go      # Server Properties > General page
@@ -147,9 +148,9 @@ gossms/
 │       ├── key_props.go          # Primary/Unique Key Properties, reusing most of Index Properties' pages
 │       ├── fk_props.go           # Foreign Key Properties: single read-only General page
 │       │
-│       ├── new_database_dialog.go # New Database dialog — builds and runs CREATE DATABASE
+│       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
 │       ├── new_database_pages.go  # New Database's page definitions
-│       ├── new_login_dialog.go    # New Login dialog — builds and runs CREATE LOGIN
+│       ├── new_login_dialog.go    # New Login — newObjectDialog config, runs CREATE LOGIN
 │       ├── new_login_pages.go     # New Login's page definitions
 │       │
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
@@ -186,6 +187,39 @@ was never armed for *this* gesture. Routers need their own gesture-wide flag
 of the dispatcher, before any positional branching) to tell a genuine fresh
 press from a continuation.
 
+Knowing a press isn't fresh isn't enough on its own, though: the router
+still has to decide *where* the continuation goes. Every positional router
+in the app therefore records the region that claimed the fresh press and
+sends every event through to it until the release, so a gesture can't
+change owner halfway through. There are three, all the same shape —
+`App.gestureOwner` (`app_events.go`), `QueryPanel.dragZone`
+(`query_panel.go`), and `propsheet.PropertySheet.dragZone`
+(`sheet_input.go`) — each with an `armGesture`/`armDrag` setter called
+wherever a branch claims the press, and a `routeGesture`/`routeDrag` that
+replays held events to the owner. Regions that already acted on the press
+(a toolbar button, a tab switch) simply swallow the repeats. `Splitter`
+carries the per-widget half of the same rule: it starts a resize only from
+a press that lands on its bar, so a selection drag crossing it doesn't
+grab it.
+
+`App` additionally snapshots the modal layer at the start of each gesture
+(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` events when a
+dialog, context menu, or menu dropdown has opened or closed since. A dialog
+sees no events until it's shown, so the first `Button1` reaching it looks
+like a press to `ModalDialog.ButtonClicked` — without this, clicking a
+context-menu item that opens a dialog and twitching before release fires
+whichever of that dialog's buttons the pointer happens to be over.
+
+The mirror image of that is a latch outliving the gesture that set it. A
+dialog button closes its dialog on the *press*, so the matching release
+never reaches `ConsumeOutsideClick`'s reset: `HandleMouse` returns early on
+`!visible`, and `syncDialogStack` has already taken the dialog off
+`dialogStack`, so `App` routes the release elsewhere. `mouseDragging` stayed
+set from one showing to the next, and `ButtonClicked` refused the first
+click of every reopening — the dialog looked frozen. `ModalDialog.Show()`
+therefore clears both latches: a new showing is never a continuation of the
+gesture that closed the last one.
+
 Relatedly: any overlay-owning widget drawn last (see
 `internal/tuikit/README.md`'s "overlays drawn last" rule) must also get
 first refusal of every key/mouse event while open, and every host that owns
@@ -194,17 +228,26 @@ must forward a `ButtonNone` release to that child before the early return —
 otherwise a drag that ends outside the host's bounds leaves the child's
 latch stuck, silently swallowing its next press.
 
-## Async result delivery: postEvent + wakeEventLoop
+## Async result delivery: postAndWake
 
-A background goroutine that reports its result via `App.postEvent(fn)` must
-send the wakeup — `a.screen.EventQ() <- tcell.NewEventInterrupt(nil)`, or
-the named helper `a.wakeEventLoop()` — **outside** the `postEvent` closure,
-right after the `postEvent(...)` call, still on the background goroutine.
-`Run()`'s event loop only drains queued callbacks when it wakes up for some
-event on `EventQ()`; if the wakeup send is nested inside the very closure
-that's waiting to be drained, nothing will ever wake the loop up to drain
-it — the result sits queued, invisible, until an unrelated keypress happens
-to arrive and drains it as a side effect.
+A background goroutine reports its result with `App.postAndWake(fn)`, which
+queues `fn` for the UI goroutine and wakes the event loop to run it. Use it
+rather than writing out its two halves (`postEvent` then `wakeEventLoop`) by
+hand.
+
+The reason it's one helper: the wakeup must be sent **outside** the
+`postEvent` closure, right after the `postEvent(...)` call, still on the
+background goroutine. `Run()`'s event loop only drains queued callbacks when
+it wakes up for some event on `EventQ()`; if the wakeup send is nested inside
+the very closure that's waiting to be drained, nothing will ever wake the
+loop up to drain it — the result sits queued, invisible, until an unrelated
+keypress happens to arrive and drains it as a side effect. That was a real,
+shipped bug (Object Explorer nodes stuck on "Loading..."), and it was
+present in every async operation in `internal/tui` at the time.
+
+The one place that still calls `wakeEventLoop()` on its own is
+`QueryPanel`'s elapsed-timer tick, which has no callback to post — it only
+needs a redraw.
 
 ## Building & testing
 

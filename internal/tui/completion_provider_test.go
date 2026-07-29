@@ -460,10 +460,9 @@ func TestSQLCompletionForwardScanStopsAtGoBatchSeparator(t *testing.T) {
 // ---------------------------------------------------------------------------
 // replaceFrom is a column on the cursor's row. The provider tokenizes a
 // flattened whole-buffer copy, but the Editor contract replaces
-// [replaceFrom, col) on the cursor's own row and anchors the popup at it.
-// Regression: buffer offsets were returned instead, so on any row after the
-// first a commit appended ("from paPatients") and the popup drew far right
-// of the cursor.
+// [replaceFrom, col) on the cursor's own row and anchors the popup at it —
+// returning buffer offsets instead makes a commit append, and the popup
+// draw far right of the cursor, on any row after the first.
 // ---------------------------------------------------------------------------
 
 func TestSQLCompletionReplaceFromIsCursorRowColumnOnLaterRows(t *testing.T) {
@@ -778,11 +777,9 @@ func TestTokenizeSQLPrefixReportsBracketStateAndStart(t *testing.T) {
 	}
 }
 
-// Regression: before EXCEPT/INTERSECT were added to sqlKeywords and UNION
-// was added to parseFromScope's expectRef-reset list, "UNION SELECT Id
-// FROM B" mis-parsed the second SELECT's own column ("Id") as a table
-// reference, since nothing between "FROM A" and "Id" ever reset
-// expectRef back to false.
+// EXCEPT/INTERSECT are in sqlKeywords and UNION resets parseFromScope's
+// expectRef, so "UNION SELECT Id FROM B" doesn't mis-parse the second
+// SELECT's own column ("Id") as a table reference.
 func TestParseFromScopeResetsAfterUnion(t *testing.T) {
 	buf := []rune("FROM A UNION SELECT Id FROM B")
 	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))

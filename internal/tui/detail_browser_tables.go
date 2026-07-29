@@ -56,15 +56,12 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 				defer tCancel()
 				rowCount, rcErr := t.RowCountContext(tCtx)
 				space, spErr := t.SpaceUsedContext(tCtx)
-				// rows[i] is only ever written here, inside the postEvent
+				// rows[i] is only ever written here, inside the posted
 				// closure, so every write lands on the UI goroutine — the
-				// same one Draw() runs on — rather than racing a redraw
-				// triggered by some other row's own completion or an
-				// unrelated event arriving mid-fetch.
-				app.postEvent(func() {
-					if seq != db.seq {
-						return
-					}
+				// same one Draw() runs on. The write is unconditional, the
+				// redraw isn't — see the same closure in
+				// loadDatabasesFolderDetails for why.
+				app.postAndWake(func() {
 					if rcErr == nil {
 						rows[i][1] = core.FormatThousands(rowCount)
 					} else {
@@ -77,9 +74,10 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 					} else {
 						rows[i][2], rows[i][3], rows[i][4] = "N/A", "N/A", "N/A"
 					}
-					db.grid.RefreshColumnWidths()
+					if seq == db.seq {
+						db.grid.RefreshColumnWidths()
+					}
 				})
-				app.wakeEventLoop()
 			}(i, t)
 		}
 		wg.Wait()

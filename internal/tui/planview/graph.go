@@ -205,7 +205,7 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 }
 
 // drawDoubleBox draws a double-line box border — the selected tile's
-// distinct look, matching the mockup's "╔══╗" selection style.
+// distinct look.
 func drawDoubleBox(s tcell.Screen, r core.Rect, style tcell.Style) {
 	x, y, w, h := r.X, r.Y, r.W, r.H
 	s.SetContent(x, y, '╔', nil, style)
@@ -440,8 +440,8 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		if ev.Buttons() == tcell.ButtonNone {
 			// The splitter needs its own drag-release event to clear
 			// sp.dragging, the same reason handleTreeTabMouse forwards
-			// ButtonNone to treeSplit unconditionally (not position-gated —
-			// see that case's comment for the shipped bug this avoids).
+			// ButtonNone to treeSplit unconditionally rather than
+			// position-gating it.
 			if v.graphSplit.HandleMouse(ev) {
 				v.layoutGraphTab()
 				return true
@@ -496,11 +496,10 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		return true
 	case tcell.Button1:
 		r := v.graphCanvasRect
-		// Scrollbar drag/click takes priority over tile selection below —
+		// Scrollbar drag/click takes priority over tile selection below:
 		// the bars are drawn over the canvas's own bottom row/right column
-		// (see drawGraphCanvas), which without this check first would
-		// otherwise be read as a click positioned past every real tile
-		// (harmless) or, worse, directly on one that happens to sit there.
+		// (see drawGraphCanvas), so without this a click on one would be
+		// read as a click on whatever tile sits underneath.
 		if core.HandleScrollbarDragH(ev, r.X, r.Bottom()-1, r.W, v.graphSt.layout.canvasW, &v.graphSt.sbDraggingX, &v.graphSt.scrollX) {
 			return true
 		}

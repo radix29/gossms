@@ -28,13 +28,12 @@ var indexTypeNames = map[gosmo.IndexType]string{
 // to columnstore indexes, out of scope here).
 var indexDataCompressionOptions = []string{"NONE", "ROW", "PAGE"}
 
-// indexPropPages builds the page set for Index Properties. Permissions —
-// the mockup's final page — is dropped: an index isn't a SQL Server
-// securable class, so GRANT/DENY/REVOKE against one isn't valid T-SQL.
-// Sort in tempdb, Online index operation, Resumable, and Max duration
-// (mockup's Options page) are also dropped — they're REBUILD-time-only
-// clauses with no persisted state to show afterward, unlike fill factor,
-// pad index, and the SET-able options this page does surface.
+// indexPropPages builds the page set for Index Properties. There's no
+// Permissions page: an index isn't a SQL Server securable class, so
+// GRANT/DENY/REVOKE against one isn't valid T-SQL. Sort in tempdb, Online
+// index operation, Resumable, and Max duration are left out too — they're
+// REBUILD-time-only clauses with no persisted state to show afterward,
+// unlike fill factor, pad index, and the SET-able options this page has.
 func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	return []propPage{
 		pageIndexGeneral(sc, dbName, schema, table, name),
@@ -43,7 +42,13 @@ func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, nam
 		pageIndexIncludedColumns(sc, dbName, schema, table, name),
 		pageIndexFilter(d, sc, dbName, schema, table, name),
 		pageIndexFragmentation(d, sc, dbName, schema, table, &name),
-		pageIndexExtendedProperties(sc, dbName, schema, table, &name),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{
+				Level0Type: "SCHEMA", Level0Name: schema,
+				Level1Type: "TABLE", Level1Name: table,
+				Level2Type: "INDEX", Level2Name: name,
+			}
+		}),
 	}
 }
 
@@ -130,10 +135,10 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			// A PK/unique-constraint-backing index rejects IGNORE_DUP_KEY
 			// outright, even to re-set its current value ("Cannot use index
 			// option ignore_dup_key to alter index '...' as it enforces a
-			// primary or unique constraint" — live-verified against a real
-			// server) — the same restriction Index.SetLockOptions's own doc
-			// comment already covers, and the reason Key Properties'
-			// pageKeyGeneral uses SetLockOptions instead of SetOptions.
+			// primary or unique constraint") — the same restriction
+			// Index.SetLockOptions's doc comment covers, and why Key
+			// Properties' pageKeyGeneral uses SetLockOptions, not
+			// SetOptions.
 			constrained := idx.IsPrimaryKey || idx.IsUniqueConstraint
 
 			fillFactorRow := propsheet.Int("Fill factor", int64(idx.FillFactor), 0, 100, "%")
@@ -388,30 +393,6 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 				propsheet.Note("These actions run immediately, independent of OK/Cancel/Apply. Press F5 to refresh this page's numbers afterward."),
 			)
 			return f, nil, nil
-		},
-	}
-}
-
-// name is *string — see pageIndexStorage's doc comment.
-func pageIndexExtendedProperties(sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			level := gosmo.ExtendedPropertyLevel{
-				Level0Type: "SCHEMA", Level0Name: schema,
-				Level1Type: "TABLE", Level1Name: table,
-				Level2Type: "INDEX", Level2Name: *name,
-			}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
-			return f, apply, nil
 		},
 	}
 }

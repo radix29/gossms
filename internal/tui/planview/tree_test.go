@@ -206,13 +206,11 @@ func TestTree_HasSelectionAndSelectedText(t *testing.T) {
 	}
 }
 
-// TestSplitter_ClickAfterDragSelectsTree is a regression test: dragging the
-// tree|details splitter and releasing it used to leave layout.Splitter's
-// internal "dragging" flag stuck true, because handleTreeTabMouse's switch
-// on ev.Buttons() had no case forwarding the release (ButtonNone) event to
-// treeSplit.HandleMouse. The very next plain click anywhere in the tab was
-// then misread as a drag continuation — moving the divider again instead of
-// selecting the clicked tree row.
+// TestSplitter_ClickAfterDragSelectsTree pins down that handleTreeTabMouse
+// forwards the release (ButtonNone) event to treeSplit.HandleMouse: without
+// it layout.Splitter's "dragging" flag stays stuck true after a divider
+// drag, and the next plain click anywhere in the tab is misread as a drag
+// continuation, moving the divider instead of selecting the clicked row.
 func TestSplitter_ClickAfterDragSelectsTree(t *testing.T) {
 	v := newTreeTabView(t)
 	r0 := v.treeSplit.Ratio()

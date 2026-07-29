@@ -13,12 +13,12 @@ import (
 //
 // This is a lexical approximation, not a full T-SQL parser — the same
 // spirit as controls.Editor's own SelectStatementAtCursor (see
-// tuikit/controls/sql_statement.go's doc comment). It recognises enough of
-// the grammar (comments, string/quoted-identifier literals, FROM/JOIN/
-// WHERE/... clause keywords, dot-qualified names) to get common queries
-// right; anything genuinely ambiguous just offers nothing rather than
-// guessing wrong. Keyword completion, CTEs/derived tables, temp tables and
-// table variables, and cross-database chains are out of scope for now.
+// tuikit/controls/sql_statement.go). It recognises enough of the grammar
+// (comments, string/quoted-identifier literals, FROM/JOIN/WHERE/... clause
+// keywords, dot-qualified names) to get common queries right; anything
+// genuinely ambiguous offers nothing rather than guessing wrong. Keyword
+// completion, CTEs/derived tables, temp tables and table variables, and
+// cross-database chains are out of scope.
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
@@ -97,12 +97,11 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 
 	// FROM-scope/clause analysis looks at the whole current statement, not
 	// just the part already typed — a table named in "SELECT | FROM
-	// Customers c" (cursor still in the column list) must resolve just as
-	// well as one already fully typed above the cursor, matching how SSMS
-	// itself parses the entire statement regardless of cursor position.
-	// The forward scan must resume in normal lexer state; when the cursor
-	// sits inside an unterminated bracket identifier, skip past its closing
-	// ']' (if any) first.
+	// Customers c" (cursor still in the column list) resolves just as well
+	// as one already fully typed above the cursor. The forward scan must
+	// resume in normal lexer state; when the cursor sits inside an
+	// unterminated bracket identifier, skip past its closing ']' (if any)
+	// first.
 	forwardFrom := upTo
 	if state == sqlLexBracket {
 		for forwardFrom < len(buf) && buf[forwardFrom] != ']' {
@@ -115,13 +114,12 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	batchEnd := statementEndOffset(lines, buf, row, forwardFrom)
 	forwardTokens, _, _, _ := tokenizeSQLRange(buf, forwardFrom, batchEnd, false)
 
-	// Multiple statements stacked in the editor with no ';' between them —
-	// extremely common in ad hoc SSMS-style scripts, where a trailing ';'
-	// is optional — still parse as one ';'/GO-delimited batch above;
-	// narrow further to the actual DML statement containing the cursor so
-	// a bare column context in one statement doesn't pick up FROM refs
-	// from an unrelated statement stacked above or below it (see
-	// dmlStatementStarts/narrowToDMLStatement).
+	// Multiple statements stacked in the editor with no ';' between them
+	// still parse as one ';'/GO-delimited batch above; narrow further to
+	// the DML statement containing the cursor so a bare column context in
+	// one statement doesn't pick up FROM refs from an unrelated statement
+	// stacked above or below it (see dmlStatementStarts /
+	// narrowToDMLStatement).
 	combined := append(append([]sqlToken{}, tokens...), forwardTokens...)
 	stmtStart, stmtEnd := narrowToDMLStatement(combined, batchStart, batchEnd, upTo)
 	tokens = tokensFrom(tokens, stmtStart)

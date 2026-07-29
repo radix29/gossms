@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
@@ -61,6 +62,12 @@ type QueryPanel struct {
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
+	// statusRect is the results area's bottom row, where drawResultsStatus
+	// paints the execution status for every tab the DataGrid isn't drawing
+	// — the grid renders the same line itself, inside its own rect. Zero
+	// when the results area is too short to spare a row.
+	statusRect core.Rect
+
 	// execStart marks when the in-flight execution began — read by
 	// updateResultsStatus for the live "elapsed" timer while executing is
 	// true, and by tickExecuting to know when to stop waking the event loop.
@@ -91,9 +98,36 @@ type QueryPanel struct {
 	// otherwise it steals Ctrl+Up/Down from the editor on every keystroke.
 	resultsFocused bool
 
+	// dragZone is the sub-region that claimed the Button1 press currently
+	// being held, or qZoneNone between gestures. tcell resends Button1 on
+	// every motion event while the button is down, and the results tab bar
+	// sits one row below the splitter, which sits directly below the
+	// editor — so a text-selection drag heading down out of the editor
+	// walks over both. Without this it grabs the splitter (resizing the
+	// panes mid-selection) and then flips the active results tab on every
+	// motion event that lands on the tab row. Mirrors
+	// propsheet.PropertySheet.dragZone; cleared on the release.
+	dragZone queryDragZone
+
 	executing bool
 	cancel    context.CancelFunc
 }
+
+// queryDragZone names the QueryPanel sub-region that owns the in-progress
+// mouse gesture — see the dragZone field.
+type queryDragZone int
+
+const (
+	qZoneNone queryDragZone = iota // no gesture in progress
+	qZoneSplitter
+	qZoneTabs
+	qZoneEditor
+	qZoneResults
+	// qZoneUnclaimed is a press no sub-region wanted. It still owns the
+	// gesture, so the repeats it generates are swallowed rather than
+	// landing on whatever the pointer later drifts over.
+	qZoneUnclaimed
+)
 
 // NewQueryPanel creates a new query panel bound to the given App (for
 // connection lookup and status updates) and titled accordingly.
@@ -178,11 +212,23 @@ func (p *QueryPanel) layoutChildren() {
 	} else {
 		p.tabRect = core.Rect{}
 	}
+	// DataGrid draws its own status bar on the last row of its rect; the
+	// other three don't, so they're given one row less and drawResultsStatus
+	// paints the same line into the gap. Sized here rather than per active
+	// tab so switching tabs needs no relayout — the row lands in the same
+	// place either way. Below two rows there's nothing left to give up, and
+	// no status is drawn.
+	p.statusRect = core.Rect{}
+	otherH := respH
+	if respH > 1 {
+		otherH = respH - 1
+		p.statusRect = core.Rect{X: bottom.X, Y: respY + respH - 1, W: bottom.W, H: 1}
+	}
 	p.results.SetBounds(bottom.X, respY, bottom.W, respH)
-	p.messages.SetBounds(bottom.X, respY, bottom.W, respH)
-	p.resultsText.SetBounds(bottom.X, respY, bottom.W, respH)
+	p.messages.SetBounds(bottom.X, respY, bottom.W, otherH)
+	p.resultsText.SetBounds(bottom.X, respY, bottom.W, otherH)
 	if p.planView != nil {
-		p.planView.SetBounds(bottom.X, respY, bottom.W, respH)
+		p.planView.SetBounds(bottom.X, respY, bottom.W, otherH)
 	}
 }
 
@@ -219,7 +265,7 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	pal := theme.Active()
 	titleStyle := tcell.StyleDefault.Background(pal.MenuBar).Foreground(pal.Text)
 	if p.editorHasFocus() {
-		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+		titleStyle = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: p.rect.X, Y: p.rect.Y, W: p.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, p.rect.X+1, p.rect.Y, p.rect.W-2, titleStyle, p.connInfoText())
@@ -232,10 +278,13 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	switch {
 	case p.onMessagesTab():
 		p.messages.Draw(s)
+		p.drawResultsStatus(s)
 	case p.planTabActive():
 		p.planView.Draw(s)
+		p.drawResultsStatus(s)
 	case p.textTabActive():
 		p.resultsText.Draw(s)
+		p.drawResultsStatus(s)
 	default:
 		p.results.Draw(s)
 		p.results.DrawOverlay(s)
@@ -274,31 +323,82 @@ func (p *QueryPanel) notConnectedMessage() string {
 	if p.conn != nil {
 		return "Not connected — use Query > Reconnect"
 	}
-	return "Not connected — use File > Connect"
+	return notConnectedMessage
 }
 
-// updateResultsStatus refreshes the results grid's status bar, recomputed
-// on every Draw so it tracks row/column navigation and, while a query is
-// executing, ticks live off execStart (see tickExecuting). resultsNotice,
-// when set, takes priority — see its field doc.
+// updateResultsStatus pushes the current status line into the results grid,
+// recomputed on every Draw so it tracks row/column navigation and, while a
+// query is executing, ticks live off execStart (see tickExecuting). The
+// other three tabs get the same line from drawResultsStatus.
 func (p *QueryPanel) updateResultsStatus() {
-	if p.resultsNotice != "" {
-		p.results.SetStatus(p.resultsNotice)
+	p.results.SetStatus(p.resultsStatusText())
+}
+
+// drawResultsStatus paints the status line for a tab the results grid isn't
+// drawing — Messages, Results To Text, and Execution Plan. Without it those
+// tabs showed nothing at all: the line lives on the DataGrid, which isn't on
+// screen for any of them, so elapsed time, row counts and the live
+// "Executing..." counter all disappeared the moment the tab changed.
+func (p *QueryPanel) drawResultsStatus(s tcell.Screen) {
+	if p.statusRect.H != 1 {
 		return
 	}
-	switch {
-	case p.executing:
-		p.results.SetStatus(formatElapsedHMS(time.Since(p.execStart)) + " | Executing...")
-	case p.result != nil && !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive():
-		set := p.result.Sets[p.activeTab]
-		row, col := 0, 0
-		if len(set.Rows) > 0 {
-			r, c := p.results.SelectedCell()
-			row, col = r+1, c+1
-		}
-		p.results.SetStatus(fmt.Sprintf("%s | Row: %d, Col: %d | %d rows",
-			formatElapsedHMS(p.result.Elapsed), row, col, len(set.Rows)))
+	core.FillRect(s, p.statusRect, ' ', resultsStatusStyle)
+	core.DrawTextRight(s, p.statusRect.X+1, p.statusRect.Y, p.statusRect.W-2,
+		resultsStatusStyle, p.resultsStatusText())
+}
+
+// resultsStatusText builds the results area's status line for whichever tab
+// is active. resultsNotice, when set, takes priority — see its field doc.
+func (p *QueryPanel) resultsStatusText() string {
+	if p.resultsNotice != "" {
+		return p.resultsNotice
 	}
+	if p.executing {
+		return formatElapsedHMS(time.Since(p.execStart)) + " | Executing..."
+	}
+	if p.result == nil {
+		// Estimated plan: nothing ran, so there's no elapsed time or row
+		// count to report — and the previous run's, left over from before
+		// setEstimatedPlan cleared p.result, would be a lie.
+		if p.planView != nil {
+			return "Estimated execution plan"
+		}
+		return ""
+	}
+	elapsed := formatElapsedHMS(p.result.Elapsed)
+	switch {
+	case p.onMessagesTab():
+		return fmt.Sprintf("%s | %d message(s)", elapsed, len(p.result.Messages))
+	case p.planTabActive():
+		return elapsed + " | Actual execution plan"
+	}
+	set, ok := p.activeResultSet()
+	if !ok {
+		return elapsed
+	}
+	if p.textTabActive() {
+		return fmt.Sprintf("%s | %d rows", elapsed, len(set.Rows))
+	}
+	row, col := 0, 0
+	if len(set.Rows) > 0 {
+		r, c := p.results.SelectedCell()
+		row, col = r+1, c+1
+	}
+	return fmt.Sprintf("%s | Row: %d, Col: %d | %d rows", elapsed, row, col, len(set.Rows))
+}
+
+// activeResultSet returns the result set the active tab shows, or ok false
+// when the active tab isn't one (Messages, Execution Plan) or there's no
+// result at all. Every caller indexing result.Sets by activeTab goes
+// through here rather than subscripting directly — the two indices are kept
+// in step by setResult/setActiveTab, but a mismatch would panic rather than
+// merely misdraw.
+func (p *QueryPanel) activeResultSet() (query.ResultSet, bool) {
+	if p.result == nil || p.activeTab < 0 || p.activeTab >= len(p.result.Sets) {
+		return query.ResultSet{}, false
+	}
+	return p.result.Sets[p.activeTab], true
 }
 
 // formatElapsedHMS renders d as SSMS's "H:MM:SS" query-execution duration.
@@ -349,11 +449,17 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	// Ctrl+Enter selects the T-SQL statement at the cursor (see
 	// controls.Editor.SelectStatementAtCursor) — the first step toward
 	// "execute current statement"; this only selects, it doesn't run it.
-	// Like Ctrl+PgUp/PgDn just below, only a terminal with a modern
-	// keyboard protocol reports Ctrl held on Enter — elsewhere this key
-	// arrives indistinguishable from plain Enter and falls through to
-	// inserting a newline instead.
-	if ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModCtrl != 0 {
+	//
+	// Two encodings reach us, and both have to be accepted. A terminal with
+	// a modern keyboard protocol reports it as Enter with Ctrl held. Every
+	// other terminal — xfce4-terminal and the rest of the VTE family
+	// included — sends a bare LF (0x0A) instead, which tcell decodes as
+	// KeyCtrlJ, since plain Enter is CR (0x0D). Only the first was handled,
+	// so on an ordinary terminal the key did nothing at all: KeyCtrlJ isn't
+	// KeyEnter, so the editor below didn't want it either. Menu > Query >
+	// Execute at Cursor kept working throughout, which is the tell that the
+	// action was fine and only the binding was missing.
+	if isCtrlEnter(ev) {
 		p.editor.SelectStatementAtCursor()
 		return true
 	}
@@ -459,16 +565,26 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if p.planView != nil && p.planView.HandleMouse(ev) {
 			handled = true
 		}
+		p.dragZone = qZoneNone
 		return handled
+	}
+	// Everything from the press that armed dragZone through to its release
+	// belongs to the sub-region that claimed it, wherever the pointer has
+	// drifted to since — including out of the panel's own columns, which is
+	// why this outranks the bounds check. See the field's doc comment.
+	if p.dragZone != qZoneNone && ev.Buttons() == tcell.Button1 {
+		return p.routeDrag(ev)
 	}
 	if mx < p.rect.X || mx >= p.rect.X+p.rect.W {
 		return false
 	}
 	if p.splitter.HandleMouse(ev) {
 		p.layoutChildren()
+		p.armDrag(ev, qZoneSplitter)
 		return true
 	}
 	if p.tabRect.H == 1 && my == p.tabRect.Y && ev.Buttons() == tcell.Button1 {
+		p.armDrag(ev, qZoneTabs)
 		if i := p.tabAt(mx); i >= 0 {
 			p.setActiveTab(i)
 		}
@@ -480,34 +596,40 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// grid (Escape is the way back out, see HandleKey).
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {
 		if p.editor.HandleMouse(ev) {
+			p.armDrag(ev, qZoneEditor)
 			p.setResultsFocused(false)
 			return true
 		}
-		switch {
-		case p.onMessagesTab():
-			if p.messages.HandleMouse(ev) {
-				p.setResultsFocused(true)
-				return true
-			}
-		case p.planTabActive():
-			if p.planView.HandleMouse(ev) {
-				p.setResultsFocused(true)
-				return true
-			}
-		case p.textTabActive():
-			if p.resultsText.HandleMouse(ev) {
-				p.setResultsFocused(true)
-				return true
-			}
-		case p.results.HandleMouse(ev):
+		if p.resultsHandleMouse(ev) {
+			p.armDrag(ev, qZoneResults)
 			p.setResultsFocused(true)
 			return true
 		}
+		p.armDrag(ev, qZoneUnclaimed)
 		return false
 	}
 	if p.editor.HandleMouse(ev) {
 		return true
 	}
+	return p.resultsHandleMouse(ev)
+}
+
+// isCtrlEnter reports whether ev is Ctrl+Enter, in either encoding a
+// terminal can deliver it as. A modern keyboard protocol (kitty, xterm's
+// modifyOtherKeys) reports Enter with ModCtrl set; everything else sends a
+// bare LF, 0x0A, which tcell decodes as KeyCtrlJ — plain Enter being CR,
+// 0x0D. Nothing else in the app binds Ctrl+J, so accepting it costs
+// nothing. See its use in HandleKey.
+func isCtrlEnter(ev *tcell.EventKey) bool {
+	if ev.Key() == tcell.KeyCtrlJ {
+		return true
+	}
+	return ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModCtrl != 0
+}
+
+// resultsHandleMouse dispatches to whichever of the four widgets sharing
+// the results rect is currently shown — see layoutChildren.
+func (p *QueryPanel) resultsHandleMouse(ev *tcell.EventMouse) bool {
 	switch {
 	case p.onMessagesTab():
 		return p.messages.HandleMouse(ev)
@@ -518,4 +640,30 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	default:
 		return p.results.HandleMouse(ev)
 	}
+}
+
+// armDrag records that zone consumed a Button1 press, so every further
+// event until the release goes back to it — see the dragZone field.
+func (p *QueryPanel) armDrag(ev *tcell.EventMouse, zone queryDragZone) {
+	if ev.Buttons() == tcell.Button1 {
+		p.dragZone = zone
+	}
+}
+
+// routeDrag delivers a held-Button1 event to the sub-region that armed the
+// gesture. qZoneTabs and qZoneUnclaimed swallow it: the tab switch already
+// happened on the press, and there is nothing further to deliver — the
+// point is only that no other sub-region sees the repeats.
+func (p *QueryPanel) routeDrag(ev *tcell.EventMouse) bool {
+	switch p.dragZone {
+	case qZoneSplitter:
+		if p.splitter.HandleMouse(ev) {
+			p.layoutChildren()
+		}
+	case qZoneEditor:
+		p.editor.HandleMouse(ev)
+	case qZoneResults:
+		p.resultsHandleMouse(ev)
+	}
+	return true
 }

@@ -120,12 +120,10 @@ func TestSetResultPlanParseErrorLeavesNoPlanTab(t *testing.T) {
 	}
 }
 
-// TestSetResultMessagesFallbackIndexAccountsForPlanTab is a regression test
-// for the bug this feature would otherwise introduce: setResult's
-// errors-or-no-sets fallback used to hardcode len(res.Sets) as the
-// Messages tab's index, which is wrong once "Execution Plan" can sit
-// between Results and Messages (Actual mode) — it must land on the real
-// last tab instead.
+// TestSetResultMessagesFallbackIndexAccountsForPlanTab pins down that
+// setResult's errors-or-no-sets fallback lands on the real last tab, not on
+// len(res.Sets): "Execution Plan" can sit between Results and Messages in
+// Actual mode, which shifts the Messages index.
 func TestSetResultMessagesFallbackIndexAccountsForPlanTab(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -144,13 +142,12 @@ func TestSetResultMessagesFallbackIndexAccountsForPlanTab(t *testing.T) {
 	}
 }
 
-// TestRenderAndStatusDoNotPanicOnPlanTabWithResults is a regression test
-// for the second bug this feature would otherwise introduce:
-// renderActiveTab and updateResultsStatus both indexed res.Sets[activeTab]
-// unconditionally once Messages/ResultsText were ruled out — correct only
-// because planView != nil used to imply result == nil. Actual mode breaks
-// that invariant, so selecting the Execution Plan tab (activeTab ==
-// len(Sets), out of range for Sets) must not panic either function.
+// TestRenderAndStatusDoNotPanicOnPlanTabWithResults pins down that
+// renderActiveTab and updateResultsStatus handle the Execution Plan tab
+// (activeTab == len(Sets), out of range for Sets) without panicking: in
+// Actual mode planView != nil no longer implies result == nil, so neither
+// may index res.Sets[activeTab] unconditionally once Messages/ResultsText
+// are ruled out.
 func TestRenderAndStatusDoNotPanicOnPlanTabWithResults(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")

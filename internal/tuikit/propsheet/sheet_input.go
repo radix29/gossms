@@ -86,6 +86,15 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 			f.HandleMouse(ev)
 		}
 		p.pageList.HandleMouse(ev)
+		p.dragZone = zoneNone
+	}
+	// Everything from the press that armed dragZone through to its release
+	// belongs to the zone that claimed it, wherever the pointer has drifted
+	// to since — including outside the dialog, which is why this outranks
+	// ConsumeOutsideClick. See the field's doc comment.
+	if p.dragZone != zoneNone && ev.Buttons() == tcell.Button1 {
+		p.routeDrag(ev)
+		return true
 	}
 	if p.ConsumeOutsideClick(ev) {
 		return true
@@ -97,23 +106,51 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	// DataGrid.OverlayActive()/QueryPanel do one level down.
 	if f := p.PageForm(p.current); f != nil && f.OverlayActive() {
 		if f.HandleMouse(ev) {
+			p.armDrag(ev, zoneForm)
 			p.setZone(zoneForm)
 			return true
 		}
 	}
 	if i := p.ButtonClicked(ev, sheetButtonLabels); i >= 0 {
+		p.armDrag(ev, zoneButtons)
 		p.setZone(zoneButtons)
 		p.btnFocus = i
 		p.activateButton(i)
 		return true
 	}
 	if p.pageList.HandleMouse(ev) {
+		p.armDrag(ev, zonePages)
 		p.setZone(zonePages)
 		return true
 	}
 	if f := p.PageForm(p.current); f != nil && f.HandleMouse(ev) {
+		p.armDrag(ev, zoneForm)
 		p.setZone(zoneForm)
 		return true
 	}
 	return true
+}
+
+// armDrag records that zone consumed a Button1 press, so every further
+// event until the release goes back to it — see the dragZone field.
+func (p *PropertySheet) armDrag(ev *tcell.EventMouse, zone focusZone) {
+	if ev.Buttons() == tcell.Button1 {
+		p.dragZone = zone
+	}
+}
+
+// routeDrag delivers a held-Button1 event to the zone that armed the
+// gesture. zoneButtons swallows it: ModalDialog.ButtonClicked already fired
+// the action on the press and its mouseDragging latch suppresses the
+// repeats, so there's nothing further to deliver — the point is only that
+// no other zone sees them either.
+func (p *PropertySheet) routeDrag(ev *tcell.EventMouse) {
+	switch p.dragZone {
+	case zoneForm:
+		if f := p.PageForm(p.current); f != nil {
+			f.HandleMouse(ev)
+		}
+	case zonePages:
+		p.pageList.HandleMouse(ev)
+	}
 }

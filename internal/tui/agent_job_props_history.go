@@ -9,16 +9,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// pageJobHistory is the read-only History page: the job's own run-level
-// history (step_id = 0 rows — one per execution, not per step, matching
-// the mockup's "Recent job history" list) plus the selected run's detail.
-// "Invoked by" from the mockup isn't a separate field here — SQL Server
-// Agent already writes that into the step_id=0 row's own Message text
-// (e.g. "...The Job was invoked by Schedule 5..."), so Message alone
-// carries it without inventing a field sysjobhistory doesn't have.
-// Ctrl+C on the Message row copies it (StaticRow's built-in CopyText) —
-// no separate "Copy Message" button needed. There's nothing to Apply, so
-// this page's apply is nil.
+// pageJobHistory is the read-only History page: the job's run-level
+// history (step_id = 0 rows — one per execution, not per step) plus the
+// selected run's detail. There's no separate "invoked by" field; Agent
+// writes that into the step_id=0 row's own Message text. Ctrl+C on the
+// Message row copies it (StaticRow's CopyText). Nothing to Apply, so this
+// page's apply is nil.
 func pageJobHistory(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "History",

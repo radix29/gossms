@@ -120,6 +120,10 @@ type Editor struct {
 	// of being read as a text click/selection-drag.
 	sbDragging bool
 
+	// sbDraggingX is sbDragging's horizontal counterpart, for the bar
+	// drawn along the editor's bottom row — see hScrollbar.
+	sbDraggingX bool
+
 	undoStack []editorState
 	redoStack []editorState
 
@@ -201,7 +205,7 @@ func (e *Editor) SetWrapMode(v bool) { e.wrapMode = v }
 // the line/case/comment actions (Ctrl+D/L/U/Z/Y, Ctrl+/) — while cursor
 // movement, Shift/Alt-Shift selection, Ctrl+A, and mouse click-drag
 // selection keep working, so the content can still be read and copied.
-// Defaults to false (every existing editable use of Editor is unaffected).
+// Defaults to false.
 func (e *Editor) SetReadOnly(v bool) { e.readOnly = v }
 
 // SetBounds positions the editor.
@@ -269,7 +273,20 @@ func (e *Editor) clampCursor() {
 	}
 }
 
+// contentH is how many rows of text the editor actually shows — its full
+// height, less the bottom row when that's given over to the horizontal
+// scrollbar (see hScrollbar). Every place that treats a height as "how many
+// lines fit" uses this rather than rect.H, or the last line would scroll
+// under the bar and the cursor could sit on a row that isn't drawn.
+func (e *Editor) contentH() int {
+	if e.hScrollbarVisible() {
+		return e.rect.H - 1
+	}
+	return e.rect.H
+}
+
 func (e *Editor) ensureCursorVisible() {
+	contentH := e.contentH()
 	if e.wrapMode {
 		contentW := e.rect.W - e.gutterWidth()
 		vls := e.buildVisualLines(contentW)
@@ -277,8 +294,8 @@ func (e *Editor) ensureCursorVisible() {
 		if vi < e.scrollRow {
 			e.scrollRow = vi
 		}
-		if vi >= e.scrollRow+e.rect.H {
-			e.scrollRow = vi - e.rect.H + 1
+		if vi >= e.scrollRow+contentH {
+			e.scrollRow = vi - contentH + 1
 		}
 		if e.scrollRow < 0 {
 			e.scrollRow = 0
@@ -288,8 +305,8 @@ func (e *Editor) ensureCursorVisible() {
 	if e.cursorRow < e.scrollRow {
 		e.scrollRow = e.cursorRow
 	}
-	if e.cursorRow >= e.scrollRow+e.rect.H {
-		e.scrollRow = e.cursorRow - e.rect.H + 1
+	if e.cursorRow >= e.scrollRow+contentH {
+		e.scrollRow = e.cursorRow - contentH + 1
 	}
 	contentW := e.rect.W - e.gutterWidth()
 	if e.cursorCol < e.scrollCol {

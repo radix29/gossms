@@ -14,19 +14,16 @@ import (
 
 // rolePropPages builds the page set for Database Role Properties. Owned
 // Roles/Owned Schemas/Members/Extended Properties are editable; General is
-// editable except for a built-in role's name/owner. Application roles
-// (their own principal type, own tree node/listing that doesn't exist
-// yet) and the mockup's search/filter boxes, WITH GRANT OPTION, Column
-// Permissions, and Effective Permissions modals aren't built — same
-// deferrals as every other Properties dialog this pass.
+// editable except for a built-in role's name/owner. Application roles are
+// not covered — they're a separate principal type with no tree node of
+// their own — nor are search/filter boxes, WITH GRANT OPTION, Column
+// Permissions, or Effective Permissions.
+//
 // roleName is boxed in a *string shared by every page below: renaming a
-// role is the one edit in this dialog that changes the identity every
-// other page's lookup depends on, so pageRoleGeneral's apply closure
-// updates *roleName in place on success — otherwise Apply (which reloads
-// every page via PropDialog.InvalidateAll) would send the very next reload
-// looking for a role name that no longer exists. Same bug class as Key
-// Properties' pageKeyGeneral and Server Role Properties'
-// pageServerRoleGeneral (see server_role_props.go). dbName never changes,
+// role changes the identity every other page's lookup depends on, so
+// pageRoleGeneral's apply closure updates *roleName in place on success —
+// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
+// would look up a role name that no longer exists. dbName never changes,
 // so it stays a plain string.
 func rolePropPages(sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
@@ -35,8 +32,13 @@ func rolePropPages(sc *db.ServerConn, dbName, roleName string) []propPage {
 		pageRoleMembers(sc, dbName, namePtr),
 		pageRoleOwnedSchemas(sc, dbName, namePtr),
 		pageRoleOwnedRoles(sc, dbName, namePtr),
-		pageRoleSecurables(sc, dbName, namePtr),
-		pageRoleExtendedProperties(sc, dbName, namePtr),
+		pageDatabasePrincipalSecurables(sc, dbName, namePtr),
+		// A database role is classed as USER in sp_addextendedproperty's
+		// level names — it's a database principal like a user, not a
+		// level of its own.
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
+		}),
 	}
 }
 
@@ -51,10 +53,10 @@ func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (
 }
 
 // isBuiltinRole reports whether a role's name/owner can't be changed:
-// every fixed role (db_owner, db_datareader, ...), plus public — verified
-// live that ALTER ROLE public WITH NAME=... and ALTER AUTHORIZATION ON
-// ROLE::public are both syntax errors, even though sys.database_principals
-// reports public's is_fixed_role as 0 like a user-defined role.
+// every fixed role (db_owner, db_datareader, ...), plus public — ALTER ROLE
+// public WITH NAME=... and ALTER AUTHORIZATION ON ROLE::public are both
+// syntax errors, even though sys.database_principals reports public's
+// is_fixed_role as 0 like a user-defined role.
 func isBuiltinRole(role *gosmo.DatabaseRole) bool {
 	return role.IsFixedRole || role.Name == "public"
 }
@@ -583,97 +585,6 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 				}
 				return nil
 			}
-			return f, apply, nil
-		},
-	}
-}
-
-func pageRoleSecurables(sc *db.ServerConn, dbName string, roleName *string) propPage {
-	return propPage{
-		title: "Securables",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			entries, err := d.PermissionsForPrincipalContext(ctx, *roleName)
-			if err != nil {
-				return nil, nil, err
-			}
-			tables, err := d.TablesContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			views, err := d.ViewsContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			schemas, err := d.SchemasContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			seen := make(map[string]bool)
-			var initial []securable
-			for _, e := range entries {
-				s := securable{Type: e.SecurableType, Schema: e.Schema, Name: e.Name}
-				if !seen[s.key()] {
-					seen[s.key()] = true
-					initial = append(initial, s)
-				}
-			}
-
-			var available []securable
-			addIfNew := func(s securable) {
-				if !seen[s.key()] {
-					seen[s.key()] = true
-					available = append(available, s)
-				}
-			}
-			addIfNew(securable{Type: "DATABASE"})
-			for _, s := range schemas {
-				addIfNew(securable{Type: "SCHEMA", Name: s.Name})
-			}
-			for _, t := range tables {
-				addIfNew(securable{Type: "TABLE", Schema: t.Schema, Name: t.Name})
-			}
-			for _, v := range views {
-				addIfNew(securable{Type: "VIEW", Schema: v.Schema, Name: v.Name})
-			}
-
-			f, apply := buildSecurablesMatrix(initial, entries, available, 8, 12,
-				func(ctx context.Context, s securable, permission string) error {
-					return grantSecurable(ctx, d, s, permission, *roleName)
-				},
-				func(ctx context.Context, s securable, permission string) error {
-					return denySecurable(ctx, d, s, permission, *roleName)
-				},
-				func(ctx context.Context, s securable, permission string) error {
-					return revokeSecurable(ctx, d, s, permission, *roleName)
-				},
-			)
-			return f, apply, nil
-		},
-	}
-}
-
-func pageRoleExtendedProperties(sc *db.ServerConn, dbName string, roleName *string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			// Database roles are classed as USER in
-			// sp_addextendedproperty/sp_updateextendedproperty level names —
-			// they're database principals like users, not a level of their own.
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *roleName}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
 			return f, apply, nil
 		},
 	}

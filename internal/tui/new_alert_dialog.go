@@ -14,12 +14,9 @@ import (
 // new_alert_dialog.go is the New Alert creation dialog (Object Explorer's
 // SQL Server Agent > Alerts > SQL Server Event Alerts, "New Alert...").
 // Two pages: General (the alert's own definition) and Response (which
-// operators get e-mailed). Linking a response job is deliberately left
-// out — see agent_job_props_alerts.go's pageJobAlerts doc comment: full
-// alert-to-job linking lives on Job Properties' own Alerts page, which
-// also has the job list to pick from; wiring it here too would duplicate
-// that UI for no real benefit, and a freshly created job may not even be
-// enlisted yet (see CreateJobContext's doc comment in gosmo).
+// operators get e-mailed). Linking a response job is left out —
+// alert-to-job linking lives on Job Properties' own Alerts page (see
+// agent_job_props_alerts.go), which has the job list to pick from.
 
 type nalertPrefetch struct {
 	existingNames map[string]bool
@@ -68,80 +65,25 @@ const allDatabasesItem = "<All databases>"
 
 // NewAlertDialog is the New Alert creation dialog.
 type NewAlertDialog struct {
-	*propsheet.PropertySheet
-
-	app *App
-	sc  *db.ServerConn
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	prefetch  *nalertPrefetch
-	forms     [2]*propsheet.Form
-	applyFns  [2]propApply
-	alertName func() string
-	preflight func() error
+	newObjectDialog[nalertPrefetch]
 }
 
 // NewNewAlertDialog creates the dialog and wires its callbacks.
 func NewNewAlertDialog(app *App) *NewAlertDialog {
-	d := &NewAlertDialog{
-		app:           app,
-		PropertySheet: propsheet.NewPropertySheet(app.screen, "New Alert"),
-	}
-	d.OnLoadPage = d.onLoadPage
-	d.OnApply = func() { d.runApply(false) }
-	d.OnOK = func() { d.runApply(true) }
-	d.OnClose = d.onClose
-	d.ConfirmDiscard = d.onConfirmDiscard
-	d.OnScript = d.runScript
+	d := &NewAlertDialog{}
+	d.init(app, newObjectConfig[nalertPrefetch]{
+		title:          "New Alert",
+		noun:           "Alert",
+		pages:          []string{"General", "Response"},
+		scriptDatabase: "msdb",
+		fetch:          fetchNewAlertPrefetch,
+		build:          d.buildPages,
+		refresh:        func(sc *db.ServerConn) { d.app.explorer.RefreshFolderByType(sc, NodeAgentEventAlerts) },
+	})
 	return d
 }
 
-func (d *NewAlertDialog) show(sc *db.ServerConn) {
-	if d.cancel != nil {
-		d.cancel()
-	}
-	d.ctx, d.cancel = context.WithCancel(sc.Context())
-	d.sc = sc
-	d.prefetch = nil
-	d.forms = [2]*propsheet.Form{}
-	d.applyFns = [2]propApply{}
-	d.alertName = nil
-	d.preflight = nil
-	d.SetHeader("Instance: "+sc.Opts.Server, "Connected: yes")
-	d.SetPages([]string{"General", "Response"})
-	d.Show()
-}
-
-func (d *NewAlertDialog) onClose() { cancelIfSet(d.cancel) }
-
-func (d *NewAlertDialog) post(fn func()) { d.app.postAndWake(fn) }
-
-func (d *NewAlertDialog) onLoadPage(page, seq int) {
-	if d.prefetch != nil {
-		d.SetPageForm(page, seq, d.forms[page])
-		return
-	}
-	sc := d.sc
-	sessionCtx := d.ctx
-	go func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-		pf, err := fetchNewAlertPrefetch(ctx, sc)
-		d.post(func() {
-			if err != nil {
-				d.SetPageError(page, seq, err)
-				return
-			}
-			d.buildPages(pf)
-			d.SetPageForm(page, seq, d.forms[page])
-		})
-	}()
-}
-
 func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
-	d.prefetch = pf
 	sc := d.sc
 
 	nameField := propsheet.Text("Name", "", 30)
@@ -220,9 +162,9 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 		return nil
 	}
 
-	d.forms = [2]*propsheet.Form{generalForm, responseForm}
-	d.applyFns = [2]propApply{generalApply, responseApply}
-	d.alertName = alertName
+	d.forms = []*propsheet.Form{generalForm, responseForm}
+	d.applyFns = []propApply{generalApply, responseApply}
+	d.objectName = alertName
 	d.preflight = func() error {
 		name := alertName()
 		if name == "" {
@@ -241,77 +183,10 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 	}
 }
 
-func (d *NewAlertDialog) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
-}
-
-func (d *NewAlertDialog) runPipeline(runCtx context.Context, onSuccess func()) {
-	if d.prefetch == nil {
-		d.SetMessage("Still loading — try again in a moment.", true)
-		return
-	}
-	if err := d.preflight(); err != nil {
-		d.SelectPage(0)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-	if page, err := d.Validate(); err != nil {
-		d.SelectPage(page)
-		d.SetMessage(err.Error(), true)
-		return
-	}
-
-	fns := d.applyFns
-	d.SetApplying(true)
-	d.SetMessage("", false)
-
-	go func() {
-		var runErr error
-		for _, fn := range fns {
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
-		d.post(func() {
-			d.SetApplying(false)
-			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
-				return
-			}
-			onSuccess()
-		})
-	}()
-}
-
-func (d *NewAlertDialog) runApply(hideOnSuccess bool) {
-	d.runPipeline(d.ctx, func() {
-		d.app.setStatus(fmt.Sprintf("Alert %q created", d.alertName()))
-		d.app.explorer.RefreshFolderByType(d.sc, NodeAgentEventAlerts)
-		if hideOnSuccess {
-			d.Hide()
-		}
-	})
-}
-
-func (d *NewAlertDialog) runScript() {
-	scriptCtx, script := gosmo.WithScript(d.ctx)
-	sc := d.sc
-	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "msdb", strings.Join(script.Statements, "\n\n"))
-	})
-}
-
 // intRowValue0 adapts an Int row's (int64, error) IntValue() to a plain
-// int, falling back to 0 on a parse error — every caller above already
-// validates the field is well-formed before Apply runs (Int rows carry
-// their own range validator), so this is just a terser accessor than
-// repeating the (n, err) shape at every call site.
+// int, falling back to 0 on a parse error. Int rows carry their own range
+// validator, so callers have already rejected a malformed field before
+// Apply runs.
 func intRowValue0(v int64, err error) int {
 	if err != nil {
 		return 0

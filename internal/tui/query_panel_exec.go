@@ -45,24 +45,18 @@ func (p *QueryPanel) CancelExecution() {
 }
 
 // Reconnect re-dials this panel's connection using the same server/login it
-// was last connected with (whatever database it's currently in, not
+// was last connected with (in whatever database it's currently in, not
 // necessarily the connection's original default — see connectForQueryPanel),
-// replacing whatever connection it currently holds. This is the query
-// window's escape hatch for a connection silently dropped out from under it
-// — an idle firewall/NAT timeout, the server killing the session, a
-// failover — distinct from File > Disconnect, which the user only reaches
-// via Object Explorer and which this panel doesn't share a connection with
-// anyway (see connectForQueryPanel's own doc comment). A no-op if this
-// panel was never connected to begin with, since there's no Opts to
-// reconnect with.
+// replacing whatever connection it holds. This is the query window's escape
+// hatch for a connection dropped out from under it: an idle firewall/NAT
+// timeout, the server killing the session, a failover. A no-op if the panel
+// was never connected, since there's no Opts to redial with.
 //
-// p.conn is deliberately left as the (now-closed) old connection rather than
-// nilled out here: connectForQueryPanel only reads its Opts, and if the
-// redial itself fails, leaving p.conn non-nil keeps this the exact same
-// state as any other query window with a dropped connection — isConnected
-// still (correctly) reports false, but the Reconnect menu item stays
-// enabled and its Opts stay around for the user to simply try again,
-// instead of the panel getting permanently stuck with no Opts to redial.
+// p.conn is deliberately left as the now-closed old connection rather than
+// nilled out: connectForQueryPanel only reads its Opts, and if the redial
+// fails, keeping p.conn non-nil leaves the panel in the same state as any
+// other with a dropped connection — isConnected still reports false, but
+// Reconnect stays enabled and its Opts stay around to try again.
 func (p *QueryPanel) Reconnect() {
 	if p.conn == nil {
 		p.app.setStatus("Nothing to reconnect — this query window was never connected")
@@ -130,20 +124,34 @@ func (p *QueryPanel) runQuery(queryText string) {
 		cancelled := ctx.Err() != nil
 		cancel() // release ctx's resources now that the query is done, whether or not CancelExecution ever ran
 		close(done)
-		p.app.postEvent(func() {
+		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil
 			if !p.app.panelHosted(p) {
 				// Panel was closed while the query was still running —
 				// nothing left to update, and in Results To File mode
 				// setResult would otherwise pop the save dialog for a panel
-				// that no longer exists.
+				// that no longer exists. The status bar still has to be told,
+				// though: setResult is the only thing that normally replaces
+				// "Executing query...", so returning without one left it
+				// pinned there indefinitely.
+				p.app.setStatus(closedPanelResultStatus(p.Title(), cancelled))
 				return
 			}
 			p.setResult(res, cancelled)
 		})
-		p.app.wakeEventLoop()
 	}()
+}
+
+// closedPanelResultStatus is what the status bar says once a query whose
+// panel was closed mid-flight finally returns. closePanelAt cancels the
+// context on the way out, so this is normally the cancelled wording; a
+// query that had already finished by then reports plainly instead.
+func closedPanelResultStatus(title string, cancelled bool) string {
+	if cancelled {
+		return fmt.Sprintf("%s was closed — its query was cancelled", title)
+	}
+	return fmt.Sprintf("%s was closed — its query finished, results discarded", title)
 }
 
 // tickExecuting wakes the event loop once a second while a query runs, so

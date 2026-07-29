@@ -13,22 +13,20 @@ import (
 // schemaPropPages builds the page set for Schema Properties: General
 // (read-only info plus an editable Owner for non-system schemas — SQL
 // Server has no RENAME SCHEMA facility, so unlike Table/Role/User
-// Properties, the schema name itself is always read-only, not just for
+// Properties the schema name itself is always read-only, not just for
 // built-ins), Permissions (schema-scoped GRANT/DENY, the schema analog of
-// Table Properties' Permissions page), and Extended Properties. The
-// mockup's owner/add-principal picker modals, permission-detail/
-// effective-permissions/object-inventory modals, high-impact filter, and
-// Drop Schema safety modal are folded into inline fields and the existing
-// Script Changes/SetMessage mechanisms, the same simplification made on
-// every prior Properties dialog in this project. sys.schemas has no
-// create_date/modify_date columns (unlike sys.tables/sys.procedures/...),
-// so the mockup's "Created"/"Modified" General rows are dropped rather
-// than faked.
+// Table Properties' Permissions page), and Extended Properties. Principal
+// pickers, permission-detail/effective-permissions modals, and the Drop
+// Schema prompt are folded into inline fields and the existing Script
+// Changes/SetMessage mechanisms. There are no Created/Modified rows:
+// sys.schemas has no create_date/modify_date columns.
 func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 	return []propPage{
 		pageSchemaGeneral(sc, dbName, schemaName),
 		pageSchemaPermissions(sc, dbName, schemaName),
-		pageSchemaExtendedProperties(sc, dbName, schemaName),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schemaName}
+		}),
 	}
 }
 
@@ -278,25 +276,6 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 					return d.RevokeSchemaPermissionContext(ctx, schemaName, gosmo.ObjectPermission(permission), principal)
 				},
 			)
-			return f, apply, nil
-		},
-	}
-}
-
-func pageSchemaExtendedProperties(sc *db.ServerConn, dbName, schemaName string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			level := gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schemaName}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
 			return f, apply, nil
 		},
 	}

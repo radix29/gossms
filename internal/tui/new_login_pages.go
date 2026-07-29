@@ -20,10 +20,9 @@ const serverDefaultLangItem = "(Server default)"
 // buildNewLoginGeneralPage builds the General page: login identity
 // (name, authentication type), password/policy (SQL Server auth only),
 // and defaults (database, language). Windows logins are typed directly as
-// "DOMAIN\name" text — no principal-browse picker, the same simplification
-// every prior dialog in this project makes for principal pickers. External
-// provider authentication is deliberately not offered (see
-// NewLoginDialog's doc comment).
+// "DOMAIN\name" text — there's no principal-browse picker. External
+// provider authentication is not offered (see NewLoginDialog's doc
+// comment).
 func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow) {
 	nameField := propsheet.Text("Login name", "", 30)
 	authRow := propsheet.Radio("Authentication", []string{"SQL Server Authentication", "Windows Authentication"}, 0)
@@ -191,13 +190,12 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		rows[i] = &nloginMapRow{dbName: dr.dbName, schema: "dbo", roleNames: dr.roleNames, roles: make([]bool, len(dr.roleNames))}
 	}
 
-	// The User column shows a fixed placeholder rather than loginName()
-	// itself — this page's Form is built once, synchronously, right after
-	// the dialog opens (see NewLoginDialog.buildPages), before the user
-	// has necessarily typed a login name on General yet, and grid cell
-	// text set via SetData doesn't get recomputed on its own when the user
-	// later visits/revisits this page. loginName() is only read fresh at
-	// apply time (below), where it's always correct.
+	// The User column shows a fixed placeholder rather than loginName():
+	// this page's Form is built once, synchronously, right after the dialog
+	// opens (see NewLoginDialog.buildPages), possibly before a login name
+	// has been typed on General, and grid text set via SetData isn't
+	// recomputed on revisit. loginName() is read fresh at apply time
+	// (below), where it's always correct.
 	const userPlaceholder = "(same as login name)"
 	rowsFor := func() [][]string {
 		out := make([][]string, len(rows))

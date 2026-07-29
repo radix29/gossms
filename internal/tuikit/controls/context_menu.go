@@ -18,18 +18,14 @@ type ContextMenu struct {
 	visible bool
 
 	// drawnX, drawnY cache the on-screen column/row Draw last clamped the
-	// menu to (see geometry) — HandleMouse hit-tests against these instead
-	// of the raw x,y above, since HandleMouse has no tcell.Screen to
-	// recompute the clamp itself. This stays correct because Draw always
-	// runs once per event-loop iteration right after the event that called
-	// Show(), and before the next input event is dispatched (see App.Run),
-	// so by the time a click can land on the menu, the cache reflects
-	// exactly what was last painted. Without this, Show()ing the menu near
-	// the screen's right or bottom edge — routine for a tall Object
-	// Explorer tree, or a DataGrid results pane — draws it shifted
-	// on-screen while hit-testing stays anchored to the original,
-	// off-screen request, so clicks land on the wrong item or miss the
-	// menu entirely.
+	// menu to (see geometry) — HandleMouse hit-tests against these rather
+	// than the raw x,y above, having no tcell.Screen to recompute the clamp
+	// itself. Draw runs once per event-loop iteration right after the event
+	// that called Show() and before the next input event is dispatched (see
+	// App.Run), so by the time a click can land, the cache reflects what was
+	// last painted. Without it, a menu shown near the screen's right or
+	// bottom edge draws shifted while hit-testing stays anchored to the
+	// original off-screen request.
 	drawnX, drawnY int
 }
 
@@ -129,8 +125,15 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 	x, y := cm.drawnX, cm.drawnY
 
 	if mx < x || mx >= x+w || my < y || my >= y+h {
+		// A click outside dismisses the menu and stops there — it must not
+		// also reach whatever it landed on, or one click would both close
+		// the menu and activate the widget underneath (see
+		// ModalDialog.ConsumeOutsideClick, which likewise consumes). Motion
+		// with no button held still falls through, so hover tracking
+		// elsewhere keeps working while the menu is open.
 		if ev.Buttons() == tcell.Button1 {
 			cm.Hide()
+			return true
 		}
 		return false
 	}

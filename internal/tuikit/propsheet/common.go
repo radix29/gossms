@@ -72,6 +72,20 @@ type ClipboardRow interface {
 	SelectAll()
 }
 
+// Shrinkable is implemented by rows that can render in fewer lines than
+// Height(w) reports — a GridRow (its DataGrid scrolls its own rows within
+// whatever space it gets) and a wrapped Note. Form clamps such a row to
+// the space left above the form's bottom edge so it never draws past it,
+// and skips drawing it entirely once less than MinDrawHeight lines remain
+// — except when it's the first row on screen, where it always draws at
+// whatever space there is so the page can't come up blank.
+type Shrinkable interface {
+	// MinDrawHeight is the fewest lines the row still renders usefully in.
+	MinDrawHeight() int
+	// SetDrawHeight sets the height the next Layout/Draw pair must use.
+	SetDrawHeight(h int)
+}
+
 // OverlayDrawer is implemented by rows that render a popup which must be
 // drawn after every other row in the form, so it isn't painted over by
 // rows below it (a dropdown's open list).

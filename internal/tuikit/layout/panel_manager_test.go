@@ -75,11 +75,11 @@ func TestPanelManagerClosablePanelStillClosesViaClick(t *testing.T) {
 	}
 }
 
-// TestPanelManagerHeldButtonOnCloseDoesNotReFire pins the fix for tcell's
-// all-motion mouse tracking resending Buttons()==Button1 on every cursor
-// motion while the button stays down: a single physical click on a tab's
-// [x] that so much as twitches used to fire OnCloseTab twice, which could
-// stack duplicate "save this Dirty panel?" prompts for one click.
+// TestPanelManagerHeldButtonOnCloseDoesNotReFire covers tcell's all-motion
+// mouse tracking resending Buttons()==Button1 on every cursor motion while
+// the button stays down: without the mouseDragging latch a single physical
+// click on a tab's [x] that twitches fires OnCloseTab twice, stacking
+// duplicate "save this Dirty panel?" prompts for one click.
 func TestPanelManagerHeldButtonOnCloseDoesNotReFire(t *testing.T) {
 	pm := NewPanelManager()
 	pm.AddPanel(&fakePanel{title: "Object Explorer Details", closable: false})
@@ -145,10 +145,10 @@ type activatablePanel struct {
 func (p *activatablePanel) SetActive(v bool) { p.active = v }
 
 // TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt
-// removes a panel to the left of the active one — the active panel's index
-// must shift down by one so the same panel stays active. Before the fix,
-// pm.active kept its old numeric value and silently ended up pointing at
-// whichever panel now occupies that slot instead.
+// removes a panel to the left of the active one: the active panel's index
+// must shift down by one so the same panel stays active, rather than
+// pm.active keeping its old numeric value and pointing at whichever panel
+// now occupies that slot.
 func TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt(t *testing.T) {
 	pm := NewPanelManager()
 	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}

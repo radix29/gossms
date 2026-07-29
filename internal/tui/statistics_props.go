@@ -13,14 +13,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// statisticPropPages builds the page set for Statistics Properties.
-// Permissions — the mockup's final page — is dropped for the same reason
-// Index Properties drops it: statistics aren't a SQL Server securable
-// class either. No recompute/Incremental are shown read-only (General and
-// Details) rather than as editable toggles: SQL Server has no ALTER
-// STATISTICS to flip them in isolation, only UPDATE STATISTICS ... WITH
-// NORECOMPUTE — so changing them is folded into the Details page's Update
-// Statistics action rather than the OK/Cancel/Apply pipeline.
+// statisticPropPages builds the page set for Statistics Properties. There's
+// no Permissions page, for the same reason Index Properties has none:
+// statistics aren't a SQL Server securable class. No recompute/Incremental
+// are read-only (General and Details) rather than editable toggles: SQL
+// Server has no ALTER STATISTICS to flip them in isolation, only UPDATE
+// STATISTICS ... WITH NORECOMPUTE, so changing them is folded into the
+// Details page's Update Statistics action instead of the Apply pipeline.
 func statisticPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	return []propPage{
 		pageStatisticGeneral(sc, dbName, schema, table, name),
@@ -29,7 +28,13 @@ func statisticPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table,
 		pageStatisticDetails(d, sc, dbName, schema, table, name),
 		pageStatisticHistogram(sc, dbName, schema, table, name),
 		pageStatisticDensityVector(sc, dbName, schema, table, name),
-		pageStatisticExtendedProperties(sc, dbName, schema, table, name),
+		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+			return gosmo.ExtendedPropertyLevel{
+				Level0Type: "SCHEMA", Level0Name: schema,
+				Level1Type: "TABLE", Level1Name: table,
+				Level2Type: "STATISTICS", Level2Name: name,
+			}
+		}),
 	}
 }
 
@@ -357,29 +362,6 @@ func pageStatisticDensityVector(sc *db.ServerConn, dbName, schema, table, name s
 				propsheet.Note("Density values are used for predicates that can't be estimated directly from the histogram — one row per leading-column prefix of the statistic's columns."),
 			)
 			return f, nil, nil
-		},
-	}
-}
-
-func pageStatisticExtendedProperties(sc *db.ServerConn, dbName, schema, table, name string) propPage {
-	return propPage{
-		title: "Extended Properties",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			level := gosmo.ExtendedPropertyLevel{
-				Level0Type: "SCHEMA", Level0Name: schema,
-				Level1Type: "TABLE", Level1Name: table,
-				Level2Type: "STATISTICS", Level2Name: name,
-			}
-			props, err := d.ExtendedPropertiesContext(ctx, level)
-			if err != nil {
-				return nil, nil, err
-			}
-			f, apply := buildExtendedPropertiesForm(sc, dbName, level, props)
-			return f, apply, nil
 		},
 	}
 }

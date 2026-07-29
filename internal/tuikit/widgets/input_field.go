@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -200,7 +201,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 			cellStyle = selStyle
 		}
 		if f.focused && ci == f.cursor {
-			cellStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(tcell.ColorWhite)
+			cellStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White)
 		}
 		s.SetContent(ix+1+col, f.rect.Y, ch, nil, cellStyle)
 	}

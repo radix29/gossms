@@ -34,8 +34,7 @@ type TreeNode struct {
 type TreeView struct {
 	rect core.Rect
 
-	nodes  []TreeNode // flat, ordered visible list
-	nodeID int        // auto-increment for IDs
+	nodes []TreeNode // flat, ordered visible list
 
 	sel    int
 	scroll int

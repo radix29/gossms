@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -50,6 +51,82 @@ type securableEdit struct {
 	permission string
 	orig       string
 	current    string
+}
+
+// pageDatabasePrincipalSecurables builds a "Securables" page scoped to one
+// database principal — a user or a database role, which hold explicit
+// object/schema/database-scoped GRANT/DENY entries the same way, so both
+// Database User Properties and Database Role Properties use this one page.
+// principal is read through a pointer because a rename on the General page
+// changes it while the dialog is open. Its server-level counterpart is
+// pagePrincipalServerPermissions (server_permissions_matrix.go).
+func pageDatabasePrincipalSecurables(sc *db.ServerConn, dbName string, principal *string) propPage {
+	return propPage{
+		title: "Securables",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			if err != nil {
+				return nil, nil, err
+			}
+			entries, err := d.PermissionsForPrincipalContext(ctx, *principal)
+			if err != nil {
+				return nil, nil, err
+			}
+			tables, err := d.TablesContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			views, err := d.ViewsContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			schemas, err := d.SchemasContext(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			seen := make(map[string]bool)
+			var initial []securable
+			for _, e := range entries {
+				s := securable{Type: e.SecurableType, Schema: e.Schema, Name: e.Name}
+				if !seen[s.key()] {
+					seen[s.key()] = true
+					initial = append(initial, s)
+				}
+			}
+
+			var available []securable
+			addIfNew := func(s securable) {
+				if !seen[s.key()] {
+					seen[s.key()] = true
+					available = append(available, s)
+				}
+			}
+			addIfNew(securable{Type: "DATABASE"})
+			for _, s := range schemas {
+				addIfNew(securable{Type: "SCHEMA", Name: s.Name})
+			}
+			for _, t := range tables {
+				addIfNew(securable{Type: "TABLE", Schema: t.Schema, Name: t.Name})
+			}
+			for _, v := range views {
+				addIfNew(securable{Type: "VIEW", Schema: v.Schema, Name: v.Name})
+			}
+
+			f, apply := buildSecurablesMatrix(initial, entries, available, 8, 12,
+				func(ctx context.Context, s securable, permission string) error {
+					return grantSecurable(ctx, d, s, permission, *principal)
+				},
+				func(ctx context.Context, s securable, permission string) error {
+					return denySecurable(ctx, d, s, permission, *principal)
+				},
+				func(ctx context.Context, s securable, permission string) error {
+					return revokeSecurable(ctx, d, s, permission, *principal)
+				},
+			)
+			return f, apply, nil
+		},
+	}
 }
 
 // buildSecurablesMatrix builds a Database Role Properties' Securables

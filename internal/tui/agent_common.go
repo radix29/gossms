@@ -69,9 +69,8 @@ func formatNotifyLevel(n gosmo.NotifyLevel) string {
 
 // refreshExplorerNode reloads node's children (if it's currently expanded)
 // and invalidates its cached detail view — the shared body behind every
-// Refresh context-menu action, extracted here so Agent delete actions can
-// refresh the parent folder a deleted entity used to live under. Nil-safe:
-// a nil node (no parent to refresh) is a no-op.
+// Refresh context-menu action, and behind Agent deletes refreshing the
+// parent folder. A nil node is a no-op.
 func refreshExplorerNode(a *App, n *explorerNode) {
 	if n == nil {
 		return
@@ -89,15 +88,14 @@ func refreshExplorerNode(a *App, n *explorerNode) {
 // and detail view on success — the shared body behind every Agent entity's
 // Enable/Disable toggle.
 func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool, run func(ctx context.Context) error) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		err := run(ctx)
-		a.postEvent(func() {
+		a.postAndWake(func() {
 			if err != nil {
 				word := "disable"
 				if enable {
@@ -110,18 +108,15 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 			a.explorer.rebuild()
 			a.detailBrowser.Invalidate(a, node)
 		})
-		a.wakeEventLoop()
 	}()
 }
 
 // deleteAgentEntity confirms with the user, then runs run (a gosmo Drop/
 // Delete call) on a background goroutine — the shared body behind every
-// Agent entity's Delete action. On success, the parent folder (whose
-// children list still includes the now-deleted node) is refreshed so the
-// tree drops it without waiting for a manual Refresh.
+// Agent entity's Delete action. On success the parent folder is refreshed
+// so the tree drops the node.
 func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, message string, run func(ctx context.Context) error) {
-	if !a.isConnected(sc) {
-		a.setStatus("Not connected — use File > Connect")
+	if !a.requireConn(sc) {
 		return
 	}
 	a.confirmDialog.ShowConfirm(title, message, func(confirmed bool) {
@@ -132,7 +127,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			err := run(ctx)
-			a.postEvent(func() {
+			a.postAndWake(func() {
 				if err != nil {
 					a.setStatus(fmt.Sprintf("Delete failed: %v", err))
 					return
@@ -140,7 +135,6 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))
 				refreshExplorerNode(a, node.parent)
 			})
-			a.wakeEventLoop()
 		}()
 	})
 }

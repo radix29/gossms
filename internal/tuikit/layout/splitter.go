@@ -2,6 +2,7 @@ package layout
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -31,6 +32,16 @@ type Splitter struct {
 	ratioBase float64
 	label     string // optional label drawn on the splitter bar
 	active    bool   // see SetActive
+
+	// mouseDragging is true from the first Button1 of a gesture until its
+	// release, wherever that press landed — mirrors Toolbar's/TreeView's/
+	// MenuBar's field of the same name. Without it a resize starts from any
+	// Button1 that happens to be over the bar, and tcell's all-motion
+	// tracking resends Button1 on every motion event while the button stays
+	// down: a text-selection drag in the editor above that crosses the bar
+	// on its way down grabs it and resizes the panes instead. dragging
+	// alone can't tell the two apart — it's only ever set by this branch.
+	mouseDragging bool
 }
 
 // NewHorizontalSplitter creates a top/bottom splitter (editor over results).
@@ -110,7 +121,7 @@ func (sp *Splitter) Draw(s tcell.Screen) {
 	}
 	style := tcell.StyleDefault.Background(barColor).Foreground(p.TextDim)
 	if sp.active {
-		style = tcell.StyleDefault.Background(p.BorderActive).Foreground(tcell.ColorWhite).Bold(true)
+		style = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
 	}
 	pos := sp.SplitPos()
 
@@ -155,11 +166,23 @@ func (sp *Splitter) HandleKey(ev *tcell.EventKey) bool {
 	return false
 }
 
-// HandleMouse handles drag events on the splitter bar.
-// Returns true when the event was consumed (including during active drag).
+// HandleMouse handles drag events on the splitter bar. Returns true when
+// the event was consumed (including during an active drag). A resize only
+// ever begins on a press that lands on the bar — see mouseDragging — so
+// the host must pass every Button1 event through here, not just the ones
+// over the bar, or a press elsewhere won't be recognized as the start of
+// the gesture it is.
 func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	pos := sp.SplitPos()
+
+	if ev.Buttons() == tcell.ButtonNone {
+		sp.mouseDragging = false
+	}
+	fresh := ev.Buttons() == tcell.Button1 && !sp.mouseDragging
+	if ev.Buttons() == tcell.Button1 {
+		sp.mouseDragging = true
+	}
 
 	onBar := false
 	if sp.dir == SplitterHorizontal {
@@ -168,7 +191,7 @@ func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 		onBar = mx == pos && my >= sp.rect.Y && my < sp.rect.Y+sp.rect.H
 	}
 
-	if !sp.dragging && ev.Buttons() == tcell.Button1 && onBar {
+	if !sp.dragging && fresh && onBar {
 		sp.dragging = true
 		if sp.dir == SplitterHorizontal {
 			sp.dragBase = my

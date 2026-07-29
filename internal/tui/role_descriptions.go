@@ -17,8 +17,7 @@ var fixedRoleDescriptions = map[string]string{
 
 // fixedServerRoleDescriptions and serverRoleImpact give each fixed server
 // role a short blurb and an impact level for Login Properties' Server
-// Roles page, matching the mockup's own impact classification.
-// User-defined server roles have no entry (blank).
+// Roles page. User-defined server roles have no entry (blank).
 var fixedServerRoleDescriptions = map[string]string{
 	"sysadmin":      "Full control over the SQL Server instance",
 	"securityadmin": "Manage logins and their properties",

@@ -18,7 +18,7 @@ const maxTaskHistory = 50
 // lets the user check on or cancel later rather than blocking the UI.
 //
 // A Task's fields are only ever mutated on the main goroutine, via the
-// closures App.postProgress/postTaskDone hand to postEvent — the same
+// closures App.postProgress/postTaskDone hand to postAndWake — the same
 // invariant QueryPanel.result and DetailBrowser rely on elsewhere in this
 // codebase (see query_panel.go, detail_browser.go). No mutex is needed as
 // long as that invariant holds: the goroutine doing the actual work never
@@ -87,14 +87,13 @@ func (a *App) startTask(parent context.Context, label string) (*Task, context.Co
 
 // postProgress schedules a progress update on t to run on the main
 // goroutine, then wakes the event loop so it draws immediately — the same
-// postEvent+wakeEventLoop handoff every other background operation in
-// this codebase uses (see query_panel.go, app_connections.go).
+// postAndWake handoff every other background operation in this codebase
+// uses (see query_panel.go, app_connections.go).
 func (a *App) postProgress(t *Task, progress int, message string) {
-	a.postEvent(func() {
+	a.postAndWake(func() {
 		t.Progress = progress
 		t.Message = message
 	})
-	a.wakeEventLoop()
 }
 
 // postTaskDone marks t finished (err nil on success) on the main goroutine,
@@ -103,7 +102,7 @@ func (a *App) postProgress(t *Task, progress int, message string) {
 // consumer wants this, the same way query execution always reports its own
 // completion), and wakes the event loop.
 func (a *App) postTaskDone(t *Task, err error) {
-	a.postEvent(func() {
+	a.postAndWake(func() {
 		t.Done = true
 		t.Err = err
 		t.Finished = time.Now()
@@ -114,7 +113,6 @@ func (a *App) postTaskDone(t *Task, err error) {
 			a.setStatus(t.Label + " completed")
 		}
 	})
-	a.wakeEventLoop()
 }
 
 // runningTaskCount reports how many tasks are still in flight, for the
