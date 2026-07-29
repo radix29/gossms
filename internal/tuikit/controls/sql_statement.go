@@ -66,7 +66,7 @@ var dmlStatementLeaders = map[string]bool{
 // VALUES (clears a pending INSERT ... SELECT/CTE main-query suppression),
 // and UNION/EXCEPT/INTERSECT/ALL (recognise a chained SELECT as a
 // continuation, not a new statement). Every other keyword is irrelevant to
-// this narrow heuristic, so — unlike completion_provider.go's much larger
+// this narrow heuristic, so — unlike completion_tokenizer.go's much larger
 // sqlKeywords table, which also drives clause detection and FROM-scope
 // parsing — this set only needs to be exactly these.
 var dmlBoundaryKeywords = map[string]bool{

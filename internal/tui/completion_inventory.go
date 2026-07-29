@@ -85,6 +85,25 @@ func (inv *completionInventory) endLoad(seq int) bool {
 	return true
 }
 
+// evictInventory drops key's entry from m so the next lookup starts a fresh
+// load — but only while that entry is still inv.
+//
+// The identity check is what makes this safe to call from a load's own
+// completion callback, which by then may be reporting on a cache generation
+// that no longer exists: purgeCompletionInventories drops a server's entries
+// on disconnect, so a reconnect to the same server before a superseded load
+// lands has already installed a different, live entry under the same key.
+// Deleting that one would strand its own in-flight load — the load completes
+// into an entry nobody can reach, so completion stays unavailable until a
+// later lookup starts yet another load. inv's own loadSeq can't catch this:
+// it's per-entry, and the stale result belongs to the entry that was
+// discarded, whose seq nothing has bumped.
+func evictInventory(m map[string]*completionInventory, key string, inv *completionInventory) {
+	if m[key] == inv {
+		delete(m, key)
+	}
+}
+
 // newCompletionInventory builds a fresh entry with the lookup indexes for
 // a freshly loaded catalog.
 func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
@@ -230,15 +249,8 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 				// so sc.IsOpen() is checked instead of matching either
 				// shape. The entry is dropped rather than poisoned with
 				// sc's own teardown error, so the next lookup from any
-				// connection retries fresh — but only if it's still this
-				// entry. purgeCompletionInventories drops the whole
-				// server's entries on disconnect, so a reconnect to the
-				// same server before this lands has already put a
-				// different, live entry under this key, and deleting that
-				// one would strand its own in-flight load.
-				if a.completionInventories[key] == inv {
-					delete(a.completionInventories, key)
-				}
+				// connection retries fresh.
+				evictInventory(a.completionInventories, key, inv)
 				return
 			}
 			if err != nil {
@@ -344,7 +356,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 			if err != nil && !sc.IsOpen() {
 				// Same shared-cache reasoning as loadCompletionInventory's
 				// equivalent branch, above, but keyed at server level.
-				delete(a.sysCompletionInventories, key)
+				evictInventory(a.sysCompletionInventories, key, inv)
 				return
 			}
 			if err != nil {

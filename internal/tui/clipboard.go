@@ -117,6 +117,16 @@ func (a *App) writeClipboard(text string) {
 	}()
 }
 
+// copyWithStatus is writeClipboard plus the status-line acknowledgement,
+// for the grid context menus whose "Copy" item is the whole interaction —
+// nothing else on screen changes, so without the message there's no sign it
+// worked. Wired into the results grid (NewQueryPanel) and the execution
+// plan's operator summary (PlanView.OnCopyRequest, in both its hosts).
+func (a *App) copyWithStatus(text string) {
+	a.writeClipboard(text)
+	a.setStatus("Copied to clipboard")
+}
+
 // pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste). The native OS
 // clipboard read happens in a background goroutine so a stalled tool can't
 // freeze the event loop, then the paste is applied on the UI thread. When

@@ -18,12 +18,12 @@ import (
 // Membership, Securables, and Extended Properties are always editable.
 // Contained/password users and external Microsoft Entra users aren't built.
 //
-// userName is boxed in a *string shared by every page below: renaming a
-// user changes the identity every other page's lookup depends on, so
-// pageUserGeneral's apply closure updates *userName in place on success —
-// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
-// would look up a user name that no longer exists. dbName never changes,
-// so it stays a plain string.
+// userName is boxed in a *string shared by every page below: renaming a user
+// changes the identity every other page's lookup depends on. The
+// rename is the last write of an Apply/OK run (see propPage.renames),
+// and commitRename then updates the box so PropDialog.InvalidateAll's
+// reload re-fetches under the new name. dbName never changes, so it
+// stays a plain string.
 func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
@@ -63,7 +63,8 @@ func isSystemUser(name string) bool {
 
 func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 			if err != nil {
@@ -211,7 +212,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 						if err := u.RenameContext(ctx, nameRow.Value()); err != nil {
 							return err
 						}
-						*userName = nameRow.Value()
+						commitRename(ctx, userName, nameRow.Value())
 					}
 					return nil
 				}

@@ -29,6 +29,38 @@ type propApply func(ctx context.Context) error
 type propPage struct {
 	title string
 	load  func(ctx context.Context) (*propsheet.Form, propApply, error)
+
+	// renames marks the page whose apply can rename the object every other
+	// page is addressed by — in practice always the General page, in the
+	// nine dialogs that allow a rename at all. Its apply is sorted last (see
+	// dirtyApplyFns) so the rename is the final write of the run and every
+	// page before it addresses the object by the name the server still has.
+	//
+	// This matters most for Script Changes, where the rename is recorded
+	// rather than executed: the sibling pages' statements would otherwise
+	// sit *below* a rename in the generated script and name an object that
+	// no longer exists by the time it runs.
+	renames bool
+}
+
+// commitRename mirrors a just-completed rename into namePtr — the boxed
+// name every other page of the dialog resolves its object by — but only
+// when the rename really ran.
+//
+// Under gosmo.WithScript (the Script Changes button) a write is recorded
+// and returns success without the server ever seeing it, while reads still
+// go to the real server. Mirroring the new name there points every sibling
+// page's lookup at an object that doesn't exist, so each one fails with
+// "not found", the run aborts on the first, and no script is produced at
+// all. Worse, namePtr stays wrong for the life of the dialog, so a
+// following real Apply fails the same way.
+//
+// The nine dialogs that can rename all call this from their General page,
+// which is also marked propPage.renames so its apply runs last.
+func commitRename(ctx context.Context, namePtr *string, newName string) {
+	if !gosmo.Scripting(ctx) {
+		*namePtr = newName
+	}
 }
 
 // PropDialog is the app-layer orchestrator for propsheet.PropertySheet:
@@ -196,16 +228,25 @@ func (d *PropDialog) validateDirty() bool {
 	return true
 }
 
-// dirtyApplyFns returns the apply closures for every dirty page.
+// dirtyApplyFns returns the apply closures for every dirty page, in page
+// order except that a renaming page's apply is moved to the end — see
+// propPage.renames.
 func (d *PropDialog) dirtyApplyFns() []propApply {
 	dirty := d.DirtyPages()
 	fns := make([]propApply, 0, len(dirty))
+	var last []propApply
 	for _, page := range dirty {
-		if fn := d.applyFn[page]; fn != nil {
-			fns = append(fns, fn)
+		fn := d.applyFn[page]
+		if fn == nil {
+			continue
 		}
+		if page < len(d.pages) && d.pages[page].renames {
+			last = append(last, fn)
+			continue
+		}
+		fns = append(fns, fn)
 	}
-	return fns
+	return append(fns, last...)
 }
 
 // runPipeline is the shared shape behind runApply and runScript: validate

@@ -3,7 +3,7 @@ package dialogs
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -189,8 +189,11 @@ func (d *FileDialog) loadDir(dir string) {
 			files = append(files, fe)
 		}
 	}
-	sort.Slice(dirs, func(i, j int) bool { return strings.ToLower(dirs[i].name) < strings.ToLower(dirs[j].name) })
-	sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].name) < strings.ToLower(files[j].name) })
+	byLowerName := func(a, b fileEntry) int {
+		return strings.Compare(strings.ToLower(a.name), strings.ToLower(b.name))
+	}
+	slices.SortStableFunc(dirs, byLowerName)
+	slices.SortStableFunc(files, byLowerName)
 
 	entries := make([]fileEntry, 0, len(dirs)+len(files)+1)
 	if parent := filepath.Dir(clean); parent != clean {

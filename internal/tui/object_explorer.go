@@ -237,6 +237,20 @@ func (oe *ObjectExplorer) Selected() *explorerNode {
 	return oe.byID[tn.ID]
 }
 
+// NodeAt returns the application-level node drawn at screen position
+// (mx, my), or nil if that position isn't over one — the scrollbar, the
+// border, or blank space below the last node all report nil. Unlike
+// Selected, this says what a mouse press actually landed on, which is what
+// drag-and-drop arming needs (see App.handleMouse): a press on the
+// scrollbar must not start a drag of whatever happens to be selected.
+func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
+	id, ok := oe.view.NodeIDAt(mx, my)
+	if !ok {
+		return nil
+	}
+	return oe.byID[id]
+}
+
 // RefreshSelected forces the selected node to reload its children.
 func (oe *ObjectExplorer) RefreshSelected() {
 	n := oe.Selected()

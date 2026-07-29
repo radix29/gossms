@@ -15,8 +15,8 @@ import (
 // agent_schedule_form.go) plus a read-only Jobs page listing which jobs
 // use this schedule. Mirrors agent_job_props.go's shape, including its
 // shared *string name cell: every page closes over &scheduleName, so a
-// rename on General is visible to later pages in the same pipeline run and
-// to PropDialog.InvalidateAll's post-Apply reload.
+// rename on General — the last write of the run, see propPage.renames — is
+// visible to PropDialog.InvalidateAll's post-Apply reload.
 
 // findAgentSchedule is a thin wrapper over gosmo.Server.ScheduleByNameContext,
 // mirroring findAgentJob.
@@ -46,7 +46,8 @@ func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
 
 func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			sch, err := findAgentSchedule(ctx, sc, *scheduleName)
 			if err != nil {
@@ -76,15 +77,6 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 				if err != nil {
 					return err
 				}
-				if freqForm.nameField.Dirty() {
-					if err := sch.RenameContext(ctx, freqForm.name()); err != nil {
-						return err
-					}
-					// Update the shared cell immediately so the Jobs
-					// page's load, and any reload after a successful
-					// Apply/OK, re-fetch under the new name.
-					*scheduleName = freqForm.name()
-				}
 				if freqForm.enabledCheck.Dirty() {
 					if freqForm.enabled() {
 						err = sch.EnableContext(ctx)
@@ -110,6 +102,17 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 					if err := sch.SetOwnerContext(ctx, ownerRow.Value()); err != nil {
 						return err
 					}
+				}
+				// Renaming last keeps every write above addressed by the
+				// name the server still has — see propPage.renames.
+				// commitRename then updates the shared cell so the Jobs
+				// page's load, and any reload after a successful Apply/OK,
+				// re-fetch under the new name.
+				if freqForm.nameField.Dirty() {
+					if err := sch.RenameContext(ctx, freqForm.name()); err != nil {
+						return err
+					}
+					commitRename(ctx, scheduleName, freqForm.name())
 				}
 				return nil
 			}

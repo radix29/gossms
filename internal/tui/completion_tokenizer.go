@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -42,8 +43,18 @@ const (
 // separators, so the tokenizer can scan linearly without juggling
 // (row, col) pairs — a comment or string literal spanning several lines
 // then falls out of the same state machine for free.
+// Sized up front: this runs on every keystroke while the completion popup
+// is open, and growing a nil slice to the size of a large script re-copies
+// the whole buffer a dozen times over.
 func flattenLines(lines [][]rune) []rune {
-	var buf []rune
+	n := 0
+	for _, l := range lines {
+		n += len(l) + 1
+	}
+	if n > 0 {
+		n-- // separators go between lines, not after the last one
+	}
+	buf := make([]rune, 0, n)
 	for i, l := range lines {
 		if i > 0 {
 			buf = append(buf, '\n')
@@ -102,7 +113,10 @@ func tokenizeSQLPrefix(buf []rune, upTo int) ([]sqlToken, sqlLexState, int, int)
 // finds where an unterminated bracket identifier's replace span starts.
 // Meaningless (stale or zero) in every other final state.
 func tokenizeSQLRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]sqlToken, sqlLexState, int, int) {
-	var tokens []sqlToken
+	// Roughly one token per 8 runes of SQL, so the append loop below stops
+	// re-copying a large script's token stream on every keystroke. An
+	// estimate only — append still grows it if the guess is low.
+	tokens := make([]sqlToken, 0, (upTo-from)/8+16)
 	state := sqlLexNormal
 	quoteStart := 0
 	semiStart := from
@@ -206,11 +220,17 @@ func tokenizeSQLRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]sqlTo
 			for i < upTo && core.IsWordRune(buf[i]) {
 				i++
 			}
-			word := string(buf[start:i])
-			if sqlKeywords[strings.ToUpper(word)] {
-				tokens = append(tokens, sqlToken{kind: sqlTokKeyword, text: strings.ToUpper(word), start: start})
+			// The keyword test runs before the word is materialised, and
+			// allocates nothing: a keyword token borrows the table's own
+			// canonical spelling, so only identifiers pay for a string. This
+			// loop runs over every word in the buffer on every keystroke
+			// while the completion popup is open, and the previous
+			// string()+ToUpper()+ToUpper() cost two or three allocations per
+			// word.
+			if kw, ok := sqlKeywordCanonical(buf, start, i); ok {
+				tokens = append(tokens, sqlToken{kind: sqlTokKeyword, text: kw, start: start})
 			} else {
-				tokens = append(tokens, sqlToken{kind: sqlTokIdent, text: word, start: start})
+				tokens = append(tokens, sqlToken{kind: sqlTokIdent, text: string(buf[start:i]), start: start})
 			}
 		default:
 			i++ // whitespace, operators, semicolons, @/# sigils, numeric literals, ...
@@ -275,21 +295,73 @@ func tokensFrom(tokens []sqlToken, from int) []sqlToken {
 	return nil
 }
 
-// sqlKeywords recognises enough T-SQL clause/reserved words for clause
+// maxSQLKeywordLen bounds sqlKeywordCanonical's stack buffer, so it has to
+// be a constant. The longest entries in sqlKeywordList are 10 characters
+// ("REFERENCES", "CONSTRAINT"); the headroom means adding a keyword doesn't
+// usually need touching this, and TestKeywordsFitCanonicalScratch fails
+// loudly if one ever exceeds it.
+const maxSQLKeywordLen = 24
+
+// sqlKeywordCanon is the lookup built from sqlKeywordList, mapping each
+// keyword to itself. Handing back the map's own key is what lets a keyword
+// token carry a canonical string without allocating one; membership tests
+// (bracketIfNeeded) read the same map, so there is only ever one.
+var sqlKeywordCanon = func() map[string]string {
+	m := make(map[string]string, len(sqlKeywordList))
+	for _, k := range sqlKeywordList {
+		m[k] = k
+	}
+	return m
+}()
+
+// isSQLKeyword reports whether an already-uppercased word is a keyword.
+func isSQLKeyword(upper string) bool {
+	_, ok := sqlKeywordCanon[upper]
+	return ok
+}
+
+// sqlKeywordCanonical reports whether buf[start:end] is a SQL keyword and,
+// if so, returns its canonical uppercase spelling — without allocating. The
+// word is ASCII-uppercased into a stack array for the lookup (Go compiles a
+// map index on string(byteSlice) without copying), and the returned string
+// is the table's own key rather than a fresh one.
+//
+// Anything longer than the longest keyword, or holding a non-ASCII rune, is
+// rejected outright: neither can match, and skipping them keeps the
+// stack array small and the fold trivially correct (ASCII case folding has
+// none of Unicode's special cases).
+func sqlKeywordCanonical(buf []rune, start, end int) (string, bool) {
+	n := end - start
+	if n <= 0 || n > maxSQLKeywordLen {
+		return "", false
+	}
+	var scratch [maxSQLKeywordLen]byte
+	for i := 0; i < n; i++ {
+		c := buf[start+i]
+		if c >= utf8.RuneSelf {
+			return "", false
+		}
+		if c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		scratch[i] = byte(c)
+	}
+	kw, ok := sqlKeywordCanon[string(scratch[:n])]
+	return kw, ok
+}
+
+// sqlKeywordList recognises enough T-SQL clause/reserved words for clause
 // detection, FROM-scope parsing, and deciding when a candidate name needs
-// bracket-quoting — not the engine's full reserved-word list.
-var sqlKeywords = map[string]bool{
-	"SELECT": true, "FROM": true, "WHERE": true, "JOIN": true, "INNER": true,
-	"LEFT": true, "RIGHT": true, "FULL": true, "OUTER": true, "CROSS": true,
-	"ON": true, "GROUP": true, "ORDER": true, "BY": true, "HAVING": true,
-	"INSERT": true, "INTO": true, "VALUES": true, "UPDATE": true, "SET": true,
-	"DELETE": true, "TRUNCATE": true, "TABLE": true, "AS": true, "AND": true,
-	"OR": true, "NOT": true, "NULL": true, "IS": true, "IN": true,
-	"EXISTS": true, "BETWEEN": true, "LIKE": true, "DISTINCT": true, "TOP": true,
-	"UNION": true, "EXCEPT": true, "INTERSECT": true, "ALL": true, "CASE": true, "WHEN": true, "THEN": true,
-	"ELSE": true, "END": true, "CAST": true, "CONVERT": true, "DECLARE": true,
-	"EXEC": true, "EXECUTE": true, "PROCEDURE": true, "FUNCTION": true,
-	"VIEW": true, "INDEX": true, "PRIMARY": true, "KEY": true, "FOREIGN": true,
-	"REFERENCES": true, "DEFAULT": true, "CHECK": true, "CONSTRAINT": true,
-	"ALTER": true, "DROP": true, "CREATE": true, "WITH": true, "MERGE": true,
+// bracket-quoting — not the engine's full reserved-word list. It is the
+// single place a keyword is declared; sqlKeywordCanon is derived from it.
+var sqlKeywordList = []string{
+	"SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL",
+	"OUTER", "CROSS", "ON", "GROUP", "ORDER", "BY", "HAVING", "INSERT",
+	"INTO", "VALUES", "UPDATE", "SET", "DELETE", "TRUNCATE", "TABLE",
+	"AS", "AND", "OR", "NOT", "NULL", "IS", "IN", "EXISTS", "BETWEEN",
+	"LIKE", "DISTINCT", "TOP", "UNION", "EXCEPT", "INTERSECT", "ALL",
+	"CASE", "WHEN", "THEN", "ELSE", "END", "CAST", "CONVERT", "DECLARE",
+	"EXEC", "EXECUTE", "PROCEDURE", "FUNCTION", "VIEW", "INDEX", "PRIMARY",
+	"KEY", "FOREIGN", "REFERENCES", "DEFAULT", "CHECK", "CONSTRAINT",
+	"ALTER", "DROP", "CREATE", "WITH", "MERGE",
 }

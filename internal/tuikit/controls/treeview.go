@@ -319,6 +319,20 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 	if idx < 0 || idx >= len(tv.nodes) {
 		return false
 	}
+	// A button press acts on one specific node, so it needs the stricter
+	// content hit-test too: the row bound above doesn't constrain mx at all,
+	// and the vertical scrollbar is drawn over the right border column (see
+	// Draw). HandleScrollbarDrag has already claimed a press there whenever
+	// the bar is actually showing, so this only changes the no-bar case —
+	// but nodeIndexAt is also what app-level drag arming hit-tests with (see
+	// NodeIDAt), and the two must agree on what "landed on a node" means.
+	// The wheel cases below keep the looser row-only bound, so scrolling
+	// with the pointer over the bar behaves exactly as before.
+	if b := ev.Buttons(); b == tcell.Button1 || b == tcell.Button2 {
+		if _, ok := tv.nodeIndexAt(mx, my); !ok {
+			return false
+		}
+	}
 	switch ev.Buttons() {
 	case tcell.Button1:
 		if tv.mouseDragging {
@@ -380,6 +394,39 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	return false
+}
+
+// nodeIndexAt returns the index into tv.nodes of the row drawn at screen
+// position (mx, my), and whether that position is over a node row at all.
+// The test is against the content area (rect.Inner(1)), not the whole rect,
+// so the border columns and rows the scrollbars are drawn over (see Draw)
+// never resolve to a node.
+func (tv *TreeView) nodeIndexAt(mx, my int) (int, bool) {
+	inner := tv.rect.Inner(1)
+	if !inner.Contains(mx, my) {
+		return 0, false
+	}
+	idx := tv.scroll + (my - inner.Y)
+	if idx < 0 || idx >= len(tv.nodes) {
+		return 0, false
+	}
+	return idx, true
+}
+
+// NodeIDAt returns the ID of the node drawn at screen position (mx, my),
+// and whether there is one there. It's how a host finds out what a mouse
+// press actually landed on, rather than inferring it from the selection
+// afterward: a press on the scrollbar, on the border, or on blank space
+// below the last node reports no node. App's Object Explorer drag-and-drop
+// arms from this (via ObjectExplorer.NodeAt) — without it, a scrollbar drag
+// was armed as a node drag and swallowed, so the thumb never followed the
+// mouse.
+func (tv *TreeView) NodeIDAt(mx, my int) (int, bool) {
+	idx, ok := tv.nodeIndexAt(mx, my)
+	if !ok {
+		return 0, false
+	}
+	return tv.nodes[idx].ID, true
 }
 
 // scrollLeft/scrollRight nudge the horizontal scroll offset by 4 columns,

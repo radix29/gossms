@@ -11,7 +11,7 @@ with no OS-specific code, no CGO. Version is resolved automatically from
 the pushed git tag — see `internal/version/version.go` — never hand-edited.
 
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
-- Depends on `github.com/radix29/gosmo` (`v0.0.5`), the author's own
+- Depends on `github.com/radix29/gosmo` (`v0.0.6`), the author's own
   companion library for SQL Server management objects —
   https://github.com/radix29/gosmo — and `github.com/gdamore/tcell/v3`
   (`v3.4.1`) for the TUI backend.

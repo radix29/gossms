@@ -136,10 +136,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results.SetCellCursor(true)
 	results.SetRowNumbers(true)
 	results.SetStatusStyle(resultsStatusStyle)
-	results.OnCopyRequest = func(text string) {
-		app.writeClipboard(text)
-		app.setStatus("Copied to clipboard")
-	}
+	results.OnCopyRequest = app.copyWithStatus
 	p := new(QueryPanel{
 		app:      app,
 		title:    title,
@@ -282,6 +279,7 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	case p.planTabActive():
 		p.planView.Draw(s)
 		p.drawResultsStatus(s)
+		p.planView.DrawOverlay(s)
 	case p.textTabActive():
 		p.resultsText.Draw(s)
 		p.drawResultsStatus(s)
@@ -427,6 +425,11 @@ func (p *QueryPanel) HandleKey(ev *tcell.EventKey) bool {
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		return p.results.HandleKey(ev)
 	}
+	// Same rule for the execution plan's Operator Summary grid, which owns
+	// the identical pair of popups one level down (see PlanView.OverlayActive).
+	if p.planTabActive() && p.planView.OverlayActive() {
+		return p.planView.HandleKey(ev)
+	}
 	// Same reasoning, for the SQL editor's own completion popup: it floats
 	// over the editor's rect independently of resultsFocused, so it must
 	// get every key before F5/Ctrl+PgUp/splitter routing below gets a
@@ -528,6 +531,13 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	if !p.onMessagesTab() && !p.textTabActive() && !p.planTabActive() && p.results.OverlayActive() {
 		p.setResultsFocused(true)
 		return p.results.HandleMouse(ev)
+	}
+	// Same rule for the execution plan's Operator Summary grid. PlanView's
+	// own HandleMouse lets releases through to its inner branches, so the
+	// forwarding below still clears any latch this doesn't reach.
+	if p.planTabActive() && p.planView.OverlayActive() {
+		p.setResultsFocused(true)
+		return p.planView.HandleMouse(ev)
 	}
 	// Same reasoning, for the SQL editor's own completion popup.
 	if p.editor.CompletionActive() {

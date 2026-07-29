@@ -19,7 +19,7 @@ func loadTestPlan(t *testing.T) *showplan.Plan {
 // unchanged from Title() — PanelManager's tab bar and combo dropdown read
 // it directly.
 func TestNewPlanPanelTitle(t *testing.T) {
-	pp := NewPlanPanel("Execution Plan — Query 1", loadTestPlan(t))
+	pp := NewPlanPanel(newTestApp(), "Execution Plan — Query 1", loadTestPlan(t))
 	if got := pp.Title(); got != "Execution Plan — Query 1" {
 		t.Errorf("Title() = %q, want %q", got, "Execution Plan — Query 1")
 	}
@@ -30,7 +30,7 @@ func TestNewPlanPanelTitle(t *testing.T) {
 // panicking — mirrors DetailBrowser's own delegation, which this type is
 // modeled on.
 func TestPlanPanelDelegatesToWrappedPlanView(t *testing.T) {
-	pp := NewPlanPanel("Execution Plan — Query 1", loadTestPlan(t))
+	pp := NewPlanPanel(newTestApp(), "Execution Plan — Query 1", loadTestPlan(t))
 	pp.SetBounds(0, 0, 80, 24)
 	pp.SetActive(true)
 

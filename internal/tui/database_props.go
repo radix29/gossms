@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -72,7 +72,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			for i, l := range logins {
 				loginNames[i] = l.Name
 			}
-			sort.Strings(loginNames)
+			slices.Sort(loginNames)
 			lastFull, lastDiff, lastLog := "Never", "Never", "Never"
 			for _, b := range history {
 				switch b.BackupType {

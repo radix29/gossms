@@ -18,10 +18,10 @@ import (
 // clause, so a constraint-backed index can never have either.
 //
 // name is boxed in a *string shared by every page below: renaming a key
-// changes the identity every other page's findIndex lookup depends on, so
-// pageKeyGeneral's apply closure updates *name in place on success —
-// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
-// would look up an index name that no longer exists.
+// changes the identity every other page's lookup depends on. The
+// rename is the last write of an Apply/OK run (see propPage.renames),
+// and commitRename then updates the box so PropDialog.InvalidateAll's
+// reload re-fetches under the new name.
 func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	namePtr := &name
 	return []propPage{
@@ -50,7 +50,8 @@ func keyTypeName(isPrimaryKey bool) string {
 
 func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {
@@ -97,7 +98,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				if err := idx.RenameContext(ctx, t, nameRow.Value()); err != nil {
 					return err
 				}
-				*name = nameRow.Value()
+				commitRename(ctx, name, nameRow.Value())
 				return nil
 			}
 			return f, apply, nil

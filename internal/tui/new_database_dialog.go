@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -49,7 +49,7 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 	for i, l := range logins {
 		loginNames[i] = l.Name
 	}
-	sort.Strings(loginNames)
+	slices.Sort(loginNames)
 
 	model, err := sc.Server.DatabaseByNameContext(ctx, "model")
 	if err != nil {

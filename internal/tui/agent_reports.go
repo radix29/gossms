@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
@@ -163,9 +163,8 @@ func recentlyModifiedJobsReport(ctx context.Context, sc *db.ServerConn) ([]strin
 	if err != nil {
 		return nil, nil, err
 	}
-	sorted := make([]*gosmo.Job, len(jobs))
-	copy(sorted, jobs)
-	sort.Slice(sorted, func(i, k int) bool { return sorted[i].DateModified.After(sorted[k].DateModified) })
+	sorted := slices.Clone(jobs)
+	slices.SortStableFunc(sorted, func(a, b *gosmo.Job) int { return b.DateModified.Compare(a.DateModified) })
 	if len(sorted) > 20 {
 		sorted = sorted[:20]
 	}

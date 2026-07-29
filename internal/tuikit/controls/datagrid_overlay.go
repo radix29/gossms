@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -100,7 +101,21 @@ func (g *DataGrid) openViewer() {
 	g.viewEditor.SetText(cells[g.selCol])
 	g.viewEditor.SetActive(true)
 	g.viewOpen = true
+	// A latch must not survive into the next showing of the same widget —
+	// see viewDismissing, and the same rule for ModalDialog in CLAUDE.md.
+	g.viewDismissing = false
 }
+
+// closeViewer hides the full-content popup. Its two callers are Escape and
+// the "[ Close ]" button; nothing else dismisses it.
+func (g *DataGrid) closeViewer() {
+	g.viewOpen = false
+	g.viewCloseRect = core.Rect{}
+}
+
+// viewCloseLabel is the popup's dismiss button, drawn at the right-hand end
+// of the hint row.
+const viewCloseLabel = "[ Close ]"
 
 // DrawOverlay renders the right-click context menu and the full-content
 // popup, if either is open. Must be called after every other widget in the
@@ -124,8 +139,16 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 		g.viewEditor.SetBounds(x+2, y+1, w-4, cellViewerLines)
 		g.viewEditor.Draw(s)
 
+		// Hint text and the Close button share the last row: the button is
+		// right-aligned and the hint clipped to whatever is left of it, so
+		// the two can't overlap however narrow the popup gets.
+		btnW := core.DisplayWidth(viewCloseLabel)
+		g.viewCloseRect = core.Rect{X: x + w - 2 - btnW, Y: y + h - 2, W: btnW, H: 1}
 		hintSt := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-		core.DrawTextClipped(s, x+2, y+h-2, w-4, hintSt, "Esc to close — Shift+arrows to select, Ctrl+C to copy")
+		core.DrawTextClipped(s, x+2, y+h-2, w-6-btnW, hintSt,
+			"Esc or Close to dismiss — Shift+arrows to select, Ctrl+C to copy")
+		btnSt := tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
+		core.DrawTextClipped(s, g.viewCloseRect.X, g.viewCloseRect.Y, btnW, btnSt, viewCloseLabel)
 	}
 	g.ctxMenu.Draw(s)
 }

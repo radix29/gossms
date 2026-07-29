@@ -43,7 +43,8 @@ func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
 
 func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			o, err := findAgentOperator(ctx, sc, *operatorName)
 			if err != nil {
@@ -84,12 +85,6 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 				if err != nil {
 					return err
 				}
-				if nameField.Dirty() {
-					if err := o.RenameContext(ctx, nameField.Value()); err != nil {
-						return err
-					}
-					*operatorName = nameField.Value()
-				}
 				if enabledCheck.Dirty() {
 					if enabledCheck.Checked() {
 						err = o.EnableContext(ctx)
@@ -113,6 +108,14 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 					if err := o.SetCategoryContext(ctx, target); err != nil {
 						return err
 					}
+				}
+				// Renaming last keeps every write above addressed by the
+				// name the server still has — see propPage.renames.
+				if nameField.Dirty() {
+					if err := o.RenameContext(ctx, nameField.Value()); err != nil {
+						return err
+					}
+					commitRename(ctx, operatorName, nameField.Value())
 				}
 				return nil
 			}

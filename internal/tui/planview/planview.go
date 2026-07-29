@@ -88,6 +88,12 @@ type PlanView struct {
 	// OnStatus, when set, is called with a one-line status message on
 	// notable actions (statement switch, tab switch, ...).
 	OnStatus func(msg string)
+	// OnCopyRequest, when set, is called with clipboard-ready text from the
+	// operator summary's "Copy" menu item, and is what makes that item
+	// appear at all (see controls.DataGrid.OnCopyRequest — the grid can't
+	// reach the screen's clipboard itself, so the host does it). Wired by
+	// QueryPanel and PlanPanel to App.writeClipboard.
+	OnCopyRequest func(text string)
 
 	// mouseDragging distinguishes a fresh Button1 press on the tab bar or
 	// statement selector from a continued hold — mirrors Toolbar's/
@@ -109,6 +115,13 @@ func New() *PlanView {
 	v.treeSplit.SetRatio(0.55) // tree gets more room than the details pane
 	v.treeSt.collapsed = make(map[int]bool)
 	v.summarySt.grid = controls.NewDataGrid()
+	// A cell cursor, like every other read-only grid in the app: it's what
+	// enables per-cell selection and the right-click / Ctrl+Space menu, and
+	// so "Show Value" — the Status column carries an operator's full warning
+	// text, which is exactly the sort of thing that gets clipped to the
+	// column width and needs opening up. Copy is forwarded through
+	// OnCopyRequest, which the host wires.
+	v.summarySt.grid.SetCellCursor(true)
 	v.graphSplit = layout.NewHorizontalSplitter("")
 	v.graphSplit.SetRatio(0.7)
 	v.graphSt.detailOpen = true // Properties strip visible from the start
@@ -339,6 +352,27 @@ func (v *PlanView) Draw(s tcell.Screen) {
 	}
 }
 
+// DrawOverlay renders the operator summary grid's right-click menu and
+// "Show Value" popup, if either is open. Must be called after every other
+// widget in the same frame has drawn — both float free of the grid's own
+// rect, so anything drawn afterward paints straight over them. Hosts
+// (QueryPanel, PlanPanel) call this at the end of their own Draw, the same
+// way they already do for DataGrid/Editor overlays.
+func (v *PlanView) DrawOverlay(s tcell.Screen) {
+	v.drawSummaryOverlay(s)
+}
+
+// OverlayActive reports whether one of those popups is currently showing.
+// It carries controls.DataGrid.OverlayActive's contract outward: a host
+// laying PlanView out beside another focusable widget must give PlanView
+// exclusive first refusal of every key and mouse event while this is true,
+// or input meant for a popup goes to whatever sits underneath its screen
+// coordinates instead. PlanView applies the same rule internally — see
+// HandleKey/HandleMouse.
+func (v *PlanView) OverlayActive() bool {
+	return v.summaryOverlayActive()
+}
+
 // drawMessage fills the content area with a single line of placeholder
 // or error text.
 func (v *PlanView) drawMessage(s tcell.Screen, msg string) {
@@ -466,6 +500,12 @@ func oneLine(s string) string {
 // forwards to the XML editor when it's the active tab. Returns false for
 // anything else so the host can route focus-navigation keys elsewhere.
 func (v *PlanView) HandleKey(ev *tcell.EventKey) bool {
+	// An open summary popup outranks everything below, search included:
+	// its keys would otherwise be read as tab digits ('1'/'2'/'3'), sort
+	// keys, or search input, and there'd be no way to dismiss it.
+	if v.summaryOverlayActive() {
+		return v.handleSummaryOverlayKey(ev)
+	}
 	// Search must get first refusal of every key while active (or while
 	// idle but eligible, for '/', 'n', 'N', 'w', 'p') — otherwise a typed
 	// digit like '1' would switch tabs instead of extending the query.
@@ -517,6 +557,23 @@ func (v *PlanView) routeToContent(ev *tcell.EventMouse) bool {
 // statement selector's ◀/▶ arrows, or the XML editor.
 func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
+	// An open summary popup outranks the tab row, the statement bar, and
+	// the content area alike — it's centred on the whole screen, so its
+	// coordinates land inside all of them.
+	//
+	// Releases included. Routing one by position instead would never reach
+	// the grid — the popup sits nowhere near the summary strip the position
+	// branches gate on — and DataGrid hands a release to the popup's editor,
+	// whose HandleMouse clears mouseDragging regardless of where the release
+	// landed, precisely so a drag terminates cleanly. Withholding it strands
+	// that latch, and the next press is read as more of the same drag.
+	// PlanView's own latch comes down here too: it's the same gesture.
+	if v.summaryOverlayActive() {
+		if ev.Buttons() == tcell.ButtonNone {
+			v.mouseDragging = false
+		}
+		return v.handleSummaryMouse(ev)
+	}
 	// Always forward release events to the XML editor, regardless of
 	// position, so an in-progress text-selection drag terminates cleanly
 	// even if the cursor has moved outside this control before release —
@@ -576,7 +633,17 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 // text selection; the Plan and Tree tabs report the selected operator's
 // details (see details.go's formatDetailsText) as their "selection"
 // instead, since there's no free-form text selection to speak of there.
+// The summary grid's "Show Value" popup takes precedence wherever it's
+// open: while it is, DataGrid is itself a clipboard target backed by the
+// popup's read-only editor, so Ctrl+C copies the text selected in there
+// rather than the operator details the Tree tab would otherwise offer. Its
+// HasSelection is false whenever the popup is closed, so this falls straight
+// through the rest of the time — the same fall-back contract DataGrid
+// documents for propsheet.GridRow.
 func (v *PlanView) HasSelection() bool {
+	if v.summaryVisible() && v.summarySt.grid.HasSelection() {
+		return true
+	}
 	switch {
 	case v.activeTab == TabXML:
 		return v.xml.HasSelection()
@@ -586,6 +653,9 @@ func (v *PlanView) HasSelection() bool {
 	return false
 }
 func (v *PlanView) SelectedText() string {
+	if v.summaryVisible() && v.summarySt.grid.HasSelection() {
+		return v.summarySt.grid.SelectedText()
+	}
 	switch {
 	case v.activeTab == TabXML:
 		return v.xml.SelectedText()
@@ -598,7 +668,17 @@ func (v *PlanView) SelectedText() string {
 }
 func (v *PlanView) Cut() string       { return v.SelectedText() }
 func (v *PlanView) Paste(text string) {}
+
+// SelectAll gates on OverlayActive rather than the grid's HasSelection its
+// two siblings above use — deliberately. There is nothing selected yet at
+// the moment Select All is invoked, so HasSelection is false exactly when
+// this needs to route to the popup. DataGrid.SelectAll is itself a no-op
+// unless its viewer is open, so the wider gate costs nothing.
 func (v *PlanView) SelectAll() {
+	if v.summaryVisible() && v.summarySt.grid.OverlayActive() {
+		v.summarySt.grid.SelectAll()
+		return
+	}
 	if v.activeTab == TabXML {
 		v.xml.SelectAll()
 	}

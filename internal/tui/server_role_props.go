@@ -23,12 +23,11 @@ import (
 // pagePrincipalServerPermissions, the same server-scoped GRANT/DENY editor
 // Login Properties' Securables page uses.
 //
-// roleName is boxed in a *string shared by every page below: renaming a
-// role changes the identity every other page's lookup depends on, so
-// pageServerRoleGeneral's apply closure updates *roleName in place on
-// success — otherwise Apply, which reloads every page via
-// PropDialog.InvalidateAll, would look up a role name that no longer
-// exists.
+// roleName is boxed in a *string shared by every page below: renaming a role
+// changes the identity every other page's lookup depends on. The
+// rename is the last write of an Apply/OK run (see propPage.renames),
+// and commitRename then updates the box so PropDialog.InvalidateAll's
+// reload re-fetches under the new name.
 func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
@@ -72,7 +71,8 @@ func serverPrincipalNames(logins []*gosmo.Login, roles []*gosmo.ServerRole) []st
 
 func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			role, err := findServerRole(ctx, sc, *roleName)
 			if err != nil {
@@ -162,7 +162,7 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
 							return err
 						}
-						*roleName = nameRow.Value()
+						commitRename(ctx, roleName, nameRow.Value())
 					}
 					return nil
 				}

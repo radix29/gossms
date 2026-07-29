@@ -17,12 +17,11 @@ import (
 // comment) — every page is editable.
 //
 // loginName is boxed in a *string shared by every page below: renaming a
-// login changes the identity every other page's lookup depends on, so
-// pageLoginGeneral's apply closure updates *loginName in place on success —
-// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
-// would look up a login name that no longer exists. Key Properties'
-// pageKeyGeneral and Server Role Properties' pageServerRoleGeneral box
-// their names the same way.
+// login changes the identity every other page's lookup depends on. The
+// rename is the last write of an Apply/OK run (see propPage.renames), and
+// commitRename then updates the box so PropDialog.InvalidateAll's reload
+// re-fetches under the new name. Key Properties' pageKeyGeneral and Server
+// Role Properties' pageServerRoleGeneral box their names the same way.
 func loginPropPages(sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
@@ -45,7 +44,8 @@ const noneItem = "(None)"
 
 func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			l, err := findLogin(ctx, sc, *loginName)
 			if err != nil {
@@ -149,12 +149,6 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				if err != nil {
 					return err
 				}
-				if nameRow.Dirty() {
-					if err := l.RenameContext(ctx, nameRow.Value()); err != nil {
-						return err
-					}
-					*loginName = nameRow.Value()
-				}
 				if isSQLLogin && passwordRow.Value() != "" {
 					if err := l.ChangePasswordWithOptionsContext(ctx, passwordRow.Value(), mustChangeRow.Checked(), unlockRow.Checked()); err != nil {
 						return err
@@ -186,6 +180,14 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 							return err
 						}
 					}
+				}
+				// Renaming last keeps every write above addressed by the
+				// name the server still has — see propPage.renames.
+				if nameRow.Dirty() {
+					if err := l.RenameContext(ctx, nameRow.Value()); err != nil {
+						return err
+					}
+					commitRename(ctx, loginName, nameRow.Value())
 				}
 				return nil
 			}

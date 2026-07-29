@@ -42,7 +42,8 @@ func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
 
 func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			al, err := findAgentAlert(ctx, sc, *alertName)
 			if err != nil {
@@ -106,12 +107,6 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 				if err != nil {
 					return err
 				}
-				if nameField.Dirty() {
-					if err := al.RenameContext(ctx, nameField.Value()); err != nil {
-						return err
-					}
-					*alertName = nameField.Value()
-				}
 				if enabledCheck.Dirty() {
 					if enabledCheck.Checked() {
 						err = al.EnableContext(ctx)
@@ -161,6 +156,14 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					if err := al.SetCategoryContext(ctx, target); err != nil {
 						return err
 					}
+				}
+				// Renaming last keeps every write above addressed by the
+				// name the server still has — see propPage.renames.
+				if nameField.Dirty() {
+					if err := al.RenameContext(ctx, nameField.Value()); err != nil {
+						return err
+					}
+					commitRename(ctx, alertName, nameField.Value())
 				}
 				return nil
 			}

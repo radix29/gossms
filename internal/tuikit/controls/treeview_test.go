@@ -345,3 +345,61 @@ func TestHorizontalScrollbarDragMovesScrollX(t *testing.T) {
 		t.Error("scrollX did not move after dragging the horizontal scrollbar thumb")
 	}
 }
+
+// NodeIDAt is what a host uses to find out what a mouse press actually
+// landed on, so it must report "no node" for every part of the widget that
+// isn't a node row — in particular the vertical scrollbar column, which the
+// internal row hit-test never bounded mx against (that bound lived only in
+// HandleScrollbarDrag, running first). App's Object Explorer drag-and-drop
+// arms from this: without the column check, a press on the scrollbar armed a
+// node drag that then swallowed every motion event, so the thumb never
+// followed the mouse.
+func TestNodeIDAtRejectsNonNodePositions(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)    // inner = {X:1, Y:1, W:38, H:8}
+	nodes := make([]TreeNode, 30) // more than inner.H, so a scrollbar shows
+	for i := range nodes {
+		nodes[i] = TreeNode{ID: i + 1, Label: "n"}
+	}
+	tv.SetNodes(nodes)
+
+	if id, ok := tv.NodeIDAt(5, 1); !ok || id != 1 {
+		t.Errorf("NodeIDAt on the first node row = (%d, %v), want (1, true)", id, ok)
+	}
+
+	// rect.Right()-1 is where Draw paints the vertical scrollbar.
+	if id, ok := tv.NodeIDAt(39, 3); ok {
+		t.Errorf("NodeIDAt on the scrollbar column = (%d, true), want no node", id)
+	}
+	// The left border column is not content either.
+	if id, ok := tv.NodeIDAt(0, 3); ok {
+		t.Errorf("NodeIDAt on the left border = (%d, true), want no node", id)
+	}
+	// Top and bottom border rows.
+	if id, ok := tv.NodeIDAt(5, 0); ok {
+		t.Errorf("NodeIDAt on the top border row = (%d, true), want no node", id)
+	}
+	if id, ok := tv.NodeIDAt(5, 9); ok {
+		t.Errorf("NodeIDAt on the bottom border row = (%d, true), want no node", id)
+	}
+	// Outside the widget entirely.
+	if id, ok := tv.NodeIDAt(100, 100); ok {
+		t.Errorf("NodeIDAt outside the rect = (%d, true), want no node", id)
+	}
+}
+
+// Blank space below the last node is inside the content area but past the
+// end of the node list, so it must report no node — arming a drag from it
+// used to carry whatever happened to be selected.
+func TestNodeIDAtRejectsBlankSpaceBelowLastNode(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.H = 8 rows for nodes
+	tv.SetNodes([]TreeNode{{ID: 1, Label: "a"}, {ID: 2, Label: "b"}})
+
+	if _, ok := tv.NodeIDAt(5, 2); !ok {
+		t.Error("NodeIDAt on the second node row reported no node")
+	}
+	if id, ok := tv.NodeIDAt(5, 6); ok {
+		t.Errorf("NodeIDAt on blank space below the last node = (%d, true), want no node", id)
+	}
+}

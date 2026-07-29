@@ -25,9 +25,13 @@ type PlanPanel struct {
 
 // NewPlanPanel creates a detached plan panel already showing plan. plan is
 // handed to a fresh planview.PlanView via SetPlan (not SetPlanXML) so the
-// already-parsed tree is reused instead of re-parsed.
-func NewPlanPanel(title string, plan *showplan.Plan) *PlanPanel {
+// already-parsed tree is reused instead of re-parsed. app supplies the
+// clipboard hook for the operator summary's "Copy" item, the same one
+// QueryPanel's own PlanView gets — without it DataGrid leaves the item out
+// of the menu entirely.
+func NewPlanPanel(app *App, title string, plan *showplan.Plan) *PlanPanel {
 	v := planview.New()
+	v.OnCopyRequest = app.copyWithStatus
 	v.SetPlan(plan)
 	return new(PlanPanel{title: title, planView: v})
 }
@@ -57,6 +61,8 @@ func (pp *PlanPanel) Draw(s tcell.Screen) {
 	core.FillRect(s, core.Rect{X: pp.rect.X, Y: pp.rect.Y, W: pp.rect.W, H: 1}, ' ', titleStyle)
 	core.DrawTextClipped(s, pp.rect.X+1, pp.rect.Y, pp.rect.W-2, titleStyle, pp.title)
 	pp.planView.Draw(s)
+	// Drawn last — see the "overlays drawn last" rule in tuikit/README.md.
+	pp.planView.DrawOverlay(s)
 }
 
 // HandleKey delegates to the wrapped PlanView.

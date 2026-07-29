@@ -284,7 +284,7 @@ func (a *App) toggleActualExecutionPlan() {
 // the Execution Plan tab's "[ Expand ]" button's action (see
 // QueryPanel.newPlanView). Every call adds a brand-new panel.
 func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
-	a.panels.SetActive(a.panels.AddPanel(NewPlanPanel(title, plan)))
+	a.panels.SetActive(a.panels.AddPanel(NewPlanPanel(a, title, plan)))
 	a.focusPanels()
 }
 

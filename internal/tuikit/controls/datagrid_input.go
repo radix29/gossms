@@ -35,7 +35,7 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 	}
 	if g.viewOpen {
 		if ev.Key() == tcell.KeyEscape {
-			g.viewOpen = false
+			g.closeViewer()
 			return true
 		}
 		g.viewEditor.HandleKey(ev)
@@ -148,17 +148,26 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.ctxMenu.HandleMouse(ev)
 		return true
 	}
+	// The tail of the gesture that closed the popup — see viewDismissing.
+	if g.viewDismissing {
+		if ev.Buttons() == tcell.ButtonNone {
+			g.viewDismissing = false
+		}
+		return true
+	}
 	if g.viewOpen {
+		if px, py := ev.Position(); ev.Buttons() == tcell.Button1 && g.viewCloseRect.Contains(px, py) {
+			g.closeViewer()
+			g.viewDismissing = true
+			return true
+		}
 		if g.viewEditor.HandleMouse(ev) {
 			return true
 		}
-		// The editor didn't act on this event — a click landed outside its
-		// bounds (or, for a release, no drag was in progress there), so
-		// only an actual outside press dismisses the popup; a stray
-		// release or a wheel event elsewhere leaves it open.
-		if ev.Buttons() == tcell.Button1 {
-			g.viewOpen = false
-		}
+		// Everything else is swallowed and the popup stays open. A click
+		// outside it used to dismiss it, which meant a stray click while
+		// reading or part-way through selecting a long value silently threw
+		// it away; Escape and the Close button are the only ways out now.
 		return true
 	}
 	// Reset the drag-vs-fresh-click tracker on every release, regardless of

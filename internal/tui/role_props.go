@@ -19,12 +19,12 @@ import (
 // their own — nor are search/filter boxes, WITH GRANT OPTION, Column
 // Permissions, or Effective Permissions.
 //
-// roleName is boxed in a *string shared by every page below: renaming a
-// role changes the identity every other page's lookup depends on, so
-// pageRoleGeneral's apply closure updates *roleName in place on success —
-// otherwise Apply, which reloads every page via PropDialog.InvalidateAll,
-// would look up a role name that no longer exists. dbName never changes,
-// so it stays a plain string.
+// roleName is boxed in a *string shared by every page below: renaming a role
+// changes the identity every other page's lookup depends on. The
+// rename is the last write of an Apply/OK run (see propPage.renames),
+// and commitRename then updates the box so PropDialog.InvalidateAll's
+// reload re-fetches under the new name. dbName never changes, so it
+// stays a plain string.
 func rolePropPages(sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
@@ -77,7 +77,8 @@ func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
 
 func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 			if err != nil {
@@ -180,7 +181,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
 							return err
 						}
-						*roleName = nameRow.Value()
+						commitRename(ctx, roleName, nameRow.Value())
 					}
 					return nil
 				}

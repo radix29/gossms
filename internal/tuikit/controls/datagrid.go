@@ -155,9 +155,24 @@ type DataGrid struct {
 	// Editor showing the selected cell's untruncated text, so it can be
 	// navigated, selected, and copied like any other text. Self-contained
 	// so every DataGrid gets this for free with no wiring at the call site.
+	// It is dismissed by Escape or its own "[ Close ]" button, never by a
+	// click elsewhere: the popup's whole purpose is reading and selecting a
+	// long value, and a stray click while doing that used to lose it.
 	viewOpen   bool
 	viewHeader string
 	viewEditor *Editor
+
+	// viewCloseRect is the "[ Close ]" button's screen position, laid out by
+	// DrawOverlay (the popup is centred on the screen, so it isn't known
+	// until then) and hit-tested by HandleMouse.
+	viewCloseRect core.Rect
+
+	// viewDismissing latches from the press on that button until the
+	// matching release. The button closes the popup on the press, like every
+	// other button here, but tcell resends Button1 on every motion while it
+	// stays held — and by then the popup is gone, so those resends would
+	// land on the grid underneath as a fresh cell click.
+	viewDismissing bool
 
 	// OnSelectRow fires whenever the selected row changes (keyboard or
 	// click). OnActivateCell fires on Enter/Space, or a click on a cell,
@@ -204,6 +219,11 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	// The viewer was showing a cell of the data being replaced, and only
+	// Escape or its Close button dismiss it — so leaving it open here
+	// would strand a popup over stale text that still claims every key
+	// and mouse event (see OverlayActive).
+	g.closeViewer()
 	g.computeColWidths()
 	g.status = core.Itoa(rows.Len()) + " rows"
 }
@@ -232,6 +252,11 @@ func (g *DataGrid) SetError(err error) {
 	g.colWidths = []int{g.rect.W - 2}
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	// The viewer was showing a cell of the data being replaced, and only
+	// Escape or its Close button dismiss it — so leaving it open here
+	// would strand a popup over stale text that still claims every key
+	// and mouse event (see OverlayActive).
+	g.closeViewer()
 	g.status = "Error"
 }
 

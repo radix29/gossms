@@ -91,6 +91,11 @@ func (p *QueryPanel) runQuery(queryText string) {
 	p.messages.SetText("") // clear stale messages from any previous run
 	p.messageErrorLines = nil
 	sc := p.conn
+	// Snapshotted for the same reason as sc: setResult writes p.database
+	// back from the connection once the script finishes (a mid-script USE),
+	// and connectForQueryPanel writes it on the UI goroutine too — neither
+	// may be read from the goroutine below. Mirrors runEstimatedPlan.
+	database := p.database
 	// Results To File wants every row a query actually returns, not just
 	// what the grid would show — captured now (like sc above) since
 	// p.resultsMode can change via the Query menu while this goroutine runs.
@@ -115,9 +120,9 @@ func (p *QueryPanel) runQuery(queryText string) {
 	go func() {
 		var res *query.Result
 		if capturePlan {
-			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), p.database, queryText, maxRows)
+			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText, maxRows)
 		} else {
-			res = query.Execute(ctx, sc.Server.DB(), p.database, queryText, maxRows)
+			res = query.Execute(ctx, sc.Server.DB(), database, queryText, maxRows)
 		}
 		// cancelled must be read before cancel() — calling cancel sets
 		// ctx.Err() itself, which would make this always true otherwise.
@@ -214,6 +219,7 @@ func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 func (p *QueryPanel) newPlanView() *planview.PlanView {
 	v := planview.New()
 	v.OnStatus = func(msg string) { p.app.setStatus(msg) }
+	v.OnCopyRequest = p.app.copyWithStatus
 	v.OnExpand = func() {
 		if plan := v.Plan(); plan != nil {
 			p.app.openPlanPanel("Execution Plan — "+p.Title(), plan)

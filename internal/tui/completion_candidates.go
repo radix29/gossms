@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -225,8 +225,8 @@ func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, re
 }
 
 func sortCompletionItems(items []controls.CompletionItem) {
-	sort.Slice(items, func(i, j int) bool {
-		return strings.ToLower(items[i].Label) < strings.ToLower(items[j].Label)
+	slices.SortStableFunc(items, func(a, b controls.CompletionItem) int {
+		return strings.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label))
 	})
 }
 
@@ -298,11 +298,11 @@ func formatColumnType(col gosmo.CatalogColumn) string {
 var regularIdentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // bracketIfNeeded returns name as-is when it's a plain identifier and not
-// one of sqlKeywords, or "[name]" (with any ']' doubled) otherwise — so a
+// one of sqlKeywordList, or "[name]" (with any ']' doubled) otherwise — so a
 // committed candidate never silently changes what it names by needing
 // quoting SQL Server would otherwise require.
 func bracketIfNeeded(name string) string {
-	if regularIdentPattern.MatchString(name) && !sqlKeywords[strings.ToUpper(name)] {
+	if regularIdentPattern.MatchString(name) && !isSQLKeyword(strings.ToUpper(name)) {
 		return name
 	}
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"

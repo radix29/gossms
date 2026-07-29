@@ -20,10 +20,10 @@ import (
 // through for pages with immediate (non-Apply) actions — Steps' "Start at
 // Step" and History's "View Full History".
 func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
-	// name is a shared cell every page closes over: pageJobGeneral's
-	// apply updates *name as soon as a rename succeeds, so later pages
-	// in the same Apply/OK click — and any reload after it, via
-	// PropDialog.InvalidateAll — use the current name.
+	// name is a shared cell every page closes over. pageJobGeneral's
+	// rename is the last write of an Apply/OK run (see propPage.renames),
+	// and commitRename then updates the cell so PropDialog.InvalidateAll's
+	// reload re-fetches under the new name.
 	name := &jobName
 	return []propPage{
 		pageJobGeneral(sc, name),
@@ -55,7 +55,8 @@ func findAgentJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.J
 
 func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
-		title: "General",
+		title:   "General",
+		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			j, err := findAgentJob(ctx, sc, *jobName)
 			if err != nil {
@@ -102,15 +103,6 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				if nameRow.Dirty() {
-					if err := j.RenameContext(ctx, nameRow.Value()); err != nil {
-						return err
-					}
-					// Update the shared cell immediately so later pages
-					// in this pipeline run, and any reload after it,
-					// re-fetch the job under its new name.
-					*jobName = nameRow.Value()
-				}
 				if descRow.Dirty() {
 					if err := j.SetDescriptionContext(ctx, descRow.Value()); err != nil {
 						return err
@@ -135,6 +127,17 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 					if err != nil {
 						return err
 					}
+				}
+				// Renaming last keeps every write above addressed by the
+				// name the server still has — see propPage.renames.
+				// commitRename then updates the shared cell so the other
+				// pages, and any reload after this, re-fetch the job under
+				// its new name.
+				if nameRow.Dirty() {
+					if err := j.RenameContext(ctx, nameRow.Value()); err != nil {
+						return err
+					}
+					commitRename(ctx, jobName, nameRow.Value())
 				}
 				return nil
 			}

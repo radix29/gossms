@@ -118,6 +118,11 @@ func (v *PlanView) layoutTree() {
 		v.bottomHeaderRect = core.Rect{X: r.X, Y: y, W: r.W, H: 1}
 		v.bottomRect = core.Rect{X: r.X, Y: y + 1, W: r.W, H: bottomTotal - 1}
 	}
+	// The summary grid is bounded here rather than in drawSummary: mouse
+	// routing hit-tests against the grid's own rect, so leaving it to draw
+	// time would mean a click landing before the first frame was tested
+	// against stale bounds.
+	v.summarySt.grid.SetBounds(v.bottomRect.X, v.bottomRect.Y, v.bottomRect.W, v.bottomRect.H)
 }
 
 // expensiveCostThreshold is the cost-percentage cutoff, shared by the Plan
@@ -548,6 +553,11 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		}
 	}
 	if v.bottomMode == bottomSummary && v.bottomRect.Contains(mx, my) {
+		// A right-click opens the grid's cell menu, so it takes focus too —
+		// otherwise the menu would be driven by keys the tree still owns.
+		if ev.Buttons() == tcell.Button2 {
+			v.bottomFocused = true
+		}
 		return v.handleSummaryMouse(ev)
 	}
 	return false

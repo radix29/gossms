@@ -300,8 +300,16 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 			a.focusExplorer()
 		}
 		a.explorer.HandleMouse(ev)
-		if ev.Buttons() == tcell.Button1 {
-			if n := a.explorer.Selected(); n != nil && isDraggableNode(n.data.Type) {
+		// Armed from what the press actually landed on (NodeAt), not from
+		// whatever ends up selected afterward, and only on a fresh press.
+		// Selected() is true of a node the user never touched: a press on
+		// the tree's scrollbar, on its border, or on blank space below the
+		// last node leaves the selection alone, and arming from it both
+		// dragged the wrong object and — because the dragNode branch above
+		// swallows every later event — killed the scrollbar drag outright,
+		// since the thumb could no longer follow the mouse.
+		if freshPress {
+			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
 				a.dragNode = n
 				a.dragX, a.dragY = mx, my
 			}
