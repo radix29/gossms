@@ -187,6 +187,14 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 
 	vls := e.buildVisualLines(contentW)
 
+	// Highlighter runs are per logical line, so they're fetched when vl.row
+	// changes rather than per visual row. That also keeps the built-in
+	// highlighters' memo on its fast path: it is keyed on being called with
+	// strictly increasing line indices, which re-asking for the same idx on
+	// every continuation row would break (correctly, but by falling back to
+	// the full replay every time).
+	runRow, runs := -1, []ColorRun(nil)
+
 	for screenRow := 0; screenRow < e.rect.H; screenRow++ {
 		vi := e.scrollRow + screenRow
 		y := e.rect.Y + screenRow
@@ -211,12 +219,19 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 		line := e.lines[vl.row]
 		selStart, selEnd, hasSel := e.selectionRangeForLine(vl.row)
 
+		if e.highlight != nil && vl.row != runRow {
+			runRow, runs = vl.row, e.highlight(e.lines, vl.row)
+		}
+
 		for col := 0; col < contentW; col++ {
 			ci := vl.start + col
 			ch := rune(' ')
 			st := bgStyle
 			if ci < vl.end {
 				ch = line[ci]
+				if e.highlight != nil {
+					st = styleAt(runs, ci, bgStyle)
+				}
 				if hasSel && ci >= selStart && ci < selEnd {
 					st = selStyle
 				}
@@ -239,13 +254,35 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 	}
 }
 
+// styleAt returns the style a highlighter assigned to rune column ci, or def
+// where no run covers it. Later runs win, matching drawHighlighted's own
+// style map, which overwrites as it walks runs in order.
+//
+// Wrap mode uses this rather than building a per-line map: it draws at most
+// contentW columns of any one logical line per visual row, so a scan of the
+// (few, coarse) runs beats materialising a style for every column of a line
+// that may be far longer than the viewport.
+func styleAt(runs []ColorRun, ci int, def tcell.Style) tcell.Style {
+	st := def
+	for _, run := range runs {
+		if ci >= run.Start && ci < run.Start+run.Len {
+			st = run.Style
+		}
+	}
+	return st
+}
+
 func (e *Editor) drawHighlighted(s tcell.Screen, x, y, w int, line []rune, runs []ColorRun, selStart, selEnd int, hasSel bool) {
 	p := theme.Active()
 	bgStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Text)
 	selStyle := theme.StyleSelected()
 
-	// Build a per-column style map
-	styles := make([]tcell.Style, len(line))
+	// Build a per-column style map, reusing the scratch buffer rather than
+	// allocating one per line per Draw — see Editor.styleScratch.
+	if cap(e.styleScratch) < len(line) {
+		e.styleScratch = make([]tcell.Style, len(line))
+	}
+	styles := e.styleScratch[:len(line)]
 	for i := range styles {
 		styles[i] = bgStyle
 	}

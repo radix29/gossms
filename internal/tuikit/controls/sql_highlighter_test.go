@@ -158,3 +158,117 @@ func TestSQLHighlighterUnterminatedBlockCommentDoesNotHang(t *testing.T) {
 	highlightLineWords(t, lines, 0)
 	highlightLineWords(t, lines, 1)
 }
+
+// memoCorpus is the document the memoization differential tests below run
+// over: every shape whose highlighting depends on carried-over block-comment
+// state, plus the ones that deliberately don't (a /* inside a string or after
+// a --, which this highlighter documents itself as not tracking — the point
+// is that both code paths agree, not that either is clever about it).
+var memoCorpus = [][]rune{
+	[]rune("SELECT 1"),
+	[]rune("SELECT /* closed on this line */ 2"),
+	[]rune("SELECT /* opens here"),
+	[]rune("still inside the comment"),
+	[]rune(""),
+	[]rune("*/ SELECT 3"),
+	[]rune("SELECT 4 -- line comment with /* inside it"),
+	[]rune("SELECT '/* in a string literal */' AS s"),
+	[]rune("*/ closes then /* reopens"),
+	[]rune("SELECT 5"),
+	[]rune("/**/ SELECT 6 /**/"),
+	[]rune("/* a */ /* b */ /* c"),
+	[]rune("*/"),
+	[]rune("SELECT @@ROWCOUNT, #tmp.x FROM #tmp"),
+	[]rune("SELECT 7 /* trailing, never closed"),
+	[]rune("dangling"),
+}
+
+// reference highlights one line the way the pre-memoization highlighter did:
+// a closure that has never been called takes startsInBlockComment's full
+// replay for every idx (the memo's fast path needs idx == lastIdx+1, and
+// lastIdx starts at -1), so this is the original implementation rather than a
+// second copy of it maintained alongside.
+func reference(lines [][]rune, idx int) []ColorRun {
+	return SQLHighlighter(&theme.Default)(lines, idx)
+}
+
+func sameRuns(a, b []ColorRun) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestSQLHighlighterMemoMatchesFullReplayInDrawOrder is the equivalence test
+// for the block-comment memo: one long-lived closure walked in Draw's own
+// strictly-increasing order — where every row but the first takes the O(1)
+// path — must colour every line exactly as the full replay does.
+func TestSQLHighlighterMemoMatchesFullReplayInDrawOrder(t *testing.T) {
+	hl := SQLHighlighter(&theme.Default)
+	for idx := range memoCorpus {
+		got := hl(memoCorpus, idx)
+		want := reference(memoCorpus, idx)
+		if !sameRuns(got, want) {
+			t.Errorf("line %d (%q): memoized = %v, full replay = %v",
+				idx, string(memoCorpus[idx]), got, want)
+		}
+	}
+}
+
+// TestSQLHighlighterMemoMatchesFullReplayOnJumps covers the access orders a
+// real Draw pass produces that aren't a simple walk: restarting at the top
+// (a redraw after an edit), resuming mid-document (the view scrolled), and
+// re-highlighting the same line twice in a row. Each must fall back to the
+// replay rather than reusing a state that doesn't belong to idx-1.
+func TestSQLHighlighterMemoMatchesFullReplayOnJumps(t *testing.T) {
+	orders := map[string][]int{
+		"restart at top":                        {0, 1, 2, 3, 0, 1, 2, 3},
+		"scrolled forward":                      {0, 1, 2, 8, 9, 10, 11},
+		"scrolled backward":                     {10, 11, 12, 2, 3, 4},
+		"same line repeated":                    {3, 3, 3, 4, 4},
+		"reverse":                               {15, 14, 13, 12, 11, 10},
+		"single jump into unterminated comment": {14, 15},
+	}
+	for name, order := range orders {
+		t.Run(name, func(t *testing.T) {
+			hl := SQLHighlighter(&theme.Default)
+			for _, idx := range order {
+				got := hl(memoCorpus, idx)
+				want := reference(memoCorpus, idx)
+				if !sameRuns(got, want) {
+					t.Errorf("line %d (%q): memoized = %v, full replay = %v",
+						idx, string(memoCorpus[idx]), got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestSQLHighlighterMemoSurvivesDocumentReplacement pins the SetText case the
+// memo's correctness argument rests on: Editor.SetText resets scrollRow to 0,
+// so the next pass starts at line 0 — where no line can already be inside a
+// block comment — and the state left over from the previous document is never
+// consulted. Highlighting a document that ends mid-comment and then starting a
+// different one at line 0 must not colour that new line 0 as a comment.
+func TestSQLHighlighterMemoSurvivesDocumentReplacement(t *testing.T) {
+	hl := SQLHighlighter(&theme.Default)
+	for idx := range memoCorpus {
+		hl(memoCorpus, idx)
+	}
+	replacement := [][]rune{
+		[]rune("SELECT 1"),
+		[]rune("SELECT 2"),
+	}
+	for idx := range replacement {
+		got := hl(replacement, idx)
+		want := reference(replacement, idx)
+		if !sameRuns(got, want) {
+			t.Errorf("replacement line %d: memoized = %v, full replay = %v", idx, got, want)
+		}
+	}
+}

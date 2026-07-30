@@ -55,6 +55,49 @@ note is invisible by the next session.
   selection has the same property), and the fix should change both together or
   neither.
 
+- **Editor indexes by rune, not display width, so a double-width character
+  smears the rest of its line.** `Editor` treats every rune as exactly one
+  screen cell: `scrollCol`, `cursorCol`, the draw loops in `editor_draw.go`,
+  `longestLineLen`, and `wrapSegments` all count runes, and `hScrollbar`'s doc
+  comment states the choice outright (it is what lets `core.HandleScrollbarDragH`
+  drive the bar directly, since track width and visible count are then the same
+  number). A CJK or emoji rune passed to `SetContent` occupies two terminal
+  cells, so everything after it on that line renders one column left of where
+  the editor thinks it is, and the cursor lands in the wrong place.
+
+  This contradicts `internal/tuikit/README.md`'s "`core.DisplayWidth`, never
+  `len()`" rule, which the rest of tuikit follows. Tabs — the common case — are
+  already handled: `expandTabs` runs on both `SetText` and paste, and
+  `indentWidth` spaces are what Tab inserts, so no literal tab reaches the draw
+  loop. Left unfixed because making the editor width-aware means reworking
+  cursor math, selection columns, horizontal scrolling and the wrap
+  segmenter together, and SQL identifiers are overwhelmingly ASCII. Recorded
+  2026-07-30 so it isn't rediscovered as a fresh bug; the constraint was only
+  in a code comment before.
+
+- **A `/*` inside a `--` line comment or a string literal poisons the syntax
+  highlighting of every line after it.** In
+
+  ```sql
+  SELECT 4 -- line comment with /* inside it
+  SELECT '/* in a string literal */' AS s
+  ```
+
+  line 2 renders entirely as a comment. `blockCommentToggleEnd`
+  (`controls/sql_highlighter.go`) toggles on every `/*`/`*/` regardless of
+  context, so the unmatched `/*` on line 1 leaves the scan "inside a comment"
+  forever. The highlighter's own main loop is smarter — it stops at a `--` and
+  skips string literals — but only for the line it is currently colouring.
+  Pre-existing; found 2026-07-30 by the differential test added with the
+  block-comment memo (`TestSQLHighlighterMemoMatchesFullReplayInDrawOrder`),
+  which is why the memo deliberately reproduces the *simplified* scan rather
+  than the main loop's more accurate one: the replay still runs on the first
+  row of every Draw pass, so a memo that disagreed with it would recolour a
+  line depending only on whether it was the first visible row. Unfixed because
+  the fix is to make the toggle scan lexer-aware, which is the same design
+  question as the bare-`GO`-in-a-block-comment item above and should be decided
+  with it.
+
 ## Carried forward from the 2026-07-30 two-repo review
 
 - **`ExecuteToSink` has no end-to-end unit test.** The rows-to-cells logic is
@@ -88,6 +131,74 @@ note is invisible by the next session.
   `detailBrowser.OnRefresh = a.refreshSelected`). Consistent today, since the
   panel only ever shows what the explorer selected; fragile if the panel ever
   drills independently of the tree. Noted 2026-07-30.
+
+## Follow-ons from the 2026-07-30 two-repo review
+
+- **`Table.DropColumn` fails on a column that any index references.** It drops
+  the column's default constraint first — SQL Server refuses otherwise, and
+  that is what its doc comment says it is for — but an index over the column
+  blocks the `ALTER TABLE ... DROP COLUMN` the same way, with "failed because
+  one or more objects access this column". Found 2026-07-30 while live-testing
+  the script-argument fix against `ubudock`, and confirmed **pre-existing and
+  not script-specific**: the real (non-`WithScript`) path fails identically.
+  Unfixed because "drop the indexes too" is a policy choice, not an oversight —
+  dropping a user's index as a side effect of dropping a column is exactly the
+  kind of thing SSMS asks about first. The honest options are to extend the
+  prologue to drop dependent indexes, or to detect them and return an error
+  naming what blocks the drop instead of passing SQL Server's through.
+
+- **The DataGrid cell viewer could now be syntax-highlighted and isn't.**
+  `Editor` wrap mode applies a `Highlighter` as of this review (it silently
+  ignored one before — `drawWrapped` never called it), so `DataGrid`'s
+  full-cell popup (`datagrid_overlay.go`, the one wrap-mode call site that
+  shows query data) could render an XML or JSON cell with `XMLHighlighter`
+  instead of as plain text. Not wired up because deciding *which* highlighter
+  a cell gets means sniffing its content or reading the column's SQL type
+  through to the grid, and neither is currently plumbed. The capability is
+  there whenever that's worth doing.
+
+  Check the cost before wiring it up. `styleAt` (`editor_draw.go`) is a
+  linear scan of the logical line's runs *per drawn column*, which is fine
+  against SQL's few coarse runs but not against a highlighter that returns
+  one run per token over a `varchar(max)` XML document — this is the call
+  site where that would land, and it compounds with the whole-document scan
+  below.
+
+- **`ExecProc` under `WithScript` is scripted but untested against a real
+  server.** `scriptExecProc` (`gosmo/procedure.go`) renders the EXEC form,
+  picking a DECLARE type per output parameter from the Go pointee type
+  (`scriptDeclType`). The mapping is asserted by unit test but has not been
+  run against SQL Server, and gossms has no `ExecProc` call site to exercise
+  it — a procedure with, say, a `DECIMAL` OUTPUT gets `SQL_VARIANT`, which
+  SQL Server may refuse. Worth a live check before anything depends on it.
+
+## Left open by the second 2026-07-30 two-repo review
+
+- **`Editor.buildVisualLines` still walks the whole document on every Draw.**
+  The allocations are gone (it builds into `Editor.vlScratch`/`segScratch`
+  rather than growing two slices from nil per call), but the *scan* is still
+  O(document), not O(viewport) — every logical line is re-segmented on every
+  event the app processes, however little of it is on screen. Draw needs only
+  rows `[scrollRow, scrollRow+H)`, and `visualIndexForCursor` only the
+  cursor's line. Not memoised because the honest version needs a
+  content-version counter, and `e.lines` is mutated at 26 sites across five
+  files: one missed bump renders stale text, which is a far worse failure
+  than the cost being fixed. The real fix is either a single mutation
+  chokepoint or lazy per-viewport segmentation. Raised 2026-07-30.
+
+- **The Databases folder still issues one round trip per database.** Unlike
+  the Tables folder — now two aggregate queries for the whole folder, see
+  below — the Databases folder can't be collapsed the same way: only
+  `TotalMB` comes from a server-wide view (`sys.master_files`), while
+  Data/Log/Unallocated/AvailLog all derive from `FILEPROPERTY`, which reports
+  on the *current* database only. So the fan-out there is a real constraint,
+  not an oversight. Recorded so it isn't re-derived.
+
+- **`formatValue`'s `case float32` is unreachable.** go-mssqldb returns
+  `float64` for both `REAL` and `FLOAT`, so only the `float64` arm ever runs.
+  Kept rather than deleted: it is correct if the driver ever narrows, and
+  `formatFloat` already takes the bit size. Noted so it isn't "discovered" as
+  live code.
 
 ## Reachable UI with no implementation behind it
 
@@ -130,7 +241,119 @@ the UI?"
   lines). Not urgent — CLAUDE.md's file-organization convention already names
   these.
 
+## Fixed by the second 2026-07-30 two-repo review (do not re-open)
+
+- ~~The mid-gesture wheel swallow was in one router of three~~ — fixed
+  2026-07-30. `App.handleMouse` swallowed a wheel tick arriving while
+  `gestureOwner` was armed, but `propsheet.PropertySheet.dragZone` and
+  `QueryPanel.dragZone` — the other two routers CLAUDE.md's
+  gesture-ownership rule names — still let one fall through to their
+  positional dispatch. The property sheet's was *reachable*: `App` checks
+  `topDialog()` before its own gesture check and never arms a gesture for a
+  click inside a dialog, so wheeling while dragging a form's scrollbar both
+  scrolled the form under the drag and moved the focus zone (`setZone` is
+  called on every positional branch). A/B-confirmed against the pre-fix
+  router. `QueryPanel`'s was latent — `App` arms `ownerPanels` for any press
+  in that column and ate the tick first — but is now pinned where the
+  invariant belongs. Both covered by tests that fail against the old form.
+
+- ~~A zero-row export printed two contradictory messages~~ — fixed
+  2026-07-30. The "Commands completed successfully." gate read
+  `res.RowsWritten == 0` as "no result set happened", which is wrong for an
+  *empty* one: `SELECT ... WHERE 1=0` to a file emitted both
+  `(0 row(s) written)` and `Commands completed successfully.`, while the same
+  query through `Execute` emitted neither. A `Result.sinkSets` counter now
+  answers the question the gate was actually asking. The decision moved into
+  `Result.shouldReportSuccess` to be unit-testable at all — `ExecuteToSink`
+  itself still can't be driven end to end by a fake driver (see
+  `stream_test.go`).
+
+- ~~A panicking detail-browser fan-out goroutine cached a permanently blank
+  row~~ — fixed 2026-07-30. The per-row `recoverPanic` added earlier that day
+  stopped the crash but not the consequence: `wg.Done` still fired, `wg.Wait`
+  returned, and `cacheOnly` cached the row still showing its `…` placeholder
+  — permanently, since reselecting the node is a cache hit that never
+  refetches. The recovery is now registered *after* `wg.Done` (so it runs
+  before it) and queues a `markFailed` closure that writes `N/A`. A/B-confirmed:
+  the old defer ordering caches `…`.
+
+- ~~The Tables detail folder issued two round trips per table~~ — fixed
+  2026-07-30. `Table.RowCount` + `Table.SpaceUsed` were fanned out
+  `maxRowFetchConcurrency` at a time, so a 300-table database cost 600
+  queries. gosmo gained `Database.TableRowCounts` and
+  `Database.TableSpaceUsedAll` — the same aggregates and joins, grouped by
+  `object_id` instead of filtered to one — and the folder now costs two
+  queries total. Verified live against `ubudock`: 0 mismatches against the
+  per-table forms across every table of every user database, and again every
+  round on a throwaway 300-table database, where the warmed best-of-three was
+  **32.9ms vs 380.1ms (11.6x)**. The throwaway database was dropped.
+
+  A table with no allocated pages is *absent* from either map rather than
+  present as zero; both call sites treat a missing key as zero.
+
+- ~~`bindScriptArgs` let a purely named-parameter statement script
+  unbound~~ — fixed 2026-07-30 in gosmo. The `sql.NamedArg` rejection lived
+  in `scriptLiteral`'s type switch, which is only reached for an argument
+  that has a matching `@pN` placeholder — and a named argument's placeholder
+  is `@name`, which `placeholderPat` doesn't match. A statement parameterised
+  purely by name would therefore have scripted with every parameter silently
+  unbound. No gosmo method binds one today (`ExecProc` renders its own EXEC
+  form), which is exactly why the guard had to move up front. Also:
+  `scriptLiteral([]byte{})` rendered `0x`, which is not a valid T-SQL binary
+  literal — now `0x00`.
+
 ## Closed since being recorded (verified 2026-07-30, do not re-open)
+
+- ~~Script Changes dropped every query parameter, producing scripts that
+  can't run~~ — fixed 2026-07-30 in gosmo. `Database.exec` captured only the
+  statement text under `WithScript` and discarded `args`, so the four
+  parameterised write methods (`Database.RenameTable`, `Index.Rename`,
+  `Table.DropColumn`, `Database.DropTable` with cascade) each scripted an
+  `@p1`/`@p2` the user's query window has no binding for — "Must declare the
+  scalar variable '@p1'". `bindScriptArgs` now substitutes literals into the
+  text (a `DECLARE` preamble would collide instead of compose: a collector's
+  statements are concatenated into one batch). `ExecProc` was worse — its real
+  path is an RPC whose statement text is the bare procedure name, so it
+  scripted an object name with no `EXEC` and no parameters; it now renders the
+  statement itself via `scriptExecProc`. Reachable from Index/Key Properties'
+  rename through `PropDialog.runScript`. An argument with no literal form is
+  now an error rather than a `%v` guess.
+
+- ~~gosmo objects mirrored a write back onto themselves even under
+  `WithScript`~~ — fixed 2026-07-30. 39 write methods assigned the new value
+  to the receiver (`idx.Name = newName`, `l.IsDisabled = true`, …) after an
+  exec that, in script mode, only recorded the statement — leaving the object
+  claiming state the server does not have, so the next call built from it
+  targeted a nonexistent object. All now go through `setIfApplied` (or, for
+  `JobStep.Update`'s multi-field block, an explicit `if !Scripting(ctx)`).
+  `Scripting` already documented this hazard for *callers*; gosmo now honours
+  it for its own objects.
+
+- ~~`float`/`real` columns displayed in scientific notation~~ — fixed
+  2026-07-30. `formatValue` had no float case, so Go's `%v` (`%g` rule)
+  rendered a float column holding 1000000 as `1e+06`. `formatFloat` now uses
+  plain decimal across the range SSMS shows plainly and an exponent only
+  outside it, keeping shortest-round-trip precision so a copied value pastes
+  back as the same float64.
+
+- ~~`RowSink.EndSet` was skipped when a set failed part-way~~ — fixed
+  2026-07-30. `streamResultSet` returned early on a scan/`Row` error, so
+  `EndSet` never ran for a set `BeginSet` had opened. Harmless for `csvSink`
+  (whose `Close` flushes anyway) but it made the interface's contract
+  "`EndSet` may not be called", which is not what it says. Now deferred, with
+  the scan/`Row` error preferred over `EndSet`'s.
+
+- ~~Results To File could start a run on a dead connection~~ — fixed
+  2026-07-30. `runQuery` checked `isConnected` before opening the save dialog
+  but the callback re-checked only `p.executing`, so disconnecting while the
+  dialog was up took `startRun` into `sc.Server.DB()` on a closed connection
+  (recovered by `recoverPanic`, but as a crash rather than a message).
+
+- ~~`Editor` wrap mode silently ignored its `Highlighter`~~ — fixed
+  2026-07-30. `drawWrapped` never called it, so setting both `SetWrapMode` and
+  `SetHighlighter` lost the highlighting without failing. Runs are now fetched
+  per *logical* line (not per visual row, which would also defeat the
+  highlighters' memo) and resolved per column through `styleAt`.
 
 - ~~Disconnecting a server root shortly after connecting leaves a real SQL
   session alive for up to 30s~~ — the completion-inventory load used
@@ -160,6 +383,12 @@ the UI?"
   `safego.go`), and `cmd/gossms` recovers at the top level. Reachable, not
   theoretical: go-mssqldb's `makeGoLangTypeName` panics on an unknown column
   type ID, which `scanResultSet` reaches for every column of every result set.
+
+  The original sweep missed the *inner* per-row fan-out goroutines in
+  `detail_browser_databases.go` and `detail_browser_tables.go` — covering the
+  outer loader goroutine is not enough, since a panic unwinds only the
+  goroutine it happens on. Both now carry their own `recoverPanic`; a nested
+  `go func()` needs one of its own, not its parent's.
 
 - ~~A password that failed to decrypt was destroyed by the next Save~~ —
   fixed 2026-07-30. `decryptPassword` now reports success, `Load` stashes the

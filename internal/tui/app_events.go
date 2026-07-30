@@ -257,8 +257,17 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	// Everything from the press that armed gestureOwner through to its
 	// release belongs to the region that claimed it, wherever the pointer
 	// has drifted to since — see the field's doc comment.
-	if a.gestureOwner != ownerNone && ev.Buttons() == tcell.Button1 {
-		a.routeGesture(ev)
+	//
+	// A wheel tick arriving mid-gesture is swallowed rather than routed: it
+	// isn't part of the gesture, and letting it through would hand it to
+	// whatever region the pointer has drifted over — wheeling while dragging
+	// the splitter scrolled the panels underneath it. Swallowing keeps the
+	// "nothing else may react until the release" invariant whole without
+	// inventing a wheel meaning for each owner.
+	if a.gestureOwner != ownerNone {
+		if ev.Buttons() == tcell.Button1 {
+			a.routeGesture(ev)
+		}
 		return
 	}
 

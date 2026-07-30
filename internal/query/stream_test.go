@@ -209,7 +209,34 @@ func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 // message loop needs the driver to populate MsgNext/MsgNextResultSet, and a
 // fake that ignores the retmsg out-param just ends the loop immediately,
 // producing a test that passes without exercising anything. The rows-to-cells
-// logic it adds is covered above via streamResultSet; the wiring
-// (Sets stays empty, RowsWritten totals the rows, the redundant "Commands
-// completed successfully." is suppressed) needs the live-server check
-// CLAUDE.md calls for.
+// logic it adds is covered above via streamResultSet; the wiring (Sets stays
+// empty, RowsWritten totals the rows) needs the live-server check CLAUDE.md
+// calls for. The one decision a unit test can still reach is which messages
+// the run ends with — see below.
+
+// TestShouldReportSuccessCountsSetsNotRows pins that an *empty* result set
+// counts as a result set on both paths. Reading RowsWritten as the stand-in
+// for "did a set happen" made a zero-row export print "(0 row(s) written)"
+// and "Commands completed successfully." together, while the same query
+// through Execute printed neither.
+func TestShouldReportSuccessCountsSetsNotRows(t *testing.T) {
+	cases := []struct {
+		name    string
+		res     Result
+		capture planCapture
+		want    bool
+	}{
+		{"no sets at all", Result{}, planCaptureNone, true},
+		{"a buffered set", Result{Sets: []ResultSet{{}}}, planCaptureNone, false},
+		{"an empty buffered set", Result{Sets: []ResultSet{{Columns: []string{"a"}}}}, planCaptureNone, false},
+		{"a streamed set with rows", Result{sinkSets: 1, RowsWritten: 5}, planCaptureNone, false},
+		{"a streamed set with no rows", Result{sinkSets: 1}, planCaptureNone, false},
+		{"an error", Result{Messages: []Message{{Text: "boom", IsError: true}}}, planCaptureNone, false},
+		{"estimated plan", Result{}, planCaptureEstimated, false},
+	}
+	for _, tc := range cases {
+		if got := tc.res.shouldReportSuccess(tc.capture); got != tc.want {
+			t.Errorf("%s: shouldReportSuccess = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

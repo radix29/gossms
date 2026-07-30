@@ -123,6 +123,15 @@ func (p *QueryPanel) runQuery(queryText string) {
 				p.app.setStatus("A query is already executing in this panel")
 				return
 			}
+			// Re-checked, not just carried over from above: the save dialog is
+			// modal but the connection isn't frozen behind it — a server
+			// disconnect (or Reconnect failing) between opening the dialog and
+			// confirming it would otherwise take startRun into
+			// sc.Server.DB() on a dead connection.
+			if !p.app.isConnected(p.conn) {
+				p.app.setStatus(p.notConnectedMessage())
+				return
+			}
 			p.startRun(queryText, path)
 		})
 		return

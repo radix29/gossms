@@ -16,27 +16,28 @@ type wrapSegment struct {
 	start, end int
 }
 
-// wrapSegments splits line into visual segments no wider than w runes,
-// breaking after the last space at or before the width limit when one
-// exists, otherwise hard-breaking exactly at the width limit (so a
-// single word longer than w still visibly progresses instead of
-// overflowing forever). Always returns at least one segment, even for
-// an empty line, so every logical line occupies at least one visual row.
-func wrapSegments(line []rune, w int) []wrapSegment {
+// wrapSegments appends line's visual segments to dst and returns it: no
+// segment wider than w runes, breaking after the last space at or before the
+// width limit when one exists, otherwise hard-breaking exactly at the width
+// limit (so a single word longer than w still visibly progresses instead of
+// overflowing forever). Always appends at least one segment, even for an
+// empty line, so every logical line occupies at least one visual row.
+//
+// It appends rather than returning a fresh slice so buildVisualLines can
+// build the whole document into one reused buffer — see Editor.vlScratch.
+func wrapSegments(dst []wrapSegment, line []rune, w int) []wrapSegment {
 	if w < 1 {
 		w = 1
 	}
 	n := len(line)
 	if n == 0 {
-		return []wrapSegment{{0, 0}}
+		return append(dst, wrapSegment{0, 0})
 	}
-	var segs []wrapSegment
 	start := 0
 	for start < n {
 		end := start + w
 		if end >= n {
-			segs = append(segs, wrapSegment{start, n})
-			break
+			return append(dst, wrapSegment{start, n})
 		}
 		breakAt := end
 		lastSpace := -1
@@ -48,10 +49,10 @@ func wrapSegments(line []rune, w int) []wrapSegment {
 		if lastSpace >= start {
 			breakAt = lastSpace + 1
 		}
-		segs = append(segs, wrapSegment{start, breakAt})
+		dst = append(dst, wrapSegment{start, breakAt})
 		start = breakAt
 	}
-	return segs
+	return dst
 }
 
 // visualLine pairs a wrap segment with the logical line (index into
@@ -61,17 +62,32 @@ type visualLine struct {
 	start, end int
 }
 
-// buildVisualLines flattens the whole document into wrap-mode visual
-// rows at the given content width. Recomputed fresh on every call, not
-// cached.
+// buildVisualLines flattens the whole document into wrap-mode visual rows at
+// the given content width. Recomputed fresh on every call — the result is
+// never cached across calls, only the buffers it is built in are.
+//
+// Two buffers, both reused: vlScratch holds the result, segScratch the
+// per-line segments wrapSegments appends into. Draw calls this once per
+// pass, HandleMouse twice more per wrap-mode event, and Draw runs on every
+// event the app processes — so building it from a nil slice meant regrowing
+// two slices from scratch, per event, over the *whole* document however
+// little of it is on screen. That is bounded by the document, not the
+// viewport: DataGrid's cell viewer (the wrap-mode call site that shows query
+// data) opens on a varchar(max)/XML value, where one logical line is
+// thousands of segments and only ~15 rows are visible.
+//
+// The returned slice aliases vlScratch and is invalidated by the next call.
+// Nothing may retain it — every caller uses it and drops it within the same
+// Draw or HandleMouse.
 func (e *Editor) buildVisualLines(w int) []visualLine {
-	var out []visualLine
+	e.vlScratch = e.vlScratch[:0]
 	for li, line := range e.lines {
-		for _, seg := range wrapSegments(line, w) {
-			out = append(out, visualLine{row: li, start: seg.start, end: seg.end})
+		e.segScratch = wrapSegments(e.segScratch[:0], line, w)
+		for _, seg := range e.segScratch {
+			e.vlScratch = append(e.vlScratch, visualLine{row: li, start: seg.start, end: seg.end})
 		}
 	}
-	return out
+	return e.vlScratch
 }
 
 // visualIndexForCursor returns the index into vls (from buildVisualLines)

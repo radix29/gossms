@@ -92,8 +92,19 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 	// belongs to the zone that claimed it, wherever the pointer has drifted
 	// to since — including outside the dialog, which is why this outranks
 	// ConsumeOutsideClick. See the field's doc comment.
-	if p.dragZone != zoneNone && ev.Buttons() == tcell.Button1 {
-		p.routeDrag(ev)
+	//
+	// A wheel tick arriving mid-gesture is swallowed rather than routed: it
+	// isn't part of the gesture, and letting it fall through hands it to the
+	// positional routing below, which both scrolls whatever the pointer has
+	// drifted over and calls setZone — so wheeling while dragging the form's
+	// scrollbar moved the focus zone out from under the drag. Same rule as
+	// App.handleMouse's gestureOwner (internal/tui/app_events.go); App can't
+	// cover this one, since it dispatches the top dialog before its own
+	// gesture check and never arms a gesture for a dialog click.
+	if p.dragZone != zoneNone {
+		if ev.Buttons() == tcell.Button1 {
+			p.routeDrag(ev)
+		}
 		return true
 	}
 	if p.ConsumeOutsideClick(ev) {

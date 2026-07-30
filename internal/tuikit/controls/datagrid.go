@@ -283,6 +283,13 @@ func (g *DataGrid) SelectedRow() int {
 	return g.selRow
 }
 
+// ScrollRow returns the index of the topmost visible data row. Read-only
+// view state — it moves on a wheel tick, a scrollbar drag, or a selection
+// scrolled into view, and there is deliberately no setter. Exists so a host
+// can assert that an event it meant to swallow never reached the grid; see
+// QueryPanel's mid-drag wheel handling.
+func (g *DataGrid) ScrollRow() int { return g.scrollRow }
+
 // SetSelectedRow sets the selected row (clamped) and scrolls it into view.
 // Does not fire OnSelectRow.
 func (g *DataGrid) SetSelectedRow(i int) {

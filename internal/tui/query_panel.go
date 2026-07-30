@@ -597,8 +597,20 @@ func (p *QueryPanel) HandleMouse(ev *tcell.EventMouse) bool {
 	// belongs to the sub-region that claimed it, wherever the pointer has
 	// drifted to since — including out of the panel's own columns, which is
 	// why this outranks the bounds check. See the field's doc comment.
-	if p.dragZone != qZoneNone && ev.Buttons() == tcell.Button1 {
-		return p.routeDrag(ev)
+	//
+	// A wheel tick arriving mid-gesture is swallowed rather than routed, same
+	// rule as App.handleMouse's gestureOwner and PropertySheet's dragZone: it
+	// isn't part of the gesture, and the positional routing below would hand
+	// it to whichever sub-region the pointer has drifted over. App's own
+	// gestureOwner (armed as ownerPanels for any press in this column) happens
+	// to swallow it one level up today, so this is belt-and-braces — but the
+	// invariant belongs to whoever owns the gesture, not to a caller that
+	// might stop arming one.
+	if p.dragZone != qZoneNone {
+		if ev.Buttons() == tcell.Button1 {
+			return p.routeDrag(ev)
+		}
+		return true
 	}
 	if mx < p.rect.X || mx >= p.rect.X+p.rect.W {
 		return false

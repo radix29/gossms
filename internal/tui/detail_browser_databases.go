@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"sync"
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
@@ -55,48 +54,31 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 		}
 		db.postPartial(app, seq, databasesFolderColumns, rows)
 
-		var wg sync.WaitGroup
-		sem := rowFetchSemaphore()
-		for i, d := range dbs {
-			wg.Add(1)
-			go func(i int, d *gosmo.Database) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				dCtx, dCancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-				defer dCancel()
-				space, spaceErr := d.SpaceUsedContext(dCtx)
-				// rows[i] is only ever written here, inside the posted
-				// closure, so every write lands on the UI goroutine — the
-				// same one Draw() runs on — rather than racing a redraw
-				// from another row's own completion.
-				//
-				// The write itself is unconditional: rows is this fetch's
-				// own slice, and cacheOnly caches it once every backfill
-				// has landed. Skipping the write when the user has since
-				// selected a different node (seq != db.seq) would cache a
-				// row still showing its "…" placeholder — permanently,
-				// since reselecting is then a cache hit that never
-				// refetches. Only the redraw is conditional.
-				app.postAndWake(func() {
-					if spaceErr == nil {
-						rows[i][3] = formatMB(space.TotalMB)
-						rows[i][4] = formatMB(space.DataMB)
-						rows[i][5] = formatMB(space.LogMB)
-						rows[i][6] = formatMB(space.UnallocatedMB)
-						rows[i][7] = formatMB(space.AvailLogMB)
-					} else {
-						for c := 3; c <= 7; c++ {
-							rows[i][c] = "N/A"
-						}
-					}
-					if seq == db.seq {
-						db.grid.RefreshColumnWidths()
-					}
-				})
-			}(i, d)
+		// Unlike the Tables folder, these sizes genuinely need one round trip
+		// per database: every figure but the total comes from FILEPROPERTY,
+		// which reports on the current database only, so there is no
+		// server-wide query to replace the fan-out with.
+		markFailed := func(i int) {
+			for c := 3; c <= 7; c++ {
+				rows[i][c] = "N/A"
+			}
 		}
-		wg.Wait()
+		db.backfillRows(app, sc, seq, len(dbs), "loading database size",
+			func(ctx context.Context, i int) func() {
+				space, err := dbs[i].SpaceUsedContext(ctx)
+				return func() {
+					if err != nil {
+						markFailed(i)
+						return
+					}
+					rows[i][3] = formatMB(space.TotalMB)
+					rows[i][4] = formatMB(space.DataMB)
+					rows[i][5] = formatMB(space.LogMB)
+					rows[i][6] = formatMB(space.UnallocatedMB)
+					rows[i][7] = formatMB(space.AvailLogMB)
+				}
+			}, markFailed)
+
 		db.cacheOnly(app, node, seq, databasesFolderColumns, rows, nil)
 	}()
 }

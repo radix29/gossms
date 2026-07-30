@@ -91,6 +91,19 @@ type Editor struct {
 	// change it" mode used by DataGrid's full-cell-content popup.
 	readOnly bool
 
+	// styleScratch is drawHighlighted's per-column style map, kept across
+	// calls instead of allocated per line. Draw runs on every event the app
+	// processes and calls drawHighlighted once per visible row, so a fresh
+	// slice per line was one allocation per row per keystroke. Valid only
+	// within a single drawHighlighted call — nothing may retain it.
+	styleScratch []tcell.Style
+
+	// vlScratch and segScratch are buildVisualLines' buffers, kept across
+	// calls for the same reason as styleScratch — see that function. Valid
+	// only until the next buildVisualLines call; nothing may retain either.
+	vlScratch  []visualLine
+	segScratch []wrapSegment
+
 	// Selection: selecting is true while a Shift+move- or mouse-drag-driven
 	// selection is active; selAnchor{Row,Col} is the fixed end,
 	// cursorRow/cursorCol is the moving end. A selection where anchor ==
@@ -172,6 +185,13 @@ func NewEditor(h Highlighter) *Editor {
 // SetHighlighter replaces the syntax highlighter — e.g. switching a query
 // editor between SQL and XML highlighting depending on which kind of file
 // was just opened into it. Pass nil to disable highlighting.
+//
+// Pass a Highlighter built for this Editor alone. Both built-in ones
+// (SQLHighlighter, XMLHighlighter) close over a cache of the previous line's
+// end-of-line comment state, so handing the same Highlighter value to two
+// Editors lets one document's carried-over block comment colour the other's.
+// Call the constructor per Editor rather than hoisting one into a package
+// variable.
 func (e *Editor) SetHighlighter(h Highlighter) { e.highlight = h }
 
 // SetGutterVisible shows or hides the line-number gutter. Editors default
@@ -198,6 +218,12 @@ func (e *Editor) gutterWidth() int {
 // KeyUp/KeyDown/PgUp/PgDn move between logical lines (actual newlines),
 // not wrapped visual rows; Left/Right/Home/End/click move the cursor
 // within a wrapped line.
+//
+// A Highlighter applies in wrap mode too: drawWrapped fetches runs per
+// logical line and resolves each column through styleAt, so the two settings
+// compose. (They didn't originally — a wrapped editor rendered as plain text,
+// silently, which was harmless only because no wrapping call site had set a
+// highlighter yet.)
 func (e *Editor) SetWrapMode(v bool) { e.wrapMode = v }
 
 // SetReadOnly makes the editor reject every mutating key — typed

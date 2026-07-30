@@ -1,6 +1,111 @@
 package tui
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+)
+
+// TestBackfillRowsFillsEveryRow is the ordinary path: every row's fetch runs
+// and its posted closure is queued by the time backfillRows returns, so a
+// cacheOnly posted afterwards drains last and sees a fully filled slice.
+func TestBackfillRowsFillsEveryRow(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	node := a.explorer.Selected()
+	a.detailBrowser = NewDetailBrowser("Details")
+	db := a.detailBrowser
+	db.seq = 1
+	db.pending[node] = 1
+
+	cols := []string{"Name", "Size"}
+	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
+
+	db.backfillRows(a, sc, 1, len(rows), "test backfill",
+		func(_ context.Context, i int) func() {
+			return func() { rows[i][1] = strings.Repeat("x", i+1) }
+		},
+		func(i int) { rows[i][1] = "N/A" })
+
+	db.cacheOnly(a, node, 1, cols, rows, nil)
+	a.drainPending()
+
+	cached, ok := db.cache[node]
+	if !ok {
+		t.Fatal("cacheOnly stored nothing")
+	}
+	for i, want := range []string{"x", "xx", "xxx"} {
+		if got := cached.rows[i][1]; got != want {
+			t.Errorf("cached row %d = %q, want %q", i, got, want)
+		}
+	}
+}
+
+// TestBackfillRowsMarksAPanickingRowFailed is the bug this helper exists to
+// hold shut. A panic in one row's fetch unwinds only that goroutine, and
+// wg.Done still fires — so wg.Wait returns and the caller caches rows. Without
+// the recovery queueing markFailed *before* wg.Done, that row is cached still
+// showing its "…" placeholder, permanently: reselecting the node is a cache
+// hit that never refetches. The other rows must be unaffected.
+func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	node := a.explorer.Selected()
+	a.detailBrowser = NewDetailBrowser("Details")
+	db := a.detailBrowser
+	db.seq = 1
+	db.pending[node] = 1
+
+	cols := []string{"Name", "Size"}
+	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
+
+	db.backfillRows(a, sc, 1, len(rows), "test backfill",
+		func(_ context.Context, i int) func() {
+			if i == 1 {
+				panic(errors.New("driver blew up on row 1"))
+			}
+			return func() { rows[i][1] = "ok" }
+		},
+		func(i int) { rows[i][1] = "N/A" })
+
+	db.cacheOnly(a, node, 1, cols, rows, nil)
+	a.drainPending()
+
+	cached, ok := db.cache[node]
+	if !ok {
+		t.Fatal("cacheOnly stored nothing")
+	}
+	for i, want := range []string{"ok", "N/A", "ok"} {
+		if got := cached.rows[i][1]; got != want {
+			t.Errorf("cached row %d = %q, want %q", i, got, want)
+		}
+	}
+	if strings.Contains(cached.rows[1][1], "…") {
+		t.Error("the panicking row was cached still showing its placeholder")
+	}
+}
+
+// TestBackfillRowsReportsThePanic pins that recovering to repair the row
+// doesn't also swallow the report — the status bar still says something went
+// wrong.
+func TestBackfillRowsReportsThePanic(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	a.detailBrowser = NewDetailBrowser("Details")
+	db := a.detailBrowser
+	db.seq = 1
+
+	rows := [][]string{{"a", "…"}}
+	db.backfillRows(a, sc, 1, 1, "loading the thing",
+		func(_ context.Context, _ int) func() { panic("boom") },
+		func(i int) { rows[i][1] = "N/A" })
+	a.drainPending()
+
+	if got := a.statusText; !strings.Contains(got, "loading the thing") {
+		t.Errorf("status = %q, want it to name the failed operation", got)
+	}
+}
 
 // The progressive Databases/Tables loaders backfill each row's slow columns
 // from its own goroutine, posting the write onto the UI goroutine and
@@ -10,9 +115,9 @@ import "testing"
 // still showing their "…" placeholder, permanently, since reselecting the
 // node is then a cache hit that never refetches.
 //
-// The closures are written inline in the loaders, so what's exercised here
-// is the seq/cache contract they're built on: a backfilled row must reach
-// the cache, and a cached result must be served back verbatim.
+// The fan-out itself is covered by the backfillRows tests above; what's
+// exercised here is the seq/cache contract it's built on: a backfilled row
+// must reach the cache, and a cached result must be served back verbatim.
 
 // TestBackfilledRowsReachCacheAfterSelectionMoved: rows mutated in place
 // after the selection moved on (seq advanced) must still be what cacheOnly

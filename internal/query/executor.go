@@ -10,6 +10,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +49,15 @@ type Result struct {
 	// across every result set. Zero for Execute and friends, which retain
 	// rows in Sets instead.
 	RowsWritten int
+
+	// sinkSets counts the result sets streamed to a RowSink, whether or not
+	// they held any rows. It is what the "Commands completed successfully."
+	// decision needs on the ExecuteToSink path: Sets is always empty there,
+	// so len(Sets) can't answer "did a result set happen", and RowsWritten
+	// can't either — an empty set writes no rows, and reading that as "no
+	// set" printed both "(0 row(s) written)" and "Commands completed
+	// successfully." for a query that plainly did return a result set.
+	sinkSets int
 
 	// PlanXML holds one complete <ShowPlanXML> document per statement/batch
 	// whose execution plan was captured, in execution order — the actual
@@ -95,6 +106,27 @@ func ErrorMessages(err error) []Message {
 	return []Message{{Text: err.Error(), IsError: true}}
 }
 func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{Text: s}) }
+
+// shouldReportSuccess reports whether the run ended with nothing else to say,
+// so the Messages pane gets SSMS's bare "Commands completed successfully."
+//
+// The test is "did any result set happen", not "did any row". Sets answers
+// that for Execute, sinkSets for ExecuteToSink — where Sets is always empty
+// because the rows went to the sink instead. Reading RowsWritten as the
+// stand-in (which it was) made a query that returned an *empty* result set
+// look like a script that returned none, so exporting one printed both
+// "(0 row(s) written)" and "Commands completed successfully.", while the
+// same query through Execute printed neither.
+//
+// planCaptureEstimated never really executes anything, so the notice would be
+// misleading there rather than merely redundant.
+//
+// Split out of executeWithSink to be testable at all: ExecuteToSink can't be
+// driven end to end by a fake driver (see stream_test.go), so this decision
+// is the part of that path a unit test can still reach.
+func (r *Result) shouldReportSuccess(capture planCapture) bool {
+	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
+}
 
 // planCapture selects whether execute additionally captures an execution
 // plan alongside a script's ordinary batches, and if so, in which SQL
@@ -155,6 +187,11 @@ func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script stri
 // that result set and is reported in Result.Messages like any other failure;
 // the rest of the script still runs, matching how Execute treats a failed
 // batch.
+//
+// EndSet is called for every set BeginSet was called for, including one
+// abandoned part-way by a Row error — so a sink that finalises anything per
+// set (a flush, a footer) can do it there and nowhere else. Its row count is
+// how many rows actually reached Row, not how many the set held.
 type RowSink interface {
 	BeginSet(columns []string) error
 	Row(cells []string) error
@@ -228,14 +265,7 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, m
 		if name, err := currentDatabase(ctx, conn); err == nil {
 			res.Database = name
 		}
-		// planCaptureEstimated never really executes anything — "Commands
-		// completed successfully" would be misleading there, not merely
-		// redundant, since nothing did.
-		// RowsWritten is checked alongside Sets: on the ExecuteToSink path
-		// Sets is always empty because the rows went to the sink instead, so
-		// without it a successful export reported "Commands completed
-		// successfully" underneath its own row counts.
-		if len(res.Sets) == 0 && res.RowsWritten == 0 && !res.HasErrors() && capture != planCaptureEstimated {
+		if res.shouldReportSuccess(capture) {
 			res.addNotice("Commands completed successfully.")
 		}
 	}
@@ -288,16 +318,20 @@ func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, e
 		return err
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= acquireConnRetryAttempts; attempt++ {
+	// Unbounded in form, bounded in fact: the attempt >= last check below is
+	// the only way out other than success, which is also what makes this
+	// total — a `attempt <= N` loop needs an unreachable return after it just
+	// to compile. >= rather than ==, so the bound holds by construction for
+	// any value of acquireConnRetryAttempts rather than by its happening to
+	// be 3; == would spin forever if it were ever set to 0.
+	for attempt := 1; ; attempt++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := conn.ExecContext(ctx, prologue); err != nil {
 			conn.Close() // dead — evicted from the pool via driver.Validator.IsValid
-			lastErr = err
-			if ctx.Err() != nil || attempt == acquireConnRetryAttempts || !gosmo.IsRetryable(err) {
+			if ctx.Err() != nil || attempt >= acquireConnRetryAttempts || !gosmo.IsRetryable(err) {
 				return nil, wrapErr(err)
 			}
 			select {
@@ -309,7 +343,6 @@ func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, e
 		}
 		return conn, nil
 	}
-	return nil, wrapErr(lastErr)
 }
 
 // currentDatabase reads DB_NAME() off conn — the same connection the
@@ -487,7 +520,7 @@ func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
 // the panel, so exporting a large table meant materialising all of it (twice
 // — once in Result.Sets, once in the grid) before a single byte reached the
 // file. Streaming holds one row at a time.
-func streamResultSet(rows *sql.Rows, sink RowSink) (int, error) {
+func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
 		return 0, err
@@ -495,19 +528,24 @@ func streamResultSet(rows *sql.Rows, sink RowSink) (int, error) {
 	if err := sink.BeginSet(sc.cols); err != nil {
 		return 0, err
 	}
-	n := 0
+	// Paired with BeginSet on every exit, so a scan or Row failure part-way
+	// through still closes the set out — see RowSink. Named returns, because
+	// the scan/Row error is the one worth reporting and EndSet's must only
+	// surface when nothing else already failed.
+	defer func() {
+		if endErr := sink.EndSet(n); endErr != nil && err == nil {
+			err = endErr
+		}
+	}()
 	for rows.Next() {
-		row, err := sc.scan(rows)
-		if err != nil {
+		var row []string
+		if row, err = sc.scan(rows); err != nil {
 			return n, err
 		}
-		if err := sink.Row(row); err != nil {
+		if err = sink.Row(row); err != nil {
 			return n, err
 		}
 		n++
-	}
-	if err := sink.EndSet(n); err != nil {
-		return n, err
 	}
 	return n, nil
 }
@@ -548,6 +586,7 @@ func scanNext(rows *sql.Rows, res *Result, maxRows int, sink RowSink) bool {
 	if sink != nil {
 		n, err := streamResultSet(rows, sink)
 		res.RowsWritten += n
+		res.sinkSets++
 		if err != nil {
 			res.addError(err)
 			return false
@@ -661,9 +700,31 @@ func formatValue(v any, isDecimalLike bool, layout string) string {
 			layout = defaultTimeLayout
 		}
 		return x.Format(layout)
+	case float64:
+		return formatFloat(x, 64)
+	case float32:
+		return formatFloat(float64(x), 32)
 	case string:
 		return x
 	default:
 		return fmt.Sprintf("%v", x)
 	}
+}
+
+// formatFloat renders a float/real column the way SSMS's grid does: plain
+// decimal across the range a person actually reads, scientific notation only
+// outside it.
+//
+// The default "%v" this replaces uses Go's %g rule, which switches to an
+// exponent as soon as the exponent reaches the number of significant digits —
+// so a float column holding 1000000 displayed as "1e+06". Shortest-round-trip
+// precision (-1) is kept either way: it is what makes the text reparse to the
+// same float64, which matters for a value copied out of the grid and pasted
+// back into a query.
+func formatFloat(f float64, bits int) string {
+	abs := math.Abs(f)
+	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {
+		return strconv.FormatFloat(f, 'e', -1, bits)
+	}
+	return strconv.FormatFloat(f, 'f', -1, bits)
 }

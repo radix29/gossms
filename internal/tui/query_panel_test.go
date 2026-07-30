@@ -269,6 +269,58 @@ func TestQueryPanelEditorDragDoesNotStealSplitterOrTabs(t *testing.T) {
 	}
 }
 
+// TestQueryPanelSwallowsWheelDuringADrag is the other half of that gesture
+// ownership: a wheel tick isn't part of the drag, so it must be swallowed
+// rather than fall through to the positional routing below, which would hand
+// it to whichever sub-region the pointer has drifted over — scrolling the
+// results grid out from under a text selection still in progress.
+//
+// App.handleMouse's gestureOwner happens to swallow this one level up today
+// (it arms ownerPanels for any press in this column), so this pins the
+// invariant where it belongs rather than relying on a caller to keep arming
+// one.
+func TestQueryPanelSwallowsWheelDuringADrag(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.editor.SetText("SELECT 1\nSELECT 2\nSELECT 3\n")
+	// Enough rows that the grid genuinely has somewhere to scroll to —
+	// newTestResult's one-row sets would make the assertion below vacuous.
+	big := &query.Result{Sets: []query.ResultSet{{Columns: []string{"c"}}}}
+	for i := 0; i < 200; i++ {
+		big.Sets[0].Rows = append(big.Sets[0].Rows, []string{"v"})
+	}
+	qp.setResult(big, false)
+	qp.setActiveTab(0)
+
+	editorRect := qp.splitter.FirstRect()
+	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, editorRect.Y, tcell.Button1, tcell.ModNone))
+	if qp.dragZone != qZoneEditor {
+		t.Fatalf("dragZone = %v after pressing in the editor, want qZoneEditor", qp.dragZone)
+	}
+	scrollBefore := qp.results.ScrollRow()
+
+	// Wheel, mid-drag, down over the results grid. Several ticks, so the
+	// assertion doesn't depend on one being enough to move a short grid.
+	for i := 0; i < 5; i++ {
+		if !qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, qp.tabRect.Y+3, tcell.WheelDown, tcell.ModNone)) {
+			t.Fatal("HandleMouse returned false for a wheel tick during a drag; it must consume it")
+		}
+	}
+	if got := qp.results.ScrollRow(); got != scrollBefore {
+		t.Errorf("results grid scrolled %d -> %d during an editor drag, want it unchanged", scrollBefore, got)
+	}
+	if qp.dragZone != qZoneEditor {
+		t.Errorf("dragZone = %v after a mid-drag wheel, want it still qZoneEditor", qp.dragZone)
+	}
+
+	// The release ends the gesture, so the swallow is scoped to it.
+	qp.HandleMouse(tcell.NewEventMouse(editorRect.X+10, qp.tabRect.Y+3, tcell.ButtonNone, tcell.ModNone))
+	if qp.dragZone != qZoneNone {
+		t.Errorf("dragZone = %v after the release, want qZoneNone", qp.dragZone)
+	}
+}
+
 // TestQueryPanelResultsClickDoesNotAccumulateBlockSelection pins down that
 // QueryPanel's HandleMouse forwards release events to the results grid, not
 // only to the splitter/editor/messages: without that, DataGrid's

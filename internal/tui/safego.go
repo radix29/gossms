@@ -36,10 +36,16 @@ func (a *App) safego(what string, fn func()) {
 // goroutine that can't be expressed as a bare func() — call it as
 // `defer a.recoverPanic("what this was doing")`.
 func (a *App) recoverPanic(what string) {
-	r := recover()
-	if r == nil {
-		return
+	if r := recover(); r != nil {
+		a.reportPanic(r, what)
 	}
+}
+
+// reportPanic logs r with a stack and puts it on the status bar. Split out
+// of recoverPanic for a deferred recovery that has repair work of its own to
+// do first — see backfillRows, whose recovery must fill the row it abandoned
+// before reporting, or the row is cached blank forever.
+func (a *App) reportPanic(r any, what string) {
 	stack := string(debug.Stack())
 	log.Printf("panic in %s: %v\n%s", what, r, stack)
 	msg := fmt.Sprintf("Internal error in %s: %v — see the log for details", what, r)

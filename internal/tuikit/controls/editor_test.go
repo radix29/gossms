@@ -861,3 +861,108 @@ func TestEditorSelectionDragIsNotStolenByHScrollbar(t *testing.T) {
 	}
 	e.HandleMouse(tcell.NewEventMouse(contentX+20, barY, tcell.ButtonNone, tcell.ModNone))
 }
+
+// -- wrap-mode highlighting -------------------------------------------------
+
+// recordingScreen captures what a Draw painted, so a test can assert on the
+// style of a given cell rather than only that Draw didn't panic.
+type recordingScreen struct {
+	tcell.Screen
+	w, h  int
+	cells map[[2]int]tcell.Style
+}
+
+func newRecordingScreen(w, h int) *recordingScreen {
+	return &recordingScreen{w: w, h: h, cells: map[[2]int]tcell.Style{}}
+}
+func (s *recordingScreen) Size() (int, int) { return s.w, s.h }
+func (s *recordingScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
+	s.cells[[2]int{x, y}] = style
+}
+func (s *recordingScreen) ShowCursor(x, y int) {}
+
+// markerHighlighter colours exactly the rune range [start,end) of every line
+// with a style nothing else in the editor uses, so a test can find it.
+func markerHighlighter(start, end int, st tcell.Style) Highlighter {
+	return func(lines [][]rune, idx int) []ColorRun {
+		return []ColorRun{{Start: start, Len: end - start, Style: st}}
+	}
+}
+
+// TestEditorWrapModeAppliesHighlighter pins that wrap mode and a Highlighter
+// compose. drawWrapped originally never called the highlighter at all, so a
+// wrapped editor rendered as plain text — silently, since setting both is not
+// an error.
+func TestEditorWrapModeAppliesHighlighter(t *testing.T) {
+	marker := tcell.StyleDefault.Foreground(tcell.ColorFuchsia).Underline(true)
+
+	// Columns 30-34 of the logical line fall on the *second* visual row once
+	// the line wraps, which is the case a per-visual-row implementation that
+	// forgot to offset by vl.start would get wrong.
+	e := NewEditor(markerHighlighter(30, 35, marker))
+	e.SetWrapMode(true)
+	e.SetGutterVisible(false)
+	e.SetText("aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd")
+	e.SetBounds(0, 0, 22, 6)
+
+	s := newRecordingScreen(40, 10)
+	e.Draw(s)
+
+	found := false
+	for cell, st := range s.cells {
+		if st == marker {
+			found = true
+			if cell[1] == 0 {
+				t.Errorf("highlighted cell at %v is on the first visual row; columns 30-34 wrap onto a later one", cell)
+			}
+		}
+	}
+	if !found {
+		t.Error("no cell carried the highlighter's style — wrap mode ignored the Highlighter")
+	}
+}
+
+// TestEditorWrapModeSelectionBeatsHighlighter: selection styling is applied
+// after the highlighter in non-wrap mode, and has to stay that way in wrap
+// mode, or selecting highlighted text stops looking selected.
+func TestEditorWrapModeSelectionBeatsHighlighter(t *testing.T) {
+	marker := tcell.StyleDefault.Foreground(tcell.ColorFuchsia).Underline(true)
+
+	e := NewEditor(markerHighlighter(0, 5, marker))
+	e.SetWrapMode(true)
+	e.SetGutterVisible(false)
+	e.SetText("aaaaaaaaaa bbbbbbbbbb")
+	e.SetBounds(0, 0, 22, 6)
+	e.SelectAll()
+
+	s := newRecordingScreen(40, 10)
+	e.Draw(s)
+
+	if st, ok := s.cells[[2]int{0, 0}]; ok && st == marker {
+		t.Error("column 0 kept the highlighter style inside a selection; selection must win")
+	}
+}
+
+func TestStyleAt(t *testing.T) {
+	def := tcell.StyleDefault
+	a := tcell.StyleDefault.Foreground(tcell.ColorRed)
+	b := tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	runs := []ColorRun{{Start: 2, Len: 3, Style: a}, {Start: 4, Len: 2, Style: b}}
+
+	cases := []struct {
+		ci   int
+		want tcell.Style
+	}{
+		{0, def},
+		{2, a},
+		{3, a},
+		{4, b}, // overlapping runs: the later one wins, as drawHighlighted's map does
+		{5, b},
+		{6, def},
+	}
+	for _, tc := range cases {
+		if got := styleAt(runs, tc.ci, def); got != tc.want {
+			t.Errorf("styleAt(ci=%d) = %v, want %v", tc.ci, got, tc.want)
+		}
+	}
+}
