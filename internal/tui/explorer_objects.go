@@ -128,10 +128,11 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	}
 	out := make([]*explorerNode, 0, len(indexes))
 	for _, idx := range indexes {
-		kind := "Nonclustered"
-		if idx.IsClustered {
-			kind = "Clustered"
-		}
+		// The index's own type, not just clustered-vs-not: a columnstore,
+		// XML or spatial index read as "Nonclustered" under the old
+		// IsClustered test, and a clustered columnstore index — which gosmo
+		// does report as clustered — read as "Nonclustered" too.
+		kind := indexTypeName(idx.Type)
 		unique := ""
 		if idx.IsUnique {
 			unique = ", Unique"

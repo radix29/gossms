@@ -330,6 +330,7 @@ func (a *App) buildUI() {
 
 	a.panels = layout.NewPanelManager()
 	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
+	a.detailBrowser.OnRefresh = a.refreshSelected
 	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
 

@@ -383,7 +383,9 @@ func (a *App) showObjectExplorerDetails() {
 		return ok
 	})
 	if idx < 0 {
-		idx = a.panels.AddPanel(NewDetailBrowser("Object Explorer Details"))
+		a.detailBrowser = NewDetailBrowser("Object Explorer Details")
+		a.detailBrowser.OnRefresh = a.refreshSelected
+		idx = a.panels.AddPanel(a.detailBrowser)
 	}
 	a.panels.SetActive(idx)
 	a.focusPanels()

@@ -75,20 +75,15 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 			triggerRow := propsheet.Radio("Trigger", []string{"SQL Server error number", "Severity level"}, triggerIdx)
 			errorField := propsheet.Int("Error number", int64(al.ErrorNumber), 0, 2147483647, "")
 			severityField := propsheet.Int("Severity", int64(al.Severity), 0, 25, "")
+			// Searched against dbItems, not dbNames: a database that no
+			// longer exists then falls back to the leading <all databases>
+			// rather than to whichever database sorts first.
 			dbItems := append([]string{allDatabasesItem}, dbNames...)
-			dbIdx := 0
-			if al.DatabaseName != "" {
-				dbIdx = 1 + indexOf(dbNames, al.DatabaseName)
-			}
-			dbRow := propsheet.Select("Database", dbItems, dbIdx)
+			dbRow := propsheet.Select("Database", dbItems, indexOf(dbItems, al.DatabaseName))
 			delayField := propsheet.Int("Delay between responses", int64(al.DelayBetweenResponses/time.Second), 0, 86400, "sec")
 			messageField := propsheet.Text("Notification message", al.NotificationMessage, 50)
 			catItems := append([]string{noneItem}, catNames...)
-			catIdx := 0
-			if al.Category != "" {
-				catIdx = 1 + indexOf(catNames, al.Category)
-			}
-			categoryRow := propsheet.Select("Category", catItems, catIdx)
+			categoryRow := propsheet.Select("Category", catItems, indexOf(catItems, al.Category))
 
 			f := propsheet.NewForm(
 				propsheet.Section("Alert identity"),
@@ -216,11 +211,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 				jobNames[i] = j.Name
 			}
 			jobItems := append([]string{noneItem}, jobNames...)
-			jobIdx := 0
-			if al.JobName != "" {
-				jobIdx = 1 + indexOf(jobNames, al.JobName)
-			}
-			responseJobSelect := propsheet.Select("Response job", jobItems, jobIdx)
+			responseJobSelect := propsheet.Select("Response job", jobItems, indexOf(jobItems, al.JobName))
 
 			f := propsheet.NewForm(
 				propsheet.Section("Operators to e-mail on this alert"),

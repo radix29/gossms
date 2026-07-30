@@ -110,6 +110,7 @@ func (a *App) cutSelection() {
 // writes to the terminal.
 func (a *App) writeClipboard(text string) {
 	go func() {
+		defer a.recoverPanic("writing to the clipboard")
 		if osClipboardWrite(text) {
 			return
 		}
@@ -139,6 +140,7 @@ func (a *App) pasteFromClipboard() {
 		return
 	}
 	go func() {
+		defer a.recoverPanic("reading the clipboard")
 		text, ok := osClipboardRead()
 		a.postAndWake(func() {
 			if ok {

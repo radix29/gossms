@@ -17,7 +17,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() },
 			Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
 		{Divider: true, Icon: "|"},
-		{Icon: "≈⎇ Est. Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
+		{Icon: "Est. Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},
 		{Icon: actualPlanToggleIcon(a.actualPlanEnabled), Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }},
 		{Divider: true, Icon: "|"},

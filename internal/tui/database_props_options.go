@@ -57,7 +57,7 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 			containmentItems := []string{"NONE", "PARTIAL"}
 			cursorDefaultItems := []string{"GLOBAL", "LOCAL"}
 			userAccessItems := []string{"MULTI_USER", "SINGLE_USER", "RESTRICTED_USER"}
-			compatItems := []string{"100", "110", "120", "130", "140", "150", "160", "170"}
+			compatItems := compatItemsFor(int(d.CompatibilityLevel()))
 			snapshotIsolationOn := o.SnapshotIsolation == "ON" || o.SnapshotIsolation == "ENABLED"
 
 			compatRow := propsheet.Select("Compatibility level", compatItems,

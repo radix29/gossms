@@ -43,6 +43,7 @@ func (a *App) checkForUpdates() {
 	a.updateDialog.ShowChecking(version.Version)
 
 	go func() {
+		defer a.recoverPanic("the update check")
 		rel, err := fetchLatestRelease()
 		a.postAndWake(func() {
 			a.updateDialog.ShowResult(version.Version, rel, err)

@@ -152,6 +152,7 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 	sessionCtx := d.ctx
 
 	go func() {
+		defer d.app.recoverPanic("loading a properties page")
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		form, apply, err := load(ctx)
@@ -175,6 +176,7 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 // Callers needing a value out of fn capture it in an outer variable.
 func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
 	go func() {
+		defer d.app.recoverPanic("a properties page action")
 		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
 		defer cancel()
 		err := fn(ctx)
@@ -273,6 +275,7 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	d.SetMessage("", false)
 
 	go func() {
+		defer d.app.recoverPanic("applying property changes")
 		var runErr error
 		for _, fn := range fns {
 			if runErr = fn(runCtx); runErr != nil {

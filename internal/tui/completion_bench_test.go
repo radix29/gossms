@@ -30,12 +30,38 @@ func benchScript(n int) [][]rune {
 	return out
 }
 
-// The completion provider re-flattens and re-tokenizes the buffer from
-// offset 0 on every keystroke while the popup is open (see
-// sqlCompletionCandidates). These benchmarks measure what that costs as the
-// script grows, with the cursor at the end — the worst case, since the
-// prefix scan runs from the start of the buffer to the cursor.
+// The completion provider re-flattens and re-scans the buffer from offset 0
+// on every keystroke while the popup is open (see sqlCompletionCandidates).
+// These benchmarks measure what that costs as the script grows, with the
+// cursor at the end — the worst case, since the prefix scan runs from the
+// start of the buffer to the cursor.
+//
+// This is the production path: scanCompletionPrefix lexes the prefix without
+// materialising tokens, then tokenizes only the cursor's statement. Compare
+// against BenchmarkCompletionPrefixScanReference_* below, which is the
+// tokenize-everything-then-discard approach it replaced.
 func benchmarkPrefixScan(b *testing.B, stmts int) {
+	lines := benchScript(stmts)
+	row := len(lines) - 2
+	col := len(lines[row])
+	var reuse []rune // QueryPanel.completionBuf, kept across keystrokes
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reuse = flattenLinesInto(reuse, lines)
+		upTo := offsetForCursor(lines, row, col)
+		scanCompletionPrefix(lines, reuse, row, upTo)
+	}
+}
+
+func BenchmarkCompletionPrefixScan_100Stmts(b *testing.B)  { benchmarkPrefixScan(b, 100) }
+func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan(b, 1000) }
+
+// benchmarkPrefixScanReference measures the approach scanCompletionPrefix
+// replaced, so the difference stays visible and a regression toward it is
+// obvious. referenceScanCompletionPrefix also backs the differential tests
+// in completion_prefix_scan_test.go.
+func benchmarkPrefixScanReference(b *testing.B, stmts int) {
 	lines := benchScript(stmts)
 	row := len(lines) - 2
 	col := len(lines[row])
@@ -44,12 +70,16 @@ func benchmarkPrefixScan(b *testing.B, stmts int) {
 	for i := 0; i < b.N; i++ {
 		buf := flattenLines(lines)
 		upTo := offsetForCursor(lines, row, col)
-		tokenizeSQLPrefix(buf, upTo)
+		referenceScanCompletionPrefix(lines, buf, row, upTo)
 	}
 }
 
-func BenchmarkCompletionPrefixScan_100Stmts(b *testing.B)  { benchmarkPrefixScan(b, 100) }
-func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan(b, 1000) }
+func BenchmarkCompletionPrefixScanReference_100Stmts(b *testing.B) {
+	benchmarkPrefixScanReference(b, 100)
+}
+func BenchmarkCompletionPrefixScanReference_1000Stmts(b *testing.B) {
+	benchmarkPrefixScanReference(b, 1000)
+}
 
 // sqlKeywordCanonical uppercases into a fixed-size stack array, so a keyword
 // longer than it would be silently unrecognisable — clause detection and

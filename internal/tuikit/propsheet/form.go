@@ -54,6 +54,10 @@ func NewForm(rows ...Row) *Form {
 // Add appends more rows.
 func (f *Form) Add(rows ...Row) { f.rows = append(f.rows, rows...) }
 
+// Rows returns the form's rows in order, for a caller that needs to find one
+// after the form is built.
+func (f *Form) Rows() []Row { return f.rows }
+
 // SetBounds positions the form's content area.
 func (f *Form) SetBounds(x, y, w, h int) { f.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 

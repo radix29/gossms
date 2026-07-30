@@ -24,6 +24,7 @@ var tablesFolderColumns = []string{
 // mirroring loadDatabasesFolderDetails' per-row backfill pattern.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
+		defer app.recoverPanic("loading table details")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 

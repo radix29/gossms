@@ -88,6 +88,62 @@ func (r *noteRow) MinDrawHeight() int  { return 1 }
 func (r *noteRow) SetDrawHeight(h int) { r.drawHeight = h }
 
 // ---------------------------------------------------------------------------
+// HintRow — non-focusable one-line message a handler sets at runtime
+// ---------------------------------------------------------------------------
+
+// HintRow is a single line of text a page's own button handlers write to, for
+// telling the user why an action they just took did nothing: an empty name, a
+// duplicate entry, nothing selected in the grid. Blank (and invisible) until
+// something sets it.
+//
+// It exists because those handlers had no way to say anything. A page is built
+// by a plain function with no App or dialog in scope, so an Add that hit a
+// duplicate could only `return`, leaving a button that looks broken. A row is
+// also the better place for the message than the status bar behind the dialog:
+// it sits next to the control the user just used.
+//
+// Not focusable, so it never takes a Tab stop, and it reserves its line
+// whether or not it has text — a hint appearing and disappearing must not
+// reflow the rows around it.
+type HintRow struct {
+	text    string
+	isError bool
+	x, y, w int
+}
+
+// Hint returns an empty HintRow.
+func Hint() *HintRow { return &HintRow{} }
+
+// Set writes an advisory message (Warning colour).
+func (r *HintRow) Set(text string) { r.text, r.isError = text, false }
+
+// SetError writes a failure message (Error colour).
+func (r *HintRow) SetError(text string) { r.text, r.isError = text, true }
+
+// Clear blanks the row — call it from a handler that succeeded, so a stale
+// complaint doesn't outlive the thing it was complaining about.
+func (r *HintRow) Clear() { r.text, r.isError = "", false }
+
+// Text returns the current message, "" when blank.
+func (r *HintRow) Text() string { return r.text }
+
+func (r *HintRow) Height(w int) int   { return 1 }
+func (r *HintRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
+func (r *HintRow) Focusable() bool    { return false }
+func (r *HintRow) Draw(s tcell.Screen, focused bool) {
+	if r.text == "" {
+		return
+	}
+	p := theme.Active()
+	fg := p.Warning
+	if r.isError {
+		fg = p.Error
+	}
+	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(fg)
+	core.DrawTextClipped(s, r.x, r.y, r.w, st, r.text)
+}
+
+// ---------------------------------------------------------------------------
 // StaticRow — focusable, read-only label/value pair
 // ---------------------------------------------------------------------------
 
@@ -322,7 +378,9 @@ type SelectRow struct {
 func Select(label string, items []string, selected int) *SelectRow {
 	dd := widgets.NewDropDown(core.PadRight(label, LabelWidth), items, selectControlWidth)
 	dd.SetSelected(selected)
-	return &SelectRow{dd: dd, orig: selected}
+	// orig read back from the widget, not taken from selected — see
+	// SetSelected on why an out-of-range index must not become the baseline.
+	return &SelectRow{dd: dd, orig: dd.Selected()}
 }
 
 // Selected returns the selected item's index.
@@ -332,7 +390,16 @@ func (r *SelectRow) Selected() int { return r.dd.Selected() }
 func (r *SelectRow) Value() string { return r.dd.Value() }
 
 // SetSelected sets the selection by index and resets the dirty baseline.
-func (r *SelectRow) SetSelected(i int) { r.dd.SetSelected(i); r.orig = i }
+//
+// The baseline comes from reading the widget back, not from i: DropDown
+// silently ignores an out-of-range index, and storing the rejected i would
+// leave Selected() != orig with no way for the user to reconcile them — a
+// permanently dirty row that reports unsaved changes forever and makes Apply
+// issue a write nobody asked for.
+func (r *SelectRow) SetSelected(i int) {
+	r.dd.SetSelected(i)
+	r.orig = r.dd.Selected()
+}
 
 func (r *SelectRow) Height(w int) int   { return 1 }
 func (r *SelectRow) Layout(x, y, w int) { r.dd.SetBounds(x, y) }
@@ -365,14 +432,19 @@ type RadioRow struct {
 func Radio(label string, options []string, selected int) *RadioRow {
 	rb := widgets.NewRadioBox(label, options)
 	rb.SetSelected(selected)
-	return &RadioRow{rb: rb, options: options, orig: selected}
+	return &RadioRow{rb: rb, options: options, orig: rb.Selected()}
 }
 
 // Selected returns the selected option's index.
 func (r *RadioRow) Selected() int { return r.rb.Selected() }
 
-// SetSelected sets the selection by index and resets the dirty baseline.
-func (r *RadioRow) SetSelected(i int) { r.rb.SetSelected(i); r.orig = i }
+// SetSelected sets the selection by index and resets the dirty baseline,
+// reading the baseline back from the widget for the reason SelectRow's own
+// SetSelected documents.
+func (r *RadioRow) SetSelected(i int) {
+	r.rb.SetSelected(i)
+	r.orig = r.rb.Selected()
+}
 
 func (r *RadioRow) Height(w int) int   { return r.rb.Height() }
 func (r *RadioRow) Layout(x, y, w int) { r.rb.SetBounds(x, y) }
@@ -420,6 +492,10 @@ func (r *ButtonsRow) Layout(x, y, w int) {
 	}
 }
 func (r *ButtonsRow) Focusable() bool { return len(r.buttons) > 0 }
+
+// Buttons returns the row's buttons, for a host that needs to reach one by
+// label after the row is built.
+func (r *ButtonsRow) Buttons() []*widgets.Button { return r.buttons }
 func (r *ButtonsRow) Draw(s tcell.Screen, focused bool) {
 	for i, b := range r.buttons {
 		b.Focus(focused && i == r.focus)

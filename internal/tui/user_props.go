@@ -8,7 +8,6 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -28,7 +27,7 @@ func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
 		pageUserGeneral(sc, dbName, namePtr),
-		pageUserOwnedSchemas(sc, dbName, namePtr),
+		pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"),
 		pageUserMembership(sc, dbName, namePtr),
 		pageDatabasePrincipalSecurables(sc, dbName, namePtr),
 		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
@@ -230,132 +229,6 @@ func loginDisabledStr(u *gosmo.User) string {
 		return "n/a"
 	}
 	return boolStr(u.LoginDisabled)
-}
-
-func pageUserOwnedSchemas(sc *db.ServerConn, dbName string, userName *string) propPage {
-	return propPage{
-		title: "Owned Schemas",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-			if err != nil {
-				return nil, nil, err
-			}
-			allSchemas, err := d.SchemasContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			users, err := d.UsersContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			roles, err := d.DatabaseRolesContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			ownerNames := principalNames(users, roles)
-
-			type schemaEdit struct {
-				schema      *gosmo.Schema
-				objectCount int
-				origOwner   string
-				newOwner    string
-			}
-			var edits []*schemaEdit
-			for _, s := range allSchemas {
-				if s.Owner != *userName {
-					continue
-				}
-				count, err := s.ObjectCountContext(ctx)
-				if err != nil {
-					return nil, nil, err
-				}
-				edits = append(edits, &schemaEdit{schema: s, objectCount: count, origOwner: s.Owner, newOwner: s.Owner})
-			}
-
-			rowsFor := func() [][]string {
-				rows := make([][]string, len(edits))
-				for i, e := range edits {
-					rows[i] = []string{e.schema.Name, e.newOwner}
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Schema", "Owner"}, rowsFor())
-			grid.SetCellCursor(true)
-
-			nameStatic := propsheet.Static("Name", "")
-			ownerStatic := propsheet.Static("Current owner", "")
-			objCountStatic := propsheet.Static("Object count", "")
-			transferRow := propsheet.Select("Transfer owner to", ownerNames, 0)
-
-			selected := -1
-			commitCurrent := func() {
-				if selected >= 0 && selected < len(edits) {
-					edits[selected].newOwner = transferRow.Value()
-				}
-			}
-			syncFromSelection := func(row int) {
-				commitCurrent()
-				selected = row
-				if row < 0 || row >= len(edits) {
-					nameStatic.SetValue("")
-					ownerStatic.SetValue("")
-					objCountStatic.SetValue("")
-					return
-				}
-				e := edits[row]
-				nameStatic.SetValue(e.schema.Name)
-				ownerStatic.SetValue(e.origOwner)
-				objCountStatic.SetValue(strconv.Itoa(e.objectCount))
-				transferRow.SetSelected(indexOf(ownerNames, e.newOwner))
-			}
-			grid.OnSelectRow = syncFromSelection
-			if len(edits) > 0 {
-				syncFromSelection(0)
-			}
-
-			gridRow := propsheet.NewGridRow(grid, 8)
-			gridRow.DirtyFn = func() bool {
-				for _, e := range edits {
-					if e.newOwner != e.origOwner {
-						return true
-					}
-				}
-				return false
-			}
-			gridRow.RevertFn = func() {
-				for _, e := range edits {
-					e.newOwner = e.origOwner
-				}
-				grid.SetData([]string{"Schema", "Owner"}, rowsFor())
-				if selected >= 0 && selected < len(edits) {
-					transferRow.SetSelected(indexOf(ownerNames, edits[selected].newOwner))
-				}
-			}
-
-			f := propsheet.NewForm(
-				propsheet.Section("Schemas owned by this user"),
-				gridRow,
-				propsheet.Section("Selected schema"),
-				nameStatic, ownerStatic, objCountStatic, transferRow,
-				propsheet.Note("Changing schema ownership can affect permission chaining and deployment scripts."),
-			)
-
-			apply := func(ctx context.Context) error {
-				commitCurrent()
-				for _, e := range edits {
-					if e.newOwner == e.origOwner {
-						continue
-					}
-					if err := e.schema.ChangeOwnerContext(ctx, e.newOwner); err != nil {
-						return err
-					}
-				}
-				return nil
-			}
-			return f, apply, nil
-		},
-	}
 }
 
 func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) propPage {

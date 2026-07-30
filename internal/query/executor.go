@@ -43,6 +43,11 @@ type Result struct {
 	// it couldn't be read (e.g. the query was cancelled first).
 	Database string
 
+	// RowsWritten totals the rows handed to a RowSink (see ExecuteToSink),
+	// across every result set. Zero for Execute and friends, which retain
+	// rows in Sets instead.
+	RowsWritten int
+
 	// PlanXML holds one complete <ShowPlanXML> document per statement/batch
 	// whose execution plan was captured, in execution order — the actual
 	// plan from ExecuteWithPlan, or the estimated (compile-only) plan from
@@ -140,7 +145,38 @@ func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script stri
 	return execute(ctx, db, database, script, 0, planCaptureEstimated)
 }
 
+// RowSink receives a script's result rows as they are scanned, instead of
+// them being retained in Result.Sets. Results To File is the caller: it
+// writes each row to a CSV file and keeps none, so an export is bounded by
+// the file rather than by memory.
+//
+// BeginSet is called once per result set before its first row, EndSet once
+// after its last with the number of rows written. A returned error aborts
+// that result set and is reported in Result.Messages like any other failure;
+// the rest of the script still runs, matching how Execute treats a failed
+// batch.
+type RowSink interface {
+	BeginSet(columns []string) error
+	Row(cells []string) error
+	EndSet(rows int) error
+}
+
+// ExecuteToSink behaves like Execute but streams every row to sink instead of
+// accumulating it in Result.Sets, which comes back empty. Row counts are
+// reported per set in Result.Messages, and Result.RowsWritten totals them.
+//
+// There is no row cap: the point of this path is to write everything the
+// query returned. Nothing is retained, so an unbounded result set costs
+// unbounded file, not unbounded memory.
+func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink) *Result {
+	return executeWithSink(ctx, db, database, script, 0, planCaptureNone, sink)
+}
+
 func execute(ctx context.Context, db *sql.DB, database, script string, maxRows int, capture planCapture) *Result {
+	return executeWithSink(ctx, db, database, script, maxRows, capture, nil)
+}
+
+func executeWithSink(ctx context.Context, db *sql.DB, database, script string, maxRows int, capture planCapture, sink RowSink) *Result {
 	start := time.Now()
 	res := &Result{}
 
@@ -183,7 +219,7 @@ func execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 		if ctx.Err() != nil {
 			break
 		}
-		runBatch(ctx, conn, b, res, maxRows)
+		runBatch(ctx, conn, b, res, maxRows, sink)
 	}
 
 	if ctx.Err() != nil {
@@ -195,7 +231,11 @@ func execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 		// planCaptureEstimated never really executes anything — "Commands
 		// completed successfully" would be misleading there, not merely
 		// redundant, since nothing did.
-		if len(res.Sets) == 0 && !res.HasErrors() && capture != planCaptureEstimated {
+		// RowsWritten is checked alongside Sets: on the ExecuteToSink path
+		// Sets is always empty because the rows went to the sink instead, so
+		// without it a successful export reported "Commands completed
+		// successfully" underneath its own row counts.
+		if len(res.Sets) == 0 && res.RowsWritten == 0 && !res.HasErrors() && capture != planCaptureEstimated {
 			res.addNotice("Commands completed successfully.")
 		}
 	}
@@ -287,7 +327,7 @@ func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
 // early returns — later statements in the batch may still have produced
 // output, and SSMS reports it all. maxRows is passed straight to
 // scanResultSet — see Execute's doc comment.
-func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, maxRows int) {
+func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, maxRows int, sink RowSink) {
 	retmsg := &sqlexp.ReturnMessage{}
 	rows, err := conn.QueryContext(ctx, sqlText, retmsg)
 	if err != nil {
@@ -309,7 +349,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
-			if !scanNext(rows, res, maxRows) {
+			if !scanNext(rows, res, maxRows, sink) {
 				// scanNext gave up part-way through the result set. The
 				// message loop can't advance past one with rows still
 				// pending, so finish reading it here. Only on this path:
@@ -328,6 +368,87 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 	}
 }
 
+// rowScanner holds the per-column scan targets and formatting decisions for
+// one result set, so a row can be read and rendered without redoing the
+// column-type analysis on every one. Shared by scanResultSet (which retains
+// rows) and streamResultSet (which writes them straight out).
+type rowScanner struct {
+	cols        []string
+	vals        []any
+	ptrs        []any
+	guids       []*mssql.NullUniqueIdentifier
+	decimalLike []bool
+	layouts     []string
+}
+
+// newRowScanner analyses the current result set's columns once.
+//
+// uniqueidentifier columns scan as a raw 16-byte []byte by default, which
+// would render as hex in the wrong byte order. Scan them into
+// NullUniqueIdentifier instead so they display as the canonical dashed GUID
+// (and NULL survives), matching SSMS.
+//
+// decimal/numeric/money/smallmoney columns also scan as []byte, but unlike
+// uniqueidentifier the driver already decodes them into the literal ASCII
+// digit string (e.g. "0.070312") rather than a binary blob — formatValue must
+// render that []byte as a plain string, not hex. (numeric reports itself as
+// DECIMAL; the driver maps both to the same name.)
+//
+// Every date/time type scans as a time.Time, so only the column type and its
+// declared scale say how much of it SSMS actually shows — a date column has no
+// time part to print, a time column no date part, and a datetime2(3) three
+// fractional digits rather than seven. layouts carries that per column; see
+// timeLayout.
+func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	sc := &rowScanner{
+		cols:        cols,
+		vals:        make([]any, len(cols)),
+		ptrs:        make([]any, len(cols)),
+		guids:       make([]*mssql.NullUniqueIdentifier, len(cols)),
+		decimalLike: make([]bool, len(cols)),
+		layouts:     make([]string, len(cols)),
+	}
+	for i := range cols {
+		typeName := types[i].DatabaseTypeName()
+		switch typeName {
+		case "UNIQUEIDENTIFIER":
+			sc.guids[i] = &mssql.NullUniqueIdentifier{}
+			sc.ptrs[i] = sc.guids[i]
+			continue
+		case "DECIMAL", "MONEY", "SMALLMONEY":
+			sc.decimalLike[i] = true
+		}
+		_, scale, scaleKnown := types[i].DecimalSize()
+		sc.layouts[i] = timeLayout(typeName, int(scale), scaleKnown)
+		sc.ptrs[i] = &sc.vals[i]
+	}
+	return sc, nil
+}
+
+// scan reads the current row and renders it as display strings.
+func (sc *rowScanner) scan(rows *sql.Rows) ([]string, error) {
+	if err := rows.Scan(sc.ptrs...); err != nil {
+		return nil, err
+	}
+	row := make([]string, len(sc.cols))
+	for i := range sc.cols {
+		if g := sc.guids[i]; g != nil {
+			row[i] = formatGUID(*g)
+		} else {
+			row[i] = formatValue(sc.vals[i], sc.decimalLike[i], sc.layouts[i])
+		}
+	}
+	return row, nil
+}
+
 // scanResultSet reads the current result set of rows into string cells, up
 // to maxRows of them (0 or negative means unlimited) — reporting whether
 // the result set actually had more than that. rows.Next() is still called
@@ -338,70 +459,57 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 // before the next message can be read — still behaves correctly, and a
 // huge SELECT can't grow one ResultSet past what the cap allows.
 func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
-	cols, err := rows.Columns()
+	sc, err := newRowScanner(rows)
 	if err != nil {
 		return ResultSet{}, false, err
 	}
-	types, err := rows.ColumnTypes()
-	if err != nil {
-		return ResultSet{}, false, err
-	}
-	rs := ResultSet{Columns: cols}
-
-	// uniqueidentifier columns scan as a raw 16-byte []byte by default, which
-	// would render as hex in the wrong byte order. Scan them into
-	// NullUniqueIdentifier instead so they display as the canonical dashed
-	// GUID (and NULL survives), matching SSMS.
-	//
-	// decimal/numeric/money/smallmoney columns also scan as []byte, but
-	// unlike uniqueidentifier the driver already decodes them into the
-	// literal ASCII digit string (e.g. "0.070312") rather than a binary
-	// blob — formatValue must render that []byte as a plain string, not hex.
-	//
-	// Every date/time type scans as a time.Time, so only the column type
-	// and its declared scale say how much of it SSMS actually shows — a
-	// date column has no time part to print, a time column no date part,
-	// and a datetime2(3) three fractional digits rather than seven.
-	// layouts carries that per column; see timeLayout.
-	vals := make([]any, len(cols))
-	ptrs := make([]any, len(cols))
-	guids := make([]*mssql.NullUniqueIdentifier, len(cols))
-	decimalLike := make([]bool, len(cols))
-	layouts := make([]string, len(cols))
-	for i := range cols {
-		typeName := types[i].DatabaseTypeName()
-		switch typeName {
-		case "UNIQUEIDENTIFIER":
-			guids[i] = &mssql.NullUniqueIdentifier{}
-			ptrs[i] = guids[i]
-			continue
-		case "DECIMAL", "MONEY", "SMALLMONEY":
-			decimalLike[i] = true
-		}
-		_, scale, scaleKnown := types[i].DecimalSize()
-		layouts[i] = timeLayout(typeName, int(scale), scaleKnown)
-		ptrs[i] = &vals[i]
-	}
+	rs := ResultSet{Columns: sc.cols}
 	truncated := false
 	for rows.Next() {
 		if maxRows > 0 && len(rs.Rows) >= maxRows {
 			truncated = true
 			continue // keep draining the stream without scanning/retaining
 		}
-		if err := rows.Scan(ptrs...); err != nil {
+		row, err := sc.scan(rows)
+		if err != nil {
 			return rs, truncated, err
-		}
-		row := make([]string, len(cols))
-		for i := range cols {
-			if g := guids[i]; g != nil {
-				row[i] = formatGUID(*g)
-			} else {
-				row[i] = formatValue(vals[i], decimalLike[i], layouts[i])
-			}
 		}
 		rs.Rows = append(rs.Rows, row)
 	}
 	return rs, truncated, nil
+}
+
+// streamResultSet writes the current result set straight to sink, retaining
+// nothing, and returns how many rows it wrote.
+//
+// This is what makes Results To File independent of result size: the
+// buffering path above holds every row as a [][]string for the lifetime of
+// the panel, so exporting a large table meant materialising all of it (twice
+// — once in Result.Sets, once in the grid) before a single byte reached the
+// file. Streaming holds one row at a time.
+func streamResultSet(rows *sql.Rows, sink RowSink) (int, error) {
+	sc, err := newRowScanner(rows)
+	if err != nil {
+		return 0, err
+	}
+	if err := sink.BeginSet(sc.cols); err != nil {
+		return 0, err
+	}
+	n := 0
+	for rows.Next() {
+		row, err := sc.scan(rows)
+		if err != nil {
+			return n, err
+		}
+		if err := sink.Row(row); err != nil {
+			return n, err
+		}
+		n++
+	}
+	if err := sink.EndSet(n); err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // showplanColumnName is the fixed column name SQL Server has used for
@@ -420,7 +528,7 @@ func isShowplanResultSet(cols []string) bool {
 // Errors are recorded on res rather than returned — a batch keeps running
 // after one, the way SSMS does — and reported as a false return, meaning
 // the set was abandoned with rows still pending for the caller to drain.
-func scanNext(rows *sql.Rows, res *Result, maxRows int) bool {
+func scanNext(rows *sql.Rows, res *Result, maxRows int, sink RowSink) bool {
 	cols, err := rows.Columns()
 	if err != nil {
 		res.addError(err)
@@ -435,6 +543,16 @@ func scanNext(rows *sql.Rows, res *Result, maxRows int) bool {
 		if xml != "" {
 			res.PlanXML = append(res.PlanXML, xml)
 		}
+		return true
+	}
+	if sink != nil {
+		n, err := streamResultSet(rows, sink)
+		res.RowsWritten += n
+		if err != nil {
+			res.addError(err)
+			return false
+		}
+		res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
 		return true
 	}
 	rs, truncated, err := scanResultSet(rows, maxRows)

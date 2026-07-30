@@ -23,6 +23,7 @@ const childFetchTimeout = 30 * time.Second
 func (a *App) loadChildren(node *explorerNode) {
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
 	go func() {
+		defer a.recoverPanic("loading Object Explorer children")
 		children := a.fetchChildren(ctx, node)
 		a.postAndWake(func() {
 			if !node.endLoad(seq) {
@@ -55,6 +56,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 		return
 	}
 	go func() {
+		defer a.recoverPanic("refreshing the SQL Server Agent node")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		status, err := sc.Server.AgentInfoContext(ctx)
@@ -329,6 +331,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
 
 	go func() {
+		defer a.recoverPanic("scripting an object")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
@@ -386,6 +389,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 
 	run := func() {
 		go func() {
+			defer a.recoverPanic("changing a database's online state")
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			d := sc.Server.Database(dbName)

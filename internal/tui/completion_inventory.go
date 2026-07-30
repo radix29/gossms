@@ -229,6 +229,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
 	go func() {
+		defer a.recoverPanic("loading the autocomplete catalog")
 		cat, err := srv.Database(database).CatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
@@ -348,6 +349,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
 	go func() {
+		defer a.recoverPanic("loading the system autocomplete catalog")
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {

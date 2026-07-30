@@ -18,7 +18,100 @@ and callbacks (`OnExpand`, `OnSelect`, button `Action`s).
 This means `tuikit` could be extracted into its own module and reused by a
 completely different tcell application without modification.
 
+**This is an invariant, not just an observation: `internal/tuikit` must not
+import `internal/tui` or `gosmo`.** Its only permitted external dependencies
+are `tcell` and `displaywidth`. Check it with:
+
+```bash
+go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
+  grep '\.' | grep -v gossms | sort -u    # non-stdlib, non-repo imports
+```
+
+That must print exactly three lines — `github.com/gdamore/tcell/v3`,
+`github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
+Anything else is a layering violation.
+
+## Which document owns what
+
+Five documents, and the same rule stated twice will eventually be stated two
+different ways. Before adding to any of them:
+
+| Document | Authoritative for |
+|---|---|
+| `CLAUDE.md` | Agent-facing working rules: verification standards, coding conventions, the short enforceable form of each idiom |
+| `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
+| `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
+| `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
+| `docs/journal.md` | Dated archive of what was built and how bugs were found. Never required reading |
+
+`README.md` is user-facing and owns features and the keyboard reference. When
+a rule needs to appear in two places, the second one summarizes in a sentence
+and links here — it does not restate the reasoning.
+
+## How a query runs
+
+The path from keystroke to result grid, which touches four packages:
+
+1. **`internal/db`** (`connection.go`) owns a connection's *lifetime*.
+   `Connect` builds the DSN from a `config.Connection` and returns a
+   `ServerConn` wrapping a `gosmo.Server`. Its `ctx`, exposed by
+   `Context()` and cancelled by `Close()`, is the parent every background
+   load scoped to that connection must derive from — closing the underlying
+   `*sql.DB` alone does not cancel a query already in flight, so a load
+   rooted at `context.Background()` keeps a real SQL Server session alive
+   after disconnect.
+2. **`internal/query`** (`executor.go`) owns *execution*. `Execute` /
+   `ExecuteWithPlan` / `ExecuteEstimatedPlan` take a `*sql.DB`, check out a
+   single `*sql.Conn` via `acquireConn` (which retries a transient liveness
+   failure 3 times with linear backoff, mirroring gosmo's own `retry.go`),
+   optionally wrap the run in `SET STATISTICS XML ON` / `SET SHOWPLAN_XML
+   ON`, then split the script on `GO` with `go-mssqldb/batch` and run each
+   batch through `runBatch`. One `Result` accumulates every result set,
+   every message, and the captured plan XML across all batches.
+3. **The message stream** is where `sqlexp` matters: result sets and
+   informational messages interleave on one connection, and `runBatch`
+   walks them together. A speculative extra `rows.Next()` here consumes the
+   return message and the grid comes up empty — verify against a live
+   server, not just a unit test.
+4. **`internal/showplan`** owns *parsing*, and nothing else — no TUI and no
+   database imports, so it is testable from a file. `ParseAll` turns the
+   captured ShowPlanXML documents into one navigable `Plan` of operator
+   nodes, which `internal/tui/planview` renders as the Plan/Tree/XML tabs.
+
+`query_panel_exec.go` is the only caller: it runs the executor on a
+background goroutine and reports the `Result` back with `postAndWake`.
+
+## Threading model
+
+**All UI and widget state belongs to the UI goroutine** — the one running
+`App.Run()`. `tuikit` does no locking anywhere (see
+`internal/tuikit/README.md`), so touching a widget from any other goroutine
+is a data race, not merely bad style.
+
+Background work follows one shape:
+
+- Derive a context from `ServerConn.Context()`, never `context.Background()`
+  — see the lifetime rule above. For cancellable, user-visible work use
+  `App.startTask(parent, label)`, which returns a `*Task` and a derived
+  context, registers it for the Background Tasks dialog, and gives the user
+  a Cancel button.
+- Do the work off-thread. Touch nothing the UI owns.
+- Report back with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
+  `postProgress` and `postTaskDone` are the task-registry wrappers around it
+  and follow the identical rule.
+
+`Run()`'s loop clears `wakePending`, drains queued callbacks, syncs the
+dialog stack, handles one event, then re-syncs and draws. The two documented
+idioms below are consequences of this model: `postAndWake` is how work
+crosses back onto the UI goroutine, and the `mouseDragging`/gesture rules
+govern how a single input event is routed once it is already there.
+
 ## Package map
+
+`internal/tui` is a flat package, so every file is listed individually with
+its purpose; `internal/tuikit` and `internal/tui/planview` are summarized by
+directory and documented in their own README and `doc.go`. A file absent
+from a summarized directory has not been omitted — look there directly.
 
 ```
 gossms/
@@ -44,6 +137,7 @@ gossms/
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
 │       │
+│       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, selectedServerConn helper
@@ -64,6 +158,7 @@ gossms/
 │       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
 │       │
+│       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
 │       ├── query_panel_exec.go   # Execute/Execute Selection/Cancel, plan-capture wiring
 │       ├── query_panel_tabs.go   # result-set tabs + Messages tab
@@ -76,12 +171,14 @@ gossms/
 │       ├── completion_scope.go      # FROM-clause/alias resolution and statement-boundary detection
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
 │       │
+│       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
 │       ├── detail_browser_server.go     # Server node: version/edition/paths/CPU/memory, then NUMA + disk volumes
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
 │       ├── detail_browser_logins.go     # Logins folder
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
 │       │
+│       │  ── SQL Server Agent ──
 │       ├── agent_common.go              # shared Job/Alert/Notify enum formatters, refreshExplorerNode, generic async enable/disable/delete plumbing for every Agent entity
 │       ├── agent_menu.go                # Agent node context menus (Start/Stop/Enable/Disable/Delete/View History) + New Job/Schedule/Alert/Operator entry points
 │       ├── agent_explorer.go            # loads the Agent subtree: Jobs (User/System split)/Schedules/Alerts/Operators/administration reports folder
@@ -102,6 +199,7 @@ gossms/
 │       ├── new_alert_dialog.go          # New Alert: General (alert definition) + Response (operators to e-mail) pages
 │       ├── new_operator_dialog.go       # New Operator, a single General page
 │       │
+│       │  ── Standalone dialogs ──
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
 │       ├── options_dialog.go     # Tools > Options — icon style, cell/row limits, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
@@ -113,6 +211,7 @@ gossms/
 │       ├── update_dialog.go      # UpdateDialog — shows installed vs. latest release
 │       ├── properties_dialog.go  # About + Object Dependencies (wraps dialogs.PropertiesDialog, the flat viewer)
 │       │
+│       │  ── Properties dialogs (propsheet-based) ──
 │       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply)
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind all six New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
@@ -148,25 +247,59 @@ gossms/
 │       ├── key_props.go          # Primary/Unique Key Properties, reusing most of Index Properties' pages
 │       ├── fk_props.go           # Foreign Key Properties: single read-only General page
 │       │
+│       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
 │       ├── new_database_pages.go  # New Database's page definitions
 │       ├── new_login_dialog.go    # New Login — newObjectDialog config, runs CREATE LOGIN
 │       ├── new_login_pages.go     # New Login's page definitions
 │       │
+│       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
 │       ├── backup_dialog.go      # Back Up Database dialog — options form + in-place progress
 │       ├── restore_dialog.go     # Restore Database dialog — options form, backup-set inspection
 │       └── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
 ```
 
-## Adding a new dialog
+## Common tasks
 
-Construct it in `App.buildUI` and append it to `a.allDialogs` — that's the
-only App-level change needed. `dialog_stack.go`'s `syncDialogStack` notices
-it the moment its own `Show()` (or `Prompt()`/`ShowXxx()`) flips it
-visible, pushes it to the top of the z-order, and routes it all input
-until it closes itself; draw order, key routing, and mouse routing all
-follow from the stack without touching `app.go` or `app_events.go` again.
+### Adding a new dialog
+
+Give `App` a typed field for it, construct it in `App.buildUI`, and append
+it to `a.allDialogs` — those three are the whole App-level change.
+`dialog_stack.go`'s `syncDialogStack` notices it the moment its own `Show()`
+(or `Prompt()`/`ShowXxx()`) flips it visible, pushes it to the top of the
+z-order, and routes it all input until it closes itself; draw order, key
+routing, and mouse routing all follow from the stack without touching
+`app.go` or `app_events.go` again. For the widget itself, follow the
+`ModalDialog` skeleton in `internal/tuikit/README.md`.
+
+### Adding a Properties page
+
+A `PropDialog` is a `[]propPage` (`prop_dialog.go`): each entry is a title
+plus a `load` func that builds the page's rows and closes over pointers to
+them, so Apply can diff what changed. Pages load lazily on first visit. Add
+a builder alongside the object's existing `*_props*.go` files and register
+it in that object's page slice — `server_props.go`'s page registration is
+the clearest example, and the 35 `*_props*.go` files all follow it. A page
+that renames its object marks `propPage.renames` so its apply runs last, and
+must thread the name as a `*string` shared across pages, or every later page
+uses the stale one.
+
+### Adding an Object Explorer node type
+
+Add the `NodeType` and its icon/name in `tree_node.go`, then register a
+`childLoader` for it in `explorer_loaders.go`'s `childLoaders` map. The
+loader receives a `loaderCtx` and the node, and returns child nodes; it runs
+off the UI goroutine, so it obeys the threading model above. Group the
+loader itself with its peers (`explorer_databases.go`, `explorer_objects.go`,
+`explorer_security.go`, `explorer_management.go`).
+
+### Adding a menu or toolbar item
+
+Both are built in `menu.go` / `toolbar.go` and both gate on an `Enabled`
+predicate — `Enabled: func() bool { return a.selectedServerConn() != nil }`
+is the common shape. An item that can be invoked when its action is
+impossible must be gated, not left to no-op silently.
 
 ## The mouseDragging idiom
 
@@ -251,22 +384,16 @@ needs a redraw.
 
 ## Building & testing
 
-```bash
-go build -o gossms ./cmd/gossms   # build
-go run ./cmd/gossms                # run without building a binary
-go test ./...                      # test
-gofmt -w .                         # format in place
-go vet ./...                       # vet
-```
+The toolchain commands and the automatic version resolution are in
+`CLAUDE.md` ("Build & verify") — plain `go`, no Makefile, nothing
+hand-edited before a release.
 
-No Makefile — plain `go` toolchain only.
-
-Version/Commit/Date (`internal/version`) resolve automatically, in priority
-order: `-ldflags -X` (set by `.github/workflows/release.yml` from the pushed
-git tag) → `debug.BuildInfo.Main.Version` (populated by `go install
-.../cmd/gossms@<tag>`) → the literal `"(devel)"` default for a plain
-`git clone && go build`/`go run`. Nothing here is hand-edited before a
-release.
+**`go test ./...` passing is not verification.** The 79 test files are worth
+keeping green, but nearly every real bug in this project was caught by
+driving the built binary against a real SQL Server, not by a test. CLAUDE.md's
+"Green tests are not verification" section is authoritative for how to do
+that — the tmux harness for TUI behavior, disposable objects for database
+behavior, A/B against a pre-fix binary for anything subtle.
 
 ## Developing against a local gosmo checkout
 
@@ -303,7 +430,12 @@ tagged module before tagging gossms itself.
 
 ## Dependencies
 
+All five direct requires in `go.mod`:
+
 | Package | Purpose |
 |---------|---------|
 | [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal UI rendering, keyboard & mouse events |
 | [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects (databases, tables, scripts…) |
+| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver itself, plus `batch` for `GO` splitting — `internal/query` |
+| [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
+| [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of only two external modules `tuikit` imports |

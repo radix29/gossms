@@ -153,6 +153,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	sessionCtx := d.ctx
 	fetch := d.fetch
 	go func() {
+		defer d.app.recoverPanic("loading a new-object page")
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		pf, err := fetch(ctx, sc)
@@ -225,6 +226,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	d.SetMessage("", false)
 
 	go func() {
+		defer d.app.recoverPanic("creating the object")
 		var runErr error
 		for _, fn := range fns {
 			if fn == nil {

@@ -230,16 +230,24 @@ func buildSecurablesMatrix(
 		availableLabels = []string{"(none available)"}
 	}
 	addSelect := propsheet.Select("Add securable", availableLabels, 0)
+	hint := propsheet.Hint()
 	addBtn := widgets.NewButton("Add", func() {
 		if len(available) == 0 {
+			hint.Set("Every securable this principal can be granted on is already listed.")
 			return
 		}
 		s := available[addSelect.Selected()]
-		for _, existingS := range securables {
+		for i, existingS := range securables {
 			if existingS.key() == s.key() {
-				return // already present — edit its Permissions row instead
+				// Already present — say so and move to its row rather than
+				// leaving the button looking broken.
+				hint.Set(s.label() + " is already listed — edit its permissions below.")
+				securableGrid.SetSelectedRow(i)
+				loadSecurable(i)
+				return
 			}
 		}
+		hint.Clear()
 		securables = append(securables, s)
 		securableGrid.SetData([]string{"Securable", "Type"}, securableRows())
 		securableGrid.SetSelectedRow(len(securables) - 1)
@@ -274,6 +282,7 @@ func buildSecurablesMatrix(
 		securablesRow,
 		addSelect,
 		propsheet.Buttons(addBtn),
+		hint,
 		permSection,
 		permsRow,
 		propsheet.Note("Space/Enter (or click) on State cycles Grant → Deny → (none). Tab switches between the securable list and its permissions. Pick a securable from the dropdown and click Add to give it its own row."),

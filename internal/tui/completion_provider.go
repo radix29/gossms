@@ -45,15 +45,15 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 		return nil, col
 	}
 
-	buf := flattenLines(lines)
+	p.completionBuf = flattenLinesInto(p.completionBuf, lines)
+	buf := p.completionBuf
 	upTo := offsetForCursor(lines, row, col)
-	tokens, state, semiStart, quoteStart := tokenizeSQLPrefix(buf, upTo)
 
-	// Scope every lookup below to the current statement — a table named in
-	// an earlier ';'- or GO-separated statement must not leak into this
-	// one's FROM-scope/clause detection (see statementStartOffset).
-	batchStart := statementStartOffset(lines, row, semiStart)
-	tokens = tokensFrom(tokens, batchStart)
+	// Scoped to the current statement — a table named in an earlier ';'- or
+	// GO-separated statement must not leak into this one's FROM-scope/clause
+	// detection (see scanCompletionPrefix and statementStartOffset).
+	pre := scanCompletionPrefix(lines, buf, row, upTo)
+	tokens, state, batchStart, quoteStart := pre.tokens, pre.state, pre.batchStart, pre.quoteStart
 
 	var qualifier, prefix string
 	var replaceFrom int

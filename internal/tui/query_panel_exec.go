@@ -71,9 +71,28 @@ func (p *QueryPanel) Reconnect() {
 	p.app.connectForQueryPanel(p, old, p.database, nil)
 }
 
+// clearResults empties the results area before a new run starts, so the
+// previous run's grid, tabs, messages and plan don't sit there looking
+// current for however long the query takes. setResult repopulates all of
+// it when the run finishes.
+func (p *QueryPanel) clearResults() {
+	p.result = nil
+	p.planView = nil
+	p.activeTab = 0
+	p.results.SetData(nil, nil)
+	p.resultsText.SetText("")
+	p.messages.SetText("")
+	p.messageErrorLines = nil
+	p.layoutChildren() // the tab bar's row goes back to the results area
+}
+
 // runQuery is the shared execution path for Execute. The heavy lifting —
 // GO batch splitting, the USE database switch, result sets, and the
 // message stream — lives in internal/query.
+//
+// In Results To File mode it asks for the destination first and then runs
+// through query.ExecuteToSink, streaming rows to the file as they are
+// scanned; see startRun.
 func (p *QueryPanel) runQuery(queryText string) {
 	if queryText == "" {
 		p.resultsNotice = "No query to execute"
@@ -88,21 +107,42 @@ func (p *QueryPanel) runQuery(queryText string) {
 		p.app.setStatus("A query is already executing in this panel")
 		return
 	}
-	p.messages.SetText("") // clear stale messages from any previous run
-	p.messageErrorLines = nil
+	// Snapshotted here rather than read inside the closures below, since the
+	// Query menu can switch modes while the save dialog is open or the query
+	// is running. Every decision that has to agree with how this run was
+	// executed reads the snapshot. See QueryPanel.runMode.
+	p.runMode = p.resultsMode
+
+	if p.runMode == ResultsModeFile {
+		// The destination has to exist before the first row is scanned, so
+		// the prompt comes first and the run starts from its callback.
+		// Cancelling the dialog runs nothing — the panel keeps its previous
+		// results rather than being cleared for a run that never happened.
+		p.promptResultsFile(func(path string) {
+			if p.executing {
+				p.app.setStatus("A query is already executing in this panel")
+				return
+			}
+			p.startRun(queryText, path)
+		})
+		return
+	}
+	p.startRun(queryText, "")
+}
+
+// startRun executes queryText, clearing the results area first. exportPath is
+// non-empty only for a Results To File run, which streams every row there
+// instead of retaining it (see csvSink) — so that path is bounded by the file,
+// not by memory, and ignores the Max Result Rows cap entirely.
+func (p *QueryPanel) startRun(queryText, exportPath string) {
+	p.clearResults()
 	sc := p.conn
 	// Snapshotted for the same reason as sc: setResult writes p.database
 	// back from the connection once the script finishes (a mid-script USE),
 	// and connectForQueryPanel writes it on the UI goroutine too — neither
 	// may be read from the goroutine below. Mirrors runEstimatedPlan.
 	database := p.database
-	// Results To File wants every row a query actually returns, not just
-	// what the grid would show — captured now (like sc above) since
-	// p.resultsMode can change via the Query menu while this goroutine runs.
 	maxRows := p.app.cfg.MaxResultRows
-	if p.resultsMode == ResultsModeFile {
-		maxRows = 0
-	}
 	// Snapshot now, not read from the goroutine below — the "Include Actual
 	// Execution Plan" toggle can change via the toolbar/Query menu while
 	// this goroutine runs.
@@ -118,10 +158,26 @@ func (p *QueryPanel) runQuery(queryText string) {
 	go p.tickExecuting(done)
 
 	go func() {
+		defer p.app.recoverPanic("query execution")
 		var res *query.Result
-		if capturePlan {
+		var sink *csvSink
+		var exportErr error
+		switch {
+		case exportPath != "":
+			sink, exportErr = newCSVSink(exportPath)
+			if exportErr != nil {
+				res = &query.Result{Messages: query.ErrorMessages(exportErr)}
+				break
+			}
+			res = query.ExecuteToSink(ctx, sc.Server.DB(), database, queryText, sink)
+			// Close after the run, whether or not it succeeded: the file has
+			// partial content either way and the handle must not leak.
+			if cerr := sink.Close(); cerr != nil && exportErr == nil {
+				exportErr = cerr
+			}
+		case capturePlan:
 			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText, maxRows)
-		} else {
+		default:
 			res = query.Execute(ctx, sc.Server.DB(), database, queryText, maxRows)
 		}
 		// cancelled must be read before cancel() — calling cancel sets
@@ -134,16 +190,18 @@ func (p *QueryPanel) runQuery(queryText string) {
 			p.cancel = nil
 			if !p.app.panelHosted(p) {
 				// Panel was closed while the query was still running —
-				// nothing left to update, and in Results To File mode
-				// setResult would otherwise pop the save dialog for a panel
-				// that no longer exists. The status bar still has to be told,
+				// nothing left to update. The status bar still has to be told,
 				// though: setResult is the only thing that normally replaces
 				// "Executing query...", so returning without one left it
-				// pinned there indefinitely.
+				// pinned there indefinitely. A file export that was already
+				// under way has been written and closed regardless.
 				p.app.setStatus(closedPanelResultStatus(p.Title(), cancelled))
 				return
 			}
 			p.setResult(res, cancelled)
+			if exportPath != "" {
+				p.reportExport(res, exportPath, res.RowsWritten, exportErr)
+			}
 		})
 	}()
 }
@@ -163,6 +221,7 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 // updateResultsStatus's live elapsed-time counter visibly ticks instead of
 // only updating once the query finishes. Exits as soon as done closes.
 func (p *QueryPanel) tickExecuting(done chan struct{}) {
+	defer p.app.recoverPanic("the query elapsed-time timer")
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -195,9 +254,6 @@ func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 	}
 	p.layoutChildren()
 
-	if p.resultsMode == ResultsModeFile && len(res.Sets) > 0 {
-		p.promptWriteResults(res)
-	}
 	p.renderActiveTab()
 
 	elapsed := res.Elapsed.Round(time.Millisecond)

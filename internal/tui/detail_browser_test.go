@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
+
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
@@ -144,5 +146,42 @@ func TestShowNodeDetailsNotConnected(t *testing.T) {
 
 	if got := db.grid.Row(0); got[1] != "Not connected" {
 		t.Errorf("grid row 0 = %v, want a Not connected status row", got)
+	}
+}
+
+// TestRefreshButtonFiresOnceOnPress checks the title bar's refresh button
+// runs OnRefresh on a fresh Button1 press and not again on the held-button
+// motion events tcell resends before the release — the mouseDragging latch.
+func TestRefreshButtonFiresOnceOnPress(t *testing.T) {
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 80, 20)
+	fired := 0
+	db.OnRefresh = func() { fired++ }
+
+	x, y := db.refreshRect.X, db.refreshRect.Y
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, 0))
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, 0))
+	if fired != 1 {
+		t.Fatalf("OnRefresh fired %d times on press+hold, want 1", fired)
+	}
+
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, 0))
+	db.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, 0))
+	if fired != 2 {
+		t.Fatalf("OnRefresh fired %d times after release + fresh press, want 2", fired)
+	}
+}
+
+// TestRefreshButtonMissDelegatesToGrid checks a press below the title bar
+// still reaches the data grid.
+func TestRefreshButtonMissDelegatesToGrid(t *testing.T) {
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 80, 20)
+	db.OnRefresh = func() { t.Error("OnRefresh fired for a press outside the button") }
+	db.grid.SetData([]string{"Property", "Value"}, [][]string{{"Name", "a"}, {"Type", "b"}})
+
+	db.HandleMouse(tcell.NewEventMouse(2, db.refreshRect.Y+4, tcell.Button1, 0))
+	if db.grid.SelectedRow() != 1 {
+		t.Errorf("grid selected row = %d, want 1 (press should reach the grid)", db.grid.SelectedRow())
 	}
 }

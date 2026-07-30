@@ -21,6 +21,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 	// goroutine (the UI goroutine): see wakeEventLoop's doc comment in
 	// app.go for why that's unsafe.
 	go func() {
+		defer app.recoverPanic("loading server details")
 		info := sc.Server.Info()
 		const availMemRow, numaRow = 9, 10
 		rows := [][]string{

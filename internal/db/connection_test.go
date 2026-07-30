@@ -1,12 +1,62 @@
 package db
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
 )
+
+// Connect only sets ConnectionOptions.Database for a non-empty value, so the
+// preview must omit the key entirely rather than show a bare "database=" that
+// doesn't match the DSN actually dialed.
+func TestBuildConnectionStringOmitsEmptyDatabase(t *testing.T) {
+	got := BuildConnectionString(config.Connection{Server: "myserver", AuthMethod: config.AuthSQLServer})
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got, err)
+	}
+	if u.Query().Has("database") {
+		t.Errorf("connection string has a database key with no database set: %q", got)
+	}
+
+	// The key is still present when there is a database to name.
+	got = BuildConnectionString(config.Connection{Server: "myserver", Database: "mydb", AuthMethod: config.AuthSQLServer})
+	u, err = url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got, err)
+	}
+	if u.Query().Get("database") != "mydb" {
+		t.Errorf("database = %q, want mydb, in %q", u.Query().Get("database"), got)
+	}
+}
+
+// ConnectionError must stay transparent to errors.Is/As: Connect wraps the
+// driver's failure, and callers need the original to tell a login rejection
+// from an unreachable host, or to ask gosmo.IsRetryable about it. Flattening
+// the cause to a string severs that.
+func TestConnectionErrorUnwrapsToCause(t *testing.T) {
+	sentinel := errors.New("login failed for user 'sa'")
+	err := error(&ConnectionError{Server: "myserver", Cause: sentinel.Error(), Err: sentinel})
+
+	if !errors.Is(err, sentinel) {
+		t.Error("errors.Is(err, sentinel) = false, want true — the cause is not reachable through Unwrap")
+	}
+	if _, ok := errors.AsType[*ConnectionError](err); !ok {
+		t.Error("errors.AsType[*ConnectionError] = false, want true")
+	}
+	if got, want := err.Error(), "connect to myserver: login failed for user 'sa'"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+
+	// Still usable when wrapped further up the stack.
+	if !errors.Is(fmt.Errorf("connecting: %w", err), sentinel) {
+		t.Error("sentinel unreachable once ConnectionError is itself wrapped")
+	}
+}
 
 func TestBuildConnectionStringSQLServerAuth(t *testing.T) {
 	got := BuildConnectionString(config.Connection{

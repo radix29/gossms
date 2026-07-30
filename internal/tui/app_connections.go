@@ -17,6 +17,7 @@ func (a *App) connectServer(opts config.Connection) {
 	a.draw()
 
 	go func() {
+		defer a.recoverPanic("connecting to the server")
 		sc, err := db.Connect(opts)
 		a.postAndWake(func() {
 			if err != nil {
@@ -64,6 +65,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
 	go func() {
+		defer a.recoverPanic("connecting the query panel")
 		newConn, err := db.Connect(opts)
 		resolvedDB := opts.Database
 		if err == nil && resolvedDB == "" {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/csv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,22 +414,42 @@ func TestResultsToTextKeysRouteToResultsTextNotGrid(t *testing.T) {
 	}
 }
 
-// TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets pins the CSV shape
+// TestCSVSinkWritesHeaderRowsAndBlankLineBetweenSets pins the CSV shape
 // Results To File relies on: one header + data rows per set, a blank line
-// between sets, and a returned count of data rows only (headers excluded).
-func TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
+// between sets. The expected bytes are unchanged from the buffer-everything
+// writeCSV this replaced — the switch to streaming was meant to change when
+// rows are written, not what ends up in the file.
+func TestCSVSinkWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.csv")
 	sets := []query.ResultSet{
 		{Columns: []string{"a", "b"}, Rows: [][]string{{"1", "2"}, {"3", "4"}}},
 		{Columns: []string{"x"}, Rows: [][]string{{"y"}}},
 	}
 
-	n, err := writeCSV(path, sets)
+	sink, err := newCSVSink(path)
 	if err != nil {
-		t.Fatalf("writeCSV: %v", err)
+		t.Fatalf("newCSVSink: %v", err)
+	}
+	n := 0
+	for _, set := range sets {
+		if err := sink.BeginSet(set.Columns); err != nil {
+			t.Fatalf("BeginSet: %v", err)
+		}
+		for _, row := range set.Rows {
+			if err := sink.Row(row); err != nil {
+				t.Fatalf("Row: %v", err)
+			}
+			n++
+		}
+		if err := sink.EndSet(len(set.Rows)); err != nil {
+			t.Fatalf("EndSet: %v", err)
+		}
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 	if n != 3 {
-		t.Errorf("n = %d, want 3 (data rows only, headers excluded)", n)
+		t.Errorf("wrote %d data rows, want 3 (headers excluded)", n)
 	}
 
 	data, err := os.ReadFile(path)
@@ -438,6 +459,50 @@ func TestWriteCSVWritesHeaderRowsAndBlankLineBetweenSets(t *testing.T) {
 	want := "a,b\n1,2\n3,4\n\nx\ny\n"
 	if string(data) != want {
 		t.Errorf("file content = %q, want %q", data, want)
+	}
+}
+
+// A cell containing the delimiter, a quote, or a newline must come back out
+// as the same value — csv.Writer quotes it, and the streaming path must not
+// have bypassed that.
+func TestCSVSinkQuotesAwkwardCells(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.csv")
+	sink, err := newCSVSink(path)
+	if err != nil {
+		t.Fatalf("newCSVSink: %v", err)
+	}
+	if err := sink.BeginSet([]string{"col"}); err != nil {
+		t.Fatalf("BeginSet: %v", err)
+	}
+	for _, cell := range []string{"a,b", `say "hi"`, "line1\nline2"} {
+		if err := sink.Row([]string{cell}); err != nil {
+			t.Fatalf("Row(%q): %v", cell, err)
+		}
+	}
+	if err := sink.EndSet(3); err != nil {
+		t.Fatalf("EndSet: %v", err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	recs, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	want := [][]string{{"col"}, {"a,b"}, {`say "hi"`}, {"line1\nline2"}}
+	if len(recs) != len(want) {
+		t.Fatalf("read %d records, want %d: %q", len(recs), len(want), recs)
+	}
+	for i := range want {
+		if recs[i][0] != want[i][0] {
+			t.Errorf("record %d = %q, want %q", i, recs[i][0], want[i][0])
+		}
 	}
 }
 
@@ -607,5 +672,40 @@ func TestNoStatusRowWhenResultsAreaIsTiny(t *testing.T) {
 	}
 	if qp.statusRect.H != 0 {
 		t.Errorf("statusRect = %+v, want the zero rect in a results area with no row to spare", qp.statusRect)
+	}
+}
+
+// TestClearResultsEmptiesPreviousRun checks the results area is emptied
+// before a new execution — the previous run's grid rows, tab bar, messages
+// and plan must not sit there looking current while the query runs.
+func TestClearResultsEmptiesPreviousRun(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.setResult(newTestResult(1, false), false)
+	qp.setActiveTab(0)
+	if qp.results.Row(0) == nil {
+		t.Fatalf("grid has no rows after setResult, nothing for clearResults to clear")
+	}
+
+	qp.clearResults()
+
+	if qp.result != nil {
+		t.Errorf("result = %v, want nil", qp.result)
+	}
+	if qp.planView != nil {
+		t.Error("planView is still set, want nil")
+	}
+	if got := qp.results.Row(0); got != nil {
+		t.Errorf("grid row 0 = %v, want nil (grid cleared)", got)
+	}
+	if got := qp.messages.Text(); got != "" {
+		t.Errorf("messages text = %q, want empty", got)
+	}
+	if qp.messageErrorLines != nil {
+		t.Errorf("messageErrorLines = %v, want nil", qp.messageErrorLines)
+	}
+	if qp.tabCount() != 0 {
+		t.Errorf("tabCount() = %d, want 0 (tab bar gone)", qp.tabCount())
 	}
 }

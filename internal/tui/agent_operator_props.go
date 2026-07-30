@@ -63,11 +63,7 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 			enabledCheck := propsheet.Check("Enabled", o.Enabled)
 			emailField := propsheet.Text("E-mail address", o.EmailAddress, 40)
 			catItems := append([]string{noneItem}, catNames...)
-			catIdx := 0
-			if o.Category != "" {
-				catIdx = 1 + indexOf(catNames, o.Category)
-			}
-			categoryRow := propsheet.Select("Category", catItems, catIdx)
+			categoryRow := propsheet.Select("Category", catItems, indexOf(catItems, o.Category))
 
 			f := propsheet.NewForm(
 				propsheet.Section("Operator identity"),

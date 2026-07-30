@@ -130,6 +130,7 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 	}
 	name := node.data.Name
 	go func() {
+		defer a.recoverPanic("starting an Agent job")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)
@@ -153,6 +154,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 	}
 	name := node.data.Name
 	go func() {
+		defer a.recoverPanic("stopping an Agent job")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)

@@ -17,6 +17,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
+		defer app.recoverPanic("loading the restore database list")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -64,6 +65,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	app, sc := d.app, d.sc
 	d.setStatusMsg("Loading backup history for "+dbName+"...", false)
 	go func() {
+		defer app.recoverPanic("loading backup history")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		hist, err := sc.Server.BackupHistoryContext(ctx, dbName)
@@ -121,6 +123,7 @@ func (d *RestoreDialog) analyze() {
 	seq := d.loadSeq
 	app, srv := d.app, d.sc.Server
 	go func() {
+		defer app.recoverPanic("analyzing the backup device")
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
 		headers, err := srv.BackupHeadersContext(ctx, dev)
@@ -171,6 +174,7 @@ func (d *RestoreDialog) startRestore() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
+		defer app.recoverPanic("preparing the restore")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -241,6 +245,7 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 
 	app, sc := d.app, d.sc
 	go func() {
+		defer app.recoverPanic("the restore")
 		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns)
 		if err == nil {
 			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })
@@ -382,6 +387,7 @@ func (d *RestoreDialog) script() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
+		defer app.recoverPanic("scripting the restore")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace)

@@ -56,6 +56,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	go p.tickExecuting(done)
 
 	go func() {
+		defer p.app.recoverPanic("the estimated execution plan")
 		res := query.ExecuteEstimatedPlan(ctx, sc.Server.DB(), database, queryText)
 		// cancelled must be read before cancel() — calling cancel sets
 		// ctx.Err() itself, which would make this always true otherwise.

@@ -198,6 +198,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			}
 			syncFieldsFromSelection()
 
+			hint := propsheet.Hint()
 			var addBtn, removeBtn *widgets.Button
 			addBtn = widgets.NewButton("Add", func() {
 				// Deliberately does NOT call commitCurrent(): these fields
@@ -209,13 +210,20 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				// left as last synced from its own selection.
 				name := nameField.Value()
 				if name == "" {
+					hint.Set("Type a logical file name first.")
 					return
 				}
-				for _, e := range visible() {
+				for i, e := range visible() {
 					if e.name == name {
-						return // already present — edit its row instead
+						// Already present — say so and select it, rather than
+						// leaving the button looking broken.
+						hint.Set("A file named " + name + " is already listed — its row is selected below.")
+						grid.SetSelectedRow(i)
+						syncFieldsFromSelection()
+						return
 					}
 				}
+				hint.Clear()
 				e := &fileEdit{
 					isNew: true, name: name, fileType: typeSelect.Value(), fileGroup: filegroupSelect.Value(), path: pathField.Value(),
 					maxSizeKB: -1,
@@ -242,13 +250,17 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				syncFieldsFromSelection()
 			})
 			removeBtn = widgets.NewButton("Remove", func() {
-				if e := selected(); e != nil {
-					e.pendingRemove = true
-					current = nil
-					grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
-					grid.SetSelectedRow(0)
-					syncFieldsFromSelection()
+				e := selected()
+				if e == nil {
+					hint.Set("Select a file in the grid above to remove it.")
+					return
 				}
+				hint.Clear()
+				e.pendingRemove = true
+				current = nil
+				grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
+				grid.SetSelectedRow(0)
+				syncFieldsFromSelection()
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 10)
@@ -283,6 +295,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				nameField, typeSelect, filegroupSelect, sizeField,
 				growthKind, growthField, maxKind, maxField, pathField,
 				propsheet.Buttons(addBtn, removeBtn),
+				hint,
 			)
 
 			apply := func(ctx context.Context) error {

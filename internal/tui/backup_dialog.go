@@ -222,6 +222,7 @@ func (d *BackupDialog) loadDatabases() {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	go func() {
+		defer app.recoverPanic("loading the backup database list")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -346,6 +347,7 @@ func (d *BackupDialog) startBackup() {
 
 	app, srv := d.app, d.sc.Server
 	go func() {
+		defer app.recoverPanic("the backup")
 		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
 		err := srv.BackupContext(ctx, opts)
 		if err == nil && verify {

@@ -83,18 +83,22 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 			}
 
 			nameField := propsheet.Text("New filegroup name", "", 24)
+			hint := propsheet.Hint()
 			var addBtn, removeBtn *widgets.Button
 			addBtn = widgets.NewButton("Add", func() {
 				syncToggles()
 				name := nameField.Value()
 				if name == "" {
+					hint.Set("Type a filegroup name first.")
 					return
 				}
 				for _, e := range visible() {
 					if e.name == name {
+						hint.Set("A filegroup named " + name + " is already listed.")
 						return
 					}
 				}
+				hint.Clear()
 				edits = append(edits, &fgEdit{name: name, isNew: true})
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
@@ -105,8 +109,10 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				vis := visible()
 				row := fgRow.Grid.SelectedRow()
 				if row < 0 || row >= len(vis) {
+					hint.Set("Select a filegroup in the grid above to remove it.")
 					return
 				}
+				hint.Clear()
 				vis[row].pendingRemove = true
 				text, values := rowsFor()
 				fgRow.SetRows(text, values)
@@ -140,6 +146,7 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Section("Add filegroup"),
 				nameField,
 				propsheet.Buttons(addBtn, removeBtn),
+				hint,
 				propsheet.Note("Only one row-data filegroup can be the default. A filegroup must be empty before it can be removed."),
 			)
 

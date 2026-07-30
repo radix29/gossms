@@ -48,7 +48,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 
 	recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 	recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(pf.modelRecovery)))
-	compatItems := []string{"100", "110", "120", "130", "140", "150", "160", "170"}
+	compatItems := compatItemsFor(int(pf.modelCompat))
 	compatRow := propsheet.Select("Compatibility level", compatItems, indexOf(compatItems, strconv.Itoa(int(pf.modelCompat))))
 
 	dataNameField := propsheet.Text("Logical name", "", 24)
@@ -220,18 +220,25 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 	fileSizeField := propsheet.Int("First file initial size", 0, 0, 16777216, "MB")
 	fileGrowthField := propsheet.Int("First file growth", 0, 0, 2097151, "MB")
 
+	hint := propsheet.Hint()
 	var addBtn, removeBtn *widgets.Button
 	addBtn = widgets.NewButton("Add", func() {
 		syncToggles()
 		name := nameField.Value()
 		if name == "" {
+			hint.Set("Type a filegroup name first.")
 			return
 		}
-		for _, e := range edits {
+		for i, e := range edits {
 			if e.name == name {
+				// Already present — say so and select it, rather than
+				// leaving the button looking broken.
+				hint.Set("A filegroup named " + name + " is already listed.")
+				fgRow.Grid.SetSelectedRow(i)
 				return
 			}
 		}
+		hint.Clear()
 		sizeMB, _ := fileSizeField.IntValue()
 		growthMB, _ := fileGrowthField.IntValue()
 		edits = append(edits, &fgEdit{
@@ -253,8 +260,10 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		syncToggles()
 		row := fgRow.Grid.SelectedRow()
 		if row < 0 || row >= len(edits) {
+			hint.Set("Select a filegroup in the grid above to remove it.")
 			return
 		}
+		hint.Clear()
 		edits = append(edits[:row], edits[row+1:]...)
 		text, values := rowsFor()
 		fgRow.SetRows(text, values)
@@ -278,6 +287,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		propsheet.Section("Optional first file"),
 		fileNameField, filePathField, fileSizeField, fileGrowthField,
 		propsheet.Buttons(addBtn, removeBtn),
+		hint,
 		propsheet.Note("Only one row-data filegroup can be the default. Leave the first-file fields blank to add an empty filegroup — the database's PRIMARY filegroup and its data/log files come from the General page, not here."),
 	)
 

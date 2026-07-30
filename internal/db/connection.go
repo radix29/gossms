@@ -29,14 +29,24 @@ const (
 
 // ConnectionError is a typed error returned by Connect.
 // Go 1.26: errors.AsType[*ConnectionError] can check for this without reflection.
+//
+// Err holds the underlying failure and is reachable through Unwrap, so a
+// caller can still inspect what actually went wrong — errors.Is against a
+// driver sentinel, errors.AsType for an mssql.Error to read its number, or
+// gosmo.IsRetryable to decide whether another attempt is worth making. Cause
+// is retained as the pre-formatted message for display.
 type ConnectionError struct {
 	Server string
 	Cause  string
+	Err    error
 }
 
 func (e *ConnectionError) Error() string {
 	return fmt.Sprintf("connect to %s: %s", e.Server, e.Cause)
 }
+
+// Unwrap exposes the underlying connect failure to errors.Is/As/AsType.
+func (e *ConnectionError) Unwrap() error { return e.Err }
 
 // ServerConn wraps a gosmo server connection plus its config.
 type ServerConn struct {
@@ -83,7 +93,7 @@ func Connect(opts config.Connection) (*ServerConn, error) {
 
 	srv, err := gosmo.Connect(co)
 	if err != nil {
-		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error()}
+		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
 	}
 	login, _ := srv.CurrentLogin()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -259,7 +269,12 @@ func BuildConnectionString(opts config.Connection) string {
 	}
 
 	q := url.Values{}
-	q.Set("database", opts.Database)
+	// Omitted when empty, matching Connect: it only sets ConnectionOptions.
+	// Database for a non-empty value, so a preview carrying a bare
+	// "database=" would not be the DSN actually dialed.
+	if opts.Database != "" {
+		q.Set("database", opts.Database)
+	}
 	q.Set("encrypt", encrypt)
 	q.Set("TrustServerCertificate", trustCert)
 

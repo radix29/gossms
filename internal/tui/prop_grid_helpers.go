@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/radix29/gosmo"
@@ -54,13 +56,55 @@ func boolIdx(b bool) int {
 // indexOf returns the index of value within items, or 0 (the first item)
 // if it isn't present — the fallback a Select/Radio row's "selected" index
 // needs when the server reports a value outside the row's known options.
+// Note the 0, not slices.Index's -1: no Select row can show a negative index.
+//
+// The 0 is only a safe fallback when items[0] is a sentinel that means
+// "nothing" — a leading (None) or <All databases>. Where items is a closed
+// set with no such sentinel, falling back renders the first real option as
+// though the server had reported it; use indexOfOK there instead.
 func indexOf(items []string, value string) int {
-	for i, it := range items {
-		if it == value {
-			return i
-		}
+	i, _ := indexOfOK(items, value)
+	return i
+}
+
+// indexOfOK is indexOf plus whether value was actually found, for a row whose
+// items can't absorb a miss. A caller that gets false shows the server's own
+// value (read-only) rather than letting a wrong-but-plausible option stand in
+// for it.
+func indexOfOK(items []string, value string) (int, bool) {
+	if i := slices.Index(items, value); i >= 0 {
+		return i, true
 	}
-	return 0
+	return 0, false
+}
+
+// compatLevelItems is the Compatibility level dropdown's base list: the
+// oldest level SQL Server still accepts through the newest gosmo names
+// (gosmo.CompatLevel2025 == 170). Don't use it directly — a server can report
+// a level outside it in either direction, so build the list with
+// compatItemsFor.
+var compatLevelItems = []string{"100", "110", "120", "130", "140", "150", "160", "170"}
+
+// compatItemsFor returns the Compatibility level items for a database
+// currently at level, with level inserted in numeric order when the base list
+// doesn't already have it — a database restored from an older instance (90 or
+// below), or a level a newer SQL Server adds.
+//
+// Selecting into the fixed list with indexOf's not-found 0 displayed such a
+// database as level 100, which is itself a real level and so read as fact.
+// A level of 0 (an unpopulated lightweight handle) adds nothing.
+func compatItemsFor(level int) []string {
+	s := strconv.Itoa(level)
+	if level <= 0 || slices.Contains(compatLevelItems, s) {
+		return compatLevelItems
+	}
+	items := append(slices.Clone(compatLevelItems), s)
+	slices.SortFunc(items, func(a, b string) int {
+		ai, _ := strconv.Atoi(a)
+		bi, _ := strconv.Atoi(b)
+		return cmp.Compare(ai, bi)
+	})
+	return items
 }
 
 // orDefault returns s, or def if s is empty — for server fields that come

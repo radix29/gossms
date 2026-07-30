@@ -32,8 +32,8 @@ func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 
 // findSchema resolves dbName/schemaName to a *gosmo.Schema — there's no
 // SchemaByNameContext (gosmo only exposes the bulk SchemasContext
-// listing), so this finds it by name the same way pageRoleOwnedSchemas/
-// pageUserOwnedSchemas already do for their own owner-change apply.
+// listing), so this finds it by name the same way
+// pagePrincipalOwnedSchemas already does for its own owner-change apply.
 func findSchema(ctx context.Context, sc *db.ServerConn, dbName, schemaName string) (*gosmo.Schema, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 	if err != nil {

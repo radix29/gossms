@@ -52,9 +52,22 @@ Guessing at `tcell`/`gosmo` API shapes from training data produces code
 that *looks* plausible but doesn't match the real API. Gotchas specific to
 these two dependencies: `Screen.PollEvent`/`PostEvent` don't exist in
 tcell v3 — replaced by a channel, `EventQ()`; the modifier accessor is
-`Modifiers()`, not `Mod()`; `gosmo.Server` has `DatabaseByName(name)`, not
-`Database(name)`; `gosmo.Database.Name` / `.State` / `.RecoveryModel` etc.
-are *methods*, not fields.
+`Modifiers()`, not `Mod()`; `gosmo.Database.Name` / `.State` /
+`.RecoveryModel` etc. are *methods*, not fields.
+
+`gosmo.Server` has **both** `Database(name)` and `DatabaseByName(name)`, and
+they are not interchangeable — picking the wrong one fails quietly:
+
+- `Database(name) *Database` returns a lightweight handle without querying
+  at all. Its `State`/`RecoveryModel`/`Collation`/`CompatibilityLevel` stay
+  zero-valued. Every write method needs only the name, so this is the right
+  choice for issuing `ALTER`-style calls against a database already known to
+  exist — and the *only* one that works under a `WithScript`-derived context,
+  where `DatabaseByNameContext`'s lookup is a real read that script mode
+  doesn't capture.
+- `DatabaseByName(name) (*Database, error)` queries `sys.databases`, so it
+  verifies existence and populates those fields. Use it when you need to
+  read them or to confirm the database is there.
 
 Before writing any code that calls into `tcell` or `gosmo`, check the real
 source first if there's any uncertainty — `go doc`, grep the module cache
@@ -114,18 +127,56 @@ checks "no crash" passes on the very behavior it was written to pin down.
 or change functionality in it when gossms needs something it doesn't
 have yet, rather than working around a missing capability inside gossms.
 Build and test inside `gosmo` itself before relying on a change from
-gossms. For the rest of the local dev workflow (the `replace` directive and
+gossms.
+
+**gosmo is a general-purpose library with users beyond gossms. Never remove
+or narrow a gosmo capability because gossms doesn't call it.** "No callers in
+gossms" is not evidence of dead code there — gossms is one consumer of a
+published SMO-shaped API, and an unused method is a method some other
+application (or a future gossms page) depends on. This applies to whole
+files, exported methods, exported types and their fields, and struct fields
+that only some code paths populate. The `*Seq` iterators in `iter.go` are the
+standing example: 75 exported methods, zero gossms callers, all deliberately
+kept.
+
+When a gosmo audit turns up something unused, the allowed moves are: make it
+faster, make its doc comment accurate about what it actually does, or add a
+test that pins it. Removing it, or replacing a general form with the narrow
+one gossms happens to need, is not one of them — bring it up instead of
+acting on it. Optimisation must be behaviour-preserving at the API surface:
+same signature, same results, same errors.
+
+For the rest of the local dev workflow (the `replace` directive and
 its release-time handling, and gosmo's own file-layout/method-pair/Seq/
 error-wrapping conventions), see the `dev-with-local-gosmo` skill and
 ARCHITECTURE.md's "Developing against a local gosmo checkout".
 
 ## Coding conventions
 
-- **Comments: short, describe what the code does — not why a decision
-  was made, what alternatives were rejected, or what trade-offs were
-  discussed.** That kind of explanation doesn't belong in the code.
-  (Some existing comments are more verbose than this; that's not the
-  target style.)
+- **Comments: describe what the code does. Add the "why" only when getting
+  it wrong reintroduces a bug, and then say so concretely.** The bar is
+  whether the next person to touch this code would break something without
+  the note — not whether the reasoning was interesting.
+  - Worth writing, and load-bearing here: the invariant a `mouseDragging`
+    latch protects, why `postAndWake`'s two halves can't be called by hand,
+    why `SelectRow.orig` is read back from the widget, why `escapeSingle`
+    goes on top of bracket-quoting. Each of those is a shipped bug that a
+    plausible "simplification" would bring straight back. The comment is the
+    only thing standing between the invariant and the next refactor.
+  - Not worth writing: alternatives considered and rejected for no lasting
+    reason, restatements of what the line plainly says, and any narration of
+    how the code came to look this way. Those belong in `docs/journal.md`.
+  - Prefer one sharp sentence naming the failure to a paragraph of
+    discussion. Where a long comment is genuinely earned, keep it on the
+    declaration it protects rather than spreading it through the body.
+
+  This rule was rewritten 2026-07-30. It previously banned "why" comments
+  outright, which contradicted the codebase — `app.go`, `datagrid.go`,
+  `secret.go`, `propsheet/common.go` are 33-50% comments, mostly rationale,
+  and that rationale has repeatedly been what stopped a regression. The old
+  wording would have had a session strip exactly the notes worth keeping.
+  Existing long comments are not a cleanup target; judge new ones by the
+  failure-mode bar above.
 - Go 1.26 features in active use: `new(T{...})` composite-literal syntax,
   the `slices` package, `errors.AsType`.
 - `core.DisplayWidth(s)`, never `len(s)`, for any column-position math —

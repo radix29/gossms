@@ -92,6 +92,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 		return
 	}
 	go func() {
+		defer a.recoverPanic("enabling/disabling an Agent object")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		err := run(ctx)
@@ -124,6 +125,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 			return
 		}
 		go func() {
+			defer a.recoverPanic("deleting an Agent object")
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			err := run(ctx)

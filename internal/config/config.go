@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -121,6 +122,20 @@ type Connection struct {
 	TrustServerCertificate bool       `json:"trust_server_certificate"`
 	Encrypt                bool       `json:"encrypt"`
 	ExtraProperties        string     `json:"extra_properties"`
+
+	// sealed is the on-disk ciphertext Load could not open for this entry —
+	// a replaced key file, a hand-edited server/user (which the AAD binds
+	// to, see secret.go), a truncated write. Save writes it back verbatim in
+	// place of re-encrypting the "" that Password came back as, so a failed
+	// decrypt stays recoverable instead of being overwritten by the next
+	// unrelated config write.
+	//
+	// Unexported, so encoding/json neither reads nor writes it: it exists
+	// only between one Load and the Saves that follow it. An entry the user
+	// actually reconnects with goes through AddOrUpdate as a fresh
+	// Connection value with sealed empty, so re-entering the password by
+	// hand replaces the unreadable ciphertext for good.
+	sealed string
 }
 
 // ConnectionName builds the identifier auto-generated for every saved
@@ -228,13 +243,28 @@ func Load() *Config {
 
 	key, err := loadOrCreateKey(filepath.Dir(path))
 	if err != nil {
+		// No key means nothing can be opened. Every ciphertext is stashed in
+		// sealed so a later Save (of some unrelated setting) writes it back
+		// rather than replacing it with an encryption of "".
+		log.Printf("config: saved passwords unavailable: %v", err)
 		for i := range cfg.Connections {
+			cfg.Connections[i].sealed = cfg.Connections[i].Password
 			cfg.Connections[i].Password = ""
 		}
 		return cfg
 	}
+	failed := 0
 	for i := range cfg.Connections {
-		cfg.Connections[i].Password = decryptPassword(key, cfg.Connections[i].Password)
+		plain, ok := decryptPassword(key, cfg.Connections[i])
+		if !ok {
+			cfg.Connections[i].sealed = cfg.Connections[i].Password
+			failed++
+		}
+		cfg.Connections[i].Password = plain
+	}
+	if failed > 0 {
+		log.Printf("config: %d saved password(s) could not be decrypted and are "+
+			"preserved as-is in %s; re-enter the password to replace one", failed, path)
 	}
 	return cfg
 }
@@ -243,6 +273,12 @@ func Load() *Config {
 // base64-encoded (see secret.go) in the on-disk copy only — c itself (the
 // live in-memory config the rest of the app reads from) is left with
 // plaintext passwords untouched.
+//
+// An entry whose stored password Load could not open keeps its original
+// ciphertext (Connection.sealed) rather than being re-encrypted from the ""
+// that Load handed back. Without that, saving any unrelated setting
+// destroyed the only recoverable copy of every password a restored key file
+// or an undone hand-edit could still have opened.
 func (c *Config) Save() error {
 	path := configPath()
 	dir := filepath.Dir(path)
@@ -265,7 +301,15 @@ func (c *Config) Save() error {
 	onDisk := *c
 	onDisk.Connections = make([]Connection, len(c.Connections))
 	for i, conn := range c.Connections {
-		enc, err := encryptPassword(key, conn.Password)
+		if conn.Password == "" && conn.sealed != "" {
+			// Load couldn't open this one. Write the bytes back exactly as
+			// they were found rather than sealing the "" that stands in for
+			// them in memory.
+			conn.Password = conn.sealed
+			onDisk.Connections[i] = conn
+			continue
+		}
+		enc, err := encryptPassword(key, conn)
 		if err != nil {
 			return err
 		}

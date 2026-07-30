@@ -58,6 +58,15 @@ type QueryPanel struct {
 	savedText   string      // editor text as of the last save/load; compared by Dirty
 	resultsMode ResultsMode // Grid/Text/File — set via Query menu
 
+	// runMode is the resultsMode the in-flight (or most recent) execution
+	// was started under, snapshotted by runQuery. Every decision that has
+	// to agree with the row cap that execution actually used reads this,
+	// not resultsMode: the Query menu can switch modes while a query runs,
+	// and a run started in Grid mode is capped to MaxResultRows, so
+	// exporting its result as though it were a File-mode run would write a
+	// truncated CSV with nothing to say so.
+	runMode ResultsMode
+
 	result    *query.Result // last execution's result; nil until first run
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
@@ -108,6 +117,12 @@ type QueryPanel struct {
 	// motion event that lands on the tab row. Mirrors
 	// propsheet.PropertySheet.dragZone; cleared on the release.
 	dragZone queryDragZone
+
+	// completionBuf is the flattened editor text sqlCompletionCandidates
+	// scans, kept across keystrokes so a large script isn't re-copied into a
+	// fresh allocation on every one (see flattenLinesInto). Valid only for the
+	// duration of one sqlCompletionCandidates call.
+	completionBuf []rune
 
 	executing bool
 	cancel    context.CancelFunc

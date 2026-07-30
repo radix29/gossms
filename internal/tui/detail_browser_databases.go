@@ -34,6 +34,7 @@ func formatMB(mb float64) string {
 // database doesn't hold up the rest.
 func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	go func() {
+		defer app.recoverPanic("loading database details")
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 

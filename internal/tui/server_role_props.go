@@ -7,9 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // serverRolePropPages builds the page set for Server Role Properties. A
@@ -189,137 +187,34 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 				return nil, nil, err
 			}
 
-			// memberEdit tracks one grid row's pending state — an existing
-			// member pending removal, or a brand-new one pending Add — the
-			// same shape as rolePropPages' pageRoleMembers.
-			type memberEdit struct {
-				name          string
-				principalType string
-				isNew         bool
-				pendingRemove bool
-			}
-			edits := make([]*memberEdit, len(members))
-			memberNames := make(map[string]bool, len(members))
-			for i, m := range members {
-				edits[i] = &memberEdit{name: m.Name, principalType: m.Type}
-				memberNames[m.Name] = true
-			}
-
+			existing := roleMemberSet(members)
 			principalType := make(map[string]string, len(logins)+len(roles))
-			for _, l := range logins {
-				principalType[l.Name] = l.LoginType
-			}
-			for _, r := range roles {
-				principalType[r.Name] = "SERVER_ROLE"
-			}
-
-			visible := func() []*memberEdit {
-				out := make([]*memberEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.pendingRemove {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
-			rowsFor := func() [][]string {
-				vis := visible()
-				rows := make([][]string, len(vis))
-				for i, e := range vis {
-					rows[i] = []string{e.name, e.principalType}
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Member", "Type"}, rowsFor())
-			grid.SetCellCursor(true)
-
 			var candidates []string
 			for _, l := range logins {
-				if !memberNames[l.Name] {
+				principalType[l.Name] = l.LoginType
+				if !existing[l.Name] {
 					candidates = append(candidates, l.Name)
 				}
 			}
 			for _, r := range roles {
-				if r.Name != *roleName && !memberNames[r.Name] {
+				principalType[r.Name] = "SERVER_ROLE"
+				if r.Name != *roleName && !existing[r.Name] {
 					candidates = append(candidates, r.Name)
 				}
 			}
-			if len(candidates) == 0 {
-				candidates = []string{noneItem}
-			}
-			addSelect := propsheet.Select("Add member", candidates, 0)
-			addBtn := widgets.NewButton("Add", func() {
-				name := addSelect.Value()
-				if name == noneItem || memberNames[name] {
-					return
-				}
-				edits = append(edits, &memberEdit{name: name, principalType: principalType[name], isNew: true})
-				memberNames[name] = true
-				grid.SetData([]string{"Member", "Type"}, rowsFor())
-				grid.SetSelectedRow(len(visible()) - 1)
+
+			f, apply := buildMembershipForm(membershipConfig{
+				members:       members,
+				candidates:    candidates,
+				principalType: principalType,
+				note:          "Add a login or another server role from the dropdown, or select a row above and Remove it.",
+				add: func(ctx context.Context, name string) error {
+					return sc.Server.AddServerRoleMemberContext(ctx, *roleName, name)
+				},
+				remove: func(ctx context.Context, name string) error {
+					return sc.Server.RemoveServerRoleMemberContext(ctx, *roleName, name)
+				},
 			})
-			removeBtn := widgets.NewButton("Remove", func() {
-				vis := visible()
-				i := grid.SelectedRow()
-				if i < 0 || i >= len(vis) {
-					return
-				}
-				delete(memberNames, vis[i].name)
-				vis[i].pendingRemove = true
-				grid.SetData([]string{"Member", "Type"}, rowsFor())
-				grid.SetSelectedRow(0)
-			})
-
-			gridRow := propsheet.NewGridRow(grid, 10)
-			gridRow.DirtyFn = func() bool {
-				for _, e := range edits {
-					if e.pendingRemove || e.isNew {
-						return true
-					}
-				}
-				return false
-			}
-			gridRow.RevertFn = func() {
-				kept := edits[:0]
-				for _, e := range edits {
-					if e.isNew {
-						continue
-					}
-					e.pendingRemove = false
-					kept = append(kept, e)
-				}
-				edits = kept
-				memberNames = make(map[string]bool, len(edits))
-				for _, e := range edits {
-					memberNames[e.name] = true
-				}
-				grid.SetData([]string{"Member", "Type"}, rowsFor())
-			}
-
-			f := propsheet.NewForm(
-				propsheet.Section("Role members"),
-				gridRow,
-				addSelect,
-				propsheet.Buttons(addBtn, removeBtn),
-				propsheet.Note("Add a login or another server role from the dropdown, or select a row above and Remove it."),
-			)
-
-			apply := func(ctx context.Context) error {
-				for _, e := range edits {
-					switch {
-					case e.pendingRemove && !e.isNew:
-						if err := sc.Server.RemoveServerRoleMemberContext(ctx, *roleName, e.name); err != nil {
-							return err
-						}
-					case e.isNew && !e.pendingRemove:
-						if err := sc.Server.AddServerRoleMemberContext(ctx, *roleName, e.name); err != nil {
-							return err
-						}
-					}
-				}
-				return nil
-			}
 			return f, apply, nil
 		},
 	}
@@ -337,98 +232,28 @@ func pageServerRoleOwnedRoles(sc *db.ServerConn, roleName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			ownerNames := serverPrincipalNames(logins, allRoles)
 
-			type ownedRoleEdit struct {
-				role      *gosmo.ServerRole
-				origOwner string
-				newOwner  string
-			}
-			var edits []*ownedRoleEdit
+			var items []*ownerTransferItem[*gosmo.ServerRole]
 			for _, r := range allRoles {
 				if r.Owner == *roleName {
-					edits = append(edits, &ownedRoleEdit{role: r, origOwner: r.Owner, newOwner: r.Owner})
+					items = append(items, &ownerTransferItem[*gosmo.ServerRole]{
+						obj: r, name: r.Name, origOwner: r.Owner, newOwner: r.Owner,
+					})
 				}
 			}
 
-			rowsFor := func() [][]string {
-				rows := make([][]string, len(edits))
-				for i, e := range edits {
-					rows[i] = []string{e.role.Name, "Server role", strconv.Itoa(len(e.role.Members))}
-				}
-				return rows
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Role", "Type", "Members"}, rowsFor())
-			grid.SetCellCursor(true)
-
-			nameStatic := propsheet.Static("Name", "")
-			ownerStatic := propsheet.Static("Current owner", "")
-			transferRow := propsheet.Select("Transfer owner to", ownerNames, 0)
-
-			selected := -1
-			commitCurrent := func() {
-				if selected >= 0 && selected < len(edits) {
-					edits[selected].newOwner = transferRow.Value()
-				}
-			}
-			syncFromSelection := func(row int) {
-				commitCurrent()
-				selected = row
-				if row < 0 || row >= len(edits) {
-					nameStatic.SetValue("")
-					ownerStatic.SetValue("")
-					return
-				}
-				e := edits[row]
-				nameStatic.SetValue(e.role.Name)
-				ownerStatic.SetValue(e.origOwner)
-				transferRow.SetSelected(indexOf(ownerNames, e.newOwner))
-			}
-			grid.OnSelectRow = syncFromSelection
-			if len(edits) > 0 {
-				syncFromSelection(0)
-			}
-
-			gridRow := propsheet.NewGridRow(grid, 8)
-			gridRow.DirtyFn = func() bool {
-				for _, e := range edits {
-					if e.newOwner != e.origOwner {
-						return true
-					}
-				}
-				return false
-			}
-			gridRow.RevertFn = func() {
-				for _, e := range edits {
-					e.newOwner = e.origOwner
-				}
-				grid.SetData([]string{"Role", "Type", "Members"}, rowsFor())
-				if selected >= 0 && selected < len(edits) {
-					transferRow.SetSelected(indexOf(ownerNames, edits[selected].newOwner))
-				}
-			}
-
-			f := propsheet.NewForm(
-				propsheet.Section("Roles owned by this role"),
-				gridRow,
-				propsheet.Section("Selected role"),
-				nameStatic, ownerStatic, transferRow,
-				propsheet.Note("Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles."),
-			)
-
-			apply := func(ctx context.Context) error {
-				commitCurrent()
-				for _, e := range edits {
-					if e.newOwner == e.origOwner {
-						continue
-					}
-					if err := e.role.ChangeOwnerContext(ctx, e.newOwner); err != nil {
-						return err
-					}
-				}
-				return nil
-			}
+			f, apply := newOwnerTransferPage(items, serverPrincipalNames(logins, allRoles), ownerTransferSpec[*gosmo.ServerRole]{
+				Headers: []string{"Role", "Type", "Members"},
+				Cells: func(it *ownerTransferItem[*gosmo.ServerRole]) []string {
+					return []string{it.name, "Server role", strconv.Itoa(len(it.obj.Members))}
+				},
+				GridSection: "Roles owned by this role",
+				ItemSection: "Selected role",
+				Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
+				ChangeOwner: func(ctx context.Context, r *gosmo.ServerRole, newOwner string) error {
+					return r.ChangeOwnerContext(ctx, newOwner)
+				},
+			})
 			return f, apply, nil
 		},
 	}

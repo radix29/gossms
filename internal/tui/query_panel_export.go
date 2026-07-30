@@ -8,59 +8,89 @@ import (
 	"github.com/radix29/gossms/internal/query"
 )
 
-// promptWriteResults implements Results To File: asks for a path, writes
-// every result set as CSV, and reports the outcome as an extra message on
-// the result (so it shows up in the Messages tab too).
-func (p *QueryPanel) promptWriteResults(res *query.Result) {
-	p.app.fileDialog.ShowSave("Results To File", "results.csv", func(path string) {
-		n, err := writeCSV(path, res.Sets)
-		msg := query.Message{Text: fmt.Sprintf("%d row(s) written to %s", n, path)}
-		if err != nil {
-			msg = query.Message{Text: fmt.Sprintf("write results: %v", err), IsError: true}
-		}
-		res.Messages = append(res.Messages, msg)
-		if p.result == res {
-			p.renderActiveTab()
-		}
-		p.app.setStatus(msg.Text)
-	})
+// csvSink implements query.RowSink by writing each row to a CSV file as it
+// arrives, so an export never holds more than one row in memory. Result sets
+// are separated by a blank line, each preceded by its header row — the same
+// layout the previous buffer-everything writer produced.
+//
+// The write path is deliberately dumb: no counting beyond what EndSet is
+// handed, no buffering past csv.Writer's own, nothing retained between rows.
+type csvSink struct {
+	f *os.File
+	w *csv.Writer
+
+	// sets counts result sets begun so far, so the blank-line separator goes
+	// between sets and not before the first.
+	sets int
 }
 
-// writeCSV writes every result set to path as CSV — a header row then data
-// rows per set, sets separated by a blank line — returning the total number
-// of data rows written. A failing Close (e.g. a disk-full flush error the OS
-// only reports at close time) is reported too, not silently dropped, unless
-// an earlier error already explains the failure.
-func writeCSV(path string, sets []query.ResultSet) (n int, err error) {
+// newCSVSink creates (or truncates) path and returns a sink writing to it.
+func newCSVSink(path string) (*csvSink, error) {
 	f, err := os.Create(path)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer func() {
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-	}()
+	return &csvSink{f: f, w: csv.NewWriter(f)}, nil
+}
 
-	w := csv.NewWriter(f)
-	for i, set := range sets {
-		if i > 0 {
-			w.Flush()
-			if _, err = f.WriteString("\n"); err != nil {
-				return n, err
-			}
+// BeginSet writes the separator (for every set after the first) and header.
+func (s *csvSink) BeginSet(columns []string) error {
+	if s.sets > 0 {
+		s.w.Flush()
+		if err := s.w.Error(); err != nil {
+			return err
 		}
-		if err = w.Write(set.Columns); err != nil {
-			return n, err
-		}
-		for _, row := range set.Rows {
-			if err = w.Write(row); err != nil {
-				return n, err
-			}
-			n++
+		if _, err := s.f.WriteString("\n"); err != nil {
+			return err
 		}
 	}
-	w.Flush()
-	err = w.Error()
-	return n, err
+	s.sets++
+	return s.w.Write(columns)
+}
+
+func (s *csvSink) Row(cells []string) error { return s.w.Write(cells) }
+
+// EndSet flushes this set's rows so a long export reaches the disk as it
+// goes rather than only at Close.
+func (s *csvSink) EndSet(int) error {
+	s.w.Flush()
+	return s.w.Error()
+}
+
+// Close flushes and closes the file. A flush error is preferred over a close
+// error since it names the actual failure, but a close error is still
+// reported rather than dropped — a disk-full condition is often only visible
+// there.
+func (s *csvSink) Close() error {
+	s.w.Flush()
+	err := s.w.Error()
+	if cerr := s.f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// promptResultsFile asks where a Results To File run should write, then hands
+// the chosen path to run. Cancelling the dialog calls neither.
+//
+// The prompt comes *before* execution, not after: the rows are streamed
+// straight to the file as they are scanned (see csvSink), so the destination
+// has to exist by the time the query starts. This also matches SSMS, which
+// asks for the filename when you execute in Results To File mode.
+func (p *QueryPanel) promptResultsFile(run func(path string)) {
+	p.app.fileDialog.ShowSave("Results To File", "results.csv", run)
+}
+
+// reportExport appends the outcome of a streamed export to res so it shows up
+// in the Messages tab, and mirrors it to the status bar.
+func (p *QueryPanel) reportExport(res *query.Result, path string, rows int, err error) {
+	msg := query.Message{Text: fmt.Sprintf("%d row(s) written to %s", rows, path)}
+	if err != nil {
+		msg = query.Message{Text: fmt.Sprintf("write results to %s: %v", path, err), IsError: true}
+	}
+	res.Messages = append(res.Messages, msg)
+	if p.result == res {
+		p.renderActiveTab()
+	}
+	p.app.setStatus(msg.Text)
 }

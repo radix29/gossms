@@ -76,7 +76,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				propsheet.Section("Key identity"),
 				nameRow,
 				propsheet.Static("Type", keyTypeName(idx.IsPrimaryKey)),
-				propsheet.Static("Index type", indexTypeNames[idx.Type]),
+				propsheet.Static("Index type", indexTypeName(idx.Type)),
 				propsheet.Static("Disabled", boolStr(idx.IsDisabled)),
 				propsheet.Section("Table or view"),
 				propsheet.Static("Schema", t.Schema),
@@ -124,14 +124,13 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 			padRow := propsheet.Check("Pad index", idx.IsPadded)
 			rowLocksRow := propsheet.Check("Allow row locks", idx.AllowRowLocks)
 			pageLocksRow := propsheet.Check("Allow page locks", idx.AllowPageLocks)
-			compressionRow := propsheet.Select("Data compression", indexDataCompressionOptions,
-				indexOf(indexDataCompressionOptions, idx.DataCompression))
+			compressionLayoutRow, compressionRow := dataCompressionRow(idx.DataCompression)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Key options"),
 				fillFactorRow, padRow, rowLocksRow, pageLocksRow,
 				propsheet.Section("Compression"),
-				compressionRow,
+				compressionLayoutRow,
 				propsheet.Note("Fill factor, pad index, and data compression only take effect after a rebuild — Apply issues one automatically when any of these three change."),
 			)
 
@@ -145,13 +144,16 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 						return err
 					}
 				}
-				if fillFactorRow.Dirty() || padRow.Dirty() || compressionRow.Dirty() {
+				// Nil when the server reports a compression outside the
+				// editable set (see dataCompressionRow).
+				compressionDirty := compressionRow != nil && compressionRow.Dirty()
+				if fillFactorRow.Dirty() || padRow.Dirty() || compressionDirty {
 					fillFactor, err := fillFactorRow.IntValue()
 					if err != nil {
 						return err
 					}
 					compression := ""
-					if compressionRow.Dirty() {
+					if compressionDirty {
 						compression = compressionRow.Value()
 					}
 					if err := idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), padRow.Checked(), compression); err != nil {

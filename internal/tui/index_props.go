@@ -15,18 +15,48 @@ import (
 // indexTypeNames renders a gosmo.IndexType the way SSMS's Index Properties
 // General page does.
 var indexTypeNames = map[gosmo.IndexType]string{
-	gosmo.IndexTypeClustered:    "Clustered",
-	gosmo.IndexTypeNonClustered: "Nonclustered",
-	gosmo.IndexTypeXML:          "XML",
-	gosmo.IndexTypeSpatial:      "Spatial",
-	gosmo.IndexTypeColumnStore:  "Columnstore",
+	gosmo.IndexTypeClustered:            "Clustered",
+	gosmo.IndexTypeNonClustered:         "Nonclustered",
+	gosmo.IndexTypeXML:                  "XML",
+	gosmo.IndexTypeSpatial:              "Spatial",
+	gosmo.IndexTypeColumnStore:          "Nonclustered columnstore",
+	gosmo.IndexTypeClusteredColumnStore: "Clustered columnstore",
+}
+
+// indexTypeName renders t for display, falling back to the server's own
+// type_desc for a type gosmo carries through verbatim — NONCLUSTERED HASH on
+// a memory-optimized table, or a type a newer SQL Server adds. The bare map
+// lookup drew an empty row for those.
+func indexTypeName(t gosmo.IndexType) string {
+	if s, ok := indexTypeNames[t]; ok {
+		return s
+	}
+	return string(t)
 }
 
 // indexDataCompressionOptions is the Options page's Data compression
 // dropdown — NONE/ROW/PAGE, the three values every SQL Server edition
-// supports on a rowstore index (COLUMNSTORE/COLUMNSTORE_ARCHIVE only apply
-// to columnstore indexes, out of scope here).
+// supports on a rowstore index. A columnstore index reports COLUMNSTORE or
+// COLUMNSTORE_ARCHIVE, which stay out of the editable set; see
+// dataCompressionRow for how such a value is shown instead.
 var indexDataCompressionOptions = []string{"NONE", "ROW", "PAGE"}
+
+// dataCompressionRow builds the Data compression row for an index Options
+// page from the server's data_compression_desc. It returns the row to lay out
+// plus the editable Select, which is nil when current isn't one of the three
+// editable values.
+//
+// Selecting into the dropdown with indexOf's not-found 0 rendered a
+// columnstore index's COLUMNSTORE as "NONE" — itself a real compression
+// setting, so it read as fact rather than as a missing value. Showing the
+// server's own text read-only is the honest form.
+func dataCompressionRow(current string) (propsheet.Row, *propsheet.SelectRow) {
+	if i, ok := indexOfOK(indexDataCompressionOptions, current); ok {
+		row := propsheet.Select("Data compression", indexDataCompressionOptions, i)
+		return row, row
+	}
+	return propsheet.Static("Data compression", current+" (not editable here)"), nil
+}
 
 // indexPropPages builds the page set for Index Properties. There's no
 // Permissions page: an index isn't a SQL Server securable class, so
@@ -106,7 +136,7 @@ func pageIndexGeneral(sc *db.ServerConn, dbName, schema, table, name string) pro
 			f := propsheet.NewForm(
 				propsheet.Section("Index identity"),
 				propsheet.Static("Index name", idx.Name),
-				propsheet.Static("Index type", indexTypeNames[idx.Type]),
+				propsheet.Static("Index type", indexTypeName(idx.Type)),
 				propsheet.Static("Unique", boolStr(idx.IsUnique)),
 				propsheet.Static("Disabled", boolStr(idx.IsDisabled)),
 				propsheet.Section("Table or view"),
@@ -145,8 +175,7 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			padRow := propsheet.Check("Pad index", idx.IsPadded)
 			rowLocksRow := propsheet.Check("Allow row locks", idx.AllowRowLocks)
 			pageLocksRow := propsheet.Check("Allow page locks", idx.AllowPageLocks)
-			compressionRow := propsheet.Select("Data compression", indexDataCompressionOptions,
-				indexOf(indexDataCompressionOptions, idx.DataCompression))
+			compressionLayoutRow, compressionRow := dataCompressionRow(idx.DataCompression)
 
 			rows := []propsheet.Row{propsheet.Section("Index options"), fillFactorRow, padRow}
 			var ignoreDupRow *propsheet.CheckRow
@@ -158,7 +187,7 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			}
 			rows = append(rows, rowLocksRow, pageLocksRow,
 				propsheet.Section("Compression"),
-				compressionRow,
+				compressionLayoutRow,
 				propsheet.Note("Fill factor, pad index, and data compression only take effect after a rebuild — Apply issues one automatically when any of these three change."),
 			)
 			f := propsheet.NewForm(rows...)
@@ -177,13 +206,17 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 						return err
 					}
 				}
-				if fillFactorRow.Dirty() || padRow.Dirty() || compressionRow.Dirty() {
+				// compressionRow is nil when the server reports a compression
+				// outside the editable set, so there is nothing to rebuild
+				// from — the rest of the page still applies.
+				compressionDirty := compressionRow != nil && compressionRow.Dirty()
+				if fillFactorRow.Dirty() || padRow.Dirty() || compressionDirty {
 					fillFactor, err := fillFactorRow.IntValue()
 					if err != nil {
 						return err
 					}
 					compression := ""
-					if compressionRow.Dirty() {
+					if compressionDirty {
 						compression = compressionRow.Value()
 					}
 					if err := idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), padRow.Checked(), compression); err != nil {

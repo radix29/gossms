@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -340,4 +342,189 @@ func TestLoadCorruptFileKeepsACopy(t *testing.T) {
 	if string(saved) != string(raw) {
 		t.Errorf(".corrupt copy = %q, want the original bytes %q", saved, raw)
 	}
+}
+
+// A config.json written before password binding must survive the upgrade:
+// Load still returns the plaintext, and the next Save rewrites the entry in
+// the bound format. Getting this wrong silently empties every saved password.
+func TestLoadMigratesLegacyUnboundPasswordOnNextSave(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	dir := filepath.Dir(configPath())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key, err := loadOrCreateKey(dir)
+	if err != nil {
+		t.Fatalf("loadOrCreateKey: %v", err)
+	}
+
+	const plaintext = "legacy-s3cr3t"
+	legacy, err := sealLegacyForTest(key, plaintext)
+	if err != nil {
+		t.Fatalf("sealLegacyForTest: %v", err)
+	}
+	onDisk := &Config{Connections: []Connection{{
+		Name: "prod", Server: "sql-prod", Port: 1433, Database: "app",
+		AuthMethod: AuthSQLServer, User: "sa", Password: legacy,
+	}}}
+	data, err := json.MarshalIndent(onDisk, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load reads the pre-binding format.
+	cfg := Load()
+	if len(cfg.Connections) != 1 {
+		t.Fatalf("len(Connections) = %d, want 1", len(cfg.Connections))
+	}
+	if got := cfg.Connections[0].Password; got != plaintext {
+		t.Fatalf("Load() password = %q, want %q — legacy config did not migrate", got, plaintext)
+	}
+
+	// Saving rewrites it bound, and it still round-trips.
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	raw, err := os.ReadFile(configPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reread Config
+	if err := json.Unmarshal(raw, &reread); err != nil {
+		t.Fatal(err)
+	}
+	stored := reread.Connections[0].Password
+	if !strings.HasPrefix(stored, aadPrefix) {
+		t.Errorf("stored password = %q, want the %q prefix after re-save", stored, aadPrefix)
+	}
+	if strings.Contains(string(raw), plaintext) {
+		t.Error("plaintext password appears in the saved file")
+	}
+	if got := Load().Connections[0].Password; got != plaintext {
+		t.Errorf("password after migration round trip = %q, want %q", got, plaintext)
+	}
+}
+
+// TestUndecryptablePasswordSurvivesAnUnrelatedSave is the regression test for
+// the data-loss path the sealed field closes. A password whose ciphertext no
+// longer opens — here because the key file was replaced — used to be
+// re-encrypted from the "" Load handed back, so saving any unrelated setting
+// overwrote the one copy a restored key could still have read.
+func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := &Config{}
+	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!"})
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	cfgPath := configPath()
+	sealedBefore := readStoredPassword(t, cfgPath)
+	if sealedBefore == "" {
+		t.Fatal("nothing was stored for the password")
+	}
+
+	// Replace the key so the stored ciphertext can no longer be opened,
+	// standing in for a regenerated or wrongly-restored key file. The real
+	// one is kept so the recovery assertion at the end can put it back.
+	keyPath := filepath.Join(filepath.Dir(cfgPath), keyFileName)
+	origKey, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, bytes.Repeat([]byte{0xAB}, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := Load()
+	if len(loaded.Connections) != 1 {
+		t.Fatalf("Load() returned %d connections, want 1", len(loaded.Connections))
+	}
+	if got := loaded.Connections[0].Password; got != "" {
+		t.Errorf("Password = %q, want \"\" — an unopenable ciphertext must not surface as plaintext", got)
+	}
+
+	// An unrelated setting changes and the config is written back.
+	loaded.MaxCellLength = 99
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save() after failed decrypt: %v", err)
+	}
+
+	if got := readStoredPassword(t, cfgPath); got != sealedBefore {
+		t.Errorf("stored password after an unrelated Save = %q, want the original ciphertext %q — "+
+			"it was overwritten and is now unrecoverable", got, sealedBefore)
+	}
+
+	// Restoring the original key brings the password back — the whole point
+	// of not overwriting the ciphertext.
+	if err := os.WriteFile(keyPath, origKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(); len(got.Connections) != 1 || got.Connections[0].Password != "s3cr3t!" {
+		t.Errorf("Load() after restoring the key = %+v, want the password back as %q",
+			got.Connections, "s3cr3t!")
+	}
+}
+
+// TestReenteredPasswordReplacesAnUnopenableOne confirms the preserved
+// ciphertext isn't sticky: reconnecting with a real password goes through
+// AddOrUpdate as a fresh Connection, whose sealed field is empty, so the
+// unopenable blob is replaced for good.
+func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := &Config{}
+	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "old-secret"})
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	cfgPath := configPath()
+	stale := readStoredPassword(t, cfgPath)
+
+	keyPath := filepath.Join(filepath.Dir(cfgPath), keyFileName)
+	if err := os.WriteFile(keyPath, bytes.Repeat([]byte{0xCD}, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := Load()
+	loaded.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "new-secret"})
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save() after re-entry: %v", err)
+	}
+
+	if got := readStoredPassword(t, cfgPath); got == stale {
+		t.Error("re-entering the password left the old unopenable ciphertext in place")
+	}
+	if got := Load(); len(got.Connections) != 1 || got.Connections[0].Password != "new-secret" {
+		t.Errorf("Load() after re-entry didn't return the new password: %+v", got.Connections)
+	}
+}
+
+// readStoredPassword reads the raw (encrypted) password field of the single
+// saved connection straight out of config.json.
+func readStoredPassword(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk struct {
+		Connections []struct {
+			Password string `json:"password"`
+		} `json:"connections"`
+	}
+	if err := json.Unmarshal(raw, &onDisk); err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk.Connections) != 1 {
+		t.Fatalf("config.json has %d connections, want 1", len(onDisk.Connections))
+	}
+	return onDisk.Connections[0].Password
 }

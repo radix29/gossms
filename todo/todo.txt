@@ -1,5 +1,5 @@
 
-restore backup -> move files, error messages, text trimming etc
+restore backup -> show remote server directoy, move files, error messages, text trimming etc
 
 ---------
 
@@ -28,6 +28,13 @@ sp_blitz & index with reference built in
 
 ------
 
-review both projects and check for bugs, inconsistencies, optimizations, simplifications and refractoring. plan only, ask before implementing to switch models. do not commit to git
+review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. think hard, take your time, be honest. plan only, ask before implementing to switch models. do not commit to git
 
 check if there are any other bugs. plan for them. ask to change model before implementing
+
+
+Critical analysis. Analyze your Claude.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree
+
+Critical analysis. Analyze your memory.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree
+
+Critical analysis. Analyze your architecture.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree

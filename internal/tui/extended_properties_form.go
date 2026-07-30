@@ -122,6 +122,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 	}
 	syncFieldsFromSelection() // seed `current` for the initial selection (row 0)
 
+	hint := propsheet.Hint()
 	var addBtn, removeBtn *widgets.Button
 	addBtn = widgets.NewButton("Add", func() {
 		// Deliberately does NOT call commitCurrent(): valueField doubles as
@@ -133,26 +134,37 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		// its own selection (same as the Files page's Add).
 		name := nameField.Value()
 		if name == "" {
+			hint.Set("Type a property name first.")
 			return
 		}
-		for _, e := range visible() {
+		for i, e := range visible() {
 			if e.name == name {
-				return // already present — edit its Value row instead
+				// Already present — say so and select it, rather than
+				// leaving the button looking broken.
+				hint.Set("A property named " + name + " is already listed — its row is selected below.")
+				grid.SetSelectedRow(i)
+				syncFieldsFromSelection()
+				return
 			}
 		}
+		hint.Clear()
 		edits = append(edits, &extPropEdit{name: name, value: valueField.Value(), isNew: true})
 		grid.SetData([]string{"Name", "Value"}, rowsFor())
 		grid.SetSelectedRow(len(visible()) - 1)
 		syncFieldsFromSelection()
 	})
 	removeBtn = widgets.NewButton("Remove", func() {
-		if e := selected(); e != nil {
-			e.pendingRemove = true
-			current = nil // its old value is void; don't let commitCurrent write back into it
-			grid.SetData([]string{"Name", "Value"}, rowsFor())
-			grid.SetSelectedRow(0)
-			syncFieldsFromSelection()
+		e := selected()
+		if e == nil {
+			hint.Set("Select a property in the grid above to remove it.")
+			return
 		}
+		hint.Clear()
+		e.pendingRemove = true
+		current = nil // its old value is void; don't let commitCurrent write back into it
+		grid.SetData([]string{"Name", "Value"}, rowsFor())
+		grid.SetSelectedRow(0)
+		syncFieldsFromSelection()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 12)
@@ -185,6 +197,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		propsheet.Section("Selected property"),
 		nameField, valueField,
 		propsheet.Buttons(addBtn, removeBtn),
+		hint,
 		propsheet.Note("Extended properties are metadata only. They can be scripted via sp_addextendedproperty, sp_updateextendedproperty, and sp_dropextendedproperty."),
 	)
 	apply := func(ctx context.Context) error {

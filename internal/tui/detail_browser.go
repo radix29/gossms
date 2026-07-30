@@ -21,6 +21,20 @@ type DetailBrowser struct {
 	grid   *controls.DataGrid
 	active bool
 
+	// OnRefresh runs when the title bar's refresh button is clicked — the
+	// same action as F5 / Edit > Refresh, refreshing whatever node the
+	// panel is currently showing. Nil makes the button a no-op.
+	OnRefresh func()
+
+	// refreshRect is the title bar's refresh button, positioned by
+	// SetBounds; zero-width when the panel is too narrow to fit it.
+	refreshRect core.Rect
+
+	// mouseDragging distinguishes a fresh Button1 press on the refresh
+	// button from a continued hold over it, like controls.Toolbar's field
+	// of the same name.
+	mouseDragging bool
+
 	// seq guards against a slow, superseded fetch (see ShowNodeDetails)
 	// overwriting the grid with results for a node that's no longer
 	// selected — incremented on every call, and any async result (partial
@@ -73,10 +87,22 @@ func NewDetailBrowser(title string) *DetailBrowser {
 // Title returns the panel title (Panel interface).
 func (db *DetailBrowser) Title() string { return db.title }
 
-// SetBounds positions the panel, reserving the first row for the title bar.
+// refreshButtonLabel is drawn at the right end of the title bar and
+// clicking it runs OnRefresh.
+const refreshButtonLabel = "[⟳]"
+
+// SetBounds positions the panel, reserving the first row for the title bar
+// and its right-aligned refresh button.
 func (db *DetailBrowser) SetBounds(x, y, w, h int) {
 	db.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	db.grid.SetBounds(x, y+1, w, h-1)
+
+	bw := core.DisplayWidth(refreshButtonLabel)
+	if w >= bw+4 {
+		db.refreshRect = core.Rect{X: x + w - bw - 1, Y: y, W: bw, H: 1}
+	} else {
+		db.refreshRect = core.Rect{}
+	}
 }
 
 // SetActive marks this panel focused (affects title bar colour).
@@ -219,6 +245,7 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
 		go func() {
+			defer app.recoverPanic("loading Object Explorer details")
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			cols, rows, err := fetchNodeDetails(ctx, sc, node)
@@ -423,7 +450,12 @@ func (db *DetailBrowser) Draw(s tcell.Screen) {
 		titleStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White).Bold(true)
 	}
 	core.FillRect(s, core.Rect{X: db.rect.X, Y: db.rect.Y, W: db.rect.W, H: 1}, ' ', titleStyle)
-	core.DrawTextClipped(s, db.rect.X+1, db.rect.Y, db.rect.W-2, titleStyle, db.title)
+	titleW := db.rect.W - 2
+	if db.refreshRect.W > 0 {
+		titleW = db.refreshRect.X - db.rect.X - 2
+		core.DrawText(s, db.refreshRect.X, db.refreshRect.Y, titleStyle, refreshButtonLabel)
+	}
+	core.DrawTextClipped(s, db.rect.X+1, db.rect.Y, titleW, titleStyle, db.title)
 
 	db.grid.Draw(s)
 	db.grid.DrawOverlay(s)
@@ -432,8 +464,27 @@ func (db *DetailBrowser) Draw(s tcell.Screen) {
 // HandleKey delegates to the data grid.
 func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool { return db.grid.HandleKey(ev) }
 
-// HandleMouse delegates to the data grid.
-func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool { return db.grid.HandleMouse(ev) }
+// HandleMouse fires OnRefresh for a press on the title bar's refresh
+// button and delegates everything else to the data grid. A release over
+// the button still reaches the grid, so its own mouseDragging latch can't
+// stick.
+func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		db.mouseDragging = false
+	}
+	mx, my := ev.Position()
+	if db.refreshRect.Contains(mx, my) {
+		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
+			db.mouseDragging = true
+			if db.OnRefresh != nil {
+				db.OnRefresh()
+			}
+		}
+		db.grid.HandleMouse(ev)
+		return true
+	}
+	return db.grid.HandleMouse(ev)
+}
 
 // HasSelection, SelectedText, Cut, Paste, and SelectAll implement
 // clipboardTarget (see internal/tui/clipboard.go) by forwarding to the

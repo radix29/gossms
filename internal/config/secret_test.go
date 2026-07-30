@@ -1,10 +1,23 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// testConn is a saved connection with pwd as its password, used as the AAD
+// identity for the seal/open round trips below.
+func testConn(pwd string) Connection {
+	return Connection{
+		Name: "prod", Server: "sql-prod", Port: 1433, Database: "app",
+		AuthMethod: AuthSQLServer, User: "sa", Password: pwd,
+	}
+}
 
 func TestEncryptDecryptPasswordRoundTrip(t *testing.T) {
 	key := make([]byte, 32)
@@ -14,23 +27,26 @@ func TestEncryptDecryptPasswordRoundTrip(t *testing.T) {
 
 	cases := []string{"s3cr3t!", "with spaces and 'quotes'", "unicode: пароль 密码"}
 	for _, plaintext := range cases {
-		enc, err := encryptPassword(key, plaintext)
+		c := testConn(plaintext)
+		enc, err := encryptPassword(key, c)
 		if err != nil {
 			t.Fatalf("encryptPassword(%q): %v", plaintext, err)
 		}
 		if enc == plaintext {
 			t.Errorf("encryptPassword(%q) returned the plaintext unchanged", plaintext)
 		}
-		got := decryptPassword(key, enc)
-		if got != plaintext {
-			t.Errorf("decryptPassword(encryptPassword(%q)) = %q, want %q", plaintext, got, plaintext)
+		c.Password = enc
+		got, ok := decryptPassword(key, c)
+		if !ok || got != plaintext {
+			t.Errorf("decryptPassword(encryptPassword(%q)) = (%q, %v), want (%q, true)",
+				plaintext, got, ok, plaintext)
 		}
 	}
 }
 
 func TestEncryptEmptyPassword(t *testing.T) {
 	key := make([]byte, 32)
-	enc, err := encryptPassword(key, "")
+	enc, err := encryptPassword(key, testConn(""))
 	if err != nil {
 		t.Fatalf("encryptPassword(\"\"): %v", err)
 	}
@@ -41,17 +57,22 @@ func TestEncryptEmptyPassword(t *testing.T) {
 
 func TestDecryptEmptyString(t *testing.T) {
 	key := make([]byte, 32)
-	if got := decryptPassword(key, ""); got != "" {
-		t.Errorf("decryptPassword(key, \"\") = %q, want \"\"", got)
+	// A password stored empty is not a failed open: ok stays true, so Save
+	// re-seals it normally instead of treating it as a value to preserve.
+	got, ok := decryptPassword(key, testConn(""))
+	if !ok || got != "" {
+		t.Errorf("decryptPassword(key, \"\") = (%q, %v), want (\"\", true)", got, ok)
 	}
 }
 
 func TestDecryptGarbageReturnsEmpty(t *testing.T) {
 	key := make([]byte, 32)
-	cases := []string{"not base64!!", "aGVsbG8=", "AAAA"}
+	cases := []string{"not base64!!", "aGVsbG8=", "AAAA", aadPrefix + "not base64!!", aadPrefix + "AAAA"}
 	for _, garbage := range cases {
-		if got := decryptPassword(key, garbage); got != "" {
-			t.Errorf("decryptPassword(key, %q) = %q, want \"\" (garbage should fail closed)", garbage, got)
+		got, ok := decryptPassword(key, testConn(garbage))
+		if ok || got != "" {
+			t.Errorf("decryptPassword(key, %q) = (%q, %v), want (\"\", false) — garbage should fail closed and report it",
+				garbage, got, ok)
 		}
 	}
 }
@@ -63,13 +84,118 @@ func TestDecryptWithWrongKeyReturnsEmpty(t *testing.T) {
 		key2[i] = 0xFF
 	}
 
-	enc, err := encryptPassword(key1, "s3cr3t!")
+	c := testConn("s3cr3t!")
+	enc, err := encryptPassword(key1, c)
 	if err != nil {
 		t.Fatalf("encryptPassword: %v", err)
 	}
-	if got := decryptPassword(key2, enc); got != "" {
-		t.Errorf("decryptPassword with wrong key = %q, want \"\" (GCM auth should fail)", got)
+	c.Password = enc
+	got, ok := decryptPassword(key2, c)
+	if ok || got != "" {
+		t.Errorf("decryptPassword with wrong key = (%q, %v), want (\"\", false) (GCM auth should fail)", got, ok)
 	}
+}
+
+// The point of the AAD: a sealed password must not open under a different
+// connection identity. Without binding, an attacker with write access to
+// config.json could move the blob onto an entry aimed at a host they control
+// and have gossms send the real password there.
+func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
+	key := make([]byte, 32)
+	orig := testConn("s3cr3t!")
+	enc, err := encryptPassword(key, orig)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+
+	for _, c := range []struct {
+		label  string
+		mutate func(Connection) Connection
+	}{
+		{"retargeted server", func(c Connection) Connection { c.Server = "attacker-host"; return c }},
+		{"different user", func(c Connection) Connection { c.User = "other"; return c }},
+		{"different auth method", func(c Connection) Connection { c.AuthMethod = AuthWindows; return c }},
+	} {
+		t.Run(c.label, func(t *testing.T) {
+			moved := c.mutate(orig)
+			moved.Password = enc
+			got, ok := decryptPassword(key, moved)
+			if ok || got != "" {
+				t.Errorf("decryptPassword after %s = (%q, %v), want (\"\", false) — the ciphertext was not bound to its connection",
+					c.label, got, ok)
+			}
+		})
+	}
+}
+
+// Relabelling a connection or repointing it at another database on the same
+// server is an ordinary edit, so neither field is in the AAD and the stored
+// password must survive both.
+func TestPasswordSurvivesNameAndDatabaseEdits(t *testing.T) {
+	key := make([]byte, 32)
+	orig := testConn("s3cr3t!")
+	enc, err := encryptPassword(key, orig)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+
+	edited := orig
+	edited.Name = "production (renamed)"
+	edited.Database = "reporting"
+	edited.Port = 14330
+	edited.Password = enc
+	got, ok := decryptPassword(key, edited)
+	if !ok || got != "s3cr3t!" {
+		t.Errorf("decryptPassword after a rename/database edit = (%q, %v), want (%q, true)", got, ok, "s3cr3t!")
+	}
+}
+
+// A config written before connection binding has no aadPrefix and must still
+// decrypt, or upgrading would silently empty every saved password.
+func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i * 3)
+	}
+	const plaintext = "legacy-s3cr3t"
+
+	legacy, err := sealLegacyForTest(key, plaintext)
+	if err != nil {
+		t.Fatalf("sealLegacyForTest: %v", err)
+	}
+	if strings.HasPrefix(legacy, aadPrefix) {
+		t.Fatalf("legacy fixture should not carry %q", aadPrefix)
+	}
+
+	c := testConn(legacy)
+	got, ok := decryptPassword(key, c)
+	if !ok || got != plaintext {
+		t.Errorf("decryptPassword(legacy) = (%q, %v), want (%q, true)", got, ok, plaintext)
+	}
+
+	// Re-sealing it moves it to the bound format.
+	c.Password = plaintext
+	reSealed, err := encryptPassword(key, c)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+	if !strings.HasPrefix(reSealed, aadPrefix) {
+		t.Errorf("re-sealed password = %q, want the %q prefix", reSealed, aadPrefix)
+	}
+}
+
+// sealLegacyForTest reproduces the pre-binding on-disk format: base64 of
+// nonce||ciphertext with no AAD and no version prefix.
+func sealLegacyForTest(key []byte, plaintext string) (string, error) {
+	gcm, err := newGCM(key)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(gcm.Seal(nonce, nonce, []byte(plaintext), nil)), nil
 }
 
 func TestLoadOrCreateKeyGeneratesAndPersists(t *testing.T) {

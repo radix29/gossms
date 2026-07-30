@@ -34,6 +34,9 @@ func (b *Button) Focus(v bool)       { b.focused = v }
 // Width returns the rendered width of this button.
 func (b *Button) Width() int { return core.DisplayWidth(b.label) + 4 } // "[ label ]"
 
+// Label returns the button's text.
+func (b *Button) Label() string { return b.label }
+
 // Draw renders the button.
 func (b *Button) Draw(s tcell.Screen) {
 	st := theme.StyleButton()

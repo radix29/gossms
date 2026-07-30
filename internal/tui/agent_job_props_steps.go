@@ -225,6 +225,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			}
 			syncFieldsFromSelection()
 
+			hint := propsheet.Hint()
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {
 				// Deliberately doesn't call commitCurrent() first:
@@ -234,13 +235,20 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				// the wrong step.
 				name := nameField.Value()
 				if name == "" {
+					hint.Set("Type a step name first.")
 					return
 				}
-				for _, e := range visible() {
+				for i, e := range visible() {
 					if e.name == name {
-						return // already present — edit its row instead
+						// Already present — say so and select it, rather than
+						// leaving the button looking broken.
+						hint.Set("A step named " + name + " is already listed — its row is selected below.")
+						grid.SetSelectedRow(i)
+						syncFieldsFromSelection()
+						return
 					}
 				}
+				hint.Clear()
 				e := &jobStepEdit{isNew: true, name: name, database: databaseSelect.Value(), command: commandField.Value()}
 				e.onSuccessAction = onSuccessSelect.Selected() + 1
 				e.onFailAction = onFailSelect.Selected() + 1
@@ -263,13 +271,17 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				syncFieldsFromSelection()
 			})
 			deleteBtn = widgets.NewButton("Delete", func() {
-				if e := selected(); e != nil {
-					e.pendingRemove = true
-					current = nil
-					grid.SetData(cols, rowsFor())
-					grid.SetSelectedRow(0)
-					syncFieldsFromSelection()
+				e := selected()
+				if e == nil {
+					hint.Set("Select a step in the grid above to delete it.")
+					return
 				}
+				hint.Clear()
+				e.pendingRemove = true
+				current = nil
+				grid.SetData(cols, rowsFor())
+				grid.SetSelectedRow(0)
+				syncFieldsFromSelection()
 			})
 
 			statusRow := propsheet.Static("Last action", "")
@@ -314,6 +326,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				onSuccessSelect, onSuccessStepField, onFailSelect, onFailStepField,
 				retryAttemptsField, retryIntervalField, outputFileField,
 				propsheet.Buttons(newBtn, deleteBtn, startBtn),
+				hint,
 				statusRow,
 				propsheet.Note("Only T-SQL steps are supported. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 			)
