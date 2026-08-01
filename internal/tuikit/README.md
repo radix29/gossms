@@ -110,6 +110,17 @@ use `core.DisplayWidth(label)`, never `len(label)` — `len()` returns bytes,
 which is wrong for any non-ASCII text and will desync drawing from mouse
 hit-testing.
 
+Text that is *indexed by rune* — `Editor` and `InputField`, whose cursor,
+selection and wrap segments are rune positions — needs the rune-level
+counterparts in `core/runecol.go`: `RuneWidth`, `RunesWidth`,
+`ColumnOfRune` (index → column) and `RuneIndexAtColumn` (column → index).
+Those four are the entire conversion between the two coordinate systems.
+Both widgets treated a rune index as a column until 2026-08-02, so a CJK or
+emoji character shifted the rest of its line one column left of where it
+rendered and swallowed its neighbour; anything new that maps between a
+caret position and an x coordinate goes through these rather than
+re-deriving it.
+
 **Async state as data, not goroutines — `propsheet.PropertySheet`.**
 `PropertySheet` is a multi-page dialog (page list on the left, a `Form` of
 `Row`s on the right, OK/Cancel/Apply/Script Changes below) where each

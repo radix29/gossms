@@ -10,11 +10,19 @@ import (
 )
 
 // InputField is a single-line text input control.
+//
+// value is indexed by rune and everything on screen is measured in terminal
+// columns, which are not the same count: a CJK ideograph or emoji takes two
+// columns, a combining mark none. cursor and selAnchor are rune indices;
+// scroll is a column offset. core.ColumnOfRune and core.RuneIndexAtColumn
+// convert between them, and every conversion here goes through one of those
+// — treating a rune index as a column is what put the caret one column left
+// of the character it was on in any field holding wide text.
 type InputField struct {
 	rect     core.Rect
 	value    []rune
-	cursor   int
-	scroll   int
+	cursor   int // rune index
+	scroll   int // terminal columns scrolled off to the left
 	focused  bool
 	password bool   // mask characters with *
 	label    string // optional inline label drawn to the left
@@ -178,33 +186,87 @@ func (f *InputField) Draw(s tcell.Screen) {
 	s.SetContent(ix, f.rect.Y, '[', nil, borderStyle)
 	s.SetContent(ix+f.rect.W+1, f.rect.Y, ']', nil, borderStyle)
 
-	display := string(f.value)
-	if f.password {
-		display = strings.Repeat("*", len(f.value))
-	}
-	runes := []rune(display)
+	runes := f.displayRunes()
 	inputStyle := theme.StyleInput()
 	selStyle := theme.StyleSelected()
+	cursorStyle := tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White)
 	hasSel := f.HasSelection()
 	selStart, selEnd := 0, 0
 	if hasSel {
 		selStart, selEnd = f.selectionBounds()
 	}
-	for col := 0; col < f.rect.W; col++ {
-		ch := ' '
-		ci := f.scroll + col
-		if ci < len(runes) {
-			ch = runes[ci]
+
+	styleFor := func(i int) tcell.Style {
+		if f.focused && i == f.cursor {
+			return cursorStyle
 		}
-		cellStyle := inputStyle
-		if hasSel && ci >= selStart && ci < selEnd {
-			cellStyle = selStyle
+		if hasSel && i >= selStart && i < selEnd {
+			return selStyle
 		}
-		if f.focused && ci == f.cursor {
-			cellStyle = tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White)
-		}
-		s.SetContent(ix+1+col, f.rect.Y, ch, nil, cellStyle)
+		return inputStyle
 	}
+
+	// Walk runes accumulating display width rather than assuming a column
+	// each: a wide rune shifts everything after it one column right, and
+	// counting runes drew the tail of the field one column left of where the
+	// terminal actually put it.
+	i, col := 0, 0
+	for i < len(runes) {
+		rw := core.RuneWidth(runes[i])
+		if col+rw > f.scroll {
+			break
+		}
+		col += rw
+		i++
+	}
+	sx := 0
+	// A wide rune straddling the left edge shows only its right-hand cell,
+	// which is not a glyph — blank it rather than emit half a character.
+	if i < len(runes) && col < f.scroll {
+		for c := f.scroll; c < col+core.RuneWidth(runes[i]) && sx < f.rect.W; c++ {
+			s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, styleFor(i))
+			sx++
+		}
+		i++
+	}
+	for sx < f.rect.W {
+		st := styleFor(i)
+		if i >= len(runes) {
+			s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, st)
+			sx++
+			i++
+			continue
+		}
+		ch := runes[i]
+		rw := core.RuneWidth(ch)
+		if rw == 0 {
+			// A combining mark shares its base rune's cell.
+			i++
+			continue
+		}
+		if sx+rw > f.rect.W {
+			// Clipped by the right edge — blanks, never half a glyph, since
+			// tcell owns both cells of a double-width character.
+			for ; sx < f.rect.W; sx++ {
+				s.SetContent(ix+1+sx, f.rect.Y, ' ', nil, st)
+			}
+			break
+		}
+		s.SetContent(ix+1+sx, f.rect.Y, ch, nil, st)
+		sx += rw
+		i++
+	}
+}
+
+// displayRunes is what Draw and the click-to-position math both measure:
+// the value itself, or one '*' per rune in password mode. The masked form
+// keeps the same rune count as the value, so a rune index means the same
+// thing in both and no mapping between them is needed.
+func (f *InputField) displayRunes() []rune {
+	if f.password {
+		return []rune(strings.Repeat("*", len(f.value)))
+	}
+	return f.value
 }
 
 // HandleKey processes keyboard input. Returns true if the event was
@@ -337,7 +399,11 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	mx, _ := ev.Position()
 	ix := f.inputX()
-	col := core.Clamp(f.scroll+(mx-ix-1), 0, len(f.value))
+	// mx-ix-1 is a terminal-column offset into the box; the cursor is a rune
+	// index. Converting is what keeps a click landing on the character it
+	// was aimed at once the field holds a wide rune.
+	runes := f.displayRunes()
+	col := core.Clamp(core.RuneIndexAtColumn(runes, f.scroll+(mx-ix-1)), 0, len(f.value))
 	if !f.mouseDragging {
 		f.mouseDragging = true
 		f.cursor = col
@@ -350,11 +416,16 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
+// adjustScroll keeps the caret inside the visible box. It works in display
+// columns — the caret's column, not its rune index — so a field of wide
+// characters scrolls twice as far per caret step, which is what the eye
+// expects and what keeps the caret on screen at all.
 func (f *InputField) adjustScroll() {
-	if f.cursor < f.scroll {
-		f.scroll = f.cursor
+	col := core.ColumnOfRune(f.displayRunes(), f.cursor)
+	if col < f.scroll {
+		f.scroll = col
 	}
-	if f.cursor >= f.scroll+f.rect.W {
-		f.scroll = f.cursor - f.rect.W + 1
+	if col >= f.scroll+f.rect.W {
+		f.scroll = col - f.rect.W + 1
 	}
 }

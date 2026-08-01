@@ -436,3 +436,27 @@ func TestEditorCompletionRowNavigationClamps(t *testing.T) {
 		t.Fatalf("Text() after commit = %q, want %q", got, "Aac")
 	}
 }
+
+// TestEditorPasteClosesCompletionAndKeepsTextVerbatim pins Paste's
+// deliberate bypass of the completion popup: pasted text is finished text,
+// so it goes in exactly as given and the popup — open on the prefix the
+// paste lands after — closes rather than re-querying against the pasted
+// token.
+func TestEditorPasteClosesCompletionAndKeepsTextVerbatim(t *testing.T) {
+	e := newTestEditor("")
+	e.SetCompletionProvider(testCompletionProvider("Customers", "CustomerOrders"))
+
+	typeString(e, "Cu")
+	if !e.CompletionActive() {
+		t.Fatal("setup: expected the popup open after typing \"Cu\"")
+	}
+
+	e.Paste("st\nFROM t")
+
+	if e.CompletionActive() {
+		t.Fatal("completion popup still open after Paste")
+	}
+	if got := e.Text(); got != "Cust\nFROM t" {
+		t.Fatalf("Text() after Paste = %q, want %q — pasted text must go in verbatim", got, "Cust\nFROM t")
+	}
+}

@@ -11,15 +11,23 @@ import (
 // Editor
 // ---------------------------------------------------------------------------
 
-// Highlighter is a function that receives every line in the document and
-// the index of the one to highlight, returning that line's ColorRun
-// segments. The full buffer (not just the target line) is passed so a
-// highlighter that needs cross-line state — a multi-line block comment
-// spanning several lines, for instance — can look at what precedes idx.
-// Pass nil to disable syntax highlighting.
-type Highlighter func(lines [][]rune, idx int) []ColorRun
+// Highlighter is a function that receives the whole document and the index
+// of the line to highlight, returning that line's ColorRun segments. The
+// full buffer (not just the target line) is passed so a highlighter that
+// needs cross-line state — a block comment spanning several lines, for
+// instance — can look at what precedes idx. Pass nil to disable syntax
+// highlighting.
+//
+// A highlighter that caches such cross-line state must key the cache on
+// doc.Version() *and* the *Document itself: the version tells it whether the
+// text changed since the last call, and the pointer whether this is even the
+// same document. Both built-in highlighters do exactly that — see
+// SQLHighlighter.
+type Highlighter func(doc *Document, idx int) []ColorRun
 
-// ColorRun describes a coloured segment within an editor line.
+// ColorRun describes a coloured segment within an editor line. Start and
+// Len are rune indices into the line, not terminal columns — Editor maps
+// them to columns when it draws (see drawLineRow).
 type ColorRun struct {
 	Start int
 	Len   int
@@ -42,18 +50,33 @@ const maxUndoSteps = 500
 
 // Editor is a multi-line text editor.
 //
-// Note: unlike the rest of tuikit (TreeView, DataGrid, MenuBar, dialogs —
-// all of which use core.DisplayWidth for correct rendering of wide/CJK
-// characters), Editor's cursor, selection, and rendering are rune-indexed:
-// one rune occupies exactly one column. Wide-character string literals
-// remain editable but may render with minor column drift.
+// Positions inside the text — cursorCol, the selection anchor, ColorRun
+// bounds, wrap segments — are rune indices. Everything on screen —
+// scrollCol, the cursor's x, a click's x, the horizontal scrollbar — is a
+// terminal column. The two are not the same count: a CJK ideograph or emoji
+// takes two columns, a combining mark none. core.ColumnOfRune and
+// core.RuneIndexAtColumn convert between them, and every conversion goes
+// through one of those; treating a rune index as a column is what made a
+// wide character shift the rest of its line one column left of where the
+// editor thought it was.
+//
+// One thing stays rune-indexed on purpose: block (column) selection, whose
+// rectangle is defined by rune columns, so a block dragged across a line
+// containing a wide rune covers a ragged rather than a straight edge.
+// Rectangular selection over mixed-width text has no single right answer;
+// this is the SSMS-parity choice, not an oversight.
 type Editor struct {
-	rect      core.Rect
-	lines     [][]rune
+	rect core.Rect
+
+	// doc holds the text. It is a pointer because Highlighter is handed the
+	// same *Document the Editor mutates, and both must see one version
+	// counter — see Document for why the counter has to be unstale-able.
+	doc *Document
+
 	cursorRow int
 	cursorCol int
 	scrollRow int
-	scrollCol int
+	scrollCol int // terminal columns scrolled off to the left, not runes
 	active    bool
 	highlight Highlighter
 
@@ -64,7 +87,13 @@ type Editor struct {
 	// so moving back onto a longer line snaps back to where the movement
 	// started instead of staying at the shorter line's clamped column. Any
 	// other cursor-moving action (typing, Left/Right, Home/End, a mouse
-	// click) resets it to the new cursorCol, starting a fresh vertical run.
+	// click) resets it to the cursor's new column, starting a fresh
+	// vertical run.
+	//
+	// It is a *display* column, not a rune index: the caret has to track the
+	// same place on screen down a column of text, which is what the user is
+	// aiming at, and rune indices drift from that as soon as a line above
+	// contains a wide character.
 	desiredCol int
 
 	// OnRightClick, if set, is called with the click position when the
@@ -98,11 +127,16 @@ type Editor struct {
 	// within a single drawHighlighted call — nothing may retain it.
 	styleScratch []tcell.Style
 
-	// vlScratch and segScratch are buildVisualLines' buffers, kept across
-	// calls for the same reason as styleScratch — see that function. Valid
-	// only until the next buildVisualLines call; nothing may retain either.
+	// vlScratch and segScratch are buildVisualLines' buffers. vlScratch also
+	// *is* its cache: the flattening it holds stays valid until either the
+	// document or the wrap width changes, which the three fields below
+	// detect. See buildVisualLines.
 	vlScratch  []visualLine
 	segScratch []wrapSegment
+
+	vlCacheVersion uint64
+	vlCacheWidth   int
+	vlCacheValid   bool
 
 	// Selection: selecting is true while a Shift+move- or mouse-drag-driven
 	// selection is active; selAnchor{Row,Col} is the fixed end,
@@ -177,10 +211,17 @@ type Editor struct {
 // NewEditor creates an Editor. Pass a Highlighter or nil.
 func NewEditor(h Highlighter) *Editor {
 	return new(Editor{
-		lines:     [][]rune{{}},
+		doc:       newDocument(),
 		highlight: h,
 	})
 }
+
+// Document returns the editor's buffer, for a caller that needs to read the
+// text by line without rebuilding it from Text() — and for the tests that
+// drive a Highlighter directly. It is the same *Document the editor mutates,
+// so its Version() moves under the caller; nothing outside this package can
+// write through it.
+func (e *Editor) Document() *Document { return e.doc }
 
 // SetHighlighter replaces the syntax highlighter — e.g. switching a query
 // editor between SQL and XML highlighting depending on which kind of file
@@ -260,7 +301,7 @@ func (e *Editor) Focus(v bool) { e.SetActive(v) }
 // Text returns the editor content.
 func (e *Editor) Text() string {
 	var sb strings.Builder
-	for i, line := range e.lines {
+	for i, line := range e.doc.all() {
 		if i > 0 {
 			sb.WriteByte('\n')
 		}
@@ -276,10 +317,11 @@ func (e *Editor) Text() string {
 // was never actually typed into this document).
 func (e *Editor) SetText(text string) {
 	parts := strings.Split(strings.ReplaceAll(expandTabs(text), "\r\n", "\n"), "\n")
-	e.lines = make([][]rune, len(parts))
+	lines := make([][]rune, len(parts))
 	for i, p := range parts {
-		e.lines[i] = []rune(p)
+		lines[i] = []rune(p)
 	}
+	e.doc.setLines(lines)
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
 	e.undoStack, e.redoStack = nil, nil
@@ -288,15 +330,31 @@ func (e *Editor) SetText(text string) {
 }
 
 func (e *Editor) clampCursor() {
-	e.cursorRow = core.Clamp(e.cursorRow, 0, len(e.lines)-1)
+	e.cursorRow = core.Clamp(e.cursorRow, 0, e.doc.Len()-1)
 	// While a block (column) selection is active, cursorCol doubles as its
 	// "virtual column" and is allowed to sit past a short row's actual
 	// length — the expected rectangular-selection visual when the
 	// selection started on a longer line. It self-heals the moment
 	// selBlock goes false, before any insert/delete runs.
-	if e.cursorRow < len(e.lines) && !e.selBlock {
-		e.cursorCol = core.Clamp(e.cursorCol, 0, len(e.lines[e.cursorRow]))
+	if e.cursorRow < e.doc.Len() && !e.selBlock {
+		e.cursorCol = core.Clamp(e.cursorCol, 0, len(e.doc.Line(e.cursorRow)))
 	}
+}
+
+// cursorLine returns the line the cursor is on, or an empty line if the row
+// is somehow out of range — every caller here wants to measure or index it,
+// and a nil slice measures to zero rather than panicking.
+func (e *Editor) cursorLine() []rune {
+	if e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
+		return nil
+	}
+	return e.doc.Line(e.cursorRow)
+}
+
+// cursorDisplayCol is the terminal column the caret sits at within its line,
+// which is what scrolling, the caret's x, and desiredCol all work in.
+func (e *Editor) cursorDisplayCol() int {
+	return core.ColumnOfRune(e.cursorLine(), e.cursorCol)
 }
 
 // contentH is how many rows of text the editor actually shows — its full
@@ -335,42 +393,52 @@ func (e *Editor) ensureCursorVisible() {
 		e.scrollRow = e.cursorRow - contentH + 1
 	}
 	contentW := e.rect.W - e.gutterWidth()
-	if e.cursorCol < e.scrollCol {
-		e.scrollCol = e.cursorCol
+	// In display columns: a line of wide characters scrolls twice as far per
+	// caret step as an ASCII one, which is exactly what the eye expects.
+	curCol := e.cursorDisplayCol()
+	if curCol < e.scrollCol {
+		e.scrollCol = curCol
 	}
-	if e.cursorCol >= e.scrollCol+contentW {
-		e.scrollCol = e.cursorCol - contentW + 1
+	if curCol >= e.scrollCol+contentW {
+		e.scrollCol = curCol - contentW + 1
 	}
 }
 
+// insertRune inserts r at the cursor. It goes through setLine rather than
+// edit whenever the line count is unchanged, which is every call that isn't
+// repairing an out-of-range cursor: this is the typing path, and edit drops
+// every cached line width, turning each keystroke into a re-measure of the
+// whole buffer.
 func (e *Editor) insertRune(r rune) {
-	if e.cursorRow >= len(e.lines) {
-		e.lines = append(e.lines, []rune{})
+	if e.cursorRow >= e.doc.Len() {
+		e.doc.edit(func(lines [][]rune) [][]rune { return append(lines, []rune{}) })
 	}
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	nl := make([]rune, len(line)+1)
 	copy(nl, line[:e.cursorCol])
 	nl[e.cursorCol] = r
 	copy(nl[e.cursorCol+1:], line[e.cursorCol:])
-	e.lines[e.cursorRow] = nl
+	e.doc.setLine(e.cursorRow, nl)
 	e.cursorCol++
 }
 
 func (e *Editor) insertNewline() {
-	if e.cursorRow >= len(e.lines) {
-		e.lines = append(e.lines, []rune{})
-	}
-	line := e.lines[e.cursorRow]
-	before := make([]rune, e.cursorCol)
-	copy(before, line[:e.cursorCol])
-	after := make([]rune, len(line)-e.cursorCol)
-	copy(after, line[e.cursorCol:])
-	e.lines[e.cursorRow] = before
-	nl := make([][]rune, len(e.lines)+1)
-	copy(nl, e.lines[:e.cursorRow+1])
-	nl[e.cursorRow+1] = after
-	copy(nl[e.cursorRow+2:], e.lines[e.cursorRow+1:])
-	e.lines = nl
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		if e.cursorRow >= len(lines) {
+			lines = append(lines, []rune{})
+		}
+		line := lines[e.cursorRow]
+		before := make([]rune, e.cursorCol)
+		copy(before, line[:e.cursorCol])
+		after := make([]rune, len(line)-e.cursorCol)
+		copy(after, line[e.cursorCol:])
+		lines[e.cursorRow] = before
+		nl := make([][]rune, len(lines)+1)
+		copy(nl, lines[:e.cursorRow+1])
+		nl[e.cursorRow+1] = after
+		copy(nl[e.cursorRow+2:], lines[e.cursorRow+1:])
+		return nl
+	})
 	e.cursorRow++
 	e.cursorCol = 0
 }
@@ -380,40 +448,38 @@ func (e *Editor) backspace() {
 		return
 	}
 	if e.cursorCol > 0 {
-		line := e.lines[e.cursorRow]
-		e.lines[e.cursorRow] = append(line[:e.cursorCol-1], line[e.cursorCol:]...)
+		line := e.doc.Line(e.cursorRow)
+		e.doc.setLine(e.cursorRow, append(line[:e.cursorCol-1], line[e.cursorCol:]...))
 		e.cursorCol--
-	} else {
-		prev := e.lines[e.cursorRow-1]
-		cur := e.lines[e.cursorRow]
-		e.cursorCol = len(prev)
-		e.lines[e.cursorRow-1] = append(prev, cur...)
-		e.lines = append(e.lines[:e.cursorRow], e.lines[e.cursorRow+1:]...)
-		e.cursorRow--
+		return
 	}
+	e.cursorCol = len(e.doc.Line(e.cursorRow - 1))
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		lines[e.cursorRow-1] = append(lines[e.cursorRow-1], lines[e.cursorRow]...)
+		return append(lines[:e.cursorRow], lines[e.cursorRow+1:]...)
+	})
+	e.cursorRow--
 }
 
 func (e *Editor) deleteChar() {
-	if e.cursorRow >= len(e.lines) {
+	if e.cursorRow >= e.doc.Len() {
 		return
 	}
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	if e.cursorCol < len(line) {
-		e.lines[e.cursorRow] = append(line[:e.cursorCol], line[e.cursorCol+1:]...)
-	} else if e.cursorRow < len(e.lines)-1 {
-		e.lines[e.cursorRow] = append(line, e.lines[e.cursorRow+1]...)
-		e.lines = append(e.lines[:e.cursorRow+1], e.lines[e.cursorRow+2:]...)
+		e.doc.setLine(e.cursorRow, append(line[:e.cursorCol], line[e.cursorCol+1:]...))
+		return
+	}
+	if e.cursorRow < e.doc.Len()-1 {
+		e.doc.edit(func(lines [][]rune) [][]rune {
+			lines[e.cursorRow] = append(lines[e.cursorRow], lines[e.cursorRow+1]...)
+			return append(lines[:e.cursorRow+1], lines[e.cursorRow+2:]...)
+		})
 	}
 }
 
 func (e *Editor) pushUndo() {
-	lines := make([][]rune, len(e.lines))
-	for i, l := range e.lines {
-		nl := make([]rune, len(l))
-		copy(nl, l)
-		lines[i] = nl
-	}
-	e.undoStack = append(e.undoStack, editorState{lines, e.cursorRow, e.cursorCol})
+	e.undoStack = append(e.undoStack, e.snapshot())
 	if len(e.undoStack) > maxUndoSteps {
 		e.undoStack = e.undoStack[1:]
 	}
@@ -421,8 +487,8 @@ func (e *Editor) pushUndo() {
 }
 
 func (e *Editor) snapshot() editorState {
-	lines := make([][]rune, len(e.lines))
-	for i, l := range e.lines {
+	lines := make([][]rune, e.doc.Len())
+	for i, l := range e.doc.all() {
 		nl := make([]rune, len(l))
 		copy(nl, l)
 		lines[i] = nl
@@ -437,7 +503,8 @@ func (e *Editor) undo() {
 	e.redoStack = append(e.redoStack, e.snapshot())
 	st := e.undoStack[len(e.undoStack)-1]
 	e.undoStack = e.undoStack[:len(e.undoStack)-1]
-	e.lines, e.cursorRow, e.cursorCol = st.lines, st.cursorRow, st.cursorCol
+	e.doc.setLines(st.lines)
+	e.cursorRow, e.cursorCol = st.cursorRow, st.cursorCol
 }
 
 func (e *Editor) redo() {
@@ -447,5 +514,6 @@ func (e *Editor) redo() {
 	e.undoStack = append(e.undoStack, e.snapshot())
 	st := e.redoStack[len(e.redoStack)-1]
 	e.redoStack = e.redoStack[:len(e.redoStack)-1]
-	e.lines, e.cursorRow, e.cursorCol = st.lines, st.cursorRow, st.cursorCol
+	e.doc.setLines(st.lines)
+	e.cursorRow, e.cursorCol = st.cursorRow, st.cursorCol
 }

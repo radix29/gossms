@@ -39,7 +39,7 @@ import (
 // cursor is empty or all-whitespace — e.g. the cursor sits on a blank line
 // between two GO separators.
 func (e *Editor) SelectStatementAtCursor() bool {
-	sr, sc, er, ec, ok := sqlStatementAt(e.lines, e.cursorRow, e.cursorCol)
+	sr, sc, er, ec, ok := sqlStatementAt(e.doc.all(), e.cursorRow, e.cursorCol)
 	if !ok {
 		return false
 	}
@@ -48,7 +48,7 @@ func (e *Editor) SelectStatementAtCursor() bool {
 	e.selAnchorRow, e.selAnchorCol = sr, sc
 	e.cursorRow, e.cursorCol = er, ec
 	e.clampCursor()
-	e.desiredCol = e.cursorCol
+	e.desiredCol = e.cursorDisplayCol()
 	e.ensureCursorVisible()
 	return true
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -141,6 +142,13 @@ type App struct {
 	// Focus: "explorer" | "panels"
 	focus string
 
+	// Bracketed paste: pasting is true between an *tcell.EventPaste start
+	// and its matching end, during which every EventKey is pasted content
+	// rather than typing and accumulates in pasteBuf. See
+	// bufferPastedKey/endBracketedPaste in clipboard.go.
+	pasting  bool
+	pasteBuf strings.Builder
+
 	pendingMu sync.Mutex
 	pending   []func()
 
@@ -218,8 +226,25 @@ func (a *App) Run() error {
 		case *tcell.EventInterrupt:
 			// triggered after background goroutine posts result
 		case *tcell.EventKey:
+			// Between the two EventPaste markers every key is pasted
+			// content, not typing — buffer it instead of handling it, or
+			// each pasted newline arrives as KeyEnter and gets eaten by
+			// IntelliSense's commit-the-selected-candidate binding, which
+			// silently rewrites the pasted text (see bufferPastedKey).
+			if a.pasting {
+				a.bufferPastedKey(e)
+				break
+			}
 			if a.handleKey(e) {
 				return nil
+			}
+		case *tcell.EventPaste:
+			// Terminal bracketed paste (the terminal's own Paste command, or
+			// a middle-click) — see beginBracketedPaste/endBracketedPaste.
+			if e.Start() {
+				a.beginBracketedPaste()
+			} else {
+				a.endBracketedPaste()
 			}
 		case *tcell.EventMouse:
 			a.handleMouse(e)

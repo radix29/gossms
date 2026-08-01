@@ -12,6 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 func newTestResult(sets int, withError bool) *query.Result {
@@ -48,7 +49,11 @@ func TestMessagesErrorLinesColoredRed(t *testing.T) {
 		t.Errorf("messageErrorLines[1] = false for the error message, want true")
 	}
 
-	lines := [][]rune{[]rune("(1 row affected)"), []rune("boom")}
+	// A real Editor, since Document has no exported constructor — the
+	// highlighter only reads Line(idx) off it.
+	ed := controls.NewEditor(nil)
+	ed.SetText("(1 row affected)\nboom")
+	lines := ed.Document()
 	if runs := qp.messagesHighlighter(lines, 0); runs != nil {
 		t.Errorf("messagesHighlighter(0) = %v, want nil (not an error line)", runs)
 	}

@@ -15,13 +15,13 @@ import (
 // messagesHighlighter colors an entire line in the Messages tab red when it
 // belongs to an error message (see query.Message.IsError and the parallel
 // messageErrorLines slice built in renderActiveTab).
-func (p *QueryPanel) messagesHighlighter(lines [][]rune, idx int) []controls.ColorRun {
+func (p *QueryPanel) messagesHighlighter(doc *controls.Document, idx int) []controls.ColorRun {
 	if idx >= len(p.messageErrorLines) || !p.messageErrorLines[idx] {
 		return nil
 	}
 	pal := theme.Active()
 	errStyle := tcell.StyleDefault.Background(pal.EditorBg).Foreground(pal.Error)
-	return []controls.ColorRun{{Start: 0, Len: len(lines[idx]), Style: errStyle}}
+	return []controls.ColorRun{{Start: 0, Len: len(doc.Line(idx)), Style: errStyle}}
 }
 
 // onMessagesTab reports whether the active tab is Messages rather than a

@@ -3,9 +3,11 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -96,4 +98,46 @@ func waitAndDrain(t *testing.T, a *App) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("no callback posted within the timeout")
+}
+
+// A create dialog's later page acts on what an earlier page created. Under
+// Script Changes the earlier page's EXEC was only collected, so resolving
+// that object with a real JobByName/AlertByName lookup fails with "not
+// found" and no script comes out at all — the bug New Schedule reported as
+// `gosmo: schedule "X" not found`. Both helpers must hand back a name-only
+// handle instead, and that handle must still script its dependent statement.
+func TestScriptSafeLookupsDoNotQueryUnderScriptMode(t *testing.T) {
+	// Server is nil on purpose: under WithScript nothing may reach the
+	// database, so a helper that still queries panics here rather than
+	// quietly passing.
+	sc := &db.ServerConn{Opts: config.Connection{Server: "server-one"}}
+	ctx, script := gosmo.WithScript(context.Background())
+
+	j, err := scriptSafeJob(ctx, sc, "nightly reindex")
+	if err != nil {
+		t.Fatalf("scriptSafeJob under WithScript: %v", err)
+	}
+	if err := j.AttachScheduleContext(ctx, "Nightly"); err != nil {
+		t.Fatalf("AttachScheduleContext on the scripted handle: %v", err)
+	}
+
+	al, err := scriptSafeAlert(ctx, sc, "sev 19")
+	if err != nil {
+		t.Fatalf("scriptSafeAlert under WithScript: %v", err)
+	}
+	if err := al.NotifyContext(ctx, "dba", gosmo.NotifyMethodEmail); err != nil {
+		t.Fatalf("NotifyContext on the scripted handle: %v", err)
+	}
+
+	if len(script.Statements) != 2 {
+		t.Fatalf("Statements = %v, want the attach and the notification", script.Statements)
+	}
+	if !strings.Contains(script.Statements[0], "sp_attach_schedule") ||
+		!strings.Contains(script.Statements[0], "N'nightly reindex'") {
+		t.Errorf("Statements[0] = %q, want sp_attach_schedule naming the job", script.Statements[0])
+	}
+	if !strings.Contains(script.Statements[1], "sp_add_notification") ||
+		!strings.Contains(script.Statements[1], "N'sev 19'") {
+		t.Errorf("Statements[1] = %q, want sp_add_notification naming the alert", script.Statements[1])
+	}
 }

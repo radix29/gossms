@@ -51,7 +51,7 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 
 	// Scoped to the current statement — a table named in an earlier ';'- or
 	// GO-separated statement must not leak into this one's FROM-scope/clause
-	// detection (see scanCompletionPrefix and statementStartOffset).
+	// detection (see scanCompletionPrefix).
 	pre := scanCompletionPrefix(lines, buf, row, upTo)
 	tokens, state, batchStart, quoteStart := pre.tokens, pre.state, pre.batchStart, pre.quoteStart
 

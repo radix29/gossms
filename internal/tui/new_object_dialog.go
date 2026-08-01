@@ -269,6 +269,31 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 	})
 }
 
+// scriptSafeJob / scriptSafeAlert resolve the object a *previous* page of the
+// same create dialog produced.
+//
+// Under Script Changes that object does not exist: the earlier page's apply
+// only collected its EXEC, so a JobByName/AlertByName lookup — a real read,
+// which WithScript does not intercept — comes back "not found" and the whole
+// script fails instead of being produced. gosmo's name-only handle is what
+// the dependent statement actually needs; every write reached from here
+// (AddStep, AttachSchedule, SetEmailNotify, Notify) builds its statement from
+// the name alone. The real Apply path still reads, so a name typo is still
+// caught by the server there.
+func scriptSafeJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
+	if gosmo.Scripting(ctx) {
+		return sc.Server.Job(name), nil
+	}
+	return sc.Server.JobByNameContext(ctx, name)
+}
+
+func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Alert, error) {
+	if gosmo.Scripting(ctx) {
+		return sc.Server.Alert(name), nil
+	}
+	return sc.Server.AlertByNameContext(ctx, name)
+}
+
 func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc

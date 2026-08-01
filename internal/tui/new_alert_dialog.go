@@ -147,7 +147,7 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 		propsheet.Note("Pager and Net Send notification aren't offered — SQL-only scope. Response job execution can be set up afterward from Job Properties' Alerts page."),
 	)
 	responseApply := func(ctx context.Context) error {
-		al, err := sc.Server.AlertByNameContext(ctx, alertName())
+		al, err := scriptSafeAlert(ctx, sc, alertName())
 		if err != nil {
 			return err
 		}

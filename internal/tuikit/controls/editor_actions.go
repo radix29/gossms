@@ -33,8 +33,8 @@ func (e *Editor) SelectAll() {
 	e.selecting = true
 	e.selBlock = false
 	e.selAnchorRow, e.selAnchorCol = 0, 0
-	e.cursorRow = len(e.lines) - 1
-	e.cursorCol = len(e.lines[e.cursorRow])
+	e.cursorRow = e.doc.Len() - 1
+	e.cursorCol = len(e.doc.Line(e.cursorRow))
 }
 
 // Undo and Redo expose the existing undo/redo stack for callers outside
@@ -52,16 +52,17 @@ func (e *Editor) DuplicateLines() {
 	n := er - sr + 1
 	block := make([][]rune, n)
 	for i := 0; i < n; i++ {
-		line := e.lines[sr+i]
+		line := e.doc.Line(sr + i)
 		cp := make([]rune, len(line))
 		copy(cp, line)
 		block[i] = cp
 	}
-	newLines := make([][]rune, 0, len(e.lines)+n)
-	newLines = append(newLines, e.lines[:er+1]...)
-	newLines = append(newLines, block...)
-	newLines = append(newLines, e.lines[er+1:]...)
-	e.lines = newLines
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		newLines := make([][]rune, 0, len(lines)+n)
+		newLines = append(newLines, lines[:er+1]...)
+		newLines = append(newLines, block...)
+		return append(newLines, lines[er+1:]...)
+	})
 	e.cursorRow += n
 	e.clampCursor()
 	e.ensureCursorVisible()
@@ -73,13 +74,15 @@ func (e *Editor) DeleteLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
 	e.selecting, e.selBlock = false, false
-	newLines := make([][]rune, 0, len(e.lines)-(er-sr+1)+1)
-	newLines = append(newLines, e.lines[:sr]...)
-	newLines = append(newLines, e.lines[er+1:]...)
-	if len(newLines) == 0 {
-		newLines = [][]rune{{}}
-	}
-	e.lines = newLines
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		newLines := make([][]rune, 0, len(lines)-(er-sr+1)+1)
+		newLines = append(newLines, lines[:sr]...)
+		newLines = append(newLines, lines[er+1:]...)
+		if len(newLines) == 0 {
+			newLines = [][]rune{{}}
+		}
+		return newLines
+	})
 	e.cursorRow, e.cursorCol = sr, 0
 	e.clampCursor()
 	e.ensureCursorVisible()
@@ -94,9 +97,12 @@ func (e *Editor) MoveLinesUp() {
 		return
 	}
 	e.pushUndo()
-	above := e.lines[sr-1]
-	copy(e.lines[sr-1:er], e.lines[sr:er+1])
-	e.lines[er] = above
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		above := lines[sr-1]
+		copy(lines[sr-1:er], lines[sr:er+1])
+		lines[er] = above
+		return lines
+	})
 	e.cursorRow--
 	if e.selecting {
 		e.selAnchorRow--
@@ -109,13 +115,16 @@ func (e *Editor) MoveLinesUp() {
 // bottom of the buffer.
 func (e *Editor) MoveLinesDown() {
 	sr, er := e.affectedLineRange()
-	if er >= len(e.lines)-1 {
+	if er >= e.doc.Len()-1 {
 		return
 	}
 	e.pushUndo()
-	below := e.lines[er+1]
-	copy(e.lines[sr+1:er+2], e.lines[sr:er+1])
-	e.lines[sr] = below
+	e.doc.edit(func(lines [][]rune) [][]rune {
+		below := lines[er+1]
+		copy(lines[sr+1:er+2], lines[sr:er+1])
+		lines[sr] = below
+		return lines
+	})
 	e.cursorRow++
 	if e.selecting {
 		e.selAnchorRow++
@@ -145,13 +154,13 @@ func (e *Editor) IndentLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
 	for r := sr; r <= er; r++ {
-		line := e.lines[r]
+		line := e.doc.Line(r)
 		nl := make([]rune, len(line)+indentWidth)
 		for i := range indentWidth {
 			nl[i] = ' '
 		}
 		copy(nl[indentWidth:], line)
-		e.lines[r] = nl
+		e.doc.setLine(r, nl)
 		if r == e.cursorRow {
 			e.cursorCol += indentWidth
 		}
@@ -171,14 +180,14 @@ func (e *Editor) DedentLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
 	for r := sr; r <= er; r++ {
-		line := e.lines[r]
+		line := e.doc.Line(r)
 		removed := dedentAmount(line)
 		if removed == 0 {
 			continue
 		}
 		nl := make([]rune, len(line)-removed)
 		copy(nl, line[removed:])
-		e.lines[r] = nl
+		e.doc.setLine(r, nl)
 		if r == e.cursorRow {
 			e.cursorCol = core.Max(0, e.cursorCol-removed)
 		}
@@ -262,20 +271,20 @@ func (e *Editor) ToggleLineComments() {
 	sr, er := e.affectedLineRange()
 	allCommented := true
 	for r := sr; r <= er; r++ {
-		if !isCommentedLine(e.lines[r]) {
+		if !isCommentedLine(e.doc.Line(r)) {
 			allCommented = false
 			break
 		}
 	}
 	e.pushUndo()
 	for r := sr; r <= er; r++ {
-		before := len(e.lines[r])
+		before := len(e.doc.Line(r))
 		if allCommented {
-			e.lines[r] = uncommentLine(e.lines[r])
+			e.doc.setLine(r, uncommentLine(e.doc.Line(r)))
 		} else {
-			e.lines[r] = commentLine(e.lines[r])
+			e.doc.setLine(r, commentLine(e.doc.Line(r)))
 		}
-		delta := len(e.lines[r]) - before
+		delta := len(e.doc.Line(r)) - before
 		if r == e.cursorRow {
 			e.cursorCol = core.Max(0, e.cursorCol+delta)
 		}
@@ -290,37 +299,45 @@ func (e *Editor) ToggleLineComments() {
 // transformSelection applies fn to every rune in the current selection, in
 // place, branching on selBlock the same way SelectedText does. No-op if
 // there's no selection.
+//
+// The rewritten lines go back through setLine even though the runes were
+// changed in place and the slice header is unchanged: the version counter is
+// what tells the highlighters and the wrap cache that the text moved, and an
+// in-place edit that skipped it would leave Ctrl+Shift+U recolouring nothing
+// — an uppercased keyword keeping its old, non-keyword colour until some
+// unrelated edit bumped the version.
 func (e *Editor) transformSelection(fn func(rune) rune) {
 	if !e.HasSelection() {
 		return
 	}
 	e.pushUndo()
+	apply := func(r, lo, hi int) {
+		line := e.doc.Line(r)
+		for i := lo; i < hi; i++ {
+			line[i] = fn(line[i])
+		}
+		e.doc.setLine(r, line)
+	}
 	if e.selBlock {
 		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		for r := topRow; r <= botRow; r++ {
-			line := e.lines[r]
-			lo := core.Clamp(loCol, 0, len(line))
-			hi := core.Clamp(hiCol, 0, len(line))
-			for i := lo; i < hi; i++ {
-				line[i] = fn(line[i])
-			}
+			n := len(e.doc.Line(r))
+			apply(r, core.Clamp(loCol, 0, n), core.Clamp(hiCol, 0, n))
 		}
 		return
 	}
 	sr, sc, er, ec := e.selectionBounds()
 	for r := sr; r <= er; r++ {
-		line := e.lines[r]
-		lo, hi := 0, len(line)
+		n := len(e.doc.Line(r))
+		lo, hi := 0, n
 		if r == sr {
-			lo = core.Clamp(sc, 0, len(line))
+			lo = core.Clamp(sc, 0, n)
 		}
 		if r == er {
-			hi = core.Clamp(ec, 0, len(line))
+			hi = core.Clamp(ec, 0, n)
 		}
-		for i := lo; i < hi; i++ {
-			line[i] = fn(line[i])
-		}
+		apply(r, lo, hi)
 	}
 }
 
@@ -339,9 +356,9 @@ func (e *Editor) deleteWordLeft() {
 		}
 		return
 	}
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	left := core.WordBoundaryLeft(line, e.cursorCol)
-	e.lines[e.cursorRow] = append(line[:left], line[e.cursorCol:]...)
+	e.doc.setLine(e.cursorRow, append(line[:left], line[e.cursorCol:]...))
 	e.cursorCol = left
 }
 
@@ -349,13 +366,13 @@ func (e *Editor) deleteWordLeft() {
 // Delete), or merges with the next line at end-of-line. Caller (HandleKey)
 // is responsible for pushUndo.
 func (e *Editor) deleteWordRight() {
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	if e.cursorCol >= len(line) {
-		if e.cursorRow < len(e.lines)-1 {
+		if e.cursorRow < e.doc.Len()-1 {
 			e.deleteChar()
 		}
 		return
 	}
 	right := core.WordBoundaryRight(line, e.cursorCol)
-	e.lines[e.cursorRow] = append(line[:e.cursorCol], line[right:]...)
+	e.doc.setLine(e.cursorRow, append(line[:e.cursorCol], line[right:]...))
 }

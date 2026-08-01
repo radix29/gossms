@@ -23,7 +23,7 @@ func highlightLineWords(t *testing.T, lines [][]rune, idx int) []string {
 	t.Helper()
 	hl := SQLHighlighter(&theme.Default)
 	done := make(chan []ColorRun, 1)
-	go func() { done <- hl(lines, idx) }()
+	go func() { done <- hl(docOf(lines), idx) }()
 	select {
 	case runs := <-done:
 		line := lines[idx]
@@ -113,18 +113,19 @@ func TestSQLHighlighterBlockCommentSpansMultipleLines(t *testing.T) {
 		[]rune("end */ SELECT 2"),
 	}
 	hl := SQLHighlighter(&theme.Default)
+	doc := docOf(lines)
 
-	runs0 := hl(lines, 0)
+	runs0 := hl(doc, 0)
 	if len(runs0) == 0 || runs0[len(runs0)-1].Start+runs0[len(runs0)-1].Len != len(lines[0]) {
 		t.Fatalf("line 0 runs = %v, want the comment to extend to end of line", runs0)
 	}
 
-	runs1 := hl(lines, 1)
+	runs1 := hl(doc, 1)
 	if len(runs1) != 1 || runs1[0].Start != 0 || runs1[0].Len != len(lines[1]) {
 		t.Fatalf("line 1 (entirely inside the comment) runs = %v, want one run covering the whole line", runs1)
 	}
 
-	runs2 := hl(lines, 2)
+	runs2 := hl(doc, 2)
 	if len(runs2) == 0 || runs2[0].Start != 0 {
 		t.Fatalf("line 2 runs = %v, want the comment's closing segment to start at column 0", runs2)
 	}
@@ -189,7 +190,7 @@ var memoCorpus = [][]rune{
 // lastIdx starts at -1), so this is the original implementation rather than a
 // second copy of it maintained alongside.
 func reference(lines [][]rune, idx int) []ColorRun {
-	return SQLHighlighter(&theme.Default)(lines, idx)
+	return SQLHighlighter(&theme.Default)(docOf(lines), idx)
 }
 
 func sameRuns(a, b []ColorRun) bool {
@@ -210,8 +211,9 @@ func sameRuns(a, b []ColorRun) bool {
 // path — must colour every line exactly as the full replay does.
 func TestSQLHighlighterMemoMatchesFullReplayInDrawOrder(t *testing.T) {
 	hl := SQLHighlighter(&theme.Default)
+	doc := docOf(memoCorpus)
 	for idx := range memoCorpus {
-		got := hl(memoCorpus, idx)
+		got := hl(doc, idx)
 		want := reference(memoCorpus, idx)
 		if !sameRuns(got, want) {
 			t.Errorf("line %d (%q): memoized = %v, full replay = %v",
@@ -237,8 +239,9 @@ func TestSQLHighlighterMemoMatchesFullReplayOnJumps(t *testing.T) {
 	for name, order := range orders {
 		t.Run(name, func(t *testing.T) {
 			hl := SQLHighlighter(&theme.Default)
+			doc := docOf(memoCorpus)
 			for _, idx := range order {
-				got := hl(memoCorpus, idx)
+				got := hl(doc, idx)
 				want := reference(memoCorpus, idx)
 				if !sameRuns(got, want) {
 					t.Errorf("line %d (%q): memoized = %v, full replay = %v",
@@ -258,17 +261,79 @@ func TestSQLHighlighterMemoMatchesFullReplayOnJumps(t *testing.T) {
 func TestSQLHighlighterMemoSurvivesDocumentReplacement(t *testing.T) {
 	hl := SQLHighlighter(&theme.Default)
 	for idx := range memoCorpus {
-		hl(memoCorpus, idx)
+		hl(docOf(memoCorpus), idx)
 	}
 	replacement := [][]rune{
 		[]rune("SELECT 1"),
 		[]rune("SELECT 2"),
 	}
 	for idx := range replacement {
-		got := hl(replacement, idx)
+		got := hl(docOf(replacement), idx)
 		want := reference(replacement, idx)
 		if !sameRuns(got, want) {
 			t.Errorf("replacement line %d: memoized = %v, full replay = %v", idx, got, want)
 		}
+	}
+}
+
+// A "/*" inside a "--" line comment or a string literal used to poison every
+// line after it: blockCommentToggleEnd toggled on it regardless of context, so
+// the scan stayed "inside a comment" for the rest of the document and coloured
+// the following lines as comment text.
+func TestSQLHighlighterIgnoresBlockCommentOpenerInsideCommentsAndStrings(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines []string
+		idx   int
+		want  []string
+	}{
+		{
+			name: "opener inside a line comment",
+			lines: []string{
+				"SELECT 4 -- line comment with /* inside it",
+				"SELECT '/* in a string literal */' AS s",
+			},
+			idx:  1,
+			want: []string{"SELECT", "'/* in a string literal */'", "AS"},
+		},
+		{
+			name: "opener inside a string literal",
+			lines: []string{
+				"SELECT '/*' AS s",
+				"SELECT 5 FROM dbo.T",
+			},
+			idx:  1,
+			want: []string{"SELECT", "5", "FROM"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := make([][]rune, len(tc.lines))
+			for i, l := range tc.lines {
+				lines[i] = []rune(l)
+			}
+			got := highlightLineWords(t, lines, tc.idx)
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("runs on %q = %q, want %q", tc.lines[tc.idx], got, tc.want)
+			}
+		})
+	}
+}
+
+// The inverse: a genuinely open block comment must still swallow the lines
+// under it, and a "*/" inside what looks like a string literal still closes it
+// — quotes carry no meaning inside a comment.
+func TestSQLHighlighterRealBlockCommentStillSwallowsFollowingLines(t *testing.T) {
+	lines := [][]rune{
+		[]rune("SELECT 1 /* opened here"),
+		[]rune("SELECT 2 FROM dbo.T"),
+		[]rune("'*/' SELECT 3"),
+		[]rune("SELECT 4 FROM dbo.U"),
+	}
+	if got := highlightLineWords(t, lines, 1); len(got) != 1 || got[0] != "SELECT 2 FROM dbo.T" {
+		t.Errorf("runs on line 1 = %q, want the whole line as one comment run", got)
+	}
+	if got := highlightLineWords(t, lines, 3); strings.Join(got, "|") != "SELECT|4|FROM" {
+		t.Errorf("runs on line 3 = %q, want the comment to have closed on line 2", got)
 	}
 }

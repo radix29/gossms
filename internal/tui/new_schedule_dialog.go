@@ -107,7 +107,7 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 			if !v[0] {
 				continue
 			}
-			j, err := sc.Server.JobByNameContext(ctx, pf.jobNames[i])
+			j, err := scriptSafeJob(ctx, sc, pf.jobNames[i])
 			if err != nil {
 				return err
 			}

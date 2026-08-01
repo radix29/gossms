@@ -17,7 +17,7 @@ func xmlHighlightRuns(t *testing.T, lines [][]rune, idx int) []string {
 	t.Helper()
 	hl := XMLHighlighter(&theme.Default)
 	done := make(chan []ColorRun, 1)
-	go func() { done <- hl(lines, idx) }()
+	go func() { done <- hl(docOf(lines), idx) }()
 	select {
 	case runs := <-done:
 		line := lines[idx]
@@ -107,7 +107,7 @@ func TestXMLHighlighterCommentSpansMultipleLines(t *testing.T) {
 	}
 	hl := XMLHighlighter(&theme.Default)
 
-	runs1 := hl(lines, 1)
+	runs1 := hl(docOf(lines), 1)
 	if len(runs1) != 1 || runs1[0].Start != 0 || runs1[0].Len != len(lines[1]) {
 		t.Fatalf("line 1 (entirely inside the comment) runs = %v, want one run covering the whole line", runs1)
 	}
@@ -129,7 +129,7 @@ func TestXMLHighlighterCDATASpansMultipleLines(t *testing.T) {
 	}
 	hl := XMLHighlighter(&theme.Default)
 
-	runs1 := hl(lines, 1)
+	runs1 := hl(docOf(lines), 1)
 	if len(runs1) != 1 || runs1[0].Start != 0 || runs1[0].Len != len(lines[1]) {
 		t.Fatalf("line 1 (entirely inside CDATA) runs = %v, want one run covering the whole line, not parsed as tags", runs1)
 	}
@@ -172,12 +172,12 @@ func TestXMLHighlighterUnterminatedCommentDoesNotHang(t *testing.T) {
 	xmlHighlightRuns(t, lines, 1)
 }
 
-// TestXMLHighlighterIncrementalCacheMatchesFullReplay guards the
-// idx==lastIdx+1 fast path documented on XMLHighlighter: calling the same
-// highlighter instance for consecutive line indices (mirroring how
-// Editor.Draw walks a viewport) must produce byte-for-byte the same runs
-// as a fresh highlighter doing the full xmlOpenBlock replay for that same
-// line in isolation — the cache must never silently diverge.
+// TestXMLHighlighterIncrementalCacheMatchesFullReplay guards the prefix-state
+// cache documented on XMLHighlighter: calling the same highlighter instance
+// for consecutive line indices (mirroring how Editor.Draw walks a viewport)
+// must produce byte-for-byte the same runs as a fresh highlighter doing the
+// full xmlOpenBlock replay for that same line in isolation — the cache must
+// never silently diverge.
 func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 	lines := [][]rune{
 		[]rune(`<?xml version="1.0"?>`),
@@ -192,9 +192,10 @@ func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 	}
 
 	sequential := XMLHighlighter(&theme.Default)
+	doc := docOf(lines)
 	for idx := range lines {
-		got := sequential(lines, idx)
-		want := XMLHighlighter(&theme.Default)(lines, idx) // fresh instance: always full replay
+		got := sequential(doc, idx)
+		want := XMLHighlighter(&theme.Default)(docOf(lines), idx) // fresh instance: always full replay
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("line %d: sequential-call runs = %#v, want %#v (fresh full replay)", idx, got, want)
 		}
@@ -202,10 +203,10 @@ func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 }
 
 // TestXMLHighlighterCacheFallsBackOnNonContiguousJump guards the other half
-// of the same invariant: when Editor.Draw's viewport scrolls (or a fresh
-// Draw pass starts at a different row than the previous one ended on), the
-// next idx won't be lastIdx+1 — the closure must fall back to a full
-// xmlOpenBlock replay rather than reusing a stale cached state.
+// of the same invariant: when Editor.Draw's viewport scrolls, the next idx
+// is not the previous one plus 1. The cache holds every line's state rather
+// than only the last one's, so an arbitrary jump must be answered exactly as
+// a full xmlOpenBlock replay would.
 func TestXMLHighlighterCacheFallsBackOnNonContiguousJump(t *testing.T) {
 	lines := [][]rune{
 		[]rune(`<a><!-- comment`),
@@ -215,10 +216,11 @@ func TestXMLHighlighterCacheFallsBackOnNonContiguousJump(t *testing.T) {
 	}
 
 	hl := XMLHighlighter(&theme.Default)
-	hl(lines, 0)        // lastIdx becomes 0
-	got := hl(lines, 2) // non-contiguous jump: must not reuse line 0's end state as if it were line 1's
+	doc := docOf(lines)
+	hl(doc, 0)
+	got := hl(doc, 2) // non-contiguous jump: must not reuse line 0's end state as if it were line 1's
 
-	want := XMLHighlighter(&theme.Default)(lines, 2)
+	want := XMLHighlighter(&theme.Default)(docOf(lines), 2)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("non-contiguous call runs = %#v, want %#v (fresh full replay)", got, want)
 	}

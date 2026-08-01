@@ -32,6 +32,12 @@ func (g *DataGrid) selectedCellsText() string {
 	return b.String()
 }
 
+// SelectedCellsText exposes selectedCellsText to a host that wires the
+// grid's cell/block selection to its own Ctrl+C — the keyboard equivalent
+// of the right-click menu's "Copy", which the grid can't do itself (see
+// OnCopyRequest for why).
+func (g *DataGrid) SelectedCellsText() string { return g.selectedCellsText() }
+
 // allRowsText returns every row in the grid, tab-separated / newline-
 // separated, optionally prefixed with a header row of column names — what
 // the row-number gutter's blank header-cell menu's "Copy All"/"Copy All

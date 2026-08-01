@@ -39,46 +39,37 @@ var (
 // by PlanView's raw-XML tab (see planview.New) and by the query editor when
 // a .xml file is opened via File > Open (see App.openQueryFile).
 //
-// Editor.Draw calls the returned Highlighter once per visible row, in
-// strictly increasing line-index order within a single Draw pass (see
-// editor_draw.go), and Draw runs on every event the app processes — every
-// keystroke, menu click, and mouse-move tick — for as long as the XML tab
-// stays the visible/selected one, whether or not it holds keyboard focus.
-// Determining whether a line starts inside an unterminated <!-- --> comment
-// or <![CDATA[ ]]> section means replaying every prior line (xmlOpenBlock):
-// O(N) per line, O(H*N) per Draw for a viewport of H rows, which is
-// noticeably slow on large execution-plan XML. The closure below caches the
-// end-of-line state from the immediately preceding call and reuses it in
-// O(1) when the new call continues that sequence (idx == lastIdx+1) — true
-// for every row but the first in a Draw pass, since nothing can mutate the
-// document between two calls within the same pass. Only the first row of a
-// pass, or a non-contiguous jump (e.g. the view just scrolled), pays the
-// full replay.
+// Editor.Draw calls the returned Highlighter once per visible row, and Draw
+// runs on every event the app processes — every keystroke, menu click, and
+// mouse-move tick — for as long as the XML tab stays the visible/selected
+// one, whether or not it holds keyboard focus. Determining whether a line
+// starts inside an unterminated <!-- --> comment or <![CDATA[ ]]> section
+// means replaying every prior line (xmlOpenBlock): O(N) per line, O(H*N) per
+// Draw for a viewport of H rows, which is noticeably slow on large
+// execution-plan XML.
+//
+// starts below holds the answer for every line, replayed once per change to
+// the document and reused for every redraw in between — see prefixStates,
+// and SQLHighlighter for why the previous one-line memo could not help the
+// first row of a pass.
 func XMLHighlighter(p *theme.Palette) Highlighter {
 	tagStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	attrStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
 	valStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorString)
 	cmtStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
 
-	lastIdx := -1
-	lastEndState := xmlNone
+	var starts prefixStates[xmlBlockState]
 
-	return func(lines [][]rune, idx int) []ColorRun {
-		line := lines[idx]
+	return func(doc *Document, idx int) []ColorRun {
+		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
 		i := 0
 
-		var startState xmlBlockState
-		if idx == lastIdx+1 {
-			startState = lastEndState
-		} else {
-			startState = xmlOpenBlock(lines, idx)
-		}
+		startState := starts.at(doc, idx, xmlNone, xmlLineEndState)
 
 		switch startState {
 		case xmlComment:
 			if end := xmlFindClose(line, 0, xmlCommentClose); end < 0 {
-				lastIdx, lastEndState = idx, xmlComment
 				return append(runs, ColorRun{0, len(line), cmtStyle})
 			} else {
 				runs = append(runs, ColorRun{0, end, cmtStyle})
@@ -86,7 +77,6 @@ func XMLHighlighter(p *theme.Palette) Highlighter {
 			}
 		case xmlCDATA:
 			if end := xmlFindClose(line, 0, xmlCDATAClose); end < 0 {
-				lastIdx, lastEndState = idx, xmlCDATA
 				return append(runs, ColorRun{0, len(line), valStyle})
 			} else {
 				runs = append(runs, ColorRun{0, end, valStyle})
@@ -183,7 +173,6 @@ func XMLHighlighter(p *theme.Palette) Highlighter {
 				i++
 			}
 		}
-		lastIdx, lastEndState = idx, xmlLineEndState(line, startState)
 		return runs
 	}
 }

@@ -92,8 +92,8 @@ func TestEditorDeleteLines(t *testing.T) {
 	if got := e2.Text(); got != "" {
 		t.Fatalf("DeleteLines() on sole line = %q, want empty", got)
 	}
-	if len(e2.lines) != 1 {
-		t.Fatalf("expected the empty-buffer invariant to hold, got %d lines", len(e2.lines))
+	if e2.doc.Len() != 1 {
+		t.Fatalf("expected the empty-buffer invariant to hold, got %d lines", e2.doc.Len())
 	}
 }
 
@@ -117,7 +117,7 @@ func TestEditorDuplicateDeleteLinesCollapseSelectionWhenCalledDirectly(t *testin
 
 	e.selecting, e.selBlock = true, false
 	e.selAnchorRow, e.selAnchorCol = 0, 0
-	e.cursorRow, e.cursorCol = len(e.lines)-1, 0 // select down to the last line
+	e.cursorRow, e.cursorCol = e.doc.Len()-1, 0 // select down to the last line
 
 	e.DeleteLines()
 	if e.HasSelection() || e.selBlock {
@@ -711,10 +711,10 @@ func TestEditorHorizontalWheelScroll(t *testing.T) {
 		t.Fatalf("scrollCol after WheelRight = %d, want %d", e.scrollCol, horizontalWheelChars)
 	}
 	// Enough further ticks to overshoot the line's end regardless of step size.
-	for range len(e.lines[0]) {
+	for range len(e.doc.Line(0)) {
 		e.HandleMouse(tcell.NewEventMouse(6, 2, tcell.WheelRight, tcell.ModNone))
 	}
-	want := len(e.lines[0]) - 1
+	want := len(e.doc.Line(0)) - 1
 	if e.scrollCol != want {
 		t.Fatalf("scrollCol after repeated WheelRight = %d, want %d (clamped to the last character)", e.scrollCol, want)
 	}
@@ -884,7 +884,7 @@ func (s *recordingScreen) ShowCursor(x, y int) {}
 // markerHighlighter colours exactly the rune range [start,end) of every line
 // with a style nothing else in the editor uses, so a test can find it.
 func markerHighlighter(start, end int, st tcell.Style) Highlighter {
-	return func(lines [][]rune, idx int) []ColorRun {
+	return func(doc *Document, idx int) []ColorRun {
 		return []ColorRun{{Start: start, Len: end - start, Style: st}}
 	}
 }

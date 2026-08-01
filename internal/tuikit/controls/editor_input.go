@@ -98,44 +98,44 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			dropSelection = false
 		} else if e.cursorRow > 0 {
 			e.cursorRow--
-			e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
+			e.cursorCol = e.colForDesired()
 		}
 	case tcell.KeyDown:
 		if moveLineCombo {
 			e.MoveLinesDown()
 			dropSelection = false
-		} else if e.cursorRow < len(e.lines)-1 {
+		} else if e.cursorRow < e.doc.Len()-1 {
 			e.cursorRow++
-			e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
+			e.cursorCol = e.colForDesired()
 		}
 	case tcell.KeyLeft:
 		if ctrlHeld {
 			if e.cursorCol > 0 {
-				e.cursorCol = core.WordBoundaryLeft(e.lines[e.cursorRow], e.cursorCol)
+				e.cursorCol = core.WordBoundaryLeft(e.doc.Line(e.cursorRow), e.cursorCol)
 			} else if e.cursorRow > 0 && !e.selBlock {
 				// Column selection never crosses lines via Left/Right — only
 				// Up/Down changes a block selection's row range. Applies to
 				// the word-jump above the same as the plain move below it.
 				e.cursorRow--
-				e.cursorCol = len(e.lines[e.cursorRow])
+				e.cursorCol = len(e.doc.Line(e.cursorRow))
 			}
 		} else if e.cursorCol > 0 {
 			e.cursorCol--
 		} else if e.cursorRow > 0 && !e.selBlock {
 			e.cursorRow--
-			e.cursorCol = len(e.lines[e.cursorRow])
+			e.cursorCol = len(e.doc.Line(e.cursorRow))
 		}
 	case tcell.KeyRight:
 		if ctrlHeld {
-			if e.cursorRow < len(e.lines) && e.cursorCol < len(e.lines[e.cursorRow]) {
-				e.cursorCol = core.WordBoundaryRight(e.lines[e.cursorRow], e.cursorCol)
-			} else if e.cursorRow < len(e.lines)-1 && !e.selBlock {
+			if e.cursorRow < e.doc.Len() && e.cursorCol < len(e.doc.Line(e.cursorRow)) {
+				e.cursorCol = core.WordBoundaryRight(e.doc.Line(e.cursorRow), e.cursorCol)
+			} else if e.cursorRow < e.doc.Len()-1 && !e.selBlock {
 				e.cursorRow++
 				e.cursorCol = 0
 			}
-		} else if e.cursorRow < len(e.lines) && e.cursorCol < len(e.lines[e.cursorRow]) {
+		} else if e.cursorRow < e.doc.Len() && e.cursorCol < len(e.doc.Line(e.cursorRow)) {
 			e.cursorCol++
-		} else if e.cursorRow < len(e.lines)-1 && !e.selBlock {
+		} else if e.cursorRow < e.doc.Len()-1 && !e.selBlock {
 			e.cursorRow++
 			e.cursorCol = 0
 		}
@@ -146,20 +146,20 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.cursorCol = 0
 	case tcell.KeyEnd:
 		if ctrlHeld {
-			e.cursorRow = len(e.lines) - 1
+			e.cursorRow = e.doc.Len() - 1
 		}
-		if e.cursorRow < len(e.lines) {
-			e.cursorCol = len(e.lines[e.cursorRow])
+		if e.cursorRow < e.doc.Len() {
+			e.cursorCol = len(e.doc.Line(e.cursorRow))
 		}
 	case tcell.KeyCtrlA:
 		e.SelectAll()
 		dropSelection = false
 	case tcell.KeyPgUp:
 		e.cursorRow = core.Max(0, e.cursorRow-e.contentH())
-		e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
+		e.cursorCol = e.colForDesired()
 	case tcell.KeyPgDn:
-		e.cursorRow = core.Min(len(e.lines)-1, e.cursorRow+e.contentH())
-		e.cursorCol = core.Min(e.desiredCol, len(e.lines[e.cursorRow]))
+		e.cursorRow = core.Min(e.doc.Len()-1, e.cursorRow+e.contentH())
+		e.cursorCol = e.colForDesired()
 	case tcell.KeyEnter:
 		e.pushUndo()
 		if hadSelection {
@@ -284,7 +284,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyUp, tcell.KeyDown, tcell.KeyPgUp, tcell.KeyPgDn:
 	default:
-		e.desiredCol = e.cursorCol
+		e.desiredCol = e.cursorDisplayCol()
 	}
 	e.ensureCursorVisible()
 	// A typed character may only pop the popup open fresh (from closed)
@@ -352,7 +352,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	var vls []visualLine
 	haveVLS := false
 	if ev.Buttons() == tcell.Button1 {
-		total := len(e.lines)
+		total := e.doc.Len()
 		if e.wrapMode {
 			vls = e.buildVisualLines(e.rect.W - e.gutterWidth())
 			haveVLS = true
@@ -370,11 +370,8 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		return e.handleMouseWrapped(ev, mx, my, contentX, vls)
 	}
 	if ev.Buttons() == tcell.Button1 {
-		row := core.Clamp(e.scrollRow+core.Min(my-e.rect.Y, e.contentH()-1), 0, len(e.lines)-1)
-		col := core.Max(0, e.scrollCol+(mx-contentX))
-		if row < len(e.lines) && col > len(e.lines[row]) {
-			col = len(e.lines[row])
-		}
+		row := core.Clamp(e.scrollRow+core.Min(my-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
+		col := e.runeColAtScreenX(row, mx-contentX)
 		if !e.mouseDragging {
 			// Fresh click: reposition the cursor. Without Shift, arm a new
 			// selection anchor here (HasSelection() stays false until the
@@ -401,7 +398,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 			// Continued drag: move the cursor, anchor and mode stay fixed.
 			e.cursorRow, e.cursorCol = row, col
 		}
-		e.desiredCol = col
+		e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)
 		return true
 	}
 	switch ev.Buttons() {
@@ -419,7 +416,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	case tcell.WheelDown:
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			e.scrollColBy(horizontalWheelChars)
-		} else if e.scrollRow < len(e.lines)-1 {
+		} else if e.scrollRow < e.doc.Len()-1 {
 			e.scrollRow++
 		}
 		return true
@@ -465,15 +462,33 @@ func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
 // point from the release event it's handling at the App level).
 func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
-	row := core.Clamp(e.scrollRow+core.Min(y-e.rect.Y, e.contentH()-1), 0, len(e.lines)-1)
-	col := core.Max(0, e.scrollCol+(x-contentX))
-	if row < len(e.lines) && col > len(e.lines[row]) {
-		col = len(e.lines[row])
-	}
+	row := core.Clamp(e.scrollRow+core.Min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
+	col := e.runeColAtScreenX(row, x-contentX)
 	e.cursorRow, e.cursorCol = row, col
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
-	e.desiredCol = col
+	e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)
 	e.ensureCursorVisible()
+}
+
+// runeColAtScreenX converts an x offset within the content area into a rune
+// index on the given row, clamped to the line's end. dx is a terminal-column
+// offset and the result is a rune index, so this is where a wide character
+// earlier on the line is accounted for — reading dx as a rune index directly
+// is what put the caret left of the click on any line containing one.
+func (e *Editor) runeColAtScreenX(row, dx int) int {
+	if row < 0 || row >= e.doc.Len() {
+		return 0
+	}
+	line := e.doc.Line(row)
+	return core.Min(core.RuneIndexAtColumn(line, core.Max(0, e.scrollCol+dx)), len(line))
+}
+
+// colForDesired maps desiredCol — a display column, see Editor.desiredCol —
+// onto a rune index on the cursor's current row, clamped to its end. This is
+// the goal-column half of vertical caret movement.
+func (e *Editor) colForDesired() int {
+	line := e.cursorLine()
+	return core.Min(core.RuneIndexAtColumn(line, e.desiredCol), len(line))
 }
 
 // horizontalWheelChars is how many characters a single horizontal wheel
@@ -486,5 +501,5 @@ const horizontalWheelChars = 4
 // it can't scroll past showing at least the last character of the buffer's
 // longest line.
 func (e *Editor) scrollColBy(delta int) {
-	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, e.longestLineLen()-1))
+	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, e.doc.maxDisplayWidth()-1))
 }

@@ -68,7 +68,7 @@ func TestBuildVisualLinesMatchesTheUnbufferedForm(t *testing.T) {
 			e := NewEditor(nil)
 			e.SetText(doc)
 			got := e.buildVisualLines(w)
-			want := referenceVisualLines(e.lines, w)
+			want := referenceVisualLines(e.doc.all(), w)
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("%s @ w=%d: buildVisualLines = %v, want %v", name, w, got, want)
 			}
@@ -95,7 +95,7 @@ func TestBuildVisualLinesSurvivesRepeatedCalls(t *testing.T) {
 		e.SetText(doc)
 		for _, w := range []int{80, 5, 33, 1, 120} {
 			got := e.buildVisualLines(w)
-			want := referenceVisualLines(e.lines, w)
+			want := referenceVisualLines(e.doc.all(), w)
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("round %d @ w=%d: buildVisualLines = %v, want %v", round, w, got, want)
 			}

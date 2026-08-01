@@ -100,7 +100,7 @@ func offsetForCursor(lines [][]rune, row, col int) int {
 // unterminated bracket identifier, which sqlCompletionCandidates still
 // completes; any other non-normal state suppresses completion entirely
 // rather than guessing) plus the offset right after the last top-level ';'
-// seen — one of the two inputs statementStartOffset combines with GO-line
+// seen — one of the two boundaries scanCompletionPrefix combines with GO-line
 // detection to scope FROM/clause analysis to the current statement only —
 // and the quoteStart offset (see tokenizeSQLRange).
 //
@@ -125,8 +125,8 @@ func tokenizeSQLPrefix(buf []rune, upTo int) ([]sqlToken, sqlLexState, int, int)
 //   - false (tokenizeSQLPrefix's use, and the forward token scan that
 //     extends FROM-scope analysis past the cursor): scanning continues
 //     through every top-level ';' up to upTo, and the third return is the
-//     offset right after the LAST one seen — statementStartOffset's other
-//     input.
+//     offset right after the LAST one seen — scanCompletionPrefix's other
+//     boundary.
 //   - true (statementEndOffset's use): scanning stops at the FIRST
 //     top-level ';', and the third return is that ';'s own offset (or upTo
 //     if none was found) — the statement's end boundary.
@@ -141,16 +141,30 @@ func tokenizeSQLRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]sqlTo
 
 // tokenizeSQLRangeFrom is tokenizeSQLRange with an explicit starting lexer
 // state, for resuming a scan at an offset whose state a previous pass already
-// established (see scanCompletionPrefix). tokenizeSQLRange's own sqlLexNormal
-// is the common case.
+// established. Every caller passes sqlLexNormal today — scanCompletionPrefix
+// only ever resumes at a normal-state batch boundary — but the parameter is
+// what makes that a stated precondition rather than a coincidence.
 func tokenizeSQLRangeFrom(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexState) ([]sqlToken, sqlLexState, int, int) {
 	// Roughly one token per 8 runes of SQL, so the append loop below stops
 	// re-copying a large script's token stream on every keystroke. An
 	// estimate only — append still grows it if the guess is low.
 	tokens := make([]sqlToken, 0, (upTo-from)/8+16)
-	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, -1)
+	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{})
 	return tokens, r.state, r.boundary, r.quoteStart
 }
+
+// goScan bounds which lines lexSQL considers as candidate "GO" batch
+// separators: only one whose first rune sits in [lo, hi). The zero value
+// disables GO detection, which is what every scan that only wants tokens
+// passes.
+//
+// The bound is what keeps the cursor's own row out of the prefix scan and
+// keeps rows at or above it out of the forward scan — both used to be
+// expressed as the loop bounds of a separate pass over lines.
+type goScan struct{ lo, hi int }
+
+func (g goScan) enabled() bool         { return g.hi > g.lo }
+func (g goScan) covers(start int) bool { return start >= g.lo && start < g.hi }
 
 // lexResult is what one pass of lexSQL learned about the text it walked.
 type lexResult struct {
@@ -162,9 +176,13 @@ type lexResult struct {
 	// quoteStart is the offset of the opening '[' or '"' when state is
 	// sqlLexBracket/sqlLexDoubleQuote; meaningless otherwise.
 	quoteStart int
-	// stateAtMark is the state on first reaching lexSQL's mark offset, or
-	// state when mark was never reached.
-	stateAtMark sqlLexState
+	// firstGo is the offset of the first bare "GO" separator line inside the
+	// scan's goScan bounds, or -1 when there was none. lastGo is the offset of
+	// the line *after* the last such line, or 0 when there was none — i.e. the
+	// batch boundary each one establishes, from the two directions the two
+	// callers need.
+	firstGo int
+	lastGo  int
 }
 
 // lexSQL is the single T-SQL state machine behind every scan in this file.
@@ -173,13 +191,38 @@ type lexResult struct {
 // found. Passing nil lexes without materialising anything, which is what the
 // prefix pass wants: identifier tokens are the only allocating part of a scan,
 // and a pass that exists purely to locate the current statement throws all of
-// them away. mark, when >= 0, records the lexer state on first reaching that
-// offset — how the second pass learns which state to resume in.
-func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexState, tokens *[]sqlToken, mark int) lexResult {
+// them away.
+//
+// gs, when enabled, also makes this the place bare "GO" batch separators are
+// recognised. That has to happen inside the state machine rather than in a
+// separate textual pass over the lines: a "GO" alone on its own line inside a
+// block comment, a string literal or a bracketed identifier is not a batch
+// separator, and treating it as one scoped completion to the wrong statement —
+// `SELECT * FROM dbo.Patients p` followed by a commented-out GO left the alias
+// `p` out of scope, so `p.` offered nothing.
+func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexState, tokens *[]sqlToken, gs goScan) lexResult {
 	state := initial
 	quoteStart := 0
 	semiStart := from
-	markState, markSeen := initial, false
+	firstGo, lastGo := -1, 0
+	// Called at every offset that both begins a line and is reached in
+	// sqlLexNormal state — the only positions a separator can occupy.
+	noteGoLine := func(start int) {
+		if !gs.enabled() || !gs.covers(start) {
+			return
+		}
+		next, ok := goSeparatorLineAt(buf, start, upTo)
+		if !ok {
+			return
+		}
+		if firstGo < 0 {
+			firstGo = start
+		}
+		lastGo = next
+	}
+	if from == 0 || (from > 0 && buf[from-1] == '\n') {
+		noteGoLine(from)
+	}
 	// A token starting before from is never this range's to report. Only one
 	// shape can produce that: a quoted identifier opened before from and
 	// closed inside it, whose token is anchored at the (unseen) opening
@@ -204,14 +247,14 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 	}
 	i := from
 	for i < upTo {
-		if mark >= 0 && !markSeen && i >= mark {
-			markState, markSeen = state, true
-		}
 		c := buf[i]
 		switch state {
 		case sqlLexLineComment:
 			if c == '\n' {
+				// The next line starts in normal state, so it can be a
+				// separator — a "-- note" line above a GO is ordinary SQL.
 				state = sqlLexNormal
+				noteGoLine(i + 1)
 			}
 			i++
 			continue
@@ -296,7 +339,7 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 			i++
 		case c == ';':
 			if stopAtSemicolon {
-				return lexResult{state, i, quoteStart, markStateOr(markState, markSeen, state)}
+				return lexResult{state, i, quoteStart, firstGo, lastGo}
 			}
 			semiStart = i + 1
 			i++
@@ -325,89 +368,80 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 				emitIdent(start, start, i)
 			}
 		default:
-			i++ // whitespace, operators, semicolons, @/# sigils, numeric literals, ...
+			// whitespace, operators, semicolons, @/# sigils, numeric literals, ...
+			if c == '\n' {
+				noteGoLine(i + 1)
+			}
+			i++
 		}
 	}
 	if stopAtSemicolon {
-		return lexResult{state, upTo, quoteStart, markStateOr(markState, markSeen, state)}
+		return lexResult{state, upTo, quoteStart, firstGo, lastGo}
 	}
-	return lexResult{state, semiStart, quoteStart, markStateOr(markState, markSeen, state)}
-}
-
-// markStateOr returns the recorded mark state, or fallback when the mark was
-// never reached (a mark at or past the end of the scanned range).
-func markStateOr(marked sqlLexState, seen bool, fallback sqlLexState) sqlLexState {
-	if seen {
-		return marked
-	}
-	return fallback
+	return lexResult{state, semiStart, quoteStart, firstGo, lastGo}
 }
 
 // statementEndOffset finds where the statement containing the cursor ends —
 // the next top-level ';' at or after upTo, the start of the next bare "GO"
 // batch-separator line after cursorRow, or len(buf), whichever comes first.
-// Combined with statementStartOffset, this lets FROM-scope/clause analysis
-// see the whole current statement regardless of where in it the cursor
-// sits — a table named in "SELECT | FROM Customers c" resolves the same as
-// one already fully typed above the cursor.
+// Combined with the batch start scanCompletionPrefix finds, this lets
+// FROM-scope/clause analysis see the whole current statement regardless of
+// where in it the cursor sits — a table named in "SELECT | FROM Customers c"
+// resolves the same as one already fully typed above the cursor.
+//
+// Both boundaries come out of the one lexer pass, so a ';' or a "GO" that is
+// really inside a comment or a literal ends nothing.
 func statementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
-	end := len(buf)
-	if _, _, stop, _ := tokenizeSQLRange(buf, upTo, len(buf), true); stop < end {
-		end = stop
-	}
-	for row := cursorRow + 1; row < len(lines); row++ {
-		if isGoSeparatorLine(lines[row]) {
-			if goStart := offsetForCursor(lines, row, 0); goStart < end {
-				end = goStart
-			}
-			break
-		}
+	// The forward scan resumes at the cursor, which callers only do after
+	// confirming the lexer is in sqlLexNormal there. Only rows strictly below
+	// the cursor's own can end its statement.
+	r := lexSQL(buf, upTo, len(buf), true, sqlLexNormal, nil,
+		goScan{lo: offsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
+	end := r.boundary
+	if r.firstGo >= 0 && r.firstGo < end {
+		end = r.firstGo
 	}
 	return end
 }
 
-// statementStartOffset combines the last top-level ';' tokenizeSQLPrefix
-// saw (semiStart) with the nearest bare "GO" batch-separator line strictly
-// above cursorRow, and returns whichever is later — the same two
-// boundaries controls.Editor.SelectStatementAtCursor recognises (see
-// tuikit/controls/sql_statement.go's isGoSeparatorLine), reimplemented
-// here in the simpler form completion context needs: no repeat-count or
-// trailing-comment parsing, just "this line is exactly GO".
-func statementStartOffset(lines [][]rune, cursorRow int, semiStart int) int {
-	return max(semiStart, lastGoBatchStart(lines, cursorRow))
-}
-
-// lastGoBatchStart returns the offset of the line following the nearest bare
-// "GO" separator line strictly above cursorRow, or 0 when there is none.
+// goSeparatorLineAt reports whether the line beginning at buf[start] — running
+// to the next '\n' or to limit — is a bare "GO" batch separator (exactly "GO",
+// case-insensitively, apart from surrounding whitespace), and returns the
+// offset of the line after it.
 //
-// Scans backwards and stops at the first hit: offsetForCursor grows with the
-// row, so the nearest GO above the cursor is also the latest boundary, and
-// walking forwards through every line instead made this quadratic (an
-// offsetForCursor call, itself O(row), per line).
-func lastGoBatchStart(lines [][]rune, cursorRow int) int {
-	for i := min(cursorRow, len(lines)) - 1; i >= 0; i-- {
-		if isGoSeparatorLine(lines[i]) {
-			return offsetForCursor(lines, i+1, 0)
-		}
-	}
-	return 0
-}
-
-// isGoSeparatorLine reports whether line is exactly "GO" apart from
-// surrounding whitespace, case-insensitively. Works on the runes directly:
-// the string(line) + TrimSpace it replaces allocated once per line scanned,
-// on every keystroke.
-func isGoSeparatorLine(line []rune) bool {
-	i, j := 0, len(line)
-	for i < j && unicode.IsSpace(line[i]) {
+// The scan bails on the first rune that cannot be part of one, so an ordinary
+// line costs a rune or two rather than a walk to its end: this is called once
+// per line of the whole prefix, on every keystroke while the completion popup
+// is open.
+//
+// Deliberately simpler than controls.Editor.SelectStatementAtCursor's own
+// separator rule (tuikit/controls/sql_statement.go), which also accepts a
+// repeat count and a trailing line comment. Completion context has no use for
+// either.
+func goSeparatorLineAt(buf []rune, start, limit int) (int, bool) {
+	i := start
+	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {
 		i++
 	}
-	for j > i && unicode.IsSpace(line[j-1]) {
-		j--
+	if i+1 >= limit ||
+		(buf[i] != 'G' && buf[i] != 'g') ||
+		(buf[i+1] != 'O' && buf[i+1] != 'o') {
+		return 0, false
 	}
-	return j-i == 2 &&
-		(line[i] == 'G' || line[i] == 'g') &&
-		(line[i+1] == 'O' || line[i+1] == 'o')
+	i += 2
+	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {
+		i++
+	}
+	if i < limit && buf[i] != '\n' {
+		return 0, false
+	}
+	return min(i+1, limit), true
+}
+
+// isGoSeparatorLine applies goSeparatorLineAt's rule to a standalone line.
+func isGoSeparatorLine(line []rune) bool {
+	_, ok := goSeparatorLineAt(line, 0, len(line))
+	return ok
 }
 
 // completionPrefixScan is everything sqlCompletionCandidates needs to know
@@ -429,20 +463,20 @@ type completionPrefixScan struct {
 // read. The first pass therefore lexes with tokens switched off, which is the
 // expensive half: materialising an identifier token allocates a string, and on
 // a large script the tokens that get discarded outnumber the kept ones by
-// orders of magnitude. The second pass tokenizes from batchStart, resuming in
-// whatever state the first pass recorded there.
+// orders of magnitude. The second pass tokenizes from batchStart alone.
 func scanCompletionPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) completionPrefixScan {
-	goStart := lastGoBatchStart(lines, cursorRow)
-	r := lexSQL(buf, 0, upTo, false, sqlLexNormal, nil, goStart)
+	// Only "GO" lines strictly above the cursor's own row are separators for
+	// the statement the cursor is in — hence the bound at that row's start.
+	r := lexSQL(buf, 0, upTo, false, sqlLexNormal, nil,
+		goScan{lo: 0, hi: offsetForCursor(lines, cursorRow, 0)})
 
-	// statementStartOffset's max(), with the lexer state at the winning
-	// boundary: right after a ';' that's normal by construction, at a GO line
-	// it's whatever pass one saw there.
-	batchStart, initial := r.boundary, sqlLexNormal
-	if goStart > batchStart {
-		batchStart, initial = goStart, r.stateAtMark
-	}
-	tokens, _, _, _ := tokenizeSQLRangeFrom(buf, batchStart, upTo, false, initial)
+	// The statement starts at whichever boundary is later: just past the last
+	// top-level ';', or the line after the last real "GO". The second pass can
+	// resume in sqlLexNormal unconditionally because both are normal-state
+	// positions by construction — the lexer only recognises either one there,
+	// and a separator line carries nothing that could still be open past it.
+	batchStart := max(r.boundary, r.lastGo)
+	tokens, _, _, _ := tokenizeSQLRangeFrom(buf, batchStart, upTo, false, sqlLexNormal)
 	return completionPrefixScan{
 		tokens:     tokens,
 		state:      r.state,

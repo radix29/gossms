@@ -197,3 +197,21 @@ func TestSelectStatementAtCursorNoOpOnBlankSeparatorLine(t *testing.T) {
 		t.Fatal("HasSelection should stay false after a no-op")
 	}
 }
+
+// Ctrl+Enter's own GO detection is already inside the state machine — the
+// isGoSeparatorLine test at the top of the line loop only runs in stNormal —
+// so a GO commented out with a block comment never splits a statement in two.
+// Pinned here because the completion-side scan in internal/tui had exactly
+// this bug and the two rules are meant to stay in step.
+func TestSelectStatementAtCursorIgnoresGoInsideBlockComment(t *testing.T) {
+	const script = "SELECT 1\n/*\nGO\n*/\nFROM dbo.T"
+	e := newTestEditor(script)
+
+	e.cursorRow, e.cursorCol = 4, 2
+	if !e.SelectStatementAtCursor() {
+		t.Fatal("expected a statement to be selected")
+	}
+	if got := e.SelectedText(); got != script {
+		t.Fatalf("statement = %q, want the whole script %q — the commented-out GO split it", got, script)
+	}
+}

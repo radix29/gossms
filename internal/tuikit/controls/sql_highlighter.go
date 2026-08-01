@@ -137,53 +137,44 @@ var sqlKeywords = map[string]bool{
 // SQLHighlighter is the built-in SQL syntax highlighter for Editor.
 //
 // The returned Highlighter is stateful and belongs to exactly one Editor —
-// see the memo below. Build a fresh one per Editor (as every call site
-// does); sharing one across two editors would let one document's carried-over
-// block-comment state colour the other's.
+// see the memo below. Build a fresh one per Editor, as every call site does.
 //
-// Editor.Draw calls it once per visible row, in strictly increasing line-index
-// order within a Draw pass, and Draw runs on every event the app processes —
-// every keystroke included. Deciding whether a line starts inside an
-// unterminated /* */ means replaying every prior line (startsInBlockComment):
-// O(N) per line, O(H*N) per Draw for a viewport of H rows. Measured on a
-// 40-row viewport scrolled to the bottom of the document, that is ~4.6ms per
-// pass at 1,000 lines and ~48ms at 10,000 — i.e. typing in a large script is
-// bounded by the highlighter. The closure below caches the end-of-line state
-// from the immediately preceding call and reuses it in O(1) when the new call
-// continues that sequence (idx == lastIdx+1), which is every row but the first
-// in a pass; that drops the 10,000-line pass to ~1.4ms. Only the first row of
-// a pass, or a non-contiguous jump (the view just scrolled), pays the replay.
-// Same treatment, for the same reason, as XMLHighlighter (xml_highlighter.go).
+// Editor.Draw calls it once per visible row, and Draw runs on every event the
+// app processes — every keystroke, mouse-move tick and timer tick included.
+// Deciding whether a line starts inside an unterminated /* */ means replaying
+// every prior line (startsInBlockComment): O(N) per line, O(H*N) per Draw for
+// a viewport of H rows. Measured on a 40-row viewport scrolled to the bottom
+// of the document, that was ~4.6ms per pass at 1,000 lines and ~48ms at
+// 10,000 — i.e. typing in a large script was bounded by the highlighter.
 //
-// The memo is safe across edits because a pass always starts at Editor's
-// scrollRow: every mutation scrolls the cursor into view and redraws before
-// the next pass, so a stale state can never be inherited by the row after an
-// edited one, and SetText resets scrollRow to 0 (where the state is
-// unconditionally "not in a comment"), so replacing the document can't be
-// mistaken for a continuation of the old one.
+// blockStarts below replays the document once and keeps the answer for every
+// line, so each call is an array index. It is rebuilt only when the document
+// changes, which the version counter reports exactly (see Document) — so a
+// pass that only scrolled, or redrew for an unrelated event, costs nothing at
+// all, and an edit costs one replay rather than one per pass.
+//
+// This replaced a memo that cached just the previous call's end-of-line state
+// and reused it when idx == lastIdx+1. That made rows 2..H of a pass O(1) but
+// could never help row 1: a pass starts at scrollRow and the previous pass
+// ended at scrollRow+H-1, so the sequence breaks at every pass boundary by
+// construction. Keying on the version instead removes the last O(document)
+// step from a redraw. Same treatment, for the same reason, as XMLHighlighter
+// (xml_highlighter.go).
 func SQLHighlighter(p *theme.Palette) Highlighter {
 	kwStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	strStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorString)
 	cmtStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
 	numStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
 
-	lastIdx := -1
-	lastEndState := false
+	var starts prefixStates[bool]
 
-	return func(lines [][]rune, idx int) []ColorRun {
-		line := lines[idx]
+	return func(doc *Document, idx int) []ColorRun {
+		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
 		i := 0
 
 		// A block comment carried over, unterminated, from an earlier line.
-		startsInComment := lastEndState
-		if idx != lastIdx+1 {
-			startsInComment = startsInBlockComment(lines, idx)
-		}
-		// Recorded up front, and via the same per-line step the replay uses,
-		// so the two can't disagree — see blockCommentToggleEnd. Nothing below
-		// influences it, so there's no exit path that can forget to set it.
-		lastIdx, lastEndState = idx, blockCommentToggleEnd(line, startsInComment)
+		startsInComment := starts.at(doc, idx, false, blockCommentToggleEnd)
 
 		if startsInComment {
 			end := blockCommentEnd(line, 0)
@@ -213,13 +204,7 @@ func SQLHighlighter(p *theme.Palette) Highlighter {
 			}
 			// String literal
 			if line[i] == '\'' {
-				j := i + 1
-				for j < len(line) && line[j] != '\'' {
-					j++
-				}
-				if j < len(line) {
-					j++
-				}
+				j := stringLiteralEnd(line, i)
 				runs = append(runs, ColorRun{i, j - i, strStyle})
 				i = j
 				continue
@@ -273,20 +258,24 @@ func blockCommentEnd(line []rune, from int) int {
 }
 
 // blockCommentToggleEnd reports whether line leaves an unterminated /* open,
-// given whether it started inside one — toggling on every "/*"/"*/" pair.
-// Like the rest of this highlighter, it doesn't account for one of those
-// appearing inside a string literal or after a "--" line comment; that's an
-// accepted simplification, not a goal.
+// given whether it started inside one.
+//
+// It skips over "--" line comments and '...' string literals exactly as
+// SQLHighlighter's main loop does, so a "/*" appearing inside either one does
+// not open a comment. Without that, `SELECT 4 -- has /* in it` left the scan
+// "inside a comment" for the whole rest of the document and every following
+// line rendered as one.
 //
 // This is the single definition of that per-line step, shared by
 // startsInBlockComment's replay and SQLHighlighter's memo. They must agree
-// exactly: the replay is still what the first row of a Draw pass uses, so a
-// memo built on the main highlight loop's own (more accurate — it does stop at
-// a "--" and skip string literals) notion of "ends inside a comment" would
-// colour a line differently depending only on whether it happened to be the
-// first visible row, which reads as a flicker while scrolling. Making the
-// simplification consistent is the fix for that; making it *correct* is a
-// separate change — see docs/open-threads.md.
+// exactly: the replay is what the first row of a Draw pass uses and the memo
+// what every later row uses, so any divergence colours a line differently
+// depending only on whether it happened to be the first visible row, which
+// reads as a flicker while scrolling.
+//
+// An unterminated string ends at the end of its line, which is also what the
+// main loop does — a genuinely multi-line literal is still mis-scanned, and
+// consistently so.
 func blockCommentToggleEnd(line []rune, in bool) bool {
 	for j := 0; j < len(line); {
 		if in {
@@ -298,14 +287,34 @@ func blockCommentToggleEnd(line []rune, in bool) bool {
 			j = end
 			continue
 		}
-		if j+1 < len(line) && line[j] == '/' && line[j+1] == '*' {
+		switch {
+		case j+1 < len(line) && line[j] == '/' && line[j+1] == '*':
 			in = true
 			j += 2
-			continue
+		case j+1 < len(line) && line[j] == '-' && line[j+1] == '-':
+			return false // rest of the line is a comment that ends with it
+		case line[j] == '\'':
+			j = stringLiteralEnd(line, j)
+		default:
+			j++
 		}
-		j++
 	}
 	return in
+}
+
+// stringLiteralEnd returns the rune index just past the '...' literal opening
+// at line[from], or len(line) if it never closes on this line. Mirrors the
+// scan SQLHighlighter's main loop performs inline, which blockCommentToggleEnd
+// has to agree with rune for rune.
+func stringLiteralEnd(line []rune, from int) int {
+	j := from + 1
+	for j < len(line) && line[j] != '\'' {
+		j++
+	}
+	if j < len(line) {
+		j++
+	}
+	return j
 }
 
 // startsInBlockComment reports whether line idx begins already inside an

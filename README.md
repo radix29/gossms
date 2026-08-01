@@ -1,5 +1,7 @@
 # goSSMS
 
+SQL Server Management Studio clone for MacOS, Linux and Windows.
+
 **goSSMS** is a cross-platform, terminal-based SQL Server Management Studio
 clone written in Go. No GUI, no X11, no CGO, no installation — a single
 executable that runs on Linux, macOS, and Windows with no SQL client tools

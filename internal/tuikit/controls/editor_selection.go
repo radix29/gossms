@@ -69,7 +69,7 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bo
 			return 0, 0, false
 		}
 		loCol, hiCol := e.blockColumnBounds()
-		n := len(e.lines[lineIdx])
+		n := len(e.doc.Line(lineIdx))
 		return core.Clamp(loCol, 0, n), core.Clamp(hiCol, 0, n), true
 	}
 	sr, sc, er, ec := e.selectionBounds()
@@ -80,7 +80,7 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bo
 	if lineIdx == sr {
 		start = sc
 	}
-	end := len(e.lines[lineIdx]) + 1
+	end := len(e.doc.Line(lineIdx)) + 1
 	if lineIdx == er {
 		end = ec
 	}
@@ -103,7 +103,7 @@ func (e *Editor) SelectedText() string {
 			if r > topRow {
 				sb.WriteByte('\n')
 			}
-			line := e.lines[r]
+			line := e.doc.Line(r)
 			lo := core.Clamp(loCol, 0, len(line))
 			hi := core.Clamp(hiCol, 0, len(line))
 			sb.WriteString(string(line[lo:hi]))
@@ -112,21 +112,21 @@ func (e *Editor) SelectedText() string {
 	}
 	sr, sc, er, ec := e.selectionBounds()
 	if sr == er {
-		line := e.lines[sr]
+		line := e.doc.Line(sr)
 		sc = core.Clamp(sc, 0, len(line))
 		ec = core.Clamp(ec, 0, len(line))
 		return string(line[sc:ec])
 	}
 	var sb strings.Builder
-	first := e.lines[sr]
+	first := e.doc.Line(sr)
 	sc = core.Clamp(sc, 0, len(first))
 	sb.WriteString(string(first[sc:]))
 	for r := sr + 1; r < er; r++ {
 		sb.WriteByte('\n')
-		sb.WriteString(string(e.lines[r]))
+		sb.WriteString(string(e.doc.Line(r)))
 	}
 	sb.WriteByte('\n')
-	last := e.lines[er]
+	last := e.doc.Line(er)
 	ec = core.Clamp(ec, 0, len(last))
 	sb.WriteString(string(last[:ec]))
 	return sb.String()
@@ -145,10 +145,10 @@ func (e *Editor) deleteSelection() {
 		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		for r := topRow; r <= botRow; r++ {
-			line := e.lines[r]
+			line := e.doc.Line(r)
 			lo := core.Clamp(loCol, 0, len(line))
 			hi := core.Clamp(hiCol, 0, len(line))
-			e.lines[r] = append(line[:lo], line[hi:]...)
+			e.doc.setLine(r, append(line[:lo], line[hi:]...))
 		}
 		e.cursorRow, e.cursorCol = topRow, loCol
 		e.selecting = false
@@ -156,22 +156,22 @@ func (e *Editor) deleteSelection() {
 		return
 	}
 	sr, sc, er, ec := e.selectionBounds()
-	sc = core.Clamp(sc, 0, len(e.lines[sr]))
-	ec = core.Clamp(ec, 0, len(e.lines[er]))
+	sc = core.Clamp(sc, 0, len(e.doc.Line(sr)))
+	ec = core.Clamp(ec, 0, len(e.doc.Line(er)))
 	if sr == er {
-		line := e.lines[sr]
-		e.lines[sr] = append(line[:sc], line[ec:]...)
+		line := e.doc.Line(sr)
+		e.doc.setLine(sr, append(line[:sc], line[ec:]...))
 	} else {
-		first := e.lines[sr]
-		last := e.lines[er]
-		merged := make([]rune, 0, sc+(len(last)-ec))
-		merged = append(merged, first[:sc]...)
-		merged = append(merged, last[ec:]...)
-		newLines := make([][]rune, 0, len(e.lines)-(er-sr))
-		newLines = append(newLines, e.lines[:sr]...)
-		newLines = append(newLines, merged)
-		newLines = append(newLines, e.lines[er+1:]...)
-		e.lines = newLines
+		e.doc.edit(func(lines [][]rune) [][]rune {
+			first, last := lines[sr], lines[er]
+			merged := make([]rune, 0, sc+(len(last)-ec))
+			merged = append(merged, first[:sc]...)
+			merged = append(merged, last[ec:]...)
+			newLines := make([][]rune, 0, len(lines)-(er-sr))
+			newLines = append(newLines, lines[:sr]...)
+			newLines = append(newLines, merged)
+			return append(newLines, lines[er+1:]...)
+		})
 	}
 	e.cursorRow, e.cursorCol = sr, sc
 	e.selecting = false
@@ -196,10 +196,16 @@ func (e *Editor) Cut() string {
 // Paste inserts text at the cursor, replacing the current selection if
 // there is one — the behaviour expected of a clipboard paste. Embedded
 // newlines in text produce multiple lines, same as typing them would.
+//
+// Deliberately bypasses the completion popup entirely — it closes it and
+// never re-queries the provider. Pasted text is finished text; offering
+// (let alone committing) IntelliSense candidates against the token the
+// paste happens to end on is how pasted SQL gets silently rewritten.
 func (e *Editor) Paste(text string) {
 	if e.readOnly || text == "" {
 		return
 	}
+	e.closeCompletion()
 	e.pushUndo()
 	if e.HasSelection() {
 		e.deleteSelection()

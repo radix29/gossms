@@ -8,118 +8,35 @@ Keep this file current: close an item by deleting it, and add one whenever
 something is knowingly left undone. An open item recorded only in a session
 note is invisible by the next session.
 
-## Blocking the next release
+## By design — not issues, do not re-raise
 
-- **gosmo is untagged past `v0.0.6`, and `go.mod`'s `replace` is active.**
-  Intentional during development (see ARCHITECTURE.md, "Developing against a
-  local gosmo checkout"), but a CI release build cannot resolve gosmo in this
-  state, and `HEAD` calls gosmo code that no tag contains (e.g.
-  `gosmo.Scripting`). Before the next gossms release tag: tag and push gosmo,
-  bump `require`, comment out the `replace`/`ignore` pair, verify a clean
-  build and test run against the tagged module. Raised 2026-07-18 as "P1",
-  deprioritized by the user at the time; still outstanding 2026-07-30.
+- **gosmo being untagged past `v0.0.6` with `go.mod`'s `replace` active is
+  the intended development state.** It was listed here as "blocking the next
+  release" from 2026-07-18 to 2026-08-01; that was wrong framing. The
+  `replace` directive is deliberately live during development (ARCHITECTURE.md,
+  "Developing against a local gosmo checkout"), and tagging gosmo, bumping
+  `require`, and commenting out the `replace`/`ignore` pair are steps of the
+  release process itself (RELEASE.md) — not outstanding work. A CI release
+  build not resolving gosmo mid-development is the expected consequence, not a
+  defect.
 
-## Known bugs, deliberately unfixed
+- **A Grid/Text query result can exhaust memory.** Intended behaviour. The Max
+  Result Rows option and every `maxRows` parameter behind it were removed
+  2026-08-01: a result set is retained in full, so `SELECT * FROM` a
+  billion-row table will OOM the process. SSMS parity of "you get what you
+  asked for" was preferred to a silent cap. The retained form is already as
+  small as it reasonably goes (`internal/query/arena.go`); the floor is the
+  16-byte string header per cell that `ResultSet.Rows [][]string` implies.
+  Results To File never retained rows and is unaffected. Do not add a cap back.
 
-- **A Grid/Text query result can exhaust memory, by design.** The Max Result
-  Rows option and every `maxRows` parameter behind it were removed 2026-08-01
-  at the user's request: a result set is retained in full, so `SELECT * FROM`
-  a billion-row table will OOM the process. Intended — SSMS parity of "you
-  get what you asked for" was preferred to a silent cap. What was done
-  instead is to make the retained form as small as it reasonably can be (see
-  `internal/query/arena.go`); the floor is the 16-byte string header per cell
-  that `ResultSet.Rows [][]string` implies, which can't come down without
-  changing that type and every `DataGrid` that consumes it. Results To File
-  is unaffected — it never retained rows.
-
-- **Script Changes is broken on any create dialog whose later page depends on
-  an earlier page having actually run.** New Schedule reports
-  `gosmo: schedule "X" not found`: page 2 (Jobs) calls `AttachSchedule`, which
-  resolves by name, but under `gosmo.WithScript` page 1's `CreateSchedule` only
-  *collected* a statement, so there is nothing to look up. New Job's Schedules
-  page and New Alert's Response page are the same shape and likely affected.
-  Apply works correctly — script mode alone is broken. Confirmed identical on a
-  pre-refactor binary, so the generic `New*Dialog` base didn't cause it.
-  Unfixed because the fix is a design choice: script the dependent statement
-  blindly, skip dependent pages, or have gosmo's script mode fake the lookup.
-  Found 2026-07-28; still present.
-
-- **A bare `GO` line inside a block comment is treated as a batch separator by
-  IntelliSense scoping.** In
-
-  ```sql
-  SELECT * FROM dbo.Patients p
-  /*
-  GO
-  */
-  WHERE p.
-  ```
-
-  `p.` offers nothing: `lastGoBatchStart` matches GO lines textually, so the
-  statement is scoped to start after the commented `GO` and the alias on line 1
-  falls out of scope. Found 2026-07-30 while optimizing the prefix scan, and
-  A/B-confirmed against a pre-change binary as **pre-existing** — the
-  differential tests in `completion_prefix_scan_test.go` deliberately pin this
-  behavior so the optimization stayed equivalence-preserving. Unfixed because
-  making GO detection lexer-aware is a design choice that also touches
-  `controls/sql_statement.go`'s `isGoSeparatorLine` (Ctrl+Enter statement
-  selection has the same property), and the fix should change both together or
-  neither.
-
-- **`InputField` indexes by rune, not display width — the same constraint as
-  `Editor` below, and for the same reason.** `widgets.InputField` holds its
-  text as `[]rune` and treats each one as a single cell: the cursor, the
-  horizontal scroll offset, and the click-to-position math
-  (`input_field.go`'s `core.Clamp(f.scroll+(mx-ix-1), 0, len(f.value))`) are
-  all rune counts, while `Draw` hands the string to the terminal, which lays
-  it out by display width. A CJK or emoji rune in a connection name or a
-  filter box puts the cursor one column left of where it renders. Recorded
-  2026-07-31 during the two-repo review so it isn't rediscovered as a fresh
-  bug independent of the `Editor` item; the two should be decided together,
-  since a width-aware `InputField` is the smaller half of the same rework.
-
-- **Editor indexes by rune, not display width, so a double-width character
-  smears the rest of its line.** `Editor` treats every rune as exactly one
-  screen cell: `scrollCol`, `cursorCol`, the draw loops in `editor_draw.go`,
-  `longestLineLen`, and `wrapSegments` all count runes, and `hScrollbar`'s doc
-  comment states the choice outright (it is what lets `core.HandleScrollbarDragH`
-  drive the bar directly, since track width and visible count are then the same
-  number). A CJK or emoji rune passed to `SetContent` occupies two terminal
-  cells, so everything after it on that line renders one column left of where
-  the editor thinks it is, and the cursor lands in the wrong place.
-
-  This contradicts `internal/tuikit/README.md`'s "`core.DisplayWidth`, never
-  `len()`" rule, which the rest of tuikit follows. Tabs — the common case — are
-  already handled: `expandTabs` runs on both `SetText` and paste, and
-  `indentWidth` spaces are what Tab inserts, so no literal tab reaches the draw
-  loop. Left unfixed because making the editor width-aware means reworking
-  cursor math, selection columns, horizontal scrolling and the wrap
-  segmenter together, and SQL identifiers are overwhelmingly ASCII. Recorded
-  2026-07-30 so it isn't rediscovered as a fresh bug; the constraint was only
-  in a code comment before.
-
-- **A `/*` inside a `--` line comment or a string literal poisons the syntax
-  highlighting of every line after it.** In
-
-  ```sql
-  SELECT 4 -- line comment with /* inside it
-  SELECT '/* in a string literal */' AS s
-  ```
-
-  line 2 renders entirely as a comment. `blockCommentToggleEnd`
-  (`controls/sql_highlighter.go`) toggles on every `/*`/`*/` regardless of
-  context, so the unmatched `/*` on line 1 leaves the scan "inside a comment"
-  forever. The highlighter's own main loop is smarter — it stops at a `--` and
-  skips string literals — but only for the line it is currently colouring.
-  Pre-existing; found 2026-07-30 by the differential test added with the
-  block-comment memo (`TestSQLHighlighterMemoMatchesFullReplayInDrawOrder`),
-  which is why the memo deliberately reproduces the *simplified* scan rather
-  than the main loop's more accurate one: the replay still runs on the first
-  row of every Draw pass, so a memo that disagreed with it would recolour a
-  line depending only on whether it was the first visible row. Unfixed because
-  the fix is to make the toggle scan lexer-aware, which is the same design
-  question as the bare-`GO`-in-a-block-comment item above and should be decided
-  with it.
+- **`Table.DropColumn` and `Table.AddColumn` are accepted as non-functional
+  for now.** `DropColumn` fails on any column an index references (SQL Server:
+  "failed because one or more objects access this column") — it drops the
+  column's default constraint first but nothing else. A null/failing
+  implementation is fine at this stage; neither is on the path to the next
+  release, and neither may be removed from gosmo (CLAUDE.md's library rule).
+  Decided 2026-08-01. Detail on what a real fix would have to choose between
+  is in the follow-ons section below.
 
 ## Carried forward from the 2026-07-30 two-repo review
 
@@ -157,7 +74,9 @@ note is invisible by the next session.
 
 ## Follow-ons from the 2026-07-30 two-repo review
 
-- **`Table.DropColumn` fails on a column that any index references.** It drops
+- **`Table.DropColumn` fails on a column that any index references.**
+  Accepted as non-functional for now — see "By design" at the top of this
+  file; kept here for the detail of what a fix would have to decide. It drops
   the column's default constraint first — SQL Server refuses otherwise, and
   that is what its doc comment says it is for — but an index over the column
   blocks the `ALTER TABLE ... DROP COLUMN` the same way, with "failed because
@@ -180,12 +99,16 @@ note is invisible by the next session.
   through to the grid, and neither is currently plumbed. The capability is
   there whenever that's worth doing.
 
-  Check the cost before wiring it up. `styleAt` (`editor_draw.go`) is a
-  linear scan of the logical line's runs *per drawn column*, which is fine
-  against SQL's few coarse runs but not against a highlighter that returns
-  one run per token over a `varchar(max)` XML document — this is the call
-  site where that would land, and it compounds with the whole-document scan
-  below.
+  Check the cost before wiring it up. Wrap mode resolves each drawn column
+  through `styleAt` (`editor_draw.go`), a linear scan of the logical line's
+  runs, deliberately: the alternative is `runStyles`' per-rune map, which for
+  a `varchar(max)` cell would be work proportional to the value rather than
+  to the ~15 visible rows. The scan is fine against SQL's few coarse runs but
+  not against a highlighter returning one run per token over a whole XML
+  document, and this is the call site where that would land. It no longer
+  compounds with a per-Draw document scan — `buildVisualLines` is memoised as
+  of 2026-08-02 and a read-only viewer segments once — so this is now the
+  only remaining cost to weigh.
 
 - **`ExecProc` under `WithScript` is scripted but untested against a real
   server.** `scriptExecProc` (`gosmo/procedure.go`) renders the EXEC form,
@@ -196,33 +119,6 @@ note is invisible by the next session.
   SQL Server may refuse. Worth a live check before anything depends on it.
 
 ## Left open by the second 2026-07-30 two-repo review
-
-- **The syntax highlighters' block-comment replay is still O(document) on the
-  first row of every Draw pass.** The memo added 2026-07-30
-  (`sql_highlighter.go`, `xml_highlighter.go`) makes rows 2..H of a pass O(1),
-  but row 1 never hits the fast path and cannot: a pass starts at `scrollRow`
-  and the previous pass ended at `scrollRow+H-1`, so `idx == lastIdx+1` is
-  false by construction at every pass boundary. That is exactly what makes the
-  memo safe across edits — the invariant is load-bearing, not an oversight —
-  but it also means `startsInBlockComment` replays the whole document on every
-  keystroke (~1.4ms at 10,000 lines, as measured when the memo landed).
-  Fixing it needs a cached prefix-state array invalidated by a content-version
-  counter, which is the *same* blocker as `buildVisualLines` below: `e.lines`
-  is mutated at 26 sites across five files, and one missed bump renders stale
-  colours. Do both together behind a single mutation chokepoint or neither.
-  Raised 2026-07-31.
-
-- **`Editor.buildVisualLines` still walks the whole document on every Draw.**
-  The allocations are gone (it builds into `Editor.vlScratch`/`segScratch`
-  rather than growing two slices from nil per call), but the *scan* is still
-  O(document), not O(viewport) — every logical line is re-segmented on every
-  event the app processes, however little of it is on screen. Draw needs only
-  rows `[scrollRow, scrollRow+H)`, and `visualIndexForCursor` only the
-  cursor's line. Not memoised because the honest version needs a
-  content-version counter, and `e.lines` is mutated at 26 sites across five
-  files: one missed bump renders stale text, which is a far worse failure
-  than the cost being fixed. The real fix is either a single mutation
-  chokepoint or lazy per-viewport segmentation. Raised 2026-07-30.
 
 - **The Databases folder still issues one round trip per database.** Unlike
   the Tables folder — now two aggregate queries for the whole folder, see
@@ -304,6 +200,163 @@ the UI?"
   ("that next call is a fresh statement/batch that sets its own context if it
   needs to" — an assumption about callers). It now names the actual mechanism,
   so the next review doesn't re-derive the same wrong conclusion.
+
+## Fixed 2026-08-02 (do not re-open)
+
+All four were one change, because they had one blocker. The two performance
+items were explicitly gated on "a single mutation chokepoint or neither", and
+the two width items on the same rework of cursor/selection/scroll/wrap math.
+
+- ~~`Editor` and `InputField` index by rune, not display width~~ — fixed.
+  Both now keep text positions (cursor, selection anchor, `ColorRun` bounds,
+  wrap segments) as rune indices and everything on screen (`scrollCol`, the
+  caret's x, a click's x, the horizontal scrollbar) as terminal columns, and
+  convert between the two through `core.ColumnOfRune` /
+  `core.RuneIndexAtColumn` — new in `core/runecol.go` alongside `RuneWidth`
+  and `RunesWidth`. `Editor`'s two draw paths collapsed into one width-aware
+  `drawLineRow`; `wrapSegments` breaks on columns; `longestLineLen` became
+  `Document.maxDisplayWidth`.
+
+  A wide rune clipped by either edge of the viewport is drawn as blanks:
+  tcell owns both cells of a double-width character, so emitting half of one
+  makes the terminal paint the whole glyph over its neighbour. That was the
+  visible symptom — **the old build did not merely misalign wide text, it
+  ate it**: typing `世界ab` into the Connect dialog's Server field rendered
+  `世ab`, and `'世界世界'` in the query editor rendered `'世世'`.
+
+  Verified live 2026-08-02, A/B against a `HEAD` build: the connection field,
+  the query editor, caret x after ten `Right` presses (49 = rune count, vs 51
+  = columns), and the Connect dialog's wrap-mode Extra Properties box, where
+  32 ideographs previously collapsed onto one unwrapped row of 16 glyphs and
+  now wrap correctly at the box edge.
+
+  Deliberately still rune-indexed: block (column) selection, whose rectangle
+  is defined by rune columns. Rectangular selection over mixed-width text has
+  no single right answer; this is the SSMS-parity choice, and it is noted on
+  `Editor` itself.
+
+- ~~The highlighters' block-comment replay is O(document) on the first row of
+  every Draw pass~~ and ~~`Editor.buildVisualLines` walks the whole document
+  on every Draw~~ — both fixed, behind the mutation chokepoint they were
+  gated on. `Document` (`controls/document.go`) now owns the buffer and a
+  version counter, reachable for writing only through `setLine` and `edit`.
+  The 26 mutation sites route through those — including two the original
+  count missed, `transformSelection`'s in-place rune rewrite and
+  `MoveLinesUp`/`Down`'s in-place reorder, neither of which changes a slice
+  header and so neither of which would have bumped a hand-placed counter.
+
+  `Highlighter` changed shape from `func([][]rune, int)` to
+  `func(*Document, int)` so a highlighter can see the version. Both built-in
+  ones replaced their one-line memo with `prefixStates` (`controls/common.go`),
+  which holds every line's carried-in state, keyed on the *Document and its
+  version. `buildVisualLines` memoises its flattening the same way.
+
+  Measured on a 10,000-line script, 40-row viewport (`editor_bench_test.go`):
+  a redraw that follows no edit went from a full replay to **0.37ms**, and a
+  keystroke from **10.4ms to 0.38ms**. A profile of the redraw now shows no
+  O(document) work at all — it is per-cell drawing.
+
+  Two further costs surfaced only once the first was removed, and are fixed
+  here too rather than left as new open items:
+  - `maxDisplayWidth` is O(every rune) where the old rune count was O(lines),
+    so a keystroke re-measured the whole buffer. `Document` caches per-line
+    widths and `setLine` drops one entry; `insertRune` was moved off `edit`
+    onto `setLine` so typing takes that path.
+  - The prefix replay itself resumes rather than restarts. `Document.dirtyFrom`
+    records the line a single `setLine` touched, and `prefixStates.replay`
+    walks forward from there, stopping as soon as a recomputed state matches
+    the stored one — the carried state has rejoined the previous scan, so no
+    later line can differ. Typing outside a comment converges on the next
+    line. Pinned differentially by
+    `TestPrefixStatesIncrementalReplayMatchesFullReplay` against
+    `startsInBlockComment`'s assumption-free replay, over edits that open,
+    close and move block comments; A/B, an off-by-one in the resume point and
+    a missing convergence-index guard are both caught.
+
+  The invariant everything rests on is pinned by
+  `TestDocumentVersionChangesOnEveryMutation`, which drives 19 editing paths
+  and fails on all 19 if the counter is frozen.
+
+## Fixed 2026-08-01 (do not re-open)
+
+- ~~Script Changes broken on any create dialog whose later page depends on an
+  earlier page having actually run~~ — fixed across both repos. Two causes,
+  both of them a *read* standing in the middle of a write-only path:
+
+  1. gosmo's four Agent create methods (`CreateScheduleContext`,
+     `CreateJobContext`, `CreateAlertContext`, `CreateOperatorContext`) ended
+     with a `...ByNameContext` read-back to populate the returned object.
+     `WithScript` only intercepts the exec chokepoints, so that read went to
+     the server, found nothing — the `sp_add_*` had merely been collected —
+     and the whole Script Changes run failed with
+     `gosmo: schedule "X" not found`. Each now returns a name-only handle
+     under `Scripting(ctx)`, from the new `Server.Schedule/Job/Alert/Operator`
+     constructors — the Agent-side counterparts of `Server.Database`, and
+     added, not substituted for the `ByName` forms.
+  2. gossms's dependent pages then did the *same* lookup themselves
+     (`JobByNameContext`/`AlertByNameContext` in `new_job_pages.go`,
+     `new_alert_dialog.go`, `new_schedule_dialog.go`). Both now go through
+     `scriptSafeJob`/`scriptSafeAlert` (`new_object_dialog.go`), which take
+     the lightweight handle under script mode and the real read otherwise.
+
+  Every write reached from those handles addresses its object by name, so
+  nothing needs the fields the read-back would have filled. Also fixed in
+  passing: `Job.SetEmailNotifyContext` assigned `NotifyEmailOperatorName`
+  directly, bypassing `setIfApplied` — the one survivor of the 2026-07-30
+  sweep. Pinned by `TestScriptedAgentCreatesReturnNameOnlyHandles` (gosmo,
+  A/B: the old form panics/queries) and
+  `TestScriptSafeLookupsDoNotQueryUnderScriptMode` (gossms, which runs with a
+  nil `Server` so a helper that still queries fails loudly).
+
+  **Verified live against `ubudock` 2026-08-01.** A throwaway job, then New
+  Schedule's two applies run under `WithScript`: the collector produces
+  `sp_add_schedule` + `sp_attach_schedule`, both statements run clean when
+  executed for real, and the schedule comes back genuinely attached to the
+  job. A/B: reverting `CreateScheduleContext`'s guard reproduces the reported
+  `gosmo: schedule "zz_throwaway_sched" not found` at page 1. Job and schedule
+  were dropped afterward. Not covered: the dialog's own Script button in
+  front of a human, and the New Job / New Alert equivalents (same code shape,
+  unit-tested only).
+
+- ~~A bare `GO` line inside a block comment treated as a batch separator by
+  IntelliSense scoping~~ — fixed. GO detection moved out of the separate
+  textual pass over `lines` and into `lexSQL` itself (`goScan` bounds,
+  `lexResult.firstGo`/`lastGo`, `goSeparatorLineAt`), so a line is only a
+  separator if it *begins* in `sqlLexNormal` — never inside a block comment, a
+  string literal, or a bracketed identifier. `lastGoBatchStart` and
+  `statementStartOffset` are gone; `scanCompletionPrefix` now always resumes
+  its second pass in `sqlLexNormal`, because both boundaries it can pick are
+  normal-state positions by construction, which removed the `mark`/
+  `stateAtMark` machinery the old resume needed. Marginally *faster* than
+  before (the backwards per-line scan is gone): 5.71ms vs 6.01ms on
+  `BenchmarkCompletionPrefixScan_1000Stmts`.
+
+  The differential baselines in `completion_prefix_scan_test.go` were made
+  lexer-aware independently (`referenceLineStartsNormal`, a plain
+  character-at-a-time walk), so the 400 generated scripts still check
+  production against something written separately. A/B: reverting the
+  reference to the textual rule makes the corpus tests fail on exactly the
+  commented-out and quoted GO cases.
+
+  `controls/sql_statement.go` needed **no change** — Ctrl+Enter's
+  `isGoSeparatorLine` test was already inside the state machine, guarded by
+  `state == stNormal`. The claim that it shared the bug was wrong; it is now
+  pinned by `TestSelectStatementAtCursorIgnoresGoInsideBlockComment`.
+
+- ~~A `/*` inside a `--` line comment or a string literal poisoned the syntax
+  highlighting of every line after it~~ — fixed.
+  `blockCommentToggleEnd` (`controls/sql_highlighter.go`) now skips `--`
+  comments and `'...'` literals exactly as the highlighter's main loop does,
+  sharing the extracted `stringLiteralEnd` with it so the two cannot drift.
+  The memo/replay invariant is untouched: both still call the one function, so
+  a line's colour still cannot depend on whether it was the first visible row.
+  A genuinely multi-line string literal is still mis-scanned, consistently
+  with the main loop. A/B-confirmed by
+  `TestSQLHighlighterIgnoresBlockCommentOpenerInsideCommentsAndStrings`, which
+  fails on both cases against the old form, plus
+  `TestSQLHighlighterRealBlockCommentStillSwallowsFollowingLines` for the
+  inverse — quotes carry no meaning *inside* a comment, so `'*/'` still closes
+  one.
 
 ## Fixed by the 2026-07-31 two-repo review (do not re-open)
 

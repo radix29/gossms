@@ -230,7 +230,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 
 	apply := func(ctx context.Context) error {
 		commitCurrent()
-		j, err := sc.Server.JobByNameContext(ctx, jobName())
+		j, err := scriptSafeJob(ctx, sc, jobName())
 		if err != nil {
 			return err
 		}
@@ -266,7 +266,7 @@ func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func(
 		propsheet.Note("Optional — attach more, or create a new schedule, from the job's own Schedules page after it's created."),
 	)
 	apply := func(ctx context.Context) error {
-		j, err := sc.Server.JobByNameContext(ctx, jobName())
+		j, err := scriptSafeJob(ctx, sc, jobName())
 		if err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func buildNewJobNotificationsPage(sc *db.ServerConn, pf *njobPrefetch, jobName f
 		if !emailCheck.Checked() && !deleteCheck.Checked() {
 			return nil
 		}
-		j, err := sc.Server.JobByNameContext(ctx, jobName())
+		j, err := scriptSafeJob(ctx, sc, jobName())
 		if err != nil {
 			return err
 		}

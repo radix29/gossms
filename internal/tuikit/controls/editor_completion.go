@@ -114,7 +114,7 @@ func (e *Editor) updateCompletion() {
 			return
 		}
 	}
-	items, from := e.completionProvider(e.lines, e.cursorRow, e.cursorCol)
+	items, from := e.completionProvider(e.doc.all(), e.cursorRow, e.cursorCol)
 	if len(items) == 0 {
 		e.closeCompletion()
 		return
@@ -141,10 +141,10 @@ func (e *Editor) updateCompletion() {
 // literal, or an empty new line never auto-opens the popup; Ctrl+Space
 // always can.
 func (e *Editor) canAutoOpenCompletion() bool {
-	if e.cursorRow >= len(e.lines) || e.cursorCol <= 0 {
+	if e.cursorRow >= e.doc.Len() || e.cursorCol <= 0 {
 		return false
 	}
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	if e.cursorCol > len(line) {
 		return false
 	}
@@ -163,10 +163,10 @@ func (e *Editor) canAutoOpenCompletion() bool {
 // still on the token Escape was pressed at" for completionSuppressed; the
 // actual replace span for a commit always comes from the provider itself.
 func (e *Editor) currentTokenStart() int {
-	if e.cursorRow >= len(e.lines) {
+	if e.cursorRow >= e.doc.Len() {
 		return e.cursorCol
 	}
-	line := e.lines[e.cursorRow]
+	line := e.doc.Line(e.cursorRow)
 	i := core.Clamp(e.cursorCol, 0, len(line))
 	for i > 0 && core.IsWordRune(line[i-1]) {
 		i--
@@ -182,7 +182,7 @@ func (e *Editor) triggerCompletionExplicit() {
 		return
 	}
 	e.completionSuppressed = false
-	items, from := e.completionProvider(e.lines, e.cursorRow, e.cursorCol)
+	items, from := e.completionProvider(e.doc.all(), e.cursorRow, e.cursorCol)
 	real := 0
 	realIdx := -1
 	for i, it := range items {
@@ -239,10 +239,10 @@ func (e *Editor) commitCompletionItem(item CompletionItem, from int) {
 		return
 	}
 	row := e.cursorRow
-	if row >= len(e.lines) {
+	if row >= e.doc.Len() {
 		return
 	}
-	line := e.lines[row]
+	line := e.doc.Line(row)
 	from = core.Clamp(from, 0, len(line))
 	to := core.Clamp(e.cursorCol, from, len(line))
 	text := []rune(item.Text)
@@ -250,7 +250,7 @@ func (e *Editor) commitCompletionItem(item CompletionItem, from int) {
 	nl = append(nl, line[:from]...)
 	nl = append(nl, text...)
 	nl = append(nl, line[to:]...)
-	e.lines[row] = nl
+	e.doc.setLine(row, nl)
 	e.cursorCol = from + len(text)
 	e.desiredCol = e.cursorCol
 	e.ensureCursorVisible()

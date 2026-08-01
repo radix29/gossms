@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -45,25 +46,35 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		return nil
 	}
 	if qp := a.activeQueryPanel(); qp != nil {
-		// The Messages tab's read-only text view, while showing, takes
-		// priority next — see QueryPanel.onMessagesTab.
-		if qp.onMessagesTab() {
-			return qp.messages
+		// Every view below shares the results half of the panel, so which
+		// one is showing only decides the target when that half actually
+		// holds keyboard focus. Without the resultsHasFocus() gate, any
+		// execution that leaves the pane on the Messages tab (or the plan,
+		// or Results To Text) silently redirects Ctrl+V from the SQL editor
+		// the user is typing in to a read-only view whose Paste is a no-op
+		// — the reported "paste does nothing in the query editor".
+		if qp.resultsHasFocus() {
+			// The Messages tab's read-only text view, while showing, takes
+			// priority — see QueryPanel.onMessagesTab.
+			if qp.onMessagesTab() {
+				return qp.messages
+			}
+			// The Execution Plan view, while showing, takes priority next
+			// — see QueryPanel.planTabActive.
+			if qp.planTabActive() {
+				return qp.planView
+			}
+			// Results To Text's read-only view, while showing, takes
+			// priority next too — see QueryPanel.textTabActive.
+			if qp.textTabActive() {
+				return qp.resultsText
+			}
+			return qp.results
 		}
-		// The Execution Plan view, while showing, takes priority next too —
-		// see QueryPanel.planTabActive.
-		if qp.planTabActive() {
-			return qp.planView
-		}
-		// Results To Text's read-only view, while showing, takes priority
-		// next too — see QueryPanel.textTabActive.
-		if qp.textTabActive() {
-			return qp.resultsText
-		}
-		// The results grid's built-in "Show Value" content viewer, while
-		// open, takes priority over the SQL editor — see
-		// controls.DataGrid.HasSelection, which is only true while that
-		// popup is showing.
+		// The results grid's built-in "Show Value" content viewer is a modal
+		// overlay: it keeps its own selection while open regardless of which
+		// half is marked focused, so it still wins over the SQL editor — see
+		// controls.DataGrid.HasSelection, true only while that popup shows.
 		if qp.results.HasSelection() {
 			return qp.results
 		}
@@ -79,7 +90,18 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 // has a selection, its text is sent to the clipboard.
 func (a *App) copySelection() {
 	target := a.activeClipboardTarget()
-	if target == nil || !target.HasSelection() {
+	if target == nil {
+		return
+	}
+	// A focused results grid has no "selection" in the clipboardTarget
+	// sense unless its content viewer is open (see
+	// controls.DataGrid.HasSelection), but it always has a cell or block
+	// under its cursor — copy that, matching its right-click "Copy".
+	if g, ok := target.(*controls.DataGrid); ok && !g.HasSelection() {
+		a.copyWithStatus(g.SelectedCellsText())
+		return
+	}
+	if !target.HasSelection() {
 		return
 	}
 	a.writeClipboard(target.SelectedText())
@@ -155,6 +177,57 @@ func (a *App) pasteFromClipboard() {
 			a.screen.GetClipboard()
 		})
 	}()
+}
+
+// ---------------------------------------------------------------------------
+// Terminal bracketed paste
+// ---------------------------------------------------------------------------
+
+// beginBracketedPaste starts collecting pasted content. tcell's
+// EnablePaste (see core.Init) only brackets the paste with EventPaste
+// start/end markers — the content itself still arrives as ordinary
+// EventKeys in between, which is why Run() buffers them here instead of
+// handling them.
+func (a *App) beginBracketedPaste() {
+	a.pasting = true
+	a.pasteBuf.Reset()
+}
+
+// bufferPastedKey appends one key of an in-progress bracketed paste to
+// pasteBuf. Anything that isn't a character, newline, or tab (arrow keys,
+// function keys — a terminal shouldn't send them inside a paste, but a
+// stray escape sequence can decode as one) is dropped rather than acted
+// on, so a paste can never trigger a command.
+func (a *App) bufferPastedKey(ev *tcell.EventKey) {
+	switch ev.Key() {
+	case tcell.KeyRune:
+		a.pasteBuf.WriteString(ev.Str())
+	case tcell.KeyEnter:
+		a.pasteBuf.WriteByte('\n')
+	case tcell.KeyTab:
+		a.pasteBuf.WriteByte('\t')
+	}
+}
+
+// endBracketedPaste applies the whole buffered paste to the current target
+// as one edit. Going through clipboardTarget.Paste rather than replaying
+// the keys is the point: replayed keys run the full typing path, where a
+// pasted newline arrives as KeyEnter and the open IntelliSense popup
+// commits its selected candidate instead — silently rewriting the pasted
+// text. One Paste call is also one undo step.
+func (a *App) endBracketedPaste() {
+	a.pasting = false
+	text := a.pasteBuf.String()
+	a.pasteBuf.Reset()
+	if text == "" {
+		return
+	}
+	if t := a.activeClipboardTarget(); t != nil {
+		t.Paste(text)
+		if a.connectDialog.Visible() {
+			a.connectDialog.updateMatches()
+		}
+	}
 }
 
 // selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on

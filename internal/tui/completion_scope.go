@@ -134,7 +134,7 @@ var dmlStatementLeaders = map[string]bool{
 //     suppress, so a later, genuinely separate SELECT stacked right after
 //     it with no ';' is (rarely) missed — a known limitation
 //
-// Combined with the ';'/GO boundaries statementStartOffset/
+// Combined with the ';'/GO boundaries scanCompletionPrefix/
 // statementEndOffset already apply, this narrows FROM-scope/clause
 // analysis to the actual statement under the cursor even when the editor
 // holds several statements back to back with no ';' between them.
@@ -180,7 +180,7 @@ func dmlStatementStarts(tokens []sqlToken) []int {
 }
 
 // narrowToDMLStatement tightens [batchStart, batchEnd) — the ';'/GO-
-// delimited boundaries statementStartOffset/statementEndOffset already
+// delimited boundaries scanCompletionPrefix/statementEndOffset already
 // computed — to the actual DML statement containing upTo, using
 // dmlStatementStarts on tokens (which must already span the same
 // [batchStart, batchEnd) range so its depth tracking starts at 0).

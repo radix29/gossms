@@ -5005,3 +5005,235 @@ heap for 200k rows fell ~15% (37.4 → 31.8 MiB). The remaining floor is the
 16-byte string header per cell that `ResultSet.Rows [][]string` implies —
 recorded in `docs/open-threads.md`, not worth changing the type and every
 `DataGrid` consumer for.
+
+## 2026-08-01 — Paste in the query editor: two independent bugs
+
+Reported as "Ctrl+V doesn't work in the query editor (xfce4-terminal), the
+terminal's own Paste does — and IntelliSense rewrites what it pastes." Two
+separate causes, both reproduced live against ubudock and A/B'd against a
+pre-fix binary.
+
+**1. Paste hit the wrong widget.** `activeClipboardTarget` chose among the
+Messages view / execution plan / Results To Text / results grid purely by
+which tab was showing, ignoring which half of the panel had keyboard focus.
+Those views are read-only, and `Editor.Paste` returns silently when
+`readOnly` — so any execution that left the pane on Messages (a `PRINT`, a
+`SET`, an error, any non-SELECT batch) redirected Ctrl+V and Edit > Paste
+away from the SQL editor the user was typing in, with no feedback at all.
+It looked terminal-specific only because the terminal's own paste never
+goes through this code. Fixed by gating the whole results-side branch on
+`qp.resultsHasFocus()`; the grid's "Show Value" viewer still wins from
+either side, since it's a modal overlay with its own selection. Ctrl+C on a
+focused results grid used to copy the *editor's* selection through the same
+hole — it now copies the grid's selected cell/block via the new exported
+`DataGrid.SelectedCellsText`, matching its right-click "Copy".
+
+**2. Bracketed paste was replayed as typing.** `core.Init` calls
+`EnablePaste`, but tcell only brackets the paste with `EventPaste`
+start/end markers — the content still arrives as ordinary `EventKey`s, and
+`Run` had no case for the markers. So a terminal paste ran the full typing
+path: each pasted newline arrived as `KeyEnter`, and with the completion
+popup open on the token the paste passed through, `handleCompletionKey`
+committed the selected candidate instead of inserting the newline.
+Live repro: popup open on `sys.`, pasting `objects\nWHERE type = 'U'`
+produced `sys.objectsWHERE type = 'U'` — the newline gone, a syntax error.
+`Run` now buffers keys between the markers (`beginBracketedPaste` /
+`bufferPastedKey` / `endBracketedPaste` in `clipboard.go`) and applies them
+through `clipboardTarget.Paste` as one edit — one undo step, and anything
+that isn't a rune/newline/tab is dropped rather than acted on, so a paste
+can't trigger a command. `Editor.Paste` also closes the completion popup
+now and never re-queries the provider.
+
+---
+
+## 2026-08-01 — Triage of the top open threads: two closed, three re-classified
+
+*User asked for the top five known issues, then ruled on each: gosmo tagging
+and the unbounded result set are by design, DropColumn/AddColumn may stay
+non-functional, and the two lexer-awareness bugs get fixed.*
+
+**Re-classified, not fixed.** The `replace`-directive/untagged-gosmo item had
+sat at the top of `open-threads.md` as "blocking the next release" since
+2026-07-18. It isn't a defect: tagging gosmo and commenting out the `replace`
+pair are steps of `RELEASE.md`, and the state it describes is the intended
+development state. Likewise the unbounded Grid/Text result set — intended
+since the Max Result Rows removal earlier the same day, SSMS parity over a
+silent cap. `Table.DropColumn`/`AddColumn` may stay non-functional for now;
+they aren't on the path to a release and gosmo's no-removal rule keeps them
+in place regardless. All three moved to a new "By design — not issues" section
+at the top of `open-threads.md`, which is where the next review should look
+before re-raising any of them.
+
+**Script Changes on multi-page create dialogs.** Reported as
+`gosmo: schedule "X" not found` from New Schedule; the root cause turned out
+to be two independent reads on a path that was supposed to be write-only.
+gosmo's four Agent `Create*Context` methods end with a `...ByNameContext`
+read-back to populate the object they return — and `WithScript` only
+intercepts the exec chokepoints, so under script mode that read went to a real
+server looking for an object whose `sp_add_*` had merely been *collected*.
+The gossms side then repeated the same lookup in the dependent page's apply
+(`JobByNameContext` in three places, `AlertByNameContext` in one). Fixed at
+both layers: gosmo gained `Server.Schedule/Job/Alert/Operator` — name-only
+handle constructors, the Agent counterparts of the existing `Server.Database`,
+*added* alongside the `ByName` forms rather than replacing them — and returns
+one under `Scripting(ctx)`; gossms's pages go through new
+`scriptSafeJob`/`scriptSafeAlert` helpers. Every write reachable from those
+handles builds its statement from the name alone, which is what makes the
+lightweight form sufficient. Caught in passing:
+`Job.SetEmailNotifyContext` assigned `NotifyEmailOperatorName` directly,
+bypassing `setIfApplied` — the last survivor of the 2026-07-30 sweep that put
+all 39 mirrored writes behind it. The gossms test runs with a nil `Server` on
+purpose, so a helper that still queries panics instead of quietly passing.
+
+**GO inside a block comment.** The completion scan's GO detection was a
+separate textual pass over `lines`, so a commented-out `GO` scoped completion
+to the wrong statement and `SELECT * FROM dbo.Patients p /* GO */ WHERE p.`
+offered nothing. Moved the detection into `lexSQL` itself: a line is a
+separator only if it *begins* in `sqlLexNormal`, which falls out of the state
+machine for free and covers block comments, string literals and bracketed
+identifiers in one rule. That also collapsed the two-pass scan's resume logic
+— both boundaries `scanCompletionPrefix` can pick are normal-state positions
+by construction, so the second pass always resumes in `sqlLexNormal` and the
+`mark`/`stateAtMark` plumbing went away with `lastGoBatchStart` and
+`statementStartOffset`. Slightly faster than before, since the backwards
+per-line scan is gone (5.71ms vs 6.01ms at 1,000 statements).
+
+The differential tests were the delicate part: they existed to pin the
+*old* behavior, so their baselines had to be made lexer-aware
+*independently* — `referenceLineStartsNormal` is a plain
+character-at-a-time walk with no shared code with `lexSQL`. The 400
+generated scripts still check production against something written
+separately, and reverting the baseline to the textual rule makes the corpus
+fail on exactly the commented-out and quoted GO cases, which is the A/B.
+
+`controls/sql_statement.go` needed no change at all. `open-threads.md` had
+claimed Ctrl+Enter shared the bug and that the two should be fixed together;
+its `isGoSeparatorLine` test was already inside the state machine, guarded by
+`state == stNormal`. Pinned by a test now rather than left as an assumption.
+
+**`/*` inside a `--` comment or a string literal.** Same shape, different
+scanner: `blockCommentToggleEnd` toggled on every `/*`/`*/` regardless of
+context, so one in a line comment left the highlighter "inside a comment" for
+the rest of the document. It now skips `--` and `'...'` exactly as the
+highlighter's main loop does, sharing the extracted `stringLiteralEnd` with
+it so the two can't drift. The memo/replay invariant is untouched, which was
+the constraint that made this look risky: both paths still call the one
+function, so a line's colour still can't depend on whether it happened to be
+the first visible row of a Draw pass. Quotes deliberately carry no meaning
+*inside* a comment — `'*/'` still closes one — which is the T-SQL rule and is
+pinned by its own test.
+
+**Live check against `ubudock`.** A throwaway job, then New Schedule's two
+applies driven under `WithScript`: the collector produced `sp_add_schedule` +
+`sp_attach_schedule`, both ran clean when executed for real, and the schedule
+came back attached to the job. A/B: reverting the `CreateScheduleContext`
+guard reproduces the reported `gosmo: schedule "zz_throwaway_sched" not
+found` at page 1 — the same message the original report carried. Throwaway
+objects dropped afterward (`sp_delete_job` takes the now-unused schedule with
+it, which is also incidental confirmation the attach was real).
+
+One thing the check turned up: a name-only handle is sufficient for *writes*
+only, exactly as documented — `Job.SchedulesContext` reads by `JobID` and
+fails on one with "Conversion failed when converting from a character string
+to uniqueidentifier". That is the intended boundary, not a gap.
+
+**Still to do:** the dialog's own Script button in front of a human, and the
+New Job / New Alert equivalents — same code shape, unit-tested only.
+
+---
+
+## 2026-08-02 — Editor and InputField display width, and the Document chokepoint
+
+`editor-display-width-and-document-2026-08`
+
+*Four open-threads items closed as one change: both text widgets became
+column-aware, and the two O(document)-per-Draw scans got a version counter
+they could finally be keyed on*
+
+Asked for the top five known issues, then for 1-4 of them. Those four were
+`Editor` and `InputField` indexing by rune rather than display width, the
+highlighters' block-comment replay being O(document) on the first row of
+every Draw pass, and `buildVisualLines` walking the whole document on every
+Draw. They came out as one change because open-threads had already recorded
+why: the two width items were "the smaller half of the same rework", and the
+two performance items were gated on "a single mutation chokepoint or
+neither".
+
+**Width.** The model chosen was to keep every *text* position a rune index
+(cursor, selection anchor, `ColorRun` bounds, wrap segments) and make every
+*screen* quantity a terminal column (`scrollCol`, caret x, click x, the
+horizontal scrollbar), with `core.ColumnOfRune` / `core.RuneIndexAtColumn`
+as the only conversion — new in `core/runecol.go` beside `RuneWidth` and
+`RunesWidth`. Converting the indices themselves would have touched far more
+code for no gain; this is also what Scintilla does. `Editor`'s plain and
+highlighted draw loops collapsed into one width-aware `drawLineRow`, and
+`InputField.Draw` got the same treatment.
+
+`RuneIndexAtColumn` snaps to the start of a wide rune from either of its
+columns, because an index between the two cells has no text position behind
+it. Clipping a wide rune at either viewport edge draws blanks rather than the
+glyph: tcell writes the continuation cell itself, so emitting half a pair
+makes the terminal paint the full character over its neighbour.
+
+That last point turned out to be the *visible* bug, and bigger than the item
+described. Recorded as "puts the cursor one column left of where it renders",
+it actually **ate characters**: A/B against a `HEAD` build, typing `世界ab`
+into the Connect dialog's Server field rendered `世ab`, `'世界世界'` in the
+query editor rendered `'世世'`, and 32 ideographs in the wrap-mode Extra
+Properties box collapsed onto one unwrapped row of 16 glyphs. Every second
+rune was being overwritten by the previous one's continuation cell. Verified
+live 2026-08-02 under tmux, both builds side by side, including caret x after
+ten `Right` presses (49 with rune counting, 51 with columns).
+
+Block (column) selection stays rune-indexed deliberately — a rectangle over
+mixed-width text has no single right answer, and this is the SSMS-parity
+choice. Noted on `Editor` itself, not just here.
+
+**The chokepoint.** `Document` (`controls/document.go`) now owns the buffer
+and a version counter, writable only through `setLine` and `edit`. The
+open-threads note counted 26 mutation sites; converting them found two more
+it had missed, and both are the interesting kind — `transformSelection`
+rewriting runes in place and `MoveLinesUp`/`Down` reordering in place, neither
+of which changes a slice header, so neither would have bumped a counter placed
+by hand next to the assignments. That is the argument for the chokepoint in
+one sentence.
+
+`Highlighter` changed shape from `func([][]rune, int)` to
+`func(*Document, int)` so a highlighter can see the version at all. Both
+built-in ones dropped their one-line memo for `prefixStates`
+(`controls/common.go`), which holds every line's carried-in state and is keyed
+on the `*Document` as well as the number — two Documents count versions
+independently from zero, so the pointer is what stops a second document being
+answered with the first one's states.
+
+**Two costs only visible once the first was gone.** Removing the per-Draw
+replay exposed that `maxDisplayWidth` is O(every rune) where the old rune
+count was O(lines), so a keystroke re-measured the whole buffer: 10.4ms per
+keystroke at 10,000 lines, worse than the problem being fixed. Per-line width
+caching plus moving `insertRune` off `edit` onto `setLine` took it out. Then
+the prefix replay itself was made resumable: `Document.dirtyFrom` records the
+line a single `setLine` touched, and the replay walks forward from there and
+stops as soon as a recomputed state matches the stored one — the carried state
+has rejoined the previous scan, so no later line can differ. Typing outside a
+comment converges on the very next line.
+
+Measured (`editor_bench_test.go`, 10,000 lines, 40-row viewport): a redraw
+following no edit 0.37ms, a keystroke 10.4ms -> 0.38ms. A profile of the
+redraw shows no O(document) work left — it is per-cell drawing and nothing
+else.
+
+**A/B, since none of this is provable by green tests.** Freezing the version
+counter fails all 19 cases of `TestDocumentVersionChangesOnEveryMutation` plus
+the three highlighter-invalidation tests and the wrap-cache test. Forcing
+`core.RuneWidth` to 1 fails all seven width tests. An off-by-one in the resume
+point and a missing convergence-index guard are each caught by
+`TestPrefixStatesIncrementalReplayMatchesFullReplay`, which compares the
+incremental cache against `startsInBlockComment`'s assumption-free replay over
+edits that open, close and move block comments.
+
+One mutant is *not* caught: removing the line-count test from `prefixStates.at`
+changes nothing, because only `setLine` leaves a non-zero `dirtyFrom` and
+`setLine` cannot change the line count, so the resume branch is already
+unreachable for a document that grew or shrank. Kept as one comparison's worth
+of insurance, and labelled as redundant in the code rather than left to look
+load-bearing.
