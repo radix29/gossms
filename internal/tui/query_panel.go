@@ -60,11 +60,9 @@ type QueryPanel struct {
 
 	// runMode is the resultsMode the in-flight (or most recent) execution
 	// was started under, snapshotted by runQuery. Every decision that has
-	// to agree with the row cap that execution actually used reads this,
-	// not resultsMode: the Query menu can switch modes while a query runs,
-	// and a run started in Grid mode is capped to MaxResultRows, so
-	// exporting its result as though it were a File-mode run would write a
-	// truncated CSV with nothing to say so.
+	// to agree with how that execution actually ran reads this, not
+	// resultsMode: the Query menu can switch modes while the save dialog is
+	// open or the query is running.
 	runMode ResultsMode
 
 	result    *query.Result // last execution's result; nil until first run

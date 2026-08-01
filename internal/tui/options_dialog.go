@@ -16,7 +16,6 @@ type optionsZone int
 const (
 	zoneIconStyle optionsZone = iota
 	zoneMaxCellLen
-	zoneMaxResultRows
 	zoneIntelliSense
 	zoneOptButtons
 )
@@ -29,7 +28,6 @@ type OptionsDialog struct {
 
 	rbIconStyle    *widgets.RadioBox
 	fMaxCellLen    *widgets.InputField
-	fMaxResultRows *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
 	zone     optionsZone
@@ -39,7 +37,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 60, 17)
+	d.InitModal(app.screen, "Options", 60, 15)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -49,7 +47,6 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.rbIconStyle = widgets.NewRadioBox("Object Explorer Icons:", labels)
 
 	d.fMaxCellLen = widgets.NewInputField("Max cell length (Query Results):", 5, false)
-	d.fMaxResultRows = widgets.NewInputField("Max result rows (Query Results):", 8, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	return d
 }
@@ -65,7 +62,6 @@ func (d *OptionsDialog) Show() {
 		}
 	}
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
-	d.fMaxResultRows.SetValue(strconv.Itoa(d.app.cfg.MaxResultRows))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setZone(zoneIconStyle)
 	d.ModalDialog.Show()
@@ -75,7 +71,6 @@ func (d *OptionsDialog) setZone(z optionsZone) {
 	d.zone = z
 	d.rbIconStyle.Focus(z == zoneIconStyle)
 	d.fMaxCellLen.Focus(z == zoneMaxCellLen)
-	d.fMaxResultRows.Focus(z == zoneMaxResultRows)
 	d.cbIntelliSense.Focus(z == zoneIntelliSense)
 }
 
@@ -92,10 +87,7 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
 	d.fMaxCellLen.Draw(s)
 
-	d.fMaxResultRows.SetBounds(inner.X+1, inner.Y+8)
-	d.fMaxResultRows.Draw(s)
-
-	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+10)
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+8)
 	d.cbIntelliSense.Draw(s)
 
 	d.DrawSeparator(s)
@@ -122,24 +114,9 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		}
 		switch ev.Key() {
 		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneMaxResultRows)
-		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneIconStyle)
-		case tcell.KeyEnter:
-			d.doButton()
-		default:
-			return false
-		}
-		return true
-	case zoneMaxResultRows:
-		if d.fMaxResultRows.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
 			d.setZone(zoneIntelliSense)
 		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxCellLen)
+			d.setZone(zoneIconStyle)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -154,7 +131,7 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		case tcell.KeyTab, tcell.KeyDown:
 			d.setZone(zoneOptButtons)
 		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxResultRows)
+			d.setZone(zoneMaxCellLen)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -218,10 +195,6 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.setZone(zoneMaxCellLen)
 		return true
 	}
-	if d.fMaxResultRows.HandleMouse(ev) {
-		d.setZone(zoneMaxResultRows)
-		return true
-	}
 	if d.rbIconStyle.HandleMouse(ev) {
 		d.setZone(zoneIconStyle)
 		return true
@@ -243,9 +216,9 @@ func (d *OptionsDialog) doButton() {
 	}
 }
 
-// apply commits the selected icon style, max cell length, and max result
-// rows to the config, persists it, and rebuilds the Object Explorer so the
-// icon change is visible immediately.
+// apply commits the selected icon style and max cell length to the config,
+// persists it, and rebuilds the Object Explorer so the icon change is
+// visible immediately.
 func (d *OptionsDialog) apply() {
 	styles := config.AllIconStyles()
 	if i := d.rbIconStyle.Selected(); i >= 0 && i < len(styles) {
@@ -255,11 +228,6 @@ func (d *OptionsDialog) apply() {
 		d.app.cfg.MaxCellLength = n
 	} else {
 		d.app.cfg.MaxCellLength = config.DefaultMaxCellLength
-	}
-	if n, err := strconv.Atoi(d.fMaxResultRows.Value()); err == nil && n > 0 {
-		d.app.cfg.MaxResultRows = n
-	} else {
-		d.app.cfg.MaxResultRows = config.DefaultMaxResultRows
 	}
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
 	if err := d.app.cfg.Save(); err != nil {

@@ -265,3 +265,26 @@ func TestFormatFloatSpecials(t *testing.T) {
 		}
 	}
 }
+
+// TestReadsCurrentDatabase pins that the DB_NAME() read-back is skipped in
+// estimated-plan mode. Under SET SHOWPLAN_XML ON nothing executes, so
+// "SELECT DB_NAME()" returns a showplan result set instead of a name — and
+// the read ran before the deferred SET ... OFF, so Result.Database ended up
+// holding the whole plan XML document.
+func TestReadsCurrentDatabase(t *testing.T) {
+	cases := []struct {
+		capture planCapture
+		want    bool
+	}{
+		{planCaptureNone, true},
+		// STATISTICS XML does really run the batches, and returns the plan
+		// after each statement's own results — so DB_NAME() still answers.
+		{planCaptureActual, true},
+		{planCaptureEstimated, false},
+	}
+	for _, c := range cases {
+		if got := c.capture.readsCurrentDatabase(); got != c.want {
+			t.Errorf("planCapture(%d).readsCurrentDatabase() = %v, want %v", c.capture, got, c.want)
+		}
+	}
+}

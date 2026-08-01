@@ -8,7 +8,6 @@ package query
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
@@ -139,6 +138,22 @@ const (
 	planCaptureEstimated             // SET SHOWPLAN_XML ON — nothing really runs
 )
 
+// readsCurrentDatabase reports whether execute should read DB_NAME() back off
+// the script's connection to populate Result.Database.
+//
+// Not under SHOWPLAN_XML. The SET ... OFF is deferred, so it hasn't run by
+// the time execute reaches that read, and while SHOWPLAN_XML is on SQL
+// Server compiles statements instead of running them — SELECT DB_NAME()
+// comes back as a one-column showplan result set, and Scan puts the whole
+// XML document into Result.Database. Estimated mode also never runs a
+// mid-script USE, so there is no database change to report in the first
+// place.
+//
+// Split out for the same reason as Result.shouldReportSuccess: this path
+// can't be driven end to end by a fake driver (see stream_test.go), so the
+// decision is the part of it a unit test can still reach.
+func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
+
 // Execute runs script against db, SSMS-style. If database is non-empty the
 // connection switches to it first ("USE [database]"), so the script runs in
 // that database context. The script is split on GO separators; a failing
@@ -146,14 +161,11 @@ const (
 // matching SSMS. Cancelling ctx stops between (and inside) batches; the
 // partial Result is still returned.
 //
-// maxRows caps how many rows each result set keeps in memory (0 or negative
-// means unlimited) — a query is still executed and drained to completion
-// either way, so row/rows-affected counts and later batches are unaffected;
-// rows past the cap are simply not scanned or retained, and a Messages
-// notice reports the truncation. Meant for the interactive Grid/Text views;
-// pass 0 for a caller (e.g. Results To File) that wants every row.
-func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows int) *Result {
-	return execute(ctx, db, database, script, maxRows, planCaptureNone)
+// Every row a result set returns is retained in Result.Sets — there is no
+// cap. A query big enough to exhaust memory is the caller's problem to not
+// run; see cellArena for how the retained rows are packed.
+func Execute(ctx context.Context, db *sql.DB, database, script string) *Result {
+	return execute(ctx, db, database, script, planCaptureNone)
 }
 
 // ExecuteWithPlan behaves like Execute but additionally runs with SET
@@ -161,20 +173,17 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, maxRows i
 // after it really runs, not just compiled — comes back in Result.PlanXML.
 // Everything else (GO-batch splitting, message capture, row scanning,
 // cancellation) is identical to Execute.
-func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string, maxRows int) *Result {
-	return execute(ctx, db, database, script, maxRows, planCaptureActual)
+func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
+	return execute(ctx, db, database, script, planCaptureActual)
 }
 
 // ExecuteEstimatedPlan behaves like Execute but runs with SET SHOWPLAN_XML
 // ON instead of actually running the script — SQL Server compiles every GO
 // batch and returns its estimated plan in Result.PlanXML without executing
 // it, matching SSMS's "Display Estimated Execution Plan". GO-batch
-// splitting and cancellation are identical to Execute; unlike Execute/
-// ExecuteWithPlan, nothing in the script produces real rows or "rows
-// affected" messages while SHOWPLAN_XML is on, so there's no meaningful
-// row cap to accept.
+// splitting and cancellation are identical to Execute.
 func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
-	return execute(ctx, db, database, script, 0, planCaptureEstimated)
+	return execute(ctx, db, database, script, planCaptureEstimated)
 }
 
 // RowSink receives a script's result rows as they are scanned, instead of
@@ -202,18 +211,17 @@ type RowSink interface {
 // accumulating it in Result.Sets, which comes back empty. Row counts are
 // reported per set in Result.Messages, and Result.RowsWritten totals them.
 //
-// There is no row cap: the point of this path is to write everything the
-// query returned. Nothing is retained, so an unbounded result set costs
-// unbounded file, not unbounded memory.
+// Nothing is retained, so an unbounded result set costs unbounded file
+// rather than unbounded memory.
 func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink) *Result {
-	return executeWithSink(ctx, db, database, script, 0, planCaptureNone, sink)
+	return executeWithSink(ctx, db, database, script, planCaptureNone, sink)
 }
 
-func execute(ctx context.Context, db *sql.DB, database, script string, maxRows int, capture planCapture) *Result {
-	return executeWithSink(ctx, db, database, script, maxRows, capture, nil)
+func execute(ctx context.Context, db *sql.DB, database, script string, capture planCapture) *Result {
+	return executeWithSink(ctx, db, database, script, capture, nil)
 }
 
-func executeWithSink(ctx context.Context, db *sql.DB, database, script string, maxRows int, capture planCapture, sink RowSink) *Result {
+func executeWithSink(ctx context.Context, db *sql.DB, database, script string, capture planCapture, sink RowSink) *Result {
 	start := time.Now()
 	res := &Result{}
 
@@ -256,14 +264,16 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, m
 		if ctx.Err() != nil {
 			break
 		}
-		runBatch(ctx, conn, b, res, maxRows, sink)
+		runBatch(ctx, conn, b, res, sink)
 	}
 
 	if ctx.Err() != nil {
 		res.Messages = append(res.Messages, Message{Text: "Query was cancelled by user.", IsError: true})
 	} else {
-		if name, err := currentDatabase(ctx, conn); err == nil {
-			res.Database = name
+		if capture.readsCurrentDatabase() {
+			if name, err := currentDatabase(ctx, conn); err == nil {
+				res.Database = name
+			}
 		}
 		if res.shouldReportSuccess(capture) {
 			res.addNotice("Commands completed successfully.")
@@ -358,9 +368,8 @@ func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
 // runBatch executes one GO batch and drains the sqlexp message stream,
 // appending result sets and messages to res. SQL errors are messages, not
 // early returns — later statements in the batch may still have produced
-// output, and SSMS reports it all. maxRows is passed straight to
-// scanResultSet — see Execute's doc comment.
-func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, maxRows int, sink RowSink) {
+// output, and SSMS reports it all.
+func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, sink RowSink) {
 	retmsg := &sqlexp.ReturnMessage{}
 	rows, err := conn.QueryContext(ctx, sqlText, retmsg)
 	if err != nil {
@@ -382,7 +391,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
-			if !scanNext(rows, res, maxRows, sink) {
+			if !scanNext(rows, res, sink) {
 				// scanNext gave up part-way through the result set. The
 				// message loop can't advance past one with rows still
 				// pending, so finish reading it here. Only on this path:
@@ -412,6 +421,11 @@ type rowScanner struct {
 	guids       []*mssql.NullUniqueIdentifier
 	decimalLike []bool
 	layouts     []string
+
+	// buf renders one cell at a time and is reused for every cell of every
+	// row — the rendered bytes are copied out by cellArena.str (or into a
+	// fresh string) before the next cell overwrites them.
+	buf []byte
 }
 
 // newRowScanner analyses the current result set's columns once.
@@ -466,50 +480,54 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	return sc, nil
 }
 
-// scan reads the current row and renders it as display strings.
-func (sc *rowScanner) scan(rows *sql.Rows) ([]string, error) {
+// scan reads the current row and renders it as display strings into row,
+// which must have one slot per column.
+//
+// a may be nil, which makes every cell its own ordinary string — right for
+// the streaming path, which hands each row straight to a sink and keeps
+// nothing. A non-nil arena packs the cells instead, so a retained result set
+// costs a handful of large allocations rather than one per cell.
+func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 	if err := rows.Scan(sc.ptrs...); err != nil {
-		return nil, err
+		return err
 	}
-	row := make([]string, len(sc.cols))
 	for i := range sc.cols {
+		sc.buf = sc.buf[:0]
 		if g := sc.guids[i]; g != nil {
-			row[i] = formatGUID(*g)
+			sc.buf = appendGUID(sc.buf, *g)
 		} else {
-			row[i] = formatValue(sc.vals[i], sc.decimalLike[i], sc.layouts[i])
+			sc.buf = appendValue(sc.buf, sc.vals[i], sc.decimalLike[i], sc.layouts[i])
 		}
+		row[i] = a.str(sc.buf)
+		// Drop the driver's own copy of this cell now that it has been
+		// rendered: without this a []byte or string column keeps its
+		// per-row allocation alive until the next row overwrites vals[i],
+		// which for the last row of a huge set is until the whole Result
+		// is dropped.
+		sc.vals[i] = nil
 	}
-	return row, nil
+	return nil
 }
 
-// scanResultSet reads the current result set of rows into string cells, up
-// to maxRows of them (0 or negative means unlimited) — reporting whether
-// the result set actually had more than that. rows.Next() is still called
-// until the driver's row stream for this set is exhausted regardless of
-// the cap; only the (comparatively expensive) Scan, string-formatting, and
-// retention past the cap are skipped, so the sqlexp message-based
-// iteration runBatch drives — which expects a result set fully drained
-// before the next message can be read — still behaves correctly, and a
-// huge SELECT can't grow one ResultSet past what the cap allows.
-func scanResultSet(rows *sql.Rows, maxRows int) (ResultSet, bool, error) {
+// scanResultSet reads the whole of rows' current result set into string
+// cells. There is no row cap — every row the server sent is retained — so
+// the cells and the per-row slices are packed into a cellArena to keep the
+// cost of a very large set as close to the size of its text as it can be.
+func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
-		return ResultSet{}, false, err
+		return ResultSet{}, err
 	}
 	rs := ResultSet{Columns: sc.cols}
-	truncated := false
+	a := &cellArena{}
 	for rows.Next() {
-		if maxRows > 0 && len(rs.Rows) >= maxRows {
-			truncated = true
-			continue // keep draining the stream without scanning/retaining
-		}
-		row, err := sc.scan(rows)
-		if err != nil {
-			return rs, truncated, err
+		row := a.row(len(sc.cols))
+		if err := sc.scan(rows, row, a); err != nil {
+			return rs, err
 		}
 		rs.Rows = append(rs.Rows, row)
 	}
-	return rs, truncated, nil
+	return rs, nil
 }
 
 // streamResultSet writes the current result set straight to sink, retaining
@@ -537,9 +555,11 @@ func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
 			err = endErr
 		}
 	}()
+	// One row buffer for the whole set: sink.Row must consume what it is
+	// given before returning (see RowSink), so it can be overwritten.
+	row := make([]string, len(sc.cols))
 	for rows.Next() {
-		var row []string
-		if row, err = sc.scan(rows); err != nil {
+		if err = sc.scan(rows, row, nil); err != nil {
 			return n, err
 		}
 		if err = sink.Row(row); err != nil {
@@ -566,7 +586,7 @@ func isShowplanResultSet(cols []string) bool {
 // Errors are recorded on res rather than returned — a batch keeps running
 // after one, the way SSMS does — and reported as a false return, meaning
 // the set was abandoned with rows still pending for the caller to drain.
-func scanNext(rows *sql.Rows, res *Result, maxRows int, sink RowSink) bool {
+func scanNext(rows *sql.Rows, res *Result, sink RowSink) bool {
 	cols, err := rows.Columns()
 	if err != nil {
 		res.addError(err)
@@ -594,15 +614,12 @@ func scanNext(rows *sql.Rows, res *Result, maxRows int, sink RowSink) bool {
 		res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
 		return true
 	}
-	rs, truncated, err := scanResultSet(rows, maxRows)
+	rs, err := scanResultSet(rows)
 	if err != nil {
 		res.addError(err)
 		return false
 	}
 	res.Sets = append(res.Sets, rs)
-	if truncated {
-		res.addNotice(fmt.Sprintf("Only the first %d row(s) are shown — increase Max Result Rows in Tools > Options to see more.", maxRows))
-	}
 	return true
 }
 
@@ -618,13 +635,18 @@ func scanPlanXML(rows *sql.Rows) (string, error) {
 	return xml, rows.Err()
 }
 
-// formatGUID renders a uniqueidentifier as SSMS does: NULL, or the canonical
-// uppercase dashed form.
-func formatGUID(g mssql.NullUniqueIdentifier) string {
+// appendGUID appends a uniqueidentifier as SSMS renders it: NULL, or the
+// canonical uppercase dashed form.
+func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	if !g.Valid {
-		return "NULL"
+		return append(dst, "NULL"...)
 	}
-	return g.UUID.String()
+	return append(dst, g.UUID.String()...)
+}
+
+// formatGUID is appendGUID's standalone form.
+func formatGUID(g mssql.NullUniqueIdentifier) string {
+	return string(appendGUID(nil, g))
 }
 
 // defaultTimeLayout renders a time.Time that arrived from a column whose
@@ -682,36 +704,56 @@ func fracLayout(scale int) string {
 // scanResultSet), so it's rendered as text instead of hex. layout is that
 // column's time layout (see timeLayout), empty for a non-date/time column.
 func formatValue(v any, isDecimalLike bool, layout string) string {
+	return string(appendValue(nil, v, isDecimalLike, layout))
+}
+
+// appendValue is formatValue in append form, so a caller scanning many rows
+// can render every cell through one reused buffer instead of allocating a
+// string per cell on the way to retaining a packed copy of it.
+func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 	switch x := v.(type) {
 	case nil:
-		return "NULL"
+		return append(dst, "NULL"...)
 	case bool:
 		if x {
-			return "1"
+			return append(dst, '1')
 		}
-		return "0"
+		return append(dst, '0')
 	case []byte:
 		if isDecimalLike {
-			return string(x)
+			return append(dst, x...)
 		}
-		return "0x" + strings.ToUpper(hex.EncodeToString(x))
+		return appendHexUpper(dst, x)
 	case time.Time:
 		if layout == "" {
 			layout = defaultTimeLayout
 		}
-		return x.Format(layout)
+		return x.AppendFormat(dst, layout)
 	case float64:
-		return formatFloat(x, 64)
+		return appendFloat(dst, x, 64)
 	case float32:
-		return formatFloat(float64(x), 32)
+		return appendFloat(dst, float64(x), 32)
 	case string:
-		return x
+		return append(dst, x...)
 	default:
-		return fmt.Sprintf("%v", x)
+		return fmt.Appendf(dst, "%v", x)
 	}
 }
 
-// formatFloat renders a float/real column the way SSMS's grid does: plain
+// appendHexUpper appends b as SSMS's "0x…" uppercase hex literal, in one
+// pass — hex.EncodeToString plus strings.ToUpper builds two throwaway copies
+// of every binary cell.
+func appendHexUpper(dst []byte, b []byte) []byte {
+	dst = append(dst, '0', 'x')
+	for _, c := range b {
+		dst = append(dst, hexUpperDigits[c>>4], hexUpperDigits[c&0x0f])
+	}
+	return dst
+}
+
+const hexUpperDigits = "0123456789ABCDEF"
+
+// appendFloat renders a float/real column the way SSMS's grid does: plain
 // decimal across the range a person actually reads, scientific notation only
 // outside it.
 //
@@ -721,10 +763,15 @@ func formatValue(v any, isDecimalLike bool, layout string) string {
 // precision (-1) is kept either way: it is what makes the text reparse to the
 // same float64, which matters for a value copied out of the grid and pasted
 // back into a query.
-func formatFloat(f float64, bits int) string {
+func appendFloat(dst []byte, f float64, bits int) []byte {
 	abs := math.Abs(f)
 	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {
-		return strconv.FormatFloat(f, 'e', -1, bits)
+		return strconv.AppendFloat(dst, f, 'e', -1, bits)
 	}
-	return strconv.FormatFloat(f, 'f', -1, bits)
+	return strconv.AppendFloat(dst, f, 'f', -1, bits)
+}
+
+// formatFloat is appendFloat's standalone form.
+func formatFloat(f float64, bits int) string {
+	return string(appendFloat(nil, f, bits))
 }

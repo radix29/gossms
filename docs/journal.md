@@ -4951,3 +4951,57 @@ the owner already has implicit control and GRANT to it creates no
 recognized as expected behavior, not a bug — pick a genuine non-owner
 principal for any future permission-apply verification). See
 [[gossms-tui-tmux-testing]] for the tmux mechanics.
+
+---
+
+## 2026-08-01 — Max Result Rows removed; scan path made memory-lean
+
+*Deleted the row cap end to end at user request (all rows returned, OOM
+accepted), then cut the cost of retaining them: cell text and per-row slices
+packed into a `cellArena`, cell rendering moved to append form.*
+
+**Removal.** `config.Config.MaxResultRows`, `config.DefaultMaxResultRows`,
+the Options dialog's "Max result rows" field and `zoneMaxResultRows` (dialog
+height back to 15 from 17), the `maxRows` parameter on `Execute`/
+`ExecuteWithPlan`/`execute`/`executeWithSink`/`runBatch`/`scanNext`/
+`scanResultSet`, `scanResultSet`'s `truncated` return, and the "Only the
+first N row(s) are shown" notice. `QueryPanel.runMode` stayed — its other
+reason to exist (the Query menu can switch modes while the save dialog is
+open) is unaffected — but its comment lost the row-cap rationale.
+`config.Load` no longer coerces the field; a `config.json` still carrying
+`max_result_rows` just ignores it, pinned by
+`TestLoadIgnoresRemovedMaxResultRows`.
+
+**What replaced it.** With no cap, the retained form is the whole cost, so:
+
+- `cellArena` (`internal/query/arena.go`) packs a result set's cell text into
+  64 KiB chunks and its per-row `[]string` into 4096-slot chunks — one
+  allocation per chunk instead of one per cell plus one per row. Strings are
+  cut from a chunk with `unsafe.String`, which is safe **only** because a
+  chunk is fixed-size and append-only: every later append writes past the
+  bytes already handed out, and the chunk stays alive as long as any string
+  cut from it. Replacing the fixed chunk with a plain growing `append` would
+  corrupt every earlier string on the first reallocation —
+  `TestCellArenaStrSurvivesChunkReuse` is what catches that. `row(n)` returns
+  a three-index slice so an append to one row can't reach the next row's
+  cells.
+- `formatValue`/`formatGUID`/`formatFloat` gained `appendValue`/`appendGUID`/
+  `appendFloat` forms and became thin wrappers over them (the tests still
+  drive the wrappers). `rowScanner` renders every cell through one reused
+  `buf` and copies it into the arena, so nothing per-cell is allocated on the
+  way. `appendHexUpper` replaces `hex.EncodeToString` + `strings.ToUpper`,
+  which built two throwaway copies of every binary cell.
+- `rowScanner.scan` now writes into a caller-supplied row slice and nils
+  `sc.vals[i]` after rendering, so the driver's own copy of the last row's
+  cells isn't pinned for the life of the `Result`.
+- `streamResultSet` (Results To File) reuses one row buffer for the whole
+  set and passes a nil arena — it retains nothing, so packing would be pure
+  overhead. `TestStreamResultSetWritesEveryRow` now checks all 500 rows are
+  distinct, which is what would fail if the reused buffer leaked to a sink.
+
+**Measured** (`BenchmarkScanResultSetArena` vs `…Naive`, 50k rows × 5 cols):
+800k allocs → 100k, 21.1 MB → 14.9 MB allocated, ~148 ms → ~101 ms. Retained
+heap for 200k rows fell ~15% (37.4 → 31.8 MiB). The remaining floor is the
+16-byte string header per cell that `ResultSet.Rows [][]string` implies —
+recorded in `docs/open-threads.md`, not worth changing the type and every
+`DataGrid` consumer for.

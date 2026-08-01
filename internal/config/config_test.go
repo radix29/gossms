@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,31 +121,28 @@ func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
 	if len(cfg.Connections) != 0 {
 		t.Errorf("len(Connections) = %d, want 0", len(cfg.Connections))
 	}
-	if cfg.MaxResultRows != DefaultMaxResultRows {
-		t.Errorf("MaxResultRows = %d, want default %d", cfg.MaxResultRows, DefaultMaxResultRows)
+	if cfg.MaxCellLength != DefaultMaxCellLength {
+		t.Errorf("MaxCellLength = %d, want default %d", cfg.MaxCellLength, DefaultMaxCellLength)
 	}
 }
 
-// TestLoadCoercesNonPositiveMaxResultRows confirms a zero (predating this
-// field) or negative (hand-edited) max_result_rows in config.json is
-// coerced back to the default, the same way MaxCellLength already is —
-// every other reader of *Config must always see a usable, positive cap.
-func TestLoadCoercesNonPositiveMaxResultRows(t *testing.T) {
-	for _, raw := range []int{0, -5} {
-		dir := t.TempDir()
-		t.Setenv("XDG_CONFIG_HOME", dir)
-		cfgDir := filepath.Join(dir, "gossms")
-		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		data := fmt.Sprintf(`{"max_result_rows": %d}`, raw)
-		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(data), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		cfg := Load()
-		if cfg.MaxResultRows != DefaultMaxResultRows {
-			t.Errorf("raw %d: MaxResultRows = %d, want default %d", raw, cfg.MaxResultRows, DefaultMaxResultRows)
-		}
+// TestLoadIgnoresRemovedMaxResultRows confirms a config.json written by a
+// version that still had the Max Result Rows option loads cleanly — the
+// field is gone, results are never capped, and the stale key must not stop
+// the rest of the file from parsing.
+func TestLoadIgnoresRemovedMaxResultRows(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "gossms")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"max_result_rows": 500, "max_cell_length": 42}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := Load(); cfg.MaxCellLength != 42 {
+		t.Errorf("MaxCellLength = %d, want 42", cfg.MaxCellLength)
 	}
 }
 
@@ -304,7 +300,6 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 	cfg := &Config{
 		IconStyle:            IconStylePortable,
 		MaxCellLength:        123,
-		MaxResultRows:        456,
 		IntelliSenseDisabled: true,
 	}
 	if err := cfg.Save(); err != nil {
@@ -312,7 +307,7 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 	}
 	got := Load()
 	if got.IconStyle != IconStylePortable || got.MaxCellLength != 123 ||
-		got.MaxResultRows != 456 || !got.IntelliSenseDisabled {
+		!got.IntelliSenseDisabled {
 		t.Errorf("round-tripped config = %+v, want every field preserved", got)
 	}
 }

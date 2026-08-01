@@ -187,6 +187,14 @@ func (a *App) Run() error {
 
 	a.buildUI()
 	a.layoutAll()
+	// Open Connect on startup: nothing in the app works without a server,
+	// so the first thing shown is the dialog the user would have opened
+	// anyway. syncDialogStack must run before the first draw — draw()
+	// renders from dialogStack, which is otherwise only synced inside the
+	// event loop, so without this the dialog wouldn't appear until the
+	// first keypress.
+	a.connectDialog.Show()
+	a.syncDialogStack()
 	a.draw()
 
 	// tcell v3's Screen interface has no PollEvent/PostEvent methods; events

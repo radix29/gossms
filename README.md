@@ -17,7 +17,8 @@ or drivers required.
 - **Multiple query panels** — open as many T-SQL editor + results tabs as you
   need. Scripts split on `GO` batches sharing one connection, each result set
   gets its own tab, and a Messages tab collects `PRINT` output, row counts,
-  and errors.
+  and errors. Results are never row-capped — every row a query returns is
+  shown, so a large enough result set is limited only by available memory.
 - **SQL editor** — syntax highlighting, word-wrap, line duplicate/move/
   indent/comment, undo/redo, and smart statement selection for running just
   the statement under the cursor.
@@ -76,6 +77,13 @@ or drivers required.
 
 ## Installation
 
+- Download the binary for your platform from the github Release and execute it. 
+- Does not have prerequisites like sql client, odbc etc.
+
+https://github.com/radix29/gossms/releases
+
+if you want to build it yourself:
+
 ```bash
 git clone https://github.com/radix29/gossms.git
 cd gossms
@@ -91,8 +99,9 @@ go install github.com/radix29/gossms/cmd/gossms@latest
 ./gossms
 ```
 
-On first launch the screen is empty. Press **Ctrl+Shift+O** or use
-**File → Connect** to open the connection dialog.
+goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
+or press `Escape` to dismiss it and work offline — `Ctrl+Shift+O` reopens it
+at any time.
 
 ## Keyboard Reference
 
@@ -131,8 +140,8 @@ A successful connection is saved automatically, most-recently-used first,
 capped at 15 profiles. In the Connect dialog, typing 4+ characters into the
 Server field looks up saved profiles by prefix.
 
-Tools > Options controls the tree icon style, results grid limits, and
-IntelliSense on/off — saved immediately to the config file:
+Tools > Options controls the tree icon style, the results grid's maximum
+cell length, and IntelliSense on/off — saved immediately to the config file:
 
 - **Linux/macOS**: `~/.config/gossms/config.json`
 - **Windows**: `%APPDATA%\gossms\config.json`

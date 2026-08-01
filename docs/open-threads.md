@@ -21,6 +21,17 @@ note is invisible by the next session.
 
 ## Known bugs, deliberately unfixed
 
+- **A Grid/Text query result can exhaust memory, by design.** The Max Result
+  Rows option and every `maxRows` parameter behind it were removed 2026-08-01
+  at the user's request: a result set is retained in full, so `SELECT * FROM`
+  a billion-row table will OOM the process. Intended — SSMS parity of "you
+  get what you asked for" was preferred to a silent cap. What was done
+  instead is to make the retained form as small as it reasonably can be (see
+  `internal/query/arena.go`); the floor is the 16-byte string header per cell
+  that `ResultSet.Rows [][]string` implies, which can't come down without
+  changing that type and every `DataGrid` that consumes it. Results To File
+  is unaffected — it never retained rows.
+
 - **Script Changes is broken on any create dialog whose later page depends on
   an earlier page having actually run.** New Schedule reports
   `gosmo: schedule "X" not found`: page 2 (Jobs) calls `AttachSchedule`, which
@@ -54,6 +65,18 @@ note is invisible by the next session.
   `controls/sql_statement.go`'s `isGoSeparatorLine` (Ctrl+Enter statement
   selection has the same property), and the fix should change both together or
   neither.
+
+- **`InputField` indexes by rune, not display width — the same constraint as
+  `Editor` below, and for the same reason.** `widgets.InputField` holds its
+  text as `[]rune` and treats each one as a single cell: the cursor, the
+  horizontal scroll offset, and the click-to-position math
+  (`input_field.go`'s `core.Clamp(f.scroll+(mx-ix-1), 0, len(f.value))`) are
+  all rune counts, while `Draw` hands the string to the terminal, which lays
+  it out by display width. A CJK or emoji rune in a connection name or a
+  filter box puts the cursor one column left of where it renders. Recorded
+  2026-07-31 during the two-repo review so it isn't rediscovered as a fresh
+  bug independent of the `Editor` item; the two should be decided together,
+  since a width-aware `InputField` is the smaller half of the same rework.
 
 - **Editor indexes by rune, not display width, so a double-width character
   smears the rest of its line.** `Editor` treats every rune as exactly one
@@ -174,6 +197,21 @@ note is invisible by the next session.
 
 ## Left open by the second 2026-07-30 two-repo review
 
+- **The syntax highlighters' block-comment replay is still O(document) on the
+  first row of every Draw pass.** The memo added 2026-07-30
+  (`sql_highlighter.go`, `xml_highlighter.go`) makes rows 2..H of a pass O(1),
+  but row 1 never hits the fast path and cannot: a pass starts at `scrollRow`
+  and the previous pass ended at `scrollRow+H-1`, so `idx == lastIdx+1` is
+  false by construction at every pass boundary. That is exactly what makes the
+  memo safe across edits — the invariant is load-bearing, not an oversight —
+  but it also means `startsInBlockComment` replays the whole document on every
+  keystroke (~1.4ms at 10,000 lines, as measured when the memo landed).
+  Fixing it needs a cached prefix-state array invalidated by a content-version
+  counter, which is the *same* blocker as `buildVisualLines` below: `e.lines`
+  is mutated at 26 sites across five files, and one missed bump renders stale
+  colours. Do both together behind a single mutation chokepoint or neither.
+  Raised 2026-07-31.
+
 - **`Editor.buildVisualLines` still walks the whole document on every Draw.**
   The allocations are gone (it builds into `Editor.vlScratch`/`segScratch`
   rather than growing two slices from nil per call), but the *scan* is still
@@ -240,6 +278,133 @@ the UI?"
   same item **is done** (split into `datagrid_draw/_input/_overlay.go`, now 450
   lines). Not urgent — CLAUDE.md's file-organization convention already names
   these.
+
+## Investigated and found NOT to be a bug (do not re-raise)
+
+- **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix does not strand the
+  pooled connection in master.** The 2026-07-31 review read
+  `server_security.go`'s `"USE master; GRANT ..."` as a pool-contamination bug
+  — `USE` is session state, so on the face of it the connection goes back to
+  the pool sitting in master, and gossms shares that pool (a query panel
+  opened with no database, as `openQueryWithText(sc, "", ...)` creates, runs
+  only `SELECT 1` as its prologue). It proposed replacing the prefix with a
+  pinned connection that reads `DB_NAME()`, switches, and switches back.
+
+  **Live A/B on 2026-08-01 disproved it.** Against a connection opened with
+  `Database` set, eight pooled connections all still reported that database
+  after a GRANT — with the *original* code. The reason is the driver:
+  `database/sql` calls `driver.SessionResetter.ResetSession` before handing a
+  pooled connection to its next user, and go-mssqldb implements it by flagging
+  the next TDS batch as a connection reset (`Conn.ResetSession` ->
+  `sendSqlBatch72`'s `resetSession`), which restores the session's database to
+  the connection string's. The proposed fix was three extra round trips per
+  grant to re-solve what the driver already handles, and was reverted.
+
+  The original doc comment reached the right conclusion for the wrong reason
+  ("that next call is a fresh statement/batch that sets its own context if it
+  needs to" — an assumption about callers). It now names the actual mechanism,
+  so the next review doesn't re-derive the same wrong conclusion.
+
+## Fixed by the 2026-07-31 two-repo review (do not re-open)
+
+All verified live against `ubudock` on 2026-08-01 unless noted; every
+throwaway database, login and backup file created for the checks was dropped.
+
+- ~~`Script Table as CREATE` emitted a script that cannot parse~~ — fixed
+  2026-07-31 in gosmo. With `IncludeIfNotExists` (**on in
+  `DefaultScriptOptions`**, which is exactly what `App.scriptObject` passes),
+  `ScriptTableContext` wrapped the CREATE TABLE *and* every index and foreign
+  key in one `IF ... BEGIN ... END` whose body contained `GO` separators. `GO`
+  is a client-side batch break, so the block was split across batches: batch
+  one carried an unclosed `BEGIN`, the last batch was a bare `END`, and the
+  whole script failed. The guard is now per statement and never spans a `GO`.
+  The assembly was extracted into `buildTableScript` first — it had zero test
+  coverage because it was welded to four catalog reads — and
+  `TestBuildTableScriptKeepsBlocksInsideOneBatch` pins the invariant. A/B
+  confirmed: the assertion flags the old shape (2 unbalanced batches) and
+  passes the new one.
+
+- ~~Columnstore / XML / spatial indexes scripted as B-tree DDL~~ — fixed
+  2026-07-31, same pass. `scriptIndex` pasted `sys.indexes.type_desc` into the
+  ordinary `CREATE <type> INDEX ... (col ASC)` form, which is invalid for
+  every one of them: a clustered columnstore takes no column list, a
+  nonclustered columnstore rejects ASC/DESC, and XML/spatial have their own
+  grammar. Columnstore now gets its correct form; XML and spatial are emitted
+  as a comment naming what was skipped, rather than a statement that cannot
+  run. A unique *constraint* also no longer scripts as `CREATE INDEX` — it is
+  now the `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` it really is, so the
+  constraint isn't silently lost.
+
+- ~~`ALTER DATABASE SCOPED CONFIGURATION ... FOR SECONDARY` was a syntax
+  error~~ — fixed 2026-07-31 in gosmo. The clause was appended after the
+  assignment; it precedes `SET`. `forSecondary: true` was therefore unusable
+  outright. gossms only ever passed `false`, so this was library-only — which
+  is exactly why it survived. Statement building moved into
+  `buildScopedConfigStatement` so the clause order is assertable without a
+  server.
+
+- ~~`BackupActionFiles` validated, then emitted a verb that does not exist~~ —
+  fixed 2026-07-31 in gosmo. `BACKUP FILES [db] TO ...` is not T-SQL; a
+  file/filegroup backup is a `BACKUP DATABASE` carrying `FILE =` /
+  `FILEGROUP =` clauses. The action was on the allowlist, so callers were told
+  it worked. `BackupOptions`/`RestoreOptions` gained `Files`/`FileGroups`, and
+  the action with neither is now an error rather than a silent degrade to a
+  full backup. Per CLAUDE.md the constant was implemented, not removed.
+
+- ~~Restore always used backup set 1~~ — fixed 2026-07-31 across both repos.
+  `gosmo.RestoreOptions` had no `FILE = n` at all, and
+  `RestoreDialog.buildRestoreOptions` read `headers[0]` unconditionally — so a
+  `.bak` written with NOINIT (full at position 1, differential at 2) could not
+  restore the differential, while the inspect view cheerfully listed both.
+  `RestoreOptions.FileNumber` now renders `WITH FILE = n`, and the inspect view
+  selects a set with ←/→. The number sent is the header's own `Position`, not
+  the slice index: they only coincide when a device's sets are contiguous from
+  1. The selection is snapshotted on the UI goroutine before the background
+  build, since `headerIdx` is UI state.
+
+- ~~`Result.Database` could come back holding an execution plan~~ — fixed
+  2026-07-31 in gossms. `executeWithSink` read `SELECT DB_NAME()` back off the
+  connection while `SET SHOWPLAN_XML ON` was still in effect — the `SET ... OFF`
+  is deferred — and under SHOWPLAN_XML nothing executes, so that query returned
+  the plan document, which `Scan` wrote into `res.Database` verbatim. Latent
+  rather than shipped: `setEstimatedPlan` ignores the field where `setResult`
+  would have used it. The decision moved into `planCapture.readsCurrentDatabase`
+  to be unit-testable, same treatment as `Result.shouldReportSuccess` — this
+  path still can't be driven end to end by a fake driver.
+
+## Live verification results (2026-08-01, `ubudock`)
+
+Everything in the section above was found by reading source. These are the
+checks that turned each one from a claim into a fact — worth recording
+because one of the six *disproved* its finding.
+
+- **Script Table as CREATE** — throwaway table with an identity PK, a unique
+  constraint, a defaulted column, a filtered nonclustered index with INCLUDE,
+  an FK with ON DELETE SET NULL, and a primary XML index. Generated script ran
+  clean, then ran clean a second time (every existence guard exercised). A/B:
+  the pre-fix scripter fails on the first batch with
+  **`Incorrect syntax near ';'`** — the unclosed `BEGIN`.
+- **Columnstore** — a second table with a clustered columnstore index scripts
+  as `CREATE CLUSTERED COLUMNSTORE INDEX [x] ON [t];` and runs clean twice.
+  The XML index is emitted as a skip comment, as intended.
+- **`FOR SECONDARY`** — both `SET MAXDOP = 4` and
+  `FOR SECONDARY SET MAXDOP = PRIMARY` accepted. (The instance is standalone,
+  so this confirms the statement parses and is accepted, not replica
+  behaviour.)
+- **`BACKUP ... FILEGROUP =`** — against a throwaway database with a second
+  filegroup: `BACKUP DATABASE [db] FILEGROUP = N'FG_Archive' TO DISK = ...`
+  ran. The action with neither a file nor a filegroup is rejected.
+- **Restore of backup set 2** — device written with a full backup (marker row
+  `SET-ONE`), the marker updated, then a second set appended with NOINIT.
+  `WITH FILE = 1` restores `SET-ONE`, `WITH FILE = 2` restores `SET-TWO`.
+  Without the clause both would have been `SET-ONE`, which is exactly the bug.
+- **Server-scope GRANT** — see "Investigated and found NOT to be a bug" above.
+  This is the one that came back negative.
+
+Not covered live, and still worth doing when the UI is next exercised: the
+Restore dialog's ←/→ backup-set selector was verified only by unit test
+(`restore_dialog_test.go`) plus the gosmo-level restore above — the dialog
+path itself needs a device with several sets in front of a human.
 
 ## Fixed by the second 2026-07-30 two-repo review (do not re-open)
 

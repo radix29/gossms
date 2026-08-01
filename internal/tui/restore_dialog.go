@@ -99,6 +99,14 @@ type RestoreDialog struct {
 	files      []*gosmo.BackupFile
 	inspectDev string
 
+	// headerIdx is which of headers the inspect view shows and the restore
+	// targets — carried into RestoreOptions.FileNumber. A device written
+	// with NOINIT holds several backup sets (a full at position 1, then
+	// differentials or logs), and RESTORE without WITH FILE = n always takes
+	// the first, so leaving this at 0 for such a device restores the full
+	// backup no matter which set the user was looking at.
+	headerIdx int
+
 	// task is the running (or finished) restore the progress view renders.
 	task       *Task
 	taskTarget string
@@ -119,6 +127,7 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.btnFocus = 0
 	d.task = nil
 	d.headers, d.files = nil, nil
+	d.headerIdx = 0
 	d.history = nil
 	d.histLoaded = false
 	d.loadSeq++
@@ -381,8 +390,8 @@ func (d *RestoreDialog) drawStatus(s tcell.Screen) {
 	core.DrawTextClipped(s, inner.X+1, d.ButtonRowY()-2, inner.W-2, st, "Status: "+d.status)
 }
 
-// drawInspect renders the Backup Information view: the first backup set's
-// header fields plus the files it contains.
+// drawInspect renders the Backup Information view: the selected backup
+// set's header fields plus the files it contains.
 func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	p := theme.Active()
 	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
@@ -390,7 +399,7 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	inner := d.InnerRect()
 	lx := inner.X + 1
 	w := inner.W - 2
-	h := d.headers[0]
+	h := d.selectedHeader()
 
 	row := inner.Y + 1
 	core.DrawTextClipped(s, lx, row, w, labelStyle, "File: "+serverPathBase(d.inspectDev))
@@ -415,7 +424,8 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	}
 	if len(d.headers) > 1 {
 		core.DrawTextClipped(s, lx, row, w, dimStyle,
-			fmt.Sprintf("(%d backup sets on this device — showing the first)", len(d.headers)))
+			fmt.Sprintf("Backup set %d of %d  (←/→ to change — the restore uses the one shown)",
+				d.headerIdx+1, len(d.headers)))
 	}
 	row += 2
 
@@ -518,6 +528,10 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.mode = restoreModeForm
 			d.btnFocus = 0
 			d.SetTitle("Restore Database")
+		case tcell.KeyLeft:
+			d.selectHeader(d.headerIdx - 1)
+		case tcell.KeyRight:
+			d.selectHeader(d.headerIdx + 1)
 		case tcell.KeyEnter:
 			d.doInspectButton()
 		case tcell.KeyTab, tcell.KeyF1:

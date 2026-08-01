@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -121,13 +122,10 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	bufDB := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer bufDB.Close()
 	bufRows := queryFakeRows(t, bufDB)
-	rs, truncated, err := scanResultSet(bufRows, 0)
+	rs, err := scanResultSet(bufRows)
 	bufRows.Close()
 	if err != nil {
 		t.Fatalf("scanResultSet: %v", err)
-	}
-	if truncated {
-		t.Fatal("scanResultSet reported truncation with maxRows=0")
 	}
 
 	streamDB := openFakeRowsDB(streamTestCols, streamTestRows())
@@ -164,9 +162,10 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	}
 }
 
-// The streaming path must ignore any row cap: an export writes everything the
-// query returned, which is the whole reason it exists.
-func TestStreamResultSetIgnoresNoCap(t *testing.T) {
+// An export writes every row the query returned, which is the whole reason
+// the streaming path exists — and it reuses one row buffer across the set,
+// so a sink must see all 500 distinct rows, not 500 views of the last one.
+func TestStreamResultSetWritesEveryRow(t *testing.T) {
 	rows := make([][]driver.Value, 500)
 	for i := range rows {
 		rows[i] = []driver.Value{int64(i), "x", time.Time{}, []byte(nil), nil}
@@ -182,7 +181,12 @@ func TestStreamResultSetIgnoresNoCap(t *testing.T) {
 		t.Fatalf("streamResultSet: %v", err)
 	}
 	if n != 500 || len(sink.rows) != 500 {
-		t.Errorf("streamed n=%d, sink got %d rows; want 500 of each", n, len(sink.rows))
+		t.Fatalf("streamed n=%d, sink got %d rows; want 500 of each", n, len(sink.rows))
+	}
+	for i, row := range sink.rows {
+		if want := strconv.Itoa(i); row[0] != want {
+			t.Fatalf("row %d first cell = %q, want %q", i, row[0], want)
+		}
 	}
 }
 

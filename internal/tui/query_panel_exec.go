@@ -141,8 +141,8 @@ func (p *QueryPanel) runQuery(queryText string) {
 
 // startRun executes queryText, clearing the results area first. exportPath is
 // non-empty only for a Results To File run, which streams every row there
-// instead of retaining it (see csvSink) — so that path is bounded by the file,
-// not by memory, and ignores the Max Result Rows cap entirely.
+// instead of retaining it (see csvSink) — so that path is bounded by the file
+// rather than by memory.
 func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.clearResults()
 	sc := p.conn
@@ -151,7 +151,6 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	// and connectForQueryPanel writes it on the UI goroutine too — neither
 	// may be read from the goroutine below. Mirrors runEstimatedPlan.
 	database := p.database
-	maxRows := p.app.cfg.MaxResultRows
 	// Snapshot now, not read from the goroutine below — the "Include Actual
 	// Execution Plan" toggle can change via the toolbar/Query menu while
 	// this goroutine runs.
@@ -185,9 +184,9 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 				exportErr = cerr
 			}
 		case capturePlan:
-			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText, maxRows)
+			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText)
 		default:
-			res = query.Execute(ctx, sc.Server.DB(), database, queryText, maxRows)
+			res = query.Execute(ctx, sc.Server.DB(), database, queryText)
 		}
 		// cancelled must be read before cancel() — calling cancel sets
 		// ctx.Err() itself, which would make this always true otherwise.
