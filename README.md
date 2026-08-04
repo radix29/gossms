@@ -32,6 +32,9 @@ or drivers required.
 - **Execution Plan Viewer** — view estimated or actual execution plans as a
   cost-weighted operator graph, an expandable tree, or syntax-highlighted
   raw XML.
+- **Cell values worth reading get a real view** — "Show Value" on an XML or
+  JSON result cell opens it in its own syntax-highlighted panel instead of a
+  narrow popup.
 - **Properties dialogs** — multi-page, editable SSMS-style Properties for
   Server, Database, Login, Table, Schema, Server Role, Database Role,
   Database User, Index/Statistics, Key, and Foreign Key, plus New Database /
@@ -119,7 +122,7 @@ at any time.
 | `Ctrl+N` | New query panel |
 | `Ctrl+W` | Close active query |
 | `Ctrl+S` | Save query |
-| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste |
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste (on a focused results grid, `Ctrl+C` copies the selected cell or block) |
 | `Tab` | Switch focus explorer ↔ panels |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle to next / previous panel |
 | `F5` | Execute query (selection if any, else the whole query); also refreshes the selected tree node or Properties page |
@@ -152,7 +155,15 @@ cell length, and IntelliSense on/off — saved immediately to the config file:
 
 The config file is human-readable JSON, except saved passwords, which are
 encrypted (AES-256-GCM) using a key stored in a separate `gossms.key` file
-alongside it. Delete either file to reset all saved connections.
+alongside it. Each password is sealed against the server, login, and
+authentication method it belongs to, so a password blob copied onto a
+different connection entry will not decrypt. Delete either file to reset all
+saved connections.
+
+If `config.json` can't be parsed it is kept as `config.json.corrupt` before
+goSSMS falls back to defaults, and a password that can't be decrypted (a
+replaced key file, a hand-edit) is left on disk untouched rather than
+overwritten — re-enter it in the Connect dialog to replace it.
 
 ## Contributing
 

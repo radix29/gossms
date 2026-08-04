@@ -99,6 +99,15 @@ Background work follows one shape:
 - Report back with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
   `postProgress` and `postTaskDone` are the task-registry wrappers around it
   and follow the identical rule.
+- Start it with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`
+  for a goroutine that isn't a bare `func()`). A panic on a background
+  goroutine can't be recovered by the UI goroutine, so without this it takes
+  the process down before `Run`'s `defer screen.Fini()` can restore the
+  terminal — the trace lands on the alternate screen and vanishes with it,
+  along with the user's unsaved query text. `safego` turns it into a status
+  message plus a stack trace in the log file. This is not theoretical:
+  go-mssqldb panics outright on a column type ID it doesn't know, and every
+  result set calls `DatabaseTypeName()` on every column.
 
 `Run()`'s loop clears `wakePending`, drains queued callbacks, syncs the
 dialog stack, handles one event, then re-syncs and draws. The two documented
@@ -122,6 +131,7 @@ gossms/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
+│   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
 │   │
@@ -155,15 +165,20 @@ gossms/
 │       ├── explorer_management.go # loaders: Server Objects folder — Agent Jobs, Linked Servers
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
-│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields
+│       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
+│       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
 │       │
 │       │  ── Query panel & IntelliSense ──
 │       ├── query_panel.go        # QueryPanel state/layout, implements layout.Panel
+│       ├── query_panel_draw.go   # QueryPanel rendering: editor/results split, tab strip, results status line
+│       ├── query_panel_input.go  # QueryPanel HandleKey/HandleMouse, incl. the results-side drag zones
 │       ├── query_panel_exec.go   # Execute/Execute Selection/Cancel, plan-capture wiring
 │       ├── query_panel_tabs.go   # result-set tabs + Messages tab
 │       ├── query_panel_plan.go   # Estimated/Actual Execution Plan tabs, backed by planview.PlanView
 │       ├── query_panel_export.go # Results To File (Text/Grid/File modes)
+│       ├── column_meta.go        # the Output Column Metadata block folded into a result's Messages
+│       ├── cell_value.go         # classifies a grid cell as plain/XML/JSON and routes the last two to their own panel
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
 │       ├── completion_provider.go   # SQL completion.Provider: cursor-context resolution (FROM-scope, qualifiers) against the cached inventory
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
@@ -173,6 +188,7 @@ gossms/
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
+│       ├── detail_browser_backfill.go   # bounded per-row backfill fan-out shared by the folder loaders below
 │       ├── detail_browser_server.go     # Server node: version/edition/paths/CPU/memory, then NUMA + disk volumes
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
 │       ├── detail_browser_logins.go     # Logins folder
@@ -201,7 +217,7 @@ gossms/
 │       │
 │       │  ── Standalone dialogs ──
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
-│       ├── options_dialog.go     # Tools > Options — icon style, cell/row limits, IntelliSense on/off, saved to config.json
+│       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
 │       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel
 │       ├── help_dialog.go        # F1 help modal (embeds dialogs.ModalDialog)
@@ -218,6 +234,8 @@ gossms/
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
 │       ├── securables_matrix.go  # generic database-securable Grant/Deny/Revoke grid + the shared Securables page for a user or database role
+│       ├── membership_page.go    # shared Members page (add/remove principals) for Database Role and Server Role Properties
+│       ├── owner_transfer_page.go # shared owner-transfer page behind Schema Ownership and Owned Roles
 │       ├── server_permissions_matrix.go # server-scope securables grid, used by Server/Login/Server Role Properties
 │       ├── server_props.go       # Server Properties: shared config-row plumbing + page registration
 │       ├── server_props_general.go      # Server Properties > General page
@@ -256,7 +274,11 @@ gossms/
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
 │       ├── backup_dialog.go      # Back Up Database dialog — options form + in-place progress
+│       ├── backup_dialog_draw.go # Back Up Database rendering
+│       ├── backup_dialog_input.go # Back Up Database HandleKey/HandleMouse
 │       ├── restore_dialog.go     # Restore Database dialog — options form, backup-set inspection
+│       ├── restore_dialog_draw.go  # Restore Database rendering
+│       ├── restore_dialog_input.go # Restore Database HandleKey/HandleMouse
 │       └── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
 ```
 

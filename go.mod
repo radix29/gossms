@@ -9,7 +9,7 @@ require (
 	github.com/gdamore/tcell/v3 v3.4.1
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/microsoft/go-mssqldb v1.10.0
-	github.com/radix29/gosmo v0.0.6
+	github.com/radix29/gosmo v0.0.7
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
@@ -42,6 +42,6 @@ require (
 )
 
 // gosmo is a sibling repository; go fix and go vet should not descend into it.
-ignore ../gosmo
+//ignore ../gosmo
 
-replace github.com/radix29/gosmo => ../gosmo
+//replace github.com/radix29/gosmo => ../gosmo

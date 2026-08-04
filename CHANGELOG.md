@@ -4,6 +4,201 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.5] - 2026-08-04
+
+### Added
+
+- **Output Column Metadata toggle** — the toolbar's `Meta` button (also
+  Query > Output Column Metadata) appends a block to the Messages tab for
+  every result set, naming each column and its declared type the way SSMS
+  writes it (`nvarchar(50)`, `decimal(18,2)`, `varchar(max)`, …); a column
+  the query didn't name shows its position instead. Backed by
+  `internal/query/coltype.go` and `ResultSet.ColumnTypes`, filled once per
+  result set rather than per row.
+- **JSON syntax highlighting** (`controls.JSONHighlighter`) joins the SQL
+  and XML highlighters. It deliberately has no `prefixStates` cache — no
+  JSON token can span a line, so each line stands alone.
+- **XML and JSON cell values open in their own highlighted query panel** —
+  "Show Value" on a cell whose text is bracketed by `<>`, `{}`, or a
+  JSON-shaped `[]` routes through the new `DataGrid.OnShowValue` hook to a
+  panel with the matching highlighter instead of the plain 60-column popup.
+  A bracket-quoted SQL Server name (`[dbo]`) still gets the popup.
+- **Save-before-exit prompt** — `Ctrl+Q` and File > Exit discarded every
+  unsaved query panel with no prompt. They now walk the dirty panels one at
+  a time, and `dialogs.ConfirmDialog` gained a three-way
+  `ShowConfirmCancel` (Yes/No/Cancel, Escape answering Cancel) for
+  questions where *No* is itself the destructive answer.
+- **Panic containment** — `App.safego`/`App.recoverPanic` wrap every
+  background goroutine in the `tui` package, and `cmd/gossms` recovers on
+  the UI goroutine after `screen.Fini()` has restored the terminal. A panic
+  now leaves a stack trace in the log file and a readable line on the
+  restored screen instead of taking the process down mid-alternate-screen
+  with the user's unsaved query text. This is reachable in practice:
+  go-mssqldb panics outright on a column type ID it doesn't know.
+- **Saved passwords are bound to the connection they belong to** — each is
+  sealed with AES-GCM additional authenticated data naming the
+  server/user/auth-method triple, so a ciphertext copied onto another entry
+  in `config.json` no longer decrypts. This closes an exfiltration path
+  that needed no decryption at all: edit a saved entry to point at a host
+  you control and goSSMS would dial out with the original password. Values
+  written by earlier versions still open, and are rewritten bound on the
+  next save.
+- **Config and key-file damage is now recoverable** — a `config.json` that
+  doesn't parse is preserved as `config.json.corrupt` before the app falls
+  back to defaults; a password that fails to decrypt keeps its original
+  ciphertext through subsequent saves instead of being overwritten with an
+  encryption of `""`; and a `gossms.key` that isn't 32 bytes is an error
+  rather than a reason to generate a fresh key over the only thing that
+  could still have opened those passwords.
+- **`Ctrl+C` on a focused results grid** copies the selected cell or block,
+  matching the right-click "Copy" — it used to copy the *editor's*
+  selection. Copy actions from the grid and the plan summary now
+  acknowledge on the status bar.
+- **Editor horizontal scrollbar**, and the results status line is now drawn
+  on the Text, Plan, and Messages tabs, not just the grid.
+- Reusable **Members** and **owner-transfer** property pages
+  (`membership_page.go`, `owner_transfer_page.go`) behind Database Role /
+  Server Role Members, Schema Ownership, and Owned Roles — all four are
+  editable, applied on OK/Apply, and discarded on Cancel.
+- New tuikit API: `TreeView.NodeIDAt`, `DataGrid.ScrollRow`/
+  `SelectedCellsText`/`OnShowValue`, `propsheet.Hint()`,
+  `core.ColumnOfRune`/`RuneIndexAtColumn`, and `controls.Document`.
+
+### Changed
+
+- **The Max Result Rows cap is gone entirely** — the Options field, the
+  `max_result_rows` config key, and every `maxRows` parameter behind it.
+  A result set is retained in full, matching SSMS's "you get what you asked
+  for"; a large enough query is now limited only by available memory. An
+  existing `config.json` carrying the old key loads cleanly and ignores it.
+- **Result sets cost far less to keep.** A new `cellArena`
+  (`internal/query/arena.go`) packs a set's cell text into 64 KiB chunks and
+  its per-row slices into 4096-slot chunks, and every cell is rendered
+  through one reused buffer. Measured over 50k rows × 5 columns: 800k
+  allocations → 100k, 21.1 MB → 14.9 MB allocated, ~148 ms → ~101 ms.
+  Results To File retains nothing and bypasses the arena entirely.
+- **The editor and every input field are display-column aware.** Text
+  positions stay rune indices; screen quantities (scroll, caret, click,
+  scrollbar) are terminal columns, converted only through the new
+  `core.ColumnOfRune`/`RuneIndexAtColumn`. Block (column) selection stays
+  rune-indexed deliberately — a rectangle over mixed-width text has no
+  single right answer, and that is the SSMS-parity choice.
+- **Editor redraw is no longer O(document).** `controls.Document` is now
+  the single mutation chokepoint for the buffer and carries a version
+  counter, which the highlighters' block-comment state cache and the
+  word-wrap cache are keyed on; the block-comment replay resumes from the
+  edited line and stops as soon as it rejoins the previous scan, and line
+  widths are cached per line. At 10,000 lines a keystroke went from 10.4 ms
+  to 0.38 ms, and a redraw with no edit is 0.37 ms with no
+  document-proportional work left.
+- **A rename is now the last write of a Properties Apply or Script run**
+  (`propPage.renames`), so sibling pages address the object by the name the
+  server still has — and a generated script doesn't put statements naming
+  the old object *below* the rename that invalidates it.
+- **Mouse gestures have a single owner from press to release** —
+  `App.gestureOwner` plus a modal-layer snapshot, `PropertySheet.dragZone`,
+  and a `Splitter` press latch. An overlay that opened or closed while the
+  button was already down no longer receives that button.
+- `query_panel.go`, `restore_dialog.go`, `backup_dialog.go`, and
+  `planview/planview.go` split along the existing draw/input seam
+  (`*_draw.go`, `*_input.go`, plus `planview_clipboard.go`); every one is
+  now under 400 lines. No file-split candidates remain outstanding.
+- Deduplicated Properties pages: `pageUserSecurables`/`pageRoleSecurables`
+  were byte-identical (now `pageDatabasePrincipalSecurables`), and seven
+  `page*ExtendedProperties` wrappers collapsed into one
+  `pageExtendedProperties`. All six "New \<object\>" dialogs now share one
+  generic `newObjectDialog` shell.
+- 33 hand-written `postEvent` + `wakeEventLoop` pairs became `postAndWake`;
+  `QueryPanel`'s elapsed-timer tick is the only remaining bare wake.
+- Toolbar labels compacted so the toggles stay equal-width (`Est.Plan`,
+  `Act.Plan[ON--]`, `Meta[-OFF]`).
+- `db.ConnectionError` now wraps the underlying failure (`Unwrap`), so a
+  caller can reach the driver error, an `mssql.Error` number, or
+  `gosmo.IsRetryable`.
+- The log file is created `0600`, matching `config.json` and the key file
+  beside it — it records server names, login names, and error text.
+- The Connect dialog's connection-string preview omits `database=` when no
+  database is set, matching the DSN actually dialed.
+- `gosmo` dependency updated `v0.0.6` → `v0.0.7` — `Scripting(ctx)` and
+  no-I/O Agent handles (which is what makes Script Changes work on the
+  create dialogs), whole-database space/row-count reads in one round trip
+  instead of one query per table, file/filegroup backup and restore, and a
+  long list of scripting fixes (parameterised writes captured with `@p1`
+  placeholders still in them, `ScriptTable`'s unparsable `IF NOT EXISTS`
+  wrapper, unique constraints scripted as indexes, fragmentation reads
+  returning numbers for the wrong table, `SetQueryStoreOptions` rejected
+  outright, `BACKUP FILES` not being T-SQL). **BREAKING there:** every
+  `*Seq()` iterator now takes a `context.Context`.
+- `go-colorful` updated `v1.4.0` → `v1.4.1` (indirect).
+- Documentation: `ARCHITECTURE.md` substantially expanded (which document
+  owns what, how a query runs, threading model, common tasks, the
+  `mouseDragging` idiom, `postAndWake`), and two new documents —
+  `docs/journal.md` (why a design is the way it is) and
+  `docs/open-threads.md` (known bugs, deferred scope, decisions not to
+  re-raise).
+- Test coverage expanded substantially across `tui`, `tuikit`, and `query`,
+  including a golden-file freeze of the T-SQL completion lexer
+  (`testdata/completion_prefix_scan.golden`) that retired a second,
+  hand-maintained T-SQL state machine kept only as a test baseline.
+
+### Fixed
+
+- **`Ctrl+V` did nothing in the query editor** whenever the results pane
+  happened to be showing Messages, the execution plan, or Results To Text —
+  any `PRINT`, `SET`, error, or non-`SELECT` batch left it there. Paste was
+  routed by which tab was visible, ignoring which half of the panel had
+  keyboard focus, and every one of those views is read-only, so the paste
+  silently went nowhere.
+- **A terminal paste was replayed as typing.** tcell brackets a paste but
+  still delivers its content as ordinary key events, and nothing handled the
+  markers — so each pasted newline arrived as `Enter`, and with the
+  IntelliSense popup open it committed the selected candidate instead.
+  Pasting `objects\nWHERE type = 'U'` over `sys.` produced
+  `sys.objectsWHERE type = 'U'`. A paste is now applied as one edit and one
+  undo step, and anything that isn't a rune, newline, or tab is dropped
+  rather than acted on.
+- **Wide characters were being eaten** by the editor and every input field.
+  Recorded as a cursor-position bug, it was worse: typing `世界ab` into the
+  Connect dialog's Server field rendered `世ab`, and 32 ideographs in a
+  wrap-mode field collapsed onto one row of 16 glyphs. Every second rune was
+  overwritten by the previous one's continuation cell.
+- **A `GO` inside a block comment or string literal started a new batch**
+  for IntelliSense scoping, so `SELECT * FROM dbo.Patients p /* GO */ WHERE
+  p.` offered no completions. Batch detection now falls out of the lexer's
+  own state machine, which covers comments, string literals, and bracketed
+  identifiers in one rule.
+- **A `/*` inside a `--` comment or a string literal** left the SQL
+  highlighter believing it was inside a block comment for the rest of the
+  document.
+- **A scrollbar drag in a Properties dialog could fire Script Changes** —
+  the form's scrollbar column and `[ Script Changes ]`'s last column are the
+  same column, and the button row was hit-tested before the form.
+- **Script Changes on the create dialogs failed with "not found."** gosmo's
+  Agent `Create*` methods ended with a read-back that went to a real server
+  under scripting mode, looking for an object whose `sp_add_*` had merely
+  been collected. Fixed in both repos; the dialogs now use name-only
+  handles.
+- **Date and time columns ignored their declared scale** — `time(0)`
+  rendered as `.0000000`.
+- **A create dialog re-ran a successful create on a second Apply**, coming
+  back with the server's "already exists"; a fast page switch could also
+  start a second prefetch and rebuild every form from it.
+- **The status bar stuck on "Executing query…" forever** after a query
+  panel was closed mid-execution.
+- **A modal dialog's mouse latch survived into its next showing**, freezing
+  the first click of every reopened dialog.
+- **A press on the Object Explorer's scrollbar or empty space started a
+  drag** of whatever node happened to be selected; drag arming now asks what
+  the press actually landed on (`TreeView.NodeIDAt`).
+- **The "Show Value" popup was dismissed by any stray click** while reading
+  a long value, and could be left stranded over stale text when new results
+  arrived — it now closes only on Escape or its own Close button, and is
+  closed explicitly when the grid's data is replaced.
+- **`Form.scroll` was never re-clamped on resize**, and
+  `DetailBrowser.PurgeConn` left a disconnected connection's rows on screen.
+- Long messages could overflow a dialog's height on a short terminal,
+  drawing over the separator and button row.
+
 ## [0.0.4] - 2026-07-28
 
 ### Added

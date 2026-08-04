@@ -50,9 +50,9 @@ bunx ccusage statusline  # Claude Code status line for hooks (Beta)
 --- prepare for release
 commit before both projects
 
-prepare gosmo for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gosmo for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
 
-prepare gosmo for release v0.0.5 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gossms for release v0.0.5 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
