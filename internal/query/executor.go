@@ -24,6 +24,12 @@ import (
 type ResultSet struct {
 	Columns []string
 	Rows    [][]string
+
+	// ColumnTypes holds each column's declared SQL Server type as SSMS
+	// writes it ("nvarchar(50)", "decimal(18,2)"), parallel to Columns. Read
+	// off the result set's own metadata, so it costs one pass per set rather
+	// than per row; the "Output Column Metadata" toggle displays it.
+	ColumnTypes []string
 }
 
 // Message is one line of the Messages pane.
@@ -416,6 +422,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 // rows) and streamResultSet (which writes them straight out).
 type rowScanner struct {
 	cols        []string
+	types       []string
 	vals        []any
 	ptrs        []any
 	guids       []*mssql.NullUniqueIdentifier
@@ -457,6 +464,7 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	}
 	sc := &rowScanner{
 		cols:        cols,
+		types:       columnTypeNames(types),
 		vals:        make([]any, len(cols)),
 		ptrs:        make([]any, len(cols)),
 		guids:       make([]*mssql.NullUniqueIdentifier, len(cols)),
@@ -518,7 +526,7 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 	if err != nil {
 		return ResultSet{}, err
 	}
-	rs := ResultSet{Columns: sc.cols}
+	rs := ResultSet{Columns: sc.cols, ColumnTypes: sc.types}
 	a := &cellArena{}
 	for rows.Next() {
 		row := a.row(len(sc.cols))

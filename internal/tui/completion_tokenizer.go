@@ -39,25 +39,18 @@ const (
 	sqlLexDoubleQuote
 )
 
-// flattenLines joins a multi-line buffer into one rune slice with '\n'
+// flattenLinesInto joins a multi-line buffer into one rune slice with '\n'
 // separators, so the tokenizer can scan linearly without juggling
 // (row, col) pairs — a comment or string literal spanning several lines
 // then falls out of the same state machine for free.
-// Sized up front: this runs on every keystroke while the completion popup
-// is open, and growing a nil slice to the size of a large script re-copies
-// the whole buffer a dozen times over.
 //
-// Production now calls flattenLinesInto directly, to reuse a buffer across
-// keystrokes. Keep this allocating form: the differential tests in
-// completion_prefix_scan_test.go use it as their independent baseline, and a
-// buffer-reusing implementation cannot check its own reuse.
-func flattenLines(lines [][]rune) []rune {
-	return flattenLinesInto(nil, lines)
-}
-
-// flattenLinesInto is flattenLines writing into dst's existing capacity when
-// it's big enough. The caller keeps dst across keystrokes so a large script
-// stops allocating (and handing the GC) a fresh copy of itself on every one.
+// It writes into dst's existing capacity when that is big enough, and sizes a
+// fresh allocation up front otherwise. Both matter: this runs on every
+// keystroke while the completion popup is open, so the caller keeps dst across
+// keystrokes to stop a large script allocating (and handing the GC) a fresh
+// copy of itself on every one, and growing a nil slice to a large script's
+// size re-copies the whole buffer a dozen times over.
+//
 // The result borrows dst, so it stays valid only until the next call with the
 // same dst — every consumer here copies what it keeps (a sqlToken holds a
 // string, not a slice of the buffer).
@@ -83,7 +76,7 @@ func flattenLinesInto(dst []rune, lines [][]rune) []rune {
 }
 
 // offsetForCursor converts an Editor (row, col) into an offset into
-// flattenLines' output.
+// flattenLinesInto's output.
 func offsetForCursor(lines [][]rune, row, col int) int {
 	off := 0
 	for i := 0; i < row && i < len(lines); i++ {
@@ -95,38 +88,27 @@ func offsetForCursor(lines [][]rune, row, col int) int {
 	return off
 }
 
-// tokenizeSQLPrefix scans buf[:upTo] into a token stream, and reports the
-// lexer's state at upTo (sqlLexBracket means upTo sits inside an
-// unterminated bracket identifier, which sqlCompletionCandidates still
-// completes; any other non-normal state suppresses completion entirely
-// rather than guessing) plus the offset right after the last top-level ';'
-// seen — one of the two boundaries scanCompletionPrefix combines with GO-line
-// detection to scope FROM/clause analysis to the current statement only —
-// and the quoteStart offset (see tokenizeSQLRange).
-//
-// Production now goes through scanCompletionPrefix, which lexes the prefix
-// without materialising tokens it will discard. Keep this single-pass form:
-// it is the baseline the differential tests compare that two-pass scan
-// against, so the equivalence check has something independent to check.
-func tokenizeSQLPrefix(buf []rune, upTo int) ([]sqlToken, sqlLexState, int, int) {
-	return tokenizeSQLRange(buf, 0, upTo, false)
-}
-
 // tokenizeSQLRange scans buf[from:upTo] into a token stream, always
-// starting in sqlLexNormal state — valid both for tokenizeSQLPrefix's
-// from-buffer-start scan and for a scan resumed exactly at the cursor
-// (statementEndOffset, and sqlCompletionCandidates' own forward scan),
-// since callers only ever resume there after confirming the lexer state at
-// that offset is already sqlLexNormal (see sqlCompletionCandidates' "inside
-// a string/quoted-identifier/comment" bail-out).
+// starting in sqlLexNormal state — valid both for a scan from the buffer
+// start and for one resumed exactly at the cursor (statementEndOffset, and
+// sqlCompletionCandidates' own forward scan), since callers only ever resume
+// there after confirming the lexer state at that offset is already
+// sqlLexNormal (see sqlCompletionCandidates' "inside a string/quoted-
+// identifier/comment" bail-out).
+//
+// The second return is the lexer's state on reaching upTo: sqlLexBracket
+// means upTo sits inside an unterminated bracket identifier, which
+// sqlCompletionCandidates still completes, while any other non-normal state
+// suppresses completion entirely rather than guessing.
 //
 // stopAtSemicolon changes what the third return value means and, for a
 // resumed/forward scan, where scanning stops:
-//   - false (tokenizeSQLPrefix's use, and the forward token scan that
-//     extends FROM-scope analysis past the cursor): scanning continues
-//     through every top-level ';' up to upTo, and the third return is the
-//     offset right after the LAST one seen — scanCompletionPrefix's other
-//     boundary.
+//   - false (a whole-prefix scan, and the forward token scan that extends
+//     FROM-scope analysis past the cursor): scanning continues through every
+//     top-level ';' up to upTo, and the third return is the offset right
+//     after the LAST one seen — one of the two boundaries
+//     scanCompletionPrefix combines with GO-line detection to scope
+//     FROM/clause analysis to the current statement only.
 //   - true (statementEndOffset's use): scanning stops at the FIRST
 //     top-level ';', and the third return is that ';'s own offset (or upTo
 //     if none was found) — the statement's end boundary.

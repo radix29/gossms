@@ -254,6 +254,17 @@ func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 	if res.Database != "" {
 		p.database = res.Database
 	}
+	// Folded into res.Messages once, here, rather than at render time: the
+	// Messages tab is re-rendered on every tab switch (renderActiveTab), so
+	// appending there would repeat the block on each visit.
+	if p.app.metaEnabled {
+		if meta := columnMetaMessages(res.Sets); len(meta) > 0 {
+			if len(res.Messages) > 0 {
+				res.Messages = append(res.Messages, query.Message{Text: ""})
+			}
+			res.Messages = append(res.Messages, meta...)
+		}
+	}
 	p.result = res
 	p.setResultPlan(res)
 	p.activeTab = 0

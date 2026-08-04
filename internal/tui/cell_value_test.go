@@ -1,0 +1,93 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestClassifyCellValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  cellValueKind
+	}{
+		{"element", "<root><a id=\"1\">x</a></root>", cellXML},
+		{"declaration", "<?xml version=\"1.0\"?><root/>", cellXML},
+		{"leading and trailing space", "  \n<root/>\n ", cellXML},
+		{"multi-root fragment", "<a/><b/>", cellXML},
+		{"showplan", `<ShowPlanXML xmlns="http://x"><BatchSequence/></ShowPlanXML>`, cellXML},
+		{"comment and cdata", "<r><!-- c --><![CDATA[<not markup>]]></r>", cellXML},
+		// Bracketed but malformed still counts — see classifyCellValue.
+		{"unclosed element", "<root>", cellXML},
+		{"mismatched tags", "<a></b>", cellXML},
+
+		{"json object", `{"a": 1}`, cellJSON},
+		{"json object with space", "  { \"a\": [1,2] }  ", cellJSON},
+		{"empty object", "{}", cellJSON},
+		{"json array of objects", `[{"a":1},{"a":2}]`, cellJSON},
+		{"json array of strings", `["a", "b"]`, cellJSON},
+		{"json array of numbers", "[1, 2, 3]", cellJSON},
+		{"json array of negatives", "[-1]", cellJSON},
+		{"json array of literals", "[true, false, null]", cellJSON},
+		{"empty array", "[]", cellJSON},
+		{"nested array", "[[1],[2]]", cellJSON},
+		{"malformed object still json", `{"a": }`, cellJSON},
+
+		// The reason jsonArrayLike exists: bracket-quoted SQL names are
+		// everywhere in result sets and must keep the grid's own popup.
+		{"quoted name", "[dbo]", cellPlain},
+		{"quoted name with dot", "[Ord.ers]", cellPlain},
+		{"quoted name with space", "[my db]", cellPlain},
+
+		{"plain text", "hello world", cellPlain},
+		{"empty", "", cellPlain},
+		{"bare bracket", "<", cellPlain},
+		{"less-than only", "<3 and >2", cellPlain},
+		{"html-ish, unbracketed end", "<p>one<p>two", cellPlain},
+		{"xml with trailing text", "<root/> see above", cellPlain},
+		{"json with trailing text", `{"a":1} and more`, cellPlain},
+		{"lone brace", "{", cellPlain},
+	}
+	for _, tt := range tests {
+		if got := classifyCellValue(tt.value); got != tt.want {
+			t.Errorf("%s: classifyCellValue(%q) = %v, want %v", tt.name, tt.value, got, tt.want)
+		}
+	}
+}
+
+// The two predicates must stay consistent with the classifier they now
+// delegate to — a value cannot be both, and each must agree with its kind.
+func TestLooksLikePredicatesAgreeWithClassifier(t *testing.T) {
+	values := []string{
+		"<root/>", `{"a":1}`, "[1]", "[dbo]", "plain", "", "<", "{",
+	}
+	for _, v := range values {
+		kind := classifyCellValue(v)
+		if got, want := looksLikeXML(v), kind == cellXML; got != want {
+			t.Errorf("looksLikeXML(%q) = %v, want %v", v, got, want)
+		}
+		if got, want := looksLikeJSON(v), kind == cellJSON; got != want {
+			t.Errorf("looksLikeJSON(%q) = %v, want %v", v, got, want)
+		}
+		if looksLikeXML(v) && looksLikeJSON(v) {
+			t.Errorf("%q classified as both XML and JSON", v)
+		}
+	}
+}
+
+// TestClassifyCellValueLargeValue pins that detection stays a bracket test on
+// a value far past any parse budget — an xml or json column holding megabytes
+// must still open in its own panel, and a large plain-text one must not.
+func TestClassifyCellValueLargeValue(t *testing.T) {
+	bigXML := "<root>" + strings.Repeat("<row><c>data</c></row>", 20000) + "</root>"
+	if got := classifyCellValue(bigXML); got != cellXML {
+		t.Errorf("a large XML document classified as %v, want cellXML", got)
+	}
+	bigJSON := "[" + strings.TrimSuffix(strings.Repeat(`{"c":"data"},`, 20000), ",") + "]"
+	if got := classifyCellValue(bigJSON); got != cellJSON {
+		t.Errorf("a large JSON document classified as %v, want cellJSON", got)
+	}
+	if got := classifyCellValue(strings.Repeat("x", len(bigXML))); got != cellPlain {
+		t.Errorf("a large plain-text value classified as %v, want cellPlain", got)
+	}
+}

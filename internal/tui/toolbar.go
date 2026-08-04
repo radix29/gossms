@@ -17,9 +17,10 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "■", Tooltip: "Stop Execution", Action: func() { a.cancelExecutingQuery() },
 			Enabled: func() bool { qp := a.activeQueryPanel(); return qp != nil && qp.executing }},
 		{Divider: true, Icon: "|"},
-		{Icon: "Est. Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
+		{Icon: "Est.Plan", Tooltip: "Show Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 			Enabled: func() bool { return a.activeQueryPanel() != nil }},
 		{Icon: actualPlanToggleIcon(a.actualPlanEnabled), Tooltip: "Include Actual Execution Plan", Action: func() { a.toggleActualExecutionPlan() }},
+		{Icon: metaToggleIcon(a.metaEnabled), Tooltip: "Show Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() }},
 		{Divider: true, Icon: "|"},
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 			Enabled: func() bool { return len(a.connections) > 0 }},
@@ -31,7 +32,16 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 // needs the toolbar to relayout its neighbors.
 func actualPlanToggleIcon(on bool) string {
 	if on {
-		return "Act. Plan [ON---]"
+		return "Act.Plan[ON--]"
 	}
-	return "Act. Plan [--OFF]"
+	return "Act.Plan[-OFF]"
+}
+
+// metaToggleIcon renders the "Show Output Column Metadata" toggle button's
+// text. Same equal-width rule as actualPlanToggleIcon, for the same reason.
+func metaToggleIcon(on bool) string {
+	if on {
+		return "Meta[ON--]"
+	}
+	return "Meta[-OFF]"
 }

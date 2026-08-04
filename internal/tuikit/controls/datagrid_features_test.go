@@ -438,3 +438,35 @@ func TestSetMaxCellWidthOverridesClamp(t *testing.T) {
 		t.Errorf("colWidths[0] = %d, want 10 (SetMaxCellWidth clamp)", g.colWidths[0])
 	}
 }
+
+// TestDataGridOnShowValueClaimsCell confirms a host that claims the cell via
+// OnShowValue gets the column name and full value, and that the built-in
+// popup then stays closed — the grid must not show both. A host that
+// declines still gets the popup.
+func TestDataGridOnShowValueClaimsCell(t *testing.T) {
+	g := newCellCursorGrid()
+	g.SetSelectedCell(1, 1)
+	var gotCol, gotVal string
+	claim := true
+	g.OnShowValue = func(column, value string) bool {
+		gotCol, gotVal = column, value
+		return claim
+	}
+
+	g.openViewer()
+	if gotCol != "Deny" || gotVal != "[ ]" {
+		t.Errorf("OnShowValue got (%q, %q), want (%q, %q)", gotCol, gotVal, "Deny", "[ ]")
+	}
+	if g.viewOpen {
+		t.Error("a claimed cell must not also open the built-in content viewer")
+	}
+
+	claim = false
+	g.openViewer()
+	if !g.viewOpen {
+		t.Fatal("a declined cell should fall through to the built-in viewer")
+	}
+	if got := g.viewEditor.Text(); got != "[ ]" {
+		t.Errorf("viewer text = %q, want %q", got, "[ ]")
+	}
+}

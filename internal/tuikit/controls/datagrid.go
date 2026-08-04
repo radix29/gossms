@@ -189,6 +189,14 @@ type DataGrid struct {
 	// host app wires this to its own clipboard-write plumbing. Grids that
 	// leave it nil (the default) don't offer these menu items at all.
 	OnCopyRequest func(text string)
+
+	// OnShowValue, if set, gets first refusal of the "Show Value" menu
+	// item: it's handed the selected cell's column name and full text, and
+	// returning true means the host displayed the value its own way, so the
+	// built-in popup stays closed. QueryPanel uses it to send an XML cell to
+	// a new query tab with XML highlighting instead of the 60-column popup.
+	// Returning false (or leaving it nil) opens the popup as usual.
+	OnShowValue func(column, value string) bool
 }
 
 // NewDataGrid creates a DataGrid.

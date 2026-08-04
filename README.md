@@ -21,6 +21,8 @@ or drivers required.
   gets its own tab, and a Messages tab collects `PRINT` output, row counts,
   and errors. Results are never row-capped — every row a query returns is
   shown, so a large enough result set is limited only by available memory.
+  The toolbar's `Meta` toggle (also Query > Output Column Metadata) adds each
+  result set's columns and their declared types to the Messages tab.
 - **SQL editor** — syntax highlighting, word-wrap, line duplicate/move/
   indent/comment, undo/redo, and smart statement selection for running just
   the statement under the cursor.

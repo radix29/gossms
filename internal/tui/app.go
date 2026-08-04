@@ -87,6 +87,13 @@ type App struct {
 	// decide between query.Execute and query.ExecuteWithPlan.
 	actualPlanEnabled bool
 
+	// metaEnabled is the "Show Output Column Metadata" toolbar toggle's
+	// state — off by default. Read by QueryPanel.setResult, which appends
+	// each result set's column/type listing to the Messages tab; snapshot
+	// semantics are irrelevant here since it's read on the UI goroutine
+	// after the query returns, not from the execution goroutine.
+	metaEnabled bool
+
 	connectDialog       *ConnectDialog
 	helpDialog          *HelpDialog
 	keyDiagDialog       *KeyDiagnosticsDialog

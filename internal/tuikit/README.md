@@ -12,7 +12,9 @@ tuikit/
 ├── theme/      Colour palette + derived tcell.Style helpers
 │             — palette.go, styles.go
 ├── core/       Geometry (Rect), drawing primitives, string/int helpers
-│             — geometry.go, screen.go, drawing.go, strutil.go, mathutil.go
+│             — geometry.go, screen.go, drawing.go, strutil.go, mathutil.go,
+│               runecol.go (rune index ↔ display column), wordutil.go
+│               (word boundaries, shared by Editor and InputField)
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox — one file per widget
 ├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
 │             — panel.go, panel_manager.go, splitter.go
@@ -28,12 +30,19 @@ tuikit/
 │               DataGrid is split across datagrid.go (state/data source/column
 │               widths), datagrid_draw.go, datagrid_input.go, and
 │               datagrid_overlay.go (right-click menu, "Show Value" popup);
-│               Editor is split across editor.go (state/options/undo),
+│               Editor's buffer is document.go — the single chokepoint for
+│               mutating text, holding a version counter that keys the syntax/
+│               wrap/width caches so per-document work happens once per edit
+│               rather than once per Draw;
+│               Editor itself is split across editor.go (state/options/undo),
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
 │               editor_input.go, editor_actions.go, editor_completion.go
 │               (generic completion/IntelliSense popup), sql_highlighter.go,
 │               sql_statement.go (T-SQL statement/batch boundary detection),
-│               xml_highlighter.go (used by planview's XML tab)
+│               xml_highlighter.go (used by planview's XML tab),
+│               json_highlighter.go (used when a JSON result cell is opened
+│               in its own panel — needs no cross-line state, since no JSON
+│               token can span a line)
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go;
                 PropertySheet itself is split across sheet.go (state/page list),

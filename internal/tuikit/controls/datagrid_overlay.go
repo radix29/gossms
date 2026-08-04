@@ -88,7 +88,8 @@ const showValueMenuItem = "Show Value"
 
 // openViewer shows the full-content popup for the currently selected
 // cell's text in a read-only Editor, so it can be navigated, selected, and
-// copied like any other text.
+// copied like any other text. A host that claims the value via OnShowValue
+// displays it instead and the popup doesn't open.
 func (g *DataGrid) openViewer() {
 	cells := g.rows.Row(g.selRow)
 	if g.selCol < 0 || g.selCol >= len(cells) {
@@ -97,6 +98,9 @@ func (g *DataGrid) openViewer() {
 	g.viewHeader = ""
 	if g.selCol < len(g.columns) {
 		g.viewHeader = g.columns[g.selCol]
+	}
+	if g.OnShowValue != nil && g.OnShowValue(g.viewHeader, cells[g.selCol]) {
+		return
 	}
 	if g.viewEditor == nil {
 		g.viewEditor = NewEditor(nil)

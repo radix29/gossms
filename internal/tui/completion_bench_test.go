@@ -58,9 +58,17 @@ func BenchmarkCompletionPrefixScan_100Stmts(b *testing.B)  { benchmarkPrefixScan
 func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan(b, 1000) }
 
 // benchmarkPrefixScanReference measures the approach scanCompletionPrefix
-// replaced, so the difference stays visible and a regression toward it is
-// obvious. referenceScanCompletionPrefix also backs the differential tests
-// in completion_prefix_scan_test.go.
+// replaced — flatten into a fresh buffer, tokenize the whole prefix, then
+// discard every token before the statement start — so the difference stays
+// visible and a regression toward it is obvious.
+//
+// It reconstructs that shape out of the production pieces rather than out of
+// the standalone baseline it used to call, which was deleted with the
+// differential tests (see completion_prefix_scan_test.go). Only the ';'
+// boundary is applied, not the GO scan the real one also did: what this
+// measures is the cost of materialising every token in the prefix and then
+// throwing most of them away, and that is unchanged by where exactly the
+// discard line falls.
 func benchmarkPrefixScanReference(b *testing.B, stmts int) {
 	lines := benchScript(stmts)
 	row := len(lines) - 2
@@ -68,9 +76,10 @@ func benchmarkPrefixScanReference(b *testing.B, stmts int) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buf := flattenLines(lines)
+		buf := flattenFresh(lines)
 		upTo := offsetForCursor(lines, row, col)
-		referenceScanCompletionPrefix(lines, buf, row, upTo)
+		tokens, _, semiStart, _ := tokenizeSQLRange(buf, 0, upTo, false)
+		tokensFrom(tokens, semiStart)
 	}
 }
 

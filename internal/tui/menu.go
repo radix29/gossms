@@ -96,6 +96,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Estimated Execution Plan", Action: func() { a.showEstimatedExecutionPlan() },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: actualExecutionPlanMenuLabel(a.actualPlanEnabled), Action: func() { a.toggleActualExecutionPlan() }},
+			{Label: outputColumnMetaMenuLabel(a.metaEnabled), Action: func() { a.toggleOutputColumnMeta() }},
 			{Divider: true},
 			{Label: "Results To Text", Action: func() { a.setResultsMode(ResultsModeText) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
@@ -138,6 +139,16 @@ func actualExecutionPlanMenuLabel(on bool) string {
 		return "Actual Execution Plan (ON)"
 	}
 	return "Actual Execution Plan (OFF)"
+}
+
+// outputColumnMetaMenuLabel folds the "Show Output Column Metadata" toggle
+// state into its Query menu label, for the same reason as
+// actualExecutionPlanMenuLabel.
+func outputColumnMetaMenuLabel(on bool) string {
+	if on {
+		return "Output Column Metadata (ON)"
+	}
+	return "Output Column Metadata (OFF)"
 }
 
 // editorAction runs fn against the active query panel's editor, if any —

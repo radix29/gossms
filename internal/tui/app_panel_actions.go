@@ -280,6 +280,23 @@ func (a *App) toggleActualExecutionPlan() {
 	a.setStatus("Include Actual Execution Plan: " + state)
 }
 
+// toggleOutputColumnMeta flips the "Show Output Column Metadata" toolbar
+// button / Query menu item, which decides whether each result set's columns
+// and their declared types are listed in the Messages tab — see
+// App.metaEnabled and columnMetaMessages. It applies to the next execution;
+// results already on screen are not re-rendered.
+func (a *App) toggleOutputColumnMeta() {
+	a.metaEnabled = !a.metaEnabled
+	a.toolbar.SetButtons(a.buildToolbar())
+	a.menuBar.SetMenus(a.buildMenus())
+	a.layoutAll()
+	state := "off"
+	if a.metaEnabled {
+		state = "on"
+	}
+	a.setStatus("Show Output Column Metadata: " + state)
+}
+
 // openPlanPanel opens a new detached panel showing plan, titled title —
 // the Execution Plan tab's "[ Expand ]" button's action (see
 // QueryPanel.newPlanView). Every call adds a brand-new panel.

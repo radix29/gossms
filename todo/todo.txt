@@ -1,5 +1,9 @@
 
+add find / replace / next etc Ctrl+f, Ctrl+H, F3 functionality
+
 restore backup -> show remote server directoy, move files, error messages, text trimming etc
+
+white/light style ? -> options, default dark
 
 ---------
 
@@ -33,8 +37,22 @@ review both projects and check for bugs, inconsistencies, optimizations, simplif
 show me the top 5 know issues if thre are any
 
 
-Critical analysis. Analyze your Claude.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree
 
-Critical analysis. Analyze your memory.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree
+bunx ccusage          # Show all detected sources by day (default)
+bunx ccusage daily    # All detected sources by day
+bunx ccusage weekly   # All detected sources by week
+bunx ccusage monthly  # All detected sources by month
+bunx ccusage session  # All detected sources by session
+bunx ccusage blocks   # Claude Code 5-hour billing windows
+bunx ccusage statusline  # Claude Code status line for hooks (Beta)
 
-Critical analysis. Analyze your architecture.md file. think hard, take your time, be honest. write a report and then ask the advisor if they agree
+
+--- prepare for release
+commit before both projects
+
+prepare gosmo for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+do not commit or tag anything to git. 
+
+
+prepare gosmo for release v0.0.5 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+do not commit or tag anything to git. 

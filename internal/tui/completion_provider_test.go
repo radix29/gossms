@@ -334,7 +334,7 @@ func TestSQLCompletionUnionedSelectsShareOneStatement(t *testing.T) {
 // a second, separate statement.
 func TestDMLStatementStartsWithClauseMainSelectNotSplit(t *testing.T) {
 	buf := []rune("WITH cte AS (SELECT Id FROM dbo.Customers) SELECT * FROM cte")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	starts := dmlStatementStarts(tokens)
 	if len(starts) != 1 {
 		t.Fatalf("dmlStatementStarts = %v, want exactly 1 (WITH itself; its own main SELECT is not a new statement)", starts)
@@ -343,7 +343,7 @@ func TestDMLStatementStartsWithClauseMainSelectNotSplit(t *testing.T) {
 
 func TestDMLStatementStartsUnionChainIsOneStatement(t *testing.T) {
 	buf := []rune("SELECT Id FROM A UNION ALL SELECT Id FROM B EXCEPT SELECT Id FROM C")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	starts := dmlStatementStarts(tokens)
 	if len(starts) != 1 {
 		t.Fatalf("dmlStatementStarts = %v, want exactly 1 — UNION ALL/EXCEPT chain a SELECT onto the same statement", starts)
@@ -352,7 +352,7 @@ func TestDMLStatementStartsUnionChainIsOneStatement(t *testing.T) {
 
 func TestDMLStatementStartsSubqueryNotCountedAsStatement(t *testing.T) {
 	buf := []rune("SELECT * FROM A WHERE Id IN (SELECT Id FROM B)")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	starts := dmlStatementStarts(tokens)
 	if len(starts) != 1 {
 		t.Fatalf("dmlStatementStarts = %v, want exactly 1 — a parenthesized subquery's SELECT is not a new statement", starts)
@@ -361,7 +361,7 @@ func TestDMLStatementStartsSubqueryNotCountedAsStatement(t *testing.T) {
 
 func TestDMLStatementStartsBackToBackWithoutSemicolon(t *testing.T) {
 	buf := []rune("SELECT * FROM A SELECT * FROM B")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	starts := dmlStatementStarts(tokens)
 	if len(starts) != 2 {
 		t.Fatalf("dmlStatementStarts = %v, want exactly 2 — two SELECTs with no ';' and no UNION between them are two statements", starts)
@@ -768,7 +768,7 @@ func TestFormatColumnType(t *testing.T) {
 
 func TestTokenizeSQLPrefixReportsBracketStateAndStart(t *testing.T) {
 	buf := []rune("SELECT * FROM [Order ")
-	_, state, _, quoteStart := tokenizeSQLPrefix(buf, len(buf))
+	_, state, _, quoteStart := tokenizeSQLRange(buf, 0, len(buf), false)
 	if state != sqlLexBracket {
 		t.Errorf("state = %v, want sqlLexBracket for an unterminated [ ident", state)
 	}
@@ -782,7 +782,7 @@ func TestTokenizeSQLPrefixReportsBracketStateAndStart(t *testing.T) {
 // SELECT's own column ("Id") as a table reference.
 func TestParseFromScopeResetsAfterUnion(t *testing.T) {
 	buf := []rune("FROM A UNION SELECT Id FROM B")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	refs := parseFromScope(tokens)
 	for _, r := range refs {
 		if r.name == "Id" {
@@ -793,7 +793,7 @@ func TestParseFromScopeResetsAfterUnion(t *testing.T) {
 
 func TestParseFromScopeHandlesMultipleJoinsAndCommas(t *testing.T) {
 	buf := []rune("FROM dbo.Customers c, dbo.Orders AS o JOIN sales.Region r ON 1=1")
-	tokens, _, _, _ := tokenizeSQLPrefix(buf, len(buf))
+	tokens, _, _, _ := tokenizeSQLRange(buf, 0, len(buf), false)
 	refs := parseFromScope(tokens)
 	if len(refs) != 3 {
 		t.Fatalf("parseFromScope returned %d refs, want 3: %+v", len(refs), refs)

@@ -1,161 +1,41 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"flag"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
 
 // scanCompletionPrefix replaced a scan that tokenized the whole prefix and
-// then threw away everything before the current statement. The replacement
-// lexes the prefix without materialising tokens, then tokenizes only the
-// statement — which means it has to agree with the one-pass form about where
-// that statement begins. These tests pin the two together token-for-token,
-// over the corpus below and over randomly assembled scripts.
+// then threw away everything before the current statement. Until 2026-08-04
+// these tests pinned the two together differentially, against a second T-SQL
+// lexer written here purely as a baseline — two copies of the same semantics
+// to keep in sync forever (docs/open-threads.md, "The two lexer
+// implementations"). That baseline is gone; what it established is frozen
+// below as golden output.
+//
+// The trade is deliberate and worth stating: a golden file pins *current*
+// behavior, so it catches a regression but cannot find a bug that was always
+// there. The equivalence itself was what the differential sweep proved, over
+// this corpus, at every cursor position, across many releases. From here the
+// corpus's job is to make any change in what the scan produces visible in a
+// diff rather than silent.
+//
+// Regenerate after an intended change, and read the diff:
+//
+//	go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden
 
-// referenceLineStartsNormal reports, per line, whether it begins outside any
-// comment, string literal, or quoted identifier. A plain character-at-a-time
-// walk written independently of lexSQL, so the differential tests below have
-// something of their own to disagree with.
-func referenceLineStartsNormal(lines [][]rune) []bool {
-	const (
-		normal = iota
-		blockComment
-		singleQuote
-		bracket
-		doubleQuote
-	)
-	out := make([]bool, len(lines))
-	state := normal
-	for r, line := range lines {
-		out[r] = state == normal
-		lineComment := false
-		for c := 0; c < len(line); {
-			// A closing delimiter doubled (…'' , ]] , "") is an escape, not
-			// the end of the run — same rule lexSQL applies.
-			switch {
-			case lineComment:
-				c = len(line)
-			case state == blockComment:
-				if c+1 < len(line) && line[c] == '*' && line[c+1] == '/' {
-					state = normal
-					c += 2
-				} else {
-					c++
-				}
-			case state == singleQuote:
-				if line[c] != '\'' {
-					c++
-				} else if c+1 < len(line) && line[c+1] == '\'' {
-					c += 2
-				} else {
-					state = normal
-					c++
-				}
-			case state == bracket:
-				if line[c] != ']' {
-					c++
-				} else if c+1 < len(line) && line[c+1] == ']' {
-					c += 2
-				} else {
-					state = normal
-					c++
-				}
-			case state == doubleQuote:
-				if line[c] != '"' {
-					c++
-				} else if c+1 < len(line) && line[c+1] == '"' {
-					c += 2
-				} else {
-					state = normal
-					c++
-				}
-			case c+1 < len(line) && line[c] == '-' && line[c+1] == '-':
-				lineComment = true
-			case c+1 < len(line) && line[c] == '/' && line[c+1] == '*':
-				state = blockComment
-				c += 2
-			case line[c] == '\'':
-				state = singleQuote
-				c++
-			case line[c] == '[':
-				state = bracket
-				c++
-			case line[c] == '"':
-				state = doubleQuote
-				c++
-			default:
-				c++
-			}
-		}
-	}
-	return out
-}
+var updateGolden = flag.Bool("update-golden", false,
+	"rewrite the completion prefix-scan golden file instead of comparing against it")
 
-// referenceStatementStartOffset walks forwards over every line keeping the
-// last GO seen — the shape the production scan had before it folded GO
-// detection into the lexer, plus the context test that fix added: a "GO" line
-// only separates batches if the line actually begins outside a comment,
-// string literal, or quoted identifier.
-func referenceStatementStartOffset(lines [][]rune, cursorRow int, semiStart int) int {
-	normal := referenceLineStartsNormal(lines)
-	start := semiStart
-	for i := 0; i < cursorRow && i < len(lines); i++ {
-		if normal[i] && strings.EqualFold(strings.TrimSpace(string(lines[i])), "GO") {
-			if goStart := offsetForCursor(lines, i+1, 0); goStart > start {
-				start = goStart
-			}
-		}
-	}
-	return start
-}
-
-// referenceScanCompletionPrefix is the original one-pass approach: tokenize
-// [0, upTo) in full, then discard every token before the statement start.
-func referenceScanCompletionPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) completionPrefixScan {
-	tokens, state, semiStart, quoteStart := tokenizeSQLRange(buf, 0, upTo, false)
-	batchStart := referenceStatementStartOffset(lines, cursorRow, semiStart)
-	return completionPrefixScan{
-		tokens:     tokensFrom(tokens, batchStart),
-		state:      state,
-		batchStart: batchStart,
-		quoteStart: quoteStart,
-	}
-}
-
-// compareScans reports the first difference between the two scans, or "".
-func compareScans(want, got completionPrefixScan) string {
-	if want.state != got.state {
-		return fmt.Sprintf("state = %d, want %d", got.state, want.state)
-	}
-	if want.batchStart != got.batchStart {
-		return fmt.Sprintf("batchStart = %d, want %d", got.batchStart, want.batchStart)
-	}
-	// quoteStart is only meaningful in the two quoted states.
-	if (want.state == sqlLexBracket || want.state == sqlLexDoubleQuote) && want.quoteStart != got.quoteStart {
-		return fmt.Sprintf("quoteStart = %d, want %d", got.quoteStart, want.quoteStart)
-	}
-	if len(want.tokens) != len(got.tokens) {
-		return fmt.Sprintf("len(tokens) = %d, want %d\n got: %s\nwant: %s",
-			len(got.tokens), len(want.tokens), dumpTokens(got.tokens), dumpTokens(want.tokens))
-	}
-	for i := range want.tokens {
-		if want.tokens[i] != got.tokens[i] {
-			return fmt.Sprintf("token[%d] = %+v, want %+v\n got: %s\nwant: %s",
-				i, got.tokens[i], want.tokens[i], dumpTokens(got.tokens), dumpTokens(want.tokens))
-		}
-	}
-	return ""
-}
-
-func dumpTokens(ts []sqlToken) string {
-	var b strings.Builder
-	for _, t := range ts {
-		fmt.Fprintf(&b, "{%d %q @%d} ", t.kind, t.text, t.start)
-	}
-	return b.String()
-}
+const prefixScanGoldenPath = "testdata/completion_prefix_scan.golden"
 
 // splitRunes turns a script into the [][]rune shape the editor hands the
 // completion provider.
@@ -168,29 +48,100 @@ func splitRunes(script string) [][]rune {
 	return lines
 }
 
-// checkEveryCursorPosition compares the two scans at every (row, col) in the
-// script — an exhaustive sweep rather than a sample, since the interesting
-// divergences are all about exactly where the cursor lands.
-func checkEveryCursorPosition(t *testing.T, script string) {
-	t.Helper()
+// flattenFresh is flattenLinesInto's always-allocate form. Production never
+// wants it — the point of flattenLinesInto is that QueryPanel keeps one
+// buffer across keystrokes — but a test comparing a recycled buffer against a
+// clean one needs both, and a buffer-reusing call cannot check its own reuse.
+func flattenFresh(lines [][]rune) []rune { return flattenLinesInto(nil, lines) }
+
+var tokKindNames = [...]string{"id", "kw", "dot", "comma", "lparen", "rparen"}
+
+var lexStateNames = [...]string{"normal", "linecomment", "blockcomment", "singlequote", "bracket", "doublequote"}
+
+func tokKindName(k sqlTokKind) string {
+	if int(k) < len(tokKindNames) {
+		return tokKindNames[k]
+	}
+	return fmt.Sprintf("kind%d", int(k))
+}
+
+func lexStateName(s sqlLexState) string {
+	if int(s) < len(lexStateNames) {
+		return lexStateNames[s]
+	}
+	return fmt.Sprintf("state%d", int(s))
+}
+
+// formatScan renders one scan result as the single golden line that stands
+// for it: everything sqlCompletionCandidates reads, and nothing else.
+//
+// quoteStart is only meaningful in the two quoted states (see
+// tokenizeSQLRange), so it is written as "-" elsewhere rather than freezing a
+// stale value that no caller looks at and any refactor could legitimately
+// change.
+func formatScan(s completionPrefixScan) string {
+	quote := "-"
+	if s.state == sqlLexBracket || s.state == sqlLexDoubleQuote {
+		quote = fmt.Sprintf("%d", s.quoteStart)
+	}
+	return fmt.Sprintf("%s batch=%d quote=%s |%s", lexStateName(s.state), s.batchStart, quote, dumpTokens(s.tokens))
+}
+
+func dumpTokens(ts []sqlToken) string {
+	var b strings.Builder
+	for _, t := range ts {
+		fmt.Fprintf(&b, " %s:%q@%d", tokKindName(t.kind), t.text, t.start)
+	}
+	return b.String()
+}
+
+// sweepCursorPositions scans at every (row, col) in the script — exhaustive
+// rather than sampled, since the interesting divergences are all about
+// exactly where the cursor lands.
+func sweepCursorPositions(script string) []string {
 	lines := splitRunes(script)
-	buf := flattenLines(lines)
+	buf := flattenFresh(lines)
+	var out []string
 	for row := range lines {
 		for col := 0; col <= len(lines[row]); col++ {
 			upTo := offsetForCursor(lines, row, col)
-			want := referenceScanCompletionPrefix(lines, buf, row, upTo)
-			got := scanCompletionPrefix(lines, buf, row, upTo)
-			if diff := compareScans(want, got); diff != "" {
-				t.Fatalf("cursor (row=%d,col=%d) in script:\n%s\n\n%s", row, col, script, diff)
-			}
+			out = append(out, fmt.Sprintf("%d,%d %s", row, col,
+				formatScan(scanCompletionPrefix(lines, buf, row, upTo))))
 		}
 	}
+	return out
+}
+
+// sweepWhileTyping scans after every keystroke of the script, cursor at the
+// end — the access pattern the completion popup actually produces, and the
+// one that puts an unterminated comment/string/bracket at the cursor.
+func sweepWhileTyping(script string) []string {
+	runes := []rune(script)
+	out := make([]string, 0, len(runes)+1)
+	for n := 0; n <= len(runes); n++ {
+		lines := splitRunes(string(runes[:n]))
+		buf := flattenFresh(lines)
+		row := len(lines) - 1
+		upTo := offsetForCursor(lines, row, len(lines[row]))
+		out = append(out, fmt.Sprintf("%d %s", n, formatScan(scanCompletionPrefix(lines, buf, row, upTo))))
+	}
+	return out
+}
+
+// digest condenses a sweep to one line of golden. Used for the two bulk
+// sections — 400 generated scripts and the typing sweep — where the full
+// streams would run to megabytes and nobody would read the diff anyway. The
+// curated corpus's cursor sweep is written out in full instead, because that
+// is the one a human reviews when the scan changes.
+func digest(lines []string) string {
+	h := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(h[:8])
 }
 
 // diffCorpus is aimed squarely at the assumptions the two-pass scan makes:
 // that the statement boundary is findable without tokens, and that tokenizing
-// from it reproduces the same tokens the full-prefix pass produced there.
-// Half the entries are "GO" in a context that does not separate batches.
+// from it reproduces the same tokens a full-prefix pass produced there. Half
+// the entries are "GO" in a context that does not separate batches.
 var diffCorpus = map[string]string{
 	"plain": "SELECT a, b FROM dbo.T WHERE x = 1",
 
@@ -253,12 +204,6 @@ var diffCorpus = map[string]string{
 	"unicode":               "SELECT [Ку], 'пароль' FROM [密码] WHERE x = N'密'",
 }
 
-func TestScanCompletionPrefixMatchesReference(t *testing.T) {
-	for name, script := range diffCorpus {
-		t.Run(name, func(t *testing.T) { checkEveryCursorPosition(t, script) })
-	}
-}
-
 // fragments are recombined into synthetic scripts below. The set is chosen so
 // that concatenation routinely produces unbalanced comments, strings, and
 // brackets straddling GO lines — the shapes that break a resumed scan.
@@ -292,10 +237,12 @@ var fragments = []string{
 	"SELECT 'GO'",
 }
 
-// Randomly assembled scripts, with the cursor swept across every position of
-// each. Seeded, so a failure reproduces.
-func TestScanCompletionPrefixMatchesReferenceOnGeneratedScripts(t *testing.T) {
+// generatedScripts assembles the random corpus. Seeded, so the golden file
+// means something: the same 400 scripts come out on every run and on every
+// machine.
+func generatedScripts() []string {
 	rng := rand.New(rand.NewSource(20260730))
+	out := make([]string, 0, 400)
 	for i := 0; i < 400; i++ {
 		var b strings.Builder
 		nLines := 1 + rng.Intn(6)
@@ -310,38 +257,108 @@ func TestScanCompletionPrefixMatchesReferenceOnGeneratedScripts(t *testing.T) {
 				b.WriteString(fragments[rng.Intn(len(fragments))])
 			}
 		}
-		script := b.String()
-		t.Run(fmt.Sprintf("script%03d", i), func(t *testing.T) {
-			checkEveryCursorPosition(t, script)
-		})
+		out = append(out, b.String())
 	}
+	return out
 }
 
-// Typing a script one rune at a time, checking after every keystroke — the
-// access pattern the completion popup actually produces.
-func TestScanCompletionPrefixMatchesReferenceWhileTyping(t *testing.T) {
-	for name, script := range diffCorpus {
-		t.Run(name, func(t *testing.T) {
-			runes := []rune(script)
-			for n := 0; n <= len(runes); n++ {
-				lines := splitRunes(string(runes[:n]))
-				buf := flattenLines(lines)
-				row := len(lines) - 1
-				upTo := offsetForCursor(lines, row, len(lines[row]))
-				want := referenceScanCompletionPrefix(lines, buf, row, upTo)
-				got := scanCompletionPrefix(lines, buf, row, upTo)
-				if diff := compareScans(want, got); diff != "" {
-					t.Fatalf("after typing %d rune(s) of:\n%s\n\n%s", n, script, diff)
-				}
-			}
-		})
+func sortedCorpusNames() []string {
+	names := make([]string, 0, len(diffCorpus))
+	for name := range diffCorpus {
+		names = append(names, name)
 	}
+	sort.Strings(names)
+	return names
+}
+
+// buildGolden renders the whole golden file. Map iteration order is random,
+// hence the sorted names — a golden file that reshuffles itself on every
+// regeneration is worthless as a diff.
+func buildGolden() string {
+	var b strings.Builder
+	b.WriteString("# goSSMS — scanCompletionPrefix golden output. Do not hand-edit.\n")
+	b.WriteString("# Regenerate: go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden\n")
+	b.WriteString("#\n")
+	b.WriteString("# [cursor-sweep] one line per cursor position, in full:\n")
+	b.WriteString("#   <row>,<col> <lexer state> batch=<statement start> quote=<offset|-> | <tokens>\n")
+	b.WriteString("# Tokens are <kind>:<text>@<rune offset>. quote is \"-\" outside the two\n")
+	b.WriteString("# quoted states, where no caller reads it.\n")
+	b.WriteString("#\n")
+	b.WriteString("# [typing] and [generated] are digests: one hash per script over the same\n")
+	b.WriteString("# per-position stream. Full streams there would run to megabytes. On a\n")
+	b.WriteString("# mismatch, re-run that script through sweepWhileTyping/sweepCursorPositions\n")
+	b.WriteString("# by hand to see what moved.\n")
+
+	b.WriteString("\n[cursor-sweep]\n")
+	for _, name := range sortedCorpusNames() {
+		fmt.Fprintf(&b, "\n== %s\nscript %q\n", name, diffCorpus[name])
+		for _, line := range sweepCursorPositions(diffCorpus[name]) {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+
+	b.WriteString("\n[typing]\n")
+	for _, name := range sortedCorpusNames() {
+		fmt.Fprintf(&b, "%s %s\n", digest(sweepWhileTyping(diffCorpus[name])), name)
+	}
+
+	b.WriteString("\n[generated]\n")
+	for i, script := range generatedScripts() {
+		fmt.Fprintf(&b, "%s script%03d %q\n", digest(sweepCursorPositions(script)), i, script)
+	}
+	return b.String()
+}
+
+// TestScanCompletionPrefixGolden is the frozen form of what the differential
+// sweep used to prove on every run. A failure here is not automatically a bug
+// — it means the scan's output changed. Read the diff, decide whether the
+// change was intended, and only then regenerate with -update-golden.
+func TestScanCompletionPrefixGolden(t *testing.T) {
+	got := buildGolden()
+	if *updateGolden {
+		if err := os.MkdirAll(filepath.Dir(prefixScanGoldenPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(prefixScanGoldenPath, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s (%d bytes)", prefixScanGoldenPath, len(got))
+		return
+	}
+	wantBytes, err := os.ReadFile(prefixScanGoldenPath)
+	if err != nil {
+		t.Fatalf("%v — regenerate with: go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden", err)
+	}
+	want := string(wantBytes)
+	if got == want {
+		return
+	}
+	gotLines, wantLines := strings.Split(got, "\n"), strings.Split(want, "\n")
+	for i := 0; i < len(gotLines) && i < len(wantLines); i++ {
+		if gotLines[i] != wantLines[i] {
+			t.Fatalf("%s differs at line %d:\n got: %s\nwant: %s\n\nRead the whole diff before regenerating:\n"+
+				"  go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden && git diff %s",
+				prefixScanGoldenPath, i+1, gotLines[i], wantLines[i], prefixScanGoldenPath)
+		}
+	}
+	t.Fatalf("%s differs in length: got %d lines, want %d", prefixScanGoldenPath, len(gotLines), len(wantLines))
+}
+
+// compareScans reports the first difference between two scans, or "".
+func compareScans(want, got completionPrefixScan) string {
+	if w, g := formatScan(want), formatScan(got); w != g {
+		return fmt.Sprintf("\n got: %s\nwant: %s", g, w)
+	}
+	return ""
 }
 
 // isGoSeparatorLine replaced strings.EqualFold(strings.TrimSpace(...), "GO").
+// The one differential check kept: its reference is two calls to the standard
+// library, not a second lexer, so there is nothing here to drift out of sync.
 func TestIsGoSeparatorLineMatchesStringVersion(t *testing.T) {
 	cases := []string{
-		"GO", "go", "Go", "gO", " GO ", "\tGO\t", "  go  ", " GO ",
+		"GO", "go", "Go", "gO", " GO ", "\tGO\t", "  go  ", " GO ",
 		"GO 5", "XGO", "GOO", "G O", "", " ", "\t", "SELECT 1", "G", "O",
 		"GO;", ";GO", "GO--x", "ＧＯ",
 	}
@@ -357,6 +374,10 @@ func TestIsGoSeparatorLineMatchesStringVersion(t *testing.T) {
 // with a block comment is not a batch separator, so the alias declared above
 // it is still in scope and `p.` completes against it. Asserted as the scope
 // boundary rather than as candidates, since the boundary is what was wrong.
+//
+// Stated as its own assertion rather than left to the golden file: the golden
+// would happily freeze the broken answer if this ever regressed and someone
+// regenerated without reading the diff.
 func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 	cases := map[string]string{
 		"block comment": "SELECT * FROM dbo.Patients p\n/*\nGO\n*/\nWHERE p.",
@@ -367,7 +388,7 @@ func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 	for name, script := range cases {
 		t.Run(name, func(t *testing.T) {
 			lines := splitRunes(script)
-			buf := flattenLines(lines)
+			buf := flattenFresh(lines)
 			row := len(lines) - 1
 			got := scanCompletionPrefix(lines, buf, row, offsetForCursor(lines, row, len(lines[row])))
 			if got.batchStart != 0 {
@@ -382,7 +403,7 @@ func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 func TestRealGoStillStartsANewBatch(t *testing.T) {
 	script := "SELECT * FROM dbo.Patients p\nGO\nWHERE p."
 	lines := splitRunes(script)
-	buf := flattenLines(lines)
+	buf := flattenFresh(lines)
 	row := len(lines) - 1
 	want := offsetForCursor(lines, 2, 0)
 	if got := scanCompletionPrefix(lines, buf, row, offsetForCursor(lines, row, len(lines[row]))).batchStart; got != want {
@@ -405,7 +426,7 @@ func TestFlattenLinesIntoReuseMatchesFreshAllocation(t *testing.T) {
 	var reused []rune
 	for _, script := range scripts {
 		lines := splitRunes(script)
-		want := flattenLines(lines)
+		want := flattenFresh(lines)
 		reused = flattenLinesInto(reused, lines)
 		if string(reused) != string(want) {
 			t.Fatalf("flattenLinesInto(reused) = %q, want %q (stale tail from a previous call?)", string(reused), string(want))
@@ -417,7 +438,8 @@ func TestFlattenLinesIntoReuseMatchesFreshAllocation(t *testing.T) {
 }
 
 // The whole scan must be unaffected by whether its buffer was freshly
-// allocated or recycled.
+// allocated or recycled. Still differential, and legitimately so: both sides
+// are the production scan, so there is no second implementation here.
 func TestScanCompletionPrefixUnaffectedByBufferReuse(t *testing.T) {
 	var reused []rune
 	// Prime the buffer with the longest script so later shorter ones recycle it.
@@ -432,7 +454,7 @@ func TestScanCompletionPrefixUnaffectedByBufferReuse(t *testing.T) {
 	for name, script := range diffCorpus {
 		t.Run(name, func(t *testing.T) {
 			lines := splitRunes(script)
-			fresh := flattenLines(lines)
+			fresh := flattenFresh(lines)
 			reused = flattenLinesInto(reused, lines)
 			for row := range lines {
 				for col := 0; col <= len(lines[row]); col++ {
