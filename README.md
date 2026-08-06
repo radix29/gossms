@@ -1,3 +1,16 @@
+<p align="center">
+  <img src="gossms_logo.png" alt="gossms" width="720">
+</p>
+
+<p align="center">
+  <strong>macOS and Linux can enjoy working with SQL Server too</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/radix29/gossms/commits/main"><img src="https://img.shields.io/github/last-commit/radix29/gossms?style=flat" alt="Last commit"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/radix29/gossms?style=flat" alt="License"></a>
+</p>
+
 # goSSMS
 
 SQL Server Management Studio clone for MacOS, Linux and Windows.
