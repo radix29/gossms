@@ -377,3 +377,96 @@ func TestFormatFileSizeHelper(t *testing.T) {
 		}
 	}
 }
+
+// newPlacedFileDialog is newTestFileDialog with a screen size behind it, so
+// the dialog gets a real centred rect and its fields land where Draw would
+// put them. The plain helper's nil screen leaves the rect at 0x0, which is
+// fine for the list-geometry tests above but puts the button row on top of
+// the path field — enough to make a mouse-routing test assert nonsense.
+func newPlacedFileDialog(t *testing.T) (*FileDialog, string) {
+	t.Helper()
+	_, dir := newTestFileDialog(t)
+	d := NewFileDialog(&sizedScreen{w: 120, h: 40})
+	d.ShowOpen("Open", dir, func(string) {})
+	// Mirrors the two SetBounds calls in file_dialog_draw.go, which only run
+	// under Draw — if those move, this must move with them.
+	inner := d.InnerRect()
+	d.pathField.SetBounds(inner.X+1, inner.Y)
+	d.nameField.SetBounds(inner.X+1, inner.Y+fileListRows+5)
+	return d, dir
+}
+
+// A text-selection drag belongs to the field that claimed its press until
+// the release, wherever the pointer goes — invariant 1 in ARCHITECTURE.md
+// § The mouseDragging idiom. InputField honours this itself, but only if its
+// host forwards the off-rect motion; hit-testing every Button1 before
+// forwarding, as this dialog used to, froze the selection at the box edge.
+func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {
+	d, _ := newPlacedFileDialog(t)
+	d.pathField.SetValue("abcdefgh")
+
+	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("the press inside the path field was refused — test premise is wrong")
+	}
+	if d.dragField != d.pathField {
+		t.Fatal("the press did not claim the gesture for the path field")
+	}
+
+	// Drag down into the file list, which owns that region and would
+	// otherwise select a row out from under the drag.
+	lr := d.listRect()
+	selBefore := d.sel
+	dragX, dragY := ix+6, lr.Y+1
+	if d.pathField.HitTest(dragX, dragY) {
+		t.Fatal("the drag point is still inside the field — test premise is wrong")
+	}
+	if !d.HandleMouse(tcell.NewEventMouse(dragX, dragY, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("the dialog refused motion the path field owns the gesture for")
+	}
+	if got := d.pathField.SelectedText(); got != "abcde" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
+	}
+	if d.sel != selBefore {
+		t.Errorf("sel = %d, want %d — the list stole a gesture the path field owned", d.sel, selBefore)
+	}
+
+	// The release ends it and clears the latch, so the next press routes
+	// positionally again.
+	d.HandleMouse(tcell.NewEventMouse(dragX, dragY, tcell.ButtonNone, tcell.ModNone))
+	if d.dragField != nil {
+		t.Error("the release left the gesture latched")
+	}
+	d.HandleMouse(tcell.NewEventMouse(lr.X+1, lr.Y+1, tcell.Button1, tcell.ModNone))
+	if d.sel == selBefore {
+		t.Error("a press in the list after the release did not select a row")
+	}
+}
+
+// A release outside the dialog is eaten by ConsumeOutsideClick, so the latch
+// has to be cleared ahead of it or the field swallows the next press.
+func TestFileDialogReleaseOutsideTheDialogClearsTheDragLatch(t *testing.T) {
+	d, _ := newPlacedFileDialog(t)
+
+	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
+
+	if d.dragField != nil {
+		t.Fatal("a release outside the dialog left the gesture latched")
+	}
+	if d.pathField.HandleMouse(tcell.NewEventMouse(ix+3, y+9, tcell.Button1, tcell.ModNone)) {
+		t.Error("the field is still latched — its next off-rect press was accepted")
+	}
+}
+
+// A latch must not survive into the next showing (tuikit invariant 4): a
+// dialog dismissed mid-drag would reopen routing every click to that field.
+func TestFileDialogShowClearsTheDragLatch(t *testing.T) {
+	d, dir := newPlacedFileDialog(t)
+	d.dragField = d.pathField
+	d.ShowOpen("Open", dir, func(string) {})
+	if d.dragField != nil {
+		t.Error("Show left a drag latch armed from the previous showing")
+	}
+}

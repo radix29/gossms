@@ -1,5 +1,7 @@
+query editor: block edit
 
-add find / replace / next etc Ctrl+f, Ctrl+H, F3 functionality
+
+
 
 restore backup -> show remote server directoy, move files, error messages, text trimming etc
 
@@ -24,6 +26,7 @@ reports
 - Availability Groups stuff
 
 - query editor word wrap (display only, line numbers)
+- external editor nvim, nano , etc
 
 
 --------------
@@ -56,3 +59,6 @@ do not commit or tag anything to git.
 
 prepare gossms for release v0.0.5 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
+
+
+

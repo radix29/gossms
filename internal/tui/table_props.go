@@ -325,16 +325,7 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 			}
 
 			f, apply := buildPermissionsMatrix(principals, gosmo.ObjectPermissionNames(), entries, 8, 12,
-				func(ctx context.Context, permission, principal string) error {
-					return d.GrantPermissionContext(ctx, schema, name, gosmo.ObjectPermission(permission), principal)
-				},
-				func(ctx context.Context, permission, principal string) error {
-					return d.DenyPermissionContext(ctx, schema, name, gosmo.ObjectPermission(permission), principal)
-				},
-				func(ctx context.Context, permission, principal string) error {
-					return d.RevokePermissionContext(ctx, schema, name, gosmo.ObjectPermission(permission), principal)
-				},
-			)
+				objectPermApply(d, schema, name))
 			return f, apply, nil
 		},
 	}

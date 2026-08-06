@@ -198,6 +198,19 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 	}
 }
 
+// RefreshCurrent re-fetches whatever node the panel is showing right now,
+// independently of the Object Explorer's selection — what the title bar's
+// refresh button runs. The two are the same node today, since the panel
+// only ever displays what the tree selected; wiring the button to the
+// panel's own currentNode is what keeps it correct if the panel ever drills
+// on its own. Nil-safe like Invalidate.
+func (db *DetailBrowser) RefreshCurrent(app *App) {
+	if db == nil || db.currentNode == nil {
+		return
+	}
+	db.Invalidate(app, db.currentNode)
+}
+
 // PurgeConn drops every cached and pending entry belonging to sc — called
 // by App.disconnect, since the explorer nodes those entries are keyed by
 // are about to be dropped from the tree. Without it both maps grow for the

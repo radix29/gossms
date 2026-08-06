@@ -14,8 +14,15 @@ import (
 // Roles/Owned Schemas/Members/Extended Properties are editable; General is
 // editable except for a built-in role's name/owner. Application roles are
 // not covered — they're a separate principal type with no tree node of
-// their own — nor are search/filter boxes, WITH GRANT OPTION, Column
-// Permissions, or Effective Permissions.
+// their own.
+//
+// There is deliberately no Effective Permissions page here, unlike Database
+// User Properties. Resolving effective permissions means impersonating the
+// principal (gosmo's EffectivePermissions, and SSMS's own Effective tab,
+// both work that way), and SQL Server refuses to impersonate a role —
+// Msg 15517, "this type of principal cannot be impersonated", verified live
+// 2026-08-05 against a role that did exist. Adding the page back would give
+// a tab whose only possible outcome is that error.
 //
 // roleName is boxed in a *string shared by every page below: renaming a role
 // changes the identity every other page's lookup depends on. The
@@ -23,14 +30,14 @@ import (
 // and commitRename then updates the box so PropDialog.InvalidateAll's
 // reload re-fetches under the new name. dbName never changes, so it
 // stays a plain string.
-func rolePropPages(sc *db.ServerConn, dbName, roleName string) []propPage {
+func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
 		pageRoleGeneral(sc, dbName, namePtr),
 		pageRoleMembers(sc, dbName, namePtr),
 		pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"),
 		pageRoleOwnedRoles(sc, dbName, namePtr),
-		pageDatabasePrincipalSecurables(sc, dbName, namePtr),
+		pageDatabasePrincipalSecurables(d, sc, dbName, namePtr),
 		// A database role is classed as USER in sp_addextendedproperty's
 		// level names — it's a database principal like a user, not a
 		// level of its own.

@@ -118,9 +118,15 @@ govern how a single input event is routed once it is already there.
 ## Package map
 
 `internal/tui` is a flat package, so every file is listed individually with
-its purpose; `internal/tuikit` and `internal/tui/planview` are summarized by
-directory and documented in their own README and `doc.go`. A file absent
-from a summarized directory has not been omitted — look there directly.
+its purpose; `internal/tuikit`, `internal/tui/planview` and
+`internal/tui/sqlparse` are summarized by directory and documented in their
+own README and `doc.go`. A file absent from a summarized directory has not
+been omitted — look there directly.
+
+Both `tui` sub-packages are leaves: they depend on `tuikit` and the standard
+library, never on `tui` itself. That is what made each extractable — and the
+absence of any other zero-outbound-reference set in `tui` is why there is no
+third one (`docs/proposals-2026-08-05.md` § 1 correction).
 
 ```
 gossms/
@@ -146,6 +152,7 @@ gossms/
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
+│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense (pure functions over runes; no App, no connection)
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
@@ -217,6 +224,7 @@ gossms/
 │       │
 │       │  ── Standalone dialogs ──
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
+│       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
 │       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel

@@ -41,10 +41,7 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 			}
 
 			f, apply := buildPermissionsMatrix(principals, gosmo.ServerPermissionNames(), entries, 8, 12,
-				sc.Server.GrantServerPermissionContext,
-				sc.Server.DenyServerPermissionContext,
-				sc.Server.RevokeServerPermissionContext,
-			)
+				serverPermApply(sc.Server))
 			return f, apply, nil
 		},
 	}

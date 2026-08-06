@@ -86,6 +86,14 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.cbVerify.HandleMouse(ev)
 		d.cbChecksum.HandleMouse(ev)
 		d.cbCopyOnly.HandleMouse(ev)
+		// Terminate a text-selection drag in the field that claimed the
+		// press, wherever the release landed. Done before
+		// ConsumeOutsideClick, which returns early on a release outside the
+		// dialog — exactly the case that would otherwise strand the latch.
+		if d.dragField != nil {
+			d.dragField.HandleMouse(ev)
+			d.dragField = nil
+		}
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -109,6 +117,14 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if ev.Buttons() != tcell.Button1 {
 		return false
+	}
+
+	// The gesture belongs to whichever field claimed its press, so motion is
+	// replayed there without hit-testing — ahead of every widget below,
+	// since none of them can own a gesture this one already started.
+	if d.dragField != nil {
+		d.dragField.HandleMouse(ev)
+		return true
 	}
 
 	// The database dropdown's open list is an overlay drawn last, so it
@@ -147,6 +163,7 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.fDest.HitTest(mx, my) {
 		d.focusTo(d.fDest)
 		d.fDest.HandleMouse(ev)
+		d.dragField = d.fDest
 		return true
 	}
 	return true

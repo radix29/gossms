@@ -46,6 +46,10 @@ type Palette struct {
 	EditorComment tcell.Color
 	EditorNumber  tcell.Color
 	EditorLineNum tcell.Color
+	// EditorMatch backs every find/replace hit *except* the current one,
+	// which is the editor's selection and so wears the selection colour —
+	// the two have to stay distinguishable at a glance.
+	EditorMatch tcell.Color
 
 	// Dialog
 	DialogBg      tcell.Color
@@ -106,6 +110,7 @@ var Default = Palette{
 	EditorComment: tcell.NewRGBColor(106, 153, 85),
 	EditorNumber:  tcell.NewRGBColor(181, 206, 168),
 	EditorLineNum: tcell.NewRGBColor(100, 100, 100),
+	EditorMatch:   tcell.NewRGBColor(88, 76, 22),
 
 	DialogBg:      tcell.NewRGBColor(45, 45, 48),
 	DialogBorder:  tcell.NewRGBColor(0, 122, 204),

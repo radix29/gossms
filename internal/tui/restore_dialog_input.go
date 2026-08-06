@@ -119,6 +119,14 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.cbReplace.HandleMouse(ev)
 		d.cbVerify.HandleMouse(ev)
 		d.cbClose.HandleMouse(ev)
+		// Terminate a text-selection drag in the field that claimed the
+		// press, wherever the release landed. Done before
+		// ConsumeOutsideClick and the mode switch below, both of which
+		// return early — exactly the cases that would strand the latch.
+		if d.dragField != nil {
+			d.dragField.HandleMouse(ev)
+			d.dragField = nil
+		}
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -147,6 +155,14 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if ev.Buttons() != tcell.Button1 {
 		return false
+	}
+
+	// The gesture belongs to whichever field claimed its press, so motion is
+	// replayed there without hit-testing — ahead of every widget below,
+	// since none of them can own a gesture this one already started.
+	if d.dragField != nil {
+		d.dragField.HandleMouse(ev)
+		return true
 	}
 
 	histMode := d.rbSource.Selected() == 1
@@ -208,6 +224,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		if f.HitTest(mx, my) {
 			d.focusTo(f)
 			f.HandleMouse(ev)
+			d.dragField = f
 			return true
 		}
 	}

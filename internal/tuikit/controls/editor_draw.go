@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -29,6 +31,7 @@ func (e *Editor) Draw(s tcell.Screen) {
 	}
 
 	selStyle := theme.StyleSelected()
+	matchStyle := theme.StyleSearchMatch()
 	// Hoisted: contentH consults the horizontal scrollbar, which measures the
 	// widest line in the buffer, so leaving it in the loop condition costs
 	// that lookup once per drawn row.
@@ -58,6 +61,7 @@ func (e *Editor) Draw(s tcell.Screen) {
 			line: line, endRune: len(line),
 			def: bgStyle, sel: selStyle,
 			selStart: selStart, selEnd: selEnd, hasSel: hasSel,
+			matches: e.matchSpansForLine(lineIdx), matchStyle: matchStyle,
 		}
 		if e.highlight != nil {
 			spec.styles = e.runStyles(e.highlight(e.doc, lineIdx), len(line), bgStyle)
@@ -103,13 +107,59 @@ type lineRow struct {
 	def, sel         tcell.Style
 	selStart, selEnd int
 	hasSel           bool
+
+	// matches are this line's find/replace hits, in rune indices, and
+	// matchStyle is what they're painted in. The current match is excluded
+	// by the caller: it is the editor's selection, so it is already painted
+	// in the selection colour, which is what tells it apart from the rest.
+	matches    []searchMatch
+	matchStyle tcell.Style
+
+	// matchCur is inMatch's cursor into matches — the first match that could
+	// still cover a rune — and matchPrimed says it has been positioned. Both
+	// are drawLineRow's scratch, not caller input, which is why the zero
+	// value has to mean "not yet primed": a construction site that forgot to
+	// initialise them would otherwise silently start the cursor at match 0.
+	matchCur    int
+	matchPrimed bool
+}
+
+// inMatch reports whether the rune at index i falls inside a search match.
+//
+// Only valid for a non-decreasing sequence of i, which is what drawLineRow
+// produces: matches is sorted and non-overlapping, so the cursor steps past
+// each match once per row instead of the list being rescanned for every
+// styled column. The first call binary-searches rather than walking from the
+// start — a horizontally scrolled row or a wrap segment begins part-way along
+// the line, and for a long line under wrap mode everything left of the
+// segment is most of the list.
+func (r *lineRow) inMatch(i int) bool {
+	if len(r.matches) == 0 {
+		return false
+	}
+	if !r.matchPrimed {
+		// Leftmost match whose endCol exceeds i, i.e. is not already behind.
+		r.matchCur, _ = slices.BinarySearchFunc(r.matches, i+1, func(m searchMatch, t int) int {
+			return m.endCol - t
+		})
+		r.matchPrimed = true
+	}
+	for r.matchCur < len(r.matches) && i >= r.matches[r.matchCur].endCol {
+		r.matchCur++
+	}
+	return r.matchCur < len(r.matches) && i >= r.matches[r.matchCur].startCol
 }
 
 // styleForRune resolves the style of the rune at index i: an active
-// selection wins over the highlighter, which wins over the default.
+// selection wins over a search match, which wins over the highlighter, which
+// wins over the default. i must not decrease across calls on one lineRow —
+// see inMatch.
 func (r *lineRow) styleForRune(i int) tcell.Style {
 	if r.hasSel && i >= r.selStart && i < r.selEnd {
 		return r.sel
+	}
+	if r.inMatch(i) {
+		return r.matchStyle
 	}
 	if r.styles != nil {
 		if i < len(r.styles) {
@@ -315,6 +365,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 	p := theme.Active()
 	bgStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.Text)
 	selStyle := theme.StyleSelected()
+	matchStyle := theme.StyleSearchMatch()
 
 	vls := e.buildVisualLines(contentW)
 
@@ -359,6 +410,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 			line:    line, endRune: vl.end,
 			def: bgStyle, sel: selStyle,
 			selStart: selStart, selEnd: selEnd, hasSel: hasSel,
+			matches: e.matchSpansForLine(vl.row), matchStyle: matchStyle,
 		}
 		if e.highlight != nil {
 			// Runs are scanned per column rather than expanded into a

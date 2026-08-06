@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"time"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -179,8 +181,15 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.mouseDragging = false
 		g.sbDragging = false
 		g.sbDraggingH = false
+		g.colResizing = false
 	}
 	mx, my := ev.Position()
+	// A column-resize drag, like the horizontal scrollbar's below, keeps
+	// control once started even after the pointer leaves the grid — so it's
+	// checked ahead of the bounds test.
+	if g.resizeDrag(ev) {
+		return true
+	}
 	// A horizontal-scrollbar drag keeps control once started, even after the
 	// pointer leaves the grid entirely — so it's checked before the bounds
 	// test, unlike the vertical bar, whose track runs the full height of the
@@ -341,6 +350,75 @@ func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
 	// is a column index and Draw never splits a cell.
 	g.scrollCol = g.colAtOffset(core.ScrollOffsetForDrag(mx-x, w, total, visible))
 	return true
+}
+
+// resizeDrag handles a Button1 press or drag on a column separator in the
+// header row, resizing the column to its left (matching SSMS). A press on
+// a separator latches colResizing for the rest of the gesture, so the edge
+// keeps following the pointer once it has moved off the one-column-wide
+// separator itself; a second press on the same separator within
+// resizeDoubleClickInterval restores that column's default width instead.
+// Returns false for anything that isn't a qualifying event, so the caller
+// can chain it ahead of its own hit-testing.
+func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
+	if ev.Buttons() != tcell.Button1 {
+		return false
+	}
+	mx, my := ev.Position()
+	if !g.colResizing {
+		col, ok := g.sepColAt(mx, my)
+		if !ok {
+			return false
+		}
+		if g.sepPressIsDouble(col, ev.When()) {
+			g.SetColumnWidth(col, 0)
+		}
+		// Latched even for the double-click, so the resends tcell sends
+		// while the button stays down are absorbed here rather than
+		// re-entering this branch against the now-moved separator.
+		g.colResizing = true
+		g.resizeCol, g.resizeStartX, g.resizeStartW = col, mx, g.colWidths[col]
+		return true
+	}
+	g.SetColumnWidth(g.resizeCol, core.Max(minResizeWidth, g.resizeStartW+mx-g.resizeStartX))
+	return true
+}
+
+// sepColAt returns the column whose right-hand separator is drawn at screen
+// position (x, y) — the column a drag there resizes. Only the header row
+// grabs: the separator glyph runs down every data row, and claiming it
+// there too would steal clicks from cell selection.
+func (g *DataGrid) sepColAt(x, y int) (col int, ok bool) {
+	if y != g.rect.Y || g.rect.H < 3 {
+		return 0, false
+	}
+	cx := g.rect.X + g.gutterWidth()
+	for i := g.scrollCol; i < len(g.colWidths); i++ {
+		cx += g.colWidths[i]
+		// drawRow omits the separator once it would fall outside the rect.
+		if cx-1 >= g.rect.Right() {
+			break
+		}
+		if x == cx-1 {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// sepPressIsDouble reports whether a press on column col's separator at
+// time at follows a previous press on the same separator closely enough to
+// count as a double-click, and records this press for the next call.
+func (g *DataGrid) sepPressIsDouble(col int, at time.Time) bool {
+	double := col == g.lastSepPressCol && !g.lastSepPressAt.IsZero() &&
+		at.Sub(g.lastSepPressAt) <= resizeDoubleClickInterval
+	if double {
+		// Don't let a third press pair with this one as well.
+		g.lastSepPressCol, g.lastSepPressAt = -1, time.Time{}
+		return true
+	}
+	g.lastSepPressCol, g.lastSepPressAt = col, at
+	return false
 }
 
 // rowAtY returns the data row index drawn at screen row y, or -1 if y

@@ -21,6 +21,11 @@ import (
 // pagePrincipalServerPermissions, the same server-scoped GRANT/DENY editor
 // Login Properties' Securables page uses.
 //
+// Effective Permissions is dropped for the same reason Database Role
+// Properties drops it — a server role cannot be impersonated either
+// (Msg 15406, the server-principal wording of the same error). See
+// rolePropPages.
+//
 // roleName is boxed in a *string shared by every page below: renaming a role
 // changes the identity every other page's lookup depends on. The
 // rename is the last write of an Apply/OK run (see propPage.renames),

@@ -266,16 +266,7 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 			}
 
 			f, apply := buildPermissionsMatrix(principals, gosmo.SchemaPermissionNames(), entries, 8, 12,
-				func(ctx context.Context, permission, principal string) error {
-					return d.GrantSchemaPermissionContext(ctx, schemaName, gosmo.ObjectPermission(permission), principal)
-				},
-				func(ctx context.Context, permission, principal string) error {
-					return d.DenySchemaPermissionContext(ctx, schemaName, gosmo.ObjectPermission(permission), principal)
-				},
-				func(ctx context.Context, permission, principal string) error {
-					return d.RevokeSchemaPermissionContext(ctx, schemaName, gosmo.ObjectPermission(permission), principal)
-				},
-			)
+				schemaPermApply(d, schemaName))
 			return f, apply, nil
 		},
 	}

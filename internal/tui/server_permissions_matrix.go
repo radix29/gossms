@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -21,9 +22,10 @@ type permEntry struct {
 	State         string
 }
 
-// permEdit tracks one grid row's pending state through the cycle
-// GRANT -> DENY -> "" (revoke) -> GRANT, driven by Space/Enter/click on
-// the State column.
+// permEdit tracks one grid row's pending state through nextPermState's
+// cycle, driven by Space/Enter/click on the State column. orig is kept
+// alongside current because the statement that applies the change depends on
+// both — see permTransition.
 type permEdit struct {
 	entry   permEntry
 	orig    string
@@ -38,37 +40,20 @@ type permPrincipal struct {
 	Type string
 }
 
-func nextPermState(s string) string {
-	switch s {
-	case "GRANT", "GRANT_WITH_GRANT_OPTION":
-		return "DENY"
-	case "DENY":
-		return ""
-	default:
-		return "GRANT"
-	}
-}
-
-func displayPermState(s string) string {
-	if s == "" {
-		return "(none)"
-	}
-	return s
-}
-
 // buildPermissionsMatrix builds the Permissions page's two-pane editor: a
 // principal list (top grid) and, for whichever principal is selected, the
 // full catalog of grantable permissions at this scope (bottom grid) — not
 // just the ones with an existing GRANT/DENY entry, so a principal with no
 // prior ACL rows still shows every permission it could be granted. Tab
 // switches focus between the two grids; the bottom grid's State column
-// cycles Grant -> Deny -> (none) on activation, same as before. Wired to
-// grant/deny/revokeFn for whichever scope (server- or database-level
-// GRANT/DENY/REVOKE) the caller needs.
+// cycles Grant -> Grant With Grant -> Deny -> (none) on activation. A filter
+// box above each grid narrows it live. Wired to applyFn for whichever scope
+// (server-, database-, schema- or object-level GRANT/DENY/REVOKE) the caller
+// needs.
 func buildPermissionsMatrix(
 	principals []permPrincipal, catalog []string, entries []permEntry,
 	principalsHeight, permsHeight int,
-	grantFn, denyFn, revokeFn func(ctx context.Context, permission, principal string) error,
+	applyFn permApplyFn,
 ) (*propsheet.Form, propApply) {
 	type entryKey struct{ principal, permission string }
 	existing := make(map[entryKey]permEntry, len(entries))
@@ -96,18 +81,37 @@ func buildPermissionsMatrix(
 		return edits
 	}
 
-	principalRows := make([][]string, len(principals))
-	for i, p := range principals {
-		principalRows[i] = []string{p.Name, p.Type}
-	}
+	// visible is the filtered view of principals; the grid's row indices
+	// address it, never principals directly. Filtering by name is what makes
+	// these pages usable against a server with hundreds of logins.
+	visible := slices.Clone(principals)
 	principalGrid := controls.NewDataGrid()
-	principalGrid.SetData([]string{"Name", "Type"}, principalRows)
+	principalRowsFor := func() [][]string {
+		rows := make([][]string, len(visible))
+		for i, p := range visible {
+			rows[i] = []string{p.Name, p.Type}
+		}
+		return rows
+	}
+	principalGrid.SetData([]string{"Name", "Type"}, principalRowsFor())
 
 	permGrid := controls.NewDataGrid()
 	permGrid.SetCellCursor(true)
+
+	// permFilter narrows the bottom grid the same way, and visiblePerms maps
+	// its row indices back onto the selected principal's full edit slice —
+	// which is indexed by the whole catalog, filter or no filter.
+	permFilter := ""
+	var visiblePerms []*permEdit
 	permRowsFor := func(edits []*permEdit) [][]string {
-		rows := make([][]string, len(edits))
-		for i, e := range edits {
+		visiblePerms = visiblePerms[:0]
+		for _, e := range edits {
+			if matchesFilter(permFilter, e.entry.Permission) {
+				visiblePerms = append(visiblePerms, e)
+			}
+		}
+		rows := make([][]string, len(visiblePerms))
+		for i, e := range visiblePerms {
 			rows[i] = []string{e.entry.Permission, displayPermState(e.current)}
 		}
 		return rows
@@ -115,32 +119,77 @@ func buildPermissionsMatrix(
 
 	permSection := propsheet.Section("Explicit permissions")
 	selected := -1
+	// selectedEdits is the edit slice the bottom grid is showing, held
+	// directly rather than re-derived from an index into visible — a filter
+	// change rebuilds visible underneath it, and an index would then address
+	// a different principal than the one on screen.
+	var selectedEdits []*permEdit
+	// clearSelection empties the bottom grid. A filter that matches nothing
+	// has to reach this: leaving it showing the previously selected principal
+	// means cycling a State there edits — and Apply then writes — permissions
+	// for a principal the page no longer lists.
+	clearSelection := func() {
+		selected = -1
+		selectedEdits = nil
+		visiblePerms = visiblePerms[:0]
+		permGrid.SetData([]string{"Permission", "State"}, nil)
+		permSection.SetTitle("Explicit permissions")
+	}
 	loadPrincipal := func(row int) {
-		if row < 0 || row >= len(principals) || row == selected {
+		if row < 0 || row >= len(visible) {
+			clearSelection()
+			return
+		}
+		if row == selected {
 			return
 		}
 		selected = row
-		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(editsFor(principals[row])))
+		selectedEdits = editsFor(visible[row])
+		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
 		permGrid.SetSelectedRow(0)
-		permSection.SetTitle("Explicit permissions for " + principals[row].Name)
+		permSection.SetTitle("Explicit permissions for " + visible[row].Name)
 	}
 	principalGrid.OnSelectRow = loadPrincipal
-	if len(principals) > 0 {
-		loadPrincipal(0)
-	}
+	loadPrincipal(0)
 
 	permGrid.OnActivateCell = func(row, col int) {
-		if selected < 0 || col != 1 {
+		if col != 1 || row < 0 || row >= len(visiblePerms) {
 			return
 		}
-		edits := editsByPrincipal[principals[selected].Name]
-		if row < 0 || row >= len(edits) {
-			return
-		}
-		edits[row].current = nextPermState(edits[row].current)
-		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(edits))
+		e := visiblePerms[row]
+		e.current = nextPermState(e.current)
+		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
 		permGrid.SetSelectedCell(row, col)
 	}
+
+	principalFilterRow := propsheet.Text("Filter principals", "", 28)
+	principalFilterRow.SetDirtyTracked(false)
+	principalFilterRow.SetOnChange(func(term string) {
+		visible = visible[:0]
+		for _, p := range principals {
+			if matchesFilter(term, p.Name, p.Type) {
+				visible = append(visible, p)
+			}
+		}
+		principalGrid.SetData([]string{"Name", "Type"}, principalRowsFor())
+		// The row that was selected is probably not at the same index (or
+		// present at all) in the new list, so re-select from the top rather
+		// than leave the bottom grid describing a principal that scrolled
+		// out from under the cursor.
+		selected = -1
+		principalGrid.SetSelectedRow(0)
+		loadPrincipal(0)
+	})
+
+	permFilterRow := propsheet.Text("Filter permissions", "", 28)
+	permFilterRow.SetDirtyTracked(false)
+	permFilterRow.SetOnChange(func(term string) {
+		permFilter = term
+		if selectedEdits != nil {
+			permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
+			permGrid.SetSelectedRow(0)
+		}
+	})
 
 	principalsRow := propsheet.NewGridRow(principalGrid, principalsHeight)
 	permsRow := propsheet.NewGridRow(permGrid, permsHeight)
@@ -160,35 +209,30 @@ func buildPermissionsMatrix(
 				e.current = e.orig
 			}
 		}
-		if selected >= 0 {
-			permGrid.SetData([]string{"Permission", "State"}, permRowsFor(editsByPrincipal[principals[selected].Name]))
+		if selectedEdits != nil {
+			permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
 		}
 	}
 
 	f := propsheet.NewForm(
 		propsheet.Section("Principals"),
+		principalFilterRow,
 		principalsRow,
 		permSection,
+		permFilterRow,
 		permsRow,
-		propsheet.Note("Space/Enter (or click) on State cycles Grant → Deny → (none). Tab switches between the principal list and its permissions."),
+		propsheet.Note(permStateCycleNote+" Tab switches between the principal list and its permissions. The filter boxes narrow each grid as you type; a hidden row keeps whatever edit it already had."),
 	)
 
 	apply := func(ctx context.Context) error {
-		for _, edits := range editsByPrincipal {
-			for _, e := range edits {
-				if e.current == e.orig {
-					continue
-				}
-				var err error
-				switch e.current {
-				case "GRANT":
-					err = grantFn(ctx, e.entry.Permission, e.entry.Principal)
-				case "DENY":
-					err = denyFn(ctx, e.entry.Permission, e.entry.Principal)
-				case "":
-					err = revokeFn(ctx, e.entry.Permission, e.entry.Principal)
-				}
-				if err != nil {
+		// Walked over principals, not over editsByPrincipal: ranging a map
+		// picks a different order every run, so which statements landed before
+		// a mid-apply failure isn't reproducible and Script Changes reorders
+		// its output between presses. editsFor is only ever called with a
+		// principal from this slice, so nothing is missed.
+		for _, p := range principals {
+			for _, e := range editsByPrincipal[p.Name] {
+				if err := applyPermEdit(ctx, applyFn, e, e.entry.Principal); err != nil {
 					return err
 				}
 			}
@@ -230,9 +274,19 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				edits[i] = &permEdit{entry: entry, orig: state, current: state}
 			}
 
+			// visible maps the grid's row indices onto edits, which stays
+			// indexed by the full catalog however the filter is set.
+			filter := ""
+			var visible []*permEdit
 			rowsFor := func() [][]string {
-				rows := make([][]string, len(edits))
-				for i, e := range edits {
+				visible = visible[:0]
+				for _, e := range edits {
+					if matchesFilter(filter, e.entry.Permission) {
+						visible = append(visible, e)
+					}
+				}
+				rows := make([][]string, len(visible))
+				for i, e := range visible {
 					rows[i] = []string{e.entry.Permission, displayPermState(e.current)}
 				}
 				return rows
@@ -241,13 +295,21 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 			grid.SetData([]string{"Permission", "State"}, rowsFor())
 			grid.SetCellCursor(true)
 			grid.OnActivateCell = func(row, col int) {
-				if col != 1 || row < 0 || row >= len(edits) {
+				if col != 1 || row < 0 || row >= len(visible) {
 					return
 				}
-				edits[row].current = nextPermState(edits[row].current)
+				visible[row].current = nextPermState(visible[row].current)
 				grid.SetData([]string{"Permission", "State"}, rowsFor())
 				grid.SetSelectedCell(row, col)
 			}
+
+			filterRow := propsheet.Text("Filter permissions", "", 28)
+			filterRow.SetDirtyTracked(false)
+			filterRow.SetOnChange(func(term string) {
+				filter = term
+				grid.SetData([]string{"Permission", "State"}, rowsFor())
+				grid.SetSelectedRow(0)
+			})
 
 			gridRow := propsheet.NewGridRow(grid, 12)
 			gridRow.DirtyFn = func() bool {
@@ -267,25 +329,15 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 
 			f := propsheet.NewForm(
 				propsheet.Section("Explicit server-level permissions"),
+				filterRow,
 				gridRow,
-				propsheet.Note("Space/Enter (or click) on State cycles Grant → Deny → (none). Database and endpoint securables aren't modeled here yet."),
+				propsheet.Note(permStateCycleNote+" The filter box narrows the list as you type. Database and endpoint securables aren't modeled here yet."),
 			)
 
+			applyFn := serverPermApply(sc.Server)
 			apply := func(ctx context.Context) error {
 				for _, e := range edits {
-					if e.current == e.orig {
-						continue
-					}
-					var err error
-					switch e.current {
-					case "GRANT":
-						err = sc.Server.GrantServerPermissionContext(ctx, e.entry.Permission, principalName)
-					case "DENY":
-						err = sc.Server.DenyServerPermissionContext(ctx, e.entry.Permission, principalName)
-					case "":
-						err = sc.Server.RevokeServerPermissionContext(ctx, e.entry.Permission, principalName)
-					}
-					if err != nil {
+					if err := applyPermEdit(ctx, applyFn, e, principalName); err != nil {
 						return err
 					}
 				}

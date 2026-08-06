@@ -70,6 +70,13 @@ type BackupDialog struct {
 	// has been re-shown.
 	loadSeq int
 
+	// dragField is the input field that claimed the current Button1
+	// gesture, nil between gestures. Motion goes to it wherever the pointer
+	// is, so dragging a selection out of the field's rect keeps extending it
+	// instead of freezing at the boundary — the hit test below it is what
+	// used to stop the drag dead. Same idiom as FindReplaceDialog.
+	dragField *widgets.InputField
+
 	// task is the running (or finished) backup the progress view renders,
 	// with its display strings frozen at start time.
 	task     *Task
@@ -119,6 +126,9 @@ func (d *BackupDialog) show(sc *db.ServerConn, dbName string) {
 
 	d.rebuildFocusable()
 	d.ModalDialog.Show()
+	// A latch must not survive into the next showing: a dialog dismissed
+	// mid-drag would otherwise reopen still routing every click to that field.
+	d.dragField = nil
 	d.setFocus(0)
 	d.loadDatabases()
 }

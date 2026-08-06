@@ -174,7 +174,8 @@ type Config struct {
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell displays
-// before truncating to an ellipsis, absent an Options dialog override —
+// before truncating to an ellipsis *by default* — a column dragged wider by
+// its separator shows more — absent an Options dialog override;
 // Load applies it to a zero (unset, or predating this field) MaxCellLength
 // so every other reader of *Config always sees a usable value.
 const DefaultMaxCellLength = 24

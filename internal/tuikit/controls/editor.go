@@ -206,6 +206,11 @@ type Editor struct {
 	// completionMouseDown — see Editor's own sbDragging for why this is a
 	// separate flag from the click-tracking one above.
 	completionSbDragging bool
+
+	// search holds the active find/replace pattern and its match list — see
+	// editor_search.go. Zero value means no search, which is every Editor
+	// until SetSearch is called on it.
+	search editorSearch
 }
 
 // NewEditor creates an Editor. Pass a Highlighter or nil.

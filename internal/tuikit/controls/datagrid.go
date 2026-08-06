@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"time"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -35,9 +37,22 @@ const colWidthSampleRows = 200
 
 // defaultMaxCellWidth is the column-width cap used when a grid doesn't opt
 // into a configurable one via SetMaxCellWidth (e.g. property-page grids —
-// only the query-results grid ties this to the Options dialog's "max cell
-// length" setting).
+// only the query-results grid ties this to the Options dialog's "max
+// default cell length" setting). It bounds the width a column is *given*,
+// not the width it may have: a separator drag can widen a column past it
+// (see colWidthOverride).
 const defaultMaxCellWidth = 40
+
+// minResizeWidth is the narrowest a column can be dragged to — one column
+// of padding on each side of the text plus the separator, so anything
+// below this leaves no room for content at all.
+const minResizeWidth = 4
+
+// resizeDoubleClickInterval is how close together two presses on the same
+// separator must fall to count as the double-click that restores a
+// column's default width. tcell reports presses, not clicks, so the timing
+// is done here (see sepPressIsDouble).
+const resizeDoubleClickInterval = 500 * time.Millisecond
 
 // cellViewerW and cellViewerLines size the built-in "full cell content"
 // popup (see openViewer/DrawOverlay): a fixed-width box showing a
@@ -116,6 +131,24 @@ type DataGrid struct {
 	// through to row/cell hit-testing.
 	sbDragging bool
 
+	// colResizing latches a column-separator drag (see resizeDrag) for the
+	// rest of the gesture, the same way sbDragging does for the scrollbar:
+	// once started, every Button1 event belongs to the resize regardless of
+	// where the pointer has drifted to. resizeStartX/W record the grab
+	// point and the column's width there, so each motion event resolves
+	// against the original grab instead of accumulating from the last one.
+	colResizing  bool
+	resizeCol    int
+	resizeStartX int
+	resizeStartW int
+
+	// lastSepPressCol/lastSepPressAt time consecutive presses on the same
+	// separator, which is how the double-click that restores a column's
+	// default width is recognised (see sepPressIsDouble). -1 means "no
+	// press yet".
+	lastSepPressCol int
+	lastSepPressAt  time.Time
+
 	// sbDraggingH is sbDragging's counterpart for the horizontal scrollbar
 	// drawn along the status row (see hScrollbar) — a separate latch for the
 	// same reason, the two bars occupying different edges of the grid.
@@ -138,6 +171,14 @@ type DataGrid struct {
 	// maxCellWidth overrides defaultMaxCellWidth for computeColWidths's
 	// upper clamp (see SetMaxCellWidth); 0 means "use the default".
 	maxCellWidth int
+
+	// colWidthOverride holds the width each column was last dragged to by
+	// its right-hand separator, or 0 for "use the computed default". These
+	// survive computeColWidths — a resized column keeps its width across a
+	// bounds change or a progressive backfill's RefreshColumnWidths — and
+	// deliberately bypass maxCellWidthOrDefault, which caps the width a
+	// column is *given*, not the width the user may drag it to.
+	colWidthOverride []int
 
 	// fillLastColumn stretches the last column past its content-based width
 	// (and past maxCellWidthOrDefault's clamp) to consume the rect's full
@@ -201,7 +242,7 @@ type DataGrid struct {
 
 // NewDataGrid creates a DataGrid.
 func NewDataGrid() *DataGrid {
-	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil)})
+	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1})
 }
 
 // SetBounds positions the grid. Recomputes column widths so a resize keeps
@@ -227,6 +268,9 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	// The widths were dragged for a different set of columns; column 2 of
+	// the next result set has nothing to do with column 2 of this one.
+	g.colWidthOverride, g.colResizing = nil, false
 	// The viewer was showing a cell of the data being replaced, and only
 	// Escape or its Close button dismiss it — so leaving it open here
 	// would strand a popup over stale text that still claims every key
@@ -260,6 +304,7 @@ func (g *DataGrid) SetError(err error) {
 	g.colWidths = []int{g.rect.W - 2}
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	g.colWidthOverride, g.colResizing = nil, false
 	// The viewer was showing a cell of the data being replaced, and only
 	// Escape or its Close button dismiss it — so leaving it open here
 	// would strand a popup over stale text that still claims every key
@@ -356,10 +401,12 @@ func (g *DataGrid) CellCursorEnabled() bool { return g.cellCursor }
 func (g *DataGrid) SetRowNumbers(v bool) { g.showRowNumbers = v }
 
 // SetMaxCellWidth overrides the upper bound computeColWidths clamps every
-// column to (defaultMaxCellWidth otherwise). n is a display-column count
-// that already includes the 1-column padding on each side of a cell's text
-// — a caller wanting a maxCellLength-character content cap should pass
-// maxCellLength+2. n <= 0 restores the default.
+// column's *default* width to (defaultMaxCellWidth otherwise) — a cap on
+// how wide content alone may make a column, not on the column: dragging a
+// separator widens it past this freely (see colWidthOverride). n is a
+// display-column count that already includes the 1-column padding on each
+// side of a cell's text — a caller wanting a maxCellLength-character
+// content cap should pass maxCellLength+2. n <= 0 restores the default.
 func (g *DataGrid) SetMaxCellWidth(n int) { g.maxCellWidth = n }
 
 // SetFillLastColumn enables or disables stretching the last column to fill
@@ -414,10 +461,59 @@ func (g *DataGrid) computeColWidths() {
 	maxW := g.maxCellWidthOrDefault()
 	for i := range g.colWidths {
 		g.colWidths[i] = core.Clamp(g.colWidths[i], 6, maxW)
+		if w := g.overrideWidth(i); w > 0 {
+			g.colWidths[i] = w
+		}
 	}
-	if g.fillLastColumn && len(g.colWidths) > 0 {
+	// A last column the user has dragged to a width of their own keeps it —
+	// stretching it back out to the rect would make the drag look ignored.
+	if g.fillLastColumn && len(g.colWidths) > 0 && g.overrideWidth(len(g.colWidths)-1) == 0 {
 		g.growLastColumnToFill()
 	}
+}
+
+// overrideWidth returns column i's user-dragged width, or 0 if it has none.
+func (g *DataGrid) overrideWidth(i int) int {
+	if i < 0 || i >= len(g.colWidthOverride) {
+		return 0
+	}
+	return g.colWidthOverride[i]
+}
+
+// setOverrideWidth records column i's dragged width (0 clears it), growing
+// the override slice on demand so it always matches the column count.
+func (g *DataGrid) setOverrideWidth(i, w int) {
+	if i < 0 || i >= len(g.colWidths) {
+		return
+	}
+	for len(g.colWidthOverride) < len(g.colWidths) {
+		g.colWidthOverride = append(g.colWidthOverride, 0)
+	}
+	g.colWidthOverride[i] = w
+}
+
+// SetColumnWidth sets column i's width explicitly, as a separator drag
+// would — bypassing the max-default clamp and surviving later recomputes
+// (see colWidthOverride). w <= 0 restores the computed default.
+func (g *DataGrid) SetColumnWidth(i, w int) {
+	if i < 0 || i >= len(g.colWidths) {
+		return
+	}
+	if w > 0 {
+		g.setOverrideWidth(i, core.Max(w, minResizeWidth))
+	} else {
+		g.setOverrideWidth(i, 0)
+	}
+	g.computeColWidths()
+}
+
+// ColumnWidth returns column i's current on-screen width, or 0 if i isn't a
+// column.
+func (g *DataGrid) ColumnWidth(i int) int {
+	if i < 0 || i >= len(g.colWidths) {
+		return 0
+	}
+	return g.colWidths[i]
 }
 
 // growLastColumnToFill widens the last column to consume whatever width is

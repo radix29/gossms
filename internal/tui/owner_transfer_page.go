@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -85,6 +86,24 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		detailStatics[i] = propsheet.Static(label, "")
 	}
 	transferRow := propsheet.Select("Transfer owner to", owners, 0)
+	// The warning SSMS puts in a modal before an ownership change. It is a
+	// row rather than a modal because the change is not issued here — it is
+	// staged until Apply/OK, so there is no point at which a blocking prompt
+	// would be answering "do it now?".
+	warnRow := propsheet.Hint()
+	refreshWarning := func() {
+		var pending int
+		for _, it := range items {
+			if it.newOwner != it.origOwner {
+				pending++
+			}
+		}
+		if pending == 0 {
+			warnRow.Clear()
+			return
+		}
+		warnRow.Set(fmt.Sprintf("%d ownership change(s) pending. Transferring ownership gives the new owner full control of the object and can revoke permissions that flowed from the old owner. Applied on OK/Apply.", pending))
+	}
 
 	// selected is the grid row whose edit transferRow currently holds, so a
 	// move to another row can write the old one back first.
@@ -92,6 +111,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 	commitCurrent := func() {
 		if selected >= 0 && selected < len(items) {
 			items[selected].newOwner = transferRow.Value()
+			refreshWarning()
 		}
 	}
 	syncFromSelection := func(row int) {
@@ -115,6 +135,12 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		}
 		transferRow.SetSelected(indexOf(owners, it.newOwner))
 	}
+	// Staying on the row and changing the dropdown must update the warning
+	// too, not only moving off it.
+	transferRow.SetOnChange(func(string) {
+		commitCurrent()
+		grid.SetData(spec.Headers, rowsFor())
+	})
 	grid.OnSelectRow = syncFromSelection
 	if len(items) > 0 {
 		syncFromSelection(0)
@@ -140,6 +166,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		if selected >= 0 && selected < len(items) {
 			transferRow.SetSelected(indexOf(owners, items[selected].newOwner))
 		}
+		refreshWarning()
 	}
 
 	rows := []propsheet.Row{
@@ -151,7 +178,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 	for _, s := range detailStatics {
 		rows = append(rows, s)
 	}
-	rows = append(rows, transferRow, propsheet.Note(spec.Note))
+	rows = append(rows, transferRow, warnRow, propsheet.Note(spec.Note))
 
 	apply := func(ctx context.Context) error {
 		commitCurrent()

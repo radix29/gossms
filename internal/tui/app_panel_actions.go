@@ -401,7 +401,7 @@ func (a *App) showObjectExplorerDetails() {
 	})
 	if idx < 0 {
 		a.detailBrowser = NewDetailBrowser("Object Explorer Details")
-		a.detailBrowser.OnRefresh = a.refreshSelected
+		a.detailBrowser.OnRefresh = func() { a.detailBrowser.RefreshCurrent(a) }
 		idx = a.panels.AddPanel(a.detailBrowser)
 	}
 	a.panels.SetActive(idx)
@@ -536,7 +536,7 @@ func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
 		return
 	}
 	a.propDialog.show(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
-		loginPropPages(sc, loginName))
+		loginPropPages(a.propDialog, sc, loginName))
 }
 
 // showTablePropertiesFor opens Table Properties for a known connection,
@@ -606,7 +606,7 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 		return
 	}
 	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
-		rolePropPages(sc, dbName, roleName))
+		rolePropPages(a.propDialog, sc, dbName, roleName))
 }
 
 // showServerRolePropertiesFor opens Server Role Properties for a known
@@ -629,7 +629,7 @@ func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) 
 		return
 	}
 	a.propDialog.show(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
-		userPropPages(sc, dbName, userName))
+		userPropPages(a.propDialog, sc, dbName, userName))
 }
 
 // showSchemaPropertiesFor opens Schema Properties for a known connection,

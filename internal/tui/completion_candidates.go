@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -21,16 +22,16 @@ import (
 // consulted too, so an alias/bare-name over a "sys.xxx" reference (e.g.
 // "FROM sys.objects o") resolves its columns the same way a user table
 // would.
-func resolveQualifierToObject(inv, sysInv *completionInventory, refs []fromRef, qualifier string) *gosmo.CatalogObject {
+func resolveQualifierToObject(inv, sysInv *completionInventory, refs []sqlparse.FromRef, qualifier string) *gosmo.CatalogObject {
 	ql := strings.ToLower(qualifier)
 	for _, ref := range refs {
-		if ref.alias != "" && strings.ToLower(ref.alias) == ql {
-			return findCatalogObject(inv, sysInv, ref.schema, ref.name)
+		if ref.Alias != "" && strings.ToLower(ref.Alias) == ql {
+			return findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
 		}
 	}
 	for _, ref := range refs {
-		if ref.alias == "" && strings.ToLower(ref.name) == ql {
-			return findCatalogObject(inv, sysInv, ref.schema, ref.name)
+		if ref.Alias == "" && strings.ToLower(ref.Name) == ql {
+			return findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
 		}
 	}
 	return findCatalogObjectByName(inv, sysInv, qualifier)
@@ -75,7 +76,7 @@ func findCatalogObjectByName(inv, sysInv *completionInventory, name string) *gos
 // schema name in the sys-schema inventory ("sys" being the only one that
 // ever matters there). Nothing matching returns nil, closing the popup
 // rather than showing something wrong.
-func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, refs []fromRef, qualifier, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, refs []sqlparse.FromRef, qualifier, prefix string) []controls.CompletionItem {
 	if obj := resolveQualifierToObject(inv, sysInv, refs, qualifier); obj != nil {
 		return p.columnItemsFor(obj, prefix)
 	}
@@ -179,13 +180,13 @@ func (p *QueryPanel) columnItemsFor(obj *gosmo.CatalogObject, prefix string) []c
 // table shows once) plus each ref's alias/table name itself, so typing
 // "c." after "c" was just offered still works — the unqualified SELECT/
 // WHERE/ON/GROUP BY/ORDER BY/HAVING/SET context.
-func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, refs []fromRef, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, refs []sqlparse.FromRef, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	seenCol := make(map[string]bool)
 	seenRef := make(map[string]bool)
 	for _, ref := range refs {
-		obj := findCatalogObject(inv, sysInv, ref.schema, ref.name)
+		obj := findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
 		if obj != nil {
 			for _, col := range obj.Columns {
 				key := strings.ToLower(col.Name)
@@ -193,9 +194,9 @@ func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, re
 					continue
 				}
 				seenCol[key] = true
-				qname := ref.alias
+				qname := ref.Alias
 				if qname == "" {
-					qname = ref.name
+					qname = ref.Name
 				}
 				items = append(items, controls.CompletionItem{
 					Text: bracketIfNeeded(col.Name), Label: col.Name,
@@ -203,9 +204,9 @@ func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, re
 				})
 			}
 		}
-		qname := ref.alias
+		qname := ref.Alias
 		if qname == "" {
-			qname = ref.name
+			qname = ref.Name
 		}
 		qkey := strings.ToLower(qname)
 		if qname == "" || seenRef[qkey] || !strings.HasPrefix(qkey, pl) {
@@ -302,7 +303,7 @@ var regularIdentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // committed candidate never silently changes what it names by needing
 // quoting SQL Server would otherwise require.
 func bracketIfNeeded(name string) string {
-	if regularIdentPattern.MatchString(name) && !isSQLKeyword(strings.ToUpper(name)) {
+	if regularIdentPattern.MatchString(name) && !sqlparse.IsKeyword(strings.ToUpper(name)) {
 		return name
 	}
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"

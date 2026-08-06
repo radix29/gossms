@@ -5941,3 +5941,1070 @@ create a procedure **with parameters** through gosmo. The examples work
 around it with parameterless procedures and demonstrate `ExecProc`'s
 In/Out/InOut against `sp_executesql`. Adding a parameter list is a gosmo API
 decision left to the author.
+
+---
+
+## 2026-08-05 — Permissions gap-fill: WITH GRANT OPTION, effective, column-level
+
+`permissions-gapfill-2026-08-05`
+
+Five items sat under `open-threads.md`'s "Deferred scope (repeatedly,
+deliberately)" heading — re-deferred on every properties pass since the
+dialogs were built. All five shipped in one sitting, plus two smaller
+carried-forward threads.
+
+### gosmo
+
+Three new files, no existing signature touched (the library rule):
+
+- `permission_options.go` — `PermissionOptions{WithGrantOption, Cascade,
+  GrantOptionOnly}` and twelve `...WithOptions` method pairs across object,
+  schema, database and server scope, all rendering through one
+  `permissionStmt.render`. The zero value renders byte-identically to the
+  plain trio, which is what lets the UI take one path for every state; a test
+  pins that equivalence at four scopes. A modifier the verb has no form for
+  (WITH GRANT OPTION on a DENY) is an error rather than a silently dropped
+  field.
+- `column_permission.go` — `ColumnPermissions`, `ColumnPermissionsForPrincipal`,
+  the grant/deny/revoke trio taking a `[]string` of columns, and
+  `ColumnPermissionNames()` (SELECT/UPDATE/REFERENCES only — `GRANT DELETE
+  (col)` is a syntax error). An empty column list is refused rather than
+  quietly widening into an object-level grant.
+- `effective_permission.go` — `fn_my_permissions` under `EXECUTE AS` for
+  database, object and schema scope, plus `EXECUTE AS LOGIN` for server
+  scope. The impersonation has to be in the same batch as the SELECT
+  (`fn_my_permissions` only ever answers for the current execution context),
+  which `Database.query`'s pinned connection makes safe.
+
+Six matching `*Seq` iterators, and the README feature map + class diagram +
+byte-identical `gosmo.mermaid` copy updated.
+
+### gossms
+
+- `internal/tui/perm_state.go` is the new shared layer: a four-state cycle
+  (none → Grant → Grant With Grant → Deny), and `permTransition(orig,
+  current)` deciding the modifiers from the *pair* of states. That pairing is
+  the load-bearing part — SQL Server refuses to revoke or deny a permission
+  granted WITH GRANT OPTION unless CASCADE is present, so every transition out
+  of Grant With Grant carries it, and the Grant With Grant → Grant step is a
+  `REVOKE GRANT OPTION FOR ... CASCADE` rather than a re-GRANT (a re-GRANT
+  leaves the grant option standing and changes nothing).
+- Both permission matrices took a single `permApplyFn` in place of the
+  grant/deny/revoke triple — a three-way split has nowhere to put a decision
+  that depends on two states.
+- Filter boxes on every securables/permissions grid, live as you type. Needed
+  `TextRow.SetOnChange` in tuikit, and `SetDirtyTracked(false)`: a filter box
+  is a view control, and left dirty-tracked it made read-only pages report
+  unsaved changes they had no way to save.
+- Column permissions are edited inline on the Securables page rather than
+  behind SSMS's modal, with an explicit "Load Columns" button through
+  `PropDialog.runPageAction` — auto-loading on selection would be a query per
+  arrow-key press.
+- A new Effective Permissions page on all four principal dialogs.
+- The create-dialog picker gap turned out to be New Login's "Default schema",
+  a free-text box whose typo only surfaced as a failed CREATE USER at apply
+  time; now a picker over the selected database's own schemas
+  (`DropDown.SetItems`/`SelectRow.SetItems`). The owner-change warning is a
+  `HintRow` on the owner-transfer pages rather than a modal — the change is
+  staged until Apply, so there is no moment where a blocking "do it now?"
+  prompt would be answering anything.
+
+### Verified live against ubudock
+
+Unit tests do not prove any of the modifier logic. Against a throwaway
+`ClaudeTmpDB` with a `tmpuser` holding `GRANT SELECT ... WITH GRANT OPTION`
+and `GRANT UPDATE (Salary)`:
+
+- the object grant read back as "Grant With Grant" in the grid;
+- cycling it to Deny and hitting Apply succeeded — that is the statement that
+  fails outright without CASCADE, so it is the real test of `permTransition`;
+- Load Columns listed the table's three columns, and cycling one to Grant
+  produced a genuine `sys.database_permissions` row (`UPDATE`/`GRANT`/`Id`);
+- Effective Permissions at object scope returned exactly the two column-level
+  UPDATEs with their column in the Subentity column, and *no* SELECT — the
+  DENY correctly absent rather than listed and overridden.
+
+Database dropped afterward. One harness note worth keeping: the app's own
+pooled connections hold a database open, so `DROP DATABASE` from a query
+panel in the same session fails with "currently in use" — drop it from a
+separate process (`Server.DropDatabase(name, true)`).
+
+### Also closed this sitting
+
+- **Object Explorer Details refresh.** The title-bar button ran
+  `App.refreshSelected` (the *explorer's* selection); it now runs
+  `DetailBrowser.RefreshCurrent`, which re-fetches the node the panel is
+  actually showing. Same node today, correct if the panel ever drills on its
+  own.
+- **`ExecuteToSink` end-to-end coverage.** The old note claimed a fake driver
+  could not reproduce sqlexp's `ReturnMessage` protocol. It can: implement
+  `driver.NamedValueChecker`, intercept the `*ReturnMessage`, and drive it
+  with `ReturnMessageInit`/`ReturnMessageEnqueue` exactly as the sqlexp docs
+  specify. `internal/query/executor_sink_test.go` now pins `Result.Sets`
+  staying empty, `RowsWritten`, the per-set notice, and the `sinkSets`
+  success-notice decision — that last one A/B-verified by reverting it to
+  read `RowsWritten` and watching the test fail. What a fake still cannot
+  reach is `runBatch`'s drain gate (deleting the drain loop still passes), so
+  that one stays a live check and remains recorded in `open-threads.md`.
+
+## 2026-08-05 — `internal/tui/sqlparse`, and the measurement that killed the rest of the split
+
+`sqlparse-extraction-2026-08-05`. Asked to review § 1 of
+`docs/proposals-2026-08-05.md` — the three-step `internal/tui` restructuring —
+in detail before acting on it. The review rejected two of its three steps and
+shipped a fourth thing it had not proposed.
+
+### Re-measuring with types instead of grep
+
+The proposal's numbers all came from `grep -E '\bApp\b'` over the package.
+Re-deriving them from a real cross-file reference graph — `go/types`, package
+loaded with `Defs`/`Uses`, every use edge attributed to its declaring file,
+549 edges — changed the conclusion:
+
+- **The headline "56% of lines never mention `App`" is wrong.** `\bApp\b`
+  does not match `p.app`/`d.app`, the lowercase field. The real number is
+  48% (58 files, 12,618 lines). Nine files are misclassified by it, two of
+  them inside the proposal's own Step 1.
+- **Step 1 was not the "pure lift with no interface needed" it claimed.**
+  The four completion files carry 30 outbound references to 11 symbols —
+  `QueryPanel` ×11 (`completion_candidates.go` is mostly `*QueryPanel`
+  methods), `nodeIcon`/`nodeData`/`Node*`, `p.app.cfg.IconStyle` ×3,
+  `isConnected`, `completionInventory` ×6. And its "densest test suite,
+  travelling unchanged" is `newTestApp()`-based for 811 of its 1,407 lines.
+- **Step 2's "one interface, five methods" is off by ~8×.** 110 outbound
+  references, 44 symbols, 16 files. Six are `App` services; the rest are
+  shared helpers (`formatSQLDate` ×19, `fqn` ×10, `formatHMS`, `dashIfZero`,
+  `intRowValue0`, the agent formatters) sitting in files the rest of `tui`
+  references 146-221 times, which therefore cannot move. It needs a fourth
+  package.
+- **Step 2's benefit already existed.** Five props tests run with zero `App`
+  references today.
+
+The generalisable lesson, and the reason this is written down: **a grep for a
+type name does not measure coupling to that type.** It misses field access,
+it misses methods on types that themselves hold the dependency, and it misses
+transitive reach entirely. Two minutes of `go/types` gave a different answer
+to every number in a document that had already been reviewed and parked.
+
+The other lesson is about the precedent the proposal cited for itself.
+`planview` has no `Host` interface and no callbacks — it is a pure leaf, and
+that is *why* it worked. A proposal that quotes an existing success as
+precedent should be checked for having the same shape as it; Step 2 had the
+opposite shape.
+
+### What actually shipped
+
+The reference graph found one set with **zero** outbound edges — the only one
+in the package: the tokenizer and the scope scanner. Those became
+`internal/tui/sqlparse` (`token.go`, `scope.go`, `doc.go`), 786 lines plus
+596 lines of tests, 16 symbols exported. Worth doing on its own merits, not
+as a probe: a T-SQL lexer has no business in the application shell.
+
+Done to `CLAUDE.md`'s file-split rule — `git mv` first, `sha1sum` all five
+files against their pre-move hashes (all identical), *then* rename
+identifiers with an explicit sed map, and let the compiler find the rest.
+`sqlToken`→`Token`, `scanCompletionPrefix`→`ScanPrefix`,
+`completionTokenContext`→`TokenContext`, and so on; `lexSQL`, `goScan`,
+`lexResult`, `sqlKeywordCanon` stay unexported.
+
+The proof it was behaviour-preserving is the golden file. `TestScanCompletionPrefixGolden`
+sweeps every cursor position in a script corpus; after the move its diff was
+**exactly two lines**, both header text (`scanCompletionPrefix` → `ScanPrefix`
+in the title, and the regeneration command's package path). All 1,560 lines of
+actual scan output were byte-identical. Benchmarks unchanged at 1 alloc/op.
+
+### Live verification
+
+Green tests are not verification, so all of it was driven against ubudock
+under tmux, on the real IntelliSense path:
+
+- `SELECT * FROM dbo.` → schema members (tables and views, correctly iconed)
+- `... FROM dbo.Patients AS p WHERE p.` → alias resolution backwards through
+  `ParseFromScope`
+- `SELECT d. FROM dbo.Doctors AS d`, cursor before the FROM → the forward
+  scan (`StatementEndOffset` + forward tokenize) still resolves the alias
+- `SELECT * FROM dbo.Invoices AS inv` / `-- GO` / `WHERE inv.` → columns
+  offered: a commented-out GO still does not split the batch (this is the
+  shipped bug the lexer's `goScan` comment names)
+- the same with a real `GO` → no popup, alias correctly out of scope
+- `dbo.[Pat` → bracket-identifier completion (the `LexBracket`/`QuoteStart`
+  branch), and `sys.objec` → the sys inventory
+
+### Rejected, and why it is written down rather than left open
+
+Steps 2 and 3 are closed in `open-threads.md` with their measurements, not
+just their verdict — a future review that only sees "120 files, one package"
+will re-propose exactly this, and the four negative results are what stop it
+costing another day. The proposal's own best contribution is one of them:
+the `agent_*`/`new_*`/`*_props_*` name families are not a seam, because they
+cut through the `App` dependency rather than along it.
+
+---
+
+## 2026-08-05 — Find and Replace in the query editor
+
+Ctrl+F / F3 / Shift+F3 / Ctrl+F3, plus Edit > Find.../Replace..., built in
+four layers: a search engine on `controls.Editor`
+(`internal/tuikit/controls/editor_search.go`), a highlighting pass in
+`editor_draw.go`, a modal `FindReplaceDialog`
+(`internal/tui/find_replace_dialog.go`) in two modes, and the app-side key
+and menu wiring.
+
+### Decisions worth keeping
+
+**One engine, not two.** A literal term goes through `regexp.QuoteMeta`,
+whole word wraps it in `\b(?:…)\b`, case-insensitivity prefixes `(?i)`. So
+match iteration, replacement, and the group-reference path have exactly one
+implementation regardless of which options are ticked.
+
+**Matches are per line, in rune indices.** The pattern is applied one
+logical line at a time, so a match can never span a line break — which keeps
+the per-line match list directly usable by the drawing path, and keeps every
+position in the same units (`cursorCol`, selection bounds, `ColorRun.Start`)
+the rest of the editor already uses. `byteRuneIndex` converts the regexp
+engine's byte offsets once per line; a byte offset that reached a selection
+bound would land mid-character on the first non-ASCII line.
+
+**Zero-width matches are dropped at scan time.** `x*`, `^`, `\b` have
+nothing to select or replace, and Find Next would stall on one forever.
+
+**Replace All is one undo step, applied right-to-left per line.** Both are
+pinned by tests: replacing left-to-right with a longer replacement shifts
+the offsets of the matches still to come on the same line, and a per-match
+`pushUndo` would take one Ctrl+Z per occurrence to undo.
+
+**"In selection only" captures the selection at `SetSearch` time**, not at
+`ReplaceAll` time — the first replacement moves the selection, so a range
+read later is already wrong. With the option ticked and nothing selected it
+replaces *nothing* rather than falling back to the whole document.
+
+**The current match is the selection.** The drawing path paints all matches
+in `Palette.EditorMatch` and lets the selection style win in `styleForRune`,
+so the current hit stays distinct without a second "current match" colour or
+a special case in the row renderer.
+
+### Ctrl+H is deliberately unbound
+
+tcell decodes the byte a legacy terminal sends for Ctrl+H (`0x08`) as plain
+`KeyBackspace` with no Ctrl bit — indistinguishable from the Backspace key
+on terminals that send `0x08` for it. Binding it would break Backspace
+there, so Replace is reached through Edit > Replace... or the Find dialog's
+own Replace mode. This was the user's call after the trade-off was laid out.
+
+### Live verification
+
+Driven against ubudock under tmux, not just unit tests: literal and regex
+finds with the match counter tracking (`Match 3 of 4 — line 2, col 24`),
+wrap-around at both ends, F3/Shift+F3 with the dialog closed, Ctrl+F3
+switching the search to the word under the caret (verified by clicking onto
+a *different* word first — plain F3 would have looked identical otherwise),
+Replace then Replace All, both undone by exactly one Ctrl+Z each, "in
+selection only" leaving the unselected line untouched, an invalid regex
+reported in the dialog, and mouse clicks on the checkboxes and buttons.
+
+Two layout bugs only the live run showed: Replace mode's four-button row
+drew over the dialog's own left border at width 56 (now 62), and both modes
+carried a spare blank row.
+
+### Harness note
+
+The Edit menu's Down-count is not stable — `Find Next`/`Find Previous` are
+`Enabled`-gated on there being a search to repeat, and disabled items are
+skipped during menu navigation. Counting Downs from a previous run activated
+`Delete Line` instead of `Replace...`. Verify the highlight per keystroke
+(the `48;2;0;122;204` match) rather than trusting a count, exactly as the
+`ButtonsRow` note in the tmux-testing memory already says.
+
+
+---
+
+## 2026-08-05 — Effective Permissions: roles can't be impersonated, and the server scope needed USE master
+
+`effective-permissions-role-fix-2026-08-05`
+
+Raised by a two-repo review as item A1 of a plan, then confirmed live. The
+Effective Permissions page shipped the sitting before onto "all four principal
+dialogs" (see `permissions-gapfill-2026-08-05`). Two of those four could never
+have worked.
+
+### A role cannot be impersonated, so it has no effective permissions to show
+
+Everything under `gosmo/effective_permission.go` resolves permissions by
+impersonating the principal and asking `fn_my_permissions`, because
+`fn_my_permissions` only ever answers for the *current* execution context —
+there is no principal argument to pass instead. SQL Server refuses to
+impersonate a role, at either scope:
+
+| statement | result |
+|---|---|
+| `EXECUTE AS USER = N'<database user>'` | 3 permissions |
+| `EXECUTE AS USER = N'<database role>'` | **Msg 15517** — "this type of principal cannot be impersonated" |
+| `EXECUTE AS LOGIN = N'<login>'` | 5 permissions |
+| `EXECUTE AS LOGIN = N'<server role>'` | **Msg 15406** — same, server-principal wording |
+
+The error names three possible causes ("does not exist, this type of principal
+cannot be impersonated, or you do not have permission"), which is what makes it
+easy to misread as a missing principal. It isn't: the roles in the A/B plainly
+existed and the connection was `sa`.
+
+So the page is now gone from Database Role Properties and Server Role
+Properties, and both gosmo doc comments — which promised roles outright — say
+user/login. It is not a gap to fill later; there is nothing to fill it with
+short of reimplementing SQL Server's own permission resolution in Go. SSMS
+doesn't offer it for roles either. `rolePropPages` and `serverRolePropPages`
+each carry a comment saying why, so it doesn't get "restored" as an oversight.
+
+Dropping the page left `serverRolePropPages`' `*PropDialog` parameter unused —
+it existed only for that page's `runPageAction` — so it went too.
+
+### The server-scope query needed the USE master prefix
+
+Found while building the A/B, not predicted by the review. `EXECUTE AS LOGIN`
+keeps the session's current database, so `EffectiveServerPermissionsContext`
+failed with **Msg 916** ("The server principal %q is not able to access the
+database %q under the current security context") whenever the pooled
+connection sat in a database the target login has no user in — which is the
+normal case for exactly the restricted logins the page is most useful on.
+
+Reproduced through gosmo itself, same binary, one line changed:
+
+```
+[conn db=master   ] LOGIN -> 5 permissions          [conn db=master   ] LOGIN -> 5 permissions
+[conn db=gossms_a1] LOGIN -> ERROR: mssql: ... Msg  [conn db=gossms_a1] LOGIN -> 5 permissions
+        916 ... not able to access the database
+   (without USE master)                                  (with USE master)
+```
+
+`Server.GrantServerPermissionContext` and every other server-scoped statement
+already carried this prefix for the same reason; the effective-permissions one
+was simply missed. Worth noting the prefix works fine at the head of a *query*
+batch and not just an exec — the `USE` produces an ENVCHANGE, not a rowset, and
+go-mssqldb returns the SELECT's result set unchanged. That was checked rather
+than assumed.
+
+### Verified live against ubudock
+
+Throwaway `gossms_a1` database, `gossms_a1_login`, `gossms_a1_srvrole`,
+`gossms_a1_user`, `gossms_a1_dbrole`; all dropped afterward. Driving the built
+binary under tmux, **connected to `gossms_a1`** so the Msg 916 path was live:
+
+- Server Role Properties — pages are General, Members, Owned Roles,
+  Securables. No Effective Permissions.
+- Database Role Properties — General, Members, Owned Schemas, Owned Roles,
+  Securables, Extended Properties. No Effective Permissions.
+- Login Properties — Effective Permissions still present, and Show reported
+  "5 effective permission(s) for gossms_a1_login" with the rows listed. Before
+  the prefix, that same click was a Msg 916 error.
+
+
+---
+
+## 2026-08-05 — Column permissions were broken end-to-end for views
+
+`column-permissions-views-2026-08-05`
+
+Item A2 of the same two-repo review as `effective-permissions-role-fix-2026-08-05`.
+A view carries column permissions exactly like a table — `GRANT UPDATE (Name)
+ON dbo.SomeView` is legal and `sys.database_permissions` records it as an
+`OBJECT_OR_COLUMN` row with a non-zero `minor_id`, indistinguishable from a
+table's. Nothing on the Securables page handled that.
+
+Two separate failures, one root cause: `ColumnPermissionEntry` reported no
+object type, so gossms had nothing to key on and hardcoded `"TABLE"` in the two
+places it built a `securable` from a column entry.
+
+1. **Existing grants on a view showed as "(none)".** The seed keyed the entry
+   under `TABLE` while the securable list gave the same object `VIEW`, so
+   `columnEditKey` never matched. The grant was there, the grid said it wasn't
+   — and cycling the cell would then have issued a fresh GRANT computed from
+   the wrong `orig`.
+2. **"Load Columns" hard-errored on any view.** It went through
+   `TableByNameContext`, whose query reads `sys.tables`, so it returned
+   `gosmo: table [dbo].[X] not found` for every view.
+
+### gosmo side
+
+- `ColumnPermissionEntry.ObjectType`, selected from `obj.type_desc` in both
+  column-permission queries and mapped through the **existing**
+  `securableObjectTypeNames` (security.go) — deliberately reusing that map
+  rather than adding a second one, so `ObjectType` and
+  `PrincipalSecurable.SecurableType` cannot drift apart. They are keyed
+  against each other by callers.
+- `Database.ObjectColumns`/`ObjectColumnsContext`, resolving through
+  `OBJECT_ID` so it reaches a view. `Table.ColumnsContext`'s query body was
+  extracted to a shared `columnSelect` const plus a `scanColumns` helper;
+  each caller appends its own WHERE, because a `Table` already holds an
+  `object_id` while the Database-scoped form has only a name.
+  `Table.ColumnsContext` keeps its exact signature, results and error string.
+- Zero rows means the object doesn't exist rather than "has no columns" —
+  every table and view has at least one — so that case returns a not-found
+  error instead of an empty slice.
+- `Database.ObjectColumnSeq` in iter.go, keeping the one-Seq-per-listing
+  convention.
+
+The joins that supply identity/computed/default/primary-key data simply do not
+match for a view, so those fields come back zero-valued. Name, ordinal, type,
+length/precision/scale, nullability and collation are all real. Said so on the
+method rather than leaving it to be discovered.
+
+### Verified live against ubudock
+
+Throwaway `gossms_a2` with `dbo.Employee`, `dbo.EmployeeView` over it, and a
+non-owner `gossms_a2_user` (an owner's GRANT is a silent no-op — the trap
+already recorded in the live-test-server notes). One column grant on each:
+`SELECT (Salary)` on the table, `UPDATE (Name)` on the view.
+
+Through gosmo directly:
+
+```
+ColumnPermissionsForPrincipal:  TABLE dbo.Employee     col=Salary SELECT GRANT
+                                VIEW  dbo.EmployeeView col=Name   UPDATE GRANT
+ObjectColumns Employee:      3 columns  Id(int) Name(nvarchar) Salary(money)
+ObjectColumns EmployeeView:  3 columns  Id(int) Name(nvarchar) Salary(money)
+ObjectColumns NoSuchThing:   gosmo: table or view [dbo].[NoSuchThing] not found
+TableByName  EmployeeView:   gosmo: table [dbo].[EmployeeView] not found   <- the old path
+```
+
+That last line is the bug reproducing: it is exactly what Load Columns called.
+
+Then the built binary under tmux, Database User Properties > Securables. Both
+objects are listed off column grants alone (neither has an object-level entry),
+which is the reconstruction path that was hardcoded:
+
+- `[dbo].[Employee] | TABLE` and `[dbo].[EmployeeView] | VIEW` — the view typed
+  correctly rather than as TABLE.
+- Load Columns on the **view** succeeded ("3 columns"), where it previously
+  errored.
+- With UPDATE selected, the view's columns read `Id (none)` / `Name Grant` /
+  `Salary (none)` — the grant found, not "(none)".
+- Regression check on the table: with SELECT selected, `Id (none)` /
+  `Name (none)` / `Salary Grant`.
+
+Database dropped afterward.
+
+## permissions-apply-and-drag-fixes-2026-08-05
+
+Items A3–A6 of the 2026-08-05 two-repo review, in one pass. No commits.
+
+### A3 — apply order and the stale baseline
+
+Both permissions editors ranged a Go map to issue their statements
+(`editsByPrincipal`, `editsBySecurable`, `colEdits`), and neither moved a
+cell's `orig` after the statement succeeded.
+
+Ordering is now a walk of the `principals` / `securables` slice, plus
+`slices.Sorted(maps.Keys(colEdits))` for the column edits. Every map key comes
+from `editsFor(<member of that slice>)`, so the walk is exhaustive.
+
+`commitApplied` (perm_state.go) moves `orig` onto `current` after a successful
+statement, guarded by `!gosmo.Scripting(ctx)` — committing under Script Changes
+would mark the page clean and leave the following real Apply with nothing to
+do, the same trap `commitRename` documents. `applyPermEdit` pairs the two so a
+caller can't do one without the other.
+
+**The plan's stated rationale for A3 was wrong and is corrected here.** It
+claimed re-issuing an already-applied transition is "wrong, not merely
+redundant" because `permTransition` derives `REVOKE GRANT OPTION FOR` and
+`CASCADE` from `orig`. Checked against the live server, every one of those
+statements is idempotent:
+
+```
+seed                                        GRANT_WITH_GRANT_OPTION
+REVOKE GRANT OPTION FOR ... CASCADE   x1    GRANT
+REVOKE GRANT OPTION FOR ... CASCADE   x2    GRANT      <- replay is a no-op
+DENY ... CASCADE                      x1    DENY
+DENY ... CASCADE                      x2    DENY
+REVOKE ... CASCADE                    x2    (no row)
+```
+
+So the replay costs round trips, not correctness. The defect a stale baseline
+*does* cause is the page misreporting server state, and it bites when the user
+undoes an edit that already landed: cell downgraded from Grant With Grant to
+Grant, Apply issues the REVOKE GRANT OPTION FOR and then fails on a later
+cell, user puts the cell back to Grant With Grant and presses Apply — with a
+stale `orig` the cell reads clean, nothing is issued, and the grid claims a
+grant option the server lost. `Dirty()` and `Revert()` are wrong for the same
+reason, both being `orig`-versus-`current` comparisons. That is what
+`TestPermissionsMatrixUndoOfAnAppliedEditIsReissued` pins.
+
+### A4 — a filter matching nothing left the lower grids live
+
+`loadSecurable`/`loadPrincipal` returned early on an out-of-range row, so
+filtering to zero rows left the previous selection's grid on screen and
+editable. Both now call a `clearSelection` that empties the lower grid(s),
+resets the section titles and drops `selectedEdits`. Edits already made are
+kept — only the display is cleared.
+
+Live A/B, Server Properties > Permissions, filter `zzz`:
+
+```
+pre-fix   top grid 0 rows | "Explicit permissions for ##MS_PolicyEventProcessingLogin##", 35 rows
+post-fix  top grid 0 rows | "Explicit permissions", 0 rows
+```
+
+### A5 — TextRow.Revert contradicted its own doc
+
+`SetDirtyTracked(false)` promised "Revert leaves it alone"; `Revert` reverted
+anyway and never fired `onChange`, so `Form.Revert` blanked a filter box while
+the grid it filters stayed narrowed on the old term. Fixed on `TextRow` and on
+`SelectRow`, which had the identical defect and whose `SetDirtyTracked` doc
+points at `TextRow`'s.
+
+### A6 — a drag that leaves the field stops selecting
+
+Two halves. `FindReplaceDialog` hit-tested every `Button1`, so motion outside
+the Find field's rect never reached it; it now has a `dragField` press-owner
+(cleared on the release and on `Show`, invariants 1 and 4). That alone changed
+nothing, because `InputField.HandleMouse` hit-tests too — its own
+`mouseDragging` latch now takes priority, which is the actual mechanism.
+
+Live A/B, press on the field's first cell and drag five rows below it:
+
+```
+pre-fix   [a]bcdefghij     — caret only, no selection; the drag never arrived
+post-fix  [abcde]fghij     — selection extended, SGR bg 48;2;0;122;204
+```
+
+The widget half is general but only reaches hosts that forward off-rect
+motion; every other dialog still hit-tests first. Recorded in
+`docs/open-threads.md` rather than widened here.
+
+### Verification
+
+Unit tests were A/B'd against the pre-fix code rather than just written green.
+Each failed first with the message it was written to produce —
+`TestPermissionsMatrixApplyOrderIsStable` caught map order on run 4 of 20,
+`TestPermissionsMatrixEmptyFilterClearsSelection` caught the stale grid *and*
+the cycle reaching the hidden edit ("issued `GRANT ... [WITH GRANT OPTION]`",
+i.e. it had cycled a cell the page no longer showed).
+
+`gofmt -l`, `go build ./...`, `go vet ./...`, `go test ./...` clean in both
+repos. gosmo untouched this pass. Throwaway database `gossms_a3` dropped,
+confirmed at zero.
+
+## gosmo-legacy-permission-delegation-2026-08-05
+
+Item C1 of the 2026-08-05 review. gosmo had two renderers for the same
+statement: `permissionStmt.render` (permission_options.go) and a hand-rolled
+`fmt.Sprintf` inside each of the twelve plain
+`Grant/Deny/RevokePermission*Context` methods — three each at object, schema,
+database and server scope. `PermissionOptions`' doc already claimed the zero
+value "renders exactly the statement those trios render"; nothing enforced it.
+
+Each of the twelve is now a one-line delegation to its `…WithOptionsContext`
+counterpart with a zero `PermissionOptions`. 84 net lines gone, one renderer,
+and the doc claim is true by construction. No exported signature changed, so
+the gosmo library rule is satisfied — this removes duplication, not
+capability.
+
+### Proving it behaviour-preserving
+
+Two harnesses, because neither alone reaches the whole surface.
+
+`TestLegacyPermissionMethodsRenderAndReject` pins, for all twelve, the exact
+rendered statement (via `gosmo.WithScript`, which captures writes without a
+server) and the exact validation error for an unrecognized permission name.
+Written and run green against the **pre-delegation** code first, so it pins
+existing behaviour rather than the refactor's.
+
+Scripting can't reach the exec-error wrap — under `WithScript` the write
+succeeds. Those needed a real server, calling each scope against an object
+that doesn't exist, captured before and after:
+
+```
+object grant    gosmo: grant SELECT on [dbo].[NoSuchTable] to "NoSuchUser": mssql: Cannot find the object ...
+object revoke   gosmo: revoke SELECT on [dbo].[NoSuchTable] from "NoSuchUser": ...
+schema deny     gosmo: deny UPDATE on schema "NoSuchSchema" to "NoSuchUser": ...
+database grant  gosmo: grant CREATE TABLE to "NoSuchUser" in "master": ...
+server grant    gosmo: grant VIEW SERVER STATE to "NoSuchLogin": ...
+server revoke   gosmo: revoke VIEW SERVER STATE from "NoSuchLogin": ...
+```
+
+`diff before.txt after.txt` — identical. `fromOrTo` reproduces the to/from
+split exactly, and `lower := strings.ToLower(verb)` reproduces each verb's
+lower-cased prefix.
+
+Nothing was created on the server: every call names an object that does not
+exist, so all six failed by design and wrote nothing.
+
+### A note on the older test
+
+`TestZeroPermissionOptionsMatchesPlainStatement` compared the plain and
+WithOptions statements for four pairs. After the delegation both sides run the
+same code, so it can no longer detect two renderers drifting — it now asserts
+the delegation is still in place. Its comment says so, and the literal
+statements moved to the new table test.
+
+## editor-search-draw-optimizations-2026-08-05
+
+B1 and B2 from `docs/proposals-2026-08-05.md` — the two find/replace hot paths,
+both in `internal/tuikit/controls`.
+
+### B1 — `styleForRune` scanned the whole match list per drawn column
+
+`lineRow.styleForRune` ran `for _, m := range r.matches` for every rune it
+styled, so a Draw pass cost `visible columns × matches on that line` per row.
+Searching a common short string in a wide script is exactly that shape.
+
+Replaced with `lineRow.inMatch`, an advancing cursor: `drawLineRow` only ever
+asks for a non-decreasing `i`, and `matches` is sorted and non-overlapping, so
+each match is stepped past once per row. The first lookup binary-searches
+rather than walking from index 0 — a horizontally scrolled row, and every wrap
+segment after the first, starts part-way along the line, and under wrap mode
+everything left of the segment is most of the list. `matchCur`/`matchPrimed`
+are scratch, not caller input, which is why the zero value has to mean *not
+primed*: `lineRow` is built as a composite literal at two call sites and
+neither should have to remember to initialise them.
+
+### B2 — `byteRuneIndex` allocated for every line, ASCII included
+
+`scanMatches` built a `len(line)+1` `[]int` per line per scan to convert the
+regexp engine's byte offsets to rune indices. For a pure-ASCII line — the
+overwhelmingly common case in T-SQL — that map is the identity. It now returns
+`nil` there and the caller uses the byte offset directly. An edit invalidates
+the scan, so this ran once per line of the whole document on the next Draw.
+
+### Measured, `-count 6`, i5-2500K
+
+| benchmark | before | after |
+|---|---|---|
+| `EditorDrawManyMatchesWideLine` | 131 µs/op | 37 µs/op |
+| `EditorDrawManyMatchesWrapped` | 1.31 ms/op | 147 µs/op |
+| `SearchScanASCII` | 36.3 ms, 3.84 MB, 22010 allocs | 32.5 ms, 1.43 MB, 17004 allocs |
+| `SearchScanNonASCII` | 36.4 ms, 4.18 MB, 22009 allocs | 36.5 ms, 4.05 MB, 21509 allocs |
+
+The 5006 allocations `SearchScanASCII` loses are one per line of the 5000-line
+fixture. `SearchScanNonASCII` is unchanged by design; it drops a few hundred
+because some lines of that fixture are still pure ASCII.
+
+### How it was checked
+
+Five style-per-column tests in `editor_matchstyle_test.go`, run green against
+the pre-change code first so they pin existing behaviour: every match on a
+line painted (not just the first), the current match in the selection style
+while the rest stay in the match style, matches under horizontal scroll, every
+segment in wrap mode, and a match spanning wide runes. A `styleScreen` records
+the style of each cell and reads a row back as `m`/`s`/`.`, so these assert the
+resolved style rather than that Draw survived.
+
+B2 splits ASCII and non-ASCII into different code paths, which had no test at
+all before: three added in `editor_search_test.go` cover rune-index bounds on a
+non-ASCII line, a document mixing the two kinds of line (one line's mapping
+must not carry into the next), and a replacement on a non-ASCII line, where
+bounds off by the multi-byte prefix corrupt the text rather than merely
+mis-highlighting it.
+
+Live: connected to ubudock, `SELECT col, col FROM dbo.T; -- col héllo col
+wörld col`, Ctrl+F `col`, Enter, Escape. `capture-pane -p -e` shows the first
+hit on the selection background (`48;2;0;122;204`) and the other four on the
+match background (`48;2;88;76;22`), including both hits that follow a
+multi-byte rune.
+
+## page-action-latch-and-scope-rows-2026-08-06
+
+A7 and C2 from `docs/proposals-2026-08-05.md`.
+
+### A7 — a second click put two round trips in flight
+
+`runPageAction` launches a goroutine and reports back through `d.post`; no
+caller guarded against being clicked again while the first was still out. Two
+goroutines then both write the captured result variable and both fill the same
+grid, so the picture that survives is whichever finished last — which can be
+the older request.
+
+Added `PropDialog.runPageActionOnce(&inFlight, fn, onDone)`, which sets the
+latch on the way in and clears it in the callback. `inFlight` is a plain bool
+because both halves run on the UI goroutine: the click handler, and `onDone`
+via `d.post`. Wired into the two Effective Permissions Show buttons, the
+Securables page's Load Columns, and `asyncStatusButton` — the last had the same
+defect and covers Check Syntax, Rebuild, Reorganize and Update Statistics in
+one place. A blocked click is not a silent no-op: the hint or status row
+already reads "Resolving..." / the busy text from the first one.
+
+Pinned by `prop_dialog_action_test.go`, which plays the event loop's part
+itself — with no screen the wake half of `postAndWake` is a no-op, so the test
+drains `pending` in a loop. It asserts the second click launches nothing, the
+latch clears afterwards, a later click runs, and the latch clears on the error
+path too. Stubbing out the guard fails it with "a second click ran while the
+first was still in flight".
+
+### C2 — the header literal, and rows that do nothing
+
+`effectivePermsCols` hoisted: `SetData` takes the header with the rows, so two
+literals were two things to keep in step.
+
+Schema and Table-or-view are now enabled only for the scope that resolves
+against them, re-synced from the picker's `OnChange`. The `Show` guards stay —
+a row can be enabled and still blank, and dropping live validation to save two
+branches would let a blanked Schema box reach the query.
+
+**That change exposed a real bug and could not ship without fixing it.**
+`TextRow.SetEnabled`'s doc claims a disabled row is "drawn dim", but
+`InputField` had no notion of being disabled: the row merely became
+unfocusable, so it rendered *identically* to a live field while ignoring every
+click — the "click does nothing" failure `CLAUDE.md` § Application rules is
+about. Three shipped callers were already in that state
+(`database_props_scoped_config.go`, `login_props.go`, `server_props.go`), so
+this was not new, but adding a fourth knowingly was not an option.
+
+`InputField` now has `SetEnabled`/`Enabled`. A disabled field drops the input
+background entirely (`theme.StyleInputDisabled`, dialog background + `TextDim`)
+rather than only dimming its text, keeps the unfocused border, paints no
+caret, and refuses keys and clicks — the mouse guard sits *above* the
+`ButtonNone` branch, since a disabled field never latched a press and so has no
+drag to end. `TextRow.SetEnabled` forwards to it, which makes its own doc true
+and fixes the three existing pages as a side effect.
+
+### How it was checked
+
+`TestDisabledInputFieldRefusesInput` covers keys, press, release and
+re-enabling; `TestDisabledInputFieldDrawsDifferently` asserts the two states do
+not render identically, which is the half that was missing before.
+`fieldScreen` now records styles as well as runes.
+
+Live, against ubudock: Database User Properties for `clinic_app_user` →
+Effective Permissions. Under Database scope both lower rows draw on the dialog
+background (`48;2;45;45;48`) with no input background anywhere; switching the
+picker to Table or view brings `48;2;51;51;55` back on both; Schema scope
+brings it back on Schema only. Show still resolves (13 permissions on schema
+dbo), three rapid clicks produce one result, and the button is not wedged
+afterwards.
+
+## securables-server-side-search-2026-08-06
+
+B3 from `docs/proposals-2026-08-05.md`, taken as the server-side option
+rather than the cheap client-side filter.
+
+The Securables page used to call `TablesContext` + `ViewsContext` +
+`SchemasContext` on open and turn the entire result into one dropdown. On a
+database with thousands of tables that is slow to open and useless to pick
+from, and the existing "Filter securables" box only narrowed the *top grid*,
+never the picker.
+
+### gosmo: `Database.FindSecurables`
+
+New `securable_search.go`. `FindSecurablesContext(ctx, SecurableSearch{Name,
+Limit})` is one query over `sys.schemas`/`sys.tables`/`sys.views`, matching
+`Name` case-insensitively as a substring of the *qualified* name — so both
+"ord" and "dbo.ord" find `dbo.Orders` — and ordering schemas, then tables,
+then views, each by qualified name, so a capped search returns a stable
+prefix rather than an arbitrary subset. `SecurableRef` carries only Type,
+Schema and Name: a picker needs the identity, and materialising `Table`/`View`
+values for thousands of candidates is work no caller wants.
+
+`escapeLikePattern` makes the term literal under `ESCAPE '\'`. Identifiers
+legally contain `_` and `%`, and a name containing `[` turns the pattern into
+a character class that matches nothing — the search box would just come up
+empty with no explanation. Verified live against HealthClinic: `_` returns
+only names literally containing an underscore (13), `%` and `[a` return
+nothing, `pat` returns `dbo.Patients` and `dbo.vw_PatientHistory`, `dbo.pat`
+returns only the table, `PAT` matches both regardless of collation.
+
+### gossms: the search box
+
+`buildSecurablesMatrix` takes `candidates []securable` plus a
+`securableFindFn` instead of a fixed `available` list. The page loader runs one
+capped search so the picker has content before anything is typed; a new
+"Search to add" row re-queries as the user types.
+
+**The searches coalesce rather than queue.** At most one is in flight; if the
+term moved on while it was out, the completion starts the next one. A query
+per keystroke puts five round trips behind "Order" *and lets an early one land
+last* — the A/B against an unguarded version shows exactly that, the recorder
+receiving `[ord o]` and the picker ending up repopulated from a term the user
+had already typed past.
+
+`FindSecurables` returns at most `securableSearchLimit+1`; the extra row is how
+the page knows to trim to 200 and say "More than 200 matches — type more to
+narrow the list." A trimmed list that says nothing reads as complete, and the
+user concludes the object does not exist. The database itself is a securable no
+name search returns, so the page offers it whenever the typed term matches its
+label — the same `matchesFilter` the top grid uses.
+
+### How it was checked
+
+Four tests in `securables_search_test.go`, driving a real built form with a
+recording find function: coalescing, the cap and its hint, the database entry
+appearing only when the term matches it, and a failed search reporting through
+the hint while leaving the picker alone (emptying it would read as "no such
+object"). They run under `-race`; the recorder locks, since the find function
+runs on a background goroutine.
+
+Live, against ubudock → HealthClinic → clinic_app_user → Securables: the page
+opens with no catalog load, typing "pat" narrows the picker to the two
+matching objects and drops "(database)", picking the view and clicking Add
+gives it a row typed VIEW with the middle grid switching to its permission
+catalog, and "pazzqt" leaves "(no matches)" with "Nothing on the server matches
+that name."
+
+Note for a future reader: `Database.Tables`/`Views`/`Schemas` are untouched —
+gossms simply no longer calls them from this page. They are library surface,
+not dead code.
+
+## grid-column-resize-2026-08-06
+
+Mouse-resizable `DataGrid` columns, SSMS-style: drag the separator in the
+header row and the column *to its left* changes width; double-click that
+separator and it goes back to the width it was given.
+
+The Options dialog's "Max cell length (Query Results)" is now "Max default
+cell length" — the same number, but it now caps only what `computeColWidths`
+hands a column from its content. A dragged width (`colWidthOverride`) is
+applied after that clamp and ignores it, so a 24-character cap no longer
+means a 60-character value can never be read in the grid.
+
+### What the state has to survive
+
+`computeColWidths` runs far more often than the data changes — every
+`SetBounds`, and every frame after a progressive backfill's
+`RefreshColumnWidths`. So the drag can't just write `colWidths`: it records
+an override and lets the recompute re-apply it, or a window resize would
+silently undo the user's drag. Two consequences fall out of that:
+
+- `SetSource`/`SetError` clear the overrides. Column 2 of the next result set
+  is not column 2 of this one.
+- `growLastColumnToFill` is skipped for a last column that has an override —
+  otherwise the Property/Value detail grids would stretch a deliberately
+  narrowed Value column straight back out.
+
+The drag itself follows the scrollbar's shape exactly: `colResizing` latches
+on the press and every Button1 event belongs to the resize until the release,
+checked ahead of `rect.Contains` so the edge keeps following a pointer that
+has left the grid. `resizeStartX`/`resizeStartW` are the grab point, so each
+motion resolves against the original grab instead of accumulating.
+
+Hit-testing is the header row only. The separator glyph runs down every data
+row, and grabbing it there would eat cell-selection clicks for a
+one-column-wide target the user is unlikely to have aimed at.
+
+tcell reports presses, not clicks, so the double-click is timed here
+(`sepPressIsDouble`, 500ms, same separator). The press that completes a
+double-click still latches `colResizing`: tcell resends Button1 on every
+motion while the button is down, and by then the separator has moved, so
+those resends have to be absorbed by the latch rather than re-entering the
+hit test against a stale position.
+
+### How it was checked
+
+Seven tests in `datagrid_resize_test.go` — widen past the max default, narrow
+down to `minResizeWidth`, survive `SetBounds`/`RefreshColumnWidths` but not
+`SetData`, double-click restore, header-row-only hit testing, the row-number
+gutter's offset, and fill-last-column losing to a drag.
+
+Live against ubudock, driving the built binary under tmux with raw SGR mouse
+sequences: `select name, type_desc, create_date from sys.objects`, dragging
+the `name` separator from column 74 to 100 took the column from 26 to 52 and
+double-clicking it put it back at 26. With a 60-character value and the
+default 24-character max, widening the column showed the whole value —
+`abcdefghij`×6, untruncated — which is the point of the change. Cell
+selection on a data row still worked afterward.
+
+---
+
+## 2026-08-06 — Drag hosts closed, and the drain gate settled live
+
+`drag-hosts-and-live-gate-2026-08-06`
+
+Two open threads closed: the text-selection-drag hosts, and the two
+live-only verifications that had been carried since 2026-07-30.
+
+### The drag hosts
+
+`widgets.InputField` has honoured its own `mouseDragging` latch ahead of its
+`HitTest` since 2026-08-05, so a field extends a selection wherever the
+pointer goes — but only if its host forwards the off-rect motion. Four hosts
+still hit-tested every `Button1` first and got a `dragField` press-owner,
+the same shape `FindReplaceDialog` already had: `connect_dialog.go` (seven
+fields), `backup_dialog_input.go` (`fDest`), `restore_dialog_input.go`
+(`fTarget`/`fFile`), `tuikit/dialogs/file_dialog_input.go`
+(`pathField`/`nameField`).
+
+Placement mattered in two of them. In `file_dialog_input.go` the replay has
+to go *above* `ButtonClicked`, not inside the `Button1` switch below it —
+otherwise a selection drag that wandered over the button row fired the
+button. In `restore_dialog_input.go` the release has to be handled ahead of
+both `ConsumeOutsideClick` and the mode switch, either of which returns
+early and would strand the latch.
+
+**Two of the six hosts the open thread listed did not need fixing**, which
+is the part worth remembering, because the entry had been carried for a day
+naming them:
+
+- `propsheet.Form` gives `Focused()` first refusal of every non-wheel button
+  *before* band routing (`form.go:387`), so a focused `TextRow` already saw
+  off-band motion.
+- `options_dialog.go` calls `fMaxCellLen.HandleMouse` unconditionally — the
+  field self-hit-tests, so the drag worked. It did have a real latch bug,
+  found while checking: its `ButtonNone` reset list covered `rbIconStyle`
+  and `cbIntelliSense` but not `fMaxCellLen`, so a release outside the
+  dialog (eaten by `ConsumeOutsideClick`) left the field armed and it
+  swallowed the next press. One line.
+
+Each new test was A/B'd against the pre-fix code and fails on it — the
+connect and file-dialog ones on `SelectedText()` being empty or the list
+stealing the gesture, the options one on the stranded latch.
+
+### The live gate
+
+`executor_sink_test.go`'s fake driver implements the sqlexp contract but not
+TDS, so deleting `runBatch`'s drain loop still passes it. Both halves of the
+gate were finally run against the real server
+(`internal/query/live_drain_test.go`, build tag `livedb`, skipped without
+`-livedb`):
+
+- **An extra `Next()` past an exhausted set does swallow the pending
+  message — confirmed, and worse than recorded.** The control run saw both
+  result sets and the `PRINT` between them; with one extra `Next()`, the
+  entire second result set never arrived. That is exactly the shipped
+  failure CLAUDE.md forbids reintroducing (empty grid, no error, no Messages
+  tab), now reproducible on demand.
+- **The drain loop after an abandoned set is *not* load-bearing on this
+  server/driver.** Without it, go-mssqldb still advanced past the abandoned
+  set and delivered everything after it. Keep the loop — it is what makes
+  the behaviour independent of a driver detail — but its removal is no
+  longer an unquantified live-only risk.
+
+### ExecProc under WithScript
+
+`gosmo/live_execproc_script_test.go` (same tag) scripts the EXEC form and
+then hands the text to the server the way a user pasting it would. The open
+thread's specific worry was wrong: a `decimal(18,4) OUTPUT` does not get
+`SQL_VARIANT` when the caller passes the natural `*float64` — it gets
+`FLOAT`, the server accepts it, and `1234.5678` round-trips exactly. `INT`,
+`BIGINT`, `NVARCHAR(MAX)`, `FLOAT`, `BIT` and `DATETIME2` all ran and
+round-tripped.
+
+The fallthrough underneath it is a real defect, though: an unmapped pointee
+type gets `DECLARE @v SQL_VARIANT`, and against a decimal OUTPUT the server
+refuses — "Implicit conversion from data type sql_variant to decimal is not
+allowed." The scripted EXEC is handed to the user as text they cannot run.
+Left unfixed and recorded in `docs/open-threads.md`: erroring out of
+`scriptExecProc` for an unmapped pointee is probably right, but it is a
+behaviour change on a published gosmo API and the author's call.
+
+---
+
+## 2026-08-06 — scriptDeclType's SQL_VARIANT gap
+
+`execproc-decltype-fix-2026-08-06`
+
+Follow-on from the live ExecProc check the same day. The first pass reported
+the `SQL_VARIANT` fallthrough as a defect and left it for the author; the
+fix took a different shape than either option offered there, because two
+live probes changed the picture.
+
+### What the probes settled
+
+- **`DECLARE @v SQL_VARIANT` is correct and accepted** against a procedure
+  whose parameter really is `sql_variant`. So erroring out of
+  `scriptExecProc` on the fallthrough — the option that looked right — would
+  have broken the one case the fallthrough exists for. It is a working
+  capability, not a bug.
+- **The destination type that triggered the original report wasn't reachable
+  through gosmo's API anyway.** The probe used a `*struct{X int}`, which the
+  driver rejects on the real RPC path too ("unsupported type ..., a struct"),
+  so the script path emitting bad SQL for it was moot.
+
+Which left the actual question: which destination types are *valid* on the
+RPC path and still fall through to `SQL_VARIANT`? Eleven of them, and they
+are not exotic:
+
+```
+*sql.NullInt64  *sql.NullInt32  *sql.NullInt16  *sql.NullByte
+*sql.NullString *sql.NullBool   *sql.NullFloat64 *sql.NullTime
+*mssql.UniqueIdentifier  *mssql.NullUniqueIdentifier
+```
+
+All accepted by the driver (`rpc=<nil>`), all scripted as `SQL_VARIANT`, all
+refused by the server: *"Implicit conversion from data type sql_variant to
+int / nvarchar / uniqueidentifier / decimal is not allowed."* `sql.Null*` is
+*the* way to receive a nullable OUTPUT parameter, so this was the ordinary
+path, not a corner.
+
+### Why the kind switch missed them
+
+`scriptDeclType` switched on `reflect.Kind`. The `sql.Null*` family and
+`NullUniqueIdentifier` are structs — the `Struct` branch only knew
+`time.Time` — and `UniqueIdentifier` is a `[16]byte` array, which had no
+branch at all. Their Go *kind* cannot give their T-SQL type away, so the fix
+is a type-keyed lookup (`declTypeByName`) consulted ahead of the kind
+switch. Purely additive: the kind switch is untouched and `SQL_VARIANT`
+remains the fallthrough.
+
+`scriptLiteral` needed nothing — it already handles `driver.Valuer`, which
+every `sql.Null*` implements, so the `InOut` seed value was always fine.
+
+### Verification
+
+`script_test.go` pins all eleven mappings plus the two `SQL_VARIANT` cases
+(unmapped struct, non-pointer) in the ordinary suite.
+`live_execproc_script_test.go` (tag `livedb`) runs each scripted `EXEC`
+against a procedure with the matching parameter type, and separately
+confirms `SQL_VARIANT` still binds to a `sql_variant` parameter — the
+regression that widening-instead-of-erroring exists to avoid.
+
+One oddity worth knowing: `*mssql.NullUniqueIdentifier` scripts correctly but
+the *driver* rejects it as an `sql.Out` destination ("Data type 0x00 is
+unknown"). The mapping is kept — the scripted form is right, and the
+limitation is go-mssqldb's.
+
+---
+
+## column-ddl-removal-2026-08-06
+
+Author's call: `Table.AddColumn`/`AddColumnContext` and
+`Table.DropColumn`/`DropColumnContext` removed from gosmo outright, rather
+than left in as the accepted-non-functional pair `docs/open-threads.md` had
+carried since 2026-08-01. `DropColumn` failed on any column an index
+referenced, and the fix was a policy choice (drop dependent indexes, or
+detect and refuse) nobody wanted to make; neither method had a gossms caller
+or a UI path.
+
+This is the standing exception to CLAUDE.md's "never remove a gosmo
+capability" rule — that rule binds *me*, not the author, and the removal was
+directed explicitly.
+
+`AlterColumn` stays, and so does `CreateTable`, which is the only remaining
+user of `ColumnDefinition`'s `IsIdentity`/`IdentitySeed`/`IdentityIncr`/
+`DefaultValue` fields — they are not dead now.
+
+Follow-on edits, all of which named the removed methods:
+
+- `table.go` — `AlterColumn`'s doc comment pointed at "DropColumn/AddColumn"
+  as the way to change a default; now says "the column, or its default
+  constraint", naming no method.
+- `script.go` — `bindScriptArgs`'s comment listed the four parameterised
+  write methods. `Table.DropColumn` was one; three remain (`Index.Rename`,
+  `Database.RenameTable`, `Database.DropTable(cascade=true)`), verified by
+  grepping `@p1` across non-test sources and discarding the read paths.
+- `script_test.go` — dropped the `DropColumn` case from
+  `TestWithScriptBindsParametersIntoTheStatement`. It was the only case
+  covering *two* placeholders in one statement, but `Index.Rename` and
+  `RenameTable` both bind `@p1`+`@p2`, so the coverage is not lost.
+- `table_test.go` — `TestAddColumnRequiresName` deleted; its shared header
+  comment now covers `TestAlterColumnRequiresName` alone.
+- `permission_allowlist_test.go` —
+  `TestAddAndAlterColumnRejectUnknownDataType` is now
+  `TestAlterColumnRejectsUnknownDataType`. The `validDataType` allowlist is
+  still exercised, by `AlterColumn` and `CreateTable`.
+- `README.md` and `gosmo.mermaid` — both carry the same generated `class
+  Table` block; both lost the two method lines, plus the two rows of the
+  Table method table in README.
+
+`CHANGELOG.md`'s v0.0.x entry still names `Table.DropColumn` as one of the
+four methods the script-argument fix repaired. Left alone deliberately: it
+records what was true of a released version.
+
+Verified: `gofmt -l`, `go vet ./...`, `go test ./...` clean in gosmo; gossms
+builds and its full suite passes against the local checkout through the
+active `replace`.
+
+`docs/open-threads.md` compacted in the same pass — 245 lines to ~135. Both
+column-DDL entries removed, the closed `ExecProc` line removed (the fix is
+recorded in `execproc-decltype-fix-2026-08-06` above), the closed
+text-selection-drag paragraph removed, and the now-empty "Follow-ons from the
+2026-07-30 two-repo review" and "Left open by the second review" headings
+folded away. Activity Monitor had two entries (a stub section and an unbuilt
+feature) and is now one. The `formatValue` `float32` note and the `USE
+master;` finding moved into "By design — do not re-raise", where they always
+belonged: both are do-not-re-raise records, not open work.

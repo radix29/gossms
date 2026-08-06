@@ -31,6 +31,10 @@ type InputField struct {
 	selecting     bool
 	selAnchor     int
 	mouseDragging bool
+
+	// disabled fields refuse input and draw greyed out. The zero value is
+	// enabled, so every existing construction site stays as it was.
+	disabled bool
 }
 
 // NewInputField creates an InputField with an optional inline label.
@@ -78,6 +82,16 @@ func (f *InputField) SetValue(v string) {
 
 // Focus sets the focused state.
 func (f *InputField) Focus(v bool) { f.focused = v }
+
+// SetEnabled toggles whether the field accepts input. A disabled field draws
+// greyed out and refuses keys and clicks — both halves matter: one that only
+// stopped accepting input would look exactly like a live field that ignores
+// the user, which is the "click does nothing" failure a page is supposed to
+// make impossible.
+func (f *InputField) SetEnabled(v bool) { f.disabled = !v }
+
+// Enabled reports whether the field accepts input.
+func (f *InputField) Enabled() bool { return !f.disabled }
 
 // HasSelection reports whether there is a non-empty active selection.
 func (f *InputField) HasSelection() bool {
@@ -174,12 +188,16 @@ func (f *InputField) inputX() int {
 func (f *InputField) Draw(s tcell.Screen) {
 	p := theme.Active()
 	if f.label != "" {
-		labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+		labelFg := p.Text
+		if f.disabled {
+			labelFg = p.TextDim
+		}
+		labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(labelFg)
 		core.DrawText(s, f.rect.X, f.rect.Y, labelStyle, f.label)
 	}
 	ix := f.inputX()
 	borderColor := p.InputBorder
-	if f.focused {
+	if f.focused && !f.disabled {
 		borderColor = p.InputFocused
 	}
 	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(borderColor)
@@ -188,6 +206,9 @@ func (f *InputField) Draw(s tcell.Screen) {
 
 	runes := f.displayRunes()
 	inputStyle := theme.StyleInput()
+	if f.disabled {
+		inputStyle = theme.StyleInputDisabled()
+	}
 	selStyle := theme.StyleSelected()
 	cursorStyle := tcell.StyleDefault.Background(p.BorderActive).Foreground(color.White)
 	hasSel := f.HasSelection()
@@ -197,7 +218,7 @@ func (f *InputField) Draw(s tcell.Screen) {
 	}
 
 	styleFor := func(i int) tcell.Style {
-		if f.focused && i == f.cursor {
+		if f.focused && !f.disabled && i == f.cursor {
 			return cursorStyle
 		}
 		if hasSel && i >= selStart && i < selEnd {
@@ -275,7 +296,7 @@ func (f *InputField) displayRunes() []rune {
 // so a caller like propsheet.Form can fall through to focus-cycling
 // instead of the field silently swallowing the key.
 func (f *InputField) HandleKey(ev *tcell.EventKey) bool {
-	if !f.focused {
+	if !f.focused || f.disabled {
 		return false
 	}
 	hadSelection := f.HasSelection()
@@ -386,12 +407,23 @@ func (f *InputField) deleteWordRight() {
 
 // HandleMouse handles click-to-position and click-and-drag text selection.
 func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
+	// Refused before the release branch: a disabled field never latched a
+	// press, so it has no drag to end.
+	if f.disabled {
+		return false
+	}
 	if ev.Buttons() == tcell.ButtonNone {
 		wasDragging := f.mouseDragging
 		f.mouseDragging = false
 		return wasDragging
 	}
-	if !f.HitTest(ev.Position()) {
+	// Once the press is latched the gesture is this field's until the
+	// release, so motion is consumed wherever the pointer went. Hit-testing
+	// it instead froze the selection the moment the pointer left the box —
+	// dragging past the end of a term stopped extending it. Only reachable
+	// when the host forwards off-rect motion here; one that routes purely by
+	// position never produces the event.
+	if !f.mouseDragging && !f.HitTest(ev.Position()) {
 		return false
 	}
 	if ev.Buttons() != tcell.Button1 {

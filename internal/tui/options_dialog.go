@@ -46,7 +46,7 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	}
 	d.rbIconStyle = widgets.NewRadioBox("Object Explorer Icons:", labels)
 
-	d.fMaxCellLen = widgets.NewInputField("Max cell length (Query Results):", 5, false)
+	d.fMaxCellLen = widgets.NewInputField("Max default cell length:", 5, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	return d
 }
@@ -181,6 +181,7 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		d.rbIconStyle.HandleMouse(ev)
 		d.cbIntelliSense.HandleMouse(ev)
+		d.fMaxCellLen.HandleMouse(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true

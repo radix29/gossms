@@ -17,6 +17,11 @@ import (
 type nloginDBRoles struct {
 	dbName    string
 	roleNames []string
+
+	// schemaNames is the database's schemas, for the Default schema picker
+	// on the User Mapping page — a schema that does not exist there fails
+	// the CREATE USER at apply time, which is what a free-text box invited.
+	schemaNames []string
 }
 
 // nloginPrefetch holds the one shared, one-time fetch every New Login page
@@ -66,7 +71,17 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 			}
 			roleNames = append(roleNames, r.Name)
 		}
-		dbRoles = append(dbRoles, nloginDBRoles{dbName: d.Name(), roleNames: roleNames})
+		schemas, err := d.SchemasContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		schemaNames := make([]string, len(schemas))
+		for i, sch := range schemas {
+			schemaNames[i] = sch.Name
+		}
+		dbRoles = append(dbRoles, nloginDBRoles{
+			dbName: d.Name(), roleNames: roleNames, schemaNames: schemaNames,
+		})
 	}
 
 	langs, err := sc.Server.LanguagesContext(ctx)

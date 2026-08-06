@@ -76,6 +76,13 @@ type FileDialog struct {
 	// field (a separate latch, for the button row) to avoid shadowing it.
 	listMouseDragging bool
 
+	// dragField is the input field that claimed the current Button1
+	// gesture, nil between gestures. Motion goes to it wherever the pointer
+	// is, so dragging a selection out of the field's rect keeps extending it
+	// instead of freezing at the boundary — the hit test below it is what
+	// used to stop the drag dead.
+	dragField *widgets.InputField
+
 	pathField *widgets.InputField
 	nameField *widgets.InputField
 
@@ -136,6 +143,9 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 		d.selectByName(name)
 	}
 	d.btnFocus = 0
+	// A latch must not survive into the next showing: a dialog dismissed
+	// mid-drag would otherwise reopen still routing every click to that field.
+	d.dragField = nil
 	d.setFocus(initialFocus)
 	d.ModalDialog.Show()
 }

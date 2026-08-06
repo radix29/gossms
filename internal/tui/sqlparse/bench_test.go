@@ -1,4 +1,4 @@
-package tui
+package sqlparse
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ func benchScript(n int) [][]rune {
 // cursor at the end — the worst case, since the prefix scan runs from the
 // start of the buffer to the cursor.
 //
-// This is the production path: scanCompletionPrefix lexes the prefix without
+// This is the production path: ScanPrefix lexes the prefix without
 // materialising tokens, then tokenizes only the cursor's statement. Compare
 // against BenchmarkCompletionPrefixScanReference_* below, which is the
 // tokenize-everything-then-discard approach it replaced.
@@ -48,16 +48,16 @@ func benchmarkPrefixScan(b *testing.B, stmts int) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		reuse = flattenLinesInto(reuse, lines)
-		upTo := offsetForCursor(lines, row, col)
-		scanCompletionPrefix(lines, reuse, row, upTo)
+		reuse = FlattenLinesInto(reuse, lines)
+		upTo := OffsetForCursor(lines, row, col)
+		ScanPrefix(lines, reuse, row, upTo)
 	}
 }
 
 func BenchmarkCompletionPrefixScan_100Stmts(b *testing.B)  { benchmarkPrefixScan(b, 100) }
 func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan(b, 1000) }
 
-// benchmarkPrefixScanReference measures the approach scanCompletionPrefix
+// benchmarkPrefixScanReference measures the approach ScanPrefix
 // replaced — flatten into a fresh buffer, tokenize the whole prefix, then
 // discard every token before the statement start — so the difference stays
 // visible and a regression toward it is obvious.
@@ -77,9 +77,9 @@ func benchmarkPrefixScanReference(b *testing.B, stmts int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf := flattenFresh(lines)
-		upTo := offsetForCursor(lines, row, col)
-		tokens, _, semiStart, _ := tokenizeSQLRange(buf, 0, upTo, false)
-		tokensFrom(tokens, semiStart)
+		upTo := OffsetForCursor(lines, row, col)
+		tokens, _, semiStart, _ := TokenizeRange(buf, 0, upTo, false)
+		TokensFrom(tokens, semiStart)
 	}
 }
 

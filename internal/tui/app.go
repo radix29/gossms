@@ -95,6 +95,7 @@ type App struct {
 	metaEnabled bool
 
 	connectDialog       *ConnectDialog
+	findDialog          *FindReplaceDialog
 	helpDialog          *HelpDialog
 	keyDiagDialog       *KeyDiagnosticsDialog
 	updateDialog        *UpdateDialog
@@ -370,7 +371,7 @@ func (a *App) buildUI() {
 
 	a.panels = layout.NewPanelManager()
 	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
-	a.detailBrowser.OnRefresh = a.refreshSelected
+	a.detailBrowser.OnRefresh = func() { a.detailBrowser.RefreshCurrent(a) }
 	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
 
@@ -382,6 +383,7 @@ func (a *App) buildUI() {
 
 	a.contextMenu = new(controls.ContextMenu{})
 	a.connectDialog = NewConnectDialog(a)
+	a.findDialog = NewFindReplaceDialog(a)
 	a.helpDialog = NewHelpDialog(a)
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
 	a.updateDialog = NewUpdateDialog(a)
@@ -417,7 +419,7 @@ func (a *App) buildUI() {
 	// somehow became visible in the same tick (today, never — each Show()
 	// is one synchronous call from one key/menu action); see syncDialogStack.
 	a.allDialogs = []Dialog{
-		a.connectDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
+		a.connectDialog, a.findDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.newJobDialog, a.newScheduleDialog, a.newAlertDialog, a.newOperatorDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,

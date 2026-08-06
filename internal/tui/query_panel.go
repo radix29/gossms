@@ -114,8 +114,8 @@ type QueryPanel struct {
 
 	// completionBuf is the flattened editor text sqlCompletionCandidates
 	// scans, kept across keystrokes so a large script isn't re-copied into a
-	// fresh allocation on every one (see flattenLinesInto). Valid only for the
-	// duration of one sqlCompletionCandidates call.
+	// fresh allocation on every one (see sqlparse.FlattenLinesInto). Valid
+	// only for the duration of one sqlCompletionCandidates call.
 	completionBuf []rune
 
 	executing bool

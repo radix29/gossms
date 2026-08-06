@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -45,29 +46,29 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 		return nil, col
 	}
 
-	p.completionBuf = flattenLinesInto(p.completionBuf, lines)
+	p.completionBuf = sqlparse.FlattenLinesInto(p.completionBuf, lines)
 	buf := p.completionBuf
-	upTo := offsetForCursor(lines, row, col)
+	upTo := sqlparse.OffsetForCursor(lines, row, col)
 
 	// Scoped to the current statement — a table named in an earlier ';'- or
 	// GO-separated statement must not leak into this one's FROM-scope/clause
-	// detection (see scanCompletionPrefix).
-	pre := scanCompletionPrefix(lines, buf, row, upTo)
-	tokens, state, batchStart, quoteStart := pre.tokens, pre.state, pre.batchStart, pre.quoteStart
+	// detection (see sqlparse.ScanPrefix).
+	pre := sqlparse.ScanPrefix(lines, buf, row, upTo)
+	tokens, state, batchStart, quoteStart := pre.Tokens, pre.State, pre.BatchStart, pre.QuoteStart
 
 	var qualifier, prefix string
 	var replaceFrom int
 	var hasQualifier bool
 	switch state {
-	case sqlLexNormal:
-		qualifier, prefix, replaceFrom, hasQualifier = completionTokenContext(tokens, upTo)
-	case sqlLexBracket:
+	case sqlparse.LexNormal:
+		qualifier, prefix, replaceFrom, hasQualifier = sqlparse.TokenContext(tokens, upTo)
+	case sqlparse.LexBracket:
 		// An unterminated bracket identifier ("FROM [Cus|") is the one
 		// non-normal lexer state completion still works in: everything
 		// after the '[' is the prefix, and the whole "[..." span gets
 		// replaced on commit (bracketIfNeeded re-quotes the inserted name
 		// only when it actually needs quoting).
-		qualifier, _, _, hasQualifier = completionTokenContext(tokens, quoteStart)
+		qualifier, _, _, hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
 		prefix = string(buf[quoteStart+1 : upTo])
 		replaceFrom = quoteStart
 	default:
@@ -80,7 +81,7 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	// popup at it. The replaced span always starts on the cursor's own row
 	// (identifiers can't span lines; a '[' on an earlier row is malformed
 	// anyway and bails), so subtracting the row's start offset converts it.
-	rowStart := offsetForCursor(lines, row, 0)
+	rowStart := sqlparse.OffsetForCursor(lines, row, 0)
 	if replaceFrom < rowStart {
 		return nil, col
 	}
@@ -103,7 +104,7 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	// unterminated bracket identifier, skip past its closing ']' (if any)
 	// first.
 	forwardFrom := upTo
-	if state == sqlLexBracket {
+	if state == sqlparse.LexBracket {
 		for forwardFrom < len(buf) && buf[forwardFrom] != ']' {
 			forwardFrom++
 		}
@@ -111,27 +112,27 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 			forwardFrom++
 		}
 	}
-	batchEnd := statementEndOffset(lines, buf, row, forwardFrom)
-	forwardTokens, _, _, _ := tokenizeSQLRange(buf, forwardFrom, batchEnd, false)
+	batchEnd := sqlparse.StatementEndOffset(lines, buf, row, forwardFrom)
+	forwardTokens, _, _, _ := sqlparse.TokenizeRange(buf, forwardFrom, batchEnd, false)
 
 	// Multiple statements stacked in the editor with no ';' between them
 	// still parse as one ';'/GO-delimited batch above; narrow further to
 	// the DML statement containing the cursor so a bare column context in
 	// one statement doesn't pick up FROM refs from an unrelated statement
-	// stacked above or below it (see dmlStatementStarts /
-	// narrowToDMLStatement).
-	combined := append(append([]sqlToken{}, tokens...), forwardTokens...)
-	stmtStart, stmtEnd := narrowToDMLStatement(combined, batchStart, batchEnd, upTo)
-	tokens = tokensFrom(tokens, stmtStart)
+	// stacked above or below it (see sqlparse.DMLStatementStarts /
+	// sqlparse.NarrowToDMLStatement).
+	combined := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
+	stmtStart, stmtEnd := sqlparse.NarrowToDMLStatement(combined, batchStart, batchEnd, upTo)
+	tokens = sqlparse.TokensFrom(tokens, stmtStart)
 	if stmtEnd < batchEnd {
-		forwardTokens, _, _, _ = tokenizeSQLRange(buf, forwardFrom, stmtEnd, false)
+		forwardTokens, _, _, _ = sqlparse.TokenizeRange(buf, forwardFrom, stmtEnd, false)
 	}
-	refs := parseFromScope(append(append([]sqlToken{}, tokens...), forwardTokens...))
+	refs := sqlparse.ParseFromScope(append(append([]sqlparse.Token{}, tokens...), forwardTokens...))
 
 	switch {
 	case hasQualifier:
 		return p.memberCandidates(inv, sysInv, refs, qualifier, prefix), replaceFrom
-	case currentClause(tokens) == clauseTable:
+	case sqlparse.CurrentClause(tokens) == sqlparse.ClauseTable:
 		return p.tableCandidates(inv, sysInv, prefix), replaceFrom
 	case len(refs) == 0:
 		// Column context but nothing's been FROM'd yet — nothing to pull

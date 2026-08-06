@@ -85,6 +85,23 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	case tcell.KeyCtrlS:
 		a.saveQuery(false)
 		return false
+	case tcell.KeyCtrlF:
+		a.findDialog.ShowFind()
+		return false
+	case tcell.KeyF3:
+		// Ctrl+F3 searches for the word under the caret; Shift+F3 steps
+		// backwards. Both modifiers are optional decoration on a key that
+		// works plainly, so a terminal that can't encode them (see the
+		// Ctrl+Enter note in README.md) still gets Find Next.
+		switch {
+		case ev.Modifiers()&tcell.ModCtrl != 0:
+			a.findWordAtCursor()
+		case ev.Modifiers()&tcell.ModShift != 0:
+			a.findNextInEditor(-1)
+		default:
+			a.findNextInEditor(1)
+		}
+		return false
 	case tcell.KeyF5:
 		if a.focus == "explorer" {
 			a.refreshSelected()

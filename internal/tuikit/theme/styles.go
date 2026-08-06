@@ -34,6 +34,9 @@ func StyleStatusBar() tcell.Style {
 func StyleSelected() tcell.Style {
 	return tcell.StyleDefault.Background(active.TreeSelected).Foreground(active.TextHighlight)
 }
+func StyleSearchMatch() tcell.Style {
+	return tcell.StyleDefault.Background(active.EditorMatch).Foreground(active.TextHighlight)
+}
 func StyleDialog() tcell.Style {
 	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.Text)
 }
@@ -45,6 +48,14 @@ func StyleButtonActive() tcell.Style {
 }
 func StyleInput() tcell.Style {
 	return tcell.StyleDefault.Background(active.InputBg).Foreground(active.InputFg)
+}
+
+// StyleInputDisabled is a field the page has switched off. It drops the
+// input background entirely rather than only dimming the text: a disabled
+// field still accepts no clicks and no keys, so it has to be obvious at a
+// glance which fields are live.
+func StyleInputDisabled() tcell.Style {
+	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.TextDim)
 }
 func StyleGridHeader() tcell.Style {
 	return tcell.StyleDefault.Background(active.GridHeader).Foreground(active.Text).Bold(true)

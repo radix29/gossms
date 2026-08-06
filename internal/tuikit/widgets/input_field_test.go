@@ -17,6 +17,10 @@ func key(k tcell.Key, mod tcell.ModMask) *tcell.EventKey {
 	return tcell.NewEventKey(k, "", mod)
 }
 
+func runeKey(r rune, mod tcell.ModMask) *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyRune, string(r), mod)
+}
+
 func TestInputFieldSelectAll(t *testing.T) {
 	f := newTestInputField("hello")
 	f.HandleKey(key(tcell.KeyCtrlA, tcell.ModNone))
@@ -127,5 +131,103 @@ func TestInputFieldCutPasteRoundTrip(t *testing.T) {
 	f.Paste("hello")
 	if got := f.Value(); got != "hello world" {
 		t.Fatalf("after Paste(): Value() = %q, want %q", got, "hello world")
+	}
+}
+
+// A drag belongs to the field that claimed its press, until the release.
+// Hit-testing every motion instead froze the selection the moment the
+// pointer left the box, so dragging past the end of a term stopped
+// extending it — invariant 1 in ARCHITECTURE.md § The mouseDragging idiom.
+func TestInputFieldDragContinuesOutsideTheBox(t *testing.T) {
+	f := NewInputField("Find: ", 20, false)
+	f.SetBounds(4, 6)
+	f.SetValue("abcdefgh")
+
+	ix, y := f.InputX(), 6
+	press := tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)
+	if !f.HandleMouse(press) {
+		t.Fatal("the press inside the box was refused — test premise is wrong")
+	}
+
+	// Two rows below the field, where HitTest fails.
+	drag := tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)
+	if f.HitTest(ix+6, y+2) {
+		t.Fatal("the drag point is still inside the box — test premise is wrong")
+	}
+	if !f.HandleMouse(drag) {
+		t.Fatal("the field refused motion it owns the gesture for")
+	}
+	if got := f.SelectedText(); got != "abcde" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
+	}
+
+	// The release ends it, and the next off-rect press is refused again.
+	f.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.ButtonNone, tcell.ModNone))
+	if f.HandleMouse(drag) {
+		t.Error("an off-rect press was accepted after the gesture ended")
+	}
+}
+
+// A disabled field must refuse both keys and clicks, and must draw
+// differently. Refusing input while looking identical to a live field is the
+// worse of the two failures: the user gets no signal at all, only a box that
+// ignores them.
+func TestDisabledInputFieldRefusesInput(t *testing.T) {
+	f := NewInputField("Schema: ", 20, false)
+	f.SetBounds(4, 6)
+	f.SetValue("dbo")
+	f.Focus(true)
+	f.SetEnabled(false)
+
+	if f.Enabled() {
+		t.Fatal("SetEnabled(false) did not take")
+	}
+	if f.HandleKey(runeKey('x', tcell.ModNone)) {
+		t.Error("a disabled field consumed a keypress")
+	}
+	if got := f.Value(); got != "dbo" {
+		t.Errorf("Value() = %q, want %q — a disabled field was edited", got, "dbo")
+	}
+
+	ix, y := f.InputX(), 6
+	if f.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
+		t.Error("a disabled field claimed a press")
+	}
+	if f.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.ButtonNone, tcell.ModNone)) {
+		t.Error("a disabled field reported handling a release it never latched")
+	}
+
+	// Re-enabling restores both halves.
+	f.SetEnabled(true)
+	if !f.HandleKey(runeKey('x', tcell.ModNone)) {
+		t.Error("a re-enabled field still refuses keys")
+	}
+	if got := f.Value(); got != "dbox" {
+		t.Errorf("Value() = %q, want %q", got, "dbox")
+	}
+}
+
+// The disabled look has to actually differ from the live one — the point of
+// the flag is that it is visible.
+func TestDisabledInputFieldDrawsDifferently(t *testing.T) {
+	draw := func(enabled bool) map[[2]int]tcell.Style {
+		f := NewInputField("Schema: ", 8, false)
+		f.SetBounds(0, 0)
+		f.SetValue("dbo")
+		f.SetEnabled(enabled)
+		s := newFieldScreen(40, 3)
+		f.Draw(s)
+		return s.styles
+	}
+	on, off := draw(true), draw(false)
+	same := true
+	for pos, st := range on {
+		if off[pos] != st {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Error("a disabled field drew exactly like an enabled one")
 	}
 }

@@ -184,14 +184,38 @@ func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone fu
 	}()
 }
 
+// runPageActionOnce is runPageAction with an in-flight latch, for a button
+// that writes its result into captured variables. Without it a second click
+// while the first round trip is still out puts two goroutines in flight, both
+// writing the same captured variable and both filling the same grid — so the
+// picture that survives is whichever finished last, which can be the older
+// request.
+//
+// inFlight is a plain bool because both halves run on the UI goroutine: the
+// button's click handler, and onDone via d.post.
+func (d *PropDialog) runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error)) {
+	if *inFlight {
+		return
+	}
+	*inFlight = true
+	d.runPageAction(fn, func(err error) {
+		*inFlight = false
+		onDone(err)
+	})
+}
+
 // asyncStatusButton returns a button that runs fn via runPageAction,
 // showing busyText in statusRow while it's in flight and either fn's
 // returned text or "Error: ..." once it completes.
 func (d *PropDialog) asyncStatusButton(label string, statusRow *propsheet.StaticRow, busyText string, fn func(ctx context.Context) (string, error)) *widgets.Button {
+	var inFlight bool
 	return widgets.NewButton(label, func() {
+		if inFlight {
+			return // statusRow already reads busyText, so this isn't a silent no-op.
+		}
 		statusRow.SetValue(busyText)
 		var result string
-		d.runPageAction(func(ctx context.Context) error {
+		d.runPageActionOnce(&inFlight, func(ctx context.Context) error {
 			r, err := fn(ctx)
 			result = r
 			return err

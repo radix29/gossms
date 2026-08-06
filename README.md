@@ -39,6 +39,13 @@ or drivers required.
   Server, Database, Login, Table, Schema, Server Role, Database Role,
   Database User, Index/Statistics, Key, and Foreign Key, plus New Database /
   New Login dialogs for creating objects from scratch.
+- **Permissions editing** — every permissions and securables grid cycles
+  Grant → Grant With Grant → Deny → (none) with the right `WITH GRANT
+  OPTION` / `CASCADE` / `GRANT OPTION FOR` statement issued for each
+  transition, plus per-column grants on a table or view, filter boxes on the
+  long grids, and an Effective Permissions page on Login and Database User
+  Properties resolving what that principal can actually do once roles,
+  ownership and inherited scopes are applied.
 - **SQL Server Agent** — browse and manage Jobs, Schedules, Alerts, and
   Operators; multi-page Job Properties (steps, schedules, alerts,
   notifications, history), run/stop a job, and view its run history.
@@ -131,6 +138,9 @@ at any time.
 | `Ctrl+Up`/`Down` | Grow / shrink query editor |
 | `Ctrl+PgUp`/`PgDn` | Previous / next result tab |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo in editor |
+| `Ctrl+F` (query editor) | Find and Replace — Match case, whole word, regular expression, and Replace All within the selection |
+| `F3` / `Shift+F3` | Find next / previous, with the Find dialog closed |
+| `Ctrl+F3` | Find the next occurrence of the word under the cursor |
 | `Ctrl+Space` (query editor) | Open/force IntelliSense suggestions |
 | `Ctrl+R` (query editor) | Refresh the cached table/column list |
 | `Shift+Arrow` | Select text |
@@ -140,6 +150,13 @@ at any time.
 | `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
 | `Shift+F10` / `Menu` key | Open the selected tree node's context menu |
 | Right-click (grid cell) | "Show Value" — full cell text in a copyable popup |
+| Drag a grid header separator | Resize the column to its left, past the max default cell length if wanted |
+| Double-click a header separator | Restore that column's default width |
+
+Replace has no shortcut of its own — it is Edit > Replace..., or the
+Replace fields inside the Find dialog. `Ctrl+H` is deliberately not bound:
+terminals send it as the same byte (`0x08`) many of them send for
+Backspace, so binding it would break Backspace on those.
 
 ## Configuration
 
@@ -148,7 +165,9 @@ capped at 15 profiles. In the Connect dialog, typing 4+ characters into the
 Server field looks up saved profiles by prefix.
 
 Tools > Options controls the tree icon style, the results grid's maximum
-cell length, and IntelliSense on/off — saved immediately to the config file:
+*default* cell length (the width a column is given from its content — drag
+a header separator to go wider), and IntelliSense on/off — saved
+immediately to the config file:
 
 - **Linux/macOS**: `~/.config/gossms/config.json`
 - **Windows**: `%APPDATA%\gossms\config.json`

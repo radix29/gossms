@@ -1,5 +1,5 @@
-# goSSMS — scanCompletionPrefix golden output. Do not hand-edit.
-# Regenerate: go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden
+# goSSMS — ScanPrefix golden output. Do not hand-edit.
+# Regenerate: go test ./internal/tui/sqlparse -run TestScanCompletionPrefixGolden -update-golden
 #
 # [cursor-sweep] one line per cursor position, in full:
 #   <row>,<col> <lexer state> batch=<statement start> quote=<offset|-> | <tokens>

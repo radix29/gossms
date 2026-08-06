@@ -172,7 +172,7 @@ func (p *QueryPanel) renderActiveTab() {
 	if res == nil {
 		return
 	}
-	// +2 to convert the Options dialog's "max cell length" (a character
+	// +2 to convert the Options dialog's "max default cell length" (a character
 	// count) into a column-width clamp, matching computeColWidths's own
 	// header-width convention of content width + 1 column of padding on
 	// each side.

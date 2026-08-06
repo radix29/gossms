@@ -30,6 +30,21 @@ func NewDropDown(label string, items []string, w int) *DropDown {
 	return new(DropDown{label: label, items: items, rect: core.Rect{W: w}})
 }
 
+// SetItems replaces the item list — for a dropdown whose choices depend on
+// another control (the schemas of the database a grid row just selected).
+// The selection resets to the first item rather than being carried over by
+// index: the new list is a different set, so the old index names something
+// unrelated. It also closes the list, since an open one is drawn from the
+// items it was opened over.
+func (d *DropDown) SetItems(items []string) {
+	d.items = items
+	d.selected = 0
+	d.open = false
+}
+
+// Items returns the current item list.
+func (d *DropDown) Items() []string { return d.items }
+
 func (d *DropDown) SetBounds(x, y int) { d.rect.X, d.rect.Y = x, y }
 func (d *DropDown) Selected() int      { return d.selected }
 func (d *DropDown) SetSelected(i int) {

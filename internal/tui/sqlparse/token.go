@@ -1,4 +1,4 @@
-package tui
+package sqlparse
 
 import (
 	"unicode"
@@ -11,35 +11,35 @@ import (
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-type sqlTokKind int
+type TokenKind int
 
 const (
-	sqlTokIdent sqlTokKind = iota
-	sqlTokKeyword
-	sqlTokDot
-	sqlTokComma
-	sqlTokParenOpen
-	sqlTokParenClose
+	TokenIdent TokenKind = iota
+	TokenKeyword
+	TokenDot
+	TokenComma
+	TokenParenOpen
+	TokenParenClose
 )
 
-type sqlToken struct {
-	kind  sqlTokKind
-	text  string // sqlTokIdent: unwrapped name; sqlTokKeyword: uppercased
-	start int    // rune offset into the flattened buffer
+type Token struct {
+	Kind  TokenKind
+	Text  string // TokenIdent: unwrapped name; TokenKeyword: uppercased
+	Start int    // rune offset into the flattened buffer
 }
 
-type sqlLexState int
+type LexState int
 
 const (
-	sqlLexNormal sqlLexState = iota
-	sqlLexLineComment
-	sqlLexBlockComment
-	sqlLexSingleQuote
-	sqlLexBracket
-	sqlLexDoubleQuote
+	LexNormal LexState = iota
+	LexLineComment
+	LexBlockComment
+	LexSingleQuote
+	LexBracket
+	LexDoubleQuote
 )
 
-// flattenLinesInto joins a multi-line buffer into one rune slice with '\n'
+// FlattenLinesInto joins a multi-line buffer into one rune slice with '\n'
 // separators, so the tokenizer can scan linearly without juggling
 // (row, col) pairs — a comment or string literal spanning several lines
 // then falls out of the same state machine for free.
@@ -52,9 +52,9 @@ const (
 // size re-copies the whole buffer a dozen times over.
 //
 // The result borrows dst, so it stays valid only until the next call with the
-// same dst — every consumer here copies what it keeps (a sqlToken holds a
+// same dst — every consumer here copies what it keeps (a Token holds a
 // string, not a slice of the buffer).
-func flattenLinesInto(dst []rune, lines [][]rune) []rune {
+func FlattenLinesInto(dst []rune, lines [][]rune) []rune {
 	n := 0
 	for _, l := range lines {
 		n += len(l) + 1
@@ -75,9 +75,9 @@ func flattenLinesInto(dst []rune, lines [][]rune) []rune {
 	return buf
 }
 
-// offsetForCursor converts an Editor (row, col) into an offset into
-// flattenLinesInto's output.
-func offsetForCursor(lines [][]rune, row, col int) int {
+// OffsetForCursor converts an Editor (row, col) into an offset into
+// FlattenLinesInto's output.
+func OffsetForCursor(lines [][]rune, row, col int) int {
 	off := 0
 	for i := 0; i < row && i < len(lines); i++ {
 		off += len(lines[i]) + 1
@@ -88,17 +88,17 @@ func offsetForCursor(lines [][]rune, row, col int) int {
 	return off
 }
 
-// tokenizeSQLRange scans buf[from:upTo] into a token stream, always
-// starting in sqlLexNormal state — valid both for a scan from the buffer
-// start and for one resumed exactly at the cursor (statementEndOffset, and
-// sqlCompletionCandidates' own forward scan), since callers only ever resume
-// there after confirming the lexer state at that offset is already
-// sqlLexNormal (see sqlCompletionCandidates' "inside a string/quoted-
-// identifier/comment" bail-out).
+// TokenizeRange scans buf[from:upTo] into a token stream, always
+// starting in LexNormal state — valid both for a scan from the buffer
+// start and for one resumed exactly at the cursor (StatementEndOffset, and
+// the completion provider's own forward scan), since callers only ever
+// resume there after confirming the lexer state at that offset is already
+// LexNormal — see the "inside a string/quoted-identifier/comment" bail-out
+// in tui's sqlCompletionCandidates.
 //
-// The second return is the lexer's state on reaching upTo: sqlLexBracket
+// The second return is the lexer's state on reaching upTo: LexBracket
 // means upTo sits inside an unterminated bracket identifier, which
-// sqlCompletionCandidates still completes, while any other non-normal state
+// the completion provider still completes, while any other non-normal state
 // suppresses completion entirely rather than guessing.
 //
 // stopAtSemicolon changes what the third return value means and, for a
@@ -107,30 +107,30 @@ func offsetForCursor(lines [][]rune, row, col int) int {
 //     FROM-scope analysis past the cursor): scanning continues through every
 //     top-level ';' up to upTo, and the third return is the offset right
 //     after the LAST one seen — one of the two boundaries
-//     scanCompletionPrefix combines with GO-line detection to scope
+//     ScanPrefix combines with GO-line detection to scope
 //     FROM/clause analysis to the current statement only.
-//   - true (statementEndOffset's use): scanning stops at the FIRST
+//   - true (StatementEndOffset's use): scanning stops at the FIRST
 //     top-level ';', and the third return is that ';'s own offset (or upTo
 //     if none was found) — the statement's end boundary.
 //
 // The fourth return is the offset of the opening '[' or '"' when the final
-// state is sqlLexBracket/sqlLexDoubleQuote — how sqlCompletionCandidates
+// state is LexBracket/LexDoubleQuote — how the completion provider
 // finds where an unterminated bracket identifier's replace span starts.
 // Meaningless (stale or zero) in every other final state.
-func tokenizeSQLRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]sqlToken, sqlLexState, int, int) {
-	return tokenizeSQLRangeFrom(buf, from, upTo, stopAtSemicolon, sqlLexNormal)
+func TokenizeRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]Token, LexState, int, int) {
+	return TokenizeRangeFrom(buf, from, upTo, stopAtSemicolon, LexNormal)
 }
 
-// tokenizeSQLRangeFrom is tokenizeSQLRange with an explicit starting lexer
+// TokenizeRangeFrom is TokenizeRange with an explicit starting lexer
 // state, for resuming a scan at an offset whose state a previous pass already
-// established. Every caller passes sqlLexNormal today — scanCompletionPrefix
+// established. Every caller passes LexNormal today — ScanPrefix
 // only ever resumes at a normal-state batch boundary — but the parameter is
 // what makes that a stated precondition rather than a coincidence.
-func tokenizeSQLRangeFrom(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexState) ([]sqlToken, sqlLexState, int, int) {
+func TokenizeRangeFrom(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState) ([]Token, LexState, int, int) {
 	// Roughly one token per 8 runes of SQL, so the append loop below stops
 	// re-copying a large script's token stream on every keystroke. An
 	// estimate only — append still grows it if the guess is low.
-	tokens := make([]sqlToken, 0, (upTo-from)/8+16)
+	tokens := make([]Token, 0, (upTo-from)/8+16)
 	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{})
 	return tokens, r.state, r.boundary, r.quoteStart
 }
@@ -151,12 +151,12 @@ func (g goScan) covers(start int) bool { return start >= g.lo && start < g.hi }
 // lexResult is what one pass of lexSQL learned about the text it walked.
 type lexResult struct {
 	// state is the lexer state on reaching upTo (or the stopping ';').
-	state sqlLexState
+	state LexState
 	// boundary is the offset right after the last top-level ';' seen, or —
-	// when stopAtSemicolon — the first such ';' offset. See tokenizeSQLRange.
+	// when stopAtSemicolon — the first such ';' offset. See TokenizeRange.
 	boundary int
 	// quoteStart is the offset of the opening '[' or '"' when state is
-	// sqlLexBracket/sqlLexDoubleQuote; meaningless otherwise.
+	// LexBracket/LexDoubleQuote; meaningless otherwise.
 	quoteStart int
 	// firstGo is the offset of the first bare "GO" separator line inside the
 	// scan's goScan bounds, or -1 when there was none. lastGo is the offset of
@@ -182,13 +182,13 @@ type lexResult struct {
 // separator, and treating it as one scoped completion to the wrong statement —
 // `SELECT * FROM dbo.Patients p` followed by a commented-out GO left the alias
 // `p` out of scope, so `p.` offered nothing.
-func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexState, tokens *[]sqlToken, gs goScan) lexResult {
+func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan) lexResult {
 	state := initial
 	quoteStart := 0
 	semiStart := from
 	firstGo, lastGo := -1, 0
 	// Called at every offset that both begins a line and is reached in
-	// sqlLexNormal state — the only positions a separator can occupy.
+	// LexNormal state — the only positions a separator can occupy.
 	noteGoLine := func(start int) {
 		if !gs.enabled() || !gs.covers(start) {
 			return
@@ -209,78 +209,78 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 	// shape can produce that: a quoted identifier opened before from and
 	// closed inside it, whose token is anchored at the (unseen) opening
 	// bracket/quote — so quoteStart is still 0 here. Dropping it matches what
-	// a scan of the whole buffer followed by tokensFrom(tokens, from) yields.
+	// a scan of the whole buffer followed by TokensFrom(tokens, from) yields.
 	keep := func(start int) bool { return tokens != nil && start >= from }
-	emit := func(t sqlToken) {
-		if keep(t.start) {
+	emit := func(t Token) {
+		if keep(t.Start) {
 			*tokens = append(*tokens, t)
 		}
 	}
 	// emitIdent exists so the string conversion happens only for a token that
 	// is actually kept. Passing the slice bounds instead of a finished
-	// sqlToken is the whole point: as an argument, string(buf[lo:hi]) is
+	// Token is the whole point: as an argument, string(buf[lo:hi]) is
 	// evaluated before emit can decline it, which allocated a string per
 	// identifier even on a tokens == nil pass — exactly the cost this scan is
 	// arranged to avoid.
 	emitIdent := func(start, lo, hi int) {
 		if keep(start) {
-			*tokens = append(*tokens, sqlToken{kind: sqlTokIdent, text: string(buf[lo:hi]), start: start})
+			*tokens = append(*tokens, Token{Kind: TokenIdent, Text: string(buf[lo:hi]), Start: start})
 		}
 	}
 	i := from
 	for i < upTo {
 		c := buf[i]
 		switch state {
-		case sqlLexLineComment:
+		case LexLineComment:
 			if c == '\n' {
 				// The next line starts in normal state, so it can be a
 				// separator — a "-- note" line above a GO is ordinary SQL.
-				state = sqlLexNormal
+				state = LexNormal
 				noteGoLine(i + 1)
 			}
 			i++
 			continue
-		case sqlLexBlockComment:
+		case LexBlockComment:
 			if c == '*' && i+1 < upTo && buf[i+1] == '/' {
-				state = sqlLexNormal
+				state = LexNormal
 				i += 2
 			} else {
 				i++
 			}
 			continue
-		case sqlLexSingleQuote:
+		case LexSingleQuote:
 			if c == '\'' {
 				if i+1 < upTo && buf[i+1] == '\'' {
 					i += 2
 					continue
 				}
-				state = sqlLexNormal
+				state = LexNormal
 				i++
 				continue
 			}
 			i++
 			continue
-		case sqlLexDoubleQuote:
+		case LexDoubleQuote:
 			if c == '"' {
 				if i+1 < upTo && buf[i+1] == '"' {
 					i += 2
 					continue
 				}
 				emitIdent(quoteStart, quoteStart+1, i)
-				state = sqlLexNormal
+				state = LexNormal
 				i++
 				continue
 			}
 			i++
 			continue
-		case sqlLexBracket:
+		case LexBracket:
 			if c == ']' {
 				if i+1 < upTo && buf[i+1] == ']' {
 					i += 2
 					continue
 				}
 				emitIdent(quoteStart, quoteStart+1, i)
-				state = sqlLexNormal
+				state = LexNormal
 				i++
 				continue
 			}
@@ -288,36 +288,36 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 			continue
 		}
 
-		// state == sqlLexNormal
+		// state == LexNormal
 		switch {
 		case c == '-' && i+1 < upTo && buf[i+1] == '-':
-			state = sqlLexLineComment
+			state = LexLineComment
 			i += 2
 		case c == '/' && i+1 < upTo && buf[i+1] == '*':
-			state = sqlLexBlockComment
+			state = LexBlockComment
 			i += 2
 		case c == '\'':
-			state = sqlLexSingleQuote
+			state = LexSingleQuote
 			i++
 		case c == '"':
-			state = sqlLexDoubleQuote
+			state = LexDoubleQuote
 			quoteStart = i
 			i++
 		case c == '[':
-			state = sqlLexBracket
+			state = LexBracket
 			quoteStart = i
 			i++
 		case c == '.':
-			emit(sqlToken{kind: sqlTokDot, start: i})
+			emit(Token{Kind: TokenDot, Start: i})
 			i++
 		case c == ',':
-			emit(sqlToken{kind: sqlTokComma, start: i})
+			emit(Token{Kind: TokenComma, Start: i})
 			i++
 		case c == '(':
-			emit(sqlToken{kind: sqlTokParenOpen, start: i})
+			emit(Token{Kind: TokenParenOpen, Start: i})
 			i++
 		case c == ')':
-			emit(sqlToken{kind: sqlTokParenClose, start: i})
+			emit(Token{Kind: TokenParenClose, Start: i})
 			i++
 		case c == ';':
 			if stopAtSemicolon {
@@ -345,7 +345,7 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 			// string()+ToUpper()+ToUpper() cost two or three allocations per
 			// word.
 			if kw, ok := sqlKeywordCanonical(buf, start, i); ok {
-				emit(sqlToken{kind: sqlTokKeyword, text: kw, start: start})
+				emit(Token{Kind: TokenKeyword, Text: kw, Start: start})
 			} else {
 				emitIdent(start, start, i)
 			}
@@ -363,22 +363,22 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial sqlLexStat
 	return lexResult{state, semiStart, quoteStart, firstGo, lastGo}
 }
 
-// statementEndOffset finds where the statement containing the cursor ends —
+// StatementEndOffset finds where the statement containing the cursor ends —
 // the next top-level ';' at or after upTo, the start of the next bare "GO"
 // batch-separator line after cursorRow, or len(buf), whichever comes first.
-// Combined with the batch start scanCompletionPrefix finds, this lets
+// Combined with the batch start ScanPrefix finds, this lets
 // FROM-scope/clause analysis see the whole current statement regardless of
 // where in it the cursor sits — a table named in "SELECT | FROM Customers c"
 // resolves the same as one already fully typed above the cursor.
 //
 // Both boundaries come out of the one lexer pass, so a ';' or a "GO" that is
 // really inside a comment or a literal ends nothing.
-func statementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
+func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 	// The forward scan resumes at the cursor, which callers only do after
-	// confirming the lexer is in sqlLexNormal there. Only rows strictly below
+	// confirming the lexer is in LexNormal there. Only rows strictly below
 	// the cursor's own can end its statement.
-	r := lexSQL(buf, upTo, len(buf), true, sqlLexNormal, nil,
-		goScan{lo: offsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
+	r := lexSQL(buf, upTo, len(buf), true, LexNormal, nil,
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
 	end := r.boundary
 	if r.firstGo >= 0 && r.firstGo < end {
 		end = r.firstGo
@@ -426,17 +426,17 @@ func isGoSeparatorLine(line []rune) bool {
 	return ok
 }
 
-// completionPrefixScan is everything sqlCompletionCandidates needs to know
-// about the text before the cursor.
-type completionPrefixScan struct {
-	// tokens covers the cursor's own statement only, ascending by start.
-	tokens     []sqlToken
-	state      sqlLexState
-	batchStart int
-	quoteStart int
+// PrefixScan is everything the query editor's completion provider needs to
+// know about the text before the cursor.
+type PrefixScan struct {
+	// Tokens covers the cursor's own statement only, ascending by Start.
+	Tokens     []Token
+	State      LexState
+	BatchStart int
+	QuoteStart int
 }
 
-// scanCompletionPrefix locates the statement the cursor sits in and tokenizes
+// ScanPrefix locates the statement the cursor sits in and tokenizes
 // that statement alone.
 //
 // Two passes, because the entire prefix must be lexed to know where the
@@ -446,32 +446,32 @@ type completionPrefixScan struct {
 // expensive half: materialising an identifier token allocates a string, and on
 // a large script the tokens that get discarded outnumber the kept ones by
 // orders of magnitude. The second pass tokenizes from batchStart alone.
-func scanCompletionPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) completionPrefixScan {
+func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// Only "GO" lines strictly above the cursor's own row are separators for
 	// the statement the cursor is in — hence the bound at that row's start.
-	r := lexSQL(buf, 0, upTo, false, sqlLexNormal, nil,
-		goScan{lo: 0, hi: offsetForCursor(lines, cursorRow, 0)})
+	r := lexSQL(buf, 0, upTo, false, LexNormal, nil,
+		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)})
 
 	// The statement starts at whichever boundary is later: just past the last
 	// top-level ';', or the line after the last real "GO". The second pass can
-	// resume in sqlLexNormal unconditionally because both are normal-state
+	// resume in LexNormal unconditionally because both are normal-state
 	// positions by construction — the lexer only recognises either one there,
 	// and a separator line carries nothing that could still be open past it.
 	batchStart := max(r.boundary, r.lastGo)
-	tokens, _, _, _ := tokenizeSQLRangeFrom(buf, batchStart, upTo, false, sqlLexNormal)
-	return completionPrefixScan{
-		tokens:     tokens,
-		state:      r.state,
-		batchStart: batchStart,
-		quoteStart: r.quoteStart,
+	tokens, _, _, _ := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
+	return PrefixScan{
+		Tokens:     tokens,
+		State:      r.state,
+		BatchStart: batchStart,
+		QuoteStart: r.quoteStart,
 	}
 }
 
-// tokensFrom returns the suffix of tokens (already in ascending start
+// TokensFrom returns the suffix of tokens (already in ascending start
 // order) beginning at the first one whose start is >= from.
-func tokensFrom(tokens []sqlToken, from int) []sqlToken {
+func TokensFrom(tokens []Token, from int) []Token {
 	for i, t := range tokens {
-		if t.start >= from {
+		if t.Start >= from {
 			return tokens[i:]
 		}
 	}
@@ -488,7 +488,8 @@ const maxSQLKeywordLen = 24
 // sqlKeywordCanon is the lookup built from sqlKeywordList, mapping each
 // keyword to itself. Handing back the map's own key is what lets a keyword
 // token carry a canonical string without allocating one; membership tests
-// (bracketIfNeeded) read the same map, so there is only ever one.
+// (IsKeyword, for tui's bracketIfNeeded) read the same map, so there is only
+// ever one.
 var sqlKeywordCanon = func() map[string]string {
 	m := make(map[string]string, len(sqlKeywordList))
 	for _, k := range sqlKeywordList {
@@ -497,8 +498,8 @@ var sqlKeywordCanon = func() map[string]string {
 	return m
 }()
 
-// isSQLKeyword reports whether an already-uppercased word is a keyword.
-func isSQLKeyword(upper string) bool {
+// IsKeyword reports whether an already-uppercased word is a keyword.
+func IsKeyword(upper string) bool {
 	_, ok := sqlKeywordCanon[upper]
 	return ok
 }

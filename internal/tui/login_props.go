@@ -22,13 +22,14 @@ import (
 // commitRename then updates the box so PropDialog.InvalidateAll's reload
 // re-fetches under the new name. Key Properties' pageKeyGeneral and Server
 // Role Properties' pageServerRoleGeneral box their names the same way.
-func loginPropPages(sc *db.ServerConn, loginName string) []propPage {
+func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
 		pageLoginGeneral(sc, namePtr),
 		pageLoginServerRoles(sc, namePtr),
 		pageLoginUserMapping(sc, namePtr),
 		pageLoginSecurables(sc, namePtr),
+		pageLoginEffectivePermissions(d, sc, namePtr),
 		pageLoginStatus(sc, namePtr),
 	}
 }

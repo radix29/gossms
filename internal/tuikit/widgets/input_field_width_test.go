@@ -18,19 +18,21 @@ import (
 // filter box put the caret one column left of where it rendered. Each test
 // below fails against that model.
 
-// fieldScreen captures the runes a Draw painted.
+// fieldScreen captures the runes a Draw painted, and their styles.
 type fieldScreen struct {
 	tcell.Screen
-	w, h  int
-	runes map[[2]int]rune
+	w, h   int
+	runes  map[[2]int]rune
+	styles map[[2]int]tcell.Style
 }
 
 func newFieldScreen(w, h int) *fieldScreen {
-	return &fieldScreen{w: w, h: h, runes: map[[2]int]rune{}}
+	return &fieldScreen{w: w, h: h, runes: map[[2]int]rune{}, styles: map[[2]int]tcell.Style{}}
 }
 func (s *fieldScreen) Size() (int, int) { return s.w, s.h }
 func (s *fieldScreen) SetContent(x, y int, primary rune, comb []rune, style tcell.Style) {
 	s.runes[[2]int{x, y}] = primary
+	s.styles[[2]int{x, y}] = style
 }
 func (s *fieldScreen) ShowCursor(x, y int) {}
 

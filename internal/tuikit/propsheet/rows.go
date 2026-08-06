@@ -188,12 +188,14 @@ func (r *StaticRow) Draw(s tcell.Screen, focused bool) {
 
 // TextRow is an editable text/numeric/password row.
 type TextRow struct {
-	field    *widgets.InputField
-	orig     string
-	unit     string
-	enabled  bool
-	validate func(string) error
-	y        int
+	field     *widgets.InputField
+	orig      string
+	unit      string
+	enabled   bool
+	validate  func(string) error
+	onChange  func(string)
+	untracked bool // see SetDirtyTracked
+	y         int
 }
 
 // Text returns a plain editable text row, width columns wide.
@@ -249,7 +251,10 @@ func (r *TextRow) SetValue(v string) {
 
 // SetEnabled toggles whether the row can be focused/edited; a disabled
 // row is skipped by Form's focus cycling and drawn dim.
-func (r *TextRow) SetEnabled(v bool) { r.enabled = v }
+func (r *TextRow) SetEnabled(v bool) {
+	r.enabled = v
+	r.field.SetEnabled(v)
+}
 
 // SetValidate installs a custom validator, replacing Int's numeric one
 // (or adding one to a plain Text row).
@@ -273,17 +278,40 @@ func (r *TextRow) Draw(s tcell.Screen, focused bool) {
 	}
 }
 
+// SetOnChange installs a callback fired whenever an edit changes the
+// field's text — for a row whose value drives something else on the same
+// page, a filter box narrowing a grid being the case it was added for.
+// It fires on the edit, not on focus loss, so the effect keeps up with
+// typing.
+func (r *TextRow) SetOnChange(fn func(string)) { r.onChange = fn }
+
+// notifyChanged fires onChange if the wrapped field's text differs from
+// before. Every edit path (keys, mouse paste) goes through it — comparing
+// values rather than guessing which keys mutate is what keeps a new
+// InputField binding from silently skipping the callback.
+func (r *TextRow) notifyChanged(before string) {
+	if r.onChange != nil && r.field.Value() != before {
+		r.onChange(r.field.Value())
+	}
+}
+
 func (r *TextRow) HandleKey(ev *tcell.EventKey) bool {
 	if !r.enabled {
 		return false
 	}
-	return r.field.HandleKey(ev)
+	before := r.field.Value()
+	handled := r.field.HandleKey(ev)
+	r.notifyChanged(before)
+	return handled
 }
 func (r *TextRow) HandleMouse(ev *tcell.EventMouse) bool {
 	if !r.enabled {
 		return false
 	}
-	return r.field.HandleMouse(ev)
+	before := r.field.Value()
+	handled := r.field.HandleMouse(ev)
+	r.notifyChanged(before)
+	return handled
 }
 func (r *TextRow) CopyText() string { return r.field.Value() }
 
@@ -295,11 +323,16 @@ func (r *TextRow) Cut() string {
 	if !r.enabled {
 		return ""
 	}
-	return r.field.Cut()
+	before := r.field.Value()
+	cut := r.field.Cut()
+	r.notifyChanged(before)
+	return cut
 }
 func (r *TextRow) Paste(text string) {
 	if r.enabled {
+		before := r.field.Value()
 		r.field.Paste(text)
+		r.notifyChanged(before)
 	}
 }
 func (r *TextRow) SelectAll() {
@@ -308,8 +341,28 @@ func (r *TextRow) SelectAll() {
 	}
 }
 
-func (r *TextRow) Dirty() bool { return r.field.Value() != r.orig }
-func (r *TextRow) Revert()     { r.field.SetValue(r.orig) }
+// SetDirtyTracked(false) makes the row a *view control* rather than an
+// edit: it never reports dirty and Revert leaves it alone. For a row that
+// steers what a read-only page displays — a filter box, a scope picker —
+// rather than something Apply would write. Without it such a page reports
+// unsaved changes it has no way to save, and Refresh prompts to discard
+// them.
+func (r *TextRow) SetDirtyTracked(v bool) { r.untracked = !v }
+
+func (r *TextRow) Dirty() bool { return !r.untracked && r.field.Value() != r.orig }
+
+// Revert restores the dirty baseline and fires onChange, so whatever the row
+// drives follows the text back. An untracked row is left alone, as
+// SetDirtyTracked promises: blanking a filter box without telling the grid it
+// filters leaves the two disagreeing about what is being shown.
+func (r *TextRow) Revert() {
+	if r.untracked {
+		return
+	}
+	before := r.field.Value()
+	r.field.SetValue(r.orig)
+	r.notifyChanged(before)
+}
 func (r *TextRow) Validate() error {
 	if r.validate == nil {
 		return nil
@@ -370,8 +423,10 @@ func (r *CheckRow) Validate() error { return nil }
 
 // SelectRow is a dropdown-select row.
 type SelectRow struct {
-	dd   *widgets.DropDown
-	orig int
+	dd        *widgets.DropDown
+	orig      int
+	untracked bool // see TextRow.SetDirtyTracked
+	onChange  func(string)
 }
 
 // Select returns an editable dropdown row.
@@ -389,6 +444,10 @@ func (r *SelectRow) Selected() int { return r.dd.Selected() }
 // Value returns the selected item's text.
 func (r *SelectRow) Value() string { return r.dd.Value() }
 
+// Items returns the row's current choices — for a caller that repopulated
+// them with SetItems and needs to find an index within the new list.
+func (r *SelectRow) Items() []string { return r.dd.Items() }
+
 // SetSelected sets the selection by index and resets the dirty baseline.
 //
 // The baseline comes from reading the widget back, not from i: DropDown
@@ -401,6 +460,20 @@ func (r *SelectRow) SetSelected(i int) {
 	r.orig = r.dd.Selected()
 }
 
+// SetDirtyTracked(false) makes the row a view control rather than an edit —
+// see TextRow.SetDirtyTracked.
+func (r *SelectRow) SetDirtyTracked(v bool) { r.untracked = !v }
+
+// SetItems replaces the row's choices and resets the dirty baseline along
+// with them — for a picker whose options depend on another control. The
+// baseline has to move too: the old orig indexed the old list, so leaving it
+// would make the row read dirty (or clean) by comparing against an item that
+// is no longer there.
+func (r *SelectRow) SetItems(items []string) {
+	r.dd.SetItems(items)
+	r.orig = r.dd.Selected()
+}
+
 func (r *SelectRow) Height(w int) int   { return 1 }
 func (r *SelectRow) Layout(x, y, w int) { r.dd.SetBounds(x, y) }
 func (r *SelectRow) Focusable() bool    { return true }
@@ -408,14 +481,47 @@ func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
 	r.dd.Focus(focused)
 	r.dd.Draw(s)
 }
-func (r *SelectRow) DrawOverlay(s tcell.Screen)            { r.dd.DrawOverlay(s) }
-func (r *SelectRow) OverlayActive() bool                   { return r.dd.IsOpen() }
-func (r *SelectRow) HandleKey(ev *tcell.EventKey) bool     { return r.dd.HandleKey(ev) }
-func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool { return r.dd.HandleMouse(ev) }
-func (r *SelectRow) CopyText() string                      { return r.dd.Value() }
-func (r *SelectRow) Dirty() bool                           { return r.dd.Selected() != r.orig }
-func (r *SelectRow) Revert()                               { r.dd.SetSelected(r.orig) }
-func (r *SelectRow) Validate() error                       { return nil }
+func (r *SelectRow) DrawOverlay(s tcell.Screen) { r.dd.DrawOverlay(s) }
+func (r *SelectRow) OverlayActive() bool        { return r.dd.IsOpen() }
+func (r *SelectRow) HandleKey(ev *tcell.EventKey) bool {
+	before := r.dd.Value()
+	handled := r.dd.HandleKey(ev)
+	r.notifyChanged(before)
+	return handled
+}
+func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool {
+	before := r.dd.Value()
+	handled := r.dd.HandleMouse(ev)
+	r.notifyChanged(before)
+	return handled
+}
+
+// SetOnChange installs a callback fired whenever the user's interaction
+// changes the selection — the SelectRow counterpart of
+// TextRow.SetOnChange, for a row that drives something else on the page.
+// Not fired by SetSelected/SetItems, which are the page's own programmatic
+// updates and would otherwise re-enter whatever set them.
+func (r *SelectRow) SetOnChange(fn func(string)) { r.onChange = fn }
+
+func (r *SelectRow) notifyChanged(before string) {
+	if r.onChange != nil && r.dd.Value() != before {
+		r.onChange(r.dd.Value())
+	}
+}
+func (r *SelectRow) CopyText() string { return r.dd.Value() }
+func (r *SelectRow) Dirty() bool      { return !r.untracked && r.dd.Selected() != r.orig }
+func (r *SelectRow) Validate() error  { return nil }
+
+// Revert restores the dirty baseline and fires onChange — see
+// TextRow.Revert, which this matches in both respects.
+func (r *SelectRow) Revert() {
+	if r.untracked {
+		return
+	}
+	before := r.dd.Value()
+	r.dd.SetSelected(r.orig)
+	r.notifyChanged(before)
+}
 
 // ---------------------------------------------------------------------------
 // RadioRow — editable single-select group, wraps widgets.RadioBox

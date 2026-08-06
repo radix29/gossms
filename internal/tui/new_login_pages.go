@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -178,6 +179,29 @@ type nloginMapRow struct {
 	schema    string
 	roleNames []string
 	roles     []bool
+
+	// schemaNames is the database's own schema list, for the Default schema
+	// picker — held per row because it differs per database.
+	schemaNames []string
+}
+
+// schemaItemsFor is a database's schema list as picker items, never empty:
+// a database whose schemas couldn't be listed still needs a usable default.
+func schemaItemsFor(names []string) []string {
+	if len(names) == 0 {
+		return []string{"dbo"}
+	}
+	return names
+}
+
+// defaultSchemaFor picks the schema a newly mapped user starts on — dbo
+// where it exists, which is every ordinary database, and otherwise the first
+// schema the database actually has.
+func defaultSchemaFor(names []string) string {
+	if slices.Contains(names, "dbo") || len(names) == 0 {
+		return "dbo"
+	}
+	return names[0]
 }
 
 // buildNewLoginUserMappingPage adapts pageLoginUserMapping's grid/role
@@ -187,7 +211,11 @@ type nloginMapRow struct {
 func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginName func() string) (*propsheet.Form, propApply) {
 	rows := make([]*nloginMapRow, len(pf.dbRoles))
 	for i, dr := range pf.dbRoles {
-		rows[i] = &nloginMapRow{dbName: dr.dbName, schema: "dbo", roleNames: dr.roleNames, roles: make([]bool, len(dr.roleNames))}
+		rows[i] = &nloginMapRow{
+			dbName: dr.dbName, schema: defaultSchemaFor(dr.schemaNames),
+			schemaNames: dr.schemaNames,
+			roleNames:   dr.roleNames, roles: make([]bool, len(dr.roleNames)),
+		}
 	}
 
 	// The User column shows a fixed placeholder rather than loginName():
@@ -217,7 +245,10 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	}
 
 	dbStatic := propsheet.Static("Database", "")
-	schemaText := propsheet.Text("Default schema", "", 20)
+	// A picker over the selected database's own schemas rather than a text
+	// box: the schema has to exist in *that* database, and a typo only
+	// surfaced as a failed CREATE USER at apply time.
+	schemaPick := propsheet.Select("Default schema", []string{"dbo"}, 0)
 	rolesGrid := propsheet.NewToggleGrid([]string{"Member", "Role"}, []int{0}, 8)
 
 	selected := -1
@@ -226,7 +257,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			return
 		}
 		e := rows[selected]
-		e.schema = schemaText.Value()
+		e.schema = schemaPick.Value()
 		vals := rolesGrid.Values()
 		for i := range e.roles {
 			if i < len(vals) {
@@ -239,13 +270,14 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		selected = row
 		if row < 0 || row >= len(rows) {
 			dbStatic.SetValue("")
-			schemaText.SetValue("")
+			schemaPick.SetItems([]string{"dbo"})
 			rolesGrid.SetRows(nil, nil)
 			return
 		}
 		e := rows[row]
 		dbStatic.SetValue(e.dbName)
-		schemaText.SetValue(e.schema)
+		schemaPick.SetItems(schemaItemsFor(e.schemaNames))
+		schemaPick.SetSelected(indexOf(schemaPick.Items(), e.schema))
 		roleText := make([][]string, len(e.roleNames))
 		roleVals := make([][]bool, len(e.roleNames))
 		for i, name := range e.roleNames {
@@ -271,7 +303,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	mappingRow.RevertFn = func() {
 		for _, e := range rows {
 			e.mapped = false
-			e.schema = "dbo"
+			e.schema = defaultSchemaFor(e.schemaNames)
 			for i := range e.roles {
 				e.roles[i] = false
 			}
@@ -287,7 +319,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		mappingRow,
 		propsheet.Note("Space/Enter (or click) on Map toggles a database's user mapping. A newly mapped database uses the login's own name as the username."),
 		propsheet.Section("Selected mapping"),
-		dbStatic, schemaText,
+		dbStatic, schemaPick,
 		propsheet.Section("Database role membership"),
 		rolesGrid,
 		propsheet.Note("Schema/role changes only take effect for a mapped database. Space/Enter (or click) on Member toggles role membership."),

@@ -23,13 +23,14 @@ import (
 // and commitRename then updates the box so PropDialog.InvalidateAll's
 // reload re-fetches under the new name. dbName never changes, so it
 // stays a plain string.
-func userPropPages(sc *db.ServerConn, dbName, userName string) []propPage {
+func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
 		pageUserGeneral(sc, dbName, namePtr),
 		pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"),
 		pageUserMembership(sc, dbName, namePtr),
-		pageDatabasePrincipalSecurables(sc, dbName, namePtr),
+		pageDatabasePrincipalSecurables(d, sc, dbName, namePtr),
+		pagePrincipalEffectivePermissions(d, sc, dbName, namePtr),
 		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
 		}),

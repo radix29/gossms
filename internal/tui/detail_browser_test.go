@@ -40,6 +40,45 @@ func TestShowNodeDetailsUsesCache(t *testing.T) {
 	}
 }
 
+// RefreshCurrent must refetch the node the panel is displaying, not
+// whatever the explorer has selected — pin it by pointing the panel at one
+// node while a second, unrelated node stays cached and untouched.
+func TestRefreshCurrentRefetchesThePanelsOwnNode(t *testing.T) {
+	a := newTestApp()
+	shown, _ := newConnectedNode("shown-node")
+	other, _ := newConnectedNode("other-node")
+
+	db := NewDetailBrowser("test")
+	db.cache[shown] = &detailResult{cols: []string{"Property", "Value"}, rows: [][]string{{"Name", "stale"}}}
+	db.cache[other] = &detailResult{cols: []string{"Property", "Value"}, rows: [][]string{{"Name", "other"}}}
+	db.ShowNodeDetails(a, shown)
+
+	db.RefreshCurrent(a)
+
+	if _, ok := db.cache[shown]; ok {
+		t.Error("cache still has an entry for the displayed node after RefreshCurrent")
+	}
+	if _, ok := db.cache[other]; !ok {
+		t.Error("RefreshCurrent dropped the cache entry for a node it isn't showing")
+	}
+	if db.grid.Status() != "Loading..." {
+		t.Errorf("status = %q, want Loading... after RefreshCurrent", db.grid.Status())
+	}
+}
+
+// RefreshCurrent with nothing displayed must be a no-op, not a fetch for a
+// nil node — the panel is in that state right after PurgeConn empties it.
+func TestRefreshCurrentWithNoNodeIsANoOp(t *testing.T) {
+	a := newTestApp()
+	db := NewDetailBrowser("test")
+
+	db.RefreshCurrent(a)
+
+	if db.grid.Status() == "Loading..." {
+		t.Error("RefreshCurrent started a fetch with no node displayed")
+	}
+}
+
 func TestInvalidateRefetchesCurrentlyDisplayedNode(t *testing.T) {
 	a := newTestApp()
 	node, _ := newConnectedNode("current-node")

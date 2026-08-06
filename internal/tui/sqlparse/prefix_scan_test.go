@@ -1,4 +1,4 @@
-package tui
+package sqlparse
 
 import (
 	"crypto/sha256"
@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// scanCompletionPrefix replaced a scan that tokenized the whole prefix and
+// ScanPrefix replaced a scan that tokenized the whole prefix and
 // then threw away everything before the current statement. Until 2026-08-04
 // these tests pinned the two together differentially, against a second T-SQL
 // lexer written here purely as a baseline — two copies of the same semantics
@@ -30,7 +30,7 @@ import (
 //
 // Regenerate after an intended change, and read the diff:
 //
-//	go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden
+//	go test ./internal/tui/sqlparse -run TestScanCompletionPrefixGolden -update-golden
 
 var updateGolden = flag.Bool("update-golden", false,
 	"rewrite the completion prefix-scan golden file instead of comparing against it")
@@ -48,24 +48,24 @@ func splitRunes(script string) [][]rune {
 	return lines
 }
 
-// flattenFresh is flattenLinesInto's always-allocate form. Production never
-// wants it — the point of flattenLinesInto is that QueryPanel keeps one
+// flattenFresh is FlattenLinesInto's always-allocate form. Production never
+// wants it — the point of FlattenLinesInto is that QueryPanel keeps one
 // buffer across keystrokes — but a test comparing a recycled buffer against a
 // clean one needs both, and a buffer-reusing call cannot check its own reuse.
-func flattenFresh(lines [][]rune) []rune { return flattenLinesInto(nil, lines) }
+func flattenFresh(lines [][]rune) []rune { return FlattenLinesInto(nil, lines) }
 
 var tokKindNames = [...]string{"id", "kw", "dot", "comma", "lparen", "rparen"}
 
 var lexStateNames = [...]string{"normal", "linecomment", "blockcomment", "singlequote", "bracket", "doublequote"}
 
-func tokKindName(k sqlTokKind) string {
+func tokKindName(k TokenKind) string {
 	if int(k) < len(tokKindNames) {
 		return tokKindNames[k]
 	}
 	return fmt.Sprintf("kind%d", int(k))
 }
 
-func lexStateName(s sqlLexState) string {
+func lexStateName(s LexState) string {
 	if int(s) < len(lexStateNames) {
 		return lexStateNames[s]
 	}
@@ -76,21 +76,21 @@ func lexStateName(s sqlLexState) string {
 // for it: everything sqlCompletionCandidates reads, and nothing else.
 //
 // quoteStart is only meaningful in the two quoted states (see
-// tokenizeSQLRange), so it is written as "-" elsewhere rather than freezing a
+// TokenizeRange), so it is written as "-" elsewhere rather than freezing a
 // stale value that no caller looks at and any refactor could legitimately
 // change.
-func formatScan(s completionPrefixScan) string {
+func formatScan(s PrefixScan) string {
 	quote := "-"
-	if s.state == sqlLexBracket || s.state == sqlLexDoubleQuote {
-		quote = fmt.Sprintf("%d", s.quoteStart)
+	if s.State == LexBracket || s.State == LexDoubleQuote {
+		quote = fmt.Sprintf("%d", s.QuoteStart)
 	}
-	return fmt.Sprintf("%s batch=%d quote=%s |%s", lexStateName(s.state), s.batchStart, quote, dumpTokens(s.tokens))
+	return fmt.Sprintf("%s batch=%d quote=%s |%s", lexStateName(s.State), s.BatchStart, quote, dumpTokens(s.Tokens))
 }
 
-func dumpTokens(ts []sqlToken) string {
+func dumpTokens(ts []Token) string {
 	var b strings.Builder
 	for _, t := range ts {
-		fmt.Fprintf(&b, " %s:%q@%d", tokKindName(t.kind), t.text, t.start)
+		fmt.Fprintf(&b, " %s:%q@%d", tokKindName(t.Kind), t.Text, t.Start)
 	}
 	return b.String()
 }
@@ -104,9 +104,9 @@ func sweepCursorPositions(script string) []string {
 	var out []string
 	for row := range lines {
 		for col := 0; col <= len(lines[row]); col++ {
-			upTo := offsetForCursor(lines, row, col)
+			upTo := OffsetForCursor(lines, row, col)
 			out = append(out, fmt.Sprintf("%d,%d %s", row, col,
-				formatScan(scanCompletionPrefix(lines, buf, row, upTo))))
+				formatScan(ScanPrefix(lines, buf, row, upTo))))
 		}
 	}
 	return out
@@ -122,8 +122,8 @@ func sweepWhileTyping(script string) []string {
 		lines := splitRunes(string(runes[:n]))
 		buf := flattenFresh(lines)
 		row := len(lines) - 1
-		upTo := offsetForCursor(lines, row, len(lines[row]))
-		out = append(out, fmt.Sprintf("%d %s", n, formatScan(scanCompletionPrefix(lines, buf, row, upTo))))
+		upTo := OffsetForCursor(lines, row, len(lines[row]))
+		out = append(out, fmt.Sprintf("%d %s", n, formatScan(ScanPrefix(lines, buf, row, upTo))))
 	}
 	return out
 }
@@ -276,8 +276,8 @@ func sortedCorpusNames() []string {
 // regeneration is worthless as a diff.
 func buildGolden() string {
 	var b strings.Builder
-	b.WriteString("# goSSMS — scanCompletionPrefix golden output. Do not hand-edit.\n")
-	b.WriteString("# Regenerate: go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden\n")
+	b.WriteString("# goSSMS — ScanPrefix golden output. Do not hand-edit.\n")
+	b.WriteString("# Regenerate: go test ./internal/tui/sqlparse -run TestScanCompletionPrefixGolden -update-golden\n")
 	b.WriteString("#\n")
 	b.WriteString("# [cursor-sweep] one line per cursor position, in full:\n")
 	b.WriteString("#   <row>,<col> <lexer state> batch=<statement start> quote=<offset|-> | <tokens>\n")
@@ -328,7 +328,7 @@ func TestScanCompletionPrefixGolden(t *testing.T) {
 	}
 	wantBytes, err := os.ReadFile(prefixScanGoldenPath)
 	if err != nil {
-		t.Fatalf("%v — regenerate with: go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden", err)
+		t.Fatalf("%v — regenerate with: go test ./internal/tui/sqlparse -run TestScanCompletionPrefixGolden -update-golden", err)
 	}
 	want := string(wantBytes)
 	if got == want {
@@ -338,7 +338,7 @@ func TestScanCompletionPrefixGolden(t *testing.T) {
 	for i := 0; i < len(gotLines) && i < len(wantLines); i++ {
 		if gotLines[i] != wantLines[i] {
 			t.Fatalf("%s differs at line %d:\n got: %s\nwant: %s\n\nRead the whole diff before regenerating:\n"+
-				"  go test ./internal/tui -run TestScanCompletionPrefixGolden -update-golden && git diff %s",
+				"  go test ./internal/tui/sqlparse -run TestScanCompletionPrefixGolden -update-golden && git diff %s",
 				prefixScanGoldenPath, i+1, gotLines[i], wantLines[i], prefixScanGoldenPath)
 		}
 	}
@@ -346,7 +346,7 @@ func TestScanCompletionPrefixGolden(t *testing.T) {
 }
 
 // compareScans reports the first difference between two scans, or "".
-func compareScans(want, got completionPrefixScan) string {
+func compareScans(want, got PrefixScan) string {
 	if w, g := formatScan(want), formatScan(got); w != g {
 		return fmt.Sprintf("\n got: %s\nwant: %s", g, w)
 	}
@@ -390,10 +390,10 @@ func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 			lines := splitRunes(script)
 			buf := flattenFresh(lines)
 			row := len(lines) - 1
-			got := scanCompletionPrefix(lines, buf, row, offsetForCursor(lines, row, len(lines[row])))
-			if got.batchStart != 0 {
+			got := ScanPrefix(lines, buf, row, OffsetForCursor(lines, row, len(lines[row])))
+			if got.BatchStart != 0 {
 				t.Errorf("batchStart = %d, want 0 — the commented-out GO was treated as a batch separator, "+
-					"scoping completion past the table alias", got.batchStart)
+					"scoping completion past the table alias", got.BatchStart)
 			}
 		})
 	}
@@ -405,13 +405,13 @@ func TestRealGoStillStartsANewBatch(t *testing.T) {
 	lines := splitRunes(script)
 	buf := flattenFresh(lines)
 	row := len(lines) - 1
-	want := offsetForCursor(lines, 2, 0)
-	if got := scanCompletionPrefix(lines, buf, row, offsetForCursor(lines, row, len(lines[row]))).batchStart; got != want {
+	want := OffsetForCursor(lines, 2, 0)
+	if got := ScanPrefix(lines, buf, row, OffsetForCursor(lines, row, len(lines[row]))).BatchStart; got != want {
 		t.Errorf("batchStart = %d, want %d (the line after the GO)", got, want)
 	}
 }
 
-// flattenLinesInto reuses the caller's buffer across keystrokes, so a shorter
+// FlattenLinesInto reuses the caller's buffer across keystrokes, so a shorter
 // script following a longer one must not leave the previous run's tail
 // visible.
 func TestFlattenLinesIntoReuseMatchesFreshAllocation(t *testing.T) {
@@ -427,9 +427,9 @@ func TestFlattenLinesIntoReuseMatchesFreshAllocation(t *testing.T) {
 	for _, script := range scripts {
 		lines := splitRunes(script)
 		want := flattenFresh(lines)
-		reused = flattenLinesInto(reused, lines)
+		reused = FlattenLinesInto(reused, lines)
 		if string(reused) != string(want) {
-			t.Fatalf("flattenLinesInto(reused) = %q, want %q (stale tail from a previous call?)", string(reused), string(want))
+			t.Fatalf("FlattenLinesInto(reused) = %q, want %q (stale tail from a previous call?)", string(reused), string(want))
 		}
 		if len(reused) != len(want) {
 			t.Fatalf("len = %d, want %d", len(reused), len(want))
@@ -449,18 +449,18 @@ func TestScanCompletionPrefixUnaffectedByBufferReuse(t *testing.T) {
 			longest = s
 		}
 	}
-	reused = flattenLinesInto(reused, splitRunes(longest))
+	reused = FlattenLinesInto(reused, splitRunes(longest))
 
 	for name, script := range diffCorpus {
 		t.Run(name, func(t *testing.T) {
 			lines := splitRunes(script)
 			fresh := flattenFresh(lines)
-			reused = flattenLinesInto(reused, lines)
+			reused = FlattenLinesInto(reused, lines)
 			for row := range lines {
 				for col := 0; col <= len(lines[row]); col++ {
-					upTo := offsetForCursor(lines, row, col)
-					want := scanCompletionPrefix(lines, fresh, row, upTo)
-					got := scanCompletionPrefix(lines, reused, row, upTo)
+					upTo := OffsetForCursor(lines, row, col)
+					want := ScanPrefix(lines, fresh, row, upTo)
+					got := ScanPrefix(lines, reused, row, upTo)
 					if diff := compareScans(want, got); diff != "" {
 						t.Fatalf("cursor (row=%d,col=%d) in %q: recycled buffer differs: %s", row, col, script, diff)
 					}

@@ -45,7 +45,7 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 			}
 
 			f, apply := buildPermissionsMatrix(principals, gosmo.DatabasePermissionNames(), entries, 8, 12,
-				d.GrantDatabasePermissionContext, d.DenyDatabasePermissionContext, d.RevokeDatabasePermissionContext)
+				databasePermApply(d))
 			return f, apply, nil
 		},
 	}
