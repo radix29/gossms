@@ -72,3 +72,42 @@ func StyleGridSelected() tcell.Style {
 func StyleGridStatus() tcell.Style {
 	return tcell.StyleDefault.Background(color.LightYellow).Foreground(color.Black)
 }
+
+// StyleChartPlot is the background of a chart's plot area — every chart
+// clears its plot to this before drawing, and a stacked column's topmost
+// partial cell blends against it.
+func StyleChartPlot() tcell.Style {
+	return tcell.StyleDefault.Background(active.ChartPlotBg).Foreground(active.ChartAxis)
+}
+
+// StyleChartGrid is the muted `·` dot grid and `┆` time divisions drawn
+// inside the plot area.
+func StyleChartGrid() tcell.Style {
+	return tcell.StyleDefault.Background(active.ChartPlotBg).Foreground(active.ChartGrid)
+}
+
+// StyleChartAxis is the Y-axis value labels and time labels around the plot.
+func StyleChartAxis() tcell.Style {
+	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.ChartAxis)
+}
+
+// StyleTooltip is the body of a popup readout, and of the toolbar buttons
+// that share its scheme.
+func StyleTooltip() tcell.Style {
+	return tcell.StyleDefault.Background(active.TooltipBg).Foreground(active.TooltipFg)
+}
+
+// StyleTooltipBorder is a tooltip's frame.
+func StyleTooltipBorder() tcell.Style {
+	return tcell.StyleDefault.Background(active.TooltipBg).Foreground(active.TooltipBorder)
+}
+
+// StyleChartSection is a dashboard section's title strip.
+func StyleChartSection() tcell.Style {
+	return tcell.StyleDefault.Background(active.ChartSectionBg).Foreground(active.ChartCyan)
+}
+
+// StyleChartTitle is a chart panel's heading, e.g. "SQL SERVER WAITS".
+func StyleChartTitle() tcell.Style {
+	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.ChartCyan)
+}

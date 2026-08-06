@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"time"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -169,6 +171,12 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		e.pushUndo()
 		switch {
+		case e.blockEditing():
+			// Block edits keep the block armed for the next key, so they take
+			// over from the plain-selection cases below rather than routing
+			// through deleteSelection, which drops it.
+			e.blockBackspace()
+			dropSelection = false
 		case hadSelection:
 			e.deleteSelection()
 		case ctrlHeld:
@@ -179,6 +187,9 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyDelete:
 		e.pushUndo()
 		switch {
+		case e.blockEditing():
+			e.blockDelete()
+			dropSelection = false
 		case hadSelection:
 			e.deleteSelection()
 		case ctrlHeld:
@@ -189,6 +200,14 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyTab:
 		if shiftHeld {
 			e.DedentLines()
+			dropSelection = false
+			break
+		}
+		if e.blockEditing() {
+			e.pushUndo()
+			for range indentWidth {
+				e.blockInsertRune(' ')
+			}
 			dropSelection = false
 			break
 		}
@@ -261,6 +280,13 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		}
 		if r != 0 && !ctrlHeld && !altHeld {
 			e.pushUndo()
+			if e.blockEditing() {
+				// One character into every row the block spans, leaving it
+				// armed a column further right so the next keystroke follows.
+				e.blockInsertRune(r)
+				dropSelection = false
+				break
+			}
 			if hadSelection {
 				e.deleteSelection()
 			}
@@ -384,6 +410,20 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 			// linear selection for the whole drag either way — best-effort,
 			// since terminal reporting of Alt as a mouse modifier varies.
 			e.mouseDragging = true
+			// A second unmodified press on the same spot selects the word
+			// under it. mouseDragging is already latched above, so the
+			// resends tcell sends while the button stays down land in the
+			// drag branch below and extend from the word instead of
+			// re-selecting it.
+			// pressIsDouble runs for every fresh press, modified or not, so a
+			// Shift- or Alt-clicked press still counts as "the previous
+			// press" for the one after it — which is why the modifier test
+			// belongs inside it and not in an && here, where the true branch
+			// would discard the press before the modifier was consulted.
+			if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
+				e.selectWordAt(row, col)
+				return true
+			}
 			if ev.Modifiers()&tcell.ModShift != 0 {
 				if !e.selecting {
 					e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol
@@ -427,6 +467,32 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		e.scrollColBy(horizontalWheelChars)
 		return true
 	}
+	return false
+}
+
+// doubleClickInterval is how close together two presses on the same text
+// position have to be to count as a double-click. Same value as DataGrid's
+// separator double-click (resizeDoubleClickInterval) — one perceived
+// double-click speed for the whole app.
+const doubleClickInterval = 500 * time.Millisecond
+
+// pressIsDouble reports whether an unmodified press at (row, col) follows a
+// previous press at the same position closely enough to count as a
+// double-click, and records this press for the next call.
+//
+// mod is taken here rather than tested by the caller because only the false
+// path records the press: a modified press has to fall through to the
+// recording branch, or it leaves no "previous press" for the one after it.
+func (e *Editor) pressIsDouble(row, col int, at time.Time, mod tcell.ModMask) bool {
+	double := mod == tcell.ModNone &&
+		row == e.lastClickRow && col == e.lastClickCol &&
+		!e.lastClickAt.IsZero() && at.Sub(e.lastClickAt) <= doubleClickInterval
+	if double {
+		// Don't let a third press pair with this one as well.
+		e.lastClickAt = time.Time{}
+		return true
+	}
+	e.lastClickRow, e.lastClickCol, e.lastClickAt = row, col, at
 	return false
 }
 

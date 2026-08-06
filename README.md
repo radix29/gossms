@@ -73,14 +73,20 @@ or drivers required.
   DROP into a new query window.
 - **Object Dependencies** — see what an object depends on and what depends
   on it.
+- **Activity Monitor** — History and Sample dashboards over live DMV data:
+  batches/transactions/compiles, wait categories, memory composition and
+  cache ratios, page activity, database I/O latency, log flushes, and
+  checkpoints. Charts scroll on both axes, the refresh rate is selectable
+  (2/3/5/10 s), and collection can be paused. Thirty minutes of history is
+  kept in memory and nothing is persisted.
 - Configurable tree icon style (Emoji/Symbols/Portable/None), resizable
   panes, background task manager, status history log, and a Check for
   Updates dialog.
 
 ## Future Plans
 
-- **Activity Monitor** — SSMS's live view of current sessions, blocking
-  chains, and resource waits
+- **Activity Monitor: Sessions and Block tabs** — the live session list and
+  the blocking chains; the History and Sample dashboards are built
 - **Reports** — a handful of the most useful built-in SSMS reports
 - **Always On Availability Groups (AAG)** — viewing and managing
   availability group topology and health
@@ -112,6 +118,7 @@ https://github.com/radix29/gossms/releases
 if you want to build it yourself:
 
 ```bash
+git clone https://github.com/radix29/gosmo.git
 git clone https://github.com/radix29/gossms.git
 cd gossms
 go build -o gossms ./cmd/gossms
@@ -157,7 +164,9 @@ at any time.
 | `Ctrl+Space` (query editor) | Open/force IntelliSense suggestions |
 | `Ctrl+R` (query editor) | Refresh the cached table/column list |
 | `Shift+Arrow` | Select text |
-| Click + drag | Select text with the mouse |
+| `Alt+Shift+Arrow` (query editor) | Block (column) selection — typing, `Tab`, `Backspace`/`Delete` then apply to every row at once, and a block copied this way pastes back rectangularly |
+| Click + drag | Select text with the mouse (`Alt`+drag makes it a block selection) |
+| Double-click (query editor) | Select the word under the pointer |
 | Mouse wheel (results grid) | Scroll rows (`Shift`+wheel scrolls columns) |
 | Arrow keys | Navigate tree / grid |
 | `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |

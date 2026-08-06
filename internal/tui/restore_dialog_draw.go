@@ -114,6 +114,11 @@ func (d *RestoreDialog) drawInspect(s tcell.Screen) {
 	core.DrawTextClipped(s, lx, row, w, labelStyle, "File: "+serverPathBase(d.inspectDev))
 	row += 2
 
+	if h == nil {
+		core.DrawTextClipped(s, lx, row, w, dimStyle, "No backup sets on this device.")
+		return
+	}
+
 	size := formatBytes(h.BackupSize)
 	if h.Compressed && h.CompressedSize > 0 {
 		size += "  (compressed: " + formatBytes(h.CompressedSize) + ")"

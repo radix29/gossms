@@ -94,13 +94,17 @@ func (a *App) openQueryFile() {
 	})
 }
 
-// closePanelAt removes the panel at index i, closing its dedicated
-// connection first if it's a QueryPanel — every query panel owns its own
+// closePanelAt removes the panel at index i, releasing whatever that panel
+// owns first: an Activity Monitor's collector and its per-tab connections,
+// or a QueryPanel's dedicated connection — every query panel owns its own
 // connection (see connectForQueryPanel), so nothing else references it. Also
 // cancels an in-flight query/plan fetch, if any — otherwise it keeps running
 // server-side until completion and its postEvent completion closure fires
 // against a panel that's no longer hosted (guarded there via panelHosted).
 func (a *App) closePanelAt(i int) {
+	if am, ok := a.panels.PanelAt(i).(*ActivityMonitor); ok {
+		am.Close()
+	}
 	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
 		if qp.executing && qp.cancel != nil {
 			qp.cancel()
@@ -426,13 +430,28 @@ func (a *App) showActivityMonitor() {
 // showActivityMonitorFor opens Activity Monitor for a known connection —
 // the shared entry point for the Tools menu/toolbar (via
 // showActivityMonitor, which resolves sc first) and the Object Explorer
-// server node's context menu (which already has sc in hand). Not
-// implemented yet.
+// server node's context menu (which already has sc in hand).
+//
+// One panel per server: reopening it for a connection that already has one
+// raises that panel instead of starting a second collector against the same
+// instance.
 func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.alertDialog.ShowAlert("Activity Monitor", "Feature not implemented yet. Coming soon!")
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		am, ok := p.(*ActivityMonitor)
+		return ok && am.conn == sc
+	})
+	if idx < 0 {
+		am := NewActivityMonitor(a, sc)
+		idx = a.panels.AddPanel(am)
+		// After AddPanel: the connect callback checks panelHosted, which is
+		// only true once the panel is in a.panels.
+		a.connectForActivityMonitor(am, sc)
+	}
+	a.panels.SetActive(idx)
+	a.focusPanels()
 }
 
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }

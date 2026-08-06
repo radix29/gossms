@@ -69,11 +69,44 @@ type Palette struct {
 	InputBorder  tcell.Color
 	InputFocused tcell.Color
 
+	// Tooltip — the popup a chart shows for the sample under the pointer,
+	// and the toolbar buttons, which wear the same scheme so a clickable
+	// control and the box it produces read as the same surface.
+	TooltipBg     tcell.Color
+	TooltipFg     tcell.Color
+	TooltipBorder tcell.Color
+
 	// Status
 	Success tcell.Color
 	Error   tcell.Color
 	Warning tcell.Color
 	Info    tcell.Color
+
+	// Chart — the series palette used by tuikit/charts. These are roles,
+	// not metric names: the application layer maps each metric to a role
+	// once and keeps that mapping fixed, so a series wears the same colour
+	// across refreshes and across dashboards.
+	//
+	// ChartPlotBg is deliberately darker than PanelBg: a chart's plot area
+	// reads as a recessed well against the panel it sits in, and a stacked
+	// column's topmost partial cell blends its series colour against this,
+	// so it has to differ from the series colours themselves.
+	//
+	// ChartSectionBg backs a dashboard section's title strip. It is lighter
+	// than the panel and grid-header backgrounds so the strips read as the
+	// dividers between sections on a screen that is otherwise wall-to-wall
+	// charts.
+	ChartCyan      tcell.Color
+	ChartGreen     tcell.Color
+	ChartYellow    tcell.Color
+	ChartBlue      tcell.Color
+	ChartRed       tcell.Color
+	ChartPurple    tcell.Color
+	ChartNeutral   tcell.Color
+	ChartGrid      tcell.Color
+	ChartAxis      tcell.Color
+	ChartPlotBg    tcell.Color
+	ChartSectionBg tcell.Color
 }
 
 // Default is the built-in SSMS dark theme.
@@ -127,10 +160,26 @@ var Default = Palette{
 	InputBorder:  tcell.NewRGBColor(63, 63, 70),
 	InputFocused: tcell.NewRGBColor(0, 122, 204),
 
+	TooltipBg:     tcell.NewRGBColor(58, 58, 64),
+	TooltipFg:     tcell.NewRGBColor(230, 230, 230),
+	TooltipBorder: tcell.NewRGBColor(95, 95, 105),
+
 	Success: tcell.NewRGBColor(75, 175, 75),
 	Error:   tcell.NewRGBColor(220, 50, 50),
 	Warning: tcell.NewRGBColor(220, 180, 50),
 	Info:    tcell.NewRGBColor(100, 160, 220),
+
+	ChartCyan:      tcell.NewRGBColor(78, 205, 196),
+	ChartGreen:     tcell.NewRGBColor(60, 200, 80),
+	ChartYellow:    tcell.NewRGBColor(212, 160, 23),
+	ChartBlue:      tcell.NewRGBColor(66, 110, 240),
+	ChartRed:       tcell.NewRGBColor(230, 60, 70),
+	ChartPurple:    tcell.NewRGBColor(170, 60, 190),
+	ChartNeutral:   tcell.NewRGBColor(200, 200, 200),
+	ChartGrid:      tcell.NewRGBColor(70, 70, 70),
+	ChartAxis:      tcell.NewRGBColor(150, 150, 150),
+	ChartPlotBg:    tcell.NewRGBColor(0, 0, 0),
+	ChartSectionBg: tcell.NewRGBColor(66, 66, 72),
 }
 
 // active is the currently active palette (starts as Default).

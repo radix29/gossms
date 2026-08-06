@@ -33,6 +33,32 @@ func WordBoundaryLeft(line []rune, col int) int {
 	return i
 }
 
+// WordBoundsAt returns the [start, end) rune range of the word under col —
+// the span a double-click selects. The class of the rune at col decides what
+// counts as "the word": a run of word runes, or a run of same-class
+// non-space punctuation. A click past the end of the line, or one landing
+// between words on whitespace, takes the run immediately to its left, so
+// double-clicking just past a word still selects that word; whitespace with
+// no word to its left reports ok == false and selects nothing.
+func WordBoundsAt(line []rune, col int) (start, end int, ok bool) {
+	i := Clamp(col, 0, len(line))
+	if i == len(line) || unicode.IsSpace(line[i]) {
+		if i == 0 || unicode.IsSpace(line[i-1]) {
+			return 0, 0, false
+		}
+		i--
+	}
+	word := IsWordRune(line[i])
+	start, end = i, i+1
+	for start > 0 && !unicode.IsSpace(line[start-1]) && IsWordRune(line[start-1]) == word {
+		start--
+	}
+	for end < len(line) && !unicode.IsSpace(line[end]) && IsWordRune(line[end]) == word {
+		end++
+	}
+	return start, end, true
+}
+
 // WordBoundaryRight mirrors WordBoundaryLeft, moving right from col. Never
 // returns more than len(line).
 func WordBoundaryRight(line []rune, col int) int {

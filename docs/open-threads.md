@@ -109,18 +109,16 @@ a settled question being reopened.
 
 ## Unbuilt features README already promises
 
-None is started; each is a feature, not a defect.
+Each is a feature, not a defect.
 
-- **Activity Monitor** — the only one with reachable entry points:
-  Tools > Activity Monitor (`menu.go`), the toolbar's 📈 button
-  (`toolbar.go`), and the Object Explorer server node's context menu
-  (`app_explorer_data.go`) all reach `showActivityMonitorFor`
-  (`app_panel_actions.go`), which shows "Feature not implemented yet. Coming
-  soon!". It tells the user rather than silently no-op'ing, so the
-  context-gated-actions rule holds. Scoped in `todo/todo.txt` as tabbed
-  (dashboard, dashboard history, `sp_whoisactive` all/active, `sp_block`,
-  Azure/MI stats), history in memory only with configurable window and
-  refresh — that scope is scratch, not a commitment.
+- **Activity Monitor: the Sessions and Block tabs.** The panel, both
+  dashboards, and live collection shipped 2026-08-06 (increment 1, see
+  `docs/plan-activity-monitor.md`). The Sessions and Block tabs exist and are
+  selectable but draw a placeholder and a manual Refresh that says it has
+  nothing to load — increment 2 is the real session list
+  (`sp_whoisactive`-shaped) and the blocking chains. Neither has opened a
+  connection yet; `ActivityMonitor.adopt` is where a tab's own connection
+  gets registered for teardown.
 - **Reports** — server-level and database-level (top tables, disk usage). No
   entry point exists yet.
 - **Always On Availability Groups** — viewing and managing topology and
@@ -139,6 +137,19 @@ Both are the author's own assessment; neither has a defect list behind it yet.
   the largest untouched-by-review area in `internal/tui`. No specific defect is
   recorded — write one down here the next time one is found, rather than
   carrying "needs a rework" as the whole thread.
+
+## Designed and deferred
+
+- **`Editor` undo is whole-buffer snapshots, not per-edit deltas.**
+  `Editor.snapshot` deep-copies every line on every `pushUndo`, which is every
+  typed character: measured 3.2 ms and 5 MB per keystroke in a 20,000-line
+  script (`BenchmarkPushUndo20k`, throwaway). The 2026-08-06 review's Batch D
+  capped the stack by total bytes (`maxUndoBytes`, 64 MB) so the memory cliff
+  is gone — the per-keystroke copy is not. The real fix is per-edit deltas: an
+  undo step records the range replaced and the text it replaced, so a
+  keystroke costs bytes rather than a document. It touches every `pushUndo`
+  call site (~15) plus `undo`/`redo`, and wants live tmux verification, so it
+  was deliberately not attempted in the same pass as the cap.
 
 ## Deferred scope (repeatedly, deliberately)
 

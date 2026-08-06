@@ -239,6 +239,63 @@ func TestFindDialogEmptyTermIsRefused(t *testing.T) {
 // searchFor is the SearchOptions a plain literal search compiles from.
 func searchFor(q string) controls.SearchOptions { return controls.SearchOptions{Query: q} }
 
+// Ctrl+F3 compiles a search without opening the dialog, so it has to leave
+// the dialog describing that search and no other. It used to sync only Find
+// what / whole word / regexp, leaving Match case (and, after a Replace-mode
+// showing, "in selection only") saying whatever the user last chose — so the
+// dialog claimed a case-sensitive search the editor was not running, and
+// optionsChanged saw a difference that wasn't real.
+func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
+	// SetText leaves the caret at the start, so the first word is the one
+	// under it — no cursor movement needed to make this deterministic.
+	a, qp := newFindTestApp(t, "Total from dbo.Orders")
+	d := a.findDialog
+
+	// Leave every option set the way a previous search would have.
+	d.replaceMode = true
+	d.cbCase.SetChecked(true)
+	d.cbRegex.SetChecked(true)
+	d.cbSel.SetChecked(true)
+	d.fReplace.SetValue("Amount")
+
+	a.findWordAtCursor()
+
+	if got := d.fFind.Value(); got != "Total" {
+		t.Fatalf("Find what = %q, want the word at the cursor", got)
+	}
+	opts := qp.editor.SearchOpts()
+	if opts.Query != "Total" || !opts.WholeWord {
+		t.Fatalf("editor search = %+v, want a whole-word search for Total", opts)
+	}
+	if d.cbCase.Checked() != opts.MatchCase {
+		t.Errorf("Match case = %v, editor MatchCase = %v", d.cbCase.Checked(), opts.MatchCase)
+	}
+	if d.cbWord.Checked() != opts.WholeWord {
+		t.Errorf("Match whole word = %v, editor WholeWord = %v", d.cbWord.Checked(), opts.WholeWord)
+	}
+	if d.cbRegex.Checked() != opts.Regexp {
+		t.Errorf("Regular expression = %v, editor Regexp = %v", d.cbRegex.Checked(), opts.Regexp)
+	}
+	if d.cbSel.Checked() != opts.InSelection {
+		t.Errorf("in selection only = %v, editor InSelection = %v", d.cbSel.Checked(), opts.InSelection)
+	}
+	// The replacement text is the dialog's to own, so it survives — and the
+	// compiled search carries it, so the two still agree.
+	if got := d.fReplace.Value(); got != "Amount" {
+		t.Errorf("Replace with = %q, want the user's text kept", got)
+	}
+	// The sequence that matters: Ctrl+F3, then open the dialog, then Find
+	// Next. optionsChanged short-circuits until a showing captures a target,
+	// so opening it is what makes the comparison real — and it must find
+	// nothing to recompile, or Find Next restarts from the cursor instead of
+	// stepping on to the next match.
+	d.ShowFind()
+	if d.optionsChanged() {
+		t.Error("optionsChanged after Ctrl+F3: a Find Next would recompile and restart from the cursor")
+	}
+	d.Hide()
+}
+
 // A latch must not survive into the next showing (tuikit invariant 4): a
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestFindDialogShowClearsTheDragLatch(t *testing.T) {

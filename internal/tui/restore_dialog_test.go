@@ -73,3 +73,20 @@ func TestSelectedHeaderSurvivesAStaleIndex(t *testing.T) {
 		t.Errorf("selectedHeader() = %v, want the first header", got)
 	}
 }
+
+// TestSelectedHeaderOnNoHeaders pins the nil return. The stale-index guard
+// above used to fall back to headers[0], which panics when there is no
+// headers[0] — on the UI goroutine, where recoverPanic cannot catch it.
+func TestSelectedHeaderOnNoHeaders(t *testing.T) {
+	d := &RestoreDialog{}
+	if got := d.selectedHeader(); got != nil {
+		t.Errorf("selectedHeader() on no headers = %v, want nil", got)
+	}
+	d.selectHeader(3) // must not leave an index selectedHeader would index with
+	if got := d.selectedHeader(); got != nil {
+		t.Errorf("selectedHeader() after selectHeader = %v, want nil", got)
+	}
+	if got := d.restoreFileNumber(); got != 0 {
+		t.Errorf("restoreFileNumber() on no headers = %d, want 0", got)
+	}
+}

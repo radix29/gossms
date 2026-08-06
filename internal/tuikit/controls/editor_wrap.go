@@ -166,6 +166,12 @@ func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, 
 			// existing selection instead — see the identical Shift+Click
 			// handling in HandleMouse (editor_input.go) for the rationale.
 			e.mouseDragging = true
+			// Double-click selects the word under the pointer, same as in
+			// non-wrap mode (see HandleMouse).
+			if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
+				e.selectWordAt(row, col)
+				return true
+			}
 			if ev.Modifiers()&tcell.ModShift != 0 {
 				if !e.selecting {
 					e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol

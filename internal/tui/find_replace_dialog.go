@@ -547,13 +547,34 @@ func (a *App) findWordAtCursor() {
 		return
 	}
 	// Whole-word, so Ctrl+F3 on "id" doesn't stop inside every "identity".
-	// Errors are impossible here: the term is literal, so it is escaped
-	// before compiling.
-	_ = qp.editor.SetSearch(controls.SearchOptions{Query: word, WholeWord: true})
-	a.findDialog.fFind.SetValue(word)
-	a.findDialog.cbWord.SetChecked(true)
-	a.findDialog.cbRegex.SetChecked(false)
+	// Replace comes from the dialog rather than being blanked: it has no
+	// effect on matching, and clearing it would throw away text the user
+	// typed. Errors are impossible here — the term is literal, so it is
+	// escaped before compiling.
+	opts := controls.SearchOptions{
+		Query:     word,
+		Replace:   a.findDialog.fReplace.Value(),
+		WholeWord: true,
+	}
+	_ = qp.editor.SetSearch(opts)
+	a.findDialog.adoptSearch(opts)
 	a.findNextInEditor(1)
+}
+
+// adoptSearch points the dialog's fields at opts, so what it shows is what
+// the editor is actually searching for. Every field opts has is written,
+// including the ones this caller left zero: a partial sync leaves
+// optionsChanged reporting a difference that isn't real, and the next Find
+// Next recompiles and so restarts from the cursor instead of stepping on to
+// the following match — which is the exact behaviour ensureSearch exists to
+// prevent.
+func (d *FindReplaceDialog) adoptSearch(opts controls.SearchOptions) {
+	d.fFind.SetValue(opts.Query)
+	d.fReplace.SetValue(opts.Replace)
+	d.cbCase.SetChecked(opts.MatchCase)
+	d.cbWord.SetChecked(opts.WholeWord)
+	d.cbRegex.SetChecked(opts.Regexp)
+	d.cbSel.SetChecked(opts.InSelection)
 }
 
 // hasEditorSearch reports whether Find Next/Previous have a search to

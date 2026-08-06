@@ -118,24 +118,27 @@ govern how a single input event is routed once it is already there.
 ## Package map
 
 `internal/tui` is a flat package, so every file is listed individually with
-its purpose; `internal/tuikit`, `internal/tui/planview` and
-`internal/tui/sqlparse` are summarized by directory and documented in their
-own README and `doc.go`. A file absent from a summarized directory has not
+its purpose; `internal/tuikit`, `internal/tui/planview`,
+`internal/tui/sqlparse` and `internal/tui/dashboard` are summarized by
+directory and documented in their own README and `doc.go`. A file absent from a summarized directory has not
 been omitted — look there directly.
 
-Both `tui` sub-packages are leaves: they depend on `tuikit` and the standard
-library, never on `tui` itself. That is what made each extractable — and the
-absence of any other zero-outbound-reference set in `tui` is why there is no
-third one (`docs/proposals-2026-08-05.md` § 1 correction).
+All three `tui` sub-packages are leaves: they depend on `tuikit` and the
+standard library, never on `tui` itself. That is what makes each
+extractable. `dashboard` is the newest, and it exists for a second reason:
+`cmd/amdemo` has to draw the same dashboards the panel draws without
+dragging in the whole application.
 
 ```
 gossms/
 ├── cmd/
 │   ├── gossms/               # main entry point
-│   └── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file (not part of the release build)
+│   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file (not part of the release build)
+│   └── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
+│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutine — no TUI imports
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
@@ -147,10 +150,12 @@ gossms/
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog
+│   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
+│       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView with tuikit/charts; no App, no connection
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
 │       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense (pure functions over runes; no App, no connection)
 │       │
@@ -189,9 +194,14 @@ gossms/
 │       ├── plan_panel.go         # pops an Execution Plan tab out into its own closable panel
 │       ├── completion_provider.go   # SQL completion.Provider: cursor-context resolution (FROM-scope, qualifiers) against the cached inventory
 │       ├── completion_inventory.go  # per-database + per-server(sys schema) catalog cache for IntelliSense, async load
-│       ├── completion_tokenizer.go  # SQL tokenizer feeding the completion resolver
-│       ├── completion_scope.go      # FROM-clause/alias resolution and statement-boundary detection
 │       ├── completion_candidates.go # schema/table/column candidate lookup against the cached inventory
+│       │
+│       │  ── Activity Monitor ──
+│       ├── activity_monitor.go        # ActivityMonitor state: tabs, toolbar, per-tab scroll, teardown; implements layout.Panel
+│       ├── activity_monitor_draw.go   # tab/toolbar rows, dashboard canvas blit, both scrollbars, placeholder tabs
+│       ├── activity_monitor_input.go  # HandleKey/HandleMouse: tab switching, scrolling, gesture zones, scrollbar drags
+│       ├── activity_monitor_history.go # activity.Store → HistoryView: one charts.Series per metric, colour roles
+│       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
@@ -241,10 +251,12 @@ gossms/
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
+│       ├── perm_state.go        # the Grant/Grant With Grant/Deny/(none) cell state, the orig→current transition each one needs, and the per-scope gosmo adapters — shared by every permissions grid below
 │       ├── securables_matrix.go  # generic database-securable Grant/Deny/Revoke grid + the shared Securables page for a user or database role
 │       ├── membership_page.go    # shared Members page (add/remove principals) for Database Role and Server Role Properties
 │       ├── owner_transfer_page.go # shared owner-transfer page behind Schema Ownership and Owned Roles
 │       ├── server_permissions_matrix.go # server-scope securables grid, used by Server/Login/Server Role Properties
+│       ├── effective_perms_page.go # read-only Effective Permissions page for a database principal (database/schema/object scope) and for a login
 │       ├── server_props.go       # Server Properties: shared config-row plumbing + page registration
 │       ├── server_props_general.go      # Server Properties > General page
 │       ├── server_props_memory.go       # Server Properties > Memory page

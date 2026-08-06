@@ -490,6 +490,53 @@ func TestEditorUndoStackCapped(t *testing.T) {
 	}
 }
 
+// TestEditorUndoStackCappedByBytes covers the second undo cap: a document
+// big enough that maxUndoBytes binds before maxUndoSteps does. Ten edits to a
+// ~13 MB document may retain at most four steps, not ten.
+func TestEditorUndoStackCappedByBytes(t *testing.T) {
+	line := strings.Repeat("x", 200)
+	lines := make([]string, 16000)
+	for i := range lines {
+		lines[i] = line
+	}
+	e := newTestEditor(strings.Join(lines, "\n"))
+	for i := 0; i < 10; i++ {
+		e.HandleKey(runeKey('y', tcell.ModNone))
+	}
+	if e.undoBytes > maxUndoBytes {
+		t.Fatalf("undoBytes = %d, want <= %d", e.undoBytes, maxUndoBytes)
+	}
+	if len(e.undoStack) == 0 || len(e.undoStack) >= 10 {
+		t.Fatalf("undoStack len = %d, want a byte-capped count between 1 and 9", len(e.undoStack))
+	}
+	// The retained steps are the newest ones, so undo still walks back one
+	// character at a time from the newest edit.
+	want := len(e.undoStack)
+	for i := 0; i < want; i++ {
+		e.undo()
+	}
+	if got := e.Text(); !strings.HasPrefix(got, strings.Repeat("y", 10-want)+line) {
+		t.Fatalf("first line after undoing every retained step = %q…, want %d leading y", got[:20], 10-want)
+	}
+	if e.undoBytes != 0 {
+		t.Fatalf("undoBytes = %d after emptying the stack, want 0", e.undoBytes)
+	}
+}
+
+// TestEditorUndoKeepsNewestStepOverBudget pins that a single snapshot larger
+// than maxUndoBytes is kept anyway — one undo has to work on any document.
+func TestEditorUndoKeepsNewestStepOverBudget(t *testing.T) {
+	e := newTestEditor(strings.Repeat(strings.Repeat("x", 1000)+"\n", 20000))
+	e.HandleKey(runeKey('y', tcell.ModNone))
+	if len(e.undoStack) != 1 {
+		t.Fatalf("undoStack len = %d, want 1 (newest step kept regardless of size)", len(e.undoStack))
+	}
+	e.undo()
+	if strings.HasPrefix(e.Text(), "y") {
+		t.Fatal("undo did not restore the pre-edit document")
+	}
+}
+
 // TestEditorShiftClickExtendsFromCursorWhenNoSelection pins down that
 // Shift+Click with no active selection yet extends from the cursor's
 // current position, rather than re-anchoring at the click point the way a
@@ -964,5 +1011,85 @@ func TestStyleAt(t *testing.T) {
 		if got := styleAt(runs, tc.ci, def); got != tc.want {
 			t.Errorf("styleAt(ci=%d) = %v, want %v", tc.ci, got, tc.want)
 		}
+	}
+}
+
+// clickAt sends one Button1 press followed by its release at (x, y) — the
+// pair the editor pairs up to recognise a double-click.
+func clickAt(e *Editor, x, y int) {
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+func TestEditorDoubleClickSelectsWord(t *testing.T) {
+	e := newTestEditor("select foo from bar")
+	e.SetGutterVisible(false)
+	e.SetBounds(0, 0, 40, 5)
+
+	clickAt(e, 8, 0) // inside "foo"
+	if e.HasSelection() {
+		t.Fatal("a single click should not select anything")
+	}
+	clickAt(e, 8, 0)
+
+	if got := e.SelectedText(); got != "foo" {
+		t.Fatalf("double-click SelectedText() = %q, want %q", got, "foo")
+	}
+}
+
+func TestEditorDoubleClickOnWhitespaceSelectsNothing(t *testing.T) {
+	e := newTestEditor("ab   cd")
+	e.SetGutterVisible(false)
+	e.SetBounds(0, 0, 40, 5)
+
+	clickAt(e, 3, 0)
+	clickAt(e, 3, 0)
+
+	if e.HasSelection() {
+		t.Fatalf("double-click between words selected %q, want nothing", e.SelectedText())
+	}
+}
+
+// clickAtMod is clickAt with a modifier held on the press.
+func clickAtMod(e *Editor, x, y int, mod tcell.ModMask) {
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, mod))
+	e.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+// A modified press is not itself a double-click, but it is still "the
+// previous press" for the one after it. Testing the modifier outside
+// pressIsDouble breaks that: the true branch discards the press before the
+// modifier is consulted, so the click after a Shift-click has nothing to
+// pair with.
+func TestEditorClickAfterShiftClickStillSelectsWord(t *testing.T) {
+	e := newTestEditor("select foo from bar")
+	e.SetGutterVisible(false)
+	e.SetBounds(0, 0, 40, 5)
+
+	clickAt(e, 8, 0)
+	clickAtMod(e, 8, 0, tcell.ModShift)
+	if got := e.SelectedText(); got == "foo" {
+		t.Fatal("a Shift-click selected the word; it should extend the selection instead")
+	}
+	clickAt(e, 8, 0)
+
+	if got := e.SelectedText(); got != "foo" {
+		t.Errorf("the click after a Shift-click selected %q, want %q", got, "foo")
+	}
+}
+
+// Two clicks far apart on the *same* spot are two separate clicks, not a
+// double-click.
+func TestEditorSlowSecondClickDoesNotSelectWord(t *testing.T) {
+	e := newTestEditor("select foo")
+	e.SetGutterVisible(false)
+	e.SetBounds(0, 0, 40, 5)
+
+	clickAt(e, 8, 0)
+	e.lastClickAt = e.lastClickAt.Add(-2 * doubleClickInterval)
+	clickAt(e, 8, 0)
+
+	if e.HasSelection() {
+		t.Fatalf("slow second click selected %q, want nothing", e.SelectedText())
 	}
 }

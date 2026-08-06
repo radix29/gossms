@@ -111,10 +111,18 @@ func (d *RestoreDialog) deviceForRestore() string {
 }
 
 // selectedHeader returns the backup set the inspect view is showing and the
-// restore will target. Never nil once analyze has populated headers — every
-// caller runs in restoreModeInspect, which analyze only enters after
-// rejecting an empty header list.
+// restore will target, or nil when there are no headers at all. Callers
+// normally run in restoreModeInspect, which analyze only enters after
+// rejecting an empty header list — but the nil return is not decoration:
+// this runs on the UI goroutine, where recoverPanic cannot reach, so an
+// index into an empty slice would take the process down with the terminal
+// still on the alternate screen and the user's unsaved query text with it.
+// A stale headerIdx (headers is replaced by every analyze) still falls back
+// to the first set.
 func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {
+	if len(d.headers) == 0 {
+		return nil
+	}
 	if d.headerIdx < 0 || d.headerIdx >= len(d.headers) {
 		return d.headers[0]
 	}

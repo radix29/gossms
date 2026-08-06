@@ -72,6 +72,15 @@ func TestSummaryViewerReleaseClearsDragLatch(t *testing.T) {
 
 	v.HandleMouse(tcell.NewEventMouse(cx, cy, tcell.ButtonNone, tcell.ModNone))
 
+	// The popup holds one short cell value, so every click in it lands on the
+	// same text position: press two of them and the editor reads a
+	// double-click and selects the word, which would mask what this test is
+	// checking. A double-click doesn't pair with a third press (see
+	// Editor.pressIsDouble), so spending one here leaves the press below a
+	// fresh one.
+	v.HandleMouse(tcell.NewEventMouse(cx, cy, tcell.Button1, tcell.ModNone))
+	v.HandleMouse(tcell.NewEventMouse(cx, cy, tcell.ButtonNone, tcell.ModNone))
+
 	v.SelectAll()
 	v.HandleMouse(tcell.NewEventMouse(cx, cy, tcell.Button1, tcell.ModNone))
 	if v.summarySt.grid.HasSelection() {

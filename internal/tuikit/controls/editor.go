@@ -2,6 +2,7 @@ package controls
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -34,19 +35,32 @@ type ColorRun struct {
 	Style tcell.Style
 }
 
-// editorState is an undo/redo snapshot.
+// editorState is an undo/redo snapshot. bytes is the approximate heap cost
+// of lines, computed once at snapshot time so trimUndo never has to walk the
+// document again.
 type editorState struct {
 	lines     [][]rune
 	cursorRow int
 	cursorCol int
+	bytes     int
 }
 
 // maxUndoSteps caps the undo stack so unbounded editing doesn't grow it
-// forever — each step is a full copy of the buffer's lines, so bounding
-// the step count also bounds memory to a fixed multiple of one snapshot's
-// size. Oldest steps are dropped first; the redo stack is unbounded since
+// forever. Oldest steps are dropped first; the redo stack is unbounded since
 // it's cleared on every new edit and can never grow past what undo popped.
 const maxUndoSteps = 500
+
+// maxUndoBytes caps the undo stack's total size, because a step count alone
+// does not bound memory: each step is a full copy of the buffer's lines, so
+// 500 steps of a 20,000-line script is ~2.5 GB. Whichever cap binds first
+// wins, and the newest step is always kept even if it alone exceeds this —
+// one undo has to work on any document.
+const maxUndoBytes = 64 << 20
+
+// sliceHeaderBytes is what one line's []rune header costs on a 64-bit build,
+// counted per line so a document of many short lines is not measured as
+// nearly free.
+const sliceHeaderBytes = 24
 
 // Editor is a multi-line text editor.
 //
@@ -159,6 +173,22 @@ type Editor struct {
 	selAnchorCol  int
 	mouseDragging bool
 
+	// lastClickAt/Row/Col record the previous Button1 press for double-click
+	// word selection (see selectWordAt). tcell reports no click count of its
+	// own, so the editor pairs presses itself, the same way DataGrid pairs
+	// separator presses for its restore-default-width double-click.
+	lastClickAt  time.Time
+	lastClickRow int
+	lastClickCol int
+
+	// blockClip is the text most recently *copied* out of a block (column)
+	// selection — see SelectedText. Paste compares its argument against it to
+	// tell a block copy round-tripped through the OS clipboard from ordinary
+	// multi-line text, which is the only way to know a paste should go back in
+	// rectangularly (Notepad++ tracks the same thing internally). Cleared by
+	// any non-block copy.
+	blockClip string
+
 	// sbDragging is true while the user is dragging the scrollbar thumb
 	// (see HandleMouse and drawScrollbar) — a separate flag from
 	// mouseDragging since the two gestures target different screen
@@ -173,6 +203,10 @@ type Editor struct {
 
 	undoStack []editorState
 	redoStack []editorState
+
+	// undoBytes is the sum of undoStack's snapshot sizes, maintained by every
+	// push and pop so trimUndo never re-measures the stack.
+	undoBytes int
 
 	// Completion: see editor_completion.go. completionProvider is nil for
 	// every Editor except the SQL query editor, so every other Editor's
@@ -329,7 +363,7 @@ func (e *Editor) SetText(text string) {
 	e.doc.setLines(lines)
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
-	e.undoStack, e.redoStack = nil, nil
+	e.undoStack, e.redoStack, e.undoBytes = nil, nil, 0
 	e.closeCompletion()
 	e.completionSuppressed = false
 }
@@ -484,21 +518,44 @@ func (e *Editor) deleteChar() {
 }
 
 func (e *Editor) pushUndo() {
-	e.undoStack = append(e.undoStack, e.snapshot())
-	if len(e.undoStack) > maxUndoSteps {
-		e.undoStack = e.undoStack[1:]
-	}
+	st := e.snapshot()
+	e.undoStack = append(e.undoStack, st)
+	e.undoBytes += st.bytes
+	e.trimUndo()
 	e.redoStack = nil
+}
+
+// trimUndo drops the oldest snapshots until the stack is inside both caps,
+// keeping at least one step.
+func (e *Editor) trimUndo() {
+	drop := 0
+	for len(e.undoStack)-drop > 1 &&
+		(len(e.undoStack)-drop > maxUndoSteps || e.undoBytes > maxUndoBytes) {
+		e.undoBytes -= e.undoStack[drop].bytes
+		drop++
+	}
+	if drop == 0 {
+		return
+	}
+	// Copied into a fresh backing array rather than e.undoStack[drop:]: the
+	// latter keeps every dropped snapshot's lines reachable behind the slice
+	// header for as long as the editor lives, which is the whole point of
+	// dropping them.
+	kept := make([]editorState, len(e.undoStack)-drop)
+	copy(kept, e.undoStack[drop:])
+	e.undoStack = kept
 }
 
 func (e *Editor) snapshot() editorState {
 	lines := make([][]rune, e.doc.Len())
+	bytes := 0
 	for i, l := range e.doc.all() {
 		nl := make([]rune, len(l))
 		copy(nl, l)
 		lines[i] = nl
+		bytes += len(l)*4 + sliceHeaderBytes
 	}
-	return editorState{lines, e.cursorRow, e.cursorCol}
+	return editorState{lines, e.cursorRow, e.cursorCol, bytes}
 }
 
 func (e *Editor) undo() {
@@ -508,6 +565,7 @@ func (e *Editor) undo() {
 	e.redoStack = append(e.redoStack, e.snapshot())
 	st := e.undoStack[len(e.undoStack)-1]
 	e.undoStack = e.undoStack[:len(e.undoStack)-1]
+	e.undoBytes -= st.bytes
 	e.doc.setLines(st.lines)
 	e.cursorRow, e.cursorCol = st.cursorRow, st.cursorCol
 }
@@ -516,7 +574,10 @@ func (e *Editor) redo() {
 	if len(e.redoStack) == 0 {
 		return
 	}
-	e.undoStack = append(e.undoStack, e.snapshot())
+	cur := e.snapshot()
+	e.undoStack = append(e.undoStack, cur)
+	e.undoBytes += cur.bytes
+	e.trimUndo()
 	st := e.redoStack[len(e.redoStack)-1]
 	e.redoStack = e.redoStack[:len(e.redoStack)-1]
 	e.doc.setLines(st.lines)

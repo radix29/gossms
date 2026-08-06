@@ -7008,3 +7008,215 @@ folded away. Activity Monitor had two entries (a stub section and an unbuilt
 feature) and is now one. The `formatValue` `float32` note and the `USE
 master;` finding moved into "By design — do not re-raise", where they always
 belonged: both are do-not-re-raise records, not open work.
+
+## activity-monitor-increment-1-2026-08-06
+
+The Activity Monitor, built in four phases against the work order in
+`todo/mockups/ACTIVITY_MONITOR.md`. `docs/plan-activity-monitor.md` is the
+plan of record and carries the four agreed deviations; this is what actually
+happened and what the live testing caught.
+
+**What shipped.** `internal/tuikit/charts` (eighth-block charts and an
+off-screen canvas), `internal/tui/dashboard` (the History and Sample
+dashboard layouts over a plain view model), `cmd/amdemo` (a deterministic
+mock harness), `internal/tui/activity_monitor*.go` (the panel: four tabs, a
+toolbar, two-axis scrolling), and `internal/activity` (DMV collection, rate
+derivation, a 30-minute store, and the collector goroutine). Sessions and
+Block are placeholders; that is increment 2.
+
+**The four deviations, in one line each.** One collector, not two — Sample
+is History's newest sample, so both tabs describe the same instant and the
+query load halves. Both dashboards render into a fixed canvas the panel
+scrolls, rather than reflowing. Connections are per tab but opened lazily.
+`VIEW SERVER STATE` is checked once and its absence stops the collector with
+a message, rather than being worked around per metric.
+
+**Bugs found by driving the binary, not by tests.**
+
+`PWAIT_EXTENSIBILITY_CLEANUP_TASK` — the one worth remembering. The waits
+panel came up with a Y axis of 150K and a single full-height column,
+everything else flattened to nothing. Steady-state probing showed maximum
+wait deltas of about 1,500 ms, so the spike was intermittent and did not
+reproduce on demand. Chasing it took a temporary live probe inside the
+package (a `TestLiveProbe` guarded by an env var, deleted afterwards) that
+printed per-type signal deltas whenever the total crossed a threshold. The
+culprit: a SQL Server 2025 background task that sleeps for five minutes and
+then reports all 300,000 ms of it against one two-second sample. The fix is
+not another name in the exclusion list — it is excluding whole families by
+`LIKE ... ESCAPE` (`PWAIT\_%`, `SLEEP%`, `QDS\_%`, and nine more), because
+every release adds background waits and a list of names is always one
+release behind. Both directions are now pinned: the background waits are
+excluded, and the waits worth showing survive.
+
+Three from phase 3, all from rendering the panel at 100 columns: the
+collector state was drawn right-aligned across the whole toolbar row and
+then partly overpainted by the buttons, leaving stray letters between them;
+the header's PAUSED marker and sample time live on the canvas and scroll out
+of view on a narrow terminal, so the toolbar now repeats them on a row that
+never scrolls, dropping parts longest-first; and the toolbar claimed to be
+"collecting" when nothing was, which is now driven by a real flag.
+
+One from phase 2, caught by a test rather than the screen: a section bar
+starting past the bottom of its rect painted a filled stripe over whatever
+sat below the dashboard.
+
+**Live verification.** Against ubudock: History and Sample under a throwaway
+`amload` database running a 4,000-iteration insert/select loop (batches,
+index searches, locking and log waits all moved and returned to baseline),
+pause confirmed to freeze both tabs, the rate selector confirmed by click
+and by key, and `sys.dm_exec_sessions` counted before, during and after —
+2 → 3 → 2, so the panel's own connection is released on close. The database
+was dropped afterwards.
+
+## editor-word-select-and-block-editing-2026-08-06
+
+Three query-editor gaps from `todo/todo.txt`: double-click didn't select a
+word, block (column) selection could only select and delete — not type into —
+and a block copy pasted back as an ordinary stream of lines.
+
+**Word select.** `core.WordBoundsAt` expands both ways from the clicked rune
+using the same word/punctuation class split the existing `WordBoundary*`
+navigation helpers use, so double-click and `Ctrl+Left/Right` agree on where a
+word ends. tcell reports no click count, so `Editor.pressIsDouble` pairs
+presses itself the way `DataGrid` already pairs separator presses for its
+restore-default-width double-click; both use 500 ms.
+
+**Block editing.** The block selection already existed as an interpretation of
+the same anchor/cursor pair (`selBlock`), so the new part is only that it
+*survives* an edit: `blockInsertRune` and friends leave a zero-width block
+armed one column over, which is what lets a run of typed characters keep going
+into every row instead of the first one collapsing the block. `blockEditing()`
+exists because `HasSelection()` reports false for exactly that state. Rows
+shorter than the block's column are padded with spaces on insert (SSMS and
+Notepad++ both do this) but not on delete — there is nothing there to delete.
+
+**Block paste.** Nothing marks a block copy once it reaches the OS clipboard,
+so `SelectedText` remembers the text it handed out for a block selection
+(`blockClip`) and `Paste` compares its argument against it. Notepad++ tracks
+the same thing internally. Anything else — text from another application, a
+plain multi-line copy — still pastes linearly.
+
+**Found by driving it, not by tests.** A zero-width block copies as a run of
+newlines unless `SelectedText` special-cases it, which would have made `F5`
+execute a blank query after any column-mode typing. Fixed in `SelectedText`
+and pinned.
+
+One existing test needed rethinking rather than fixing:
+`TestSummaryViewerReleaseClearsDragLatch` clicked twice on the same spot of a
+one-character cell viewer, which is now a double-click and selects a word. It
+spends a click pair first, since a double-click doesn't pair with a third
+press.
+
+**Live verification.** Under tmux: `Alt+Shift+Down` twice then `XY` put `XY`
+into all three rows (padding the short one), two `Backspace`es took it back
+out, block copy pasted rectangularly past the end of the buffer padding the
+appended rows, and an SGR double-click (`\033[<0;38;4M` ×2) highlighted the
+whole word.
+
+## review-batches-a-and-b-2026-08-06
+
+Batches A and B of `docs/plan-review-2026-08-06.md`. A was four independent
+correctness fixes; B was the draw path. Both documents' status lines are
+updated in the plan itself — this is what was learned doing it.
+
+**The plan's proposed cache invalidator was wrong.** Batch B says to
+invalidate the cached canvas on "sample count, canvas size, or header state".
+Sample count doesn't work: `activity.Store.Append` prunes by time, so once the
+30-minute window fills, `Len` sits at a constant while every sample under it
+scrolls — a dashboard keyed on it would freeze after half an hour and never
+say so. `ActivityMonitor.viewGen`, bumped wherever the view models are
+rebuilt, is the key that actually tracks the data.
+
+**Where the allocations were.** `Canvas.SetContent` built a string per cell
+(`string(append([]rune{primary}, combining...))`) and then measured it with a
+full grapheme segmentation. A cell now holds a primary rune plus the rest of
+its grapheme, so a single-rune write — which is every chart glyph —
+allocates nothing and measures with `displaywidth.Rune`. `Get` composes the
+string on demand for the callers that want one, and `Blit` reads cells
+directly instead of going through it. That plus a single-segment fast path in
+`composeStack` took `BenchmarkDrawHistory` from 20,685 allocations to 2,183,
+and 6.36 ms to 3.05 ms.
+
+**The double scale pass went away without a cache.** `dashboard.drawChart`
+drew a chart and then called `Plot` for the hit rect, which recomputed
+`maxValue`/`maxStackTotal` and the whole layout. Both history charts' `Draw`
+now returns the plot rect it just used. Adding a return value to `Draw` is
+source-compatible — existing `c.Draw(s, r)` call sites still compile — so
+`Plot` stays for callers that only hit-test.
+
+**Verified by A/B capture, not by tests.** `cmd/amdemo` was built twice, once
+with the three chart optimisations reverted in place, and both were driven
+under tmux with `capture-pane -p -e`. History and Sample came back
+byte-identical including every SGR sequence, which is the only way to be sure
+a cell-composition change didn't shift a colour somewhere in eleven charts.
+
+## review-batch-c-2026-08-06
+
+Batch C of `docs/plan-review-2026-08-06.md` — documentation and dead surface.
+Five of the seven items were comment or query corrections; the two that
+needed a design decision were both wired up rather than trimmed, as the batch
+recommended.
+
+**`fileRow.isLog` had no reader because `fileDeltas` grouped by database
+alone.** It now groups by database and file kind, so a database contributes a
+data row and a log row, and `FileIO.Label()` renders the log half as
+`"db (log)"`. Log writes are small and sequential and data writes are not; a
+combined row hides which of the two a latency spike came from, which is what
+the DMV comment had been claiming the column was there for all along.
+
+**The waits split reverses a documented attribution, deliberately.**
+`waitDeltas` used to report each category's *resource* time in its own bucket
+and push every category's signal time into `WaitCPU`, with a test pinning it.
+That model cannot produce a per-category resource/signal split — the signal
+half has already been moved somewhere else by the time a bar is built. It now
+returns the whole wait per category plus a parallel signal-per-category array
+(`Sample.WaitsSignal`), and the Sample tab draws each bar as a red resource
+part under a green signal part with a Resource/Signal legend, which is what
+`SampleView.WaitLegend` and `charts.Bar.Parts` were built for and what only
+`cmd/amdemo` had been exercising. `CPUPctOfWaits` is unchanged. Consequence
+worth knowing: the History waits stack now plots total wait per category, and
+its CPU band is no longer inflated by every other category's signal time.
+
+**Live verification is what confirmed both.** Under generated CPU and I/O
+load against ubudock, the Sample tab's CPU wait bar decoded as six red cells
+under six green ones in a `capture-pane -p -e` dump — the resource part below
+the signal part — and the DATABASE IO panel named `test_new_db (log)`
+separately from its data file. Neither is something a unit test would have
+shown; the drawing code was already correct and simply had nothing to draw.
+
+**The `sessions.go` cut-off mismatch was real.** Sessions were counted with
+`is_user_process = 1` and requests with `session_id > 50`, under one comment
+calling the latter "the conventional user-session cut-off" — two definitions
+under one heading, which makes the request counts look wrong against the
+session count at the edges. One `LEFT JOIN` from sessions to requests now
+gives all five numbers one definition. Run against ubudock before committing:
+`2 0 0 0 0` on an idle instance, with the collecting connection correctly
+excluded from the request counts.
+
+## review-batch-d-2026-08-07
+
+Batch D of `docs/plan-review-2026-08-06.md` — undo memory. The batch offered
+a byte cap or per-edit deltas and recommended the cap; that is what landed,
+with deltas written down in `docs/open-threads.md` § Designed and deferred.
+
+**A step cap alone never bounded undo memory.** `maxUndoSteps` is 500 and
+each step is a full deep copy of the buffer, so a 20,000-line script has a
+2.5 GB worst case — the existing comment claimed the step count bounded
+memory "to a fixed multiple of one snapshot's size", which is true and also
+useless when the multiple is 500. `editorState` now carries the snapshot's
+approximate size, measured during the copy it already performs, `Editor`
+tracks the running total, and `trimUndo` evicts oldest-first until the stack
+is inside both the step cap and a 64 MB byte cap.
+
+**The newest step is exempt from the byte cap.** A document whose single
+snapshot exceeds 64 MB would otherwise get an empty undo stack and silently
+lose the one undo a user is most likely to reach for. `trimUndo` stops at one
+step; a test pins it with a 20,000-line, 1,000-column document.
+
+**Eviction copies into a fresh slice.** `e.undoStack = e.undoStack[1:]` left
+every dropped snapshot reachable behind the slice header, so the eviction
+freed nothing at all — the same trap `Store.Append` in
+`internal/activity/store.go` already documents avoiding.
+
+Verified under tmux beyond the tests: typing into a query panel, then six
+undos and a redo, still steps one character at a time.

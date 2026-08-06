@@ -21,6 +21,25 @@ func (e *Editor) HasSelection() bool {
 // ClearSelection drops any active selection without affecting the cursor.
 func (e *Editor) ClearSelection() { e.selecting = false }
 
+// selectWordAt selects the word under (row, col) — a double-click's result
+// (see HandleMouse). A position with no word to select (whitespace between
+// words, past the end of an empty line) just places the cursor there, leaving
+// no selection behind.
+func (e *Editor) selectWordAt(row, col int) {
+	e.cursorRow, e.cursorCol = row, col
+	e.selecting, e.selBlock = false, false
+	start, end, ok := core.WordBoundsAt(e.doc.Line(row), col)
+	if !ok {
+		e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)
+		return
+	}
+	e.selecting = true
+	e.selAnchorRow, e.selAnchorCol = row, start
+	e.cursorCol = end
+	e.desiredCol = core.ColumnOfRune(e.doc.Line(row), end)
+	e.ensureCursorVisible()
+}
+
 // selectionBounds returns the selection endpoints ordered so the start is
 // always at or before the end in document order (anchor and cursor can be
 // in either order depending on which direction the user selected in).
@@ -91,6 +110,10 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bo
 // selection. For a block (column) selection, each affected row's
 // [loCol,hiCol) slice is joined with "\n", same join convention as a
 // linear multi-line selection.
+//
+// It also records a block selection's text in blockClip, so a later Paste of
+// the same text can put it back rectangularly — this is the only point every
+// copy path (Edit > Copy, Ctrl+C, the context menu) passes through.
 func (e *Editor) SelectedText() string {
 	if !e.HasSelection() {
 		return ""
@@ -98,6 +121,12 @@ func (e *Editor) SelectedText() string {
 	if e.selBlock {
 		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
+		if hiCol == loCol {
+			// A zero-width block is the caret left behind by typing in column
+			// mode, not a selection: it must not copy as a run of newlines.
+			e.blockClip = ""
+			return ""
+		}
 		var sb strings.Builder
 		for r := topRow; r <= botRow; r++ {
 			if r > topRow {
@@ -108,8 +137,10 @@ func (e *Editor) SelectedText() string {
 			hi := core.Clamp(hiCol, 0, len(line))
 			sb.WriteString(string(line[lo:hi]))
 		}
-		return sb.String()
+		e.blockClip = sb.String()
+		return e.blockClip
 	}
+	e.blockClip = ""
 	sr, sc, er, ec := e.selectionBounds()
 	if sr == er {
 		line := e.doc.Line(sr)
@@ -201,12 +232,23 @@ func (e *Editor) Cut() string {
 // never re-queries the provider. Pasted text is finished text; offering
 // (let alone committing) IntelliSense candidates against the token the
 // paste happens to end on is how pasted SQL gets silently rewritten.
+//
+// Text that came out of this editor's own block (column) selection goes back
+// in as a block, one line per row at the cursor's column — see blockPaste. A
+// block copy is unmarked once it reaches the OS clipboard, so the only thing
+// left to recognise it by is the text itself matching blockClip.
 func (e *Editor) Paste(text string) {
 	if e.readOnly || text == "" {
 		return
 	}
 	e.closeCompletion()
 	e.pushUndo()
+	if e.blockClip != "" && text == e.blockClip {
+		e.blockPaste(text)
+		e.clampCursor()
+		e.ensureCursorVisible()
+		return
+	}
 	if e.HasSelection() {
 		e.deleteSelection()
 	}

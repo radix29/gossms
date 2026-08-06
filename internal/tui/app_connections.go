@@ -94,6 +94,34 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	}()
 }
 
+// connectForActivityMonitor opens the Activity Monitor's own connection,
+// cloning sc's options the way connectForQueryPanel does, and starts the
+// collector on it. The panel owns this connection and closes it on
+// teardown; collection must not share App's connection, since a DMV read
+// every couple of seconds would sit in front of whatever Object Explorer is
+// doing on it.
+func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) {
+	opts := sc.Opts
+	go func() {
+		defer a.recoverPanic("connecting Activity Monitor")
+		newConn, err := db.Connect(opts)
+		a.postAndWake(func() {
+			if err != nil {
+				am.status = fmt.Sprintf("Connection failed: %v", err)
+				return
+			}
+			if !a.panelHosted(am) {
+				// The panel was closed while this was resolving — nothing
+				// else references newConn, so close it here or it leaks for
+				// the rest of the process's lifetime.
+				newConn.Close()
+				return
+			}
+			am.startCollector(newConn)
+		})
+	}()
+}
+
 // defaultDatabaseName resolves the database a connection actually landed
 // in when config.Connection.Database was left empty — the login's real
 // default database — so the query panel's connection bar and Execute both

@@ -43,6 +43,15 @@ tuikit/
 │               json_highlighter.go (used when a JSON result cell is opened
 │               in its own panel — needs no cross-line state, since no JSON
 │               token can span a line)
+├── charts/     Terminal charts from generic series data — no SQL Server or
+│             application knowledge, same as the rest of tuikit
+│             — canvas.go (off-screen cell buffer satisfying the drawing half
+│               of tcell.Screen, so a dashboard larger than the terminal can be
+│               rendered once and then blitted/scrolled), scale.go (nice-number
+│               linear scales, ticks, value formatting), glyph.go (eighth-block
+│               ramps), axis.go, legend.go, common.go (Series and the stacked-run
+│               composition every stacked chart shares), history.go,
+│               stacked_history.go, barchart.go, stacked_bar.go, vbar.go, kpi.go
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go;
                 PropertySheet itself is split across sheet.go (state/page list),
