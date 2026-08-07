@@ -32,6 +32,14 @@ import (
 // Name is gossms's program name, for display purposes.
 const Name = "gossms"
 
+// License and Copyright are what Help > About shows. gossms is GPL-3.0, so
+// a binary that carries it owes the user the licence notice; keep these in
+// step with the LICENSE file at the repo root.
+const (
+	License   = "GPL-3.0-or-later"
+	Copyright = "© 2026 radix29"
+)
+
 var (
 	Version = "(devel)"
 	Commit  = "unknown"

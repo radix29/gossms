@@ -78,15 +78,21 @@ or drivers required.
   cache ratios, page activity, database I/O latency, log flushes, and
   checkpoints. Charts scroll on both axes, the refresh rate is selectable
   (2/3/5/10 s), and collection can be paused. Thirty minutes of history is
-  kept in memory and nothing is persisted.
+  kept in memory and nothing is persisted. The TempDB tab tracks tempdb
+  space, temp tables and the version store on its own slower schedule. The
+  Block and Sessions tabs each show one run of a stored procedure in a full
+  result grid — Block the current blocking chains, Sessions everything
+  currently running. Neither refreshes on a timer: they run once when first
+  opened and again on Refresh. Each procedure is used where it is found,
+  `master.dbo.sp_block` / `master.dbo.sp_WhoIsActive`, or installed as
+  `tempdb.dbo.usp_block` / `tempdb.dbo.usp_WhoIsActive`, with an "Install in
+  master" button to make it permanent.
 - Configurable tree icon style (Emoji/Symbols/Portable/None), resizable
   panes, background task manager, status history log, and a Check for
   Updates dialog.
 
 ## Future Plans
 
-- **Activity Monitor: Sessions and Block tabs** — the live session list and
-  the blocking chains; the History and Sample dashboards are built
 - **Reports** — a handful of the most useful built-in SSMS reports
 - **Always On Availability Groups (AAG)** — viewing and managing
   availability group topology and health
@@ -216,6 +222,32 @@ more stable state.
 For the internal package layout and design rationale, see
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Acknowledgements
+
+The Activity Monitor's Sessions tab runs **sp_WhoIsActive**, Adam Machanic's
+activity-monitoring procedure — https://github.com/amachanic/sp_whoisactive —
+with thanks. goSSMS carries a copy in `internal/activity/whoisactive.sql` so
+it can install one on a server that hasn't got it.
+
 ## License
 
-MIT
+goSSMS is © 2026 radix29 and licensed **GPL-3.0-or-later**; see `LICENSE`
+for the full text.
+
+    goSSMS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your
+    option) any later version.
+
+    goSSMS is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+    FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+    for more details.
+
+The bundled copy of sp_WhoIsActive is © 2007-2026 Adam Machanic and licensed
+**GPL-3.0** under its own copyright, whose text is carried alongside it as
+`internal/activity/LICENSE.sp_whoisactive`. It is used unmodified apart from
+the two changes its own header records — the release script's SET-options and
+stub-CREATE batches removed, and its declaration rewritten at install time so
+the tempdb copy can be named `usp_WhoIsActive`. It is aggregated with goSSMS,
+not derived from it; its copyright stays with its author.

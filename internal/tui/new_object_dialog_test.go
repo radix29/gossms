@@ -14,7 +14,7 @@ import (
 )
 
 // testPrefetch stands in for a real create dialog's prefetch payload.
-type testPrefetch struct{ call int }
+type testPrefetch struct{}
 
 // newTestObjectDialog builds a two-page create dialog whose fetch announces
 // itself on started, takes its own release gate off gates, and blocks on

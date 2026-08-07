@@ -76,12 +76,14 @@ func (inv *completionInventory) beginLoad(parent context.Context, timeout time.D
 // endLoad reports whether seq (as returned by beginLoad) is still current
 // — false means a newer beginLoad has since superseded it, and the result
 // belonging to seq must be discarded. Clears cancelLoad on success, since
-// the fetch it guarded has now finished.
+// the fetch it guarded has now finished — through cancel(), so the timeout
+// context is released rather than left registered on its parent with the
+// timer still armed. Same reasoning as explorerNode.endLoad.
 func (inv *completionInventory) endLoad(seq int) bool {
 	if inv.loadSeq != seq {
 		return false
 	}
-	inv.cancelLoad = nil
+	inv.cancel()
 	return true
 }
 
@@ -228,8 +230,7 @@ func (p *QueryPanel) refreshCompletionCache() {
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
-	go func() {
-		defer a.recoverPanic("loading the autocomplete catalog")
+	a.safego("loading the autocomplete catalog", func() {
 		cat, err := srv.Database(database).CatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
@@ -264,7 +265,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 			}
 			a.refreshCompletionPopups(key)
 		})
-	}()
+	})
 }
 
 // refreshCompletionPopups re-queries the completion provider of every
@@ -348,8 +349,7 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
-	go func() {
-		defer a.recoverPanic("loading the system autocomplete catalog")
+	a.safego("loading the system autocomplete catalog", func() {
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
@@ -371,7 +371,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 			inv.applyCatalog(cat)
 			a.refreshSysCompletionPopups(key)
 		})
-	}()
+	})
 }
 
 // refreshSysCompletionPopups is refreshCompletionPopups' sys-schema

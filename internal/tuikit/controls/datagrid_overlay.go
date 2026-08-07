@@ -99,7 +99,7 @@ func (g *DataGrid) openViewer() {
 	if g.selCol < len(g.columns) {
 		g.viewHeader = g.columns[g.selCol]
 	}
-	if g.OnShowValue != nil && g.OnShowValue(g.viewHeader, cells[g.selCol]) {
+	if g.OnShowValue != nil && g.OnShowValue(g.selCol, g.viewHeader, cells[g.selCol]) {
 		return
 	}
 	if g.viewEditor == nil {

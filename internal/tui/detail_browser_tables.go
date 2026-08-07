@@ -29,8 +29,7 @@ var tablesFolderColumns = []string{
 // fan-out is gone. loadDatabasesFolderDetails still needs its own — see the
 // note there for why the same collapse isn't available for database sizes.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	go func() {
-		defer app.recoverPanic("loading table details")
+	app.safego("loading table details", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
@@ -87,5 +86,5 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 		})
 
 		db.cacheOnly(app, node, seq, tablesFolderColumns, rows, nil)
-	}()
+	})
 }

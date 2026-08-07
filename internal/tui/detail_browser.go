@@ -257,13 +257,12 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 	case NodeTables:
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
-		go func() {
-			defer app.recoverPanic("loading Object Explorer details")
+		app.safego("loading Object Explorer details", func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			cols, rows, err := fetchNodeDetails(ctx, sc, node)
 			db.postFinal(app, node, seq, cols, rows, err)
-		}()
+		})
 	}
 }
 
@@ -311,15 +310,19 @@ func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols [
 	})
 }
 
-// maxRowFetchConcurrency bounds how many per-row backfill goroutines a
+// maxRowFetchConcurrency bounds how many per-row backfill goroutines one
 // progressive loader (loadDatabasesFolderDetails, loadTablesFolderDetails)
 // runs at once. Unbounded, a folder with hundreds of entries would open
 // hundreds of connections against a pool whose MaxOpenConns is 20 (see
 // internal/db/connection.go) and queue a redraw for each; capping keeps
 // one slow row from blocking the rest without running them all at once.
+//
+// The bound is per loader, not per connection: each backfillRows call takes
+// its own bucket, so two folders loading at once fan out to 16. That is
+// still inside the pool, but the headroom is two loaders, not more.
 const maxRowFetchConcurrency = 8
 
-// rowFetchSemaphore returns a token bucket for bounding a progressive
+// rowFetchSemaphore returns a fresh token bucket bounding one progressive
 // loader's per-row fan-out to maxRowFetchConcurrency at a time. Acquire by
 // sending to it, release by receiving.
 func rowFetchSemaphore() chan struct{} {

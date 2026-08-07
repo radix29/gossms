@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -180,7 +181,7 @@ func TestEditorClipsAWideRuneAtTheRightEdge(t *testing.T) {
 // rune and painted per column, so selecting one ideograph must highlight the
 // pair of cells it renders in.
 func TestEditorSelectionCoversBothCellsOfAWideRune(t *testing.T) {
-	marker := tcell.StyleDefault.Foreground(tcell.ColorFuchsia).Underline(true)
+	marker := tcell.StyleDefault.Foreground(color.Fuchsia).Underline(true)
 	e := NewEditor(markerHighlighter(0, 1, marker))
 	e.SetGutterVisible(false)
 	e.SetText("世界")

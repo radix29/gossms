@@ -152,8 +152,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	sc := d.sc
 	sessionCtx := d.ctx
 	fetch := d.fetch
-	go func() {
-		defer d.app.recoverPanic("loading a new-object page")
+	d.app.safego("loading a new-object page", func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		pf, err := fetch(ctx, sc)
@@ -186,7 +185,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 				d.SetPageForm(r.page, r.seq, d.forms[r.page])
 			}
 		})
-	}()
+	})
 }
 
 func (d *newObjectDialog[P]) onConfirmDiscard(page int, proceed func()) {
@@ -225,8 +224,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	d.SetApplying(true)
 	d.SetMessage("", false)
 
-	go func() {
-		defer d.app.recoverPanic("creating the object")
+	d.app.safego("creating the object", func() {
 		var runErr error
 		for _, fn := range fns {
 			if fn == nil {
@@ -244,7 +242,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 			}
 			onSuccess()
 		})
-	}()
+	})
 }
 
 func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {

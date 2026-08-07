@@ -12,7 +12,9 @@ implementation deliberately deviates from it.
 | 1 — charts, canvas, theme roles | **Done.** `internal/tuikit/charts` with 71 tests; chart colour roles and styles in `tuikit/theme`. |
 | 2 — `cmd/amdemo` and the dashboard renderers | **Done.** `internal/tui/dashboard` (both dashboards, 14 tests) and `cmd/amdemo`; canvas sizes pinned below. |
 | 3 — panel shell | **Done.** `internal/tui/activity_monitor{,_draw,_input}.go` with 13 tests; `showActivityMonitorFor` opens it, one panel per server. |
-| 4 — live collection | **Done.** `internal/activity` (10 files, 20 tests); History and Sample both live against `sys.dm_os_*` and `sys.dm_io_virtual_file_stats`. |
+| 4 — live collection | **Done.** `internal/activity`; History and Sample both live against `sys.dm_os_*` and `sys.dm_io_virtual_file_stats`. |
+| TempDB tab | **Done.** Its own collector, store and rate (`activity/tempdb*.go`, `activity_monitor_tempdb.go`). |
+| Increment 2 — Sessions and Block | **Done 2026-08-07.** Both are result grids over a helper procedure (`activity.Proc`): `sp_WhoIsActive` and `sp_block`, each in its own connection, installed into tempdb as `usp_*` when neither database has a copy. |
 
 ## Decisions taken up front
 
@@ -236,7 +238,8 @@ verifiable.
    and Sample both go live, since Sample is nearly free once the store
    exists.
 
-Increment 2: the real Sessions and Block tabs.
+Increment 2: the real Sessions and Block tabs. **Done 2026-08-07** — see the
+status table above and `docs/journal.md`.
 
 ## Wait exclusions
 
@@ -280,11 +283,9 @@ Unit tests are not verification here; the dashboard is driven.
   `HandleMouse` returns early.
 - Background work runs under `safego` and reports through `postAndWake`.
 
-## Documentation to update when increment 1 lands
+## Documentation to update when increment 1 lands — done
 
-- `ARCHITECTURE.md` — package map entries for `charts`, `activity`, and the
-  `activity_monitor_*.go` files.
-- `docs/open-threads.md` — drop the Activity Monitor stub entry; add the
-  pending Sessions/Block tabs.
-- `docs/journal.md` — what was built, and the four deviations above.
-- `README.md` — Activity Monitor moves out of the unbuilt list.
+All four landed with the increments themselves: `ARCHITECTURE.md`'s package
+map, `docs/open-threads.md`, `docs/journal.md`, and `README.md`. This file
+stays as the plan of record for the deviations above, which the panel's own
+doc comments cite by number.

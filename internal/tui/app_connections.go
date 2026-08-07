@@ -16,8 +16,7 @@ func (a *App) connectServer(opts config.Connection) {
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 	a.draw()
 
-	go func() {
-		defer a.recoverPanic("connecting to the server")
+	a.safego("connecting to the server", func() {
 		sc, err := db.Connect(opts)
 		a.postAndWake(func() {
 			if err != nil {
@@ -45,7 +44,7 @@ func (a *App) connectServer(opts config.Connection) {
 				a.logStatus("save config: %v", err)
 			}
 		})
-	}()
+	})
 }
 
 // connectForQueryPanel opens a dedicated connection for qp, cloning sc's own
@@ -64,8 +63,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	qp.database = opts.Database
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
-	go func() {
-		defer a.recoverPanic("connecting the query panel")
+	a.safego("connecting the query panel", func() {
 		newConn, err := db.Connect(opts)
 		resolvedDB := opts.Database
 		if err == nil && resolvedDB == "" {
@@ -91,7 +89,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 				onConnected()
 			}
 		})
-	}()
+	})
 }
 
 // connectForActivityMonitor opens the Activity Monitor's own connection,
@@ -102,12 +100,15 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 // doing on it.
 func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) {
 	opts := sc.Opts
-	go func() {
-		defer a.recoverPanic("connecting Activity Monitor")
+	a.safego("connecting Activity Monitor", func() {
 		newConn, err := db.Connect(opts)
 		a.postAndWake(func() {
 			if err != nil {
-				am.status = fmt.Sprintf("Connection failed: %v", err)
+				// Both feeds, not just the activity one: neither collector
+				// will ever start, and the TempDB tab would otherwise keep
+				// saying it was waiting for its first sample.
+				am.act.status = fmt.Sprintf("Connection failed: %v", err)
+				am.td.status = am.act.status
 				return
 			}
 			if !a.panelHosted(am) {
@@ -119,7 +120,7 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 			}
 			am.startCollector(newConn)
 		})
-	}()
+	})
 }
 
 // defaultDatabaseName resolves the database a connection actually landed

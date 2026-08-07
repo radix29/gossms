@@ -131,13 +131,12 @@ func (a *App) cutSelection() {
 // OSC 52 fallback is marshalled back to the UI thread since SetClipboard
 // writes to the terminal.
 func (a *App) writeClipboard(text string) {
-	go func() {
-		defer a.recoverPanic("writing to the clipboard")
+	a.safego("writing to the clipboard", func() {
 		if osClipboardWrite(text) {
 			return
 		}
 		a.postAndWake(func() { a.screen.SetClipboard([]byte(text)) })
-	}()
+	})
 }
 
 // copyWithStatus is writeClipboard plus the status-line acknowledgement,
@@ -161,8 +160,7 @@ func (a *App) pasteFromClipboard() {
 	if a.activeClipboardTarget() == nil {
 		return
 	}
-	go func() {
-		defer a.recoverPanic("reading the clipboard")
+	a.safego("reading the clipboard", func() {
 		text, ok := osClipboardRead()
 		a.postAndWake(func() {
 			if ok {
@@ -176,7 +174,7 @@ func (a *App) pasteFromClipboard() {
 			}
 			a.screen.GetClipboard()
 		})
-	}()
+	})
 }
 
 // ---------------------------------------------------------------------------

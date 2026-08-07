@@ -1,16 +1,4 @@
-Activity Monitor: Session tab
-it is using the stored procedure sp_whoisactive
-the source code is in the script https://github.com/amachanic/sp_whoisactive/blob/master/sp_WhoIsActive.sql
-do not refresh autoatic. it is executed by the first tab load and then by pressing the refresh button.
-you can use the result panel from the query editor
-at the top add aknowledgemts and thanks:
-https://github.com/amachanic/sp_whoisactive and Adam Machanic
-add in the help -> about reference to this
-
-
-
-sp_block
-
+activity monitor. sample . memory composition . click + tooltip 
 
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
@@ -31,9 +19,13 @@ reports
 -------------
 
 - Availability Groups stuff
+    - build an AAG with 2 docker containers
+    - add AAG stuff
 
-- query editor word wrap (display only, line numbers)
-- external editor nvim, nano , etc
+- query editor :
+    - word wrap (display only, line numbers)
+    - auto indent ?
+    - external editor nvim, nano , etc
 
 
 --------------

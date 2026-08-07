@@ -11,8 +11,7 @@ import (
 // Server.Logins() round trip, so unlike the Databases folder there's
 // nothing to backfill progressively.
 func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	go func() {
-		defer app.recoverPanic("loading login details")
+	app.safego("loading login details", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
@@ -32,5 +31,5 @@ func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node
 		}
 		cols := []string{"Name", "Type", "Status", "Default Database", "Created"}
 		db.postFinal(app, node, seq, cols, rows, nil)
-	}()
+	})
 }

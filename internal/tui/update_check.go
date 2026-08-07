@@ -42,13 +42,12 @@ func (r githubRelease) releasesURL() string {
 func (a *App) checkForUpdates() {
 	a.updateDialog.ShowChecking(version.Version)
 
-	go func() {
-		defer a.recoverPanic("the update check")
+	a.safego("the update check", func() {
 		rel, err := fetchLatestRelease()
 		a.postAndWake(func() {
 			a.updateDialog.ShowResult(version.Version, rel, err)
 		})
-	}()
+	})
 }
 
 // fetchLatestRelease calls the GitHub API for gossms's latest release.

@@ -20,16 +20,16 @@ func metaText(msgs []query.Message) string {
 // 1-based position when the query didn't name it.
 func TestColumnMetaMessages(t *testing.T) {
 	sets := []query.ResultSet{
-		{Columns: []string{"col1", "col2"}, ColumnTypes: []string{"nvarchar(50)", "int"}},
-		{Columns: []string{"col1", ""}, ColumnTypes: []string{"float", "datetime"}},
+		{Columns: []string{"col1", "sql text"}, ColumnTypes: []string{"nvarchar(50)", "xml"}},
+		{Columns: []string{"od]d", ""}, ColumnTypes: []string{"float", "datetime"}},
 	}
 	want := strings.Join([]string{
 		"Result 1",
-		"col1 nvarchar(50)",
-		"col2 int",
+		"[col1] nvarchar(50)",
+		"[sql text] xml",
 		"",
 		"Result 2",
-		"col1 float",
+		"[od]]d] float",
 		"2 datetime",
 	}, "\n")
 	if got := metaText(columnMetaMessages(sets)); got != want {
@@ -53,7 +53,7 @@ func TestColumnMetaMessagesNoSets(t *testing.T) {
 // would have gone.
 func TestColumnMetaMessagesMissingTypes(t *testing.T) {
 	sets := []query.ResultSet{{Columns: []string{"a", "b"}}}
-	want := "Result 1\na\nb"
+	want := "Result 1\n[a]\n[b]"
 	if got := metaText(columnMetaMessages(sets)); got != want {
 		t.Errorf("columnMetaMessages =\n%s\n\nwant\n%s", got, want)
 	}

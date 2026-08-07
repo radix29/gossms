@@ -11,6 +11,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
+// logFileType is sys.database_files' type_desc for a transaction log file,
+// the one file type that belongs to no filegroup.
+const logFileType = "LOG"
+
+// noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The
+// list is filegroup names with no empty entry, so indexOf's not-found 0 left
+// PRIMARY in the box and commitCurrent wrote it onto the edit — the grid then
+// reported a filegroup for a log file, which is a wrong fact about the
+// database in a properties dialog.
+const noFilegroupItem = "(not applicable)"
+
 // fileEdit tracks one Files-page row's pending state: an existing file
 // whose logical name/size/growth/max size changed, a brand-new file
 // pending Add (isNew), or an existing file pending Remove.
@@ -119,7 +130,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			grid.SetCellCursor(true)
 
 			nameField := propsheet.Text("Logical name", "", 24)
-			typeSelect := propsheet.Select("File type", []string{"ROWS", "LOG"}, 0)
+			typeSelect := propsheet.Select("File type", []string{"ROWS", logFileType}, 0)
 			filegroupSelect := propsheet.Select("Filegroup", fgNames, 0)
 			pathField := propsheet.Text("Path", "", 40)
 			sizeField := propsheet.Int("Initial size", 0, 0, 16777216, "MB")
@@ -136,6 +147,29 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 				return vis[i]
 			}
+			// showFilegroupFor swaps the Filegroup dropdown between the real
+			// filegroup list and the single "(not applicable)" entry a LOG file
+			// gets, so the row can never offer a choice that wouldn't be used.
+			showFilegroupFor := func(fileType, fileGroup string) {
+				if fileType == logFileType {
+					filegroupSelect.SetItems([]string{noFilegroupItem})
+					return
+				}
+				filegroupSelect.SetItems(fgNames)
+				filegroupSelect.SetSelected(indexOf(fgNames, fileGroup))
+			}
+			// pickedFilegroup reads the dropdown back, as "" for a LOG file —
+			// which is what DatabaseFileInfo.FileGroup already holds for one.
+			pickedFilegroup := func(fileType string) string {
+				if fileType == logFileType {
+					return ""
+				}
+				return filegroupSelect.Value()
+			}
+			typeSelect.SetOnChange(func(string) {
+				showFilegroupFor(typeSelect.Value(), "")
+			})
+
 			var current *fileEdit
 			commitCurrent := func() {
 				if current == nil {
@@ -143,7 +177,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 				current.name = nameField.Value()
 				current.fileType = typeSelect.Value()
-				current.fileGroup = filegroupSelect.Value()
+				current.fileGroup = pickedFilegroup(current.fileType)
 				current.path = pathField.Value()
 				if n, err := sizeField.IntValue(); err == nil {
 					current.sizeKB = n * 1024
@@ -173,8 +207,8 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				nameField.SetValue(current.name)
-				typeSelect.SetSelected(indexOf([]string{"ROWS", "LOG"}, current.fileType))
-				filegroupSelect.SetSelected(indexOf(fgNames, current.fileGroup))
+				typeSelect.SetSelected(indexOf([]string{"ROWS", logFileType}, current.fileType))
+				showFilegroupFor(current.fileType, current.fileGroup)
 				pathField.SetValue(current.path)
 				sizeField.SetValue(strconv.FormatInt(current.sizeKB/1024, 10))
 				if current.isPercentGrowth {
@@ -225,7 +259,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 				hint.Clear()
 				e := &fileEdit{
-					isNew: true, name: name, fileType: typeSelect.Value(), fileGroup: filegroupSelect.Value(), path: pathField.Value(),
+					isNew: true, name: name, fileType: typeSelect.Value(), fileGroup: pickedFilegroup(typeSelect.Value()), path: pathField.Value(),
 					maxSizeKB: -1,
 				}
 				if n, err := sizeField.IntValue(); err == nil {
@@ -314,7 +348,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 						spec := gosmo.DatabaseFileSpec{
 							Name: e.name, Type: e.fileType, Path: e.path, SizeKB: e.sizeKB, MaxSizeKB: e.maxSizeKB,
 						}
-						if e.fileType != "LOG" {
+						if e.fileType != logFileType {
 							spec.FileGroup = e.fileGroup
 						}
 						if e.isPercentGrowth {

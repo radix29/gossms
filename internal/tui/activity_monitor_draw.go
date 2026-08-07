@@ -19,9 +19,9 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 	am.drawToolbar(s)
 	if am.tab.canvasTab() {
 		am.drawDashboard(s)
-	} else {
-		am.drawStub(s)
+		return
 	}
+	am.procTab().draw(s)
 }
 
 // tabSegments computes each tab's on-screen extent. Drawing and hit-testing
@@ -73,7 +73,10 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 	// dashboard whose paused marker has scrolled away is the one way this
 	// display can actively mislead, so the toolbar repeats it on a row that
 	// never scrolls.
-	if am.tab.dashboardTab() {
+	// Every tab with a feed, TempDB included: its dashboard scrolls the same
+	// way, and collectionState() has always reported that feed's own state —
+	// it was just never drawn there.
+	if am.tab.canvasTab() {
 		// Fitted into what the controls leave rather than right-aligned over
 		// the whole row: a longer message than the gap would otherwise be
 		// drawn first and then partly overpainted by the buttons, leaving
@@ -95,7 +98,9 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 			continue
 		}
 		style := theme.StyleTooltip()
-		if t.selected {
+		if t.disabled {
+			style = style.Foreground(pal.TextDim)
+		} else if t.selected {
 			style = tcell.StyleDefault.Background(pal.MenuSelected).Foreground(color.White).Bold(true)
 		}
 		core.FillRect(s, t.rect, ' ', style)
@@ -179,28 +184,4 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 // time axis by. Read at draw time rather than stored with the samples: a
 // rate change takes effect from the next tick, and the scale describes the
 // columns arriving now.
-func (am *ActivityMonitor) drawInterval() time.Duration {
-	if am.tab == amTabTempDB {
-		return am.tdRate()
-	}
-	return am.rate()
-}
-
-// drawStub renders a placeholder tab: what it will become, and whatever its
-// Refresh button last reported.
-func (am *ActivityMonitor) drawStub(s tcell.Screen) {
-	r := am.contentRect
-	if r.W <= 0 || r.H <= 0 {
-		return
-	}
-	pal := theme.Active()
-	text := "Sessions view is not implemented yet."
-	if am.tab == amTabBlock {
-		text = "Blocking view is not implemented yet."
-	}
-	y := r.Y + r.H/2
-	core.DrawTextClipped(s, r.X+1, y, r.W-2, theme.StylePanel().Foreground(pal.TextDim), text)
-	if note := am.stubStatus[am.tab]; note != "" && y+1 < r.Bottom() {
-		core.DrawTextClipped(s, r.X+1, y+1, r.W-2, theme.StylePanel().Foreground(pal.TextDim), note)
-	}
-}
+func (am *ActivityMonitor) drawInterval() time.Duration { return am.feed().rate() }

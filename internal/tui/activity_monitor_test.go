@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -84,34 +88,6 @@ func TestActivityMonitorToolbarFollowsTheActiveTab(t *testing.T) {
 	}
 }
 
-func TestActivityMonitorStubTabsRenderPlaceholders(t *testing.T) {
-	am := newTestActivityMonitor(100, 30)
-
-	am.setTab(amTabSessions)
-	if rows := amRender(am, 100, 30); !amRowsContain(rows, "Sessions view is not implemented yet.") {
-		t.Error("the Sessions tab drew no placeholder")
-	}
-	am.setTab(amTabBlock)
-	if rows := amRender(am, 100, 30); !amRowsContain(rows, "Blocking view is not implemented yet.") {
-		t.Error("the Block tab drew no placeholder")
-	}
-}
-
-// A Refresh that appears to do nothing is exactly what the context-gating
-// rule forbids: the placeholder tabs have nothing to load, so the button
-// has to say so.
-func TestActivityMonitorStubRefreshAcknowledges(t *testing.T) {
-	am := newTestActivityMonitor(100, 30)
-	am.setTab(amTabBlock)
-
-	if !amRune(am, 'r') {
-		t.Fatal("Refresh on the Block tab was not handled")
-	}
-	if !amRowsContain(amRender(am, 100, 30), "Refreshed") {
-		t.Error("Refresh left no sign it ran")
-	}
-}
-
 func TestActivityMonitorPauseAndRate(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 
@@ -136,7 +112,7 @@ func TestActivityMonitorPauseAndRate(t *testing.T) {
 	if !amRune(am, '-') {
 		t.Fatal("the rate selector didn't accept a slower interval")
 	}
-	if got := am.rate().Seconds(); got != 3 {
+	if got := am.act.rate().Seconds(); got != 3 {
 		t.Errorf("rate = %vs, want 3s after one step slower", got)
 	}
 	if !amRowsContain(amRender(am, 100, 30), "3 sec") {
@@ -155,11 +131,11 @@ func TestActivityMonitorToolbarReportsCollectorState(t *testing.T) {
 	if !strings.Contains(full, "not collecting") {
 		t.Errorf("state = %q, want it to say nothing is being collected", full)
 	}
-	if !strings.Contains(full, am.status) {
-		t.Errorf("state = %q, want it to carry the collector's status %q", full, am.status)
+	if !strings.Contains(full, am.act.status) {
+		t.Errorf("state = %q, want it to carry the collector's status %q", full, am.act.status)
 	}
 
-	am.collecting = true
+	am.act.collecting = true
 	if got := am.collectionState()[0]; strings.Contains(got, "not collecting") {
 		t.Errorf("state = %q, want it to say collection is running", got)
 	}
@@ -234,10 +210,14 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 		t.Error("Home didn't return the viewport to the top-left")
 	}
 
-	// A placeholder tab scrolls nowhere at all.
-	am.setTab(amTabBlock)
-	if amKey(am, tcell.KeyDown) || amKey(am, tcell.KeyPgDn) {
-		t.Error("a placeholder tab claimed a scroll key")
+	// A procedure-backed tab has no canvas to scroll: the panel's own
+	// scrolling must stay out of it and leave the keys to the grid.
+	am.setTab(amTabSessions)
+	if maxX, maxY := am.scrollLimits(); maxX != 0 || maxY != 0 {
+		t.Errorf("the Sessions tab reported scroll limits %d,%d, want 0,0", maxX, maxY)
+	}
+	if am.scrollBy(0, 1) {
+		t.Error("the panel scrolled a tab that has no canvas")
 	}
 }
 
@@ -301,11 +281,11 @@ func TestActivityMonitorHeldClickFiresOnce(t *testing.T) {
 	pause := am.tools[len(am.tools)-1].rect
 
 	am.HandleMouse(tcell.NewEventMouse(pause.X+1, pause.Y, tcell.Button1, tcell.ModNone))
-	if !am.paused {
+	if !am.act.paused {
 		t.Fatal("clicking Pause didn't pause the collector")
 	}
 	am.HandleMouse(tcell.NewEventMouse(pause.X+2, pause.Y, tcell.Button1, tcell.ModNone))
-	if !am.paused {
+	if !am.act.paused {
 		t.Error("a held click re-fired Pause, toggling it back")
 	}
 	am.HandleMouse(tcell.NewEventMouse(4, am.tabRect.Y, tcell.Button1, tcell.ModNone))
@@ -394,7 +374,7 @@ func amWithSamples(am *ActivityMonitor, n int) {
 			TransactionsSec: float64(50 + i),
 		})
 	}
-	am.sampleTime = "15:32:45"
+	am.act.sampleTime = "15:32:45"
 	am.rebuild()
 }
 
@@ -524,7 +504,7 @@ func amWithTempDBSamples(am *ActivityMonitor, n int) {
 		}
 		am.tdStore.Append(s)
 	}
-	am.tdSampleTime = "20:05:00"
+	am.td.sampleTime = "20:05:00"
 	am.tempdb = am.buildTempDBView()
 }
 
@@ -547,19 +527,19 @@ func TestActivityMonitorTempDBHasItsOwnRateAndPause(t *testing.T) {
 	am := newTestActivityMonitor(160, 45)
 	am.setTab(amTabTempDB)
 
-	if am.tdRate() != 30*time.Second {
-		t.Errorf("TempDB opens at %v, want the 30s default", am.tdRate())
+	if am.td.rate() != 30*time.Second {
+		t.Errorf("TempDB opens at %v, want the 30s default", am.td.rate())
 	}
-	if !amRune(am, '-') || am.tdRate() != 60*time.Second {
-		t.Errorf("'-' left the TempDB rate at %v, want 60s", am.tdRate())
+	if !amRune(am, '-') || am.td.rate() != 60*time.Second {
+		t.Errorf("'-' left the TempDB rate at %v, want 60s", am.td.rate())
 	}
-	if am.rate() != amRates[defaultRateIdx] {
-		t.Errorf("changing the TempDB rate moved the activity rate to %v", am.rate())
+	if am.act.rate() != amRates[defaultRateIdx] {
+		t.Errorf("changing the TempDB rate moved the activity rate to %v", am.act.rate())
 	}
-	if !amRune(am, 'p') || !am.tdPaused {
+	if !amRune(am, 'p') || !am.td.paused {
 		t.Error("'p' did not pause the TempDB collector")
 	}
-	if am.paused {
+	if am.act.paused {
 		t.Error("pausing TempDB also paused the activity collector")
 	}
 	// Past the end of the list is a no-op, not a wrap: the toolbar shows the
@@ -595,5 +575,137 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	}
 	if am.tooltip.time != "20:02:30" {
 		t.Errorf("tooltip names sample %q, want the newest tempdb sample", am.tooltip.time)
+	}
+}
+
+// hostedActivityMonitor is a panel the App actually hosts, which is what
+// panelHosted gates every collector callback on.
+func hostedActivityMonitor(t *testing.T) *ActivityMonitor {
+	t.Helper()
+	a := newTestApp()
+	am := NewActivityMonitor(a, &db.ServerConn{Opts: config.Connection{Server: "SQLDEMO01"}})
+	a.panels.AddPanel(am)
+	am.SetBounds(0, 0, 100, 30)
+	return am
+}
+
+// A collector's Run returns on three paths and reports only one of them
+// (ErrNoPermission) through onError. Until the panel learned about the other
+// two it went on drawing "collecting" with a live Pause whose every send the
+// stopped collector dropped.
+func TestActivityMonitorCollectorStoppedClearsCollecting(t *testing.T) {
+	am := hostedActivityMonitor(t)
+	c := activity.NewCollector(nil, nil, nil)
+	am.collector, am.act.started, am.act.collecting, am.act.status = c, true, true, ""
+
+	am.collectorStopped(c)
+
+	if am.act.collecting {
+		t.Fatal("the panel still reports collecting after Run returned")
+	}
+	if am.act.status != collectionStoppedStatus {
+		t.Errorf("status = %q, want %q for a Run that returned without reporting why", am.act.status, collectionStoppedStatus)
+	}
+	if state := am.collectionState(); !strings.Contains(state[len(state)-1], "not collecting") {
+		t.Errorf("collectionState() = %q, want it to say collection stopped", state)
+	}
+}
+
+// An error the collector did report is the better message, so the silent
+// exit's status must not overwrite it.
+func TestActivityMonitorCollectorStoppedKeepsAReportedError(t *testing.T) {
+	am := hostedActivityMonitor(t)
+	c := activity.NewCollector(nil, nil, nil)
+	am.collector, am.act.started, am.act.collecting = c, true, true
+	am.applyError(errors.New("read DMVs: connection reset"))
+
+	am.collectorStopped(c)
+
+	if am.act.status != "read DMVs: connection reset" {
+		t.Errorf("status = %q, want the error the collector reported", am.act.status)
+	}
+}
+
+// A Retry starts a new collector while the old goroutine is still unwinding.
+// Its stopped-callback arrives afterwards and must not report the new
+// collector as stopped.
+func TestActivityMonitorStaleStoppedCallbackIgnored(t *testing.T) {
+	am := hostedActivityMonitor(t)
+	old := activity.NewCollector(nil, nil, nil)
+	am.collector, am.act.started, am.act.collecting = activity.NewCollector(nil, nil, nil), true, true
+
+	am.collectorStopped(old)
+
+	if !am.act.collecting {
+		t.Error("the previous collector's stopped-callback stopped the current one")
+	}
+}
+
+// A stopped collector's Pause can do nothing — every send is dropped — so
+// the toolbar offers the one control that can: Retry, which starts a new
+// collector on the connection the panel still owns.
+func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
+	am := hostedActivityMonitor(t)
+	c := activity.NewCollector(nil, nil, nil)
+	am.collector, am.act.started, am.act.collecting = c, true, true
+	am.buildTools()
+	if amToolLabelled(am, "Retry") != nil {
+		t.Fatal("a running collector offered Retry")
+	}
+
+	am.collectorStopped(c)
+
+	retry := amToolLabelled(am, "Retry")
+	if retry == nil {
+		t.Fatal("a stopped collector offered no Retry")
+	}
+	if amToolLabelled(am, "Pause") != nil {
+		t.Error("a stopped collector still offers Pause, whose sends it drops")
+	}
+	// feedConn is nil on a panel that never dialled, so the restart is a
+	// no-op — what is pinned here is that the control is live and reaches it.
+	retry.action()
+}
+
+func amToolLabelled(am *ActivityMonitor, label string) *amTool {
+	for i := range am.tools {
+		if am.tools[i].label == label {
+			return &am.tools[i]
+		}
+	}
+	return nil
+}
+
+// deadConnector fails every dial, so a collector's HasViewServerState
+// prologue errors and Run returns before its first tick — the shape of a
+// connection that dropped between the panel opening and the first read.
+type deadConnector struct{}
+
+func (deadConnector) Connect(context.Context) (driver.Conn, error) {
+	return nil, errors.New("tui_test: no connection")
+}
+
+func (deadConnector) Driver() driver.Driver { return nil }
+
+// The wiring, not just collectorStopped's arithmetic: a Run that returns
+// must reach the panel. Drives the real collector against a dead pool and
+// drains the queue postAndWake posted to.
+func TestActivityMonitorLearnsARunReturned(t *testing.T) {
+	am := hostedActivityMonitor(t)
+	pool := sql.OpenDB(deadConnector{})
+	defer pool.Close()
+
+	c := activity.NewCollector(pool, nil,
+		func(err error) { am.app.postAndWake(func() { am.applyError(err) }) })
+	am.collector, am.act.started, am.act.collecting = c, true, true
+
+	am.runCollector(c, context.Background(), time.Second)
+	am.app.drainPending()
+
+	if am.act.collecting {
+		t.Fatal("the panel still reports collecting after the collector's Run returned")
+	}
+	if am.act.status == "" {
+		t.Error("nothing was reported about why collection stopped")
 	}
 }

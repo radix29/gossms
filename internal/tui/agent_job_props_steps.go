@@ -25,9 +25,33 @@ var jobStepOnActionItems = []string{
 	"Go to step...",
 }
 
-// jobStepEdit tracks one Steps-page row's pending state: an existing T-SQL
-// step whose definition changed, a brand-new step pending Add (isNew), or
-// an existing step pending Delete. orig is nil for a brand-new step —
+// tsqlSubsystem is the only subsystem the Steps page can edit. Every other
+// one (CMDEXEC, PowerShell, SSIS, replication) is listed read-only — see
+// jobStepEdit.editable.
+const tsqlSubsystem = "TSQL"
+
+// unchangedDatabaseItem is the Database dropdown's leading sentinel,
+// selected when the step's own database_name is one the list can't show:
+// NULL (which every non-T-SQL step has, and StepsContext reads as ""), or a
+// database since dropped or renamed. Without it, indexOf's not-found 0 put
+// the alphabetically first database on the server in the box and
+// commitCurrent wrote it straight back — an ALTER of the step's target
+// database that the user never asked for. gosmo reads an empty Database as
+// "leave it alone" (JobStep.UpdateContext), which is exactly what this
+// sentinel maps back to.
+const unchangedDatabaseItem = "(unchanged)"
+
+// defaultDatabaseItem is the New Job Steps page's counterpart to
+// unchangedDatabaseItem: a step that doesn't exist yet has no database to
+// leave alone, so the sentinel there means "don't send @database_name at
+// all" and lets sp_add_jobstep apply the server's default. Without it, a
+// step the user never chose a database for was created against whichever
+// database sorted first in the dropdown.
+const defaultDatabaseItem = "(default)"
+
+// jobStepEdit tracks one Steps-page row's pending state: an existing step
+// whose definition changed, a brand-new step pending Add (isNew), or an
+// existing step pending Delete. orig is nil for a brand-new step —
 // Update/Delete both need a real *gosmo.JobStep to call.
 type jobStepEdit struct {
 	orig          *gosmo.JobStep
@@ -35,6 +59,10 @@ type jobStepEdit struct {
 	pendingRemove bool
 
 	stepID int // display only; 0 for a not-yet-saved new step
+
+	// subsystem is the step's own, carried through Update unchanged. It is
+	// not "TSQL" for every step: the page lists whatever sysjobsteps holds.
+	subsystem string
 
 	name            string
 	database        string
@@ -61,7 +89,7 @@ type jobStepEdit struct {
 
 func jobStepEditFromStep(s *gosmo.JobStep) *jobStepEdit {
 	return &jobStepEdit{
-		orig: s, stepID: s.StepID,
+		orig: s, stepID: s.StepID, subsystem: s.Subsystem,
 		name: s.Name, database: s.Database, command: s.Command,
 		onSuccessAction: s.OnSuccessAction, onSuccessStepID: s.OnSuccessStepID,
 		onFailAction: s.OnFailAction, onFailStepID: s.OnFailStepID,
@@ -73,6 +101,14 @@ func jobStepEditFromStep(s *gosmo.JobStep) *jobStepEdit {
 	}
 }
 
+// editable reports whether this page may write the step back. Only T-SQL:
+// the edit panel has no CmdExec/PowerShell/SSIS fields, and JobStepRequest
+// carries a subsystem, so writing one of those back through this page's
+// form would hand its old command text to the query processor as T-SQL.
+func (e *jobStepEdit) editable() bool {
+	return e.isNew || e.subsystem == tsqlSubsystem
+}
+
 func (e *jobStepEdit) changed() bool {
 	return e.name != e.origName || e.database != e.origDatabase || e.command != e.origCommand ||
 		e.onSuccessAction != e.origOnSuccessAction || e.onSuccessStepID != e.origOnSuccessStepID ||
@@ -82,8 +118,12 @@ func (e *jobStepEdit) changed() bool {
 }
 
 func (e *jobStepEdit) request() gosmo.JobStepRequest {
+	sub := e.subsystem
+	if sub == "" {
+		sub = tsqlSubsystem
+	}
 	return gosmo.JobStepRequest{
-		Name: e.name, Subsystem: "TSQL", Command: e.command, Database: e.database,
+		Name: e.name, Subsystem: sub, Command: e.command, Database: e.database,
 		OnSuccessAction: e.onSuccessAction, OnSuccessStepID: e.onSuccessStepID,
 		OnFailAction: e.onFailAction, OnFailStepID: e.onFailStepID,
 		RetryAttempts: e.retryAttempts, RetryInterval: e.retryInterval, OutputFileName: e.outputFileName,
@@ -97,11 +137,17 @@ func stepNumberText(e *jobStepEdit) string {
 	return strconv.Itoa(e.stepID)
 }
 
-// pageJobSteps is the Steps page: a grid of the job's T-SQL steps (SQL-only
-// scope — CmdExec, PowerShell, SSIS and every other subsystem excluded)
-// plus an inline "selected step" edit panel, following the
-// Add/Remove-button idiom of database_props_files.go's Files page. There
-// is no step reordering: msdb has no documented stored procedure for it.
+// pageJobSteps is the Steps page: a grid of every step the job has plus an
+// inline "selected step" edit panel, following the Add/Remove-button idiom
+// of database_props_files.go's Files page. There is no step reordering:
+// msdb has no documented stored procedure for it.
+//
+// Editing is T-SQL-only, but *listing* is not — a job's steps are shown
+// whole, with a Type column, so a mixed job doesn't look like it has fewer
+// steps than it does. A step of any other subsystem is read-only here:
+// commitCurrent refuses to copy the form back onto it, which is what keeps
+// it out of changed() and so out of apply entirely. New steps this page
+// creates are T-SQL.
 func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Steps",
@@ -137,12 +183,12 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				return out
 			}
-			cols := []string{"Step", "Name", "Database"}
+			cols := []string{"Step", "Name", "Type", "Database"}
 			rowsFor := func() [][]string {
 				vis := visible()
 				rows := make([][]string, len(vis))
 				for i, e := range vis {
-					rows[i] = []string{stepNumberText(e), e.name, e.database}
+					rows[i] = []string{stepNumberText(e), e.name, e.subsystem, e.database}
 				}
 				return rows
 			}
@@ -150,8 +196,13 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			grid := controls.NewDataGrid()
 			grid.SetData(cols, rowsFor())
 
+			// The sentinel goes first so index 0 is the "can't show what the
+			// server reported" fallback rather than a real database — see
+			// unchangedDatabaseItem and indexOf's own doc comment.
+			dbItems := append([]string{unchangedDatabaseItem}, dbNames...)
+
 			nameField := propsheet.Text("Step name", "", 30)
-			databaseSelect := propsheet.Select("Database", dbNames, 0)
+			databaseSelect := propsheet.Select("Database", dbItems, 0)
 			commandField := propsheet.Text("Command", "", 60)
 			onSuccessSelect := propsheet.Select("On success action", jobStepOnActionItems, 2)
 			onSuccessStepField := propsheet.Int("On success go to step", 0, 0, 999, "")
@@ -161,6 +212,8 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			retryIntervalField := propsheet.Int("Retry interval", 0, 0, 999, "minutes")
 			outputFileField := propsheet.Text("Output file name", "", 40)
 
+			hint := propsheet.Hint()
+
 			selected := func() *jobStepEdit {
 				vis := visible()
 				i := grid.SelectedRow()
@@ -169,13 +222,30 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				return vis[i]
 			}
+			// pickedDatabase maps the dropdown back to what gosmo should be
+			// sent: the sentinel means "the server's value, whatever it is",
+			// which JobStepRequest spells as the empty string.
+			pickedDatabase := func() string {
+				if v := databaseSelect.Value(); v != unchangedDatabaseItem {
+					return v
+				}
+				return ""
+			}
 			var current *jobStepEdit
 			commitCurrent := func() {
 				if current == nil {
 					return
 				}
+				// A step this page can't edit is never written back. Returning
+				// before the first assignment is what keeps it out of
+				// changed(), and so out of apply — the alternative was
+				// sp_update_jobstep turning a PowerShell step into a T-SQL one
+				// carrying its old script.
+				if !current.editable() {
+					return
+				}
 				current.name = nameField.Value()
-				current.database = databaseSelect.Value()
+				current.database = pickedDatabase()
 				current.command = commandField.Value()
 				current.onSuccessAction = onSuccessSelect.Selected() + 1
 				current.onFailAction = onFailSelect.Selected() + 1
@@ -209,7 +279,14 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return
 				}
 				nameField.SetValue(current.name)
-				databaseSelect.SetSelected(indexOf(dbNames, current.database))
+				// indexOfOK, not indexOf: dbItems is a closed set with a
+				// sentinel at 0, so a database the list can't show selects the
+				// sentinel instead of the first real database.
+				if i, ok := indexOfOK(dbNames, current.database); ok {
+					databaseSelect.SetSelected(i + 1)
+				} else {
+					databaseSelect.SetSelected(0)
+				}
 				commandField.SetValue(current.command)
 				onSuccessSelect.SetSelected(current.onSuccessAction - 1)
 				onSuccessStepField.SetValue(strconv.Itoa(current.onSuccessStepID))
@@ -218,6 +295,15 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				retryAttemptsField.SetValue(strconv.Itoa(current.retryAttempts))
 				retryIntervalField.SetValue(strconv.Itoa(current.retryInterval))
 				outputFileField.SetValue(current.outputFileName)
+				// Say so on selection rather than on OK: a read-only step's
+				// fields still take typing (SelectRow has no disabled state to
+				// match TextRow's), so the only honest moment to explain that
+				// nothing will be saved is when the row is picked.
+				if !current.editable() {
+					hint.Set(current.subsystem + " steps are shown read-only — this page edits T-SQL steps only.")
+				} else {
+					hint.Clear()
+				}
 			}
 			grid.OnSelectRow = func(row int) {
 				commitCurrent()
@@ -225,7 +311,6 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			}
 			syncFieldsFromSelection()
 
-			hint := propsheet.Hint()
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {
 				// Deliberately doesn't call commitCurrent() first:
@@ -249,7 +334,10 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					}
 				}
 				hint.Clear()
-				e := &jobStepEdit{isNew: true, name: name, database: databaseSelect.Value(), command: commandField.Value()}
+				e := &jobStepEdit{
+					isNew: true, subsystem: tsqlSubsystem,
+					name: name, database: pickedDatabase(), command: commandField.Value(),
+				}
 				e.onSuccessAction = onSuccessSelect.Selected() + 1
 				e.onFailAction = onFailSelect.Selected() + 1
 				if n, err := onSuccessStepField.IntValue(); err == nil {
@@ -328,7 +416,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				propsheet.Buttons(newBtn, deleteBtn, startBtn),
 				hint,
 				statusRow,
-				propsheet.Note("Only T-SQL steps are supported. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
+				propsheet.Note("Steps of other subsystems are listed but read-only; only T-SQL steps can be edited or created here. Database \"(unchanged)\" leaves the step's own database alone. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 			)
 
 			apply := func(ctx context.Context) error {
@@ -367,7 +455,11 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				// descending step_id order, so each delete only renumbers
 				// steps already dealt with.
 				for _, e := range edits {
-					if e.isNew || e.pendingRemove || !e.changed() {
+					// !editable is already implied by !changed() — commitCurrent
+					// never writes to one — but stated here too, because this is
+					// the loop that would rewrite the step's subsystem if it ever
+					// stopped being implied.
+					if e.isNew || e.pendingRemove || !e.editable() || !e.changed() {
 						continue
 					}
 					step, err := freshStep(e.orig.StepID)

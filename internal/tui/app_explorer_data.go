@@ -22,8 +22,7 @@ const childFetchTimeout = 30 * time.Second
 // so it can never clobber the newer one.
 func (a *App) loadChildren(node *explorerNode) {
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
-	go func() {
-		defer a.recoverPanic("loading Object Explorer children")
+	a.safego("loading Object Explorer children", func() {
 		children := a.fetchChildren(ctx, node)
 		a.postAndWake(func() {
 			if !node.endLoad(seq) {
@@ -34,7 +33,7 @@ func (a *App) loadChildren(node *explorerNode) {
 				a.refreshAgentRootLabel(node)
 			}
 		})
-	}()
+	})
 }
 
 // refreshAgentRootLabel appends " (Stopped)" to the just-shown "SQL Server
@@ -55,8 +54,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	if agentNode == nil || sc == nil || sc.Server == nil {
 		return
 	}
-	go func() {
-		defer a.recoverPanic("refreshing the SQL Server Agent node")
+	a.safego("refreshing the SQL Server Agent node", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		status, err := sc.Server.AgentInfoContext(ctx)
@@ -67,7 +65,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 			agentNode.label = agentRootLabel + " (Stopped)"
 			a.explorer.rebuild()
 		})
-	}()
+	})
 }
 
 func (a *App) onNodeSelected(node *explorerNode) {
@@ -330,8 +328,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 	}
 	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
 
-	go func() {
-		defer a.recoverPanic("scripting an object")
+	a.safego("scripting an object", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
@@ -367,7 +364,7 @@ func (a *App) scriptObject(node *explorerNode, action string) {
 			a.focusPanels()
 			a.connectForQueryPanel(qp, sc, dbName, nil)
 		})
-	}()
+	})
 }
 
 // toggleDatabaseOffline takes node's database offline, or brings it back
@@ -388,8 +385,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	goOffline := !node.data.IsOffline
 
 	run := func() {
-		go func() {
-			defer a.recoverPanic("changing a database's online state")
+		a.safego("changing a database's online state", func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			d := sc.Server.Database(dbName)
@@ -417,7 +413,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 				}
 				a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
 			})
-		}()
+		})
 	}
 
 	if goOffline {

@@ -24,7 +24,7 @@ func newTestPropertiesDialog(n int) *PropertiesDialog {
 func TestPropertiesDialogScrollbarDragScrolls(t *testing.T) {
 	d := newTestPropertiesDialog(40)
 	inner := d.InnerRect()
-	dataH := inner.H - 3
+	dataH := propsDataH(inner)
 	if len(d.rows) <= dataH {
 		t.Fatalf("test needs more rows than dataH (%d) to exercise scrolling, got %d", dataH, len(d.rows))
 	}
@@ -46,13 +46,67 @@ func TestPropertiesDialogScrollbarDragScrolls(t *testing.T) {
 	}
 }
 
+// TestPropertiesDialogRowsClearButtonRow pins the row capacity against the
+// chrome below it: the last drawable row must sit above the separator, or
+// DrawSeparator/DrawButtons paint over it and the scroll clamp never brings
+// it into view.
+func TestPropertiesDialogRowsClearButtonRow(t *testing.T) {
+	d := newTestPropertiesDialog(40)
+	inner := d.InnerRect()
+	lastY := inner.Y + 2 + propsDataH(inner) - 1
+	sepY := d.ButtonRowY() - 1
+	if lastY >= sepY {
+		t.Errorf("last row y = %d overlaps separator y = %d", lastY, sepY)
+	}
+}
+
+// TestPropertiesDialogScrollReachesLastRow confirms the scroll clamp lets
+// every row become visible, including the last.
+func TestPropertiesDialogScrollReachesLastRow(t *testing.T) {
+	d := newTestPropertiesDialog(40)
+	dataH := propsDataH(d.InnerRect())
+	for range len(d.rows) {
+		d.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+	}
+	if d.scroll+dataH != len(d.rows) {
+		t.Errorf("scroll = %d with dataH %d over %d rows; last row never reaches the viewport", d.scroll, dataH, len(d.rows))
+	}
+}
+
+// TestPropertiesDialogSizedWidensKeyColumn confirms ShowPropertiesSized
+// widens the Property column to fit the longest key, and that a plain
+// ShowProperties afterwards returns the dialog to its default size.
+func TestPropertiesDialogSizedWidensKeyColumn(t *testing.T) {
+	scr := &sizedScreen{w: 120, h: 50}
+	d := NewPropertiesDialog(scr)
+	medium := "A Key Of Twenty-Eight Chars." // 28 columns
+	d.ShowPropertiesSized("Big", []PropertyRow{
+		PropertySection("A Section Caption Longer Than Any Key Here"),
+		{Key: medium, Value: "v"},
+	}, 90, 20)
+	if d.keyW != len(medium) {
+		t.Errorf("keyW = %d, want %d (widened to the longest key, sections excluded)", d.keyW, len(medium))
+	}
+	if got := d.Rect().W; got != 90 {
+		t.Errorf("dialog width = %d, want 90", got)
+	}
+
+	d.ShowProperties("Small", []PropertyRow{{Key: "K", Value: "V"}})
+	if got := d.Rect().W; got != propsDefaultW {
+		t.Errorf("dialog width = %d after ShowProperties, want the default %d", got, propsDefaultW)
+	}
+	if d.keyW != propsKeyW {
+		t.Errorf("keyW = %d after ShowProperties, want the default %d", d.keyW, propsKeyW)
+	}
+}
+
 // TestPropertiesDialogWheelScrolls confirms the mouse wheel scrolls the row
 // list, matching every sibling dialog (HelpDialog, KeyDiagnosticsDialog,
 // QueryListDialog, TasksDialog) — previously only Up/Down keys scrolled it.
 func TestPropertiesDialogWheelScrolls(t *testing.T) {
 	d := newTestPropertiesDialog(40)
 	inner := d.InnerRect()
-	dataH := inner.H - 3
+	dataH := propsDataH(inner)
 	if len(d.rows) <= dataH {
 		t.Fatalf("test needs more rows than dataH (%d) to exercise scrolling, got %d", dataH, len(d.rows))
 	}

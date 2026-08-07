@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -34,13 +35,15 @@ var amTabLabels = [amTabCount]string{"History", "Sample", "TempDB", "Sessions", 
 // these.
 func (t amTab) dashboardTab() bool { return t == amTabHistory || t == amTabSample }
 
-// canvasTab reports whether t draws a scrolling canvas rather than a
-// placeholder. It gates every scrolling key and gesture.
+// canvasTab reports whether t draws a scrolling dashboard canvas rather
+// than a result grid. It gates every scrolling key and gesture, and the
+// toolbar's rate/Pause arm — the three canvas tabs are exactly the tabs
+// with a feed.
 func (t amTab) canvasTab() bool { return t.dashboardTab() || t == amTabTempDB }
 
 // amRates are the refresh intervals the rate selector offers, matching the
 // work order's 2/3/5/10 seconds.
-var amRates = [...]time.Duration{
+var amRates = []time.Duration{
 	2 * time.Second,
 	3 * time.Second,
 	5 * time.Second,
@@ -48,23 +51,31 @@ var amRates = [...]time.Duration{
 }
 
 // amRateLabels label the amRates entries.
-var amRateLabels = [...]string{"2 s", "3 s", "5 s", "10 s"}
+var amRateLabels = []string{"2 s", "3 s", "5 s", "10 s"}
 
 // defaultRateIdx is the interval a freshly opened panel collects at.
 const defaultRateIdx = 0
+
+// collectionStoppedStatus is what the header says when a collector's Run
+// returned without reporting why — the cancelled-context exit. An exit that
+// did report goes through applyError and keeps that message instead.
+const collectionStoppedStatus = "Collection stopped."
+
+// noSamplesStatus is what a feed reports before its first tick lands.
+const noSamplesStatus = "No samples collected yet."
 
 // amTempDBRates are the TempDB tab's own intervals. They are an order of
 // magnitude longer than the activity rates because tempdb space is a level
 // that moves over minutes, and because the object enumeration each tick
 // performs reads tempdb's own metadata — the very thing a contended tempdb
 // has too little of.
-var amTempDBRates = [...]time.Duration{
+var amTempDBRates = []time.Duration{
 	10 * time.Second,
 	30 * time.Second,
 	60 * time.Second,
 }
 
-var amTempDBRateLabels = [...]string{"10 s", "30 s", "60 s"}
+var amTempDBRateLabels = []string{"10 s", "30 s", "60 s"}
 
 // defaultTempDBRateIdx is 30 seconds: fast enough to watch a version store
 // grow, slow enough that the metadata read is never the problem.
@@ -74,8 +85,8 @@ const defaultTempDBRateIdx = 1
 // server's live activity, hosted by layout.PanelManager like any other
 // panel. History, Sample and TempDB render dashboards from
 // internal/tui/dashboard into an off-screen canvas of fixed size, which the
-// panel scrolls a viewport over; Sessions and Block are placeholders until
-// increment 2.
+// panel scrolls a viewport over; Sessions and Block are result grids over
+// sp_WhoIsActive and the blocking procedure.
 //
 // Unlike the work order's two independent collectors, one collector feeds
 // both dashboards — Sample is the newest sample in History's store — so
@@ -96,26 +107,12 @@ type ActivityMonitor struct {
 	scrollX [amTabCount]int
 	scrollY [amTabCount]int
 
-	rateIdx int
-	paused  bool
-
-	// collecting is true while the collector goroutine is running. It is
-	// what the toolbar reports, so the panel never claims to be sampling a
-	// server it isn't.
-	collecting bool
-
-	// status is the collector's last non-fatal message, shown in the
-	// dashboard header rather than replacing the dashboard.
-	status string
-
-	// sampleTime is the clock time of the sample currently on screen,
-	// empty until the first one is collected.
-	sampleTime string
-
-	// stubStatus is the Refresh button's acknowledgement on a placeholder
-	// tab, per tab. Sessions and Block have nothing to fetch yet, so their
-	// Refresh has to show that it ran without claiming it loaded anything.
-	stubStatus [amTabCount]string
+	// act and td are the collector-facing state of the two dashboards: the
+	// activity feed behind History and Sample, and the TempDB tab's own. Every
+	// tab-dependent read of a rate, a pause, a status or a sample time goes
+	// through feed(), so neither has to be spelled twice.
+	act amFeed
+	td  amFeed
 
 	// store holds every sample collected, and collector is the goroutine
 	// filling it. One collector feeds both dashboards: History plots the
@@ -126,17 +123,24 @@ type ActivityMonitor struct {
 	history dashboard.HistoryView
 	sample  dashboard.SampleView
 
-	// The TempDB tab keeps its own store, collector, rate, and paused state:
-	// it ticks in tens of seconds against a store that retains hours, and
-	// nothing about it is shared with the two activity dashboards.
-	tdStore      activity.TempDBStore
-	tdCollector  *activity.TempDBCollector
-	tdRateIdx    int
-	tdPaused     bool
-	tdCollecting bool
-	tdStatus     string
-	tdSampleTime string
-	tempdb       dashboard.TempDBView
+	// The TempDB tab keeps its own store and collector as well as its own
+	// feed: it ticks in tens of seconds against a store that retains hours,
+	// and nothing about it is shared with the two activity dashboards.
+	tdStore     activity.TempDBStore
+	tdCollector *activity.TempDBCollector
+	tempdb      dashboard.TempDBView
+
+	// blk and sess are the two procedure-backed tabs: a result grid over one
+	// run of sp_block and of sp_WhoIsActive. Each opens its own connection the
+	// first time its tab is shown, and neither ever refreshes on a timer.
+	blk  *amProcTab
+	sess *amProcTab
+
+	// feedConn is the connection both dashboard collectors run on — the one
+	// the panel dialled for itself, also held in owned. Kept under its own
+	// name so a collector whose Run has returned can be started again on it
+	// without reopening the panel.
+	feedConn *db.ServerConn
 
 	// owned are connections this panel opened for itself and must close on
 	// teardown — the per-tab connections of the work order's connection
@@ -182,6 +186,80 @@ type ActivityMonitor struct {
 	hDragging bool
 }
 
+// amFeed is one dashboard's collector-facing state: its rate list and
+// selection, its Pause, whether its collector is running, and what it last
+// reported. The activity feed (History and Sample, which share one collector
+// — see the panel's doc comment) and the TempDB feed differ in their rates
+// and in which collector they drive, and in nothing else, so this is held
+// twice rather than written twice.
+//
+// The collectors are separate types, so reaching one is a closure rather
+// than a field: applyRate/applyPaused are re-pointed at each new collector
+// by the panel's start methods, and are nil until one has been started.
+type amFeed struct {
+	prefix     string // the toolbar's label for this feed's rate selector
+	rates      []time.Duration
+	rateLabels []string
+
+	rateIdx int
+	paused  bool
+
+	// started is true from the moment a collector was first created for this
+	// feed. The toolbar gate is started && !collecting — never !collecting
+	// alone, since paused is a preference the panel carries into the start
+	// and a panel still connecting has to keep its controls live.
+	started bool
+
+	// collecting is true while the collector goroutine is running. It is
+	// what the toolbar reports, so the panel never claims to be sampling a
+	// server it isn't.
+	collecting bool
+
+	// status is the collector's last non-fatal message, shown in the
+	// dashboard header rather than replacing the dashboard.
+	status string
+
+	// sampleTime is the clock time of the sample currently on screen,
+	// empty until the first one is collected.
+	sampleTime string
+
+	applyRate   func(time.Duration)
+	applyPaused func(bool)
+	// restart starts a new collector for this feed on the connection the
+	// panel already owns — what the Retry control calls.
+	restart func()
+}
+
+// rate is the interval this feed's collector ticks at.
+func (f *amFeed) rate() time.Duration { return f.rates[f.rateIdx] }
+
+// setRate selects an interval by index into the feed's rates, and reports
+// whether anything changed — an index off either end is a no-op, not a
+// wrap, so the toolbar and the +/- keys agree about the ends of the list.
+func (f *amFeed) setRate(i int) bool {
+	if i < 0 || i >= len(f.rates) || i == f.rateIdx {
+		return false
+	}
+	f.rateIdx = i
+	if f.applyRate != nil {
+		f.applyRate(f.rate())
+	}
+	return true
+}
+
+// setPaused pauses or resumes this feed's collector.
+func (f *amFeed) setPaused(v bool) {
+	f.paused = v
+	if f.applyPaused != nil {
+		f.applyPaused(v)
+	}
+}
+
+// stopped reports a collector that started and has since returned — the
+// state in which Pause can no longer do anything, because a stopped
+// collector drops every send.
+func (f *amFeed) stopped() bool { return f.started && !f.collecting }
+
 // amCanvasKey is everything a rendered dashboard canvas depends on. Any
 // difference from the cached key means the canvas has to be redrawn.
 type amCanvasKey struct {
@@ -210,9 +288,16 @@ type amTooltipRow struct {
 
 // amTool is one clickable toolbar control. Rate buttons render selected;
 // the rest are plain.
+//
+// disabled draws the control dimmed and makes a click on it do nothing —
+// what the rate controls become once their collector has *started and then
+// stopped* (amFeed.stopped). Not before it starts: Pause is a preference the
+// panel carries into startActivityCollector, so a panel still connecting
+// keeps its controls live.
 type amTool struct {
 	label    string
 	selected bool
+	disabled bool
 	action   func()
 	rect     core.Rect
 }
@@ -220,13 +305,27 @@ type amTool struct {
 // NewActivityMonitor creates the panel for one server connection.
 func NewActivityMonitor(app *App, sc *db.ServerConn) *ActivityMonitor {
 	am := new(ActivityMonitor{
-		app:       app,
-		conn:      sc,
-		rateIdx:   defaultRateIdx,
-		tdRateIdx: defaultTempDBRateIdx,
-		status:    "No samples collected yet.",
-		tdStatus:  "No samples collected yet.",
+		app:  app,
+		conn: sc,
+		act: amFeed{
+			prefix:     "Refresh rate:",
+			rates:      amRates,
+			rateLabels: amRateLabels,
+			rateIdx:    defaultRateIdx,
+			status:     noSamplesStatus,
+		},
+		td: amFeed{
+			prefix:     "TempDB rate:",
+			rates:      amTempDBRates,
+			rateLabels: amTempDBRateLabels,
+			rateIdx:    defaultTempDBRateIdx,
+			status:     noSamplesStatus,
+		},
 	})
+	am.act.restart = am.startActivityCollector
+	am.td.restart = am.startTempDBCollector
+	am.blk = am.newProcTab(activity.BlockProc, "")
+	am.sess = am.newProcTab(activity.WhoIsActiveProc, whoIsActiveCredit())
 	am.buildTools()
 	return am
 }
@@ -249,12 +348,21 @@ func (am *ActivityMonitor) Close() {
 		am.tdCollector.Stop()
 		am.tdCollector = nil
 	}
-	am.collecting = false
-	am.tdCollecting = false
+	am.act.collecting = false
+	am.td.collecting = false
 	for _, sc := range am.owned {
 		sc.Close()
 	}
 	am.owned = nil
+	am.feedConn = nil
+	// The tempdb copies of the two procedures are deliberately left where they
+	// are: they cost nothing, survive until the next SQL Server restart, and
+	// dropping them would make every reopening of this panel reinstall them.
+	for _, pt := range []*amProcTab{am.blk, am.sess} {
+		pt.conn = nil
+		pt.grid = nil
+		pt.result = nil
+	}
 	am.store.Reset()
 	am.tdStore.Reset()
 	am.history = dashboard.HistoryView{}
@@ -265,40 +373,121 @@ func (am *ActivityMonitor) Close() {
 }
 
 // startCollector takes ownership of the panel's own connection and starts
-// collecting against it. Called once, from the connect callback.
+// both dashboard collectors against it. Called once, from the connect
+// callback; each collector can be started again on its own from there (see
+// restartCollector).
 func (am *ActivityMonitor) startCollector(conn *db.ServerConn) {
 	am.adopt(conn)
+	am.feedConn = conn
+	am.startActivityCollector()
+	am.startTempDBCollector()
+}
+
+// startActivityCollector starts the History/Sample collector on the panel's
+// own connection.
+func (am *ActivityMonitor) startActivityCollector() {
+	conn := am.feedConn
+	if conn == nil || conn.Server == nil {
+		return
+	}
 	am.collector = activity.NewCollector(conn.Server.DB(),
 		func(s activity.Sample) { am.app.postAndWake(func() { am.applySample(s) }) },
 		func(err error) { am.app.postAndWake(func() { am.applyError(err) }) })
-	am.collecting = true
-	am.status = ""
-	if am.paused {
+	am.act.applyRate = am.collector.SetRate
+	am.act.applyPaused = am.collector.SetPaused
+	am.act.started, am.act.collecting, am.act.status = true, true, ""
+	if am.act.paused {
 		am.collector.SetPaused(true)
 	}
 
-	collector, ctx, rate := am.collector, conn.Context(), am.rate()
-	am.app.safego("collecting server activity", func() { collector.Run(ctx, rate) })
+	am.buildTools() // the rate/Pause controls are gated on the feed's state
 
-	am.startTempDBCollector(conn)
+	collector, ctx, rate := am.collector, conn.Context(), am.act.rate()
+	am.app.safego("collecting server activity", func() { am.runCollector(collector, ctx, rate) })
+}
+
+// runCollector is the collector goroutine's whole body: collect, then tell
+// the panel it has stopped.
+//
+// The second half is what keeps am.collecting honest. Run reports only one
+// of its three exits through onError (ErrNoPermission); a failed permission
+// prologue and a cancelled context both return silently, and without this
+// the toolbar went on claiming to be collecting, with a live Pause whose
+// every send the stopped collector dropped.
+func (am *ActivityMonitor) runCollector(c *activity.Collector, ctx context.Context, rate time.Duration) {
+	c.Run(ctx, rate)
+	am.app.postAndWake(func() { am.collectorStopped(c) })
 }
 
 // startTempDBCollector starts the TempDB tab's own collector on the same
 // connection's pool. A second goroutine on the same *sql.DB gets its own
 // physical connection, which is what keeps a slow tempdb tick from delaying
 // an activity tick.
-func (am *ActivityMonitor) startTempDBCollector(conn *db.ServerConn) {
+func (am *ActivityMonitor) startTempDBCollector() {
+	conn := am.feedConn
+	if conn == nil || conn.Server == nil {
+		return
+	}
 	am.tdCollector = activity.NewTempDBCollector(conn.Server.DB(),
 		func(s activity.TempDBSample) { am.app.postAndWake(func() { am.applyTempDBSample(s) }) },
 		func(err error) { am.app.postAndWake(func() { am.applyTempDBError(err) }) })
-	am.tdCollecting = true
-	am.tdStatus = ""
-	if am.tdPaused {
+	am.td.applyRate = am.tdCollector.SetRate
+	am.td.applyPaused = am.tdCollector.SetPaused
+	am.td.started, am.td.collecting, am.td.status = true, true, ""
+	if am.td.paused {
 		am.tdCollector.SetPaused(true)
 	}
+	am.buildTools()
 
-	collector, ctx, rate := am.tdCollector, conn.Context(), am.tdRate()
-	am.app.safego("collecting tempdb activity", func() { collector.Run(ctx, rate) })
+	collector, ctx, rate := am.tdCollector, conn.Context(), am.td.rate()
+	am.app.safego("collecting tempdb activity", func() { am.runTempDBCollector(collector, ctx, rate) })
+}
+
+// runTempDBCollector is runCollector for the TempDB tab — same two halves,
+// same reason.
+func (am *ActivityMonitor) runTempDBCollector(c *activity.TempDBCollector, ctx context.Context, rate time.Duration) {
+	c.Run(ctx, rate)
+	am.app.postAndWake(func() { am.tempDBCollectorStopped(c) })
+}
+
+// collectorStopped records that the activity collector's Run has returned.
+// It is checked against the current collector because a Retry starts a new
+// one: the old goroutine's callback arrives after the new collector is
+// already running, and must not report that one as stopped.
+func (am *ActivityMonitor) collectorStopped(c *activity.Collector) {
+	if !am.app.panelHosted(am) || am.collector != c {
+		return
+	}
+	am.act.collecting = false
+	if am.act.status == "" {
+		am.act.status = collectionStoppedStatus
+	}
+	am.buildTools()
+}
+
+// tempDBCollectorStopped is collectorStopped for the TempDB tab.
+func (am *ActivityMonitor) tempDBCollectorStopped(c *activity.TempDBCollector) {
+	if !am.app.panelHosted(am) || am.tdCollector != c {
+		return
+	}
+	am.td.collecting = false
+	if am.td.status == "" {
+		am.td.status = collectionStoppedStatus
+	}
+	am.buildTools()
+}
+
+// restartCollector starts the active tab's collector again after it stopped.
+// The connection is still the panel's own and still open — what died is the
+// goroutine, so a failed permission prologue or a dropped tick no longer
+// costs the whole panel.
+func (am *ActivityMonitor) restartCollector() {
+	f := am.feed()
+	if f.collecting || f.restart == nil {
+		return
+	}
+	f.status = ""
+	f.restart()
 }
 
 // applyTempDBSample stores a tempdb tick and rebuilds that tab. Runs on the
@@ -308,8 +497,8 @@ func (am *ActivityMonitor) applyTempDBSample(s activity.TempDBSample) {
 		return
 	}
 	am.tdStore.Append(s)
-	am.tdSampleTime = s.At.Format("15:04:05")
-	am.tdStatus = ""
+	am.td.sampleTime = s.At.Format("15:04:05")
+	am.td.status = ""
 	am.tempdb = am.buildTempDBView()
 	am.viewGen++
 }
@@ -320,9 +509,10 @@ func (am *ActivityMonitor) applyTempDBError(err error) {
 	if !am.app.panelHosted(am) {
 		return
 	}
-	am.tdStatus = err.Error()
+	am.td.status = err.Error()
 	if errors.Is(err, activity.ErrNoPermission) {
-		am.tdCollecting = false
+		am.td.collecting = false
+		am.buildTools()
 	}
 }
 
@@ -333,8 +523,8 @@ func (am *ActivityMonitor) applySample(s activity.Sample) {
 		return
 	}
 	am.store.Append(s)
-	am.sampleTime = s.At.Format("15:04:05")
-	am.status = ""
+	am.act.sampleTime = s.At.Format("15:04:05")
+	am.act.status = ""
 	am.rebuild()
 }
 
@@ -354,9 +544,10 @@ func (am *ActivityMonitor) applyError(err error) {
 	if !am.app.panelHosted(am) {
 		return
 	}
-	am.status = err.Error()
+	am.act.status = err.Error()
 	if errors.Is(err, activity.ErrNoPermission) {
-		am.collecting = false
+		am.act.collecting = false
+		am.buildTools()
 	}
 }
 
@@ -385,6 +576,8 @@ func (am *ActivityMonitor) SetBounds(x, y, w, h int) {
 		W: core.Max(am.contentRect.W-1, 0),
 		H: core.Max(am.contentRect.H-1, 0),
 	}
+	am.blk.layout()
+	am.sess.layout()
 	am.buildTools()
 }
 
@@ -405,7 +598,7 @@ func (am *ActivityMonitor) canvasSize() (int, int) {
 }
 
 // scrollLimits is the largest scroll offset the active tab allows on each
-// axis. Both are zero on a placeholder tab, which is what makes every
+// axis. Both are zero on a tab with no canvas, which is what makes every
 // scrolling key return false there.
 func (am *ActivityMonitor) scrollLimits() (maxX, maxY int) {
 	if !am.tab.canvasTab() {
@@ -446,106 +639,95 @@ func (am *ActivityMonitor) setTab(t amTab) {
 	am.tab = t
 	am.tooltip = nil
 	am.buildTools()
+	if pt := am.procTab(); pt != nil {
+		pt.activate()
+	}
 }
 
-// setRate selects a refresh interval by index into amRates.
+// feed is the collector state the active tab reads and writes: the TempDB
+// tab's own, or the activity feed behind History and Sample. The
+// procedure-backed tabs have no feed of their own and get the activity one,
+// which is what the tab-independent header and status line already showed
+// there.
+func (am *ActivityMonitor) feed() *amFeed {
+	if am.tab == amTabTempDB {
+		return &am.td
+	}
+	return &am.act
+}
+
+// setRate selects a refresh interval for the active tab's feed, by index
+// into that feed's own rate list, and reports whether anything changed.
 func (am *ActivityMonitor) setRate(i int) bool {
-	if i < 0 || i >= len(amRates) || i == am.rateIdx {
+	if !am.feed().setRate(i) {
 		return false
-	}
-	am.rateIdx = i
-	if am.collector != nil {
-		am.collector.SetRate(am.rate())
 	}
 	am.buildTools()
 	return true
 }
 
-// rate is the interval the collector ticks at.
-func (am *ActivityMonitor) rate() time.Duration { return amRates[am.rateIdx] }
-
-// setTempDBRate selects the TempDB tab's interval by index into
-// amTempDBRates.
-func (am *ActivityMonitor) setTempDBRate(i int) bool {
-	if i < 0 || i >= len(amTempDBRates) || i == am.tdRateIdx {
-		return false
-	}
-	am.tdRateIdx = i
-	if am.tdCollector != nil {
-		am.tdCollector.SetRate(am.tdRate())
-	}
-	am.buildTools()
-	return true
-}
-
-// tdRate is the interval the tempdb collector ticks at.
-func (am *ActivityMonitor) tdRate() time.Duration { return amTempDBRates[am.tdRateIdx] }
-
-// setTempDBPaused pauses or resumes tempdb collection. Separate from
-// setPaused: the two collectors are independent, and pausing one while
-// reading the other is a normal thing to want.
-func (am *ActivityMonitor) setTempDBPaused(v bool) {
-	am.tdPaused = v
-	if am.tdCollector != nil {
-		am.tdCollector.SetPaused(v)
-	}
-	am.buildTools()
-}
-
-// setPaused pauses or resumes collection. One collector feeds both
-// dashboards, so this governs History and Sample together.
+// setPaused pauses or resumes the active tab's feed. The two feeds are
+// independent — pausing TempDB while watching History is a normal thing to
+// want — and on the dashboards one collector serves History and Sample
+// together.
 func (am *ActivityMonitor) setPaused(v bool) {
-	am.paused = v
-	if am.collector != nil {
-		am.collector.SetPaused(v)
-	}
+	am.feed().setPaused(v)
 	am.buildTools()
-}
-
-// refreshStub is the Refresh button on Sessions and Block. Those tabs have
-// no query yet, so it acknowledges the click on the tab itself rather than
-// appearing to do nothing.
-func (am *ActivityMonitor) refreshStub() {
-	am.stubStatus[am.tab] = "Refreshed " + time.Now().Format("15:04:05") + " — nothing to load yet."
 }
 
 // buildTools rebuilds the toolbar for the active tab: the rate selector and
-// Pause/Continue on the dashboards, a manual Refresh on the placeholders.
-// Positions come from toolRect, so SetBounds calls this too.
+// Pause/Continue on the dashboards, a manual Refresh on the procedure-backed
+// ones. Positions come from toolRect, so SetBounds calls this too.
 func (am *ActivityMonitor) buildTools() {
 	am.tools = am.tools[:0]
 	switch {
-	case am.tab.dashboardTab():
-		am.toolPrefix = "Refresh rate:"
-		for i, label := range amRateLabels {
+	case am.tab.canvasTab():
+		// One arm for both dashboards: the feeds differ in their rate lists
+		// and in which collector they drive, and the toolbar reads neither
+		// directly.
+		f := am.feed()
+		am.toolPrefix = f.prefix
+		off := f.stopped()
+		for i, label := range f.rateLabels {
 			am.tools = append(am.tools, amTool{
 				label:    label,
-				selected: i == am.rateIdx,
+				selected: i == f.rateIdx,
+				disabled: off,
 				action:   func() { am.setRate(i) },
 			})
 		}
+		if off {
+			// Pause has nothing left to pause: its every send is dropped by a
+			// stopped collector. Retry is the one control that can still do
+			// something, and without it a single failed prologue left the
+			// panel a static picture until it was closed and reopened.
+			am.tools = append(am.tools, amTool{label: "Retry", action: am.restartCollector})
+			break
+		}
 		label := "Pause"
-		if am.paused {
+		if f.paused {
 			label = "Continue"
 		}
-		am.tools = append(am.tools, amTool{label: label, action: func() { am.setPaused(!am.paused) }})
-	case am.tab == amTabTempDB:
-		am.toolPrefix = "TempDB rate:"
-		for i, label := range amTempDBRateLabels {
+		am.tools = append(am.tools, amTool{label: label, action: func() { am.setPaused(!f.paused) }})
+	default:
+		pt := am.procTab()
+		am.toolPrefix = ""
+		am.tools = append(am.tools, amTool{
+			label:    "Refresh",
+			disabled: pt.busy,
+			action:   pt.refresh,
+		})
+		// Offered only while the procedure isn't already in master: with a
+		// master copy in use there is nothing left for the button to do, and
+		// leaving it there would invite a pointless write to a system
+		// database.
+		if pt.loc != activity.ProcMaster {
 			am.tools = append(am.tools, amTool{
-				label:    label,
-				selected: i == am.tdRateIdx,
-				action:   func() { am.setTempDBRate(i) },
+				label:    "Install in master",
+				disabled: pt.busy || pt.conn == nil,
+				action:   pt.confirmInstallInMaster,
 			})
 		}
-		label := "Pause"
-		if am.tdPaused {
-			label = "Continue"
-		}
-		am.tools = append(am.tools, amTool{label: label, action: func() { am.setTempDBPaused(!am.tdPaused) }})
-	default:
-		am.toolPrefix = ""
-		am.tools = append(am.tools, amTool{label: "Refresh", action: am.refreshStub})
 	}
 	am.layoutTools()
 }
@@ -575,15 +757,11 @@ func (am *ActivityMonitor) layoutTools() {
 }
 
 // resolution names the active tab's sampling interval the way the
-// dashboards show it. TempDB has its own collector, so on that tab this has
-// to report that collector's rate or the header would credit tempdb columns
-// with a resolution they don't have.
+// dashboards show it. It reads the active tab's own feed: TempDB has its own
+// collector, and reporting the activity rate there would credit tempdb
+// columns with a resolution they don't have.
 func (am *ActivityMonitor) resolution() string {
-	d := am.rate()
-	if am.tab == amTabTempDB {
-		d = am.tdRate()
-	}
-	return fmt.Sprintf("%d sec", int(d.Seconds()))
+	return fmt.Sprintf("%d sec", int(am.feed().rate().Seconds()))
 }
 
 // collectionState is the one-line summary the toolbar repeats on the right:
@@ -593,10 +771,8 @@ func (am *ActivityMonitor) resolution() string {
 // loses the collector's message before it loses the fact that collection is
 // stopped.
 func (am *ActivityMonitor) collectionState() []string {
-	paused, collecting, sampleTime, status := am.paused, am.collecting, am.sampleTime, am.status
-	if am.tab == amTabTempDB {
-		paused, collecting, sampleTime, status = am.tdPaused, am.tdCollecting, am.tdSampleTime, am.tdStatus
-	}
+	f := am.feed()
+	paused, collecting, sampleTime, status := f.paused, f.collecting, f.sampleTime, f.status
 	state := "not collecting"
 	switch {
 	case paused:
@@ -617,15 +793,13 @@ func (am *ActivityMonitor) collectionState() []string {
 // header is the identification strip both dashboards draw, built from the
 // connection and the collector's current state.
 func (am *ActivityMonitor) header() dashboard.Header {
+	f := am.feed()
 	h := dashboard.Header{
 		Instance:   am.conn.Opts.Server,
 		Resolution: am.resolution(),
-		SampleTime: am.sampleTime,
-		Status:     am.status,
-		Paused:     am.paused,
-	}
-	if am.tab == amTabTempDB {
-		h.SampleTime, h.Status, h.Paused = am.tdSampleTime, am.tdStatus, am.tdPaused
+		SampleTime: f.sampleTime,
+		Status:     f.status,
+		Paused:     f.paused,
 	}
 	if am.conn.Server != nil && am.conn.Server.Info() != nil {
 		info := am.conn.Server.Info()

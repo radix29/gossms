@@ -447,15 +447,16 @@ func TestDataGridOnShowValueClaimsCell(t *testing.T) {
 	g := newCellCursorGrid()
 	g.SetSelectedCell(1, 1)
 	var gotCol, gotVal string
+	gotIdx := -1
 	claim := true
-	g.OnShowValue = func(column, value string) bool {
-		gotCol, gotVal = column, value
+	g.OnShowValue = func(col int, column, value string) bool {
+		gotIdx, gotCol, gotVal = col, column, value
 		return claim
 	}
 
 	g.openViewer()
-	if gotCol != "Deny" || gotVal != "[ ]" {
-		t.Errorf("OnShowValue got (%q, %q), want (%q, %q)", gotCol, gotVal, "Deny", "[ ]")
+	if gotIdx != 1 || gotCol != "Deny" || gotVal != "[ ]" {
+		t.Errorf("OnShowValue got (%d, %q, %q), want (%d, %q, %q)", gotIdx, gotCol, gotVal, 1, "Deny", "[ ]")
 	}
 	if g.viewOpen {
 		t.Error("a claimed cell must not also open the built-in content viewer")

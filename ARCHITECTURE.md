@@ -139,6 +139,7 @@ gossms/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutine — no TUI imports
+│   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
@@ -198,10 +199,11 @@ gossms/
 │       │
 │       │  ── Activity Monitor ──
 │       ├── activity_monitor.go        # ActivityMonitor state: tabs, toolbar, per-tab scroll, teardown; implements layout.Panel
-│       ├── activity_monitor_draw.go   # tab/toolbar rows, dashboard canvas blit, both scrollbars, placeholder tabs
+│       ├── activity_monitor_draw.go   # tab/toolbar rows, dashboard canvas blit, both scrollbars
 │       ├── activity_monitor_input.go  # HandleKey/HandleMouse: tab switching, scrolling, gesture zones, scrollbar drags
 │       ├── activity_monitor_history.go # activity.Store → HistoryView: one charts.Series per metric, colour roles
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
+│       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
@@ -423,6 +425,20 @@ present in every async operation in `internal/tui` at the time.
 The one place that still calls `wakeEventLoop()` on its own is
 `QueryPanel`'s elapsed-timer tick, which has no callback to post — it only
 needs a redraw.
+
+### Starting the goroutine: safego
+
+Start it with **`App.safego("what this was doing", fn)`**, never a bare
+`go func()`. `safego` is the goroutine plus the `defer recoverPanic(what)`
+that keeps a panic in background work from taking the process down with it,
+and `what` is what the report names. Writing the two halves by hand works
+right up until the day one is written without the `defer`, which is a panic
+nothing catches.
+
+The one deliberate exception is
+`DetailBrowser.backfillRows` (`detail_browser_backfill.go`), whose goroutine
+carries its own `recover` because it has to queue `markFailed` *before*
+`wg.Done` releases the caller. It documents that on the spot.
 
 ## Building & testing
 

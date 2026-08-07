@@ -228,8 +228,7 @@ func (d *BackupDialog) loadDatabases() {
 	d.loadSeq++
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
-	go func() {
-		defer app.recoverPanic("loading the backup database list")
+	app.safego("loading the backup database list", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -249,7 +248,7 @@ func (d *BackupDialog) loadDatabases() {
 			}
 			d.setDatabaseItems(names)
 		})
-	}()
+	})
 }
 
 // setDatabaseItems replaces the Database dropdown (DropDown items are
@@ -353,8 +352,7 @@ func (d *BackupDialog) startBackup() {
 	d.SetTitle("Backup Database - Progress")
 
 	app, srv := d.app, d.sc.Server
-	go func() {
-		defer app.recoverPanic("the backup")
+	app.safego("the backup", func() {
 		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
 		err := srv.BackupContext(ctx, opts)
 		if err == nil && verify {
@@ -362,7 +360,7 @@ func (d *BackupDialog) startBackup() {
 			err = srv.VerifyBackupContext(ctx, dest)
 		}
 		app.postTaskDone(task, err)
-	}()
+	})
 }
 
 // progressButtons is the progress view's button row: Hide keeps the backup

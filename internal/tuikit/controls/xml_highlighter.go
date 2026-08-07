@@ -12,8 +12,9 @@ import (
 // ---------------------------------------------------------------------------
 
 // xmlBlockState is what an unterminated multi-line construct a line can
-// begin already inside — either an XML comment or a CDATA section, found by
-// xmlOpenBlock. The two never nest inside each other in valid XML, so a
+// begin already inside — either an XML comment or a CDATA section, carried
+// from line to line by xmlLineEndState. The two never nest inside each
+// other in valid XML, so a
 // single state (rather than a stack) is enough.
 type xmlBlockState int
 
@@ -222,10 +223,14 @@ func xmlFindClose(line []rune, from int, closer []rune) int {
 // unterminated <!-- --> comment or <![CDATA[ ]]> section carried over from
 // an earlier line — found by replaying every line before it and toggling
 // state on each construct's start/end delimiter, mirroring
-// startsInBlockComment in sql_highlighter.go. This full replay is O(idx);
-// XMLHighlighter's closure only falls back to it for the first row of a
-// Draw pass (or a non-contiguous jump), not per visible row — see its doc
-// comment.
+// startsInBlockComment in sql_highlighter.go.
+//
+// XMLHighlighter does not call it: it reads prefixStates instead, which
+// answers the same question in O(1) per line. This is the O(idx) reference
+// implementation that cache is required to agree with, and the only caller
+// is TestXMLPrefixStatesMatchFullReplayAcrossEdits, which checks exactly
+// that after each edit. Same role, and same lack of production callers, as
+// startsInBlockComment on the SQL side.
 func xmlOpenBlock(lines [][]rune, idx int) xmlBlockState {
 	state := xmlNone
 	for i := 0; i < idx; i++ {

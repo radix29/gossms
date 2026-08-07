@@ -20,6 +20,7 @@ const (
 	amZoneVBar
 	amZoneHBar
 	amZonePlot
+	amZoneProcGrid
 )
 
 // hScrollStep is how far one horizontal scroll key moves the viewport —
@@ -34,6 +35,24 @@ const pageStep = 10
 // back false, including a scroll key already at its boundary — this panel
 // must never become a place the keyboard can't leave.
 func (am *ActivityMonitor) HandleKey(ev *tcell.EventKey) bool {
+	// A procedure-backed tab's grid is a real widget, not a canvas: it gets
+	// the keys before the panel's own tab-switching and scrolling. An open
+	// grid overlay (context menu, value viewer) is drawn last and so gets
+	// first refusal of everything, Tab included — otherwise Tab would switch
+	// tabs out from under a showing popup.
+	if pt := am.procTab(); pt != nil && pt.grid != nil {
+		if pt.grid.OverlayActive() {
+			return pt.grid.HandleKey(ev)
+		}
+		switch ev.Key() {
+		case tcell.KeyTab, tcell.KeyBacktab:
+			// The panel's own tab cycling; the grid has no use for either.
+		default:
+			if pt.grid.HandleKey(ev) {
+				return true
+			}
+		}
+	}
 	switch ev.Key() {
 	case tcell.KeyTab:
 		// Plain Tab only: App.handleKey routes Ctrl+Tab to its own focus
@@ -85,37 +104,28 @@ func (am *ActivityMonitor) pageHeight() int {
 }
 
 // handleRune runs the panel's letter shortcuts, each gated on the tab it
-// applies to: Pause/Continue and the rate selector belong to the
-// dashboards, Refresh to the placeholders.
+// applies to: Pause/Continue and the rate selector belong to the dashboard
+// tabs, Refresh to the procedure-backed ones.
 func (am *ActivityMonitor) handleRune(r rune) bool {
 	switch r {
 	case 'p', 'P':
-		switch {
-		case am.tab == amTabTempDB:
-			am.setTempDBPaused(!am.tdPaused)
-		case am.tab.dashboardTab():
-			am.setPaused(!am.paused)
-		default:
+		if !am.tab.canvasTab() {
 			return false
 		}
+		am.setPaused(!am.feed().paused)
 		return true
 	case 'r', 'R':
-		if am.tab.canvasTab() {
+		pt := am.procTab()
+		if pt == nil {
 			return false
 		}
-		am.refreshStub()
+		pt.refresh()
 		return true
 	case '+', '=':
 		// Faster: a shorter interval, i.e. earlier in the rate list.
-		if am.tab == amTabTempDB {
-			return am.setTempDBRate(am.tdRateIdx - 1)
-		}
-		return am.tab.dashboardTab() && am.setRate(am.rateIdx-1)
+		return am.tab.canvasTab() && am.setRate(am.feed().rateIdx-1)
 	case '-', '_':
-		if am.tab == amTabTempDB {
-			return am.setTempDBRate(am.tdRateIdx + 1)
-		}
-		return am.tab.dashboardTab() && am.setRate(am.rateIdx+1)
+		return am.tab.canvasTab() && am.setRate(am.feed().rateIdx+1)
 	}
 	return false
 }
@@ -125,15 +135,44 @@ func (am *ActivityMonitor) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		// The release ends the gesture wherever the pointer happens to be —
 		// including outside the panel, which is why App forwards ButtonNone
-		// even to a panel it would otherwise skip.
+		// even to a panel it would otherwise skip. Each grid carries its own
+		// drag latch, so both must see the release even when the gesture was
+		// never theirs and their tab is not the one showing.
+		for _, pt := range []*amProcTab{am.blk, am.sess} {
+			if pt.grid != nil {
+				pt.grid.HandleMouse(ev)
+			}
+		}
 		am.dragZone = amZoneNone
 		am.vDragging = false
 		am.hDragging = false
 		return false
 	}
 
+	pt := am.procTab()
+
+	// An open grid overlay is drawn on top of the whole panel, so it takes
+	// the click before the tab row and toolbar get to hit-test it.
+	if pt != nil && pt.grid != nil && pt.grid.OverlayActive() {
+		return pt.grid.HandleMouse(ev)
+	}
+
 	if am.dragZone != amZoneNone {
 		return am.routeDrag(ev)
+	}
+
+	// The grid owns everything below the toolbar, for every button — its
+	// right-click "Show Value" menu and its block-selection drag are part of
+	// the result-grid behaviour these tabs are expected to have. The credit
+	// row above it is not the grid's, so the hit test is the grid's own rect
+	// rather than the whole content area.
+	if pt != nil && pt.grid != nil {
+		if mx, my := ev.Position(); pt.gridRect.Contains(mx, my) {
+			if ev.Buttons() == tcell.Button1 {
+				am.dragZone = amZoneProcGrid
+			}
+			return pt.grid.HandleMouse(ev)
+		}
 	}
 
 	switch ev.Buttons() {
@@ -180,9 +219,12 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 		am.dragZone = amZoneTools
 		for _, t := range am.tools {
 			if !t.rect.IsZero() && t.rect.Contains(mx, my) {
-				if t.action != nil {
+				if t.action != nil && !t.disabled {
 					t.action()
 				}
+				// Claimed either way: the press landed on the toolbar, and a
+				// disabled control must swallow it rather than let it fall
+				// through to whatever is drawn underneath.
 				return true
 			}
 		}
@@ -218,6 +260,13 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 func (am *ActivityMonitor) routeDrag(ev *tcell.EventMouse) bool {
 	if am.dragZone == amZoneVBar || am.dragZone == amZoneHBar {
 		return am.scrollbarDrag(ev)
+	}
+	// The grid extends a block selection across the rest of the gesture, so
+	// unlike the tab row and toolbar it needs every held event replayed.
+	if am.dragZone == amZoneProcGrid {
+		if pt := am.procTab(); pt != nil && pt.grid != nil {
+			return pt.grid.HandleMouse(ev)
+		}
 	}
 	return true
 }

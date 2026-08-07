@@ -91,8 +91,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 	if !a.requireConn(sc) {
 		return
 	}
-	go func() {
-		defer a.recoverPanic("enabling/disabling an Agent object")
+	a.safego("enabling/disabling an Agent object", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		err := run(ctx)
@@ -109,7 +108,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 			a.explorer.rebuild()
 			a.detailBrowser.Invalidate(a, node)
 		})
-	}()
+	})
 }
 
 // deleteAgentEntity confirms with the user, then runs run (a gosmo Drop/
@@ -124,8 +123,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 		if !confirmed {
 			return
 		}
-		go func() {
-			defer a.recoverPanic("deleting an Agent object")
+		a.safego("deleting an Agent object", func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			err := run(ctx)
@@ -137,6 +135,6 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))
 				refreshExplorerNode(a, node.parent)
 			})
-		}()
+		})
 	})
 }

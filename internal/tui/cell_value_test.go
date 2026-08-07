@@ -55,6 +55,35 @@ func TestClassifyCellValue(t *testing.T) {
 	}
 }
 
+// TestClassifyCellKind pins the declared-type path: an xml column opens as XML
+// even when its serialized value doesn't end in '>', which is the sp_block
+// case (`try_cast('<?query --' + text + '--?>' as xml)` comes back ending in
+// "--?&gt;") that the text sniff alone dropped into the grid's popup.
+func TestClassifyCellKind(t *testing.T) {
+	tests := []struct {
+		name    string
+		sqlType string
+		value   string
+		want    cellValueKind
+	}{
+		{"xml column, entity-escaped tail", "xml", "<?query --\r\nselect 1\r\n--?&gt;", cellXML},
+		{"xml column, ordinary document", "xml", "<root/>", cellXML},
+		{"xml column, NULL cell", "xml", "NULL", cellPlain},
+		{"xml column, empty cell", "xml", "", cellPlain},
+		{"json column", "json", `{"a":1}`, cellJSON},
+		{"type case-insensitive", "XML", "<?query --x--?&gt;", cellXML},
+		{"sized type is not xml", "nvarchar(max)", "plain text", cellPlain},
+		{"no type falls back to sniff", "", "<root/>", cellXML},
+		{"no type, plain value", "", "hello", cellPlain},
+		{"nvarchar holding xml still sniffs", "nvarchar(max)", "<root/>", cellXML},
+	}
+	for _, tt := range tests {
+		if got := classifyCellKind(tt.sqlType, tt.value); got != tt.want {
+			t.Errorf("%s: classifyCellKind(%q, %q) = %v, want %v", tt.name, tt.sqlType, tt.value, got, tt.want)
+		}
+	}
+}
+
 // The two predicates must stay consistent with the classifier they now
 // delegate to — a value cannot be both, and each must agree with its kind.
 func TestLooksLikePredicatesAgreeWithClassifier(t *testing.T) {

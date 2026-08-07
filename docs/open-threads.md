@@ -71,7 +71,11 @@ a settled question being reopened.
   type-checked cross-file reference graph and rejected on the numbers. What
   shipped instead is `internal/tui/sqlparse`, the only part of the package with
   *zero* outbound references. The earlier "P5" file-split list finished
-  2026-08-04 — every file is under 400 lines, split on the draw/input seam.
+  2026-08-04 — every file *on that list* came out under 400 lines, split on
+  the draw/input seam. It was never a standing rule for the package, and
+  isn't one now: 32 non-test files exceed 400 lines, thirteen of them in
+  `internal/tui`. That is not a reason to re-open the question this
+  paragraph closes.
   The negative results, each a proposal a future review will otherwise
   re-invent:
 
@@ -88,6 +92,32 @@ a settled question being reopened.
     holds: five `*_test.go` files under `props` have zero `App` references.
   - `planview`, the precedent, has no `Host` interface at all. Both existing
     sub-packages are leaves, and that is why both worked.
+
+- **The Block tab listing the monitoring session itself is intended.**
+  `sp_block`'s final `WHERE` drops only sessions that are idle *and* blocking
+  nobody, and the session running the procedure is neither, so an unblocked
+  server shows exactly one row: its own. Raised by the 2026-08-07 second
+  review with `and spr.spid <> @@spid` as the fix (sp_WhoIsActive's
+  `@show_own_spid = 0` is the precedent) and **rejected — author's call, on
+  purpose**. Do not "fix" it.
+
+- **`sp_block`'s `cross apply sys.dm_exec_sql_text` and its lack of an
+  `ecid = 0` filter are intended.** The same review proposed `outer apply`
+  plus `spid > 50 and ecid = 0`, on the grounds that a blocker with no cached
+  text takes its whole blocked subtree out of the tree and that a parallel
+  plan is several `sys.sysprocesses` rows. Neither was reproducible on
+  ubudock — a sleeping blocker kept a resolvable handle, and `DBCC
+  FREEPROCCACHE` does not evict a live transaction's text — and the
+  `cross apply` is what keeps system sessions out today. **Author's call: as
+  is.** The one part of that finding that was accepted, the unused
+  `dm_exec_cursors` join, is already gone.
+
+- **The Activity Monitor probes `VIEW SERVER STATE` once per collector, so
+  twice per panel open.** Hoisting it to a single shared check was proposed
+  and dropped: the Retry control added in the same pass starts a *new*
+  collector after a transient failure, and a cached permission answer would
+  make that retry fail without asking the server. One extra round trip on
+  open is the cheaper mistake.
 
 - **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb
   returns `float64` for both `REAL` and `FLOAT`. It is correct if the driver
@@ -111,14 +141,6 @@ a settled question being reopened.
 
 Each is a feature, not a defect.
 
-- **Activity Monitor: the Sessions and Block tabs.** The panel, both
-  dashboards, and live collection shipped 2026-08-06 (increment 1, see
-  `docs/plan-activity-monitor.md`). The Sessions and Block tabs exist and are
-  selectable but draw a placeholder and a manual Refresh that says it has
-  nothing to load — increment 2 is the real session list
-  (`sp_whoisactive`-shaped) and the blocking chains. Neither has opened a
-  connection yet; `ActivityMonitor.adopt` is where a tab's own connection
-  gets registered for teardown.
 - **Reports** — server-level and database-level (top tables, disk usage). No
   entry point exists yet.
 - **Always On Availability Groups** — viewing and managing topology and

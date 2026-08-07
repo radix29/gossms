@@ -55,8 +55,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	done := make(chan struct{})
 	go p.tickExecuting(done)
 
-	go func() {
-		defer p.app.recoverPanic("the estimated execution plan")
+	p.app.safego("the estimated execution plan", func() {
 		res := query.ExecuteEstimatedPlan(ctx, sc.Server.DB(), database, queryText)
 		// cancelled must be read before cancel() — calling cancel sets
 		// ctx.Err() itself, which would make this always true otherwise.
@@ -71,7 +70,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 			}
 			p.setEstimatedPlan(res, cancelled)
 		})
-	}()
+	})
 }
 
 // setEstimatedPlan installs a finished plan fetch. On success, the plan

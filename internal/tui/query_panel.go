@@ -146,10 +146,6 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	results.SetRowNumbers(true)
 	results.SetStatusStyle(resultsStatusStyle)
 	results.OnCopyRequest = app.copyWithStatus
-	// An XML or JSON cell goes to its own query tab with the matching
-	// highlighting instead of the grid's 60-column popup; anything else falls
-	// through to the popup.
-	results.OnShowValue = app.openCellValuePanel
 	p := new(QueryPanel{
 		app:      app,
 		title:    title,
@@ -161,6 +157,14 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	p.messages.SetReadOnly(true)
 	p.resultsText = controls.NewEditor(nil)
 	p.resultsText.SetReadOnly(true)
+	// An XML or JSON cell goes to its own query tab with the matching
+	// highlighting instead of the grid's 60-column popup; anything else falls
+	// through to the popup. The declared column type comes from the active
+	// result set, since a value's own text isn't a reliable XML tell — see
+	// classifyCellKind.
+	results.OnShowValue = func(col int, column, value string) bool {
+		return app.openCellValuePanel(p.columnType(col), column, value)
+	}
 	p.editor.OnRightClick = func(x, y int) { app.showEditorContextMenu(x, y) }
 	p.editor.SetCompletionProvider(p.newCompletionProvider())
 	return p
@@ -281,4 +285,15 @@ func (p *QueryPanel) activeResultSet() (query.ResultSet, bool) {
 		return query.ResultSet{}, false
 	}
 	return p.result.Sets[p.activeTab], true
+}
+
+// columnType returns the declared SQL Server type of the active result set's
+// col'th column, or "" when there's no such column or the set carries no
+// types.
+func (p *QueryPanel) columnType(col int) string {
+	rs, ok := p.activeResultSet()
+	if !ok || col < 0 || col >= len(rs.ColumnTypes) {
+		return ""
+	}
+	return rs.ColumnTypes[col]
 }

@@ -129,8 +129,7 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 		return
 	}
 	name := node.data.Name
-	go func() {
-		defer a.recoverPanic("starting an Agent job")
+	a.safego("starting an Agent job", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)
@@ -145,7 +144,7 @@ func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
 			a.setStatus(fmt.Sprintf("Job %q started", name))
 			a.detailBrowser.Invalidate(a, node)
 		})
-	}()
+	})
 }
 
 func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
@@ -153,8 +152,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 		return
 	}
 	name := node.data.Name
-	go func() {
-		defer a.recoverPanic("stopping an Agent job")
+	a.safego("stopping an Agent job", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		j, err := sc.Server.JobByNameContext(ctx, name)
@@ -169,7 +167,7 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 			a.setStatus(fmt.Sprintf("Job %q stopped", name))
 			a.detailBrowser.Invalidate(a, node)
 		})
-	}()
+	})
 }
 
 // showAgentJobHistory opens a new query window against msdb, pre-filled

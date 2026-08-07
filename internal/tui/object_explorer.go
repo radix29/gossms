@@ -50,11 +50,19 @@ func (n *explorerNode) beginLoad(parent context.Context, timeout time.Duration) 
 // — false means a newer beginLoad has since superseded it, and the result
 // belonging to seq must be discarded. Clears cancelLoad on success, since
 // the fetch it guarded has now finished.
+//
+// The cancel is called, not just dropped: the fetch's result is already in
+// hand by the time this runs, but the timeout context stays registered on
+// the connection's context with its timer armed until childFetchTimeout
+// expires, for every node ever expanded.
 func (n *explorerNode) endLoad(seq int) bool {
 	if n.loadSeq != seq {
 		return false
 	}
-	n.cancelLoad = nil
+	if n.cancelLoad != nil {
+		n.cancelLoad()
+		n.cancelLoad = nil
+	}
 	return true
 }
 

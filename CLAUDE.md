@@ -204,6 +204,15 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   any pre-release trimming — it decodes tcell's exact Key/Modifiers/rune per
   keypress, which is what separates a real app bug from a terminal
   limitation.
+- **Never give a procedure you install outside `master` an `sp_` prefix.** An
+  `sp_`-prefixed name falls back to `master` when the current database has no
+  such procedure, which corrupts DDL on exactly the path that installs one:
+  `CREATE OR ALTER dbo.sp_x` in tempdb finds master's copy and fails with
+  "Invalid object name", and `DROP PROCEDURE IF EXISTS dbo.sp_x` in tempdb
+  **deletes master's copy** — it did, on the win10cli test server. Both
+  verified live. `internal/activity/block.go` is the worked example: master's
+  copy is `sp_block` (the name a hand-installed one already has), tempdb's is
+  `usp_block`, and every `EXEC` names its database.
 - **Never call `rows.Next()` speculatively inside `internal/query/executor.go`'s
   `sqlexp.ReturnMessage` loop.** One extra `Next()` on an exhausted result set
   makes the driver consume the protocol message `retmsg.Message(ctx)` is

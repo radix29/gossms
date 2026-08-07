@@ -56,9 +56,9 @@ func (am *ActivityMonitor) chartTab() bool {
 // bucketTime is the clock time of one plotted bucket, falling back to the
 // newest sample's time when the view carries no per-bucket times.
 func (am *ActivityMonitor) bucketTime(idx int) string {
-	times, newest := am.history.Times, am.sampleTime
+	times, newest := am.history.Times, am.act.sampleTime
 	if am.tab == amTabTempDB {
-		times, newest = am.tempdb.Times, am.tdSampleTime
+		times, newest = am.tempdb.Times, am.td.sampleTime
 	}
 	if idx >= 0 && idx < len(times) {
 		return times[idx]

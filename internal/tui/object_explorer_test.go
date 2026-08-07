@@ -38,11 +38,20 @@ func TestExplorerNodeBeginEndLoad(t *testing.T) {
 	if n.cancelLoad == nil {
 		t.Errorf("endLoad(stale seq) must not clear cancelLoad for the still-pending current fetch")
 	}
+	if ctx2.Err() != nil {
+		t.Errorf("endLoad(stale seq) cancelled the current fetch's context (err=%v)", ctx2.Err())
+	}
 
 	if !n.endLoad(seq2) {
 		t.Errorf("endLoad(current seq) = false, want true")
 	}
 	if n.cancelLoad != nil {
 		t.Errorf("endLoad(current seq) should clear cancelLoad")
+	}
+	// Cleared by calling it, not by dropping it: a discarded CancelFunc
+	// leaves the timeout context registered on its parent with the timer
+	// armed for the full childFetchTimeout, once per node ever expanded.
+	if ctx2.Err() != context.Canceled {
+		t.Errorf("endLoad(current seq) dropped cancelLoad without calling it (ctx err=%v)", ctx2.Err())
 	}
 }

@@ -7115,7 +7115,7 @@ whole word.
 
 ## review-batches-a-and-b-2026-08-06
 
-Batches A and B of `docs/plan-review-2026-08-06.md`. A was four independent
+Batches A and B of the 2026-08-06 cross-repo review. A was four independent
 correctness fixes; B was the draw path. Both documents' status lines are
 updated in the plan itself — this is what was learned doing it.
 
@@ -7152,7 +7152,7 @@ a cell-composition change didn't shift a colour somewhere in eleven charts.
 
 ## review-batch-c-2026-08-06
 
-Batch C of `docs/plan-review-2026-08-06.md` — documentation and dead surface.
+Batch C of the 2026-08-06 cross-repo review — documentation and dead surface.
 Five of the seven items were comment or query corrections; the two that
 needed a design decision were both wired up rather than trimmed, as the batch
 recommended.
@@ -7195,7 +7195,7 @@ excluded from the request counts.
 
 ## review-batch-d-2026-08-07
 
-Batch D of `docs/plan-review-2026-08-06.md` — undo memory. The batch offered
+Batch D of the 2026-08-06 cross-repo review — undo memory. The batch offered
 a byte cap or per-edit deltas and recommended the cap; that is what landed,
 with deltas written down in `docs/open-threads.md` § Designed and deferred.
 
@@ -7220,3 +7220,420 @@ freed nothing at all — the same trap `Store.Append` in
 
 Verified under tmux beyond the tests: typing into a query panel, then six
 undos and a redo, still steps one character at a time.
+
+---
+
+## review-batch-a-2026-08-07
+
+Batch A of the 2026-08-07 cross-repo review — the three bugs that review
+turned up. All three landed. The review itself deliberately looked where the
+2026-08-06 pass had not: the fourteen `agent_*` files, the Activity Monitor's
+collector lifecycle, and the property-page edit/apply seam.
+
+**The Steps page listed every subsystem's steps and wrote them all back as
+T-SQL.** `pageJobSteps`' doc comment claimed CmdExec/PowerShell/SSIS were
+"excluded"; nothing excluded them — `Job.StepsContext` returns every row of
+`sysjobsteps`, and `jobStepEdit.request()` hardcoded `Subsystem: "TSQL"`,
+which `JobStep.UpdateContext` always sends. So a PowerShell step this page
+updated became a T-SQL step still carrying its PowerShell script. The fix
+keeps the listing whole (a Type column, so a mixed job doesn't look like it
+has fewer steps than it has) and makes non-T-SQL steps read-only, guarded at
+the top of `commitCurrent` — refusing to copy the form back is what keeps
+such a step out of `changed()` and so out of apply entirely.
+
+**The same page silently rewrote a step's target database.** `indexOf`'s own
+doc comment names the hazard — a 0 fallback is only safe when `items[0]` is a
+sentinel — and `dbNames` had none, so a step whose `database_name` is NULL
+(every non-T-SQL step) or dropped selected the alphabetically first database
+on the server, and `commitCurrent` wrote it straight back. gosmo's
+`UpdateContext` goes out of its way to treat an empty `Database` as "keep";
+the UI defeated that by never producing an empty value. Now an `(unchanged)`
+sentinel leads the list, resolved through `indexOfOK`, and maps back to `""`.
+
+The trigger for both was one click: `commitCurrent` runs on every grid row
+change, so selecting a second step was enough to make the page dirty, and
+`PropDialog` applies every dirty page.
+
+**Live A/B on win10cli was what made both undeniable.** Throwaway job with a
+T-SQL/`msdb` step, a CMDEXEC step, and a T-SQL/`master` step; select the
+CMDEXEC row, select the next row, OK. Pre-fix, `sysjobsteps` came back with
+`2|two_cmdexec|TSQL|HealthClinic|cmd /c echo hello`. Post-fix, byte-identical
+to the pre-run state — and changing step 1's database `msdb` → `master`
+through the dropdown still applied correctly, so the read-only guard didn't
+cost the page its actual job.
+
+**`Collector.send`'s `case <-c.stop` escape was only real if someone called
+`Stop`.** Both collectors' `Run` returned without closing `stop` on two paths
+(the `VIEW SERVER STATE` prologue failing, and `ctx.Done()`), after which the
+8-slot `control` buffer was the only thing absorbing `SetRate`/`SetPaused` —
+both called straight from the UI goroutine. `defer c.Stop()` at the top of
+`Run` makes the invariant hold by construction. Three committed tests in
+`internal/activity/collector_test.go`; A/B'd by reverting the two `defer`s,
+all three fail with `SetPaused/SetRate blocked after Run returned`.
+
+**The severity claim on that one was wrong, and live testing is what caught
+it.** The review called it an application freeze. It is not reachable today:
+gossms cannot connect at all without `VIEW SERVER STATE` (verified with a
+disposable `zz_noviewstate` login — the connect fails in `loadServerInfo`, so
+no panel is ever created), and the Activity Monitor's connection is its own,
+cancelled only by `ActivityMonitor.Close`, which calls `collector.Stop()` on
+the line above. Verified live: Activity Monitor open, File > Disconnect,
+fifteen Pause clicks — still responsive. What is left is a latent trap the
+Sessions/Block increment would walk into, which is reason enough for a
+one-line fix, but the plan document now says so rather than the opposite.
+
+**The toolbar gating is `am.collector != nil && !am.collecting`, not
+`!am.collecting`.** `am.paused` is a preference the panel carries into
+`startCollector`, so a panel still connecting has to keep its controls live.
+The over-broad first version was caught by
+`TestActivityMonitorHeldClickFiresOnce`, which builds a monitor with no
+collector at all.
+
+## review-batches-bcd-2026-08-07
+
+Batches B, C and D of the 2026-08-07 cross-repo review, in one pass after
+Batch A. Nothing committed.
+
+**The New Job dialog had A3's bug in the other direction.**
+`new_job_pages.go` is a copy-sibling of `agent_job_props_steps.go` and used
+the same `indexOf`-into-a-sentinel-less-list pattern, so a step the user
+never chose a database for was created against whichever database sorted
+first rather than against the server's default. It gets a `(default)`
+sentinel rather than A3's `(unchanged)`, and the two constants stay separate
+deliberately: a step that does not exist yet has no database to leave alone,
+so `""` here means "omit `@database_name` and let `sp_add_jobstep` decide".
+A/B'd live on win10cli with `new_job_pages.go` restored from `HEAD` — same
+keystrokes, `1|s1|TSQL|HealthClinic|SELECT 1` before,
+`1|s1|TSQL|master|SELECT 1` after.
+
+**"Disable the row" had to be spelled with `SetItems`.** The Files page
+showed `PRIMARY` as a log file's filegroup for the same not-found-0 reason.
+`propsheet.SelectRow` has no disabled state — `TextRow.SetEnabled` has no
+counterpart there — so the LOG case swaps the dropdown's items for a single
+`(not applicable)` entry and `pickedFilegroup` reads it back as `""`.
+`typeSelect.SetOnChange` covers the new-file path, where the type is chosen
+rather than loaded. Reproduced live before the fix: selecting the log row put
+`PRIMARY` in the box, selecting the data row committed it, and the next grid
+rebuild showed `HealthClinic_log | LOG | PRIMARY`. Both dialogs were
+cancelled, so nothing reached the database either way.
+
+**`endLoad` had a copy-sibling the review missed.** The plan named
+`explorerNode.endLoad` as the one place a `context.CancelFunc` was dropped
+rather than called; `completionInventory.endLoad` is the same method and had
+the same defect. Both fixed. The interesting part was making the tests bite:
+the existing ones only checked that `cancelLoad` came back `nil`, which is
+true either way. The new assertion is on the context — `ctx2.Err() !=
+context.Canceled` — and reverting the fix produces
+`endLoad(current seq) dropped cancelLoad without calling it (ctx err=<nil>)`.
+
+**`xmlOpenBlock` was kept rather than deleted, and the test is what earns
+it.** It has no production callers because `XMLHighlighter` reads
+`prefixStates` instead, which is the whole point: it is the O(idx) reference
+implementation the O(1) cache has to agree with, the same role
+`startsInBlockComment` plays for SQL. `TestXMLPrefixStatesMatchFullReplayAcrossEdits`
+now checks the cache against it after six edits that open and close comments
+and CDATA sections. A/B'd by widening `prefixStates.replay`'s converge test
+from `i > from` to `i >= from`, which breaks the cache without touching the
+step function: the new test fails with `after edit 0 (row 6 -> "<b/>"): line
+7 open-block state = 1, want 0`, and so does the SQL sibling. Deleting the
+function would have left that invariant unpinned.
+
+**Batch C stayed a comment-only batch on purpose.** `rowFetchSemaphore`'s
+per-call bucket is a behaviour question, not a documentation one — the
+comment now states the real bound (per loader, so two folders fan out to 16)
+instead of reasoning from a global that does not exist. Moving the bucket to
+package level is still available and still costed; it just is not a docs fix.
+
+`staticcheck ./...` is clean on gossms after D, for the first time in this
+review.
+
+## xml-cell-panel-by-column-type-2026-08-07
+
+Two changes, both driven by `master.dbo.sp_block` on ubudock, whose `[sql
+text]` column is `try_cast('<?query --' + st.text + '--?>' as xml)`.
+
+**"Show Value" on an xml cell opened the grid popup, not an XML panel.**
+`classifyCellValue` sniffed shape only — first byte `<`, last byte `>` — and
+that value's last byte is `;`. SQL Server serialises the fragment with its
+text nodes entity-escaped, so whatever closes the processing instruction
+early leaves the value ending in `--?&gt;`, which reads as plain text. Fixed
+by making the declared column type win: `DataGrid.OnShowValue` now passes the
+cell's column *index* (names in one result set can repeat), `QueryPanel`
+resolves it through the new `columnType` against the active result set's
+`ColumnTypes`, and `classifyCellKind` maps `xml`/`json` straight to their
+panel kinds, falling back to the old text sniff when the type says nothing —
+an `nvarchar(max)` holding XML still opens as XML. A NULL or empty cell in an
+xml column stays with the popup; there is nothing to open.
+
+Found by driving the built-in binary under tmux against the live server, not
+by a test: the value's tail was only visible from
+`right(convert(nvarchar(max), @x), 20)` in sqlcmd. The first probe of that
+tail was itself misleading — the ad-hoc query matched *its own* session in
+`sys.sysprocesses`, and its text contained a literal `--?>`, so the escaping
+it showed had a different cause than the one in the procedure's output.
+`OBJECT_DEFINITION` is what made the reproduction honest.
+
+**Output Column Metadata now bracket-quotes column names**, `]` doubled:
+`[sql text] xml` rather than `sql text xml`, so a name with a space or a
+keyword reads as one identifier and pastes into a query. An unnamed column
+still shows its bare 1-based position — a position is not an identifier to
+quote.
+
+---
+
+## 2026-08-07 — Activity Monitor Block tab
+
+`activity-monitor-block-tab-2026-08-07`
+
+*The Block tab became a real result grid over `sp_block`, with its own
+connection, a master/tempdb lookup, and an "Install in master" button.*
+
+User request: the Block tab runs the `sp_block` procedure from
+`todo/mockups/sp_block.sql` and shows its output in a result grid with the
+grid's full behaviour. On first showing, look for the procedure in `master`;
+if it isn't there, look in `tempdb`; if it's in neither, create it in
+`tempdb`. Offer an "Install in master" button beside Refresh whenever master
+hasn't got it, behind a Yes/No confirmation. Use a dedicated connection, and
+never drop the tempdb copy on teardown — a SQL Server restart is what removes
+it, and that is understood.
+
+`todo/` is scratch, not source, so the procedure body lives in
+`internal/activity/block.go` as `blockProcScript`, with `FindBlockProc`
+(one round trip answering both databases) and `InstallBlockProc`. The tab
+itself is `internal/tui/activity_monitor_block.go`: connect → resolve →
+install-if-absent → run, each step through `safego`/`postAndWake`, with
+`blkBusy` gating every toolbar control in between. The result goes through
+`query.Execute`, which is what gives the grid its `ColumnTypes` — the
+`[sql text]` column comes back as `xml`, so `OnShowValue` opens it in a
+highlighted panel exactly as a query panel's grid does (see
+[[xml-cell-panel-by-column-type-2026-08-07]]).
+
+**Two live-server findings, both from the `sp_` prefix, neither catchable by
+a test.** An `sp_`-prefixed procedure name falls back to `master` when the
+current database has no such procedure, and that changes what DDL means:
+
+1. `create or alter procedure dbo.sp_block` run in `tempdb`'s context finds
+   master's copy, decides it is altering *that*, and fails with
+   `Invalid object name 'dbo.sp_block'`.
+2. Far worse: `drop procedure if exists dbo.sp_block` run in `tempdb`'s
+   context **drops master's copy**. The first version of `InstallBlockProc`
+   did exactly that as a "replace" step and deleted `master.dbo.sp_block` on
+   the win10cli test server; it was restored from
+   `todo/mockups/sp_block.sql` and verified byte-identical against a
+   pre-captured `OBJECT_DEFINITION`.
+
+Note what the fallback means: the hazard lands squarely on the *install*
+path, since that is by definition the case where the current database hasn't
+got the procedure. Pinned afterwards with a disposable `sp_zzdrop` in both
+databases — the drop then took tempdb's copy and left master's alone, so the
+rule really is "current database first, master as fallback", not "master
+always".
+
+**The fix, at the user's suggestion: drop the prefix.** The tempdb copy is
+installed as `usp_block`, so it is an ordinary object resolved in the
+database the DDL was issued against, and `CREATE OR ALTER` is safe and
+idempotent there. master keeps `sp_block`, the name a hand-installed copy
+already has, and `CREATE OR ALTER` is safe there too because master *is* the
+fallback target. `BlockProcLocation` now carries `Name()`/`Qualified()` and
+every `EXEC` names its database, since neither name is reachable unqualified
+from an arbitrary database context.
+
+The install goes to `<db>.sys.sp_executesql` with the script as a parameter:
+the three-part procedure name puts the `CREATE` in the target database's
+context without a `USE` (this runs on a pooled connection, whose database has
+to be left as it was found — verified with `DB_NAME()` afterward), and a
+parameter avoids escaping a body full of single quotes.
+
+**The overlay bug the tmux run caught.** `DataGrid.Draw` does not draw the
+context menu or the value popup — `DrawOverlay` is a separate call that has
+to come after everything else in the frame. Without it the right-click menu
+opened, swallowed every event through `OverlayActive`, and was never drawn,
+which looks exactly like a dead right-click. `QueryPanel.Draw` had the call
+all along; the Block tab now does too.
+
+Verified live on both servers: the blocking chain rendered with a real
+blocker/victim pair (`WAITFOR` holding an X lock, `LCK_M_S` indented under
+it), Refresh re-ran it, right-click → Show Value opened the `[sql text]`
+cell as XML. The whole none-in-master path was exercised on win10cli by
+temporarily renaming master's copy aside: the tab installed into `tempdb`,
+reported "sp_block in tempdb", offered "Install in master", and after the
+confirmation reported "sp_block in master" with the button gone. Everything
+renamed back and diffed afterward.
+
+---
+
+## 2026-08-07 — Activity Monitor Sessions tab over sp_WhoIsActive
+
+`activity-monitor-sessions-whoisactive-2026-08-07`
+
+*The last placeholder tab became a result grid over Adam Machanic's sp_WhoIsActive, and the Block tab's machinery was generalized so both tabs are one implementation*
+
+User request: make Sessions run `sp_WhoIsActive`, no auto-refresh (once on
+first showing, then Refresh), the query panel's result grid, an
+acknowledgement at the top, a Help > About reference, and "the same way as
+sp_block is working including the usp_ part".
+
+**One implementation, two tabs.** Copying `activity_monitor_block.go` would
+have duplicated ~460 lines across the Go and TUI sides, so `BlockProcLocation`
+and its four methods became `activity.Proc` — a procedure described by its
+master name, its tempdb name, and a `script(name)` closure — plus a plain
+`ProcLocation`. `internal/tui/activity_monitor_proctab.go` is the tab: one
+`amProcTab` per procedure, held as `ActivityMonitor.blk` and `.sess`, selected
+by `procTab()`. Everything the Block tab already got right is now got right
+twice for free: the private connection (a run can take seconds, and a
+two-second sample tick must not queue behind it), `DrawOverlay` after
+`Draw`, the `ButtonNone` forward to every latch-bearing grid, and Tab
+belonging to the panel rather than the grid.
+
+With Sessions no longer a placeholder there are no placeholder tabs left, so
+`drawStub`/`refreshStub`/`stubStatus` went with it.
+
+**The licence.** sp_WhoIsActive is GPL-3.0; goSSMS was MIT at the time this
+was written. Raised before writing anything, since embedding it is not a
+detail: the user chose to embed it, so the repo carries the upstream
+`LICENSE` as `internal/activity/LICENSE.sp_whoisactive`, the embedded
+`internal/activity/whoisactive.sql` opens with a GPL §5(a) modification
+notice, and README's License section says what belongs to whom.
+
+**goSSMS was relicensed GPL-3.0-or-later in the same session**, which is what
+the repo carries now: `LICENSE` is the full GPL-3.0 text and README § License
+says so. Anything below in this entry that reads "MIT" is describing the
+state before that. The two
+modifications are exactly what that notice records: the release script's
+SET-options and stub-`CREATE` batches removed (`sp_executesql` runs one
+batch, and `GO` is not a statement), and the declaration rewritten at install
+time.
+
+**The self-referential trap in the notice.** The install rewrites the single
+`ALTER PROC dbo.sp_WhoIsActive` line with `strings.Replace(..., 1)`. The
+modification notice, as first written, quoted that line verbatim — so the
+first occurrence was the comment, and the rewrite would have landed there and
+left the real declaration creating `sp_WhoIsActive` in tempdb: the exact `sp_`
+fallback disaster the `usp_` rule exists to prevent, arrived by a different
+road. The notice now describes the line instead of quoting it, and
+`TestWhoIsActiveHeaderAppearsOnce` pins the count at one.
+
+**Verified live on both servers.** ubudock already had
+`master.dbo.sp_WhoIsActive`, which exercised the prefer-master path; win10cli
+had neither copy, which exercised the install-into-tempdb path. Both: the
+install left `DB_NAME()` unchanged, re-installing over an existing copy
+worked, master's copy was untouched by the tempdb DDL, and the procedure
+returned its full 23-column result. Then driven under tmux against win10cli
+with a held `WAITFOR DELAY` session: the credit row and the grid rendered
+together, the status line read `1 row(s) 12:56:07 (tempdb.dbo.usp_WhoIsActive)`,
+the timestamp did **not** move across eight idle seconds (no auto-refresh) and
+did move on `r`, right-click → Show Value opened `sql_text` as XML, and Tab
+walked Sessions → Block → History without trapping.
+
+Zero rows on an idle server is correct, not a bug: upstream's `@show_own_spid`
+defaults to 0, so the tab's own session is excluded. goSSMS passes no
+parameters — same as `sp_block`.
+
+---
+
+## 2026-08-07 — second cross-repo review: the collector rewrite
+
+`review-second-pass-2026-08-07`
+
+*A second review the same day, aimed at the uncommitted Activity Monitor code the first one could not see. Its bug batch was two-thirds "on purpose"; what it was actually worth was the refactor.*
+
+The review's plan file was removed with the other landed plans in the same
+pass (see the end of this entry). Four findings in its Batch A,
+of which the user took **one**: A2 (the Block tab lists the monitoring
+session itself) and A4 (`cross apply dm_exec_sql_text`, `ecid`) are
+deliberate and are now recorded as such in `open-threads.md`; A3 (the unused
+`dm_exec_cursors` join) the user fixed by hand while the review was being
+written.
+
+**A1 — a dead collector still reported itself as collecting.** The morning's
+review had given both collectors `defer c.Stop()`, which fixed the hang and
+told the panel nothing. `Run` has three exits and reports one of them
+(`ErrNoPermission`); a failed permission prologue and a cancelled context
+both return silently, so `am.collecting` stayed true, the sample time froze,
+and Pause went on toggling its own label while a stopped collector dropped
+every send. Now the goroutine is `runCollector`/`runTempDBCollector` — `Run`,
+then `postAndWake(collectorStopped)` — and the stopped-callback is checked
+against the *current* collector, because a Retry starts a new one whose
+predecessor's callback is still in flight.
+
+Retry is the other half: a stopped feed's Pause is replaced by a **Retry**
+control that starts a new collector on the connection the panel still owns
+(`feedConn`). Before it, one failed prologue turned the panel into a static
+picture until it was closed and reopened.
+
+A/B'd by deleting the `postAndWake` line: `TestActivityMonitorLearnsARunReturned`
+fails with "the panel still reports collecting after the collector's Run
+returned", and passes with it. That test drives the real collector against a
+`sql.OpenDB` whose connector always errors, so what it pins is the wiring,
+not `collectorStopped`'s arithmetic — which three sibling tests pin
+separately (a reported error survives the silent-exit status, a stale
+callback is ignored, and Retry replaces Pause).
+
+**C1/C2 — the two collectors and the two stores were one implementation
+each, written twice.** `collector[S, Snap]` now holds the prologue, the
+select loop, the control channel and the stop latch; `Collector` and
+`TempDBCollector` are the exported wrappers that give it its concrete
+callbacks and its `probe`/`derive` pair. `sampleStore[T]` likewise, with
+retention, detail window and the drop-detail closure passed in per call so
+the zero value stays usable — the panel holds both stores as plain value
+fields and never constructs them. This is why C1/C2 went **before** A1: the
+same fix would otherwise have been written twice, which is exactly how the
+morning's `defer c.Stop()` went in twice and how `endLoad`'s copy-sibling was
+missed.
+
+**C3 — `amFeed`.** The panel carried seven collector-facing fields twice
+(`rateIdx`/`tdRateIdx`, `paused`/`tdPaused`, `collecting`/`tdCollecting`,
+`status`/`tdStatus`, `sampleTime`/`tdSampleTime`) and five methods twice, and
+re-read them behind `if am.tab == amTabTempDB` in `resolution`,
+`collectionState`, `header` and `drawInterval`. All of that is now one
+`amFeed` held twice, picked by `feed()`; `buildTools`' two rate arms are one
+arm over `f.rateLabels`; `setRate`/`setPaused` are one method each. The
+collectors are different types, so the seam is two closures (`applyRate`,
+`applyPaused`) re-pointed at each new collector.
+
+Two things fell out of it. The toolbar's stopped-gate is now
+`f.started && !f.collecting` rather than `am.collector != nil &&
+!am.collecting` — same rule, stated on the feed. And the collector-state line
+on the right of the toolbar, which `collectionState()` had always computed
+for TempDB, was drawn only on `dashboardTab()`; it is now on every
+`canvasTab()`, so a paused TempDB tab shows its PAUSED marker on the row that
+doesn't scroll. That was the whole reason the line exists.
+
+**C4 — one spelling of "goroutine with a panic guard".** 36 hand-rolled
+`go func() { defer a.recoverPanic(...) }()` became `a.safego(...)` across 19
+files, mechanically. Every one already had its defer, so nothing was broken;
+what changes is that the next goroutine gets copied from a form that cannot
+omit it. `detail_browser_backfill.go` keeps its own `recover` — it has to
+queue `markFailed` before `wg.Done` releases the caller — and `ARCHITECTURE.md`
+now says so beside the `postAndWake` rule.
+
+**B — the small ones.** `JobStepRequest`'s two string fields read an empty
+value differently (`Database` keeps, `OutputFileName` clears) because msdb
+does; that is now stated on the fields themselves rather than only on
+`UpdateContext`. `scriptDeclType`'s `reflect.Struct` arm says it is the
+map's fallback and cannot fire today — noted and kept, per the no-removal
+rule. The journal's licence paragraph in the entry above said goSSMS was MIT;
+it now records the relicensing to GPL-3.0-or-later that happened in the same
+session.
+
+**B1 was dropped, deliberately.** The plan proposed hoisting
+`HasViewServerState` out of the two collectors so opening the panel costs one
+probe instead of two. A1's Retry is the argument against it: a cached
+permission answer would make a retry after a transient failure fail without
+asking the server. One round trip at panel open is the cheaper mistake.
+
+**Verified live on ubudock under tmux.** History collecting at 2 s; `-` moved
+it to 3 s and then 5 s with the header agreeing; `p` toggled PAUSED and back;
+Tab to TempDB showed `TempDB rate: 10 s 30 s 60 s` with its own
+`collecting 14:14:51 (30 sec)` — the line that was previously missing there —
+and pausing TempDB left History collecting with its own advancing sample time.
+Sessions ran `tempdb.dbo.usp_WhoIsActive` and refreshed on `r`; Block returned
+its tree.
+
+**Docs cleanup, same pass.** The three landed review plans
+(`plan-review-2026-08-06.md`, `-07.md`, `-07-second.md`) were removed: the
+journal is the permanent record and each of their batches has an entry here.
+Entries that cited them by filename now name the review instead.
+`plan-activity-monitor.md` stays — it is the plan of record the panel's own
+comments cite by deviation number — with its status table brought up to
+increment 2.

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/radix29/gossms/internal/query"
 )
@@ -12,16 +13,19 @@ import (
 // declared SQL Server type.
 //
 //	Result 1
-//	col1 nvarchar(50)
-//	col2 int
+//	[col1] nvarchar(50)
+//	[col2] int
 //
 //	Result 2
-//	col1 float
+//	[sql text] xml
 //	2 datetime
 //
-// A column the query didn't name — a bare expression, "SELECT 1+1" — shows
-// its 1-based position instead, since an empty name would leave the type
-// line starting with a space and reading as if it belonged to the one above.
+// Names are bracket-quoted (with any ']' doubled) so a column named with a
+// space or a keyword reads as one identifier, and can be pasted straight into
+// a query. A column the query didn't name — a bare expression, "SELECT 1+1" —
+// shows its unbracketed 1-based position instead, since an empty name would
+// leave the type line starting with a space and reading as if it belonged to
+// the one above, and a position is not an identifier to quote.
 //
 // Returns nil when there are no result sets, so a script that only ran DML
 // gets no empty block.
@@ -36,10 +40,10 @@ func columnMetaMessages(sets []query.ResultSet) []query.Message {
 		}
 		msgs = append(msgs, query.Message{Text: "Result " + strconv.Itoa(i+1)})
 		for c, name := range rs.Columns {
+			line := "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 			if name == "" {
-				name = strconv.Itoa(c + 1)
+				line = strconv.Itoa(c + 1)
 			}
-			line := name
 			// ColumnTypes is parallel to Columns, but a set built by
 			// something other than a real scan (a test fake, a future
 			// synthesised set) may not carry it — show the name alone

@@ -409,6 +409,13 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 			}
 		case sqlexp.MsgNextResultSet:
 			active = rows.NextResultSet()
+		default:
+			// sqlexp's message set is closed today, so this arm is
+			// unreachable. Without it, a type added by a future sqlexp would
+			// spin this loop at 100% CPU with no way out; reporting it and
+			// stopping turns that hang into something the Messages tab names.
+			res.addError(fmt.Errorf("unexpected message type %T from the driver", m))
+			active = false
 		}
 	}
 	if err := rows.Err(); err != nil && ctx.Err() == nil {

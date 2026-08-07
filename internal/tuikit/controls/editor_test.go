@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 )
 
 func newTestEditor(text string) *Editor {
@@ -941,7 +942,7 @@ func markerHighlighter(start, end int, st tcell.Style) Highlighter {
 // wrapped editor rendered as plain text — silently, since setting both is not
 // an error.
 func TestEditorWrapModeAppliesHighlighter(t *testing.T) {
-	marker := tcell.StyleDefault.Foreground(tcell.ColorFuchsia).Underline(true)
+	marker := tcell.StyleDefault.Foreground(color.Fuchsia).Underline(true)
 
 	// Columns 30-34 of the logical line fall on the *second* visual row once
 	// the line wraps, which is the case a per-visual-row implementation that
@@ -973,7 +974,7 @@ func TestEditorWrapModeAppliesHighlighter(t *testing.T) {
 // after the highlighter in non-wrap mode, and has to stay that way in wrap
 // mode, or selecting highlighted text stops looking selected.
 func TestEditorWrapModeSelectionBeatsHighlighter(t *testing.T) {
-	marker := tcell.StyleDefault.Foreground(tcell.ColorFuchsia).Underline(true)
+	marker := tcell.StyleDefault.Foreground(color.Fuchsia).Underline(true)
 
 	e := NewEditor(markerHighlighter(0, 5, marker))
 	e.SetWrapMode(true)
@@ -992,8 +993,8 @@ func TestEditorWrapModeSelectionBeatsHighlighter(t *testing.T) {
 
 func TestStyleAt(t *testing.T) {
 	def := tcell.StyleDefault
-	a := tcell.StyleDefault.Foreground(tcell.ColorRed)
-	b := tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	a := tcell.StyleDefault.Foreground(color.Red)
+	b := tcell.StyleDefault.Foreground(color.Blue)
 	runs := []ColorRun{{Start: 2, Len: 3, Style: a}, {Start: 4, Len: 2, Style: b}}
 
 	cases := []struct {

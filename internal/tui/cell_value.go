@@ -63,6 +63,42 @@ func jsonArrayLike(t string) bool {
 	return false
 }
 
+// classifyCellKind decides how a "Show Value" cell is displayed when the
+// column's declared SQL Server type is known (see query.ResultSet.ColumnTypes;
+// sqlType may be empty for a set that doesn't carry types).
+//
+// The declared type wins over the text sniff, and has to: a real xml column's
+// value is not reliably bracket-shaped. SQL Server serialises an xml fragment
+// with its text nodes entity-escaped, so the blocked-process idiom
+// `try_cast('<?query --' + text + '--?>' as xml)` comes back ending in
+// "--?&gt;" whenever the batch text closed the processing instruction early —
+// last byte ';', which classifyCellValue reads as plain text and drops into
+// the 60-column popup.
+func classifyCellKind(sqlType, value string) cellValueKind {
+	if k := classifySQLType(sqlType); k != cellPlain {
+		// A NULL cell renders as the literal "NULL" — nothing to open.
+		if strings.TrimSpace(value) == "" || value == "NULL" {
+			return cellPlain
+		}
+		return k
+	}
+	return classifyCellValue(value)
+}
+
+// classifySQLType maps a declared column type ("xml", "nvarchar(50)", "json")
+// to the panel kind it always gets, or cellPlain when the type says nothing
+// about the value's shape.
+func classifySQLType(sqlType string) cellValueKind {
+	base, _, _ := strings.Cut(sqlType, "(")
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "xml":
+		return cellXML
+	case "json":
+		return cellJSON
+	}
+	return cellPlain
+}
+
 // looksLikeXML reports whether s should be shown as XML rather than in the
 // grid's built-in value popup. See classifyCellValue.
 func looksLikeXML(s string) bool { return classifyCellValue(s) == cellXML }
@@ -87,10 +123,10 @@ func looksLikeJSON(s string) bool { return classifyCellValue(s) == cellJSON }
 // The panel has no connection of its own: it exists to read a value, not to
 // run it. savedText is seeded so the panel isn't born dirty and closing it
 // doesn't prompt to save.
-func (a *App) openCellValuePanel(column, value string) bool {
+func (a *App) openCellValuePanel(sqlType, column, value string) bool {
 	var suffix string
 	var highlighter controls.Highlighter
-	switch classifyCellValue(value) {
+	switch classifyCellKind(sqlType, value) {
 	case cellXML:
 		suffix, highlighter = ".xml", controls.XMLHighlighter(theme.Active())
 	case cellJSON:

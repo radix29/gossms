@@ -2,6 +2,7 @@ package tui
 
 import (
 	gosmoversion "github.com/radix29/gosmo/version"
+	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/version"
@@ -196,15 +197,25 @@ func (a *App) editorRedo() {
 // showing a bare "unknown".
 func (a *App) showAbout() {
 	rows := []PropertyRow{
-		{Key: "Application", Value: version.Name},
+		PropertySection("Application"),
+		{Key: "Name", Value: version.Name},
+		{Key: "Description", Value: "Go SQL Server Management Studio TUI"},
 		{Key: "Version", Value: version.Version},
 		{Key: "Commit", Value: version.Commit},
 		{Key: "Built", Value: version.Date},
-		{Key: "Runtime", Value: version.Runtime()},
-		{Key: "Go Version", Value: "1.26"},
-		{Key: "Description", Value: "Go SQL Server Management Studio TUI"},
 		{Key: "Author", Value: "radix29"},
 		{Key: "Repository", Value: "github.com/radix29/gossms"},
+
+		PropertySection("License"),
+		{Key: "License", Value: version.License},
+		{Key: "Copyright", Value: version.Copyright},
+		{Key: "Source", Value: "https://github.com/radix29/gossms"},
+
+		PropertySection("Runtime"),
+		{Key: "Platform", Value: version.Runtime()},
+		{Key: "Go Version", Value: "1.26"},
+
+		PropertySection("Components"),
 		{Key: "DB Framework", Value: "github.com/radix29/gosmo " + gosmoversion.Version},
 	}
 	if gosmoversion.Commit != "unknown" {
@@ -216,6 +227,18 @@ func (a *App) showAbout() {
 	rows = append(rows,
 		PropertyRow{Key: "TUI Library", Value: "internal/tuikit (embedded)"},
 		PropertyRow{Key: "TUI Backend", Value: "github.com/gdamore/tcell/v3"},
+
+		// The Activity Monitor's Sessions tab installs and runs somebody
+		// else's GPL-3.0 procedure. Naming it here is both the thanks it is
+		// owed and the attribution the licence requires of a binary that
+		// carries a copy.
+		PropertySection("Sessions Tab — bundled procedure"),
+		PropertyRow{Key: "Procedure", Value: "sp_WhoIsActive " + activity.WhoIsActiveVersion()},
+		PropertyRow{Key: "With thanks to", Value: activity.WhoIsActiveAuthor},
+		PropertyRow{Key: "Project", Value: activity.WhoIsActiveRepo},
+		PropertyRow{Key: "Licence", Value: activity.WhoIsActiveLicense},
 	)
-	a.propsDialog.ShowGenericProperties("About goSSMS", rows)
+	// Sized to the whole list so the About box doesn't open scrolled on a
+	// normal terminal; recentre clamps it on a small one.
+	a.propsDialog.ShowGenericPropertiesSized("About goSSMS", rows, 82, len(rows)+7)
 }

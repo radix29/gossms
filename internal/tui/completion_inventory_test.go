@@ -49,6 +49,11 @@ func TestCompletionInventoryBeginEndLoad(t *testing.T) {
 	if inv.cancelLoad != nil {
 		t.Errorf("endLoad(current seq) should clear cancelLoad")
 	}
+	// Cleared by calling it, not by dropping it — same reason as
+	// TestExplorerNodeBeginEndLoad's matching check.
+	if ctx2.Err() != context.Canceled {
+		t.Errorf("endLoad(current seq) dropped cancelLoad without calling it (ctx err=%v)", ctx2.Err())
+	}
 }
 
 // evictInventory must only drop the entry the finishing load actually

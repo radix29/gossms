@@ -202,6 +202,59 @@ func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 	}
 }
 
+// TestXMLPrefixStatesMatchFullReplayAcrossEdits is the XML counterpart of
+// TestPrefixStatesIncrementalReplayMatchesFullReplay: it checks the cache
+// XMLHighlighter actually reads (prefixStates over xmlLineEndState) against
+// xmlOpenBlock, the full replay that assumes nothing, after each of a series
+// of edits that open and close comments and CDATA sections. xmlOpenBlock has
+// no callers outside this test and exists for it — it is the reference
+// implementation the cache is required to agree with, the role
+// startsInBlockComment plays for SQL in highlighter_cache_test.go.
+func TestXMLPrefixStatesMatchFullReplayAcrossEdits(t *testing.T) {
+	e := NewEditor(nil)
+	e.SetBounds(0, 0, 80, 20)
+	e.SetText(strings.Join([]string{
+		`<Root>`,
+		`<!-- opened here`,
+		`still inside`,
+		`--><a>`,
+		`<![CDATA[ raw <not a tag>`,
+		`]]>`,
+		`<!-- another`,
+		`</a>`,
+		`</Root>`,
+	}, "\n"))
+	doc := e.Document()
+
+	edits := []struct {
+		row  int
+		text string
+	}{
+		{6, `<b/>`},                // closes the trailing comment by removing it
+		{6, `<!-- reopened`},       // opens it again
+		{1, `<c/>`},                // removes the first opener
+		{5, `]]> <!-- and again`},  // a comment opened right after a CDATA close
+		{4, `<![CDATA[ still raw`}, // CDATA that never closes
+		{0, `<Root><!--`},          // line 0: dirtyFrom 0, full replay
+	}
+
+	var cache prefixStates[xmlBlockState]
+	for i := range doc.Len() {
+		cache.at(doc, i, xmlNone, xmlLineEndState)
+	}
+	for n, ed := range edits {
+		e.doc.setLine(ed.row, []rune(ed.text))
+		for i := range doc.Len() {
+			got := cache.at(doc, i, xmlNone, xmlLineEndState)
+			want := xmlOpenBlock(doc.all(), i)
+			if got != want {
+				t.Fatalf("after edit %d (row %d -> %q): line %d open-block state = %v, want %v",
+					n, ed.row, ed.text, i, got, want)
+			}
+		}
+	}
+}
+
 // TestXMLHighlighterCacheFallsBackOnNonContiguousJump guards the other half
 // of the same invariant: when Editor.Draw's viewport scrolls, the next idx
 // is not the previous one plus 1. The cache holds every line's state rather

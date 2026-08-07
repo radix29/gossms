@@ -16,8 +16,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 	d.loadSeq++
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
-	go func() {
-		defer app.recoverPanic("loading the restore database list")
+	app.safego("loading the restore database list", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -48,7 +47,7 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 			d.loadHistory(d.prevHistDB)
 			d.autoFillTarget(d.prevHistDB)
 		})
-	}()
+	})
 }
 
 // loadHistory fetches dbName's msdb backup history into the Backup Set
@@ -64,8 +63,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
 	d.setStatusMsg("Loading backup history for "+dbName+"...", false)
-	go func() {
-		defer app.recoverPanic("loading backup history")
+	app.safego("loading backup history", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		hist, err := sc.Server.BackupHistoryContext(ctx, dbName)
@@ -95,7 +93,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 				d.setStatusMsg("Ready", false)
 			}
 		})
-	}()
+	})
 }
 
 // deviceForRestore returns the backup device the current form selects: the
@@ -165,8 +163,7 @@ func (d *RestoreDialog) analyze() {
 	d.loadSeq++
 	seq := d.loadSeq
 	app, srv := d.app, d.sc.Server
-	go func() {
-		defer app.recoverPanic("analyzing the backup device")
+	app.safego("analyzing the backup device", func() {
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
 		headers, err := srv.BackupHeadersContext(ctx, dev)
@@ -194,7 +191,7 @@ func (d *RestoreDialog) analyze() {
 			d.SetTitle("Backup Information")
 			d.setStatusMsg("Ready", false)
 		})
-	}()
+	})
 }
 
 // startRestore validates the form, then checks whether the target database
@@ -217,8 +214,7 @@ func (d *RestoreDialog) startRestore() {
 	d.loadSeq++
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
-	go func() {
-		defer app.recoverPanic("preparing the restore")
+	app.safego("preparing the restore", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		dbs, err := sc.Server.DatabasesContext(ctx)
@@ -244,7 +240,7 @@ func (d *RestoreDialog) startRestore() {
 			}
 			d.beginRestore(dev, target)
 		})
-	}()
+	})
 }
 
 // confirmOverwrite gates a restore that would overwrite an existing
@@ -292,14 +288,13 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 	d.SetTitle("Restore Database - Progress")
 
 	app, sc := d.app, d.sc
-	go func() {
-		defer app.recoverPanic("the restore")
+	app.safego("the restore", func() {
 		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns, fileNumber)
 		if err == nil {
 			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })
 		}
 		app.postTaskDone(task, err)
-	}()
+	})
 }
 
 // runRestore is the background body of startRestore: verify (optional),
@@ -450,8 +445,7 @@ func (d *RestoreDialog) script() {
 	d.loadSeq++
 	seq := d.loadSeq
 	app, sc := d.app, d.sc
-	go func() {
-		defer app.recoverPanic("scripting the restore")
+	app.safego("scripting the restore", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber)
@@ -470,5 +464,5 @@ func (d *RestoreDialog) script() {
 			d.setStatusMsg("Ready", false)
 			app.openQueryWithText(sc, "", stmt)
 		})
-	}()
+	})
 }

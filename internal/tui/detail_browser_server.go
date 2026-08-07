@@ -20,8 +20,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 	// wakeEventLoop they trigger) directly from ShowNodeDetails' own
 	// goroutine (the UI goroutine): see wakeEventLoop's doc comment in
 	// app.go for why that's unsafe.
-	go func() {
-		defer app.recoverPanic("loading server details")
+	app.safego("loading server details", func() {
 		info := sc.Server.Info()
 		const availMemRow, numaRow = 9, 10
 		rows := [][]string{
@@ -69,7 +68,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 			}
 		}
 		db.postFinal(app, node, seq, cols, rows, nil)
-	}()
+	})
 }
 
 // diskVolumeLabel names a disk volume row: the mount point/drive letter

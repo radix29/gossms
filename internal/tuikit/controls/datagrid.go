@@ -232,12 +232,15 @@ type DataGrid struct {
 	OnCopyRequest func(text string)
 
 	// OnShowValue, if set, gets first refusal of the "Show Value" menu
-	// item: it's handed the selected cell's column name and full text, and
-	// returning true means the host displayed the value its own way, so the
-	// built-in popup stays closed. QueryPanel uses it to send an XML cell to
-	// a new query tab with XML highlighting instead of the 60-column popup.
+	// item: it's handed the selected cell's column index, column name and
+	// full text, and returning true means the host displayed the value its
+	// own way, so the built-in popup stays closed. QueryPanel uses it to send
+	// an XML cell to a new query tab with XML highlighting instead of the
+	// 60-column popup — the index is what lets it look the column's declared
+	// type up in its own result-set metadata, since duplicate column names in
+	// one result set make the name alone ambiguous.
 	// Returning false (or leaving it nil) opens the popup as usual.
-	OnShowValue func(column, value string) bool
+	OnShowValue func(col int, column, value string) bool
 }
 
 // NewDataGrid creates a DataGrid.

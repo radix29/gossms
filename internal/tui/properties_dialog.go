@@ -12,6 +12,10 @@ import (
 // code can refer to tui.PropertyRow without importing tuikit directly.
 type PropertyRow = dialogs.PropertyRow
 
+// PropertySection re-exports dialogs.PropertySection — a group-heading row
+// for a PropertyRow list.
+func PropertySection(caption string) PropertyRow { return dialogs.PropertySection(caption) }
+
 // PropertiesDialog wraps tuikit/dialogs.PropertiesDialog — the flat,
 // single-page key/value viewer used for the About box and Object
 // Dependencies. Multi-page, editable dialogs use PropDialog
@@ -43,6 +47,13 @@ func (d *PropertiesDialog) ShowGenericProperties(title string, rows []PropertyRo
 	d.ShowProperties(title, rows)
 }
 
+// ShowGenericPropertiesSized is ShowGenericProperties at an explicit dialog
+// size, for content the default 60x24 can't hold (the About box).
+func (d *PropertiesDialog) ShowGenericPropertiesSized(title string, rows []PropertyRow, w, h int) {
+	d.seq++
+	d.ShowPropertiesSized(title, rows, w, h)
+}
+
 // ShowDependencies loads and displays what schema.name depends on and what
 // depends on it — SSMS's Object Dependencies dialog — asynchronously and
 // seq-guarded the same way ShowDatabaseProperties is, since both
@@ -60,8 +71,7 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	seq := d.seq
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
-	go func() {
-		defer app.recoverPanic("loading dependencies")
+	app.safego("loading dependencies", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)
@@ -75,7 +85,7 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 			}
 			d.ShowProperties(title, rows)
 		})
-	}()
+	})
 }
 
 // fetchDependencyRows runs the gosmo dependency queries for the

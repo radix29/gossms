@@ -165,8 +165,7 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	done := make(chan struct{})
 	go p.tickExecuting(done)
 
-	go func() {
-		defer p.app.recoverPanic("query execution")
+	p.app.safego("query execution", func() {
 		var res *query.Result
 		var sink *csvSink
 		var exportErr error
@@ -211,7 +210,7 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 				p.reportExport(res, exportPath, res.RowsWritten, exportErr)
 			}
 		})
-	}()
+	})
 }
 
 // closedPanelResultStatus is what the status bar says once a query whose
