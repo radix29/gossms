@@ -346,6 +346,13 @@ func (g *DataGrid) SelectedRow() int {
 // QueryPanel's mid-drag wheel handling.
 func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 
+// ScrollCol returns the index of the leftmost visible column — ScrollRow's
+// horizontal counterpart, and read-only for the same reason. A host needs it
+// to tell a Left/Right that scrolled the grid from one the grid ignored,
+// because a grid without a cell cursor reports neither through SelectedCell;
+// see propsheet.GridRow.HandleKey.
+func (g *DataGrid) ScrollCol() int { return g.scrollCol }
+
 // SetSelectedRow sets the selected row (clamped) and scrolls it into view.
 // Does not fire OnSelectRow.
 func (g *DataGrid) SetSelectedRow(i int) {

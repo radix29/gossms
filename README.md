@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>macOS and Linux can enjoy working with SQL Server too</strong>
+  <strong>Manage SQL Server without leaving macOS or Linux</strong>
 </p>
 
 <p align="center">

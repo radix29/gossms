@@ -62,13 +62,9 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				authType = "SQL Server Authentication"
 			}
 
-			dbs, err := sc.Server.DatabasesContext(ctx)
+			dbNames, err := databaseNames(ctx, sc)
 			if err != nil {
 				return nil, nil, err
-			}
-			dbNames := make([]string, len(dbs))
-			for i, d := range dbs {
-				dbNames[i] = d.Name()
 			}
 			langs, err := sc.Server.LanguagesContext(ctx)
 			if err != nil {

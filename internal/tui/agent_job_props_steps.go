@@ -160,13 +160,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			dbs, err := sc.Server.DatabasesContext(ctx)
+			dbNames, err := databaseNames(ctx, sc)
 			if err != nil {
 				return nil, nil, err
-			}
-			dbNames := make([]string, len(dbs))
-			for i, db := range dbs {
-				dbNames[i] = db.Name()
 			}
 
 			edits := make([]*jobStepEdit, len(steps))

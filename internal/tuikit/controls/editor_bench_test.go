@@ -76,6 +76,37 @@ func BenchmarkEditorDrawHighlightedTyping10k(b *testing.B) {
 	}
 }
 
+// BenchmarkEditorTypeInto20k is the measurement behind undo steps being
+// deltas: one keystroke through HandleKey, which pushes an undo step, into a
+// 20,000-line script. A step that copied the whole buffer cost 3.2 ms and
+// 5 MB per character here — the editor's single worst per-keystroke cost, and
+// paid whether or not the user ever pressed Ctrl+Z.
+//
+// Typing is measured without a Draw so the step is what is being timed rather
+// than the highlighter; BenchmarkEditorDrawHighlightedTyping10k bounds the
+// other half.
+func BenchmarkEditorTypeInto20k(b *testing.B) {
+	e := NewEditor(nil)
+	e.SetText(benchScript(20000))
+	e.SetBounds(0, 0, 100, 40)
+	k := runeKey('x', tcell.ModNone)
+
+	// The caret moves on each iteration so no single line grows by one rune
+	// per iteration: a benchmark that types into the same line ends up
+	// measuring a 40 KB line rather than a 60-character one, and reports the
+	// per-keystroke cost as several times what it is.
+	row := 0
+	b.ResetTimer()
+	for b.Loop() {
+		e.cursorRow, e.cursorCol = row, 0
+		e.HandleKey(k)
+		row++
+		if row >= e.doc.Len() {
+			row = 0
+		}
+	}
+}
+
 // BenchmarkEditorDrawWrappedLargeCell mirrors DataGrid's full-cell viewer: one
 // very long logical line, read-only, behind a small window. buildVisualLines
 // re-segmented the whole value on every event before it was memoised.

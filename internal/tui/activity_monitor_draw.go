@@ -134,7 +134,9 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 	core.DrawScrollbarH(s, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, am.viewRect.W, sx, track, thumb)
 
 	// Last, over everything: the tooltip is pinned to a spot in the viewport
-	// and has to sit on top of the data it reports on.
+	// and has to sit on top of the data it reports on. Re-resolved first,
+	// against the hit map the render above just rebuilt.
+	am.refreshTooltip()
 	am.drawTooltip(s)
 }
 
@@ -164,7 +166,7 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 	case amTabSample:
 		v := am.sample
 		v.Header = key.header
-		dashboard.DrawSample(c, c.Rect(), v)
+		am.hits = dashboard.DrawSample(c, c.Rect(), v)
 	case amTabTempDB:
 		v := am.tempdb
 		v.Header = key.header

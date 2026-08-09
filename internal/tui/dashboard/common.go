@@ -162,3 +162,17 @@ func kpi(label, value string) charts.KPI {
 	}
 	return charts.KPI{Label: label, Value: value}
 }
+
+// addHit records where one chart's plot landed so a click can be turned back
+// into the sample under it. A zero-sized plot or a chart with no series is
+// dropped rather than recorded: both draw nothing, and a hit over nothing
+// would pin a tooltip with no numbers in it.
+//
+// snapshot distinguishes a current-sample chart, whose series carry one value
+// each, from a history — see ChartHit.Snapshot for what it changes.
+func addHit(hits *[]ChartHit, title string, plot core.Rect, series []charts.Series, snapshot bool) {
+	if hits == nil || plot.W <= 0 || plot.H <= 0 || len(series) == 0 {
+		return
+	}
+	*hits = append(*hits, ChartHit{Title: title, Plot: plot, Series: series, Snapshot: snapshot})
+}

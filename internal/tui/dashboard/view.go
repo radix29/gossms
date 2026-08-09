@@ -183,10 +183,23 @@ type ChartHit struct {
 	Title  string
 	Plot   core.Rect
 	Series []charts.Series
+
+	// Snapshot marks a chart of the current sample rather than a history:
+	// its series carry one value each and the whole plot describes that one
+	// instant, so every column in it resolves to index 0. Without this a
+	// one-value chart would only answer on its rightmost column, which is
+	// where the newest bucket of a history lands.
+	Snapshot bool
 }
 
 // Bucket is the index of the bucket drawn at screen column x, or -1 when x
 // is outside the plot or over a column that predates the data.
 func (h ChartHit) Bucket(x int) int {
+	if h.Snapshot {
+		if x < h.Plot.X || x >= h.Plot.Right() {
+			return -1
+		}
+		return 0
+	}
 	return charts.BucketAt(h.Plot, x, charts.BucketCount(h.Series))
 }

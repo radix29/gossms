@@ -35,33 +35,6 @@ type ColorRun struct {
 	Style tcell.Style
 }
 
-// editorState is an undo/redo snapshot. bytes is the approximate heap cost
-// of lines, computed once at snapshot time so trimUndo never has to walk the
-// document again.
-type editorState struct {
-	lines     [][]rune
-	cursorRow int
-	cursorCol int
-	bytes     int
-}
-
-// maxUndoSteps caps the undo stack so unbounded editing doesn't grow it
-// forever. Oldest steps are dropped first; the redo stack is unbounded since
-// it's cleared on every new edit and can never grow past what undo popped.
-const maxUndoSteps = 500
-
-// maxUndoBytes caps the undo stack's total size, because a step count alone
-// does not bound memory: each step is a full copy of the buffer's lines, so
-// 500 steps of a 20,000-line script is ~2.5 GB. Whichever cap binds first
-// wins, and the newest step is always kept even if it alone exceeds this —
-// one undo has to work on any document.
-const maxUndoBytes = 64 << 20
-
-// sliceHeaderBytes is what one line's []rune header costs on a 64-bit build,
-// counted per line so a document of many short lines is not measured as
-// nearly free.
-const sliceHeaderBytes = 24
-
 // Editor is a multi-line text editor.
 //
 // Positions inside the text — cursorCol, the selection anchor, ColorRun
@@ -204,9 +177,13 @@ type Editor struct {
 	undoStack []editorState
 	redoStack []editorState
 
-	// undoBytes is the sum of undoStack's snapshot sizes, maintained by every
-	// push and pop so trimUndo never re-measures the stack.
+	// undoBytes is the sum of undoStack's step sizes, maintained by every push
+	// and pop so trimUndo never re-measures the stack.
 	undoBytes int
+
+	// stepOpen says the newest undo step is still missing its newLen because
+	// the edit it covers has not run yet — see finalizeStep.
+	stepOpen bool
 
 	// Completion: see editor_completion.go. completionProvider is nil for
 	// every Editor except the SQL query editor, so every other Editor's
@@ -362,8 +339,8 @@ func (e *Editor) SetText(text string) {
 	}
 	e.doc.setLines(lines)
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
-	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging = false, false, false, false
-	e.undoStack, e.redoStack, e.undoBytes = nil, nil, 0
+	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
+	e.undoStack, e.redoStack, e.undoBytes, e.stepOpen = nil, nil, 0, false
 	e.closeCompletion()
 	e.completionSuppressed = false
 }
@@ -515,71 +492,4 @@ func (e *Editor) deleteChar() {
 			return append(lines[:e.cursorRow+1], lines[e.cursorRow+2:]...)
 		})
 	}
-}
-
-func (e *Editor) pushUndo() {
-	st := e.snapshot()
-	e.undoStack = append(e.undoStack, st)
-	e.undoBytes += st.bytes
-	e.trimUndo()
-	e.redoStack = nil
-}
-
-// trimUndo drops the oldest snapshots until the stack is inside both caps,
-// keeping at least one step.
-func (e *Editor) trimUndo() {
-	drop := 0
-	for len(e.undoStack)-drop > 1 &&
-		(len(e.undoStack)-drop > maxUndoSteps || e.undoBytes > maxUndoBytes) {
-		e.undoBytes -= e.undoStack[drop].bytes
-		drop++
-	}
-	if drop == 0 {
-		return
-	}
-	// Copied into a fresh backing array rather than e.undoStack[drop:]: the
-	// latter keeps every dropped snapshot's lines reachable behind the slice
-	// header for as long as the editor lives, which is the whole point of
-	// dropping them.
-	kept := make([]editorState, len(e.undoStack)-drop)
-	copy(kept, e.undoStack[drop:])
-	e.undoStack = kept
-}
-
-func (e *Editor) snapshot() editorState {
-	lines := make([][]rune, e.doc.Len())
-	bytes := 0
-	for i, l := range e.doc.all() {
-		nl := make([]rune, len(l))
-		copy(nl, l)
-		lines[i] = nl
-		bytes += len(l)*4 + sliceHeaderBytes
-	}
-	return editorState{lines, e.cursorRow, e.cursorCol, bytes}
-}
-
-func (e *Editor) undo() {
-	if len(e.undoStack) == 0 {
-		return
-	}
-	e.redoStack = append(e.redoStack, e.snapshot())
-	st := e.undoStack[len(e.undoStack)-1]
-	e.undoStack = e.undoStack[:len(e.undoStack)-1]
-	e.undoBytes -= st.bytes
-	e.doc.setLines(st.lines)
-	e.cursorRow, e.cursorCol = st.cursorRow, st.cursorCol
-}
-
-func (e *Editor) redo() {
-	if len(e.redoStack) == 0 {
-		return
-	}
-	cur := e.snapshot()
-	e.undoStack = append(e.undoStack, cur)
-	e.undoBytes += cur.bytes
-	e.trimUndo()
-	st := e.redoStack[len(e.redoStack)-1]
-	e.redoStack = e.redoStack[:len(e.redoStack)-1]
-	e.doc.setLines(st.lines)
-	e.cursorRow, e.cursorCol = st.cursorRow, st.cursorCol
 }

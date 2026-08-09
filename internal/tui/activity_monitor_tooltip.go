@@ -46,19 +46,43 @@ func (am *ActivityMonitor) pinTooltip(mx, my int) *amTooltip {
 	return nil
 }
 
-// chartTab reports whether the active tab draws time-series charts a click
-// can be resolved against. Sample's bars carry their own value labels and
-// have no buckets to name.
-func (am *ActivityMonitor) chartTab() bool {
-	return am.tab == amTabHistory || am.tab == amTabTempDB
+// refreshTooltip re-resolves the pinned readout from its anchor, so a box on
+// a live dashboard keeps reporting the column it points at instead of the
+// numbers that happened to be there when it was pinned.
+//
+// It must run after the canvas render and before drawTooltip, which is
+// exactly where drawDashboard calls it: am.hits is rebuilt by that render, so
+// re-resolving any earlier reads the previous frame's series and reinstates
+// the desync this exists to close.
+//
+// pinTooltip answering nil is the drop: a panel resized under the box, or a
+// chart whose series went away, leaves the anchor over nothing, and a tooltip
+// pointing at nothing is worse than none.
+func (am *ActivityMonitor) refreshTooltip() {
+	if am.tooltip == nil {
+		return
+	}
+	a := am.tooltip.anchor
+	am.tooltip = am.pinTooltip(a.X, a.Y)
 }
+
+// chartTab reports whether the active tab draws charts a click can be
+// resolved against. Sample's bar panels carry their own value labels, but
+// its memory composition bar names its segments in a legend with no room
+// for their megabytes, so that tab reports hits too.
+func (am *ActivityMonitor) chartTab() bool { return am.tab.canvasTab() }
 
 // bucketTime is the clock time of one plotted bucket, falling back to the
 // newest sample's time when the view carries no per-bucket times.
 func (am *ActivityMonitor) bucketTime(idx int) string {
 	times, newest := am.history.Times, am.act.sampleTime
-	if am.tab == amTabTempDB {
+	switch am.tab {
+	case amTabTempDB:
 		times, newest = am.tempdb.Times, am.td.sampleTime
+	case amTabSample:
+		// Sample plots one instant, not a series of buckets: index 0 is the
+		// newest sample, not the oldest column of History's window.
+		return am.act.sampleTime
 	}
 	if idx >= 0 && idx < len(times) {
 		return times[idx]

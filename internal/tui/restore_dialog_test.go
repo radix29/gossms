@@ -90,3 +90,62 @@ func TestSelectedHeaderOnNoHeaders(t *testing.T) {
 		t.Errorf("restoreFileNumber() on no headers = %d, want 0", got)
 	}
 }
+
+// The Files Included panel, the MOVE clauses and the RESTORE itself all name
+// a backup set, and all three have to name the *same* one — a file list read
+// from a different set describes logical files the restored set does not
+// contain, and SQL Server rejects the whole statement. They agree by
+// construction only as long as every path derives the number from
+// backupSetNumber, so the rule is pinned here directly.
+//
+// The index bounds matter as much as the values: analyze asks for set 0 on a
+// header slice it has just fetched, while restoreFileNumber asks for
+// headerIdx, which is UI state left over from the previous device.
+func TestBackupSetNumber(t *testing.T) {
+	one := []*gosmo.BackupHeader{hdr(1, "AppDB")}
+	three := []*gosmo.BackupHeader{hdr(1, "AppDB"), hdr(2, "AppDB"), hdr(3, "Other")}
+	gappy := []*gosmo.BackupHeader{hdr(4, "AppDB"), hdr(7, "AppDB")}
+	unnumbered := []*gosmo.BackupHeader{hdr(0, "AppDB"), hdr(0, "AppDB")}
+
+	for _, tc := range []struct {
+		what    string
+		headers []*gosmo.BackupHeader
+		i       int
+		want    int
+	}{
+		{"no headers at all", nil, 0, 0},
+		{"no headers, stale index", nil, 5, 0},
+		// A lone set is always at position 1 (appending numbers 1..n; INIT and
+		// FORMAT reinitialise to a single set at 1), so omitting the clause
+		// cannot target the wrong set — and keeps WITH FILE = 1 out of the
+		// common single-backup statement.
+		{"lone set omits the clause", one, 0, 0},
+		{"lone set, stale index", one, 3, 0},
+		{"first of three", three, 0, 1},
+		{"last of three", three, 2, 3},
+		// Position, not index+1: the two only coincide on a contiguous device.
+		{"non-contiguous device uses Position", gappy, 1, 7},
+		{"stale index falls back to the first set", three, 99, 1},
+		{"negative index falls back to the first set", three, -1, 1},
+		// index+1 is the fallback for a header that reported no position.
+		{"unreported position falls back to index+1", unnumbered, 1, 2},
+	} {
+		if got := backupSetNumber(tc.headers, tc.i); got != tc.want {
+			t.Errorf("%s: backupSetNumber(%d headers, i=%d) = %d, want %d",
+				tc.what, len(tc.headers), tc.i, got, tc.want)
+		}
+	}
+}
+
+// analyze opens the inspect view on headers[0] and reads that set's file
+// list; selectHeader's reload reads the selected set's. On a device whose
+// first set is the selected one they must produce the same number, or
+// arrowing off set 1 and back onto it would swap the Files Included panel
+// for a different set's files.
+func TestAnalyzeAndSelectionAgreeOnTheFirstSet(t *testing.T) {
+	headers := []*gosmo.BackupHeader{hdr(1, "AppDB"), hdr(2, "AppDB")}
+	d := &RestoreDialog{headers: headers, headerIdx: 0}
+	if opened, selected := backupSetNumber(headers, 0), d.restoreFileNumber(); opened != selected {
+		t.Errorf("analyze reads set %d but the selection reports %d", opened, selected)
+	}
+}

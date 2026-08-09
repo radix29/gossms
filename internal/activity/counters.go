@@ -92,9 +92,20 @@ var counterQuery = counterQueryFor(counterNames)
 // counterQueryFor builds the reading query for a fixed list of counter
 // names. The IN list is built rather than parameterised because these are
 // compile-time constants, not user input.
+//
+// The instance filter is not cosmetic. Counter *names* are not unique across
+// instances: the Databases object publishes one row per database for the
+// five counters read from it, and Plan Cache one per cache type. Without the
+// filter a 200-database server returned around a thousand rows every tick,
+// of which about forty were ever read — every consumer asks for either the
+// unnamed instance of a single-instance object or the "_Total" aggregate
+// (see Derive and deriveTempDB). RTRIM to match the projection above, and
+// because SQL Server blank-pads the column.
 func counterQueryFor(names []string) string {
 	return "SELECT RTRIM(object_name), RTRIM(counter_name), RTRIM(instance_name), cntr_value, cntr_type " +
-		"FROM sys.dm_os_performance_counters WHERE RTRIM(counter_name) IN (" + quotedList(names) + ")"
+		"FROM sys.dm_os_performance_counters " +
+		"WHERE RTRIM(counter_name) IN (" + quotedList(names) + ") " +
+		"AND RTRIM(instance_name) IN ('', '" + totalInstance + "')"
 }
 
 // quotedList renders names as a SQL string list. The names are constants in

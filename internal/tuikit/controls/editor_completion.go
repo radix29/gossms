@@ -192,7 +192,7 @@ func (e *Editor) triggerCompletionExplicit() {
 		}
 	}
 	if real == 1 {
-		e.pushUndo()
+		e.pushUndoLocal()
 		e.commitCompletionItem(items[realIdx], from)
 		e.closeCompletion()
 		return
@@ -268,7 +268,7 @@ func (e *Editor) commitSelectedCompletion() {
 	if item.Placeholder {
 		return
 	}
-	e.pushUndo()
+	e.pushUndoLocal()
 	e.commitCompletionItem(item, e.completionFrom)
 	e.closeCompletion()
 }

@@ -460,6 +460,110 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	}
 }
 
+// A new sample scrolls the History window one column left, which moves the
+// canvas under a pinned tooltip exactly as scrolling does — the box would
+// keep its old numbers while pointing at a column that now holds different
+// ones. At the default 2s rate that desynced every two seconds.
+func TestActivityMonitorTooltipFollowsANewSample(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	am.app.panels.AddPanel(am) // applySample ignores an unhosted panel
+	am.SetBounds(0, 0, 150, 40)
+	amWithSamples(am, 30)
+	amRender(am, 150, 40)
+
+	// The rightmost column is the newest bucket, so a new sample lands under
+	// this exact anchor and the box must report it.
+	hit := am.hits[0]
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	if am.tooltip == nil {
+		t.Fatal("no tooltip to test with")
+	}
+	pinned := am.tooltip.rows[0].value
+
+	am.applySample(activity.Sample{
+		At:              time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC),
+		BatchesSec:      9999,
+		TransactionsSec: 9999,
+	})
+	rows := amRender(am, 150, 40) // re-resolved here, not on the sample
+
+	if am.tooltip == nil {
+		t.Fatal("the tooltip was dropped by a new sample; it should have been re-resolved")
+	}
+	if got := am.tooltip.rows[0].value; got == pinned {
+		t.Errorf("the tooltip still reads %q after a new sample landed under it, want the new column's value", got)
+	}
+	if got := am.tooltip.time; got != "15:33:00" {
+		t.Errorf("the tooltip names %q, want the new sample's 15:33:00", got)
+	}
+	if !amRowsContain(rows, am.tooltip.rows[0].value) {
+		t.Errorf("the refreshed tooltip wasn't drawn: %q", am.tooltip.rows[0].value)
+	}
+}
+
+// The two collectors both land in invalidateView, so clearing the tooltip
+// there let the tempdb collector's tick dismiss a box pinned on History —
+// a tab that tick redraws nothing on. Neither feed may touch the other's.
+func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	am.app.panels.AddPanel(am)
+	am.SetBounds(0, 0, 150, 40)
+	amWithSamples(am, 30)
+	amRender(am, 150, 40)
+
+	hit := am.hits[0]
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	if am.tooltip == nil {
+		t.Fatal("no tooltip to test with")
+	}
+	pinned := am.tooltip.rows[0].value
+
+	am.applyTempDBSample(activity.TempDBSample{At: time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC)})
+	amRender(am, 150, 40)
+
+	if am.tooltip == nil {
+		t.Fatal("a tempdb tick dismissed a tooltip pinned on History")
+	}
+	if got := am.tooltip.rows[0].value; got != pinned {
+		t.Errorf("a tempdb tick moved a History tooltip from %q to %q", pinned, got)
+	}
+}
+
+// And the mirror image: the activity collector ticks twice a tempdb one, so
+// a box pinned on the TempDB tab is the one most exposed to the other feed.
+func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	am.app.panels.AddPanel(am)
+	am.SetBounds(0, 0, 150, 40)
+	amWithTempDBSamples(am, 6)
+	am.setTab(amTabTempDB)
+	amRender(am, 150, 40)
+
+	if len(am.hits) == 0 {
+		t.Fatal("the TempDB tab recorded no chart hits to click")
+	}
+	hit := am.hits[0]
+	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y-am.scrollY[am.tab])
+	if am.tooltip == nil {
+		t.Fatal("no tooltip to test with")
+	}
+	pinned := am.tooltip.rows[0].value
+
+	am.applySample(activity.Sample{
+		At:              time.Date(2026, 8, 6, 20, 5, 30, 0, time.UTC),
+		BatchesSec:      9999,
+		TransactionsSec: 9999,
+	})
+	amRender(am, 150, 40)
+
+	if am.tooltip == nil {
+		t.Fatal("an activity tick dismissed a tooltip pinned on TempDB")
+	}
+	if got := am.tooltip.rows[0].value; got != pinned {
+		t.Errorf("an activity tick moved a TempDB tooltip from %q to %q", pinned, got)
+	}
+}
+
 // A tooltip reports the sample under the pointer, not the newest one.
 func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
@@ -474,6 +578,45 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	}
 	if newest.time == older.time {
 		t.Errorf("both columns reported %q; the tooltip isn't reading the clicked bucket", newest.time)
+	}
+}
+
+// The Sample tab's memory composition bar answers a click too: its legend
+// names the segments but not their megabytes. Unlike a history chart the bar
+// plots one instant, so every column of it — not only the rightmost — has to
+// report the same components.
+func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	am.store.Append(activity.Sample{
+		At:                  time.Date(2026, 8, 6, 15, 32, 45, 0, time.UTC),
+		TotalServerMemoryMB: 4096,
+		Detail: &activity.SampleDetail{Memory: []activity.MemoryComponent{
+			{Name: "Buffer", MB: 3000},
+			{Name: "Stolen Buffer", MB: 800},
+			{Name: "Plan (SQL)", MB: 296},
+		}},
+	})
+	am.act.sampleTime = "15:32:45"
+	am.rebuild()
+	am.setTab(amTabSample)
+	amRender(am, 150, 40)
+
+	if len(am.hits) != 1 {
+		t.Fatalf("the Sample tab reported %d chart hits, want the composition bar", len(am.hits))
+	}
+	hit := am.hits[0]
+	y := am.viewRect.Y + hit.Plot.Y - am.scrollY[amTabSample]
+	for _, dx := range []int{0, hit.Plot.W / 2, hit.Plot.W - 1} {
+		tip := am.pinTooltip(am.viewRect.X+hit.Plot.X+dx-am.scrollX[amTabSample], y)
+		if tip == nil {
+			t.Fatalf("column %d of the composition bar produced no tooltip", dx)
+		}
+		if tip.time != "15:32:45" {
+			t.Errorf("tooltip names sample %q, want the newest sample", tip.time)
+		}
+		if len(tip.rows) != 3 || tip.rows[0].label != "Buffer" {
+			t.Errorf("tooltip rows = %+v, want one per memory component", tip.rows)
+		}
 	}
 }
 

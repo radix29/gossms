@@ -49,7 +49,35 @@ func (r *GridRow) Draw(s tcell.Screen, focused bool) {
 	r.Grid.Focus(focused)
 	r.Grid.Draw(s)
 }
-func (r *GridRow) HandleKey(ev *tcell.EventKey) bool     { return r.Grid.HandleKey(ev) }
+
+// HandleKey forwards to the grid, but reports an arrow key the grid could
+// not act on as unhandled, so Form's own Up/Down focus movement and the
+// sheet's Left-to-the-page-list still work from a focused grid.
+//
+// DataGrid answers true to every arrow key whether or not it moved — fine
+// standalone, where nothing else wants them, and a keyboard trap here: Form
+// falls back to its navigation only on false, so Down at the last row, Up at
+// the first, and Left at column 0 left the user stuck on the grid with Tab
+// and Escape the only ways out. An empty grid swallowed all of them.
+//
+// Movement is detected rather than predicted — asking the grid what it did is
+// what keeps this correct as the grid's own key handling changes. The scroll
+// column is part of that: a grid with no cell cursor scrolls horizontally
+// without ever changing SelectedCell.
+func (r *GridRow) HandleKey(ev *tcell.EventKey) bool {
+	switch ev.Key() {
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight:
+	default:
+		return r.Grid.HandleKey(ev)
+	}
+	row, col := r.Grid.SelectedCell()
+	scroll := r.Grid.ScrollCol()
+	if !r.Grid.HandleKey(ev) {
+		return false
+	}
+	newRow, newCol := r.Grid.SelectedCell()
+	return newRow != row || newCol != col || r.Grid.ScrollCol() != scroll
+}
 func (r *GridRow) HandleMouse(ev *tcell.EventMouse) bool { return r.Grid.HandleMouse(ev) }
 
 // DrawOverlay implements propsheet.OverlayDrawer: the grid's built-in

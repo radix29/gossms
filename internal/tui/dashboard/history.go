@@ -48,21 +48,14 @@ func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []ChartHit {
 // landed.
 func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryChart, hits *[]ChartHit) {
 	inner := drawPanelTitle(s, panel, title)
-	addHit(hits, title, c.Draw(s, inner), c.Series)
+	addHit(hits, title, c.Draw(s, inner), c.Series, false)
 }
 
 // drawStackedChart draws one stacked history panel and records where its
 // plot landed.
 func drawStackedChart(s tcell.Screen, panel core.Rect, title string, c charts.StackedHistoryChart, hits *[]ChartHit) {
 	inner := drawPanelTitle(s, panel, title)
-	addHit(hits, title, c.Draw(s, inner), c.Series)
-}
-
-func addHit(hits *[]ChartHit, title string, plot core.Rect, series []charts.Series) {
-	if hits == nil || plot.W <= 0 || plot.H <= 0 || len(series) == 0 {
-		return
-	}
-	*hits = append(*hits, ChartHit{Title: title, Plot: plot, Series: series})
+	addHit(hits, title, c.Draw(s, inner), c.Series, false)
 }
 
 // section draws one section's bar and returns the body rect under it plus

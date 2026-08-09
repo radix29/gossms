@@ -37,10 +37,12 @@ type StackedBar struct {
 	ShowTotal bool
 }
 
-// Draw renders the bar into r.
-func (b StackedBar) Draw(s tcell.Screen, r core.Rect) {
+// Draw renders the bar into r and returns the rectangle the bar itself
+// covers — the segments only, without the total or the legend — so a caller
+// can hit-test a click against it. The zero Rect means nothing was drawn.
+func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 	if r.W <= 0 || r.H <= 0 {
-		return
+		return core.Rect{}
 	}
 	blankRect(s, r)
 
@@ -51,10 +53,20 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) {
 		}
 	}
 
+	// Clamped to leave the legend its rows, and never past r itself: r.H > 0
+	// above, so both arms land in 1..r.H. That is what bounds the drawing
+	// loop below, and what lets the returned rect be stated as barRows rather
+	// than counted — the two must not be able to disagree.
+	//
+	// legendRows is then re-derived rather than assumed: the bar keeps a row
+	// even when that leaves the legend none, so on a rect too short for both
+	// the original figure would place the legend below r and DrawLegend, which
+	// fills whatever rect it is handed, would paint over the panel beneath.
 	legendRows := legendRowsFor(b.LegendRows, b.Series)
 	barRows := core.Max(b.Rows, 1)
 	if barRows+legendRows > r.H {
 		barRows = core.Max(r.H-legendRows, 1)
+		legendRows = core.Max(r.H-barRows, 0)
 	}
 
 	valueW := 0
@@ -63,7 +75,7 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) {
 	}
 	barW := r.W - valueW
 	if barW <= 0 {
-		return
+		return core.Rect{}
 	}
 
 	sc := b.Scale
@@ -89,7 +101,7 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) {
 	}
 	cells := composeStack(barW, segs, bg)
 
-	for row := 0; row < barRows && r.Y+row < r.Bottom(); row++ {
+	for row := range barRows {
 		y := r.Y + row
 		core.FillRect(s, core.Rect{X: r.X, Y: y, W: barW, H: 1}, ' ', theme.StyleChartPlot())
 		drawHRun(s, r.X, y, cells)
@@ -100,4 +112,11 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) {
 	if legendRows > 0 {
 		DrawLegend(s, core.Rect{X: r.X, Y: r.Y + barRows, W: r.W, H: legendRows}, LegendItems(b.Series))
 	}
+	if len(segs) == 0 {
+		// Every series was zero or negative, so the plot is blank background
+		// and there is nothing for a click to report. Saying so here is what
+		// keeps "the zero Rect means nothing was drawn" true for the caller.
+		return core.Rect{}
+	}
+	return core.Rect{X: r.X, Y: r.Y, W: barW, H: barRows}
 }

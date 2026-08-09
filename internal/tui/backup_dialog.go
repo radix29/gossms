@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -222,8 +223,8 @@ func (d *BackupDialog) syncAutoDest() {
 }
 
 // loadDatabases fetches the server's database list in the background and
-// swaps it into the Database dropdown, keeping the current selection.
-// tempdb is excluded — it can't be backed up.
+// swaps it into the Database dropdown, keeping the current selection. What
+// the list may contain is backupDatabaseNames' rule, not this dialog's.
 func (d *BackupDialog) loadDatabases() {
 	d.loadSeq++
 	seq := d.loadSeq
@@ -231,7 +232,7 @@ func (d *BackupDialog) loadDatabases() {
 	app.safego("loading the backup database list", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		dbs, err := sc.Server.DatabasesContext(ctx)
+		names, err := backupDatabaseNames(ctx, sc)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -240,12 +241,6 @@ func (d *BackupDialog) loadDatabases() {
 				d.setStatusMsg(fmt.Sprintf("Load databases: %v", err), true)
 				return
 			}
-			names := make([]string, 0, len(dbs))
-			for _, dbo := range dbs {
-				if !strings.EqualFold(dbo.Name(), "tempdb") {
-					names = append(names, dbo.Name())
-				}
-			}
 			d.setDatabaseItems(names)
 		})
 	})
@@ -253,8 +248,20 @@ func (d *BackupDialog) loadDatabases() {
 
 // setDatabaseItems replaces the Database dropdown (DropDown items are
 // fixed at construction), preserving the current selection and focus.
+//
+// A selection the incoming list doesn't contain is kept, at the front, rather
+// than dropped. show() seeds the dropdown with the database the dialog was
+// opened on, and backupDatabaseNames filters out ones BACKUP will refuse — so
+// right-clicking an OFFLINE database and choosing Back Up arrives here with a
+// selection that isn't in the list. Falling through to index 0 would silently
+// retarget the dialog at whichever database happened to sort first, and the
+// user would back that one up instead. Failing loudly on the database they
+// actually picked is the better outcome.
 func (d *BackupDialog) setDatabaseItems(names []string) {
 	cur := d.ddDatabase.Value()
+	if cur != "" && !slices.Contains(names, cur) {
+		names = append([]string{cur}, names...)
+	}
 	dd := widgets.NewDropDown("Database: ", names, 40)
 	for i, n := range names {
 		if n == cur {

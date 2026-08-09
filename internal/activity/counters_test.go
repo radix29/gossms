@@ -3,6 +3,7 @@ package activity
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func set(rows ...counterRow) counterSet {
@@ -17,6 +18,63 @@ type counterRow struct {
 	object, counter, instance string
 	value                     int64
 	typ                       int
+}
+
+// Both reading queries drop every counter row belonging to a named instance
+// — a database in the Databases object, a cache type in Plan Cache — because
+// nothing reads one. Without this a 200-database server carried around a
+// thousand rows per tick to use about forty.
+func TestCounterQueriesFilterToTheInstancesRead(t *testing.T) {
+	for name, q := range map[string]string{
+		"activity": counterQuery,
+		"tempdb":   tempdbCounterQuery,
+	} {
+		if !strings.Contains(q, "RTRIM(instance_name) IN ('', '_Total')") {
+			t.Errorf("the %s counter query does not filter by instance:\n%s", name, q)
+		}
+	}
+}
+
+// The premise of that filter: every counter Derive reads lives either at the
+// unnamed instance of a single-instance object or at the _Total aggregate,
+// so a per-database row is never the one consulted. A wild per-database
+// value is planted here to prove it is ignored rather than summed or
+// preferred — if it ever were, the filter would be silently dropping the row
+// the panel actually wanted.
+func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
+	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	rows := func(batches, transactions, logFlushes int64) []counterRow {
+		return []counterRow{
+			{objSQLStats, "Batch Requests/sec", "", batches, cntrPerSecond},
+			{objDatabases, "Transactions/sec", totalInstance, transactions, cntrPerSecond},
+			{objDatabases, "Log Flushes/sec", totalInstance, logFlushes, cntrPerSecond},
+			// The per-database row the filter now drops. Present in both
+			// snapshots so it would produce a rate if it were ever read.
+			{objDatabases, "Transactions/sec", "AdventureWorks", transactions * 999, cntrPerSecond},
+			// A ratio counter and its base, both at _Total.
+			{objPlanCache, "Cache Hit Ratio", totalInstance, 90, cntrFraction},
+			{objPlanCache, "Cache Hit Ratio Base", totalInstance, 100, cntrBase},
+		}
+	}
+	prev := snapshotAt(start, set(rows(1000, 2000, 0)...))
+	cur := snapshotAt(start.Add(2*time.Second), set(rows(1600, 4000, 200)...))
+
+	s := Derive(prev, cur)
+
+	for _, tc := range []struct {
+		what string
+		got  float64
+		want float64
+	}{
+		{"batches", s.BatchesSec, 300},            // unnamed instance
+		{"transactions", s.TransactionsSec, 1000}, // _Total, not the per-database row
+		{"log flushes", s.LogFlushesSec, 100},     // _Total
+		{"plan cache hit", s.PlanCacheHitPct, 90}, // _Total fraction over its base
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.what, tc.got, tc.want)
+		}
+	}
 }
 
 // A named instance publishes "MSSQL$INST:Buffer Manager" where a default

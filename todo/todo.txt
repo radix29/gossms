@@ -1,4 +1,5 @@
-activity monitor. sample . memory composition . click + tooltip 
+create 2 new vms ubusql1, ubusql2 with sql server. build an aag, move some dbs
+
 
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width

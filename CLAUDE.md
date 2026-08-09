@@ -192,6 +192,17 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   `true` becomes a keyboard trap the user can only escape with the mouse.
   Check what a new widget returns for Up/Down at a list boundary and Escape
   with nothing open.
+  **A widget that is correct standalone can still trap once wrapped as a
+  form row, and then it is the wrapper's job to translate.** `DataGrid`
+  answers `true` to every arrow key, which is right when nothing else wants
+  them — and made every one of the 21 `NewGridRow` pages swallow Down at the
+  last row, Up at the first, and `Left` back to the page list. The fix went
+  in `propsheet.GridRow`, which snapshots `SelectedCell`/`ScrollCol` around
+  the key and reports what actually moved; changing `DataGrid` itself would
+  have reached QueryPanel, DetailBrowser and the Activity Monitor, all of
+  which depend on the blanket answer. Detect movement, never predict it, and
+  remember that a grid with no cell cursor scrolls without changing
+  `SelectedCell`.
 - **Every menu item and toolbar button must be context-gated** — never let a
   click or keypress do nothing, do the wrong thing, or crash because a
   precondition (a connection, an active query panel, an Object Explorer

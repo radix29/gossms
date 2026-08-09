@@ -17,6 +17,45 @@ a settled question being reopened.
 
 ## By design — not issues, do not re-raise
 
+- **Which databases a dropdown offers is settled, and lives in
+  `internal/tui/database_list.go`.** The rule turns on when the name is
+  resolved: a name stored now and used later (job step, alert, login default
+  database, restore history) lists every database including system and
+  non-ONLINE ones, because it is opened when the job runs, not now; a name
+  acted on immediately lists only what the action will accept. Backup is the
+  only dialog in the second class, and both its exclusions are hard server
+  restrictions verified on win10cli 2026-08-09 — `BACKUP DATABASE tempdb` and
+  a backup of an OFFLINE database each fail with "BACKUP DATABASE is
+  terminating abnormally". Do not "unify" the two lists; they are different on
+  purpose.
+  The trap that comes with the filter, since it will be rediscovered: the
+  Backup dialog is opened *on* a database from the Object Explorer, and its
+  dropdown is swapped asynchronously afterwards. `setDatabaseItems` keeps a
+  selection the incoming list doesn't contain, at the front. Without that,
+  right-clicking an OFFLINE database and choosing Back Up silently retargets
+  the dialog at whichever database sorts first and backs *that* one up —
+  reproduced live, `gossms_p6_offline` became `HealthClinic`. Any future
+  narrowing of a dropdown that a dialog can be opened on needs the same
+  treatment.
+
+- **The editor's redo stack is deliberately uncapped in bytes, and
+  `applyStep`'s slice is deliberately unguarded.** Both were raised 2026-08-09
+  and settled the same day; `maxUndoSteps` and `applyStep` in
+  `internal/tuikit/controls/editor_undo.go` now carry the reasoning, and
+  `TestEditorRedoStackBound` pins it.
+  - Redo is bounded in *count* (one entry per undo, cleared on any new edit)
+    and not in bytes. `maxUndoBytes` genuinely does not reach it — the inverse
+    carries the lines being *replaced*, so on a growing document redo ends up
+    above undo: 48.4 MB against 46.5 MB, measured. The undo stack's own byte
+    cap is what bounds it, to within one document. A `redoBytes` cap would buy
+    that one document back in exchange for silently dropping the deepest redo.
+    Not worth it.
+  - `applyStep` slicing `[st.row : st.row+st.newLen]` without a bounds check is
+    the intended failure mode. The invariant is `pushUndoSpan`'s caller
+    promise, and a violated promise means the document is about to be
+    corrupted; clamping would turn that into an undo that quietly restores the
+    wrong text. The panic is the more useful failure. Do not add a clamp.
+
 - **gosmo untagged past `v0.0.6` with `go.mod`'s `replace` active is the
   intended development state**, not a release blocker. Tagging gosmo, bumping
   `require`, and commenting out the `replace`/`ignore` pair are steps of the
@@ -73,9 +112,9 @@ a settled question being reopened.
   *zero* outbound references. The earlier "P5" file-split list finished
   2026-08-04 — every file *on that list* came out under 400 lines, split on
   the draw/input seam. It was never a standing rule for the package, and
-  isn't one now: 32 non-test files exceed 400 lines, thirteen of them in
-  `internal/tui`. That is not a reason to re-open the question this
-  paragraph closes.
+  isn't one now: 31 non-test files exceed 400 lines, fifteen of them directly
+  in `internal/tui` (re-counted 2026-08-09). That is not a reason to re-open
+  the question this paragraph closes.
   The negative results, each a proposal a future review will otherwise
   re-invent:
 
@@ -119,6 +158,18 @@ a settled question being reopened.
   make that retry fail without asking the server. One extra round trip on
   open is the cheaper mistake.
 
+- **`counterQueryFor`'s `RTRIM(instance_name) IN ('', '_Total')` filter drops
+  no counter the panels read.** Raised twice on the grounds that
+  `RTRIM(NULL)` is `NULL` and `NULL IN (...)` is false, so a NULL
+  `instance_name` would be silently dropped. **Verified live 2026-08-07 on
+  both servers.** win10cli (Windows) has no NULL `instance_name` rows at all;
+  ubudock (Linux) has exactly five, and all five are `SQLPAL:Host Memory` /
+  `SQLPAL:Guest Memory` rows that are not in `counterNames` and have no
+  gossms consumer. Every one of the 33 names in `counterNames` resolves
+  through the filter on both builds, 37 rows each (the extra four are names
+  published under both `''` and `'_Total'`). Do not add a
+  `OR instance_name IS NULL` arm.
+
 - **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb
   returns `float64` for both `REAL` and `FLOAT`. It is correct if the driver
   ever narrows, and `formatFloat` already takes the bit size. Noted so it isn't
@@ -126,7 +177,9 @@ a settled question being reopened.
 
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix does not strand the
   pooled connection in master.** The 2026-07-31 review read
-  `server_security.go`'s `"USE master; GRANT ..."` as pool contamination and
+  gosmo's `"USE master; " + stmt` (now `permission_options.go:348`, which
+  `server_security.go`'s grant/deny/revoke methods route through) as pool
+  contamination and
   proposed a pinned connection that reads `DB_NAME()`, switches, and switches
   back. **Live A/B on 2026-08-01 disproved it**: eight pooled connections all
   still reported the right database after a GRANT, with the *original* code.
@@ -154,24 +207,22 @@ Both are the author's own assessment; neither has a defect list behind it yet.
   concrete parts: show the *remote* server's directory rather than the
   client's, move-files handling, error messages, and text trimming. The dialog
   works today; this is a quality pass, not a break.
+  One part of "move-files handling" is **done** (2026-08-08): the MOVE clauses
+  and the Files Included panel were both built from backup set 1 regardless of
+  which set was selected, which failed every rename-restore from an appended
+  `.bak` with "Logical file 'x' is not part of database 'y'". See
+  `gosmo.Server.BackupFileListForSetContext` and `docs/journal.md`. The
+  remaining parts are untouched.
+  The rework must not re-scatter the set number: since 2026-08-09 the restore
+  itself, the MOVE clauses and the Files Included panel all take it from
+  `backupSetNumber` in `restore_dialog_ops.go`, which carries the rule and the
+  live evidence behind it. Two of the three deriving it separately is what
+  produced the bug above.
 
 - **SQL Agent needs a complete rework.** The `agent_*` files (14 of them) are
   the largest untouched-by-review area in `internal/tui`. No specific defect is
   recorded — write one down here the next time one is found, rather than
   carrying "needs a rework" as the whole thread.
-
-## Designed and deferred
-
-- **`Editor` undo is whole-buffer snapshots, not per-edit deltas.**
-  `Editor.snapshot` deep-copies every line on every `pushUndo`, which is every
-  typed character: measured 3.2 ms and 5 MB per keystroke in a 20,000-line
-  script (`BenchmarkPushUndo20k`, throwaway). The 2026-08-06 review's Batch D
-  capped the stack by total bytes (`maxUndoBytes`, 64 MB) so the memory cliff
-  is gone — the per-keystroke copy is not. The real fix is per-edit deltas: an
-  undo step records the range replaced and the text it replaced, so a
-  keystroke costs bytes rather than a document. It touches every `pushUndo`
-  call site (~15) plus `undo`/`redo`, and wants live tmux verification, so it
-  was deliberately not attempted in the same pass as the cap.
 
 ## Deferred scope (repeatedly, deliberately)
 

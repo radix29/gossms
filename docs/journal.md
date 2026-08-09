@@ -7637,3 +7637,355 @@ Entries that cited them by filename now name the review instead.
 `plan-activity-monitor.md` stays — it is the plan of record the panel's own
 comments cite by deviation number — with its status table brought up to
 increment 2.
+
+## 2026-08-07 — Editor undo becomes per-edit deltas
+
+`Editor.pushUndo` deep-copied every line of the buffer, on every keystroke, to
+record a one-character change. Measured through `HandleKey` on a 20,000-line
+script: **4.5 ms, 5.25 MB and 20,002 allocations per keypress**. The 64 MB
+`maxUndoBytes` cap added on 2026-08-06 bounded the *stack*, not the per-edit
+copy; this closes the rest of it. Now: **90 µs, 1.05 KB, 5 allocations** — the
+new `BenchmarkEditorTypeInto20k` is the permanent measurement.
+
+**The design.** An `editorState` is now a span delta: the lines that occupied
+`[row, row+len(old))` before the edit, and `newLen` rows after it. `newLen`
+can't be known at push time because the edit hasn't run yet, so the newest
+step is left *open* and closed by `finalizeStep` — an edit confined to the
+span can only change the line count from inside it, so the span's new extent
+is its old one plus the document's net growth. That one observation is what
+makes a before-the-edit hook able to record an after-the-edit delta, and
+recording `docLen` at push is all it costs.
+
+`Document.replaceRange` is the splice undo and redo apply through, so a
+restore moves the version counter once rather than once per line. `undo` and
+`redo` are now the same operation: `applyStep` installs a step and returns the
+one that reverses it.
+
+**Where the spans come from.** `pushUndo()` still means "the whole document"
+and is what the paths whose reach isn't known in advance keep using — Paste,
+Cut, Replace All, the line and block actions. The per-keystroke paths call
+`pushUndoLocal()`, which derives the span from the cursor and selection and
+widens it by one row either side, because Backspace at column 0 joins onto the
+line above and Delete at end of line pulls the one below up. Both join cases
+were reproduced as document corruption with the widening removed.
+
+**The hazard, and what pins it.** A span narrower than its edit does not fail
+loudly — undo restores a document that was never typed. So
+`TestEditorUndoRestoresEveryEditPath` round-trips 28 editing paths through
+apply/undo/redo and requires the text and cursor back exactly. Mutation
+testing: removing the ±1 widening failed it on both join cases with a
+duplicated line; making `newLen` ignore the document's growth panicked.
+
+A third mutation *survived* and was the useful one — cloning a step's lines on
+the way into the document turned out to be redundant, because every caller
+pops a step before applying it and no step is ever applied twice. The clone
+came out and the ownership rule went onto `applyStep` in its place.
+
+**A fix the delta exposed.** `trimUndo` copied the retained steps into a fresh
+exact-size array, so `cap == len` and the *next* push reallocated the whole
+500-entry stack: 38 KB per keystroke once the step cap binds. It had been
+invisible behind a 5 MB snapshot. Now it shifts down in place and clears the
+vacated tail, which drops the evicted steps' lines just as the fresh array
+did, without allocating.
+
+`TestEditorUndoStackCappedByBytes` and `TestEditorUndoKeepsNewestStepOverBudget`
+were rewritten onto `Paste`, since ten keystrokes no longer come near either
+cap — the caps are real, they just bind on whole-document steps now.
+
+**Verified live under tmux**, not only by the tests: typed three lines,
+Backspace-joined two of them, Ctrl+Z and Ctrl+Y round-tripped; 40 undos walked
+back to an empty buffer and 40 redos returned it byte-identical; select-all
+overtype, and a Delete-join at end of line, both undid clean.
+
+## 2026-08-07 — Second review pass: tooltip staleness, a missing latch, two tidyings
+
+A review of both repos after the undo work. Most of what was swept came back
+clean and is recorded here so it isn't re-swept: one `go func` in the tree (in
+`safego`), one bare `wakeEventLoop` (the documented `QueryPanel` timer),
+`rows.Err()` after every `Next()` loop, and every `fmt.Sprintf` in gosmo that
+interpolates a quoted `%s` traced to an `escapeSingle`/`QuoteName`/validated-
+enum argument — 27 of them, no injection surface.
+
+**The one real bug: the Activity Monitor's pinned tooltip went stale every two
+seconds.** `scrollTo` and `setTab` both drop the tooltip because the canvas has
+moved under it, but a *new sample* moves it exactly the same way and nothing
+dropped it there. The box kept its old numbers while pointing at a column that
+now held different ones. The field comment gave away how it happened — "so a
+*paused* dashboard keeps the numbers the user clicked on" — the paused case was
+designed and the running case never considered.
+
+Fixed by routing all three `viewGen++` sites through `invalidateView`, which
+bumps the counter and clears the tooltip together; the pause behaviour survives
+because a paused feed never rebuilds. `rebuild` has one non-test caller
+(`applySample`), so the clear fires only on new data.
+
+**How it was proven, before and after.** A throwaway test pinned a tooltip,
+appended a sample with a distinguishable value, and printed what the box said
+against what the column under it now held. Then the shipped tests
+(`...NewSampleDismissesTheTooltip`, `...NewTempDBSampleDismissesTheTooltip`)
+were mutation-checked by deleting the `am.tooltip = nil` from `invalidateView`
+— both fail. Then a live A/B against ubudock under tmux, driving real mouse
+SGR sequences into the pane: pre-fix, a tooltip pinned at 22:34:51 was still
+reading `Index searches/sec 10` thirty-eight seconds and nineteen samples later
+with the axis showing 22:35:29; post-fix it cleared on the next sample.
+
+**Two smaller things.** `Editor.SetText` cleared four of five mouse latches —
+`sbDraggingX` was missing, which is CLAUDE.md's invariant 4 (a latch must not
+survive into the widget's next showing). `TestEditorSetTextClearsEveryMouseLatch`
+enumerates the fields through a map rather than spot-checking, because the bug
+*was* one field missing from a list. And `addSnapshotHit` was a copy of `addHit`
+differing only by `Snapshot: true`; they are now one helper in the package's own
+`common.go`, taking the flag.
+
+**`editor_undo.go`.** The undo machinery had grown to ~200 of `editor.go`'s 697
+lines, mostly my own doing in the previous entry. Extracted by exact line range
+per the splitting procedure, and the two files were diffed against the original
+to prove the split is a pure move before anything was deleted.
+
+**C1 closed by live query, not by reading.** The standing question of whether
+`counterQueryFor`'s instance filter drops NULL-`instance_name` rows was settled
+against both servers; the answer and the evidence are now in `open-threads.md`
+under "do not re-raise" so the third reviewer doesn't re-derive it.
+
+## 2026-08-08 — Third review pass: a keyboard trap in every grid page, and RESTORE's wrong file list
+
+Two proven bugs, both found by going where the previous two passes hadn't:
+the `agent_*` family, the restore path, gosmo's retry/resource layer, and the
+`propsheet` row contract.
+
+**Every property-sheet grid was a partial keyboard trap.** `DataGrid.HandleKey`
+ends in an unconditional `return true`, so Up at row 0, Down at the last row and
+Left at column 0 all reported "handled" having done nothing. `GridRow` forwarded
+that verbatim, and `Form` falls back to its own Up/Down navigation only on
+`false` — so a focused grid swallowed the keys that were supposed to leave it.
+Tab and Escape still worked; `Left`, which is how `PropertySheet` returns to its
+page list, did not. An empty grid ate all of them. 21 pages use `NewGridRow`,
+and `ToggleGridRow` embeds it.
+
+Fixed in `GridRow`, not `DataGrid`: the grid's blanket answer is right when it
+is standalone (QueryPanel results, the Activity Monitor's proc tabs,
+DetailBrowser all rely on it), and changing it there would have reached all
+three. `GridRow.HandleKey` now snapshots `SelectedCell` and `ScrollCol` around
+an arrow key and reports movement rather than predicting it — the same
+before/after idiom `TextRow` and `SelectRow` already use. `ScrollCol` was added
+to `DataGrid` for it, because a grid with no cell cursor scrolls horizontally
+without ever changing `SelectedCell`; without that half, Right/Left over a wide
+grid would have been reported as unhandled.
+
+Three mutations, all caught: reverting to the blanket forward, ignoring the
+scroll column, and releasing every arrow unconditionally (which the
+"Down inside the grid stays in the grid" case exists to catch).
+
+**Live A/B**, Server Properties > Permissions, whose three grids sit in a row.
+At the last principal, one Down and typing `ALTER`:
+
+    post-fix   Filter permissions [ALTER                       ]
+    pre-fix    Filter permissions [                            ]   (six Downs)
+
+**RESTORE built its MOVE clauses from the wrong backup set.**
+`BackupFileListContext` issues `RESTORE FILELISTONLY` with no `WITH FILE = n`,
+so it always describes set 1, while the restore ran with `FileNumber`. Appending
+to a `.bak` is SSMS's default, so multi-set devices are ordinary. Proven on
+ubudock with two throwaway databases backed up to one device: `FILELISTONLY`
+returned `zz_set_a`/`zz_set_a_log` where set 2 held `zz_set_b`/`zz_set_b_log`,
+and the RESTORE that gossms actually built failed with *Logical file 'zz_set_a'
+is not part of database 'zz_restored'*.
+
+gosmo gained `BackupFileListForSet`/`...Context` taking a 1-based set number;
+`BackupFileListContext` keeps its exact signature and delegates with 0. The
+query moved into `backupFileListQuery` so the `WITH FILE` clause is unit-tested
+rather than only reachable through a live server.
+
+**A second manifestation in the same dialog**, found while fixing the first: the
+Backup Information view read the file list once, in `analyze`, and never again —
+so ←/→ changed the header to another set while the Files Included panel kept
+showing set 1's, directly contradicting its own caption ("the restore uses the
+one shown"). `selectHeader` now re-reads it, guarded by the same `loadSeq` that
+`analyze` uses so a held arrow key can't land a stale answer. `analyze` also
+asks for `headers[0].Position` rather than assuming set 1, since a device whose
+earlier sets were overwritten starts higher. (**That last reason is wrong** —
+overwriting a media set renumbers it back to 1. Measured and corrected the next
+day; see the 2026-08-09 entry's P3. The code was safe, for the opposite
+reason.)
+
+End-to-end through the TUI: pre-fix, set 2 selected showed `zz_set_a`'s files
+and the restore failed; post-fix it showed `zz_set_b`'s and the restore
+succeeded, landing `zz_set_b`/`zz_set_b_log` at
+`/var/opt/mssql/data/zz_restored_zz_set_b.mdf`.
+
+**Swept and clean, recorded so it isn't re-swept:** the whole `agent_*` family
+(3,169 lines — `requireConn` on every entry point including both shared
+delegates, `safego`+`postAndWake` throughout, its one interpolated query behind
+`sqlStringLiteral`); gosmo's 83 `rows.Next()` loops against 83 `rows.Err()`
+checked per-function, not by count; `retry.go`; zero `core.DisplayWidth`
+violations; and a structural scan of every function of six lines or more, which
+turned up exactly two near-identical pairs, both legitimate parallel
+implementations over different types.
+
+---
+
+## 2026-08-09 — Fourth review pass: six scripted setters, a tooltip that had to stop vanishing, and four facts settled on the server
+
+A review of both repos for bugs, inconsistencies, simplifications and
+refactoring, worked through as P1–P6. Every finding was A/B'd against a
+pre-fix binary or a mutated build, and the four questions that turned on
+SQL Server's actual behaviour were settled on win10cli rather than argued
+from memory. Nothing was committed.
+
+**P1 — six gosmo setters lied to their own handle under `WithScript`.**
+`Database.SetRecoveryModel`, `SetCompatibilityLevel`, `SetReadOnly`,
+`SetOffline`, `SetOnline` and `ConfigurationOption.SetValue` each mirrored
+the new value onto the receiver immediately after `execContext`. Under a
+`WithScript` context `execContext` appends the statement to the collector
+and returns nil without touching the server, so gossms's "Script Changes"
+button (`prop_dialog.go:344`, which runs every page's apply closure under
+`gosmo.WithScript`) left the in-memory handle claiming state the server had
+never been given. `setIfApplied` exists for exactly this and was simply not
+used in these six places.
+
+The live test that proves it is `live_setifapplied_test.go` (`//go:build
+livedb`, DSN via the existing `-livedb` flag — no credentials in the repo,
+matching `live_execproc_script_test.go`). **Two ways the first draft failed
+to catch its own bug**, both now pinned by comments on the assertions:
+asserting state only at the end of the scripted loop nets out, because
+`SetOffline` and `SetOnline` write the same field in opposite directions and
+a pair that both mirror wrongly lands back on the starting value; and a
+scripted `SetOnline` on an already-ONLINE database assigns "ONLINE" over
+"ONLINE", which is unobservable. Fixed with per-step assertions plus a
+second block that takes the database genuinely OFFLINE first.
+
+**P2 — the Activity Monitor's pinned tooltip was dismissed by its own data.**
+`invalidateView` cleared `am.tooltip`, so a box pinned to a chart column
+vanished on the next collector tick — two seconds at the default rate — and,
+because both collectors land in the same function, a tempdb tick dismissed a
+tooltip pinned on History. The first fix was the wrong shape: clearing is not
+what a new sample calls for, since the pin is a position in the viewport and
+the numbers under it are what changed. `refreshTooltip` now re-resolves the
+tooltip from its stored anchor at draw time, after the canvas render has
+rebuilt the hit map and before `drawTooltip`; a nil return is the drop.
+`Close()` still clears outright, and says why.
+
+Live A/B: the pre-fix binary's tooltip vanished within 3 s; the post-fix one
+survived 16+ s with its own time advancing 11:12:51 → 11:13:03 → 11:13:11,
+and a TempDB tooltip survived eight activity ticks unchanged. Two existing
+tests failed on the new behaviour and were replaced — one of them,
+`TestActivityMonitorNewTempDBSampleDismissesTheTooltip`, had a comment
+claiming it covered a TempDB-pinned tooltip but never left the History tab,
+so it was asserting the cross-tab defect as spec.
+
+**About dialog** — the standalone "Sessions Tab" section became two rows in
+Components (procedure version, upstream repo). The GPL-3.0 attribution is
+carried by `whoIsActiveCredit()` on the Sessions tab and by the embedded
+`whoisactive.sql`'s own copyright header alongside `LICENSE.sp_whoisactive`;
+dropping either of those is what would cost the attribution, not this list.
+`WhoIsActiveAuthor`/`WhoIsActiveLicense` both still have callers.
+
+**P3 — the backup-set number, and a comment whose premise was false.**
+The previous pass (2026-08-08) left `analyze()` reading `headers[0].Position`
+"since a device whose earlier sets were overwritten starts higher", guarded
+by `len(headers) > 1` — a guard that exempts precisely the case the sentence
+describes. **The premise is wrong, measured on win10cli:**
+
+    after 3x WITH NOINIT   → Position 1, 2, 3   (3 sets)
+    after WITH INIT        → Position 1         (1 set)
+    after WITH FORMAT      → Position 1         (1 set)
+
+Overwriting a media set resets numbering to 1; nothing leaves a lone set
+numbered higher. So the guard was safe for the opposite reason to the one
+written down. The rule now lives once, in `backupSetNumber`, which the
+restore, the MOVE clauses and the Files Included panel all call — two of the
+three deriving it separately is what produced the 2026-08-08 bug. Why they
+must agree, proven end-to-end on a device holding two *different* databases:
+
+    RESTORE FILE=2 with MOVE from set 2  → succeeded
+    RESTORE FILE=2 with MOVE from set 1  → FAILED
+
+**P4 — a zero refresh rate panicked the application, not the panel.**
+`internal/activity/collector.go` guarded non-positive rates in `backoff` and
+in `retune`, and then panicked before either ran: `time.NewTicker(state.rate)`.
+`Run` executes under `App.safego`, so that is the process. `normalizeRate`
+now runs at both places `collectorState.rate` is written — `Run`'s argument
+and the control-channel `apply` — and `retune`'s `d <= 0` arm came out, since
+it was the guard that made the mid-run case *silently* wrong rather than
+loud. `backoff` keeps its own guard: that one is its doubling loop's
+termination precondition.
+
+Three mutations, three distinct failures, which is what shows the two halves
+are both load-bearing:
+
+    original                        panic: non-positive interval for NewTicker
+    normalize at Run entry only     panic: non-positive interval for Ticker.Reset
+    normalize both, retune inert    1 probes before the rate change, 1 after
+
+`TestCollectorSetRateReachesTheTicker` pins the control path by timing,
+because a `SetRate` that updates state but never resets the ticker is
+invisible to any other kind of assertion. Live on win10cli, the rate selector
+being the changed path: 2 s → 10 s produced samples exactly ten seconds apart
+(11:45:54 → 11:46:04 → 11:46:14), 10 s → 2 s two seconds apart, Pause froze
+the clock across 9 s, and the TempDB collector — a second instance of the
+same code — reported its own 30 s rate.
+
+**P5 — the editor's undo stack: one comment corrected, one guard deliberately
+not added.** `maxUndoSteps` claimed the redo stack "can never grow past what
+undo popped". True by count, false by bytes: `applyStep`'s inverse carries the
+lines being *replaced* — the document as it is now — not the lines the popped
+step held, so on a document that grew over its history every inverse is bigger
+than the step that produced it. Measured: peak redo 48.4 MB against 46.5 MB of
+undo. `inv.bytes` is computed and stored and never accumulated; there is no
+`redoBytes` and `maxUndoBytes` does not reach the redo stack at all. No cap was
+added — the undo stack's own byte cap bounds it to within one document, and a
+redo cap would buy that back in exchange for silently dropping the deepest
+redo. `TestEditorRedoStackBound` pins both halves; rewriting `applyStep` so the
+inverse carries `st.old` — the world the old comment described — makes the two
+totals *exactly equal* (954400 vs 954400) and fails the test, so it
+distinguishes the readings rather than merely passing.
+
+`applyStep`'s `e.doc.all()[st.row : st.row+st.newLen]` stays unguarded, on
+purpose and now said so on both `editorState.newLen` and `applyStep`. The
+invariant is `pushUndoSpan`'s caller promise, and a violated promise means the
+document is about to be corrupted; a clamp converts that into an undo that
+quietly restores text the user never typed. A drafted per-path assertion was
+dropped after A/B showed it cannot fire — on both constructible breakages the
+existing "undo left" assertion catches them first, and the genuinely
+out-of-range case is unreachable from all 28 paths precisely because they keep
+their promise. An assertion that cannot fail is noise.
+
+**P6 — thirteen dropdowns re-derived their database list, and one of them was
+wrong.** 16 `DatabasesContext` calls across 12 files; five were byte-identical
+name loops. The rule now lives in `internal/tui/database_list.go` and turns on
+*when the name is resolved*: stored now and used later (job step, alert, login
+default database, restore history) lists every database, system and non-ONLINE
+alike, because it is opened when the job runs; acted on now lists only what the
+action accepts. Backup is the only dialog in the second class, and both its
+exclusions are hard server restrictions, verified:
+
+    BACKUP DATABASE tempdb             FAILED: BACKUP DATABASE is terminating abnormally
+    BACKUP DATABASE (offline)          FAILED: BACKUP DATABASE is terminating abnormally
+    BACKUP DATABASE (same db, online)  ok
+
+So Backup's `tempdb` filter was not an inconsistency but an *incomplete* one;
+with an OFFLINE database on the server the old binary offered it as the
+dropdown's default selection.
+
+**The filter then introduced a worse bug, caught before it shipped.** The
+Backup dialog is opened *on* a database, `show()` seeds the dropdown with that
+one name, and `setDatabaseItems` matches the old selection by name when the
+full list arrives. A filtered list doesn't contain an offline database, so the
+selection fell through to index 0 — right-clicking an offline database and
+choosing Back Up silently retargeted the dialog at whichever database sorted
+first and would have backed *that* one up:
+
+    filter, no selection preservation:  gossms_p6_offline → [HealthClinic]
+    filter + preservation (shipped):    gossms_p6_offline → [gossms_p6_offline]
+
+`setDatabaseItems` now keeps an unlisted selection at the front. Silently
+backing up the wrong database is worse than the error the filter was added to
+prevent; the user's choice stands and the server's own refusal is what they
+see.
+
+**Process note, recorded because it nearly cost real work:** a
+`git checkout <file>` used to undo a temporary A/B edit reverted ~200 lines of
+*pre-existing uncommitted* work in `editor_test.go`. Recovered in full from a
+dangling blob (`git fsck --lost-found`), verified against two ranges read
+earlier in the session and against the set of tests present at HEAD. Revert
+points now go to a scratchpad copy, never to git.

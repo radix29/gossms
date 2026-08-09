@@ -368,7 +368,12 @@ func (am *ActivityMonitor) Close() {
 	am.history = dashboard.HistoryView{}
 	am.sample = dashboard.SampleView{}
 	am.tempdb = dashboard.TempDBView{}
-	am.viewGen++
+	am.invalidateView()
+	// Dropped outright rather than left for refreshTooltip: the views are
+	// now empty, so it would resolve to nothing on the next draw anyway, and
+	// a closed panel keeping a box of numbers pinned is not a state worth
+	// carrying to a reopening.
+	am.tooltip = nil
 	am.canvas = nil
 }
 
@@ -500,7 +505,7 @@ func (am *ActivityMonitor) applyTempDBSample(s activity.TempDBSample) {
 	am.td.sampleTime = s.At.Format("15:04:05")
 	am.td.status = ""
 	am.tempdb = am.buildTempDBView()
-	am.viewGen++
+	am.invalidateView()
 }
 
 // applyTempDBError reports a failed tempdb tick without clearing what has
@@ -532,6 +537,20 @@ func (am *ActivityMonitor) applySample(s activity.Sample) {
 func (am *ActivityMonitor) rebuild() {
 	am.history = am.buildHistoryView()
 	am.sample = am.buildSampleView()
+	am.invalidateView()
+}
+
+// invalidateView marks the cached canvas stale, so the next draw re-renders
+// it from the view models that have just been replaced.
+//
+// A pinned tooltip is deliberately left alone here. New view models do put
+// different numbers under it — that desync is real — but it is the *box* that
+// has to move on, not the pin: refreshTooltip re-resolves it from its anchor
+// on the next draw, once the render has rebuilt the hit map. Clearing it here
+// instead was the first fix, and it made a pinned box vanish on the following
+// tick (two seconds at the default rate) and, because both collectors land
+// here, let a tempdb tick dismiss a box pinned on History.
+func (am *ActivityMonitor) invalidateView() {
 	am.viewGen++
 }
 

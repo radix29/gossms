@@ -491,9 +491,13 @@ func TestEditorUndoStackCapped(t *testing.T) {
 	}
 }
 
-// TestEditorUndoStackCappedByBytes covers the second undo cap: a document
-// big enough that maxUndoBytes binds before maxUndoSteps does. Ten edits to a
-// ~13 MB document may retain at most four steps, not ten.
+// TestEditorUndoStackCappedByBytes covers the second undo cap: a document big
+// enough that maxUndoBytes binds before maxUndoSteps does. Paste is the
+// operation used because it is one of the paths whose reach isn't known in
+// advance, so it still copies the whole buffer per step — a keystroke's step
+// covers a couple of lines and would never reach either cap (see
+// TestEditorKeystrokeStepIsProportionalToTheEdit). Ten pastes into a ~13 MB
+// document may retain at most four steps, not ten.
 func TestEditorUndoStackCappedByBytes(t *testing.T) {
 	line := strings.Repeat("x", 200)
 	lines := make([]string, 16000)
@@ -502,7 +506,7 @@ func TestEditorUndoStackCappedByBytes(t *testing.T) {
 	}
 	e := newTestEditor(strings.Join(lines, "\n"))
 	for i := 0; i < 10; i++ {
-		e.HandleKey(runeKey('y', tcell.ModNone))
+		e.Paste("y")
 	}
 	if e.undoBytes > maxUndoBytes {
 		t.Fatalf("undoBytes = %d, want <= %d", e.undoBytes, maxUndoBytes)
@@ -524,17 +528,179 @@ func TestEditorUndoStackCappedByBytes(t *testing.T) {
 	}
 }
 
-// TestEditorUndoKeepsNewestStepOverBudget pins that a single snapshot larger
-// than maxUndoBytes is kept anyway — one undo has to work on any document.
+// TestEditorUndoKeepsNewestStepOverBudget pins that a single step larger than
+// maxUndoBytes is kept anyway — one undo has to work on any document.
 func TestEditorUndoKeepsNewestStepOverBudget(t *testing.T) {
 	e := newTestEditor(strings.Repeat(strings.Repeat("x", 1000)+"\n", 20000))
-	e.HandleKey(runeKey('y', tcell.ModNone))
+	e.Paste("y")
 	if len(e.undoStack) != 1 {
 		t.Fatalf("undoStack len = %d, want 1 (newest step kept regardless of size)", len(e.undoStack))
+	}
+	if e.undoBytes <= maxUndoBytes {
+		t.Fatalf("undoBytes = %d, want a single step over the %d budget", e.undoBytes, maxUndoBytes)
 	}
 	e.undo()
 	if strings.HasPrefix(e.Text(), "y") {
 		t.Fatal("undo did not restore the pre-edit document")
+	}
+}
+
+// An undo step costs what the edit costs, not what the document costs. This
+// is the whole point of steps being deltas: pushUndo runs on every keystroke,
+// and copying a 20,000-line buffer to record a one-character insert measured
+// 3.2 ms and 5 MB per character.
+//
+// The bound is stated in lines rather than seconds so it can't go green on a
+// faster machine. A keystroke may cover the cursor's row and one either side
+// (see editSpan); ten rows leaves room to widen that without a false alarm,
+// and still fails by three orders of magnitude if a step ever goes back to
+// covering the buffer.
+func TestEditorKeystrokeStepIsProportionalToTheEdit(t *testing.T) {
+	e := newTestEditor(strings.Repeat("SELECT col1, col2 FROM dbo.T WHERE x = 1\n", 20000))
+	e.cursorRow = 10000
+
+	for _, k := range []tcell.EventKey{
+		*runeKey('y', tcell.ModNone),
+		*key(tcell.KeyEnter, tcell.ModNone),
+		*key(tcell.KeyBackspace, tcell.ModNone),
+		*key(tcell.KeyDelete, tcell.ModNone),
+		*key(tcell.KeyTab, tcell.ModNone),
+	} {
+		before := len(e.undoStack)
+		e.HandleKey(&k)
+		if len(e.undoStack) != before+1 {
+			t.Fatalf("key %v pushed %d steps, want 1", k.Key(), len(e.undoStack)-before)
+		}
+		if got := len(e.undoStack[before].old); got > 10 {
+			t.Errorf("key %v recorded %d lines, want a step proportional to the edit", k.Key(), got)
+		}
+	}
+}
+
+// Every editing path pushes its own undo step, and a step that claims a
+// narrower span than its edit actually touched does not fail loudly — it
+// restores a document that was never typed. So each one is round-tripped
+// here: apply, undo, and require both the text and the cursor back exactly.
+// Redo then has to reproduce the edit, since undo builds redo's step from the
+// span it just restored.
+func TestEditorUndoRestoresEveryEditPath(t *testing.T) {
+	const doc = "SELECT one\n    SELECT two\n-- SELECT three\nSELECT four\nSELECT five"
+
+	// selectRows puts a linear selection over rows [sr, er] to make the
+	// multi-row and replace-selection branches reachable.
+	selectRows := func(e *Editor, sr, er int) {
+		e.selecting, e.selBlock = true, false
+		e.selAnchorRow, e.selAnchorCol = sr, 0
+		e.cursorRow, e.cursorCol = er, len(e.doc.Line(er))
+	}
+
+	for _, tc := range []struct {
+		name string
+		do   func(*Editor)
+	}{
+		{"type a rune", func(e *Editor) { e.HandleKey(runeKey('Z', tcell.ModNone)) }},
+		{"type over a selection", func(e *Editor) {
+			selectRows(e, 1, 3)
+			e.HandleKey(runeKey('Z', tcell.ModNone))
+		}},
+		{"enter", func(e *Editor) { e.cursorCol = 3; e.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) }},
+		{"enter over a selection", func(e *Editor) {
+			selectRows(e, 0, 2)
+			e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+		}},
+		{"backspace mid-line", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 2, 5
+			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+		}},
+		{"backspace joining the line above", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 2, 0
+			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+		}},
+		{"backspace over a selection", func(e *Editor) {
+			selectRows(e, 1, 4)
+			e.HandleKey(key(tcell.KeyBackspace, tcell.ModNone))
+		}},
+		{"ctrl+backspace", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, len(e.doc.Line(1))
+			e.HandleKey(key(tcell.KeyBackspace, tcell.ModCtrl))
+		}},
+		{"delete mid-line", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 2, 4
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		}},
+		{"delete joining the line below", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, len(e.doc.Line(1))
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		}},
+		{"ctrl+delete", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 4
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModCtrl))
+		}},
+		{"tab", func(e *Editor) { e.cursorCol = 3; e.HandleKey(key(tcell.KeyTab, tcell.ModNone)) }},
+		{"tab over a one-row selection", func(e *Editor) {
+			selectRows(e, 2, 2)
+			e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+		}},
+		{"tab over a multi-row selection indents", func(e *Editor) {
+			selectRows(e, 1, 3)
+			e.HandleKey(key(tcell.KeyTab, tcell.ModNone))
+		}},
+		{"shift+tab dedents", func(e *Editor) { e.cursorRow = 1; e.HandleKey(key(tcell.KeyBacktab, tcell.ModNone)) }},
+		{"paste multi-line", func(e *Editor) { e.cursorRow, e.cursorCol = 1, 2; e.Paste("a\nb\nc") }},
+		{"paste over a selection", func(e *Editor) { selectRows(e, 0, 3); e.Paste("x\ny") }},
+		{"cut", func(e *Editor) { selectRows(e, 1, 2); e.Cut() }},
+		{"duplicate lines", func(e *Editor) { e.cursorRow = 2; e.DuplicateLines() }},
+		{"delete lines", func(e *Editor) { selectRows(e, 1, 2); e.DeleteLines() }},
+		{"move lines up", func(e *Editor) { e.cursorRow = 3; e.MoveLinesUp() }},
+		{"move lines down", func(e *Editor) { e.cursorRow = 1; e.MoveLinesDown() }},
+		{"toggle comments", func(e *Editor) { selectRows(e, 0, 4); e.ToggleLineComments() }},
+		{"uppercase selection", func(e *Editor) { selectRows(e, 1, 3); e.UppercaseSelection() }},
+		{"block insert", func(e *Editor) {
+			e.selecting, e.selBlock = true, true
+			e.selAnchorRow, e.selAnchorCol = 1, 2
+			e.cursorRow, e.cursorCol = 3, 2
+			e.HandleKey(runeKey('#', tcell.ModNone))
+		}},
+		{"block delete", func(e *Editor) {
+			e.selecting, e.selBlock = true, true
+			e.selAnchorRow, e.selAnchorCol = 1, 1
+			e.cursorRow, e.cursorCol = 3, 4
+			e.HandleKey(key(tcell.KeyDelete, tcell.ModNone))
+		}},
+		{"replace current", func(e *Editor) {
+			e.SetSearch(SearchOptions{Query: "two", Replace: "II"})
+			e.FindNext(1)
+			e.ReplaceCurrent()
+		}},
+		{"replace all", func(e *Editor) {
+			e.SetSearch(SearchOptions{Query: "SELECT", Replace: "select"})
+			e.ReplaceAll()
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestEditor(doc)
+			tc.do(e)
+			after, afterRow, afterCol := e.Text(), e.cursorRow, e.cursorCol
+			if after == doc {
+				t.Fatalf("setup: the operation changed nothing, so undo proves nothing")
+			}
+
+			e.undo()
+			if got := e.Text(); got != doc {
+				t.Fatalf("undo left\n%q\nwant\n%q", got, doc)
+			}
+			if e.cursorRow >= e.doc.Len() || e.cursorCol > len(e.doc.Line(e.cursorRow)) {
+				t.Fatalf("undo left the cursor at (%d,%d), outside the restored document", e.cursorRow, e.cursorCol)
+			}
+
+			e.redo()
+			if got := e.Text(); got != after {
+				t.Fatalf("redo left\n%q\nwant\n%q", got, after)
+			}
+			if e.cursorRow != afterRow || e.cursorCol != afterCol {
+				t.Errorf("redo put the cursor at (%d,%d), want (%d,%d)", e.cursorRow, e.cursorCol, afterRow, afterCol)
+			}
+		})
 	}
 }
 
@@ -910,6 +1076,33 @@ func TestEditorSelectionDragIsNotStolenByHScrollbar(t *testing.T) {
 	e.HandleMouse(tcell.NewEventMouse(contentX+20, barY, tcell.ButtonNone, tcell.ModNone))
 }
 
+// SetText is the reset-for-reuse path, so no mouse latch may survive it — a
+// latch left set makes the next press in the reused editor read as the
+// continuation of a gesture that ended in the previous document. Enumerated
+// rather than spot-checked because the bug was one field missing from the
+// list.
+func TestEditorSetTextClearsEveryMouseLatch(t *testing.T) {
+	latches := func(e *Editor) map[string]*bool {
+		return map[string]*bool{
+			"selecting":     &e.selecting,
+			"selBlock":      &e.selBlock,
+			"mouseDragging": &e.mouseDragging,
+			"sbDragging":    &e.sbDragging,
+			"sbDraggingX":   &e.sbDraggingX,
+		}
+	}
+	e := wideTestEditor()
+	for _, p := range latches(e) {
+		*p = true
+	}
+	e.SetText("SELECT 1")
+	for name, p := range latches(e) {
+		if *p {
+			t.Errorf("%s survived SetText", name)
+		}
+	}
+}
+
 // -- wrap-mode highlighting -------------------------------------------------
 
 // recordingScreen captures what a Draw painted, so a test can assert on the
@@ -1092,5 +1285,54 @@ func TestEditorSlowSecondClickDoesNotSelectWord(t *testing.T) {
 
 	if e.HasSelection() {
 		t.Fatalf("slow second click selected %q, want nothing", e.SelectedText())
+	}
+}
+
+// TestEditorRedoStackBound pins what maxUndoSteps' comment claims about the
+// redo stack, both halves of it: the count bound holds, and the byte bound
+// does not.
+//
+// The second half is the one worth a test. applyStep's inverse carries the
+// lines being replaced — the document as it is now — not the lines the popped
+// step carried, so on a document that grew over its history every inverse is
+// bigger than the step that produced it and the redo stack ends up holding
+// more than the undo stack ever did. The comment this replaced claimed redo
+// "can never grow past what undo popped", which is the reading anyone
+// re-deriving the bound from the code will reach for; this fails on it.
+func TestEditorRedoStackBound(t *testing.T) {
+	chunk := strings.Repeat(strings.Repeat("z", 100)+"\n", 50)
+	e := newTestEditor("seed")
+	for i := 0; i < 10; i++ {
+		e.cursorRow, e.cursorCol = 0, 0
+		e.Paste(chunk) // a whole-document step, so each one grows the buffer
+	}
+	e.finalizeStep()
+	undoSteps, undoBytes := len(e.undoStack), e.undoBytes
+
+	redoBytes := func() int {
+		n := 0
+		for _, st := range e.redoStack {
+			n += st.bytes
+		}
+		return n
+	}
+	peak := 0
+	for len(e.undoStack) > 0 {
+		e.undo()
+		if b := redoBytes(); b > peak {
+			peak = b
+		}
+	}
+
+	if len(e.redoStack) != undoSteps {
+		t.Fatalf("redo holds %d steps after undoing %d; undo pushes exactly one per pop", len(e.redoStack), undoSteps)
+	}
+	if len(e.redoStack) > maxUndoSteps {
+		t.Errorf("redo holds %d steps, more than maxUndoSteps (%d)", len(e.redoStack), maxUndoSteps)
+	}
+	if peak <= undoBytes {
+		t.Errorf("peak redo bytes %d <= undo bytes %d; the growing-document case is meant to invert them, "+
+			"so either this setup stopped growing the buffer or applyStep changed which lines the inverse carries",
+			peak, undoBytes)
 	}
 }

@@ -34,13 +34,9 @@ func fetchNewAlertPrefetch(ctx context.Context, sc *db.ServerConn) (*nalertPrefe
 	for _, a := range alerts {
 		existing[strings.ToLower(a.Name)] = true
 	}
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbNames, err := databaseNames(ctx, sc)
 	if err != nil {
 		return nil, err
-	}
-	dbNames := make([]string, len(dbs))
-	for i, d := range dbs {
-		dbNames[i] = d.Name()
 	}
 	cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
 	if err != nil {

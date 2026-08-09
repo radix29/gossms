@@ -19,7 +19,10 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 	app.safego("loading the restore database list", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		dbs, err := sc.Server.DatabasesContext(ctx)
+		// Every database, including offline ones: this dropdown picks whose
+		// backup *history* to read out of msdb, which outlives the database's
+		// current state — see databaseNames.
+		names, err := databaseNames(ctx, sc)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -29,10 +32,6 @@ func (d *RestoreDialog) loadHistoryDatabases() {
 				return
 			}
 			cur := d.ddHistDB.Value()
-			names := make([]string, len(dbs))
-			for i, dbo := range dbs {
-				names[i] = dbo.Name()
-			}
 			dd := widgets.NewDropDown("Database:   ", names, 40)
 			for i, n := range names {
 				if n == cur {
@@ -130,25 +129,83 @@ func (d *RestoreDialog) selectedHeader() *gosmo.BackupHeader {
 // selectHeader moves the inspect view to backup set i, clamped — ←/→ at
 // either end stays put rather than wrapping, so holding an arrow can't
 // silently cycle past the set the user meant to stop on.
+//
+// Each set on a device has its own file list, so moving between them
+// re-reads it. Without that the Files Included panel kept showing the first
+// set's files under a header naming a different one, which the view's own
+// caption ("the restore uses the one shown") flatly contradicts.
 func (d *RestoreDialog) selectHeader(i int) {
+	was := d.headerIdx
 	d.headerIdx = core.Clamp(i, 0, len(d.headers)-1)
+	if d.headerIdx != was {
+		d.loadFileList()
+	}
 }
 
-// restoreFileNumber is the WITH FILE = n the restore needs to target the
-// selected backup set. Backup sets are numbered from 1 and BackupHeader
-// carries its own Position, which is the authoritative number — the slice
-// index only matches it when the device's sets are contiguous from 1.
-// Zero (no clause) whenever the device holds a single set, which is the
-// common case and what SQL Server defaults to anyway.
-func (d *RestoreDialog) restoreFileNumber() int {
-	if len(d.headers) <= 1 {
+// loadFileList re-reads the selected backup set's file list in the
+// background. Held ←/→ fires one of these per set crossed; loadSeq drops
+// every answer but the newest, the same guard analyze uses.
+func (d *RestoreDialog) loadFileList() {
+	dev, fileNumber := d.inspectDev, d.restoreFileNumber()
+	if dev == "" {
+		return
+	}
+	d.loadSeq++
+	seq := d.loadSeq
+	app, srv := d.app, d.sc.Server
+	app.safego("reading a backup set's file list", func() {
+		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
+		defer cancel()
+		files, err := srv.BackupFileListForSetContext(ctx, dev, fileNumber)
+		app.postAndWake(func() {
+			if seq != d.loadSeq || !d.Visible() {
+				return
+			}
+			if err != nil {
+				d.setStatusMsg(err.Error(), true)
+				return
+			}
+			d.files = files
+		})
+	})
+}
+
+// backupSetNumber is the WITH FILE = n that targets headers[i].
+//
+// RESTORE numbers backup sets by each set's own Position, so that is what
+// gets sent; the slice index only coincides with it when the device's sets
+// run contiguously from 1, and index+1 is a fallback for a header that
+// reported no position at all.
+//
+// Zero means no clause, which SQL Server reads as the first set. A lone set
+// gets zero so the overwhelmingly common single-backup device produces a
+// statement without a redundant WITH FILE = 1. That is safe because a device
+// holding one set always holds it at position 1: appending numbers sets 1..n,
+// and WITH INIT and WITH FORMAT both reinitialise the media set back to a
+// single set at 1. There is no operation that leaves a lone set numbered
+// higher, so no caller has to special-case one.
+//
+// Every path that names a set goes through here — the restore itself, the
+// MOVE clauses built from that set's file list, and the Files Included panel.
+// They have to agree: a file list read from a different set names logical
+// files the restored set does not contain, which fails the whole RESTORE.
+func backupSetNumber(headers []*gosmo.BackupHeader, i int) int {
+	if len(headers) <= 1 {
 		return 0
 	}
-	h := d.selectedHeader()
-	if h.Position > 0 {
-		return h.Position
+	if i < 0 || i >= len(headers) {
+		i = 0
 	}
-	return d.headerIdx + 1
+	if p := headers[i].Position; p > 0 {
+		return p
+	}
+	return i + 1
+}
+
+// restoreFileNumber is the WITH FILE = n for the set the inspect view is
+// showing — see backupSetNumber for the rule.
+func (d *RestoreDialog) restoreFileNumber() int {
+	return backupSetNumber(d.headers, d.headerIdx)
 }
 
 // analyze reads the backup's header and file list in the background and
@@ -168,8 +225,12 @@ func (d *RestoreDialog) analyze() {
 		defer cancel()
 		headers, err := srv.BackupHeadersContext(ctx, dev)
 		var files []*gosmo.BackupFile
-		if err == nil {
-			files, err = srv.BackupFileListContext(ctx, dev)
+		if err == nil && len(headers) > 0 {
+			// The view opens on headers[0], so the file list has to name that
+			// set. Derived by the same rule selectHeader's reload uses, or the
+			// panel would disagree with itself the moment the user arrows off
+			// the first set and back onto it.
+			files, err = srv.BackupFileListForSetContext(ctx, dev, backupSetNumber(headers, 0))
 		}
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
@@ -387,7 +448,12 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 	// server's default directories, named after the target.
 	var relocate []gosmo.RelocateFile
 	if !strings.EqualFold(source, target) {
-		files, err := srv.BackupFileListContext(ctx, dev)
+		// The file list has to name the same set as FileNumber below. Asking
+		// for the device without one describes set 1, whose logical file names
+		// are a different database's whenever backups were appended — and MOVE
+		// clauses naming files the restored set doesn't contain fail the whole
+		// RESTORE.
+		files, err := srv.BackupFileListForSetContext(ctx, dev, fileNumber)
 		if err != nil {
 			return gosmo.RestoreOptions{}, err
 		}

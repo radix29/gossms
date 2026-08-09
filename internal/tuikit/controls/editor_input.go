@@ -163,13 +163,13 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.cursorRow = core.Min(e.doc.Len()-1, e.cursorRow+e.contentH())
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyEnter:
-		e.pushUndo()
+		e.pushUndoLocal()
 		if hadSelection {
 			e.deleteSelection()
 		}
 		e.insertNewline()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		e.pushUndo()
+		e.pushUndoLocal()
 		switch {
 		case e.blockEditing():
 			// Block edits keep the block armed for the next key, so they take
@@ -185,7 +185,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			e.backspace()
 		}
 	case tcell.KeyDelete:
-		e.pushUndo()
+		e.pushUndoLocal()
 		switch {
 		case e.blockEditing():
 			e.blockDelete()
@@ -204,7 +204,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			break
 		}
 		if e.blockEditing() {
-			e.pushUndo()
+			e.pushUndoLocal()
 			for range indentWidth {
 				e.blockInsertRune(' ')
 			}
@@ -219,7 +219,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 				break
 			}
 		}
-		e.pushUndo()
+		e.pushUndoLocal()
 		if hadSelection {
 			e.deleteSelection()
 		}
@@ -279,7 +279,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			break
 		}
 		if r != 0 && !ctrlHeld && !altHeld {
-			e.pushUndo()
+			e.pushUndoLocal()
 			if e.blockEditing() {
 				// One character into every row the block spans, leaving it
 				// armed a column further right so the next keystroke follows.

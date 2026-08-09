@@ -49,13 +49,9 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			dbs, err := sc.Server.DatabasesContext(ctx)
+			dbNames, err := databaseNames(ctx, sc)
 			if err != nil {
 				return nil, nil, err
-			}
-			dbNames := make([]string, len(dbs))
-			for i, d := range dbs {
-				dbNames[i] = d.Name()
 			}
 			cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
 			if err != nil {

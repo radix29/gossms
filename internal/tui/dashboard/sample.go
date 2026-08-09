@@ -11,17 +11,23 @@ import (
 // that read better as figures than as bars sit in the section bars as KPIs.
 //
 // r is normally a canvas of SampleCanvasW × SampleCanvasH.
-func DrawSample(s tcell.Screen, r core.Rect, v SampleView) {
+//
+// The returned hits describe the panels a click can be resolved against —
+// the memory composition bar, whose segments are otherwise named only by a
+// legend that has no room for their values.
+func DrawSample(s tcell.Screen, r core.Rect, v SampleView) []ChartHit {
 	if r.W <= 0 || r.H <= 0 {
-		return
+		return nil
 	}
 	drawHeader(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: sampleHeaderH}, v.Header)
 
+	hits := make([]ChartHit, 0, 1)
 	y := r.Y + sampleHeaderH
 	y = sampleActivity(s, r, y, v)
 	y = sampleWaits(s, r, y, v)
-	y = sampleMemory(s, r, y, v)
+	y = sampleMemory(s, r, y, v, &hits)
 	sampleDatabaseIO(s, r, y, v)
+	return hits
 }
 
 func sampleActivity(s tcell.Screen, r core.Rect, y int, v SampleView) int {
@@ -97,7 +103,7 @@ func loadFactorWidth(cores, bodyW int) int {
 	return w
 }
 
-func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView) int {
+func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]ChartHit) int {
 	body, next := section(s, r, y, sampleBodyH, "SQL SERVER MEMORY", []charts.KPI{
 		kpi("Page Life Expectancy", v.PageLifeExpectancy),
 		kpi("Memory Grants Pending", v.MemoryGrantsPending),
@@ -106,12 +112,13 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 
 	// The composition bar is the section's centrepiece: it gets several
 	// rows so its segments are legible, with its own legend beneath.
-	charts.StackedBar{
+	bar := charts.StackedBar{
 		Series:     v.Memory,
 		Rows:       core.Max(cols[0].H/3, 1),
 		LegendRows: 2,
 		ShowTotal:  true,
 	}.Draw(s, drawPanelTitle(s, cols[0], "MEMORY COMPOSITION"))
+	addHit(hits, "MEMORY COMPOSITION", bar, v.Memory, true)
 
 	if len(cols) > 1 {
 		ratios := v.CacheRatios

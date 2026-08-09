@@ -111,6 +111,20 @@ func (d *Document) edit(fn func(lines [][]rune) [][]rune) {
 	d.touch()
 }
 
+// replaceRange substitutes the n lines at row with the lines in with, which
+// the Document takes ownership of. It is the general splice undo and redo are
+// applied through: a step covers one contiguous span, and restoring it in a
+// single mutation is what keeps the version counter moving once per undo
+// rather than once per line.
+func (d *Document) replaceRange(row, n int, with [][]rune) {
+	d.edit(func(lines [][]rune) [][]rune {
+		out := make([][]rune, 0, len(lines)-n+len(with))
+		out = append(out, lines[:row]...)
+		out = append(out, with...)
+		return append(out, lines[row+n:]...)
+	})
+}
+
 // touch invalidates every version-keyed cache. Called by setLines and edit,
 // which can both change the line count and so cannot keep any per-line
 // width; setLine has its own narrower invalidation. Nothing else should

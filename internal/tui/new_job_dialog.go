@@ -53,13 +53,9 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	for i, c := range cats {
 		catNames[i] = c.Name
 	}
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbNames, err := databaseNames(ctx, sc)
 	if err != nil {
 		return nil, err
-	}
-	dbNames := make([]string, len(dbs))
-	for i, d := range dbs {
-		dbNames[i] = d.Name()
 	}
 	scheds, err := sc.Server.SchedulesContext(ctx)
 	if err != nil {

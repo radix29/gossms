@@ -229,14 +229,14 @@ func (a *App) showAbout() {
 		PropertyRow{Key: "TUI Backend", Value: "github.com/gdamore/tcell/v3"},
 
 		// The Activity Monitor's Sessions tab installs and runs somebody
-		// else's GPL-3.0 procedure. Naming it here is both the thanks it is
-		// owed and the attribution the licence requires of a binary that
-		// carries a copy.
-		PropertySection("Sessions Tab — bundled procedure"),
-		PropertyRow{Key: "Procedure", Value: "sp_WhoIsActive " + activity.WhoIsActiveVersion()},
-		PropertyRow{Key: "With thanks to", Value: activity.WhoIsActiveAuthor},
-		PropertyRow{Key: "Project", Value: activity.WhoIsActiveRepo},
-		PropertyRow{Key: "Licence", Value: activity.WhoIsActiveLicense},
+		// else's GPL-3.0 procedure, so it is listed as a component like any
+		// other bundled dependency. Author and licence are deliberately not
+		// repeated here: whoIsActiveCredit draws both on the Sessions tab
+		// itself, and the embedded whoisactive.sql carries the upstream
+		// copyright header alongside LICENSE.sp_whoisactive. Dropping either
+		// of those is what would cost the attribution — not this list.
+		PropertyRow{Key: "Sessions Procedure", Value: "sp_WhoIsActive " + activity.WhoIsActiveVersion()},
+		PropertyRow{Key: "Sessions Procedure Source", Value: activity.WhoIsActiveRepo},
 	)
 	// Sized to the whole list so the About box doesn't open scrolled on a
 	// normal terminal; recentre clamps it on a small one.

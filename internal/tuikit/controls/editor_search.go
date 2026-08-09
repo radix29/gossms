@@ -339,7 +339,9 @@ func (e *Editor) ReplaceCurrent() bool {
 	if !e.selectionIsMatch(m) {
 		return false
 	}
-	e.pushUndo()
+	// replaceMatch rewrites one line and never changes the line count, so the
+	// step is that one row — Replace/F3 down a large script is a held key.
+	e.pushUndoSpan(m.row, m.row+1)
 	e.replaceMatch(m)
 	e.search.cur = -1
 	e.FindNext(1)
