@@ -133,11 +133,11 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 	core.DrawScrollbar(s, am.viewRect.Right(), am.viewRect.Y, am.viewRect.H, ch, am.viewRect.H, sy, track, thumb)
 	core.DrawScrollbarH(s, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, am.viewRect.W, sx, track, thumb)
 
-	// Last, over everything: the tooltip is pinned to a spot in the viewport
-	// and has to sit on top of the data it reports on. Re-resolved first,
-	// against the hit map the render above just rebuilt.
+	// Last, over everything: the tooltip has to sit on top of the data it
+	// reports on. Re-resolved first, against the hit map the render above
+	// just rebuilt, which is what moves it onto its sample's current column.
 	am.refreshTooltip()
-	am.drawTooltip(s)
+	am.drawTooltip(s, c)
 }
 
 // dashboardCanvas returns the active tab's rendered canvas, re-rendering it

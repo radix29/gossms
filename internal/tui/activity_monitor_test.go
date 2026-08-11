@@ -460,25 +460,26 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	}
 }
 
-// A new sample scrolls the History window one column left, which moves the
-// canvas under a pinned tooltip exactly as scrolling does — the box would
-// keep its old numbers while pointing at a column that now holds different
-// ones. At the default 2s rate that desynced every two seconds.
-func TestActivityMonitorTooltipFollowsANewSample(t *testing.T) {
+// A new sample pushes every plotted bucket one column left. The pin is the
+// sample, not the spot: the box has to keep its own numbers and move with its
+// column. Anchored to the screen instead, it sat still and reported whichever
+// sample slid under it — every two seconds at the default rate.
+func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.app.panels.AddPanel(am) // applySample ignores an unhosted panel
 	am.SetBounds(0, 0, 150, 40)
 	amWithSamples(am, 30)
 	amRender(am, 150, 40)
 
-	// The rightmost column is the newest bucket, so a new sample lands under
-	// this exact anchor and the box must report it.
+	// The rightmost column is the newest bucket, so the sample about to land
+	// takes this exact column and the box must vacate it.
 	hit := am.hits[0]
-	amClick(am, am.viewRect.X+hit.Plot.Right()-1-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
+	amClick(am, x, am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
 	}
-	pinned := am.tooltip.rows[0].value
+	pinned, pinnedTime, col := am.tooltip.rows[0].value, am.tooltip.time, am.tooltip.col
 
 	am.applySample(activity.Sample{
 		At:              time.Date(2026, 8, 6, 15, 33, 0, 0, time.UTC),
@@ -488,16 +489,60 @@ func TestActivityMonitorTooltipFollowsANewSample(t *testing.T) {
 	rows := amRender(am, 150, 40) // re-resolved here, not on the sample
 
 	if am.tooltip == nil {
-		t.Fatal("the tooltip was dropped by a new sample; it should have been re-resolved")
+		t.Fatal("the tooltip was dropped by a new sample; its own sample is still on the chart")
 	}
-	if got := am.tooltip.rows[0].value; got == pinned {
-		t.Errorf("the tooltip still reads %q after a new sample landed under it, want the new column's value", got)
+	if got := am.tooltip.time; got != pinnedTime {
+		t.Errorf("the tooltip now names %q, want the sample it was pinned to (%q)", got, pinnedTime)
 	}
-	if got := am.tooltip.time; got != "15:33:00" {
-		t.Errorf("the tooltip names %q, want the new sample's 15:33:00", got)
+	if got := am.tooltip.rows[0].value; got != pinned {
+		t.Errorf("the tooltip reads %q, want its own sample's %q", got, pinned)
+	}
+	if got := am.tooltip.col; got != col-1 {
+		t.Errorf("the pinned column is %d, want %d — one left, with the sample it names", got, col-1)
 	}
 	if !amRowsContain(rows, am.tooltip.rows[0].value) {
-		t.Errorf("the refreshed tooltip wasn't drawn: %q", am.tooltip.rows[0].value)
+		t.Errorf("the moved tooltip wasn't drawn: %q", am.tooltip.rows[0].value)
+	}
+}
+
+// Once the pinned sample has been pushed off the left edge of the plot there
+// is nothing on screen for the box to point at, so it closes.
+func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	am.app.panels.AddPanel(am)
+	am.SetBounds(0, 0, 150, 40)
+	amWithSamples(am, 30)
+	amRender(am, 150, 40)
+
+	// Pinned on the oldest bucket drawn, which the next sample pushes past
+	// the left edge only once the plot is full — so fill it first.
+	base := time.Date(2026, 8, 6, 16, 0, 0, 0, time.UTC)
+	n := am.hits[0].Plot.W
+	for i := 0; i < n; i++ {
+		am.store.Append(activity.Sample{
+			At:         base.Add(time.Duration(i) * 2 * time.Second),
+			BatchesSec: float64(i),
+		})
+	}
+	am.rebuild()
+	amRender(am, 150, 40)
+
+	hit := am.hits[0]
+	amClick(am, am.viewRect.X+hit.Plot.X-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	if am.tooltip == nil {
+		t.Fatal("no tooltip to test with")
+	}
+
+	// One more sample, well inside retention: the pinned one is still in the
+	// store, just no longer drawn — which is the case under test.
+	am.applySample(activity.Sample{
+		At:         base.Add(time.Duration(n) * 2 * time.Second),
+		BatchesSec: 1,
+	})
+	amRender(am, 150, 40)
+
+	if am.tooltip != nil {
+		t.Errorf("the tooltip survived its sample leaving the plot; it now names %q", am.tooltip.time)
 	}
 }
 
@@ -578,6 +623,35 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	}
 	if newest.time == older.time {
 		t.Errorf("both columns reported %q; the tooltip isn't reading the clicked bucket", newest.time)
+	}
+}
+
+// The pin marks the column it reports and names its moment on the chart's own
+// time axis, whose other labels are ages counted back from now — without the
+// callout the box quotes a clock time the chart under it never shows.
+func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
+	am := newTestActivityMonitor(150, 40)
+	amWithSamples(am, 200) // enough to fill the plot out to its left edge
+	amRender(am, 150, 40)
+
+	hit := am.hits[0]
+	if hit.TimeRow.H == 0 {
+		t.Fatal("the chart recorded no time-axis row to call out on")
+	}
+	// Pinned near the left of the plot, where the box is placed clear of the
+	// callout's own columns.
+	amClick(am, am.viewRect.X+hit.Plot.X+5-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
+	if am.tooltip == nil {
+		t.Fatal("no tooltip to test with")
+	}
+	rows := amRender(am, 150, 40)
+
+	_, y := am.screenPos(0, hit.TimeRow.Y)
+	if y < 0 || y >= len(rows) {
+		t.Fatalf("the time-axis row is off screen at y=%d", y)
+	}
+	if !strings.Contains(rows[y], am.tooltip.time) {
+		t.Errorf("the time axis reads %q, want the pinned %q called out on it", rows[y], am.tooltip.time)
 	}
 }
 

@@ -40,7 +40,7 @@ Each entry names a section, not a whole document; read the section.
 | A goroutine delivering a result to the UI | `ARCHITECTURE.md` § Async result delivery: postAndWake |
 | gosmo changes / the `replace` directive | the `dev-with-local-gosmo` skill; `ARCHITECTURE.md` § Developing against a local gosmo checkout |
 | Known bugs, deferred scope, release blockers | `docs/open-threads.md` — check before reporting something as newly found |
-| Why a design is the way it is | search `docs/journal.md` (not required reading) |
+| Why a design is the way it is | search `docs/journal.md` — work since the current tag only, trimmed each release; older entries are in git history (not required reading) |
 
 ## The one rule that matters most: verify against real source, don't guess
 

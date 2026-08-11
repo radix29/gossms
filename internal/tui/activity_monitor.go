@@ -88,11 +88,10 @@ const defaultTempDBRateIdx = 1
 // panel scrolls a viewport over; Sessions and Block are result grids over
 // sp_WhoIsActive and the blocking procedure.
 //
-// Unlike the work order's two independent collectors, one collector feeds
-// both dashboards — Sample is the newest sample in History's store — so
-// there is a single refresh rate and a single Pause/Continue governing both
-// (see docs/plan-activity-monitor.md, deviation 1). TempDB is the exception
-// and keeps its own collector, store and rate.
+// One collector feeds both dashboards — Sample is the newest sample in
+// History's store — so there is a single refresh rate and a single
+// Pause/Continue governing both. TempDB is the exception and keeps its own
+// collector, store and rate.
 type ActivityMonitor struct {
 	app  *App
 	conn *db.ServerConn // the server being watched; owned by App, not by this panel
@@ -272,12 +271,33 @@ type amCanvasKey struct {
 
 // amTooltip is a pinned readout of one sample: every series of one chart at
 // the bucket that was clicked, in the chart's own colours.
+//
+// The pin is the *sample*, not the spot it was clicked at: chart and time
+// identify it, and its position is re-derived from them on every draw. A
+// history plots its newest bucket at the right edge, so each new sample
+// pushes the pinned one a column left — anchored to the screen instead, the
+// box would sit still and quietly start reporting whichever sample had slid
+// under it.
 type amTooltip struct {
-	time string
-	rows []amTooltipRow
-	// anchor is where the click landed, in screen coordinates. The box is
-	// placed beside it and flipped when it would fall off the viewport.
-	anchor core.Rect
+	chart string // ChartHit.Title of the chart the pin lives on
+	time  string // the pinned bucket's clock time — its identity, and its caption
+	rows  []amTooltipRow
+
+	// snapshot marks a pin on a current-sample chart. Those have one bucket
+	// and no time axis, so nothing in them drifts and the pinned column is
+	// kept exactly where it was clicked.
+	snapshot bool
+
+	// col and row are the pinned point in canvas coordinates: col the column
+	// the bucket is drawn in, row where the click landed within the plot.
+	// The viewport scrolls over the canvas, so both are translated to the
+	// screen at draw time.
+	col, row int
+
+	// plot and timeRow are the pinned chart's rects in canvas coordinates,
+	// re-read with the position each draw: the pin is dropped when it falls
+	// outside the first, and the time callout sits on the second.
+	plot, timeRow core.Rect
 }
 
 type amTooltipRow struct {
@@ -543,13 +563,13 @@ func (am *ActivityMonitor) rebuild() {
 // invalidateView marks the cached canvas stale, so the next draw re-renders
 // it from the view models that have just been replaced.
 //
-// A pinned tooltip is deliberately left alone here. New view models do put
-// different numbers under it — that desync is real — but it is the *box* that
-// has to move on, not the pin: refreshTooltip re-resolves it from its anchor
-// on the next draw, once the render has rebuilt the hit map. Clearing it here
-// instead was the first fix, and it made a pinned box vanish on the following
-// tick (two seconds at the default rate) and, because both collectors land
-// here, let a tempdb tick dismiss a box pinned on History.
+// A pinned tooltip is deliberately left alone here. A new sample shifts every
+// history chart one column left, so the box does have to move — but that is
+// refreshTooltip's job on the next draw, once the render has rebuilt the hit
+// map it re-derives the pinned column from. Clearing it here instead was the
+// first fix, and it made a pinned box vanish on the following tick (two
+// seconds at the default rate) and, because both collectors land here, let a
+// tempdb tick dismiss a box pinned on History.
 func (am *ActivityMonitor) invalidateView() {
 	am.viewGen++
 }
@@ -638,9 +658,10 @@ func (am *ActivityMonitor) scrollTo(x, y int) bool {
 		return false
 	}
 	am.scrollX[am.tab], am.scrollY[am.tab] = x, y
-	// A pinned tooltip is anchored to a spot in the viewport, and the canvas
-	// has just moved under it: left up, it would point at a column whose
-	// numbers are not the ones in the box.
+	// A pinned tooltip is dropped on a pan, deliberately. It tracks its own
+	// sample across ticks and would survive this too, but panning is the user
+	// looking somewhere else on the dashboard, and a box that follows them
+	// there is in the way of what they scrolled to see.
 	am.tooltip = nil
 	return true
 }

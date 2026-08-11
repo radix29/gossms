@@ -292,6 +292,41 @@ func TestFormatAgeUsesOneUnitPerAxis(t *testing.T) {
 	}
 }
 
+// ColumnAt is the inverse of BucketAt, and a caller tracking a bucket across
+// ticks depends on the two agreeing exactly: a column off, and a readout sits
+// beside the bucket it quotes.
+func TestColumnAtInvertsBucketAt(t *testing.T) {
+	plot := core.Rect{X: 3, Y: 0, W: 10, H: 4}
+
+	for _, buckets := range []int{1, 4, 10, 25} {
+		for x := plot.X; x < plot.Right(); x++ {
+			idx := BucketAt(plot, x, buckets)
+			if idx < 0 {
+				continue
+			}
+			if got := ColumnAt(plot, idx, buckets); got != x {
+				t.Errorf("buckets=%d: column %d holds bucket %d, but ColumnAt puts it at %d", buckets, x, idx, got)
+			}
+		}
+	}
+}
+
+// A bucket older than the plot is wide has been pushed off its left edge and
+// is no longer drawn — the answer a pinned readout closes on.
+func TestColumnAtRejectsABucketPastTheLeftEdge(t *testing.T) {
+	plot := core.Rect{X: 3, Y: 0, W: 10, H: 4}
+
+	if got := ColumnAt(plot, 4, 25); got != -1 {
+		t.Errorf("bucket 4 of 25 on a 10-wide plot = column %d, want -1: it is 21 columns back", got)
+	}
+	if got := ColumnAt(plot, 15, 25); got != plot.X {
+		t.Errorf("the oldest bucket still drawn = column %d, want the plot's left edge %d", got, plot.X)
+	}
+	if got := ColumnAt(plot, 25, 25); got != -1 {
+		t.Errorf("a bucket past the end of the data = column %d, want -1", got)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		if haystack[i:i+len(needle)] == needle {

@@ -83,6 +83,16 @@ func (h StackedHistoryChart) Plot(r core.Rect) core.Rect {
 	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).plot
 }
 
+// TimeRow is the row Draw writes the time scale on for the same r — see
+// HistoryChart.TimeRow.
+func (h StackedHistoryChart) TimeRow(r core.Rect) core.Rect {
+	sc := h.Scale
+	if sc.IsZero() {
+		sc = AutoScale(maxStackTotal(h.Series))
+	}
+	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).timeRow
+}
+
 // drawColumns composes and draws one stacked run per visible bucket.
 func (h StackedHistoryChart) drawColumns(s tcell.Screen, plot core.Rect, sc Scale) {
 	bg := theme.Active().ChartPlotBg

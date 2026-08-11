@@ -184,6 +184,11 @@ type ChartHit struct {
 	Plot   core.Rect
 	Series []charts.Series
 
+	// TimeRow is the chart's time-scale row, directly under Plot, zero-sized
+	// on a chart too short to carry one. It is where a caller marking the
+	// pinned column names the moment it covers.
+	TimeRow core.Rect
+
 	// Snapshot marks a chart of the current sample rather than a history:
 	// its series carry one value each and the whole plot describes that one
 	// instant, so every column in it resolves to index 0. Without this a
@@ -202,4 +207,17 @@ func (h ChartHit) Bucket(x int) int {
 		return 0
 	}
 	return charts.BucketAt(h.Plot, x, charts.BucketCount(h.Series))
+}
+
+// Column is where bucket idx is drawn now — the inverse of Bucket, for a
+// caller holding on to a bucket across redraws. It returns -1 once that
+// bucket has been pushed off the left edge of the plot by newer samples,
+// which is the moment a readout pinned to it stops having anything on screen
+// to point at. A snapshot chart plots one instant and nothing in it drifts,
+// so it always answers -1: there is no column to re-derive.
+func (h ChartHit) Column(idx int) int {
+	if h.Snapshot {
+		return -1
+	}
+	return charts.ColumnAt(h.Plot, idx, charts.BucketCount(h.Series))
 }

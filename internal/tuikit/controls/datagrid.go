@@ -12,11 +12,9 @@ import (
 // ---------------------------------------------------------------------------
 
 // RowSource decouples DataGrid from any one in-memory shape for its data.
-// Today every caller hands it a fully materialized [][]string (via SetData,
-// which wraps it in SliceRowSource below), but a future paged or streaming
-// query result — rows fetched a page at a time from a server-side cursor —
-// can implement this directly and hand it to SetSource without DataGrid
-// itself changing.
+// Every caller today hands it a materialized [][]string via SetData; a paged
+// or streaming result can implement this directly and go through SetSource
+// without DataGrid changing.
 type RowSource interface {
 	// Len returns the number of rows.
 	Len() int
@@ -55,10 +53,8 @@ const minResizeWidth = 4
 const resizeDoubleClickInterval = 500 * time.Millisecond
 
 // cellViewerW and cellViewerLines size the built-in "full cell content"
-// popup (see openViewer/DrawOverlay): a fixed-width box showing a
-// read-only, word-wrapped Editor 4 lines high, matching the spec. It's
-// centred on the whole screen, not just the grid's own rect, so it reads
-// as a proper modal even when the grid is small.
+// popup (see openViewer/DrawOverlay). It is centred on the whole screen, not
+// the grid's rect, so it reads as a modal even when the grid is small.
 const cellViewerW = 60
 const cellViewerLines = 8
 
@@ -107,13 +103,11 @@ type DataGrid struct {
 
 	// selAnchorRow/selAnchorCol mark the fixed corner of a multi-cell block
 	// selection; selRow/selCol (the cell cursor above) mark the moving
-	// corner. blockSelecting is true while such a selection is active — set
-	// by Shift+Arrow or a mouse drag (see HandleKey/HandleMouse), cleared by
-	// a plain arrow key or a fresh, non-Shift click. Only meaningful, like
-	// selCol, in cell-cursor mode, and gated in both places to a read-only
-	// grid (OnActivateCell == nil) so an editable toggle grid's click-drag
-	// keeps activating every cell it passes over instead of drawing a
-	// selection block.
+	// corner. blockSelecting is true while one is active — set by Shift+Arrow
+	// or a mouse drag, cleared by a plain arrow key or a fresh non-Shift
+	// click. Cell-cursor mode only, and gated to a read-only grid
+	// (OnActivateCell == nil) so an editable toggle grid's click-drag keeps
+	// painting every cell it passes over instead of drawing a block.
 	blockSelecting             bool
 	selAnchorRow, selAnchorCol int
 
@@ -122,21 +116,16 @@ type DataGrid struct {
 	// cursor) — mirrors Editor's own field of the same name and purpose.
 	mouseDragging bool
 
-	// sbDragging is true while the user is dragging the scrollbar thumb
-	// (see HandleMouse) — set on a fresh Button1 press that lands on the
-	// scrollbar column, cleared on release. Separate from mouseDragging
-	// since the two gestures target different screen regions and must not
-	// be conflated: once a scrollbar drag starts, HandleMouse gives every
-	// subsequent Button1 event to it regardless of x, without falling
-	// through to row/cell hit-testing.
+	// sbDragging latches a scrollbar-thumb drag from the press on the
+	// scrollbar column to the release. Separate from mouseDragging: once it
+	// is set, HandleMouse gives every Button1 event to the scrollbar
+	// regardless of x, never falling through to row/cell hit-testing.
 	sbDragging bool
 
-	// colResizing latches a column-separator drag (see resizeDrag) for the
-	// rest of the gesture, the same way sbDragging does for the scrollbar:
-	// once started, every Button1 event belongs to the resize regardless of
-	// where the pointer has drifted to. resizeStartX/W record the grab
-	// point and the column's width there, so each motion event resolves
-	// against the original grab instead of accumulating from the last one.
+	// colResizing latches a column-separator drag (see resizeDrag) the way
+	// sbDragging does for the scrollbar. resizeStartX/W record the grab point
+	// and the column's width there, so each motion resolves against the
+	// original grab instead of accumulating from the last one.
 	colResizing  bool
 	resizeCol    int
 	resizeStartX int
@@ -155,13 +144,9 @@ type DataGrid struct {
 	sbDraggingH bool
 
 	// toggleRow/toggleCol record the last cell an editable toggle grid's
-	// click-drag activated (see blockSelecting's doc comment above), so a
-	// resent Button1 event at that same cell — tcell resends on every
-	// cursor motion while the button stays down, even without the mouse
-	// actually leaving the cell — doesn't call OnActivateCell a second
-	// time for one physical, stationary click. A drag that moves to a
-	// genuinely different cell still activates it, preserving the
-	// paint-as-you-drag behavior.
+	// click-drag activated, so tcell's Button1 resends at that same cell
+	// don't call OnActivateCell again for one stationary click. A drag onto a
+	// different cell still activates it, keeping paint-as-you-drag.
 	toggleRow, toggleCol int
 
 	// showRowNumbers prepends a non-selectable, unlabelled row-number
@@ -191,14 +176,12 @@ type DataGrid struct {
 	// OnActivateCell (i.e. a read-only grid), never on an editable one.
 	ctxMenu ContextMenu
 
-	// viewOpen and viewEditor back the built-in "full cell content" popup,
-	// opened via ctxMenu's "Show Value" item: a read-only, word-wrapped
-	// Editor showing the selected cell's untruncated text, so it can be
-	// navigated, selected, and copied like any other text. Self-contained
-	// so every DataGrid gets this for free with no wiring at the call site.
-	// It is dismissed by Escape or its own "[ Close ]" button, never by a
-	// click elsewhere: the popup's whole purpose is reading and selecting a
-	// long value, and a stray click while doing that used to lose it.
+	// viewOpen and viewEditor back the built-in "full cell content" popup
+	// opened by ctxMenu's "Show Value": a read-only, word-wrapped Editor over
+	// the cell's untruncated text, so it can be navigated, selected and
+	// copied. Dismissed by Escape or its "[ Close ]" button only, never by a
+	// click elsewhere — the popup exists for selecting a long value, and a
+	// stray click during that must not lose it.
 	viewOpen   bool
 	viewHeader string
 	viewEditor *Editor
@@ -208,11 +191,10 @@ type DataGrid struct {
 	// until then) and hit-tested by HandleMouse.
 	viewCloseRect core.Rect
 
-	// viewDismissing latches from the press on that button until the
-	// matching release. The button closes the popup on the press, like every
-	// other button here, but tcell resends Button1 on every motion while it
-	// stays held — and by then the popup is gone, so those resends would
-	// land on the grid underneath as a fresh cell click.
+	// viewDismissing latches from the press on that button to the release.
+	// The button closes the popup on the press, but tcell resends Button1 on
+	// every motion while held, and by then the popup is gone — the resends
+	// would land on the grid underneath as a fresh cell click.
 	viewDismissing bool
 
 	// OnSelectRow fires whenever the selected row changes (keyboard or
@@ -231,15 +213,13 @@ type DataGrid struct {
 	// leave it nil (the default) don't offer these menu items at all.
 	OnCopyRequest func(text string)
 
-	// OnShowValue, if set, gets first refusal of the "Show Value" menu
-	// item: it's handed the selected cell's column index, column name and
-	// full text, and returning true means the host displayed the value its
-	// own way, so the built-in popup stays closed. QueryPanel uses it to send
-	// an XML cell to a new query tab with XML highlighting instead of the
-	// 60-column popup — the index is what lets it look the column's declared
-	// type up in its own result-set metadata, since duplicate column names in
-	// one result set make the name alone ambiguous.
-	// Returning false (or leaving it nil) opens the popup as usual.
+	// OnShowValue, if set, gets first refusal of the "Show Value" menu item,
+	// handed the cell's column index, column name and full text; true means
+	// the host displayed it its own way and the built-in popup stays closed,
+	// false (or nil) opens the popup. QueryPanel routes an XML cell to a new
+	// highlighted query tab this way — the index is what lets it find the
+	// column's declared type, since duplicate names in one result set make
+	// the name ambiguous.
 	OnShowValue func(col int, column, value string) bool
 }
 
@@ -274,10 +254,9 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	// The widths were dragged for a different set of columns; column 2 of
 	// the next result set has nothing to do with column 2 of this one.
 	g.colWidthOverride, g.colResizing = nil, false
-	// The viewer was showing a cell of the data being replaced, and only
-	// Escape or its Close button dismiss it — so leaving it open here
-	// would strand a popup over stale text that still claims every key
-	// and mouse event (see OverlayActive).
+	// Only Escape or Close dismiss the viewer, so leaving it open here
+	// strands a popup over stale text that still claims every key and mouse
+	// event (see OverlayActive).
 	g.closeViewer()
 	g.computeColWidths()
 	g.status = core.Itoa(rows.Len()) + " rows"
@@ -290,12 +269,10 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 // SetData again on every update would visually reset the user's scroll
 // position each time.
 //
-// The recompute is deferred to the next Draw rather than run here, since
-// that's the first moment the new widths could matter. Its callers are
-// exactly the progressive backfills, which call this once per row as each
-// row's own round trip lands: recomputing on the spot rescans up to
-// colWidthSampleRows rows for every one of them, when a whole burst of
-// rows arriving between two frames only ever needs one rescan.
+// Deferred to the next Draw, the first moment the new widths matter. The
+// callers are the progressive backfills, one call per row as its round trip
+// lands: recomputing on the spot rescans up to colWidthSampleRows rows every
+// time, when a burst of rows between two frames needs one rescan.
 func (g *DataGrid) RefreshColumnWidths() {
 	g.widthsDirty = true
 }
@@ -308,10 +285,7 @@ func (g *DataGrid) SetError(err error) {
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.colWidthOverride, g.colResizing = nil, false
-	// The viewer was showing a cell of the data being replaced, and only
-	// Escape or its Close button dismiss it — so leaving it open here
-	// would strand a popup over stale text that still claims every key
-	// and mouse event (see OverlayActive).
+	// See SetSource: an open viewer would strand itself over stale text.
 	g.closeViewer()
 	g.status = "Error"
 }
@@ -420,11 +394,10 @@ func (g *DataGrid) SetRowNumbers(v bool) { g.showRowNumbers = v }
 func (g *DataGrid) SetMaxCellWidth(n int) { g.maxCellWidth = n }
 
 // SetFillLastColumn enables or disables stretching the last column to fill
-// the grid's remaining width — used for a two-column Property/Value detail
-// view, where a narrow, content-clamped Value column wastes most of a wide
-// panel. Off by default, since it would misalign a grid with several
-// similarly-important columns (e.g. a results grid or a Databases-folder
-// list) by giving the last one outsized, arbitrary width.
+// the grid's remaining width — for a two-column Property/Value view, where a
+// content-clamped Value column wastes most of a wide panel. Off by default:
+// on a grid of similarly-important columns it gives the last one arbitrary
+// outsized width.
 func (g *DataGrid) SetFillLastColumn(v bool) {
 	g.fillLastColumn = v
 	g.computeColWidths()

@@ -24,8 +24,7 @@ var (
 
 // buildSampleView draws the newest sample in the store. Sample is History's
 // most recent sample rather than a second collection of its own, so the two
-// tabs always describe the same instant (see docs/plan-activity-monitor.md,
-// deviation 1).
+// tabs always describe the same instant.
 func (am *ActivityMonitor) buildSampleView() dashboard.SampleView {
 	latest, ok := am.store.Latest()
 	if !ok {

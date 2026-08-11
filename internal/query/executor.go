@@ -55,13 +55,10 @@ type Result struct {
 	// rows in Sets instead.
 	RowsWritten int
 
-	// sinkSets counts the result sets streamed to a RowSink, whether or not
-	// they held any rows. It is what the "Commands completed successfully."
-	// decision needs on the ExecuteToSink path: Sets is always empty there,
-	// so len(Sets) can't answer "did a result set happen", and RowsWritten
-	// can't either — an empty set writes no rows, and reading that as "no
-	// set" printed both "(0 row(s) written)" and "Commands completed
-	// successfully." for a query that plainly did return a result set.
+	// sinkSets counts the result sets streamed to a RowSink, empty ones
+	// included. On the ExecuteToSink path Sets is always empty and an empty
+	// set writes no rows, so neither len(Sets) nor RowsWritten can answer
+	// "did a result set happen" — see shouldReportSuccess.
 	sinkSets int
 
 	// PlanXML holds one complete <ShowPlanXML> document per statement/batch
@@ -115,20 +112,16 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 // shouldReportSuccess reports whether the run ended with nothing else to say,
 // so the Messages pane gets SSMS's bare "Commands completed successfully."
 //
-// The test is "did any result set happen", not "did any row". Sets answers
-// that for Execute, sinkSets for ExecuteToSink — where Sets is always empty
-// because the rows went to the sink instead. Reading RowsWritten as the
-// stand-in (which it was) made a query that returned an *empty* result set
-// look like a script that returned none, so exporting one printed both
-// "(0 row(s) written)" and "Commands completed successfully.", while the
-// same query through Execute printed neither.
+// The test is "did any result set happen", not "did any row" — Sets answers
+// that for Execute, sinkSets for ExecuteToSink. Substituting RowsWritten
+// makes a query returning an *empty* set look like one returning none, and
+// the export then prints both "(0 row(s) written)" and "Commands completed
+// successfully.". planCaptureEstimated never really executes, so the notice
+// would be misleading there.
 //
-// planCaptureEstimated never really executes anything, so the notice would be
-// misleading there rather than merely redundant.
-//
-// Split out of executeWithSink to be testable at all: ExecuteToSink can't be
-// driven end to end by a fake driver (see stream_test.go), so this decision
-// is the part of that path a unit test can still reach.
+// Split out of executeWithSink because ExecuteToSink can't be driven end to
+// end by a fake driver (see stream_test.go); this is the part of that path a
+// unit test can reach.
 func (r *Result) shouldReportSuccess(capture planCapture) bool {
 	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
 }
@@ -147,17 +140,13 @@ const (
 // readsCurrentDatabase reports whether execute should read DB_NAME() back off
 // the script's connection to populate Result.Database.
 //
-// Not under SHOWPLAN_XML. The SET ... OFF is deferred, so it hasn't run by
-// the time execute reaches that read, and while SHOWPLAN_XML is on SQL
-// Server compiles statements instead of running them — SELECT DB_NAME()
-// comes back as a one-column showplan result set, and Scan puts the whole
-// XML document into Result.Database. Estimated mode also never runs a
-// mid-script USE, so there is no database change to report in the first
-// place.
+// Not under SHOWPLAN_XML. The SET ... OFF is deferred and so hasn't run by
+// then, and while SHOWPLAN_XML is on SQL Server compiles rather than runs —
+// SELECT DB_NAME() comes back as a one-column showplan set and Scan puts the
+// whole XML document into Result.Database. Estimated mode also never runs a
+// mid-script USE, so there is no change to report.
 //
-// Split out for the same reason as Result.shouldReportSuccess: this path
-// can't be driven end to end by a fake driver (see stream_test.go), so the
-// decision is the part of it a unit test can still reach.
+// Split out for testability, same as Result.shouldReportSuccess.
 func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
 
 // Execute runs script against db, SSMS-style. If database is non-empty the
@@ -303,25 +292,19 @@ func acquireConnRetryDelay(attempt int) time.Duration {
 
 // acquireConn returns a live pinned *sql.Conn for execute to run a script's
 // GO batches on, already switched to database (via "USE") if non-empty —
-// retrying against a fresh connection when the pool hands back one that's
-// dead. A batch script needs one dedicated connection for its whole run
-// (temp tables and SET options must survive across batches — see execute),
-// so unlike every other call in this package it can't just go through db's
-// own pool-level Query/ExecContext, which retries a dead pooled connection
-// automatically; a *sql.Conn pinned via db.Conn gets none of that —
-// database/sql's automatic bad-connection retry only covers *sql.DB-level
-// calls, never one already pinned out of the pool. Without this, a
-// connection silently dropped while idle (a firewall/NAT timeout, the
-// server killing an idle session, a failover) fails the very next Execute
-// outright, and only the one after it — which happens to dial fresh —
-// succeeds. gosmo's own Database.query/queryRow close the same gap for
-// reads.
+// retrying against a fresh connection when the pool hands back a dead one.
+// A batch script needs one dedicated connection for its whole run (temp
+// tables and SET options must survive across batches — see execute), and
+// database/sql's automatic bad-connection retry covers only *sql.DB-level
+// calls, never a *sql.Conn already pinned out of the pool. Without this, a
+// connection silently dropped while idle (firewall/NAT timeout, the server
+// killing an idle session, a failover) fails the very next Execute outright
+// and only the one after it succeeds. gosmo's Database.query/queryRow close
+// the same gap for reads.
 //
-// Only this function's own USE/SELECT-1 prologue is ever retried, never one
-// of the caller's actual batches: those still fail outright if the
-// connection dies mid-script, since silently re-running arbitrary user SQL
-// against a fresh connection could re-apply side effects that already
-// partially ran.
+// Only the USE/SELECT-1 prologue is retried, never a caller's batch: silently
+// re-running arbitrary user SQL on a fresh connection could re-apply side
+// effects that already partially ran.
 func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, error) {
 	prologue := "SELECT 1"
 	if database != "" {
@@ -334,12 +317,10 @@ func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, e
 		return err
 	}
 
-	// Unbounded in form, bounded in fact: the attempt >= last check below is
-	// the only way out other than success, which is also what makes this
-	// total — a `attempt <= N` loop needs an unreachable return after it just
-	// to compile. >= rather than ==, so the bound holds by construction for
-	// any value of acquireConnRetryAttempts rather than by its happening to
-	// be 3; == would spin forever if it were ever set to 0.
+	// Unbounded in form, bounded by the attempt >= check below — a
+	// `attempt <= N` loop needs an unreachable return after it just to
+	// compile. >= not ==, so the bound holds for any value of
+	// acquireConnRetryAttempts; == would spin forever at 0.
 	for attempt := 1; ; attempt++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -444,22 +425,18 @@ type rowScanner struct {
 
 // newRowScanner analyses the current result set's columns once.
 //
-// uniqueidentifier columns scan as a raw 16-byte []byte by default, which
-// would render as hex in the wrong byte order. Scan them into
-// NullUniqueIdentifier instead so they display as the canonical dashed GUID
-// (and NULL survives), matching SSMS.
+// uniqueidentifier scans as a raw 16-byte []byte, which renders as hex in
+// the wrong byte order; NullUniqueIdentifier gives the canonical dashed GUID
+// and preserves NULL.
 //
-// decimal/numeric/money/smallmoney columns also scan as []byte, but unlike
-// uniqueidentifier the driver already decodes them into the literal ASCII
-// digit string (e.g. "0.070312") rather than a binary blob — formatValue must
-// render that []byte as a plain string, not hex. (numeric reports itself as
-// DECIMAL; the driver maps both to the same name.)
+// decimal/numeric/money/smallmoney also scan as []byte, but the driver has
+// already decoded them to an ASCII digit string ("0.070312"), so formatValue
+// must render that []byte as text, not hex. (numeric reports as DECIMAL.)
 //
-// Every date/time type scans as a time.Time, so only the column type and its
-// declared scale say how much of it SSMS actually shows — a date column has no
-// time part to print, a time column no date part, and a datetime2(3) three
-// fractional digits rather than seven. layouts carries that per column; see
-// timeLayout.
+// Every date/time type scans as a time.Time, so only the column type and
+// declared scale say how much SSMS shows — a date has no time part, a time
+// no date, a datetime2(3) three fractional digits. layouts carries that per
+// column; see timeLayout.
 func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -546,13 +523,9 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 }
 
 // streamResultSet writes the current result set straight to sink, retaining
-// nothing, and returns how many rows it wrote.
-//
-// This is what makes Results To File independent of result size: the
-// buffering path above holds every row as a [][]string for the lifetime of
-// the panel, so exporting a large table meant materialising all of it (twice
-// — once in Result.Sets, once in the grid) before a single byte reached the
-// file. Streaming holds one row at a time.
+// nothing, and returns how many rows it wrote. This is what makes Results To
+// File independent of result size — scanResultSet above holds every row for
+// the lifetime of the panel; this holds one row at a time.
 func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -670,17 +643,15 @@ func formatGUID(g mssql.NullUniqueIdentifier) string {
 const defaultTimeLayout = "2006-01-02 15:04:05.000"
 
 // timeLayout returns the layout SSMS's grid uses for a date/time column of
-// the given SQL Server type, or "" for a type that isn't one. Each type
-// shows exactly the parts it stores and no more: a date column has no time
-// of day, a time column no date. Rendering them all as "datetime" — which
-// is what a single fixed layout does — invents a "00:00:00.000" for every
-// date column and silently truncates a datetime2's last four digits.
+// the given SQL Server type, or "" for a type that isn't one. Each type shows
+// exactly the parts it stores: one fixed "datetime" layout for all of them
+// invents a "00:00:00.000" for every date column and truncates a datetime2's
+// last four digits.
 //
-// datetime2, time and datetimeoffset carry a declared scale of 0-7 that
-// sets how many fractional-second digits they show, so scale comes from
-// the column's own DecimalSize (the driver reports it for exactly these
-// three types); scaleKnown false falls back to the type's 7-digit maximum.
-// The other types' precision is fixed by the type itself.
+// datetime2, time and datetimeoffset carry a declared scale of 0-7 setting
+// their fractional-second digits, so scale comes from DecimalSize (reported
+// for exactly those three); scaleKnown false falls back to the 7-digit
+// maximum. The other types' precision is fixed by the type.
 func timeLayout(databaseTypeName string, scale int, scaleKnown bool) string {
 	if !scaleKnown {
 		scale = 7
@@ -772,12 +743,11 @@ const hexUpperDigits = "0123456789ABCDEF"
 // decimal across the range a person actually reads, scientific notation only
 // outside it.
 //
-// The default "%v" this replaces uses Go's %g rule, which switches to an
-// exponent as soon as the exponent reaches the number of significant digits —
-// so a float column holding 1000000 displayed as "1e+06". Shortest-round-trip
-// precision (-1) is kept either way: it is what makes the text reparse to the
-// same float64, which matters for a value copied out of the grid and pasted
-// back into a query.
+// Go's "%v"/%g rule switches to an exponent as soon as the exponent reaches
+// the number of significant digits, so a float column holding 1000000 shows
+// as "1e+06". Shortest-round-trip precision (-1) is kept either way: it is
+// what makes the text reparse to the same float64, which matters for a value
+// copied out of the grid and pasted back into a query.
 func appendFloat(dst []byte, f float64, bits int) []byte {
 	abs := math.Abs(f)
 	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {

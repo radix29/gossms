@@ -89,6 +89,19 @@ func (h HistoryChart) Plot(r core.Rect) core.Rect {
 	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).plot
 }
 
+// TimeRow is the row Draw writes the time scale on for the same r, zero-sized
+// when the chart was too short to carry one. A caller that marks a column on
+// that scale has to ask for this for the same reason Plot exists: laying the
+// chrome out a second time by hand puts the mark on the wrong row as soon as
+// either layout changes.
+func (h HistoryChart) TimeRow(r core.Rect) core.Rect {
+	sc := h.Scale
+	if sc.IsZero() {
+		sc = AutoScale(maxValue(h.Series))
+	}
+	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).timeRow
+}
+
 // drawColumns plots every visible bucket, tallest series first within each
 // column so shorter ones overwrite the taller and stay readable.
 func (h HistoryChart) drawColumns(s tcell.Screen, plot core.Rect, sc Scale) {
@@ -141,6 +154,23 @@ func BucketAt(plot core.Rect, x, buckets int) int {
 		return -1
 	}
 	return bucketAt(x-plot.X, plot.W, buckets)
+}
+
+// ColumnAt is the screen column bucket idx is drawn in — the inverse of
+// BucketAt, for a caller that has hold of a bucket and needs to know where
+// it is now. Returns -1 for a bucket outside the data or one that has
+// scrolled off the left edge of the plot, which is what a caller tracking a
+// bucket across ticks watches for: newer samples push older ones left, and
+// past the plot's width they are no longer drawn at all.
+func ColumnAt(plot core.Rect, idx, buckets int) int {
+	if plot.W <= 0 || idx < 0 || idx >= buckets {
+		return -1
+	}
+	x := plot.Right() - 1 - (buckets - 1 - idx)
+	if x < plot.X || x >= plot.Right() {
+		return -1
+	}
+	return x
 }
 
 // BucketCount is how many time buckets a set of series plots — the length

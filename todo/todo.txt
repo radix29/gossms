@@ -1,4 +1,19 @@
-create 2 new vms ubusql1, ubusql2 with sql server. build an aag, move some dbs
+
+release
+
+Always On Availability Groups:
+- add functionality to support AAG
+- screenshot from the SSMS on the todo/mockups/aag.
+- testing
+    - hosts / instances : ubusql1 ubusql2 
+    - everything is for testing purposes can create / destroy databases AAGs etc
+    - it is configured as a cluster with pacemaker
+    - all the passwords for all the accounts are the same: inSecure123
+    - ssh user: radu
+    - keep in mind the testing environment for future testings
+    - there is a reserved ip/name for the listener: ubuaag.fritz.box 192.168.178.99 / ff.ff.ff.0  can use it if you rebbuild the aag
+    - ask questions if not sure or cant decide yourself
+
 
 
 new tab: waits
@@ -19,10 +34,6 @@ reports
 
 -------------
 
-- Availability Groups stuff
-    - build an AAG with 2 docker containers
-    - add AAG stuff
-
 - query editor :
     - word wrap (display only, line numbers)
     - auto indent ?
@@ -40,24 +51,19 @@ review both projects and check for bugs, inconsistencies, optimizations, simplif
 show me the top 5 know issues if thre are any
 
 
+go over the source files code comments and compact them. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary
+
 
 bunx ccusage          # Show all detected sources by day (default)
-bunx ccusage daily    # All detected sources by day
-bunx ccusage weekly   # All detected sources by week
-bunx ccusage monthly  # All detected sources by month
-bunx ccusage session  # All detected sources by session
-bunx ccusage blocks   # Claude Code 5-hour billing windows
-bunx ccusage statusline  # Claude Code status line for hooks (Beta)
-
 
 --- prepare for release
 commit before both projects
 
-prepare gosmo for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gosmo for release v0.0.8 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
 
-prepare gossms for release v0.0.5 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gossms for release v0.0.6 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
 

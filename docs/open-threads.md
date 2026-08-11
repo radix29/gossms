@@ -9,9 +9,7 @@ something is knowingly left undone. An open item recorded only in a session
 note is invisible by the next session.
 
 **This file holds only open work.** Fixed items do not accumulate here —
-record a fix in `docs/journal.md` instead (the 2026-08-03 archive of six
-"fixed / do not re-open" sections is there under
-`open-threads-closed-archive-2026-08-03`). The "do not re-raise" sections
+record a fix in `docs/journal.md` instead. The "do not re-raise" sections
 below are the deliberate exception: they are not history, they are what stops
 a settled question being reopened.
 
@@ -102,12 +100,12 @@ a settled question being reopened.
   alone. The fan-out is also already concurrent 8-wide, so it costs
   `ceil(N/8) x RTT`. If a user ever reports the folder being slow, the batch
   goes in as a *fast path* with the fan-out as the fallback on any batch error
-  — never as a replacement. Full costing in `docs/proposals-2026-08-05.md` § 2.
+  — never as a replacement.
 
 - **Restructuring `internal/tui` is closed. No file-split or package-split
-  candidates are outstanding.** Raised 2026-07-30, costed in
-  `docs/proposals-2026-08-05.md` § 1, re-measured 2026-08-05 against a
-  type-checked cross-file reference graph and rejected on the numbers. What
+  candidates are outstanding.** Raised 2026-07-30, costed and then re-measured
+  2026-08-05 against a type-checked cross-file reference graph (549 real symbol
+  edges) and rejected on the numbers. What
   shipped instead is `internal/tui/sqlparse`, the only part of the package with
   *zero* outbound references. The earlier "P5" file-split list finished
   2026-08-04 — every file *on that list* came out under 400 lines, split on

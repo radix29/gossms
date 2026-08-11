@@ -11,7 +11,7 @@ Three companion documents carry the detail this one deliberately doesn't:
 - `docs/open-threads.md` — work found, decided, or deferred but not
   finished, including the decisions that must not be re-raised.
 - `docs/journal.md` — why a design is the way it is, and how a bug was
-  found.
+  found, for the work since the current tag. Trimmed at each release.
 - `CHANGELOG.md` / `RELEASE.md` — what actually shipped, per tag.
 
 ## Release target
@@ -23,9 +23,12 @@ queries, view/edit properties) are solid across all three supported
 platforms and authentication modes, not that every SSMS feature is
 covered — see [Feature backlog](#feature-backlog) for what can wait.
 
-`v0.0.5` (2026-08-04) is the current tag. The last few releases have been
-feature-led; that one was mostly hardening — result-set memory, display
-width, paste, panic containment, and saved-password integrity.
+`v0.0.5` (2026-08-04) is the current tag — mostly hardening: result-set
+memory, display width, paste, panic containment, and saved-password
+integrity. Unreleased since then: Find and Replace in the query editor, the
+Activity Monitor (History, Sample, TempDB, Sessions, Block), the permissions
+gap-fill (`WITH GRANT OPTION`, effective and column-level permissions), and
+per-edit editor undo.
 
 ## Ongoing practices (no end date)
 
@@ -47,26 +50,19 @@ These continue for the life of the project, release or not:
 
 2. **SQL Agent** needs a complete rework.
 
-3. **Find / Replace** in the query editor — `Ctrl+F`, `Ctrl+H`, `F3`.
-
-4. **Database Reports** — the useful ones at server and database level:
+3. **Database Reports** — the useful ones at server and database level:
    disk usage, top tables.
 
-5. **Activity Monitor** — currently a reachable stub with three entry
-   points (see `docs/open-threads.md`). Tabbed: dashboard, history,
-   `sp_whoisactive` (all/active), blocking, Azure/Managed Instance stats.
-   History in memory only, refresh interval and window configurable.
+4. **Availability Groups** — viewing and managing AG topology and health.
 
-6. **Availability Groups** — viewing and managing AG topology and health.
-
-7. **Light / white theme** — selectable in Tools > Options, dark staying
+5. **Light / white theme** — selectable in Tools > Options, dark staying
    the default.
 
-8. **Authentication testing** — no infrastructure currently available;
+6. **Authentication testing** — no infrastructure currently available;
    blocked until access exists, not a code problem: Entra ID against
    Managed Instances and Azure SQL Database.
 
-9. **Platform testing** — build and exercise on macOS (no Mac available
+7. **Platform testing** — build and exercise on macOS (no Mac available
    yet; blocked on hardware/CI access, same as above).
 
 ## Feature backlog (later, no particular order)
@@ -76,15 +72,9 @@ These continue for the life of the project, release or not:
   notes and the Known Issues below. Needs a documented fallback/remap story
   rather than one-off fixes per report.
 - `sp_blitz`-style diagnostics and an index reference, built in.
-- Splitting `internal/tui` into sub-packages — it is 140+ files in one flat
-  package while `tuikit` is cleanly layered. The `agent_*`,
-  `database_props_*`, and `new_*` families are the natural seams. Judged
-  not worth doing yet, and recorded in `docs/open-threads.md` as the one
-  structural thing that keeps getting slowly worse.
-- The deferred Properties scope listed in `docs/open-threads.md`: Windows
-  and Entra authentication in Login Properties / New Login, `WITH GRANT
-  OPTION`, effective permissions, filter boxes on the long securables
-  grids, and column-level permissions.
+- Windows and Microsoft Entra authentication in Login Properties / New Login,
+  and the External Provider login type generally — gosmo-side work needed
+  first. The standing deferral in `docs/open-threads.md`.
 
 ## Known issues to close out before/around release
 

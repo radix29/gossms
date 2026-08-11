@@ -169,10 +169,11 @@ func kpi(label, value string) charts.KPI {
 // would pin a tooltip with no numbers in it.
 //
 // snapshot distinguishes a current-sample chart, whose series carry one value
-// each, from a history — see ChartHit.Snapshot for what it changes.
-func addHit(hits *[]ChartHit, title string, plot core.Rect, series []charts.Series, snapshot bool) {
+// each, from a history — see ChartHit.Snapshot for what it changes. timeRow
+// is the chart's time-scale row, zero for a chart that draws none.
+func addHit(hits *[]ChartHit, title string, plot, timeRow core.Rect, series []charts.Series, snapshot bool) {
 	if hits == nil || plot.W <= 0 || plot.H <= 0 || len(series) == 0 {
 		return
 	}
-	*hits = append(*hits, ChartHit{Title: title, Plot: plot, Series: series, Snapshot: snapshot})
+	*hits = append(*hits, ChartHit{Title: title, Plot: plot, TimeRow: timeRow, Series: series, Snapshot: snapshot})
 }

@@ -13,12 +13,11 @@ drag/resize logic exactly once. None of it knows what a "database" or
 "stored procedure" is — it operates on generic `Rect`s, `TreeNode`s with an
 `any` `Tag` field, and string/string row data. The `tui` package never
 re-implements widget mechanics; it only supplies SQL-Server-specific data
-and callbacks (`OnExpand`, `OnSelect`, button `Action`s).
+and callbacks (`OnExpand`, `OnSelect`, button `Action`s). `tuikit` could
+therefore be extracted into its own module and reused by a different tcell
+application unmodified.
 
-This means `tuikit` could be extracted into its own module and reused by a
-completely different tcell application without modification.
-
-**This is an invariant, not just an observation: `internal/tuikit` must not
+**That is an invariant, not an observation: `internal/tuikit` must not
 import `internal/tui` or `gosmo`.** Its only permitted external dependencies
 are `tcell` and `displaywidth`. Check it with:
 
@@ -33,14 +32,15 @@ Anything else is a layering violation.
 
 ## Which document owns what
 
-Five documents, and the same rule stated twice will eventually be stated two
-different ways. Before adding to any of them:
+The same rule stated twice will eventually be stated two different ways.
+Before adding to any of them:
 
 | Document | Authoritative for |
 |---|---|
 | `CLAUDE.md` | Agent-facing working rules: verification standards, coding conventions, the short enforceable form of each idiom |
 | `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
+| `PLAN.md` | What's next: release target, current priorities, feature backlog |
 | `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
 | `docs/journal.md` | Dated archive of what was built and how bugs were found. Never required reading |
 
@@ -100,20 +100,19 @@ Background work follows one shape:
   `postProgress` and `postTaskDone` are the task-registry wrappers around it
   and follow the identical rule.
 - Start it with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`
-  for a goroutine that isn't a bare `func()`). A panic on a background
-  goroutine can't be recovered by the UI goroutine, so without this it takes
-  the process down before `Run`'s `defer screen.Fini()` can restore the
-  terminal — the trace lands on the alternate screen and vanishes with it,
-  along with the user's unsaved query text. `safego` turns it into a status
-  message plus a stack trace in the log file. This is not theoretical:
-  go-mssqldb panics outright on a column type ID it doesn't know, and every
-  result set calls `DatabaseTypeName()` on every column.
+  for a goroutine that isn't a bare `func()`). The UI goroutine can't
+  recover a background panic, so without this the process dies before
+  `Run`'s `defer screen.Fini()` restores the terminal — the trace lands on
+  the alternate screen and vanishes with it, along with unsaved query text.
+  `safego` turns it into a status message plus a stack trace in the log.
+  Not theoretical: go-mssqldb panics outright on a column type ID it doesn't
+  know, and every result set calls `DatabaseTypeName()` on every column.
 
 `Run()`'s loop clears `wakePending`, drains queued callbacks, syncs the
-dialog stack, handles one event, then re-syncs and draws. The two documented
-idioms below are consequences of this model: `postAndWake` is how work
-crosses back onto the UI goroutine, and the `mouseDragging`/gesture rules
-govern how a single input event is routed once it is already there.
+dialog stack, handles one event, then re-syncs and draws. The two idioms
+below follow from that: `postAndWake` is how work crosses back onto the UI
+goroutine, and the `mouseDragging`/gesture rules govern how one input event
+is routed once it is already there.
 
 ## Package map
 
@@ -138,8 +137,9 @@ gossms/
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
-│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutine — no TUI imports
+│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
+│   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
@@ -179,6 +179,7 @@ gossms/
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
+│       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
 │       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
 │       │
@@ -203,6 +204,8 @@ gossms/
 │       ├── activity_monitor_input.go  # HandleKey/HandleMouse: tab switching, scrolling, gesture zones, scrollbar drags
 │       ├── activity_monitor_history.go # activity.Store → HistoryView: one charts.Series per metric, colour roles
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
+│       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
+│       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │
 │       │  ── Detail Browser ──
@@ -355,90 +358,77 @@ and cleared on the matching `ButtonNone` release, or the same action refires
 on every motion event while the button stays down. This latch is per-widget:
 it only guards a resend that stays over the widget that armed it.
 
-A router that dispatches events by screen position (`App.handleMouse`) sees
-every event regardless of where a gesture started, so a drag that begins
-elsewhere and merely drifts across a latch-owning widget's row arrives there
-as a fresh-looking `Button1` — the per-widget latch doesn't help, because it
-was never armed for *this* gesture. Routers need their own gesture-wide flag
-(e.g. `App.mouseButtonDown`, set/cleared from the raw event at the very top
-of the dispatcher, before any positional branching) to tell a genuine fresh
-press from a continuation.
+A router that dispatches by screen position (`App.handleMouse`) sees every
+event regardless of where the gesture started, so a drag that begins
+elsewhere and drifts across a latch-owning widget's row arrives as a
+fresh-looking `Button1` — the per-widget latch was never armed for *this*
+gesture. Routers need a gesture-wide flag (`App.mouseButtonDown`,
+set/cleared from the raw event above all positional branching) to tell a
+fresh press from a continuation.
 
-Knowing a press isn't fresh isn't enough on its own, though: the router
-still has to decide *where* the continuation goes. Every positional router
-in the app therefore records the region that claimed the fresh press and
-sends every event through to it until the release, so a gesture can't
-change owner halfway through. There are three, all the same shape —
-`App.gestureOwner` (`app_events.go`), `QueryPanel.dragZone`
-(`query_panel.go`), and `propsheet.PropertySheet.dragZone`
-(`sheet_input.go`) — each with an `armGesture`/`armDrag` setter called
-wherever a branch claims the press, and a `routeGesture`/`routeDrag` that
-replays held events to the owner. Regions that already acted on the press
-(a toolbar button, a tab switch) simply swallow the repeats. `Splitter`
-carries the per-widget half of the same rule: it starts a resize only from
-a press that lands on its bar, so a selection drag crossing it doesn't
-grab it.
+That only says a press isn't fresh, not where the continuation goes. So
+every positional router records the region that claimed the fresh press and
+replays to it until the release, and a gesture can't change owner halfway
+through. Three, all the same shape — `App.gestureOwner` (`app_events.go`),
+`QueryPanel.dragZone` (`query_panel.go`), `propsheet.PropertySheet.dragZone`
+(`sheet_input.go`) — each an `armGesture`/`armDrag` at every branch that
+claims a press plus a `routeGesture`/`routeDrag` that replays held events.
+Regions that already acted (a toolbar button, a tab switch) swallow the
+repeats. `Splitter` is the per-widget half: it starts a resize only from a
+press landing on its bar, so a selection drag crossing it doesn't grab it.
 
-`App` additionally snapshots the modal layer at the start of each gesture
-(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` events when a
-dialog, context menu, or menu dropdown has opened or closed since. A dialog
-sees no events until it's shown, so the first `Button1` reaching it looks
-like a press to `ModalDialog.ButtonClicked` — without this, clicking a
-context-menu item that opens a dialog and twitching before release fires
-whichever of that dialog's buttons the pointer happens to be over.
+`App` also snapshots the modal layer per gesture
+(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` events across
+a change. A dialog sees no events until shown, so the first `Button1`
+reaching it reads as a press to `ModalDialog.ButtonClicked` — without the
+snapshot, clicking a context-menu item that opens a dialog and twitching
+before release fires whichever button the pointer landed on.
 
-The mirror image of that is a latch outliving the gesture that set it. A
-dialog button closes its dialog on the *press*, so the matching release
-never reaches `ConsumeOutsideClick`'s reset: `HandleMouse` returns early on
-`!visible`, and `syncDialogStack` has already taken the dialog off
-`dialogStack`, so `App` routes the release elsewhere. `mouseDragging` stayed
-set from one showing to the next, and `ButtonClicked` refused the first
-click of every reopening — the dialog looked frozen. `ModalDialog.Show()`
-therefore clears both latches: a new showing is never a continuation of the
-gesture that closed the last one.
+The mirror image is a latch outliving its gesture. A dialog button closes
+its dialog on the *press*, so the release never reaches
+`ConsumeOutsideClick`'s reset — `HandleMouse` returns early on `!visible`
+and `syncDialogStack` has already popped the dialog, so `App` routes the
+release elsewhere. `mouseDragging` then survived into the next showing and
+`ButtonClicked` refused its first click: the dialog looked frozen.
+`ModalDialog.Show()` clears both latches for that reason.
 
-Relatedly: any overlay-owning widget drawn last (see
-`internal/tuikit/README.md`'s "overlays drawn last" rule) must also get
-first refusal of every key/mouse event while open, and every host that owns
-a latch-bearing child widget with an early `return` in its own `HandleMouse`
-must forward a `ButtonNone` release to that child before the early return —
-otherwise a drag that ends outside the host's bounds leaves the child's
-latch stuck, silently swallowing its next press.
+Two consequences: an overlay-owning widget drawn last (see
+`internal/tuikit/README.md`'s "overlays drawn last") gets first refusal of
+every key/mouse event while open; and a host with an early `return` in
+`HandleMouse` must forward `ButtonNone` to any latch-bearing child before
+returning, or a drag ending outside its bounds leaves the child's latch
+stuck and silently swallowing its next press.
 
 ## Async result delivery: postAndWake
 
 A background goroutine reports its result with `App.postAndWake(fn)`, which
-queues `fn` for the UI goroutine and wakes the event loop to run it. Use it
-rather than writing out its two halves (`postEvent` then `wakeEventLoop`) by
-hand.
+queues `fn` for the UI goroutine and wakes the event loop to run it — never
+its two halves (`postEvent` then `wakeEventLoop`) by hand.
 
-The reason it's one helper: the wakeup must be sent **outside** the
-`postEvent` closure, right after the `postEvent(...)` call, still on the
-background goroutine. `Run()`'s event loop only drains queued callbacks when
-it wakes up for some event on `EventQ()`; if the wakeup send is nested inside
-the very closure that's waiting to be drained, nothing will ever wake the
-loop up to drain it — the result sits queued, invisible, until an unrelated
-keypress happens to arrive and drains it as a side effect. That was a real,
-shipped bug (Object Explorer nodes stuck on "Loading..."), and it was
-present in every async operation in `internal/tui` at the time.
+It is one helper because the wakeup must be sent **outside** the `postEvent`
+closure, right after the `postEvent(...)` call, still on the background
+goroutine. `Run()`'s loop only drains queued callbacks when it wakes for an
+event on `EventQ()`; nest the wakeup inside the very closure waiting to be
+drained and nothing ever wakes the loop to drain it — the result sits
+queued and invisible until an unrelated keypress drains it as a side
+effect. Shipped bug: Object Explorer nodes stuck on "Loading...", in every
+async operation in `internal/tui` at the time.
 
-The one place that still calls `wakeEventLoop()` on its own is
-`QueryPanel`'s elapsed-timer tick, which has no callback to post — it only
-needs a redraw.
+`QueryPanel`'s elapsed-timer tick is the one legitimate bare
+`wakeEventLoop()` caller: no callback to post, only a redraw to ask for.
 
 ### Starting the goroutine: safego
 
 Start it with **`App.safego("what this was doing", fn)`**, never a bare
 `go func()`. `safego` is the goroutine plus the `defer recoverPanic(what)`
-that keeps a panic in background work from taking the process down with it,
-and `what` is what the report names. Writing the two halves by hand works
-right up until the day one is written without the `defer`, which is a panic
-nothing catches.
+that keeps a background panic from taking the process down; `what` names it
+in the report. Writing the halves by hand works right up until one is
+written without the `defer` — a panic nothing catches.
 
-The one deliberate exception is
-`DetailBrowser.backfillRows` (`detail_browser_backfill.go`), whose goroutine
-carries its own `recover` because it has to queue `markFailed` *before*
-`wg.Done` releases the caller. It documents that on the spot.
+The one exception is `DetailBrowser.backfillRows`
+(`detail_browser_backfill.go`), which carries its own `recover` so it can
+queue `markFailed` *before* `wg.Done` releases the caller. It documents that
+on the spot.
 
 ## Building & testing
 
@@ -446,7 +436,7 @@ The toolchain commands and the automatic version resolution are in
 `CLAUDE.md` ("Build & verify") — plain `go`, no Makefile, nothing
 hand-edited before a release.
 
-**`go test ./...` passing is not verification.** The 79 test files are worth
+**`go test ./...` passing is not verification.** The test suite is worth
 keeping green, but nearly every real bug in this project was caught by
 driving the built binary against a real SQL Server, not by a test. CLAUDE.md's
 "Green tests are not verification" section is authoritative for how to do
@@ -465,21 +455,16 @@ ignore ../gosmo
 replace github.com/radix29/gosmo => ../gosmo
 ```
 
-**active** — this is the intended state during development, not an
-oversight. Builds therefore resolve gosmo from the `../gosmo` sibling
-checkout, and the version in `require` is only a floor: `HEAD` of gossms
-routinely calls gosmo code that isn't tagged yet, so a clone without the
-sibling checkout may not build. Anyone working on gossms is expected to have
-both repos checked out side by side.
-
-Consequences worth keeping in mind:
+**active** — the intended state during development, not an oversight.
+Builds resolve gosmo from the `../gosmo` sibling checkout, and `require` is
+only a floor: `HEAD` of gossms routinely calls gosmo code that isn't tagged
+yet, so a clone without the sibling checkout may not build.
 
 - A gossms behavior that looks wrong may be coming from uncommitted or
   untagged gosmo code. Check `git -C ../gosmo status`/`log` before
-  attributing it to the pinned release.
-- Build and test inside `gosmo` itself (`go build ./...`, `go test ./...`)
-  before relying on a change from gossms — a gossms-side build only
-  compiles the packages it imports.
+  blaming the pinned release.
+- Build and test inside `gosmo` itself before relying on a change from
+  gossms — a gossms-side build only compiles the packages it imports.
 
 Only at release time does the pair get commented back out: tag and push
 gosmo, bump `go.mod`'s `require` to the new tag, comment out

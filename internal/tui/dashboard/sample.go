@@ -118,7 +118,7 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]Char
 		LegendRows: 2,
 		ShowTotal:  true,
 	}.Draw(s, drawPanelTitle(s, cols[0], "MEMORY COMPOSITION"))
-	addHit(hits, "MEMORY COMPOSITION", bar, v.Memory, true)
+	addHit(hits, "MEMORY COMPOSITION", bar, core.Rect{}, v.Memory, true)
 
 	if len(cols) > 1 {
 		ratios := v.CacheRatios
