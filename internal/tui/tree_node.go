@@ -73,6 +73,15 @@ const (
 	NodeAgentReport
 	NodeLinkedServers
 	NodeLinkedServer
+	NodeAlwaysOn
+	NodeAvailabilityGroups
+	NodeAvailabilityGroup
+	NodeAvailabilityReplicas
+	NodeAvailabilityReplica
+	NodeAvailabilityDatabases
+	NodeAvailabilityDatabase
+	NodeAGListeners
+	NodeAGListener
 	NodeDatabaseSecurity
 	NodeUsers
 	NodeUser
@@ -154,7 +163,9 @@ func isContainerNode(t NodeType) bool {
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
 		NodeAgentSchedules, NodeAgentAlerts, NodeAgentEventAlerts,
-		NodeAgentOperators, NodeAgentAdmin:
+		NodeAgentOperators, NodeAgentAdmin,
+		NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityReplicas,
+		NodeAvailabilityDatabases, NodeAGListeners:
 		return true
 	}
 	return false
@@ -233,6 +244,14 @@ func objectIconEmoji(t NodeType) rune {
 		return '📋'
 	case NodeLinkedServer:
 		return '🔗'
+	case NodeAvailabilityGroup:
+		return '🔄'
+	case NodeAvailabilityReplica:
+		return '🖧'
+	case NodeAvailabilityDatabase:
+		return '🛢'
+	case NodeAGListener:
+		return '📡'
 	case NodeTrigger:
 		return '⚡'
 	case NodeSequence:
@@ -300,6 +319,14 @@ func objectIconSymbols(t NodeType) rune {
 		return '≡'
 	case NodeLinkedServer:
 		return '⇄'
+	case NodeAvailabilityGroup:
+		return '↻'
+	case NodeAvailabilityReplica:
+		return '⧉'
+	case NodeAvailabilityDatabase:
+		return '⬢'
+	case NodeAGListener:
+		return '◎'
 	case NodeTrigger:
 		return '⚡'
 	case NodeSequence:
@@ -349,6 +376,14 @@ func nodeTypeName(t NodeType) string {
 		return "Login"
 	case NodeUser:
 		return "User"
+	case NodeAvailabilityGroup:
+		return "Availability Group"
+	case NodeAvailabilityReplica:
+		return "Availability Replica"
+	case NodeAvailabilityDatabase:
+		return "Availability Database"
+	case NodeAGListener:
+		return "Availability Group Listener"
 	default:
 		return "Object"
 	}
@@ -364,6 +399,7 @@ func hasChildren(t NodeType) bool {
 		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
 		NodeAgentSchedule, NodeAgentAlert, NodeAgentAlertCategories,
 		NodeAgentOperator, NodeAgentReport,
+		NodeAvailabilityReplica, NodeAvailabilityDatabase, NodeAGListener,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -397,5 +433,30 @@ type nodeData struct {
 	// single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the
 	// same single-flag-drives-one-label idiom).
 	IsEnabled bool
-	conn      *db.ServerConn
+
+	// AGName is the owning availability group's name for any node under it
+	// (the Replicas/Databases/Listeners folders and their leaves). Same role
+	// TableName plays for table-scoped nodes: Name on a leaf points at the
+	// replica or listener itself, so the group would otherwise be lost once
+	// the folder above is flattened away.
+	AGName string
+
+	// AGSuspended and AGIsPrimary carry the two pieces of availability state
+	// the Always On context menus gate on — whether this database's data
+	// movement is suspended, and whether this replica is currently the
+	// primary. Both are already known when the node is built and neither can
+	// be recovered from the label, which is a rendered string.
+	AGSuspended bool
+	AGIsPrimary bool
+
+	// AGLocalSecondary and AGLocalJoined describe the copy of this availability
+	// database held by the instance the tree is connected to: whether that
+	// instance is a secondary for the group, and whether its own copy has
+	// joined. Joining and unjoining are ALTER DATABASE statements that act on
+	// that one copy, so both facts are about the local instance even though the
+	// folder above is read from the primary.
+	AGLocalSecondary bool
+	AGLocalJoined    bool
+
+	conn *db.ServerConn
 }

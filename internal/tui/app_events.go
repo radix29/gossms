@@ -103,9 +103,16 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		}
 		return false
 	case tcell.KeyF5:
-		if a.focus == "explorer" {
+		// Explorer focused: refresh the selected node. Otherwise the active
+		// panel gets first refusal before the "F5 executes the query" default,
+		// the same way plain Tab is offered to the panel below — a panel that
+		// refreshes rather than executes (the Always On dashboard) has no
+		// other way to see the key, and QueryPanel's own F5 does exactly what
+		// executeActiveQuery does, so the fallback is unchanged for it.
+		switch {
+		case a.focus == "explorer":
 			a.refreshSelected()
-		} else {
+		case !a.panels.HandleKey(ev):
 			a.executeActiveQuery()
 		}
 		return false

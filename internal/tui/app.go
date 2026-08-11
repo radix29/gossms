@@ -108,6 +108,11 @@ type App struct {
 	newScheduleDialog   *NewScheduleDialog
 	newAlertDialog      *NewAlertDialog
 	newOperatorDialog   *NewOperatorDialog
+	agAddDatabaseDialog *AGAddDatabaseDialog
+	agAddListenerDialog *AGAddListenerDialog
+	agAddReplicaDialog  *AGAddReplicaDialog
+	newAGDialog         *NewAGDialog
+	newEndpointDialog   *NewEndpointDialog
 	fileDialog          *dialogs.FileDialog
 	queryListDialog     *QueryListDialog
 	optionsDialog       *OptionsDialog
@@ -396,6 +401,11 @@ func (a *App) buildUI() {
 	a.newScheduleDialog = NewNewScheduleDialog(a)
 	a.newAlertDialog = NewNewAlertDialog(a)
 	a.newOperatorDialog = NewNewOperatorDialog(a)
+	a.agAddDatabaseDialog = NewAGAddDatabaseDialog(a)
+	a.agAddListenerDialog = NewAGAddListenerDialog(a)
+	a.agAddReplicaDialog = NewAGAddReplicaDialog(a)
+	a.newAGDialog = NewNewAGDialog(a)
+	a.newEndpointDialog = NewNewEndpointDialog(a)
 	a.fileDialog = dialogs.NewFileDialog(a.screen)
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
 		a.confirmDialog.ShowConfirm("Confirm Save As",
@@ -422,6 +432,7 @@ func (a *App) buildUI() {
 		a.connectDialog, a.findDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.newJobDialog, a.newScheduleDialog, a.newAlertDialog, a.newOperatorDialog,
+		a.agAddDatabaseDialog, a.agAddListenerDialog, a.agAddReplicaDialog, a.newAGDialog, a.newEndpointDialog,
 		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
 		a.confirmDialog, a.confirmTypedDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
 	}

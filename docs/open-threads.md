@@ -196,8 +196,105 @@ Each is a feature, not a defect.
 
 - **Reports** — server-level and database-level (top tables, disk usage). No
   entry point exists yet.
-- **Always On Availability Groups** — viewing and managing topology and
-  health. gosmo-side work needed first; nothing exists on either side.
+- **Always On Availability Groups** — all seven phases are **done**: gosmo's
+  `availability_group.go` read, write, operation and create layers plus
+  `endpoint.go` and `certificate.go`, `db.ServerConn.Peer` for following the
+  primary, the Object Explorer branch, `ag_props*.go`, the `AGDashboard` panel
+  in both its per-group and all-groups forms, `alwayson_menu.go` with its
+  dialogs, `new_ag_dialog.go`/`new_ag_pages.go`, `ag_add_replica_dialog.go`,
+  `ag_listener_props.go` and `new_endpoint_dialog.go`. See `docs/journal.md`.
+  What is left is scoped out rather than unfinished:
+
+  **New Database Mirroring Endpoint does not script.** The dialog runs its
+  pipeline for real; there is no Script Changes equivalent of
+  `NewAGDialog.annotateScript` for it. Under a `WithScript` context the
+  certificate exchange cannot work at all — `Certificate.Encoded` has nothing
+  to read back, since nothing was created — so the pipeline stops after the
+  statements it can emit rather than producing a script that looks complete and
+  is not. Making it scriptable properly means emitting the peer's half as
+  `FROM BINARY` literals read live while the rest is captured, which is a
+  different mode, not a flag.
+
+  **The create dialog has no Read-Only Routing page**, unlike SSMS's. Routing
+  is a per-replica setting that AG Properties already covers, and it is
+  reachable two clicks after the group exists.
+
+  **The endpoint dialog assumes a full mesh and one shared master key
+  password.** Every instance gets every other instance's certificate, which is
+  what an availability group needs and more than a plain mirroring pair does;
+  and the one password field is used for whichever instances turn out to have
+  no database master key yet, rather than one per instance.
+
+  **A replica that needs different credentials cannot be added.**
+  `db.ServerConn.Peer` reuses the tree connection's login for every instance,
+  so a topology with per-instance credentials surfaces as a connect error when
+  Add Replica runs. Same limitation the Object Explorer's follow-the-primary
+  already has.
+
+  **A partly created group is left as it is**, and so is a partly added
+  replica. If CREATE succeeds and a secondary then fails to JOIN, the error
+  names the instance and says the group exists, but nothing is rolled back —
+  dropping a group the user asked for on the strength of one unreachable peer
+  would be worse. Reproduced live: with the test cluster's endpoint certificate
+  broken, the dialog created the group, reported `availability group "AAG2" was
+  created, but ubusql2 could not join it`, and left both halves visible. Add
+  Replica makes the same choice for the same reason, in the same wording.
+
+  **An added replica's endpoint URL cannot be edited.** Add Replica reads it
+  with `DatabaseMirroringEndpoint.URL()`, which builds the host from the
+  instance's `@@SERVERNAME` — so an instance whose short name does not resolve
+  from the other replicas gets a URL that does not work, with no way to type
+  the FQDN instead. The test cluster does not show this, because `/etc/hosts`
+  resolves the short names there.
+
+  **Add Replica does not offer initial data synchronization**, unlike SSMS's
+  wizard, which can take a full and log backup to a share and restore them on
+  the new replica. AUTOMATIC seeding covers the case the wizard's share-based
+  route exists to work around; MANUAL seeding means restoring each database
+  there by hand and then using Join to Availability Group on the secondary's
+  copy, which is now in the tree.
+
+  **Failover cannot be done in T-SQL under `cluster_type = EXTERNAL`** —
+  handled, not open: `agFailoverRefusal` explains it and names Pacemaker
+  instead of sending the statement. Recorded here because the two error codes
+  behind it are worth keeping written down. EXTERNAL rejects both
+  `ALTER AVAILABILITY GROUP ... FAILOVER` and
+  `... FORCE_FAILOVER_ALLOW_DATA_LOSS` with `Msg 47104`; `NONE` rejects only
+  the lossless form, with `Msg 47122`, and allows the forced one. Both
+  verified live.
+
+  **`RemoveReplica` and `Drop` have no live coverage against a real group.**
+  Both were verified by standing up a throwaway `CLUSTER_TYPE = NONE` group
+  across ubusql1/ubusql2 and tearing it down, since running them on AAG1 would
+  destroy the test cluster. `TestLiveAvailabilityGroupOperations` deliberately
+  skips them; only add/remove database, suspend/resume, the listener round
+  trip and the failover refusal run there.
+
+  **A listener address cannot be removed and a listener cannot be renamed.**
+  Not a gap in gossms: `ALTER AVAILABILITY GROUP ... MODIFY LISTENER` has no
+  statement for either, so both mean REMOVE LISTENER and ADD LISTENER. Listener
+  Properties says so rather than offering buttons that would only work on rows
+  not yet written. Note also that under an EXTERNAL cluster type an added
+  address is recorded OFFLINE, since the external cluster manager owns it —
+  verified live 2026-08-11.
+
+  **Add Database does not check for a full backup.** Full recovery, online and
+  not-already-in-a-group are checked; the backup-chain prerequisite is stated
+  in the dialog and left to the server's own error, because checking it is a
+  per-database query into `msdb`. SSMS's wizard both checks it and offers to
+  take the backup.
+
+  **The unreachable-primary fallback is unit tested but never exercised
+  live.** `resolveAGView` degrades to the partial local view and flags it, but
+  no test has actually made a replica unreachable. Note that AG Properties
+  takes the opposite line — `agOnPrimary` treats an unreachable primary as an
+  error, because a page that loaded from a secondary would offer edits the
+  server rejects — and that path *is* only unit tested too.
+
+  **`AVAILABILITY_MODE`/`FAILOVER_MODE` writes are unit tested, never run
+  live.** Dropping the last synchronous replica of an EXTERNAL group leaves
+  Pacemaker unable to promote anything, recoverable only by recreating the
+  group, so `TestLiveAvailabilityGroupWrite` deliberately skips both.
 
 ## Reworks named in README's Known Issues
 

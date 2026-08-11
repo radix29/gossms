@@ -71,6 +71,10 @@ type ServerConn struct {
 	cancel context.CancelFunc
 
 	closed bool
+
+	// peerFields caches connections to other instances in the same topology
+	// (Always On replicas) — see peer.go.
+	peerFields
 }
 
 // Connect opens a connection using the given config.Connection.
@@ -108,6 +112,7 @@ func (sc *ServerConn) Close() {
 	if sc.cancel != nil {
 		sc.cancel()
 	}
+	sc.closePeers()
 	if sc.Server != nil {
 		sc.Server.Close()
 	}

@@ -83,6 +83,12 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 	if db, ok := a.panels.ActivePanel().(*DetailBrowser); ok && db.HasSelection() {
 		return db
 	}
+	// The Always On dashboard is two grids and nothing else, so whichever one
+	// has the keyboard is the target — copySelection's DataGrid branch then
+	// copies the cell under the cursor even with no viewer open.
+	if dash, ok := a.panels.ActivePanel().(*AGDashboard); ok {
+		return dash.grid()
+	}
 	return nil
 }
 

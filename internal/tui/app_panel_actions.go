@@ -105,6 +105,9 @@ func (a *App) closePanelAt(i int) {
 	if am, ok := a.panels.PanelAt(i).(*ActivityMonitor); ok {
 		am.Close()
 	}
+	if dash, ok := a.panels.PanelAt(i).(*AGDashboard); ok {
+		dash.Close()
+	}
 	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
 		if qp.executing && qp.cancel != nil {
 			qp.cancel()
@@ -505,6 +508,41 @@ func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 	}
 	a.propDialog.show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
 		databasePropPages(sc, dbName))
+}
+
+// showAGPropertiesFor opens Availability Group Properties for a group on sc —
+// the Object Explorer context menu's entry point on an availability group
+// node. sc need not be the group's primary: every page follows the primary
+// itself (see agOnPrimary), and reports it as an error when it can't.
+func (a *App) showAGPropertiesFor(sc *db.ServerConn, agName string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, "", "Availability Group Properties",
+		"Availability group: "+agName, "Server: "+sc.Opts.Server, agPropPages(sc, agName))
+}
+
+// showAGDashboardFor opens the Always On dashboard — the Object Explorer
+// context menu's "Show Dashboard", on a group or, with an empty agName, on the
+// Always On root for every group at once.
+//
+// One panel per (connection, group): reopening raises the existing one rather
+// than starting a second poller against the same primary, mirroring
+// showActivityMonitorFor. The all-groups view is one more such key, so it
+// coexists with any number of per-group panels.
+func (a *App) showAGDashboardFor(sc *db.ServerConn, agName string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		dash, ok := p.(*AGDashboard)
+		return ok && dash.conn == sc && strings.EqualFold(dash.agName, agName)
+	})
+	if idx < 0 {
+		idx = a.panels.AddPanel(NewAGDashboard(a, sc, agName))
+	}
+	a.panels.SetActive(idx)
+	a.focusPanels()
 }
 
 // showNewLoginDialog opens New Login for a known connection — the Object

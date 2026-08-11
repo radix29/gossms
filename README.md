@@ -92,6 +92,42 @@ or drivers required.
   `master.dbo.sp_block` / `master.dbo.sp_WhoIsActive`, or installed as
   `tempdb.dbo.usp_block` / `tempdb.dbo.usp_WhoIsActive`, with an "Install in
   master" button to make it permanent.
+- **Always On Availability Groups** — the Object Explorer branch lists each
+  group with the local replica's role, and under it the replicas, databases
+  (with their synchronization state) and listener; databases in a group are
+  labelled with their state in the Databases folder too. **Availability Group
+  Properties** covers the group's settings, its replicas' configuration,
+  backup preferences and read-only routing, offering only the failover modes
+  the group's cluster type actually accepts. **Show Dashboard** opens a live
+  panel, on one group or — from the Always On node — on every group at once,
+  with estimated data loss and estimated recovery time derived per secondary
+  (F5 refreshes, P pauses, `+`/`-` sets the refresh rate, Enter opens the
+  selected group's own dashboard). Operations sit on the context menus: add and
+  remove a database, suspend and resume data movement, add and remove the
+  listener, add and remove a replica, delete the group, and fail over. On a
+  secondary, a database's own copy can be joined to the group and taken back
+  out of it — the manual-seeding counterpart of adding a database, offered only
+  where it applies. **Add Replica** grows an existing group: it reads the new
+  instance's mirroring endpoint, runs ADD REPLICA on the primary, then joins
+  the replica through its own connection and grants it what automatic seeding
+  needs. **Listener
+  Properties** changes the port and binds further addresses for a multi-subnet
+  listener. Everything reads and writes through the group's primary,
+  connecting to it when you are on a secondary. Failover is gated on the
+  group's cluster type — under an externally managed cluster (Pacemaker on
+  Linux) SQL Server refuses it, and goSSMS says so and names the tool that
+  owns it rather than sending a statement that can only fail. **New
+  Availability Group** creates one: it runs CREATE on the instance you are
+  connected to, then joins each secondary through its own connection and
+  grants it what automatic seeding
+  needs. **New Database Mirroring Endpoint** creates the prerequisite every
+  replica needs, across all of them at once: a master key and a certificate on
+  each instance, then each instance's *public* certificate imported by the
+  others with a login to own it and CONNECT granted on the endpoint. No private
+  key is read or transmitted, and nothing needs copying between the hosts —
+  which is what the documented file-based recipe requires. Anything already in
+  place is left alone, so it completes a half-configured set rather than
+  failing on it.
 - Configurable tree icon style (Emoji/Symbols/Portable/None), resizable
   panes, background task manager, status history log, and a Check for
   Updates dialog.
@@ -99,8 +135,6 @@ or drivers required.
 ## Future Plans
 
 - **Reports** — a handful of the most useful built-in SSMS reports
-- **Always On Availability Groups (AAG)** — viewing and managing
-  availability group topology and health
 
 ## Known Issues
 

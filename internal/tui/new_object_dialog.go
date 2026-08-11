@@ -31,6 +31,11 @@ type newObjectConfig[P any] struct {
 	// noun names the created object in the success status message, e.g.
 	// "Job" → `Job "nightly reindex" created`.
 	noun string
+	// verb completes that message when "created" would be untrue. Add
+	// Database to an availability group creates nothing — it adds an existing
+	// database to a group — so it sets "added to the availability group".
+	// Empty means "created".
+	verb string
 	// pages are the page names, in order; forms and applyFns are indexed by
 	// the same positions.
 	pages []string
@@ -253,13 +258,13 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 			d.Dismiss()
 			return
 		}
-		d.SetMessage(fmt.Sprintf("%s %q has already been created — close this dialog and use its Properties to change it further.",
-			d.noun, d.objectName()), true)
+		d.SetMessage(fmt.Sprintf("%s %q has already been %s — close this dialog and use its Properties to change it further.",
+			d.noun, d.objectName(), orDefault(d.verb, "created")), true)
 		return
 	}
 	d.runPipeline(d.ctx, func() {
 		d.created = true
-		d.app.setStatus(fmt.Sprintf("%s %q created", d.noun, d.objectName()))
+		d.app.setStatus(fmt.Sprintf("%s %q %s", d.noun, d.objectName(), orDefault(d.verb, "created")))
 		d.refresh(d.sc)
 		if hideOnSuccess {
 			d.Dismiss()

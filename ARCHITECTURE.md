@@ -137,6 +137,7 @@ gossms/
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
+│   │                        #   peer.go: cached same-credential connections to other instances (Always On: read the group from its primary)
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
@@ -176,6 +177,7 @@ gossms/
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles
 │       ├── explorer_management.go # loaders: Server Objects folder — Agent Jobs, Linked Servers
+│       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
@@ -271,6 +273,19 @@ gossms/
 │       ├── server_props_database_settings.go # Server Properties > Database Settings page
 │       ├── server_props_advanced.go     # Server Properties > Advanced page
 │       ├── server_props_permissions.go  # Server Properties > Permissions page
+│       ├── ag_dashboard.go                  # Always On dashboard panel: refresh loop, estimated data loss / recovery time, replica issues
+│       ├── ag_dashboard_draw.go             # Always On dashboard: layout and drawing
+│       ├── ag_dashboard_all.go              # Always On dashboard's all-groups view (the Always On root's Show Dashboard): per-group rollup and its issues column
+│       ├── ag_props.go                      # Availability Group Properties: page set, General page, agOnPrimary (every page reads and writes through the primary)
+│       ├── ag_props_backup.go               # Availability Group Properties > Backup Preferences page
+│       ├── ag_props_routing.go              # Availability Group Properties > Read-Only Routing page; routing-list text parser and the three-phase apply order
+│       ├── alwayson_menu.go                 # Always On context menus and operations: add/remove database, suspend/resume, listener, remove replica, delete group, failover (with the cluster-type refusal)
+│       ├── ag_add_database_dialog.go        # Add Database to Availability Group: eligibility split and the reason each database was left out
+│       ├── ag_add_listener_dialog.go        # New Availability Group Listener: DNS name, port, DHCP or one address per subnet
+│       ├── ag_listener_props.go             # Availability Group Listener Properties: port and added addresses, the only two things MODIFY LISTENER can change
+│       ├── new_ag_dialog.go                  # New Availability Group: prefetch, shared page state, and the CREATE/JOIN/GRANT pipeline across three instances
+│       ├── new_ag_pages.go                   # New Availability Group's General and Backup Preferences pages; the cluster-type/failover-mode rules
+│       ├── new_endpoint_dialog.go            # New Database Mirroring Endpoint: master key, certificate and login per instance, and the public-certificate exchange between them
 │       ├── database_props.go               # Database Properties: General/Owner page definitions
 │       ├── database_props_files.go          # Database Properties > Files page
 │       ├── database_props_filegroups.go     # Database Properties > Filegroups page
@@ -339,7 +354,7 @@ Add the `NodeType` and its icon/name in `tree_node.go`, then register a
 loader receives a `loaderCtx` and the node, and returns child nodes; it runs
 off the UI goroutine, so it obeys the threading model above. Group the
 loader itself with its peers (`explorer_databases.go`, `explorer_objects.go`,
-`explorer_security.go`, `explorer_management.go`).
+`explorer_security.go`, `explorer_management.go`, `explorer_alwayson.go`).
 
 ### Adding a menu or toolbar item
 

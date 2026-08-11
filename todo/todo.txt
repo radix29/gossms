@@ -1,21 +1,4 @@
 
-release
-
-Always On Availability Groups:
-- add functionality to support AAG
-- screenshot from the SSMS on the todo/mockups/aag.
-- testing
-    - hosts / instances : ubusql1 ubusql2 
-    - everything is for testing purposes can create / destroy databases AAGs etc
-    - it is configured as a cluster with pacemaker
-    - all the passwords for all the accounts are the same: inSecure123
-    - ssh user: radu
-    - keep in mind the testing environment for future testings
-    - there is a reserved ip/name for the listener: ubuaag.fritz.box 192.168.178.99 / ff.ff.ff.0  can use it if you rebbuild the aag
-    - ask questions if not sure or cant decide yourself
-
-
-
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
 

@@ -3,18 +3,22 @@ package tui
 import gosmo "github.com/radix29/gosmo"
 
 // loadServerChildren returns a connected server's top-level folders:
-// Databases, Security, Server Objects (linked servers), and SQL Server
-// Agent — a sibling of Databases here rather than nested under Server
-// Objects, matching SSMS's own top-level placement. Kept a static, no-query
-// loader (unlike loadDatabasesChildren etc.) so it stays safe to call
-// directly in tests; the Agent node's " (Stopped)" label suffix is instead
-// filled in by a follow-up async check — see refreshAgentRootLabel in
-// app_explorer_data.go.
+// Databases, Security, Server Objects (linked servers), Always On High
+// Availability, and SQL Server Agent — the last two siblings of Databases
+// here rather than nested under Server Objects, matching SSMS's own top-level
+// placement. Kept a static, no-query loader (unlike loadDatabasesChildren
+// etc.) so it stays safe to call directly in tests; the Agent node's
+// " (Stopped)" label suffix is instead filled in by a follow-up async check —
+// see refreshAgentRootLabel in app_explorer_data.go. The Always On folder is
+// listed unconditionally for the same reason SSMS does: whether the instance
+// has Always On enabled is a query, and the answer belongs in the folder's
+// own expansion (loadAlwaysOnChildren), not in whether it appears.
 func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
 		l.node("Server Objects", NodeManagement, "", "", ""),
+		l.node(alwaysOnRootLabel, NodeAlwaysOn, "", "", ""),
 		l.node(agentRootLabel, NodeAgentJobs, "", "", ""),
 	}, nil
 }
@@ -25,12 +29,17 @@ func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 const agentRootLabel = "SQL Server Agent"
 
 // loadDatabasesChildren lists user databases, with a "System Databases"
-// folder listed first if the server has any — matching SSMS.
+// folder listed first if the server has any — matching SSMS. A database that
+// belongs to an availability group carries its synchronization state in the
+// label, the same way the Availability Databases folder writes it; see
+// agLocalDatabaseStates for why the state shown here is the local replica's
+// alone.
 func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbs, err := l.sc.Server.DatabasesContext(l.ctx)
 	if err != nil {
 		return nil, err
 	}
+	agStates := agLocalDatabaseStates(l)
 	var userDBs []*explorerNode
 	hasSystem := false
 	for _, d := range dbs {
@@ -38,7 +47,7 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 			hasSystem = true
 			continue
 		}
-		n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
+		n := l.node(agLabelForDatabase(d.Name(), agStates), NodeDatabase, "", d.Name(), d.Name())
 		n.data.IsOffline = d.State() != "ONLINE"
 		userDBs = append(userDBs, n)
 	}

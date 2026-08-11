@@ -251,6 +251,24 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 				a.showStatisticPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
 			}},
 		}
+	case NodeAlwaysOn:
+		return alwaysOnRootMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityGroups:
+		return agGroupsFolderMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityGroup:
+		return agGroupMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityReplicas:
+		return agReplicasFolderMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityDatabases:
+		return agDatabasesFolderMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityDatabase:
+		return agDatabaseMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAvailabilityReplica:
+		return agReplicaMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAGListeners:
+		return agListenersFolderMenuItems(a, sc, node, newQuery, refresh)
+	case NodeAGListener:
+		return agListenerMenuItems(a, sc, node, refresh)
 	case NodeAgentUserJobs:
 		return []controls.MenuItem{
 			newQuery,

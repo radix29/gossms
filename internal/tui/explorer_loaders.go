@@ -75,6 +75,13 @@ var childLoaders = map[NodeType]childLoader{
 	NodeManagement:    loadManagementChildren,
 	NodeLinkedServers: loadLinkedServersChildren,
 
+	NodeAlwaysOn:              loadAlwaysOnChildren,
+	NodeAvailabilityGroups:    loadAvailabilityGroupsChildren,
+	NodeAvailabilityGroup:     loadAvailabilityGroupChildren,
+	NodeAvailabilityReplicas:  loadAvailabilityReplicasChildren,
+	NodeAvailabilityDatabases: loadAvailabilityDatabasesChildren,
+	NodeAGListeners:           loadAGListenersChildren,
+
 	NodeAgentJobs:        loadAgentRootChildren,
 	NodeAgentJobsFolder:  loadAgentJobsFolderChildren,
 	NodeAgentUserJobs:    loadAgentUserJobsChildren,
