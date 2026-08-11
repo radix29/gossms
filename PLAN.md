@@ -23,12 +23,12 @@ queries, view/edit properties) are solid across all three supported
 platforms and authentication modes, not that every SSMS feature is
 covered — see [Feature backlog](#feature-backlog) for what can wait.
 
-`v0.0.5` (2026-08-04) is the current tag — mostly hardening: result-set
-memory, display width, paste, panic containment, and saved-password
-integrity. Unreleased since then: Find and Replace in the query editor, the
-Activity Monitor (History, Sample, TempDB, Sessions, Block), the permissions
-gap-fill (`WITH GRANT OPTION`, effective and column-level permissions), and
-per-edit editor undo.
+`v0.0.6` (2026-08-11) is the current tag — the Activity Monitor (History,
+Sample, TempDB, Block, Sessions) and the charting library behind it, Find and
+Replace plus block editing in the query editor, the permissions gap-fill
+(`WITH GRANT OPTION`, column-level and effective permissions), per-edit
+editor undo, and the relicensing to GPL-3.0-or-later. Nothing is unreleased
+as of this tag.
 
 ## Ongoing practices (no end date)
 

@@ -54,11 +54,13 @@ a settled question being reopened.
     corrupted; clamping would turn that into an undo that quietly restores the
     wrong text. The panic is the more useful failure. Do not add a clamp.
 
-- **gosmo untagged past `v0.0.6` with `go.mod`'s `replace` active is the
-  intended development state**, not a release blocker. Tagging gosmo, bumping
-  `require`, and commenting out the `replace`/`ignore` pair are steps of the
-  release process itself (RELEASE.md). A CI release build not resolving gosmo
-  mid-development is the expected consequence.
+- **gosmo untagged past its current tag with `go.mod`'s `replace` active is
+  the intended development state**, not a release blocker. Tagging gosmo,
+  bumping `require`, and commenting out the `replace`/`ignore` pair are steps
+  of the release process itself (ARCHITECTURE.md § Developing against a local
+  gosmo checkout). A CI release build not resolving gosmo mid-development is
+  the expected consequence. As of `v0.0.6` the pair is commented out and
+  `require` names gosmo `v0.0.8`; re-activate both when work resumes.
 
 - **A Grid/Text query result can exhaust memory.** The Max Result Rows option
   and every `maxRows` parameter behind it were removed 2026-08-01: a result

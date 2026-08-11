@@ -34,7 +34,11 @@ tuikit/
 │               mutating text, holding a version counter that keys the syntax/
 │               wrap/width caches so per-document work happens once per edit
 │               rather than once per Draw;
-│               Editor itself is split across editor.go (state/options/undo),
+│               Editor itself is split across editor.go (state/options),
+│               editor_undo.go (per-edit span deltas, capped in steps and
+│               bytes), editor_search.go (the one regexp engine behind Find,
+│               Replace and Replace All), editor_block.go (block/column
+│               selection editing and its rectangular clipboard),
 │               editor_selection.go, editor_draw.go, editor_wrap.go,
 │               editor_input.go, editor_actions.go, editor_completion.go
 │               (generic completion/IntelliSense popup), sql_highlighter.go,

@@ -4,6 +4,259 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.6] - 2026-08-11
+
+### Added
+
+- **Activity Monitor** (View > Activity Monitor) — five tabs over live DMV
+  data, backed by three new packages: `internal/activity` (DMV collection,
+  `cntr_type` decode, wait categorization, a 30-minute store and the
+  collector goroutines), `internal/tuikit/charts` (an off-screen canvas plus
+  eighth-block history/stacked/bar/KPI charts over generic series), and
+  `internal/tui/dashboard` (the layouts, drawable without an `App` — which is
+  what `cmd/amdemo`, a deterministic mock harness, drives).
+  - **History** and **Sample** share one collector, so both tabs describe the
+    same instant: batches/transactions/compiles, wait categories split into
+    their resource and signal halves, memory composition and cache ratios,
+    page activity, per-file database I/O latency, log flushes and
+    checkpoints. The refresh rate is selectable (2/3/5/10 s), collection
+    pauses, and a stopped feed offers **Retry** rather than freezing into a
+    static picture. Nothing is persisted.
+  - **TempDB** tracks tempdb space, per-file usage, temp tables and the
+    version store on its own slower cadence (10/30/60 s), from a second
+    collector.
+  - **Block** and **Sessions** each run one stored procedure into a full
+    result grid — the current blocking chains, and everything currently
+    running. Neither refreshes on a timer. Each procedure is used where it is
+    found (`master.dbo.sp_block` / `master.dbo.sp_WhoIsActive`) or installed
+    into tempdb as `usp_block` / `usp_WhoIsActive`, with an "Install in
+    master" button behind a confirmation. `internal/activity/proc.go` is the
+    one implementation both tabs share.
+  - **A click pins a chart readout**, and the box tracks the sample it names:
+    it is anchored to the bucket's clock time, not to a screen spot, so it
+    follows the data left across the plot and closes itself once that sample
+    is pruned or scrolls off.
+  - **`VIEW SERVER STATE` is checked once per collector** and its absence
+    stops that feed with a message rather than being worked around per
+    metric.
+- **Find and Replace in the query editor** — `Ctrl+F`, `F3` / `Shift+F3`,
+  `Ctrl+F3` (search for the word under the caret), and Edit >
+  Find.../Replace...; one dialog in two modes over a new search engine on
+  `controls.Editor` (`editor_search.go`). Match case, whole word, regular
+  expressions, and Replace All confined to the selection. Everything goes
+  through one regexp — a literal term is `regexp.QuoteMeta`'d — so iteration,
+  replacement and group references have a single implementation. Replace All
+  is one undo step. `Ctrl+H` is deliberately unbound: terminals send it as
+  the same byte many of them send for Backspace.
+- **Block (column) editing.** An `Alt+Shift+Arrow` selection could previously
+  only be selected and deleted; typing, `Tab`, `Backspace` and `Delete` now
+  apply to every row at once (padding short rows on insert, as SSMS and
+  Notepad++ do), and a block copied this way pastes back rectangularly rather
+  than as a run of lines.
+- **Double-click selects the word under the pointer** in the editor, using
+  the same word/punctuation split `Ctrl+Left`/`Right` navigate by
+  (`core.WordBoundsAt`).
+- **Resizable result-grid columns** — drag a header separator to resize the
+  column to its left, double-click it to restore that column's default width.
+  A dragged width ignores the max-cell-length clamp, which is what makes a
+  60-character value readable in a grid capped at 24; Options' "Max cell
+  length (Query Results)" is now "Max default cell length" to say so.
+- **Permissions editing completed.** Every permissions and securables grid
+  cycles none → Grant → Grant With Grant → Deny, and `internal/tui/perm_state.go`
+  derives the statement from the *pair* of states, so leaving Grant With
+  Grant carries `CASCADE` and the step back down to Grant is a
+  `REVOKE GRANT OPTION FOR ... CASCADE` rather than a no-op re-GRANT. Plus:
+  per-column grants on a table or view behind an explicit "Load Columns",
+  filter boxes on every long grid, a read-only **Effective Permissions** page
+  on Login and Database User Properties, and a server-side **securable
+  search** box that replaces loading a database's whole catalog into a
+  dropdown.
+- **Editable Members / owner-transfer pages** gained a default-schema picker
+  on New Login, replacing a free-text box whose typo only surfaced as a
+  failed `CREATE USER` at apply time.
+- **`internal/tui/sqlparse`** — the T-SQL tokenizer and statement-scope
+  scanner behind IntelliSense, extracted as a leaf package with zero outbound
+  references to the application shell. The move is pinned by the golden
+  prefix-scan file, whose diff was two header lines.
+
+### Changed
+
+- **goSSMS is now licensed GPL-3.0-or-later** (`LICENSE`, README § License,
+  and Help > About). The Activity Monitor's Sessions tab embeds Adam
+  Machanic's **sp_WhoIsActive**, which is GPL-3.0; its own licence text is
+  carried as `internal/activity/LICENSE.sp_whoisactive`, and the embedded
+  `internal/activity/whoisactive.sql` opens with the GPL §5(a) notice
+  recording the two modifications (the release script's SET-options and
+  stub-`CREATE` batches removed, and the declaration rewritten at install
+  time so the tempdb copy can be named `usp_WhoIsActive`).
+- **Editor undo is per-edit deltas, not a whole-document snapshot.** A
+  keystroke on a 20,000-line script cost 4.5 ms, 5.25 MB and 20,002
+  allocations; it now costs 90 µs, 1.05 KB and 5 allocations. An undo step is
+  the span of lines the edit touched, left open at push time and closed by
+  `finalizeStep`; `undo` and `redo` are the same operation. The stack is
+  capped at 500 steps *and* 64 MB, with the newest step exempt so a document
+  larger than the cap still has one undo.
+- **The Activity Monitor's chart drawing lost 90% of its allocations.** A
+  canvas cell holds a primary rune plus the rest of its grapheme rather than
+  a composed string, and both history charts' `Draw` returns the plot rect it
+  just used instead of recomputing the layout for the hit test:
+  `BenchmarkDrawHistory` 20,685 → 2,183 allocations and 6.36 ms → 3.05 ms,
+  with the rendered output byte-identical including every SGR sequence.
+- **Find's draw path is no longer quadratic in matches.** `styleForRune`
+  scanned the whole match list per drawn column; an advancing cursor with a
+  binary-searched first lookup took `EditorDrawManyMatchesWideLine` from
+  131 µs to 37 µs and the wrapped case from 1.31 ms to 147 µs. `byteRuneIndex`
+  no longer allocates a mapping for a pure-ASCII line.
+- **The two collectors and the two sample stores became one implementation
+  each** (`collector[S, Snap]`, `sampleStore[T]`), and the panel's seven
+  duplicated collector-facing fields became one `amFeed` held twice — which
+  is what stopped the same fix having to be written twice, and gave the
+  TempDB tab the collector-state line it had been computing and never
+  drawing.
+- **36 hand-rolled panic-guarded goroutines became `App.safego`** across 19
+  files, so the next one is copied from a form that cannot omit the guard.
+  `detail_browser_backfill.go` keeps its own `recover`, and ARCHITECTURE.md
+  says why.
+- **Which databases a dropdown offers is now one rule**
+  (`internal/tui/database_list.go`), turning on *when the name is resolved*:
+  stored now and used later (job step, alert, login default database, restore
+  history) lists every database, system and non-ONLINE alike; acted on now
+  lists only what the action accepts. Backup is the only dialog in the second
+  class, and both its exclusions were verified against the server.
+- **The Securables page searches the server instead of listing the catalog.**
+  Backed by gosmo's `Database.FindSecurables`, capped at 200 with a hint when
+  there are more, and coalescing rather than queueing keystrokes so an early
+  answer can't land last.
+- **"Show Value" routes by declared column type**, not by the shape of the
+  text: an `xml` or `json` column opens in its highlighted panel even when the
+  value's own brackets are entity-escaped (SQL Server's serialization of an
+  `xml` value ends `--?&gt;`, which reads as plain text). An `nvarchar(max)`
+  holding XML still opens as XML through the old sniff.
+- **Output Column Metadata bracket-quotes column names** (`]` doubled), so a
+  name with a space or a keyword reads as one identifier and pastes into a
+  query. An unnamed column still shows its bare 1-based position.
+- **`gosmo` dependency updated `v0.0.7` → `v0.0.8`** — `PermissionOptions`
+  and a `WithOptions` form of every GRANT/DENY/REVOKE, column-level and
+  effective permissions, `Database.FindSecurables`, `Database.ObjectColumns`
+  (a view's columns, which `Table.Columns` cannot reach),
+  `Server.BackupFileListForSet`, `JobStep.LastRunDate`/`LastRunElapsed`, the
+  `setIfApplied` sweep finishing on six state-mirroring setters, and fixes to
+  `IsRetryable`, `sp_update_jobstep`'s output file, and a scripted `ExecProc`'s
+  declared types. **BREAKING there:** `Table.AddColumn` and `Table.DropColumn`
+  are gone (author's call — `DropColumn` failed on any column an index
+  referenced, and neither had a caller here).
+- Documentation: `ARCHITECTURE.md`'s package map covers the three new
+  packages and the Activity Monitor's files; `internal/tuikit/README.md`
+  covers `charts` and the editor's search/undo files; `docs/journal.md` is
+  trimmed to this release, with `docs/open-threads.md` carrying what is still
+  open and what must not be re-raised.
+
+### Fixed
+
+- **Every property-sheet grid was a partial keyboard trap.**
+  `DataGrid.HandleKey` ends in an unconditional `return true`, so Up at row 0,
+  Down at the last row and `Left` at column 0 all claimed to be handled having
+  done nothing — and `propsheet.Form` falls back to its own navigation only on
+  `false`. 21 pages use `NewGridRow`; on all of them the keys that leave the
+  grid (including `Left`, which is how `PropertySheet` returns to its page
+  list) did nothing, and an empty grid ate every arrow key. Fixed in
+  `GridRow`, which snapshots `SelectedCell`/`ScrollCol` around the key and
+  reports what actually moved — not in `DataGrid`, whose blanket answer is
+  right for QueryPanel, the Activity Monitor and the Detail Browser.
+- **RESTORE built its `MOVE` clauses from the wrong backup set.**
+  `RESTORE FILELISTONLY` was issued without `WITH FILE = n`, so it always
+  described set 1 while the restore ran with the selected set — and appending
+  to a `.bak` is SSMS's default. Every rename-restore from an appended device
+  failed with "Logical file 'x' is not part of database 'y'". The Files
+  Included panel had the same defect from the other end: it was read once and
+  never re-read when the selected set changed, contradicting its own caption.
+  The set number now has one home (`backupSetNumber`).
+- **The Job Steps page rewrote every non-T-SQL step as T-SQL.** `Job.Steps`
+  returns every row of `sysjobsteps` and the page hardcoded
+  `Subsystem: "TSQL"`, so a PowerShell or CmdExec step it touched became a
+  T-SQL step still carrying its original script — and merely selecting a
+  second step was enough to make the page dirty. Such steps are now listed
+  (with a Type column) but read-only.
+- **The same page, and New Job, silently rewrote a step's target database.**
+  A step whose `database_name` is NULL or dropped resolved to index 0 of the
+  dropdown — the alphabetically first database on the server — and was written
+  straight back. Both lists now lead with a sentinel (`(unchanged)`,
+  `(default)`) that maps back to an empty value.
+- **Database Properties > Files showed `PRIMARY` as a log file's filegroup**,
+  for the same not-found-0 reason, and committed it on the next row change.
+  The LOG case now swaps the dropdown for a single `(not applicable)` entry.
+- **Column permissions were broken end-to-end for views.**
+  `ColumnPermissionEntry` reported no object type, so gossms keyed a view's
+  grants as `TABLE`: existing grants showed as "(none)" (and cycling one
+  would have issued a statement computed from the wrong baseline), and "Load
+  Columns" hard-errored on any view because it went through `sys.tables`.
+- **Effective Permissions was offered on two dialogs where it can never
+  work.** Everything behind it resolves by impersonating the principal, and
+  SQL Server refuses to impersonate a role (Msg 15517 / 15406), so the page
+  is gone from Database Role and Server Role Properties — as it is in SSMS.
+  The server-scope query also needed its `USE master` prefix: `EXECUTE AS
+  LOGIN` keeps the session's database, so it failed with Msg 916 for exactly
+  the restricted logins the page is most useful on.
+- **A permissions Apply issued its statements in Go map order and never moved
+  a cell's baseline.** Both are now ordered walks of the principal/securable
+  lists, and a successful statement commits `orig` onto `current` — unless the
+  run was under Script Changes. With a stale baseline, undoing an edit that
+  had already landed left the grid claiming a grant the server no longer had.
+- **A filter matching nothing left the lower grids live and editable** on the
+  previous selection, so a cycle could reach a cell the page no longer showed.
+- **A disabled `TextRow` rendered identically to a live one** and silently
+  ignored every click — `InputField` had no notion of being disabled at all,
+  which affected three shipped pages. It now drops the input background,
+  paints no caret, and refuses keys and clicks.
+- **`Revert` on a dirty-tracking-disabled row reverted anyway**, so
+  `Form.Revert` blanked a filter box while the grid it filters stayed narrowed
+  on the old term (`TextRow` and `SelectRow`).
+- **A second click put two round trips in flight** on every asynchronous
+  property-page action — Effective Permissions' Show, Load Columns, and (via
+  `asyncStatusButton`) Check Syntax, Rebuild, Reorganize and Update
+  Statistics — with the older answer able to win. `runPageActionOnce` latches
+  them.
+- **A text-selection drag that left the field stopped selecting.**
+  `InputField`'s own drag latch now takes priority over its hit test, and the
+  four hosts that hit-tested every `Button1` first (Connect, Backup, Restore,
+  and tuikit's FileDialog) forward the motion. The Options dialog's
+  `ButtonNone` reset list was missing its one field, so a release outside the
+  dialog left it armed and it swallowed the next press.
+- **A dead Activity Monitor collector went on reporting itself as
+  collecting.** Two of `Run`'s three exits returned silently, so the sample
+  time froze while Pause went on toggling its own label and every send was
+  dropped; the goroutine now posts a stopped-callback (checked against the
+  *current* collector, since a Retry's predecessor is still in flight).
+- **A zero refresh rate panicked the application.** `time.NewTicker` was
+  reached before either of the guards meant to stop it, and the collector runs
+  under `safego`, so that is the process. The rate is normalized at both
+  places it is written.
+- **The pinned chart tooltip was wrong in three different ways** across this
+  release: stale (it kept its old numbers while the column under it changed),
+  then dismissed by its own data (a tick two seconds later cleared it, and a
+  tempdb tick cleared a History pin), then drifting (it re-resolved from the
+  click coordinates, so it started reporting whichever sample slid under it).
+  It is now anchored to the sample's clock time. Two rendering bugs went with
+  it: the box covered the time callout it is paired with, and the callout
+  overwrote the middle of the axis's age labels, leaving their tails standing
+  as numbers of their own.
+- **Right-click did nothing on the Activity Monitor's Block and Sessions
+  grids.** `DataGrid.DrawOverlay` is a separate call that has to come after
+  everything else in the frame; without it the menu opened, swallowed every
+  event, and was never drawn.
+- **`completionInventory.endLoad` dropped a `context.CancelFunc` without
+  calling it** — the same defect as `explorerNode.endLoad`, in its
+  copy-sibling.
+- **`Editor.SetText` cleared four of its five mouse latches**, leaving the
+  horizontal-scrollbar drag armed into the editor's next showing.
+- **Object Explorer Details' refresh button refreshed the wrong node** — it
+  ran the *explorer's* selection rather than the node the panel was showing.
+- The Backup dialog offered `tempdb` and offline databases, both of which the
+  server refuses outright; narrowing the list then exposed a worse bug caught
+  before it shipped — right-clicking an offline database and choosing Back Up
+  retargeted the dialog at whichever database sorted first, so an unlisted
+  selection is now kept at the front of the dropdown.
+
 ## [0.0.5] - 2026-08-04
 
 ### Added

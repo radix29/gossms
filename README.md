@@ -38,7 +38,10 @@ or drivers required.
   result set's columns and their declared types to the Messages tab.
 - **SQL editor** — syntax highlighting, word-wrap, line duplicate/move/
   indent/comment, undo/redo, and smart statement selection for running just
-  the statement under the cursor.
+  the statement under the cursor. Find and Replace (`Ctrl+F`) with match
+  case, whole word, regular expressions, and Replace All confined to the
+  selection. Block (column) selection you can type into, and that pastes
+  back rectangularly; double-click selects a word.
 - **IntelliSense** — autocompletes schemas, tables, views, and columns as you
   type, understands table aliases and multi-statement scripts, and can be
   toggled off in Options.
@@ -77,8 +80,10 @@ or drivers required.
   batches/transactions/compiles, wait categories, memory composition and
   cache ratios, page activity, database I/O latency, log flushes, and
   checkpoints. Charts scroll on both axes, the refresh rate is selectable
-  (2/3/5/10 s), and collection can be paused. Thirty minutes of history is
-  kept in memory and nothing is persisted. The TempDB tab tracks tempdb
+  (2/3/5/10 s), and collection can be paused. Clicking a chart pins a
+  readout that follows the sample it names across the plot and closes itself
+  when that sample scrolls off. Thirty minutes of history is kept in memory
+  and nothing is persisted. The TempDB tab tracks tempdb
   space, temp tables and the version store on its own slower schedule. The
   Block and Sessions tabs each show one run of a stored procedure in a full
   result grid — Block the current blocking chains, Sessions everything

@@ -4,6 +4,106 @@ High-level summary of what changed in each goSSMS release, one entry per
 version. For the detailed, file-by-file changes behind each entry, see
 [CHANGELOG.md](CHANGELOG.md).
 
+## v0.0.6 — 2026-08-11
+
+The Activity Monitor release. Five live tabs over DMV data arrive with a
+terminal charting library behind them, the query editor gains Find and
+Replace and real block editing, and permissions editing is finally complete
+— `WITH GRANT OPTION`, column-level grants, and an Effective Permissions
+page. goSSMS is now GPL-3.0-or-later. Updates `gosmo` to v0.0.8.
+
+### New
+
+- **Activity Monitor** (View > Activity Monitor) — **History** and **Sample**
+  over live DMVs: batches/transactions/compiles, wait categories split into
+  resource and signal time, memory composition and cache ratios, page
+  activity, per-file I/O latency, log flushes and checkpoints. Selectable
+  refresh rate (2/3/5/10 s), pause, and Retry on a feed that stopped. Thirty
+  minutes of history is kept in memory; nothing is persisted.
+- **TempDB tab** — tempdb space, per-file usage, temp tables and the version
+  store, on its own slower schedule.
+- **Block and Sessions tabs** — the current blocking chains and everything
+  currently running, each one run of a stored procedure in a full result
+  grid. `sp_block` / `sp_WhoIsActive` are used where they are found, or
+  installed into tempdb, with an "Install in master" button to make either
+  permanent.
+- **A click pins a chart readout, and it tracks its sample** — the box follows
+  the data left across the plot and closes itself when the point it names
+  scrolls off.
+- **Find and Replace** in the query editor — `Ctrl+F`, `F3`/`Shift+F3`,
+  `Ctrl+F3` for the word under the caret, match case, whole word, regular
+  expressions, and Replace All within the selection as one undo step.
+- **Block (column) editing** — typing, `Tab`, `Backspace` and `Delete` now
+  apply to every row of an `Alt+Shift+Arrow` selection, and a block copied
+  that way pastes back rectangularly. Double-click selects a word.
+- **Resizable result-grid columns** — drag a header separator to resize the
+  column to its left, past the max default cell length; double-click it to
+  restore.
+- **Permissions editing completed** — `WITH GRANT OPTION` / `CASCADE` /
+  `GRANT OPTION FOR` derived from each cell's transition, per-column grants on
+  a table or view, filter boxes on the long grids, a securables search that
+  asks the server instead of loading the whole catalog, and a read-only
+  **Effective Permissions** page on Login and Database User Properties.
+
+### Fixes
+
+- **Every property-sheet grid was a partial keyboard trap** — Up at the first
+  row, Down at the last, and `Left` back to the page list all did nothing on
+  all 21 grid pages, and an empty grid ate every arrow key.
+- **A restore from an appended `.bak` used the wrong backup set's file list**,
+  so every rename-restore failed with "Logical file 'x' is not part of
+  database 'y'"; the Files Included panel also kept showing set 1 whatever was
+  selected.
+- **The Job Steps page rewrote a PowerShell or CmdExec step as T-SQL**, and
+  it — like New Job — silently retargeted a step at whichever database sorted
+  first. Selecting a second step was enough to trigger both.
+- **Column permissions were broken end-to-end for views**: existing grants
+  read as "(none)", and "Load Columns" errored on every view.
+- **Effective Permissions was offered on Database Role and Server Role
+  Properties, where it can never work** — a role cannot be impersonated — and
+  the server-scope query failed for exactly the restricted logins it is most
+  useful on.
+- **A disabled properties field looked live and silently ignored clicks**; a
+  second click on an async page action put two round trips in flight; a
+  permissions Apply issued its statements in map order and left a stale
+  baseline behind; a filter matching nothing left the grids below it live.
+- **A text-selection drag stopped selecting the moment it left the field**, in
+  the Connect, Backup, Restore, Find and file dialogs.
+- **Activity Monitor**: a stopped collector went on reporting itself as
+  collecting, a zero refresh rate panicked the application, right-click did
+  nothing on the Block and Sessions grids, and the pinned tooltip was by turns
+  stale, self-dismissing, and drifting.
+- Database Properties > Files showed `PRIMARY` as a log file's filegroup and
+  committed it; the Backup dialog offered `tempdb` and offline databases; the
+  Object Explorer Details refresh button refreshed the wrong node;
+  `Editor.SetText` left one mouse latch armed.
+
+### Changes
+
+- **goSSMS is now GPL-3.0-or-later.** The Sessions tab embeds Adam Machanic's
+  GPL-3.0 **sp_WhoIsActive**, carried with its own licence and a modification
+  notice; see README § License and Acknowledgements.
+- **Editor undo became per-edit deltas** — a keystroke in a 20,000-line
+  script went from 4.5 ms / 5.25 MB / 20,002 allocations to 90 µs / 1.05 KB /
+  5 allocations, and the stack is capped in bytes as well as steps.
+- **The dashboards draw an order of magnitude cheaper** — 20,685 allocations
+  down to 2,183 and 6.36 ms to 3.05 ms, with the rendered output proven
+  byte-identical — and Find's draw path is no longer quadratic in matches.
+- The two collectors and the two sample stores became one generic
+  implementation each, the panel's duplicated per-feed state became one type
+  held twice, and 36 hand-rolled panic-guarded goroutines became `safego`.
+- Which databases a dropdown offers is now one documented rule, turning on
+  whether the name is resolved now or later.
+- "Show Value" routes by the column's declared type rather than by the shape
+  of the text, so an `xml` column opens highlighted even when its brackets
+  come back entity-escaped.
+- The T-SQL tokenizer and scope scanner moved out to `internal/tui/sqlparse`;
+  Options' "Max cell length" is now "Max *default* cell length".
+- `gosmo` v0.0.7 → v0.0.8 (permission options, column-level and effective
+  permissions, securable search, a view's columns, per-set backup file lists,
+  and job-step fixes). **BREAKING there:** `Table.AddColumn`/`DropColumn` are
+  gone.
+
 ## v0.0.5 — 2026-08-04
 
 A hardening release. The result path stops capping and starts costing
