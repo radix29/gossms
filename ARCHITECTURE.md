@@ -151,7 +151,7 @@ gossms/
 │   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
-│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog
+│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog (+ FileSystem: local or remote)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework
@@ -313,6 +313,7 @@ gossms/
 │       │
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
+│       ├── server_filesystem.go  # dialogs.FileSystem over gosmo — what Browse lists is the SQL Server host's disks, not this machine's
 │       ├── backup_dialog.go      # Back Up Database dialog — options form + in-place progress
 │       ├── backup_dialog_draw.go # Back Up Database rendering
 │       ├── backup_dialog_input.go # Back Up Database HandleKey/HandleMouse
@@ -431,6 +432,26 @@ async operation in `internal/tui` at the time.
 
 `QueryPanel`'s elapsed-timer tick is the one legitimate bare
 `wakeEventLoop()` caller: no callback to post, only a redraw to ask for.
+
+### The other direction: FileDialog.showBusy
+
+`dialogs.FileDialog` is the one place that paints *outside* the app's draw
+cycle, and it is not an exception to the rule above so much as the absence of
+one: `dialogs.FileSystem` is synchronous, so a remote implementation
+(`internal/tui/serverFS`) spends a network round trip inside the event
+handler and the loop cannot post anything until it returns. `showBusy` draws
+the dialog with a "Listing ..." line and calls `Screen.Show()` before the
+call, so the wait is legible instead of looking like a hang — a listing of
+`C:\Windows\System32` over the wire takes ten seconds and used to sit there
+with the *previous* directory still on screen.
+
+It repaints only for a `dialogs.BlockingFileSystem`, which `serverFS`
+implements and `LocalFileSystem` does not: on the local disk the extra frame
+would only flicker. Do not "simplify" this into the normal draw cycle — there
+is no frame between the keypress and the blocked call for the normal cycle to
+run in. The real fix is an asynchronous `FileSystem`, deliberately not built:
+it turns Tab completion and the save-overwrite check into callback chains for
+a wait the indicator already explains.
 
 ### Starting the goroutine: safego
 

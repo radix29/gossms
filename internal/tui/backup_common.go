@@ -14,6 +14,26 @@ import (
 // (backup_dialog.go, restore_dialog.go) share: server-side path handling,
 // progress-bar drawing, and display formatting for backup metadata.
 
+// wrapMessage lays text out over at most maxLines lines of w columns,
+// clipping the last one with "…" when even that isn't enough.
+//
+// SQL Server's own restore failures run to 200-plus characters ("The backup
+// set holds a backup of a database other than the existing 'x' database.
+// RESTORE DATABASE is terminating abnormally."), so a message drawn on one
+// clipped line stops right before the part that says what went wrong. Every
+// dialog that shows a server error has room for several lines; use them.
+func wrapMessage(text string, w, maxLines int) []string {
+	if w <= 0 || maxLines <= 0 {
+		return nil
+	}
+	lines := core.WrapText(text, w)
+	if len(lines) > maxLines {
+		rest := strings.Join(lines[maxLines-1:], " ")
+		lines = append(lines[:maxLines-1], core.Truncate(rest, w))
+	}
+	return lines
+}
+
 // joinServerPath joins a directory and file name using the separator the
 // directory itself uses — the path lives on the server, whose OS may not be
 // the one gossms runs on.

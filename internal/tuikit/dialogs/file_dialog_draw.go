@@ -39,10 +39,17 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 
 	lr := d.listRect()
 	baseStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	if d.listErr != "" {
+	// busy wins over listErr: it is only ever set for the duration of a
+	// FileSystem call, and what it replaces is the previous directory's
+	// listing or error, both of which are about to be superseded.
+	note := d.busy
+	if note == "" {
+		note = d.listErr
+	}
+	if note != "" {
 		core.FillRect(s, lr, ' ', baseStyle)
-		errStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-		core.DrawTextClipped(s, lr.X, lr.Y, lr.W, errStyle, d.listErr)
+		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		core.DrawTextClipped(s, lr.X, lr.Y, lr.W, noteStyle, note)
 	} else {
 		for row := 0; row < lr.H; row++ {
 			idx := d.scroll + row
@@ -88,21 +95,21 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 	// drawn over it this frame (see Draw's nameColW comment).
 	core.FillRect(s, core.Rect{X: x, Y: y, W: nameColW + 1 + fileSizeColW + 1 + fileModColW + 1, H: 1}, ' ', st)
 
-	icon, name := "📄", e.name
-	if e.isDir {
+	icon, name := "📄", e.Name
+	if e.IsDir {
 		icon = "📁"
-		name += "/"
+		name += d.FileSystem().Separator()
 	}
 	core.DrawTextClipped(s, x, y, nameColW, st, marker+icon+" "+name)
 
-	sizeText := formatFileSize(e.size)
-	if e.isDir {
+	sizeText := formatFileSize(e.Size)
+	if e.IsDir {
 		sizeText = "DIR"
 	}
 	core.DrawTextRight(s, x+nameColW+1, y, fileSizeColW, st, sizeText)
 
-	if e.name != ".." {
+	if e.Name != ".." {
 		modX := x + nameColW + 1 + fileSizeColW + 1
-		core.DrawTextRight(s, modX, y, fileModColW, st, e.mod.Format("2006-01-02 15:04"))
+		core.DrawTextRight(s, modX, y, fileModColW, st, e.ModTime.Format("2006-01-02 15:04"))
 	}
 }

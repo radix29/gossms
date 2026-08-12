@@ -58,7 +58,7 @@ func (d *FileDialog) typeaheadJump(r rune) {
 	for _, candidate := range []string{d.typeahead + string(r), string(r)} {
 		lower := strings.ToLower(candidate)
 		for i, e := range d.entries {
-			if strings.HasPrefix(strings.ToLower(e.name), lower) {
+			if strings.HasPrefix(strings.ToLower(e.Name), lower) {
 				d.typeahead = candidate
 				d.sel = i
 				d.ensureVisible()

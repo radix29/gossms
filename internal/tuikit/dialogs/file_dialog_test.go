@@ -45,14 +45,14 @@ func TestFileDialogLoadDirSortsDirsBeforeFiles(t *testing.T) {
 		t.Fatalf("entries = %v, want names %v", d.entries, want)
 	}
 	for i, name := range want {
-		if d.entries[i].name != name {
-			t.Errorf("entries[%d].name = %q, want %q", i, d.entries[i].name, name)
+		if d.entries[i].Name != name {
+			t.Errorf("entries[%d].Name = %q, want %q", i, d.entries[i].Name, name)
 		}
 	}
-	if !d.entries[0].isDir || !d.entries[1].isDir || !d.entries[2].isDir {
+	if !d.entries[0].IsDir || !d.entries[1].IsDir || !d.entries[2].IsDir {
 		t.Fatal("expected the first three entries to be directories")
 	}
-	if d.entries[3].isDir || d.entries[4].isDir {
+	if d.entries[3].IsDir || d.entries[4].IsDir {
 		t.Fatal("expected the last two entries to be files")
 	}
 }
@@ -65,7 +65,7 @@ func TestFileDialogLoadDirAtRootOmitsParent(t *testing.T) {
 	}
 	d.loadDir(root)
 	for _, e := range d.entries {
-		if e.name == ".." {
+		if e.Name == ".." {
 			t.Fatalf("filesystem root listing should not include a %q entry", "..")
 		}
 	}
@@ -81,8 +81,8 @@ func TestFileDialogShowOpenPreselectsName(t *testing.T) {
 	if got := d.nameField.Value(); got != "README.md" {
 		t.Fatalf("nameField.Value() = %q, want %q", got, "README.md")
 	}
-	if d.entries[d.sel].name != "README.md" {
-		t.Fatalf("selected entry = %q, want %q", d.entries[d.sel].name, "README.md")
+	if d.entries[d.sel].Name != "README.md" {
+		t.Fatalf("selected entry = %q, want %q", d.entries[d.sel].Name, "README.md")
 	}
 	if d.focus != ffList {
 		t.Fatalf("focus = %d, want ffList", d.focus)
@@ -230,7 +230,7 @@ func TestFileDialogTypeaheadJumpsToMatch(t *testing.T) {
 
 	d.HandleKey(rn('m')) // "main.go" is the only entry starting with 'm'
 
-	if got := d.entries[d.sel].name; got != "main.go" {
+	if got := d.entries[d.sel].Name; got != "main.go" {
 		t.Fatalf("selected entry after typeahead 'm' = %q, want %q", got, "main.go")
 	}
 }
@@ -332,8 +332,8 @@ func TestFileDialogHeldButtonOnUnselectedRowDoesNotAutoActivate(t *testing.T) {
 	// TestFileDialogLoadDirSortsDirsBeforeFiles). ShowOpen preselects
 	// README.md (index 4), so main.go (index 3) starts out unselected.
 	const mainGoIdx = 3
-	if d.entries[mainGoIdx].name != "main.go" {
-		t.Fatalf("entries[%d] = %q, want main.go", mainGoIdx, d.entries[mainGoIdx].name)
+	if d.entries[mainGoIdx].Name != "main.go" {
+		t.Fatalf("entries[%d] = %q, want main.go", mainGoIdx, d.entries[mainGoIdx].Name)
 	}
 	lr := d.listRect()
 	x, y := lr.X+1, lr.Y+mainGoIdx

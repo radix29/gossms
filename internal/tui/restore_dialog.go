@@ -10,12 +10,51 @@ import (
 )
 
 // RestoreDialog modes: the option form, the backup-inspection view Analyze
-// Backup switches to, and the in-place progress view once the restore runs.
+// Backup switches to, the file-relocation view Files switches to, and the
+// in-place progress view once the restore runs.
 const (
 	restoreModeForm = iota
 	restoreModeInspect
+	restoreModeFiles
 	restoreModeProgress
 )
+
+// File-relocation modes, in the order the Files view's radio lists them.
+const (
+	// relocAuto relocates every file to the server's default data/log
+	// folders, but only when the target name differs from the backup's —
+	// restoring a copy next to the original otherwise has the two databases
+	// fighting over the same physical files. This is the dialog's default
+	// and the only behaviour it had before the Files view existed.
+	relocAuto = iota
+	// relocOriginal restores every file to the path recorded in the backup.
+	relocOriginal
+	// relocFolder relocates every file into the folders named in the Files
+	// view, regardless of whether the database is being renamed.
+	relocFolder
+)
+
+// relocPlan is the Files view's relocation choice, snapshotted on the UI
+// goroutine so buildRestoreOptions can read it from a background one.
+type relocPlan struct {
+	mode    int
+	dataDir string
+	logDir  string
+}
+
+// needsFileList reports whether the plan actually moves anything, and so
+// whether the RESTORE FILELISTONLY the MOVE clauses are built from is worth
+// running at all.
+func (p relocPlan) needsFileList(source, target string) bool {
+	switch p.mode {
+	case relocFolder:
+		return true
+	case relocOriginal:
+		return false
+	default:
+		return !strings.EqualFold(source, target)
+	}
+}
 
 const (
 	restoreDialogW = 72
@@ -26,9 +65,15 @@ const (
 // dropdown lists (most recent first) — its open list doesn't scroll.
 const maxHistorySets = 10
 
+// Button rows. The form's labels are kept short deliberately: five buttons
+// at "Analyze Backup" width no longer fit inside restoreDialogW. The inspect
+// row has room to spell "File Locations" out, but says "Files" like the form
+// does because both buttons open the same view — two names for one
+// destination reads as two destinations.
 var (
-	restoreFormButtons    = []string{"Analyze Backup", "Script", "Start Restore", "Cancel"}
-	restoreInspectButtons = []string{"Restore", "Back"}
+	restoreFormButtons    = []string{"Analyze", "Files", "Script", "Start Restore", "Cancel"}
+	restoreInspectButtons = []string{"Files", "Restore", "Back"}
+	restoreFilesButtons   = []string{"Restore", "Back"}
 )
 
 // RestoreDialog is the Restore Database dialog (Object Explorer, database
@@ -59,6 +104,14 @@ type RestoreDialog struct {
 	cbReplace  *widgets.CheckBox
 	cbVerify   *widgets.CheckBox
 	cbClose    *widgets.CheckBox
+
+	// Files view (restoreModeFiles): where the restored database's files
+	// land, and the folders relocFolder puts them in.
+	rbReloc    *widgets.RadioBox
+	fDataDir   *widgets.InputField
+	fLogDir    *widgets.InputField
+	btnDefLoc  *widgets.Button
+	filesFocus int
 
 	focusIdx  int
 	focusable []focusable
@@ -153,6 +206,19 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.cbVerify.SetChecked(true)
 	d.cbClose = widgets.NewCheckBox("Close existing connections")
 	d.cbClose.SetChecked(true)
+
+	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{
+		"Relocate to the default folders when renaming the database",
+		"Keep the locations recorded in the backup",
+		"Relocate all files to the folders below",
+	})
+	d.btnDefLoc = widgets.NewButton("Default Location", d.fillDefaultLocation)
+	d.fDataDir = widgets.NewInputField("Data folder:", d.dirFieldWidth(), false)
+	d.fLogDir = widgets.NewInputField("Log folder: ", d.dirFieldWidth(), false)
+	d.filesFocus = 0
+	// Pre-filled so the Relocate option is usable the moment it's picked;
+	// Default Location puts these same values back after an edit.
+	d.fillDefaultLocation()
 
 	d.prevSource = 0
 	d.prevHistDB = d.ddHistDB.Value()
@@ -250,13 +316,20 @@ func (d *RestoreDialog) autoFillTarget(name string) {
 	}
 }
 
-// browseFile opens the shared file dialog to pick the backup file.
+// browseFile opens the shared file dialog to pick the backup file. Like
+// Backup's Browse, it browses the server's filesystem — RESTORE reads the
+// device on the SQL Server host, not on this machine.
 func (d *RestoreDialog) browseFile() {
+	fs, ok := newServerFS(d.sc)
+	if !ok {
+		d.setStatusMsg("Not connected — cannot browse the server's filesystem.", true)
+		return
+	}
 	start := strings.TrimSpace(d.fFile.Value())
-	if start == "" && d.sc != nil && d.sc.Server != nil {
+	if start == "" {
 		start = joinServerPath(d.sc.Server.Info().DefaultBackupPath, "")
 	}
-	d.app.fileDialog.ShowOpen("Select Backup File", start, func(path string) {
+	d.app.fileDialog.ShowOpenOn(fs, "Select Backup File", start, func(path string) {
 		d.fFile.SetValue(path)
 	})
 }
@@ -273,10 +346,12 @@ func (d *RestoreDialog) doFormButton() {
 	case 0:
 		d.analyze()
 	case 1:
-		d.script()
+		d.showFileLocations()
 	case 2:
-		d.startRestore()
+		d.script()
 	case 3:
+		d.startRestore()
+	case 4:
 		d.Hide()
 	}
 }
@@ -284,12 +359,28 @@ func (d *RestoreDialog) doFormButton() {
 func (d *RestoreDialog) doInspectButton() {
 	switch d.btnFocus {
 	case 0:
+		d.showFileLocations()
+	case 1:
+		d.startRestore()
+	case 2:
+		d.backToForm()
+	}
+}
+
+func (d *RestoreDialog) doFilesButton() {
+	switch d.btnFocus {
+	case 0:
 		d.startRestore()
 	case 1:
-		d.mode = restoreModeForm
-		d.btnFocus = 0
-		d.SetTitle("Restore Database")
+		d.backToForm()
 	}
+}
+
+// backToForm returns from the inspect or files view to the option form.
+func (d *RestoreDialog) backToForm() {
+	d.mode = restoreModeForm
+	d.btnFocus = 0
+	d.SetTitle("Restore Database")
 }
 
 func (d *RestoreDialog) doProgressButton() {

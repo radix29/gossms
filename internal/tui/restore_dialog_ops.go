@@ -210,7 +210,12 @@ func (d *RestoreDialog) restoreFileNumber() int {
 
 // analyze reads the backup's header and file list in the background and
 // switches to the inspection view (mockup's "Backup Information").
-func (d *RestoreDialog) analyze() {
+func (d *RestoreDialog) analyze() { d.loadBackupInfo(restoreModeInspect) }
+
+// loadBackupInfo reads the backup's header and file list in the background,
+// then switches to next — the inspection view, or the Files view, both of
+// which render that same data.
+func (d *RestoreDialog) loadBackupInfo(next int) {
 	dev := d.deviceForRestore()
 	if dev == "" {
 		d.setStatusMsg("Select a backup file or history entry first.", true)
@@ -247,10 +252,14 @@ func (d *RestoreDialog) analyze() {
 			d.headers, d.files, d.inspectDev = headers, files, dev
 			d.headerIdx = 0
 			d.autoFillTarget(headers[0].DatabaseName)
+			d.setStatusMsg("Ready", false)
+			if next == restoreModeFiles {
+				d.enterFilesMode()
+				return
+			}
 			d.mode = restoreModeInspect
 			d.btnFocus = 0
 			d.SetTitle("Backup Information")
-			d.setStatusMsg("Ready", false)
 		})
 	})
 }
@@ -335,10 +344,12 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 	replace := d.cbReplace.Checked()
 	verify := d.cbVerify.Checked()
 	closeConns := d.cbClose.Checked()
-	// Snapshotted here, on the UI goroutine — runRestore reads it from a
-	// background one, where d.headerIdx must not be touched. Zero unless the
-	// user analyzed a multi-set device and picked a set.
+	// Snapshotted here, on the UI goroutine — runRestore reads them from a
+	// background one, where the dialog's own state must not be touched. The
+	// set number is zero unless the user analyzed a multi-set device and
+	// picked a set.
 	fileNumber := d.restoreFileNumber()
+	plan := d.relocation()
 
 	task, ctx := d.app.startTask(d.sc.Context(), "Restore "+target)
 	d.task = task
@@ -350,7 +361,7 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 
 	app, sc := d.app, d.sc
 	app.safego("the restore", func() {
-		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns, fileNumber)
+		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns, fileNumber, plan)
 		if err == nil {
 			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })
 		}
@@ -361,7 +372,7 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 // runRestore is the background body of startRestore: verify (optional),
 // read metadata, relocate files for a renamed target, close existing
 // connections (optional), then the RESTORE itself with progress.
-func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target string, recovery, replace, verify, closeConns bool, fileNumber int) error {
+func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target string, recovery, replace, verify, closeConns bool, fileNumber int, plan relocPlan) error {
 	app, srv := d.app, d.sc.Server
 
 	if verify {
@@ -372,7 +383,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	}
 
 	app.postProgress(task, -1, "Reading backup metadata...")
-	ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber)
+	ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber, plan)
 	if err != nil {
 		return err
 	}
@@ -414,16 +425,65 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	return nil
 }
 
+// relocateFiles returns the MOVE clauses that put the backup set's files
+// where plan asks, or nil to leave every file at the path recorded in the
+// backup. defData/defLog are the server's default directories, used by
+// relocAuto and as the fallback for a folder field left empty.
+//
+// Renaming decides the file *names*, in every mode that moves anything:
+// restoring under a different database name mints
+// "<target>_<logical><ext>", so the copy can't collide with the original
+// database's own files, while a same-name restore keeps the backup's file
+// names and changes only the directory.
+func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, source, target string) []gosmo.RelocateFile {
+	if !plan.needsFileList(source, target) {
+		return nil
+	}
+	dataDir, logDir := defData, defLog
+	if plan.mode == relocFolder {
+		if plan.dataDir != "" {
+			dataDir = plan.dataDir
+		}
+		if plan.logDir != "" {
+			logDir = plan.logDir
+		}
+	}
+	renamed := !strings.EqualFold(source, target)
+
+	var relocate []gosmo.RelocateFile
+	for _, f := range files {
+		dir, ext := dataDir, serverPathExt(f.PhysicalName)
+		if f.Type == "L" {
+			dir = logDir
+			if ext == "" {
+				ext = ".ldf"
+			}
+		} else if ext == "" {
+			ext = ".ndf"
+		}
+		name := serverPathBase(f.PhysicalName)
+		if renamed {
+			name = target + "_" + f.LogicalName + ext
+		}
+		relocate = append(relocate, gosmo.RelocateFile{
+			LogicalName:  f.LogicalName,
+			PhysicalName: joinServerPath(dir, name),
+		})
+	}
+	return relocate
+}
+
 // buildRestoreOptions resolves dev/target into a gosmo.RestoreOptions,
-// including the file relocation MOVE clauses a renamed target needs — the
-// read-only metadata lookup shared by runRestore (which goes on to execute
-// the result) and script() (which only renders it as T-SQL for review).
+// including the file relocation MOVE clauses plan asks for — the read-only
+// metadata lookup shared by runRestore (which goes on to execute the
+// result) and script() (which only renders it as T-SQL for review).
 //
 // fileNumber is the backup set to restore (RESTORE's WITH FILE = n), 0 for
-// a device holding only one. It is passed in rather than read off the
-// dialog because this runs on a background goroutine: d.headerIdx is UI
-// state, so the caller snapshots it via restoreFileNumber before starting.
-func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace bool, fileNumber int) (gosmo.RestoreOptions, error) {
+// a device holding only one. It, like plan, is passed in rather than read
+// off the dialog because this runs on a background goroutine: d.headerIdx
+// and the Files view's widgets are UI state, so the caller snapshots them
+// via restoreFileNumber/relocation before starting.
+func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace bool, fileNumber int, plan relocPlan) (gosmo.RestoreOptions, error) {
 	srv := d.sc.Server
 	headers, err := srv.BackupHeadersContext(ctx, dev)
 	if err != nil {
@@ -443,11 +503,8 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 		}
 	}
 
-	// Restoring under a different name: MOVE every file out of the paths
-	// recorded in the backup (still owned by the source database) into the
-	// server's default directories, named after the target.
 	var relocate []gosmo.RelocateFile
-	if !strings.EqualFold(source, target) {
+	if plan.needsFileList(source, target) {
 		// The file list has to name the same set as FileNumber below. Asking
 		// for the device without one describes set 1, whose logical file names
 		// are a different database's whenever backups were appended — and MOVE
@@ -458,22 +515,7 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 			return gosmo.RestoreOptions{}, err
 		}
 		info := srv.Info()
-		for _, f := range files {
-			dir := info.DefaultDataPath
-			ext := serverPathExt(f.PhysicalName)
-			if f.Type == "L" {
-				dir = info.DefaultLogPath
-				if ext == "" {
-					ext = ".ldf"
-				}
-			} else if ext == "" {
-				ext = ".ndf"
-			}
-			relocate = append(relocate, gosmo.RelocateFile{
-				LogicalName:  f.LogicalName,
-				PhysicalName: joinServerPath(dir, target+"_"+f.LogicalName+ext),
-			})
-		}
+		relocate = relocateFiles(files, plan, info.DefaultDataPath, info.DefaultLogPath, source, target)
 	}
 
 	return gosmo.RestoreOptions{
@@ -505,7 +547,7 @@ func (d *RestoreDialog) script() {
 	}
 	recovery := d.rbRecovery.Selected() == 0
 	replace := d.cbReplace.Checked()
-	fileNumber := d.restoreFileNumber() // snapshot on the UI goroutine — see beginRestore
+	fileNumber, plan := d.restoreFileNumber(), d.relocation() // snapshots on the UI goroutine — see beginRestore
 
 	d.setStatusMsg("Building script...", false)
 	d.loadSeq++
@@ -514,7 +556,7 @@ func (d *RestoreDialog) script() {
 	app.safego("scripting the restore", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber)
+		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber, plan)
 		var stmt string
 		if err == nil {
 			stmt, err = gosmo.BuildRestoreStatement(ropts)

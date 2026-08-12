@@ -298,28 +298,81 @@ Each is a feature, not a defect.
 
 ## Reworks named in README's Known Issues
 
-Both are the author's own assessment; neither has a defect list behind it yet.
+The author's own assessment; no defect list behind it yet.
 
-- **The Database Restore dialog needs a rework.** `todo/todo.txt` names the
-  concrete parts: show the *remote* server's directory rather than the
-  client's, move-files handling, error messages, and text trimming. The dialog
-  works today; this is a quality pass, not a break.
-  One part of "move-files handling" is **done** (2026-08-08): the MOVE clauses
-  and the Files Included panel were both built from backup set 1 regardless of
-  which set was selected, which failed every rename-restore from an appended
-  `.bak` with "Logical file 'x' is not part of database 'y'". See
-  `gosmo.Server.BackupFileListForSetContext` and `docs/journal.md`. The
-  remaining parts are untouched.
-  The rework must not re-scatter the set number: since 2026-08-09 the restore
-  itself, the MOVE clauses and the Files Included panel all take it from
-  `backupSetNumber` in `restore_dialog_ops.go`, which carries the rule and the
-  live evidence behind it. Two of the three deriving it separately is what
-  produced the bug above.
+**Backup and Restore no longer need one** — closed 2026-08-12, and dropped
+from README's Known Issues. Every part `todo/todo.txt` named is done: the
+Browse buttons list the *server's* filesystem rather than the client's, the
+Restore File Locations view (`restore_dialog_files.go`) covers move-files
+handling, a failed restore's SQL Server message is wrapped rather than clipped
+to one line, and paths in the file list are clipped from the left so the file
+name survives. Per-file destinations (SSMS's editable "Restore As" column) were
+deliberately not built; the folder-level choice covers what the dialog's width
+allows. The Backup dialog's progress view wraps its failure message too, as of
+2026-08-12 — it was the last rough edge left in the pair.
 
-- **SQL Agent needs a complete rework.** The `agent_*` files (14 of them) are
-  the largest untouched-by-review area in `internal/tui`. No specific defect is
-  recorded — write one down here the next time one is found, rather than
-  carrying "needs a rework" as the whole thread.
+Two rules from that work outlive it. **The backup set number must not get
+re-scattered**: the restore itself, the MOVE clauses and the Files Included
+panel all take it from `backupSetNumber` in `restore_dialog_ops.go`, and two of
+the three deriving it separately is exactly what produced the "Logical file 'x'
+is not part of database 'y'" failure on every rename-restore from an appended
+`.bak`. **The relocation preview and the MOVE clauses must keep sharing
+`relocateFiles`**, or the paths the Files view lists stop describing what the
+restore does.
+
+- **SQL Agent.** Reviewed 2026-08-12, the first pass over the `agent_*` files.
+  The area is in better shape than "needs a complete rework" implied — the
+  Steps page's three-pass apply around `sp_delete_jobstep`'s renumbering, the
+  read-only non-T-SQL guard, per-row dirty gating, rename-last ordering, and
+  gosmo's `escapeSingle` coverage of every `sp_*` call are all sound. "Needs a
+  complete rework" is retired as the thread; these are what the pass actually
+  found, none of them fixed yet.
+
+  - **Job Properties > Notifications assigns an operator the user never
+    picked.** `pageJobNotifications` (`agent_job_props_alerts.go:197`) builds
+    the Operator dropdown as `propsheet.Select("Operator", opNames,
+    indexOf(opNames, j.NotifyEmailOperatorName))` — no leading sentinel, so a
+    job with no operator configured (`""`) takes `indexOf`'s not-found 0 and
+    displays whichever operator sorts first as if it were the job's. Ticking
+    E-mail then makes `emailCheck.Dirty()` true and apply writes
+    `operatorSelect.Value()` — that arbitrary operator. Verified live on
+    win10cli 2026-08-12 with a disposable job and two disposable operators
+    (`zz_notify_probe`, `zz_op_alpha`/`zz_op_beta`, all dropped after): the
+    job came up showing `zz_op_alpha` with `notify_email_operator_id = 0`, and
+    one tick plus OK left `notify_level_email = 2` pointing at `zz_op_alpha`.
+
+    The fix is the idiom this package already uses in three sibling places —
+    `noneItem` at index 0, searched against the combined list, mapped back to
+    `""` on apply. `Job.SetEmailNotifyContext` documents `""` as "leave the
+    operator unchanged", which paired with `NotifyNever` is exactly what the
+    sentinel should mean. The per-row dirty gate right above the write already
+    names this failure ("an arbitrary real operator when the job has none
+    configured") — it just closes the unrelated-section door, not this one.
+
+  - **A dropped owner login is displayed as a real one.** `pageJobGeneral`
+    (`agent_job_props.go:83`) and `pageScheduleGeneral`
+    (`agent_schedule_props.go:67`) both do `indexOf(loginNames,
+    ...OwnerLoginName)`. A job or schedule whose `owner_sid` no longer
+    resolves shows the first login on the server as its owner. Display-only —
+    the row isn't dirty, so nothing is written — but it misreports ownership
+    on exactly the jobs an admin is hunting for. `indexOfOK` plus a sentinel,
+    same as above.
+
+  - **"Jobs Without Schedules" silently drops what it couldn't check.**
+    `jobsWithoutSchedulesReport` (`agent_reports.go:138`) does `if err != nil
+    || len(scheds) > 0 { continue }`, so a job whose per-job round trip failed
+    is omitted from a report whose entire purpose is finding jobs that are
+    missing something. It should surface the failure or list the job as
+    unknown.
+
+  - **Duration is formatted two ways in one feature.** `formatHMS`
+    ("01:02:03") on the Job Properties General and History pages;
+    `time.Duration.String()` ("1h2m3s") in `agentJobHistoryDetail`
+    (`agent_detail.go:241`) and `failedJobRunsReport` (`agent_reports.go:107`).
+
+  Two known gaps stay as scope notes, not defects: Start/Stop Job aren't gated
+  on job state (the permitted reactive-error fallback), and there's no step
+  reordering (msdb has no documented procedure for it).
 
 ## Deferred scope (repeatedly, deliberately)
 

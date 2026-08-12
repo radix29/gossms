@@ -277,15 +277,25 @@ func (d *BackupDialog) setDatabaseItems(names []string) {
 }
 
 // browseDest opens the shared file dialog to pick the destination path.
-// The path is used on the server, but browsing the local filesystem is the
-// best available picker.
+// It browses the *server's* filesystem (newServerFS): BACKUP resolves the
+// device path on the SQL Server host, so a path picked from the client's own
+// disks names a directory the server can't write to.
 func (d *BackupDialog) browseDest() {
+	fs, ok := newServerFS(d.sc)
+	if !ok {
+		d.setStatusMsg("Not connected — cannot browse the server's filesystem.", true)
+		return
+	}
 	start := strings.TrimSpace(d.fDest.Value())
 	if start == "" {
 		start = d.autoDest()
 	}
-	d.app.fileDialog.ShowSave("Backup Destination", start, func(path string) {
+	d.app.fileDialog.ShowSaveOn(fs, "Backup Destination", start, func(path string) {
 		d.fDest.SetValue(path)
+		// The picked path is the user's own choice now, so syncAutoDest must
+		// stop treating the field as still holding a generated default and
+		// overwriting it on the next database/type change.
+		d.lastAutoDest = ""
 	})
 }
 

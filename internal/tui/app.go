@@ -10,7 +10,6 @@ package tui
 import (
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -408,8 +407,11 @@ func (a *App) buildUI() {
 	a.newEndpointDialog = NewNewEndpointDialog(a)
 	a.fileDialog = dialogs.NewFileDialog(a.screen)
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
+		// serverPathBase, not filepath.Base: the path may be the SQL Server
+		// host's, whose separator isn't this machine's — filepath.Base of
+		// `C:\Backup\db.bak` on Linux is the whole string.
 		a.confirmDialog.ShowConfirm("Confirm Save As",
-			filepath.Base(path)+" already exists. Overwrite it?",
+			serverPathBase(path)+" already exists. Overwrite it?",
 			func(confirmed bool) {
 				if confirmed {
 					proceed()

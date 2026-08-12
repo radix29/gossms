@@ -453,11 +453,24 @@ func (f *InputField) HandleMouse(ev *tcell.EventMouse) bool {
 // characters scrolls twice as far per caret step, which is what the eye
 // expects and what keeps the caret on screen at all.
 func (f *InputField) adjustScroll() {
-	col := core.ColumnOfRune(f.displayRunes(), f.cursor)
+	runes := f.displayRunes()
+	col := core.ColumnOfRune(runes, f.cursor)
 	if col < f.scroll {
 		f.scroll = col
 	}
 	if col >= f.scroll+f.rect.W {
 		f.scroll = col - f.rect.W + 1
+	}
+	// Keeping the caret visible is not enough on its own: replacing a long
+	// value with a short one (SetValue) leaves the caret at the new, shorter
+	// end, and the rule above happily scrolls the window to start exactly
+	// there — past every character in the field, which then draws blank over
+	// a value that is really set. Shipped as "Browse returns C:\temp\aaa.bak
+	// and the Destination box goes empty, but Script emits the right path".
+	if last := core.ColumnOfRune(runes, len(runes)) - f.rect.W + 1; f.scroll > last {
+		f.scroll = last
+	}
+	if f.scroll < 0 {
+		f.scroll = 0
 	}
 }

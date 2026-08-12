@@ -68,7 +68,12 @@ func (d *BackupDialog) layoutForm() {
 	d.cbCopyOnly.SetBounds(lx, row)
 }
 
-// drawStatus renders the "Status:" line just above the button separator.
+// drawStatus renders the "Status:" line, growing *upward* from the row above
+// the separator into whatever rows the form's last checkbox leaves free. A
+// failed BACKUP reports SQL Server's own message here ("Cannot open backup
+// device ... Operating system error 5(Access is denied.)"), which is several
+// times one line and is the only thing the user still needs — the same reason
+// the progress view wraps its own message.
 func (d *BackupDialog) drawStatus(s tcell.Screen) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
@@ -76,7 +81,12 @@ func (d *BackupDialog) drawStatus(s tcell.Screen) {
 		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
 	}
 	inner := d.InnerRect()
-	core.DrawTextClipped(s, inner.X+1, d.ButtonRowY()-2, inner.W-2, st, "Status: "+d.status)
+	w := inner.W - 2
+	lines := wrapMessage("Status: "+d.status, w, d.ButtonRowY()-1-(d.cbCopyOnly.RectY()+1))
+	y := d.ButtonRowY() - 1 - len(lines)
+	for i, ln := range lines {
+		core.DrawTextClipped(s, inner.X+1, y+i, w, st, ln)
+	}
 }
 
 // drawProgress renders the progress view from the running/finished task.
@@ -121,7 +131,13 @@ func (d *BackupDialog) drawProgress(s tcell.Screen) {
 	case msg == "":
 		msg = "Starting backup..."
 	}
-	core.DrawTextClipped(s, lx, inner.Y+12, w, msgStyle, msg)
+	// Last, and given every remaining row down to the separator: a failed
+	// backup reports SQL Server's own message, which is far longer than one
+	// line and is the only thing on this screen the user still needs.
+	msgY := inner.Y + 12
+	for i, ln := range wrapMessage(msg, w, d.ButtonRowY()-1-msgY) {
+		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
+	}
 
 	d.DrawSeparator(s)
 	labels := d.progressButtons()

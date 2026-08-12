@@ -3,7 +3,10 @@ package tui
 import (
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // hdr builds a backup header at a given device position.
@@ -137,6 +140,167 @@ func TestBackupSetNumber(t *testing.T) {
 	}
 }
 
+// bfile builds a backup file-list entry.
+func bfile(logical, physical, typ string) *gosmo.BackupFile {
+	return &gosmo.BackupFile{LogicalName: logical, PhysicalName: physical, Type: typ}
+}
+
+// The set of files every relocation case below is built from: a data and a
+// log file recorded under the source database's own Windows paths.
+func backupSetFiles() []*gosmo.BackupFile {
+	return []*gosmo.BackupFile{
+		bfile("AppDB", `D:\SQL\DATA\AppDB.mdf`, "D"),
+		bfile("AppDB_log", `E:\SQL\LOG\AppDB_log.ldf`, "L"),
+	}
+}
+
+// TestRelocateFilesAuto pins the behaviour the dialog had before the Files
+// view existed, and still defaults to: files are moved to the server's
+// default folders — under names derived from the target — only when the
+// restore renames the database, since a same-name restore is meant to land
+// on the original's own files.
+func TestRelocateFilesAuto(t *testing.T) {
+	plan := relocPlan{mode: relocAuto}
+	defData, defLog := `C:\Data`, `C:\Log`
+
+	if got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "AppDB"); got != nil {
+		t.Errorf("same-name restore relocated files: %+v, want none", got)
+	}
+	// Case-insensitively the same name is the same database.
+	if got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "appdb"); got != nil {
+		t.Errorf("case-different name relocated files: %+v, want none", got)
+	}
+
+	got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "AppDB_Copy")
+	want := []gosmo.RelocateFile{
+		{LogicalName: "AppDB", PhysicalName: `C:\Data\AppDB_Copy_AppDB.mdf`},
+		{LogicalName: "AppDB_log", PhysicalName: `C:\Log\AppDB_Copy_AppDB_log.ldf`},
+	}
+	assertRelocations(t, got, want)
+}
+
+// TestRelocateFilesOriginal pins that the "keep the locations recorded in
+// the backup" choice emits no MOVE at all — including for a renamed target,
+// where the pre-Files-view dialog always relocated.
+func TestRelocateFilesOriginal(t *testing.T) {
+	plan := relocPlan{mode: relocOriginal}
+	for _, target := range []string{"AppDB", "AppDB_Copy"} {
+		if got := relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", target); got != nil {
+			t.Errorf("target %q: relocated files: %+v, want none", target, got)
+		}
+	}
+}
+
+// TestRelocateFilesFolder pins the explicit relocation: every file moves to
+// the named folders whether or not the database is renamed, and the file
+// names follow the same rule as relocAuto — the backup's own names for a
+// same-name restore, target-derived ones for a rename, so a copy restored
+// into the same folder as the original can't collide with it.
+func TestRelocateFilesFolder(t *testing.T) {
+	plan := relocPlan{mode: relocFolder, dataDir: `F:\NewData`, logDir: `G:\NewLog`}
+
+	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB"),
+		[]gosmo.RelocateFile{
+			{LogicalName: "AppDB", PhysicalName: `F:\NewData\AppDB.mdf`},
+			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_log.ldf`},
+		})
+
+	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB_Copy"),
+		[]gosmo.RelocateFile{
+			{LogicalName: "AppDB", PhysicalName: `F:\NewData\AppDB_Copy_AppDB.mdf`},
+			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_Copy_AppDB_log.ldf`},
+		})
+}
+
+// TestRelocateFilesFolderFallsBackToDefaults pins that a folder field left
+// empty means the server's default directory, not a bare file name — which
+// RESTORE would reject as a relative path.
+func TestRelocateFilesFolderFallsBackToDefaults(t *testing.T) {
+	plan := relocPlan{mode: relocFolder, logDir: `G:\NewLog`}
+	assertRelocations(t, relocateFiles(backupSetFiles(), plan, `C:\Data`, `C:\Log`, "AppDB", "AppDB"),
+		[]gosmo.RelocateFile{
+			{LogicalName: "AppDB", PhysicalName: `C:\Data\AppDB.mdf`},
+			{LogicalName: "AppDB_log", PhysicalName: `G:\NewLog\AppDB_log.ldf`},
+		})
+}
+
+// TestRelocateFilesSuppliesAnExtension pins the fallback for a backup whose
+// physical name carries no extension: a renamed file is minted from the
+// logical name, so it needs one, and data and log files get different ones.
+func TestRelocateFilesSuppliesAnExtension(t *testing.T) {
+	files := []*gosmo.BackupFile{
+		bfile("AppDB", `D:\SQL\DATA\AppDB`, "D"),
+		bfile("AppDB_log", `E:\SQL\LOG\AppDB_log`, "L"),
+	}
+	assertRelocations(t, relocateFiles(files, relocPlan{mode: relocAuto}, `C:\Data`, `C:\Log`, "AppDB", "Copy"),
+		[]gosmo.RelocateFile{
+			{LogicalName: "AppDB", PhysicalName: `C:\Data\Copy_AppDB.ndf`},
+			{LogicalName: "AppDB_log", PhysicalName: `C:\Log\Copy_AppDB_log.ldf`},
+		})
+}
+
+// needsFileList decides whether buildRestoreOptions runs RESTORE
+// FILELISTONLY at all, so it has to agree with relocateFiles: a mode that
+// would produce MOVE clauses must not have its file list skipped.
+func TestNeedsFileListAgreesWithRelocateFiles(t *testing.T) {
+	for _, tc := range []struct {
+		plan   relocPlan
+		target string
+	}{
+		{relocPlan{mode: relocAuto}, "AppDB"},
+		{relocPlan{mode: relocAuto}, "AppDB_Copy"},
+		{relocPlan{mode: relocOriginal}, "AppDB"},
+		{relocPlan{mode: relocOriginal}, "AppDB_Copy"},
+		{relocPlan{mode: relocFolder, dataDir: `F:\D`, logDir: `F:\L`}, "AppDB"},
+		{relocPlan{mode: relocFolder, dataDir: `F:\D`, logDir: `F:\L`}, "AppDB_Copy"},
+	} {
+		moves := relocateFiles(backupSetFiles(), tc.plan, `C:\Data`, `C:\Log`, "AppDB", tc.target)
+		if want := len(moves) > 0; tc.plan.needsFileList("AppDB", tc.target) != want {
+			t.Errorf("mode %d target %q: needsFileList = %v but relocateFiles produced %d moves",
+				tc.plan.mode, tc.target, !want, len(moves))
+		}
+	}
+}
+
+// TestClipPathLeft pins that a path too long for its column keeps its tail.
+// Two files under the same SQL Server default folder are ~70 columns of
+// identical prefix, so a tail-clipped path (core.Truncate) renders them
+// indistinguishable — the file name is the whole point of the line.
+func TestClipPathLeft(t *testing.T) {
+	const path = `C:\Program Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\DATA\AppDB.mdf`
+	for _, tc := range []struct {
+		w    int
+		want string
+	}{
+		{0, ""},
+		{-1, ""},
+		{len(path), path},            // fits exactly, no ellipsis
+		{len(path) + 5, path},        // room to spare
+		{20, `…SSQL\DATA\AppDB.mdf`}, // fills the column, tail first
+		{1, "…"},
+	} {
+		got := clipPathLeft(path, tc.w)
+		if got != tc.want {
+			t.Errorf("clipPathLeft(w=%d) = %q, want %q", tc.w, got, tc.want)
+		}
+		if w := core.DisplayWidth(got); w > tc.w && tc.w > 0 {
+			t.Errorf("clipPathLeft(w=%d) is %d columns wide", tc.w, w)
+		}
+	}
+}
+
+func assertRelocations(t *testing.T, got, want []gosmo.RelocateFile) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %d relocations, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("relocation %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 // analyze opens the inspect view on headers[0] and reads that set's file
 // list; selectHeader's reload reads the selected set's. On a device whose
 // first set is the selected one they must produce the same number, or
@@ -147,5 +311,60 @@ func TestAnalyzeAndSelectionAgreeOnTheFirstSet(t *testing.T) {
 	d := &RestoreDialog{headers: headers, headerIdx: 0}
 	if opened, selected := backupSetNumber(headers, 0), d.restoreFileNumber(); opened != selected {
 		t.Errorf("analyze reads set %d but the selection reports %d", opened, selected)
+	}
+}
+
+// filesDialog builds just enough of a RestoreDialog for the Files view's
+// focus cycle — the four widgets it rotates through, with the folder fields
+// enabled to match relocFolder.
+func filesDialog() *RestoreDialog {
+	d := &RestoreDialog{}
+	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{"auto", "original", "folder"})
+	d.fDataDir = widgets.NewInputField("Data folder:", 40, false)
+	d.fLogDir = widgets.NewInputField("Log folder: ", 40, false)
+	d.btnDefLoc = widgets.NewButton("Default Location", func() {})
+	d.rbReloc.SetSelected(relocFolder)
+	d.syncRelocState()
+	return d
+}
+
+// TestFilesFocusSurvivesTheCycleShrinking pins that leaving relocFolder while
+// focus sits past the end of the shorter cycle lands back on the radio. The
+// cycle goes 4 entries to 1 the moment the folder fields are disabled, and
+// handleFilesKey indexes it with filesFocus unguarded — a stale 3 is an
+// out-of-range panic on the next keystroke, not a cosmetic wrong highlight.
+func TestFilesFocusSurvivesTheCycleShrinking(t *testing.T) {
+	d := filesDialog()
+	d.setFilesFocus(3)
+	if got := d.filesFocus; got != 3 {
+		t.Fatalf("setFilesFocus(3) = %d, want 3 — the folder cycle should have four entries", got)
+	}
+
+	d.rbReloc.SetSelected(relocOriginal)
+	d.syncRelocState()
+
+	cycle := d.filesFocusCycle()
+	if len(cycle) != 1 {
+		t.Fatalf("cycle has %d entries outside relocFolder, want 1", len(cycle))
+	}
+	if d.filesFocus >= len(cycle) {
+		t.Fatalf("filesFocus = %d, out of range for a %d-entry cycle", d.filesFocus, len(cycle))
+	}
+	if cycle[d.filesFocus] != focusable(d.rbReloc) {
+		t.Errorf("focus landed on %T, want the radio — it is the only thing left to focus", cycle[d.filesFocus])
+	}
+}
+
+// Tab has nowhere to go when the radio is the whole cycle, and must stay on
+// it rather than wrapping to an index the shorter cycle doesn't have.
+func TestFilesTabStaysPutOnASingleEntryCycle(t *testing.T) {
+	d := filesDialog()
+	d.rbReloc.SetSelected(relocAuto)
+	d.syncRelocState()
+	for i := 0; i < 3; i++ {
+		d.handleFilesKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		if d.filesFocus != 0 {
+			t.Fatalf("Tab %d: filesFocus = %d, want 0", i+1, d.filesFocus)
+		}
 	}
 }

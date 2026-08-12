@@ -1,8 +1,6 @@
 package dialogs
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -22,27 +20,39 @@ import (
 // same convention every other tuikit field follows for keys it doesn't act
 // on.
 func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
+	fs := d.FileSystem()
 	val := f.Value()
-	dirPart, base := filepath.Split(val)
+	dirPart, base := fs.Split(val)
 	searchDir := d.dir
 	if dirPart != "" {
-		if filepath.IsAbs(dirPart) {
-			searchDir = filepath.Clean(dirPart)
+		if fs.IsAbs(dirPart) {
+			searchDir = fs.Clean(dirPart)
 		} else {
-			searchDir = filepath.Join(d.dir, dirPart)
+			searchDir = fs.Join(d.dir, dirPart)
 		}
 	}
-	infos, err := os.ReadDir(searchDir)
-	if err != nil {
-		return false
+	// Completing against the directory already on screen must not cost a
+	// second listing: this runs on every Tab keypress, and on a remote
+	// filesystem each one is a network round trip inside the event handler.
+	// d.entries carries the dialog's own ".." row, which fs.List never
+	// reports and which would otherwise poison the common prefix.
+	infos := d.entries
+	if searchDir != d.dir {
+		var err error
+		if infos, err = fs.List(searchDir); err != nil {
+			return false
+		}
 	}
 	var candidates []string
 	for _, e := range infos {
-		if dirsOnly && !e.IsDir() {
+		if e.Name == ".." {
 			continue
 		}
-		if base == "" || strings.HasPrefix(e.Name(), base) {
-			candidates = append(candidates, e.Name())
+		if dirsOnly && !e.IsDir {
+			continue
+		}
+		if base == "" || strings.HasPrefix(e.Name, base) {
+			candidates = append(candidates, e.Name)
 		}
 	}
 	if len(candidates) == 0 {
@@ -54,8 +64,9 @@ func (d *FileDialog) completeField(f *widgets.InputField, dirsOnly bool) bool {
 	}
 	completed := dirPart + common
 	if len(candidates) == 1 {
-		if info, err := os.Stat(filepath.Join(searchDir, common)); err == nil && info.IsDir() {
-			completed += string(filepath.Separator)
+		// A failed probe just leaves the trailing separator off.
+		if _, isDir, _ := fs.Exists(fs.Join(searchDir, common)); isDir {
+			completed += fs.Separator()
 		}
 	}
 	f.SetValue(completed)

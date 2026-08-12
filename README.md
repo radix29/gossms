@@ -66,8 +66,8 @@ or drivers required.
   Operators; multi-page Job Properties (steps, schedules, alerts,
   notifications, history), run/stop a job, and view its run history.
 - **Backup & Restore** — full option dialogs (destination, type, media,
-  compression, point-in-time restore) running as cancellable background
-  tasks with live progress.
+  compression, point-in-time restore, file relocation) running as cancellable
+  background tasks with live progress.
 - **Full authentication support** via [gosmo](https://github.com/radix29/gosmo):
   SQL Server Authentication, Windows Integrated Authentication, and Azure
   Entra ID (Default, Password, MSI, Service Principal, Interactive, Device
@@ -142,7 +142,6 @@ or drivers required.
 - Entra authentication not tested at the moment — no infrastructure available
 - Not tested on macOS yet — no Mac available
 - Executables are built by GitHub but not signed; checksums are available
-- Database Restore dialog needs a rework
 - SQL Agent needs a complete rework
 
 ## Prerequisites

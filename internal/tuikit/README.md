@@ -23,7 +23,11 @@ tuikit/
 │               typed_confirm_dialog.go (retype-to-confirm); FileDialog (browse/
 │               save-as, list+path entry, used for every file path prompt in
 │               internal/tui) is split across file_dialog.go (state), file_dialog_draw.go,
-│               file_dialog_input.go, and file_dialog_complete.go (path completion)
+│               file_dialog_input.go, file_dialog_complete.go (path completion), and
+│               file_system.go (the FileSystem it browses through — LocalFileSystem
+│               by default, plus Windows/Posix path rules a host app builds a
+│               remote FileSystem on; see ShowOpenOn/ShowSaveOn, and
+│               BlockingFileSystem for the "Listing ..." repaint a networked one gets)
 ├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL/XML highlighters, statement select)
 │             — one file per group: menu_bar.go/context_menu.go (+ shared MenuItem/Menu
 │               types in menu_item.go), toolbar.go, treeview.go, listbox.go, tabstrip.go;
@@ -245,4 +249,7 @@ This is exactly the pattern `ConnectDialog` and `HelpDialog` follow in
 `internal/tui`; `dialogs.FileDialog` (any file path prompt — Open, Save,
 Save As, Results To File) is the same idea one level down, built directly
 in `tuikit/dialogs` rather than `internal/tui` since it needs no SQL Server
-domain knowledge at all.
+domain knowledge at all. It reaches the filesystem only through its
+`FileSystem` interface, never `os`/`path/filepath` directly, which is what
+lets `internal/tui` point Backup's and Restore's Browse at the *server's*
+disks (`serverFS`, backed by gosmo) while every other caller stays local.

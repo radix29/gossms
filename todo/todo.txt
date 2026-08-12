@@ -2,9 +2,6 @@
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
 
-
-restore backup -> show remote server directoy, move files, error messages, text trimming etc
-
 white/light style ? -> options, default dark
 
 ---------

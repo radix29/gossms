@@ -1,11 +1,8 @@
 package dialogs
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -20,14 +17,6 @@ const (
 	FileDialogOpen FileDialogMode = iota
 	FileDialogSave
 )
-
-// fileEntry is one row of the current directory listing.
-type fileEntry struct {
-	name  string
-	isDir bool
-	size  int64
-	mod   time.Time
-}
 
 // Geometry: fileDialogW/H size the dialog; fileListRows is how many entries
 // are visible at once; fileSizeColW/fileModColW are the two right-hand
@@ -51,17 +40,27 @@ const (
 // FileDialog is a generic, embeddable Open/Save file picker: a persistent
 // path bar, a scrollable Name/Size/Modified directory listing, and a
 // filename field, with shell-style Tab completion on both text fields. It
-// only ever touches the local filesystem — no gosmo/SQL Server knowledge —
-// so a single instance can be reused (via ShowOpen/ShowSave) everywhere a
-// host app needs to choose a file or a save destination.
+// reaches the filesystem only through a FileSystem — no os/filepath calls of
+// its own, and no gosmo/SQL Server knowledge — so a single instance can be
+// reused (via ShowOpen/ShowSave for the local machine, ShowOpenOn/ShowSaveOn
+// for anything else) everywhere a host app needs to choose a file or a save
+// destination.
 type FileDialog struct {
 	ModalDialog
 
 	mode FileDialogMode
 
-	dir       string
-	entries   []fileEntry
-	listErr   string
+	// fs is whose filesystem is being browsed. Every Show* entry point sets
+	// it, so one caller's remote filesystem can never leak into the next
+	// caller's local browse.
+	fs FileSystem
+
+	dir     string
+	entries []FileEntry
+	listErr string
+	// busy, when set, replaces the listing with a one-line message while a
+	// FileSystem call is in flight — see showBusy.
+	busy      string
 	sel       int
 	scroll    int
 	typeahead string
@@ -118,7 +117,13 @@ func NewFileDialog(s tcell.Screen) *FileDialog {
 // file, the initial selection) — an already-open file's path, or "" for
 // the working directory.
 func (d *FileDialog) ShowOpen(title, startPath string, onChoose func(path string)) {
+	d.ShowOpenOn(LocalFileSystem{}, title, startPath, onChoose)
+}
+
+// ShowOpenOn is ShowOpen against fs instead of the local machine.
+func (d *FileDialog) ShowOpenOn(fs FileSystem, title, startPath string, onChoose func(path string)) {
 	d.mode = FileDialogOpen
+	d.fs = fs
 	d.SetTitle(title)
 	d.OnChoose = onChoose
 	d.start(startPath, ffList)
@@ -127,42 +132,101 @@ func (d *FileDialog) ShowOpen(title, startPath string, onChoose func(path string
 // ShowSave configures the dialog to pick or confirm a destination path and
 // displays it.
 func (d *FileDialog) ShowSave(title, startPath string, onChoose func(path string)) {
+	d.ShowSaveOn(LocalFileSystem{}, title, startPath, onChoose)
+}
+
+// ShowSaveOn is ShowSave against fs instead of the local machine.
+func (d *FileDialog) ShowSaveOn(fs FileSystem, title, startPath string, onChoose func(path string)) {
 	d.mode = FileDialogSave
+	d.fs = fs
 	d.SetTitle(title)
 	d.OnChoose = onChoose
 	d.start(startPath, ffName)
 }
 
+// FileSystem returns the filesystem the dialog is currently browsing. Never
+// nil once any Show* has run; the local machine before that.
+func (d *FileDialog) FileSystem() FileSystem {
+	if d.fs == nil {
+		d.fs = LocalFileSystem{}
+	}
+	return d.fs
+}
+
 // start resets per-session state, loads startPath's directory, and shows
 // the dialog with initialFocus focused.
 func (d *FileDialog) start(startPath string, initialFocus int) {
-	dir, name := splitStartPath(startPath)
-	d.loadDir(dir)
+	dir, name := d.splitStartPath(startPath)
 	d.nameField.SetValue(name)
-	if name != "" {
-		d.selectByName(name)
-	}
+	d.entries, d.listErr = nil, ""
 	d.btnFocus = 0
 	// A latch must not survive into the next showing: a dialog dismissed
 	// mid-drag would otherwise reopen still routing every click to that field.
 	d.dragField = nil
 	d.setFocus(initialFocus)
+	// Shown *before* the first listing, not after. That listing is a
+	// FileSystem call like any other, and on a remote filesystem it is the
+	// slowest of the session — showBusy can only paint a dialog that is
+	// already visible, so loading first left the whole open with no feedback.
 	d.ModalDialog.Show()
+	d.loadDir(dir)
+	if name != "" {
+		d.selectByName(name)
+	}
+}
+
+// showBusy paints the dialog with msg in place of the listing and flushes it,
+// ahead of a FileSystem call that may block.
+//
+// FileSystem is synchronous by design, so a remote one spends a network round
+// trip inside the event handler and the whole TUI stops until it returns —
+// with the *previous* directory still on screen, which is indistinguishable
+// from a hang. This is the one place tuikit paints outside the app's own draw
+// cycle, so it is limited to the filesystems that need it: only a
+// BlockingFileSystem gets a repaint, which is also what keeps the local
+// browse from flickering on every navigation.
+func (d *FileDialog) showBusy(msg string) {
+	if d.screen == nil || !d.Visible() {
+		return
+	}
+	if b, ok := d.FileSystem().(BlockingFileSystem); !ok || !b.Blocking() {
+		return
+	}
+	d.busy = msg
+	d.Draw(d.screen)
+	d.screen.Show()
+}
+
+// entryFor returns the listing row for path when path names something in the
+// directory already on screen, which is where a typed path usually points.
+// It spares a FileSystem.Exists round trip — a remote filesystem answers that
+// one over the network, on a keystroke.
+func (d *FileDialog) entryFor(path string) (FileEntry, bool) {
+	fs := d.FileSystem()
+	dir, name := fs.Split(path)
+	if name == "" || name == ".." || fs.Clean(dir) != d.dir {
+		return FileEntry{}, false
+	}
+	for _, e := range d.entries {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return FileEntry{}, false
 }
 
 // splitStartPath separates a caller-supplied initial path into a directory
 // to open and a filename to preselect — "" (no name), a bare filename
 // ("query.sql"), or a full path (an already-open file) are all valid.
-func splitStartPath(startPath string) (dir, name string) {
+func (d *FileDialog) splitStartPath(startPath string) (dir, name string) {
+	fs := d.FileSystem()
 	if startPath == "" {
-		wd, _ := os.Getwd()
-		return wd, ""
+		return fs.Default(), ""
 	}
-	if dirPart, base := filepath.Split(startPath); dirPart != "" {
+	if dirPart, base := fs.Split(startPath); dirPart != "" {
 		return dirPart, base
 	}
-	wd, _ := os.Getwd()
-	return wd, startPath
+	return fs.Default(), startPath
 }
 
 // loadDir lists dir's contents into d.entries — directories first, then
@@ -170,15 +234,16 @@ func splitStartPath(startPath string) (dir, name string) {
 // unless dir is already the filesystem root. Resets selection/scroll and
 // updates the path field to reflect the new current directory.
 func (d *FileDialog) loadDir(dir string) {
-	clean := filepath.Clean(dir)
-	if abs, err := filepath.Abs(clean); err == nil {
-		clean = abs
-	}
+	fs := d.FileSystem()
+	sep := fs.Separator()
+	clean := fs.Clean(dir)
 	d.dir = clean
-	d.pathField.SetValue(clean + string(filepath.Separator))
+	d.pathField.SetValue(strings.TrimSuffix(clean, sep) + sep)
 	d.sel, d.scroll = 0, 0
 
-	infos, err := os.ReadDir(clean)
+	d.showBusy("Listing " + clean + " ...")
+	infos, err := fs.List(clean)
+	d.busy = ""
 	if err != nil {
 		d.entries = nil
 		d.listErr = err.Error()
@@ -186,28 +251,26 @@ func (d *FileDialog) loadDir(dir string) {
 	}
 	d.listErr = ""
 
-	var dirs, files []fileEntry
+	var dirs, files []FileEntry
 	for _, e := range infos {
-		fe := fileEntry{name: e.Name(), isDir: e.IsDir()}
-		if info, err := e.Info(); err == nil {
-			fe.size = info.Size()
-			fe.mod = info.ModTime()
+		if e.Name == "." || e.Name == ".." {
+			continue // the ".." row below is the dialog's own
 		}
-		if fe.isDir {
-			dirs = append(dirs, fe)
+		if e.IsDir {
+			dirs = append(dirs, e)
 		} else {
-			files = append(files, fe)
+			files = append(files, e)
 		}
 	}
-	byLowerName := func(a, b fileEntry) int {
-		return strings.Compare(strings.ToLower(a.name), strings.ToLower(b.name))
+	byLowerName := func(a, b FileEntry) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	}
 	slices.SortStableFunc(dirs, byLowerName)
 	slices.SortStableFunc(files, byLowerName)
 
-	entries := make([]fileEntry, 0, len(dirs)+len(files)+1)
-	if parent := filepath.Dir(clean); parent != clean {
-		entries = append(entries, fileEntry{name: "..", isDir: true})
+	entries := make([]FileEntry, 0, len(dirs)+len(files)+1)
+	if parent := fs.Parent(clean); parent != clean {
+		entries = append(entries, FileEntry{Name: "..", IsDir: true})
 	}
 	entries = append(entries, dirs...)
 	entries = append(entries, files...)
@@ -217,7 +280,7 @@ func (d *FileDialog) loadDir(dir string) {
 // selectByName moves the list selection to the entry named name, if any.
 func (d *FileDialog) selectByName(name string) {
 	for i, e := range d.entries {
-		if e.name == name {
+		if e.Name == name {
 			d.sel = i
 			d.ensureVisible()
 			return
@@ -294,17 +357,27 @@ func (d *FileDialog) confirmFocused() {
 // name field) if it's an existing file, or attempts to list it anyway
 // (surfacing the resulting error) if it's neither.
 func (d *FileDialog) navigateTyped() {
+	fs := d.FileSystem()
 	typed := strings.TrimSpace(d.pathField.Value())
 	target := d.dir
 	if typed != "" {
 		target = typed
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(d.dir, target)
+		if !fs.IsAbs(target) {
+			target = fs.Join(d.dir, target)
 		}
 	}
-	if info, err := os.Stat(target); err == nil && !info.IsDir() {
-		d.loadDir(filepath.Dir(target))
-		name := filepath.Base(target)
+	isFile := false
+	if e, ok := d.entryFor(target); ok {
+		isFile = !e.IsDir
+	} else {
+		// A failed probe falls through to loadDir, which surfaces the same
+		// failure in listErr rather than swallowing it here.
+		exists, isDir, _ := fs.Exists(target)
+		isFile = exists && !isDir
+	}
+	if isFile {
+		dir, name := fs.Split(target)
+		d.loadDir(dir)
 		d.nameField.SetValue(name)
 		d.selectByName(name)
 		d.setFocus(ffName)
@@ -320,16 +393,17 @@ func (d *FileDialog) activateSelected() {
 	if d.sel < 0 || d.sel >= len(d.entries) {
 		return
 	}
+	fs := d.FileSystem()
 	e := d.entries[d.sel]
-	if e.isDir {
-		target := filepath.Join(d.dir, e.name)
-		if e.name == ".." {
-			target = filepath.Dir(d.dir)
+	if e.IsDir {
+		target := fs.Join(d.dir, e.Name)
+		if e.Name == ".." {
+			target = fs.Parent(d.dir)
 		}
 		d.loadDir(target)
 		return
 	}
-	d.nameField.SetValue(e.name)
+	d.nameField.SetValue(e.Name)
 	d.confirmChoice()
 }
 
@@ -340,8 +414,8 @@ func (d *FileDialog) syncNameFromSelection() {
 	if d.sel < 0 || d.sel >= len(d.entries) {
 		return
 	}
-	if e := d.entries[d.sel]; !e.isDir {
-		d.nameField.SetValue(e.name)
+	if e := d.entries[d.sel]; !e.IsDir {
+		d.nameField.SetValue(e.Name)
 	}
 }
 
@@ -353,8 +427,8 @@ func (d *FileDialog) confirmChoice() {
 		return
 	}
 	path := name
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(d.dir, path)
+	if fs := d.FileSystem(); !fs.IsAbs(path) {
+		path = fs.Join(d.dir, path)
 	}
 	d.finish(path)
 }
@@ -364,7 +438,13 @@ func (d *FileDialog) confirmChoice() {
 // before OnChoose fires.
 func (d *FileDialog) finish(path string) {
 	if d.mode == FileDialogSave && d.OnConfirmOverwrite != nil {
-		if _, err := os.Stat(path); err == nil {
+		// "Couldn't ask" prompts as if the file were there. A remote
+		// filesystem answers this over the network, and treating its timeout
+		// as "not there" skips the overwrite guard silently — the one
+		// outcome worse than an unnecessary prompt, whose Yes does exactly
+		// what the user asked for anyway.
+		exists, _, err := d.FileSystem().Exists(path)
+		if exists || err != nil {
 			d.OnConfirmOverwrite(path, func() { d.choose(path) })
 			return
 		}

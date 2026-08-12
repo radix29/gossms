@@ -574,3 +574,357 @@ the hand-built AAG1 uses the FQDN form. Both work here because `/etc/hosts`
 resolves the short names — see `gossms-aag-test-cluster` — but a topology where
 only the FQDN resolves has no way to say so, since the dialog does not let the
 URL be edited.
+
+---
+
+## Backup/Restore Browse now browses the server's filesystem (2026-08-12)
+
+Two reported bugs, one root cause. Backup's and Restore's Browse buttons opened
+`dialogs.FileDialog` against the *client's* disks, and `FileDialog` built every
+path with `path/filepath`. Since the device path in `BACKUP`/`RESTORE` is
+resolved by the SQL Server host, the listing showed directories the server
+cannot see; and on a Linux client browsing win10cli, `filepath.IsAbs` says
+`C:\...\backup_test_full.bak` is *relative*, so Save joined it onto the working
+directory. Reproduced end to end on the pre-fix binary, which scripted
+`BACKUP DATABASE [backup_test] TO DISK = N'/tmp/claude-1000/.../C:\Program
+Files\...\backup_test_full.bak'` — no error, no warning, just a destination that
+could never work.
+
+**gosmo — `filesystem.go`.** `Server.EnumFileSystem`, `Server.FixedDrives`,
+`Server.FileSystemExists`, plus `ServerInfo.Platform` (declared since forever,
+never populated; now parsed from `@@VERSION`, which works below 2017 where
+`sys.dm_os_host_info` doesn't exist). Each has a version-gated fallback —
+`sys.dm_os_enumerate_filesystem` → `xp_dirtree` below 2017,
+`sys.dm_os_enumerate_fixed_drives` → `xp_fixeddrives` below 2019 — chosen from
+`VersionMajor` rather than by sniffing error strings.
+
+The one load-bearing detail is `WHERE level = 0`. `sys.dm_os_enumerate_filesystem`
+recurses the whole subtree, so a listing of `C:\` without it enumerates the
+entire drive. SQL Server pushes the predicate *into* the function rather than
+filtering afterwards, which is what makes the fix free: measured on
+17.0.1125.2, `C:\Program Files\Microsoft SQL Server` returned 3091 rows in 2.1s
+unfiltered and 6 rows in 0.6s filtered. `C:\Windows` filtered is 101 rows in
+0.6s. Without that pushdown the DMF would have been unusable and the whole
+listing would have had to go through `xp_dirtree`.
+
+**tuikit — `dialogs/file_system.go`.** `FileDialog` no longer calls `os` or
+`path/filepath` anywhere; it reaches the filesystem through a `FileSystem`
+interface, whose path half (`PathRules`) is implemented twice —
+`WindowsPathRules` and `PosixPathRules` — so path handling follows the *host
+being browsed*, not the client. `ShowOpen`/`ShowSave` reset to
+`LocalFileSystem` on every call and `ShowOpenOn`/`ShowSaveOn` take one
+explicitly, which is what stops a remote filesystem leaking from Backup's
+Browse into the next File > Open Query File through the single shared dialog
+instance.
+
+`WindowsPathRules.Parent` had to check the trailing-separator case *before* the
+drive-letter case: `C:\` ends in the separator and its last path element ends
+in `:`, so the drive-letter branch returned `C:\` as its own parent and stranded
+the browse at the drive root with no way back out to the drive list. Caught by
+`TestWindowsPathRules`, not by reading it.
+
+**gossms — `server_filesystem.go`.** `serverFS` embeds whichever `PathRules`
+matches `ServerInfo.Platform` and implements `List`/`Default`/`Exists` over
+gosmo. `List("")` is the level above every root: it returns the host's fixed
+drives, which is where `..` out of `C:\` lands. Calls are synchronous on the UI
+goroutine — the file dialog has no async path — bounded by a 15s timeout so an
+unreachable server can't look like a hang.
+
+Two smaller fixes fell out: `App.OnConfirmOverwrite` used `filepath.Base` for
+the "already exists" prompt, which on Linux renders the whole
+`C:\Backup\db.bak` as the "file name"; and `browseDest` now clears
+`lastAutoDest`, so a path the user picked isn't silently regenerated the next
+time the database or backup type changes.
+
+**Verified live on both platforms.** win10cli (Windows): browsed
+`MSSQL\Backup` → `MSSQL\` → `DATA\`, picked a file, got the server-overwrite
+prompt with the right base name, then ran a real `BACKUP DATABASE backup_test`
+to a Browse-picked path — 100%, file confirmed on disk at 528384 bytes — and
+Restore's Browse found it and read its header. ubusql1 (Linux): `/` separators
+throughout, and no `..` row at `/`, where `Parent` returns the root itself.
+File > Open Query File after a server browse still lists the local machine.
+
+### Follow-up: the Destination field drew empty for a short path (2026-08-12)
+
+Reported right after the above: browsing to `C:\temp`, naming the file
+`aaa.bak` and confirming left the Backup dialog's Destination box **blank**,
+while Script generated the correct `C:\temp\aaa.bak`. The value was never
+wrong — only what got painted was.
+
+`InputField.adjustScroll` had one job, keeping the caret inside the box, and
+did it correctly. But `SetValue` puts the caret at the end of the *new* value,
+so replacing the ~90-column default backup path with a 15-column one left
+`col = 15` against `scroll = 37`; the "caret is left of the window" rule pulled
+`scroll` back to 15 — which is past the last character of a 15-column string.
+The caret was visible; every character was off-screen to the left. A clamp
+against the value's own end width, plus a floor at zero, fixes it.
+
+This is a latent `InputField` bug of long standing, not something the Browse
+work introduced — it just needed a short value to replace a long one in the
+same field, which nothing did until Browse started returning real server paths.
+Every other `SetValue` caller benefits.
+
+Pinned by `TestInputFieldSetValueShorterValueStaysVisible`, which asserts on
+the runes actually drawn into the box rather than on `Value()` — asserting on
+`Value()` would have passed against the bug, since `Value()` was right the
+whole time. `TestInputFieldSetValueLongValueShowsItsTail` guards the other
+direction, that a too-long value still shows its tail with the caret at the end.
+A/B-verified: with the clamp removed the first test reports `drawn text = ""`.
+
+## Restore: file relocation gets a view of its own (2026-08-12)
+
+Requested: the Restore dialog should offer to move the restored files to a new
+or default location, show the locations recorded in the backup, and carry a
+button that pre-fills the fields with the server's current data/log paths.
+Part of the "move-files handling" item under `docs/open-threads.md` § Reworks
+named in README's Known Issues.
+
+Until now the dialog had exactly one relocation rule and no way to see or
+change it: files were moved to the server's default folders **iff** the target
+name differed from the backup's, under `<target>_<logical><ext>` names. That
+rule is a good default — it is what lets a copy be restored beside its original
+— so it stayed, as the first of three explicit choices in a new **Restore File
+Locations** view (`restore_dialog_files.go`, `restoreModeFiles`): relocate when
+renaming, keep the backup's own locations, or relocate everything into two
+named folders. `relocateFiles` in `restore_dialog_ops.go` is the one function
+that turns a choice into `MOVE` clauses, and the view's per-file preview calls
+it too, so what the list shows and what the RESTORE does cannot drift apart.
+The renaming rule now governs only the file *names*: in folder mode a same-name
+restore keeps the backup's file names and changes just the directory.
+
+The view is reachable from the form's new `Files` button and from Backup
+Information's new `File Locations` button; both need the set's
+`RESTORE FILELISTONLY`, so `analyze` grew into `loadBackupInfo(next)` and an
+already-analyzed device skips the round trip. `Analyze Backup` lost its second
+word — five buttons at that width no longer fit in the 72-column dialog.
+
+**Paths are clipped from the left, not the right.** The first draft used
+`DrawTextClipped` and the live server made the problem obvious: every path in
+the list rendered as the same `C:\Program Files\Microsoft SQL Server\MSSQL17.…`
+prefix with the file name — the only part that differs — cut off. `clipPathLeft`
+keeps the tail instead.
+
+Live-verified against win10cli end to end, on a throwaway `zz_reloc_src`
+database and its backup: the preview tracked edits to the folder fields
+keystroke by keystroke, `Default Location` put the server's paths back, and a
+real restore into a non-default folder landed exactly where the preview said —
+`sys.master_files` for the restored copy named the chosen folder and the
+`<target>_<logical>` file names. Both databases and the `.bak` dropped
+afterwards.
+
+### Follow-ups: the script's MOVE clauses, and truncated errors (2026-08-12)
+
+Two reports against the work above, both live-reproduced first.
+
+**"The Script button should add the MOVE parts."** It already did — invisibly.
+`gosmo.BuildRestoreStatement` emitted the whole statement on one line, and a
+restore that relocates two files carries two `MOVE` clauses of two full
+Windows paths each: ~300 columns, of which the query editor shows the first
+80 and no more. The scripted RESTORE looked like it stopped after `FROM DISK`.
+
+Fixed in gosmo (`backup.go`), which now breaks the statement after the target
+and after the device list and puts one `WITH` option per line — the layout
+SSMS scripts. Whitespace is not significant here, so `RestoreContext` executes
+exactly what it did before; the four exact-string tests in `backup_test.go`
+were updated to the new layout. Live-verified both ways: the scripted
+statement now shows both `MOVE` lines in the editor, and running it with F5
+restored the database (`RESTORE DATABASE successfully processed 362 pages`).
+`BuildBackupStatement` still emits one line — its options are short — and was
+left alone deliberately.
+
+**"Restore error messages get truncated."** They were: the progress view drew
+SQL Server's failure on one clipped line — `Failed: gosmo: restore
+"zz_err_tgt": mssql: The backup set holds a b` — with eight blank rows under
+it. `wrapMessage` (in `backup_common.go`) wraps to a line budget and clips the
+last line only if even that overflows; the progress view now draws the message
+last, after Elapsed/Remaining, with every row down to the separator to use,
+and the option form's status line gets the two rows `cbClose` leaves free.
+A/B-verified against the same failing restore (backup of one database
+restored over another without REPLACE): the whole message is now on screen.
+
+The Backup dialog's progress view has the same one-line failure message and
+was not touched — not reported, and not part of this request.
+
+### Backup and Restore closed out (2026-08-12)
+
+The author's call, same day: the pair no longer needs a rework. README's Known
+Issues loses "Database Restore dialog needs a rework" (SQL Agent's stays), and
+`docs/open-threads.md` § Reworks named in README's Known Issues records what
+closed it — server-side Browse, the File Locations view, wrapped error
+messages, left-clipped paths — plus the two rules that outlive the thread:
+one source for the backup set number (`backupSetNumber`), and one source for
+the relocation paths (`relocateFiles`, shared by the preview and the MOVE
+clauses). The Backup dialog's one-line failure message is noted there as the
+remaining rough edge.
+
+### The Backup dialog's failure message wraps too (2026-08-12)
+
+Same treatment as the restore side, in `drawProgress`
+(`backup_dialog_draw.go`): the message is drawn last, from `inner.Y+12` down
+to the separator, through the shared `wrapMessage`. At the dialog's 23-row
+height that is a six-line budget.
+
+Live-verified on win10cli by backing `backup_test` up to `Z:\nope\…`: the
+progress view now shows all three lines of `Failed: gosmo: backup
+"backup_test": mssql: Cannot open backup device 'Z:\nope\backup_test_full.bak'.
+Operating system error 3(The system cannot find the path specified.).`, where
+the old single `DrawTextClipped` line stopped at "Cannot open backup dev…".
+
+## Review pass: three correctness items from the Browse/Restore work (2026-08-12)
+
+A read-through of both repos after the Backup/Restore close-out. Most of what
+it turned up was already settled in `docs/open-threads.md`; three things were
+real, all in the server-side Browse work, and all fixed here.
+
+**The Backup dialog's *form* status line still clipped to one line.** The
+progress view had been fixed the same day, the form had not — and the form is
+where a failed Validate or a failed database load reports SQL Server's own
+message. It now uses `wrapMessage` exactly as Restore's `drawStatus` does,
+except the line budget is derived from `cbCopyOnly.RectY()` rather than
+hardcoded, so it follows the form's layout if that ever changes. On the
+shipped layout it works out to two rows, the same number Restore hardcodes;
+the old code drew one and left the other blank. Live-verified on win10cli:
+Validate's ~150-column `BACKUP DATABASE ... TO DISK = N'C:\Program Files\...'`
+now fills both rows where it used to stop at the first.
+
+**`FileSystem.Exists` could not tell "not there" from "couldn't ask".** With a
+`(bool, bool)` signature, `serverFS.Exists` had nowhere to put a timeout or a
+dropped connection and reported `(false, false)` — which `FileDialog.finish`
+reads as "no file there" and uses to *skip* the save-overwrite prompt. So the
+one moment the guard exists for, a shaky connection, was the moment it went
+quiet. `Exists` now returns an error, `LocalFileSystem` documents that it
+never has one to give ("not there" is an answer, not an inability to answer),
+and `finish` treats a failed probe as "assume it's there" and prompts: an
+unnecessary prompt whose Yes does what the user asked for anyway is strictly
+better than a silent overwrite. The other two call sites (`navigateTyped`,
+`completeField`) ignore the error on purpose and say why.
+`TestSaveOverwritePromptsWhenExistsCannotAnswer` pins it, A/B-verified — with
+`|| err != nil` removed it reports `OnConfirmOverwrite path = ""`.
+
+**`newServerFS` fell back to the client's filesystem when there was no
+connection.** It returned `dialogs.LocalFileSystem{}` for a nil
+`sc`/`Server`/`Info`, so Browse would look like it worked and hand back a path
+off *this* machine's disks — a directory the server cannot see. That is the
+"a click does the wrong thing" case `CLAUDE.md` § Application rules rules out.
+It now returns `(fs, ok)` and both Browse buttons refuse with
+`setStatusMsg("Not connected — cannot browse the server's filesystem.", true)`.
+Removing the fallback also let Restore's `browseFile` drop its own duplicate
+nil check.
+
+**Not a bug, written down so it isn't rediscovered:** gosmo's
+`FixedDrivesContext` falls back to `xp_fixeddrives` below version 15, and that
+procedure does not exist on SQL Server on Linux. It is unreachable — the drive
+list is only asked for when a path walks above a root, and
+`PosixPathRules.Parent("/")` returns `"/"`, so a Linux browse never gets
+there. Said so on the method rather than synthesizing a `/` entry no caller
+would see.
+
+### Making the server browse legible, and cheaper (2026-08-12)
+
+The review's one architectural finding, and the two round trips next to it.
+
+**`dialogs.FileSystem` is synchronous, and `serverFS` puts a network call
+inside the event handler.** Every navigation, every Tab, every Enter in the
+path bar stopped the whole TUI until the server answered — with the
+*previous* directory still painted, which is exactly what a hang looks like.
+Reproduced trivially on win10cli: `C:\Windows\System32` takes about ten
+seconds to enumerate over the wire.
+
+`FileDialog.showBusy` now paints the dialog with `Listing <dir> ...` in place
+of the listing and flushes it before the call. That makes it the only thing in
+tuikit that draws outside the app's draw cycle, which is deliberate and
+documented in `ARCHITECTURE.md` § The other direction: FileDialog.showBusy —
+there is no frame between the keypress and the blocked call for the normal
+cycle to run in. It repaints only for a `dialogs.BlockingFileSystem`, a
+one-method interface `serverFS` implements and `LocalFileSystem` doesn't, so
+a local browse doesn't flicker.
+
+`start()` had to be reordered to `Show()` before the first `loadDir` rather
+than after — showBusy can only paint a dialog that is already visible, and the
+first listing is the slowest of the session.
+
+**An async `FileSystem` was considered and not built.** It turns Tab
+completion and the save-overwrite check into callback chains, for a wait the
+indicator now explains. Revisit only if the indicator turns out not to be
+enough.
+
+**Two round trips removed.** Tab completion re-listed the directory already on
+screen — on every keypress. It now reuses `d.entries`, filtering out the
+dialog's own ".." row, which `fs.List` never reports and which would drag the
+common prefix to "" and stop completion working at all. `navigateTyped`
+likewise probed `Exists` for a name the listing already describes; `entryFor`
+answers from the cache when the typed path points into the current directory.
+`finish`'s overwrite probe was deliberately left alone: correctness on a
+safety guard beats one round trip on a final click.
+
+Live-verified on win10cli: the `Listing C:\Windows\System32 ...` frame holds
+for the whole ten seconds and clears into the listing, and completing `winver`
+→ `winver.exe` in that same directory is instant, where before it would have
+cost a second ten-second enumeration. Round-trip counts are pinned by
+`TestCompletionInCurrentDirCostsNoExtraList` and
+`TestNavigateTypedUsesTheListingItAlreadyHas` (counters on the fake
+filesystem, both A/B-verified), and `TestCompletionIgnoresTheParentRow` pins
+the ".." exclusion. `showBusy` itself has no unit test: tcell v3.4.1 ships no
+simulation screen, so the package's test screen can size but not draw.
+
+### Three tidy-ups from the same review pass (2026-08-12)
+
+**One destination, one name.** The Restore form's `[ Files ]` button and the
+inspect view's `[ File Locations ]` button both call `showFileLocations`. Two
+names for one view reads as two views, so the inspect row now says `Files`
+too. It went that direction rather than the other because the form row can't
+grow: five buttons at `File Locations` width don't fit inside
+`restoreDialogW`. The view still titles itself "Restore File Locations", which
+is where the long name belongs. Verified live against win10cli — the renamed
+button still hit-tests (`ButtonClicked` measures the same slice `DrawButtons`
+paints, so the two can't drift) and opens the same view.
+
+**A UNC path bottomed out two levels too low.** `WindowsPathRules.Parent`
+walked `\\host\share` by separator, offering `\\host` and then `\` before
+reaching the drive list — two levels that enumerate nothing and that Up had to
+be pressed through. The share root is the shallowest listable level, so its
+parent is now "" (the drive list), the same answer `C:\` gets. Drive-letter
+paths are unaffected; the two cases are told apart by component count, since
+`Clean` leaves a trailing separator on `C:\` but not on `\\host\share`. The
+`Clean` doc comment claimed otherwise and was corrected.
+`TestWindowsPathRulesUNCBottomsOutAtTheShare` pins it, A/B-verified: without
+the guard it reports exactly the `\\host` and `\` levels.
+
+**gosmo: `platformFromVersionString` moved to `server.go`.** It parses
+`@@VERSION` for `ServerInfo.Platform` and its only caller is `loadInfo`;
+`filesystem.go` was where its *result* gets consumed, not where it belongs.
+The test moved to `server_test.go` with its `firstLine` helper. Pure code
+motion — no behavior change.
+
+### Filling the three test gaps the review found (2026-08-12)
+
+All three pin an invariant that was already correct and had nothing holding it
+there. Each was A/B-verified by breaking the code and watching the new test
+name the failure.
+
+**`filesFocusCycle` shrinking under the cursor.** The Files view's Tab order is
+four entries under `relocFolder` and one otherwise, and `handleFilesKey`
+indexes it with `filesFocus` unguarded. The `((i % n) + n) % n` in
+`setFilesFocus` is the whole defence, and dropping it turns leaving
+`relocFolder` from the Default Location button into an index-out-of-range
+panic on the next keystroke — on the UI goroutine, where `recoverPanic` can't
+catch it. `TestFilesFocusSurvivesTheCycleShrinking` and
+`TestFilesTabStaysPutOnASingleEntryCycle`.
+
+**`wrapMessage`'s budget-exhaustion branch.** Four tests, the load-bearing one
+being that overflow is *folded into* the last line and clipped there rather
+than the slice being cut at `maxLines`. Cutting the slice is the plausible
+simplification and it loses the ellipsis, so a truncated server error reads as
+a complete sentence that happens to stop early — the exact failure the helper
+was written for.
+
+**`serverIsWindows`'s three-way decision.** Eight cases covering
+Platform-wins-over-path in both directions, the backup-path fallback for an
+instance that reported neither, and an unrecognized platform string falling
+through to the path rather than being a third answer. It picks the `PathRules`
+the whole browse runs on: Posix rules over a Windows host leave "C:\..."
+unsplittable, the dialog lists the wrong directory, and BACKUP gets a
+destination the server can't write. The step from that boolean to the rules
+`newServerFS` installs stays untested — it needs a `*gosmo.Server` whose
+`Info()` answers, which only a real connection's `loadInfo` can arrange — so
+that half is noted in the test file and verified live instead.

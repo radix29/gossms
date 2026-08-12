@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -229,5 +230,51 @@ func TestDisabledInputFieldDrawsDifferently(t *testing.T) {
 	}
 	if same {
 		t.Error("a disabled field drew exactly like an enabled one")
+	}
+}
+
+// drawnText reads back the text the field actually painted into its box —
+// what the user sees, as opposed to what Value() reports.
+func drawnText(t *testing.T, f *InputField) string {
+	t.Helper()
+	s := newFieldScreen(120, 3)
+	f.Draw(s)
+	var b strings.Builder
+	for x := f.InputX() + 1; x < f.InputX()+1+f.Width(); x++ {
+		if r, ok := s.runes[[2]int{x, 0}]; ok && r != 0 {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+// Replacing a long value with a short one must leave the short one visible.
+// adjustScroll only ever kept the *caret* on screen, and SetValue puts the
+// caret at the new end — so after a long path was replaced by a short one the
+// window stayed scrolled past every character and the box drew empty while
+// Value() was perfectly correct. Live symptom: picking C:\temp\aaa.bak in the
+// Backup dialog's Browse blanked the Destination field, but Script still
+// generated the right path.
+func TestInputFieldSetValueShorterValueStaysVisible(t *testing.T) {
+	f := NewInputField("Dest: ", 54, false)
+	f.SetBounds(0, 0)
+
+	f.SetValue(`C:\Program Files\Microsoft SQL Server\MSSQL17.MSSQLSERVER\MSSQL\Backup\backup_test_full.bak`)
+	f.SetValue(`C:\temp\aaa.bak`)
+
+	if got := drawnText(t, f); got != `C:\temp\aaa.bak` {
+		t.Fatalf("drawn text = %q, want %q", got, `C:\temp\aaa.bak`)
+	}
+}
+
+// The tail of a value too long for the box is what should stay visible, with
+// the caret at the end — the behaviour the clamp above must not undo.
+func TestInputFieldSetValueLongValueShowsItsTail(t *testing.T) {
+	f := NewInputField("Dest: ", 10, false)
+	f.SetBounds(0, 0)
+	f.SetValue("abcdefghijklmnop")
+
+	if got := drawnText(t, f); got != "hijklmnop" {
+		t.Fatalf("drawn text = %q, want %q", got, "hijklmnop")
 	}
 }

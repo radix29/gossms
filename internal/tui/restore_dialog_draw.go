@@ -18,6 +18,9 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	case restoreModeInspect:
 		d.drawInspect(s)
 		return
+	case restoreModeFiles:
+		d.drawFiles(s)
+		return
 	case restoreModeProgress:
 		d.drawProgress(s)
 		return
@@ -45,7 +48,9 @@ func (d *RestoreDialog) Draw(s tcell.Screen) {
 	d.cbVerify.Draw(s)
 	d.cbClose.Draw(s)
 
-	d.drawStatus(s)
+	// Two lines: the form's last row (cbClose) leaves exactly that much room
+	// above the separator.
+	d.drawStatus(s, 2)
 	d.DrawSeparator(s)
 	d.DrawButtons(s, restoreFormButtons, d.btnFocus)
 
@@ -89,14 +94,22 @@ func (d *RestoreDialog) layoutForm() {
 	d.cbClose.SetBounds(lx, row)
 }
 
-func (d *RestoreDialog) drawStatus(s tcell.Screen) {
+// drawStatus renders the status line, growing *upward* from the row above
+// the separator so a wrapped server error uses the rows the mode leaves
+// free above it (maxLines) instead of being cut off at one line.
+func (d *RestoreDialog) drawStatus(s tcell.Screen, maxLines int) {
 	p := theme.Active()
 	st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
 	if d.statusErr {
 		st = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
 	}
 	inner := d.InnerRect()
-	core.DrawTextClipped(s, inner.X+1, d.ButtonRowY()-2, inner.W-2, st, "Status: "+d.status)
+	w := inner.W - 2
+	lines := wrapMessage("Status: "+d.status, w, maxLines)
+	y := d.ButtonRowY() - 1 - len(lines)
+	for i, ln := range lines {
+		core.DrawTextClipped(s, inner.X+1, y+i, w, st, ln)
+	}
 }
 
 // drawInspect renders the Backup Information view: the selected backup
@@ -189,6 +202,14 @@ func (d *RestoreDialog) drawProgress(s tcell.Screen) {
 	}
 	drawProgressBar(s, lx, inner.Y+4, w, pct, labelStyle)
 
+	elapsed, remaining, haveRemaining := taskTimes(t)
+	core.DrawText(s, lx, inner.Y+6, labelStyle, "Elapsed  : "+formatHMS(elapsed))
+	rem := "--:--:--"
+	if haveRemaining {
+		rem = formatHMS(remaining)
+	}
+	core.DrawText(s, lx, inner.Y+7, labelStyle, "Remaining: "+rem)
+
 	msg := t.Message
 	msgStyle := labelStyle
 	switch {
@@ -200,15 +221,13 @@ func (d *RestoreDialog) drawProgress(s tcell.Screen) {
 	case msg == "":
 		msg = "Starting restore..."
 	}
-	core.DrawTextClipped(s, lx, inner.Y+6, w, msgStyle, msg)
-
-	elapsed, remaining, haveRemaining := taskTimes(t)
-	core.DrawText(s, lx, inner.Y+8, labelStyle, "Elapsed  : "+formatHMS(elapsed))
-	rem := "--:--:--"
-	if haveRemaining {
-		rem = formatHMS(remaining)
+	// Last, and given every remaining row down to the separator: a failed
+	// restore reports SQL Server's own message, which is far longer than one
+	// line and is the only thing on this screen the user still needs.
+	msgY := inner.Y + 9
+	for i, ln := range wrapMessage(msg, w, d.ButtonRowY()-1-msgY) {
+		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
 	}
-	core.DrawText(s, lx, inner.Y+9, labelStyle, "Remaining: "+rem)
 
 	d.DrawSeparator(s)
 	labels := d.progressButtons()

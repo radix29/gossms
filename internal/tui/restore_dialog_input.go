@@ -27,12 +27,12 @@ func (d *RestoreDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.btnFocus = (d.btnFocus - 1 + n) % n
 		}
 		return true
+	case restoreModeFiles:
+		return d.handleFilesKey(ev)
 	case restoreModeInspect:
 		switch ev.Key() {
 		case tcell.KeyEscape:
-			d.mode = restoreModeForm
-			d.btnFocus = 0
-			d.SetTitle("Restore Database")
+			d.backToForm()
 		case tcell.KeyLeft:
 			d.selectHeader(d.headerIdx - 1)
 		case tcell.KeyRight:
@@ -116,6 +116,8 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.ddHistSet.HandleMouse(ev)
 		d.rbRecovery.HandleMouse(ev)
 		d.btnBrowse.HandleMouse(ev)
+		d.rbReloc.HandleMouse(ev)
+		d.btnDefLoc.HandleMouse(ev)
 		d.cbReplace.HandleMouse(ev)
 		d.cbVerify.HandleMouse(ev)
 		d.cbClose.HandleMouse(ev)
@@ -139,6 +141,8 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			d.doProgressButton()
 		}
 		return true
+	case restoreModeFiles:
+		return d.handleFilesMouse(ev)
 	case restoreModeInspect:
 		if i := d.ButtonClicked(ev, restoreInspectButtons); i >= 0 {
 			d.btnFocus = i
