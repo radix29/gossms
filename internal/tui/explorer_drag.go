@@ -84,7 +84,7 @@ func (a *App) drawDragGhost(s tcell.Screen, screenW int) {
 	text := explorerDragText(a.dragNode)
 	x := a.dragX + 1
 	if x >= screenW {
-		x = core.Max(0, a.dragX-core.DisplayWidth(text))
+		x = max(0, a.dragX-core.DisplayWidth(text))
 	}
 	if maxW := screenW - x; maxW > 0 {
 		core.DrawTextClipped(s, x, a.dragY, maxW, theme.StyleSelected(), text)

@@ -196,7 +196,7 @@ func drawLineRow(s tcell.Screen, r lineRow) {
 	if r.w <= 0 {
 		return
 	}
-	n := core.Min(r.endRune, len(r.line))
+	n := min(r.endRune, len(r.line))
 
 	// Skip whatever lies entirely left of the window.
 	i, col := 0, 0
@@ -268,7 +268,7 @@ func (e *Editor) runStyles(runs []ColorRun, n int, def tcell.Style) []tcell.Styl
 		styles[i] = def
 	}
 	for _, run := range runs {
-		for j := core.Max(0, run.Start); j < run.Start+run.Len && j < n; j++ {
+		for j := max(0, run.Start); j < run.Start+run.Len && j < n; j++ {
 			styles[j] = run.Style
 		}
 	}
@@ -397,7 +397,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 		line := e.doc.Line(vl.row)
 		selStart, selEnd, hasSel := e.selectionRangeForLine(vl.row)
 		if hasSel {
-			selEnd = core.Min(selEnd, vl.end)
+			selEnd = min(selEnd, vl.end)
 		}
 
 		if e.highlight != nil && vl.row != runRow {
@@ -431,7 +431,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 		screenRow := vi - e.scrollRow
 		if vi < len(vls) && screenRow >= 0 && screenRow < e.rect.H {
 			line := e.doc.Line(vls[vi].row)
-			curX := contentX + core.RunesWidth(line[vls[vi].start:core.Min(e.cursorCol, len(line))])
+			curX := contentX + core.RunesWidth(line[vls[vi].start:min(e.cursorCol, len(line))])
 			if curX >= contentX && curX < contentX+contentW {
 				s.ShowCursor(curX, e.rect.Y+screenRow)
 			}

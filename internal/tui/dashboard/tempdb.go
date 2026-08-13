@@ -186,7 +186,7 @@ func drawSessionRow(s tcell.Screen, r core.Rect, style tcell.Style, cells []stri
 		if i >= len(cells) || x >= r.Right() {
 			return
 		}
-		w := core.Min(col.width, r.Right()-x)
+		w := min(col.width, r.Right()-x)
 		if col.right {
 			core.DrawTextRight(s, x, r.Y, w-1, style, cells[i])
 		} else {

@@ -193,8 +193,8 @@ func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
 	if y+h > view.Bottom() || (covers(y) && above >= view.Y && !covers(above)) {
 		y = above
 	}
-	x = core.Clamp(x, view.X, core.Max(view.Right()-w, view.X))
-	y = core.Clamp(y, view.Y, core.Max(view.Bottom()-h, view.Y))
+	x = core.Clamp(x, view.X, max(view.Right()-w, view.X))
+	y = core.Clamp(y, view.Y, max(view.Bottom()-h, view.Y))
 	return core.Rect{X: x, Y: y, W: w, H: h}
 }
 
@@ -271,8 +271,8 @@ func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x i
 		return -1
 	}
 	w := core.DisplayWidth(t.time)
-	left := core.Max(rowX, am.viewRect.X)
-	right := core.Min(rowX+t.timeRow.W, am.viewRect.Right())
+	left := max(rowX, am.viewRect.X)
+	right := min(rowX+t.timeRow.W, am.viewRect.Right())
 	if right-left < w {
 		return -1
 	}
@@ -289,8 +289,8 @@ func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x i
 // the row or the viewport.
 func (am *ActivityMonitor) labelRun(c *charts.Canvas, row core.Rect, from, to int) (int, int) {
 	rowX, _ := am.screenPos(row.X, row.Y)
-	lo := core.Max(core.Max(rowX, am.viewRect.X), 0)
-	hi := core.Min(rowX+row.W, am.viewRect.Right())
+	lo := max(max(rowX, am.viewRect.X), 0)
+	hi := min(rowX+row.W, am.viewRect.Right())
 
 	blank := func(x int) bool {
 		cx, _ := am.canvasPos(x, 0)

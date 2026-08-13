@@ -51,8 +51,8 @@ func drawDetailsHeader(s tcell.Screen, rect core.Rect, title string, canUp, canD
 // rows, clamped to the current selection's line count.
 func (v *PlanView) scrollDetails(delta int) {
 	total := len(detailLines(v.selectedNode(), v.currentStatement()))
-	max := core.Max(0, total-v.detailsContentRect.H)
-	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, max)
+	maxScroll := max(0, total-v.detailsContentRect.H)
+	v.detailsScroll = core.Clamp(v.detailsScroll+delta, 0, maxScroll)
 }
 
 // scrollBottomProps shifts the Tree tab's bottom Properties section's
@@ -60,8 +60,8 @@ func (v *PlanView) scrollDetails(delta int) {
 // count — mirrors scrollDetails for the "Operator Details" pane.
 func (v *PlanView) scrollBottomProps(delta int) {
 	total := len(nodePropsForDisplay(v.selectedNode()))
-	max := core.Max(0, total-v.bottomRect.H)
-	v.propsSt.scroll = core.Clamp(v.propsSt.scroll+delta, 0, max)
+	maxScroll := max(0, total-v.bottomRect.H)
+	v.propsSt.scroll = core.Clamp(v.propsSt.scroll+delta, 0, maxScroll)
 }
 
 // drawDetails renders the Operator Details pane's aligned key/value lines

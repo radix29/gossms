@@ -57,15 +57,6 @@ func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (
 	return d.RoleByNameContext(ctx, roleName)
 }
 
-// isBuiltinRole reports whether a role's name/owner can't be changed:
-// every fixed role (db_owner, db_datareader, ...), plus public — ALTER ROLE
-// public WITH NAME=... and ALTER AUTHORIZATION ON ROLE::public are both
-// syntax errors, even though sys.database_principals reports public's
-// is_fixed_role as 0 like a user-defined role.
-func isBuiltinRole(role *gosmo.DatabaseRole) bool {
-	return role.IsFixedRole || role.Name == "public"
-}
-
 // principalNames returns every database principal (user or role) that
 // could own a role or schema, or be added as a role member — the
 // candidate list every owner/member picker on this dialog draws from.
@@ -127,7 +118,7 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 				distinctSecurables[securable{e.SecurableType, e.Schema, e.Name}.key()] = true
 			}
 
-			builtin := isBuiltinRole(role)
+			builtin := isSystemDatabaseRole(role)
 			roleType := "Database role"
 			if builtin {
 				roleType = "Fixed database role"

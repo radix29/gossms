@@ -54,6 +54,20 @@ func loadAgentJobsFolderChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 // than a user job — e.g. syspolicy_purge_history. msdb has no "is system
 // job" flag, so this is a name-based heuristic: every built-in Agent job
 // uses the "syspolicy_" prefix.
+//
+// This is not only a placement heuristic. agentJobNode feeds the answer to
+// data.IsSystem, which is what suppresses Delete/Rename in
+// objectOpsMenuItems, and msdb permits sp_delete_job on any job at all —
+// so widening the prefix silently takes away an operation the server
+// allows, and narrowing it hands back a delete this gate is the only thing
+// preventing. Change it with the same care as isSystemLogin in
+// system_principals.go.
+//
+// Deliberately narrow: sysutility_*, mdw_purge_data*, and "SSIS Server
+// Maintenance Job" land in User Jobs. Those arrive with an optional feature
+// an administrator chose to install (Utility Control Point, the Management
+// Data Warehouse, SSIS), and removing one along with its feature is
+// ordinary administration, not a mistake to guard against.
 func isSystemAgentJob(j *gosmo.Job) bool {
 	return strings.HasPrefix(j.Name, "syspolicy_")
 }
@@ -95,6 +109,7 @@ func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 func agentJobNode(l loaderCtx, j *gosmo.Job) *explorerNode {
 	n := l.node(j.Name, NodeAgentJob, "", j.Name, "")
 	n.data.IsEnabled = j.IsEnabled
+	n.data.IsSystem = isSystemAgentJob(j)
 	return n
 }
 

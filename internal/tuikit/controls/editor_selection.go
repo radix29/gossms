@@ -83,7 +83,7 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (startCol, endCol int, ok bo
 		return 0, 0, false
 	}
 	if e.selBlock {
-		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
+		topRow, botRow := min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 		if lineIdx < topRow || lineIdx > botRow {
 			return 0, 0, false
 		}
@@ -119,7 +119,7 @@ func (e *Editor) SelectedText() string {
 		return ""
 	}
 	if e.selBlock {
-		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
+		topRow, botRow := min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		if hiCol == loCol {
 			// A zero-width block is the caret left behind by typing in column
@@ -173,7 +173,7 @@ func (e *Editor) deleteSelection() {
 		return
 	}
 	if e.selBlock {
-		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
+		topRow, botRow := min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		for r := topRow; r <= botRow; r++ {
 			line := e.doc.Line(r)

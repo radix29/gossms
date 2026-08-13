@@ -189,11 +189,9 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		// button stays down must not reach it again — lZoneToolbar swallows
 		// them in routeDrag. runTool applies the same gate drawToolbar dims
 		// on, so a dimmed cell is inert rather than merely grey.
-		for i := range lv.tools {
-			if !lv.tools[i].rect.IsZero() && lv.tools[i].rect.Contains(mx, my) {
-				lv.runTool(i)
-				return true
-			}
+		if i := toolButtonAt(lv.tools, mx, my); i >= 0 {
+			lv.runTool(i)
+			return true
 		}
 		return true
 	}

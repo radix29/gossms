@@ -15,11 +15,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// focusable is satisfied by any tuikit widget that supports keyboard focus.
-type focusable interface {
-	Focus(bool)
-}
-
 // maxServerMatches caps how many rows of the server-field autocomplete
 // list are drawn/hit-tested at once. Matches beyond this many simply
 // aren't shown — the list doesn't scroll — so with up to
@@ -169,13 +164,7 @@ func (d *ConnectDialog) Show() {
 }
 
 func (d *ConnectDialog) setFocus(i int) {
-	for _, f := range d.focusable {
-		f.Focus(false)
-	}
-	if i >= 0 && i < len(d.focusable) {
-		d.focusIdx = i
-		d.focusable[i].Focus(true)
-	}
+	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
 	// The autocomplete list only makes sense while the server field has
 	// focus; moving away from it closes the list.
 	if i != 0 {
@@ -308,7 +297,7 @@ func (d *ConnectDialog) drawMatches(s tcell.Screen) {
 	x := d.fServer.InputX() + 1 // +1: past the '[' border, onto the text
 	y := d.fServer.RectY() + 1
 	w := d.fServer.Width()
-	n := core.Min(len(d.matches), maxServerMatches)
+	n := min(len(d.matches), maxServerMatches)
 	for i := 0; i < n; i++ {
 		st := listStyle
 		if i == d.matchSel {
@@ -443,10 +432,10 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.setFocus((d.focusIdx + 1) % len(d.focusable))
+		d.setFocus(nextFocus(d.focusIdx, len(d.focusable)))
 		return true
 	case tcell.KeyBacktab:
-		d.setFocus((d.focusIdx - 1 + len(d.focusable)) % len(d.focusable))
+		d.setFocus(prevFocus(d.focusIdx, len(d.focusable)))
 		return true
 	case tcell.KeyEscape:
 		d.Hide()
@@ -642,7 +631,7 @@ func (d *ConnectDialog) matchHit(ev *tcell.EventMouse) (int, bool) {
 	x := d.fServer.InputX() + 1
 	y := d.fServer.RectY() + 1
 	w := d.fServer.Width()
-	n := core.Min(len(d.matches), maxServerMatches)
+	n := min(len(d.matches), maxServerMatches)
 	if my < y || my >= y+n || mx < x || mx >= x+w {
 		return 0, false
 	}

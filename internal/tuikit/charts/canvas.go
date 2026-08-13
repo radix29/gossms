@@ -60,7 +60,7 @@ func (c canvasCell) text() string {
 // Non-positive dimensions are clamped to zero, giving a canvas that accepts
 // (and discards) every draw.
 func NewCanvas(w, h int) *Canvas {
-	w, h = core.Max(w, 0), core.Max(h, 0)
+	w, h = max(w, 0), max(h, 0)
 	c := &Canvas{w: w, h: h, cells: make([]canvasCell, w*h)}
 	c.Fill(' ', tcell.StyleDefault)
 	return c
@@ -75,7 +75,7 @@ func (c *Canvas) Rect() core.Rect { return core.Rect{X: 0, Y: 0, W: c.w, H: c.h}
 
 // Fill sets every cell to ch in style (tcell.Screen).
 func (c *Canvas) Fill(ch rune, style tcell.Style) {
-	cell := canvasCell{primary: ch, style: style, width: core.Max(displaywidth.Rune(ch), 1)}
+	cell := canvasCell{primary: ch, style: style, width: max(displaywidth.Rune(ch), 1)}
 	for i := range c.cells {
 		c.cells[i] = cell
 	}
@@ -104,7 +104,7 @@ func (c *Canvas) Put(x, y int, str string, style tcell.Style) (string, int) {
 		return "", 0
 	}
 	first := g.Value()
-	w := core.Max(g.Width(), 1)
+	w := max(g.Width(), 1)
 	c.set(x, y, first, style)
 	return str[len(first):], w
 }
@@ -133,7 +133,7 @@ func (c *Canvas) set(x, y int, str string, style tcell.Style) {
 		primary: primary,
 		rest:    str[n:],
 		style:   style,
-		width:   core.Max(displaywidth.String(str), 1),
+		width:   max(displaywidth.String(str), 1),
 	})
 }
 
@@ -148,7 +148,7 @@ func (c *Canvas) setRune(x, y int, r rune, style tcell.Style) {
 		// content; tcell draws a blank for one and so does this.
 		r = ' '
 	}
-	c.write(x, y, canvasCell{primary: r, style: style, width: core.Max(displaywidth.Rune(r), 1)})
+	c.write(x, y, canvasCell{primary: r, style: style, width: max(displaywidth.Rune(r), 1)})
 }
 
 // write stores one composed cell, reserving the trailing cell of a wide
@@ -187,8 +187,8 @@ func (c *Canvas) inBounds(x, y int) bool {
 // space rather than drawn, so a half-drawn wide glyph can never bleed a
 // stray column into whatever sits beside the viewport.
 func (c *Canvas) Blit(s tcell.Screen, src core.Rect, dst core.Rect) {
-	rows := core.Min(src.H, dst.H)
-	cols := core.Min(src.W, dst.W)
+	rows := min(src.H, dst.H)
+	cols := min(src.W, dst.W)
 	for dy := 0; dy < rows; dy++ {
 		for dx := 0; dx < cols; {
 			// Read the cell rather than Get it: Get composes a string per

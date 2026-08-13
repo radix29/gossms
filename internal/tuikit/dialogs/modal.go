@@ -74,10 +74,10 @@ func (d *ModalDialog) recentre() {
 		return
 	}
 	sw, sh := d.screen.Size()
-	d.rect.W = core.Min(d.reqW, sw)
-	d.rect.H = core.Min(d.reqH, sh)
-	d.rect.X = core.Max(0, (sw-d.rect.W)/2)
-	d.rect.Y = core.Max(0, (sh-d.rect.H)/2)
+	d.rect.W = min(d.reqW, sw)
+	d.rect.H = min(d.reqH, sh)
+	d.rect.X = max(0, (sw-d.rect.W)/2)
+	d.rect.Y = max(0, (sh-d.rect.H)/2)
 }
 
 // Show makes the dialog visible, recentred on the screen.

@@ -55,7 +55,7 @@ func (l *ListBox) SetBounds(x, y, w, h int) {
 // SetItems replaces the item list, clamping selection/scroll into range.
 func (l *ListBox) SetItems(items []string) {
 	l.items = items
-	l.sel = core.Clamp(l.sel, 0, core.Max(0, len(items)-1))
+	l.sel = core.Clamp(l.sel, 0, max(0, len(items)-1))
 	l.ensureVisible()
 }
 
@@ -134,11 +134,11 @@ func (l *ListBox) HandleKey(ev *tcell.EventKey) bool {
 			l.fireSelect()
 		}
 	case tcell.KeyPgUp:
-		l.sel = core.Max(0, l.sel-l.rect.H)
+		l.sel = max(0, l.sel-l.rect.H)
 		l.ensureVisible()
 		l.fireSelect()
 	case tcell.KeyPgDn:
-		l.sel = core.Min(len(l.items)-1, l.sel+l.rect.H)
+		l.sel = min(len(l.items)-1, l.sel+l.rect.H)
 		l.ensureVisible()
 		l.fireSelect()
 	case tcell.KeyHome:

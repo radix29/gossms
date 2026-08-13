@@ -43,16 +43,25 @@ type objectOp struct {
 	renameWarning string
 }
 
-// dbOf resolves the database a node's object lives in.
-func dbOf(ctx context.Context, sc *db.ServerConn, n nodeData) (*gosmo.Database, error) {
-	return sc.Server.DatabaseByNameContext(ctx, n.DBName)
+// dbOf is the database a node's object lives in.
+//
+// Server.Database, not DatabaseByName: every statement below names its object
+// in the text and reads nothing off the *gosmo.Database but its name, so the
+// sys.databases round trip DatabaseByName costs bought nothing. It also could
+// not run under a WithScript-derived context, which is what a Script Changes
+// on Delete would need — see gosmo's Server.Database.
+func dbOf(sc *db.ServerConn, n nodeData) *gosmo.Database {
+	return sc.Server.Database(n.DBName)
 }
 
-// tableOf resolves the table a table-scoped node (index, statistic, key,
+// tableOf is the table a table-scoped node (index, statistic, key,
 // constraint) belongs to — nodeData.TableName, since Schema/Name on those
 // point at the index's or constraint's own name.
-func tableOf(ctx context.Context, sc *db.ServerConn, n nodeData) (*gosmo.Table, error) {
-	return findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
+//
+// A name-only handle, for the same reason as dbOf. Only DropConstraint uses
+// it; the index and statistic ops need the real object and query for it.
+func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
+	return sc.Server.Database(n.DBName).Table(n.Schema, n.TableName)
 }
 
 // objectOps is the per-type table. Every rename that goes through
@@ -80,20 +89,13 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "Table",
 		warning: "All of its data is deleted with it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
+			d := dbOf(sc, n)
 			// cascade=false: a table another table references must have that
 			// foreign key dealt with first, the same refusal SSMS gives.
 			return d.DropTableContext(ctx, n.Schema, n.Name, false)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
-			return d.RenameTableContext(ctx, n.Schema, n.Name, newName)
+			return dbOf(sc, n).RenameTableContext(ctx, n.Schema, n.Name, newName)
 		},
 	},
 	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropViewContext), rename: renameObjectIn},
@@ -179,17 +181,11 @@ var objectOps = map[NodeType]objectOp{
 	NodeUser: {
 		noun: "User",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
+			d := dbOf(sc, n)
 			return d.DropUserContext(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
+			d := dbOf(sc, n)
 			u, err := d.UserByNameContext(ctx, n.Name)
 			if err != nil {
 				return err
@@ -200,10 +196,7 @@ var objectOps = map[NodeType]objectOp{
 	NodeDatabaseRole: {
 		noun: "Database Role",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
+			d := dbOf(sc, n)
 			return d.DropDatabaseRoleContext(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
@@ -220,10 +213,7 @@ var objectOps = map[NodeType]objectOp{
 		// deliberately absent here rather than offered and failing.
 		noun: "Schema",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			d, err := dbOf(ctx, sc, n)
-			if err != nil {
-				return err
-			}
+			d := dbOf(sc, n)
 			return d.DropSchemaContext(ctx, n.Name)
 		},
 	},
@@ -277,32 +267,20 @@ var objectOps = map[NodeType]objectOp{
 // drop function.
 func dropIn(fn func(*gosmo.Database, context.Context, string, string) error) func(context.Context, *db.ServerConn, nodeData) error {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-		d, err := dbOf(ctx, sc, n)
-		if err != nil {
-			return err
-		}
-		return fn(d, ctx, n.Schema, n.Name)
+		return fn(dbOf(sc, n), ctx, n.Schema, n.Name)
 	}
 }
 
 // renameObjectIn is sp_rename's 'OBJECT' class, shared by every schema-
 // scoped object that isn't a table, index, or statistic.
 func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-	d, err := dbOf(ctx, sc, n)
-	if err != nil {
-		return err
-	}
-	return d.RenameObjectContext(ctx, n.Schema, n.Name, newName)
+	return dbOf(sc, n).RenameObjectContext(ctx, n.Schema, n.Name, newName)
 }
 
 // dropConstraint removes a primary key, unique constraint, foreign key, or
 // CHECK constraint — one ALTER TABLE ... DROP CONSTRAINT for all four.
 func dropConstraint(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-	t, err := tableOf(ctx, sc, n)
-	if err != nil {
-		return err
-	}
-	return t.DropConstraintContext(ctx, n.Name)
+	return tableOf(sc, n).DropConstraintContext(ctx, n.Name)
 }
 
 // objectOpFor returns the Delete/Rename behaviour for a node type, or nil
@@ -315,9 +293,17 @@ func objectOpFor(t NodeType) *objectOp {
 }
 
 // objectOpsMenuItems is the Rename/Delete pair a node offers, or nil.
+//
+// A system object offers neither, the same way a node type absent from
+// objectOps does. The System * folders emit the same node types as the user
+// ones, so the type alone put Delete and Rename on master, on sys.objects and
+// on the SQL-Server-created Agent jobs: renaming a system database runs
+// SET SINGLE_USER WITH ROLLBACK IMMEDIATE — kicking every connection to msdb
+// or model — before the server refuses the rename itself, and renaming a
+// system Agent job is not refused at all.
 func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	op := objectOpFor(node.data.Type)
-	if op == nil {
+	if op == nil || node.data.IsSystem {
 		return nil
 	}
 	var items []controls.MenuItem
@@ -351,7 +337,9 @@ func objectDisplayName(n *explorerNode) string {
 func (a *App) deleteObject(node *explorerNode) {
 	op := objectOpFor(node.data.Type)
 	sc := resolveConn(node)
-	if op == nil || op.drop == nil || !a.requireConn(sc) {
+	// IsSystem is re-checked here rather than trusted from the menu: this is
+	// the function that issues the DROP, so it is where the guarantee belongs.
+	if op == nil || op.drop == nil || node.data.IsSystem || !a.requireConn(sc) {
 		return
 	}
 	name := objectDisplayName(node)
@@ -401,7 +389,7 @@ func (a *App) deleteObject(node *explorerNode) {
 func (a *App) renameObject(node *explorerNode) {
 	op := objectOpFor(node.data.Type)
 	sc := resolveConn(node)
-	if op == nil || op.rename == nil || !a.requireConn(sc) {
+	if op == nil || op.rename == nil || node.data.IsSystem || !a.requireConn(sc) {
 		return
 	}
 	oldName := node.data.Name

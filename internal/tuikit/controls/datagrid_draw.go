@@ -152,7 +152,7 @@ func (g *DataGrid) drawRow(s tcell.Screen, y int, cells []string, style tcell.St
 		if cell == nullCellText {
 			cellStyle = style.Foreground(p.TextDim)
 		}
-		avail := core.Min(cw, g.rect.Right()-col)
+		avail := min(cw, g.rect.Right()-col)
 		core.FillRect(s, core.Rect{X: col, Y: y, W: avail, H: 1}, ' ', cellStyle)
 		core.DrawTextClipped(s, col+1, y, avail-2, cellStyle, core.Truncate(cell, avail-2))
 		if col+cw-1 < g.rect.Right() {
@@ -192,7 +192,7 @@ func (g *DataGrid) drawCellSelection(s tcell.Screen, y int, cells []string, xOff
 			if cellText == nullCellText {
 				cellSt = st.Foreground(p.TextDim)
 			}
-			avail := core.Min(cw, g.rect.Right()-col)
+			avail := min(cw, g.rect.Right()-col)
 			core.FillRect(s, core.Rect{X: col, Y: y, W: avail, H: 1}, ' ', cellSt)
 			core.DrawTextClipped(s, col+1, y, avail-2, cellSt, core.Truncate(cellText, avail-2))
 			if col+cw-1 < g.rect.Right() {

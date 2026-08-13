@@ -80,7 +80,17 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			}
 			credItems := append([]string{noneItem}, credNames(creds)...)
 
-			nameRow := propsheet.Text("Login name", l.Name, 24)
+			// The ## logins are the one thing on this page the server would
+			// happily let through: ALTER LOGIN ... WITH NAME succeeds on
+			// [##MS_PolicyEventProcessingLogin##] and silently orphans the
+			// matching users in master and msdb. See isSystemLogin.
+			builtin := isSystemLogin(l)
+			var nameRow *propsheet.TextRow
+			var identityRow propsheet.Row = propsheet.Static("Login name", l.Name)
+			if !builtin {
+				nameRow = propsheet.Text("Login name", l.Name, 24)
+				identityRow = nameRow
+			}
 			passwordRow := propsheet.Password("Password", 20)
 			confirmRow := propsheet.Password("Confirm password", 20)
 			// The mismatch check must live on passwordRow, not confirmRow:
@@ -120,9 +130,9 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			}
 			credentialRow := propsheet.Select("Map to credential", credItems, credSelected)
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Login identity"),
-				nameRow,
+				identityRow,
 				propsheet.Static("Authentication", authType),
 				propsheet.Section("Password"),
 				passwordRow, confirmRow,
@@ -139,7 +149,15 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				propsheet.Static("SID", fmt.Sprintf("0x%X", l.SID)),
 				propsheet.Static("Created", formatSQLDate(l.CreateDate)),
 				propsheet.Static("Modified", formatSQLDate(l.ModifyDate)),
-			)
+			}
+			if builtin {
+				rows = append(rows,
+					propsheet.Section("Built-in login"),
+					propsheet.Note("This is a built-in login SQL Server manages for itself. Its name can't be changed."),
+				)
+			}
+
+			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
 				l, err := findLogin(ctx, sc, *loginName)
@@ -180,7 +198,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				}
 				// Renaming last keeps every write above addressed by the
 				// name the server still has — see propPage.renames.
-				if nameRow.Dirty() {
+				if nameRow != nil && nameRow.Dirty() {
 					if err := l.RenameContext(ctx, nameRow.Value()); err != nil {
 						return err
 					}

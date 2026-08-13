@@ -86,7 +86,7 @@ func (v VBarChart) drawBars(s tcell.Screen, plot core.Rect, sc Scale) {
 		// colour field rather than as a pair of measured values.
 		barW = core.Clamp(slot-1, 1, maxAutoBarWidth)
 	}
-	barW = core.Min(barW, slot)
+	barW = min(barW, slot)
 
 	for i, bar := range v.Bars {
 		// Centre the bar in its slot so the gaps either side are even and

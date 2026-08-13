@@ -361,11 +361,11 @@ func (d *FindReplaceDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.focusIdx = (d.focusIdx + 1) % d.focusCount()
+		d.focusIdx = nextFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyBacktab:
-		d.focusIdx = (d.focusIdx - 1 + d.focusCount()) % d.focusCount()
+		d.focusIdx = prevFocus(d.focusIdx, d.focusCount())
 		d.syncFocus()
 		return true
 	case tcell.KeyEscape:

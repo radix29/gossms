@@ -127,6 +127,12 @@ func disabledJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]s
 // jobsWithoutSchedulesReport fetches each job's attached schedules to
 // determine whether it has any — one round trip per job, acceptable for
 // the modest job counts a single SQL Server Agent instance typically has.
+//
+// A job whose round trip fails is listed with its Schedules cell reading
+// "Unknown", not dropped. Dropping it hid the one case this report exists to
+// surface: the answer "this job may be missing a schedule and I could not
+// check" is the report's subject, and silence reads as "all fine". Same
+// choice countOrDash makes for the summary's census.
 func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
@@ -135,12 +141,22 @@ func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]strin
 	rows := make([][]string, 0)
 	for _, j := range jobs {
 		scheds, err := j.SchedulesContext(ctx)
-		if err != nil || len(scheds) > 0 {
+		// A cancelled or timed-out context fails every remaining job, which
+		// would render as a report claiming every job is unverifiable. Report
+		// the cancellation itself instead.
+		if err != nil && ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if err == nil && len(scheds) > 0 {
 			continue
 		}
-		rows = append(rows, []string{j.Name, j.Category, fmt.Sprintf("%v", j.IsEnabled)})
+		schedules := "None"
+		if err != nil {
+			schedules = "Unknown"
+		}
+		rows = append(rows, []string{j.Name, j.Category, fmt.Sprintf("%v", j.IsEnabled), schedules})
 	}
-	return []string{"Job Name", "Category", "Enabled"}, rows, nil
+	return []string{"Job Name", "Category", "Enabled", "Schedules"}, rows, nil
 }
 
 func jobsWithoutNotificationsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {

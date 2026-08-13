@@ -6,5 +6,5 @@
 //   - screen.go   — Init (tcell.Screen setup)
 //   - drawing.go  — DrawText/DrawBox/FillRect/DrawScrollbar/... primitives
 //   - strutil.go  — DisplayWidth/Truncate/PadRight/Itoa/JoinPath/EvRune
-//   - mathutil.go — Min/Max/Clamp/ClampF
+//   - mathutil.go — Clamp
 package core

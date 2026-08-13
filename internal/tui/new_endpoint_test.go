@@ -54,11 +54,36 @@ func TestEndpointPrincipalNamesMatchOnBothSides(t *testing.T) {
 	}
 	// The names the pipeline builds inline, pinned here so a change to either
 	// side has to change this test too.
-	if got := "ubusql2" + "_login"; got != "ubusql2_login" {
+	if got := endpointPrincipalBase("ubusql2") + "_login"; got != "ubusql2_login" {
 		t.Errorf("login name = %q", got)
 	}
-	if got := "ubusql2" + "_user"; got != "ubusql2_user" {
+	if got := endpointPrincipalBase("ubusql2") + "_user"; got != "ubusql2_user" {
 		t.Errorf("user name = %q", got)
+	}
+}
+
+func TestEndpointPrincipalBaseSurvivesANamedInstance(t *testing.T) {
+	// @@SERVERNAME on a named instance is HOST\INSTANCE, and the backslash is
+	// what makes [HOST\INST_login] the spelling of a Windows principal. The
+	// test cluster is all default instances, so this path has never run live —
+	// this is the only thing pinning it.
+	d := NewNewEndpointDialog(&App{})
+	if got := d.certificateName(`WIN10CLI\SQL2019`); got != "WIN10CLI$SQL2019_Cert" {
+		t.Errorf("certificate name = %q, want WIN10CLI$SQL2019_Cert", got)
+	}
+	if got := endpointPrincipalBase(`WIN10CLI\SQL2019`) + "_login"; got != "WIN10CLI$SQL2019_login" {
+		t.Errorf("login name = %q, want WIN10CLI$SQL2019_login", got)
+	}
+	// Two named instances on one host must not collapse to the same principal
+	// names — which is what truncating to the host, the way endpointURL does,
+	// would do.
+	if endpointPrincipalBase(`HOST\A`) == endpointPrincipalBase(`HOST\B`) {
+		t.Error("two named instances on one host share a principal base")
+	}
+	// A default instance is unchanged, which is why every deployment so far
+	// ran through this untouched.
+	if got := endpointPrincipalBase("ubusql1"); got != "ubusql1" {
+		t.Errorf("default instance = %q, want ubusql1", got)
 	}
 }
 

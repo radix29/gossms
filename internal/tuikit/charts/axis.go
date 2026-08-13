@@ -93,7 +93,7 @@ func drawTimeAxis(s tcell.Screen, row, plot core.Rect, now string, interval time
 	// to its left knows where it has to stop.
 	leftmost := row.Right()
 	if now != "" {
-		x := core.Max(row.Right()-core.DisplayWidth(now), row.X)
+		x := max(row.Right()-core.DisplayWidth(now), row.X)
 		core.DrawTextClipped(s, x, row.Y, row.Right()-x, style, now)
 		leftmost = x
 	}

@@ -64,7 +64,7 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 	d.message = message
 	d.required = required
 	d.status = ""
-	d.input = widgets.NewInputField("", core.Max(20, core.DisplayWidth(required)+16), false)
+	d.input = widgets.NewInputField("", max(20, core.DisplayWidth(required)+16), false)
 	d.focus = typedConfirmFocusInput
 	d.syncFocus()
 	d.OnConfirm = onConfirm

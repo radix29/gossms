@@ -344,7 +344,7 @@ func (g *DataGrid) SetSelectedCell(row, col int) {
 		return
 	}
 	g.selRow = core.Clamp(row, 0, g.rows.Len()-1)
-	g.selCol = core.Clamp(col, 0, core.Max(0, len(g.columns)-1))
+	g.selCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
 	g.ensureVisible(g.rect.H - 3)
 	g.ensureVisibleCol()
 }
@@ -358,7 +358,7 @@ func (g *DataGrid) Focus(v bool) { g.active = v }
 func (g *DataGrid) SetCellCursor(enabled bool) {
 	g.cellCursor = enabled
 	if enabled {
-		g.selCol = core.Clamp(g.selCol, 0, core.Max(0, len(g.columns)-1))
+		g.selCol = core.Clamp(g.selCol, 0, max(0, len(g.columns)-1))
 	}
 }
 
@@ -427,7 +427,7 @@ func (g *DataGrid) computeColWidths() {
 	for i, col := range g.columns {
 		g.colWidths[i] = core.DisplayWidth(col) + 2
 	}
-	n := core.Min(g.rows.Len(), colWidthSampleRows)
+	n := min(g.rows.Len(), colWidthSampleRows)
 	for r := 0; r < n; r++ {
 		row := g.rows.Row(r)
 		for i, cell := range row {
@@ -480,7 +480,7 @@ func (g *DataGrid) SetColumnWidth(i, w int) {
 		return
 	}
 	if w > 0 {
-		g.setOverrideWidth(i, core.Max(w, minResizeWidth))
+		g.setOverrideWidth(i, max(w, minResizeWidth))
 	} else {
 		g.setOverrideWidth(i, 0)
 	}
@@ -519,7 +519,7 @@ func (g *DataGrid) gutterWidth() int {
 	if !g.showRowNumbers {
 		return 0
 	}
-	return core.DisplayWidth(core.Itoa(core.Max(1, g.rows.Len()))) + 2
+	return core.DisplayWidth(core.Itoa(max(1, g.rows.Len()))) + 2
 }
 
 // selectionBounds returns the inclusive row/col rectangle of the current

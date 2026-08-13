@@ -143,16 +143,16 @@ func (b BarChart) labelGutter(w int) int {
 		return 0
 	}
 	if b.LabelWidth > 0 {
-		return core.Min(b.LabelWidth, w)
+		return min(b.LabelWidth, w)
 	}
 	widest := 0
 	for _, bar := range b.Bars {
-		widest = core.Max(widest, core.DisplayWidth(bar.Label))
+		widest = max(widest, core.DisplayWidth(bar.Label))
 	}
 	if widest == 0 {
 		return 0
 	}
-	return core.Min(widest+1, core.Max(w/3, 1))
+	return min(widest+1, max(w/3, 1))
 }
 
 // valueGutter is the width the formatted values need, or 0 when they aren't
@@ -163,7 +163,7 @@ func (b BarChart) valueGutter() int {
 	}
 	widest := 0
 	for _, bar := range b.Bars {
-		widest = core.Max(widest, core.DisplayWidth(FormatValue(bar.total())))
+		widest = max(widest, core.DisplayWidth(FormatValue(bar.total())))
 	}
 	return widest + 1
 }

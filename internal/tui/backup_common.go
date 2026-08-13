@@ -105,7 +105,7 @@ func drawProgressBar(s tcell.Screen, x, y, w, pct int, st tcell.Style) {
 	}
 	filled := 0
 	if pct > 0 {
-		filled = core.Min(barW, barW*pct/100)
+		filled = min(barW, barW*pct/100)
 	}
 	for i := 0; i < barW; i++ {
 		ch := '░'

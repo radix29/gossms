@@ -63,10 +63,10 @@ func (b StackedBar) Draw(s tcell.Screen, r core.Rect) core.Rect {
 	// the original figure would place the legend below r and DrawLegend, which
 	// fills whatever rect it is handed, would paint over the panel beneath.
 	legendRows := legendRowsFor(b.LegendRows, b.Series)
-	barRows := core.Max(b.Rows, 1)
+	barRows := max(b.Rows, 1)
 	if barRows+legendRows > r.H {
-		barRows = core.Max(r.H-legendRows, 1)
-		legendRows = core.Max(r.H-barRows, 0)
+		barRows = max(r.H-legendRows, 1)
+		legendRows = max(r.H-barRows, 0)
 	}
 
 	valueW := 0

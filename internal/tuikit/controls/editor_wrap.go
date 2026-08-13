@@ -155,7 +155,7 @@ func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, 
 		// it back to a rune index is what stops a wide character earlier in
 		// the segment from putting the caret in the wrong place.
 		line := e.doc.Line(row)
-		col := vl.start + core.RuneIndexAtColumn(line[vl.start:vl.end], core.Max(0, mx-contentX))
+		col := vl.start + core.RuneIndexAtColumn(line[vl.start:vl.end], max(0, mx-contentX))
 		if col > vl.end {
 			col = vl.end
 		}

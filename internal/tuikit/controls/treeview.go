@@ -85,7 +85,7 @@ func (tv *TreeView) SetActive(v bool) { tv.active = v }
 // Callers typically rebuild this list in OnExpand after loading children.
 func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	tv.nodes = nodes
-	tv.sel = core.Clamp(tv.sel, 0, core.Max(0, len(nodes)-1))
+	tv.sel = core.Clamp(tv.sel, 0, max(0, len(nodes)-1))
 	// A collapse/refresh that shrinks the flat node list below the old
 	// scroll offset would otherwise leave scroll pointing past the end of
 	// nodes — Draw's render loop breaks on its first iteration in that
@@ -99,7 +99,7 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 			tv.contentW = w
 		}
 	}
-	tv.scrollX = core.Clamp(tv.scrollX, 0, core.Max(0, tv.contentW-tv.rect.Inner(1).W))
+	tv.scrollX = core.Clamp(tv.scrollX, 0, max(0, tv.contentW-tv.rect.Inner(1).W))
 }
 
 // lineWidth returns n's rendered row width in display columns: indent (2
@@ -108,7 +108,7 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 func (tv *TreeView) lineWidth(n TreeNode) int {
 	w := n.Depth*2 + 4
 	if n.Icon != 0 {
-		w += core.Max(1, core.DisplayWidth(string(n.Icon))) + 1
+		w += max(1, core.DisplayWidth(string(n.Icon))) + 1
 	}
 	w += core.DisplayWidth(n.Label)
 	return w
@@ -223,12 +223,12 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 		}
 		return true
 	case tcell.KeyPgUp:
-		tv.sel = core.Max(0, tv.sel-inner.H)
+		tv.sel = max(0, tv.sel-inner.H)
 		tv.ensureVisible(inner.H)
 		tv.fireSelect()
 		return true
 	case tcell.KeyPgDn:
-		tv.sel = core.Min(len(tv.nodes)-1, tv.sel+inner.H)
+		tv.sel = min(len(tv.nodes)-1, tv.sel+inner.H)
 		tv.ensureVisible(inner.H)
 		tv.fireSelect()
 		return true
@@ -433,12 +433,12 @@ func (tv *TreeView) NodeIDAt(mx, my int) (int, bool) {
 // clamped to [0, contentW-inner.W] so the scrollbar thumb never runs past
 // either end of the track.
 func (tv *TreeView) scrollLeft() {
-	tv.scrollX = core.Max(0, tv.scrollX-4)
+	tv.scrollX = max(0, tv.scrollX-4)
 }
 
 func (tv *TreeView) scrollRight() {
-	maxScroll := core.Max(0, tv.contentW-tv.rect.Inner(1).W)
-	tv.scrollX = core.Min(maxScroll, tv.scrollX+4)
+	maxScroll := max(0, tv.contentW-tv.rect.Inner(1).W)
+	tv.scrollX = min(maxScroll, tv.scrollX+4)
 }
 
 // toggleExpand flips the selected node's Expanded state and fires
@@ -503,7 +503,7 @@ func (tv *TreeView) openContextMenuAtSelection() {
 	// it back through tv.scrollX like the mouse-click expander hit-test
 	// does, clamped so a node scrolled left of the panel still pops the
 	// menu on-screen rather than off its left edge.
-	x := inner.X + core.Max(0, n.Depth*2-tv.scrollX)
+	x := inner.X + max(0, n.Depth*2-tv.scrollX)
 	y := inner.Y + (tv.sel - tv.scroll)
 	tv.OnRightClick(n.ID, x, y)
 }

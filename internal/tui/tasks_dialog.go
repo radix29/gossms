@@ -134,12 +134,7 @@ func (d *TasksDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 func (d *TasksDialog) ensureVisible(dataH int) {
-	if d.sel < d.scroll {
-		d.scroll = d.sel
-	}
-	if d.sel >= d.scroll+dataH {
-		d.scroll = d.sel - dataH + 1
-	}
+	d.scroll = scrollToShow(d.sel, d.scroll, dataH)
 }
 
 // cancelSelected cancels the selected task, if any and still running —

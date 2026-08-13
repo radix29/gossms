@@ -24,7 +24,7 @@ func (e *Editor) blockEditing() bool { return e.selecting && e.selBlock }
 
 // blockRows returns the block selection's row range, ordered.
 func (e *Editor) blockRows() (top, bot int) {
-	return core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
+	return min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 }
 
 // setBlockCaret re-arms the block over rows top..bot as a zero-width column

@@ -179,7 +179,7 @@ func (r *StaticRow) Draw(s tcell.Screen, focused bool) {
 	}
 	core.DrawTextClipped(s, r.x, r.y, LabelWidth, lst, r.label)
 	valX := r.x + LabelWidth
-	core.DrawTextClipped(s, valX, r.y, core.Max(0, r.w-LabelWidth), vst, r.value)
+	core.DrawTextClipped(s, valX, r.y, max(0, r.w-LabelWidth), vst, r.value)
 }
 
 // ---------------------------------------------------------------------------

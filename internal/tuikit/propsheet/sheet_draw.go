@@ -27,14 +27,14 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 
 	bodyY := inner.Y + 2
 	bodyBottom := p.ButtonRowY() - 2 // one row reserved for the hint/message line
-	bodyH := core.Max(0, bodyBottom-bodyY)
+	bodyH := max(0, bodyBottom-bodyY)
 
 	p.pageList.SetBounds(inner.X, bodyY, pageListWidth, bodyH)
 	p.pageList.Draw(s)
 	core.DrawVLine(s, inner.X+pageListWidth, bodyY, bodyH, sep)
 
 	contentX := inner.X + pageListWidth + 2
-	contentW := core.Max(0, inner.Right()-contentX)
+	contentW := max(0, inner.Right()-contentX)
 	p.drawContent(s, contentX, bodyY, contentW, bodyH)
 
 	msgY := bodyBottom
@@ -78,7 +78,7 @@ func (p *PropertySheet) drawContent(s tcell.Screen, x, y, w, h int) {
 	sep := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.Border)
 	core.DrawHLine(s, x, y+1, w, sep)
 
-	contentY, contentH := y+2, core.Max(0, h-2)
+	contentY, contentH := y+2, max(0, h-2)
 	dimSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.TextDim)
 
 	switch slot.state {

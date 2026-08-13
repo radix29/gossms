@@ -341,8 +341,8 @@ func (e *Editor) moveCompletionSel(delta int) {
 }
 
 func (e *Editor) ensureCompletionVisible() {
-	e.completionScroll = core.Min(e.completionScroll,
-		core.Max(0, len(e.completionItems)-maxCompletionRows))
+	e.completionScroll = min(e.completionScroll,
+		max(0, len(e.completionItems)-maxCompletionRows))
 	if e.completionSel < e.completionScroll {
 		e.completionScroll = e.completionSel
 	}
@@ -438,8 +438,8 @@ func (e *Editor) completionColumnWidths() (labelW, detailW int) {
 			detailW = w
 		}
 	}
-	labelW = core.Min(labelW, maxCompletionLabelW)
-	detailW = core.Min(detailW, maxCompletionDetailW)
+	labelW = min(labelW, maxCompletionLabelW)
+	detailW = min(detailW, maxCompletionDetailW)
 	return labelW, detailW
 }
 
@@ -455,7 +455,7 @@ func (e *Editor) completionRect() core.Rect {
 	if detailW > 0 {
 		w += 2 + detailW // gap + detail
 	}
-	rowCount := core.Min(len(e.completionItems), maxCompletionRows)
+	rowCount := min(len(e.completionItems), maxCompletionRows)
 	if len(e.completionItems) > maxCompletionRows {
 		w++ // scrollbar column
 	}
@@ -466,7 +466,7 @@ func (e *Editor) completionRect() core.Rect {
 	// Keep the popup horizontally inside the editor's rect — a token start
 	// scrolled off-view to the left, or one near the right edge, must not
 	// put it over the gutter or off-screen.
-	x = core.Max(e.rect.X, core.Min(x, e.rect.Right()-w))
+	x = max(e.rect.X, min(x, e.rect.Right()-w))
 	y := e.cursorRow - e.scrollRow + e.rect.Y + 1
 
 	// Flip above the cursor line when there isn't room below.

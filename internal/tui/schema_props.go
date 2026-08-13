@@ -51,18 +51,6 @@ func findSchema(ctx context.Context, sc *db.ServerConn, dbName, schemaName strin
 	return nil, fmt.Errorf("schema %q not found in %q", schemaName, dbName)
 }
 
-// isSystemSchema reports whether a schema's owner can't be changed —
-// dbo/guest/sys/INFORMATION_SCHEMA, the same fixed set isSystemUser
-// already treats as non-interactive for the analogous reason.
-func isSystemSchema(name string) bool {
-	switch name {
-	case "dbo", "guest", "sys", "INFORMATION_SCHEMA":
-		return true
-	default:
-		return false
-	}
-}
-
 func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 	return propPage{
 		title: "General",

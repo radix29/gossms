@@ -26,11 +26,11 @@ func (d *FileDialog) handleListKey(ev *tcell.EventKey) bool {
 			d.syncNameFromSelection()
 		}
 	case tcell.KeyPgUp:
-		d.sel = core.Max(0, d.sel-fileListRows)
+		d.sel = max(0, d.sel-fileListRows)
 		d.ensureVisible()
 		d.syncNameFromSelection()
 	case tcell.KeyPgDn:
-		d.sel = core.Min(len(d.entries)-1, d.sel+fileListRows)
+		d.sel = min(len(d.entries)-1, d.sel+fileListRows)
 		d.ensureVisible()
 		d.syncNameFromSelection()
 	case tcell.KeyHome:

@@ -142,7 +142,7 @@ func (e *Editor) editSpan() (lo, hi int) {
 	lo, hi = e.cursorRow, e.cursorRow+1
 	if e.HasSelection() {
 		sr, _, er, _ := e.selectionBounds()
-		lo, hi = core.Min(lo, sr), core.Max(hi, er+1)
+		lo, hi = min(lo, sr), max(hi, er+1)
 	}
 	return core.Clamp(lo-1, 0, e.doc.Len()), core.Clamp(hi+1, 0, e.doc.Len())
 }

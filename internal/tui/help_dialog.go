@@ -146,9 +146,9 @@ func (d *HelpDialog) HandleKey(ev *tcell.EventKey) bool {
 			d.scroll++
 		}
 	case tcell.KeyPgUp:
-		d.scroll = core.Max(0, d.scroll-dataH)
+		d.scroll = max(0, d.scroll-dataH)
 	case tcell.KeyPgDn:
-		d.scroll = core.Max(0, core.Min(len(helpLines)-dataH, d.scroll+dataH))
+		d.scroll = max(0, min(len(helpLines)-dataH, d.scroll+dataH))
 	}
 	return true
 }

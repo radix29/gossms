@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -153,7 +154,12 @@ func agDefaultFailoverMode(clusterType string) string {
 
 func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	nameRow := propsheet.Text("Server instance", "", 30)
-	endpointRow := propsheet.Static("Endpoint URL", "(not connected yet)")
+	// Editable, not Static. Connect fills it from the instance's own endpoint,
+	// whose host comes from that instance's @@SERVERNAME — so an instance whose
+	// short name the other replicas cannot resolve produces a URL that parses,
+	// is accepted, and then never connects. Typing the FQDN is the only repair,
+	// and there was none.
+	endpointRow := propsheet.Text("Endpoint URL", "", 40)
 
 	modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, indexOf(agAvailabilityModeItems, pf.defaults.availabilityMode))
 	failoverRow := propsheet.Select("Failover mode", agFailoverModeItems, indexOf(agFailoverModeItems, pf.defaults.failoverMode))
@@ -164,6 +170,10 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	priorityRow := propsheet.Int("Backup priority", int64(pf.defaults.backupPriority), 0, 100, "")
 
 	d.commit = func() {
+		// The row wins over what Connect read, so an edited host is what ADD
+		// REPLICA gets. Clearing it clears resolved too, which validation then
+		// refuses — the same answer as never having connected.
+		d.resolved.endpointURL = strings.TrimSpace(endpointRow.Value())
 		d.resolved.availabilityMode = modeRow.Value()
 		d.resolved.failoverMode = failoverRow.Value()
 		d.resolved.seedingMode = seedingRow.Value()
@@ -183,7 +193,7 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	nameRow.SetOnChange(func(v string) {
 		if !strings.EqualFold(strings.TrimSpace(v), d.resolved.name) {
 			d.resolved.name, d.resolved.endpointURL = "", ""
-			endpointRow.SetValue("(not connected yet)")
+			endpointRow.SetValue("")
 		}
 	})
 
@@ -200,6 +210,7 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 		propsheet.Buttons(connectBtn),
 		endpointRow,
 		propsheet.Note("Connect reads the instance's database mirroring endpoint, which ADD REPLICA needs and which cannot be guessed — an endpoint that is missing or not STARTED is refused here rather than producing a replica that never connects."),
+		propsheet.Note("The URL it fills in names the instance the way that instance names itself. Edit the host if the other replicas cannot resolve it — the port is the endpoint's and should be left alone."),
 		propsheet.Section("Replica settings"),
 		modeRow, failoverRow, seedingRow, primaryRoleRow, secondaryRoleRow, timeoutRow, priorityRow,
 		propsheet.Note(fmt.Sprintf("This group's cluster type is %s, so the failover mode must be %s.",
@@ -217,6 +228,26 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	d.applyFns[0] = d.addReplica
 }
 
+// validateEndpointURL rejects an endpoint URL that ADD REPLICA would store and
+// then fail to connect over. The shape is tcp://host:port — the only one
+// database mirroring endpoints use, and the one gosmo's endpointURL builds.
+func validateEndpointURL(u string) error {
+	const scheme = "tcp://"
+	rest, ok := strings.CutPrefix(strings.ToLower(u), scheme)
+	if !ok {
+		return fmt.Errorf("endpoint URL %q has to start with tcp:// — the form is tcp://host:port", u)
+	}
+	host, port, ok := strings.Cut(rest, ":")
+	if !ok || host == "" {
+		return fmt.Errorf("endpoint URL %q needs a host and a port — the form is tcp://host:port", u)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("endpoint URL %q has no usable port — the form is tcp://host:port", u)
+	}
+	return nil
+}
+
 // agAllowedFailoverModes is agFailoverModesFor's list alone, for the note.
 func agAllowedFailoverModes(clusterType string) []string {
 	allowed, _ := agFailoverModesFor(clusterType)
@@ -227,6 +258,12 @@ func agAllowedFailoverModes(clusterType string) []string {
 func validateAddReplica(r newAGReplica, pf *agAddReplicaPrefetch) error {
 	if r.name == "" || r.endpointURL == "" {
 		return fmt.Errorf("type the instance to add and press Connect — its endpoint URL has to be read from the instance itself")
+	}
+	// The URL is editable, so it is now the one field a typo reaches the server
+	// through. ADD REPLICA takes a malformed one without complaint and the
+	// replica simply never connects, which is diagnosed hours later.
+	if err := validateEndpointURL(r.endpointURL); err != nil {
+		return err
 	}
 	if pf.existing[strings.ToLower(r.name)] {
 		return fmt.Errorf("%s is already a replica of this availability group", r.name)

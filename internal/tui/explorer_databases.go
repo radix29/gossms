@@ -72,6 +72,7 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 			n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
 			n.data.IsOffline = d.State() != "ONLINE"
 			n.data.CreateDate = d.CreateDate()
+			n.data.IsSystem = true
 			out = append(out, n)
 		}
 	}
@@ -117,7 +118,9 @@ func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	}
 	return listChildren(func() ([]*gosmo.User, error) { return dbObj.UsersContext(l.ctx) },
 		func(u *gosmo.User) *explorerNode {
-			return l.node(u.Name, NodeUser, "", u.Name, node.data.DBName)
+			n := l.node(u.Name, NodeUser, "", u.Name, node.data.DBName)
+			n.data.IsSystem = isSystemUser(u.Name)
+			return n
 		})
 }
 
@@ -128,7 +131,9 @@ func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	}
 	return listChildren(func() ([]*gosmo.DatabaseRole, error) { return dbObj.DatabaseRolesContext(l.ctx) },
 		func(r *gosmo.DatabaseRole) *explorerNode {
-			return l.node(r.Name, NodeDatabaseRole, "", r.Name, node.data.DBName)
+			n := l.node(r.Name, NodeDatabaseRole, "", r.Name, node.data.DBName)
+			n.data.IsSystem = isSystemDatabaseRole(r)
+			return n
 		})
 }
 
@@ -139,6 +144,8 @@ func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	}
 	return listChildren(func() ([]*gosmo.Schema, error) { return dbObj.SchemasContext(l.ctx) },
 		func(s *gosmo.Schema) *explorerNode {
-			return l.node(s.Name, NodeSchema, s.Name, s.Name, node.data.DBName)
+			n := l.node(s.Name, NodeSchema, s.Name, s.Name, node.data.DBName)
+			n.data.IsSystem = isSystemSchema(s.Name)
+			return n
 		})
 }

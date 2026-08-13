@@ -75,7 +75,7 @@ func (d *PropertiesDialog) ShowPropertiesSized(title string, rows []PropertyRow,
 			d.keyW = kw
 		}
 	}
-	d.keyW = core.Min(d.keyW, core.Max(propsKeyW, w/3))
+	d.keyW = min(d.keyW, max(propsKeyW, w/3))
 	d.SetSize(w, h)
 	d.ModalDialog.Show()
 }
@@ -86,7 +86,7 @@ func (d *PropertiesDialog) ShowPropertiesSized(title string, rows []PropertyRow,
 // — so a naive inner.H-3 draws the last two rows straight under the
 // separator and buttons, where DrawSeparator/DrawButtons overwrite them and
 // the scroll clamp then refuses to bring them into view at all.
-func propsDataH(inner core.Rect) int { return core.Max(0, inner.H-5) }
+func propsDataH(inner core.Rect) int { return max(0, inner.H-5) }
 
 // Draw renders the properties dialog.
 func (d *PropertiesDialog) Draw(s tcell.Screen) {

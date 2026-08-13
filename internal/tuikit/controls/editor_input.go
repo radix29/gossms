@@ -157,10 +157,10 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.SelectAll()
 		dropSelection = false
 	case tcell.KeyPgUp:
-		e.cursorRow = core.Max(0, e.cursorRow-e.contentH())
+		e.cursorRow = max(0, e.cursorRow-e.contentH())
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyPgDn:
-		e.cursorRow = core.Min(e.doc.Len()-1, e.cursorRow+e.contentH())
+		e.cursorRow = min(e.doc.Len()-1, e.cursorRow+e.contentH())
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyEnter:
 		e.pushUndoLocal()
@@ -396,7 +396,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		return e.handleMouseWrapped(ev, mx, my, contentX, vls)
 	}
 	if ev.Buttons() == tcell.Button1 {
-		row := core.Clamp(e.scrollRow+core.Min(my-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
+		row := core.Clamp(e.scrollRow+min(my-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
 		col := e.runeColAtScreenX(row, mx-contentX)
 		if !e.mouseDragging {
 			// Fresh click: reposition the cursor. Without Shift, arm a new
@@ -528,7 +528,7 @@ func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
 // point from the release event it's handling at the App level).
 func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
-	row := core.Clamp(e.scrollRow+core.Min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
+	row := core.Clamp(e.scrollRow+min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
 	col := e.runeColAtScreenX(row, x-contentX)
 	e.cursorRow, e.cursorCol = row, col
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
@@ -546,7 +546,7 @@ func (e *Editor) runeColAtScreenX(row, dx int) int {
 		return 0
 	}
 	line := e.doc.Line(row)
-	return core.Min(core.RuneIndexAtColumn(line, core.Max(0, e.scrollCol+dx)), len(line))
+	return min(core.RuneIndexAtColumn(line, max(0, e.scrollCol+dx)), len(line))
 }
 
 // colForDesired maps desiredCol — a display column, see Editor.desiredCol —
@@ -554,7 +554,7 @@ func (e *Editor) runeColAtScreenX(row, dx int) int {
 // the goal-column half of vertical caret movement.
 func (e *Editor) colForDesired() int {
 	line := e.cursorLine()
-	return core.Min(core.RuneIndexAtColumn(line, e.desiredCol), len(line))
+	return min(core.RuneIndexAtColumn(line, e.desiredCol), len(line))
 }
 
 // horizontalWheelChars is how many characters a single horizontal wheel
@@ -567,5 +567,5 @@ const horizontalWheelChars = 4
 // it can't scroll past showing at least the last character of the buffer's
 // longest line.
 func (e *Editor) scrollColBy(delta int) {
-	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, core.Max(0, e.doc.maxDisplayWidth()-1))
+	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, max(0, e.doc.maxDisplayWidth()-1))
 }

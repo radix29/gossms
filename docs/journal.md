@@ -1314,3 +1314,246 @@ and login, dropped afterwards: table rename, view delete, index rename, primary
 key delete (ALTER TABLE DROP CONSTRAINT), table delete, database rename (forced,
 `sys.databases` confirming MULTI_USER/ONLINE afterwards), database delete behind
 the retype dialog, and login rename + delete — each cross-checked with `sqlcmd`.
+
+---
+
+## Cross-repo review pass: system objects, drop semantics, endpoint certificates (2026-08-13)
+
+A review of everything new since `v0.0.6` (gossms) and `v0.0.8` (gosmo) —
+the log viewer, the folder filter, Delete/Rename, the endpoint dialog, the
+server filesystem, the restore Files view. Five things came out of it; the
+first is the only real bug.
+
+**Delete and Rename were offered on system objects, and one of them did
+damage before failing.** `objectOpsMenuItems` keyed off `node.data.Type`
+alone, and the System * folders emit exactly the same node types as the user
+ones — `loadSystemDatabasesChildren` builds `NodeDatabase`,
+`loadSystemViewsChildren` builds `NodeView`, `agentJobNode` builds
+`NodeAgentJob` for both families. So `master` carried Rename and Delete, and
+so did `sys.objects` and `syspolicy_purge_history`. Delete fails on the
+server, which is merely wrong; **Rename on a system database is worse**,
+because `RenameDatabaseContext(force=true)` runs SINGLE_USER WITH ROLLBACK
+IMMEDIATE *first* and only then finds out the server won't rename `model` or
+`msdb` — every connection to that database is dropped on the way to an error.
+Renaming a system Agent job isn't refused at all.
+
+The fix is `nodeData.IsSystem`, set by the four system loaders and by
+`agentJobNode` from the `isSystemAgentJob` predicate that already existed, and
+checked in `objectOpsMenuItems` *and* again in `deleteObject`/`renameObject` —
+the second check is where the DROP is issued, so that is where the guarantee
+belongs.
+
+A/B'd live on win10cli with a pre-fix binary built from HEAD: the old one
+shows `Rename...`/`Delete...` on `master` and `Rename...` on
+`syspolicy_purge_history`; the new one shows neither, and `HealthClinic` still
+has both. The Agent family's own `Delete Job...` (`agent_menu.go`) is
+deliberately still offered on a system job — SSMS permits deleting one, and
+that item was never part of the `objectOps` table.
+
+**gosmo's Drop* methods no longer carry IF EXISTS.** Half the family had it
+and half didn't, so the same gesture in Object Explorer reported two different
+things about the same situation: deleting a view that was already gone said
+"View deleted", deleting a sequence said the server refused. Author's call was
+the honest direction — a bare DROP everywhere, so "deleted" means deleted, and
+a caller that wants idempotence ignores the error. The generated *scripts*
+keep IF EXISTS: Scripter's DROP-and-CREATE output exists to be re-run, which is
+the opposite requirement. `TestDropStatementsAreNotIdempotent` pins the whole
+family at once, and it was verified live — a second `DROP VIEW` and a second
+`DROP TABLE` both now come back "because it does not exist or you do not have
+permission".
+
+**`dbOf` was paying a round trip per delete.** It resolved the database with
+`DatabaseByNameContext`, a `sys.databases` query, when every statement under it
+names its object in the text and reads nothing off the `*gosmo.Database` but
+its name. `Server.Database` is the right handle and costs nothing — and is the
+only one that would work under a `WithScript` context, which is what a Script
+Changes on Delete would need. `Database.Table(schema, name)` is new in gosmo for
+the same reason, with its doc comment explicit that ObjectID stays zero so the
+methods that query by it are not what the handle is for. Live-checked: the
+name-only handle dropped a real CHECK constraint.
+
+**The endpoint exchange trusted a certificate by name.** `importPeerCertificate`
+skipped the import whenever a certificate of the expected name existed, so a
+reinstalled peer left a stale public certificate in place, the pipeline reported
+success, and the endpoint then refused the connection with nothing saying why.
+It now compares `Thumbprint` on the two rows, which are already loaded, and
+names the instance to fix. Not exercised live — that needs two instances and a
+rebuilt one.
+
+**Minor.** `error_log.go`'s scan and iteration errors now carry the `gosmo:`
+prefix the rest of the package uses. `LogViewer.Load` gives the enumeration and
+the read a `logReadTimeout` each instead of one shared budget, so a slow
+`sp_enumerrorlogs` can no longer eat the read's half of it. `panel_toolbar.go`
+is new and holds the toolbar geometry Activity Monitor and the Log Viewer were
+duplicating (`toolButton`, `layoutToolButtons`, `toolButtonAt`) — geometry only,
+since the two disagree on what dimming means. It is *not* `toolbar.go`, which is
+App's own icon strip in the menu bar row.
+
+---
+
+## `End` on an empty DataGrid crashed the app (2026-08-13)
+
+Found in a cross-repo review sweep, confirmed live on win10cli, fixed the same
+session.
+
+`DataGrid.HandleKey`'s four whole-list jumps had no empty-grid guard.
+`End` set `selRow = g.rows.Len() - 1`, which is `-1` with no rows, and `PgDn`
+reached the same value through `core.Min(g.rows.Len()-1, ...)`. `ensureVisible`
+then copied it into `scrollRow` — it clamps neither — and `Draw`'s row loop
+bounds `dataIdx` only from *above* (`dataIdx >= g.rows.Len()`), so it fell
+through to `SliceRowSource.Row(-1)` and panicked. On the UI goroutine, which
+`safego` does not cover, so `main.run`'s recover logged a trace and the app
+exited.
+
+Reachable from any focusable empty grid: a zero-row query result, an empty
+Object Explorer Details list, a `propsheet.GridRow` for a table with no
+indexes. Repro was three keystrokes after connecting —
+`Ctrl+N`, `SELECT 1 AS a WHERE 1=0`, F5, click into the results grid, `End`.
+
+**Why it survived so long.** `TestDataGridEmptyBeforeSetData` already pressed
+`End` on an empty grid — and passed, because `HandleKey` itself never panicked.
+The panic was two calls away in `Draw`, which the test never ran. That is the
+"asserts nothing crashed" failure mode `CLAUDE.md` warns about, caught on the
+one test written to cover this exact case. The replacement,
+`TestDataGridRowJumpKeysOnEmptyGridKeepIndicesValid`, asserts `selRow` and
+`scrollRow` are non-negative and then makes the same `rows.Row(scrollRow)` call
+the draw loop makes; it fails with the original panic when the guard is
+reverted.
+
+The fix refuses `PgUp`/`PgDn`/`Home`/`End` outright when `rows.Len() == 0`,
+which is the guard `SetSelectedRow` and `SetSelectedCell` already carried —
+`HandleKey` was the one row-moving path that skipped it. It still returns
+`true`, keeping DataGrid's blanket "I claim the arrows" answer that QueryPanel
+and DetailBrowser rely on; `propsheet.GridRow` turns "nothing moved" into
+`false` for the form case on its own, so an empty grid in a property page still
+hands `Up`/`Down` back to `Form` rather than trapping focus. `Up`/`Down` needed
+no guard — both are already bounded by a live row index.
+
+## Login Properties could rename a `##MS_*` login (2026-08-13)
+
+`system_principals.go` added `isSystemLogin` and Object Explorer honours it —
+the context menu on `##MS_PolicyEventProcessingLogin##` offers neither Rename
+nor Delete. Login Properties' General page didn't: it built its `Login name`
+row as an editable `propsheet.Text` unconditionally, so `ALTER LOGIN ... WITH
+NAME` was still one dialog away for exactly the principal `isSystemLogin`
+exists to protect. The server permits that rename; what it doesn't do is fix up
+the matching users in master and msdb, which is why the gate is a gate.
+
+The page now follows the shape `user_props.go`, `schema_props.go`,
+`role_props.go` and `server_role_props.go` already use: a `builtin` flag picks
+`Static` over `Text` for the identity row, a closing "Built-in login" note says
+why, and the apply closure's rename branch is nil-guarded. Only the name is
+gated — default database, language and credential are ordinary `ALTER LOGIN`
+settings that work fine on these logins, and the password rows were already
+disabled for them by the existing `isSQLLogin` test.
+
+Verified live on win10cli: `##MS_PolicyEventProcessingLogin##` renders the name
+read-only with the note at the foot of the form, `sa` still renders `[sa]`
+editable (renaming `sa` is a documented hardening step and stays available).
+
+## `core.Min`/`core.Max` retired in favour of the builtins (2026-08-13)
+
+`core.Min`/`core.Max` predate the project's move to Go 1.21+'s builtin `min`
+and `max`, and both spellings were already in the tree — 145 calls through
+`core`, plus a dozen bare builtin calls added since. Swept all 145 to the
+builtins across 51 files and deleted the two functions; `core.Clamp` stays,
+being generic over `cmp.Ordered` and not something the builtins cover (the
+layout splitter clamps a `float64` ratio).
+
+Three `planview` scroll helpers held the result in a local named `max`.
+`max := max(0, …)` compiles — the RHS resolves before the declaration takes
+effect — but it shadows the builtin for the rest of the function, so they're
+now `maxScroll`. `TestMinMax` and the `Min/Max` mention in `core/doc.go` went
+with the functions.
+
+Smoke-tested live on win10cli after the sweep, since the touched code is
+almost all draw-time column math: results grid, scrollbar thumbs, and the
+estimated execution plan's graph all render correctly.
+
+## Small fixes alongside (2026-08-13)
+
+- `os.WriteFile` mode literals in `log_viewer.go` and `app_panel_actions.go`
+  were `0644`; every other mode in the tree is `0o…`.
+- Stray blank line in `loadDatabaseRolesChildren`.
+- gosmo's `qualifiedName` emitted `[].[name]` for an empty schema. Most of its
+  callers take schema from an exported method's parameter, and `OBJECT_ID`
+  resolves that form to NULL — so a caller passing `""` got an empty result set
+  and no error. It now returns the unqualified `[name]`, pinned by a case in
+  `TestQualifiedName`.
+
+`wakeEventLoop`'s doc comment was on this list as "overstates the deadlock
+risk"; re-reading it, it doesn't — `quit()` takes the same `quitMu` from the UI
+goroutine while not draining `EventQ()`, so a blocking send really would hang
+Ctrl+Q. Left alone.
+
+## panel_toolbar nits (2026-08-13)
+
+A second review pass over the working tree, after the four fixes above landed
+on top of the in-progress `dialog_common.go` / `panel_toolbar.go` /
+`system_principals.go` extraction. Almost everything checked out; two nits in
+the new shared toolbar came out of it.
+
+`layoutToolButtons` guarded its fit test with `r.W == 0 || x+w > r.Right()`.
+`Rect.Right()` is exclusive (`X+W`), so a zero-width toolbar puts the first
+button at `X+1` with `w >= 2` and fails the width test on its own — the clause
+never decided anything, in either of the two inlined copies it was lifted
+from. Dropped, after checking the equivalence with a throwaway test over both
+the prefixed and unprefixed layouts.
+
+`toolButton.disabled` is documented as "drawn, not enforced", which is true of
+Activity Monitor and misleading for the Log Viewer: that panel dims and gates
+on `toolsEnabled()`, a whole-row state, so `disabled` on one of its buttons is
+neither drawn nor enforced. Said so on the field rather than making the Log
+Viewer honour it — the two panels genuinely disagree about what a dimmed
+toolbar means, which is why only the geometry is shared.
+
+## Three from the open-threads list (2026-08-13)
+
+**"Jobs Without Schedules" no longer hides what it couldn't check.**
+`jobsWithoutSchedulesReport` did `if err != nil || len(scheds) > 0 { continue }`,
+so a job whose per-job round trip failed vanished from a report whose subject is
+jobs that are missing something — silence read as "all fine". The report now
+carries a fourth column, Schedules, reading `None` or `Unknown`, which is the
+same answer `countOrDash` gives the summary's census. A cancelled context is
+the one case that still returns an error rather than a page of `Unknown`: every
+remaining job would fail, and a report claiming nothing is verifiable is worse
+than saying the read was cancelled.
+
+Verified live on win10cli — both its jobs have schedules, so the report was
+empty until a throwaway `zz_gossms_noschedule` was added, which then listed with
+`None`. Dropped afterwards. The `Unknown` path has no live coverage: forcing one
+job's `SchedulesContext` to fail while the others succeed needs a failure that
+can be aimed at a single round trip.
+
+**The endpoint exchange survives a named instance.** The certificate, login and
+user were `<@@SERVERNAME>_Cert` / `_login` / `_user`, and `@@SERVERNAME` on a
+named instance is `HOST\INSTANCE` — so the login was `[HOST\INST_login]`, which
+is the spelling of a Windows principal. `endpointPrincipalBase` now maps the
+backslash to `$` (SQL Server's own `MSSQL$INSTANCE` convention), at all four
+sites: `certificateName`, the login and user in `importPeerCertificate`, and the
+`GrantConnect` grantee. Not truncated to the host the way gosmo's `endpointURL`
+does — that is right for a TCP host and would give two named instances on one
+machine the same principal names. A default instance is unchanged, which is why
+every deployment so far ran through this untouched, and why the only pin is
+`TestEndpointPrincipalBaseSurvivesANamedInstance`: the test cluster is all
+default instances.
+
+**Add Replica's endpoint URL is editable.** It was a `Static` row filled from
+`DatabaseMirroringEndpoint.URL()`, whose host comes from that instance's own
+`@@SERVERNAME` — so an instance whose short name the other replicas cannot
+resolve produced a URL that parses, is accepted, and never connects, with no way
+to type the FQDN. Now a `Text` row: Connect still fills it and is still required
+(it is what proves the endpoint exists and is STARTED, and an empty
+`resolved.name` is the tell), but the host can be corrected afterwards.
+
+That makes it the one field in the dialog a typo reaches the server through, so
+`validateEndpointURL` was added — `ADD REPLICA` stores a malformed URL without
+complaint and the replica simply never connects, which is diagnosed hours later.
+
+Verified live on ubusql1: the row renders as an input, accepts a hand-typed
+`tcp://ubusql2.fritz.box:5022`, and both notes render. Connect could not be
+shown filling it — the only other instance is already a replica, so `connect`
+refuses it before reading the endpoint — and the malformed-URL refusal is
+likewise unreachable live for the same reason, since the missing-name check
+fires first. Both are unit tested. `sys.availability_replicas` was re-checked
+afterwards: still ubusql1 and ubusql2, nothing written.

@@ -194,13 +194,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 }
 
 func (d *newObjectDialog[P]) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
+	d.app.confirmDiscardChanges(proceed)
 }
 
 // runPipeline validates the dialog and, if it passes, runs every page's

@@ -151,12 +151,7 @@ func (d *QueryListDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 func (d *QueryListDialog) ensureVisible(dataH int) {
-	if d.sel < d.scroll {
-		d.scroll = d.sel
-	}
-	if d.sel >= d.scroll+dataH {
-		d.scroll = d.sel - dataH + 1
-	}
+	d.scroll = scrollToShow(d.sel, d.scroll, dataH)
 }
 
 func (d *QueryListDialog) activate() {

@@ -71,7 +71,7 @@ func section(s tcell.Screen, r core.Rect, y, bodyH int, title string, kpis []cha
 	}
 	body := core.Rect{X: r.X, Y: y + sectionBarH, W: r.W, H: bodyH}
 	if body.Bottom() > r.Bottom() {
-		body.H = core.Max(r.Bottom()-body.Y, 0)
+		body.H = max(r.Bottom()-body.Y, 0)
 	}
 	return body, y + sectionBarH + bodyH
 }

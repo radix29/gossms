@@ -209,3 +209,52 @@ func TestAvailabilityGroupsFolderOffersNewGroup(t *testing.T) {
 		t.Errorf("Availability Groups folder menu = %v, want a New Availability Group... item", labels)
 	}
 }
+
+// The endpoint URL became editable so an instance whose short name the other
+// replicas cannot resolve can be given its FQDN — which also makes it the one
+// field in the dialog a typo reaches the server through. ADD REPLICA stores a
+// malformed URL without complaint and the replica then never connects, so the
+// refusal has to happen here.
+func TestValidateEndpointURL(t *testing.T) {
+	good := []string{
+		"tcp://ubusql1:5022",
+		"TCP://ubusql1:5022",
+		"tcp://sqlnode1.corp.example.com:5022",
+		"tcp://10.0.0.7:5022",
+	}
+	for _, u := range good {
+		if err := validateEndpointURL(u); err != nil {
+			t.Errorf("validateEndpointURL(%q) = %v, want nil", u, err)
+		}
+	}
+	bad := []string{
+		"",                    // never connected, or cleared
+		"ubusql1:5022",        // the scheme is not optional
+		"http://ubusql1:5022", // mirroring endpoints are TCP only
+		"tcp://ubusql1",       // no port
+		"tcp://:5022",         // no host
+		"tcp://ubusql1:abc",   // port is not a number
+		"tcp://ubusql1:0",     // out of range
+		"tcp://ubusql1:70000",
+	}
+	for _, u := range bad {
+		if err := validateEndpointURL(u); err == nil {
+			t.Errorf("validateEndpointURL(%q) = nil, want an error", u)
+		}
+	}
+}
+
+// A hand-typed URL must not let the dialog skip Connect: the endpoint still has
+// to have been read from the instance, which is what proves it exists and is
+// STARTED. Connect is what sets the name, so an empty name is the tell.
+func TestAddReplicaStillNeedsConnectDespiteAnEditableURL(t *testing.T) {
+	pf := &agAddReplicaPrefetch{clusterType: "EXTERNAL", existing: map[string]bool{}}
+	r := newAGReplica{endpointURL: "tcp://ubusql2:5022", failoverMode: "EXTERNAL"}
+	err := validateAddReplica(r, pf)
+	if err == nil {
+		t.Fatal("validateAddReplica accepted a typed URL with no connected instance")
+	}
+	if !strings.Contains(err.Error(), "Connect") {
+		t.Errorf("error = %q, want it to name Connect", err)
+	}
+}

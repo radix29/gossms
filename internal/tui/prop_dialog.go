@@ -231,13 +231,7 @@ func (d *PropDialog) asyncStatusButton(label string, statusRow *propsheet.Static
 // via the app's shared confirm dialog — shown nested on top of this one,
 // which the dialog stack already supports (see dialog_stack.go).
 func (d *PropDialog) onConfirmDiscard(page int, proceed func()) {
-	d.app.confirmDialog.ShowConfirm("Discard Changes",
-		"This page has unsaved changes. Discard them and refresh from the server?",
-		func(confirmed bool) {
-			if confirmed {
-				proceed()
-			}
-		})
+	d.app.confirmDiscardChanges(proceed)
 }
 
 // validateDirty runs every dirty page's validator, reporting the first

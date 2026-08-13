@@ -32,11 +32,11 @@ const maxMessageWidthNum, maxMessageWidthDen = 2, 3
 // one kept. Returns the dialog size to pass to SetSize and the message
 // split into the lines the caller draws one per row.
 func (d *ModalDialog) fitMessage(message string, minW, baseH int) (w, h int, lines []string) {
-	w = core.Max(minW, core.DisplayWidth(message)+messageBoxOverhead)
+	w = max(minW, core.DisplayWidth(message)+messageBoxOverhead)
 	if d.screen != nil {
 		if sw, _ := d.screen.Size(); sw > 0 {
 			if maxW := sw * maxMessageWidthNum / maxMessageWidthDen; w > maxW {
-				w = core.Max(minW, maxW)
+				w = max(minW, maxW)
 			}
 		}
 	}
@@ -45,7 +45,7 @@ func (d *ModalDialog) fitMessage(message string, minW, baseH int) (w, h int, lin
 
 	if d.screen != nil {
 		if _, sh := d.screen.Size(); sh > 0 {
-			if maxLines := core.Max(1, sh-baseH+1); maxLines < len(lines) {
+			if maxLines := max(1, sh-baseH+1); maxLines < len(lines) {
 				remainder := strings.Join(lines[maxLines-1:], " ")
 				lines = append(lines[:maxLines-1], core.Truncate(remainder, contentW))
 			}

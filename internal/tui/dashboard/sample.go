@@ -96,7 +96,7 @@ func loadFactorWidth(cores, bodyW int) int {
 	// Not held to minPanelW: this panel is deliberately narrow on a small
 	// box, and widening it to a general panel's minimum would take room from
 	// the waits chart for empty columns.
-	w := core.Min(loadFactorChromeW+cores*loadFactorSlotW, bodyW/2)
+	w := min(loadFactorChromeW+cores*loadFactorSlotW, bodyW/2)
 	if w < loadFactorChromeW+loadFactorSlotW {
 		return 0
 	}
@@ -114,7 +114,7 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]Char
 	// rows so its segments are legible, with its own legend beneath.
 	bar := charts.StackedBar{
 		Series:     v.Memory,
-		Rows:       core.Max(cols[0].H/3, 1),
+		Rows:       max(cols[0].H/3, 1),
 		LegendRows: 2,
 		ShowTotal:  true,
 	}.Draw(s, drawPanelTitle(s, cols[0], "MEMORY COMPOSITION"))

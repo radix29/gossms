@@ -81,7 +81,7 @@ func (sp *Splitter) Ratio() float64 { return sp.ratio }
 
 // SetRatio explicitly sets the split ratio.
 func (sp *Splitter) SetRatio(r float64) {
-	sp.ratio = core.ClampF(r, sp.minRatio, sp.maxRatio)
+	sp.ratio = core.Clamp(r, sp.minRatio, sp.maxRatio)
 }
 
 // SplitPos returns the absolute screen coordinate of the divider line.
@@ -146,20 +146,20 @@ func (sp *Splitter) HandleKey(ev *tcell.EventKey) bool {
 	}
 	if sp.dir == SplitterHorizontal {
 		if ev.Key() == tcell.KeyUp {
-			sp.ratio = core.ClampF(sp.ratio-step, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratio-step, sp.minRatio, sp.maxRatio)
 			return true
 		}
 		if ev.Key() == tcell.KeyDown {
-			sp.ratio = core.ClampF(sp.ratio+step, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratio+step, sp.minRatio, sp.maxRatio)
 			return true
 		}
 	} else {
 		if ev.Key() == tcell.KeyLeft {
-			sp.ratio = core.ClampF(sp.ratio-step, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratio-step, sp.minRatio, sp.maxRatio)
 			return true
 		}
 		if ev.Key() == tcell.KeyRight {
-			sp.ratio = core.ClampF(sp.ratio+step, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratio+step, sp.minRatio, sp.maxRatio)
 			return true
 		}
 	}
@@ -208,10 +208,10 @@ func (sp *Splitter) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		if sp.dir == SplitterHorizontal {
 			delta := float64(my-sp.dragBase) / float64(sp.rect.H)
-			sp.ratio = core.ClampF(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
 		} else {
 			delta := float64(mx-sp.dragBase) / float64(sp.rect.W)
-			sp.ratio = core.ClampF(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
+			sp.ratio = core.Clamp(sp.ratioBase+delta, sp.minRatio, sp.maxRatio)
 		}
 		return true
 	}

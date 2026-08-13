@@ -444,6 +444,14 @@ type nodeData struct {
 	Loaded       bool
 	IsPrimaryKey bool
 	IsOffline    bool
+	// IsSystem marks an object SQL Server owns — a system database, a sys-schema
+	// view/procedure/function, a SQL-Server-created Agent job. The loaders of the
+	// System * folders emit the same node types as the user ones, so without this
+	// flag nothing downstream can tell master from a user database. Delete and
+	// Rename gate on it (see objectOpsMenuItems): renaming a system database runs
+	// SET SINGLE_USER WITH ROLLBACK IMMEDIATE before the server refuses the
+	// rename, and renaming a system Agent job succeeds outright.
+	IsSystem bool
 	// IsEnabled mirrors a SQL Server Agent job/schedule/alert/operator's
 	// own Enabled flag — set at load time so the context menu can offer a
 	// single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the

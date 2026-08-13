@@ -189,10 +189,10 @@ func (e *Editor) DedentLines() {
 		copy(nl, line[removed:])
 		e.doc.setLine(r, nl)
 		if r == e.cursorRow {
-			e.cursorCol = core.Max(0, e.cursorCol-removed)
+			e.cursorCol = max(0, e.cursorCol-removed)
 		}
 		if e.selecting && r == e.selAnchorRow {
-			e.selAnchorCol = core.Max(0, e.selAnchorCol-removed)
+			e.selAnchorCol = max(0, e.selAnchorCol-removed)
 		}
 	}
 	e.clampCursor()
@@ -286,10 +286,10 @@ func (e *Editor) ToggleLineComments() {
 		}
 		delta := len(e.doc.Line(r)) - before
 		if r == e.cursorRow {
-			e.cursorCol = core.Max(0, e.cursorCol+delta)
+			e.cursorCol = max(0, e.cursorCol+delta)
 		}
 		if e.selecting && r == e.selAnchorRow {
-			e.selAnchorCol = core.Max(0, e.selAnchorCol+delta)
+			e.selAnchorCol = max(0, e.selAnchorCol+delta)
 		}
 	}
 	e.clampCursor()
@@ -319,7 +319,7 @@ func (e *Editor) transformSelection(fn func(rune) rune) {
 		e.doc.setLine(r, line)
 	}
 	if e.selBlock {
-		topRow, botRow := core.Min(e.selAnchorRow, e.cursorRow), core.Max(e.selAnchorRow, e.cursorRow)
+		topRow, botRow := min(e.selAnchorRow, e.cursorRow), max(e.selAnchorRow, e.cursorRow)
 		loCol, hiCol := e.blockColumnBounds()
 		for r := topRow; r <= botRow; r++ {
 			n := len(e.doc.Line(r))

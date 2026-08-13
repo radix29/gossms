@@ -78,6 +78,19 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		}
 	}
 	dataH := g.rect.H - 3
+	// The four whole-list jumps do nothing on an empty grid, the same guard
+	// SetSelectedRow/SetSelectedCell already carry. PgDn and End derive selRow
+	// from rows.Len()-1, which is -1 with no rows; ensureVisible then copies
+	// that into scrollRow, and Draw's row loop only bounds dataIdx from above,
+	// so it reaches rows.Row(-1) and panics on the UI goroutine — which has no
+	// recover, so it takes the whole app down. Up/Down need no guard: both are
+	// already bounded by a live row index.
+	switch ev.Key() {
+	case tcell.KeyPgUp, tcell.KeyPgDn, tcell.KeyHome, tcell.KeyEnd:
+		if g.rows.Len() == 0 {
+			return true
+		}
+	}
 	moved := false
 	switch ev.Key() {
 	case tcell.KeyUp:
@@ -93,11 +106,11 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 			moved = true
 		}
 	case tcell.KeyPgUp:
-		g.selRow = core.Max(0, g.selRow-dataH)
+		g.selRow = max(0, g.selRow-dataH)
 		g.ensureVisible(dataH)
 		moved = true
 	case tcell.KeyPgDn:
-		g.selRow = core.Min(g.rows.Len()-1, g.selRow+dataH)
+		g.selRow = min(g.rows.Len()-1, g.selRow+dataH)
 		g.ensureVisible(dataH)
 		moved = true
 	case tcell.KeyHome:
@@ -319,7 +332,7 @@ const horizontalWheelCols = 1
 // scrollColBy shifts scrollCol by delta (negative scrolls left), clamped
 // to the valid column range.
 func (g *DataGrid) scrollColBy(delta int) {
-	g.scrollCol = core.Clamp(g.scrollCol+delta, 0, core.Max(0, len(g.columns)-1))
+	g.scrollCol = core.Clamp(g.scrollCol+delta, 0, max(0, len(g.columns)-1))
 }
 
 // hScrollbarDrag handles a Button1 press or drag on the horizontal
@@ -380,7 +393,7 @@ func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 		g.resizeCol, g.resizeStartX, g.resizeStartW = col, mx, g.colWidths[col]
 		return true
 	}
-	g.SetColumnWidth(g.resizeCol, core.Max(minResizeWidth, g.resizeStartW+mx-g.resizeStartX))
+	g.SetColumnWidth(g.resizeCol, max(minResizeWidth, g.resizeStartW+mx-g.resizeStartX))
 	return true
 }
 
@@ -449,7 +462,7 @@ func (g *DataGrid) colAtOffset(off int) int {
 		col = i
 		acc += cw
 	}
-	return core.Clamp(col, 0, core.Max(0, len(g.colWidths)-1))
+	return core.Clamp(col, 0, max(0, len(g.colWidths)-1))
 }
 
 // colAt returns the column index whose cell contains screen x, in

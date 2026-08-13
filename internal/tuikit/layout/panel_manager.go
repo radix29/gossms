@@ -252,7 +252,7 @@ func (pm *PanelManager) Draw(s tcell.Screen) {
 	// Drop-down list — drawn after the active panel so it isn't immediately
 	// painted over by the panel's own content, which occupies the same rows.
 	if pm.comboOpen && len(pm.panels) > 0 {
-		listX := core.Max(pm.rect.X, pm.rect.X+pm.rect.W-30)
+		listX := max(pm.rect.X, pm.rect.X+pm.rect.W-30)
 		listW := 28
 		listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
 		for i, panel := range pm.panels {
@@ -355,7 +355,7 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Combo list click
 	if pm.comboOpen {
-		listX := core.Max(pm.rect.X, pm.rect.X+pm.rect.W-30)
+		listX := max(pm.rect.X, pm.rect.X+pm.rect.W-30)
 		listW := 28
 		row := my - pm.contentY()
 		if ev.Buttons() == tcell.Button1 && mx >= listX && mx < listX+listW &&

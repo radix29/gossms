@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -110,8 +111,27 @@ func NewNewEndpointDialog(app *App) *NewEndpointDialog {
 		build:   d.buildPages,
 		refresh: func(*db.ServerConn) { refreshExplorerNode(d.app, d.node) },
 	})
-	d.certificateName = func(instance string) string { return instance + "_Cert" }
+	d.certificateName = func(instance string) string { return endpointPrincipalBase(instance) + "_Cert" }
 	return d
+}
+
+// endpointPrincipalBase is the instance name as it appears in the certificate,
+// login and user names the exchange creates.
+//
+// A named instance reports @@SERVERNAME as HOST\INSTANCE, and the backslash is
+// what makes the raw name unusable here: [HOST\INST_login] is the spelling of a
+// Windows principal, so CREATE LOGIN ... FROM CERTIFICATE on it is a name SQL
+// Server will also accept from an authentication path that has nothing to do
+// with this certificate. It becomes HOST$INST, following the same convention
+// SQL Server's own service accounts use (MSSQL$INSTANCE).
+//
+// Not truncated to the host, which is what gosmo's endpointURL does: that is
+// right for a TCP host and wrong here, since two named instances on one machine
+// would then share every principal name in the exchange. A default instance has
+// no backslash and is unchanged, which is why every deployment so far has run
+// through this untouched.
+func endpointPrincipalBase(instance string) string {
+	return strings.ReplaceAll(instance, `\`, "$")
 }
 
 func (d *NewEndpointDialog) show(sc *db.ServerConn, node *explorerNode) {
@@ -299,7 +319,7 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 		propsheet.Buttons(addBtn, removeBtn),
 		hint,
 		propsheet.Note("Every instance is reached with this connection's credentials. Each keeps its own certificate; only the public half of each is exchanged, and no private key is read or transmitted."),
-		propsheet.Note("Certificates are named <instance>_Cert, and each peer gets a login and user named <instance>_login and <instance>_user to own the certificate it presents. Anything already present is left alone."),
+		propsheet.Note("Certificates are named <instance>_Cert, and each peer gets a login and user named <instance>_login and <instance>_user to own the certificate it presents. A named instance contributes HOST$INSTANCE, not HOST\\INSTANCE. Anything already present is left alone."),
 	}, commit
 }
 
@@ -444,8 +464,8 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	if len(other.encoded) == 0 {
 		return nil // scripting; see ensureCertificate
 	}
-	login := other.inst.name + "_login"
-	user := other.inst.name + "_user"
+	login := endpointPrincipalBase(other.inst.name) + "_login"
+	user := endpointPrincipalBase(other.inst.name) + "_user"
 	certName := d.certificateName(other.inst.name)
 
 	// Only an actual absence means "create it". Treating every lookup failure
@@ -485,6 +505,22 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	if existing != nil {
+		// Same name is not the same certificate. A reinstalled or rebuilt peer
+		// generates a fresh key pair under the name it had before, and the
+		// import below is skipped on the name alone — so the pipeline reports
+		// success, the endpoint then refuses the peer's connection, and nothing
+		// anywhere says why. Thumbprints are already loaded on both rows, so
+		// this costs no round trip.
+		//
+		// other.cert is dereferenced unguarded on purpose: ensureCertificate
+		// sets cert and encoded together, and an empty encoded already returned
+		// above, so a nil here means that invariant broke. A nil check would
+		// turn the break into this check silently not running, which is the one
+		// outcome the check exists to prevent.
+		if !bytes.Equal(existing.Thumbprint, other.cert.Thumbprint) {
+			return fmt.Errorf("%s already has a different certificate named %s than the one %s presents — drop it there and run this again",
+				p.inst.name, certName, other.inst.name)
+		}
 		return nil
 	}
 	spec := gosmo.CertificateSpec{Name: certName, Authorization: user, FromBinary: other.encoded}
@@ -526,7 +562,7 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 		if other == p {
 			continue
 		}
-		if err := ep.GrantConnectContext(ctx, other.inst.name+"_login"); err != nil {
+		if err := ep.GrantConnectContext(ctx, endpointPrincipalBase(other.inst.name)+"_login"); err != nil {
 			return fmt.Errorf("%s: grant %s connect: %w", p.inst.name, other.inst.name, err)
 		}
 	}

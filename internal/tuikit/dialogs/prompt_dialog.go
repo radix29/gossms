@@ -71,7 +71,7 @@ func (d *PromptDialog) ShowPrompt(title, message, label, initial string, onAccep
 	d.status = ""
 	d.OnAccept = onAccept
 	d.Validate = nil
-	d.input = widgets.NewInputField(label, core.Max(24, promptW-core.DisplayWidth(label)-8), false)
+	d.input = widgets.NewInputField(label, max(24, promptW-core.DisplayWidth(label)-8), false)
 	d.input.SetValue(initial)
 	d.input.SelectAll()
 	d.focus = promptFocusInput

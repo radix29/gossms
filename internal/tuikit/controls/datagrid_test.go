@@ -39,6 +39,40 @@ func TestDataGridEmptyBeforeSetData(t *testing.T) {
 	g.HandleMouse(tcell.NewEventMouse(1, 3, tcell.Button1, tcell.ModNone))
 }
 
+// TestDataGridRowJumpKeysOnEmptyGridKeepIndicesValid asserts the indices
+// themselves, not merely that HandleKey returned. End and PgDn used to set
+// selRow to rows.Len()-1 == -1, ensureVisible copied it into scrollRow, and
+// the next Draw indexed rows.Row(-1) — a panic on the UI goroutine, which has
+// no recover, so pressing End on a zero-row query result exited the app.
+// HandleKey never panicked itself, which is why asserting "no panic" here
+// missed it for as long as it did.
+func TestDataGridRowJumpKeysOnEmptyGridKeepIndicesValid(t *testing.T) {
+	keys := map[string]tcell.Key{
+		"End":  tcell.KeyEnd,
+		"PgDn": tcell.KeyPgDn,
+		"PgUp": tcell.KeyPgUp,
+		"Home": tcell.KeyHome,
+	}
+	for name, key := range keys {
+		t.Run(name, func(t *testing.T) {
+			g := newTestDataGrid()
+			g.SetData([]string{"A", "B"}, nil)
+			g.HandleKey(tcell.NewEventKey(key, "", tcell.ModNone))
+			if g.selRow < 0 {
+				t.Errorf("selRow after %s on an empty grid = %d, want >= 0", name, g.selRow)
+			}
+			if g.scrollRow < 0 {
+				t.Errorf("scrollRow after %s on an empty grid = %d, want >= 0", name, g.scrollRow)
+			}
+			// What Draw's row loop does for its first line: with scrollRow
+			// negative this is the call that panicked.
+			if g.scrollRow < g.rows.Len() {
+				g.rows.Row(g.scrollRow)
+			}
+		})
+	}
+}
+
 // TestDataGridSetDataWrapsSlice confirms SetData (the shape every existing
 // caller uses) reaches the grid through the same SetSource/RowSource path
 // as a custom source would.

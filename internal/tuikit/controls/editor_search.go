@@ -481,5 +481,5 @@ func (e *Editor) ensureColumnVisible() {
 	} else if col >= e.scrollCol+contentW {
 		e.scrollCol = col - contentW + 1
 	}
-	e.scrollCol = core.Max(0, e.scrollCol)
+	e.scrollCol = max(0, e.scrollCol)
 }

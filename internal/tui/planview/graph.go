@@ -125,13 +125,13 @@ func (v *PlanView) drawEdge(s tcell.Screen, e edge, pal *theme.Palette) {
 	x2, y2 := r.X+e.x2-v.graphSt.scrollX, r.Y+e.y2-v.graphSt.scrollY
 	midX := r.X + e.midX - v.graphSt.scrollX
 
-	hlineClipped(s, r, core.Min(x1, midX), y1, absInt(midX-x1), style)
+	hlineClipped(s, r, min(x1, midX), y1, absInt(midX-x1), style)
 	top, h := y1, y2-y1
 	if h < 0 {
 		top, h = y2, -h
 	}
 	vlineClipped(s, r, midX, top, h+1, style)
-	hlineClipped(s, r, core.Min(midX, x2), y2, absInt(x2-midX), style)
+	hlineClipped(s, r, min(midX, x2), y2, absInt(x2-midX), style)
 	putClipped(s, r, x1, y1, '◄', style)
 }
 
@@ -302,8 +302,8 @@ func (v *PlanView) ensureTileVisible(id int) {
 	if rect.Bottom() > v.graphSt.scrollY+r.H {
 		v.graphSt.scrollY = rect.Bottom() - r.H
 	}
-	v.graphSt.scrollX = core.Max(0, v.graphSt.scrollX)
-	v.graphSt.scrollY = core.Max(0, v.graphSt.scrollY)
+	v.graphSt.scrollX = max(0, v.graphSt.scrollX)
+	v.graphSt.scrollY = max(0, v.graphSt.scrollY)
 }
 
 // graphSelectParent, graphSelectFirstChild, graphSelectSibling, and
@@ -389,8 +389,8 @@ func (v *PlanView) graphSelectRoot() {
 // delta rows, clamped to the current selection's line count.
 func (v *PlanView) scrollGraphProps(delta int) {
 	total := len(detailLines(v.selectedNode(), v.currentStatement()))
-	max := core.Max(0, total-v.graphPropsRect.H)
-	v.graphPropsScroll = core.Clamp(v.graphPropsScroll+delta, 0, max)
+	maxScroll := max(0, total-v.graphPropsRect.H)
+	v.graphPropsScroll = core.Clamp(v.graphPropsScroll+delta, 0, maxScroll)
 }
 
 // handleGraphTabKey handles the Plan tab's navigation, detail-strip toggle,
@@ -476,9 +476,9 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		// honour both — matches DataGrid's and Editor's identical
 		// convention.
 		if ev.Modifiers()&tcell.ModShift != 0 {
-			v.graphSt.scrollX = core.Max(0, v.graphSt.scrollX-4)
+			v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
 		} else {
-			v.graphSt.scrollY = core.Max(0, v.graphSt.scrollY-1)
+			v.graphSt.scrollY = max(0, v.graphSt.scrollY-1)
 		}
 		return true
 	case tcell.WheelDown:
@@ -489,7 +489,7 @@ func (v *PlanView) handleGraphTabMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	case tcell.WheelLeft:
-		v.graphSt.scrollX = core.Max(0, v.graphSt.scrollX-4)
+		v.graphSt.scrollX = max(0, v.graphSt.scrollX-4)
 		return true
 	case tcell.WheelRight:
 		v.graphSt.scrollX += 4

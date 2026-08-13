@@ -217,17 +217,14 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 	}
 	if am.toolRect.Contains(mx, my) {
 		am.dragZone = amZoneTools
-		for _, t := range am.tools {
-			if !t.rect.IsZero() && t.rect.Contains(mx, my) {
-				if t.action != nil && !t.disabled {
-					t.action()
-				}
-				// Claimed either way: the press landed on the toolbar, and a
-				// disabled control must swallow it rather than let it fall
-				// through to whatever is drawn underneath.
-				return true
+		if i := toolButtonAt(am.tools, mx, my); i >= 0 {
+			if t := am.tools[i]; t.action != nil && !t.disabled {
+				t.action()
 			}
 		}
+		// Claimed either way: the press landed on the toolbar, and a disabled
+		// control — or the gap between two — must swallow it rather than let
+		// it fall through to whatever is drawn underneath.
 		return true
 	}
 	if am.tab.canvasTab() {

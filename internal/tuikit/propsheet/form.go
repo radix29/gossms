@@ -118,7 +118,7 @@ func (f *Form) Focused() Row {
 // for the scrollbar when the form doesn't fit.
 func (f *Form) contentWidth() int {
 	if f.totalHeight(f.rect.W) > f.rect.H {
-		return core.Max(0, f.rect.W-1)
+		return max(0, f.rect.W-1)
 	}
 	return f.rect.W
 }
@@ -158,7 +158,7 @@ func (f *Form) rowAtLine(n, w int) int {
 			return i
 		}
 	}
-	return core.Max(0, len(f.rows)-1)
+	return max(0, len(f.rows)-1)
 }
 
 // maxScroll returns the largest scroll index worth reaching — the one that
@@ -170,7 +170,7 @@ func (f *Form) maxScroll(w int) int {
 	for i := len(f.rows) - 1; i >= 0; i-- {
 		used += f.rows[i].Height(w)
 		if used > f.rect.H {
-			return core.Min(i+1, core.Max(0, len(f.rows)-1))
+			return min(i+1, max(0, len(f.rows)-1))
 		}
 	}
 	return 0
@@ -324,13 +324,13 @@ func (f *Form) HandleKey(ev *tcell.EventKey) bool {
 			// this frame. Swallow the key instead of scrolling underneath it.
 			return true
 		}
-		f.scroll = core.Min(f.maxScroll(f.contentWidth()), f.scroll+core.Max(1, f.rect.H/2))
+		f.scroll = min(f.maxScroll(f.contentWidth()), f.scroll+max(1, f.rect.H/2))
 		return true
 	case tcell.KeyPgUp:
 		if f.OverlayActive() {
 			return true
 		}
-		f.scroll = core.Max(0, f.scroll-core.Max(1, f.rect.H/2))
+		f.scroll = max(0, f.scroll-max(1, f.rect.H/2))
 		return true
 	}
 	return false
@@ -357,9 +357,9 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		if ev.Buttons() == tcell.WheelUp {
-			f.scroll = core.Max(0, f.scroll-3)
+			f.scroll = max(0, f.scroll-3)
 		} else {
-			f.scroll = core.Min(f.maxScroll(f.contentWidth()), f.scroll+3)
+			f.scroll = min(f.maxScroll(f.contentWidth()), f.scroll+3)
 		}
 		return true
 	}
@@ -444,7 +444,7 @@ func (f *Form) handleScrollbarDrag(ev *tcell.EventMouse, w int) bool {
 	}
 	f.sbDragging = true
 	line := core.ScrollOffsetForDrag(my-f.rect.Y, f.rect.H, total, f.rect.H)
-	f.scroll = core.Min(f.rowAtLine(line, w), f.maxScroll(w))
+	f.scroll = min(f.rowAtLine(line, w), f.maxScroll(w))
 	return true
 }
 

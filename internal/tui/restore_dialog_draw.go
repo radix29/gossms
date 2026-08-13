@@ -231,5 +231,5 @@ func (d *RestoreDialog) drawProgress(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	labels := d.progressButtons()
-	d.DrawButtons(s, labels, core.Min(d.btnFocus, len(labels)-1))
+	d.DrawButtons(s, labels, min(d.btnFocus, len(labels)-1))
 }

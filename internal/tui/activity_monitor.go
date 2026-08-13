@@ -142,7 +142,13 @@ type ActivityMonitor struct {
 	contentRect core.Rect // everything below the toolbar, scrollbars included
 	viewRect    core.Rect // the dashboard viewport, scrollbars excluded
 
-	tools      []amTool
+	// tools are the panel's toolbar cells — panel_toolbar.go, not toolbar.go,
+	// which is App's own icon strip in the menu bar row. A cell's disabled is
+	// what the rate controls become once their collector has *started and then
+	// stopped* (amFeed.stopped) — not before it starts: Pause is a preference
+	// the panel carries into startActivityCollector, so a panel still
+	// connecting keeps its controls live.
+	tools      []toolButton
 	toolPrefix string
 	// toolsEnd is the column just past the last laid-out control, so the
 	// right-aligned collector state can be fitted into what's left rather
@@ -289,22 +295,6 @@ type amTooltipRow struct {
 	label string
 	value string
 	color tcell.Color
-}
-
-// amTool is one clickable toolbar control. Rate buttons render selected; the
-// rest are plain.
-//
-// disabled draws the control dimmed and makes a click do nothing — what the
-// rate controls become once their collector has *started and then stopped*
-// (amFeed.stopped). Not before it starts: Pause is a preference the panel
-// carries into startActivityCollector, so a panel still connecting keeps its
-// controls live.
-type amTool struct {
-	label    string
-	selected bool
-	disabled bool
-	action   func()
-	rect     core.Rect
 }
 
 // NewActivityMonitor creates the panel for one server connection.
@@ -582,7 +572,7 @@ func (am *ActivityMonitor) SetBounds(x, y, w, h int) {
 	am.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	am.tabRect = core.Rect{X: x, Y: y, W: w, H: 1}
 	am.toolRect = core.Rect{X: x, Y: y + 1, W: w, H: 1}
-	am.contentRect = core.Rect{X: x, Y: y + 2, W: w, H: core.Max(h-2, 0)}
+	am.contentRect = core.Rect{X: x, Y: y + 2, W: w, H: max(h-2, 0)}
 
 	// The scrollbars sit outside the viewport permanently rather than
 	// appearing only on overflow: a bar that comes and goes changes the
@@ -591,8 +581,8 @@ func (am *ActivityMonitor) SetBounds(x, y, w, h int) {
 	am.viewRect = core.Rect{
 		X: am.contentRect.X,
 		Y: am.contentRect.Y,
-		W: core.Max(am.contentRect.W-1, 0),
-		H: core.Max(am.contentRect.H-1, 0),
+		W: max(am.contentRect.W-1, 0),
+		H: max(am.contentRect.H-1, 0),
 	}
 	am.blk.layout()
 	am.sess.layout()
@@ -612,7 +602,7 @@ func (am *ActivityMonitor) canvasSize() (int, int) {
 	default:
 		cw, ch = dashboard.HistoryCanvasW, dashboard.HistoryCanvasH
 	}
-	return core.Max(cw, am.viewRect.W), ch
+	return max(cw, am.viewRect.W), ch
 }
 
 // scrollLimits is the largest scroll offset the active tab allows on each
@@ -623,7 +613,7 @@ func (am *ActivityMonitor) scrollLimits() (maxX, maxY int) {
 		return 0, 0
 	}
 	cw, ch := am.canvasSize()
-	return core.Max(cw-am.viewRect.W, 0), core.Max(ch-am.viewRect.H, 0)
+	return max(cw-am.viewRect.W, 0), max(ch-am.viewRect.H, 0)
 }
 
 // scrollTo moves the active tab's viewport, clamped, and reports whether it
@@ -704,7 +694,7 @@ func (am *ActivityMonitor) buildTools() {
 		am.toolPrefix = f.prefix
 		off := f.stopped()
 		for i, label := range f.rateLabels {
-			am.tools = append(am.tools, amTool{
+			am.tools = append(am.tools, toolButton{
 				label:    label,
 				selected: i == f.rateIdx,
 				disabled: off,
@@ -716,18 +706,18 @@ func (am *ActivityMonitor) buildTools() {
 			// every send. Retry is the one control that can still do
 			// something; without it a single failed prologue leaves the panel
 			// a static picture until it is closed and reopened.
-			am.tools = append(am.tools, amTool{label: "Retry", action: am.restartCollector})
+			am.tools = append(am.tools, toolButton{label: "Retry", action: am.restartCollector})
 			break
 		}
 		label := "Pause"
 		if f.paused {
 			label = "Continue"
 		}
-		am.tools = append(am.tools, amTool{label: label, action: func() { am.setPaused(!f.paused) }})
+		am.tools = append(am.tools, toolButton{label: label, action: func() { am.setPaused(!f.paused) }})
 	default:
 		pt := am.procTab()
 		am.toolPrefix = ""
-		am.tools = append(am.tools, amTool{
+		am.tools = append(am.tools, toolButton{
 			label:    "Refresh",
 			disabled: pt.busy,
 			action:   pt.refresh,
@@ -736,7 +726,7 @@ func (am *ActivityMonitor) buildTools() {
 		// master copy in use the button has nothing to do, and would invite a
 		// pointless write to a system database.
 		if pt.loc != activity.ProcMaster {
-			am.tools = append(am.tools, amTool{
+			am.tools = append(am.tools, toolButton{
 				label:    "Install in master",
 				disabled: pt.busy || pt.conn == nil,
 				action:   pt.confirmInstallInMaster,
@@ -746,28 +736,9 @@ func (am *ActivityMonitor) buildTools() {
 	am.layoutTools()
 }
 
-// toolGap is the blank column between two toolbar controls; a control's own
-// label is drawn with one space of padding either side.
-const toolGap = 1
-
-// layoutTools assigns each control its screen rect, left to right after the
-// prefix. A control that would run past the right edge gets a zero rect and
-// is neither drawn nor clickable.
+// layoutTools assigns each control its screen rect — see layoutToolButtons.
 func (am *ActivityMonitor) layoutTools() {
-	x := am.toolRect.X + 1
-	defer func() { am.toolsEnd = x }()
-	if am.toolPrefix != "" {
-		x += core.DisplayWidth(am.toolPrefix) + 1
-	}
-	for i := range am.tools {
-		w := core.DisplayWidth(am.tools[i].label) + 2
-		if am.toolRect.W == 0 || x+w > am.toolRect.Right() {
-			am.tools[i].rect = core.Rect{}
-			continue
-		}
-		am.tools[i].rect = core.Rect{X: x, Y: am.toolRect.Y, W: w, H: 1}
-		x += w + toolGap
-	}
+	am.toolsEnd = layoutToolButtons(am.tools, am.toolRect, am.toolPrefix)
 }
 
 // resolution names the active tab's sampling interval the way the dashboards

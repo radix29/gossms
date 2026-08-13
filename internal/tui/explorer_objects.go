@@ -196,6 +196,7 @@ func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 		func(v *gosmo.View) *explorerNode {
 			n := l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
 			n.data.CreateDate = v.CreateDate
+			n.data.IsSystem = true
 			return n
 		})
 }
@@ -231,6 +232,7 @@ func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 		func(p *gosmo.StoredProcedure) *explorerNode {
 			n := l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
 			n.data.CreateDate = p.CreateDate
+			n.data.IsSystem = true
 			return n
 		})
 }
@@ -266,6 +268,7 @@ func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 		func(f *gosmo.UserDefinedFunction) *explorerNode {
 			n := l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
 			n.data.CreateDate = f.CreateDate
+			n.data.IsSystem = true
 			return n
 		})
 }

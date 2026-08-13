@@ -133,10 +133,10 @@ const viewCloseLabel = "[ Close ]"
 func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 	if g.viewOpen {
 		sw, sh := s.Size()
-		w := core.Min(cellViewerW, core.Max(20, sw-4))
+		w := min(cellViewerW, max(20, sw-4))
 		h := cellViewerLines + 4 // border top/bottom + cellViewerLines text rows + 1 hint row
-		x := core.Max(0, (sw-w)/2)
-		y := core.Max(0, (sh-h)/2)
+		x := max(0, (sw-w)/2)
+		y := max(0, (sh-h)/2)
 		rect := core.Rect{X: x, Y: y, W: w, H: h}
 
 		p := theme.Active()

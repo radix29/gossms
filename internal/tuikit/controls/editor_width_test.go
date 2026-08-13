@@ -51,7 +51,7 @@ func (s *glyphScreen) row(x, y, w int) string {
 			r = ' '
 		}
 		out = append(out, r)
-		i += core.Max(1, core.RuneWidth(r))
+		i += max(1, core.RuneWidth(r))
 	}
 	return string(out)
 }

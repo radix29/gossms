@@ -16,6 +16,7 @@ func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 		func(login *gosmo.Login) *explorerNode {
 			n := l.node(login.Name, NodeLogin, "", login.Name, "")
 			n.data.CreateDate = login.CreateDate
+			n.data.IsSystem = isSystemLogin(login)
 			return n
 		})
 }
@@ -23,6 +24,8 @@ func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 func loadServerRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(func() ([]*gosmo.ServerRole, error) { return l.sc.Server.ServerRolesContext(l.ctx) },
 		func(r *gosmo.ServerRole) *explorerNode {
-			return l.node(r.Name, NodeServerRole, "", r.Name, "")
+			n := l.node(r.Name, NodeServerRole, "", r.Name, "")
+			n.data.IsSystem = isSystemServerRole(r)
+			return n
 		})
 }

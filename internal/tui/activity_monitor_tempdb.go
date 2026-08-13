@@ -9,7 +9,6 @@ import (
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tuikit/charts"
-	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // maxSessionRows is how many sessions the usage grid lists. The grid is
@@ -195,7 +194,7 @@ func tempdbFileAdvice(s activity.TempDBSample) string {
 	if len(data) == 0 {
 		return ""
 	}
-	want := core.Min(s.Cores, maxRecommendedFiles)
+	want := min(s.Cores, maxRecommendedFiles)
 	if s.Cores > 0 && len(data) < want {
 		return fmt.Sprintf("%d data files for %d cores — one file per core up to %d is the usual recommendation.",
 			len(data), s.Cores, maxRecommendedFiles)

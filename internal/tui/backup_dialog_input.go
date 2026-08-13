@@ -2,7 +2,6 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -17,7 +16,7 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 		case tcell.KeyEscape:
 			d.Hide()
 		case tcell.KeyEnter:
-			d.btnFocus = core.Min(d.btnFocus, len(d.progressButtons())-1)
+			d.btnFocus = min(d.btnFocus, len(d.progressButtons())-1)
 			d.doProgressButton()
 		case tcell.KeyTab, tcell.KeyF1:
 			d.btnFocus = (d.btnFocus + 1) % len(d.progressButtons())
@@ -30,10 +29,10 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.setFocus((d.focusIdx + 1) % len(d.focusable))
+		d.setFocus(nextFocus(d.focusIdx, len(d.focusable)))
 		return true
 	case tcell.KeyBacktab:
-		d.setFocus((d.focusIdx - 1 + len(d.focusable)) % len(d.focusable))
+		d.setFocus(prevFocus(d.focusIdx, len(d.focusable)))
 		return true
 	case tcell.KeyEscape:
 		if d.ddDatabase.IsOpen() {

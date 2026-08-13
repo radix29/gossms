@@ -453,10 +453,10 @@ func (v *PlanView) handleTreeTabKey(ev *tcell.EventKey) bool {
 		v.moveTreeSelection(1)
 		return true
 	case tcell.KeyPgUp:
-		v.moveTreeSelection(-core.Max(1, v.treePaneRect.H))
+		v.moveTreeSelection(-max(1, v.treePaneRect.H))
 		return true
 	case tcell.KeyPgDn:
-		v.moveTreeSelection(core.Max(1, v.treePaneRect.H))
+		v.moveTreeSelection(max(1, v.treePaneRect.H))
 		return true
 	case tcell.KeyHome:
 		if len(v.treeSt.rows) > 0 {

@@ -232,7 +232,7 @@ func DrawScrollbar(s tcell.Screen, x, y, h, total, visible, offset int, style, t
 	if total <= visible || total == 0 {
 		return
 	}
-	thumbH := Max(1, h*visible/total)
+	thumbH := max(1, h*visible/total)
 	thumbY := y + offset*h/total
 	for i := 0; i < thumbH && thumbY+i < y+h; i++ {
 		s.SetContent(x, thumbY+i, '█', nil, thumbStyle)
@@ -264,7 +264,7 @@ func DrawScrollbarH(s tcell.Screen, x, y, w, total, visible, offset int, style, 
 	if total <= visible || total == 0 {
 		return
 	}
-	thumbW := Max(1, w*visible/total)
+	thumbW := max(1, w*visible/total)
 	thumbX := x + offset*w/total
 	for i := 0; i < thumbW && thumbX+i < x+w; i++ {
 		s.SetContent(thumbX+i, y, '█', nil, thumbStyle)

@@ -47,17 +47,6 @@ func findServerRole(ctx context.Context, sc *db.ServerConn, roleName string) (*g
 	return sc.Server.ServerRoleByNameContext(ctx, roleName)
 }
 
-// isBuiltinServerRole reports whether a server role's name/owner can't be
-// changed: every fixed role (sysadmin, dbcreator, ...) plus public — both
-// ALTER SERVER ROLE public WITH NAME=... and ALTER AUTHORIZATION ON SERVER
-// ROLE::public are syntax errors ("public" is a reserved keyword in this
-// position), even though public's is_fixed_role is 0. The database-level
-// public role has the same restriction (see isBuiltinRole in
-// role_props.go).
-func isBuiltinServerRole(role *gosmo.ServerRole) bool {
-	return role.IsFixedRole || role.Name == "public"
-}
-
 // serverPrincipalNames returns every server principal (login or server
 // role) that could own a server role or be added as a member — the
 // candidate list every owner/member picker on this dialog draws from.
@@ -107,7 +96,7 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 				}
 			}
 
-			builtin := isBuiltinServerRole(role)
+			builtin := isSystemServerRole(role)
 			roleType := "Server role"
 			if builtin {
 				roleType = "Fixed server role"

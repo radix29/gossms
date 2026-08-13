@@ -51,7 +51,7 @@ func (s Series) labelFor(maxW int) string {
 func maxLen(series []Series) int {
 	n := 0
 	for _, s := range series {
-		n = core.Max(n, len(s.Values))
+		n = max(n, len(s.Values))
 	}
 	return n
 }
@@ -150,7 +150,7 @@ func (c stackCell) filled() bool { return c.split > 0 }
 // and the one covering most of its upper half; the rest are dropped rather
 // than drawn as a hole.
 func composeStack(length int, segs []segment, bg tcell.Color) []stackCell {
-	out := make([]stackCell, core.Max(length, 0))
+	out := make([]stackCell, max(length, 0))
 	for i := range out {
 		out[i] = stackCell{lower: bg, upper: bg}
 	}
@@ -270,7 +270,7 @@ type plotFrame struct {
 func axisGutter(sc Scale, levels int) int {
 	w := 0
 	for _, t := range sc.Ticks(levels) {
-		w = core.Max(w, core.DisplayWidth(FormatValue(t)))
+		w = max(w, core.DisplayWidth(FormatValue(t)))
 	}
 	return w + 1
 }

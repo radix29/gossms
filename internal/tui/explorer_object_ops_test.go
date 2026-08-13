@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -53,6 +54,49 @@ func TestObjectOpsMenuItemsPerNodeType(t *testing.T) {
 				t.Errorf("Delete present = %v, want %v (menu %v)", got, tt.delete, labels)
 			}
 		})
+	}
+}
+
+// A system object offers neither action, whatever its type says. The System *
+// folders emit the same node types as the user ones, so before nodeData.IsSystem
+// existed the type alone put Delete and Rename on master, on sys.objects and on
+// the SQL-Server-created Agent jobs — and Rename on a system database runs
+// SET SINGLE_USER WITH ROLLBACK IMMEDIATE before the server refuses it.
+func TestObjectOpsMenuItemsRefusesSystemObjects(t *testing.T) {
+	system := []struct {
+		name string
+		node *explorerNode
+	}{
+		{"system database", opNode(NodeDatabase, "", "master", "")},
+		{"system view", opNode(NodeView, "sys", "objects", "")},
+		{"system procedure", opNode(NodeStoredProcedure, "sys", "sp_who", "")},
+		{"system function", opNode(NodeFunction, "sys", "fn_my_permissions", "")},
+		{"system agent job", opNode(NodeAgentJob, "", "syspolicy_purge_history", "")},
+	}
+	for _, tt := range system {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.node.data.IsSystem = true
+			a := &App{}
+			if items := a.objectOpsMenuItems(tt.node); len(items) != 0 {
+				t.Errorf("a system object offered %d menu items, want none: %v", len(items), items)
+			}
+		})
+	}
+}
+
+// The loaders behind the System * folders are what set the flag the gate reads,
+// so the two have to stay in step: a loader that stops setting it puts Delete
+// back on master with nothing to catch it. Asserted on the node builders that
+// take no connection.
+func TestSystemAgentJobNodesAreMarkedSystem(t *testing.T) {
+	l := loaderCtx{}
+	sys := agentJobNode(l, &gosmo.Job{Name: "syspolicy_purge_history"})
+	if !sys.data.IsSystem {
+		t.Error("a SQL-Server-created Agent job is not marked IsSystem")
+	}
+	user := agentJobNode(l, &gosmo.Job{Name: "Nightly Reindex"})
+	if user.data.IsSystem {
+		t.Error("a user Agent job is marked IsSystem")
 	}
 }
 

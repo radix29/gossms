@@ -112,8 +112,8 @@ func (d *demo) draw(s tcell.Screen) {
 		dashboard.DrawHistory(c, c.Rect(), d.history)
 	}
 
-	d.scrollX = core.Clamp(d.scrollX, 0, core.Max(cw-view.W, 0))
-	d.scrollY = core.Clamp(d.scrollY, 0, core.Max(ch-view.H, 0))
+	d.scrollX = core.Clamp(d.scrollX, 0, max(cw-view.W, 0))
+	d.scrollY = core.Clamp(d.scrollY, 0, max(ch-view.H, 0))
 	c.Blit(s, core.Rect{X: d.scrollX, Y: d.scrollY, W: view.W, H: view.H}, view)
 
 	name := "History"

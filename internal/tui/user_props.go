@@ -47,20 +47,6 @@ func findUser(ctx context.Context, sc *db.ServerConn, dbName, userName string) (
 	return d.UserByNameContext(ctx, userName)
 }
 
-// isSystemUser reports whether a user's name/login/default schema can't be
-// changed: ALTER USER on any of these fails outright ("Cannot rename the
-// user 'guest'.", "Cannot alter the user 'dbo'.", same for
-// sys/INFORMATION_SCHEMA), unlike the ordinary permission errors other
-// ALTER USER failures produce.
-func isSystemUser(name string) bool {
-	switch name {
-	case "dbo", "guest", "sys", "INFORMATION_SCHEMA":
-		return true
-	default:
-		return false
-	}
-}
-
 func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {
 	return propPage{
 		title:   "General",
@@ -247,7 +233,7 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 			// public's membership is implicit (never an explicit row in
 			// sys.database_role_members) and ALTER ROLE public ADD/DROP
 			// MEMBER is a syntax error — exclude it, same as
-			// role_props.go's isBuiltinRole treats it as non-interactive.
+			// isSystemDatabaseRole treats it as non-interactive.
 			var roles []*gosmo.DatabaseRole
 			for _, r := range allRoles {
 				if r.Name != "public" {

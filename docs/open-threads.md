@@ -15,6 +15,21 @@ a settled question being reopened.
 
 ## By design — not issues, do not re-raise
 
+- **No gosmo `Drop*` write method carries `IF EXISTS`, and that is the
+  decision, not an omission.** Settled 2026-08-13 after a review found the
+  family split down the middle: dropping a view that was already gone reported
+  "View deleted" and dropping a sequence reported the server's refusal, from
+  the same Object Explorer gesture. A bare DROP everywhere was chosen over
+  `IF EXISTS` everywhere so that "deleted" means deleted; a caller that wants
+  idempotence ignores the error, which is a choice the library cannot make for
+  it. `TestDropStatementsAreNotIdempotent` pins it. The *scripts* Scripter
+  generates keep `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
+
+- **A system Agent job still offers `Delete Job...`.** Rename came off every
+  system object 2026-08-13 (`nodeData.IsSystem`), but the Agent family's own
+  Delete in `agent_menu.go` was never part of the `objectOps` table and is left
+  alone: SSMS permits deleting a system job, and msdb raises no objection.
+
 - **Which databases a dropdown offers is settled, and lives in
   `internal/tui/database_list.go`.** The rule turns on when the name is
   resolved: a name stored now and used later (job step, alert, login default
@@ -240,12 +255,14 @@ Each is a feature, not a defect.
   created, but ubusql2 could not join it`, and left both halves visible. Add
   Replica makes the same choice for the same reason, in the same wording.
 
-  **An added replica's endpoint URL cannot be edited.** Add Replica reads it
-  with `DatabaseMirroringEndpoint.URL()`, which builds the host from the
-  instance's `@@SERVERNAME` — so an instance whose short name does not resolve
-  from the other replicas gets a URL that does not work, with no way to type
-  the FQDN instead. The test cluster does not show this, because `/etc/hosts`
-  resolves the short names there.
+  **An added replica's endpoint URL is editable as of 2026-08-13**, so an
+  instance whose short name the other replicas cannot resolve can be given its
+  FQDN. Connect still fills it and is still required — it is what proves the
+  endpoint exists and is STARTED. What is left open is coverage: the only other
+  instance is already a replica, so `connect` refuses it before reading an
+  endpoint, and neither Connect filling the row nor `validateEndpointURL`'s
+  refusal has been seen live. Both are unit tested; showing either needs a third
+  instance.
 
   **Add Replica does not offer initial data synchronization**, unlike SSMS's
   wizard, which can take a full and log backup to a share and restore them on
@@ -330,12 +347,12 @@ restore does.
   operator nobody picked, and a dropped owner login shown as a real one — are
   **fixed** (2026-08-12, see `docs/journal.md`); what is left is below.
 
-  - **"Jobs Without Schedules" silently drops what it couldn't check.**
-    `jobsWithoutSchedulesReport` (`agent_reports.go:138`) does `if err != nil
-    || len(scheds) > 0 { continue }`, so a job whose per-job round trip failed
-    is omitted from a report whose entire purpose is finding jobs that are
-    missing something. It should surface the failure or list the job as
-    unknown.
+  ~~**"Jobs Without Schedules" silently drops what it couldn't check.**~~
+    **Fixed** 2026-08-13 — the report carries a Schedules column reading
+    `None`/`Unknown`, and a cancelled context returns the cancellation rather
+    than a page of `Unknown`. See `docs/journal.md`. The `Unknown` path has no
+    live coverage: aiming a failure at one job's round trip while the others
+    succeed has no easy handle.
 
   ~~**Duration is formatted two ways in one feature.**~~ **Fixed** — every
   duration in the app now goes through `formatHMS` (`backup_common.go`); the
@@ -406,6 +423,23 @@ of Always On's `agSetSelect`, with `changedTo` gating every write. See
   through `isAlreadyExists`, matching the `CreateUserContext` call below it.
   Note `isAlreadyExists` matches this by its "already exists" substring; its
   `15023` arm is the *user* code, and logins raise 15025.
+
+- **The peer-certificate mismatch check is not exercised live.**
+  `importPeerCertificate` compares `Certificate.Thumbprint` before skipping an
+  import (2026-08-13), so a peer that was rebuilt under the same instance name
+  is named rather than silently left with a stale certificate. Reproducing it
+  needs two instances and one of them reinstalled; only the same-thumbprint
+  path has ever run.
+
+- **The named-instance principal names are handled but have never run live.**
+  Fixed 2026-08-13: `endpointPrincipalBase` maps `@@SERVERNAME`'s backslash to
+  `$`, so a named instance contributes `HOST$INSTANCE_login` rather than
+  `[HOST\INST_login]`, which is the spelling of a Windows principal. It is
+  deliberately not truncated to the host the way `endpointURL` does — two named
+  instances on one machine would then share every principal name in the
+  exchange. `TestEndpointPrincipalBaseSurvivesANamedInstance` is the only thing
+  pinning it; the test cluster is all default instances, so no named instance
+  has ever gone through the exchange.
 
 - **The endpoint dialog's own branch is still only compiler-checked.**
   `importPeerCertificate` needs a live `*gosmo.Server` — a concrete struct with

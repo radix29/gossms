@@ -259,21 +259,13 @@ func (d *RestoreDialog) rebuildFocusable() {
 }
 
 func (d *RestoreDialog) setFocus(i int) {
-	for _, f := range d.focusable {
-		f.Focus(false)
-	}
-	if i >= 0 && i < len(d.focusable) {
-		d.focusIdx = i
-		d.focusable[i].Focus(true)
-	}
+	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
 }
 
+// focusTo moves focus to w, if it's in the focusable list.
 func (d *RestoreDialog) focusTo(w focusable) {
-	for i, f := range d.focusable {
-		if f == w {
-			d.setFocus(i)
-			return
-		}
+	if i := indexOfFocusable(d.focusable, w); i >= 0 {
+		d.setFocus(i)
 	}
 }
 
@@ -384,14 +376,5 @@ func (d *RestoreDialog) backToForm() {
 }
 
 func (d *RestoreDialog) doProgressButton() {
-	if d.task == nil || d.task.Done {
-		d.Hide()
-		return
-	}
-	switch d.btnFocus {
-	case 0:
-		d.Hide()
-	case 1:
-		d.task.Cancel()
-	}
+	runProgressButton(d.task, d.btnFocus, d.Hide)
 }

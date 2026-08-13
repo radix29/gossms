@@ -78,7 +78,7 @@ type LogViewer struct {
 	gridRect   core.Rect
 	detailRect core.Rect
 
-	tools []logTool
+	tools []toolButton
 	// toolsEnd is the column just past the last laid-out button, where the
 	// filter field starts — mirrors ActivityMonitor.toolsEnd.
 	toolsEnd int
@@ -107,14 +107,6 @@ type LogViewer struct {
 	busy   bool
 
 	dragZone logDragZone
-}
-
-// logTool is one clickable toolbar cell — a selector or a button. Mirrors
-// ActivityMonitor's amTool.
-type logTool struct {
-	label  string
-	action func()
-	rect   core.Rect
 }
 
 // logDragZone names the LogViewer sub-region that owns the in-progress mouse
@@ -208,20 +200,10 @@ func (lv *LogViewer) layoutChildren() {
 	lv.grid.SetBounds(lv.gridRect.X, lv.gridRect.Y, lv.gridRect.W, lv.gridRect.H)
 }
 
-// layoutTools places the toolbar cells left to right, then the filter field
-// in whatever is left. A cell that doesn't fit gets a zero rect and is
-// neither drawn nor hit-tested, matching ActivityMonitor.layoutTools.
+// layoutTools places the toolbar cells (see layoutToolButtons), then the
+// filter field in whatever is left.
 func (lv *LogViewer) layoutTools() {
-	x := lv.toolRect.X + 1
-	for i := range lv.tools {
-		w := core.DisplayWidth(lv.tools[i].label) + 2
-		if lv.toolRect.W == 0 || x+w > lv.toolRect.Right() {
-			lv.tools[i].rect = core.Rect{}
-			continue
-		}
-		lv.tools[i].rect = core.Rect{X: x, Y: lv.toolRect.Y, W: w, H: 1}
-		x += w + toolGap
-	}
+	x := layoutToolButtons(lv.tools, lv.toolRect, "")
 	lv.toolsEnd = x
 	// The field's own width excludes its label and brackets, which is why
 	// the fit test adds them back — see widgets.InputField.Draw.
@@ -258,7 +240,7 @@ const (
 // order the logTool* constants name. Labels are rebuilt on every draw (see
 // refreshToolLabels), since both selectors show what they currently point at.
 func (lv *LogViewer) buildTools() {
-	lv.tools = []logTool{
+	lv.tools = []toolButton{
 		{action: lv.showLogTypeMenu},
 		{action: lv.showLogFileMenu},
 		{label: "Refresh", action: lv.Refresh},
@@ -343,12 +325,20 @@ func (lv *LogViewer) Load() {
 
 	logType, logNum := lv.logType, lv.logNum
 	sc := lv.conn
-	ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
+	// One cancel for the panel to pull, but a fresh deadline per call: sharing
+	// a single logReadTimeout let a slow sp_enumerrorlogs eat the read's half
+	// of it, so the file the user actually asked for timed out because the
+	// *list* was slow.
+	ctx, cancel := context.WithCancel(sc.Context())
 	lv.cancel = cancel
 	lv.app.safego("reading an error log", func() {
 		defer cancel()
-		files, filesErr := sc.Server.EnumErrorLogsContext(ctx, logType)
-		entries, err := sc.Server.ReadLogContext(ctx, logType, logNum)
+		enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
+		files, filesErr := sc.Server.EnumErrorLogsContext(enumCtx, logType)
+		enumCancel()
+		readCtx, readCancel := context.WithTimeout(ctx, logReadTimeout)
+		defer readCancel()
+		entries, err := sc.Server.ReadLogContext(readCtx, logType, logNum)
 		lv.app.postAndWake(func() {
 			if seq != lv.seq {
 				return
@@ -552,7 +542,7 @@ func (lv *LogViewer) export() {
 		lv.app.safego("exporting a log", func() {
 			// Writing on the UI goroutine froze the whole app for the duration
 			// — a big log to a network path is seconds, not milliseconds.
-			err := os.WriteFile(path, []byte(text), 0644)
+			err := os.WriteFile(path, []byte(text), 0o644)
 			lv.app.postAndWake(func() {
 				if err != nil {
 					lv.app.setStatus(fmt.Sprintf("Export failed: %v", err))

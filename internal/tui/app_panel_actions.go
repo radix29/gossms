@@ -393,7 +393,7 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 // succeeded — callers that only want to proceed on success (see
 // saveQueryPanel) check the return value instead of assuming it worked.
 func (a *App) writeQueryFile(qp *QueryPanel, path string) bool {
-	if err := os.WriteFile(path, []byte(qp.editor.Text()), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(qp.editor.Text()), 0o644); err != nil {
 		a.setStatus(fmt.Sprintf("Save failed: %v", err))
 		return false
 	}

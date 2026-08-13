@@ -884,7 +884,7 @@ func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
 	retry.action()
 }
 
-func amToolLabelled(am *ActivityMonitor, label string) *amTool {
+func amToolLabelled(am *ActivityMonitor, label string) *toolButton {
 	for i := range am.tools {
 		if am.tools[i].label == label {
 			return &am.tools[i]
