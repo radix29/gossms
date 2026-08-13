@@ -173,7 +173,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 				rows = append(rows, propsheet.Static("Owner", schema.Owner))
 			} else {
 				ownerNames := principalNames(users, roles)
-				ownerRow = propsheet.Select("Owner", ownerNames, indexOf(ownerNames, schema.Owner))
+				ownerRow = selectPreserving("Owner", ownerNames, schema.Owner, unknownOwnerItem)
 				rows = append(rows, ownerRow)
 			}
 			rows = append(rows,
@@ -214,14 +214,15 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			var apply propApply
 			if !builtin {
 				apply = func(ctx context.Context) error {
-					if !ownerRow.Dirty() {
+					owner, ok := changedTo(ownerRow, unknownOwnerItem)
+					if !ok {
 						return nil
 					}
 					s, err := findSchema(ctx, sc, dbName, schemaName)
 					if err != nil {
 						return err
 					}
-					return s.ChangeOwnerContext(ctx, ownerRow.Value())
+					return s.ChangeOwnerContext(ctx, owner)
 				}
 			}
 			return f, apply, nil

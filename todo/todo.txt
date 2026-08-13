@@ -4,13 +4,38 @@ at the top a section that show the grpahic from history: sql server aẃaits and
 
 white/light style ? -> options, default dark
 
----------
+-------------
 
-reports
-    - serverw
-    - database
-        - top tables
-        - disk usage
+## 14. Suggested order
+
+Sequenced by value-per-day, not by section order. Each phase leaves the tool
+coherent.
+
+**Phase 1 — cash in what gosmo already has (mostly S, ~2–3 weeks)**
+4. General scripting engine + `Script … as ▸` on every node (§6.2a)
+5. Missing-index banner on execution plans; open/save `.sqlplan`
+6. Partition Functions/Schemes, Security Policies, Always Encrypted key
+
+**Phase 2 — the reporting and Query Store layer (M, ~3–4 weeks)**
+10. Query Store's seven views + Force/Unforce Plan (§8)
+11. Detach / Attach
+
+**Phase 3 — the tree's missing families (M, ~3–4 weeks)**
+12. Credentials, Audits + Server Audit Specifications, Backup Devices,
+    server DDL Triggers, Endpoints
+13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
+    Database Snapshots, Tables sub-folders
+14. Service Broker (whole subtree)
+15. Certificates / Symmetric / Asymmetric Keys, Database Audit Specs
+
+**Phase 5 — the big ones (L, open-ended)**
+23. Extended Events + XEvent Profiler viewer
+24. Database Mail, Resource Governor
+25. Live Query Statistics; Compare Showplan
+26. Replication (read-only)
+27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
+
+
 
 -------------
 
@@ -18,6 +43,8 @@ reports
     - word wrap (display only, line numbers)
     - auto indent ?
     - external editor nvim, nano , etc
+
+- group ny schema
 
 
 --------------
@@ -37,6 +64,7 @@ go over the source files code comments and compact them. throw unnecessary wordi
 bunx ccusage          # Show all detected sources by day (default)
 
 --- prepare for release
+
 commit before both projects
 
 prepare gosmo for release v0.0.8 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.

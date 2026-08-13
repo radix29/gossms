@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -77,10 +78,68 @@ func (a *App) showContextMenu(node *explorerNode, x, y int) {
 	a.contextMenu.Show(x, y, a.contextMenuItemsForNode(node))
 }
 
+// contextMenuItemsForNode is the node's own menu plus the two groups every
+// node type gets for free: Rename/Delete (explorer_object_ops.go) and, on a
+// filterable folder, Filter Settings/Remove Filter (explorer_filter.go).
+// Both are spliced in above Refresh, where SSMS puts them, rather than
+// repeated in each branch of nodeMenuItems — which node types offer them is
+// objectOpFor's and filterProps's answer, not something those branches know.
 func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
+	items := a.nodeMenuItems(node)
+	items = insertBeforeRefresh(items, a.objectOpsMenuItems(node))
+	return insertBeforeRefresh(items, a.filterMenuItems(node))
+}
+
+// filterMenuItems is the Filter pair a filterable folder offers, or nil.
+func (a *App) filterMenuItems(node *explorerNode) []controls.MenuItem {
+	if len(filterProps(node.data.Type)) == 0 {
+		return nil
+	}
+	return []controls.MenuItem{
+		{Label: "Filter Settings...", Action: func() { a.showFilterDialog(node) }},
+		{
+			Label:   "Remove Filter",
+			Enabled: func() bool { return node.data.Filter.active() },
+			Action:  func() { a.applyNodeFilter(node, nil) },
+		},
+	}
+}
+
+// refreshMenuLabel is the label the Refresh item carries in every node's
+// menu, and the anchor insertBeforeRefresh finds it by.
+const refreshMenuLabel = "Refresh"
+
+// insertBeforeRefresh splices extra in above the Refresh item as its own
+// divided group, leaving Refresh and Properties... last the way SSMS does.
+// The dividers are added only where one isn't already there — every node
+// menu already has one above Refresh, and two in a row draw as two lines.
+// A menu with no Refresh — no node type today, but a leaf that can't be
+// reloaded would be one — gets extra appended instead.
+func insertBeforeRefresh(items, extra []controls.MenuItem) []controls.MenuItem {
+	if len(extra) == 0 {
+		return items
+	}
+	for i, it := range items {
+		if it.Label != refreshMenuLabel {
+			continue
+		}
+		group := extra
+		if i > 0 && !items[i-1].Divider {
+			group = append([]controls.MenuItem{{Divider: true}}, group...)
+		}
+		group = append(slices.Clone(group), controls.MenuItem{Divider: true})
+		out := make([]controls.MenuItem, 0, len(items)+len(group))
+		out = append(out, items[:i]...)
+		out = append(out, group...)
+		return append(out, items[i:]...)
+	}
+	return append(items, append([]controls.MenuItem{{Divider: true}}, extra...)...)
+}
+
+func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	newQuery := controls.MenuItem{Label: "New Query", Action: func() { a.newQueryPanelForConn(sc, node.data.DBName) }}
-	refresh := controls.MenuItem{Label: "Refresh", Action: func() {
+	refresh := controls.MenuItem{Label: refreshMenuLabel, Action: func() {
 		node.data.Loaded = false
 		node.children = nil
 		if node.expanded {
@@ -99,6 +158,9 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 			{Divider: true},
 			{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+			{Label: "View SQL Server Log", Action: func() {
+				a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
+			}},
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
@@ -298,6 +360,38 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 			newQuery,
 			{Divider: true},
 			{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeManagement:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "View SQL Server Log", Action: func() {
+				a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
+			}},
+			{Divider: true},
+			refresh,
+		}
+	case NodeSQLServerLogs, NodeAgentErrorLogs:
+		logType := gosmo.ErrorLogSQLServer
+		if node.data.Type == NodeAgentErrorLogs {
+			logType = gosmo.ErrorLogAgent
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeSQLServerLog, NodeAgentErrorLog:
+		return []controls.MenuItem{
+			{Label: "View Log", Action: func() {
+				a.showLogViewerFor(sc, node.data.LogType, node.data.LogNumber)
+			}},
+			{Divider: true},
+			newQuery,
 			{Divider: true},
 			refresh,
 		}

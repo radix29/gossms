@@ -8,8 +8,8 @@ import (
 
 // agent_explorer.go loads the SQL Server Agent subtree — Jobs (User/System),
 // Schedules, Alerts (SQL Server Event Alerts only — see
-// gosmo.Server.EventAlerts), Operators, and a small set of SQL-only
-// administration reports.
+// gosmo.Server.EventAlerts), Operators, Error Logs, and a small set of
+// SQL-only administration reports.
 
 // agentReportTitles lists the "SQL-only administration" folder's report
 // leaves, in display order. Each title doubles as the lookup key
@@ -32,6 +32,7 @@ func loadAgentRootChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 		l.node("Schedules", NodeAgentSchedules, "", "", ""),
 		l.node("Alerts", NodeAgentAlerts, "", "", ""),
 		l.node("Operators", NodeAgentOperators, "", "", ""),
+		l.node("Error Logs", NodeAgentErrorLogs, "", "", ""),
 		l.node("SQL-only administration", NodeAgentAdmin, "", "", ""),
 	}, nil
 }

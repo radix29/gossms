@@ -928,3 +928,389 @@ destination the server can't write. The step from that boolean to the rules
 `newServerFS` installs stays untested — it needs a `*gosmo.Server` whose
 `Info()` answers, which only a real connection's `loadInfo` can arrange — so
 that half is noted in the test file and verified live instead.
+
+---
+
+## gosmo `ErrNotFound`, and the endpoint dialog's create-on-any-error (2026-08-12)
+
+Cross-repo review pass. The mechanical floor was already clean in both repos —
+`go build`, `go vet`, `staticcheck`, `gofmt -l` and `go test -race` all say
+nothing — so both findings came from reading.
+
+**gosmo had no way to say "absent".** Twenty-odd by-name lookups reported a
+missing object as `fmt.Errorf("gosmo: login %q not found", name)`: an
+unwrapped string, so a caller could only distinguish absence from failure by
+matching message text. Three other conventions existed alongside it —
+`CertificateByName` returns `(nil, nil)`, `AvailabilityGroupByName` wrapped
+`sql.ErrNoRows`, `AgentStatus` synthesises `StatusText: "Unknown"`. Only the
+first was a defect; the other three are deliberate and are now written down on
+`ErrNotFound` itself, because the split will otherwise read as an oversight
+every time someone new looks at it.
+
+`ErrNotFound` plus `notFoundf` went into `errors.go` and the 18 sites now call
+it. **The messages did not change by a byte** — `notFoundError` carries the
+text and reaches the sentinel through `Unwrap()`, rather than the usual
+`": %w"` suffix, which would have appended a second "not found" to every one
+of them. `notFoundfAlso` exists for the one method that had already documented
+a different sentinel: `AvailabilityGroupByName` goes on satisfying
+`errors.Is(err, sql.ErrNoRows)`, since narrowing a published gosmo contract is
+exactly what `CLAUDE.md` forbids. `CertificateByName`'s `(nil, nil)` was left
+alone for the same reason — changing it is a breaking change, not a cleanup.
+Its doc now says so.
+
+The three tests were A/B'd against a deliberately broken `Unwrap` before being
+believed; two of them fail without it. That check is worth repeating on any
+sentinel test, because `errors.Is` assertions pass vacuously in both
+directions if the constructor is wrong.
+
+**What the sentinel was for.** `importPeerCertificate`
+(`new_endpoint_dialog.go`) read
+
+```go
+if _, err := p.server.LoginByNameContext(ctx, login); err != nil { /* create it */ }
+```
+
+— *any* error meant "the login isn't there", so a dropped connection or a
+cancelled lookup surfaced as a failed `CREATE LOGIN` rather than as the fault
+that actually stopped the pipeline, on a dialog where telling those apart is
+the entire diagnosis. It now switches on `errors.Is(err, gosmo.ErrNotFound)`
+and returns anything else as a lookup failure. It works today only because
+`LoginByNameContext` happens to error on not-found; the same file calls
+`CertificateByNameContext` forty lines up and correctly tests it against
+`nil` — two conventions, one function apart, which is what made the wrong one
+look right.
+
+**The live check corrected the premise.** The first version of this entry said
+a *denied SELECT* on `sys.server_principals` was the case being fixed. It
+isn't, and win10cli said so: SQL Server does not raise a permission error
+there. Metadata visibility **filters silently** — a caller without
+`VIEW ANY DEFINITION` gets zero rows, which is indistinguishable from absence
+because the server itself does not distinguish them. Measured directly: a
+throwaway login saw exactly two principals (`sa` and itself); after
+`DENY VIEW ANY DEFINITION` it saw one, having lost sight of **its own row**.
+`TestLiveNotFoundCannotSeePastMetadataVisibility` pins that.
+
+So the sentinel does not close the permission case, and no sentinel could.
+What closes it is idempotence: `CreateLoginContext`'s error is now passed
+through `isAlreadyExists`, exactly as the `CreateUserContext` call three lines
+below already was. An existing-but-invisible login reads as absent, the CREATE
+collides, and the collision is the proof the login was there. Confirmed live
+that the collision is catchable — SQL Server answers
+`The server principal 'x' already exists.`, which the helper's "already
+exists" substring matches (its other arm, `15023`, is the *user* code; logins
+raise 15025 and never reach it).
+
+Worth keeping straight, since it inverts the intuition: for principals,
+"not found" from a lookup is weaker evidence than "already exists" from a
+write. The lookup can be lied to by permissions; the write cannot.
+
+It was the only site of its shape: no other gossms caller branches on a
+by-name error, they all propagate. The gossms branch itself still has **no
+unit test** — it needs a live `*gosmo.Server`, a concrete struct with no
+interface to fake — so it stays compiler-checked only; what is now covered
+live is the gosmo behaviour underneath it, in `live_notfound_test.go`
+(four tests, `-tags livedb`, throwaway logins dropped after).
+
+---
+
+## One dropdown helper, ten sites, and what the server refuses to let you break (2026-08-12)
+
+`indexOf` returns 0 when a value isn't in the list, and 0 is a real option. Ten
+property-page dropdowns fed it a *server-supplied* value, so a job owned by a
+dropped login, a login whose default database no longer exists, or a schema
+owned by an unresolvable principal each displayed the first real option as
+fact — on exactly the objects an admin opens the page to investigate.
+
+**Four idioms already existed for this, which is why sites kept getting
+missed**: a prepended sentinel (`noneItem`, `unknownOwnerItem`), sorted
+insertion (`compatItemsFor`), append-and-widen (`agSetSelect`, from Always On),
+and `indexOfOK` plus a read-only static. `agSetSelect` was the only one that
+*cannot* misreport, because the value the server gave is always in the list it
+builds. It is now `preservingItems` in `prop_grid_helpers.go`, with
+`selectPreserving` as the build-a-row form and `agSetSelect` kept as the
+repoint-a-row form over the same core. Ten sites converted, plus
+`database_props.go`'s hand-rolled variant, leaving one implementation.
+
+**`changedTo` is the other half, and matters more than it looks.** A widened
+list means a stand-in can be *displayed*; nothing may let it be *written*.
+Gating on `Dirty()` alone happens to be enough today — a stand-in is only in
+the list when it is also the original selection, so returning to it clears the
+flag — but that is a property of how the list is built, three files from the
+write. `changedTo` states it instead: dirty, and not on the stand-in.
+
+Only one of the ten wrote bad data: Job Properties > Notifications, where
+`emailCheck.Dirty()` gates a write of `operatorSelect.Value()`, so ticking
+E-mail on a job with no operator sent whichever operator sorted first. It now
+maps `noneItem` back to `""`, which `SetEmailNotify` documents as "leave the
+operator unchanged". The other nine were display-only — established by grepping
+every `Dirty()` gate in `*_props*.go`/`new_*.go`, not assumed.
+
+**A/B'd live on win10cli, twice.** A login whose default database was dropped
+(`zz_orphan_defdb` → `zz_defdb`, database dropped underneath it): old binary
+showed `backup_test`, an unrelated real database; new shows `zz_defdb`. An
+orphaned schedule owner: old showed `##MS_PolicyEventProce…`, the first login
+on the server; new shows `(unresolved owner)`. Escape closed both dialogs
+without an unsaved-changes prompt, so the widened row is not spuriously dirty.
+
+**The server refused to reproduce one of them, and that corrected the note.**
+`open-threads.md` had job and schedule owners as one bullet. They are not:
+SQL Server *blocks* `DROP LOGIN` for a login that owns a job ("This login is
+the owner of 1 job(s)"), while a schedule has no such protection — its owner
+drops cleanly and `SUSER_SNAME(owner_sid)` goes NULL at once. So the schedule
+case is trivially reachable and the job case needs a restored msdb or a removed
+AD principal. Both still want the fix; only one can be demonstrated by dropping
+a login.
+
+**Testing notes worth keeping.** The unit tests were A/B'd against the old
+`indexOf` behaviour — five of eight fail without the fix. One of them,
+`TestChangedToRefusesTheStandIn`, passed under *both* on the first attempt: it
+reached the stand-in through `SetSelected`/`SetItems`, which reset the dirty
+baseline, so it was only re-testing the untouched-row case. Driving the widget
+(focus, Enter, Up, Enter) is the only way to make a `SelectRow` dirty, and the
+rewritten test fails correctly without the guard. Both premise checks
+(`t.Fatal("test premise is wrong")`) earned their place — one caught that
+`Down` cannot move off a stand-in, since `selectPreserving` appends it last.
+
+Eight `indexOf` sites remain and are deliberately left: their lists begin with
+a sentinel, so a miss lands on `(None)` rather than a real value. See
+`open-threads.md` for why converting them is a separate question.
+
+---
+
+## The LIKE-escape duplicate, and one bare `==` (2026-08-12)
+
+Two small items from the same review, both in gosmo.
+
+**`escapeLikePattern` was a byte-identical copy of `likeEscape`** — same four
+replacer pairs, one in `securable_search.go`, one in `helpers.go`, each with
+its own test. Deduped onto `likeEscape`. Both were unexported, so nothing left
+the published API and the no-removal rule never came into it.
+
+Two things were kept rather than dropped with the function. Its doc comment
+explained the failure better than the survivor's did — `_` and `%` are legal in
+an identifier so a search for one silently wildcard-matches, and a `[` turns
+the pattern into a character class that matches nothing — and that is now on
+`likeEscape`. Its test had one case the other lacked, every metacharacter at
+once (`` `_%[\` ``), which moved into `TestLikeEscape`;
+`securable_search_test.go` held nothing else and is gone.
+
+Verified live rather than assumed, because a rename that compiles proves
+nothing about the query: three throwaway tables in a throwaway database,
+searched through `FindSecurablesContext`. `my_table` returned **only**
+`my_table` and not `myXtable` — which is the whole point, since an unescaped
+`_` is a single-character wildcard that would match both — and `100%` matched
+`pct100%tbl` literally.
+
+**`certificate.go` compared `err == sql.ErrNoRows`** where the other twenty
+sites use `errors.Is`. It was correct only by luck of plumbing, and it is the
+worst place in the package to rely on that: `CertificateByName` is the one
+lookup whose not-found answer is `(nil, nil)`, and `Database.queryRow` already
+wraps *some* of its failures (`fmt.Errorf` on the `USE`). A bare comparison
+that stopped matching would turn "no such certificate" into an error and send
+every caller that branches on `cert == nil` down the other path — and the
+endpoint pipeline creates a certificate on exactly that branch.
+
+That contract had no test at all, which is why the hazard was invisible.
+`TestLiveCertificateNotFoundIsNilNil` now pins it in both directions: a missing
+certificate is `(nil, nil)`, and a real one comes back populated — the second
+half matters, or "nil" could quietly become "always nil" and still pass.
+
+The test creates its certificate with `ENCRYPTION BY PASSWORD`, not the
+database master key. master has no DMK on a stock instance, and creating one
+there would be a real and lasting change to the server for a test's
+convenience.
+
+**One bare comparison was left alone on purpose.** `showplan/parse.go` reads
+`err == io.EOF` from `xml.Decoder.Token()`. Here `==` is the *stricter* choice:
+`io.EOF` is returned bare by convention, and switching to `errors.Is` would
+make an error that merely wraps EOF read as a clean end of document, silently
+truncating a plan instead of reporting a parse failure. The input is always an
+in-memory `strings.Reader`, so the two are equivalent today; the difference
+only ever runs one way, and not the safe one.
+
+---
+
+## SQL Server / Agent log viewer (2026-08-12)
+
+`todo/todo.txt` phase 1 item 1. The log itself was already reachable through
+gosmo's `ReadErrorLog`; what was missing was the *other* log family, the file
+list, and any UI.
+
+**gosmo — `error_log.go`.** The Error Log section moved out of
+`server_config.go` (a grab-bag of configuration, sessions, error log and
+Database Mail) into a file of its own, byte-for-byte, then grew:
+`ErrorLogType` (`ErrorLogSQLServer` = 1, `ErrorLogAgent` = 2 — the values
+`xp_readerrorlog` and `sp_enumerrorlogs` take, so they pass straight through),
+`ErrorLogFile` and `EnumErrorLogs`, and `ReadLog`/`ReadLogContext` taking the
+family. Additive only: `ReadErrorLog` still exists and now delegates with
+type 1, and `ErrorLogEntry` keeps `LogDate`/`Process` and *gains* `Date
+time.Time` and `ErrorLevel int`.
+
+Three facts came from probing win10cli, not from memory, and each shaped the
+code:
+
+- **The middle column differs by family.** `xp_readerrorlog N, 1` returns
+  `LogDate, ProcessInfo, Text`; `xp_readerrorlog N, 2` returns `LogDate,
+  ErrorLevel, Text` — a `DATETIME`, an `INT`, an `NVARCHAR`. Scanning one
+  shape into the other fails in the driver, which is why `ReadLogContext`
+  branches on the family for the scan and why `ErrorLogEntry.Source()` exists
+  for the callers that just want a column to show.
+- **`sp_enumerrorlogs`' Date column is an `NVARCHAR`**, formatted by the
+  extended procedure (`"08/12/2026  21:49"`, two spaces, minute precision) —
+  not a datetime. `ErrorLogFile` therefore keeps both the raw string and a
+  parsed `LastWritten`, and `parseErrorLogFileDate` reports the zero time
+  rather than guessing when no known layout matches: the formatting follows
+  the server's locale, so an unrecognized one has to degrade to showing what
+  the server said. Labels use minute precision for the same reason —
+  `formatSQLDate`'s `":00"` seconds would be invented.
+- **The Agent family's current log comes back last**, not first
+  (`1,2,3,4,5,6,0`), so `EnumErrorLogsContext` sorts by number.
+
+`LogDate` is now derived from `Date` with `RFC3339Nano`, which is exactly what
+`database/sql`'s `convertAssign` produced when the old code scanned a
+`DATETIME` straight into a `string` — the compatibility is deliberate and was
+checked against the live server both ways.
+
+**gossms — the `LogViewer` panel.** Two toolbar selectors (family, archive),
+a filter field, Refresh and Export, over a `DataGrid` of Date/Source/Message
+and a details pane below a draggable divider. The selectors pop
+`App.contextMenu` rather than embedding `widgets.DropDown`: the application's
+own overlay already gets first refusal of every key and click, and it is
+styled for a panel rather than a dialog. `layout.Splitter` is reused whole, so
+the divider's drag rules came for free.
+
+Rows are shown **newest first**, as SSMS's viewer opens, with the direction
+marked in the Date header. The sort is stable, so the several entries one
+second usually carries keep the order the log wrote them in — reversing those
+as well would scramble a startup sequence or a stack dump, verified live on a
+`22:44:17` pair. Export follows what is displayed, but writes a plain header:
+a column name in a file shouldn't carry the grid's sort marker.
+
+The details pane exists because a log entry is not a grid row: the startup
+banner is four lines with tabs. `flattenLogText` makes the one-line grid cell,
+`splitLogLines` preserves the structure for the pane, and both are pinned by
+tests. Alt+Up/Down scrolls the pane — not PgUp/PgDn, which belong to the grid
+the cursor is in.
+
+**Object Explorer** grew a real **Management** folder (SQL Server Logs) beside
+Server Objects, and **Error Logs** under SQL Server Agent, each listing one
+leaf per file. Which meant renaming `NodeManagement` — it had been the type of
+the node *labelled* "Server Objects" — to `NodeServerObjects`, before adding a
+second, differently-meaning `NodeManagement` next to it.
+
+**One trap, found live.** Both selectors are labelled with what they point at,
+so their labels change without a resize; `layoutTools` ran only from
+`SetBounds`, and the rect laid out for the shorter old label let the next
+button overpaint the tail of this one ("File: Archive #1 — 2 Refresh").
+`Draw` now relabels and relays out together.
+
+**A keyboard trap, avoided by the rule in `CLAUDE.md`.** `App.handleKey` only
+moves focus back to Object Explorer when the focused panel *declines* Tab, so
+the panel walks grid → filter and then returns false, resetting focus to the
+grid on the way out. Both directions are pinned by tests, including the
+narrow-panel case where the filter field doesn't fit and the first Tab must
+already be declined.
+
+**Verified live on win10cli** through tmux: both families, archive switching
+via the selector and via the tree, the filter (2 of 91 rows on "recovery",
+case-insensitively), F5 (339 → 345 entries as the live log grew), splitter
+drag and keyboard resize, Alt+Down details scroll, Export (91 entries to
+TSV), one-panel-per-server reuse, and Tab leaving the panel at both widths.
+
+---
+
+## Object Explorer folder filter (2026-08-13)
+
+SSMS's "Filter Settings" on a folder node — the first of the two items at the
+top of `todo/todo.txt`. `internal/tui/explorer_filter.go` is the model,
+`filter_dialog.go` the dialog.
+
+**Where the filtering happens decides everything else.** It runs in
+`fetchChildren`, on whatever the folder's loader returned, so a filter survives
+Refresh, collapse/expand and reconnect without any loader knowing it exists,
+and applying or clearing one is just a folder reload (`App.applyNodeFilter`).
+The alternative — filtering at draw time — would have had to teach `flatten`
+about node semantics and would still have counted hidden rows in every
+scroll/selection calculation.
+
+**The property list is bounded by what the loader already fetches.** SSMS
+offers Owner and Durability Type on Tables; both live on gosmo's `TableDetail`,
+i.e. one query per table, so neither is offered here. Name/Schema come free
+from `nodeData`; Creation Date and Is Memory Optimized are new `nodeData`
+fields the six relevant loaders now populate. A criterion matched against a
+zero `CreateDate` rejects every row, which is why `filterProps` and the loaders
+have to stay in step — pinned by `TestFilterPropsAreBackedByNodeData`.
+
+**Sub-folders and error nodes are never filtered out.** A filtered Views folder
+keeps "System Views", and a failed expand keeps its error leaf — otherwise a
+filter that matches nothing and a folder that failed to load look identical.
+
+**The "(filtered)" suffix is rendered, not stored** (`flatten` reads
+`nodeData.Filter`), so clearing a filter can't leave the label mangled.
+
+Dates and booleans are validated in the dialog before a filter is built: an
+unparseable value matches nothing, so a typo would otherwise come back as an
+empty folder with no error.
+
+**Verified live on win10cli** through tmux: Name contains "pat" (8 tables → 1,
+label marked, status line summarising the filter), Creation Date after
+2000-01-01 (all 8 kept), Is Memory Optimized equals True (empty folder), the
+bad-date validation message, Remove Filter restoring the folder and the label,
+the item greyed out when there is no filter, reopening the dialog seeding back
+the criteria in force, and the server-level form (Databases: no Database
+header line, Name + Creation Date only, "System Databases" retained).
+
+---
+
+## General Delete and Rename (2026-08-13)
+
+The second `todo/todo.txt` item, and the one that needed gosmo work first.
+`internal/tui/explorer_object_ops.go` is one table of what Delete and Rename
+mean per node type, plus the two shared actions around it; a node type absent
+from the table offers neither, which is how folders and system-object families
+stay out of the menu instead of showing an item that fails when clicked.
+
+**gosmo gained the drops and renames that weren't there** — `Database`:
+`DropView`, `DropFunction`, `DropTrigger`, `DropSequence`, `DropSynonym`,
+`DropDatabaseRole`, `RenameObject`; `Table.DropConstraint`;
+`Statistic.Rename`; `Server.DropServerRole`, `Server.RenameDatabase`; plus
+`DatabaseRole.Drop` and `ServerRole.Drop`. `Sequence.Drop`/`Synonym.Drop` now
+delegate to the new Database-level forms, with the same SQL as before —
+`DROP SEQUENCE` has no `IF EXISTS` and `DROP SYNONYM` does, and changing
+either would change what an existing caller observes. Each new statement is
+pinned through `WithScript` in `drop_rename_test.go`, which is how the exact
+T-SQL gets asserted without a server.
+
+**One statement class per rename.** `sp_rename` needs the right `@objtype`:
+`OBJECT` for views/procedures/functions/sequences/synonyms/triggers and for a
+foreign key or CHECK constraint, `INDEX` for an index — and for a primary key
+or unique constraint, whose name *is* its backing index's name — and
+`STATISTICS` for a statistic. Schemas have no rename at all, so Rename is
+absent there rather than offered and failing.
+
+**Renaming a database found a real one, live.** `ALTER DATABASE ... MODIFY
+NAME` needs exclusive access, and the tree's own metadata connections are
+enough to deny it: the first live attempt came back "could not be exclusively
+locked". `RenameDatabaseContext` therefore takes `force`, doing
+SINGLE_USER WITH ROLLBACK IMMEDIATE and MULTI_USER around the rename —
+including when the rename fails, so a refusal never strands the database
+single-user — and Object Explorer asks before using it.
+
+**Delete confirmations scale with the blast radius**: a plain Yes/No for one
+object, the retype-the-name dialog for a database (whose drop also closes
+connections). `dialogs.PromptDialog` is new for Rename — a one-line input with
+OK/Cancel, an initial value that comes back selected so typing replaces it, and
+a `Validate` hook; an empty or rejected value keeps the dialog open with the
+reason rather than closing silently.
+
+**The Filter and Rename/Delete groups are spliced in above Refresh**
+(`insertBeforeRefresh`), matching SSMS's ordering, rather than repeated in
+every branch of `nodeMenuItems`. Its divider handling exists because the first
+version drew two separator lines in a row: every node menu already has a
+divider above Refresh.
+
+**Verified live on win10cli** against a throwaway `gossms_ops_test` database
+and login, dropped afterwards: table rename, view delete, index rename, primary
+key delete (ALTER TABLE DROP CONSTRAINT), table delete, database rename (forced,
+`sys.databases` confirming MULTI_USER/ONLINE afterwards), database delete behind
+the retype dialog, and login rename + delete — each cross-checked with `sqlcmd`.

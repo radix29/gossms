@@ -194,7 +194,12 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 			}
 
 			emailCheck := propsheet.Check("E-mail", j.NotifyLevelEmail != gosmo.NotifyNever)
-			operatorSelect := propsheet.Select("Operator", opNames, indexOf(opNames, j.NotifyEmailOperatorName))
+			// noneItem is offered unconditionally, not only when the job has
+			// no operator: it is a choice the user makes, not just a stand-in
+			// for a blank. selectPreserving then keeps an operator that has
+			// since been dropped visible instead of collapsing it to opNames[0].
+			opItems := append([]string{noneItem}, opNames...)
+			operatorSelect := selectPreserving("Operator", opItems, j.NotifyEmailOperatorName, noneItem)
 			conditionSelect := propsheet.Select("When to e-mail", notifyConditionItems, notifyConditionIndex(j.NotifyLevelEmail))
 			deleteCheck := propsheet.Check("Delete job", j.DeleteLevel != gosmo.NotifyNever)
 			deleteConditionSelect := propsheet.Select("When to delete", notifyConditionItems, notifyConditionIndex(j.DeleteLevel))
@@ -221,15 +226,19 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 				// Each write is gated on whether ITS OWN rows are dirty,
 				// not just on the page (PropertySheet.DirtyPages is only
 				// page-level) — otherwise editing the Delete Job section
-				// alone would rewrite the e-mail operator with indexOf's
-				// index-0 fallback, which is an arbitrary real operator
-				// when the job has none configured.
+				// alone would rewrite the e-mail operator.
 				if emailCheck.Dirty() || operatorSelect.Dirty() || conditionSelect.Dirty() {
 					emailLevel := gosmo.NotifyNever
 					if emailCheck.Checked() {
 						emailLevel = notifyConditionLevels[conditionSelect.Selected()]
 					}
-					if err := j.SetEmailNotifyContext(ctx, operatorSelect.Value(), emailLevel); err != nil {
+					// preservedValue turns noneItem back into "", which
+					// SetEmailNotify documents as "leave the operator
+					// unchanged" — the only thing it can mean, since
+					// sp_update_job has no value that clears one. Ticking
+					// E-mail on a job with no operator configured used to
+					// send whichever operator sorted first.
+					if err := j.SetEmailNotifyContext(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
 						return err
 					}
 				}

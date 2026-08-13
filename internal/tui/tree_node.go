@@ -3,6 +3,7 @@ package tui
 import (
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 )
@@ -52,7 +53,10 @@ const (
 	NodeLogin
 	NodeServerRoles
 	NodeServerRole
+	NodeServerObjects
 	NodeManagement
+	NodeSQLServerLogs
+	NodeSQLServerLog
 	NodeAgentJobs
 	NodeAgentJobsFolder
 	NodeAgentUserJobs
@@ -71,6 +75,8 @@ const (
 	NodeAgentOperator
 	NodeAgentAdmin
 	NodeAgentReport
+	NodeAgentErrorLogs
+	NodeAgentErrorLog
 	NodeLinkedServers
 	NodeLinkedServer
 	NodeAlwaysOn
@@ -158,7 +164,8 @@ func isContainerNode(t NodeType) bool {
 		NodeStatistics, NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
 		NodeSecurity, NodeLogins,
-		NodeServerRoles, NodeManagement, NodeAgentJobs, NodeLinkedServers,
+		NodeServerRoles, NodeServerObjects, NodeManagement, NodeSQLServerLogs,
+		NodeAgentErrorLogs, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
@@ -242,6 +249,8 @@ func objectIconEmoji(t NodeType) rune {
 		return '🗂'
 	case NodeAgentReport:
 		return '📋'
+	case NodeSQLServerLog, NodeAgentErrorLog:
+		return '📄'
 	case NodeLinkedServer:
 		return '🔗'
 	case NodeAvailabilityGroup:
@@ -317,6 +326,8 @@ func objectIconSymbols(t NodeType) rune {
 		return '▨'
 	case NodeAgentReport:
 		return '≡'
+	case NodeSQLServerLog, NodeAgentErrorLog:
+		return '▤'
 	case NodeLinkedServer:
 		return '⇄'
 	case NodeAvailabilityGroup:
@@ -384,6 +395,10 @@ func nodeTypeName(t NodeType) string {
 		return "Availability Database"
 	case NodeAGListener:
 		return "Availability Group Listener"
+	case NodeSQLServerLog:
+		return "SQL Server Log"
+	case NodeAgentErrorLog:
+		return "SQL Server Agent Error Log"
 	default:
 		return "Object"
 	}
@@ -399,6 +414,7 @@ func hasChildren(t NodeType) bool {
 		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
 		NodeAgentSchedule, NodeAgentAlert, NodeAgentAlertCategories,
 		NodeAgentOperator, NodeAgentReport,
+		NodeSQLServerLog, NodeAgentErrorLog,
 		NodeAvailabilityReplica, NodeAvailabilityDatabase, NodeAGListener,
 		NodeLoading, NodeError:
 		return false
@@ -457,6 +473,26 @@ type nodeData struct {
 	// folder above is read from the primary.
 	AGLocalSecondary bool
 	AGLocalJoined    bool
+
+	// CreateDate and IsMemoryOptimized back the Object Explorer folder
+	// filter's "Creation Date" and "Is Memory Optimized" criteria (see
+	// explorer_filter.go). Only the loaders whose folder offers the property
+	// populate them — filterProps and the loaders must stay in step, since a
+	// criterion matched against a zero CreateDate rejects every row.
+	CreateDate        time.Time
+	IsMemoryOptimized bool
+
+	// Filter is this folder node's Object Explorer filter, nil when it has
+	// none. Applied by fetchChildren to whatever the folder's loader
+	// returned, so it survives a Refresh and a collapse/expand alike.
+	Filter *nodeFilter
+
+	// LogType and LogNumber address the error-log file a NodeSQLServerLog or
+	// NodeAgentErrorLog leaf stands for: which family, and which archive
+	// number within it. Both are needed to open the viewer on that file, and
+	// neither can be recovered from the label, which is a rendered date.
+	LogType   gosmo.ErrorLogType
+	LogNumber int
 
 	conn *db.ServerConn
 }

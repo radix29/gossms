@@ -326,37 +326,9 @@ restore does.
   read-only non-T-SQL guard, per-row dirty gating, rename-last ordering, and
   gosmo's `escapeSingle` coverage of every `sp_*` call are all sound. "Needs a
   complete rework" is retired as the thread; these are what the pass actually
-  found, none of them fixed yet.
-
-  - **Job Properties > Notifications assigns an operator the user never
-    picked.** `pageJobNotifications` (`agent_job_props_alerts.go:197`) builds
-    the Operator dropdown as `propsheet.Select("Operator", opNames,
-    indexOf(opNames, j.NotifyEmailOperatorName))` — no leading sentinel, so a
-    job with no operator configured (`""`) takes `indexOf`'s not-found 0 and
-    displays whichever operator sorts first as if it were the job's. Ticking
-    E-mail then makes `emailCheck.Dirty()` true and apply writes
-    `operatorSelect.Value()` — that arbitrary operator. Verified live on
-    win10cli 2026-08-12 with a disposable job and two disposable operators
-    (`zz_notify_probe`, `zz_op_alpha`/`zz_op_beta`, all dropped after): the
-    job came up showing `zz_op_alpha` with `notify_email_operator_id = 0`, and
-    one tick plus OK left `notify_level_email = 2` pointing at `zz_op_alpha`.
-
-    The fix is the idiom this package already uses in three sibling places —
-    `noneItem` at index 0, searched against the combined list, mapped back to
-    `""` on apply. `Job.SetEmailNotifyContext` documents `""` as "leave the
-    operator unchanged", which paired with `NotifyNever` is exactly what the
-    sentinel should mean. The per-row dirty gate right above the write already
-    names this failure ("an arbitrary real operator when the job has none
-    configured") — it just closes the unrelated-section door, not this one.
-
-  - **A dropped owner login is displayed as a real one.** `pageJobGeneral`
-    (`agent_job_props.go:83`) and `pageScheduleGeneral`
-    (`agent_schedule_props.go:67`) both do `indexOf(loginNames,
-    ...OwnerLoginName)`. A job or schedule whose `owner_sid` no longer
-    resolves shows the first login on the server as its owner. Display-only —
-    the row isn't dirty, so nothing is written — but it misreports ownership
-    on exactly the jobs an admin is hunting for. `indexOfOK` plus a sentinel,
-    same as above.
+  found. The two dropdown bullets that were here — Notifications assigning an
+  operator nobody picked, and a dropped owner login shown as a real one — are
+  **fixed** (2026-08-12, see `docs/journal.md`); what is left is below.
 
   - **"Jobs Without Schedules" silently drops what it couldn't check.**
     `jobsWithoutSchedulesReport` (`agent_reports.go:138`) does `if err != nil
@@ -370,9 +342,139 @@ restore does.
     `time.Duration.String()` ("1h2m3s") in `agentJobHistoryDetail`
     (`agent_detail.go:241`) and `failedJobRunsReport` (`agent_reports.go:107`).
 
+  The first two bullets are not SQL Agent bugs — they are the local face of a
+  ten-site family, and fixing them here alone would leave the other seven. See
+  § Dropdowns that misreport a value the list doesn't contain, below.
+
   Two known gaps stay as scope notes, not defects: Start/Stop Job aren't gated
   on job state (the permitted reactive-error fallback), and there's no step
   reordering (msdb has no documented procedure for it).
+
+## Dropdowns: what is settled, and the one class left
+
+The ten-site misreporting family found 2026-08-12 is **fixed** — one helper,
+`selectPreserving`/`preservingItems` in `prop_grid_helpers.go`, generalised out
+of Always On's `agSetSelect`, with `changedTo` gating every write. See
+`docs/journal.md`. Two things survive it.
+
+- **Do not re-unify the eight remaining `indexOf` sites.** They are a
+  different, already-safe class: every one indexes a list that *begins with a
+  sentinel* (`(None)`, `<All databases>`) — `login_props.go:119`,
+  `agent_operator_props.go:66`, `user_props.go:154`, `agent_alert_props.go:78`,
+  `:82`, `:210`, plus `new_database_pages.go:46` whose value is the dialog's
+  own. A miss there falls back to the sentinel, not to a real value, which is
+  the correct answer and is pinned by
+  `TestIndexOfSentinelListFallsBackToSentinel`.
+  Converting them to `selectPreserving` *would* be a further improvement — a
+  category deleted out from under an alert would then display its real name
+  instead of `(None)` — but it changes documented, tested behaviour for a
+  strictly smaller error, so it is a deliberate non-goal rather than an
+  oversight. Raise it as its own change if ever wanted.
+
+- **"A job whose owner login was dropped" is not reachable that way, and the
+  old note here said it was.** Verified live on win10cli 2026-08-12: SQL Server
+  *refuses* to drop a login that owns a job — `This login is the owner of 1
+  job(s). You must delete or reassign these jobs before the login can be
+  dropped.` A **schedule** has no such protection: dropping its owner login
+  succeeds and `SUSER_SNAME(owner_sid)` goes NULL immediately, which is how the
+  fix was A/B'd. So an orphaned *job* owner needs a different route — an msdb
+  restored from another instance, or a Windows principal removed from AD — and
+  is rarer than the schedule case, not equally common. Worth knowing before
+  anyone tries to reproduce it by dropping a login and concludes the code is
+  fine.
+
+## gosmo items left from the 2026-08-12 review
+
+- **`CertificateByName`'s `(nil, nil)` was deliberately not changed** when
+  `ErrNotFound` went in. Making it error on absence is a breaking change to a
+  published contract, and its callers branch on absence as the ordinary case.
+  Recorded so the remaining split doesn't read as an oversight — the three
+  surviving conventions are now documented on `ErrNotFound` itself, and the
+  `(nil, nil)` answer is pinned live by `TestLiveCertificateNotFoundIsNilNil`
+  in both directions, so "nil" cannot quietly start meaning "always nil".
+
+- **A missing principal and an invisible one are the same thing to
+  `ErrNotFound`, and that is SQL Server's doing — do not try to fix it in
+  gosmo.** Metadata visibility hides a principal the caller lacks
+  `VIEW ANY DEFINITION` on by returning **zero rows, not an error**, so an
+  existing login reads as absent and no lookup can tell the difference.
+  Verified live on win10cli 2026-08-12 and pinned by
+  `TestLiveNotFoundCannotSeePastMetadataVisibility`: a throwaway login saw two
+  principals (`sa` and itself), and after `DENY VIEW ANY DEFINITION` saw one,
+  having lost sight of its own row. The answer is idempotence at the write,
+  not a better sentinel — `importPeerCertificate` now runs `CreateLoginContext`
+  through `isAlreadyExists`, matching the `CreateUserContext` call below it.
+  Note `isAlreadyExists` matches this by its "already exists" substring; its
+  `15023` arm is the *user* code, and logins raise 15025.
+
+- **The endpoint dialog's own branch is still only compiler-checked.**
+  `importPeerCertificate` needs a live `*gosmo.Server` — a concrete struct with
+  no interface to fake — so the three-way switch has no unit test. The gosmo
+  behaviour underneath it is covered by `live_notfound_test.go` (five tests,
+  `-tags livedb`). Driving the dialog end to end still needs two instances and
+  has not been done.
+
+## Log File Viewer: what is deliberately out of it
+
+Built 2026-08-12 (see `docs/journal.md`). Three things SSMS's own viewer has
+were left out on purpose, not forgotten:
+
+- **One log file at a time, no merged view.** SSMS's left pane checkboxes let
+  several logs (and the Windows event log) be merged into one date-sorted grid.
+  The two selectors were chosen instead; merging means a source column, a merge
+  sort, and N reads per refresh.
+- **The filter is client-side.** `xp_readerrorlog` takes two search strings and
+  a date range as arguments 3-6, which is what SSMS's "Filter…" uses. Filtering
+  in the panel re-filters instantly with no round trip and is honest about how
+  many of the entries read match; a server-side filter would be needed only for
+  a log too large to hold, which is also when `logReadTimeout` starts to matter.
+- **No Enter / double-click on a log-file leaf.** `controls.TreeView` has no
+  activation callback at all (`Enter` is `toggleExpand`), so a log leaf opens
+  from its context menu like every other leaf in the tree. Adding `OnActivate`
+  to TreeView would be a tuikit change affecting every node type.
+
+Also not built: the Windows event log (needs WMI, out of scope for a no-CGO
+portable build) and `sp_cycle_errorlog` / `sp_cycle_agent_errorlog` as a
+"Recycle" action — gosmo has `CycleErrorLog`, but nothing in the UI calls it.
+
+## Object Explorer folder filter: what is deliberately out of it
+
+Built 2026-08-13 (see `docs/journal.md`). Four gaps, all deliberate:
+
+- **The filter is client-side.** SSMS pushes it into the folder's own query;
+  here the loader fetches the folder as usual and `fetchChildren` drops the
+  rows the filter rejects. A folder large enough for that to matter is a folder
+  whose unfiltered expand is already slow.
+- **Owner and Durability Type are not offered on Tables**, though SSMS offers
+  both — each is one `TableDetail` query per table. Adding them means a
+  folder-wide detail fetch first.
+- **Object Explorer Details ignores the filter.** The tree is filtered; the
+  details pane's own loaders (`detail_browser_*.go`) query independently and
+  still list the whole folder.
+- **Filters are per-session, not persisted.** A filter lives on the tree node,
+  so it is lost on disconnect or exit; SSMS keeps them for the session only
+  too, but it does keep them across a reconnect within one.
+
+## Delete/Rename: what is deliberately out of it
+
+Built 2026-08-13 (see `docs/journal.md`).
+
+- **No column, no partition, no filegroup Delete.** SSMS deletes a column from
+  the Columns folder; that is an `ALTER TABLE DROP COLUMN` with its own
+  constraint/index preconditions, not a member of the one-statement family the
+  table covers.
+- **No cascade.** A table is dropped with `cascade=false`, so a referenced
+  table is refused by the server until its foreign keys are dealt with — the
+  same refusal SSMS gives. gosmo's `DropTableContext` can cascade; nothing in
+  the UI asks for it yet.
+- **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
+  wording explains what blocks each one; only Rename comes from the shared
+  table. Availability groups likewise.
+- **No multi-select delete.** `controls.TreeView` has a single selection, so
+  SSMS's "Delete Object" dialog listing several objects has no equivalent.
+- **Rename does not move an object between schemas** — `sp_rename` takes a
+  bare name, and moving is `ALTER SCHEMA ... TRANSFER`, which Object Explorer
+  does not offer (Schema Properties' owner transfer is a different operation).
 
 ## Deferred scope (repeatedly, deliberately)
 

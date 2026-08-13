@@ -115,6 +115,8 @@ type App struct {
 	fileDialog          *dialogs.FileDialog
 	queryListDialog     *QueryListDialog
 	optionsDialog       *OptionsDialog
+	filterDialog        *FilterDialog
+	promptDialog        *dialogs.PromptDialog
 	tasksDialog         *TasksDialog
 	confirmDialog       *dialogs.ConfirmDialog
 	confirmTypedDialog  *dialogs.TypedConfirmDialog
@@ -420,6 +422,8 @@ func (a *App) buildUI() {
 	}
 	a.queryListDialog = NewQueryListDialog(a)
 	a.optionsDialog = NewOptionsDialog(a)
+	a.filterDialog = NewFilterDialog(a)
+	a.promptDialog = dialogs.NewPromptDialog(a.screen)
 	a.tasksDialog = NewTasksDialog(a)
 	a.confirmDialog = dialogs.NewConfirmDialog(a.screen)
 	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(a.screen)
@@ -435,7 +439,7 @@ func (a *App) buildUI() {
 		a.newDatabaseDialog, a.newLoginDialog,
 		a.newJobDialog, a.newScheduleDialog, a.newAlertDialog, a.newOperatorDialog,
 		a.agAddDatabaseDialog, a.agAddListenerDialog, a.agAddReplicaDialog, a.newAGDialog, a.newEndpointDialog,
-		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog,
+		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog, a.filterDialog, a.promptDialog,
 		a.confirmDialog, a.confirmTypedDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
 	}
 }

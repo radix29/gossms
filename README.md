@@ -29,6 +29,17 @@ or drivers required.
   matching SSMS's layout, including system databases/objects grouped
   separately. Drag a node into a query editor to insert its (schema-qualified)
   name. Right-click for context actions, or take a database offline/online.
+- **Delete and Rename anywhere in the tree** — right-click any object
+  (table, view, procedure, function, index, statistic, key, constraint,
+  trigger, sequence, synonym, database, login, user, role, schema) for
+  **Rename...** and **Delete...**. Deleting is confirmed first, and a
+  database has to have its name retyped; renaming a database closes the
+  connections that would otherwise block it.
+- **Object Explorer folder filter** — right-click a folder (Tables, Views,
+  Stored Procedures, Functions, Databases, Logins, …) and pick **Filter
+  Settings...** to narrow it by name, schema, creation date, or memory-
+  optimized, each with its own operator (contains, equals, before/after, …).
+  Filtered folders are labelled `(filtered)`; **Remove Filter** clears one.
 - **Multiple query panels** — open as many T-SQL editor + results tabs as you
   need. Scripts split on `GO` batches sharing one connection, each result set
   gets its own tab, and a Messages tab collects `PRINT` output, row counts,
@@ -92,6 +103,19 @@ or drivers required.
   `master.dbo.sp_block` / `master.dbo.sp_WhoIsActive`, or installed as
   `tempdb.dbo.usp_block` / `tempdb.dbo.usp_WhoIsActive`, with an "Install in
   master" button to make it permanent.
+- **Log File Viewer** — SSMS's log viewer as a panel: the SQL Server error
+  log or the SQL Server Agent's, current or any archive, chosen from two
+  toolbar selectors. Entries show newest first as Date / Source / Message
+  over a details
+  pane that renders the selected entry's full text as the log wrote it,
+  multi-line entries included, with a draggable divider between the two
+  (Ctrl+Up/Down resizes it, Alt+Up/Down scrolls the details pane). The filter
+  box narrows the grid to entries whose source or message contains what you
+  type, F5 re-reads the file, and Export writes the entries currently shown
+  to a tab-separated file. Reached from Object Explorer: **Management > SQL
+  Server Logs**, **SQL Server Agent > Error Logs**, or "View SQL Server Log"
+  on the server node. One panel per server — opening another log file
+  re-points the one already open.
 - **Always On Availability Groups** — the Object Explorer branch lists each
   group with the local replica's role, and under it the replicas, databases
   (with their synchronization state) and listener; databases in a group are
@@ -199,8 +223,9 @@ at any time.
 | `F5` | Execute query (selection if any, else the whole query); also refreshes the selected tree node or Properties page |
 | `Ctrl+Enter` | Select the T-SQL statement at the cursor without executing it |
 | `Ctrl+Left`/`Right` | Narrow / widen object explorer |
-| `Ctrl+Up`/`Down` | Grow / shrink query editor |
+| `Ctrl+Up`/`Down` | Grow / shrink query editor (in the Log File Viewer, the entry grid vs. the details pane) |
 | `Ctrl+PgUp`/`PgDn` | Previous / next result tab |
+| `Alt+Up`/`Down` (Log File Viewer) | Scroll the selected entry's details pane |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo in editor |
 | `Ctrl+F` (query editor) | Find and Replace — Match case, whole word, regular expression, and Replace All within the selection |
 | `F3` / `Shift+F3` | Find next / previous, with the Find dialog closed |

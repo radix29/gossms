@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -107,6 +108,9 @@ func (a *App) closePanelAt(i int) {
 	}
 	if dash, ok := a.panels.PanelAt(i).(*AGDashboard); ok {
 		dash.Close()
+	}
+	if lv, ok := a.panels.PanelAt(i).(*LogViewer); ok {
+		lv.Close()
 	}
 	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
 		if qp.executing && qp.cancel != nil {
@@ -452,6 +456,32 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 		// After AddPanel: the connect callback checks panelHosted, which is
 		// only true once the panel is in a.panels.
 		a.connectForActivityMonitor(am, sc)
+	}
+	a.panels.SetActive(idx)
+	a.focusPanels()
+}
+
+// showLogViewerFor opens the Log File Viewer on one log file of sc — the
+// Object Explorer entry point for the server node, the SQL Server Logs and
+// Agent Error Logs folders, and each log-file leaf.
+//
+// One panel per server, like showActivityMonitorFor: opening a second log
+// file re-points the panel that is already there rather than accumulating a
+// tab per archive, which is also how SSMS's own viewer behaves.
+func (a *App) showLogViewerFor(sc *db.ServerConn, logType gosmo.ErrorLogType, logNum int) {
+	if !a.requireConn(sc) {
+		return
+	}
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		lv, ok := p.(*LogViewer)
+		return ok && lv.conn == sc
+	})
+	if idx < 0 {
+		lv := NewLogViewer(a, sc, logType, logNum)
+		idx = a.panels.AddPanel(lv)
+		lv.Load()
+	} else {
+		a.panels.PanelAt(idx).(*LogViewer).ShowLog(logType, logNum)
 	}
 	a.panels.SetActive(idx)
 	a.focusPanels()

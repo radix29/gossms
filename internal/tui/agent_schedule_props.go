@@ -64,7 +64,7 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 
 			freqForm := newScheduleFreqForm()
 			freqForm.populate(sch)
-			ownerRow := propsheet.Select("Owner", loginNames, indexOf(loginNames, sch.OwnerLoginName))
+			ownerRow := selectPreserving("Owner", loginNames, sch.OwnerLoginName, unknownOwnerItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Schedule identity"),
@@ -98,8 +98,8 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 						return err
 					}
 				}
-				if ownerRow.Dirty() {
-					if err := sch.SetOwnerContext(ctx, ownerRow.Value()); err != nil {
+				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
+					if err := sch.SetOwnerContext(ctx, owner); err != nil {
 						return err
 					}
 				}

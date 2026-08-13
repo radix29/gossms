@@ -72,8 +72,11 @@ var childLoaders = map[NodeType]childLoader{
 	NodeLogins:      loadLoginsChildren,
 	NodeServerRoles: loadServerRolesChildren,
 
-	NodeManagement:    loadManagementChildren,
+	NodeServerObjects: loadServerObjectsChildren,
 	NodeLinkedServers: loadLinkedServersChildren,
+
+	NodeManagement:    loadManagementChildren,
+	NodeSQLServerLogs: loadSQLServerLogsChildren,
 
 	NodeAlwaysOn:              loadAlwaysOnChildren,
 	NodeAvailabilityGroups:    loadAvailabilityGroupsChildren,
@@ -91,6 +94,7 @@ var childLoaders = map[NodeType]childLoader{
 	NodeAgentEventAlerts: loadAgentEventAlertsChildren,
 	NodeAgentOperators:   loadAgentOperatorsChildren,
 	NodeAgentAdmin:       loadAgentAdminChildren,
+	NodeAgentErrorLogs:   loadAgentErrorLogsChildren,
 }
 
 // fetchChildren looks up and runs the loader for node.data.Type. Runs on a
@@ -111,7 +115,7 @@ func (a *App) fetchChildren(ctx context.Context, node *explorerNode) []*explorer
 		a.logStatus("fetchChildren [%v]: %v", node.data.Type, err)
 		return []*explorerNode{errExplorerNode(err)}
 	}
-	return children
+	return filterChildren(node, children)
 }
 
 // listChildren runs a gosmo collection fetch and maps each item to an

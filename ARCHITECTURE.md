@@ -176,9 +176,11 @@ gossms/
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles
-│       ├── explorer_management.go # loaders: Server Objects folder — Agent Jobs, Linked Servers
+│       ├── explorer_management.go # loaders: Server Objects folder (Linked Servers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
+│       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
+│       ├── explorer_object_ops.go # general Delete/Rename: per-NodeType drop/rename table, confirmation, prompt, parent-folder refresh
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
@@ -209,6 +211,11 @@ gossms/
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
+│       │
+│       │  ── Log File Viewer ──
+│       ├── log_viewer.go              # LogViewer state: log-family/archive selectors, filter, read + export; implements layout.Panel
+│       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
+│       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
@@ -242,6 +249,7 @@ gossms/
 │       │  ── Standalone dialogs ──
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
+│       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json
 │       ├── query_list_dialog.go  # Tools > Query List — switch between open query panels
 │       ├── tasks_dialog.go       # Tools > Background Tasks — live task list + Cancel

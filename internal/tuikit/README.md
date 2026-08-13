@@ -18,9 +18,10 @@ tuikit/
 ├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox — one file per widget
 ├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
 │             — panel.go, panel_manager.go, splitter.go
-├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, TypedConfirmDialog, FileDialog
+├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, TypedConfirmDialog, PromptDialog, FileDialog
 │             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go,
-│               typed_confirm_dialog.go (retype-to-confirm); FileDialog (browse/
+│               typed_confirm_dialog.go (retype-to-confirm), prompt_dialog.go (one-line
+│               text input, e.g. a new name); FileDialog (browse/
 │               save-as, list+path entry, used for every file path prompt in
 │               internal/tui) is split across file_dialog.go (state), file_dialog_draw.go,
 │               file_dialog_input.go, file_dialog_complete.go (path completion), and

@@ -159,7 +159,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 				for i, s := range schemas {
 					schemaNames[i] = s.Name
 				}
-				schemaRow = propsheet.Select("Default schema", schemaNames, indexOf(schemaNames, u.DefaultSchema))
+				schemaRow = selectPreserving("Default schema", schemaNames, u.DefaultSchema, unsetItem)
 
 				rows = append(rows,
 					nameRow,
@@ -198,8 +198,8 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 					if err != nil {
 						return err
 					}
-					if schemaRow.Dirty() {
-						if err := u.SetDefaultSchemaContext(ctx, schemaRow.Value()); err != nil {
+					if schema, ok := changedTo(schemaRow, unsetItem); ok {
+						if err := u.SetDefaultSchemaContext(ctx, schema); err != nil {
 							return err
 						}
 					}

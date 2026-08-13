@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
+	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -357,6 +358,12 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return agentAlertCategoriesDetail(ctx, sc)
 	case NodeAgentReport:
 		return agentReportDetail(ctx, sc, node.data.Name)
+	case NodeSQLServerLogs:
+		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogSQLServer)
+	case NodeAgentErrorLogs:
+		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogAgent)
+	case NodeSQLServerLog, NodeAgentErrorLog:
+		return errorLogFileDetail(ctx, sc, node)
 	case NodeSystemDatabases:
 		dbs, err := sc.Server.DatabasesContext(ctx)
 		if err != nil {

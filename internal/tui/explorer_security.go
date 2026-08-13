@@ -14,7 +14,9 @@ func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(func() ([]*gosmo.Login, error) { return l.sc.Server.LoginsContext(l.ctx) },
 		func(login *gosmo.Login) *explorerNode {
-			return l.node(login.Name, NodeLogin, "", login.Name, "")
+			n := l.node(login.Name, NodeLogin, "", login.Name, "")
+			n.data.CreateDate = login.CreateDate
+			return n
 		})
 }
 

@@ -7,15 +7,19 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// fakeSizedScreen is a minimal tcell.Screen fake — Size() is all
-// ModalDialog.recentre needs to compute a real, non-zero Rect() for these
-// tests, mirroring dialogs.sizedScreen's identical purpose in that package.
+// fakeSizedScreen is a minimal tcell.Screen fake. Size() is what
+// ModalDialog.recentre needs to compute a real, non-zero Rect(), mirroring
+// dialogs.sizedScreen's identical purpose in that package; SetContent is
+// stubbed so a caller that has to actually draw something — focusSelect, which
+// can only reach a row's widget through Draw — doesn't fall through to the
+// embedded nil Screen and panic.
 type fakeSizedScreen struct {
 	tcell.Screen
 	w, h int
 }
 
-func (s *fakeSizedScreen) Size() (int, int) { return s.w, s.h }
+func (s *fakeSizedScreen) Size() (int, int)                               { return s.w, s.h }
+func (s *fakeSizedScreen) SetContent(int, int, rune, []rune, tcell.Style) {}
 
 // TestQueryListDialogScrollbarDragScrolls confirms dragging the query list's
 // scrollbar scrolls it instead of being read as a click that switches to

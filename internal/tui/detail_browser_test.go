@@ -136,7 +136,7 @@ func TestInvalidateNilReceiverIsSafe(t *testing.T) {
 // no sense for a folder.
 func TestFetchNodeDetailsFallsBackToChildList(t *testing.T) {
 	sc := &dbconn.ServerConn{}
-	node := &explorerNode{label: "Server Objects", data: nodeData{Type: NodeManagement, conn: sc}}
+	node := &explorerNode{label: "Server Objects", data: nodeData{Type: NodeServerObjects, conn: sc}}
 
 	cols, rows, err := fetchNodeDetails(context.Background(), sc, node)
 	if err != nil {

@@ -78,6 +78,66 @@ func indexOfOK(items []string, value string) (int, bool) {
 	return 0, false
 }
 
+// preservingItems returns base and the index of value within it, widening the
+// list with value itself when base doesn't contain it. The returned index
+// therefore always points at value — which is the whole point, and the one
+// thing indexOf cannot promise.
+//
+// Prefer this to indexOf for any value the *server* supplied. indexOf's
+// not-found 0 renders items[0] as though the server had reported it, so a job
+// owned by a dropped login, a login whose default database no longer exists,
+// or a schema owned by an unresolvable principal all display the first real
+// option as fact — on exactly the objects an admin opened the page to
+// investigate. A widened list cannot lie: the value shown is the value read.
+//
+// value must be non-empty; pass orDefault(value, <sentinel>) for a field the
+// server leaves blank, so the stand-in is named at the call site rather than
+// guessed here. selectPreserving does that for you.
+func preservingItems(base []string, value string) ([]string, int) {
+	if i, ok := indexOfOK(base, value); ok {
+		return base, i
+	}
+	items := append(slices.Clone(base), value)
+	return items, len(items) - 1
+}
+
+// selectPreserving builds a Select row that can never misreport: it displays
+// value, whether or not base offers it, showing unset in value's place when
+// the server reported nothing.
+//
+// Read it back with preservedValue, which maps unset to "" again — a row left
+// showing the stand-in must not write the stand-in as if it were a real name.
+func selectPreserving(label string, base []string, value, unset string) *propsheet.SelectRow {
+	items, i := preservingItems(base, orDefault(value, unset))
+	return propsheet.Select(label, items, i)
+}
+
+// preservedValue reads a selectPreserving row back as a value to write,
+// undoing its stand-in.
+func preservedValue(row *propsheet.SelectRow, unset string) string {
+	if v := row.Value(); v != unset {
+		return v
+	}
+	return ""
+}
+
+// changedTo reports the real value a selectPreserving row was edited to, and
+// whether there is one — dirty, and not left sitting on its stand-in.
+//
+// Gate every write behind it rather than on Dirty() alone. Dirty() happens to
+// be enough today, because a stand-in is only ever in the list when it is also
+// the original selection, so returning to it clears the flag; that is a
+// property of how the list is built, three files away from the write, and a
+// page that ever offers a stand-in alongside a real value would send
+// "(unresolved owner)" to the server as a principal name.
+func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
+	if !row.Dirty() {
+		return "", false
+	}
+	v := preservedValue(row, unset)
+	return v, v != ""
+}
+
 // compatLevelItems is the Compatibility level dropdown's base list: the
 // oldest level SQL Server still accepts through the newest gosmo names
 // (gosmo.CompatLevel2025 == 170). Don't use it directly — a server can report

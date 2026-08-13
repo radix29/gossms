@@ -3,8 +3,9 @@ package tui
 import gosmo "github.com/radix29/gosmo"
 
 // loadServerChildren returns a connected server's top-level folders:
-// Databases, Security, Server Objects (linked servers), Always On High
-// Availability, and SQL Server Agent — the last two siblings of Databases
+// Databases, Security, Server Objects (linked servers), Management (the SQL
+// Server logs), Always On High Availability, and SQL Server Agent — the last
+// three siblings of Databases
 // here rather than nested under Server Objects, matching SSMS's own top-level
 // placement. Kept a static, no-query loader (unlike loadDatabasesChildren
 // etc.) so it stays safe to call directly in tests; the Agent node's
@@ -17,7 +18,8 @@ func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 	return []*explorerNode{
 		l.node("Databases", NodeDatabases, "", "", ""),
 		l.node("Security", NodeSecurity, "", "", ""),
-		l.node("Server Objects", NodeManagement, "", "", ""),
+		l.node("Server Objects", NodeServerObjects, "", "", ""),
+		l.node("Management", NodeManagement, "", "", ""),
 		l.node(alwaysOnRootLabel, NodeAlwaysOn, "", "", ""),
 		l.node(agentRootLabel, NodeAgentJobs, "", "", ""),
 	}, nil
@@ -49,6 +51,7 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 		}
 		n := l.node(agLabelForDatabase(d.Name(), agStates), NodeDatabase, "", d.Name(), d.Name())
 		n.data.IsOffline = d.State() != "ONLINE"
+		n.data.CreateDate = d.CreateDate()
 		userDBs = append(userDBs, n)
 	}
 	if !hasSystem {
@@ -68,6 +71,7 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 		if d.IsSystem() {
 			n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
 			n.data.IsOffline = d.State() != "ONLINE"
+			n.data.CreateDate = d.CreateDate()
 			out = append(out, n)
 		}
 	}

@@ -124,7 +124,7 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 			} else {
 				ownerNames := serverPrincipalNames(logins, roles)
 				nameRow = propsheet.Text("Role name", role.Name, 24)
-				ownerRow = propsheet.Select("Owner", ownerNames, indexOf(ownerNames, role.Owner))
+				ownerRow = selectPreserving("Owner", ownerNames, role.Owner, unknownOwnerItem)
 				rows = append(rows, nameRow, ownerRow)
 			}
 			rows = append(rows,
@@ -156,8 +156,8 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 					if err != nil {
 						return err
 					}
-					if ownerRow.Dirty() {
-						if err := role.ChangeOwnerContext(ctx, ownerRow.Value()); err != nil {
+					if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
+						if err := role.ChangeOwnerContext(ctx, owner); err != nil {
 							return err
 						}
 					}

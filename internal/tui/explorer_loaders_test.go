@@ -113,7 +113,7 @@ func TestTableChildrenAreStaticFolders(t *testing.T) {
 
 // TestSQLServerAgentIsSiblingOfDatabases pins down SQL Server Agent's tree
 // position: a direct child of the server root, alongside Databases, not
-// nested under the Server Objects (Management) folder — matching SSMS's own
+// nested under the Server Objects folder — matching SSMS's own
 // top-level placement.
 func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 	a := newTestApp()
@@ -137,13 +137,13 @@ func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 		t.Fatal(`loadServerChildren didn't include "SQL Server Agent"`)
 	}
 
-	mgmtChildren, err := childLoaders[NodeManagement](l, &explorerNode{data: nodeData{Type: NodeManagement, conn: sc}})
+	mgmtChildren, err := childLoaders[NodeServerObjects](l, &explorerNode{data: nodeData{Type: NodeServerObjects, conn: sc}})
 	if err != nil {
-		t.Fatalf("loadManagementChildren: %v", err)
+		t.Fatalf("loadServerObjectsChildren: %v", err)
 	}
 	for _, c := range mgmtChildren {
 		if c.label == "SQL Server Agent" {
-			t.Error(`Server Objects (Management) folder still contains "SQL Server Agent" — it should only be under the server root now`)
+			t.Error(`Server Objects folder still contains "SQL Server Agent" — it should only be under the server root now`)
 		}
 	}
 }

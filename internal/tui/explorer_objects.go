@@ -13,7 +13,10 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 	}
 	return listChildren(func() ([]*gosmo.Table, error) { return dbObj.TablesContext(l.ctx) },
 		func(t *gosmo.Table) *explorerNode {
-			return l.node(t.Schema+"."+t.Name, NodeTable, t.Schema, t.Name, node.data.DBName)
+			n := l.node(t.Schema+"."+t.Name, NodeTable, t.Schema, t.Name, node.data.DBName)
+			n.data.CreateDate = t.CreateDate
+			n.data.IsMemoryOptimized = t.IsMemoryOptimized
+			return n
 		})
 }
 
@@ -171,7 +174,9 @@ func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	}
 	views, err := listChildren(func() ([]*gosmo.View, error) { return dbObj.ViewsContext(l.ctx) },
 		func(v *gosmo.View) *explorerNode {
-			return l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
+			n := l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
+			n.data.CreateDate = v.CreateDate
+			return n
 		})
 	if err != nil {
 		return nil, err
@@ -189,7 +194,9 @@ func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 	}
 	return listChildren(func() ([]*gosmo.View, error) { return dbObj.SystemViewsContext(l.ctx) },
 		func(v *gosmo.View) *explorerNode {
-			return l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
+			n := l.node(v.Schema+"."+v.Name, NodeView, v.Schema, v.Name, node.data.DBName)
+			n.data.CreateDate = v.CreateDate
+			return n
 		})
 }
 
@@ -202,7 +209,9 @@ func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 	}
 	procs, err := listChildren(func() ([]*gosmo.StoredProcedure, error) { return dbObj.StoredProceduresContext(l.ctx) },
 		func(p *gosmo.StoredProcedure) *explorerNode {
-			return l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
+			n := l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
+			n.data.CreateDate = p.CreateDate
+			return n
 		})
 	if err != nil {
 		return nil, err
@@ -220,7 +229,9 @@ func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 	}
 	return listChildren(func() ([]*gosmo.StoredProcedure, error) { return dbObj.SystemStoredProceduresContext(l.ctx) },
 		func(p *gosmo.StoredProcedure) *explorerNode {
-			return l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
+			n := l.node(p.Schema+"."+p.Name, NodeStoredProcedure, p.Schema, p.Name, node.data.DBName)
+			n.data.CreateDate = p.CreateDate
+			return n
 		})
 }
 
@@ -233,7 +244,9 @@ func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 	}
 	funcs, err := listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return dbObj.UserDefinedFunctionsContext(l.ctx) },
 		func(f *gosmo.UserDefinedFunction) *explorerNode {
-			return l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n := l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n.data.CreateDate = f.CreateDate
+			return n
 		})
 	if err != nil {
 		return nil, err
@@ -251,7 +264,9 @@ func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	}
 	return listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return dbObj.SystemFunctionsContext(l.ctx) },
 		func(f *gosmo.UserDefinedFunction) *explorerNode {
-			return l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n := l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n.data.CreateDate = f.CreateDate
+			return n
 		})
 }
 

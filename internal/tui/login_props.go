@@ -111,8 +111,8 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				unlockRow.SetChecked(false)
 			}
 
-			defaultDBRow := propsheet.Select("Default database", dbNames, indexOf(dbNames, l.DefaultDatabase))
-			defaultLangRow := propsheet.Select("Default language", langNames, indexOf(langNames, det.DefaultLanguage))
+			defaultDBRow := selectPreserving("Default database", dbNames, l.DefaultDatabase, unsetItem)
+			defaultLangRow := selectPreserving("Default language", langNames, det.DefaultLanguage, unsetItem)
 			origCredential := det.CredentialName
 			credSelected := 0
 			if origCredential != "" {
@@ -156,13 +156,13 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 						return err
 					}
 				}
-				if defaultDBRow.Dirty() {
-					if err := l.SetDefaultDatabaseContext(ctx, defaultDBRow.Value()); err != nil {
+				if db, ok := changedTo(defaultDBRow, unsetItem); ok {
+					if err := l.SetDefaultDatabaseContext(ctx, db); err != nil {
 						return err
 					}
 				}
-				if defaultLangRow.Dirty() {
-					if err := l.SetDefaultLanguageContext(ctx, defaultLangRow.Value()); err != nil {
+				if lang, ok := changedTo(defaultLangRow, unsetItem); ok {
+					if err := l.SetDefaultLanguageContext(ctx, lang); err != nil {
 						return err
 					}
 				}

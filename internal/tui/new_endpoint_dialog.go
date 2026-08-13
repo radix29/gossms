@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -447,7 +448,15 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	user := other.inst.name + "_user"
 	certName := d.certificateName(other.inst.name)
 
-	if _, err := p.server.LoginByNameContext(ctx, login); err != nil {
+	// Only an actual absence means "create it". Treating every lookup failure
+	// as absence reports the CREATE LOGIN error instead of the permission or
+	// connection error that really stopped the pipeline, on a dialog where
+	// that distinction is the whole diagnosis.
+	_, err := p.server.LoginByNameContext(ctx, login)
+	switch {
+	case err == nil:
+		// Already there; nothing to create.
+	case errors.Is(err, gosmo.ErrNotFound):
 		// The login is never signed in as — it exists to own the certificate
 		// and to be the grantee of CONNECT — so its password is random and
 		// deliberately not shown or stored anywhere.
@@ -455,9 +464,17 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		if perr != nil {
 			return perr
 		}
-		if err := p.server.CreateLoginContext(ctx, login, password, nil); err != nil {
+		// "Absent" can also mean "there but not visible from here": SQL Server
+		// hides a principal the caller lacks VIEW ANY DEFINITION on by
+		// returning no rows, not an error, so the lookup above cannot tell the
+		// two apart — the server doesn't. Verified live on win10cli: a login
+		// under DENY VIEW ANY DEFINITION cannot see even its own row. Tolerate
+		// the collision, exactly as the CreateUser call below does.
+		if err := p.server.CreateLoginContext(ctx, login, password, nil); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create login %s: %w", p.inst.name, login, err)
 		}
+	default:
+		return fmt.Errorf("%s: look up login %s: %w", p.inst.name, login, err)
 	}
 	if err := p.master.CreateUserContext(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
 		return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)

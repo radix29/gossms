@@ -12,9 +12,8 @@ import (
 // ---------------------------------------------------------------------------
 
 // RowSource decouples DataGrid from any one in-memory shape for its data.
-// Every caller today hands it a materialized [][]string via SetData; a paged
-// or streaming result can implement this directly and go through SetSource
-// without DataGrid changing.
+// Callers hand it a materialized [][]string via SetData; a paged or streaming
+// result can implement this directly and go through SetSource instead.
 type RowSource interface {
 	// Len returns the number of rows.
 	Len() int
@@ -28,40 +27,39 @@ type SliceRowSource [][]string
 func (s SliceRowSource) Len() int           { return len(s) }
 func (s SliceRowSource) Row(i int) []string { return s[i] }
 
-// colWidthSampleRows caps how many rows computeColWidths inspects. A source
-// with millions of rows would make every SetSource call scan all of them
-// just to size columns; SSMS itself only samples for the same reason.
+// colWidthSampleRows caps how many rows computeColWidths inspects, so a source
+// with millions of rows doesn't make every SetSource scan all of them just to
+// size columns. SSMS samples for the same reason.
 const colWidthSampleRows = 200
 
-// defaultMaxCellWidth is the column-width cap used when a grid doesn't opt
-// into a configurable one via SetMaxCellWidth (e.g. property-page grids —
-// only the query-results grid ties this to the Options dialog's "max
-// default cell length" setting). It bounds the width a column is *given*,
-// not the width it may have: a separator drag can widen a column past it
-// (see colWidthOverride).
+// defaultMaxCellWidth is the column-width cap for a grid that doesn't opt into
+// a configurable one via SetMaxCellWidth (only the query-results grid does,
+// tying it to the Options dialog's "max default cell length"). It bounds the
+// width a column is *given*, not the width it may have: a separator drag can
+// widen a column past it (see colWidthOverride).
 const defaultMaxCellWidth = 40
 
-// minResizeWidth is the narrowest a column can be dragged to — one column
-// of padding on each side of the text plus the separator, so anything
-// below this leaves no room for content at all.
+// minResizeWidth is the narrowest a column can be dragged to — one column of
+// padding each side of the text plus the separator, below which there is no
+// room for content at all.
 const minResizeWidth = 4
 
 // resizeDoubleClickInterval is how close together two presses on the same
-// separator must fall to count as the double-click that restores a
-// column's default width. tcell reports presses, not clicks, so the timing
-// is done here (see sepPressIsDouble).
+// separator must fall to count as the double-click that restores a column's
+// default width. tcell reports presses, not clicks, so the timing is done here
+// (see sepPressIsDouble).
 const resizeDoubleClickInterval = 500 * time.Millisecond
 
-// cellViewerW and cellViewerLines size the built-in "full cell content"
-// popup (see openViewer/DrawOverlay). It is centred on the whole screen, not
-// the grid's rect, so it reads as a modal even when the grid is small.
+// cellViewerW and cellViewerLines size the built-in "full cell content" popup
+// (see openViewer/DrawOverlay). It is centred on the whole screen, not the
+// grid's rect, so it reads as a modal even when the grid is small.
 const cellViewerW = 60
 const cellViewerLines = 8
 
 // viewerDimNum/viewerDimDen fade the screen behind the popup toward
 // DialogOverlay; 3/5 leaves it at ~40% of its own colour. Mirrors
-// dialogs.ModalDialog's own dialogDimNum/Den, duplicated here since
-// controls doesn't depend on dialogs (see tuikit/README.md).
+// dialogs.ModalDialog's dialogDimNum/Den, duplicated here since controls
+// doesn't depend on dialogs (see tuikit/README.md).
 const viewerDimNum, viewerDimDen = 3, 5
 
 // ---------------------------------------------------------------------------
@@ -85,41 +83,40 @@ type DataGrid struct {
 	status    string
 	active    bool
 
-	// statusStyle overrides the status bar's default GridHeader/TextDim
-	// look when hasStatusStyle is set (see SetStatusStyle) — used by the
-	// query-results grid to match SSMS's yellow execution-status bar
-	// without changing the look of every other DataGrid in the app.
+	// statusStyle overrides the status bar's default GridHeader/TextDim look
+	// when hasStatusStyle is set (see SetStatusStyle) — used by the
+	// query-results grid to match SSMS's yellow execution-status bar without
+	// changing every other DataGrid in the app.
 	statusStyle    tcell.Style
 	hasStatusStyle bool
 
-	// cellCursor and selCol are opt-in: when disabled (the default), Left/
-	// Right scroll wide grids horizontally as before and only whole rows
-	// are ever highlighted. When enabled (SetCellCursor(true)), Left/Right
-	// move a per-cell cursor instead and Draw highlights that single cell —
-	// used by property-sheet toggle grids (permission Grant/Deny columns,
-	// role-membership checkboxes, …).
+	// cellCursor and selCol are opt-in: disabled (the default), Left/Right
+	// scroll wide grids horizontally and only whole rows are highlighted.
+	// Enabled (SetCellCursor(true)), Left/Right move a per-cell cursor and
+	// Draw highlights that single cell — used by property-sheet toggle grids
+	// (permission Grant/Deny columns, role-membership checkboxes, …).
 	cellCursor bool
 	selCol     int
 
 	// selAnchorRow/selAnchorCol mark the fixed corner of a multi-cell block
-	// selection; selRow/selCol (the cell cursor above) mark the moving
-	// corner. blockSelecting is true while one is active — set by Shift+Arrow
-	// or a mouse drag, cleared by a plain arrow key or a fresh non-Shift
-	// click. Cell-cursor mode only, and gated to a read-only grid
-	// (OnActivateCell == nil) so an editable toggle grid's click-drag keeps
-	// painting every cell it passes over instead of drawing a block.
+	// selection; selRow/selCol mark the moving corner. blockSelecting is true
+	// while one is active — set by Shift+Arrow or a mouse drag, cleared by a
+	// plain arrow key or a fresh non-Shift click. Cell-cursor mode only, and
+	// gated to a read-only grid (OnActivateCell == nil) so an editable toggle
+	// grid's click-drag keeps painting every cell it passes over instead of
+	// drawing a block.
 	blockSelecting             bool
 	selAnchorRow, selAnchorCol int
 
-	// mouseDragging distinguishes a fresh Button1 press (arm a new
-	// selection anchor) from a continued drag (keep the anchor, move the
-	// cursor) — mirrors Editor's own field of the same name and purpose.
+	// mouseDragging distinguishes a fresh Button1 press (arm a new selection
+	// anchor) from a continued drag (keep the anchor, move the cursor).
+	// Mirrors Editor's field of the same name and purpose.
 	mouseDragging bool
 
 	// sbDragging latches a scrollbar-thumb drag from the press on the
-	// scrollbar column to the release. Separate from mouseDragging: once it
-	// is set, HandleMouse gives every Button1 event to the scrollbar
-	// regardless of x, never falling through to row/cell hit-testing.
+	// scrollbar column to the release. Separate from mouseDragging: once set,
+	// HandleMouse gives every Button1 event to the scrollbar regardless of x,
+	// never falling through to row/cell hit-testing.
 	sbDragging bool
 
 	// colResizing latches a column-separator drag (see resizeDrag) the way

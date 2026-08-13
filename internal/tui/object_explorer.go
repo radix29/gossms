@@ -300,9 +300,15 @@ func (oe *ObjectExplorer) rebuild() {
 }
 
 func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, depth int) []controls.TreeNode {
+	// The suffix is added here rather than written into n.label, so clearing
+	// the filter doesn't have to unpick it from a string the loaders own.
+	label := n.label
+	if n.data.Filter.active() {
+		label += " (filtered)"
+	}
 	flat = append(flat, controls.TreeNode{
 		ID:       n.id,
-		Label:    n.label,
+		Label:    label,
 		Icon:     nodeIcon(n.data, oe.app.cfg.IconStyle, n.expanded),
 		Depth:    depth,
 		Expanded: n.expanded,

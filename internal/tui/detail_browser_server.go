@@ -94,3 +94,58 @@ func diskVolumeValue(v gosmo.DiskVolumeInfo) string {
 	}
 	return val
 }
+
+// errorLogFilesDetail builds the SQL Server Logs / Agent Error Logs folder's
+// detail view: one row per log file, matching what the folder's own children
+// list.
+func errorLogFilesDetail(ctx context.Context, sc *dbconn.ServerConn, logType gosmo.ErrorLogType) ([]string, [][]string, error) {
+	files, err := sc.Server.EnumErrorLogsContext(ctx, logType)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows := make([][]string, 0, len(files))
+	for _, f := range files {
+		rows = append(rows, []string{errorLogFileLabel(f), formatKB(f.SizeBytes)})
+	}
+	return []string{"Log", "Size"}, rows, nil
+}
+
+// errorLogFileDetail builds one log file leaf's detail view. The entry count
+// is what makes it worth a round trip — the size and date are already in the
+// label — so the log is read here as well as enumerated.
+func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	logType, logNum := node.data.LogType, node.data.LogNumber
+	rows := [][]string{
+		{"Log", logType.String()},
+		{"File", node.label},
+	}
+	if files, err := sc.Server.EnumErrorLogsContext(ctx, logType); err == nil {
+		for _, f := range files {
+			if f.Number == logNum {
+				rows = append(rows,
+					[]string{"Last written", formatSQLDate(f.LastWritten)},
+					[]string{"Size", formatKB(f.SizeBytes)})
+				break
+			}
+		}
+	}
+	entries, err := sc.Server.ReadLogContext(ctx, logType, logNum)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows = append(rows, []string{"Entries", strconv.Itoa(len(entries))})
+	if len(entries) > 0 {
+		rows = append(rows,
+			[]string{"First entry", formatSQLDate(entries[0].Date)},
+			[]string{"Last entry", formatSQLDate(entries[len(entries)-1].Date)})
+	}
+	return []string{"Property", "Value"}, rows, nil
+}
+
+// formatKB renders a log file's byte count the way a file listing would.
+func formatKB(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d bytes", bytes)
+	}
+	return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+}

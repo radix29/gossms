@@ -94,26 +94,24 @@ var (
 // known reads as unchanged instead of being "set" to a literal ALTER rejects.
 const agUnknownItem = "(unknown)"
 
-// agSetSelect points row at value, widening the item list when value is not
-// one of the known keywords so the dropdown can never misreport what the
-// server holds.
+// agSetSelect points an existing row at value, widening the item list when
+// value is not one of the known keywords so the dropdown can never misreport
+// what the server holds.
+//
+// This is selectPreserving's repoint-a-row form — the two share
+// preservingItems. Keep them that way: the Always On pages were where the
+// widening rule was worked out, and the ten property pages that later adopted
+// it did so by generalising this function, not by re-deriving it.
 func agSetSelect(row *propsheet.SelectRow, base []string, value string) {
-	shown := orDefault(value, agUnknownItem)
-	items := base
-	if _, ok := indexOfOK(base, shown); !ok {
-		items = append(append([]string(nil), base...), shown)
-	}
+	items, i := preservingItems(base, orDefault(value, agUnknownItem))
 	row.SetItems(items)
-	row.SetSelected(indexOf(items, shown))
+	row.SetSelected(i)
 }
 
 // agSelectValue reads row back as a value to write, undoing agSetSelect's
 // stand-in.
 func agSelectValue(row *propsheet.SelectRow) string {
-	if v := row.Value(); v != agUnknownItem {
-		return v
-	}
-	return ""
+	return preservedValue(row, agUnknownItem)
 }
 
 // agFailureConditionItems describes FAILURE_CONDITION_LEVEL 1-5 in order, so
