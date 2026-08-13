@@ -67,7 +67,13 @@ func serverPathExt(path string) string {
 	return ""
 }
 
-// formatHMS renders a duration as "HH:MM:SS" for the progress screens.
+// formatHMS renders a duration as "HH:MM:SS". The app's only duration
+// renderer: the backup/restore progress screens, the query panel's elapsed
+// time, and every SQL Agent run duration go through it, so a job that took
+// an hour and two minutes reads the same everywhere.
+//
+// Seconds truncate rather than round, which is what a running clock needs —
+// the query panel's live timer must never show a second that hasn't elapsed.
 func formatHMS(d time.Duration) string {
 	if d < 0 {
 		d = 0

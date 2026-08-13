@@ -105,7 +105,7 @@ func errorLogFilesDetail(ctx context.Context, sc *dbconn.ServerConn, logType gos
 	}
 	rows := make([][]string, 0, len(files))
 	for _, f := range files {
-		rows = append(rows, []string{errorLogFileLabel(f), formatKB(f.SizeBytes)})
+		rows = append(rows, []string{errorLogFileLabel(f), formatBytes(f.SizeBytes)})
 	}
 	return []string{"Log", "Size"}, rows, nil
 }
@@ -124,7 +124,7 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			if f.Number == logNum {
 				rows = append(rows,
 					[]string{"Last written", formatSQLDate(f.LastWritten)},
-					[]string{"Size", formatKB(f.SizeBytes)})
+					[]string{"Size", formatBytes(f.SizeBytes)})
 				break
 			}
 		}
@@ -140,12 +140,4 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			[]string{"Last entry", formatSQLDate(entries[len(entries)-1].Date)})
 	}
 	return []string{"Property", "Value"}, rows, nil
-}
-
-// formatKB renders a log file's byte count the way a file listing would.
-func formatKB(bytes int64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%d bytes", bytes)
-	}
-	return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
 }

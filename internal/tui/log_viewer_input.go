@@ -19,8 +19,10 @@ func (lv *LogViewer) HandleKey(ev *tcell.EventKey) bool {
 	if lv.grid.OverlayActive() {
 		return lv.grid.HandleKey(ev)
 	}
+	// F5 is the Refresh cell's action, run through the same gate the click
+	// path uses — the key must not do what a dimmed button refuses to.
 	if ev.Key() == tcell.KeyF5 {
-		lv.Refresh()
+		lv.runTool(logToolRefresh)
 		return true
 	}
 	// Tab walks grid → filter → out of the panel. The last step must return
@@ -185,10 +187,11 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		// The action runs on the press, so the repeats tcell sends while the
 		// button stays down must not reach it again — lZoneToolbar swallows
-		// them in routeDrag.
-		for _, t := range lv.tools {
-			if !t.rect.IsZero() && t.rect.Contains(mx, my) {
-				t.action()
+		// them in routeDrag. runTool applies the same gate drawToolbar dims
+		// on, so a dimmed cell is inert rather than merely grey.
+		for i := range lv.tools {
+			if !lv.tools[i].rect.IsZero() && lv.tools[i].rect.Contains(mx, my) {
+				lv.runTool(i)
 				return true
 			}
 		}

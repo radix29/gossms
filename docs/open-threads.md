@@ -337,10 +337,10 @@ restore does.
     missing something. It should surface the failure or list the job as
     unknown.
 
-  - **Duration is formatted two ways in one feature.** `formatHMS`
-    ("01:02:03") on the Job Properties General and History pages;
-    `time.Duration.String()` ("1h2m3s") in `agentJobHistoryDetail`
-    (`agent_detail.go:241`) and `failedJobRunsReport` (`agent_reports.go:107`).
+  ~~**Duration is formatted two ways in one feature.**~~ **Fixed** — every
+  duration in the app now goes through `formatHMS` (`backup_common.go`); the
+  query panel's rounding near-duplicate and both `Duration.String()` sites in
+  the Agent detail/reports pages are gone.
 
   The first two bullets are not SQL Agent bugs — they are the local face of a
   ten-site family, and fixing them here alone would leave the other seven. See

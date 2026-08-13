@@ -147,6 +147,9 @@ func TestObjectDisplayName(t *testing.T) {
 		// A schema node carries its own name in both fields; "Sales.Sales"
 		// would be nonsense.
 		{opNode(NodeSchema, "Sales", "Sales", ""), "Sales"},
+		// ...but a table whose name happens to equal its schema keeps the
+		// qualifier. Testing Schema == Name instead of the node type dropped it.
+		{opNode(NodeTable, "Sales", "Sales", ""), "Sales.Sales"},
 	}
 	for _, tt := range tests {
 		if got := objectDisplayName(tt.node); got != tt.want {

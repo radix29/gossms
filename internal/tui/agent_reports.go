@@ -104,7 +104,7 @@ func failedJobRunsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]
 		if j.LastRunOutcome != gosmo.JobOutcomeFailed {
 			continue
 		}
-		rows = append(rows, []string{j.Name, j.Category, dashIfZero(j.LastRunDate), j.LastRunDuration.String()})
+		rows = append(rows, []string{j.Name, j.Category, dashIfZero(j.LastRunDate), formatHMS(j.LastRunDuration)})
 	}
 	return []string{"Job Name", "Category", "Last Run", "Duration"}, rows, nil
 }

@@ -18,6 +18,58 @@ func showTestFilterDialog(t *testing.T) (*App, *FilterDialog, *explorerNode) {
 	return a, a.filterDialog, node
 }
 
+// showTestFilterDialogOnScreen opens the dialog on a Tables folder against a
+// terminal of the given size, so the geometry can be checked at widths where
+// ModalDialog clamps the dialog narrower than it asked for.
+func showTestFilterDialogOnScreen(t *testing.T, w, h int) *FilterDialog {
+	t.Helper()
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	a.screen = &fakeSizedScreen{w: w, h: h}
+	a.filterDialog = NewFilterDialog(a)
+	node := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, DBName: "HealthClinic", conn: sc}}
+	a.filterDialog.show(node, filterProps(NodeTables), "server-one")
+	a.filterDialog.layout() // Draw's job; the test isn't drawing
+	return a.filterDialog
+}
+
+// Every row's widgets must stay inside the dialog's borders at any terminal
+// width. recentre clamps the dialog to the screen, and the columns were laid
+// out from fixed constants sized for the full 74 — so on a narrow window the
+// value fields, the widest column, drew straight through the right border.
+func TestFilterDialogRowsFitInsideBorders(t *testing.T) {
+	for _, w := range []int{120, 80, 74, 66, 55, 44} {
+		d := showTestFilterDialogOnScreen(t, w, 30)
+		inner := d.InnerRect()
+		last := inner.X + inner.W - 1
+		if len(d.rows) == 0 {
+			t.Fatalf("width %d: dialog has no rows", w)
+		}
+		for i := range d.rows {
+			r := &d.rows[i]
+			// The closing bracket is one past the input area (see
+			// InputField.Draw), and the value field is the rightmost widget.
+			if right := r.value.RectX() + r.value.Width() + 1; right > last {
+				t.Errorf("terminal %d: row %d's value field ends at column %d, past the dialog's last inside column %d",
+					w, i, right, last)
+			}
+			if r.op.RectX() < inner.X {
+				t.Errorf("terminal %d: row %d's operator starts at column %d, left of the dialog at %d", w, i, r.op.RectX(), inner.X)
+			}
+		}
+	}
+}
+
+// Wide enough for the full dialog means the full column widths — the reflow
+// must not shrink anything it doesn't have to.
+func TestFilterDialogKeepsFullColumnsWhenItFits(t *testing.T) {
+	d := showTestFilterDialogOnScreen(t, 120, 30)
+	if d.propColW != filterPropColW || d.opW != filterOpW || d.valueW != filterValueW {
+		t.Errorf("columns on a wide terminal = %d/%d/%d, want the full %d/%d/%d",
+			d.propColW, d.opW, d.valueW, filterPropColW, filterOpW, filterValueW)
+	}
+}
+
 func TestFilterDialogBuildsCriteriaFromFilledRowsOnly(t *testing.T) {
 	_, d, _ := showTestFilterDialog(t)
 	d.rows[0].value.SetValue("cust") // Name contains cust
@@ -79,6 +131,44 @@ func TestFilterDialogEmptyRowsProduceNoFilter(t *testing.T) {
 	}
 	if d.Visible() {
 		t.Error("OK must close the dialog")
+	}
+}
+
+// A whitespace-only value must count as an empty row, not as a criterion.
+// matchText trims the value it compares, so " " arrived as an empty needle and
+// `Contains` matched every row: the folder was labelled "(filtered)" and
+// nothing was filtered out.
+func TestFilterDialogWhitespaceValueIsNotACriterion(t *testing.T) {
+	_, d, node := showTestFilterDialog(t)
+	d.rows[0].value.SetValue("   ") // Name contains <spaces>
+
+	f, badRow, err := d.buildFilter()
+	if err != nil {
+		t.Fatalf("buildFilter: %v (row %d)", err, badRow)
+	}
+	if f.active() {
+		t.Fatalf("a whitespace-only value produced %v, want no filter", f.criteria)
+	}
+
+	// The same value through the whole path: OK must leave the folder
+	// unfiltered rather than installing a filter that keeps every child.
+	d.applyAndClose()
+	if node.data.Filter != nil {
+		t.Errorf("OK with a whitespace-only value installed %v, want no filter", node.data.Filter.criteria)
+	}
+}
+
+// A value with real text keeps it, but loses the padding — so the criterion
+// the folder holds is the one the summary line and a reopened dialog show.
+func TestFilterDialogTrimsCriterionValues(t *testing.T) {
+	_, d, _ := showTestFilterDialog(t)
+	d.rows[0].value.SetValue("  cust  ")
+	f, badRow, err := d.buildFilter()
+	if err != nil {
+		t.Fatalf("buildFilter: %v (row %d)", err, badRow)
+	}
+	if len(f.criteria) != 1 || f.criteria[0].value != "cust" {
+		t.Errorf("criteria = %+v, want one Name criterion with value %q", f.criteria, "cust")
 	}
 }
 

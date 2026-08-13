@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -88,6 +89,49 @@ func TestWrapMessageWithNoRoom(t *testing.T) {
 	for _, tc := range []struct{ w, maxLines int }{{0, 4}, {40, 0}, {-1, -1}} {
 		if got := wrapMessage(restoreFailure, tc.w, tc.maxLines); got != nil {
 			t.Errorf("wrapMessage(w=%d, maxLines=%d) = %q, want nil", tc.w, tc.maxLines, got)
+		}
+	}
+}
+
+// TestFormatHMS pins the app's one duration rendering. It replaced a rounding
+// near-duplicate (the query panel's own) and two bare Duration.String() sites
+// in the Agent reports, so a job that ran 1h2m3s now reads the same in all
+// four places.
+func TestFormatHMS(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "00:00:00"},
+		{-time.Second, "00:00:00"},            // a clock skew must not print "-1:59:59"
+		{1500 * time.Millisecond, "00:00:01"}, // truncates: a live timer must not run ahead
+		{time.Hour + 2*time.Minute + 3*time.Second, "01:02:03"},
+		{100 * time.Hour, "100:00:00"}, // hours are not clamped to two digits
+	}
+	for _, c := range cases {
+		if got := formatHMS(c.d); got != c.want {
+			t.Errorf("formatHMS(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
+// TestFormatBytes pins the unit walk. It is now the only byte renderer —
+// formatKB, which the log detail pages used, capped at KB and showed a 40 MB
+// log as "40960.0 KB".
+func TestFormatBytes(t *testing.T) {
+	cases := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KB"},
+		{40 * 1024 * 1024, "40.0 MB"},
+		{5 * 1024 * 1024 * 1024, "5.0 GB"},
+	}
+	for _, c := range cases {
+		if got := formatBytes(c.n); got != c.want {
+			t.Errorf("formatBytes(%d) = %q, want %q", c.n, got, c.want)
 		}
 	}
 }

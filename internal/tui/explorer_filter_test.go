@@ -151,32 +151,84 @@ func TestFilterChildrenKeepsFoldersAndErrors(t *testing.T) {
 	}
 }
 
-// Every property filterProps offers must be one the folder's own loader can
-// actually populate — a Creation Date criterion on a folder whose nodes
-// carry no date rejects every row, which reads as "the filter is broken".
+// filterableFolders is every folder type that offers a filter. Listed here so
+// a new one has to be added deliberately, alongside the properties its loader
+// populates.
+var filterableFolders = []NodeType{
+	NodeTables, NodeViews, NodeSystemViews, NodeStoredProcedures, NodeSystemProcedures,
+	NodeFunctions, NodeSystemFunctions, NodeSequences, NodeSynonyms, NodeTriggers,
+	NodeDatabases, NodeSystemDatabases, NodeLogins, NodeUsers, NodeDatabaseRoles,
+	NodeSchemas, NodeServerRoles,
+}
+
+// propBacking is the nodeData field each filterable property is supposed to
+// read, as a setter that touches nothing else, plus a criterion value that
+// must match what the setter wrote.
+var propBacking = map[filterPropID]struct {
+	set   func(*nodeData)
+	value string
+}{
+	fpName:            {func(d *nodeData) { d.Name = "widget" }, "widget"},
+	fpSchema:          {func(d *nodeData) { d.Schema = "widget" }, "widget"},
+	fpCreationDate:    {func(d *nodeData) { d.CreateDate = time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC) }, "2026-03-04"},
+	fpMemoryOptimized: {func(d *nodeData) { d.IsMemoryOptimized = true }, "True"},
+}
+
+// Every property a folder offers must actually be wired through to the
+// nodeData field it names. nodeData is a 20-field union and the wiring is
+// spread over filterTextValue/filterBoolValue/matchDate, so a property added
+// to filterProps without its matching case falls through to Name and silently
+// filters on the wrong field — or, for a folder whose loader leaves the field
+// zero, rejects every row and reads as "the filter is broken".
+//
+// The teeth are the positive assertion: with only its own field populated, a
+// property's default criterion must match. A property reading someone else's
+// field sees the zero value there and fails it.
 func TestFilterPropsAreBackedByNodeData(t *testing.T) {
-	for _, t2 := range []NodeType{
-		NodeTables, NodeViews, NodeSystemViews, NodeStoredProcedures, NodeSystemProcedures,
-		NodeFunctions, NodeSystemFunctions, NodeSequences, NodeSynonyms, NodeTriggers,
-		NodeDatabases, NodeSystemDatabases, NodeLogins, NodeUsers, NodeDatabaseRoles,
-		NodeSchemas, NodeServerRoles,
-	} {
-		props := filterProps(t2)
+	for _, ft := range filterableFolders {
+		props := filterProps(ft)
 		if len(props) == 0 {
-			t.Errorf("filterProps(%v) is empty — the Filter menu items would never appear", t2)
+			t.Errorf("filterProps(%v) is empty — the Filter menu items would never appear", ft)
 			continue
 		}
 		if props[0].id != fpName {
-			t.Errorf("filterProps(%v)[0] = %v, want Name first", t2, props[0].name)
+			t.Errorf("filterProps(%v)[0] = %v, want Name first", ft, props[0].name)
 		}
 		for _, p := range props {
-			if len(filterOps(p.kind)) == 0 {
-				t.Errorf("filterProps(%v): %q offers no operators", t2, p.name)
+			ops := filterOps(p.kind)
+			if len(ops) == 0 {
+				t.Errorf("filterProps(%v): %q offers no operators", ft, p.name)
+				continue
+			}
+			b, ok := propBacking[p.id]
+			if !ok {
+				t.Errorf("filterProps(%v) offers %q, but no nodeData field is declared for it — wire it into filterTextValue/filterBoolValue and add it to propBacking", ft, p.name)
+				continue
+			}
+			var d nodeData
+			b.set(&d)
+			c := filterCriterion{prop: p, op: ops[0], value: b.value}
+			if !matchCriterion(c, d) {
+				t.Errorf("filterProps(%v): %q %v %q rejected a node with only that field set — the property reads the wrong nodeData field", ft, p.name, ops[0], b.value)
+			}
+			if matchCriterion(c, nodeData{}) {
+				t.Errorf("filterProps(%v): %q %v %q matched an empty node", ft, p.name, ops[0], b.value)
 			}
 		}
 	}
 	if got := filterProps(NodeTable); got != nil {
 		t.Errorf("filterProps(NodeTable) = %v, want nil (a table is not a folder)", got)
+	}
+}
+
+// Every folder that offers a filter must be a container the tree treats as a
+// folder — filterChildren exempts container children from filtering, so a
+// filterable type that isn't one would have its own sub-folders filtered away.
+func TestFilterableFoldersAreContainers(t *testing.T) {
+	for _, ft := range filterableFolders {
+		if !isContainerNode(ft) {
+			t.Errorf("%v offers a filter but isn't a container node", ft)
+		}
 	}
 }
 

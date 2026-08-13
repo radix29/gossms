@@ -87,6 +87,16 @@ type LogViewer struct {
 	// message can be read past the pane's height without resizing it.
 	detailScroll int
 
+	// detailCache is the last detailLines result, valid for the entry and
+	// width it was built at. The wrap is the panel's only per-frame
+	// allocation of any size — a stack dump entry wraps to hundreds of lines,
+	// and both the draw and every scroll step asked for the whole thing.
+	// Invalidated by invalidateDetailCache wherever the text can change
+	// without the entry pointer changing with it.
+	detailCache      []string
+	detailCacheEntry *gosmo.ErrorLogEntry
+	detailCacheWidth int
+
 	// seq guards against a superseded read landing after a newer one: every
 	// load increments it and an async result is applied only if it is still
 	// the most recent. Same role as DetailBrowser.seq.
@@ -162,7 +172,13 @@ func (lv *LogViewer) SetActive(v bool) {
 
 // Close cancels any in-flight read. Called from App.closePanelAt; the
 // connection belongs to App, so there is nothing else to release.
-func (lv *LogViewer) Close() {
+func (lv *LogViewer) Close() { lv.cancelRead() }
+
+// cancelRead aborts the in-flight read, if there is one. Called both when the
+// panel closes and when a new read supersedes one — seq already discards a
+// superseded result, but without cancelling it the query goes on running on
+// the shared host connection until logReadTimeout.
+func (lv *LogViewer) cancelRead() {
 	if lv.cancel != nil {
 		lv.cancel()
 		lv.cancel = nil
@@ -212,8 +228,14 @@ func (lv *LogViewer) layoutTools() {
 	need := core.DisplayWidth(logFilterLabel) + 1 + logFilterWidth + 2
 	if lv.toolRect.W > 0 && x+need <= lv.toolRect.Right() {
 		lv.filter.SetBounds(x, lv.toolRect.Y)
-	} else {
-		lv.filter.SetBounds(-1, -1)
+		return
+	}
+	lv.filter.SetBounds(-1, -1)
+	// A field parked off-screen must not keep focus: HandleKey routes on
+	// filterFocused alone, so every keystroke went into a field that wasn't
+	// drawn. Narrowing the terminal mid-typing was enough to trigger it.
+	if lv.filterFocused {
+		lv.setFilterFocused(false)
 	}
 }
 
@@ -221,9 +243,20 @@ func (lv *LogViewer) layoutTools() {
 // A field laid out off-screen must not take focus or draw.
 func (lv *LogViewer) filterVisible() bool { return lv.filter.RectX() >= 0 }
 
-// buildTools defines the toolbar: the two selectors, then the buttons.
-// Labels are rebuilt on every draw (see refreshToolLabels), since both
-// selectors show what they currently point at.
+// Toolbar cell indexes, in the order buildTools lays them out — the two
+// selectors then the buttons. Named because the cells are addressed by index
+// from three places: popMenu anchors a selector's list under its own cell, and
+// HandleKey runs the Refresh cell's action for F5.
+const (
+	logToolLogType = iota
+	logToolFile
+	logToolRefresh
+	logToolExport
+)
+
+// buildTools defines the toolbar: the two selectors, then the buttons, in the
+// order the logTool* constants name. Labels are rebuilt on every draw (see
+// refreshToolLabels), since both selectors show what they currently point at.
 func (lv *LogViewer) buildTools() {
 	lv.tools = []logTool{
 		{action: lv.showLogTypeMenu},
@@ -232,6 +265,23 @@ func (lv *LogViewer) buildTools() {
 		{label: "Export...", action: lv.export},
 	}
 	lv.refreshToolLabels()
+}
+
+// toolsEnabled reports whether the toolbar's actions are available. The one
+// answer behind all three call sites — drawToolbar's dimming, the click path
+// and F5 — so a cell can never be drawn dimmed and still act on a click. It
+// could, and clicking a dimmed Refresh mid-read started a second read whose
+// predecessor went on running to logReadTimeout.
+func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
+
+// runTool invokes toolbar cell i's action, or does nothing while the toolbar
+// is disabled. Reports whether the action ran.
+func (lv *LogViewer) runTool(i int) bool {
+	if !lv.toolsEnabled() {
+		return false
+	}
+	lv.tools[i].action()
+	return true
 }
 
 // refreshToolLabels updates the two selectors' labels from the current
@@ -284,6 +334,7 @@ func (lv *LogViewer) Load() {
 		lv.setStatus("Not connected")
 		return
 	}
+	lv.cancelRead()
 	lv.seq++
 	seq := lv.seq
 	lv.busy = true
@@ -314,8 +365,7 @@ func (lv *LogViewer) Load() {
 				return
 			}
 			lv.entries = sortLogEntriesDesc(entries)
-			lv.detailScroll = 0
-			lv.applyFilter()
+			lv.applyFilter() // resets detailScroll itself
 		})
 	})
 }
@@ -334,6 +384,7 @@ var logExportColumns = []string{"Date", "Source", "Message"}
 // match is a case-insensitive substring over the source and the message,
 // which is what the filter box promises; an empty filter shows everything.
 func (lv *LogViewer) applyFilter() {
+	lv.invalidateDetailCache()
 	needle := strings.ToLower(strings.TrimSpace(lv.filter.Value()))
 	lv.shown = lv.shown[:0]
 	for _, e := range lv.entries {
@@ -348,6 +399,15 @@ func (lv *LogViewer) applyFilter() {
 	lv.grid.SetData(logGridColumns, rows)
 	lv.detailScroll = 0
 	lv.setStatus(lv.summary())
+}
+
+// invalidateDetailCache forces the next detailLines call to re-wrap. Needed
+// because the cache is keyed on the entry pointer, and two of the three lines
+// above the message name the log file rather than the entry — a fresh
+// enumeration renames "Archive #3" to "Archive #3 — 2026-08-12 21:49" without
+// the selected entry changing.
+func (lv *LogViewer) invalidateDetailCache() {
+	lv.detailCacheEntry, lv.detailCache = nil, nil
 }
 
 // summary is the status line under the grid: how much of the file is shown,
@@ -423,8 +483,7 @@ func (lv *LogViewer) selectedEntry() *gosmo.ErrorLogEntry {
 // first-refusal event handling every other overlay does.
 func (lv *LogViewer) showLogTypeMenu() {
 	items := make([]controls.MenuItem, 0, 2)
-	for _, t := range []gosmo.ErrorLogType{gosmo.ErrorLogSQLServer, gosmo.ErrorLogAgent} {
-		logType := t
+	for _, logType := range []gosmo.ErrorLogType{gosmo.ErrorLogSQLServer, gosmo.ErrorLogAgent} {
 		label := logType.String()
 		if logType == lv.logType {
 			label = "• " + label
@@ -437,7 +496,7 @@ func (lv *LogViewer) showLogTypeMenu() {
 			}
 		}})
 	}
-	lv.popMenu(0, items)
+	lv.popMenu(logToolLogType, items)
 }
 
 // showLogFileMenu pops the archive selector. With no enumeration cached yet
@@ -446,7 +505,7 @@ func (lv *LogViewer) showLogTypeMenu() {
 func (lv *LogViewer) showLogFileMenu() {
 	files := lv.files[lv.logType]
 	if len(files) == 0 {
-		lv.popMenu(1, []controls.MenuItem{
+		lv.popMenu(logToolFile, []controls.MenuItem{
 			{Label: "(log list not loaded — Refresh)", Action: lv.Refresh},
 		})
 		return
@@ -462,7 +521,7 @@ func (lv *LogViewer) showLogFileMenu() {
 			lv.ShowLog(lv.logType, num)
 		}})
 	}
-	lv.popMenu(1, items)
+	lv.popMenu(logToolFile, items)
 }
 
 // popMenu shows items under tool i, or at the panel's top-left if that cell
@@ -484,15 +543,34 @@ func (lv *LogViewer) export() {
 	}
 	name := fmt.Sprintf("%s-log-%d.txt", strings.ToLower(strings.ReplaceAll(lv.logType.String(), " ", "-")), lv.logNum)
 	lv.app.fileDialog.ShowSave("Export Log", name, func(path string) {
-		var b strings.Builder
-		b.WriteString(strings.Join(logExportColumns, "\t") + "\n")
-		for _, e := range lv.shown {
-			fmt.Fprintf(&b, "%s\t%s\t%s\n", formatSQLDate(e.Date), e.Source(), flattenLogText(e.Text))
-		}
-		if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
-			lv.app.setStatus(fmt.Sprintf("Export failed: %v", err))
-			return
-		}
-		lv.app.setStatus(fmt.Sprintf("Exported %d entries to %s", len(lv.shown), path))
+		// The text is rendered here, on the UI goroutine, and only the write
+		// runs off it: applyFilter reuses shown's backing array (shown[:0]), so
+		// a snapshot of the slice would be rewritten under the goroutine by the
+		// next keystroke in the filter field.
+		text := lv.exportText()
+		n := len(lv.shown)
+		lv.app.safego("exporting a log", func() {
+			// Writing on the UI goroutine froze the whole app for the duration
+			// — a big log to a network path is seconds, not milliseconds.
+			err := os.WriteFile(path, []byte(text), 0644)
+			lv.app.postAndWake(func() {
+				if err != nil {
+					lv.app.setStatus(fmt.Sprintf("Export failed: %v", err))
+					return
+				}
+				lv.app.setStatus(fmt.Sprintf("Exported %d entries to %s", n, path))
+			})
+		})
+		lv.app.setStatus(fmt.Sprintf("Exporting %d entries to %s...", n, path))
 	})
+}
+
+// exportText renders the shown entries as the tab-separated file's contents.
+func (lv *LogViewer) exportText() string {
+	var b strings.Builder
+	b.WriteString(strings.Join(logExportColumns, "\t") + "\n")
+	for _, e := range lv.shown {
+		fmt.Fprintf(&b, "%s\t%s\t%s\n", formatSQLDate(e.Date), e.Source(), flattenLogText(e.Text))
+	}
+	return b.String()
 }

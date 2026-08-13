@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +144,151 @@ func TestLogViewerTabLeavesPanelWhenFilterHidden(t *testing.T) {
 	}
 	if lv.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone)) {
 		t.Error("Tab returned true with no filter field to focus — the panel traps focus")
+	}
+}
+
+// TestLogViewerNarrowingDropsFilterFocus pins the resize case: the filter field
+// is parked off-screen when the toolbar outgrows the panel, and HandleKey routes
+// on filterFocused alone — so a field left focused there swallowed every
+// keystroke into something that wasn't drawn.
+func TestLogViewerNarrowingDropsFilterFocus(t *testing.T) {
+	lv := newTestLogViewer()
+	lv.active = true
+	lv.SetBounds(0, 0, 200, 30)
+	lv.setFilterFocused(true)
+	if !lv.filterVisible() || !lv.filterFocused {
+		t.Fatal("setup failed: the filter field must be visible and focused at width 200")
+	}
+
+	lv.SetBounds(0, 0, 40, 30)
+	if lv.filterVisible() {
+		t.Fatal("filter field fit at width 40; the rest of this test is meaningless")
+	}
+	if lv.filterFocused {
+		t.Error("narrowing left focus on the hidden filter field; keystrokes go nowhere visible")
+	}
+	// Focus must land back on the grid, not nowhere: typing has to reach
+	// something after the resize.
+	x := tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone)
+	before := lv.filter.Value()
+	lv.HandleKey(x)
+	if lv.filter.Value() != before {
+		t.Errorf("a keystroke after narrowing reached the hidden filter field (value %q)", lv.filter.Value())
+	}
+}
+
+// TestLogViewerBusyToolbarIsInert is the "dimmed but clickable" regression:
+// drawToolbar greys every cell while a read is in flight, and both the click
+// path and F5 must refuse it. They didn't — clicking a dimmed Refresh started a
+// second read and left the first running to logReadTimeout.
+func TestLogViewerBusyToolbarIsInert(t *testing.T) {
+	lv := newTestLogViewer()
+	lv.SetBounds(0, 0, 200, 30)
+
+	fired := 0
+	lv.tools[logToolRefresh].action = func() { fired++ }
+	r := lv.tools[logToolRefresh].rect
+	if r.IsZero() {
+		t.Fatal("Refresh cell didn't fit at width 200; the rest of this test is meaningless")
+	}
+	click := tcell.NewEventMouse(r.X+1, r.Y, tcell.Button1, tcell.ModNone)
+	f5 := tcell.NewEventKey(tcell.KeyF5, "", tcell.ModNone)
+
+	lv.busy = true
+	if lv.toolsEnabled() {
+		t.Fatal("toolsEnabled() is true while busy — the toolbar draws dimmed on the same answer")
+	}
+	lv.HandleMouse(click)
+	lv.dragZone = lZoneNone // the press armed the gesture; clear it for the idle click below
+	if !lv.HandleKey(f5) {
+		t.Error("F5 while busy returned false — the key belongs to the panel even when it does nothing")
+	}
+	if fired != 0 {
+		t.Errorf("Refresh ran %d times while busy, want 0 (dimmed cells must be inert)", fired)
+	}
+
+	lv.busy = false
+	lv.HandleMouse(click)
+	lv.dragZone = lZoneNone
+	lv.HandleKey(f5)
+	if fired != 2 {
+		t.Errorf("Refresh ran %d times when idle, want 2 (one click, one F5)", fired)
+	}
+}
+
+// TestLogViewerLoadCancelsSupersededRead pins the other half: seq discards a
+// superseded result, but the query behind it has to be cancelled too or it runs
+// on the shared host connection until logReadTimeout.
+func TestLogViewerLoadCancelsSupersededRead(t *testing.T) {
+	lv := newTestLogViewer()
+	cancelled := false
+	lv.cancel = func() { cancelled = true }
+
+	lv.cancelRead()
+	if !cancelled {
+		t.Error("cancelRead() didn't call the in-flight read's cancel func")
+	}
+	if lv.cancel != nil {
+		t.Error("cancelRead() left the stale cancel func in place; the next call would cancel a finished read")
+	}
+}
+
+// TestLogViewerExportTextRendersShownEntries pins what the export writes: the
+// header plus one flattened line per *shown* entry, not per entry read. The
+// text is rendered on the UI goroutine for a reason — applyFilter reuses
+// shown's backing array, so the write goroutine gets a finished string rather
+// than a slice that changes under it.
+func TestLogViewerExportTextRendersShownEntries(t *testing.T) {
+	lv := newTestLogViewer()
+	lv.entries = testLogEntries()
+	lv.filter.SetValue("server")
+	lv.applyFilter()
+
+	lines := strings.Split(strings.TrimRight(lv.exportText(), "\n"), "\n")
+	if len(lines) != 1+len(lv.shown) {
+		t.Fatalf("exportText produced %d lines, want %d (header + %d shown)", len(lines), 1+len(lv.shown), len(lv.shown))
+	}
+	if got := strings.Split(lines[0], "\t"); !slices.Equal(got, logExportColumns) {
+		t.Errorf("header = %v, want %v", got, logExportColumns)
+	}
+	if n := len(strings.Split(lines[1], "\t")); n != len(logExportColumns) {
+		t.Errorf("first row has %d fields, want %d", n, len(logExportColumns))
+	}
+	// The unfiltered entry must be absent — the export follows the filter.
+	if strings.Contains(lv.exportText(), "Recovery is complete.") {
+		t.Error("exportText included a filtered-out entry")
+	}
+}
+
+// TestLogViewerDetailLinesAreCached pins the per-frame wrap: drawDetails and
+// every scroll step ask for the whole wrapped entry, so the result is memoized
+// per (entry, width) — and must still re-wrap when either changes, or a resize
+// would leave the pane showing the old wrap.
+func TestLogViewerDetailLinesAreCached(t *testing.T) {
+	lv := newTestLogViewer()
+	lv.entries = testLogEntries()
+	lv.applyFilter()
+	e := lv.entries[0]
+
+	first := lv.detailLines(e, 40)
+	if len(first) == 0 {
+		t.Fatal("detailLines returned nothing")
+	}
+	if again := lv.detailLines(e, 40); &again[0] != &first[0] {
+		t.Error("a repeat call at the same width re-wrapped instead of returning the cached lines")
+	}
+	if narrow := lv.detailLines(e, 20); &narrow[0] == &first[0] {
+		t.Error("a width change returned the cache; the pane would draw the old wrap")
+	}
+	if other := lv.detailLines(lv.entries[1], 40); other[2] == first[2] {
+		t.Errorf("a different entry returned the first entry's Source line (%q)", other[2])
+	}
+	// The header lines name the log file, not the entry, so a fresh
+	// enumeration has to drop the cache even though the entry is unchanged.
+	lv.detailLines(e, 40)
+	lv.invalidateDetailCache()
+	if after := lv.detailLines(e, 40); &after[0] == &first[0] {
+		t.Error("invalidateDetailCache didn't force a re-wrap")
 	}
 }
 

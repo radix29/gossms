@@ -107,7 +107,7 @@ func (p *QueryPanel) resultsStatusText() string {
 		return p.resultsNotice
 	}
 	if p.executing {
-		return formatElapsedHMS(time.Since(p.execStart)) + " | Executing..."
+		return formatHMS(time.Since(p.execStart)) + " | Executing..."
 	}
 	if p.result == nil {
 		// Estimated plan: nothing ran, so there's no elapsed time or row
@@ -118,7 +118,7 @@ func (p *QueryPanel) resultsStatusText() string {
 		}
 		return ""
 	}
-	elapsed := formatElapsedHMS(p.result.Elapsed)
+	elapsed := formatHMS(p.result.Elapsed)
 	switch {
 	case p.onMessagesTab():
 		return fmt.Sprintf("%s | %d message(s)", elapsed, len(p.result.Messages))
@@ -138,15 +138,4 @@ func (p *QueryPanel) resultsStatusText() string {
 		row, col = r+1, c+1
 	}
 	return fmt.Sprintf("%s | Row: %d, Col: %d | %d rows", elapsed, row, col, len(set.Rows))
-}
-
-// formatElapsedHMS renders d as SSMS's "H:MM:SS" query-execution duration.
-func formatElapsedHMS(d time.Duration) string {
-	d = d.Round(time.Second)
-	h := d / time.Hour
-	d -= h * time.Hour
-	m := d / time.Minute
-	d -= m * time.Minute
-	sec := d / time.Second
-	return fmt.Sprintf("%02d:%02d:%02d", h, m, sec)
 }

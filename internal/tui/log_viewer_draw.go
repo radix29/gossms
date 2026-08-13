@@ -39,7 +39,7 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 			continue
 		}
 		style := theme.StyleTooltip()
-		if lv.busy {
+		if !lv.toolsEnabled() {
 			style = style.Foreground(pal.TextDim)
 		}
 		core.FillRect(s, t.rect, ' ', style)
@@ -89,9 +89,15 @@ func (lv *LogViewer) drawDetails(s tcell.Screen) {
 // detailLines renders one entry into the details pane's lines, wrapped to w
 // columns. Kept separate from drawDetails so the scroll bounds can be
 // computed from the same text that gets drawn.
+//
+// The result is cached per (entry, width) — see detailCache. Callers must
+// treat the slice as read-only: the next call hands back the same one.
 func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
 	if w < 1 {
 		return nil
+	}
+	if e == lv.detailCacheEntry && w == lv.detailCacheWidth {
+		return lv.detailCache
 	}
 	lines := []string{
 		"Date    " + formatSQLDate(e.Date),
@@ -109,5 +115,6 @@ func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
 			lines = append(lines, "  "+line)
 		}
 	}
+	lv.detailCacheEntry, lv.detailCacheWidth, lv.detailCache = e, w, lines
 	return lines
 }

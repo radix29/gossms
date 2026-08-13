@@ -13,187 +13,64 @@
 
 # goSSMS
 
-SQL Server Management Studio clone for MacOS, Linux and Windows.
-
-**goSSMS** is a cross-platform, terminal-based SQL Server Management Studio
-clone written in Go. No GUI, no X11, no CGO, no installation — a single
-executable that runs on Linux, macOS, and Windows with no SQL client tools
-or drivers required.
+A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
+One executable — no GUI, no installer, no SQL client tools or drivers
+required.
 
 ![Demo](demo.gif)
 
 ## Features
 
-- **Object Explorer** — browse servers, databases, tables, views, procedures,
-  functions, triggers, sequences, synonyms, and security objects in a tree
-  matching SSMS's layout, including system databases/objects grouped
-  separately. Drag a node into a query editor to insert its (schema-qualified)
-  name. Right-click for context actions, or take a database offline/online.
-- **Delete and Rename anywhere in the tree** — right-click any object
-  (table, view, procedure, function, index, statistic, key, constraint,
-  trigger, sequence, synonym, database, login, user, role, schema) for
-  **Rename...** and **Delete...**. Deleting is confirmed first, and a
-  database has to have its name retyped; renaming a database closes the
-  connections that would otherwise block it.
-- **Object Explorer folder filter** — right-click a folder (Tables, Views,
-  Stored Procedures, Functions, Databases, Logins, …) and pick **Filter
-  Settings...** to narrow it by name, schema, creation date, or memory-
-  optimized, each with its own operator (contains, equals, before/after, …).
-  Filtered folders are labelled `(filtered)`; **Remove Filter** clears one.
-- **Multiple query panels** — open as many T-SQL editor + results tabs as you
-  need. Scripts split on `GO` batches sharing one connection, each result set
-  gets its own tab, and a Messages tab collects `PRINT` output, row counts,
-  and errors. Results are never row-capped — every row a query returns is
-  shown, so a large enough result set is limited only by available memory.
-  The toolbar's `Meta` toggle (also Query > Output Column Metadata) adds each
-  result set's columns and their declared types to the Messages tab.
-- **SQL editor** — syntax highlighting, word-wrap, line duplicate/move/
-  indent/comment, undo/redo, and smart statement selection for running just
-  the statement under the cursor. Find and Replace (`Ctrl+F`) with match
-  case, whole word, regular expressions, and Replace All confined to the
-  selection. Block (column) selection you can type into, and that pastes
-  back rectangularly; double-click selects a word.
-- **IntelliSense** — autocompletes schemas, tables, views, and columns as you
-  type, understands table aliases and multi-statement scripts, and can be
-  toggled off in Options.
-- **Execution Plan Viewer** — view estimated or actual execution plans as a
-  cost-weighted operator graph, an expandable tree, or syntax-highlighted
-  raw XML.
-- **Cell values worth reading get a real view** — "Show Value" on an XML or
-  JSON result cell opens it in its own syntax-highlighted panel instead of a
-  narrow popup.
-- **Properties dialogs** — multi-page, editable SSMS-style Properties for
-  Server, Database, Login, Table, Schema, Server Role, Database Role,
-  Database User, Index/Statistics, Key, and Foreign Key, plus New Database /
-  New Login dialogs for creating objects from scratch.
-- **Permissions editing** — every permissions and securables grid cycles
-  Grant → Grant With Grant → Deny → (none) with the right `WITH GRANT
-  OPTION` / `CASCADE` / `GRANT OPTION FOR` statement issued for each
-  transition, plus per-column grants on a table or view, filter boxes on the
-  long grids, and an Effective Permissions page on Login and Database User
-  Properties resolving what that principal can actually do once roles,
-  ownership and inherited scopes are applied.
-- **SQL Server Agent** — browse and manage Jobs, Schedules, Alerts, and
-  Operators; multi-page Job Properties (steps, schedules, alerts,
-  notifications, history), run/stop a job, and view its run history.
+- **Object Explorer** — the familiar SSMS tree: databases, tables, views,
+  procedures, functions, triggers, sequences, synonyms, security, and
+  Management. Right-click anything to rename, delete, script as
+  CREATE/DROP, see dependencies, or open Properties. Filter any folder by
+  name, schema, or creation date. Drag a node into the editor to insert its
+  name.
+- **Query editor** — as many editor+results tabs as you like, `GO` batch
+  splitting, a tab per result set, and a Messages tab for `PRINT`, row
+  counts, and errors. Results are never row-capped. Syntax highlighting,
+  undo/redo, Find & Replace with regex, block (column) selection, and
+  IntelliSense for schemas, tables, views, and columns.
+- **Execution plans** — estimated or actual, as a cost-weighted operator
+  graph, a tree, or raw XML. XML and JSON result cells open in their own
+  syntax-highlighted viewer.
+- **Properties dialogs** — editable, multi-page SSMS-style Properties for
+  Server, Database, Login, Table, Schema, roles, users, indexes, keys, and
+  more, plus New Database and New Login. Full permissions editing including
+  per-column grants and an Effective Permissions view.
 - **Backup & Restore** — full option dialogs (destination, type, media,
-  compression, point-in-time restore, file relocation) running as cancellable
+  compression, point-in-time, file relocation) run as cancellable
   background tasks with live progress.
-- **Full authentication support** via [gosmo](https://github.com/radix29/gosmo):
-  SQL Server Authentication, Windows Integrated Authentication, and Azure
-  Entra ID (Default, Password, MSI, Service Principal, Interactive, Device
-  Code, Azure CLI).
-- **Script objects** — script any table/view/procedure/function as CREATE or
-  DROP into a new query window.
-- **Object Dependencies** — see what an object depends on and what depends
-  on it.
-- **Activity Monitor** — History and Sample dashboards over live DMV data:
-  batches/transactions/compiles, wait categories, memory composition and
-  cache ratios, page activity, database I/O latency, log flushes, and
-  checkpoints. Charts scroll on both axes, the refresh rate is selectable
-  (2/3/5/10 s), and collection can be paused. Clicking a chart pins a
-  readout that follows the sample it names across the plot and closes itself
-  when that sample scrolls off. Thirty minutes of history is kept in memory
-  and nothing is persisted. The TempDB tab tracks tempdb
-  space, temp tables and the version store on its own slower schedule. The
-  Block and Sessions tabs each show one run of a stored procedure in a full
-  result grid — Block the current blocking chains, Sessions everything
-  currently running. Neither refreshes on a timer: they run once when first
-  opened and again on Refresh. Each procedure is used where it is found,
-  `master.dbo.sp_block` / `master.dbo.sp_WhoIsActive`, or installed as
-  `tempdb.dbo.usp_block` / `tempdb.dbo.usp_WhoIsActive`, with an "Install in
-  master" button to make it permanent.
-- **Log File Viewer** — SSMS's log viewer as a panel: the SQL Server error
-  log or the SQL Server Agent's, current or any archive, chosen from two
-  toolbar selectors. Entries show newest first as Date / Source / Message
-  over a details
-  pane that renders the selected entry's full text as the log wrote it,
-  multi-line entries included, with a draggable divider between the two
-  (Ctrl+Up/Down resizes it, Alt+Up/Down scrolls the details pane). The filter
-  box narrows the grid to entries whose source or message contains what you
-  type, F5 re-reads the file, and Export writes the entries currently shown
-  to a tab-separated file. Reached from Object Explorer: **Management > SQL
-  Server Logs**, **SQL Server Agent > Error Logs**, or "View SQL Server Log"
-  on the server node. One panel per server — opening another log file
-  re-points the one already open.
-- **Always On Availability Groups** — the Object Explorer branch lists each
-  group with the local replica's role, and under it the replicas, databases
-  (with their synchronization state) and listener; databases in a group are
-  labelled with their state in the Databases folder too. **Availability Group
-  Properties** covers the group's settings, its replicas' configuration,
-  backup preferences and read-only routing, offering only the failover modes
-  the group's cluster type actually accepts. **Show Dashboard** opens a live
-  panel, on one group or — from the Always On node — on every group at once,
-  with estimated data loss and estimated recovery time derived per secondary
-  (F5 refreshes, P pauses, `+`/`-` sets the refresh rate, Enter opens the
-  selected group's own dashboard). Operations sit on the context menus: add and
-  remove a database, suspend and resume data movement, add and remove the
-  listener, add and remove a replica, delete the group, and fail over. On a
-  secondary, a database's own copy can be joined to the group and taken back
-  out of it — the manual-seeding counterpart of adding a database, offered only
-  where it applies. **Add Replica** grows an existing group: it reads the new
-  instance's mirroring endpoint, runs ADD REPLICA on the primary, then joins
-  the replica through its own connection and grants it what automatic seeding
-  needs. **Listener
-  Properties** changes the port and binds further addresses for a multi-subnet
-  listener. Everything reads and writes through the group's primary,
-  connecting to it when you are on a secondary. Failover is gated on the
-  group's cluster type — under an externally managed cluster (Pacemaker on
-  Linux) SQL Server refuses it, and goSSMS says so and names the tool that
-  owns it rather than sending a statement that can only fail. **New
-  Availability Group** creates one: it runs CREATE on the instance you are
-  connected to, then joins each secondary through its own connection and
-  grants it what automatic seeding
-  needs. **New Database Mirroring Endpoint** creates the prerequisite every
-  replica needs, across all of them at once: a master key and a certificate on
-  each instance, then each instance's *public* certificate imported by the
-  others with a login to own it and CONNECT granted on the endpoint. No private
-  key is read or transmitted, and nothing needs copying between the hosts —
-  which is what the documented file-based recipe requires. Anything already in
-  place is left alone, so it completes a half-configured set rather than
-  failing on it.
-- Configurable tree icon style (Emoji/Symbols/Portable/None), resizable
-  panes, background task manager, status history log, and a Check for
-  Updates dialog.
+- **Activity Monitor** — live dashboards over DMV data: throughput, waits,
+  memory, I/O latency, and checkpoints, plus TempDB, blocking chains, and a
+  Sessions tab powered by sp_WhoIsActive.
+- **Log File Viewer** — SQL Server and SQL Agent error logs, current or
+  archived, with filtering and export.
+- **SQL Server Agent** — Jobs, Schedules, Alerts, and Operators; multi-page
+  Job Properties, run/stop a job, and view run history.
+- **Always On Availability Groups** — browse groups, replicas, databases,
+  and listeners; a live dashboard with estimated data loss and recovery
+  time; create groups, add replicas and databases, suspend/resume, fail
+  over, and set up database mirroring endpoints across all replicas at once.
+- **Authentication** — SQL Server, Windows Integrated, and Azure Entra ID
+  (Default, Password, MSI, Service Principal, Interactive, Device Code,
+  Azure CLI).
 
-## Future Plans
+## Install
 
-- **Reports** — a handful of the most useful built-in SSMS reports
-
-## Known Issues
-
-- Some terminals (e.g. xfce4-terminal) eat some key shortcuts
-- Entra authentication not tested at the moment — no infrastructure available
-- Not tested on macOS yet — no Mac available
-- Executables are built by GitHub but not signed; checksums are available
-- SQL Agent needs a complete rework
-
-## Prerequisites
-
-- Go 1.26 or later (only needed to build from source)
-- Access to a SQL Server instance
-- A terminal emulator supporting 256 colours and UTF-8 (most modern ones do
-  — without UTF-8, tree icons and box-drawing characters won't render
-  correctly)
-
-## Installation
-
-- Download the binary for your platform from the github Release and execute it. 
-- Does not have prerequisites like sql client, odbc etc.
+Download the binary for your platform and run it:
 
 https://github.com/radix29/gossms/releases
 
-if you want to build it yourself:
+Or build from source (needs Go 1.26+):
 
 ```bash
-git clone https://github.com/radix29/gosmo.git
-git clone https://github.com/radix29/gossms.git
-cd gossms
-go build -o gossms ./cmd/gossms
-
-# Or install directly
 go install github.com/radix29/gossms/cmd/gossms@latest
 ```
+
+You need a terminal with 256 colours and UTF-8 support (most modern ones)
+and access to a SQL Server instance.
 
 ## Usage
 
@@ -202,88 +79,62 @@ go install github.com/radix29/gossms/cmd/gossms@latest
 ```
 
 goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
-or press `Escape` to dismiss it and work offline — `Ctrl+Shift+O` reopens it
-at any time.
+or press `Escape` to work offline — `Ctrl+Shift+O` reopens it any time.
 
 ## Keyboard Reference
 
 | Key | Action |
 |-----|--------|
-| `F1` | Help |
-| `F10` | Activate menu bar |
-| `Ctrl+Q` | Quit |
-| `Ctrl+Shift+O` | Connect to server (falls back to `Ctrl+O`'s behavior on terminals that can't distinguish the Shift) |
-| `Ctrl+O` | Open a `.sql` file as a new query |
-| `Ctrl+N` | New query panel |
-| `Ctrl+W` | Close active query |
-| `Ctrl+S` | Save query |
-| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste (on a focused results grid, `Ctrl+C` copies the selected cell or block) |
+| `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
+| `Ctrl+Shift+O` | Connect to server |
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query |
+| `F5` | Execute query (selection if any); also refreshes a tree node or Properties page |
+| `Ctrl+Enter` | Select the statement at the cursor without executing |
 | `Tab` | Switch focus explorer ↔ panels |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle to next / previous panel |
-| `F5` | Execute query (selection if any, else the whole query); also refreshes the selected tree node or Properties page |
-| `Ctrl+Enter` | Select the T-SQL statement at the cursor without executing it |
-| `Ctrl+Left`/`Right` | Narrow / widen object explorer |
-| `Ctrl+Up`/`Down` | Grow / shrink query editor (in the Log File Viewer, the entry grid vs. the details pane) |
-| `Ctrl+PgUp`/`PgDn` | Previous / next result tab |
-| `Alt+Up`/`Down` (Log File Viewer) | Scroll the selected entry's details pane |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo in editor |
-| `Ctrl+F` (query editor) | Find and Replace — Match case, whole word, regular expression, and Replace All within the selection |
-| `F3` / `Shift+F3` | Find next / previous, with the Find dialog closed |
-| `Ctrl+F3` | Find the next occurrence of the word under the cursor |
-| `Ctrl+Space` (query editor) | Open/force IntelliSense suggestions |
-| `Ctrl+R` (query editor) | Refresh the cached table/column list |
-| `Shift+Arrow` | Select text |
-| `Alt+Shift+Arrow` (query editor) | Block (column) selection — typing, `Tab`, `Backspace`/`Delete` then apply to every row at once, and a block copied this way pastes back rectangularly |
-| Click + drag | Select text with the mouse (`Alt`+drag makes it a block selection) |
-| Double-click (query editor) | Select the word under the pointer |
-| Mouse wheel (results grid) | Scroll rows (`Shift`+wheel scrolls columns) |
-| Arrow keys | Navigate tree / grid |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous panel |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab |
+| `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
+| `Ctrl+Up` / `Down` | Grow / shrink the query editor |
+| `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
+| `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
+| `Ctrl+F3` | Find next occurrence of the word at the cursor |
+| `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
+| `Shift+Arrow`, `Alt+Shift+Arrow` | Select text, block (column) select |
 | `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
-| `Shift+F10` / `Menu` key | Open the selected tree node's context menu |
-| Right-click (grid cell) | "Show Value" — full cell text in a copyable popup |
-| Drag a grid header separator | Resize the column to its left, past the max default cell length if wanted |
-| Double-click a header separator | Restore that column's default width |
+| `Shift+F10` / `Menu` key | Context menu for the selected tree node |
+| Right-click a grid cell | "Show Value" — full cell text, copyable |
+| Drag / double-click a header separator | Resize / reset a grid column |
 
-Replace has no shortcut of its own — it is Edit > Replace..., or the
-Replace fields inside the Find dialog. `Ctrl+H` is deliberately not bound:
-terminals send it as the same byte (`0x08`) many of them send for
-Backspace, so binding it would break Backspace on those.
+Replace is Edit > Replace... or the Replace fields in the Find dialog.
+`Ctrl+H` is deliberately unbound — many terminals send it as the same byte
+as Backspace.
 
 ## Configuration
 
-A successful connection is saved automatically, most-recently-used first,
-capped at 15 profiles. In the Connect dialog, typing 4+ characters into the
-Server field looks up saved profiles by prefix.
+Successful connections are saved automatically (most recent first, up to
+15); type 4+ characters in the Server field to look one up. Tools > Options
+sets the tree icon style, the results grid's default cell width, and
+IntelliSense on/off.
 
-Tools > Options controls the tree icon style, the results grid's maximum
-*default* cell length (the width a column is given from its content — drag
-a header separator to go wider), and IntelliSense on/off — saved
-immediately to the config file:
+Settings live in `~/.config/gossms/config.json` (Linux/macOS) or
+`%APPDATA%\gossms\config.json` (Windows). Saved passwords are encrypted
+(AES-256-GCM) with a key in `gossms.key` alongside it, sealed against the
+server, login, and auth method they belong to. Delete either file to reset
+all saved connections.
 
-- **Linux/macOS**: `~/.config/gossms/config.json`
-- **Windows**: `%APPDATA%\gossms\config.json`
+## Known Issues
 
-The config file is human-readable JSON, except saved passwords, which are
-encrypted (AES-256-GCM) using a key stored in a separate `gossms.key` file
-alongside it. Each password is sealed against the server, login, and
-authentication method it belongs to, so a password blob copied onto a
-different connection entry will not decrypt. Delete either file to reset all
-saved connections.
-
-If `config.json` can't be parsed it is kept as `config.json.corrupt` before
-goSSMS falls back to defaults, and a password that can't be decrypted (a
-replaced key file, a hand-edit) is left on disk untouched rather than
-overwritten — re-enter it in the Connect dialog to replace it.
+- Some terminals (e.g. xfce4-terminal) eat some key shortcuts
+- Entra authentication untested — no infrastructure available
+- Not tested on macOS yet — no Mac available
+- Release binaries are unsigned; checksums are provided
+- SQL Agent needs a rework
 
 ## Contributing
 
-The codebase is currently unstable and going through regular refactoring,
-so I'm not accepting pull requests at this time — please open an issue
-instead. I'll start accepting PRs once the project reaches a released,
-more stable state.
-
-For the internal package layout and design rationale, see
-[ARCHITECTURE.md](ARCHITECTURE.md).
+The codebase is still unstable and refactoring often, so I'm not accepting
+pull requests yet — please open an issue instead. For the internal package
+layout and design rationale, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Acknowledgements
 

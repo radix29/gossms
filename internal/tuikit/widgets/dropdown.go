@@ -46,7 +46,13 @@ func (d *DropDown) SetItems(items []string) {
 func (d *DropDown) Items() []string { return d.items }
 
 func (d *DropDown) SetBounds(x, y int) { d.rect.X, d.rect.Y = x, y }
-func (d *DropDown) Selected() int      { return d.selected }
+
+// RectX and Width report the widget's position and the visible width of its
+// value area (excluding label and brackets) — the pair InputField exposes, for
+// a caller laying a dropdown out in a row alongside other widgets.
+func (d *DropDown) RectX() int    { return d.rect.X }
+func (d *DropDown) Width() int    { return d.rect.W }
+func (d *DropDown) Selected() int { return d.selected }
 func (d *DropDown) SetSelected(i int) {
 	if i >= 0 && i < len(d.items) {
 		d.selected = i

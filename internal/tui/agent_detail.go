@@ -238,7 +238,7 @@ func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, []
 	rows := make([][]string, 0, len(history))
 	for _, h := range history {
 		rows = append(rows, []string{
-			h.JobName, formatSQLDate(h.RunDate), formatJobOutcome(h.Outcome), h.Duration.String(), h.Message,
+			h.JobName, formatSQLDate(h.RunDate), formatJobOutcome(h.Outcome), formatHMS(h.Duration), h.Message,
 		})
 	}
 	return []string{"Job Name", "Run Date", "Outcome", "Duration", "Message"}, rows, nil

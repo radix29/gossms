@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -27,6 +28,13 @@ type FilterDialog struct {
 	node *explorerNode
 
 	rows []filterDialogRow
+
+	// Column widths for this showing, from columnWidths. Fields rather than
+	// the constants because a dialog clamped to a narrow terminal lays its
+	// rows out inside the width it actually got.
+	propColW int
+	opW      int
+	valueW   int
 
 	serverName string
 	dbName     string
@@ -61,6 +69,9 @@ type filterDialogRow struct {
 // property name, then the operator dropdown, then the value field. Widths
 // fit the longest property name ("Is Memory Optimized") and the longest
 // operator name ("Does not contain") without clipping.
+//
+// These are the widths on a terminal wide enough for the whole dialog. On a
+// narrower one they are what columnWidths shrinks from — see its floors.
 const (
 	filterPropColW  = 21
 	filterOpW       = 17
@@ -68,6 +79,19 @@ const (
 	filterDialogW   = 74
 	filterButtonsOK = 1 // index of OK in buttons(), the Enter default
 )
+
+// Column floors for a dialog clamped narrower than filterDialogW. A property
+// name and an operator clip to something still recognisable; the value field
+// needs enough room to see what was typed.
+const (
+	filterPropMinW  = 10
+	filterOpMinW    = 8
+	filterValueMinW = 8
+)
+
+// filterRowFixedW is what layout puts around the three columns on a row: the
+// dropdown's two brackets, the value field's two, and the gap between them.
+const filterRowFixedW = 5
 
 func NewFilterDialog(app *App) *FilterDialog {
 	d := &FilterDialog{app: app}
@@ -99,6 +123,13 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	// mid-drag would otherwise reopen still routing every click to that field.
 	d.dragField = nil
 
+	// Sized before the widgets are built: recentre clamps the dialog to the
+	// terminal, and a widget's width is fixed at construction. Building the
+	// rows at their full widths first is what drew the value fields past the
+	// right border of a dialog clamped to a narrow window.
+	d.SetSize(filterDialogW, d.heightFor(len(props)))
+	d.propColW, d.opW, d.valueW = d.columnWidths()
+
 	d.rows = make([]filterDialogRow, 0, len(props))
 	for _, p := range props {
 		ops := filterOps(p.kind)
@@ -109,16 +140,41 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 		d.rows = append(d.rows, filterDialogRow{
 			prop:  p,
 			ops:   ops,
-			op:    widgets.NewDropDown("", names, filterOpW),
-			value: widgets.NewInputField("", filterValueW, false),
+			op:    widgets.NewDropDown("", names, d.opW),
+			value: widgets.NewInputField("", d.valueW, false),
 		})
 	}
 	d.seedFrom(node.data.Filter)
 
 	d.focusIdx = 0
 	d.syncFocus()
-	d.SetSize(filterDialogW, d.height())
 	d.Show()
+}
+
+// columnWidths divides the row's usable width between the three columns: the
+// full constants when they fit, which is the case on any terminal wide enough
+// for the whole dialog. Otherwise they shrink in the order a narrow dialog can
+// best afford — a clipped property name first (the column header still says
+// what the column is), then the operator, and the value field last, since that
+// is the one the user types into. Every column stops at its floor, so a
+// terminal too narrow even for those still overflows; that is ModalDialog's
+// own limit, not this dialog's.
+func (d *FilterDialog) columnWidths() (propColW, opW, valueW int) {
+	propColW, opW, valueW = filterPropColW, filterOpW, filterValueW
+	// -1 for the left text margin (layout's lx = inner.X+1).
+	short := propColW + opW + valueW + filterRowFixedW - (d.InnerRect().W - 1)
+	for _, c := range []struct {
+		w   *int
+		min int
+	}{{&propColW, filterPropMinW}, {&opW, filterOpMinW}, {&valueW, filterValueMinW}} {
+		if short <= 0 {
+			break
+		}
+		give := min(short, *c.w-c.min)
+		*c.w -= give
+		short -= give
+	}
+	return propColW, opW, valueW
 }
 
 // seedFrom fills the rows from the folder's current filter, so reopening
@@ -154,12 +210,13 @@ func (d *FilterDialog) headerLines() int {
 	return 2
 }
 
-// height sizes the dialog to its row count: the header, a blank row, the
+// heightFor sizes the dialog to a row count: the header, a blank row, the
 // "Filter Criteria:" caption and its column header, one row per property, a
 // blank row and the message line — then the 5 rows ModalDialog reserves
-// below the content (separator, button row, borders).
-func (d *FilterDialog) height() int {
-	return d.headerLines() + 4 + len(d.rows) + 1 + 5
+// below the content (separator, button row, borders). Takes the count rather
+// than reading len(d.rows), since show sizes the dialog before building them.
+func (d *FilterDialog) heightFor(rows int) int {
+	return d.headerLines() + 4 + rows + 1 + 5
 }
 
 func (d *FilterDialog) buttons() []string { return []string{"Clear Filter", "OK", "Cancel"} }
@@ -218,11 +275,16 @@ func (d *FilterDialog) openDropDown() *widgets.DropDown {
 // whose value the criterion's kind can't parse. A nil filter with no error
 // means every row was left empty — "no filter", which OK applies as a
 // removal.
+//
+// Values are trimmed here, which is what makes a whitespace-only row count as
+// empty. Matching trims too, so an untrimmed " " reached matchText as an empty
+// needle: `Contains` is true of every row, so the folder got the "(filtered)"
+// label and filtered nothing.
 func (d *FilterDialog) buildFilter() (*nodeFilter, int, error) {
 	f := &nodeFilter{}
 	for i := range d.rows {
 		r := &d.rows[i]
-		val := r.value.Value()
+		val := strings.TrimSpace(r.value.Value())
 		if val == "" {
 			continue
 		}
@@ -310,13 +372,13 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 	core.DrawText(s, lx, y, dim, "Filter Criteria:")
 	y++
 	core.DrawText(s, lx, y, dim, "Property")
-	core.DrawText(s, lx+filterPropColW, y, dim, "Operator")
-	core.DrawText(s, lx+filterPropColW+filterOpW+3, y, dim, "Value")
+	core.DrawTextClipped(s, lx+d.propColW, y, d.opW+2, dim, "Operator")
+	core.DrawTextClipped(s, lx+d.propColW+d.opW+3, y, d.valueW+2, dim, "Value")
 	y++
 
 	for i := range d.rows {
 		r := &d.rows[i]
-		core.DrawTextClipped(s, lx, y+i, filterPropColW-1, label, r.prop.name)
+		core.DrawTextClipped(s, lx, y+i, d.propColW-1, label, r.prop.name)
 		r.op.Draw(s)
 		r.value.Draw(s)
 	}
@@ -338,8 +400,8 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 func (d *FilterDialog) layout() {
 	inner := d.InnerRect()
 	lx := inner.X + 1
-	opX := lx + filterPropColW
-	valX := opX + filterOpW + 3
+	opX := lx + d.propColW
+	valX := opX + d.opW + 3
 	rowY := inner.Y + d.headerLines() + 3
 
 	for i := range d.rows {
