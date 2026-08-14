@@ -188,12 +188,7 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 			includeRow.SetChecked(d.databases[current].included)
 		}
 	}
-	grid.OnSelectRow = func(int) {
-		commit()
-		sync()
-		grid.SetData(headers, rowsFor())
-	}
-	sync()
+	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
 	gridRow := propsheet.NewGridRow(grid, 7)
 	// The grid mirrors state the checkbox owns, so it has to be redrawn from
@@ -201,7 +196,7 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 	// edited in place.
 	gridRow.DirtyFn = func() bool {
 		commit()
-		grid.SetData(headers, rowsFor())
+		reload()
 		for _, db := range d.databases {
 			if db.included {
 				return true
@@ -269,22 +264,13 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		agSetSelect(secondaryRoleRow, agSecondaryRoleItems, r.secondaryRole)
 		timeoutRow.SetValue(strconv.Itoa(r.sessionTimeout))
 	}
-	redraw := func() {
-		grid.SetData(headers, rowsFor())
-	}
-	grid.OnSelectRow = func(int) {
-		commit()
-		sync()
-		redraw()
-	}
-	sync()
+	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
 	addBtn := widgets.NewButton("Add Replica", func() {
 		commit()
 		d.addReplica(strings.TrimSpace(addNameRow.Value()), func() {
 			addNameRow.SetValue("")
-			redraw()
-			sync()
+			reload()
 		})
 	})
 	removeBtn := widgets.NewButton("Remove Replica", func() {
@@ -298,14 +284,13 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		}
 		d.replicas = append(d.replicas[:current], d.replicas[current+1:]...)
 		current = -1
-		redraw()
-		sync()
+		reload()
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 8)
 	gridRow.DirtyFn = func() bool {
 		commit()
-		redraw()
+		reload()
 		return len(d.replicas) > 1
 	}
 
@@ -417,12 +402,7 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 			priorityRow.SetValue(strconv.Itoa(d.replicas[current].backupPriority))
 		}
 	}
-	grid.OnSelectRow = func(int) {
-		commit()
-		sync()
-		grid.SetData(headers, rowsFor())
-	}
-	sync()
+	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
 	gridRow := propsheet.NewGridRow(grid, 8)
 	// The replica list is the General page's, and a replica added there after
@@ -430,7 +410,7 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 	// is what keeps the two in step without a change notification.
 	gridRow.DirtyFn = func() bool {
 		commit()
-		grid.SetData(headers, rowsFor())
+		reload()
 		return false
 	}
 

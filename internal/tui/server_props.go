@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -99,6 +100,12 @@ func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]config
 // the Processors page's affinity bitmasks) and call
 // Server.ReconfigureContext once at the end.
 func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow, boolRows []configBoolRow) (changed bool, err error) {
+	// sys.configurations comes back once for the whole apply instead of once
+	// per dirty row: it is a single ~80-row read either way, so a page with
+	// three dirty options pays one round trip rather than three. Fetched
+	// lazily so an apply with nothing dirty still costs nothing.
+	lookup := configLookup(sc)
+
 	for _, cr := range intRows {
 		if !cr.row.Dirty() {
 			continue
@@ -107,7 +114,7 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		if err != nil {
 			return changed, err
 		}
-		opt, err := sc.Server.ConfigurationByNameContext(ctx, cr.name)
+		opt, err := lookup(ctx, cr.name)
 		if err != nil {
 			return changed, err
 		}
@@ -124,7 +131,7 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		if cr.row.Checked() {
 			v = 1
 		}
-		opt, err := sc.Server.ConfigurationByNameContext(ctx, cr.name)
+		opt, err := lookup(ctx, cr.name)
 		if err != nil {
 			return changed, err
 		}
@@ -134,6 +141,30 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		changed = true
 	}
 	return changed, nil
+}
+
+// configLookup returns a by-name option lookup that reads sys.configurations
+// at most once, on the first call. An unknown name is reported the way
+// Server.ConfigurationByNameContext reports it, so callers see no difference.
+func configLookup(sc *db.ServerConn) func(context.Context, string) (*gosmo.ConfigurationOption, error) {
+	var byName map[string]*gosmo.ConfigurationOption
+	return func(ctx context.Context, name string) (*gosmo.ConfigurationOption, error) {
+		if byName == nil {
+			opts, err := sc.Server.ConfigurationsContext(ctx)
+			if err != nil {
+				return nil, err
+			}
+			byName = make(map[string]*gosmo.ConfigurationOption, len(opts))
+			for _, o := range opts {
+				byName[o.Name] = o
+			}
+		}
+		opt, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("gosmo: configuration option %q not found", name)
+		}
+		return opt, nil
+	}
 }
 
 // configApply returns an apply closure for pages whose only edits are

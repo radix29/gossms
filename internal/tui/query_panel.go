@@ -54,6 +54,13 @@ type QueryPanel struct {
 	savedText   string      // editor text as of the last save/load; compared by Dirty
 	resultsMode ResultsMode // Grid/Text/File — set via Query menu
 
+	// fileEnc and fileCRLF are how the opened file was encoded on disk, so
+	// Save writes it back in the same shape rather than converting it to
+	// LF-separated UTF-8. Their zero values are what a panel with no file
+	// wants anyway. See decodeTextFile.
+	fileEnc  fileEncoding
+	fileCRLF bool
+
 	// runMode is the resultsMode the in-flight (or most recent) execution
 	// was started under, snapshotted by runQuery. Every decision that has
 	// to agree with how that execution actually ran reads this, not
@@ -120,6 +127,12 @@ type QueryPanel struct {
 
 	executing bool
 	cancel    context.CancelFunc
+
+	// execDone is closed when the in-flight run's goroutine exits, which is
+	// how tickExecuting knows to stop. Both execute paths close it from a
+	// defer, so a panic can't leave the ticker waking the event loop once a
+	// second for the rest of the process's life.
+	execDone chan struct{}
 }
 
 // queryDragZone names the QueryPanel sub-region that owns the in-progress

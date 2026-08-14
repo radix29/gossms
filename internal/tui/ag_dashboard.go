@@ -144,8 +144,19 @@ func NewAGDashboard(app *App, conn *db.ServerConn, agName string) *AGDashboard {
 
 	ctx, cancel := context.WithCancel(conn.Context())
 	d.cancel = cancel
-	app.safego("refreshing an Always On dashboard", func() { d.run(ctx) })
+	// safegoRepair: both grids were latched at "Loading..." above, and only
+	// run's own refreshes ever replace that — a panic leaves the panel
+	// claiming to be loading for as long as it stays open.
+	app.safegoRepair("refreshing an Always On dashboard", d.refreshPanicked, func() { d.run(ctx) })
 	return d
+}
+
+// refreshPanicked replaces the "Loading..." placeholders after a panic in
+// the refresh loop — the App.safegoRepair step for run.
+func (d *AGDashboard) refreshPanicked() {
+	const msg = "Refresh stopped unexpectedly — see the log for details."
+	d.topGrid.SetStatus(msg)
+	d.bottomGrid.SetStatus(msg)
 }
 
 func (d *AGDashboard) Title() string {

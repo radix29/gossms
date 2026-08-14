@@ -46,7 +46,7 @@ coherent.
 
 - group ny schema
 
-
+- execution plan : graphic representation : align to the top like in SSMS
 --------------
 
 sp_blitz & index with reference built in

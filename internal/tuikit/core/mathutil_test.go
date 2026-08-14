@@ -19,6 +19,25 @@ func TestClamp(t *testing.T) {
 	}
 }
 
+// Clamp(i, 0, len(x)-1) over an empty x asks for the empty range [0, -1].
+// hi wins, so the result is -1 — "no selection" — and not 0, which would be
+// a row that isn't there. Callers across the package are written against
+// this; pinned here so it can't be "fixed" into returning lo.
+func TestClampEmptyRangeYieldsHi(t *testing.T) {
+	if got := Clamp(3, 0, -1); got != -1 {
+		t.Errorf("Clamp(3, 0, -1) = %d, want -1 (no selection)", got)
+	}
+	if got := Clamp(0, 0, -1); got != -1 {
+		t.Errorf("Clamp(0, 0, -1) = %d, want -1 (no selection)", got)
+	}
+	// lo is applied first, so a v below it still comes back as lo even on an
+	// empty range. No caller passes a negative index, but the asymmetry is
+	// the part a reader would guess wrong.
+	if got := Clamp(-5, 0, -1); got != 0 {
+		t.Errorf("Clamp(-5, 0, -1) = %d, want 0 (lo is applied before hi)", got)
+	}
+}
+
 func TestClampFloat(t *testing.T) {
 	cases := []struct {
 		v, lo, hi, want float64

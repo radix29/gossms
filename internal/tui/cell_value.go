@@ -142,7 +142,11 @@ func (a *App) openCellValuePanel(sqlType, column, value string) bool {
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, title)
 	qp.editor.SetText(value)
-	qp.savedText = value
+	// Read back from the editor, not from value: SetText expands tabs and
+	// folds CRLF, so seeding from value leaves an XML or JSON cell containing
+	// either one born dirty — and with no filePath, closing it pushes the user
+	// into Save As for a value they only wanted to look at.
+	qp.savedText = qp.editor.Text()
 	qp.editor.SetHighlighter(highlighter)
 	a.panels.SetActive(a.panels.AddPanel(qp))
 	a.focusPanels()

@@ -154,6 +154,12 @@ func (p *PropertySheet) Show() {
 	}
 }
 
+// Relayout re-derives the sheet's screen-relative size, then recentres.
+// Draw does the same thing every frame, so the sheet already followed a
+// resize on its own; overriding here keeps it correct at the moment the
+// host broadcasts, rather than one draw later.
+func (p *PropertySheet) Relayout() { p.recomputeSize() }
+
 func (p *PropertySheet) recomputeSize() {
 	if p.screen == nil {
 		return

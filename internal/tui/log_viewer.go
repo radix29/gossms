@@ -3,13 +3,13 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
@@ -331,7 +331,11 @@ func (lv *LogViewer) Load() {
 	// *list* was slow.
 	ctx, cancel := context.WithCancel(sc.Context())
 	lv.cancel = cancel
-	lv.app.safego("reading an error log", func() {
+	// safegoRepair, not safego: busy is cleared in the callback below, which
+	// a panic on the read goroutine never reaches. toolsEnabled gates the
+	// whole toolbar on it, so the panel would be left with Refresh, Export
+	// and both selectors dimmed and inert until it was closed.
+	lv.app.safegoRepair("reading an error log", func() { lv.readPanicked(seq) }, func() {
 		defer cancel()
 		enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
 		files, filesErr := sc.Server.EnumErrorLogsContext(enumCtx, logType)
@@ -358,6 +362,20 @@ func (lv *LogViewer) Load() {
 			lv.applyFilter() // resets detailScroll itself
 		})
 	})
+}
+
+// readPanicked releases the busy latch after a panic on the read goroutine —
+// Load's App.safegoRepair step. Guarded by seq like the normal completion
+// path: a newer Load has already set busy for itself, and clearing it here
+// would re-enable a toolbar whose read is still out.
+func (lv *LogViewer) readPanicked(seq int) {
+	if seq != lv.seq {
+		return
+	}
+	lv.busy = false
+	lv.cancel = nil
+	lv.refreshToolLabels()
+	lv.setStatus("Read stopped unexpectedly — see the log for details.")
 }
 
 // logGridColumns are the entry grid's columns. The marker on Date says which
@@ -450,8 +468,9 @@ func sortLogEntriesDesc(entries []*gosmo.ErrorLogEntry) []*gosmo.ErrorLogEntry {
 // splitLogLines breaks an entry's text into the lines the log itself wrote.
 // A single xp_readerrorlog row can span several — the startup banner puts
 // the build date and the OS on their own tab-indented lines — and the
-// details pane preserves that structure rather than reflowing the whole
-// thing into one paragraph.
+// details pane wraps each of them separately rather than reflowing the whole
+// thing into one paragraph. The line breaks survive; the indentation does
+// not, since core.WrapText splits on strings.Fields.
 func splitLogLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
@@ -542,7 +561,7 @@ func (lv *LogViewer) export() {
 		lv.app.safego("exporting a log", func() {
 			// Writing on the UI goroutine froze the whole app for the duration
 			// — a big log to a network path is seconds, not milliseconds.
-			err := os.WriteFile(path, []byte(text), 0o644)
+			err := fileutil.WriteAtomic(path, []byte(text), 0o644)
 			lv.app.postAndWake(func() {
 				if err != nil {
 					lv.app.setStatus(fmt.Sprintf("Export failed: %v", err))

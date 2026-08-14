@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -136,6 +137,23 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 	}
 	v := preservedValue(row, unset)
 	return v, v != ""
+}
+
+// redrawGrid replaces a grid's rows while leaving the cell cursor where the
+// user put it.
+//
+// `DataGrid.SetData` resets the cursor to 0,0 — correct for a fresh result set,
+// wrong for the redraws a Properties page does to re-render state the user is
+// still navigating. Two things go wrong without the restore, and the second is
+// the one that makes a page unusable rather than merely jumpy: the cursor jumps
+// to the first row, and `propsheet.GridRow` — which reports movement by diffing
+// `SelectedCell` either side of the key — then answers "not handled", so `Form`
+// moves focus straight out of the grid on the first arrow key. See
+// `wireGridEditor` (ag_props.go) for the worked example and the bug it fixed.
+func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
+	r, c := grid.SelectedCell()
+	grid.SetData(headers, rows)
+	grid.SetSelectedCell(r, c)
 }
 
 // compatLevelItems is the Compatibility level dropdown's base list: the

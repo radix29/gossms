@@ -2,11 +2,16 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
-
-	"github.com/radix29/gossms/internal/tuikit/core"
 )
+
+// errTaskPanicked is what a task is finished with when its goroutine
+// panicked — the panic itself is already logged and reported, so this only
+// has to give the task a terminal state and a reason in the Tasks dialog.
+var errTaskPanicked = errors.New("stopped unexpectedly — see the log for details")
 
 // maxTaskHistory caps how many finished tasks App.tasks keeps around (for
 // the Tasks dialog's history) before the oldest are evicted. Running tasks
@@ -56,7 +61,7 @@ func (t *Task) statusText() string {
 		if t.Progress < 0 {
 			return t.Label + " — " + msg
 		}
-		return t.Label + " — " + core.Itoa(t.Progress) + "% — " + msg
+		return t.Label + " — " + strconv.Itoa(t.Progress) + "% — " + msg
 	case t.Err != nil:
 		return t.Label + " — failed: " + t.Err.Error()
 	default:
@@ -102,17 +107,22 @@ func (a *App) postProgress(t *Task, progress int, message string) {
 // consumer wants this, the same way query execution always reports its own
 // completion), and wakes the event loop.
 func (a *App) postTaskDone(t *Task, err error) {
-	a.postAndWake(func() {
-		t.Done = true
-		t.Err = err
-		t.Finished = time.Now()
-		t.Cancel()
-		if err != nil {
-			a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, err))
-		} else {
-			a.setStatus(t.Label + " completed")
-		}
-	})
+	a.postAndWake(func() { a.markTaskDone(t, err) })
+}
+
+// markTaskDone is postTaskDone's body, for a caller that is already on the
+// main goroutine — a safegoRepair step, which is posted there itself and
+// must not add a second hop that would land after the panic report.
+func (a *App) markTaskDone(t *Task, err error) {
+	t.Done = true
+	t.Err = err
+	t.Finished = time.Now()
+	t.Cancel()
+	if err != nil {
+		a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, err))
+	} else {
+		a.setStatus(t.Label + " completed")
+	}
 }
 
 // runningTaskCount reports how many tasks are still in flight, for the

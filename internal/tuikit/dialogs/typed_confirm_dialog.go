@@ -74,6 +74,13 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 	d.ModalDialog.Show()
 }
 
+// Relayout re-wraps the message for the new screen width, then recentres.
+func (d *TypedConfirmDialog) Relayout() {
+	w, h, lines := d.fitMessage(d.message, typedConfirmW, typedConfirmH)
+	d.msgLines = lines
+	d.SetSize(w, h)
+}
+
 func (d *TypedConfirmDialog) syncFocus() {
 	d.input.Focus(d.focus == typedConfirmFocusInput)
 }

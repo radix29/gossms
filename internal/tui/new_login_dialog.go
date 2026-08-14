@@ -54,15 +54,18 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		return nil, err
 	}
 	dbNames := make([]string, 0, len(dbs))
-	var dbRoles []nloginDBRoles
 	for _, d := range dbs {
 		dbNames = append(dbNames, d.Name())
-		if d.State() != "ONLINE" {
-			continue
-		}
+	}
+	// Two round trips per ONLINE database, so serially this is 2N latencies
+	// inside one propFetchTimeout before the dialog can show any page at all.
+	// A database that drops out here — offline, or unreadable — simply has no
+	// roles or schemas to offer, which is what the User Mapping page already
+	// shows for an offline one.
+	dbRoles, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (nloginDBRoles, error) {
 		roles, err := d.DatabaseRolesContext(ctx)
 		if err != nil {
-			return nil, err
+			return nloginDBRoles{}, err
 		}
 		var roleNames []string
 		for _, r := range roles {
@@ -73,15 +76,16 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		}
 		schemas, err := d.SchemasContext(ctx)
 		if err != nil {
-			return nil, err
+			return nloginDBRoles{}, err
 		}
 		schemaNames := make([]string, len(schemas))
 		for i, sch := range schemas {
 			schemaNames[i] = sch.Name
 		}
-		dbRoles = append(dbRoles, nloginDBRoles{
-			dbName: d.Name(), roleNames: roleNames, schemaNames: schemaNames,
-		})
+		return nloginDBRoles{dbName: d.Name(), roleNames: roleNames, schemaNames: schemaNames}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	langs, err := sc.Server.LanguagesContext(ctx)

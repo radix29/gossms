@@ -97,3 +97,31 @@ func TestPageActionLatchClearsAfterAnError(t *testing.T) {
 		t.Fatal("the latch survived a failed action")
 	}
 }
+
+// The latch's release lives in onDone, which a panicking action never
+// reaches. Without a repair step the button refuses every later click for the
+// rest of the dialog's life — Check Syntax, Estimate Rows, Rebuild and the
+// rest all go dead with no explanation.
+func TestPageActionLatchClearsWhenTheActionPanics(t *testing.T) {
+	a := newTestApp()
+	d := &PropDialog{app: a, ctx: context.Background()}
+
+	var busy bool
+	doneRan := false
+	d.runPageActionOnce(&busy, func(context.Context) error { panic("boom") },
+		func(error) { doneRan = true })
+
+	drainUntil(t, a, func() bool { return !busy }, "the in-flight latch to clear")
+	if doneRan {
+		t.Error("onDone ran for an action that panicked")
+	}
+
+	// The latch clearing is only worth anything if the button works again.
+	ran := make(chan struct{})
+	d.runPageActionOnce(&busy, func(context.Context) error { close(ran); return nil }, func(error) {})
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the next click was refused — the latch never really cleared")
+	}
+}

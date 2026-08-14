@@ -335,3 +335,61 @@ func contains(haystack, needle string) bool {
 	}
 	return false
 }
+
+// DrawFrame exists so a caller needing both rects gets them from the layout
+// pass Draw already made, rather than laying the chart out twice — and that
+// is only safe while it answers exactly what Draw and TimeRow do. A rect that
+// drifts puts a caller's pinned-column marker on the wrong row.
+func TestDrawFrameAgreesWithDrawAndTimeRow(t *testing.T) {
+	series := []Series{
+		{Label: "A", Color: colA, Values: []float64{1, 9, 3, 400}},
+		{Label: "B", Color: colB, Values: []float64{7, 2}},
+	}
+	rects := []core.Rect{
+		{X: 0, Y: 0, W: 40, H: 12},
+		{X: 2, Y: 3, W: 24, H: 8},
+		{X: 0, Y: 0, W: 6, H: 2}, // too short for a time row
+		{X: 0, Y: 0, W: 0, H: 0}, // degenerate
+	}
+	for _, r := range rects {
+		h := HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}
+		plot, timeRow := h.DrawFrame(NewCanvas(40, 14), r)
+		if want := h.Draw(NewCanvas(40, 14), r); plot != want {
+			t.Errorf("%+v: DrawFrame plot = %+v, Draw = %+v", r, plot, want)
+		}
+		if want := h.TimeRow(r); timeRow != want {
+			t.Errorf("%+v: DrawFrame timeRow = %+v, TimeRow = %+v", r, timeRow, want)
+		}
+
+		sh := StackedHistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}
+		plot, timeRow = sh.DrawFrame(NewCanvas(40, 14), r)
+		if want := sh.Draw(NewCanvas(40, 14), r); plot != want {
+			t.Errorf("%+v: stacked DrawFrame plot = %+v, Draw = %+v", r, plot, want)
+		}
+		if want := sh.TimeRow(r); timeRow != want {
+			t.Errorf("%+v: stacked DrawFrame timeRow = %+v, TimeRow = %+v", r, timeRow, want)
+		}
+	}
+}
+
+// DrawFrame must paint the same cells Draw does — it is Draw, and a caller
+// choosing it for the extra rect must not be choosing a different chart.
+func TestDrawFrameDrawsWhatDrawDraws(t *testing.T) {
+	series := []Series{{Label: "A", Color: colA, Values: []float64{4, 0, 2, 4}}}
+	r := core.Rect{X: 0, Y: 0, W: 30, H: 10}
+
+	a := NewCanvas(30, 10)
+	HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}.Draw(a, r)
+	b := NewCanvas(30, 10)
+	HistoryChart{Series: series, TimeLabel: "10:31:07", Interval: time.Minute}.DrawFrame(b, r)
+
+	for y := range 10 {
+		for x := range 30 {
+			gotStr, gotStyle, _ := b.Get(x, y)
+			wantStr, wantStyle, _ := a.Get(x, y)
+			if gotStr != wantStr || gotStyle != wantStyle {
+				t.Fatalf("cell (%d,%d): DrawFrame drew %q, Draw drew %q", x, y, gotStr, wantStr)
+			}
+		}
+	}
+}

@@ -139,7 +139,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 	// too, not only moving off it.
 	transferRow.SetOnChange(func(string) {
 		commitCurrent()
-		grid.SetData(spec.Headers, rowsFor())
+		redrawGrid(grid, spec.Headers, rowsFor())
 	})
 	grid.OnSelectRow = syncFromSelection
 	if len(items) > 0 {
@@ -162,7 +162,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 		for _, it := range items {
 			it.newOwner = it.origOwner
 		}
-		grid.SetData(spec.Headers, rowsFor())
+		redrawGrid(grid, spec.Headers, rowsFor())
 		if selected >= 0 && selected < len(items) {
 			transferRow.SetSelected(indexOf(owners, items[selected].newOwner))
 		}

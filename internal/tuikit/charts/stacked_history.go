@@ -44,54 +44,43 @@ type StackedHistoryChart struct {
 	LegendRows int
 }
 
+// spec is this chart as the shared history machinery sees it: an auto-scale
+// over the largest per-bucket *total*, since the column's height is the sum,
+// and columns composed as one stacked run.
+func (h StackedHistoryChart) spec() historySpec {
+	return historySpec{
+		series:     h.Series,
+		scale:      h.Scale,
+		autoMax:    func() float64 { return maxStackTotal(h.Series) },
+		yLevels:    h.YLevels,
+		legendRows: h.LegendRows,
+		gridEvery:  h.GridEvery,
+		timeLabel:  h.TimeLabel,
+		interval:   h.Interval,
+		drawCols:   h.drawColumns,
+	}
+}
+
 // Draw renders the chart into r and returns the plot rect it drew into —
 // see HistoryChart.Draw.
 func (h StackedHistoryChart) Draw(s tcell.Screen, r core.Rect) core.Rect {
-	if r.W <= 0 || r.H <= 0 {
-		return core.Rect{}
-	}
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxStackTotal(h.Series))
-	}
-	frame := layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series))
-	if frame.plot.W <= 0 || frame.plot.H <= 0 {
-		blankRect(s, r)
-		return frame.plot
-	}
+	plot, _ := h.spec().drawFrame(s, r)
+	return plot
+}
 
-	gridEvery := h.GridEvery
-	if gridEvery == 0 {
-		gridEvery = gridSpacing(frame.plot.W)
-	}
-	drawPlotBackground(s, frame.plot, gridEvery)
-	h.drawColumns(s, frame.plot, sc)
-
-	drawYAxis(s, frame.axis, frame.plot, sc, levelsFor(h.YLevels, frame.plot.H))
-	drawTimeAxis(s, frame.timeRow, frame.plot, h.TimeLabel, h.Interval, gridEvery)
-	DrawLegend(s, frame.legend, LegendItems(h.Series))
-	return frame.plot
+// DrawFrame is Draw reporting the time row as well — see
+// HistoryChart.DrawFrame.
+func (h StackedHistoryChart) DrawFrame(s tcell.Screen, r core.Rect) (plot, timeRow core.Rect) {
+	return h.spec().drawFrame(s, r)
 }
 
 // Plot is the rect Draw would plot into for the same r — see
 // HistoryChart.Plot.
-func (h StackedHistoryChart) Plot(r core.Rect) core.Rect {
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxStackTotal(h.Series))
-	}
-	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).plot
-}
+func (h StackedHistoryChart) Plot(r core.Rect) core.Rect { return h.spec().plotRect(r) }
 
 // TimeRow is the row Draw writes the time scale on for the same r — see
 // HistoryChart.TimeRow.
-func (h StackedHistoryChart) TimeRow(r core.Rect) core.Rect {
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxStackTotal(h.Series))
-	}
-	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).timeRow
-}
+func (h StackedHistoryChart) TimeRow(r core.Rect) core.Rect { return h.spec().timeRowRect(r) }
 
 // drawColumns composes and draws one stacked run per visible bucket.
 func (h StackedHistoryChart) drawColumns(s tcell.Screen, plot core.Rect, sc Scale) {

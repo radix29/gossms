@@ -41,6 +41,36 @@ func TestIsSystemSchemaExcludesFixedRoleSchemas(t *testing.T) {
 	}
 }
 
+// isSystemUser and isSystemSchema are separate predicates over the same four
+// names, kept apart because they answer for different statements and could
+// legitimately diverge if SQL Server ever let one go. Nothing else pins that
+// they agree *today*, though, and they must: each of the four is undroppable
+// as a user and as a schema, so a name added to or removed from one list
+// alone silently offers Delete on half of a principal that cannot take it.
+//
+// This is the test to change — deliberately, with a live result behind it —
+// if the two ever really do need different answers.
+func TestSystemUserAndSchemaListsAgree(t *testing.T) {
+	names := []string{
+		// The four, from both directions.
+		"dbo", "guest", "sys", "INFORMATION_SCHEMA",
+		// Fixed-role schemas: droppable, and a user of the same name is an
+		// ordinary user. Not system on either side.
+		"db_owner", "db_datareader", "db_denydatawriter",
+		// Ordinary names, and the casing traps: the comparison is
+		// case-sensitive on purpose, so under a case-sensitive collation a
+		// separately created "Guest" stays editable.
+		"Sales", "HealthClinicApp", "Guest", "DBO", "information_schema",
+	}
+	for _, name := range names {
+		if isSystemUser(name) != isSystemSchema(name) {
+			t.Errorf("%s: isSystemUser=%v but isSystemSchema=%v; the four built-in "+
+				"names are undroppable as both, so the two lists must agree",
+				name, isSystemUser(name), isSystemSchema(name))
+		}
+	}
+}
+
 // public carries is_fixed_role = 0 in both families while refusing DROP and
 // ALTER ... WITH NAME, so the flag alone is not the predicate.
 func TestPublicIsSystemDespiteNotBeingAFixedRole(t *testing.T) {

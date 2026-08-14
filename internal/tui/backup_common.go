@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,15 +24,7 @@ import (
 // clipped line stops right before the part that says what went wrong. Every
 // dialog that shows a server error has room for several lines; use them.
 func wrapMessage(text string, w, maxLines int) []string {
-	if w <= 0 || maxLines <= 0 {
-		return nil
-	}
-	lines := core.WrapText(text, w)
-	if len(lines) > maxLines {
-		rest := strings.Join(lines[maxLines-1:], " ")
-		lines = append(lines[:maxLines-1], core.Truncate(rest, w))
-	}
-	return lines
+	return core.WrapTextLimit(text, w, maxLines)
 }
 
 // joinServerPath joins a directory and file name using the separator the
@@ -115,7 +108,7 @@ func drawProgressBar(s tcell.Screen, x, y, w, pct int, st tcell.Style) {
 		s.SetContent(x+i, y, ch, nil, st)
 	}
 	if pct >= 0 {
-		core.DrawText(s, x+barW+1, y, st, core.Itoa(pct)+"%")
+		core.DrawText(s, x+barW+1, y, st, strconv.Itoa(pct)+"%")
 	}
 }
 

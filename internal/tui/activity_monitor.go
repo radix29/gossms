@@ -400,7 +400,12 @@ func (am *ActivityMonitor) startActivityCollector() {
 	am.buildTools() // the rate/Pause controls are gated on the feed's state
 
 	collector, ctx, rate := am.collector, conn.Context(), am.act.rate()
-	am.app.safego("collecting server activity", func() { am.runCollector(collector, ctx, rate) })
+	// safegoRepair, not safego: am.act.collecting was latched above and is
+	// cleared only by runCollector's second half, which a panic skips —
+	// collectorStopped is that half, and is already guarded on collector.
+	am.app.safegoRepair("collecting server activity",
+		func() { am.collectorStopped(collector) },
+		func() { am.runCollector(collector, ctx, rate) })
 }
 
 // runCollector is the collector goroutine's whole body: collect, then tell the
@@ -437,7 +442,10 @@ func (am *ActivityMonitor) startTempDBCollector() {
 	am.buildTools()
 
 	collector, ctx, rate := am.tdCollector, conn.Context(), am.td.rate()
-	am.app.safego("collecting tempdb activity", func() { am.runTempDBCollector(collector, ctx, rate) })
+	// safegoRepair for the same reason as startActivityCollector's.
+	am.app.safegoRepair("collecting tempdb activity",
+		func() { am.tempDBCollectorStopped(collector) },
+		func() { am.runTempDBCollector(collector, ctx, rate) })
 }
 
 // runTempDBCollector is runCollector for the TempDB tab — same two halves,

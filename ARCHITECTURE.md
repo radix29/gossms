@@ -450,8 +450,20 @@ one: `dialogs.FileSystem` is synchronous, so a remote implementation
 handler and the loop cannot post anything until it returns. `showBusy` draws
 the dialog with a "Listing ..." line and calls `Screen.Show()` before the
 call, so the wait is legible instead of looking like a hang — a listing of
-`C:\Windows\System32` over the wire takes ten seconds and used to sit there
-with the *previous* directory still on screen.
+`C:\Windows\System32` over the wire used to sit there for ten seconds with
+the *previous* directory still on screen.
+
+**That ten seconds is history, not a current figure**, and this paragraph
+said otherwise until 2026-08-14. gosmo's `enumFileSystemDMF` has since gained
+a `WHERE level = 0` filter, without which
+`sys.dm_os_enumerate_filesystem` walks the whole subtree under the path
+rather than listing one directory. Re-measured live on win10cli through
+`EnumFileSystemContext`, best of three: `C:\Windows\System32` 4551 entries in
+**1.2s**, `C:\Windows` 101 in 35ms, `C:\Program Files` 29 in 11ms. `showBusy`
+still earns its place — a second of frozen UI is worth labelling, and the
+call is still synchronous — but do not size anything off the old number. It
+was cited in a review as evidence that `serverFileSystemTimeout` needed
+raising, which the real timings do not support.
 
 It repaints only for a `dialogs.BlockingFileSystem`, which `serverFS`
 implements and `LocalFileSystem` does not: on the local disk the extra frame
@@ -473,6 +485,42 @@ The one exception is `DetailBrowser.backfillRows`
 (`detail_browser_backfill.go`), which carries its own `recover` so it can
 queue `markFailed` *before* `wg.Done` releases the caller. It documents that
 on the spot.
+
+### When the goroutine latched UI state first: safegoRepair
+
+`safego` alone reports the panic and stops there, which is not enough for the
+common shape where the *caller* latched something on the UI goroutine before
+the `go` — a busy flag, a `SetApplying(true)`, a `"Loading..."` placeholder, a
+toolbar the flag dims. The release is a plain statement inside the goroutine
+body, or lives in the callback it posts when it finishes, and a panic unwinds
+straight past both. The latch then survives for the object's lifetime.
+
+Use **`App.safegoRepair(what, repair, fn)`**: identical to `safego`, plus it
+queues `repair` on the UI goroutine when — and only when — `fn` panics, before
+`recoverPanic` reports it, so the panic stays the status bar's last word.
+`repair` runs on the main goroutine already, so it calls the UI directly and
+must not add a second `postAndWake` hop of its own (`App.markTaskDone` is
+`postTaskDone`'s body split out for exactly that reason).
+
+Two passes over this codebase (2026-08-13, 2026-08-14) converted sixteen
+sites: query execution and the estimated plan, both `runPipeline`s and
+`New …`'s page loader, the Activity Monitor's two collectors, the backup and
+restore tasks, the AG dashboard, the update check, dependencies, and the log
+viewer, completion inventory and property-page actions before them. The
+symptoms were all the same shape — Execute disabled for the panel's lifetime,
+a Properties dialog inert down to its Cancel button, a task the status bar
+counts as running forever.
+
+A goroutine that also owns a resource the same panic would leak — a
+`context.CancelFunc`, a channel a ticker is selecting on — releases it with
+`defer` *inside* `fn`, not from `repair`. `QueryPanel.startRun` is the worked
+example: `defer cancel()` and `defer close(done)` on entry, because a panic
+past `close(done)` leaves `tickExecuting` waking the event loop once a second
+for the rest of the process's life.
+
+Cover a new one the way `TestPageActionLatchClearsWhenTheActionPanics` does:
+panic the action, then assert the *next* one still runs. A test that only
+checks the flag flipped passes on a latch nothing can use again.
 
 ## Building & testing
 

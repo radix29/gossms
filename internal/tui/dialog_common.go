@@ -53,7 +53,16 @@ func prevFocus(idx, n int) int { return (idx - 1 + n) % n }
 // scrollToShow returns the scroll offset that brings row sel into a viewport
 // dataH rows tall, moving by the least that does it — up when sel is above the
 // top, down when it is past the bottom, unchanged when it is already in view.
+//
+// A viewport with no rows in it has nothing to scroll anything into, so the
+// offset is left alone. Without the guard the "past the bottom" arm below is
+// unconditionally true at dataH == 0 and answers sel+1 — scrolled one row
+// past the very selection it was asked to reveal, which draws as an empty
+// pane rather than as a short one.
 func scrollToShow(sel, scroll, dataH int) int {
+	if dataH <= 0 {
+		return scroll
+	}
 	if sel < scroll {
 		return sel
 	}

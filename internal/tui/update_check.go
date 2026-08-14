@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +20,11 @@ const githubReleasesAPI = "https://api.github.com/repos/radix29/gossms/releases/
 // githubReleasesPage is shown as the fallback link when a release response
 // doesn't carry its own html_url.
 const githubReleasesPage = "https://github.com/radix29/gossms/releases/latest"
+
+// errUpdateCheckPanicked is what the update dialog reports when the check
+// goroutine panicked — the panic itself is already logged and on the status
+// bar, so this only has to get the dialog out of its checking state.
+var errUpdateCheckPanicked = errors.New("the update check stopped unexpectedly — see the log for details")
 
 // githubRelease holds the fields of GitHub's release API response gossms
 // actually uses.
@@ -42,7 +48,11 @@ func (r githubRelease) releasesURL() string {
 func (a *App) checkForUpdates() {
 	a.updateDialog.ShowChecking(version.Version)
 
-	a.safego("the update check", func() {
+	// safegoRepair: ShowChecking latches the dialog into its loading state,
+	// which only ShowResult leaves — a panic strands it there.
+	a.safegoRepair("the update check", func() {
+		a.updateDialog.ShowResult(version.Version, githubRelease{}, errUpdateCheckPanicked)
+	}, func() {
 		rel, err := fetchLatestRelease()
 		a.postAndWake(func() {
 			a.updateDialog.ShowResult(version.Version, rel, err)

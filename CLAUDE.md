@@ -185,6 +185,17 @@ ordinary cleanup. The no-removal rule is about gosmo only.
 
 ## Application rules (not derivable from the code)
 
+- **Seed `QueryPanel.savedText` from `qp.editor.Text()`, never from the string
+  you just passed to `SetText`.** `SetText` normalizes what it is given —
+  expands tabs, folds CRLF to LF, replaces invalid UTF-8 with U+FFFD — so
+  seeding from the source marks the panel dirty the moment it opens. That is
+  not cosmetic: a panel that is falsely dirty prompts to save on close, and the
+  save rewrites the file in the editor's normalized form. `File > Open` shipped
+  that way and converted a UTF-16 script to U+FFFD-laden UTF-8 on disk
+  (2026-08-14). Anything that reads a text file also goes through
+  `decodeTextFile`/`encodeTextFile` (`text_encoding.go`), which detect the
+  encoding **from a BOM only** — a guessed encoding rewrites the user's script
+  in one they never chose — and preserve the file's line endings.
 - **A widget's `HandleKey`/`HandleMouse` must return `true` only for events
   it actually acted on** — never a blanket "I'm focused, so I consumed it."
   `propsheet.Form` gives the focused row first refusal and falls back to its
@@ -203,6 +214,20 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   which depend on the blanket answer. Detect movement, never predict it, and
   remember that a grid with no cell cursor scrolls without changing
   `SelectedCell`.
+  **The other side of that contract: never call `DataGrid.SetData` on a grid
+  the user is navigating without putting the cell cursor back — use
+  `redrawGrid` (`prop_grid_helpers.go`).** `SetData` resets the selection to
+  0,0. From inside the grid's own `OnSelectRow` that is worst, because the
+  callback runs *after* the grid has moved: the move is undone, `GridRow`
+  correctly reports "not handled", and `Form` moves focus out of the grid on
+  the very first arrow key. Six sites shipped that way — three AG Properties
+  pages, three New Availability Group pages, plus `owner_transfer_page.go`'s
+  dropdown — and on each, every row but the first was unselectable by mouse
+  *and* keyboard (found and fixed 2026-08-14; see `docs/journal.md`).
+  `wireGridEditor` (`ag_props.go`) packages the whole commit/load/redraw
+  wiring for the grid-plus-detail-editor idiom. A redraw after the row *set*
+  changes — an add/remove button, a new result — is a different case and may
+  reset the cursor deliberately.
 - **Every menu item and toolbar button must be context-gated** — never let a
   click or keypress do nothing, do the wrong thing, or crash because a
   precondition (a connection, an active query panel, an Object Explorer
@@ -263,6 +288,17 @@ keypress drains it (shipped bug: tree nodes stuck on "Loading..."). See
 `ARCHITECTURE.md` § Async result delivery: postAndWake. `QueryPanel`'s
 elapsed-timer tick is the one legitimate bare `wakeEventLoop()` caller: it
 has no callback to post, only a redraw to ask for.
+
+**A background operation that latches UI state before it starts must use
+`App.safegoRepair`, not `App.safego`** — a busy flag, a "loading" placeholder,
+a toolbar the flag dims. The latch is released by the callback the goroutine
+posts when it finishes, and a panic unwinds straight past that callback, so
+the latch survives for the object's lifetime: the Log File Viewer's whole
+toolbar stays inert, an Activity Monitor tab sits at "Running..." forever, a
+Properties page's button refuses every later click. `safego` alone reports the
+panic and leaves the UI stuck; the repair step is the way out. Cover it the
+way `TestPageActionLatchClearsWhenTheActionPanics` does — panic the action,
+then assert the *next* click still runs.
 
 ## Splitting a file that's grown too large
 

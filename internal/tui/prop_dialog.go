@@ -174,12 +174,20 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 // any page's dirty state; the page decides when its buttons are relevant.
 // Callers needing a value out of fn capture it in an outer variable.
 func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
-	d.app.safego("a properties page action", func() {
+	d.app.safego("a properties page action", d.pageActionBody(fn, onDone))
+}
+
+// pageActionBody is the goroutine body both runPageAction and
+// runPageActionOnce hand to safego: one round trip bounded by
+// propFetchTimeout, reported back on the UI goroutine. The two differ only
+// in what happens when it panics.
+func (d *PropDialog) pageActionBody(fn func(ctx context.Context) error, onDone func(err error)) func() {
+	return func() {
 		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
 		defer cancel()
 		err := fn(ctx)
 		d.post(func() { onDone(err) })
-	})
+	}
 }
 
 // runPageActionOnce is runPageAction with an in-flight latch, for a button
@@ -191,15 +199,22 @@ func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone fu
 //
 // inFlight is a plain bool because both halves run on the UI goroutine: the
 // button's click handler, and onDone via d.post.
+//
+// safegoRepair rather than safego, unlike runPageAction, precisely because
+// there is a latch: onDone is what clears it, and a panic on the action's
+// goroutine unwinds past onDone — leaving the button refusing every later
+// click for the dialog's lifetime, with nothing on screen to say why.
 func (d *PropDialog) runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error)) {
 	if *inFlight {
 		return
 	}
 	*inFlight = true
-	d.runPageAction(fn, func(err error) {
-		*inFlight = false
-		onDone(err)
-	})
+	d.app.safegoRepair("a properties page action",
+		func() { *inFlight = false },
+		d.pageActionBody(fn, func(err error) {
+			*inFlight = false
+			onDone(err)
+		}))
 }
 
 // asyncStatusButton returns a button that runs fn via runPageAction,
@@ -290,7 +305,7 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	d.SetApplying(true)
 	d.SetMessage("", false)
 
-	d.app.safego("applying property changes", func() {
+	d.app.safegoRepair("applying property changes", d.applyPanicked, func() {
 		var runErr error
 		for _, fn := range fns {
 			if runErr = fn(runCtx); runErr != nil {
@@ -306,6 +321,15 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 			onSuccess()
 		})
 	})
+}
+
+// applyPanicked releases the applying latch after a panic in runPipeline's
+// goroutine — its App.safegoRepair step. While applying, PropertySheet
+// ignores every button (activateButton) and defers page loads, so without
+// this the whole dialog — Cancel included — is inert until it is force-closed.
+func (d *PropDialog) applyPanicked() {
+	d.SetApplying(false)
+	d.SetMessage("Apply stopped unexpectedly — see the log for details.", true)
 }
 
 // runApply validates and applies every dirty page for real. hideOnSuccess

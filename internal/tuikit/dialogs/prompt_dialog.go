@@ -82,6 +82,13 @@ func (d *PromptDialog) ShowPrompt(title, message, label, initial string, onAccep
 	d.ModalDialog.Show()
 }
 
+// Relayout re-wraps the message for the new screen width, then recentres.
+func (d *PromptDialog) Relayout() {
+	w, h, lines := d.fitMessage(d.message, promptW, promptH)
+	d.msgLines = lines
+	d.SetSize(w, h)
+}
+
 // Value is what the input currently holds, trimmed.
 func (d *PromptDialog) Value() string { return strings.TrimSpace(d.input.Value()) }
 

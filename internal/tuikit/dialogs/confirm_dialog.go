@@ -88,6 +88,13 @@ func (d *ConfirmDialog) show(title, message string, buttons []string, onAnswer f
 	d.ModalDialog.Show()
 }
 
+// Relayout re-wraps the message for the new screen width, then recentres.
+func (d *ConfirmDialog) Relayout() {
+	w, h, lines := d.fitMessage(d.message, confirmDialogMinW, confirmDialogBaseH)
+	d.msgLines = lines
+	d.SetSize(w, h)
+}
+
 // Draw renders the confirm dialog.
 func (d *ConfirmDialog) Draw(s tcell.Screen) {
 	if !d.visible {

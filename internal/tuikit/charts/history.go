@@ -47,60 +47,49 @@ type HistoryChart struct {
 	LegendRows int
 }
 
+// spec is this chart as the shared history machinery sees it: an auto-scale
+// over each series' own largest value, and columns drawn independently.
+func (h HistoryChart) spec() historySpec {
+	return historySpec{
+		series:     h.Series,
+		scale:      h.Scale,
+		autoMax:    func() float64 { return maxValue(h.Series) },
+		yLevels:    h.YLevels,
+		legendRows: h.LegendRows,
+		gridEvery:  h.GridEvery,
+		timeLabel:  h.TimeLabel,
+		interval:   h.Interval,
+		drawCols:   h.drawColumns,
+	}
+}
+
 // Draw renders the chart into r and returns the plot rect it drew into —
 // the same rect Plot reports for the same r, handed back so a caller that
 // hit-tests what it just drew doesn't repeat the scale and layout pass.
 func (h HistoryChart) Draw(s tcell.Screen, r core.Rect) core.Rect {
-	if r.W <= 0 || r.H <= 0 {
-		return core.Rect{}
-	}
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxValue(h.Series))
-	}
-	frame := layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series))
-	if frame.plot.W <= 0 || frame.plot.H <= 0 {
-		blankRect(s, r)
-		return frame.plot
-	}
+	plot, _ := h.spec().drawFrame(s, r)
+	return plot
+}
 
-	gridEvery := h.GridEvery
-	if gridEvery == 0 {
-		gridEvery = gridSpacing(frame.plot.W)
-	}
-	drawPlotBackground(s, frame.plot, gridEvery)
-	h.drawColumns(s, frame.plot, sc)
-
-	drawYAxis(s, frame.axis, frame.plot, sc, levelsFor(h.YLevels, frame.plot.H))
-	drawTimeAxis(s, frame.timeRow, frame.plot, h.TimeLabel, h.Interval, gridEvery)
-	DrawLegend(s, frame.legend, LegendItems(h.Series))
-	return frame.plot
+// DrawFrame is Draw reporting the time row as well, for a caller that needs
+// both — Draw followed by TimeRow lays the chart out twice, and the layout
+// pass runs the auto-scale walk over every bucket of every series.
+func (h HistoryChart) DrawFrame(s tcell.Screen, r core.Rect) (plot, timeRow core.Rect) {
+	return h.spec().drawFrame(s, r)
 }
 
 // Plot is the rect Draw would plot into for the same r — the data area,
 // without the axis gutter, time row, or legend. A caller that hit-tests a
 // drawn chart has to ask for this rather than recompute it, or the two
 // disagree the moment either chart's chrome changes.
-func (h HistoryChart) Plot(r core.Rect) core.Rect {
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxValue(h.Series))
-	}
-	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).plot
-}
+func (h HistoryChart) Plot(r core.Rect) core.Rect { return h.spec().plotRect(r) }
 
 // TimeRow is the row Draw writes the time scale on for the same r, zero-sized
 // when the chart was too short to carry one. A caller that marks a column on
 // that scale has to ask for this for the same reason Plot exists: laying the
 // chrome out a second time by hand puts the mark on the wrong row as soon as
 // either layout changes.
-func (h HistoryChart) TimeRow(r core.Rect) core.Rect {
-	sc := h.Scale
-	if sc.IsZero() {
-		sc = AutoScale(maxValue(h.Series))
-	}
-	return layoutPlot(r, axisGutter(sc, levelsFor(h.YLevels, r.H)), legendRowsFor(h.LegendRows, h.Series)).timeRow
-}
+func (h HistoryChart) TimeRow(r core.Rect) core.Rect { return h.spec().timeRowRect(r) }
 
 // drawColumns plots every visible bucket, tallest series first within each
 // column so shorter ones overwrite the taller and stay readable.

@@ -36,15 +36,8 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 					Grantor: p.Grantor, Permission: p.Permission, State: p.State,
 				}
 			}
-			principals := make([]permPrincipal, 0, len(users)+len(roles))
-			for _, u := range users {
-				principals = append(principals, permPrincipal{Name: u.Name, Type: u.UserType})
-			}
-			for _, r := range roles {
-				principals = append(principals, permPrincipal{Name: r.Name, Type: "DATABASE_ROLE"})
-			}
 
-			f, apply := buildPermissionsMatrix(principals, gosmo.DatabasePermissionNames(), entries, 8, 12,
+			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.DatabasePermissionNames(), entries, 8, 12,
 				databasePermApply(d))
 			return f, apply, nil
 		},

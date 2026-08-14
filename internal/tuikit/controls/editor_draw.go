@@ -2,6 +2,7 @@ package controls
 
 import (
 	"slices"
+	"strconv"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -44,7 +45,7 @@ func (e *Editor) Draw(s tcell.Screen) {
 		if gw > 0 {
 			core.FillRect(s, core.Rect{X: e.rect.X, Y: y, W: gw, H: 1}, ' ', gutterStyle)
 			if lineIdx < e.doc.Len() {
-				num := core.Itoa(lineIdx + 1)
+				num := strconv.Itoa(lineIdx + 1)
 				gx := e.rect.X + gw - 1 - len(num)
 				core.DrawText(s, gx, y, gutterStyle, num)
 			}
@@ -389,7 +390,7 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 		// Only the first visual row of each logical line gets a line
 		// number in the gutter; continuation rows leave it blank.
 		if gw > 0 && (vi == 0 || vls[vi-1].row != vl.row) {
-			num := core.Itoa(vl.row + 1)
+			num := strconv.Itoa(vl.row + 1)
 			gx := e.rect.X + gw - 1 - len(num)
 			core.DrawText(s, gx, y, gutterStyle, num)
 		}

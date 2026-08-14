@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -233,6 +234,44 @@ func TestLoadOrCreateKeyDifferentDirsGetDifferentKeys(t *testing.T) {
 	}
 	if string(key1) == string(key2) {
 		t.Error("two independently generated keys collided; RNG or generation logic is broken")
+	}
+}
+
+// The key is written the same way config.json is — temp file, fsync,
+// rename — so a crash can't leave a short one behind for
+// TestLoadOrCreateKeyRejectsWrongSizedKeyFile's refusal to reject on the
+// next run, with every saved password already encrypted under it. The
+// atomicity itself isn't observable from here; what is, and what a plain
+// os.WriteFile would break, is that the rename leaves no temp file behind
+// and the result still carries owner-only permissions.
+func TestLoadOrCreateKeyLeavesOnlyTheKeyFileBehind(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := loadOrCreateKey(dir); err != nil {
+		t.Fatalf("loadOrCreateKey: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != keyFileName {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("directory holds %v, want just [%s] — a temp file was left behind", names, keyFileName)
+	}
+
+	info, err := entries[0].Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("key file mode = %v, want 0600", info.Mode().Perm())
+	}
+	if info.Size() != 32 {
+		t.Errorf("key file is %d bytes, want 32", info.Size())
 	}
 }
 

@@ -1557,3 +1557,884 @@ refuses it before reading the endpoint — and the malformed-URL refusal is
 likewise unreachable live for the same reason, since the missing-name check
 fires first. Both are unit tested. `sys.availability_replicas` was re-checked
 afterwards: still ubusql1 and ubusql2, nothing written.
+
+## Cross-repo review pass: five findings, and one that turned out backwards (2026-08-14)
+
+A full review of both repos on request. The headline is that it found very
+little: `go build`/`vet`/`test`/`-race` and **staticcheck clean on both**, zero
+TODO/FIXME markers in either, and every documented invariant holding when
+checked mechanically rather than assumed — `tuikit`'s three permitted external
+imports, `planview`/`sqlparse`/`dashboard` as genuine leaves, `rows.Close`/
+`rows.Err` at all 102 gosmo query sites (the six that look bare delegate
+`rows.Err()` into `scanColumns`/`scanExtProps`/`scanEffectivePermissions`), and
+gosmo's `gosmo: ...: %w` convention at every clause-builder call site. The two
+mass refactors in the last commit of each repo — `core.Min`/`Max` to the
+builtins plus a generic `Clamp` across 93 files, and gosmo's error-message pass
+across 38 — were both mechanically sound. Nothing in `docs/open-threads.md` was
+re-raised.
+
+Four small things went in, and a fifth was reverted by its own evidence.
+
+**`writeFileAtomic` never flushed the directory.** `internal/config/config.go`
+syncs the temp file before renaming, which is the hard half, but the rename is a
+change to the *directory* — so a crash could leave durable bytes under a name
+the directory doesn't carry yet, and the config reverts whole. That is the same
+"lost every saved connection" outcome the temp-file dance exists to prevent,
+through a narrower window. `syncDir` closes it.
+
+The trap here, caught before it shipped: the obvious form returns the `Sync`
+error, and **that breaks Windows outright**. Syncing a directory is a POSIX
+notion; `FlushFileBuffers` rejects a handle opened for reading, so every `Save`
+would have failed on one of the three platforms this single binary targets. It
+is best-effort and returns nothing, deliberately — this must not be able to fail
+a save that already succeeded.
+
+**`scrollToShow`'s zero-height viewport.** New in the previous commit and shared
+by five hand-rolled dialogs. At `dataH == 0` the "past the bottom" arm is
+unconditionally true and answers `sel+1` — scrolled one row past the very
+selection it was asked to reveal, drawing as an empty pane rather than a short
+one. No caller reaches it today; guarded and pinned with three table cases.
+
+**`isSystemUser` and `isSystemSchema` are byte-identical and nothing said so.**
+They are kept apart on purpose — different statements, and they could
+legitimately diverge — but they must agree *today*, since each of the four names
+is undroppable as both a user and a schema. A one-sided edit would offer Delete
+on half a principal that cannot take it. `TestSystemUserAndSchemaListsAgree`
+pins it, and was A/B'd by removing `"sys"` from the schema list alone and
+confirming the failure names `sys`.
+
+**gosmo's filesystem version gate now fails toward the branch that always
+works.** `EnumFileSystemContext` gated *negatively* — `xp_dirtree` only on a
+known pre-2017 instance, everything else including an **unknown** version to
+`sys.dm_os_enumerate_filesystem`. `xp_dirtree` exists on every version and the
+DMV does not, so guessing toward the DMV turns an unknown pre-2017 instance into
+a hard failure, while guessing the other way costs a known-modern one only
+`Size` and `LastModified`. Browse needs names and the directory flag; it can
+live without the other two. Degrade, don't fail.
+
+The flip rests on a claim only a server can settle — that `xp_dirtree` returns
+the *same directory* as the DMV, just with less detail. If the two disagreed on
+which entries exist, the fallback would be a different answer rather than a
+lesser one. `live_filesystem_test.go` (`-tags livedb`, read-only) checks exactly
+that on win10cli: same connection, `info` nil versus `info` forced to major 17,
+**identical 20 entries with identical directory flags**, and `xp_dirtree`
+reporting zero sizes and timestamps where the DMV reports 20/20 of both. The
+first run pointed at `C:\Program Files\Microsoft SQL Server` and reported 0/6
+sized — all six are directories, so that was no evidence at all, and it was
+re-run against a path with real files.
+
+### The finding that reversed: `serverFileSystemTimeout`
+
+Raised from 15s to 30s to match the app's other fetch timeouts, on the strength
+of ARCHITECTURE.md's statement that listing `C:\Windows\System32` over the wire
+takes ten seconds — 1.5x headroom on a case already observed. Timing the live
+run above disproved the premise: **1.2s, not ten seconds**, 4551 entries, best
+of three, measured through `EnumFileSystemContext` (`C:\Windows` 101 entries in
+35ms, `C:\Program Files` 29 in 11ms).
+
+The ten-second figure predates gosmo's own `WHERE level = 0` filter on
+`sys.dm_os_enumerate_filesystem`, without which the DMV walks the whole subtree
+under the path instead of listing one directory — that fix is the ~8x, and the
+prose in ARCHITECTURE.md was never updated to follow it.
+
+With real numbers the argument runs the other way and the change was reverted.
+This timeout is not like the other four: they bound *background* work, this one
+bounds a **frozen UI**, because `dialogs.FileSystem` is synchronous. 15s was
+already more than 10x headroom, and 30s only doubled how long an unreachable
+server looks like a hang — the exact case the constant's first sentence exists
+to bound. Consistency with the other timeouts was the wrong axis to optimise.
+
+Two lessons worth more than the fix. **A measurement in prose is a claim with a
+date on it, and an optimisation elsewhere can silently falsify it** — the
+`WHERE level = 0` filter went into gosmo and left a number in gossms's
+ARCHITECTURE.md describing a version of the code that no longer existed. Both
+that paragraph and `serverFileSystemTimeout`'s own comment now carry the fresh
+figures *and* an explicit warning off the old one. And **re-measure the evidence
+before acting on it**, even when it is written down in your own repo by your own
+hand: this one survived a plan, a decision and an implementation before the
+live run contradicted it.
+
+## Open dialogs did not follow a terminal resize (2026-08-14)
+
+Found on the second cross-repo review pass of the day, by driving the binary
+rather than reading it. `ModalDialog.recentre` had exactly three callers —
+`InitModal`, `SetSize`, `Show` — and none of them is a resize.
+`App.layoutAll`, the `EventResize` handler, relaid out the menu bar, toolbar,
+splitter, explorer and panels; the dialog stack is not in the layout tree
+(dialogs centre themselves on the screen), so nothing reached it.
+
+A dialog open across a resize therefore kept the rect it was centred into.
+Reproduced under tmux with the Connect dialog at 120x34 shrunk to 60x20: the
+box stayed at x=28 w=60, so its right border and its **entire button row**
+were off-screen, while it went on swallowing every key. At 24x5 it drew
+nothing at all and the app looked hung — Escape still closed it, which is the
+only reason it was recoverable.
+
+Every one of the ~28 app dialogs was affected **except** the propsheet family:
+`PropertySheet.Draw` calls `recomputeSize` on every frame, so Properties and
+every New-object dialog self-healed. That is exactly why this survived so
+long — the dialogs a user resizes around are usually property sheets.
+
+The fix is an exported `ModalDialog.Relayout()` (recentre), `Relayout()` added
+to `tui.Dialog`, and `App.relayoutDialogs` broadcast from `layoutAll` over
+`dialogStack`. The broadcast goes **above** `layoutAll`'s `w < 20 || h < 5`
+early return: the smallest terminals are where an unrefitted dialog is most
+broken, so that guard must not skip it. `AlertDialog`, `ConfirmDialog`,
+`PromptDialog` and `TypedConfirmDialog` override `Relayout` to re-run
+`fitMessage` first — they wrap their message to a fraction of the screen
+width, so following a resize means re-wrapping, not only recentring.
+`PropertySheet` overrides it with `recomputeSize`, which is what its `Draw`
+was already doing a frame later.
+
+Recentring from `DrawBase` instead would have fixed it too, and was rejected:
+it does layout work every frame and hides the trigger.
+
+Verified A/B against a pre-fix binary. Post-fix, a resized dialog renders
+**byte-identically** to one freshly opened at that size — the Help dialog
+capture at 50x16 matches the pre-fix binary launched at 50x16 exactly. Pinned
+by `TestLayoutAllRefitsOpenDialogsToTheNewScreenSize`, which fails on the old
+code with `rect {X:28 Y:10 W:44 H:9}` against a 44x12 screen.
+
+### Left alone: content is not clipped to a clamped rect
+
+The A/B turned up a second, older problem it would have been easy to blame on
+the fix. A fixed-size dialog on a terminal smaller than itself has its *rect*
+clamped by `recentre`, but its content still draws at fixed row/column
+offsets: at 30x8 the Connect dialog's field rows run past the right border and
+the button row lands on top of them. The pre-fix binary **launched** at 30x8
+draws the identical mess, so this is untouched by the change and predates it —
+noted in `docs/open-threads.md` rather than fixed here.
+
+## The encryption key was the one file not written atomically (2026-08-14)
+
+`config.json` goes out through `writeFileAtomic` — temp file, `Sync`, rename,
+`syncDir` — and `gossms.key`, which is the only thing that can read it, went
+out through a plain `os.WriteFile`.
+
+`Save` creates the key before it writes the ciphertext that depends on it, so
+the crash window is real and one-directional: config.json durable and full of
+sealed passwords, `gossms.key` absent or short-written. `loadOrCreateKey`
+then refuses a wrong-sized key file by design — the right call in isolation,
+since overwriting it would destroy the passwords for good — and the next run
+hard-errors instead. Every saved password is unrecoverable. That is the same
+"lost every saved connection" outcome the temp-file dance and the `syncDir`
+call exist to prevent, reached through the other half of the pair.
+
+One-line fix: `writeFileAtomic(path, key)`. Atomicity is not observable from a
+unit test, so `TestLoadOrCreateKeyLeavesOnlyTheKeyFileBehind` pins what is —
+the rename leaves no temp file, and the result is still 32 bytes at 0600.
+
+## Three from the same review: EndSet, Load, Clamp (2026-08-14)
+
+### `EndSet` skipped the set whose `BeginSet` failed
+
+`streamResultSet` registered its `EndSet` defer *after* calling `BeginSet`, so
+a sink that refused to open a set never got the matching close — contradicting
+`RowSink`'s own promise that "EndSet is called for every set BeginSet was
+called for", and its instruction to finalise per-set state "there and nowhere
+else". Nothing broke in practice, because the only sink is `csvSink` and its
+`BeginSet` failure mode (a header write that doesn't reach the disk) leaves
+nothing to unwind. It is still the contract a second sink would be written
+against.
+
+Fixed by hoisting the defer above the `BeginSet` call rather than by softening
+the doc: a sink that took a lock or allocated per-set state before the failure
+has `EndSet` as its only place to undo it. `n` is 0 there, and the named-return
+guard already prefers the first error, so `BeginSet`'s error is what surfaces —
+`TestStreamResultSetEndsASetWhoseBeginFailed` asserts exactly that, not just
+that EndSet ran.
+
+### `Load` treated "couldn't read it" as "there isn't one"
+
+Any `os.ReadFile` error returned an empty `Config` — a permission change, EIO,
+EMFILE. The app then came up with no saved connections, and the next `Save`, of
+some unrelated Options-dialog setting, wrote that emptiness over a file that
+was very likely still intact. The corrupt-JSON path immediately below has
+always been careful about this, preserving the bytes to `.corrupt`; the
+read-error path just dropped them.
+
+Only `fs.ErrNotExist` is a first run now. Anything else logs and sets an
+unexported `Config.unreadable`, which makes `Save` refuse the write with the
+original error wrapped. Unexported so it neither serialises nor survives being
+copied into a fresh `Config`. Both callers of `Save` already route its error to
+the status bar, so the refusal is visible without any new plumbing.
+
+Verified live as well as in tests: launched against a `config.json` with mode
+0000, the app starts normally, logs the reason, and the file is byte-identical
+afterwards. No key file is created either, since `Load` returns before
+`loadOrCreateKey`.
+
+### `Clamp`'s empty range, documented
+
+`Clamp(i, 0, len(x)-1)` over an empty `x` asks for `[0, -1]`. That is not a
+bug — -1 is the package's "no selection", so the index lands there instead of
+on row 0, which doesn't exist — but the doc said only "restricts v to [lo, hi]"
+and the behaviour is now generic and reachable from ~40 call sites.
+
+Writing the test caught the doc draft being wrong: `lo` is applied *first*, so
+an empty range returns `hi` only for `v >= lo`, and `Clamp(-5, 0, -1)` is 0,
+not -1. Both the comment and `TestClampEmptyRangeYieldsHi` now say so. No call
+site passes a negative index, but that asymmetry is the part a reader would
+guess wrong, and guessing wrong here means "simplifying" Clamp into returning
+`lo` and quietly moving every empty-collection selection onto a phantom row 0.
+
+## Two refactors, and what they actually bought (2026-08-14)
+
+Both were named in the review as line-count wins. Neither was. What each
+bought is one copy of a shared shape instead of two or six — worth doing, but
+the estimates were wrong and it is worth writing down why.
+
+### The six schema-scoped Object Explorer loaders
+
+`loadViewsChildren` / `loadSystemViewsChildren` and the same pair for stored
+procedures and functions were six copies of one function: resolve the
+database, list one kind of object, build "schema.name" nodes carrying a
+CreateDate, and (for the user half) put a "System …" folder in front. They
+differed in the fetch method, the NodeType, the folder label, and nothing
+else.
+
+Now `loadSchemaScoped` plus `withSystemFolder`, with the six registry entries
+reduced to their differences. Go can't reach a struct field through a type
+parameter, so each of the three gosmo types supplies a two-line accessor
+(`viewFields`, `procFields`, `funcFields`) instead of the union constraint
+that would read better.
+
+**Net: -3 lines.** The estimate in the review was "~90 → ~35", which counted
+the bodies being deleted and not the helper and accessors replacing them. The
+real gain is that the `DatabaseByNameContext` dance and the node construction
+exist once, so the next change to how these nodes are built happens once
+rather than six times, with no compiler help if a copy is missed.
+
+Verified against win10cli rather than trusted: a scripted tmux drive expands
+HealthClinic's Views, System Views, Stored Procedures, System Procedures,
+Functions and System Functions and dumps the tree, run against a pre-refactor
+binary and a post-refactor one. **Byte-identical**, all six folders, including
+the several-hundred-entry sys lists.
+
+### The two history charts
+
+`HistoryChart` and `StackedHistoryChart` had identical `Draw`, `Plot` and
+`TimeRow` methods, differing only in where an auto-scale takes its maximum
+(`maxValue` vs `maxStackTotal`) and in `drawColumns`. Both now convert
+themselves into an unexported `historySpec` and the shared code in `common.go`
+does the rest. `autoMax` is a func rather than a value so it stays as lazy as
+the `sc.IsZero()` check that used to guard it — these charts redraw on every
+collector tick.
+
+**Net: +2 lines**, all of it the doc comment. The point is not the size: the
+chrome sequence — gutter, plot, time row, legend, and the order they draw in —
+was written twice, and nothing fails to compile when only one copy learns
+about a new piece of chrome.
+
+Verified by golden dump rather than by the existing 21 tests passing: a
+throwaway test rendered both chart types across 504 combinations of size,
+interval, legend rows, grid spacing and series count to a `Canvas`, dumping
+the text plus the reported `plot`/`timeRow` rects. Run in a worktree at HEAD
+and again on the refactor — **identical**. That covers the degenerate sizes
+(1x1, 3x2) and the empty-series cases the hand-written tests mostly skip.
+
+### Not done, deliberately
+
+`agent_menu.go`'s `setAgentXEnabled`×4 / `deleteAgentX`×4 / `agentXMenuItems`×3
+are already thin adapters over `setAgentEnabled`/`deleteAgentEntity`; naming
+the gosmo type per entity is the clarity that pays. `HandleScrollbarDrag`/`H`
+and `perm_state.go`'s `databasePermApply`/`serverPermApply` are axis and scope
+mirrors — a `horizontal bool` parameter would be worse than the duplication.
+
+## The detail backfill bounded the work but not the goroutines (2026-08-14)
+
+`DetailBrowser.backfillRows` started one goroutine per row and had each of
+them acquire a token from an 8-slot semaphore. The *fetches* were capped at 8,
+which is what `maxRowFetchConcurrency`'s comment promises and what the
+connection pool needs — but the goroutines enforcing that cap were not capped
+at all. A folder with hundreds of entries parked hundreds of goroutines whose
+only job was to wait in line.
+
+Now a fixed pool of `min(n, maxRowFetchConcurrency)` workers pulling row
+indices off a channel. Workers, not tokens. The per-row body moved to
+`backfillRow`, which is where its `recover` has to live: with one goroutine
+per row a panic cost only that row, but a worker that dies takes every row it
+still owes with it. `rowFetchSemaphore` had no callers left and went with it.
+
+The FIFO argument the caller depends on still holds and is slightly stronger:
+every row's closure is queued before *any* worker's `wg.Done`, so a `cacheOnly`
+posted after `backfillRows` returns is still appended last.
+
+Two new tests. `TestBackfillRowsGoroutinesAreBoundedNotJustFetches` samples
+`runtime.NumGoroutine()` from inside the fetches — the distinction matters,
+since concurrent *fetches* were already capped and a test that measured those
+would have passed on the old code. Run against HEAD it reports **399
+goroutines over baseline for 400 rows**; after, 8 plus slack.
+`TestBackfillRowsPanicDoesNotKillTheWorker` panics every worker's first row and
+asserts the remaining 32 still get fetched.
+
+Live A/B on win10cli, both progressive loaders: the Databases folder's
+backfilled Total/Data/Log/Avail columns and HealthClinic's Tables folder's Row
+Count/Data/Index/Unused columns, pre-fix binary against post-fix.
+**Byte-identical**, volatile Avail-Log figure included.
+
+## Second review pass: three fixes, one verified against the running binary (2026-08-14)
+
+A second full review of both repos, the same day as the pass above and
+deliberately not repeating it. Same mechanical baseline, re-run and still
+clean: `go build`/`vet`/`test`/`-race` and `staticcheck -checks all` on both,
+no TODO/FIXME in either, every SQL literal interpolation in gosmo through
+`escapeSingle`/`QuoteLiteral` (the one bare `'%s'`, `backup.go:406`, is a
+formatted timestamp), `rows.Close`/`rows.Err` everywhere. Three findings went
+in; two more are recorded in `docs/open-threads.md` rather than fixed.
+
+### `core.WrapText` never broke an over-long word, and every caller clipped it
+
+The headline, and the one with a user-visible face. `WrapText` joined
+`strings.Fields` greedily and never split a *single* token, so a word wider
+than the wrap width came back as one over-wide line. Every caller then draws
+through `DrawTextClipped` — so the overflow was cut at the pane's right edge
+with no ellipsis and no way to reach it. Four call sites: the Log File
+Viewer's details pane (`log_viewer_draw.go`, the one place built for reading
+an entry *in full*), `wrapMessage` in `backup_common.go`, `fitMessage` behind
+every Alert/Confirm/Prompt/TypedConfirm, and `propsheet`'s `noteRow`.
+
+A/B'd in the binary, not just in a test: a pre-fix build and a post-fix build,
+each at 64x22 under tmux with `XDG_CONFIG_HOME` pointed at a scratch dir, both
+asked to connect to a 68-character unbroken hostname. **Pre-fix the name is cut
+at 40 columns and `.invalid` never appears on screen at all** — the dialog
+jumps straight from forty `a`s to `gosmo: ping: lookup`, and the informative
+end of the name the user got wrong is invisible. Post-fix it continues onto the
+next line and reads whole.
+
+The fix hard-breaks at a grapheme boundary via `splitGrapheme`, which always
+takes at least one grapheme — that is what terminates the split loop when a
+single grapheme is itself wider than the line (a CJK rune in a one-column
+pane). Two traps found while writing it, both caught by the tests: a word that
+divides exactly into full lines left a blank line on the end, and the
+"no line exceeds w" invariant has to exempt the lone over-wide grapheme.
+
+`splitGrapheme` deliberately does *not* replace the clip loops in
+`PadRight`/`PadLeft`, which the review had flagged as duplication: their
+contract is the opposite one. A fixed-width cell must never exceed `n`, so it
+drops a wide grapheme that would straddle the edge — exactly the case where
+`splitGrapheme` must emit one. Same-looking loops, incompatible guarantees.
+
+Also corrected while in there: `splitLogLines`' doc comment claimed the
+details pane preserves the startup banner's tab-indented structure. The line
+breaks survive; the indentation does not, since `WrapText` splits on
+`strings.Fields`. The comment now says so.
+
+### `core.Itoa` was wrong at `MinInt`, and had no reason to exist
+
+`Itoa` negated `n` to take its digits, which is a no-op at `math.MinInt` — the
+loop then produced nothing and the answer was `"-"`. `FormatThousands(int64)`
+built on it, via an `int(n)` narrowing that also truncates on a 32-bit target,
+and answered `"--"` at `math.MinInt64`. Both verified before the change.
+
+Unreachable from today's callers (row counts, MB, percentages, line numbers),
+but the comment justifying the hand-rolled loop — *"without importing
+strconv"* — did not survive contact: nothing constrains `core` that way and
+the file already imports `strings`. `Itoa` is gone and its seven call sites
+call `strconv.Itoa`; `FormatThousands` keeps its comma logic over
+`strconv.FormatInt` and is pinned at both int64 extremes.
+
+### A panic left every "busy" latch set for the object's lifetime
+
+Systemic, low probability, and the same failure mode as `backfillRow`'s
+`markFailed` recovery. Eight sites set a flag before `safego` and clear it only
+inside the callback the goroutine posts on completion — which a panic unwinds
+straight past. `safego` reports the panic; nothing releases the latch. The Log
+File Viewer's `toolsEnabled` gates its whole toolbar on it, so Refresh, Export
+and both selectors go inert until the panel is closed; an Activity Monitor proc
+tab sits at "Connecting..."/"Running..." with its buttons dimmed;
+`completion_inventory`'s `loading` makes every later lookup see a load in
+flight that no longer exists, so IntelliSense never comes back for that
+database; `PropDialog.runPageActionOnce`'s latch makes the button refuse every
+later click.
+
+One mechanism, `App.safegoRepair(what, repair, fn)`, with `repair` queued on
+the UI goroutine only on a panic and *before* the report, so the status bar's
+last word is the panic. Each site's repair is written for what it latched:
+`amProcTab.panicRepair` clears busy and rebuilds the toolbar,
+`LogViewer.readPanicked` is seq-guarded so a superseded panic can't unlatch a
+newer read, and the two completion loaders **evict** the entry rather than
+merely unlatching it — the next lookup then retries from scratch instead of
+reading a catalog half-built by the fetch that died, which is what the
+existing closed-connection branch already does for the same reason.
+`PropDialog` grew `pageActionBody` so the latched and unlatched forms share one
+goroutine body instead of duplicating the timeout dance.
+
+A/B'd: reverting `runPageActionOnce` to plain `safego` makes
+`TestPageActionLatchClearsWhenTheActionPanics` time out waiting for the latch,
+which is the bug exactly. The test asserts the *next* click runs, not merely
+that the flag flipped.
+
+The rule is now in `CLAUDE.md` § Mouse, overlays, and async UI, beside
+`postAndWake`'s.
+
+### `backfillRows` could hang the loader, not just lose a row
+
+Found reading the pool that went in earlier the same day. `backfillRow`
+recovers a panicking fetch, so a worker dying needs a panic raised inside that
+recovery — but the producer handed indices out from the loader goroutine, so if
+that ever took every worker, `rowIdx <- i` blocked forever and the whole folder
+hung rather than losing the rows one worker owed. The queue is now filled and
+closed before any worker exists, so no send can block on one; `n` ints is a few
+KB at the folder sizes this runs on. The worker loop also grew a
+`defer app.recoverPanic(what)` — it is the one goroutine in the package spawned
+directly rather than through `safego`, and a panic escaping it takes the
+process down with the terminal still in raw mode.
+
+## Second review pass, findings 3 and 5 (2026-08-14)
+
+The two the previous round left recorded rather than implemented. Both entries
+are gone from `docs/open-threads.md` now that the work is done.
+
+### gosmo `Table.IndexesContext` was N+1, at two round trips per index
+
+`IndexesContext` called `indexColumnsContext` *inside* its own `rows.Next()`
+loop — the only nested-query-in-a-row-loop in the library. `Database.query`
+pins its own pooled `*sql.Conn` and issues its own `USE`, so a table with 20
+indexes cost roughly 42 round trips across 21 connection acquisitions, with the
+outer connection held throughout. The worst caller is
+`internal/tui/index_props.go`, which fetches every index on the table to
+display one.
+
+Now two queries whatever the index count: `indexListContext` for the indexes,
+then one `sys.index_columns` query for the whole object — no `index_id`
+predicate, ordered by `index_id, key_ordinal, index_column_id`, grouped into a
+`map[int][]IndexColumn` in Go. The split into a helper is what lets the first
+query's rows close before the second opens, so the two never hold two pooled
+connections at once. A table with no indexes skips the column query entirely,
+which matters for a folder full of heaps. Rows for `index_id` 0 come back and
+are simply never looked up; excluding them would cost a predicate to save at
+most one row.
+
+The live A/B this needed before it could land, on win10cli against a throwaway
+`gossms_idx_ab` built to hit every shape — composite DESC keys, included
+columns, a filtered index with non-default fill factor and lock options, a
+disabled index, PAGE compression, a unique constraint, a heap with a
+nonclustered index, clustered and nonclustered columnstore, primary and
+secondary XML, spatial, a table with no indexes at all, and a schema, table and
+column whose names need bracket-quoting (`[odd schema].[t.dotted]`, a column
+named `col]bracket`):
+
+- **Output byte-for-byte identical**, pre-fix binary against post-fix, over
+  `gossms_idx_ab` and `HealthClinic` — 82 lines, 35 indexes, every flag, every
+  key and included column in order. Both binaries were checked with `strings`
+  for their own query text first, after the previous round's A/B was briefly
+  run against a binary built from the wrong source.
+- **~640ms → ~50-120ms** over the 18-index database, three runs each.
+  `HealthClinic`, whose tables carry one to four indexes, barely moves — the
+  win is proportional to indexes per table, which is what an N+1 predicts.
+- Driven in the real binary as well: Index Properties on `IX_composite_desc`
+  shows `a` Descending, `b` Ascending, `c` Descending in order; on
+  `IX_with_included` the Included Columns page has exactly b, c and d ticked;
+  `t_noindex`'s Indexes folder opens empty with no error. Throwaway database
+  dropped afterwards.
+
+`TestIndexesUsesOneQueryForEveryIndexColumn` pins the query count at one per
+object for three indexes, and the grouping with it — including a heap row the
+server really does return. `TestIndexesSkipsTheColumnQueryWhenThereAreNoIndexes`
+pins the empty case. Both needed the capture driver to reply with more than one
+row, so `cannedRow` grew a `rows` field beside its `row` and `captureLog` a
+`count`.
+
+### The three small consistency items
+
+- `agent_detail.go`'s `agentScheduleDetail` hand-wrote `.Format("2006-01-02")`
+  with a zero-check for the end date and none for the start, so a zero
+  `ActiveStartDate` would have rendered `0001-01-01`. Both dates now go through
+  `formatAgentDate`, which is in the same package and already answers correctly.
+- `restore_dialog_draw.go` hand-wrote `"2006-01-02 15:04:05"`; it calls
+  `formatSQLDate` now, which is that layout plus the zero-Time blank.
+- `dashboard/history.go` laid every chart out twice per frame — `c.Draw(inner)`
+  and then `c.TimeRow(inner)`, each running `historySpec.layout` and with it
+  `autoMax()`, a walk over every bucket of every series. `Draw`'s doc comment
+  says it returns the plot rect precisely so a caller need not repeat the pass,
+  and the very next argument repeated it. `HistoryChart`/`StackedHistoryChart`
+  gained `DrawFrame`, returning plot and time row from the one pass;
+  `historySpec.draw` became `drawFrame` and `Draw` is now a wrapper on it.
+  `BenchmarkDrawHistory` moves ~3.51ms → ~3.33ms median over six runs — small,
+  as the open thread predicted, and the point is the shape. What makes it safe
+  is `TestDrawFrameAgreesWithDrawAndTimeRow`, which asserts both rects match
+  `Draw`/`TimeRow` across four rects including a chart too short for a time row,
+  and `TestDrawFrameDrawsWhatDrawDraws`, which compares every cell of two
+  canvases.
+
+The fourth item on that list, folding `PadRight`/`PadLeft`'s clip loops into
+`splitGrapheme`, was retired in the previous round rather than deferred: their
+contract is the opposite one. A fixed-width cell must never exceed n, so it
+drops a straddling wide grapheme, where `splitGrapheme` must emit one or
+`WrapText`'s loop cannot terminate.
+
+## File > Open was lossy and File > Save destroyed the original (2026-08-14)
+
+Third review pass, finding 1, fixed complete. One root cause with four symptoms,
+all reproduced in the running binary before the fix and re-checked after.
+
+`openQueryFile` did `os.ReadFile` → `editor.SetText(string(data))` and then
+`qp.savedText = string(data)`. `SetText` normalizes what it is given — expands
+tabs, folds CRLF to LF, and `[]rune()` turns every invalid byte into U+FFFD —
+so `savedText` was compared against text the editor never held. Only a plain
+ASCII, LF, tab-free file survived the round trip.
+
+- **The BOM was never stripped.** A UTF-8-with-BOM script — what SSMS and
+  VS Code on Windows write — sent its U+FEFF to the server inside the first
+  batch, and SQL Server answered `Incorrect syntax near '﻿'`, pointing at a
+  character that does not render. Verified live on win10cli before the fix.
+- **UTF-16 was not detected.** SSMS's *own* default `.sql` encoding loaded as
+  mojibake that still read as plausible SQL, the NULs invisible on screen.
+- **Every such file opened marked dirty**, because `savedText` held the raw
+  bytes. A file with one tab in it showed `*` untouched.
+- **And so closing it prompted to save, and the save rewrote it.** `utf16.sql`
+  went from 80 bytes of UTF-16 LE to 88 bytes of `efbfbd efbfbd 5300…`,
+  unrecoverable. That is the sequence that made this the pass's one HIGH: the
+  false dirty flag is what walks the user into the destructive write.
+
+`internal/tui/text_encoding.go` is new: `decodeTextFile` detects the encoding
+**from a BOM and nothing else** — guessing wrong rewrites a user's script in an
+encoding they never chose — and reports the line ending alongside it;
+`encodeTextFile` is its inverse. `QueryPanel` carries the pair as
+`fileEnc`/`fileCRLF`, whose zero values are already right for a panel with no
+file, and `writeQueryFile` re-encodes through it. A file with no BOM that is not
+valid UTF-8 cannot be round-tripped at all, so it loads with U+FFFD and says so
+in the status bar rather than converting it silently.
+
+Live A/B in the built binary over four fixtures: `utf16.sql` (UTF-16 LE + CRLF)
+and `bom.sql` (UTF-8 BOM + CRLF) open, display correctly, show no `*`, and save
+back **md5-identical**. `tabs.sql` and `latin1.sql` open clean and undirty; an
+explicit save converts the tabs to spaces and the `\xe9` to U+FFFD, which is the
+editor's documented behavior and the warned-about case respectively — neither is
+reachable without the user choosing to save.
+
+The same one-line defect sat in `openCellValuePanel`, directly under a comment
+promising the opposite ("savedText is seeded so the panel isn't born dirty").
+An XML or JSON cell value containing a tab or CRLF was born dirty, and with no
+`filePath`, closing it pushed the user into Save As for a value they only wanted
+to read. Both sites now read `savedText` back from `qp.editor.Text()`.
+
+## Review findings 2-4 (2026-08-14)
+
+**Folding an overflowing message re-injected spaces into hard-broken words.**
+`dialogs.fitMessage` and `tui.wrapMessage` both did
+`strings.Join(lines[maxLines-1:], " ")`. That was right while `WrapText` only
+broke at spaces, and wrong the moment it started hard-breaking long tokens
+(earlier the same day) — an unreachable UNC path came back as two
+plausible-looking ones. The two were the same wrap-then-fold algorithm
+duplicated across the layer boundary, so the fix and the dedup are one change:
+`core.WrapTextLimit`. It shares `wrapLines` with `WrapText`, which now also
+reports, per line, whether the break after it fell inside a word — the fold
+rejoins with a space only where the wrap took one out. Verified live: a
+Connection Error dialog on a 60x14 terminal folds
+`…example.inval` / `id/share/…` / `…that.` / `keeps.going:` with nothing
+inserted at any of the three hard breaks, and clips the tail with "…".
+
+**`PadRight`/`PadLeft` did not deliver the exactly-n columns they promise.**
+Found by fuzzing, which neither repo had before. `PadRight("0\xcc", 2)` came
+back 3 columns wide: padding is concatenation, and a grapheme cluster can
+absorb the bytes after it, so `"0\xcc"` measures 1 column while `"0\xcc "`
+re-segments into 3. Only invalid UTF-8 can end mid-cluster, so `padSpaces` —
+now the shared body of both, which also retires the byte-identical clip loops —
+runs `strings.ToValidUTF8` first. **No reachable path:** go-mssqldb was probed
+directly with `varchar 0xCC`, `0xFF` and unpaired surrogates and always hands
+back valid UTF-8, and every other caller passes app text. This is a false
+invariant made true, not a live bug fixed. The A/B is in
+`TestPadIsExactlyNColumnsForAnyInput`, which measured 3 against the pre-fix
+body and 2 after.
+
+**`os.WriteFile` for a user's own files.** `config.json` got the full
+temp-file + Chmod + Sync + rename + syncDir treatment while a `.sql` script the
+user spent an hour on was truncated in place. `writeFileAtomic`/`syncDir` moved
+verbatim out of `internal/config` into a new `internal/fileutil` — extracted by
+exact range and diffed, the only changes being the exported name and a `perm`
+parameter — and now back both `writeQueryFile` and the Log File Viewer's
+export. `query_panel_export.go` deliberately stays on `os.Create`: Results To
+File streams to a fresh output file rather than replacing one.
+
+**Smaller items.** `LogViewer.detailLines` guarded `w < 1` and then wrapped at
+`w-2` for its two-space indent, so a 1- or 2-column pane handed `WrapText` a
+non-positive width and got the paragraph back unwrapped — one long line
+`DrawTextClipped` cut at the edge with no ellipsis. Now `w < 3`. Its
+`len(wrapped) == 0` branch was unreachable (`WrapText` never returns an empty
+slice) and is gone; an empty paragraph produced the same two spaces either way.
+The three database-scope Permissions pages built their principal list in blocks
+identical character for character, and two of them their entry list as well:
+`databasePermPrincipals` and `objectPermEntries`. That last one is the change
+in this batch **not** verified against a live server — it is a pure data
+transform with unit tests pinning order and the named-string-type conversion,
+but the pages themselves need a connection.
+
+Left alone deliberately: `gosmo.ErrNotFound` is consumed at exactly one of
+gossms's ~40 lookup sites. Not a defect — the other sites want the `(nil, nil)`
+convention — but whether it is meant to be used more widely is a call to make
+once rather than rediscover per review.
+
+---
+
+## The missed half of the busy-latch pass (2026-08-14)
+
+Phase 1 of a cross-repo review. The 2026-08-13 pass ("a panic left every 'busy'
+latch set for the object's lifetime") fixed eight `safego` sites and missed
+eight more. Found by auditing all ~57 `safego`/`safegoRepair` callers for state
+latched on the UI goroutine *before* the `go`, whose only release is inside the
+callback the goroutine posts at the end — which a panic unwinds straight past.
+
+**Query execution was the worst of them, and the one the mechanism was written
+for.** `safego`'s own doc names go-mssqldb's `makeGoLangTypeName` panicking on
+an unknown column type ID, reached through `query.scanResultSet`'s
+`DatabaseTypeName()` — which runs on this exact goroutine. `startRun` latched
+`p.executing`, `p.cancel` and a `tickExecuting` goroutine, and released all
+three from plain statements at the bottom of the body. One panic therefore left
+the panel refusing every later Execute (`menu.go`, `toolbar.go` and
+`runEstimatedPlan` all gate on `p.executing`), the context uncancelled, and the
+ticker alive — `wakeEventLoop()` once a second for the rest of the process's
+life, one leaked goroutine per panicked run. `cancel()` and `close(done)` are
+now `defer`red, `execPanicked` is the `safegoRepair` step, and `done` is kept
+as `p.execDone` so a test can see the ticker was stopped.
+
+The A/B is `TestExecutePanicReleasesTheLatchAndAllowsTheNextRun` and
+`TestExecutePanicStopsTheTickerAndCancelsTheContext`: both time out against the
+pre-fix body and pass after. Neither needs an injected panic — a `ServerConn`
+with a nil `gosmo.Server` makes the `sc.Server.DB()` inside the goroutine
+dereference nil, which is a real panic raised where the driver's would be.
+
+The other seven: both `runPipeline`s (`PropDialog` and `newObjectDialog`),
+where `SetApplying(true)` makes `PropertySheet.activateButton` ignore *every*
+button — Cancel included — so the dialog was fully inert;
+`newObjectDialog.onLoadPage`, where a stuck `d.fetching` means no page of that
+dialog ever loads again; both Activity Monitor collectors, whose
+`collectorStopped`/`tempDBCollectorStopped` were already written and already
+`c`-guarded, so they were their own repair; and the backup and restore starts,
+where a panic past `postTaskDone` leaves a `*Task` that is never `Done`, so
+`pruneFinishedTasks` never evicts it and the status bar counts it as running
+for the rest of the session. `postTaskDone`'s body split out as `markTaskDone`
+for the repair, which is already on the UI goroutine and must not add a second
+`postAndWake` hop — that would land *after* the panic report and overwrite it.
+`TestSheetApplyingBlocksButtonsUntilCleared` pins what the applying latch
+actually disables, which is what makes it worth repairing.
+
+**A lossy UTF-16 decode was reported only for a trailing odd byte.**
+`decodeTextFile` derived `lossy` from `len(data)%2`, while `utf16.Decode` maps
+an unpaired surrogate to U+FFFD — its own comment said so. A UTF-16 `.sql` with
+a lone surrogate opened with no warning and Save wrote the replacement
+characters back for good: the same failure as the `File > Open` UTF-16 bug from
+the day before, through a narrower door. `decodeUTF16` now returns `lossy`
+itself, covering both causes; `hasUnpairedSurrogate` is the scan.
+`TestDecodeUTF16SurrogatePairIsNotLossy` is the other half — an emoji in a
+comment must not flag the file as damaged.
+
+**A finding that did not survive verification.** The review called
+`peer.go`'s `p.IsOpen()` a data race against `closePeers`, which closes each
+peer *outside* `peerMu` while `ServerConn.closed` is written by `Close`. It is
+not: every `IsOpen` on a cached peer happens under `peerMu`, and `closePeers`
+takes that same mutex before any peer is closed, so the write is always ordered
+after the read — and once `closePeers` has run, `sc.peers` is nil and there is
+no cached peer left to test. A `-race` test written to reproduce it (50 rounds
+of `Peer` against `Close`) reports nothing, with or without the "fix". The
+attempted fix was reverted; `TestPeerLookupRacesDisconnect` stays, pinning why
+the shape is safe so the next reviewer doesn't re-raise it.
+
+Also: `evictInventory`'s doc block had been orphaned onto `loadPanicked` when
+that function was inserted between the comment and its `func` line, so the
+"identity check is what makes this safe" paragraph documented a function with
+no identity check. Moved back.
+
+## The per-database fan-out that measured slower (2026-08-14)
+
+Phase 2 of the same review. Two Properties pages walk every ONLINE database
+inside one `propFetchTimeout` — `fetchNewLoginPrefetch` (`DatabaseRolesContext`
+*and* `SchemasContext`, so 2N round trips before the New Login dialog shows any
+page) and `pageLoginUserMapping` (`DatabaseRolesContext` on top of gosmo's own
+per-database `UserMappingsContext`). The plan was to fan them out across a
+bounded worker pool, the shape `DetailBrowser.backfillRows` already uses.
+
+**Built it, measured it, threw the concurrency away.** Against the live
+instance with 40 throwaway databases added (46 online), an 8-wide fan-out of
+the New Login per-database work was *slower than serial on every run*, at every
+width from 2 to 8:
+
+| width | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| 1 | 0.41s | 0.47s | 0.37s |
+| 2 | 0.62s | 0.64s | 0.73s |
+| 4 | 0.77s | 0.79s | 0.88s |
+| 8 | 0.57s | 1.54s | 0.64s |
+
+`gosmo.Database.query` pins a pooled connection of its own and issues its own
+`USE`, so each worker needs a *physical* connection — and on the pool a
+freshly opened dialog actually has, that means a TCP+TLS+login handshake per
+worker. A handshake here costs ~180ms; the query latency it overlaps costs
+~3.6ms. The concurrency only pays once eight connections are already idle: with
+a pre-warmed pool the same fan-out did win, 0.34s → 0.13s, which is exactly the
+measurement that would have shipped a regression if it had been the only one
+taken. Both halves are now serial with a comment carrying the numbers, so the
+next reviewer doesn't re-derive this.
+
+**What was kept.** The two loops now *skip* a database whose fetch fails
+instead of failing the whole page — the inconsistency the review actually
+found, since gosmo's `UserMappingsContext` on the very same page has always
+skipped an unreachable-but-ONLINE one (its comment says so) while the gossms
+loops beside it returned the error. One inaccessible availability-group
+secondary took down a page with 45 other databases to show. `eachDatabase`
+(`db_scan.go`) states that policy once for both, and `onlineDatabases` replaces
+the two hand-rolled filters. Verified live by connecting as a login mapped into
+exactly one database: `UserMappingsContext` returned that one mapping rather
+than an error, with the other 45 skipped.
+
+`Login.UserMappingsContext` kept the `userMappingsIn` split the fan-out
+attempt introduced — one database's read, with the skip-vs-abort boundary
+stated on it — which is worth having on its own.
+
+**Also.** `applyConfigRows` re-read `sys.configurations` once per dirty option
+via `ConfigurationByNameContext`; it now reads the whole set once, lazily, so an
+apply with three dirty options costs one round trip instead of three and one
+with nothing dirty still costs none.
+
+Both dialogs were driven end to end under tmux against the live instance before
+and after, showing all 46 databases with their roles. The 40 throwaway
+databases and the test login were dropped; `sys.databases` and
+`sys.server_principals` were checked clean afterwards.
+
+---
+
+## Phase 3 of the review: a "duplication" that was hiding a shipped bug (2026-08-14)
+
+Phase 3 was the tidying half of the review plan — a doc gap, two
+micro-optimisations, two duplications and two consistency nits. One of the
+duplications turned out not to be cosmetic.
+
+**Every replica but the first was unreachable on two AG Properties pages.**
+`ag_props_backup.go` and `ag_props_routing.go` both wired their per-row detail
+editor to the grid the same way:
+
+```go
+grid.OnSelectRow = func(int) {
+    commitCurrent()
+    syncFromSelection()
+    grid.SetData(headers, gridRows())   // ← resets the selection to 0,0
+}
+```
+
+`DataGrid.SetData` resets `selRow`/`selCol` — it says so on
+`RefreshColumnWidths`, which exists precisely because SetData doesn't preserve
+them — and this redraw runs from *inside* `OnSelectRow`, after the grid has
+already moved. So the move was undone the moment it happened. Two symptoms,
+and the second is the one that made the pages unusable rather than merely
+annoying:
+
+- clicking any row other than the first left the cursor on the first;
+- `propsheet.GridRow.HandleKey` reports movement by comparing `SelectedCell`
+  either side of the key, so a grid that always came back to 0,0 answered
+  "not handled" — and `propsheet.Form` took that as its cue to move focus on.
+  The first arrow key threw focus straight out of the grid onto the field
+  below it.
+
+Between them, there was no way — mouse or keyboard — to select the second
+replica, and therefore no way to set its backup priority, read-only routing
+URL or routing list. Both pages have shipped like that since Always On phase 2.
+
+Found by reading the two functions side by side to extract their shared
+scaffolding, and noticing that the `login_props.go` User Mapping page — the
+same idiom, written earlier — saves and restores the cell around its own
+`SetData` while these two don't.
+
+**Verified live, A/B, against AAG1** (ubusql1/ubusql2, two replicas), driving
+both binaries under tmux to Backup Preferences and reading the focused-cell
+background out of `capture-pane -e`:
+
+| | pre-fix | post-fix |
+|---|---|---|
+| click ubusql2 | cursor lands on ubusql1 | cursor lands on ubusql2 |
+| then Down | focus leaves the grid for the Backup priority field | ubusql1 → ubusql2 |
+| then Up | — | back to ubusql1 |
+
+Both dialogs were cancelled with Escape; nothing was applied to the group.
+
+The fix is the extraction itself: `wireGridEditor` (`ag_props.go`) owns the
+`OnSelectRow` wiring, the save/restore around `SetData`, and the redraw the
+pages' `RevertFn`s need, and the reason for the restore is stated on it.
+`ag_props_grid_editor_test.go` drives a real `DataGrid` through real key events
+and pins all three behaviours; removing the restore fails two of them.
+
+**The rest of Phase 3, as planned.** `ARCHITECTURE.md` gained a
+*"When the goroutine latched UI state first: safegoRepair"* section next to the
+`safego` one — `CLAUDE.md` has stated the rule since 2026-08-13 and pointed at
+`ARCHITECTURE.md` for the reasoning, which wasn't there. `core.Truncate` walked
+the graphemes twice (once via `displaywidth.String` for the fits-already check);
+it now answers both questions in one pass, checked against the old
+implementation over 200k random strings including ZWJ emoji clusters and
+combining marks. `dialogs.fitMessage` wrapped its message twice whenever the
+height cap fired; it computes `maxLines` first and wraps once.
+`login_props.go` and `new_login_pages.go` share `setRoleToggles`. The
+`.corrupt` config sidecar goes through `fileutil.WriteAtomic` like everything
+else the package writes — it is the only remaining copy of bytes nothing can
+reconstruct, so a partial one is the loss it exists to prevent.
+
+**One planned item was a non-finding.** The plan flagged `Execute` and
+`Estimated Execution Plan` as disagreeing about their proactive gate. They
+don't: both, plus the toolbar's three execute-family buttons, gate on
+`activeQueryPanel() != nil` alone and carry the same reactive guards
+(`isConnected`, `p.executing`) inside `runQuery`/`runEstimatedPlan`. The
+`qp.conn != nil && !qp.executing` gate the plan attributed to Execute belongs
+to *Reconnect*, where it is correct. Left alone.
+
+---
+
+## Sweeping for the AG grid bug's siblings (2026-08-14)
+
+Phase 3 found one instance of "redraw the grid from inside its own
+`OnSelectRow` and the selection is silently undone". This pass went looking for
+the rest of the class, and found four more — every one of them, like the first
+two, in Always On code.
+
+**The audit.** A script resolved each of the 33 `OnSelectRow`/`OnActivateCell`
+assignments in the tree to its callback body (following the named closures, not
+just the inline literals), then looked for a `SetData`/`SetSource`/`SetRows` on
+*that same grid* with no `SetSelectedCell` to put the cursor back. It also
+flagged every grid in the tree that gets `SetData` more than once, so the
+non-callback redraws — button handlers, `DirtyFn`, an `OnChange` — got read too.
+
+Reentrant resets, all fixed:
+
+| Site | What was unreachable |
+|---|---|
+| `ag_props.go` General | every replica but the primary — so no secondary's availability mode, failover mode, seeding mode, readable-secondary setting or session timeout could be edited |
+| `ag_props_backup.go`, `ag_props_routing.go` | fixed in Phase 3 |
+| `new_ag_pages.go` databases | only the *first* database could be included in a new group |
+| `new_ag_pages.go` replicas, backup | same, for the replica list and its priorities |
+| `owner_transfer_page.go` | not reentrant, but `transferRow.SetOnChange` redrew without the restore: picking a new owner snapped the grid cursor to the first row while the detail rows below went on showing the row the user was actually editing |
+
+Everything else came back clean or benign. `propsheet.ToggleGridRow.activateCell`
+already does `render()` then `SetSelectedCell` — the pattern done right, and
+where it was presumably learnt. The add/remove-button redraws
+(`ag_add_listener_dialog.go`, `ag_listener_props.go`, `new_endpoint_dialog.go`)
+reset the cursor to row 0 after the list changes, which is defensible and not
+this bug. `activity_monitor_proctab.go`, `log_viewer.go`, `planview/summary.go`
+and `query_panel_exec.go` re-populate from genuinely new data, where resetting
+is correct.
+
+**The shared primitive.** `redrawGrid(grid, headers, rows)` in
+`prop_grid_helpers.go` does the save/`SetData`/restore, and states why on
+itself. `wireGridEditor` (ag_props.go) is now built on it and used by all five
+AG sites; `owner_transfer_page.go` calls it directly, since its wiring differs.
+
+**Verified live, A/B, on both servers.** Against AAG1 (ubusql1/ubusql2) for AG
+Properties General — pre-fix, clicking `ubusql2` landed on `ubusql1` and the
+first arrow key threw focus out of the grid; post-fix, click and Up/Down all
+land where they should. Against the New Availability Group dialog with three
+databases (two throwaway ones created for it) — same result, plus the
+commit-on-move round trip: check "Include the selected database" on
+`t4_grid_b`, move off, and the row reads True. Against win10cli for Owned
+Schemas, with a throwaway database, user and three schemas — post-fix the grid
+cursor stays on `t4_sch_b` across the dropdown change, pre-fix it does not.
+Every dialog was escaped rather than applied; `sys.availability_groups`,
+`sys.availability_replicas` and `sys.schemas` were re-read afterwards to
+confirm nothing was written, and all throwaway objects were dropped and
+verified gone on both instances.
+
+**Tests.** `ag_props_grid_editor_test.go` (three, from Phase 3) drives a real
+`DataGrid` through real key events. `new_ag_grid_editor_test.go` adds the layer
+they don't reach: the New AG databases grid wired exactly as `buildGeneralPage`
+wires it, driven through a real `propsheet.Form`. That one is worth having
+because its failure message is the whole bug in one line — with the restore
+removed it reports `after Down #1 grid is on row 0, want 1 (focused row now
+*propsheet.CheckRow)`, i.e. the grid didn't move *and* the form took focus away
+from it. All four fail with the restore removed from `redrawGrid` and pass with
+it.

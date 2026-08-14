@@ -382,3 +382,37 @@ func TestSheetHandleMouseForwardsReleaseToPageList(t *testing.T) {
 		t.Fatalf("selected = %v after second press, want %v (release must clear the page list's latch)", selected, want)
 	}
 }
+
+// SetApplying(true) makes the sheet ignore every button, Cancel included, so
+// a half-finished apply can't be double-submitted or abandoned mid-write.
+// That is exactly why the flag must always be cleared again: an apply
+// goroutine that dies without clearing it leaves the whole dialog inert with
+// no way out but force-closing it, which is what the app layer's
+// safegoRepair step exists to prevent.
+func TestSheetApplyingBlocksButtonsUntilCleared(t *testing.T) {
+	p := newTestSheet("General")
+	p.Show()
+
+	applies, closes := 0, 0
+	p.OnApply = func() { applies++ }
+	p.OnClose = func() { closes++ }
+
+	p.setZone(zoneButtons)
+	enter := tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)
+
+	p.SetApplying(true)
+	p.btnFocus = 2 // Apply
+	p.HandleKey(enter)
+	p.btnFocus = 1 // Cancel — Dismiss, via OnClose
+	p.HandleKey(enter)
+	if applies != 0 || closes != 0 {
+		t.Fatalf("while applying: applies=%d closes=%d, want 0/0", applies, closes)
+	}
+
+	p.SetApplying(false)
+	p.btnFocus = 2
+	p.HandleKey(enter)
+	if applies != 1 {
+		t.Errorf("after SetApplying(false): applies = %d, want 1", applies)
+	}
+}

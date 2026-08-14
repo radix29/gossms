@@ -533,6 +533,12 @@ func (a *App) jumpToPanel(i int) {
 
 // layoutAll recalculates every region from current screen size.
 func (a *App) layoutAll() {
+	// Dialogs first, and above the too-small guard: a dialog that outgrows
+	// the terminal draws its borders and button row off-screen while still
+	// taking every key, so the smallest sizes are exactly where it must
+	// still be re-fitted.
+	a.relayoutDialogs()
+
 	w, h := a.screen.Size()
 	if w < 20 || h < 5 {
 		return

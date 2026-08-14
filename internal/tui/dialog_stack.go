@@ -8,16 +8,17 @@ import (
 
 // Dialog is the shape every modal dialog already has, by embedding
 // tuikit/dialogs.ModalDialog (directly, or via dialogs.PropertiesDialog):
-// Visible/Draw/HandleKey/HandleMouse. App tracks which dialogs are open as
-// a z-ordered stack of these instead of hand-enumerating every dialog type
-// at each place that needs to know "what's on top" — adding a new dialog
-// costs one line in buildUI's allDialogs list; draw order and input
-// routing then fall out of the stack automatically.
+// Visible/Draw/HandleKey/HandleMouse/Relayout. App tracks which dialogs are
+// open as a z-ordered stack of these instead of hand-enumerating every
+// dialog type at each place that needs to know "what's on top" — adding a
+// new dialog costs one line in buildUI's allDialogs list; draw order, input
+// routing and resize handling then fall out of the stack automatically.
 type Dialog interface {
 	Visible() bool
 	Draw(s tcell.Screen)
 	HandleKey(ev *tcell.EventKey) bool
 	HandleMouse(ev *tcell.EventMouse) bool
+	Relayout()
 }
 
 // syncDialogStack reconciles dialogStack with reality: every dialog closes
@@ -48,6 +49,17 @@ func (a *App) topDialog() Dialog {
 		return nil
 	}
 	return a.dialogStack[len(a.dialogStack)-1]
+}
+
+// relayoutDialogs re-fits every open dialog to the current screen size.
+// Dialogs are not part of the main layout tree — they centre themselves on
+// the screen — so layoutAll's SetBounds calls reach none of them, and
+// without this an open dialog keeps the rect it was centred into when the
+// terminal was a different size (see dialogs.ModalDialog.Relayout).
+func (a *App) relayoutDialogs() {
+	for _, d := range a.dialogStack {
+		d.Relayout()
+	}
 }
 
 // drawDialogs renders every open dialog bottom-to-top, so a nested dialog

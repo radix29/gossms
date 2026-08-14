@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -47,6 +48,69 @@ func TestModalDialogRestoresFullSizeOnLargerScreen(t *testing.T) {
 	wantX := (200 - 78) / 2
 	if d.rect.X != wantX {
 		t.Errorf("rect.X = %d, want %d", d.rect.X, wantX)
+	}
+}
+
+// A dialog that stays open across a terminal resize must re-fit: it kept
+// its old rect and drew its right border and whole button row past the new
+// screen edge, while still swallowing every key.
+func TestModalDialogRelayoutFollowsAShrinkingScreen(t *testing.T) {
+	scr := &sizedScreen{w: 120, h: 34}
+	d := &ModalDialog{}
+	d.InitModal(scr, "Help", 78, 20)
+	d.Show()
+
+	scr.w, scr.h = 60, 12
+	d.Relayout()
+
+	if d.rect.W != 60 || d.rect.X != 0 {
+		t.Errorf("rect = %dx%d at (%d,%d), want width 60 at x=0 (clamped to the new screen)",
+			d.rect.W, d.rect.H, d.rect.X, d.rect.Y)
+	}
+	if d.rect.Right() > scr.w || d.rect.Bottom() > scr.h {
+		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, scr.w, scr.h)
+	}
+	// The button row is the part that went missing first.
+	if d.ButtonRowY() >= scr.h {
+		t.Errorf("ButtonRowY() = %d, off a %d-row screen", d.ButtonRowY(), scr.h)
+	}
+}
+
+func TestModalDialogRelayoutRestoresRequestedSizeOnAGrowingScreen(t *testing.T) {
+	scr := &sizedScreen{w: 40, h: 10}
+	d := &ModalDialog{}
+	d.InitModal(scr, "Help", 78, 20)
+	d.Show()
+
+	scr.w, scr.h = 200, 50
+	d.Relayout()
+
+	if d.rect.W != 78 || d.rect.H != 20 {
+		t.Errorf("rect = %dx%d, want 78x20 (the requested size, not the earlier clamp)", d.rect.W, d.rect.H)
+	}
+	if wantX := (200 - 78) / 2; d.rect.X != wantX {
+		t.Errorf("rect.X = %d, want %d (recentred)", d.rect.X, wantX)
+	}
+}
+
+// AlertDialog sizes itself to its message and a fraction of the screen
+// width, so following a resize means re-wrapping, not only recentring.
+func TestAlertDialogRelayoutRewrapsMessage(t *testing.T) {
+	scr := &sizedScreen{w: 200, h: 50}
+	d := NewAlertDialog(scr)
+	msg := strings.Repeat("word ", 30)
+	d.ShowAlert("Alert", msg)
+	wide := len(d.msgLines)
+
+	scr.w, scr.h = 60, 24
+	d.Relayout()
+
+	if len(d.msgLines) <= wide {
+		t.Errorf("msgLines = %d after shrinking to 60 cols, want more than the %d it wrapped to at 200",
+			len(d.msgLines), wide)
+	}
+	if d.rect.Right() > scr.w || d.rect.Bottom() > scr.h {
+		t.Errorf("rect %+v extends past the %dx%d screen", d.rect, scr.w, scr.h)
 	}
 }
 

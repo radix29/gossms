@@ -1,8 +1,7 @@
-// Package query executes T-SQL scripts the way SSMS does: the script is
-// split into GO batches, every batch runs on one dedicated connection (so
-// temp tables and SET options survive across batches), and the driver's
-// message stream is captured alongside the result sets — PRINT output,
-// "(n rows affected)" counts, and SQL errors all land in Result.Messages.
+// Package query executes T-SQL scripts the way SSMS does: split into GO
+// batches, all run on one dedicated connection (so temp tables and SET options
+// survive across batches), with the driver's message stream — PRINT output,
+// "(n rows affected)", SQL errors — captured into Result.Messages.
 package query
 
 import (
@@ -25,10 +24,9 @@ type ResultSet struct {
 	Columns []string
 	Rows    [][]string
 
-	// ColumnTypes holds each column's declared SQL Server type as SSMS writes
-	// it ("nvarchar(50)", "decimal(18,2)"), parallel to Columns. Read off the
-	// set's own metadata, so it costs one pass per set rather than per row;
-	// the "Output Column Metadata" toggle displays it.
+	// ColumnTypes holds each column's declared SQL Server type as SSMS writes it
+	// ("nvarchar(50)", "decimal(18,2)"), parallel to Columns. Displayed by the
+	// "Output Column Metadata" toggle.
 	ColumnTypes []string
 }
 
@@ -49,8 +47,8 @@ type Result struct {
 	// reflected back. Empty if it couldn't be read (a cancelled query, say).
 	Database string
 
-	// RowsWritten totals the rows handed to a RowSink (see ExecuteToSink),
-	// across every result set. Zero for Execute, which retains rows in Sets.
+	// RowsWritten totals the rows handed to a RowSink (see ExecuteToSink) across
+	// every result set. Zero for Execute, which retains rows in Sets.
 	RowsWritten int
 
 	// sinkSets counts the result sets streamed to a RowSink, empty ones
@@ -59,9 +57,8 @@ type Result struct {
 	// result set happen" — see shouldReportSuccess.
 	sinkSets int
 
-	// PlanXML holds one complete <ShowPlanXML> document per statement/batch
-	// whose execution plan was captured, in execution order: the actual plan
-	// from ExecuteWithPlan, or the estimated (compile-only) plan from
+	// PlanXML holds one <ShowPlanXML> document per captured statement/batch, in
+	// execution order: actual plans from ExecuteWithPlan, estimated ones from
 	// ExecuteEstimatedPlan. Execute never populates this.
 	PlanXML []string
 }
@@ -92,8 +89,8 @@ func (r *Result) addError(err error) {
 // ErrorMessages formats err the way SSMS's Messages pane shows a failed batch:
 // a SQL Server error becomes two messages, the "Msg 208, Level 16, State 1,
 // Line 4" status line and the message text; anything else becomes one message
-// from err.Error(). Exported so a caller that talks to gosmo directly instead
-// of through Execute (QueryPanel's execution-plan paths) reports identically.
+// from err.Error(). Exported so callers that talk to gosmo directly (the
+// execution-plan paths) report identically.
 func ErrorMessages(err error) []Message {
 	if se, ok := gosmo.AsSQLError(err); ok {
 		msgs := []Message{{Text: se.Header(), IsError: true}}
@@ -111,13 +108,9 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 //
 // The test is "did any result set happen", not "did any row" — Sets answers
 // that for Execute, sinkSets for ExecuteToSink. Substituting RowsWritten makes
-// a query returning an *empty* set look like one returning none, and the
-// export then prints both "(0 row(s) written)" and "Commands completed
-// successfully.". planCaptureEstimated never really executes, so the notice
-// would mislead there.
-//
-// Split out of executeWithSink because ExecuteToSink can't be driven end to
-// end by a fake driver (see stream_test.go); this is the reachable part.
+// a query returning an *empty* set look like one returning none, and the export
+// then prints both "(0 row(s) written)" and "Commands completed successfully.".
+// planCaptureEstimated never really executes, so the notice would mislead.
 func (r *Result) shouldReportSuccess(capture planCapture) bool {
 	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
 }
@@ -135,13 +128,10 @@ const (
 // readsCurrentDatabase reports whether execute should read DB_NAME() back off
 // the script's connection to populate Result.Database.
 //
-// Not under SHOWPLAN_XML. The SET ... OFF is deferred and so hasn't run by
-// then, and while SHOWPLAN_XML is on SQL Server compiles rather than runs:
+// Never under SHOWPLAN_XML: the SET ... OFF is deferred and hasn't run yet, so
 // SELECT DB_NAME() comes back as a one-column showplan set and Scan puts the
 // whole XML document into Result.Database. Estimated mode also never runs a
-// mid-script USE, so there is no change to report.
-//
-// Split out for testability, same as Result.shouldReportSuccess.
+// mid-script USE, so there is nothing to report.
 func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
 
 // Execute runs script against db, SSMS-style. If database is non-empty the
@@ -151,9 +141,8 @@ func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstima
 // matching SSMS. Cancelling ctx stops between (and inside) batches; the
 // partial Result is still returned.
 //
-// Every row is retained in Result.Sets — there is no cap. A query big enough
-// to exhaust memory is the caller's problem to not run; see cellArena for how
-// the retained rows are packed.
+// Every row is retained in Result.Sets — there is no cap; see cellArena for how
+// they are packed.
 func Execute(ctx context.Context, db *sql.DB, database, script string) *Result {
 	return execute(ctx, db, database, script, planCaptureNone)
 }
@@ -184,9 +173,10 @@ func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script stri
 // runs, matching how Execute treats a failed batch.
 //
 // EndSet is called for every set BeginSet was called for, including one
-// abandoned part-way by a Row error — so a sink that finalises anything per
-// set (a flush, a footer) can do it there and nowhere else. Its count is how
-// many rows reached Row, not how many the set held.
+// abandoned part-way by a Row error and one whose own BeginSet failed — so a
+// sink that finalises anything per set (a flush, a footer) can do it there and
+// nowhere else. Its count is how many rows reached Row, not how many the set
+// held, and is 0 for a set that never opened.
 type RowSink interface {
 	BeginSet(columns []string) error
 	Row(cells []string) error
@@ -517,18 +507,22 @@ func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := sink.BeginSet(sc.cols); err != nil {
-		return 0, err
-	}
 	// Paired with BeginSet on every exit, so a scan or Row failure part-way
-	// through still closes the set out — see RowSink. Named returns because
-	// the scan/Row error is the one worth reporting, and EndSet's must surface
-	// only when nothing else already failed.
+	// through still closes the set out — see RowSink. Registered *before* the
+	// BeginSet call, not after: the contract is that every begun set ends, and
+	// a sink that took a lock or allocated per-set state before the failure
+	// that aborted its BeginSet has EndSet as its only place to undo it.
+	// Named returns because the BeginSet/scan/Row error is the one worth
+	// reporting, and EndSet's must surface only when nothing else already
+	// failed.
 	defer func() {
 		if endErr := sink.EndSet(n); endErr != nil && err == nil {
 			err = endErr
 		}
 	}()
+	if err = sink.BeginSet(sc.cols); err != nil {
+		return 0, err
+	}
 	// One row buffer for the whole set: sink.Row must consume what it is
 	// given before returning (see RowSink), so it can be overwritten.
 	row := make([]string, len(sc.cols))

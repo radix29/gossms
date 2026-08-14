@@ -278,13 +278,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		dbStatic.SetValue(e.dbName)
 		schemaPick.SetItems(schemaItemsFor(e.schemaNames))
 		schemaPick.SetSelected(indexOf(schemaPick.Items(), e.schema))
-		roleText := make([][]string, len(e.roleNames))
-		roleVals := make([][]bool, len(e.roleNames))
-		for i, name := range e.roleNames {
-			roleText[i] = []string{name}
-			roleVals[i] = []bool{e.roles[i]}
-		}
-		rolesGrid.SetRows(roleText, roleVals)
+		setRoleToggles(rolesGrid, e.roleNames, e.roles)
 	}
 	grid.OnSelectRow = syncFromSelection
 	if len(rows) > 0 {

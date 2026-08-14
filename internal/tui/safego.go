@@ -32,6 +32,35 @@ func (a *App) safego(what string, fn func()) {
 	}()
 }
 
+// safegoRepair is safego for a background operation that latched UI state
+// before it started: a busy flag, a "loading" placeholder, a dimmed toolbar.
+// repair runs on the UI goroutine if — and only if — fn panicked.
+//
+// The latch is otherwise cleared by the callback fn posts when it finishes,
+// and a panic unwinds straight past that callback, so the flag stays set for
+// the object's lifetime: the Log File Viewer's toolbar stays dimmed with
+// Refresh, Export and both selectors dead until the panel is closed, an
+// Activity Monitor tab sits at "Running..." forever, IntelliSense reports a
+// catalog still loading that nothing is loading. safego reports the panic
+// either way — what is lost without a repair step is the UI's way out of it.
+//
+// repair is queued before the panic is reported, so the status bar's last
+// word is the panic rather than whatever the repair sets. Same ordering, and
+// the same reason, as backfillRow's recovery (detail_browser_backfill.go).
+func (a *App) safegoRepair(what string, repair func(), fn func()) {
+	go func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				return
+			}
+			a.postAndWake(repair)
+			a.reportPanic(r, what)
+		}()
+		fn()
+	}()
+}
+
 // recoverPanic is safego's deferred half, also usable directly by a
 // goroutine that can't be expressed as a bare func() — call it as
 // `defer a.recoverPanic("what this was doing")`.

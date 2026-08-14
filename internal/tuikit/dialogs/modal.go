@@ -101,6 +101,18 @@ func (d *ModalDialog) Show() {
 	d.visible = true
 }
 
+// Relayout re-fits the dialog to the current screen size. The host calls
+// this on every terminal resize for each open dialog: recentre otherwise
+// runs only from InitModal/SetSize/Show, so a dialog open across a resize
+// kept the rect it was centred into and drew its right/bottom border and
+// its whole button row off-screen — while still swallowing every key. On a
+// terminal small enough it drew nothing at all and the app looked frozen.
+//
+// A dialog whose size depends on the screen (its content is wrapped to a
+// fraction of the width, or it grows with the terminal) overrides this to
+// recompute that size first and then call SetSize, which recentres.
+func (d *ModalDialog) Relayout() { d.recentre() }
+
 // Hide dismisses the dialog.
 func (d *ModalDialog) Hide() { d.visible = false }
 

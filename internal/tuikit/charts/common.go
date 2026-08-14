@@ -1,6 +1,8 @@
 package charts
 
 import (
+	"time"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -301,6 +303,76 @@ func layoutPlot(r core.Rect, gutter, legendRows int) plotFrame {
 	f.axis = core.Rect{X: r.X, Y: r.Y, W: gutter, H: bottom - r.Y}
 	f.plot = core.Rect{X: r.X + gutter, Y: r.Y, W: r.W - gutter, H: bottom - r.Y}
 	return f
+}
+
+// historySpec is everything HistoryChart and StackedHistoryChart do
+// identically, which is all of it but two things: where an auto-scale takes
+// its maximum from, and how one column is drawn. Both public types convert
+// themselves into one of these (see their spec methods) and the code below
+// takes over, so the chrome sequence — gutter, plot, time row, legend, and
+// the order they are drawn in — exists once. Two copies drifted apart
+// silently: nothing fails to compile when only one of them learns about a
+// new piece of chrome.
+//
+// autoMax is a func, not a value, because it is only wanted when Scale is
+// zero and computing it walks every bucket of every series on a chart that
+// redraws on every collector tick.
+type historySpec struct {
+	series     []Series
+	scale      Scale
+	autoMax    func() float64
+	yLevels    int
+	legendRows int
+	gridEvery  int
+	timeLabel  string
+	interval   time.Duration
+	drawCols   func(s tcell.Screen, plot core.Rect, sc Scale)
+}
+
+// layout resolves the scale and reserves the chrome. Both are needed
+// together: the axis gutter's width depends on how wide the scale's own
+// labels print.
+func (sp historySpec) layout(r core.Rect) (Scale, plotFrame) {
+	sc := sp.scale
+	if sc.IsZero() {
+		sc = AutoScale(sp.autoMax())
+	}
+	return sc, layoutPlot(r, axisGutter(sc, levelsFor(sp.yLevels, r.H)), legendRowsFor(sp.legendRows, sp.series))
+}
+
+// drawFrame draws the chart and reports both of the rects a caller can be
+// left needing, from the one layout pass it already had to make.
+func (sp historySpec) drawFrame(s tcell.Screen, r core.Rect) (plot, timeRow core.Rect) {
+	if r.W <= 0 || r.H <= 0 {
+		return core.Rect{}, core.Rect{}
+	}
+	sc, frame := sp.layout(r)
+	if frame.plot.W <= 0 || frame.plot.H <= 0 {
+		blankRect(s, r)
+		return frame.plot, frame.timeRow
+	}
+
+	gridEvery := sp.gridEvery
+	if gridEvery == 0 {
+		gridEvery = gridSpacing(frame.plot.W)
+	}
+	drawPlotBackground(s, frame.plot, gridEvery)
+	sp.drawCols(s, frame.plot, sc)
+
+	drawYAxis(s, frame.axis, frame.plot, sc, levelsFor(sp.yLevels, frame.plot.H))
+	drawTimeAxis(s, frame.timeRow, frame.plot, sp.timeLabel, sp.interval, gridEvery)
+	DrawLegend(s, frame.legend, LegendItems(sp.series))
+	return frame.plot, frame.timeRow
+}
+
+func (sp historySpec) plotRect(r core.Rect) core.Rect {
+	_, frame := sp.layout(r)
+	return frame.plot
+}
+
+func (sp historySpec) timeRowRect(r core.Rect) core.Rect {
+	_, frame := sp.layout(r)
+	return frame.timeRow
 }
 
 // drawPlotBackground clears the plot area and lays the muted dot grid and

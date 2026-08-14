@@ -309,22 +309,8 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 				return nil, nil, err
 			}
 
-			entries := make([]permEntry, len(perms))
-			for i, p := range perms {
-				entries[i] = permEntry{
-					Principal: p.Principal, PrincipalType: p.PrincipalType,
-					Grantor: p.Grantor, Permission: string(p.Permission), State: string(p.State),
-				}
-			}
-			principals := make([]permPrincipal, 0, len(users)+len(roles))
-			for _, u := range users {
-				principals = append(principals, permPrincipal{Name: u.Name, Type: u.UserType})
-			}
-			for _, r := range roles {
-				principals = append(principals, permPrincipal{Name: r.Name, Type: "DATABASE_ROLE"})
-			}
-
-			f, apply := buildPermissionsMatrix(principals, gosmo.ObjectPermissionNames(), entries, 8, 12,
+			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.ObjectPermissionNames(),
+				objectPermEntries(perms), 8, 12,
 				objectPermApply(d, schema, name))
 			return f, apply, nil
 		},

@@ -3,12 +3,17 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/radix29/gossms/internal/fileutil"
 )
 
 // AuthMethod is gossms's own authentication-method enum, used for the UI
@@ -171,6 +176,13 @@ type Config struct {
 	// zero value keeps the feature on by default for both a fresh install
 	// and a config.json written before this option existed.
 	IntelliSenseDisabled bool `json:"intellisense_disabled"`
+
+	// unreadable is the error Load hit reading an existing config.json, if
+	// any. It makes this Config write-protected (see Save): everything the
+	// file held is missing from it, so writing it back would destroy a file
+	// that is very likely still intact. Unexported, so it neither serialises
+	// nor survives a copy into a new Config the way a fresh Load's would.
+	unreadable error
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell displays
@@ -202,17 +214,29 @@ func LogFilePath() (string, error) {
 	return filepath.Join(dir, "gossms.log"), nil
 }
 
-// Load reads the config from disk, returning an empty config on error.
-// Saved passwords are decrypted back to plaintext in the returned Config
-// (see secret.go) — if the key can't be read/created, or a given password
-// doesn't decrypt cleanly, that connection's Password comes back ""; every
-// other field still loads fine.
+// Load reads the config from disk, returning an empty config if there isn't
+// one yet. Saved passwords are decrypted back to plaintext in the returned
+// Config (see secret.go) — if the key can't be read/created, or a given
+// password doesn't decrypt cleanly, that connection's Password comes back "";
+// every other field still loads fine.
+//
+// A config file that exists but can't be read (a permission change, EIO, too
+// many open files) is not the same as not having one, and returning an empty
+// config for both is what made it dangerous: the app came up with no saved
+// connections and the next Save — of some unrelated setting — wrote that
+// emptiness over a file that was still perfectly good. Such a config comes
+// back unreadable instead, and Save refuses to touch the file at all.
 func Load() *Config {
 	path := configPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
 		cfg.MaxCellLength = DefaultMaxCellLength
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("config: %s exists but could not be read (%v); "+
+				"starting with no saved settings and refusing to overwrite it", path, err)
+			cfg.unreadable = err
+		}
 		return cfg
 	}
 	cfg := new(Config)
@@ -222,8 +246,11 @@ func Load() *Config {
 		// every saved connection, so keep the bytes under a .corrupt name
 		// first: recovering a password by hand is impossible, but the
 		// server/user/database fields are readable. Best-effort — nothing
-		// here should stop the app from starting.
-		_ = os.WriteFile(path+".corrupt", data, 0o600)
+		// here should stop the app from starting. Written atomically like
+		// every other file this package produces: the sidecar is the only
+		// remaining copy of bytes nothing else can reconstruct, so a partial
+		// one is the very loss it exists to prevent.
+		_ = fileutil.WriteAtomic(path+".corrupt", data, 0o600)
 		cfg = new(Config)
 	}
 	if cfg.MaxCellLength <= 0 {
@@ -270,6 +297,12 @@ func Load() *Config {
 // or an undone hand-edit could still have opened.
 func (c *Config) Save() error {
 	path := configPath()
+	if c.unreadable != nil {
+		// Load never saw this file's contents, so c is empty of everything it
+		// held. Writing c out would replace a readable-again config with that
+		// emptiness — the one outcome worse than not saving.
+		return fmt.Errorf("config: not saving over %s — it could not be read at startup: %w", path, c.unreadable)
+	}
 	dir := filepath.Dir(path)
 	// 0700, matching loadOrCreateKey's own MkdirAll (secret.go). Save runs
 	// before that call and MkdirAll never chmods an already-existing
@@ -310,44 +343,7 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, data)
-}
-
-// writeFileAtomic writes data to path by way of a temp file in the same
-// directory plus a rename, so path is only ever replaced whole. A plain
-// os.WriteFile truncates in place: a crash, a full disk, or a power loss
-// partway through leaves invalid JSON behind, which Load then discards
-// entirely (see there) — silently taking every saved connection with it.
-// The temp file has to share path's directory for the rename to be atomic,
-// since a rename across filesystems isn't.
-func writeFileAtomic(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp) // no-op once the rename below has succeeded
-
-	// CreateTemp makes the file 0600 already; set it explicitly so the
-	// permissions don't depend on that staying true.
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	// Flush to disk before the rename, so a crash right after it can't
-	// leave the new name pointing at an empty or partial file.
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fileutil.WriteAtomic(path, data, 0o600)
 }
 
 // MaxSavedConnections caps how many recent connections Config keeps. The

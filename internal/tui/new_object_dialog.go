@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,11 @@ import (
 // The PropDialog (properties-of-an-existing-object) shell in prop_dialog.go
 // is deliberately separate: it loads its pages lazily one at a time and
 // applies a dirty-diff, neither of which a create dialog has any use for.
+
+// errPageLoadPanicked is what a queued page request is failed with when the
+// prefetch goroutine panicked — the panic itself is already logged and on
+// the status bar, so the page only has to say why it has no content.
+var errPageLoadPanicked = errors.New("loading stopped unexpectedly — see the log for details")
 
 // newObjectConfig is everything that differs between one create dialog and
 // the next. Passed to newObjectDialog.init at construction.
@@ -157,7 +163,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	sc := d.sc
 	sessionCtx := d.ctx
 	fetch := d.fetch
-	d.app.safego("loading a new-object page", func() {
+	d.app.safegoRepair("loading a new-object page", func() { d.fetchPanicked(sessionCtx) }, func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		pf, err := fetch(ctx, sc)
@@ -193,6 +199,31 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	})
 }
 
+// fetchPanicked releases the prefetch latch after a panic in onLoadPage's
+// goroutine — its App.safegoRepair step. d.fetching is what makes the fetch
+// single-flight, so leaving it set means no page of this dialog ever loads
+// again; the queued requests have to be failed too, or they sit blank
+// forever. Guarded by sessionCtx for the same reason the normal completion
+// path is: a reopened dialog has a fetch of its own out.
+func (d *newObjectDialog[P]) fetchPanicked(sessionCtx context.Context) {
+	if d.ctx != sessionCtx {
+		return
+	}
+	d.fetching = false
+	waiting := d.waiting
+	d.waiting = nil
+	for _, r := range waiting {
+		d.SetPageError(r.page, r.seq, errPageLoadPanicked)
+	}
+}
+
+// applyPanicked releases the applying latch after a panic in runPipeline's
+// goroutine — see PropDialog.applyPanicked for what the latch disables.
+func (d *newObjectDialog[P]) applyPanicked() {
+	d.SetApplying(false)
+	d.SetMessage("Create stopped unexpectedly — see the log for details.", true)
+}
+
 func (d *newObjectDialog[P]) onConfirmDiscard(page int, proceed func()) {
 	d.app.confirmDiscardChanges(proceed)
 }
@@ -223,7 +254,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	d.SetApplying(true)
 	d.SetMessage("", false)
 
-	d.app.safego("creating the object", func() {
+	d.app.safegoRepair("creating the object", d.applyPanicked, func() {
 		var runErr error
 		for _, fn := range fns {
 			if fn == nil {

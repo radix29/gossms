@@ -305,6 +305,20 @@ type mapEdit struct {
 	roles      []bool
 }
 
+// setRoleToggles fills a one-checkbox-per-role toggle grid from the parallel
+// name/checked slices both User Mapping pages keep a database's role
+// membership in — this one and buildNewLoginUserMappingPage's
+// (new_login_pages.go).
+func setRoleToggles(g *propsheet.ToggleGridRow, names []string, checked []bool) {
+	text := make([][]string, len(names))
+	vals := make([][]bool, len(names))
+	for i, name := range names {
+		text[i] = []string{name}
+		vals[i] = []bool{checked[i]}
+	}
+	g.SetRows(text, vals)
+}
+
 func mapCell(mapped bool) string {
 	if mapped {
 		return "[x]"
@@ -333,11 +347,14 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				mappingByDB[m.Database] = m
 			}
 
-			var edits []*mapEdit
-			for _, d := range dbs {
-				if d.State() != "ONLINE" {
-					continue
-				}
+			// One more round trip per ONLINE database on top of the one
+			// UserMappingsContext already makes per database, so serially
+			// this page is 2N latencies deep. A database whose roles can't
+			// be read drops out of the list the same way an offline one
+			// does — the alternative is one unreadable availability-group
+			// secondary failing a page that has every other database to
+			// show, which is not what the mapping half above does.
+			edits, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (*mapEdit, error) {
 				m, isMapped := mappingByDB[d.Name()]
 				user := *loginName
 				schema := "dbo"
@@ -349,7 +366,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				}
 				roles, err := d.DatabaseRolesContext(ctx)
 				if err != nil {
-					return nil, nil, err
+					return nil, err
 				}
 				var roleNames []string
 				var origRoles []bool
@@ -363,12 +380,15 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					roleNames = append(roleNames, r.Name)
 					origRoles = append(origRoles, isMapped && slices.Contains(m.Roles, r.Name))
 				}
-				edits = append(edits, &mapEdit{
+				return &mapEdit{
 					dbName: d.Name(), origMapped: isMapped, mapped: isMapped,
 					user: user, origSchema: schema, schema: schema,
 					roleNames: roleNames, origRoles: origRoles,
 					roles: append([]bool(nil), origRoles...),
-				})
+				}, nil
+			})
+			if err != nil {
+				return nil, nil, err
 			}
 
 			rowsFor := func() [][]string {
@@ -420,13 +440,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				e := edits[row]
 				dbStatic.SetValue(e.dbName)
 				schemaText.SetValue(e.schema)
-				roleText := make([][]string, len(e.roleNames))
-				roleVals := make([][]bool, len(e.roleNames))
-				for i, name := range e.roleNames {
-					roleText[i] = []string{name}
-					roleVals[i] = []bool{e.roles[i]}
-				}
-				rolesGrid.SetRows(roleText, roleVals)
+				setRoleToggles(rolesGrid, e.roleNames, e.roles)
 			}
 			grid.OnSelectRow = syncFromSelection
 			if len(edits) > 0 {

@@ -360,7 +360,8 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 	d.SetTitle("Restore Database - Progress")
 
 	app, sc := d.app, d.sc
-	app.safego("the restore", func() {
+	// safegoRepair for the same reason as startBackup's.
+	app.safegoRepair("the restore", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
 		err := d.runRestore(ctx, task, dev, target, recovery, replace, verify, closeConns, fileNumber, plan)
 		if err == nil {
 			app.postAndWake(func() { app.explorer.RefreshDatabasesFolder(sc) })

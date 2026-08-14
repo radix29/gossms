@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"strconv"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -44,7 +46,7 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 			style = theme.StyleGridSelected()
 		}
 		if gw > 0 {
-			g.drawGutterCell(s, y, core.Itoa(dataIdx+1), style)
+			g.drawGutterCell(s, y, strconv.Itoa(dataIdx+1), style)
 		}
 		cells := g.rows.Row(dataIdx)
 		g.drawRow(s, y, cells, style, gw)

@@ -318,17 +318,10 @@ func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols [
 // internal/db/connection.go) and queue a redraw for each; capping keeps
 // one slow row from blocking the rest without running them all at once.
 //
-// The bound is per loader, not per connection: each backfillRows call takes
-// its own bucket, so two folders loading at once fan out to 16. That is
-// still inside the pool, but the headroom is two loaders, not more.
+// The bound is per loader, not per connection: each backfillRows call runs
+// its own pool, so two folders loading at once fan out to 16. That is still
+// inside the pool, but the headroom is two loaders, not more.
 const maxRowFetchConcurrency = 8
-
-// rowFetchSemaphore returns a fresh token bucket bounding one progressive
-// loader's per-row fan-out to maxRowFetchConcurrency at a time. Acquire by
-// sending to it, release by receiving.
-func rowFetchSemaphore() chan struct{} {
-	return make(chan struct{}, maxRowFetchConcurrency)
-}
 
 // fetchNodeDetails runs the gosmo queries for a node's detail grid. Called
 // from a background goroutine (see ShowNodeDetails) — it must not touch

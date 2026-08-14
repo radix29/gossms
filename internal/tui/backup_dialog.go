@@ -360,7 +360,11 @@ func (d *BackupDialog) startBackup() {
 	d.SetTitle("Backup Database - Progress")
 
 	app, srv := d.app, d.sc.Server
-	app.safego("the backup", func() {
+	// safegoRepair: the Task is latched running above, and only postTaskDone
+	// finishes it. A panic past that leaves a task pruneFinishedTasks never
+	// evicts, so the status bar counts it as in flight for the rest of the
+	// session and the dialog sits in the progress view with a dead Cancel.
+	app.safegoRepair("the backup", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
 		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
 		err := srv.BackupContext(ctx, opts)
 		if err == nil && verify {

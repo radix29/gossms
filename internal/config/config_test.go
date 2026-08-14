@@ -162,6 +162,62 @@ func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
 	}
 }
 
+// A config file that exists but can't be read is not the same as not having
+// one. Load used to return the same empty Config for both, so a transient
+// read failure came up with no saved connections and the next Save — of some
+// unrelated setting — wrote that emptiness over a file that was still fine.
+func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a 0000 file is still readable")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "gossms")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfgDir, "config.json")
+	original := `{"connections":[{"name":"prod","server":"sql-prod"}],"max_cell_length":42}`
+	if err := os.WriteFile(path, []byte(original), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if len(cfg.Connections) != 0 {
+		t.Fatalf("len(Connections) = %d, want 0 — the file was never read", len(cfg.Connections))
+	}
+
+	if err := cfg.Save(); err == nil {
+		t.Error("Save() = nil error over an unreadable config, want a refusal")
+	}
+
+	// The refusal is only worth anything if the file is still intact.
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != original {
+		t.Errorf("config.json was rewritten:\n got %s\nwant %s", after, original)
+	}
+}
+
+// The other half of the same branch: no file at all is an ordinary first run,
+// and must stay saveable.
+func TestLoadMissingConfigStillSaves(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	cfg := Load()
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() after a first-run Load: %v", err)
+	}
+	if _, err := os.Stat(configPath()); err != nil {
+		t.Errorf("config.json was not written: %v", err)
+	}
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	xdgDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)

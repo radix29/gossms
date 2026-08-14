@@ -208,6 +208,44 @@ func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 	}
 }
 
+// beginFailSink refuses to open a set at all — the "the header row wouldn't
+// write" case, e.g. a full disk hit on csvSink's first Write.
+type beginFailSink struct {
+	recordingSink
+}
+
+func (s *beginFailSink) BeginSet([]string) error { return errors.New("begin failed") }
+
+// A failed BeginSet must still get its EndSet: RowSink promises finalisation
+// happens there and nowhere else, and a sink that took a lock or allocated
+// per-set state before the failure has no other place to undo it. The defer
+// used to be registered after the BeginSet call, so this path skipped it.
+func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
+	db := openFakeRowsDB(streamTestCols, streamTestRows())
+	defer db.Close()
+
+	r := queryFakeRows(t, db)
+	sink := &beginFailSink{}
+	n, err := streamResultSet(r, sink)
+	r.Close()
+
+	if err == nil {
+		t.Fatal("streamResultSet returned nil error after BeginSet failed")
+	}
+	if err.Error() != "begin failed" {
+		t.Errorf("err = %v, want the BeginSet error — EndSet's must not displace it", err)
+	}
+	if n != 0 {
+		t.Errorf("n = %d, want 0 — no row was written", n)
+	}
+	if len(sink.endRows) != 1 || sink.endRows[0] != 0 {
+		t.Errorf("endRows = %v, want [0] — EndSet once, for the set that never opened", sink.endRows)
+	}
+	if len(sink.rows) != 0 {
+		t.Errorf("sink received %d rows after refusing the set", len(sink.rows))
+	}
+}
+
 // ExecuteToSink itself is not unit-tested end to end: it runs through
 // sqlexp's ReturnMessage protocol, which a fake driver cannot reproduce — the
 // message loop needs the driver to populate MsgNext/MsgNextResultSet, and a

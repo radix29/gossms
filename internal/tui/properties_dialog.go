@@ -71,7 +71,16 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	seq := d.seq
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
-	app.safego("loading dependencies", func() {
+	// safegoRepair: the dialog was latched at a "Loading..." row above, and
+	// only the completion callback replaces it.
+	app.safegoRepair("loading dependencies", func() {
+		if seq != d.seq || !d.Visible() {
+			return
+		}
+		d.ShowProperties(title, []PropertyRow{
+			{Key: "Error", Value: "Loading stopped unexpectedly — see the log for details."},
+		})
+	}, func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)

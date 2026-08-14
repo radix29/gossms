@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -256,7 +257,7 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	// event (see OverlayActive).
 	g.closeViewer()
 	g.computeColWidths()
-	g.status = core.Itoa(rows.Len()) + " rows"
+	g.status = strconv.Itoa(rows.Len()) + " rows"
 }
 
 // RefreshColumnWidths recomputes column widths from the grid's current
@@ -519,7 +520,7 @@ func (g *DataGrid) gutterWidth() int {
 	if !g.showRowNumbers {
 		return 0
 	}
-	return core.DisplayWidth(core.Itoa(max(1, g.rows.Len()))) + 2
+	return core.DisplayWidth(strconv.Itoa(max(1, g.rows.Len()))) + 2
 }
 
 // selectionBounds returns the inclusive row/col rectangle of the current

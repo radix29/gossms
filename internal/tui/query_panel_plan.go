@@ -53,15 +53,19 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	p.app.setStatus("Fetching estimated execution plan...")
 
 	done := make(chan struct{})
+	p.execDone = done
 	go p.tickExecuting(done)
 
-	p.app.safego("the estimated execution plan", func() {
+	p.app.safegoRepair("the estimated execution plan", p.execPanicked, func() {
+		// Both on every exit, not just the normal one — see startRun.
+		defer cancel()
+		defer close(done)
+
 		res := query.ExecuteEstimatedPlan(ctx, sc.Server.DB(), database, queryText)
-		// cancelled must be read before cancel() — calling cancel sets
-		// ctx.Err() itself, which would make this always true otherwise.
+		// cancelled must be read while ctx is still live — the deferred
+		// cancel() above sets ctx.Err() itself, which would make this always
+		// true if it were read after.
 		cancelled := ctx.Err() != nil
-		cancel()
-		close(done)
 		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil

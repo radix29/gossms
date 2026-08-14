@@ -139,10 +139,25 @@ func (pt *amProcTab) activate() {
 	pt.am.buildTools()
 
 	opts := pt.am.conn.Opts
-	pt.am.app.safego("connecting Activity Monitor "+pt.proc.MasterName+" tab", func() {
+	pt.am.app.safegoRepair("connecting Activity Monitor "+pt.proc.MasterName+" tab", pt.panicRepair, func() {
 		conn, err := db.Connect(opts)
 		pt.am.app.postAndWake(func() { pt.connected(conn, err) })
 	})
+}
+
+// panicRepair releases the busy latch after a panic on one of this tab's
+// background steps — see App.safegoRepair. Every step below clears busy in
+// the callback it posts on completion, which a panic never reaches: buildTools
+// dims Refresh and both install actions while busy is set, so the tab would
+// be left frozen at "Connecting..." or "Running..." with no way back short of
+// closing the panel.
+func (pt *amProcTab) panicRepair() {
+	if !pt.am.app.panelHosted(pt.am) {
+		return
+	}
+	pt.busy = false
+	pt.setStatus("Stopped unexpectedly — see the log for details.")
+	pt.am.buildTools()
 }
 
 // connected adopts the tab's connection and moves on to the procedure.
@@ -174,7 +189,7 @@ func (pt *amProcTab) connected(conn *db.ServerConn, err error) {
 func (pt *amProcTab) resolveProc() {
 	conn := pt.conn
 	pt.busy = true
-	pt.am.app.safego("preparing "+pt.proc.MasterName, func() {
+	pt.am.app.safegoRepair("preparing "+pt.proc.MasterName, pt.panicRepair, func() {
 		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
 		defer cancel()
 		loc, err := pt.proc.Find(ctx, conn.Server.DB())
@@ -223,7 +238,7 @@ func (pt *amProcTab) refresh() {
 	pt.am.buildTools()
 
 	conn, script := pt.conn, pt.proc.Exec(pt.loc)
-	pt.am.app.safego("running "+qualified, func() {
+	pt.am.app.safegoRepair("running "+qualified, pt.panicRepair, func() {
 		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
 		defer cancel()
 		res := query.Execute(ctx, conn.Server.DB(), "", script)
@@ -292,7 +307,7 @@ func (pt *amProcTab) installInMaster() {
 	pt.am.buildTools()
 
 	conn := pt.conn
-	pt.am.app.safego("installing "+qualified, func() {
+	pt.am.app.safegoRepair("installing "+qualified, pt.panicRepair, func() {
 		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
 		defer cancel()
 		err := pt.proc.Install(ctx, conn.Server.DB(), activity.ProcMaster)

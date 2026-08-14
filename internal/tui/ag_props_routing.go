@@ -112,12 +112,7 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 				urlRow.SetValue(current.url)
 				listRow.SetValue(current.list)
 			}
-			grid.OnSelectRow = func(int) {
-				commitCurrent()
-				syncFromSelection()
-				grid.SetData(headers, gridRows())
-			}
-			syncFromSelection()
+			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {
@@ -133,8 +128,7 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 					e.url, e.list = e.origURL, e.origList
 				}
 				current = nil
-				grid.SetData(headers, gridRows())
-				syncFromSelection()
+				reload()
 			}
 
 			f := propsheet.NewForm(

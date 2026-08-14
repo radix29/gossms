@@ -100,15 +100,15 @@ func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 	}
 	jobs, jErr := sch.JobsContext(ctx)
 
-	endDate := "No end date"
-	if !sch.ActiveEndDate.IsZero() {
-		endDate = sch.ActiveEndDate.Format("2006-01-02")
+	endDate := formatAgentDate(sch.ActiveEndDate)
+	if endDate == "" {
+		endDate = "No end date"
 	}
 	rows := [][]string{
 		{"Schedule name", sch.Name},
 		{"Enabled", fmt.Sprintf("%v", sch.Enabled)},
 		{"Owner", sch.OwnerLoginName},
-		{"Start date", sch.ActiveStartDate.Format("2006-01-02")},
+		{"Start date", formatAgentDate(sch.ActiveStartDate)},
 		{"End date", endDate},
 		{"Used by jobs", countOrDash(len(jobs), jErr)},
 		{"Description", sch.Description()},

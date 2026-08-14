@@ -116,12 +116,7 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 				}
 				priorityRow.SetValue(strconv.Itoa(current.priority))
 			}
-			grid.OnSelectRow = func(int) {
-				commitCurrent()
-				syncFromSelection()
-				grid.SetData(headers, gridRows())
-			}
-			syncFromSelection()
+			reload := wireGridEditor(grid, headers, gridRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {
@@ -137,8 +132,7 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 					e.priority = e.orig
 				}
 				current = nil
-				grid.SetData(headers, gridRows())
-				syncFromSelection()
+				reload()
 			}
 
 			f := propsheet.NewForm(

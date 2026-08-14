@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/fileutil"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
@@ -80,15 +81,26 @@ func (a *App) openQueryFile() {
 		}
 		a.queryPanelCnt++
 		qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
-		qp.editor.SetText(string(data))
-		qp.savedText = string(data)
+		text, enc, crlf, lossy := decodeTextFile(data)
+		qp.editor.SetText(text)
+		// Read back from the editor, never from text: SetText expands tabs, so
+		// seeding savedText with what was passed in marks a file with a single
+		// tab in it dirty the moment it opens — and then closing it prompts to
+		// save, which is what walks the user into rewriting a file they never
+		// touched.
+		qp.savedText = qp.editor.Text()
 		qp.filePath = path
+		qp.fileEnc, qp.fileCRLF = enc, crlf
 		if strings.EqualFold(filepath.Ext(path), ".xml") {
 			qp.editor.SetHighlighter(controls.XMLHighlighter(theme.Active()))
 		}
 		a.panels.SetActive(a.panels.AddPanel(qp))
 		a.focusPanels()
-		a.setStatus("Opened " + path)
+		if lossy {
+			a.setStatus("Opened " + path + " — not valid UTF-8; undecodable bytes shown as � and saving will replace them")
+		} else {
+			a.setStatus("Opened " + path)
+		}
 		if sc, database := a.selectedConnTarget(); sc != nil {
 			a.connectForQueryPanel(qp, sc, database, nil)
 		}
@@ -392,8 +404,15 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 // writeQueryFile writes qp's editor content to path, reporting whether it
 // succeeded — callers that only want to proceed on success (see
 // saveQueryPanel) check the return value instead of assuming it worked.
+//
+// The bytes are re-encoded in whatever shape the panel's file was opened in
+// (see decodeTextFile); a panel that was never opened from a file writes
+// LF-separated UTF-8, which is fileEnc/fileCRLF's zero value. The write goes
+// through fileutil.WriteAtomic for the same reason config.Save does: a plain
+// os.WriteFile truncates first, so a full disk mid-write leaves the user with
+// neither their script nor the file it replaced.
 func (a *App) writeQueryFile(qp *QueryPanel, path string) bool {
-	if err := os.WriteFile(path, []byte(qp.editor.Text()), 0o644); err != nil {
+	if err := fileutil.WriteAtomic(path, encodeTextFile(qp.editor.Text(), qp.fileEnc, qp.fileCRLF), 0o644); err != nil {
 		a.setStatus(fmt.Sprintf("Save failed: %v", err))
 		return false
 	}

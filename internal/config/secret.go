@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/radix29/gossms/internal/fileutil"
 )
 
 // Password protection
@@ -75,7 +77,13 @@ func loadOrCreateKey(dir string) ([]byte, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, key, 0o600); err != nil {
+	// Atomically, and flushed to disk, for the same reason config.json is
+	// (see fileutil.WriteAtomic) — but with more at stake here. Save creates the
+	// key before it writes the ciphertext that depends on it, so a crash
+	// that leaves config.json durable and gossms.key absent or short-written
+	// hits loadOrCreateKey's "expected 32" refusal above on the next run,
+	// and every saved password is gone for good rather than merely unread.
+	if err := fileutil.WriteAtomic(path, key, 0o600); err != nil {
 		return nil, err
 	}
 	return key, nil

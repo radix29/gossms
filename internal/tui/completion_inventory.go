@@ -87,6 +87,23 @@ func (inv *completionInventory) endLoad(seq int) bool {
 	return true
 }
 
+// loadPanicked is both loaders' App.safegoRepair step. loading is otherwise
+// cleared only in the callback the fetch posts on completion, which a panic
+// unwinds straight past — and every later lookup then sees a load in flight
+// that no longer exists, so completion never comes back for that key.
+//
+// The entry is dropped rather than merely unlatched, which is what the
+// err-and-closed-connection branch above does for the same reason: the next
+// lookup retries from scratch instead of reading a catalog half-built by the
+// fetch that died. seq keeps a superseded panic off a live newer load, the
+// same way endLoad keeps a superseded result off one.
+func loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
+	if !inv.endLoad(seq) {
+		return
+	}
+	evictInventory(m, key, inv)
+}
+
 // evictInventory drops key's entry from m so the next lookup starts a fresh
 // load — but only while that entry is still inv.
 //
@@ -230,7 +247,9 @@ func (p *QueryPanel) refreshCompletionCache() {
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
-	a.safego("loading the autocomplete catalog", func() {
+	a.safegoRepair("loading the autocomplete catalog", func() {
+		loadPanicked(a.completionInventories, key, inv, seq)
+	}, func() {
 		cat, err := srv.Database(database).CatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {
@@ -349,7 +368,9 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
 	srv := sc.Server
 	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
-	a.safego("loading the system autocomplete catalog", func() {
+	a.safegoRepair("loading the system autocomplete catalog", func() {
+		loadPanicked(a.sysCompletionInventories, key, inv, seq)
+	}, func() {
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.endLoad(seq) {

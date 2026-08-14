@@ -205,6 +205,24 @@ a settled question being reopened.
   connection string's. The proposed fix was three extra round trips per grant
   to re-solve what the driver already handles, and was reverted.
 
+## Dialog content is not clipped to a clamped rect
+
+Found 2026-08-14, alongside the resize fix (see `docs/journal.md`), and
+deliberately not fixed there. `ModalDialog.recentre` clamps a dialog's *rect*
+to a terminal smaller than the dialog's requested size, so the box, its
+borders and its button row stay on screen. The content does not follow: rows
+are drawn at fixed offsets from the dialog's origin, so at 30x8 the Connect
+dialog's field rows run past the right border and `DrawButtons` lands on top
+of them.
+
+This is not a resize bug — the pre-resize binary launched directly at 30x8
+draws the identical mess, and post-fix a resized dialog renders
+byte-identically to a freshly opened one. Fixing it means every dialog's Draw
+clipping to `InnerRect` and skipping rows below `ButtonRowY()`, which is a
+change to ~28 hand-written Draw methods, not to `ModalDialog`. Nothing is lost
+meanwhile: the terminals where it shows are ones where the dialog could not
+have been read anyway.
+
 ## Unbuilt features README already promises
 
 Each is a feature, not a defect.

@@ -93,7 +93,11 @@ func (lv *LogViewer) drawDetails(s tcell.Screen) {
 // The result is cached per (entry, width) — see detailCache. Callers must
 // treat the slice as read-only: the next call hands back the same one.
 func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
-	if w < 1 {
+	// Three columns, not one: the message body is indented by two, so a
+	// narrower pane leaves WrapText a width of zero or less, and it answers
+	// that by handing back the paragraph unwrapped — one long line that
+	// DrawTextClipped then cuts at the edge with no ellipsis.
+	if w < 3 {
 		return nil
 	}
 	if e == lv.detailCacheEntry && w == lv.detailCacheWidth {
@@ -106,12 +110,7 @@ func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
 		"Message",
 	}
 	for _, para := range splitLogLines(e.Text) {
-		wrapped := core.WrapText(para, w-2)
-		if len(wrapped) == 0 {
-			lines = append(lines, "")
-			continue
-		}
-		for _, line := range wrapped {
+		for _, line := range core.WrapText(para, w-2) {
 			lines = append(lines, "  "+line)
 		}
 	}

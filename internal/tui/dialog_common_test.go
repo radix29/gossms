@@ -118,6 +118,12 @@ func TestScrollToShow(t *testing.T) {
 		{"above the viewport scrolls up to sel", 1, 3, 10, 1},
 		{"below the viewport scrolls the minimum", 13, 3, 10, 4},
 		{"far below jumps so sel is the last row", 40, 3, 10, 31},
+		// A viewport with no rows has nothing to reveal. Unguarded, the
+		// "past the bottom" arm is always true here and answers sel+1 —
+		// scrolled past the selection, which draws as an empty pane.
+		{"zero-height viewport leaves the offset alone", 5, 3, 0, 3},
+		{"zero-height viewport at offset zero stays there", 0, 0, 0, 0},
+		{"negative height leaves the offset alone", 5, 3, -1, 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := scrollToShow(tt.sel, tt.scroll, tt.dataH); got != tt.want {

@@ -189,6 +189,35 @@ func agMissingReplicaErr(name string) error {
 	return fmt.Errorf("replica %q is no longer part of this availability group — refresh the page and try again", name)
 }
 
+// wireGridEditor connects a per-row detail editor below a DataGrid to the
+// grid's selection, the shape the Backup Preferences and Read-Only Routing
+// pages share: moving off a row commits whatever was typed into the editor,
+// loads the newly selected row into it, then redraws the grid, whose own cells
+// report what was just committed. Returns the redraw a page's RevertFn needs
+// after it has rewritten the edits behind the grid.
+//
+// The selected cell is saved and restored around SetData because SetData
+// resets it to 0,0, and this redraw runs from inside OnSelectRow — i.e. after
+// the grid has already moved. Without the restore, every replica but the first
+// was unreachable on both pages: a click on any other row selected the first
+// one instead, and because GridRow reports movement by comparing SelectedCell
+// either side of the key (see propsheet.GridRow.HandleKey), a grid that always
+// came back to 0,0 answered "not handled" and the first arrow key threw focus
+// out of the grid entirely. Verified against AAG1's two replicas, 2026-08-14.
+func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
+	redraw := func() { redrawGrid(grid, headers, gridRows()) }
+	grid.OnSelectRow = func(int) {
+		commitCurrent()
+		syncFromSelection()
+		redraw()
+	}
+	syncFromSelection()
+	return func() {
+		redraw()
+		syncFromSelection()
+	}
+}
+
 func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 	return propPage{
 		title: "General",
@@ -307,12 +336,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				agSetSelect(seedingRow, agSeedingModeItems, current.seedingMode)
 				timeoutRow.SetValue(strconv.Itoa(current.sessionTimeout))
 			}
-			grid.OnSelectRow = func(int) {
-				commitCurrent()
-				syncFromSelection()
-				grid.SetData(replicaHeaders, replicaRows())
-			}
-			syncFromSelection()
+			reload := wireGridEditor(grid, replicaHeaders, replicaRows, commitCurrent, syncFromSelection)
 
 			gridRow := propsheet.NewGridRow(grid, 9)
 			gridRow.DirtyFn = func() bool {
@@ -328,8 +352,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 					edits[i] = agReplicaEditFrom(r)
 				}
 				current = nil
-				grid.SetData(replicaHeaders, replicaRows())
-				syncFromSelection()
+				reload()
 			}
 
 			rows := []propsheet.Row{

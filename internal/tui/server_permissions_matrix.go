@@ -40,6 +40,35 @@ type permPrincipal struct {
 	Type string
 }
 
+// databasePermPrincipals is the principal list every database-scope
+// Permissions page offers: every user, then every database role. The database,
+// schema, and object pages differ only in which permission catalog they pair
+// it with, so the list itself is built once.
+func databasePermPrincipals(users []*gosmo.User, roles []*gosmo.DatabaseRole) []permPrincipal {
+	principals := make([]permPrincipal, 0, len(users)+len(roles))
+	for _, u := range users {
+		principals = append(principals, permPrincipal{Name: u.Name, Type: u.UserType})
+	}
+	for _, r := range roles {
+		principals = append(principals, permPrincipal{Name: r.Name, Type: "DATABASE_ROLE"})
+	}
+	return principals
+}
+
+// objectPermEntries normalizes the schema- and object-scope entries, whose
+// Permission and State are named string types rather than the plain strings
+// the server- and database-scope ones carry.
+func objectPermEntries(perms []*gosmo.PermissionEntry) []permEntry {
+	entries := make([]permEntry, len(perms))
+	for i, p := range perms {
+		entries[i] = permEntry{
+			Principal: p.Principal, PrincipalType: p.PrincipalType,
+			Grantor: p.Grantor, Permission: string(p.Permission), State: string(p.State),
+		}
+	}
+	return entries
+}
+
 // buildPermissionsMatrix builds the Permissions page's two-pane editor: a
 // principal list (top grid) and, for whichever principal is selected, the
 // full catalog of grantable permissions at this scope (bottom grid) — not

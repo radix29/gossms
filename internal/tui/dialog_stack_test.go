@@ -98,6 +98,38 @@ func TestStatusHistoryDialogParticipatesInStack(t *testing.T) {
 	}
 }
 
+// A dialog is not part of the layout tree — it centres itself on the screen
+// — so layoutAll's SetBounds calls reach none of them, and an open dialog
+// used to keep the rect it was centred into before the resize: its right
+// border and its entire button row landed off-screen while it went on
+// swallowing every key. On a small enough terminal it drew nothing at all
+// and the app looked hung.
+func TestLayoutAllRefitsOpenDialogsToTheNewScreenSize(t *testing.T) {
+	a := newLatchTestApp()
+	scr := a.screen.(*fakeSizedScreen)
+
+	a.alertDialog.ShowAlert("Alert", "Something happened.")
+	a.syncDialogStack()
+
+	scr.w, scr.h = 44, 12
+	a.layoutAll()
+
+	r := a.alertDialog.Rect()
+	if r.Right() > scr.w || r.Bottom() > scr.h {
+		t.Errorf("dialog rect %+v extends past the %dx%d screen after resize", r, scr.w, scr.h)
+	}
+
+	// Below layoutAll's too-small floor is exactly where an unrefitted
+	// dialog is most broken, so the refit must happen before that guard.
+	scr.w, scr.h = 16, 4
+	a.layoutAll()
+
+	r = a.alertDialog.Rect()
+	if r.Right() > scr.w || r.Bottom() > scr.h {
+		t.Errorf("dialog rect %+v extends past the %dx%d screen (below layoutAll's size floor)", r, scr.w, scr.h)
+	}
+}
+
 // TestDialogStackRoutesInputToTopOnly confirms only the frontmost dialog
 // ever receives input — the invariant handleKey/handleMouse rely on.
 func TestDialogStackRoutesInputToTopOnly(t *testing.T) {

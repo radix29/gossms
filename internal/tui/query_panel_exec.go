@@ -163,9 +163,16 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.app.setStatus("Executing query...")
 
 	done := make(chan struct{})
+	p.execDone = done
 	go p.tickExecuting(done)
 
-	p.app.safego("query execution", func() {
+	p.app.safegoRepair("query execution", p.execPanicked, func() {
+		// Both on every exit, not just the normal one: a panic past them
+		// leaks ctx and leaves tickExecuting waking the event loop once a
+		// second for the rest of the process's life.
+		defer cancel()
+		defer close(done)
+
 		var res *query.Result
 		var sink *csvSink
 		var exportErr error
@@ -187,11 +194,10 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 		default:
 			res = query.Execute(ctx, sc.Server.DB(), database, queryText)
 		}
-		// cancelled must be read before cancel() — calling cancel sets
-		// ctx.Err() itself, which would make this always true otherwise.
+		// cancelled must be read while ctx is still live — the deferred
+		// cancel() above sets ctx.Err() itself, which would make this always
+		// true if it were read after.
 		cancelled := ctx.Err() != nil
-		cancel() // release ctx's resources now that the query is done, whether or not CancelExecution ever ran
-		close(done)
 		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil
@@ -222,6 +228,19 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 		return fmt.Sprintf("%s was closed — its query was cancelled", title)
 	}
 	return fmt.Sprintf("%s was closed — its query finished, results discarded", title)
+}
+
+// execPanicked releases the single-flight latch after a panic on an execute
+// or estimated-plan goroutine — the App.safegoRepair step for both. Without
+// it p.executing stays set for the panel's lifetime, and every later Execute
+// is refused by the guards that read it (menu, toolbar, runEstimatedPlan).
+// Needs no seq guard the way LogViewer.readPanicked does: p.executing is
+// itself what stops a second run from starting, so there is never a newer
+// one to clobber.
+func (p *QueryPanel) execPanicked() {
+	p.executing = false
+	p.cancel = nil
+	p.resultsNotice = "Execution stopped unexpectedly — see the log for details."
 }
 
 // tickExecuting wakes the event loop once a second while a query runs, so

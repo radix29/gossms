@@ -1,8 +1,6 @@
 package dialogs
 
 import (
-	"strings"
-
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -41,15 +39,19 @@ func (d *ModalDialog) fitMessage(message string, minW, baseH int) (w, h int, lin
 		}
 	}
 	contentW := w - messageBoxOverhead
-	lines = core.WrapText(message, contentW)
-
+	maxLines := 0
 	if d.screen != nil {
 		if _, sh := d.screen.Size(); sh > 0 {
-			if maxLines := max(1, sh-baseH+1); maxLines < len(lines) {
-				remainder := strings.Join(lines[maxLines-1:], " ")
-				lines = append(lines[:maxLines-1], core.Truncate(remainder, contentW))
-			}
+			maxLines = max(1, sh-baseH+1)
 		}
+	}
+	// WrapTextLimit is WrapText for a message that already fits in maxLines,
+	// so the cap needs no second wrap of its own. It has no unlimited form,
+	// which is what the screenless branch falls back to.
+	if maxLines > 0 && contentW > 0 {
+		lines = core.WrapTextLimit(message, contentW, maxLines)
+	} else {
+		lines = core.WrapText(message, contentW)
 	}
 	return w, baseH + len(lines) - 1, lines
 }
