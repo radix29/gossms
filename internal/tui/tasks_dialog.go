@@ -64,9 +64,7 @@ func (d *TasksDialog) Draw(s tcell.Screen) {
 	}
 
 	if len(tasks) > dataH {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-		core.DrawScrollbar(s, d.Rect().Right()-1, inner.Y+1, dataH, len(tasks), dataH, d.scroll, sbStyle, sbThumb)
+		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(tasks), d.scroll)
 	}
 
 	d.DrawButtons(s, []string{"Cancel Task", "Close"}, 0)

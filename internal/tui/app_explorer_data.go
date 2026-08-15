@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -23,7 +24,13 @@ const childFetchTimeout = 30 * time.Second
 // so it can never clobber the newer one.
 func (a *App) loadChildren(node *explorerNode) {
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
-	a.safego("loading Object Explorer children", func() {
+	// safegoRepair, not safego: handleExpand latched the node at "Loading..."
+	// before calling this (data.Loaded is still false), and the SetChildren
+	// below is the only thing that clears it. A panic unwinds past the posted
+	// callback entirely, so without the repair the node keeps spinning until
+	// the user happens to collapse and re-expand it — with nothing on screen
+	// saying why.
+	a.safegoRepair("loading Object Explorer children", func() { a.childFetchPanicked(node, seq) }, func() {
 		children := a.fetchChildren(ctx, node)
 		a.postAndWake(func() {
 			if !node.endLoad(seq) {
@@ -35,6 +42,32 @@ func (a *App) loadChildren(node *explorerNode) {
 			}
 		})
 	})
+}
+
+// errChildFetchPanicked is what an expand shows when its loader panicked. The
+// stack is already in the log by the time this is displayed (see reportPanic);
+// the tree has room for one line.
+var errChildFetchPanicked = errors.New("loading failed unexpectedly — see the log for details")
+
+// childFetchPanicked ends the load a panic abandoned, replacing the
+// "Loading..." placeholder with the same kind of error node fetchChildren
+// produces for an ordinary loader failure.
+//
+// Note what that costs, deliberately: SetChildren marks the node Loaded, so
+// Refresh is what retries — collapsing and re-expanding now redisplays the
+// error instead of refetching, which is what it did before this repair
+// existed. That is the same bargain an ordinary loader error already makes,
+// and being told the expand failed is worth more than a silent retry on a
+// gesture most users won't think to make.
+//
+// Guarded by seq exactly as the success path is: a newer expand has already
+// latched the node for itself, and overwriting its children with this one's
+// error is the bug endLoad exists to prevent.
+func (a *App) childFetchPanicked(node *explorerNode, seq int) {
+	if !node.endLoad(seq) {
+		return
+	}
+	a.explorer.SetChildren(node, []*explorerNode{errExplorerNode(errChildFetchPanicked)})
 }
 
 // refreshAgentRootLabel appends " (Stopped)" to the just-shown "SQL Server

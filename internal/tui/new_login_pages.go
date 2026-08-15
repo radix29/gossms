@@ -233,15 +233,14 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		return out
 	}
 	grid := controls.NewDataGrid()
-	grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
+	grid.SetData(userMappingColumns, rowsFor())
 	grid.SetCellCursor(true)
 	grid.OnActivateCell = func(row, col int) {
 		if col != 0 || row < 0 || row >= len(rows) {
 			return
 		}
 		rows[row].mapped = !rows[row].mapped
-		grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-		grid.SetSelectedCell(row, col)
+		redrawGrid(grid, userMappingColumns, rowsFor())
 	}
 
 	dbStatic := propsheet.Static("Database", "")
@@ -265,25 +264,21 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			}
 		}
 	}
-	syncFromSelection := func(row int) {
-		commitCurrent()
-		selected = row
-		if row < 0 || row >= len(rows) {
+	syncFromSelection := func() {
+		selected = grid.SelectedRow()
+		if selected < 0 || selected >= len(rows) {
 			dbStatic.SetValue("")
 			schemaPick.SetItems([]string{"dbo"})
 			rolesGrid.SetRows(nil, nil)
 			return
 		}
-		e := rows[row]
+		e := rows[selected]
 		dbStatic.SetValue(e.dbName)
 		schemaPick.SetItems(schemaItemsFor(e.schemaNames))
 		schemaPick.SetSelected(indexOf(schemaPick.Items(), e.schema))
 		setRoleToggles(rolesGrid, e.roleNames, e.roles)
 	}
-	grid.OnSelectRow = syncFromSelection
-	if len(rows) > 0 {
-		syncFromSelection(0)
-	}
+	reload := wireGridEditor(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
 
 	mappingRow := propsheet.NewGridRow(grid, 10)
 	mappingRow.DirtyFn = func() bool {
@@ -302,10 +297,12 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 				e.roles[i] = false
 			}
 		}
-		grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-		if selected >= 0 && selected < len(rows) {
-			syncFromSelection(selected)
-		}
+		// reload, never syncFromSelection directly: reload redraws and reloads
+		// the editor *without* committing first, which is the whole difference.
+		// The schema picker and role toggles still hold the pre-revert values at
+		// this point, so a commit would write the selected row straight back to
+		// what Revert just undid.
+		reload()
 	}
 
 	f := propsheet.NewForm(
@@ -410,7 +407,7 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 		for _, e := range edits {
 			e.current = ""
 		}
-		grid.SetData([]string{"Permission", "State"}, rowsFor())
+		redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
 	}
 
 	f := propsheet.NewForm(

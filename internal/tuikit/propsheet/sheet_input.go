@@ -16,6 +16,21 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 		p.Refresh(p.current)
 		return true
 	}
+	// Ctrl+Z reverts the page to what it loaded with — the only way a user
+	// reaches Form.Revert and the 21 RevertFn closures behind it. Handled here
+	// rather than in zoneForm so it works from the page list and button row
+	// too, and ahead of the focused row for the same reason F5 is: no row wants
+	// it. Nothing inside a form row does either — widgets.InputField takes
+	// Ctrl+A and Ctrl+U and no propsheet row hosts a controls.Editor, which is
+	// the one widget with its own Ctrl+Z.
+	if ev.Key() == tcell.KeyCtrlZ {
+		if p.RevertPage(p.current) {
+			p.SetMessage("Reverted to the loaded values.", false)
+		} else {
+			p.SetMessage("Nothing to revert — no unsaved changes on this page.", false)
+		}
+		return true
+	}
 	// Escape cancels the whole sheet everywhere except zoneForm, where the
 	// focused row gets first refusal — an open dropdown overlay consumes
 	// Escape to close itself (see DropDown.HandleKey) rather than the

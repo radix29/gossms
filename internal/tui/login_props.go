@@ -319,6 +319,10 @@ func setRoleToggles(g *propsheet.ToggleGridRow, names []string, checked []bool) 
 	g.SetRows(text, vals)
 }
 
+// userMappingColumns are the User Mapping grid's columns, shared by this
+// page and buildNewLoginUserMappingPage — both grids are the same grid.
+var userMappingColumns = []string{"Map", "Database", "User", "Schema"}
+
 func mapCell(mapped bool) string {
 	if mapped {
 		return "[x]"
@@ -394,20 +398,23 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			rowsFor := func() [][]string {
 				rows := make([][]string, len(edits))
 				for i, e := range edits {
-					rows[i] = []string{mapCell(e.mapped), e.dbName, e.user, e.origSchema}
+					// e.schema, not e.origSchema: the redraw after each commit
+					// exists so the grid reports what the editor below it just
+					// wrote, and showing the loaded value instead left an edited
+					// schema invisible in the grid until Apply.
+					rows[i] = []string{mapCell(e.mapped), e.dbName, e.user, e.schema}
 				}
 				return rows
 			}
 			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
+			grid.SetData(userMappingColumns, rowsFor())
 			grid.SetCellCursor(true)
 			grid.OnActivateCell = func(row, col int) {
 				if col != 0 || row < 0 || row >= len(edits) {
 					return
 				}
 				edits[row].mapped = !edits[row].mapped
-				grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-				grid.SetSelectedCell(row, col)
+				redrawGrid(grid, userMappingColumns, rowsFor())
 			}
 
 			dbStatic := propsheet.Static("Database", "")
@@ -428,24 +435,20 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					}
 				}
 			}
-			syncFromSelection := func(row int) {
-				commitCurrent()
-				selected = row
-				if row < 0 || row >= len(edits) {
+			syncFromSelection := func() {
+				selected = grid.SelectedRow()
+				if selected < 0 || selected >= len(edits) {
 					dbStatic.SetValue("")
 					schemaText.SetValue("")
 					rolesGrid.SetRows(nil, nil)
 					return
 				}
-				e := edits[row]
+				e := edits[selected]
 				dbStatic.SetValue(e.dbName)
 				schemaText.SetValue(e.schema)
 				setRoleToggles(rolesGrid, e.roleNames, e.roles)
 			}
-			grid.OnSelectRow = syncFromSelection
-			if len(edits) > 0 {
-				syncFromSelection(0)
-			}
+			reload := wireGridEditor(grid, userMappingColumns, rowsFor, commitCurrent, syncFromSelection)
 
 			mappingRow := propsheet.NewGridRow(grid, 10)
 			mappingRow.DirtyFn = func() bool {
@@ -467,10 +470,12 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					e.schema = e.origSchema
 					e.roles = append([]bool(nil), e.origRoles...)
 				}
-				grid.SetData([]string{"Map", "Database", "User", "Schema"}, rowsFor())
-				if selected >= 0 && selected < len(edits) {
-					syncFromSelection(selected)
-				}
+				// reload, never syncFromSelection directly: reload redraws and
+				// reloads the editor *without* committing first, which is the
+				// whole difference. The schema box and role toggles still hold
+				// the pre-revert values at this point, so a commit would write
+				// the selected row straight back to what Revert just undid.
+				reload()
 			}
 
 			f := propsheet.NewForm(

@@ -115,6 +115,7 @@ func (a *App) fetchChildren(ctx context.Context, node *explorerNode) []*explorer
 		a.logStatus("fetchChildren [%v]: %v", node.data.Type, err)
 		return []*explorerNode{errExplorerNode(err)}
 	}
+	a.restoreFilters(sc, children)
 	return filterChildren(node, children)
 }
 

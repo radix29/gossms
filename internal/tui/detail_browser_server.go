@@ -20,7 +20,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 	// wakeEventLoop they trigger) directly from ShowNodeDetails' own
 	// goroutine (the UI goroutine): see wakeEventLoop's doc comment in
 	// app.go for why that's unsafe.
-	app.safego("loading server details", func() {
+	app.safegoRepair("loading server details", db.panicRepair(node, seq), func() {
 		info := sc.Server.Info()
 		const availMemRow, numaRow = 9, 10
 		rows := [][]string{

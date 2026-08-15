@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"sync"
+
+	"github.com/radix29/gossms/internal/config"
 )
 
 // peer.go lets one connection reach a *different* instance using the same
@@ -24,9 +26,10 @@ import (
 //
 // server is a SQL Server instance name as the catalog reports it — typically
 // sys.availability_replicas.replica_server_name, which may carry a
-// "HOST\INSTANCE" suffix. sc's own port and auth settings are reused; a
-// topology whose replicas listen on different ports or want different
-// credentials is out of scope here and will surface as a connect error.
+// "HOST\INSTANCE" suffix. sc's own port and auth settings are reused, but not
+// its database — see peerOptions. A topology whose replicas listen on
+// different ports or want different credentials is out of scope here and will
+// surface as a connect error.
 //
 // Returns sc itself when server names sc's own instance, so callers can route
 // through Peer unconditionally without special-casing the local case.
@@ -47,9 +50,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	// Connect outside the lock: it does network I/O, and holding the mutex
 	// across it would serialise every replica of a multi-replica group behind
 	// the slowest one.
-	opts := sc.Opts
-	opts.Server = server
-	peer, err := Connect(opts)
+	peer, err := Connect(sc.peerOptions(server))
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +74,28 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	}
 	sc.peers[key] = peer
 	return peer, nil
+}
+
+// peerOptions is sc's own connection options retargeted at server: same port,
+// same auth, same credentials, and deliberately **no database**.
+//
+// A database named in the connection string has to be openable or the connect
+// itself fails — "Cannot open database %q that was requested by the login",
+// raised at ping time, verified live against win10cli 2026-08-14. The database
+// the user happened to connect through is exactly the one a peer may not be
+// able to open: a secondary replica that is not readable, or one that has not
+// joined that database yet. Carrying it over turns an ordinary Always On read
+// into a connect error before any of it runs.
+//
+// Nothing is lost by dropping it. Everything Peer exists to reach is
+// server-scoped — the availability catalog, the sys.dm_hadr_* DMVs, an
+// endpoint, a certificate — and anything database-scoped goes through gosmo's
+// own Database handles, which set their context per query.
+func (sc *ServerConn) peerOptions(server string) config.Connection {
+	opts := sc.Opts
+	opts.Server = server
+	opts.Database = ""
+	return opts
 }
 
 // isSelf reports whether server names the instance sc is already connected to.

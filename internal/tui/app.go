@@ -1,10 +1,7 @@
-// Package tui is the gossms application layer. It wires together the
-// reusable, embeddable controls from internal/tuikit (theme, core, widgets,
-// layout, dialogs, controls) into the SQL-Server-specific Object Explorer,
-// query panels, and dialogs that make up goSSMS.
-//
-// Everything in tuikit is application-agnostic; everything in this package
-// knows about gosmo, config.Connection, and SQL Server object types.
+// Package tui is the gossms application layer. It wires the
+// application-agnostic controls from internal/tuikit into the
+// SQL-Server-specific Object Explorer, query panels, and dialogs; everything
+// here knows about gosmo, config.Connection, and SQL Server object types.
 package tui
 
 import (
@@ -24,9 +21,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// App is the root application struct that owns the screen and all UI panels.
-// It is the only place in the codebase where tuikit controls are bound to
-// SQL-Server-specific behaviour.
+// App is the root application struct, owning the screen and all UI panels.
+// The only place tuikit controls are bound to SQL-Server-specific behaviour.
 type App struct {
 	screen tcell.Screen
 
@@ -35,44 +31,41 @@ type App struct {
 	explorer *ObjectExplorer
 	panels   *layout.PanelManager
 
-	// detailBrowser is the single, always-present Object Explorer Details
-	// panel (see DetailBrowser.Closable) — kept as its own field, not just
-	// found via panels.ActivePanel(), so refresh actions can invalidate its
-	// cache even when some other panel is the active tab.
+	// detailBrowser is the always-present Object Explorer Details panel (see
+	// DetailBrowser.Closable) — its own field rather than found via
+	// panels.ActivePanel(), so refresh actions can invalidate its cache even
+	// when another panel is the active tab.
 	detailBrowser *DetailBrowser
 
-	// dragNode is the Object Explorer node currently being dragged toward
-	// the query editor (armed by a Button1 press over a draggable node,
-	// cleared on release) — nil when no drag is in progress. See
-	// handleMouse/dropExplorerNode. dragX/dragY track the mouse position
-	// while a drag is in progress, so draw can render a ghost of the
-	// dragged object's text following the cursor.
+	// dragNode is the Object Explorer node being dragged toward the query
+	// editor — armed by a Button1 press over a draggable node, cleared on
+	// release, nil otherwise. dragX/dragY track the cursor so draw can
+	// render a ghost of the dragged object's text. See
+	// handleMouse/dropExplorerNode.
 	dragNode *explorerNode
 	dragX    int
 	dragY    int
 
-	// mouseButtonDown tracks whether Button1 is currently held, regardless
-	// of where the gesture started or which widget is under the cursor.
-	// Unlike the per-widget mouseDragging latches (Toolbar, TreeView,
-	// MenuBar, ModalDialog), which only catch a resend staying within the
-	// same widget, this is what lets handleMouse tell a drag that started
-	// elsewhere and merely drifted across the status row from a fresh press
-	// starting there. See handleMouse's use for the Status History dialog.
+	// mouseButtonDown tracks whether Button1 is held, regardless of where
+	// the gesture started. Unlike the per-widget mouseDragging latches
+	// (Toolbar, TreeView, MenuBar, ModalDialog), which only catch a resend
+	// staying inside the same widget, this lets handleMouse tell a drag that
+	// started elsewhere and drifted across the status row from a fresh press
+	// starting there.
 	mouseButtonDown bool
 
 	// gestureOwner is the region that claimed the Button1 press currently
-	// being held, or ownerNone between gestures — the App-level counterpart
-	// of propsheet.PropertySheet.dragZone and QueryPanel.dragZone. Without
-	// it, a drag that merely wanders out of the region it started in is
-	// handed to whatever it wanders over: leftward out of a query editor
-	// arms an Object Explorer drag-and-drop that pastes a node's SQL on
-	// release, and across the explorer/panels splitter bar resizes the two.
-	// Cleared on the release.
+	// held, ownerNone between gestures — the App-level counterpart of
+	// propsheet.PropertySheet.dragZone and QueryPanel.dragZone. Without it a
+	// drag that wanders out of its region is handed to whatever it wanders
+	// over: leftward out of a query editor arms an Object Explorer drop that
+	// pastes a node's SQL on release, and crossing the splitter bar resizes
+	// the panes. Cleared on release.
 	gestureOwner appGestureOwner
 
-	// gestureOverlay is the modal layer as it stood when the current
-	// gesture began, so handleMouse can tell that a dialog, context menu,
-	// or menu dropdown has opened or closed since — see its use there.
+	// gestureOverlay is the modal layer as it stood when the current gesture
+	// began, so handleMouse can tell a dialog, context menu, or menu
+	// dropdown has opened or closed since.
 	gestureOverlay overlayStack
 
 	menuBar       *controls.MenuBar
@@ -82,15 +75,13 @@ type App struct {
 	queryPanelCnt int
 
 	// actualPlanEnabled is the "Include Actual Execution Plan" toolbar
-	// toggle's state — off by default. Read by QueryPanel.runQuery to
-	// decide between query.Execute and query.ExecuteWithPlan.
+	// toggle, off by default. Read by QueryPanel.runQuery to choose between
+	// query.Execute and query.ExecuteWithPlan.
 	actualPlanEnabled bool
 
-	// metaEnabled is the "Show Output Column Metadata" toolbar toggle's
-	// state — off by default. Read by QueryPanel.setResult, which appends
-	// each result set's column/type listing to the Messages tab; snapshot
-	// semantics are irrelevant here since it's read on the UI goroutine
-	// after the query returns, not from the execution goroutine.
+	// metaEnabled is the "Show Output Column Metadata" toolbar toggle, off
+	// by default. Read by QueryPanel.setResult on the UI goroutine after the
+	// query returns, so it needs no snapshot semantics.
 	metaEnabled bool
 
 	connectDialog       *ConnectDialog
@@ -137,20 +128,25 @@ type App struct {
 	connections []*db.ServerConn
 	cfg         *config.Config
 
-	// completionInventories caches one metadata snapshot per server+login+
-	// database (see completionInventoryKey), shared by every query panel
-	// connected to that same database — see completion_inventory.go. Only
-	// ever read/written from the UI goroutine (direct calls, or inside a
-	// postEvent closure), same convention as every other App field.
+	// savedFilters remembers each filtered folder's nodeFilter by identity
+	// rather than node pointer (see filterKey), so reconnecting within one
+	// session brings the filters back — the tree can't hold them, since a
+	// disconnect drops every node. filterMu guards it: fetchChildren
+	// restores from it on the loading goroutine, applyNodeFilter writes from
+	// the UI goroutine.
+	savedFilters map[filterKey]*nodeFilter
+	filterMu     sync.Mutex
+
+	// completionInventories caches one metadata snapshot per
+	// server+login+database (see completionInventoryKey), shared by every
+	// query panel on that database. UI goroutine only, like every other App
+	// field.
 	completionInventories map[string]*completionInventory
 
-	// sysCompletionInventories caches one "sys" schema catalog-view
-	// snapshot per server+login (see sysCompletionInventoryKey) — unlike
-	// completionInventories this is server-scoped, not per-database, since
-	// sys.tables/sys.columns/... are defined identically in every database
-	// on a server and only need loading once per connection. Populated
-	// proactively at connect time (see connectServer/connectForQueryPanel)
-	// rather than lazily on first keystroke.
+	// sysCompletionInventories caches one "sys" catalog-view snapshot per
+	// server+login (see sysCompletionInventoryKey). Server-scoped rather
+	// than per-database, since sys.tables/sys.columns/... are identical in
+	// every database on a server. Populated at connect time, not lazily.
 	sysCompletionInventories map[string]*completionInventory
 
 	// Focus: "explorer" | "panels"
@@ -158,8 +154,7 @@ type App struct {
 
 	// Bracketed paste: pasting is true between an *tcell.EventPaste start
 	// and its matching end, during which every EventKey is pasted content
-	// rather than typing and accumulates in pasteBuf. See
-	// bufferPastedKey/endBracketedPaste in clipboard.go.
+	// and accumulates in pasteBuf. See clipboard.go.
 	pasting  bool
 	pasteBuf strings.Builder
 
@@ -167,24 +162,21 @@ type App struct {
 	pending   []func()
 
 	// wakePending coalesces wakeEventLoop calls: true from the moment an
-	// EventInterrupt has been sent until the event loop next wakes for any
-	// event and clears it. A background goroutine that finds it already true
-	// skips sending its own interrupt — the callback it queued via postEvent
-	// still runs, because drainPending() drains the whole a.pending queue
-	// the next time the loop wakes for any reason. Without this, a burst of
-	// near-simultaneous background completions (the bounded per-row fetches
-	// in loadDatabasesFolderDetails/loadTablesFolderDetails) each cost a
-	// full drainPending + syncDialogStack + draw().
+	// EventInterrupt is sent until the loop next wakes and clears it. A
+	// goroutine finding it already true skips its own interrupt; its queued
+	// callback still runs, since drainPending drains the whole queue on the
+	// next wake for any reason. Without this a burst of near-simultaneous
+	// completions (the bounded per-row fetches in
+	// loadDatabasesFolderDetails/loadTablesFolderDetails) each cost a full
+	// drainPending + syncDialogStack + draw().
 	wakePending atomic.Bool
 
-	// quitMu serializes wakeEventLoop's channel send against quit's call to
-	// screen.Fini(), which closes EventQ() — see quit's and wakeEventLoop's
-	// doc comments. Checking a quitting flag before sending would still
-	// race: Fini() can close the channel between the check and the send.
-	// Holding quitMu across both the flag and the send (in wakeEventLoop),
-	// and across setting the flag and calling Fini() (in quit), makes the
-	// two mutually exclusive — a send either completes before Fini() closes
-	// the channel or never happens at all.
+	// quitMu serializes wakeEventLoop's channel send against quit's
+	// screen.Fini(), which closes EventQ(). Checking a flag before sending
+	// would still race — Fini() can close the channel between check and
+	// send. Holding quitMu across flag-and-send (wakeEventLoop) and across
+	// set-flag-and-Fini (quit) makes the two mutually exclusive: a send
+	// either completes before the close or never happens.
 	quitMu   sync.Mutex
 	quitting bool
 }
@@ -209,26 +201,22 @@ func (a *App) Run() error {
 
 	a.buildUI()
 	a.layoutAll()
-	// Open Connect on startup: nothing in the app works without a server,
-	// so the first thing shown is the dialog the user would have opened
-	// anyway. syncDialogStack must run before the first draw — draw()
-	// renders from dialogStack, which is otherwise only synced inside the
-	// event loop, so without this the dialog wouldn't appear until the
-	// first keypress.
+	// Open Connect on startup — nothing works without a server.
+	// syncDialogStack must run before the first draw: draw() renders from
+	// dialogStack, which is otherwise only synced inside the event loop, so
+	// the dialog wouldn't appear until the first keypress.
 	a.connectDialog.Show()
 	a.syncDialogStack()
 	a.draw()
 
-	// tcell v3's Screen interface has no PollEvent/PostEvent methods; events
-	// are delivered and posted through a plain channel, EventQ(). The
-	// channel is closed by Fini(), so `for ev := range` exits automatically
-	// on quit instead of needing a nil-event sentinel check.
+	// tcell v3 has no PollEvent/PostEvent; events go through the EventQ()
+	// channel, which Fini() closes — so the range exits on quit without a
+	// nil-event sentinel.
 	for ev := range s.EventQ() {
 		// Cleared before draining, not after, so a postEvent+wakeEventLoop
-		// racing this instant still gets a wake of its own: if its append
-		// to a.pending lands after drainPending's mutex-protected read
-		// below, wakePending is already false again, so its CompareAndSwap
-		// succeeds and queues a fresh EventInterrupt.
+		// racing this instant still gets its own wake: if its append to
+		// a.pending lands after drainPending's read below, wakePending is
+		// already false, so its CompareAndSwap succeeds.
 		a.wakePending.Store(false)
 		a.drainPending()
 		a.syncDialogStack()
@@ -241,10 +229,9 @@ func (a *App) Run() error {
 			// triggered after background goroutine posts result
 		case *tcell.EventKey:
 			// Between the two EventPaste markers every key is pasted
-			// content, not typing — buffer it instead of handling it, or
-			// each pasted newline arrives as KeyEnter and gets eaten by
-			// IntelliSense's commit-the-selected-candidate binding, which
-			// silently rewrites the pasted text (see bufferPastedKey).
+			// content, not typing — buffer it, or each pasted newline
+			// arrives as KeyEnter and IntelliSense's commit binding eats
+			// it, silently rewriting the pasted text.
 			if a.pasting {
 				a.bufferPastedKey(e)
 				break
@@ -253,8 +240,8 @@ func (a *App) Run() error {
 				return nil
 			}
 		case *tcell.EventPaste:
-			// Terminal bracketed paste (the terminal's own Paste command, or
-			// a middle-click) — see beginBracketedPaste/endBracketedPaste.
+			// Terminal bracketed paste — the terminal's own Paste command,
+			// or a middle-click.
 			if e.Start() {
 				a.beginBracketedPaste()
 			} else {
@@ -263,9 +250,7 @@ func (a *App) Run() error {
 		case *tcell.EventMouse:
 			a.handleMouse(e)
 		case *tcell.EventClipboard:
-			// Response to a GetClipboard() request made from Ctrl+V — see
-			// activeClipboardTarget for how the destination widget is
-			// resolved.
+			// Response to the GetClipboard() request made from Ctrl+V.
 			if target := a.activeClipboardTarget(); target != nil {
 				target.Paste(string(e.Data()))
 				if a.connectDialog.Visible() {
@@ -276,26 +261,24 @@ func (a *App) Run() error {
 
 		// Re-sync before drawing: the event just handled may have opened or
 		// closed a dialog, and draw() renders straight from dialogStack, so
-		// without this a new dialog wouldn't appear — nor a closed one
-		// vanish — until the next event arrived. The top-of-loop sync still
-		// runs so input routing sees changes made by drainPending.
+		// the change wouldn't show until the next event. The top-of-loop
+		// sync still runs so input routing sees drainPending's changes.
 		a.syncDialogStack()
 		a.draw()
 	}
 	return nil
 }
 
-// postAndWake queues fn to run on the UI goroutine (via postEvent) and
-// immediately wakes the event loop to run it, without waiting for an
-// unrelated key press or mouse move to arrive first. Call it from a
-// background goroutine, after any other work it needs to do — never from
-// the UI goroutine itself (see wakeEventLoop's doc comment).
+// postAndWake queues fn to run on the UI goroutine and immediately wakes the
+// event loop, without waiting for an unrelated key or mouse event. Call it
+// from a background goroutine, never from the UI goroutine (see
+// wakeEventLoop).
 //
-// This is how every background operation in internal/tui reports its
-// result, and the only way one should: writing the two calls out by hand
-// invites nesting the wakeup inside the very closure that's waiting to be
-// drained, which never fires. See wakeEventLoop for why. It's also the
-// shared body behind PropDialog.post and every New*Dialog.post.
+// This is how every background operation in internal/tui reports its result,
+// and the only way one should: writing the two calls out by hand invites
+// nesting the wakeup inside the very closure waiting to be drained, which
+// never fires. Also the shared body behind PropDialog.post and every
+// New*Dialog.post.
 func (a *App) postAndWake(fn func()) {
 	a.postEvent(fn)
 	a.wakeEventLoop()
@@ -317,38 +300,30 @@ func (a *App) drainPending() {
 	}
 }
 
-// wakeEventLoop nudges the event loop to run one more iteration — draining
+// wakeEventLoop nudges the event loop to run one more iteration, draining
 // callbacks queued via postEvent and redrawing. Call it from a background
-// goroutine after postEvent; calling it from the UI thread itself would
-// deadlock (the loop can't read EventQ while it's mid-dispatch).
+// goroutine after postEvent; from the UI thread it would deadlock, since the
+// loop can't read EventQ mid-dispatch.
 //
-// Reach for postAndWake rather than this directly. The wakeup has to be
-// sent after the postEvent call and outside its closure: Run()'s loop only
-// drains queued callbacks when it wakes for some event on EventQ(), so a
-// wakeup nested inside the very closure waiting to be drained can never
-// fire, and the result sits queued and invisible until an unrelated
-// keypress happens to drain it. That was a real shipped bug. The one
-// caller left that needs this on its own is QueryPanel's elapsed-timer
-// tick, which has no callback to post.
+// Prefer postAndWake. The wakeup has to be sent after postEvent and outside
+// its closure: Run()'s loop only drains queued callbacks when it wakes for an
+// event, so a wakeup nested inside the closure waiting to be drained never
+// fires and the result sits queued and invisible until an unrelated keypress
+// drains it — a real shipped bug. The only caller that needs this alone is
+// QueryPanel's elapsed-timer tick, which has no callback to post.
 //
-// A no-op when a.screen is nil, as it is for every App built by newTestApp:
-// a background goroutine from an async action exercised in such a test can
-// still be running after its test function returned, and would otherwise
-// panic on the nil screen.
+// No-op when a.screen is nil (every App from newTestApp): a background
+// goroutine can outlive its test function and would panic on the nil screen.
+// Also a no-op if wakePending is already set, or if the app is quitting —
+// quitMu makes this and Fini() mutually exclusive.
 //
-// Also a no-op if wakePending is already set (see its doc comment on App)
-// or if the app is quitting (see quit's — quitMu makes the two mutually
-// exclusive, so this either sends before Fini() closes EventQ() or not at
-// all, never after).
-//
-// The send is non-blocking. quitMu is held across it, and quit() takes the
-// same lock from the UI goroutine, which is then not draining EventQ(): a
+// The send is non-blocking. quitMu is held across it and quit() takes the
+// same lock from a UI goroutine that is then not draining EventQ(), so a
 // blocking send on a full queue (tcell buffers 128, which all-motion mouse
-// tracking fills fast during a slow frame) would hold quitMu while quit()
-// waited for it, hanging Ctrl+Q. Giving up on a full queue loses nothing —
-// a full queue guarantees the loop is about to wake for those events, and
-// the top of Run()'s loop clears wakePending and calls drainPending() on
-// every iteration regardless of what woke it.
+// tracking fills fast during a slow frame) would hang Ctrl+Q. Giving up on a
+// full queue loses nothing: a full queue means the loop is about to wake, and
+// every iteration clears wakePending and calls drainPending regardless of
+// what woke it.
 func (a *App) wakeEventLoop() {
 	if a.screen == nil {
 		return
@@ -409,8 +384,8 @@ func (a *App) buildUI() {
 	a.newEndpointDialog = NewNewEndpointDialog(a)
 	a.fileDialog = dialogs.NewFileDialog(a.screen)
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
-		// serverPathBase, not filepath.Base: the path may be the SQL Server
-		// host's, whose separator isn't this machine's — filepath.Base of
+		// serverPathBase, not filepath.Base: the path may use the SQL Server
+		// host's separator, not this machine's — filepath.Base of
 		// `C:\Backup\db.bak` on Linux is the whole string.
 		a.confirmDialog.ShowConfirm("Confirm Save As",
 			serverPathBase(path)+" already exists. Overwrite it?",
@@ -431,9 +406,8 @@ func (a *App) buildUI() {
 	a.backupDialog = NewBackupDialog(a)
 	a.restoreDialog = NewRestoreDialog(a)
 
-	// Registration order only matters as a tie-break for dialogs that
-	// somehow became visible in the same tick (today, never — each Show()
-	// is one synchronous call from one key/menu action); see syncDialogStack.
+	// Registration order only matters as a tie-break for dialogs that became
+	// visible in the same tick; see syncDialogStack.
 	a.allDialogs = []Dialog{
 		a.connectDialog, a.findDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
 		a.newDatabaseDialog, a.newLoginDialog,
@@ -456,24 +430,22 @@ func (a *App) focusPanels() {
 	a.syncActivePanelFocus()
 }
 
-// syncActivePanelFocus keeps the visible panel's Activatable state (title
-// bar highlight, cursor visibility) in sync with a.focus. PanelManager only
-// calls SetActive when its own active index changes, and knows nothing
-// about a.focus — so anything that can leave a.focus == "explorer" while
-// changing which panel is active (nextPanel/prevPanel) must call this too,
-// or the newly-selected panel shows as focused while Object Explorer still
-// holds real keyboard focus.
+// syncActivePanelFocus keeps the visible panel's Activatable state (title bar
+// highlight, cursor visibility) in sync with a.focus. PanelManager knows
+// nothing about a.focus and only calls SetActive when its own active index
+// changes, so anything that changes the active panel while a.focus stays
+// "explorer" (nextPanel/prevPanel) must call this, or the new panel shows as
+// focused while Object Explorer holds real keyboard focus.
 func (a *App) syncActivePanelFocus() {
 	if p, ok := a.panels.ActivePanel().(layout.Activatable); ok {
 		p.SetActive(a.focus == "panels")
 	}
 }
 
-// cycleFocus advances keyboard focus one step (Ctrl+Tab): Object Explorer
-// -> the active query panel's editor -> its results pane -> Object Explorer
-// again. A non-query panel (e.g. Object Explorer Details), or a query panel
-// with no results yet, has no middle/last stop to offer, so this degrades
-// to the plain two-way explorer/panels toggle for those.
+// cycleFocus advances keyboard focus one step (Ctrl+Tab): Object Explorer ->
+// the active query panel's editor -> its results pane -> Object Explorer. A
+// non-query panel, or a query panel with no results yet, offers no middle
+// stop, so this degrades to a two-way explorer/panels toggle.
 func (a *App) cycleFocus() {
 	qp := a.activeQueryPanel()
 	switch {
@@ -489,10 +461,8 @@ func (a *App) cycleFocus() {
 	}
 }
 
-// cycleFocusReverse is cycleFocus run backwards (Ctrl+Shift+Tab): Object
-// Explorer -> the active query panel's results pane -> its editor -> Object
-// Explorer again. Degrades the same way cycleFocus does when there's no
-// results pane to stop at.
+// cycleFocusReverse is cycleFocus backwards (Ctrl+Shift+Tab): Object Explorer
+// -> results pane -> editor -> Object Explorer. Degrades the same way.
 func (a *App) cycleFocusReverse() {
 	qp := a.activeQueryPanel()
 	switch {
@@ -508,10 +478,9 @@ func (a *App) cycleFocusReverse() {
 	}
 }
 
-// nextPanel and prevPanel run the tab-bar's Next/Prev panel action (Ctrl+
-// Shift+Right/Left and the View menu) — thin wrappers over PanelManager.
-// Next/Prev that also re-sync the newly active panel's focus visuals (see
-// syncActivePanelFocus), since these can fire while a.focus == "explorer".
+// nextPanel and prevPanel run the tab-bar's Next/Prev panel action
+// (Ctrl+Shift+Right/Left and the View menu). They wrap PanelManager.Next/Prev
+// and re-sync focus visuals, since they can fire while a.focus == "explorer".
 func (a *App) nextPanel() {
 	a.panels.Next()
 	a.syncActivePanelFocus()
@@ -522,10 +491,8 @@ func (a *App) prevPanel() {
 	a.syncActivePanelFocus()
 }
 
-// jumpToPanel switches directly to panel i, counted from the left
-// (Ctrl+0..9 — 0 is always Object Explorer Details, see
-// DetailBrowser.Closable). An out-of-range i is a silent no-op, same as
-// PanelManager.SetActive.
+// jumpToPanel switches to panel i, counted from the left (Ctrl+0..9; 0 is
+// always Object Explorer Details). Out-of-range i is a silent no-op.
 func (a *App) jumpToPanel(i int) {
 	a.panels.SetActive(i)
 	a.syncActivePanelFocus()
@@ -535,8 +502,8 @@ func (a *App) jumpToPanel(i int) {
 func (a *App) layoutAll() {
 	// Dialogs first, and above the too-small guard: a dialog that outgrows
 	// the terminal draws its borders and button row off-screen while still
-	// taking every key, so the smallest sizes are exactly where it must
-	// still be re-fitted.
+	// taking every key, so the smallest sizes are where re-fitting matters
+	// most.
 	a.relayoutDialogs()
 
 	w, h := a.screen.Size()
@@ -580,36 +547,32 @@ func (a *App) draw() {
 	}
 	core.DrawTextClipped(s, 1, h-statusH, w-2, statusStyle, a.statusText+connInfo)
 
-	// Overlays — drawn last so they aren't painted over by panels/status bar,
-	// which occupy the same rows the menu dropdown and context menu extend into.
+	// Overlays last, so the panels/status bar don't paint over the rows the
+	// menu dropdown and context menu extend into.
 	a.menuBar.DrawOverlay(s)
 	a.toolbar.DrawOverlay(s)
 	a.contextMenu.Draw(s)
 	a.drawDragGhost(s, w)
 
-	// Modal dialogs — highest z-order; dialogStack is kept current by
-	// syncDialogStack (see Run), so drawing it bottom-to-top here is
-	// enough to paint a nested dialog over its parent.
+	// Modal dialogs — highest z-order. dialogStack is kept current by
+	// syncDialogStack, so drawing it bottom-to-top paints a nested dialog
+	// over its parent.
 	a.drawDialogs(s)
 
 	s.Show()
 }
 
-// quit tears the screen down unconditionally — Fini closes EventQ(), which
-// is what ends Run's loop, and s.EventQ() is unusable from then on. Callers
-// reached from a user action want requestQuit instead, which offers to save
-// unsaved query panels first.
+// quit tears the screen down unconditionally — Fini closes EventQ(), ending
+// Run's loop and making the channel unusable. User actions want requestQuit
+// instead, which offers to save unsaved query panels first.
 //
-// quitMu is held across setting quitting and calling Fini() so a
-// wakeEventLoop call racing this from a background goroutine either
-// completes its send before Fini() closes EventQ(), or sees quitting and
-// skips sending entirely — never sends on the closed channel, which would
-// panic.
+// quitMu is held across setting quitting and calling Fini() so a racing
+// wakeEventLoop either completes its send first or sees quitting and skips
+// it, never sending on the closed channel and panicking.
 //
-// screen is nil for the minimal *App some tests build by hand (see
-// newTestApp in app_connections_test.go) without going through Run; quitting
-// is the flag everything else keys off, so setting it is the part that has
-// to happen either way. Same reasoning as setStatus's nil check below.
+// screen is nil for the minimal *App newTestApp builds without going through
+// Run; quitting is what everything else keys off, so it must be set either
+// way. Same reasoning as setStatus's nil check.
 func (a *App) quit() {
 	a.quitMu.Lock()
 	defer a.quitMu.Unlock()
@@ -621,20 +584,16 @@ func (a *App) quit() {
 
 func (a *App) setStatus(msg string) {
 	a.statusText = msg
-	// statusHistoryDialog is nil for the minimal *App some tests build by
-	// hand (see newTestApp in app_connections_test.go) without going
-	// through buildUI.
+	// nil for the minimal *App newTestApp builds without buildUI.
 	if a.statusHistoryDialog != nil {
 		a.statusHistoryDialog.Record(msg)
 	}
 }
 
-// logStatus records msg in both the log file and the status-history dialog
-// but, unlike setStatus, never touches the single-line a.statusText the
-// status bar shows. Used for background/diagnostic detail — a config-save
-// failure after an otherwise successful connect, a child-node fetch error
-// already surfaced as an error tree node — that shouldn't clobber the
-// status bar.
+// logStatus records msg in the log file and the status-history dialog but,
+// unlike setStatus, leaves a.statusText alone. For background/diagnostic
+// detail that shouldn't clobber the status bar — a config-save failure after
+// a successful connect, a fetch error already shown as an error tree node.
 func (a *App) logStatus(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	log.Print(msg)
@@ -643,9 +602,8 @@ func (a *App) logStatus(format string, args ...any) {
 	}
 }
 
-// pluralSuffix returns "" for n == 1 and "s" otherwise, for simple
-// singular/plural status-bar wording ("1 server connected" vs "2 servers
-// connected").
+// pluralSuffix returns "" for n == 1 and "s" otherwise, for status-bar
+// wording like "1 server connected" vs "2 servers connected".
 func pluralSuffix(n int) string {
 	if n == 1 {
 		return ""

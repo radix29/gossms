@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	dbconn "github.com/radix29/gossms/internal/db"
 )
 
 // explorer_filter.go is the model behind Object Explorer's folder filter
@@ -12,7 +14,8 @@ import (
 // node, and where the filtering itself happens. The dialog that edits one
 // lives in filter_dialog.go.
 //
-// A filter is applied at fetch time (fetchChildren), not at draw time, so
+// A filter is applied at fetch time (fetchChildren for the tree,
+// filterObjects for the Detail Browser's own loaders), not at draw time, so
 // changing or clearing one always goes through a folder reload — see
 // App.applyNodeFilter.
 
@@ -279,6 +282,91 @@ func filterChildren(node *explorerNode, children []*explorerNode) []*explorerNod
 	return out
 }
 
+// filterObjects drops the objects a folder's filter rejects, given a
+// function mapping one object to the nodeData fields the criteria read.
+//
+// This is the Detail Browser's half of the filter. Its loaders
+// (detail_browser*.go) query gosmo directly instead of expanding the tree, so
+// they hold collections of gosmo objects rather than *explorerNode and can't
+// go through filterChildren; filtering the collection before rows are built
+// keeps a progressive loader's row indices lined up with it.
+func filterObjects[T any](node *explorerNode, items []T, key func(T) nodeData) []T {
+	f := node.data.Filter
+	if !f.active() {
+		return items
+	}
+	out := make([]T, 0, len(items))
+	for _, it := range items {
+		if f.matches(key(it)) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// filterKey identifies a filterable folder by what it is rather than by the
+// *explorerNode holding it, since disconnecting drops the whole subtree and
+// reconnecting builds fresh nodes. Schema and table are what keep a
+// table-scoped folder (a table's own Triggers) apart from the
+// database-scoped folder of the same type.
+type filterKey struct {
+	conn   string
+	dbName string
+	schema string
+	table  string
+	typ    NodeType
+}
+
+func newFilterKey(sc *dbconn.ServerConn, d nodeData) filterKey {
+	return filterKey{
+		conn:   sysCompletionInventoryKey(sc.Opts),
+		dbName: d.DBName,
+		schema: d.Schema,
+		table:  d.TableName,
+		typ:    d.Type,
+	}
+}
+
+// rememberFilter records (or, for a nil f, forgets) a folder's filter so a
+// reconnect within the same session comes back filtered, the way SSMS does.
+// Nothing is persisted to disk — a filter lives for as long as the process.
+func (a *App) rememberFilter(sc *dbconn.ServerConn, d nodeData, f *nodeFilter) {
+	if sc == nil {
+		return
+	}
+	a.filterMu.Lock()
+	defer a.filterMu.Unlock()
+	if !f.active() {
+		delete(a.savedFilters, newFilterKey(sc, d))
+		return
+	}
+	if a.savedFilters == nil {
+		a.savedFilters = make(map[filterKey]*nodeFilter)
+	}
+	a.savedFilters[newFilterKey(sc, d)] = f
+}
+
+// restoreFilters reattaches remembered filters to freshly loaded folder
+// nodes. Called from fetchChildren, on the loading goroutine, because a
+// folder's filter has to be in place before that folder's own children are
+// fetched — restoring it afterwards would leave the node labelled
+// "(filtered)" over a list nothing had filtered.
+func (a *App) restoreFilters(sc *dbconn.ServerConn, children []*explorerNode) {
+	a.filterMu.Lock()
+	defer a.filterMu.Unlock()
+	if len(a.savedFilters) == 0 {
+		return
+	}
+	for _, c := range children {
+		if len(filterProps(c.data.Type)) == 0 {
+			continue
+		}
+		if f, ok := a.savedFilters[newFilterKey(sc, c.data)]; ok {
+			c.data.Filter = f
+		}
+	}
+}
+
 // applyNodeFilter installs f (nil to clear) on a folder node and reloads it.
 // The reload is what actually applies the filter — fetchChildren filters the
 // loader's result — and the rebuild repaints the node's own "(filtered)"
@@ -286,6 +374,7 @@ func filterChildren(node *explorerNode, children []*explorerNode) []*explorerNod
 // does once an expanded reload completes.
 func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 	node.data.Filter = f
+	a.rememberFilter(resolveConn(node), node.data, f)
 	refreshExplorerNode(a, node)
 	a.explorer.rebuild()
 	if f.active() {

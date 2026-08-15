@@ -133,9 +133,7 @@ func (d *PropertiesDialog) Draw(s tcell.Screen) {
 		core.DrawTextClipped(s, inner.X+keyW+4, y, inner.W-keyW-4, valStyle, pr.Value)
 	}
 	if len(d.rows) > dataH {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-		core.DrawScrollbar(s, d.Rect().Right()-1, inner.Y+2, dataH, len(d.rows), dataH, d.scroll, sbStyle, sbThumb)
+		d.DrawContentScrollbar(s, inner.Y+2, dataH, len(d.rows), d.scroll)
 	}
 
 	d.DrawSeparator(s)

@@ -71,6 +71,12 @@ var helpLines = []string{
 	"  Ctrl+R      Refresh the cached table/column list for this database",
 	"  (Tools > Options has an on/off toggle for this feature)",
 	"",
+	"Properties Dialogs",
+	"  Tab         Move focus: page list -> page -> buttons",
+	"  F5          Reload the current page from the server",
+	"  Ctrl+Z      Revert this page to its loaded values",
+	"  Ctrl+C      Copy the focused row's value",
+	"",
 	"Focus / Panel Tabs",
 	"  Ctrl+Tab         Cycle focus: Explorer -> Query Editor -> Results",
 	"  Ctrl+Shift+Tab   Cycle focus in reverse: Explorer -> Results -> Editor",
@@ -120,9 +126,7 @@ func (d *HelpDialog) Draw(s tcell.Screen) {
 	}
 
 	if len(helpLines) > dataH {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-		core.DrawScrollbar(s, d.Rect().Right()-1, inner.Y+1, dataH, len(helpLines), dataH, d.scroll, sbStyle, sbThumb)
+		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(helpLines), d.scroll)
 	}
 
 	d.DrawButtons(s, []string{"Close"}, 0)

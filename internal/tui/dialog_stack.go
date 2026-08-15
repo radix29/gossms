@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // Dialog is the shape every modal dialog already has, by embedding
@@ -64,8 +65,19 @@ func (a *App) relayoutDialogs() {
 
 // drawDialogs renders every open dialog bottom-to-top, so a nested dialog
 // paints over its parent rather than the reverse.
+//
+// Each Draw gets a clipping screen with the clip reset to the whole terminal;
+// dialogs.ModalDialog.DrawBase narrows it to the dialog's own box when the
+// rect had to be clamped to a small terminal, which is what keeps content
+// laid out for the requested size from spilling across the screen. Resetting
+// per dialog matters for a nested one: it must not inherit its parent's clip.
 func (a *App) drawDialogs(s tcell.Screen) {
+	if len(a.dialogStack) == 0 {
+		return
+	}
+	cs := core.NewClipScreen(s)
 	for _, d := range a.dialogStack {
-		d.Draw(s)
+		cs.ResetClip()
+		d.Draw(cs)
 	}
 }

@@ -41,7 +41,7 @@ const zoneNone focusZone = -1
 
 var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
 
-const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+C Copy   Esc Cancel"
+const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Revert   Ctrl+C Copy   Esc Cancel"
 
 const pageListWidth = 24
 
@@ -263,6 +263,26 @@ func (p *PropertySheet) Refresh(page int) {
 		return
 	}
 	p.startLoad(page)
+}
+
+// RevertPage restores page's rows to the values it loaded with, without
+// re-querying the server, and reports whether anything changed. Refresh is the
+// other half of the pair and the more expensive one: it throws the loaded form
+// away and asks the server again.
+//
+// Unlike Refresh this asks no confirmation — discarding the edits *is* what
+// was asked for, and the message it leaves says so, since a form that reverts
+// to values identical to what the user typed would otherwise look inert.
+func (p *PropertySheet) RevertPage(page int) bool {
+	if page < 0 || page >= len(p.pages) {
+		return false
+	}
+	slot := &p.pages[page]
+	if slot.form == nil || !slot.form.Dirty() {
+		return false
+	}
+	slot.form.Revert()
+	return true
 }
 
 // InvalidateAll marks every page NotLoaded (used after a successful

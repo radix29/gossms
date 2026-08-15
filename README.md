@@ -96,6 +96,7 @@ or press `Escape` to work offline — `Ctrl+Shift+O` reopens it any time.
 | `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
 | `Ctrl+Up` / `Down` | Grow / shrink the query editor |
 | `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
+| `Ctrl+Z` (Properties) | Revert the current page to the values it loaded with |
 | `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
 | `Ctrl+F3` | Find next occurrence of the word at the cursor |
 | `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
@@ -124,11 +125,22 @@ all saved connections.
 
 ## Known Issues
 
+Environment and distribution:
+
 - Some terminals (e.g. xfce4-terminal) eat some key shortcuts
 - Entra authentication untested — no infrastructure available
 - Not tested on macOS yet — no Mac available
 - Release binaries are unsigned; checksums are provided
-- SQL Agent needs a rework
+
+Functional gaps:
+
+- SQL Agent: Start/Stop Job aren't gated on job state (the server's error is
+  what tells you), and job steps can't be reordered
+- Always On: a group that is created but whose secondary fails to join is left
+  as it is rather than rolled back, and every replica is reached with the tree
+  connection's own login, so a topology with per-instance credentials can't be
+  built from here
+- Reports (server- and database-level) aren't built yet
 
 ## Contributing
 

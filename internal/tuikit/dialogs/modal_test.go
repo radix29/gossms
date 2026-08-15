@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // sizedScreen embeds the tcell.Screen interface (nil at runtime) and
@@ -172,5 +173,118 @@ func TestModalDialogLatchDoesNotSurviveIntoTheNextShowing(t *testing.T) {
 	d.Show() // reopened later, with no release ever delivered in between
 	if got := d.ButtonClicked(press(), labels); got != 0 {
 		t.Errorf("first click of the second showing = %d, want 0 — the latch survived Show", got)
+	}
+}
+
+// drawScreen is a screen fake with enough surface for DrawBase: Size, the
+// Get/Put pair DimArea walks with, and SetContent, recording every cell.
+type drawScreen struct {
+	tcell.Screen
+	w, h  int
+	cells map[[2]int]rune
+}
+
+func newDrawScreen(w, h int) *drawScreen {
+	return &drawScreen{w: w, h: h, cells: map[[2]int]rune{}}
+}
+
+func (s *drawScreen) Size() (int, int) { return s.w, s.h }
+
+func (s *drawScreen) SetContent(x, y int, primary rune, _ []rune, _ tcell.Style) {
+	s.cells[[2]int{x, y}] = primary
+}
+
+func (s *drawScreen) Get(int, int) (string, tcell.Style, int) {
+	return " ", tcell.StyleDefault, 1
+}
+
+func (s *drawScreen) Put(x, y int, str string, style tcell.Style) (string, int) {
+	if str == "" {
+		return "", 0
+	}
+	r := []rune(str)
+	s.SetContent(x, y, r[0], nil, style)
+	return string(r[1:]), 1
+}
+
+func (s *drawScreen) at(x, y int) rune { return s.cells[[2]int{x, y}] }
+
+// A dialog laid out for 78x20 and clamped onto a 30x8 terminal draws its
+// rows at the offsets it asked for, so they run past the right border and
+// past the button row. DrawBase confines them to the box.
+func TestDrawBaseClipsContentOnAClampedRect(t *testing.T) {
+	rec := newDrawScreen(30, 8)
+	d := &ModalDialog{}
+	d.InitModal(rec, "Connect", 78, 20)
+	d.Show()
+
+	cs := core.NewClipScreen(rec)
+	d.DrawBase(cs)
+
+	r := d.Rect()
+	// A field row laid out for 78 columns, and a row laid out for row 15 of
+	// a 20-row dialog — neither fits.
+	core.DrawText(cs, r.X+2, r.Y+2, tcell.StyleDefault, strings.Repeat("x", 70))
+	core.DrawText(cs, r.X+2, r.Y+15, tcell.StyleDefault, "overflow")
+
+	if got := rec.at(r.X+2, r.Y+2); got != 'x' {
+		t.Errorf("first content column = %q, want 'x' — the clip must not eat what fits", got)
+	}
+	if got := rec.at(r.Right(), r.Y+2); got == 'x' {
+		t.Error("content ran past the dialog's right edge")
+	}
+	if got := rec.at(r.X+2, r.Y+15); got == 'o' {
+		t.Error("a row laid out below the dialog's clamped height still drew")
+	}
+	if got := rec.at(r.Right()-1, r.Y+2); got == 'x' {
+		t.Error("content overwrote the right border column")
+	}
+	// The scrollbar sits on that border column, outside the content clip —
+	// DrawContentScrollbar is what still gets through.
+	before := rec.at(r.Right()-1, r.Y+1)
+	d.DrawContentScrollbar(cs, r.Y+1, 3, 30, 0)
+	if rec.at(r.Right()-1, r.Y+1) == before {
+		t.Error("scrollbar on the right border column was clipped away")
+	}
+}
+
+// At its requested size a dialog draws exactly as it always has — an
+// overlay it opens (a dropdown, a completion list) may legitimately extend
+// past the box, and clipping that would be the regression.
+func TestDrawBaseDoesNotClipAtTheRequestedSize(t *testing.T) {
+	rec := newDrawScreen(100, 40)
+	d := &ModalDialog{}
+	d.InitModal(rec, "Connect", 78, 20)
+	d.Show()
+
+	cs := core.NewClipScreen(rec)
+	d.DrawBase(cs)
+
+	r := d.Rect()
+	core.DrawText(cs, r.Right()+1, r.Bottom()+1, tcell.StyleDefault, "z")
+	if rec.at(r.Right()+1, r.Bottom()+1) != 'z' {
+		t.Error("an unclamped dialog must not clip anything")
+	}
+}
+
+// Right-aligned buttons over a content row that reached the button row
+// leave the row's left half showing through. Nothing else draws there.
+func TestDrawButtonsClearsTheRowOnAClampedRect(t *testing.T) {
+	rec := newDrawScreen(30, 8)
+	d := &ModalDialog{}
+	d.InitModal(rec, "Connect", 78, 20)
+	d.Show()
+
+	cs := core.NewClipScreen(rec)
+	d.DrawBase(cs)
+	r := d.Rect()
+	core.DrawText(cs, r.X+1, d.ButtonRowY(), tcell.StyleDefault, strings.Repeat("x", 10))
+	d.DrawButtons(cs, []string{"OK"}, 0)
+
+	if got := rec.at(r.X+1, d.ButtonRowY()); got == 'x' {
+		t.Error("content left of the buttons survived on the button row")
+	}
+	if got := rec.at(d.buttonRowStartX([]string{"OK"}), d.ButtonRowY()); got != '[' {
+		t.Errorf("button row starts with %q, want '['", got)
 	}
 }

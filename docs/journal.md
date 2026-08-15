@@ -2438,3 +2438,395 @@ removed it reports `after Down #1 grid is on row 0, want 1 (focused row now
 *propsheet.CheckRow)`, i.e. the grid didn't move *and* the form took focus away
 from it. All four fail with the restore removed from `redrawGrid` and pass with
 it.
+
+---
+
+## Cross-repo review: RevertFn's grid redraws, and fileutil's first tests (2026-08-14)
+
+A review pass over both repos. Everything mechanical was already clean on both
+— `go build`, `go vet`, `gofmt -l`, `staticcheck -checks=all`, `go test` and
+`go test -race` all pass with nothing to report — so this records only what the
+pass actually changed. The rest of what it found is in `docs/open-threads.md`.
+
+Environment note that cost time: `/tmp` here is a 2 GB tmpfs, and a `-race`
+link needs more than it has free, so `go test -race ./...` fails with
+`disk quota exceeded` from the linker rather than from anything in the code.
+`TMPDIR=~/.cache/gotmp go test -race ./...` passes.
+
+**`RevertFn` was the one place `redrawGrid` had not reached.** The 2026-08-14
+sweep that introduced it covered `OnSelectRow` and the grid-plus-editor idiom;
+`RevertFn` was not on it. Thirteen of the fourteen `RevertFn` bodies still
+called `DataGrid.SetData` directly. Most are correct as they stand and were
+left alone — `membership_page.go`, `extended_properties_form.go`,
+`database_props_files.go` and the three `agent_job_props_*` pages all *drop
+rows* on Revert (anything added since load), and a changed row set is the case
+where resetting the cursor is the deliberate answer. Five could not: the row
+set is fixed and Revert only restores values. Those now use `redrawGrid` —
+`login_props.go`, `new_login_pages.go` (twice) and
+`server_permissions_matrix.go` (twice).
+
+**The second bug was the one worth finding.** Both user-mapping pages —
+`pageLoginUserMapping` and `buildNewLoginUserMappingPage`, which are the same
+page twice — followed the redraw with `syncFromSelection(selected)`, and
+`syncFromSelection` opens with `commitCurrent()`. At that moment the schema
+box and the role toggles still hold the *pre-revert* values, so the commit
+wrote the selected row straight back to what Revert had just undone. Revert
+worked on every row except the one the user was looking at. The fix is to clear
+`selected` before the resync so `commitCurrent` no-ops; `syncFromSelection`
+sets it again on the way through, so nothing else changes. Note this is not the
+same trap as the `OnSelectRow` family: there the commit is load-bearing and
+must keep running, which is why clearing the latch is scoped to Revert alone.
+
+**Tests.** `prop_grid_revert_test.go` drives a real `DataGrid` through real key
+events, in the harness style of `ag_props_grid_editor_test.go`. Three: the
+cursor survives Revert, the selected row's uncommitted edit is discarded by
+Revert, and — the guard against over-fixing — an ordinary row change still
+commits. A/B'd by putting the old `SetData`-plus-`syncFromSelection(selected)`
+shape back into the harness: the first two fail, naming the cursor reset and
+the re-commit respectively, and the third stays green either way.
+
+**`internal/fileutil` had no tests at all**, having arrived the same day as the
+newest code in the tree while guarding `config.json`, `gossms.key` and every
+`.sql` the user saves. `atomic_test.go` covers contents, both mode paths, whole
+replacement, the empty file, the temp file being a sibling of the target, and
+no temp file surviving either outcome. 0% to 64%; the remainder is `Chmod`/
+`Write`/`Sync`/`Close`/`Rename` failure branches that need injection to reach,
+and a 76-line file does not earn a seam for them.
+
+One of those tests is worth more than it looks and is commented on itself:
+writing into an **unwritable directory**. Creating the temp file needs write
+permission on the directory, where overwriting an existing file does not — so a
+plain `os.WriteFile` implementation *succeeds* there and destroys the original,
+and only the temp-file-plus-rename fails and leaves it intact. Confirmed by A/B,
+replacing `WriteAtomic`'s body with `os.WriteFile`: that test is the single one
+of the seven that fails. The others pass under both implementations, so they
+pin contract rather than mechanism, which is the right split but worth knowing
+before trusting them to catch a regression in the atomicity itself.
+
+## WriteAtomic stops re-widening the files it replaces (2026-08-14)
+
+Follow-on from the review entry above, and the reason the temp-file dance needs
+a rule that `os.WriteFile` never did: it creates a **new inode**, so the mode
+comes from whatever the code says rather than from the file already on disk.
+Every caller passes a constant — 0600 for `config.json` and `gossms.key`, 0644
+for a saved script — so a `.sql` the user had chmodded 0600 silently came back
+0644 on the next Ctrl+S. That is a behaviour change `fileutil` introduced when
+it replaced the plain writes, and nobody would look for it in a durability
+helper.
+
+**The fix is `modeFor`, and the interesting part is that it is not "preserve the
+existing mode".** Preserving it outright trades the bug for a worse one: a
+`config.json` or `gossms.key` that reached 0644 — a legacy write, a stray
+chmod, a restore from a backup taken elsewhere — would then keep that mode
+forever, because nothing else ever narrows it. So the existing mode is kept
+**with `perm` as a ceiling** (`fi.Mode().Perm() & perm`): the caller's constant
+is the widest the file is ever allowed to be, and anything narrower survives.
+A non-existent or unreadable path just gets `perm`.
+
+The accepted cost, written on `modeFor` so it isn't rediscovered as a bug: a
+script at 0664 in a group-writable tree comes back 0644, losing group write.
+Erring toward the tighter mode is the right direction for files that sit next
+to credentials.
+
+**Two tests, and each catches exactly one of the two ways to get this wrong** —
+confirmed by A/B, running the suite against both broken implementations:
+
+- `TestWriteAtomicKeepsAnExistingFilesNarrowerMode` is the only failure when
+  `modeFor` returns `perm` verbatim (the shipped bug).
+- `TestWriteAtomicTightensAnExistingFileWiderThanPerm` is the only failure when
+  it returns `fi.Mode().Perm()` with no ceiling (the naive fix).
+
+Both `chmod` explicitly after `os.WriteFile` rather than trusting its perm
+argument, which the umask filters.
+
+Still open, and deliberately not bundled in: `WriteAtomic` replaces a
+**symlinked** path with a regular file instead of writing through it. Resolving
+it moves both the temp directory and the rename target, so it is its own change
+— see `docs/open-threads.md`.
+
+## The two loaders that latched a placeholder under plain safego (2026-08-14)
+
+Third item from the 2026-08-14 review. `CLAUDE.md` § Mouse, overlays, and async
+UI already says a background operation that latches UI state before it starts
+must use `App.safegoRepair`; two loaders predated the rule and were never
+brought across.
+
+**Object Explorer expand.** `handleExpand` sets the node expanded with
+`data.Loaded` still false, which is what makes the tree draw a "Loading..."
+child, and `SetChildren` in the posted callback is the only thing that clears
+it. A panic in any of the ~40 `childLoaders` unwinds past that callback, and
+the node spins forever. `childFetchPanicked` now ends the load and installs the
+same `errExplorerNode` an ordinary loader failure produces.
+
+**The trade that comes with it, written on the repair.** `SetChildren` marks the
+node `Loaded`, so a panicked expand now needs **Refresh** to retry — before,
+`Loaded` stayed false and collapsing plus re-expanding refetched. That is a real
+capability given up. It is the right side of the trade because it is exactly
+what an ordinary loader error already does, and because the old behaviour
+recovered only if the user happened to try a gesture nothing told them to try.
+
+**Object Explorer Details.** Same shape, five entry points: the single-shot
+`default` arm of `fetch` plus the four progressive loaders, each of which
+latches either the "Loading..." status or its own first-stage placeholder rows
+(`loadServerDetails` literally writes "Loading..." into two cells). One shared
+`DetailBrowser.panicRepair(node, seq)` closure now serves all five. It keeps
+both of `postFinal`'s guards for the same reasons and **caches nothing** — a
+panic says nothing about what the node's details are, so the pending entry is
+dropped and the next selection retries, where an ordinary error is cached
+because the server actually answered.
+
+Three `safego` calls in `app_explorer_data.go` were checked and deliberately
+left alone: `refreshAgentRootLabel` (a failed check leaves the label as it was),
+`scriptObject` and `toggleDatabaseOffline` (status messages only). Nothing to
+release.
+
+**Tests** — `async_latch_panic_test.go`. The expand test is end-to-end: it
+swaps a panicking loader into `childLoaders`, calls `loadChildren`, and waits
+for the node to release. A/B'd against plain `safego`, it doesn't merely fail,
+it **times out** — `timed out waiting for the panicking expand to release the
+node` — which is the bug stated exactly. The other three cover the guards:
+a stale panic must not overwrite a newer expand's children, must not drop a
+newer fetch's pending entry, and must not paint an error over a node the user
+has since moved off.
+
+## allDialogs completeness is now pinned (2026-08-14)
+
+Fourth item. `buildUI`'s `allDialogs` list is maintained by hand and is the
+sole input to `syncDialogStack`, so a dialog missing from it is never drawn,
+never offered input and never relayouted — with nothing anywhere raising a
+word about it. It was complete (30 fields, 30 entries; the review's "28" was a
+miscount of the literal, not a finding).
+
+`dialog_registration_test.go` reflects over `App`'s fields, takes the ones whose
+type implements `Dialog`, and requires each to appear in `allDialogs`. Fields
+are unexported, so identity is compared with `reflect.Value.Pointer()` —
+`Interface()` panics on an unexported field. It also rejects duplicate and nil
+entries, and asserts the field count matches the list length, which is what
+catches a list naming something that is not an `App` field.
+
+Two guards worth keeping: the `found == 0` check, so the test fails loudly
+rather than passing vacuously if the fields ever move behind a struct; and the
+A/B — dropping `filterDialog` from the list makes it report
+`App.filterDialog (*tui.FilterDialog) is missing from buildUI's allDialogs
+list`, naming the field rather than just a count mismatch.
+
+## The user-mapping pages, the peer database, symlinks — and what live testing corrected (2026-08-14)
+
+Last of the 2026-08-14 review items, plus the two open questions it left.
+
+**Finding 6 was the wrong shape, and the right one was already in the repo.**
+The proposal was to merge `pageLoginUserMapping` and
+`buildNewLoginUserMappingPage` behind one builder. Costed against the actual
+code, that needs six injection points over two different row structs
+(`mapEdit` carries `orig*` and a real user name; `nloginMapRow` carries neither
+and adds `schemaNames`), two different schema widgets (a free-text box vs a
+picker), two different dirty rules and two unrelated applies. The shared part
+would be wiring, and each page would keep most of its body. **Merge rejected.**
+
+What the two pages genuinely shared was the part that had the bug — the
+commit/sync/redraw wiring — and `wireGridEditor` (ag_props.go) already exists
+for exactly that, built during the 2026-08-14 grid-cursor sweep and used by all
+five AG sites. Neither user-mapping page used it. Both do now. Its `reload()`
+is redraw-plus-sync **without a commit**, which is precisely the Revert
+semantics that had to be hand-rolled two entries ago; that hand-rolling
+(`row := selected; selected = -1; syncFromSelection(row)`) is gone from both.
+The bug is now structurally unavailable rather than fixed twice.
+
+**A third bug fell out of the conversion.** `pageLoginUserMapping`'s `rowsFor`
+built the Schema column from `e.origSchema` — the loaded value, never the
+edited one. Combined with the missing redraw, a schema change was invisible in
+the grid until Apply. Both halves are fixed: `e.schema`, and `wireGridEditor`'s
+redraw after each commit.
+
+**Live A/B on win10cli, and this one is user-visible.** A throwaway login
+(`t6_rev_login`) mapped into `HealthClinic` and `backup_test`. Edit the schema
+on the HealthClinic row, move off it, read the grid:
+
+- pre-fix binary: `HealthClinic | t6_rev_login | dbo` — the edit is committed to
+  the model and will Apply, but the grid never shows it.
+- post-fix binary: `HealthClinic | t6_rev_login | dbot6_alt`, column rewidened,
+  and the detail pane below on `master` — proving the redraw preserved the
+  cursor rather than snapping it to row 0.
+
+Escaped rather than applied; `sys.database_principals` re-read afterwards
+showed `dbo` unchanged in both databases, and every throwaway object was
+dropped and verified gone.
+
+**The correction that matters: `Form.Revert()` has no non-test caller.** Found
+while setting up the Revert half of that live test — there is no way to trigger
+it. The only `.Revert()` outside a `_test.go` in the whole module is
+`form.go:480`, inside `Form.Revert` itself, and F5/Refresh goes to
+`ConfirmDiscard` plus `startLoad` (a server reload), not here. So the Revert
+defects fixed in the two entries above were **real defects in unreachable
+code**, not the user-visible bug the review claimed. The fixes and their tests
+stand; the severity claim did not. Recorded as an open decision — expose Revert
+or retire it — in `docs/open-threads.md`.
+
+**`Peer` no longer carries the connection's database.** The open question was
+answered empirically before touching anything: a small probe against win10cli
+connecting with `Database:` set to `""`, `master`, `HealthClinic` and a
+nonexistent name showed the last failing the **connect**, at ping time —
+`Cannot open database "nonexistent_db_xyz" that was requested by the login`.
+That is exactly what a peer hits when the database the user connected through
+is one a secondary cannot open. `peerOptions` now drops it; everything `Peer`
+reaches is server-scoped anyway. Extracted as its own method purely to give the
+decision a unit-testable seam, since `Peer` itself needs a second instance.
+
+**`WriteAtomic` now writes through a symlink.** The other half of the mode fix.
+A rename replaces a directory entry, so a symlinked script was being turned
+into a regular file with the real file left stale — a write-in-place follows a
+link for free, a rename has to be made to. `resolveSymlink` uses
+`EvalSymlinks` with a fallback for a path that does not resolve (a new file, a
+dangling link), and both cases are tested. A/B: removing the call fails the
+symlink test with `the symlink was replaced by a regular file`.
+
+**…and through a dangling one (2026-08-15).** The fallback above was "use the
+path as given", which quietly left the original bug in place for a link whose
+target does not exist yet: `EvalSymlinks` fails on it, so the rename landed on
+the link and the target was never created. The test that was supposed to cover
+it read the contents back *through the link*, which passes either way — the
+kind of assertion that pins nothing. Proven with a scratch test first: `link
+was replaced by a regular file` / `target not created`. `resolveSymlink` now
+walks the last component by hand with `Lstat`/`Readlink` when `EvalSymlinks`
+fails, resolving a relative target against the link's own directory and giving
+up after 16 hops so a link cycle returns instead of spinning. Three tests
+replace the weak one: the link survives and the target appears, a chain of two
+dangling links (one relative) is followed, and a cycle returns inside five
+seconds.
+
+## Ctrl+Z reverts a Properties page (2026-08-15)
+
+The answer to the open decision from 2026-08-14: `Form.Revert` had no
+non-test caller, and the choice was to expose it or retire it along with the
+21 `RevertFn` closures. **Exposed** — author's call. Retiring would have
+deleted correct, tested code from `propsheet`'s published row interface with
+nothing to show for it, and the whole cost of exposing it is one key.
+
+`PropertySheet.RevertPage(page)` restores the loaded values without a round
+trip and reports whether anything changed; `Ctrl+Z` calls it and puts either
+`Reverted to the loaded values.` or `Nothing to revert — no unsaved changes on
+this page.` on the message line. The message is not decoration: reverting a
+page whose values were retyped identically looks exactly like a dead key
+otherwise.
+
+**Why `Ctrl+Z`, and why beside `F5`.** `Ctrl+R` was the obvious "reset" key and
+is already taken app-wide (Refresh IntelliSense Cache), and a fifth button on a
+row that is already `OK/Cancel/Apply/Script Changes` would have cost width on
+exactly the terminals where dialog content is already clipped (§ Dialog content
+is not clipped to a clamped rect). `Ctrl+Z` is free *inside* a sheet —
+`widgets.InputField` takes `Ctrl+A`/`Ctrl+U`, and no propsheet row hosts a
+`controls.Editor`, the one widget with its own `Ctrl+Z`. It is handled at the
+top of `HandleKey` next to `F5`, before the zone switch, so it works from the
+page list and the button row too.
+
+**Live, against win10cli.** Server Properties > Memory: edited two rows
+(min server memory 16 → 16999, max 2147483647 → 21474836), one `Ctrl+Z`
+restored both and printed the message; a second `Ctrl+Z` printed the
+nothing-to-revert one. Then Server Properties > Permissions, the grid case
+that `RevertFn` exists for: toggled `ADMINISTER BULK OPERATIONS` to `Grant`,
+`Ctrl+Z` put it back to `(none)`, and the next `Down` still moved the
+selection — `redrawGrid` kept the cell cursor, so the revert did not leave the
+grid in the "every row but the first is unselectable" state. Escape closed the
+dialog; nothing was applied.
+
+Also added a **Properties Dialogs** section to Help (F1) and a README row.
+The first draft of the help line clipped at the dialog's width — caught in the
+capture, not in a test.
+
+## Dialog content is clipped to a clamped rect (2026-08-15)
+
+The last of the small-terminal thread. `recentre` has clamped the dialog
+*rect* to the screen since 2026-08-14, but content is drawn at fixed offsets
+from the dialog origin for the size the dialog *asked* for, so at 30x8 the
+Connect dialog's field rows ran to the screen edge, the bottom border was
+overwritten by `Database:`, and `DrawButtons` landed in the middle of the
+Port row — captured as `│ Por[ Connect ]3 [ Cancel ] │`.
+
+The open thread costed this as "~28 hand-written Draw methods". It isn't:
+one clipping screen and three changes to `ModalDialog` cover every dialog in
+the app, present and future.
+
+**`core.ClipScreen`** wraps a `tcell.Screen` and drops cell writes outside a
+clip rect. `App.drawDialogs` wraps the screen once and resets the clip before
+each dialog's `Draw`, so a nested dialog never inherits its parent's clip.
+Every write path is covered, not just `SetContent`: `DimArea` walks a row
+with `Get`/`Put`, so `Put` is clipped too — and it has to keep *reporting*
+the width it skipped, or that walk never leaves the column. `Fill`/`Clear`
+cover the clip rather than the screen.
+
+**`DrawBase` installs the clip** after the dim and the border, both of which
+draw outside it legitimately, and **only when the rect is clamped**
+(`d.clamped()`, `rect.W < reqW || rect.H < reqH`). The gate is the point: a
+dropdown or completion overlay opened inside a dialog may extend past the
+box, and clipping those would be the regression. A/B'd — at 120x34 the
+Connect and Help dialogs capture byte-identically before and after.
+
+**`DrawButtons` clears from `ButtonRowY()` to the bottom inner row** when
+clamped. Buttons are right-aligned, so drawing them over a content row left
+the row's left half showing through; a dialog with a button row draws nothing
+of its own from that row down.
+
+**The clip is `InnerRect`, and that took a second pass.** The first version
+left the right border column writable, because the scrollbar idiom every
+dialog uses puts the bar *on* the border (`core.DrawScrollbar` at
+`Rect().Right()-1`, which is what `ScrollbarDrag` hit-tests). That kept the
+bars but let content overwrite the border, which still read as broken. So the
+clip is now the interior, and the five dialog-level bars (Help, Tasks, Query
+List, Key Diagnostics, PropertiesDialog) go through the new
+`ModalDialog.DrawContentScrollbar`, which widens the clip to the whole box
+for the draw and owns the two theme styles all five had copied. **A new
+dialog-level scrollbar must use it** — `core.DrawScrollbar` at `Right()-1`
+now draws into the clip and vanishes on a clamped rect. A scrollbar inside a
+child widget is unaffected; those sit on the widget's own rect, inside the
+dialog.
+
+Verified live under tmux at 30x8, 40x12 and 44x12, and across a 120x34 →
+44x12 resize: box intact, content confined, button row clean, Help's
+scrollbar still drawn at 40x12.
+
+## The folder filter reaches Object Explorer Details, and survives a reconnect (2026-08-15)
+
+Two of the four gaps `docs/open-threads.md` recorded against the folder
+filter, closed together.
+
+**The Detail Browser ignored the filter.** The tree drew `Tables (filtered)`
+over two rows while the pane beside it listed all eight — `fetchChildren`
+filters the loader's `[]*explorerNode`, but `detail_browser_*.go`'s loaders
+query gosmo directly and hold `[]*gosmo.Table`, so there was nothing for
+`filterChildren` to take. The generic view is the exception:
+`fetchChildObjectsDetail` reuses the folder's own `childLoaders` entry and so
+holds nodes, and it now calls `filterChildren` — which covers every folder
+whose detail view is the plain child list (Users, Roles, Schemas, Sequences,
+Synonyms, Triggers, Functions and the System * folders). The five
+purpose-built loaders go through **`filterObjects`**, a generic that takes a
+function mapping one gosmo object to the `nodeData` fields the criteria read:
+Tables, Databases, Logins, and `fetchNodeDetails`'s Views, Stored Procedures
+and System Databases cases.
+
+**Filtering the collection, not the rows, is what keeps the progressive
+loaders correct.** `loadTablesFolderDetails` and
+`loadDatabasesFolderDetails` post placeholder rows first and then backfill by
+index from a second query, so a filter applied to `rows` after the fact would
+leave the backfill writing row counts and sizes into the wrong rows. Both
+filter the gosmo slice before any row is built.
+
+**A filter no longer dies with the connection.** It lives on the tree node,
+and a disconnect drops the subtree, so reconnecting came back unfiltered —
+SSMS keeps a filter for the session across a reconnect. `App.savedFilters` is
+keyed by **`filterKey`** — connection (`sysCompletionInventoryKey`, i.e.
+server+port+login), database, schema, table, node type — rather than by node
+pointer. Schema and table are in the key because a table's own Triggers
+folder and its database's are the same NodeType in the same database.
+`applyNodeFilter` writes it, `fetchChildren` restores it onto freshly loaded
+children. **The restore has to happen in `fetchChildren`, not after
+`SetChildren`**: a folder's filter must be in place before that folder's own
+children are fetched, or the node comes back labelled `(filtered)` over a
+list nothing filtered. That puts the map on the loading goroutine, hence
+`App.filterMu`. Nothing is written to disk, deliberately.
+
+Verified live on win10cli, and A/B'd against a pre-fix binary: with
+`Name contains "med"` on HealthClinic's Tables folder, the old binary showed
+the tree at two tables and the details pane at all eight; the new one shows
+two in both, with row counts and sizes still landing on the right rows. The
+Databases folder's filter survived a real Disconnect and reconnect —
+`Databases (filtered)`, one row in the tree, one in the pane.

@@ -188,6 +188,50 @@ func (d *ModalDialog) DrawBase(s tcell.Screen) {
 	borderStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogBorder)
 	titleStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.DialogTitle).Bold(true)
 	core.DrawBoxTitle(s, d.rect, d.title, borderStyle, titleStyle)
+
+	// Everything the embedding type draws from here on is confined to the
+	// box — see contentClip. Set after the dim and the border, both of which
+	// legitimately draw outside it.
+	if d.clamped() {
+		core.SetClip(s, d.contentClip())
+	}
+}
+
+// clamped reports whether recentre had to shrink the dialog to fit the
+// terminal. Every embedding type lays its content out at fixed offsets from
+// the dialog origin for the size it *asked* for, so on a clamped rect the
+// rows run past the right border and past the button row, and DrawButtons
+// then lands on top of them. The clip and the button-row clear below exist
+// for that case only, and are gated on it so a dialog at its requested size
+// draws exactly as it always has — a dropdown or completion overlay opened
+// inside a dialog may extend beyond the box, and clipping it there would be
+// a regression.
+func (d *ModalDialog) clamped() bool {
+	return d.rect.W < d.reqW || d.rect.H < d.reqH
+}
+
+// contentClip is the region an embedding type's content may draw in: the
+// interior, with the border left intact. The one thing a dialog legitimately
+// draws outside it is its scrollbar, which by convention sits on the right
+// border column — DrawContentScrollbar widens the clip for exactly that.
+func (d *ModalDialog) contentClip() core.Rect { return d.InnerRect() }
+
+// DrawContentScrollbar draws the dialog's own vertical scrollbar spanning
+// [trackY, trackY+trackH) on the right border column, which is where
+// ScrollbarDrag hit-tests for it. That column is outside contentClip, so the
+// clip is widened to the whole box for the draw: a dialog calling
+// core.DrawScrollbar there directly would have its bar clipped away on a
+// clamped rect.
+func (d *ModalDialog) DrawContentScrollbar(s tcell.Screen, trackY, trackH, total, offset int) {
+	if c, ok := s.(*core.ClipScreen); ok {
+		saved := c.Clip()
+		c.SetClip(d.rect)
+		defer c.SetClip(saved)
+	}
+	p := theme.Active()
+	sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
+	sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
+	core.DrawScrollbar(s, d.rect.Right()-1, trackY, trackH, total, trackH, offset, sbStyle, sbThumb)
 }
 
 // InnerRect returns the usable interior rectangle (excluding border).
@@ -227,6 +271,14 @@ func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int
 	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
 	col := d.buttonRowStartX(labels)
 	y := d.ButtonRowY()
+	// On a clamped rect, content laid out for the full height reaches this
+	// row and the one below it; the buttons are right-aligned, so without
+	// the clear what shows is the tail of a content row with a button row
+	// sitting in the middle of it. A dialog that has a button row draws
+	// nothing of its own from ButtonRowY down.
+	if d.clamped() {
+		core.FillRect(s, core.Rect{X: d.rect.X + 1, Y: y, W: d.rect.W - 2, H: d.rect.Bottom() - 1 - y}, ' ', theme.StyleDialog())
+	}
 	for i, label := range labels {
 		st := btnStyle
 		if i == activeIdx {

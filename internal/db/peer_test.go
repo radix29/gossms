@@ -44,3 +44,34 @@ func TestPeerLookupRacesDisconnect(t *testing.T) {
 		wg.Wait()
 	}
 }
+
+// A database named in the connection string has to be openable or the connect
+// itself fails, at ping time — "Cannot open database %q that was requested by
+// the login", verified live against win10cli 2026-08-14. The database the user
+// connected through is exactly the one a peer may not be able to open (an
+// unreadable secondary, or one that has not joined that database), so Peer
+// must not carry it over.
+//
+// Peer's own connect can't run without a real second instance, so this pins
+// the decision at the only seam a unit test has: the options it builds from.
+func TestPeerOptionsDropTheDatabase(t *testing.T) {
+	sc := &ServerConn{Opts: config.Connection{
+		Server: "primary", Port: 1433, User: "sa", Password: "pw",
+		Database: "SalesDB", TrustServerCertificate: true,
+	}}
+
+	opts := sc.peerOptions("secondary")
+
+	if opts.Database != "" {
+		t.Errorf("peer options carry Database %q — a secondary that cannot open "+
+			"it fails the connect outright", opts.Database)
+	}
+	if opts.Server != "secondary" {
+		t.Errorf("peer options name server %q, want %q", opts.Server, "secondary")
+	}
+	// Everything else has to survive, or the peer authenticates differently
+	// from the connection it was derived from.
+	if opts.User != "sa" || opts.Password != "pw" || opts.Port != 1433 || !opts.TrustServerCertificate {
+		t.Errorf("peer options lost credentials or transport settings: %+v", opts)
+	}
+}

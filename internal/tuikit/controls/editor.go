@@ -12,23 +12,19 @@ import (
 // Editor
 // ---------------------------------------------------------------------------
 
-// Highlighter is a function that receives the whole document and the index
-// of the line to highlight, returning that line's ColorRun segments. The
-// full buffer (not just the target line) is passed so a highlighter that
-// needs cross-line state — a block comment spanning several lines, for
-// instance — can look at what precedes idx. Pass nil to disable syntax
-// highlighting.
+// Highlighter receives the whole document and the index of the line to
+// highlight, returning that line's ColorRun segments. The full buffer is
+// passed so a highlighter needing cross-line state — a block comment spanning
+// several lines — can look at what precedes idx. nil disables highlighting.
 //
-// A highlighter that caches such cross-line state must key the cache on
-// doc.Version() *and* the *Document itself: the version tells it whether the
-// text changed since the last call, and the pointer whether this is even the
-// same document. Both built-in highlighters do exactly that — see
-// SQLHighlighter.
+// A highlighter caching such state must key the cache on doc.Version() *and*
+// the *Document itself: the version says whether the text changed, the pointer
+// whether this is even the same document. Both built-in highlighters do.
 type Highlighter func(doc *Document, idx int) []ColorRun
 
-// ColorRun describes a coloured segment within an editor line. Start and
-// Len are rune indices into the line, not terminal columns — Editor maps
-// them to columns when it draws (see drawLineRow).
+// ColorRun describes a coloured segment within an editor line. Start and Len
+// are rune indices into the line, not terminal columns — Editor maps them to
+// columns when it draws.
 type ColorRun struct {
 	Start int
 	Len   int
@@ -38,26 +34,23 @@ type ColorRun struct {
 // Editor is a multi-line text editor.
 //
 // Positions inside the text — cursorCol, the selection anchor, ColorRun
-// bounds, wrap segments — are rune indices. Everything on screen —
-// scrollCol, the cursor's x, a click's x, the horizontal scrollbar — is a
-// terminal column. The two are not the same count: a CJK ideograph or emoji
-// takes two columns, a combining mark none. core.ColumnOfRune and
-// core.RuneIndexAtColumn convert between them, and every conversion goes
-// through one of those; treating a rune index as a column is what made a
+// bounds, wrap segments — are rune indices. Everything on screen — scrollCol,
+// the cursor's x, a click's x, the horizontal scrollbar — is a terminal
+// column. The two differ: a CJK ideograph or emoji takes two columns, a
+// combining mark none. Every conversion goes through core.ColumnOfRune or
+// core.RuneIndexAtColumn; treating a rune index as a column is what made a
 // wide character shift the rest of its line one column left of where the
 // editor thought it was.
 //
-// One thing stays rune-indexed on purpose: block (column) selection, whose
-// rectangle is defined by rune columns, so a block dragged across a line
-// containing a wide rune covers a ragged rather than a straight edge.
-// Rectangular selection over mixed-width text has no single right answer;
-// this is the SSMS-parity choice, not an oversight.
+// Block (column) selection stays rune-indexed on purpose, so a block dragged
+// across a line containing a wide rune has a ragged rather than straight edge.
+// Rectangular selection over mixed-width text has no single right answer; this
+// is the SSMS-parity choice.
 type Editor struct {
 	rect core.Rect
 
-	// doc holds the text. It is a pointer because Highlighter is handed the
-	// same *Document the Editor mutates, and both must see one version
-	// counter — see Document for why the counter has to be unstale-able.
+	// doc holds the text. A pointer because Highlighter is handed the same
+	// *Document the Editor mutates, and both must see one version counter.
 	doc *Document
 
 	cursorRow int
@@ -68,56 +61,46 @@ type Editor struct {
 	highlight Highlighter
 
 	// desiredCol is the "goal column" for vertical caret movement — the
-	// Notepad++/Scintilla convention where Up/Down/PgUp/PgDn (plain or with
-	// Shift, extending a selection) keep aiming for this column even after
-	// passing through a shorter line that forced cursorCol to clamp down,
-	// so moving back onto a longer line snaps back to where the movement
-	// started instead of staying at the shorter line's clamped column. Any
-	// other cursor-moving action (typing, Left/Right, Home/End, a mouse
-	// click) resets it to the cursor's new column, starting a fresh
-	// vertical run.
+	// Notepad++/Scintilla convention where Up/Down/PgUp/PgDn (with or without
+	// Shift) keep aiming for this column even after passing through a shorter
+	// line that clamped cursorCol down, so moving back onto a longer line
+	// snaps back to where the movement started. Any other cursor-moving action
+	// resets it, starting a fresh vertical run.
 	//
-	// It is a *display* column, not a rune index: the caret has to track the
-	// same place on screen down a column of text, which is what the user is
-	// aiming at, and rune indices drift from that as soon as a line above
-	// contains a wide character.
+	// A *display* column, not a rune index: the caret has to track the same
+	// place on screen down a column of text, and rune indices drift from that
+	// as soon as a line above contains a wide character.
 	desiredCol int
 
-	// OnRightClick, if set, is called with the click position when the
-	// user right-clicks (Button2) inside the content area — the app layer
-	// uses it to pop up a Cut/Copy/Paste context menu. The editor itself
-	// leaves the cursor and any active selection untouched, so the menu's
-	// Copy/Cut act on whatever was already selected.
+	// OnRightClick, if set, is called with the click position on a Button2
+	// press inside the content area — the app layer pops up a Cut/Copy/Paste
+	// menu. The editor leaves the cursor and selection untouched, so the
+	// menu's Copy/Cut act on whatever was already selected.
 	OnRightClick func(x, y int)
 
-	// hideGutter suppresses the line-number gutter (and reclaims its width
-	// for content). Zero value is false, so every existing NewEditor call
-	// site — the SQL query editor — keeps its gutter automatically; only a
-	// caller that explicitly wants a plain multi-line text box opts out via
-	// SetGutterVisible(false).
+	// hideGutter suppresses the line-number gutter and reclaims its width for
+	// content. False by default, so the SQL query editor keeps its gutter;
+	// plain multi-line text boxes opt out via SetGutterVisible(false).
 	hideGutter bool
 
-	// wrapMode enables word-wrap rendering (see SetWrapMode). Zero value
-	// is false, so the SQL query editor's horizontal-scroll behavior is
-	// completely unaffected; it's an opt-in for plain text boxes.
+	// wrapMode enables word-wrap rendering, off by default — an opt-in for
+	// plain text boxes, leaving the SQL editor's horizontal scrolling alone.
 	wrapMode bool
 
-	// readOnly rejects every mutating key (see SetReadOnly) while still
-	// allowing cursor movement, selection, and copy — a "view text, can't
-	// change it" mode used by DataGrid's full-cell-content popup.
+	// readOnly rejects every mutating key while still allowing cursor
+	// movement, selection, and copy — used by DataGrid's cell-content popup.
 	readOnly bool
 
 	// styleScratch is drawHighlighted's per-column style map, kept across
-	// calls instead of allocated per line. Draw runs on every event the app
-	// processes and calls drawHighlighted once per visible row, so a fresh
-	// slice per line was one allocation per row per keystroke. Valid only
-	// within a single drawHighlighted call — nothing may retain it.
+	// calls instead of allocated per line: Draw runs on every event and calls
+	// drawHighlighted once per visible row, so a fresh slice per line was one
+	// allocation per row per keystroke. Valid only within a single
+	// drawHighlighted call — nothing may retain it.
 	styleScratch []tcell.Style
 
 	// vlScratch and segScratch are buildVisualLines' buffers. vlScratch also
-	// *is* its cache: the flattening it holds stays valid until either the
-	// document or the wrap width changes, which the three fields below
-	// detect. See buildVisualLines.
+	// *is* its cache: the flattening it holds stays valid until the document
+	// or the wrap width changes, which the three fields below detect.
 	vlScratch  []visualLine
 	segScratch []wrapSegment
 
@@ -125,21 +108,16 @@ type Editor struct {
 	vlCacheWidth   int
 	vlCacheValid   bool
 
-	// Selection: selecting is true while a Shift+move- or mouse-drag-driven
-	// selection is active; selAnchor{Row,Col} is the fixed end,
-	// cursorRow/cursorCol is the moving end. A selection where anchor ==
-	// cursor is treated as empty (HasSelection reports false).
-	// mouseDragging distinguishes a fresh Button1 click (start a new
-	// selection anchor) from a continued drag (keep the anchor, move the
-	// cursor) — see HandleMouse.
+	// Selection: selecting is true while a Shift+move or mouse-drag selection
+	// is active; selAnchor{Row,Col} is the fixed end, cursorRow/cursorCol the
+	// moving end. anchor == cursor counts as empty. mouseDragging
+	// distinguishes a fresh Button1 click (new anchor) from a continued drag
+	// (keep the anchor, move the cursor).
 	//
-	// selBlock switches the *interpretation* of the same anchor/cursor
-	// pair from a linear (stream) selection to a rectangular (column)
-	// selection: every row between the anchor's and cursor's row is
-	// affected, each at the same [loCol,hiCol) column range — see
-	// blockColumnBounds. Entered via Alt+Shift+Arrow or Alt+drag, never in
-	// wrapMode (rectangular selection assumes fixed rune columns, which
-	// word-wrap breaks).
+	// selBlock reinterprets the same anchor/cursor pair as a rectangular
+	// (column) selection: every row between them at the same [loCol,hiCol)
+	// range — see blockColumnBounds. Entered via Alt+Shift+Arrow or Alt+drag,
+	// never in wrapMode, which breaks the fixed rune columns it assumes.
 	selecting     bool
 	selBlock      bool
 	selAnchorRow  int
@@ -147,31 +125,26 @@ type Editor struct {
 	mouseDragging bool
 
 	// lastClickAt/Row/Col record the previous Button1 press for double-click
-	// word selection (see selectWordAt). tcell reports no click count of its
-	// own, so the editor pairs presses itself, the same way DataGrid pairs
-	// separator presses for its restore-default-width double-click.
+	// word selection. tcell reports no click count, so the editor pairs
+	// presses itself, as DataGrid does for its separator double-click.
 	lastClickAt  time.Time
 	lastClickRow int
 	lastClickCol int
 
-	// blockClip is the text most recently *copied* out of a block (column)
-	// selection — see SelectedText. Paste compares its argument against it to
-	// tell a block copy round-tripped through the OS clipboard from ordinary
-	// multi-line text, which is the only way to know a paste should go back in
-	// rectangularly (Notepad++ tracks the same thing internally). Cleared by
-	// any non-block copy.
+	// blockClip is the text most recently copied out of a block (column)
+	// selection. Paste compares its argument against it to tell a block copy
+	// that round-tripped through the OS clipboard from ordinary multi-line
+	// text — the only way to know a paste should go back in rectangularly.
+	// Cleared by any non-block copy.
 	blockClip string
 
-	// sbDragging is true while the user is dragging the scrollbar thumb
-	// (see HandleMouse and drawScrollbar) — a separate flag from
-	// mouseDragging since the two gestures target different screen
-	// regions and must not be conflated: once a scrollbar drag starts,
-	// every subsequent Button1 event controls it regardless of x, instead
-	// of being read as a text click/selection-drag.
+	// sbDragging latches a scrollbar-thumb drag. Separate from mouseDragging:
+	// once set, every Button1 event controls the bar regardless of x, instead
+	// of reading as a text click or selection drag.
 	sbDragging bool
 
-	// sbDraggingX is sbDragging's horizontal counterpart, for the bar
-	// drawn along the editor's bottom row — see hScrollbar.
+	// sbDraggingX is sbDragging's counterpart for the bar along the editor's
+	// bottom row.
 	sbDraggingX bool
 
 	undoStack []editorState
@@ -186,9 +159,8 @@ type Editor struct {
 	stepOpen bool
 
 	// Completion: see editor_completion.go. completionProvider is nil for
-	// every Editor except the SQL query editor, so every other Editor's
-	// behavior (Ctrl+Space opening OnRightClick's menu, no popup ever
-	// appearing) is completely unaffected.
+	// every Editor but the SQL query editor, where Ctrl+Space opens
+	// OnRightClick's menu instead and no popup ever appears.
 	completionProvider CompletionProvider
 	completionOpen     bool
 	completionItems    []CompletionItem
@@ -197,30 +169,26 @@ type Editor struct {
 	completionFrom     int // column where the replaced span starts; valid only while completionOpen
 
 	// completionSuppressed, set by Escape, stops the popup reopening at the
-	// same token the user just dismissed it at — completionSuppressRow/Col
-	// pin that token's start position; moving off it (row change, or the
-	// token's own start column shifting) clears the suppression, same as
-	// SSMS's "Escape closes IntelliSense for this word" behavior.
+	// token it was just dismissed at; completionSuppressRow/Col pin that
+	// token's start. Moving off it (row change, or the start column shifting)
+	// clears the suppression — SSMS's "Escape closes IntelliSense for this
+	// word" behaviour.
 	completionSuppressed  bool
 	completionSuppressRow int
 	completionSuppressCol int
 
 	// completionMouseDown distinguishes a fresh Button1 press on the popup
-	// from a continued hold over the same row — mirrors mouseDragging's
-	// purpose for the editor body. Without it, tcell's all-motion mouse
-	// tracking resends Buttons()==Button1 on every cursor motion while the
-	// button stays down, so a single click on an already-selected item can
-	// call commitSelectedCompletion() more than once.
+	// from a continued hold over the same row. Without it, tcell's all-motion
+	// tracking resends Button1 on every cursor motion while held, so one click
+	// on an already-selected item calls commitSelectedCompletion twice.
 	completionMouseDown bool
 
 	// completionSbDragging is the popup scrollbar's equivalent of
-	// completionMouseDown — see Editor's own sbDragging for why this is a
-	// separate flag from the click-tracking one above.
+	// completionMouseDown, separate for the same reason as sbDragging.
 	completionSbDragging bool
 
-	// search holds the active find/replace pattern and its match list — see
-	// editor_search.go. Zero value means no search, which is every Editor
-	// until SetSearch is called on it.
+	// search holds the active find/replace pattern and its match list. Zero
+	// value means no search, which is every Editor until SetSearch.
 	search editorSearch
 }
 
@@ -232,29 +200,23 @@ func NewEditor(h Highlighter) *Editor {
 	})
 }
 
-// Document returns the editor's buffer, for a caller that needs to read the
-// text by line without rebuilding it from Text() — and for the tests that
-// drive a Highlighter directly. It is the same *Document the editor mutates,
-// so its Version() moves under the caller; nothing outside this package can
-// write through it.
+// Document returns the editor's buffer, for a caller reading the text by line
+// without rebuilding it from Text(). It is the same *Document the editor
+// mutates, so its Version() moves under the caller; nothing outside this
+// package can write through it.
 func (e *Editor) Document() *Document { return e.doc }
 
-// SetHighlighter replaces the syntax highlighter — e.g. switching a query
-// editor between SQL and XML highlighting depending on which kind of file
-// was just opened into it. Pass nil to disable highlighting.
+// SetHighlighter replaces the syntax highlighter — switching a query editor
+// between SQL and XML for the kind of file just opened, say. nil disables it.
 //
-// Pass a Highlighter built for this Editor alone. Both built-in ones
-// (SQLHighlighter, XMLHighlighter) close over a cache of the previous line's
-// end-of-line comment state, so handing the same Highlighter value to two
-// Editors lets one document's carried-over block comment colour the other's.
-// Call the constructor per Editor rather than hoisting one into a package
-// variable.
+// Pass a Highlighter built for this Editor alone. Both built-in ones close
+// over a cache of the previous line's end-of-line comment state, so sharing
+// one value between two Editors lets one document's carried-over block comment
+// colour the other's. Call the constructor per Editor.
 func (e *Editor) SetHighlighter(h Highlighter) { e.highlight = h }
 
-// SetGutterVisible shows or hides the line-number gutter. Editors default
-// to a visible gutter (matching the SQL query editor); pass false for
-// plain multi-line text boxes — e.g. the connection-string editor — where
-// line numbers aren't meaningful.
+// SetGutterVisible shows or hides the line-number gutter, visible by default.
+// Pass false for plain multi-line text boxes, where line numbers mean nothing.
 func (e *Editor) SetGutterVisible(v bool) { e.hideGutter = !v }
 
 // gutterWidth returns the on-screen width reserved for the line-number
@@ -267,28 +229,21 @@ func (e *Editor) gutterWidth() int {
 }
 
 // SetWrapMode enables word-wrap rendering: long lines soft-wrap at word
-// boundaries to fit the content width instead of scrolling horizontally,
-// and scrollRow/scrolling become vertical-only — scrollCol is unused in
-// this mode. Defaults to off; used by plain multi-line text boxes like
-// the connection-string editor.
+// boundaries to fit the content width instead of scrolling horizontally, and
+// scrolling becomes vertical-only — scrollCol is unused. Off by default; used
+// by plain multi-line text boxes like the connection-string editor.
 //
-// KeyUp/KeyDown/PgUp/PgDn move between logical lines (actual newlines),
-// not wrapped visual rows; Left/Right/Home/End/click move the cursor
-// within a wrapped line.
+// KeyUp/KeyDown/PgUp/PgDn move between logical lines (actual newlines), not
+// wrapped visual rows; Left/Right/Home/End/click move within a wrapped line.
 //
-// A Highlighter applies in wrap mode too: drawWrapped fetches runs per
-// logical line and resolves each column through styleAt, so the two settings
-// compose. (They didn't originally — a wrapped editor rendered as plain text,
-// silently, which was harmless only because no wrapping call site had set a
-// highlighter yet.)
+// A Highlighter applies in wrap mode too: drawWrapped fetches runs per logical
+// line and resolves each column through styleAt.
 func (e *Editor) SetWrapMode(v bool) { e.wrapMode = v }
 
-// SetReadOnly makes the editor reject every mutating key — typed
-// characters, Enter, Backspace/Delete, Tab/Backtab indent, undo/redo, and
-// the line/case/comment actions (Ctrl+D/L/U/Z/Y, Ctrl+/) — while cursor
-// movement, Shift/Alt-Shift selection, Ctrl+A, and mouse click-drag
-// selection keep working, so the content can still be read and copied.
-// Defaults to false.
+// SetReadOnly makes the editor reject every mutating key — typed characters,
+// Enter, Backspace/Delete, Tab/Backtab indent, undo/redo, and the
+// line/case/comment actions — while cursor movement, selection and Ctrl+A keep
+// working, so the content can still be read and copied. Off by default.
 func (e *Editor) SetReadOnly(v bool) { e.readOnly = v }
 
 // SetBounds positions the editor.
@@ -303,15 +258,14 @@ func (e *Editor) SetActive(v bool) {
 	e.active = v
 }
 
-// Bounds returns the editor's current screen rect, set by SetBounds — lets
-// a caller outside the package hit-test a screen coordinate against the
-// editor without duplicating its geometry (e.g. Object Explorer's
-// drag-and-drop drop-target check in app_events.go).
+// Bounds returns the editor's current screen rect, so a caller outside the
+// package can hit-test against it without duplicating its geometry — Object
+// Explorer's drag-and-drop target check does this.
 func (e *Editor) Bounds() core.Rect { return e.rect }
 
 // Focus sets focus state, mirroring the widgets package's Focus(bool)
-// convention so Editor can be Tab-cycled alongside InputField, DropDown,
-// and CheckBox by callers that key off that method name.
+// convention so Editor can be Tab-cycled alongside InputField, DropDown and
+// CheckBox.
 func (e *Editor) Focus(v bool) { e.SetActive(v) }
 
 // Text returns the editor content.
@@ -326,11 +280,10 @@ func (e *Editor) Text() string {
 	return sb.String()
 }
 
-// SetText replaces content, resetting the cursor, any active selection,
-// and the undo/redo history — all of which refer to the old document and
-// would otherwise dangle (a stale selection anchor past the new buffer's
-// end makes SelectedText panic; a stale undo step would restore text that
-// was never actually typed into this document).
+// SetText replaces content, resetting the cursor, selection and undo/redo
+// history — all of which refer to the old document and would otherwise dangle:
+// a stale selection anchor past the new buffer's end makes SelectedText panic,
+// and a stale undo step restores text never typed into this document.
 func (e *Editor) SetText(text string) {
 	parts := strings.Split(strings.ReplaceAll(expandTabs(text), "\r\n", "\n"), "\n")
 	lines := make([][]rune, len(parts))
@@ -348,18 +301,16 @@ func (e *Editor) SetText(text string) {
 func (e *Editor) clampCursor() {
 	e.cursorRow = core.Clamp(e.cursorRow, 0, e.doc.Len()-1)
 	// While a block (column) selection is active, cursorCol doubles as its
-	// "virtual column" and is allowed to sit past a short row's actual
-	// length — the expected rectangular-selection visual when the
-	// selection started on a longer line. It self-heals the moment
-	// selBlock goes false, before any insert/delete runs.
+	// virtual column and may sit past a short row's length — the expected
+	// rectangular visual when the selection started on a longer line. It
+	// self-heals the moment selBlock goes false, before any insert/delete.
 	if e.cursorRow < e.doc.Len() && !e.selBlock {
 		e.cursorCol = core.Clamp(e.cursorCol, 0, len(e.doc.Line(e.cursorRow)))
 	}
 }
 
-// cursorLine returns the line the cursor is on, or an empty line if the row
-// is somehow out of range — every caller here wants to measure or index it,
-// and a nil slice measures to zero rather than panicking.
+// cursorLine returns the line the cursor is on, or nil if the row is out of
+// range — callers measure or index it, and nil measures to zero.
 func (e *Editor) cursorLine() []rune {
 	if e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
 		return nil
@@ -373,11 +324,10 @@ func (e *Editor) cursorDisplayCol() int {
 	return core.ColumnOfRune(e.cursorLine(), e.cursorCol)
 }
 
-// contentH is how many rows of text the editor actually shows — its full
-// height, less the bottom row when that's given over to the horizontal
-// scrollbar (see hScrollbar). Every place that treats a height as "how many
-// lines fit" uses this rather than rect.H, or the last line would scroll
-// under the bar and the cursor could sit on a row that isn't drawn.
+// contentH is how many rows of text the editor shows — its full height, less
+// the bottom row when that goes to the horizontal scrollbar. Everything asking
+// "how many lines fit" uses this rather than rect.H, or the last line scrolls
+// under the bar and the cursor can sit on a row that isn't drawn.
 func (e *Editor) contentH() int {
 	if e.hScrollbarVisible() {
 		return e.rect.H - 1
@@ -410,7 +360,7 @@ func (e *Editor) ensureCursorVisible() {
 	}
 	contentW := e.rect.W - e.gutterWidth()
 	// In display columns: a line of wide characters scrolls twice as far per
-	// caret step as an ASCII one, which is exactly what the eye expects.
+	// caret step as an ASCII one, which is what the eye expects.
 	curCol := e.cursorDisplayCol()
 	if curCol < e.scrollCol {
 		e.scrollCol = curCol
@@ -420,11 +370,10 @@ func (e *Editor) ensureCursorVisible() {
 	}
 }
 
-// insertRune inserts r at the cursor. It goes through setLine rather than
-// edit whenever the line count is unchanged, which is every call that isn't
-// repairing an out-of-range cursor: this is the typing path, and edit drops
-// every cached line width, turning each keystroke into a re-measure of the
-// whole buffer.
+// insertRune inserts r at the cursor, going through setLine rather than edit
+// whenever the line count is unchanged — every call but one repairing an
+// out-of-range cursor. This is the typing path, and edit drops every cached
+// line width, turning each keystroke into a re-measure of the whole buffer.
 func (e *Editor) insertRune(r rune) {
 	if e.cursorRow >= e.doc.Len() {
 		e.doc.edit(func(lines [][]rune) [][]rune { return append(lines, []rune{}) })

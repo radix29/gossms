@@ -32,7 +32,7 @@ func formatMB(mb float64) string {
 // them concurrently (bounded by maxRowFetchConcurrency) means one slow
 // database doesn't hold up the rest.
 func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	app.safego("loading database details", func() {
+	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
@@ -41,6 +41,10 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
 		}
+
+		all = filterObjects(node, all, func(d *gosmo.Database) nodeData {
+			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
+		})
 
 		dbs := make([]*gosmo.Database, 0, len(all))
 		rows := make([][]string, 0, len(all))

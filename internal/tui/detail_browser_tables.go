@@ -29,7 +29,7 @@ var tablesFolderColumns = []string{
 // fan-out is gone. loadDatabasesFolderDetails still needs its own — see the
 // note there for why the same collapse isn't available for database sizes.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	app.safego("loading table details", func() {
+	app.safegoRepair("loading table details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
@@ -43,6 +43,12 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
 		}
+		tables = filterObjects(node, tables, func(t *gosmo.Table) nodeData {
+			return nodeData{
+				Name: t.Name, Schema: t.Schema,
+				CreateDate: t.CreateDate, IsMemoryOptimized: t.IsMemoryOptimized,
+			}
+		})
 
 		rows := make([][]string, len(tables))
 		for i, t := range tables {

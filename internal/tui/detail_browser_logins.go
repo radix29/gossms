@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 
+	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
@@ -11,7 +12,7 @@ import (
 // Server.Logins() round trip, so unlike the Databases folder there's
 // nothing to backfill progressively.
 func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	app.safego("loading login details", func() {
+	app.safegoRepair("loading login details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
@@ -20,6 +21,10 @@ func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
 		}
+
+		logins = filterObjects(node, logins, func(l *gosmo.Login) nodeData {
+			return nodeData{Name: l.Name, CreateDate: l.CreateDate}
+		})
 
 		rows := make([][]string, 0, len(logins))
 		for _, l := range logins {

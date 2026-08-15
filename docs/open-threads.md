@@ -205,24 +205,6 @@ a settled question being reopened.
   connection string's. The proposed fix was three extra round trips per grant
   to re-solve what the driver already handles, and was reverted.
 
-## Dialog content is not clipped to a clamped rect
-
-Found 2026-08-14, alongside the resize fix (see `docs/journal.md`), and
-deliberately not fixed there. `ModalDialog.recentre` clamps a dialog's *rect*
-to a terminal smaller than the dialog's requested size, so the box, its
-borders and its button row stay on screen. The content does not follow: rows
-are drawn at fixed offsets from the dialog's origin, so at 30x8 the Connect
-dialog's field rows run past the right border and `DrawButtons` lands on top
-of them.
-
-This is not a resize bug — the pre-resize binary launched directly at 30x8
-draws the identical mess, and post-fix a resized dialog renders
-byte-identically to a freshly opened one. Fixing it means every dialog's Draw
-clipping to `InnerRect` and skipping rows below `ButtonRowY()`, which is a
-change to ~28 hand-written Draw methods, not to `ModalDialog`. Nothing is lost
-meanwhile: the terminals where it shows are ones where the dialog could not
-have been read anyway.
-
 ## Unbuilt features README already promises
 
 Each is a feature, not a defect.
@@ -491,7 +473,8 @@ portable build) and `sp_cycle_errorlog` / `sp_cycle_agent_errorlog` as a
 
 ## Object Explorer folder filter: what is deliberately out of it
 
-Built 2026-08-13 (see `docs/journal.md`). Four gaps, all deliberate:
+Built 2026-08-13 (see `docs/journal.md`). Two gaps left, both deliberate; the
+other two were fixed 2026-08-15.
 
 - **The filter is client-side.** SSMS pushes it into the folder's own query;
   here the loader fetches the folder as usual and `fetchChildren` drops the
@@ -500,12 +483,16 @@ Built 2026-08-13 (see `docs/journal.md`). Four gaps, all deliberate:
 - **Owner and Durability Type are not offered on Tables**, though SSMS offers
   both — each is one `TableDetail` query per table. Adding them means a
   folder-wide detail fetch first.
-- **Object Explorer Details ignores the filter.** The tree is filtered; the
-  details pane's own loaders (`detail_browser_*.go`) query independently and
-  still list the whole folder.
-- **Filters are per-session, not persisted.** A filter lives on the tree node,
-  so it is lost on disconnect or exit; SSMS keeps them for the session only
-  too, but it does keep them across a reconnect within one.
+- ~~**Object Explorer Details ignores the filter.**~~ **Fixed** 2026-08-15 —
+  every detail loader now filters what it lists: `filterObjects` for the ones
+  holding gosmo objects, `filterChildren` for `fetchChildObjectsDetail`, which
+  holds `*explorerNode` already. See `docs/journal.md`.
+- ~~**Filters are per-session, not persisted.**~~ **Fixed as far as SSMS goes**
+  2026-08-15 — `App.savedFilters`, keyed by `filterKey` rather than by node
+  pointer, brings a folder's filter back on a reconnect within the session.
+  Writing filters to `config.json` so they survive an exit stays out: SSMS
+  keeps them for the session only, and restoring one at startup against a
+  folder whose objects have since changed is not wanted.
 
 ## Delete/Rename: what is deliberately out of it
 
@@ -534,3 +521,54 @@ Built 2026-08-13 (see `docs/journal.md`).
   New Login, and the External Provider login type generally. gosmo-side work
   needed first. Re-deferred on every properties/dialog pass; this is the
   standing answer to "why isn't this in the UI?".
+
+## Left open by the 2026-08-14 cross-repo review
+
+The pass fixed the `RevertFn` grid redraws and gave `internal/fileutil` its
+first tests (see `docs/journal.md`). These are what it found and did not act
+on. Nothing here is urgent; the first two are small and self-contained.
+
+- ~~**`fileutil.WriteAtomic` overwrites an existing file's permission bits, and
+  replaces a symlink instead of writing through it.**~~ **Both fixed** — the
+  mode half 2026-08-14 (`modeFor` keeps the existing file's mode with `perm` as
+  a ceiling), the symlink half 2026-08-15 (`resolveSymlink` runs before the temp
+  file is placed, so both it and the rename land in the target's directory). See
+  `docs/journal.md`.
+
+- ~~**`allDialogs` completeness is unpinned.**~~ **Fixed** 2026-08-14 —
+  `dialog_registration_test.go` reflects over `App`'s dialog-typed fields and
+  fails naming any that `buildUI` forgot. See `docs/journal.md`.
+
+- ~~**`App.loadChildren` and `DetailBrowser.fetch` use `safego` where the rule
+  says `safegoRepair`.**~~ **Fixed** 2026-08-14, across all five detail loaders
+  as well as the expand. See `docs/journal.md` — including what the Object
+  Explorer half deliberately gives up (a panicked expand now needs Refresh to
+  retry, where before it retried on a re-expand).
+
+- ~~**The user-mapping page exists twice.**~~ **Addressed differently, and the
+  page merge is now a deliberate non-goal.** Both pages were converted to
+  `wireGridEditor` 2026-08-14, which is where the duplication that actually
+  caused a bug lived; merging the two page *builders* was costed and rejected
+  (six injection points, two different row structs, two unrelated applies).
+  See `docs/journal.md`. Do not re-propose the merge without new evidence.
+
+- ~~**`Form.Revert()` has no non-test caller, and fourteen pages implement
+  `RevertFn` for it.**~~ **Decided and done** 2026-08-15: Revert is exposed,
+  not retired. `Ctrl+Z` on a `PropertySheet` calls `RevertPage`, which reaches
+  `Form.Revert`, every row's `Revert` and all 21 `RevertFn` closures. See
+  `docs/journal.md`.
+  The two rules that came with it, since both are easy to undo by accident:
+  **`Ctrl+Z` is handled ahead of the zone switch, beside `F5`** — a sheet-level
+  command, so it works from the page list and the button row, and the focused
+  row never sees it. And **`Ctrl+Z` must stay free inside a form row**:
+  `widgets.InputField` takes `Ctrl+A`/`Ctrl+U` and no propsheet row hosts a
+  `controls.Editor`, which is the one widget with a `Ctrl+Z` of its own. A row
+  that ever embeds a full editor takes this key back and needs a different one.
+
+- ~~**Open question: `ServerConn.Peer` copies `Opts.Database` to the peer.**~~
+  **Answered and fixed** 2026-08-14 — a probe against win10cli showed a
+  database named in the connection string failing the *connect*, at ping time,
+  so `peerOptions` blanks it; everything `Peer` reaches is server-scoped. See
+  `docs/journal.md`. Note the other three `sc.Opts` clones — the query panel's
+  and the Activity Monitor's two — target the same instance and keep the
+  database on purpose; this rule is about the cross-instance clone only.

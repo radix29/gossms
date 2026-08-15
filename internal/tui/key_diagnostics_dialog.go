@@ -85,9 +85,7 @@ func (d *KeyDiagnosticsDialog) Draw(s tcell.Screen) {
 	}
 
 	if len(d.lines) > dataH {
-		sbStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Border)
-		sbThumb := tcell.StyleDefault.Background(p.BorderActive).Foreground(p.BorderActive)
-		core.DrawScrollbar(s, d.Rect().Right()-1, inner.Y+1, dataH, len(d.lines), dataH, d.scroll, sbStyle, sbThumb)
+		d.DrawContentScrollbar(s, inner.Y+1, dataH, len(d.lines), d.scroll)
 	}
 
 	d.DrawButtons(s, []string{"Close"}, 0)

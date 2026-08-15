@@ -235,6 +235,15 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   `Enabled func() bool`; the reactive fallback is a guard plus
   `setStatus(...)` matching existing wording ("Not connected — use File >
   Connect", "No active query panel").
+- **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`,
+  not `core.DrawScrollbar` at `Rect().Right()-1`.** On a terminal too small
+  for its requested size a dialog's content is clipped to `InnerRect`
+  (`App.drawDialogs` wraps the screen in a `core.ClipScreen`; `DrawBase`
+  narrows it when `clamped()`), and the border column the bar sits on is
+  outside that clip — a bar drawn directly there is correct at full size and
+  silently gone on a clamped one. A scrollbar inside a child widget is on the
+  widget's own rect and needs nothing. Same reason `DrawBase` sets the clip
+  only when clamped: an overlay a dialog opens may extend past the box.
 - **Key Diagnostics (`internal/tui/key_diagnostics_dialog.go`, Help menu) is
   a permanent shipped feature**, not debug scaffolding. It's out of scope for
   any pre-release trimming — it decodes tcell's exact Key/Modifiers/rune per
@@ -249,6 +258,15 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   verified live. `internal/activity/block.go` is the worked example: master's
   copy is `sp_block` (the name a hand-installed one already has), tempdb's is
   `usp_block`, and every `EXEC` names its database.
+- **A folder's Object Explorer filter has to be applied twice — once for the
+  tree, once for the Detail Browser.** The tree's half is `filterChildren` in
+  `fetchChildren`; the pane's loaders (`detail_browser_*.go`) query gosmo
+  independently and hold gosmo objects, so they go through `filterObjects`
+  instead, on the collection and *before* rows are built — a progressive
+  loader backfills by index, so filtering the rows afterwards writes each
+  count and size into the wrong row. A new detail loader for a filterable
+  folder that skips this leaves the pane listing objects the tree next to it
+  has filtered away, which is what shipped until 2026-08-15.
 - **Never call `rows.Next()` speculatively inside `internal/query/executor.go`'s
   `sqlexp.ReturnMessage` loop.** One extra `Next()` on an exhausted result set
   makes the driver consume the protocol message `retmsg.Message(ctx)` is

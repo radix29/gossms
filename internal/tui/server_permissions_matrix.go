@@ -239,7 +239,7 @@ func buildPermissionsMatrix(
 			}
 		}
 		if selectedEdits != nil {
-			permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
+			redrawGrid(permGrid, []string{"Permission", "State"}, permRowsFor(selectedEdits))
 		}
 	}
 
@@ -353,7 +353,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				for _, e := range edits {
 					e.current = e.orig
 				}
-				grid.SetData([]string{"Permission", "State"}, rowsFor())
+				redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
 			}
 
 			f := propsheet.NewForm(

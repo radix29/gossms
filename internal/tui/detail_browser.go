@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gdamore/tcell/v3"
@@ -13,18 +14,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// DetailBrowser shows details of the selected object-explorer node.
-// It is a thin Panel wrapper around a tuikit controls.DataGrid, adding a
-// title bar and the SQL-Server-specific data loading logic.
+// DetailBrowser shows details of the selected Object Explorer node — a Panel
+// wrapper around controls.DataGrid adding a title bar and the SQL-Server
+// specific loading logic.
 type DetailBrowser struct {
 	rect   core.Rect
 	title  string
 	grid   *controls.DataGrid
 	active bool
 
-	// OnRefresh runs when the title bar's refresh button is clicked — the
-	// same action as F5 / Edit > Refresh, refreshing whatever node the
-	// panel is currently showing. Nil makes the button a no-op.
+	// OnRefresh runs on a click of the title bar's refresh button — the same
+	// action as F5 / Edit > Refresh. Nil makes the button a no-op.
 	OnRefresh func()
 
 	// refreshRect is the title bar's refresh button, positioned by
@@ -36,33 +36,26 @@ type DetailBrowser struct {
 	// of the same name.
 	mouseDragging bool
 
-	// seq guards against a slow, superseded fetch (see ShowNodeDetails)
-	// overwriting the grid with results for a node that's no longer
-	// selected — incremented on every call, and any async result (partial
-	// or final) is only applied if it's still the most recent one
-	// requested.
+	// seq guards a slow, superseded fetch from overwriting the grid with
+	// results for a node no longer selected: incremented on every call, and
+	// any async result is applied only if it is still the most recent.
 	seq int
 
-	// currentNode is the node ShowNodeDetails last displayed — tracked so
-	// Invalidate can tell whether the node it's invalidating needs an
-	// immediate refetch (it's what's on screen right now) or can just be
-	// dropped from cache for next time it's selected.
+	// currentNode is the node ShowNodeDetails last displayed, so Invalidate can
+	// tell whether to refetch immediately or just drop the cache entry.
 	currentNode *explorerNode
 
-	// cache holds the completed result of the last successful fetch per
-	// node, so reselecting a node already shown doesn't re-hit the network —
-	// only a Refresh action (see Invalidate) or a fresh node (a folder
-	// reload replaces its children with new *explorerNode values, which
-	// naturally miss the cache) forces a refetch. Never populated with
-	// partial/in-progress results, only the final one.
+	// cache holds the last successful fetch per node, so reselecting a node
+	// already shown doesn't re-hit the network. Only a Refresh action or a
+	// fresh node forces a refetch — a folder reload replaces its children with
+	// new *explorerNode values, which naturally miss the cache. Never holds
+	// partial results, only final ones.
 	cache map[*explorerNode]*detailResult
 
-	// pending records, per node, the seq of the most recently dispatched
-	// fetch for it — set by fetch, checked by postFinal/cacheOnly before
-	// writing cache. Reselecting a node while its fetch is still in flight
-	// dispatches a second, newer fetch for the same node pointer; without
-	// this check whichever finished last would win the cache write, letting
-	// an older fetch overwrite a newer result.
+	// pending records per node the seq of the most recent fetch dispatched for
+	// it — set by fetch, checked by postFinal/cacheOnly before writing cache.
+	// Reselecting a node mid-fetch dispatches a second fetch for the same node
+	// pointer; without this whichever finished last wins the cache write.
 	pending map[*explorerNode]int
 }
 
@@ -109,20 +102,15 @@ func (db *DetailBrowser) SetBounds(x, y, w, h int) {
 // SetActive marks this panel focused (affects title bar colour).
 func (db *DetailBrowser) SetActive(v bool) { db.active = v }
 
-// Closable reports false: Object Explorer Details is a fixed, always-
-// present panel (there is exactly one, added once in App.buildUI) and
-// can't be closed via the tab bar's [x] or Ctrl+W — see layout.Closable.
+// Closable reports false: Object Explorer Details is a fixed, always-present
+// panel, so the tab bar's [x] and Ctrl+W can't close it.
 func (db *DetailBrowser) Closable() bool { return false }
 
-// ShowNodeDetails loads detail data for the given explorer node,
-// asynchronously — every fetch is a real network round trip and this fires
-// on every tree-selection change, so running it inline on the UI goroutine
-// would freeze the app on each arrow-key press against a slow server. A
-// node already shown once is served from cache — see Invalidate for how a
-// Refresh action forces a fresh copy. Nil-safe like Invalidate, so a
-// minimal test App built without a DetailBrowser (see newTestApp in
-// app_connections_test.go) can still exercise the onNodeSelected paths
-// that call this.
+// ShowNodeDetails loads detail data for node asynchronously: every fetch is a
+// network round trip and this fires on every tree-selection change, so running
+// it inline would freeze the app on each arrow key against a slow server. A
+// node already shown is served from cache. Nil-safe like Invalidate, so a
+// minimal test App without a DetailBrowser can still exercise onNodeSelected.
 func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	if db == nil {
 		return
@@ -171,23 +159,17 @@ func (db *DetailBrowser) applyResult(r *detailResult) {
 	db.grid.SetData(r.cols, r.rows)
 }
 
-// isPropertyValueColumns reports whether cols is the Property/Value pair
-// shape used for a single-record detail view (Server, Database, and the
-// generic default node) rather than a list of many similar rows (the
-// Databases/Logins folders, Tables, Views, …) — used to decide whether the
-// grid's Value column should stretch to fill the panel instead of just
-// fitting its own content.
+// isPropertyValueColumns reports whether cols is the Property/Value shape of a
+// single-record detail view rather than a list of similar rows — which decides
+// whether the Value column stretches to fill the panel.
 func isPropertyValueColumns(cols []string) bool {
 	return len(cols) == 2 && cols[0] == "Property" && cols[1] == "Value"
 }
 
-// Invalidate drops any cached detail data for node — called by every
-// Refresh action (F5, right-click Refresh, the Databases/Logins folder
-// reload helpers) so a forced refresh reaches the Detail Browser too, not
-// just the Object Explorer tree. If node is the one currently on screen,
-// it's also refetched immediately rather than waiting for a reselect.
-// Nil-safe like dbconn.ServerConn.Close, so call sites (and tests that build an
-// App without a DetailBrowser) don't need their own nil check.
+// Invalidate drops any cached detail data for node — called by every Refresh
+// action so a forced refresh reaches the Detail Browser, not just the tree. A
+// node currently on screen is refetched immediately rather than on reselect.
+// Nil-safe, so call sites need no nil check of their own.
 func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 	if db == nil {
 		return
@@ -199,12 +181,10 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 	}
 }
 
-// RefreshCurrent re-fetches whatever node the panel is showing right now,
-// independently of the Object Explorer's selection — what the title bar's
-// refresh button runs. The two are the same node today, since the panel
-// only ever displays what the tree selected; wiring the button to the
-// panel's own currentNode is what keeps it correct if the panel ever drills
-// on its own. Nil-safe like Invalidate.
+// RefreshCurrent re-fetches whatever node the panel is showing, independently
+// of the tree's selection — what the title bar's refresh button runs. Keying
+// off the panel's own currentNode keeps it correct if the panel ever drills on
+// its own. Nil-safe like Invalidate.
 func (db *DetailBrowser) RefreshCurrent(app *App) {
 	if db == nil || db.currentNode == nil {
 		return
@@ -212,11 +192,10 @@ func (db *DetailBrowser) RefreshCurrent(app *App) {
 	db.Invalidate(app, db.currentNode)
 }
 
-// PurgeConn drops every cached and pending entry belonging to sc — called
-// by App.disconnect, since the explorer nodes those entries are keyed by
-// are about to be dropped from the tree. Without it both maps grow for the
-// life of the session, holding every disconnected server's node pointers
-// and full result rows alive. Nil-safe like Invalidate.
+// PurgeConn drops every cached and pending entry belonging to sc — called by
+// App.disconnect, since the nodes they are keyed by are about to leave the
+// tree. Without it both maps grow for the session's life, holding every
+// disconnected server's node pointers and result rows alive. Nil-safe.
 func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 	if db == nil {
 		return
@@ -232,20 +211,20 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 		}
 	}
 	if db.currentNode != nil && resolveConn(db.currentNode) == sc {
-		// Disconnecting the last server empties the tree, which fires no
-		// OnSelect — nothing else would ever repaint the grid, so it would
-		// sit there showing the disconnected server's rows. Bumping seq at
-		// the same time drops any fetch for it still in flight.
+		// Disconnecting the last server empties the tree and fires no
+		// OnSelect, so nothing else would repaint the grid and it would keep
+		// showing the disconnected server's rows. Bumping seq also drops any
+		// fetch still in flight.
 		db.currentNode = nil
 		db.seq++
 		db.showEmpty()
 	}
 }
 
-// fetch dispatches to a per-node-type loader. Node types with more than one
-// round trip worth fetching (NodeServer, NodeDatabases, NodeLogins) show
-// their fast fields first and backfill the rest progressively; everything
-// else goes through the single-shot fetchNodeDetails.
+// fetch dispatches to a per-node-type loader. Types worth more than one round
+// trip (NodeServer, NodeDatabases, NodeLogins) show their fast fields first and
+// backfill progressively; the rest go through the single-shot
+// fetchNodeDetails.
 func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	db.pending[node] = seq
 	switch node.data.Type {
@@ -258,12 +237,40 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 	case NodeTables:
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
-		app.safego("loading Object Explorer details", func() {
+		app.safegoRepair("loading Object Explorer details", db.panicRepair(node, seq), func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
 			cols, rows, err := fetchNodeDetails(ctx, sc, node)
 			db.postFinal(app, node, seq, cols, rows, err)
 		})
+	}
+}
+
+// errDetailFetchPanicked is what the panel shows when a detail loader
+// panicked. The stack is already in the log by then — see reportPanic.
+var errDetailFetchPanicked = errors.New("loading failed unexpectedly — see the log for details")
+
+// panicRepair builds the safegoRepair step every loader in fetch shares: the
+// panel is latched at "Loading..." (or a progressive loader's placeholder rows)
+// and only postFinal clears it, which a panic never reaches.
+//
+// Nothing is cached. A panic says nothing about this node's details, so
+// dropping the pending entry lets the next selection retry rather than serving
+// the failure forever — unlike postFinal, which caches an ordinary error
+// because the server answered.
+//
+// Both of postFinal's guards are kept, for the same reasons: pending is cleared
+// only if this fetch is still the newest for the node, and the grid touched
+// only if its node is still selected.
+func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
+	return func() {
+		if db.pending[node] == seq {
+			delete(db.pending, node)
+		}
+		if seq != db.seq {
+			return
+		}
+		db.grid.SetError(errDetailFetchPanicked)
 	}
 }
 
@@ -280,11 +287,9 @@ func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]
 	})
 }
 
-// postFinal caches the completed result for node — unless a newer fetch for
-// this same node has since been dispatched (see pending), in which case
-// this one is stale and must not clobber the newer fetch's eventual result
-// — and displays it if still current. Called exactly once per fetch,
-// whether single-shot or the last stage of a progressive loader.
+// postFinal caches the completed result for node — unless a newer fetch for it
+// has been dispatched since, making this one stale — and displays it if still
+// current. Called once per fetch, single-shot or last progressive stage.
 func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
 	result := &detailResult{cols: cols, rows: rows, err: err}
 	app.postAndWake(func() {
@@ -298,11 +303,10 @@ func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols [
 	})
 }
 
-// cacheOnly caches the completed result for node without touching the
-// grid — used by a progressive loader's last stage (see
-// loadDatabasesFolderDetails) once every row has already been updated in
-// place, where postFinal's SetData would reset the user's scroll position.
-// Gated by pending the same way postFinal is — see there.
+// cacheOnly caches the completed result without touching the grid — for a
+// progressive loader's last stage, once every row has been updated in place and
+// postFinal's SetData would reset the user's scroll position. Gated by pending
+// the same way postFinal is.
 func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
 	app.postAndWake(func() {
 		if db.pending[node] == seq {
@@ -312,23 +316,20 @@ func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols [
 }
 
 // maxRowFetchConcurrency bounds how many per-row backfill goroutines one
-// progressive loader (loadDatabasesFolderDetails, loadTablesFolderDetails)
-// runs at once. Unbounded, a folder with hundreds of entries would open
-// hundreds of connections against a pool whose MaxOpenConns is 20 (see
-// internal/db/connection.go) and queue a redraw for each; capping keeps
-// one slow row from blocking the rest without running them all at once.
+// progressive loader runs at once. Unbounded, a folder with hundreds of entries
+// opens hundreds of connections against a pool whose MaxOpenConns is 20 and
+// queues a redraw for each; capping keeps one slow row from blocking the rest.
 //
-// The bound is per loader, not per connection: each backfillRows call runs
-// its own pool, so two folders loading at once fan out to 16. That is still
-// inside the pool, but the headroom is two loaders, not more.
+// The bound is per loader, not per connection: each backfillRows call runs its
+// own pool, so two folders loading at once fan out to 16 — still inside the
+// pool, but the headroom is two loaders, not more.
 const maxRowFetchConcurrency = 8
 
-// fetchNodeDetails runs the gosmo queries for a node's detail grid. Called
-// from a background goroutine (see ShowNodeDetails) — it must not touch
-// DetailBrowser or any other UI state directly, only return data for the
-// caller to apply via postAndWake. ctx bounds the whole call (see the
-// caller's childFetchTimeout) so a hung server leaves the goroutine and its
-// connection to time out instead of blocking forever.
+// fetchNodeDetails runs the gosmo queries for a node's detail grid. Called from
+// a background goroutine, so it must not touch DetailBrowser or any other UI
+// state — only return data for the caller to apply via postAndWake. ctx bounds
+// the whole call, so a hung server times the goroutine out rather than blocking
+// forever.
 func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	switch node.data.Type {
 	case NodeAgentJobs:
@@ -362,6 +363,9 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
+		dbs = filterObjects(node, dbs, func(d *gosmo.Database) nodeData {
+			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
+		})
 		rows := make([][]string, 0, 4)
 		for _, d := range dbs {
 			if d.IsSystem() {
@@ -403,6 +407,9 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
+		views = filterObjects(node, views, func(v *gosmo.View) nodeData {
+			return nodeData{Name: v.Name, Schema: v.Schema, CreateDate: v.CreateDate}
+		})
 		rows := make([][]string, 0, len(views))
 		for _, v := range views {
 			rows = append(rows, []string{v.Schema + "." + v.Name, formatSQLDate(v.CreateDate)})
@@ -418,6 +425,9 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
+		procs = filterObjects(node, procs, func(p *gosmo.StoredProcedure) nodeData {
+			return nodeData{Name: p.Name, Schema: p.Schema, CreateDate: p.CreateDate}
+		})
 		rows := make([][]string, 0, len(procs))
 		for _, p := range procs {
 			rows = append(rows, []string{p.Schema + "." + p.Name, formatSQLDate(p.CreateDate), formatSQLDate(p.ModifyDate)})
@@ -437,11 +447,12 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	}
 }
 
-// fetchChildObjectsDetail is the fallback detail view for any node type with
-// children but no richer, purpose-built view above: it lists the child
-// objects. Reuses the same childLoaders entry the tree expands with, so a
-// new NodeType wired into childLoaders picks up a folder-shaped detail view
-// instead of the leaf-style Property/Value grid.
+// fetchChildObjectsDetail is the fallback detail view for a node type with
+// children but no purpose-built view: it lists the child objects. Reuses the
+// childLoaders entry the tree expands with, so a new NodeType wired in gets a
+// folder-shaped detail view rather than the leaf-style Property/Value grid.
+// Since it holds *explorerNode it applies the folder's filter through
+// filterChildren, not the filterObjects the gosmo-shaped loaders use.
 func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	loader, ok := childLoaders[node.data.Type]
 	if !ok {
@@ -451,6 +462,7 @@ func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *e
 	if err != nil {
 		return nil, nil, err
 	}
+	children = filterChildren(node, children)
 	rows := make([][]string, 0, len(children))
 	for _, c := range children {
 		rows = append(rows, []string{c.label})
@@ -480,10 +492,9 @@ func (db *DetailBrowser) Draw(s tcell.Screen) {
 // HandleKey delegates to the data grid.
 func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool { return db.grid.HandleKey(ev) }
 
-// HandleMouse fires OnRefresh for a press on the title bar's refresh
-// button and delegates everything else to the data grid. A release over
-// the button still reaches the grid, so its own mouseDragging latch can't
-// stick.
+// HandleMouse fires OnRefresh for a press on the title bar's refresh button and
+// delegates everything else to the grid. A release over the button still
+// reaches the grid, so its mouseDragging latch can't stick.
 func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() == tcell.ButtonNone {
 		db.mouseDragging = false
@@ -502,10 +513,9 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	return db.grid.HandleMouse(ev)
 }
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll implement
-// clipboardTarget (see internal/tui/clipboard.go) by forwarding to the
-// grid, which is itself only a real clipboard target while its built-in
-// "Show Value" content viewer is open (see controls.DataGrid.HasSelection).
+// HasSelection, SelectedText, Cut, Paste and SelectAll implement
+// clipboardTarget by forwarding to the grid, which is itself a real clipboard
+// target only while its "Show Value" content viewer is open.
 func (db *DetailBrowser) HasSelection() bool   { return db.grid.HasSelection() }
 func (db *DetailBrowser) SelectedText() string { return db.grid.SelectedText() }
 func (db *DetailBrowser) Cut() string          { return db.grid.Cut() }
