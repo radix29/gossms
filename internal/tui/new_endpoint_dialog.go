@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -306,8 +307,21 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 		grid.SetData(headers, rowsFor())
 	})
 
+	// The instance list the page opened with — this connection's own instance
+	// alone. Without a RevertFn, Ctrl+Z cleared the name and password fields,
+	// said "Reverted to the loaded values", and left every instance the user
+	// had added still in the exchange. A shallow clone is the whole snapshot
+	// here: an instance is built once by addInstance and never edited after,
+	// so only the list itself changes.
+	baseline := slices.Clone(d.instances)
+
 	gridRow := propsheet.NewGridRow(grid, 5)
 	gridRow.DirtyFn = func() bool { return len(d.instances) > 1 }
+	gridRow.RevertFn = func() {
+		d.instances = slices.Clone(baseline)
+		hint.Set("")
+		redrawGrid(grid, headers, rowsFor())
+	}
 
 	commit := func() { grid.SetData(headers, rowsFor()) }
 

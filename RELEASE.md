@@ -4,6 +4,143 @@ High-level summary of what changed in each goSSMS release, one entry per
 version. For the detailed, file-by-file changes behind each entry, see
 [CHANGELOG.md](CHANGELOG.md).
 
+## v0.0.7 — 2026-08-19
+
+The Always On release. Availability groups arrive complete — browse a
+topology, edit it, watch it on a live dashboard, run every operation on it,
+and create one across instances that were never registered — alongside a Log
+File Viewer, an Object Explorer folder filter, Delete and Rename on any
+object, and a Backup/Restore pair that finally browses the *server's*
+filesystem rather than the client's. Updates `gosmo` to v0.0.9.
+
+### New
+
+- **Always On Availability Groups**, end to end. An `Always On High
+  Availability` folder in Object Explorer over groups, replicas, availability
+  databases and listeners; AG Properties (General, Backup Preferences,
+  Read-Only Routing); and a live **dashboard** for one group or for all of
+  them, with estimated data loss and estimated recovery time — the two numbers
+  SQL Server does not report — and a selectable refresh rate.
+- **Every Always On read follows the primary.** The `sys.dm_hadr_*` DMVs
+  describe only what the connected instance can see, so a topology read from a
+  secondary comes back blank where it matters most. goSSMS opens a connection
+  to the primary with the same credentials, says so on screen, and degrades to
+  the partial local view — naming the host it could not reach — rather than
+  failing.
+- **Always On operations**: add and remove a database, join and unjoin a
+  secondary's own copy, suspend and resume data movement, add and remove a
+  replica, add, modify and remove a listener, drop a group, and fail over,
+  planned or forced with data loss. Where an operation runs is part of what it
+  means, and each confirmation says which instance it is about to affect.
+- **Create an availability group** across instances the user never registered
+  — CREATE on the connected instance, then JOIN and the seeding grant run by
+  each secondary against itself. Script Changes labels every statement with
+  the instance it targets.
+- **New Database Mirroring Endpoint** sets up certificates, logins, endpoints
+  and grants across all replicas at once, exchanging **public** certificates
+  over connections goSSMS already has instead of the documented
+  back-up-to-a-file-and-copy-it route. No private key is read, transmitted or
+  written, and a half-configured pair is completed rather than refused.
+- **Log File Viewer** — SQL Server and SQL Agent error logs, current or
+  archived, newest first, with a filter, a details pane for the entries that
+  are four lines long, and export.
+- **Object Explorer folder filter** — SSMS's Filter Settings over name,
+  schema, creation date and memory-optimized. It survives Refresh,
+  collapse/expand and a reconnect, and it reaches the Detail Browser beside
+  the tree.
+- **Delete and Rename on any object**, with the confirmation scaled to the
+  blast radius — a plain Yes/No for one object, retype-the-name for a
+  database. A database rename offers the forced form, since the tree's own
+  connections are enough to deny it exclusive access.
+- **Backup and Restore browse the server's filesystem**, with the path rules
+  of the host being browsed rather than the client's. Browsing a Windows
+  instance from Linux used to produce a destination that could never work,
+  scripted with no error at all.
+- **Restore File Locations** — a view of its own for relocation: keep the
+  backup's paths, relocate when renaming, or move everything into two named
+  folders, with a per-file preview and a button that fills in the server's own
+  data and log paths.
+- **`Ctrl+Z` reverts a Properties page** to the values it loaded with, without
+  a round trip.
+- **Text files keep their encoding.** UTF-8, UTF-8-with-BOM and UTF-16 are
+  detected from a BOM and nothing else, and the file's line endings are
+  preserved on save.
+
+### Fixes
+
+- **Every replica but the first was unreachable on six grid pages** — three AG
+  Properties pages, three New Availability Group pages and the owner-transfer
+  dropdown. Redrawing a grid from inside its own selection callback silently
+  undid the move, so neither the mouse nor the keyboard could reach a second
+  row, and the first arrow key threw focus out of the grid entirely.
+- **`File > Open` was lossy and `File > Save` destroyed the original.** A file
+  with a tab, a CRLF or a BOM opened marked dirty, so closing it prompted to
+  save — and the save rewrote it. A UTF-8 BOM went to the server inside the
+  first batch, and a UTF-16 script came back U+FFFD-laden and unrecoverable.
+- **`End` on an empty results grid took the application down**, three
+  keystrokes from any query returning no rows.
+- **Delete and Rename were offered on system objects**, and renaming a system
+  database dropped every connection to it on the way to an error the server
+  was always going to return. Login Properties could likewise rename a
+  `##MS_*` login.
+- **A panic left the UI latched for the object's lifetime**, at 16 sites: a
+  query panel refusing every later Execute with a ticker still running, a
+  Properties dialog ignoring every button including Cancel, an inert Log File
+  Viewer toolbar, IntelliSense never returning for a database, a backup
+  counted as running forever, and tree nodes stuck on "Loading...".
+- **Long words were never broken and every caller clipped them**, so a
+  connection error to a too-long hostname showed forty characters of it and
+  never the informative end.
+- **A dialog did not follow a terminal resize** — the box kept the rect it was
+  centred into, so its entire button row could sit off-screen while it went on
+  swallowing every key — and dialog content overflowed the box on a terminal
+  too small for it.
+- **Ten property-page dropdowns displayed the first option as fact** when the
+  server's value wasn't in the list, on exactly the objects an admin opens the
+  page to investigate; one of the ten wrote it back.
+- **`Ctrl+Z` lied on four grids**, reporting a revert while the grid kept
+  every change — enough to create an availability group with a database the
+  user had just told the app to forget.
+- **Config could be lost two ways**: an unreadable `config.json` read as "no
+  config" and was then overwritten with emptiness, and `gossms.key` — the one
+  file that can read it — was the only thing not written atomically.
+  `WriteAtomic` also stopped re-widening file modes and stopped replacing
+  symlinks with regular files.
+- **The Detail Browser parked one goroutine per row** waiting on an 8-slot
+  gate, and could deadlock the folder outright if a worker died.
+- Backup and Restore failure messages no longer clip to one line, the Restore
+  script's `MOVE` clauses are visible rather than running off a 300-column
+  line, the Destination field no longer draws empty for a short path, the
+  endpoint pipeline no longer reads any error as "the login isn't there" or
+  trusts a peer certificate by name, "Jobs Without Schedules" no longer hides
+  the jobs it couldn't check, and F5 reaches a dashboard panel.
+
+### Changes
+
+- `gosmo` v0.0.8 → v0.0.9 — availability groups end to end, certificates and
+  the binary certificate exchange, the database mirroring endpoint, the error
+  log, the server's filesystem, an `ErrNotFound` sentinel, and the `Drop` /
+  `Rename` gaps filled in across the object families.
+- **`Table.Indexes` went from N+1 to two queries** whatever the index count —
+  ~640 ms to ~50-120 ms over an 18-index database, output byte-for-byte
+  identical.
+- **A per-database fan-out was built, measured, and thrown away**: it was
+  slower than serial at every width, because each worker needs a physical
+  connection and the handshake costs fifty times the query. What was kept is
+  that a database whose fetch fails is now skipped rather than failing the
+  whole page.
+- **`Drop` no longer means "or it was already gone"** — gosmo's drop methods
+  lost `IF EXISTS`, so "deleted" means deleted. Generated scripts keep it,
+  since they exist to be re-run.
+- One implementation each, where there had been several: the grid-plus-editor
+  idiom, the dropdown that must not misreport a server value, the
+  schema-scoped tree loaders, the two history charts, and the panel toolbar
+  geometry. `core.Min`/`core.Max` gave way to Go's builtins across 145 call
+  sites.
+- The T-SQL of every gosmo write method is now pinned by test — 84 of 183 had
+  no coverage at all — and the dialog registry is pinned by reflection over
+  `App`'s own fields.
+
 ## v0.0.6 — 2026-08-11
 
 The Activity Monitor release. Five live tabs over DMV data arrive with a

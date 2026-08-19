@@ -144,6 +144,8 @@ gossms/
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
+│   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export
+│   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
 │   │
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md

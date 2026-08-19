@@ -187,6 +187,12 @@ func (d *DropDown) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		return true
 	}
+	// A click outside an open list closes it and returns false, so the same
+	// click also reaches whatever it landed on. That is the convention across
+	// this codebase's overlays — layout.PanelManager's panel combo does the
+	// same — not an oversight: the click is aimed at the thing underneath, and
+	// swallowing it costs the user a second one. Change both together or the
+	// two dropdowns stop behaving alike.
 	if d.open {
 		d.open = false
 	}

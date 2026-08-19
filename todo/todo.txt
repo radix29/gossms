@@ -44,9 +44,11 @@ coherent.
     - auto indent ?
     - external editor nvim, nano , etc
 
-- group ny schema
+- group by schema
 
 - execution plan : graphic representation : align to the top like in SSMS
+
+- kryboar shortcuts for mac (pltform dependednt?)
 --------------
 
 sp_blitz & index with reference built in
@@ -67,11 +69,11 @@ bunx ccusage          # Show all detected sources by day (default)
 
 commit before both projects
 
-prepare gosmo for release v0.0.8 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gosmo for release v0.0.9 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
 
-prepare gossms for release v0.0.6 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
+prepare gossms for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
 

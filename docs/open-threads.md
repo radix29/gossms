@@ -15,6 +15,15 @@ a settled question being reopened.
 
 ## By design — not issues, do not re-raise
 
+- **Three items came off README's Known Issues 2026-08-18, as scope notes
+  rather than defects**, and are not to be re-listed there: SQL Agent's
+  ungated Start/Stop Job and missing step reordering, Always On's
+  no-rollback of a partly created group, and Always On's one-login-for-every-
+  replica limit of `db.ServerConn.Peer`. Each is described in full below — see
+  § Reworks named in README's Known Issues and § Unbuilt features README
+  already promises. README's Known Issues now names only Reports plus the
+  environment and distribution caveats.
+
 - **No gosmo `Drop*` write method carries `IF EXISTS`, and that is the
   decision, not an omission.** Settled 2026-08-13 after a review found the
   family split down the middle: dropping a view that was already gone reported
@@ -74,8 +83,8 @@ a settled question being reopened.
   bumping `require`, and commenting out the `replace`/`ignore` pair are steps
   of the release process itself (ARCHITECTURE.md § Developing against a local
   gosmo checkout). A CI release build not resolving gosmo mid-development is
-  the expected consequence. As of `v0.0.6` the pair is commented out and
-  `require` names gosmo `v0.0.8`; re-activate both when work resumes.
+  the expected consequence. As of `v0.0.7` the pair is commented out and
+  `require` names gosmo `v0.0.9`; re-activate both when work resumes.
 
 - **A Grid/Text query result can exhaust memory.** The Max Result Rows option
   and every `maxRows` parameter behind it were removed 2026-08-01: a result
@@ -399,6 +408,41 @@ of Always On's `agSetSelect`, with `changedTo` gating every write. See
   is rarer than the schedule case, not equally common. Worth knowing before
   anyone tries to reproduce it by dropping a login and concludes the code is
   fine.
+
+## Left open by the 2026-08-18 cross-repo review
+
+The pass closed gosmo's write-statement coverage gap and the New-X grids'
+missing `RevertFn`s (see `docs/journal.md`). These are what it found and did
+not act on.
+
+- **Four gosmo methods still have no test: `BackupHeaders`, `BackupHistory`,
+  `BackupFileList`, `BackupFileListForSet`.** All four are reads —
+  `RESTORE HEADERONLY`/`FILELISTONLY` and an msdb history query — so
+  `WithScript` cannot capture them and only a live server exercises them. They
+  *are* driven by the Restore dialog's Analyze Backup, which was verified live
+  2026-07-19; what is missing is a test, not the verification.
+
+- **Five functions in gossms are unreachable, including from tests**:
+  `charts.HistoryChart.Plot`, `charts.StackedHistoryChart.Plot`,
+  `charts.historySpec.plotRect`, `core.ClearRect`, `theme.SetPalette`. The last
+  is advertised in `theme/doc.go` as the palette extension point, so it is a
+  keep-and-document rather than a delete. gosmo's no-removal rule does not
+  reach these — they are gossms's own.
+
+- **`internal/tuikit/layout` is the least-covered tuikit package (46.6%)**, and
+  it is where `Splitter` and `PanelManager` keep their drag latches — the class
+  of bug that has shipped here before. `internal/activity` (54.8%) has the
+  collector's backoff/pause/stop paths uncovered. Both are unit-testable with
+  no server and no terminal.
+
+- **`fileutil.WriteAtomic` preserves mode but not owner.** The rename makes the
+  replacement file owned by whoever is running, where a write-in-place would
+  have kept the original's uid/gid. It only bites if gossms is run as root over
+  a user-owned file, which is not a case it supports; recorded so the next
+  reader of `modeFor` doesn't assume ownership is handled there too.
+
+- **`activity_monitor_proctab.go`'s `"Not connected."` is the only status
+  string of ~40 with a trailing period.** Cosmetic.
 
 ## gosmo items left from the 2026-08-12 review
 

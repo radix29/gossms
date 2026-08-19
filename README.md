@@ -41,7 +41,8 @@ required.
   per-column grants and an Effective Permissions view.
 - **Backup & Restore** — full option dialogs (destination, type, media,
   compression, point-in-time, file relocation) run as cancellable
-  background tasks with live progress.
+  background tasks with live progress. Browse picks paths on the *server's*
+  filesystem, with that host's own path rules.
 - **Activity Monitor** — live dashboards over DMV data: throughput, waits,
   memory, I/O latency, and checkpoints, plus TempDB, blocking chains, and a
   Sessions tab powered by sp_WhoIsActive.
@@ -134,12 +135,6 @@ Environment and distribution:
 
 Functional gaps:
 
-- SQL Agent: Start/Stop Job aren't gated on job state (the server's error is
-  what tells you), and job steps can't be reordered
-- Always On: a group that is created but whose secondary fails to join is left
-  as it is rather than rolled back, and every replica is reached with the tree
-  connection's own login, so a topology with per-instance credentials can't be
-  built from here
 - Reports (server- and database-level) aren't built yet
 
 ## Contributing

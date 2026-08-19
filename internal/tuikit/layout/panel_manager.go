@@ -364,6 +364,11 @@ func (pm *PanelManager) HandleMouse(ev *tcell.EventMouse) bool {
 			pm.comboOpen = false
 			return true
 		}
+		// Closing on a click outside the list, then falling through to the
+		// active panel below, so the same click also does what it was aimed
+		// at — the convention widgets.DropDown follows too. Verified against
+		// the running app 2026-08-18: the click that dismisses the combo also
+		// moves the query editor's caret, which is the intended behaviour.
 		if ev.Buttons() == tcell.Button1 {
 			pm.comboOpen = false
 		}

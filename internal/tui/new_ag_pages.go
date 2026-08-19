@@ -190,6 +190,13 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 	}
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
+	// The inclusions the page opened with — nothing, since the group does not
+	// exist yet. RevertFn needs a baseline of its own because the state it
+	// restores lives on the dialog, not in the grid: Ctrl+Z otherwise emptied
+	// the name field, said "Reverted to the loaded values", and left every
+	// database the user had ticked still queued for the CREATE.
+	baseline := slices.Clone(d.databases)
+
 	gridRow := propsheet.NewGridRow(grid, 7)
 	// The grid mirrors state the checkbox owns, so it has to be redrawn from
 	// that state whenever the checkbox is read back — the row itself is never
@@ -203,6 +210,10 @@ func (d *NewAGDialog) databaseRows() (propsheet.Row, propsheet.Row, func()) {
 			}
 		}
 		return false
+	}
+	gridRow.RevertFn = func() {
+		d.databases = slices.Clone(baseline)
+		reload()
 	}
 	return gridRow, includeRow, commit
 }
@@ -287,11 +298,25 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		reload()
 	})
 
+	// The replica list the page opened with. Same reason databaseRows keeps
+	// one: without it Ctrl+Z reverted the visible rows and left every added
+	// replica, and every per-replica mode already committed, in the request.
+	// It restores the whole list, backup priorities included — those are set
+	// on the Backup Preferences page but stored on these same replicas, and a
+	// dialog that has not been applied has no other baseline to keep them
+	// against.
+	baseline := cloneAGReplicas(d.replicas)
+
 	gridRow := propsheet.NewGridRow(grid, 8)
 	gridRow.DirtyFn = func() bool {
 		commit()
 		reload()
 		return len(d.replicas) > 1
+	}
+	gridRow.RevertFn = func() {
+		d.replicas = cloneAGReplicas(baseline)
+		current = -1
+		reload()
 	}
 
 	return []propsheet.Row{
@@ -404,6 +429,16 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 	}
 	reload := wireGridEditor(grid, headers, rowsFor, commit, sync)
 
+	// Priorities are keyed by replica name rather than snapshotted as a slice,
+	// unlike the General page's baseline: the replica list belongs to that
+	// page, and a replica added there after this page was built must survive a
+	// revert here. A name missing from the map is such a replica, and keeps
+	// whatever priority it was added with.
+	basePriority := map[string]int{}
+	for _, r := range d.replicas {
+		basePriority[r.name] = r.backupPriority
+	}
+
 	gridRow := propsheet.NewGridRow(grid, 8)
 	// The replica list is the General page's, and a replica added there after
 	// this page was built has to show up here. Rebuilding on every dirty check
@@ -412,6 +447,15 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 		commit()
 		reload()
 		return false
+	}
+	gridRow.RevertFn = func() {
+		for _, r := range d.replicas {
+			if p, ok := basePriority[r.name]; ok {
+				r.backupPriority = p
+			}
+		}
+		current = -1
+		reload()
 	}
 
 	d.commitBackupPage = func() {

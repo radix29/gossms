@@ -4,6 +4,293 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.7] - 2026-08-19
+
+### Added
+
+- **Always On Availability Groups**, built in seven phases and end to end —
+  reading a topology, editing it, watching it, and creating one.
+  - **Object Explorer** grows an `Always On High Availability` folder between
+    Server Objects and SQL Server Agent, with nine node types over
+    availability groups, replicas, availability databases and listeners
+    (`explorer_alwayson.go`). The folder is listed unconditionally and reports
+    "Always On is not enabled on this instance" on expansion rather than being
+    hidden behind a query. Labels distinguish a group with no visible primary
+    as `(Not synchronizing)` rather than `(Secondary)`, and a database shows
+    every distinct state across replicas instead of collapsing them.
+  - **Everything follows the primary.** `sys.availability_groups` and
+    `sys.availability_replicas` are cluster-wide, but the `sys.dm_hadr_*` DMVs
+    describe only what the connected instance can see, so a topology read from
+    a secondary comes back with every peer's role, connection state and health
+    blank. `db.ServerConn.Peer` (`internal/db/peer.go`) opens and caches a
+    connection to another instance with the same credentials, and every loader
+    re-reads through it when the local instance is not the primary; the tree
+    says so with a `(read from primary <host>)` note. An unreachable primary
+    degrades to the partial local view with a `NodeError` naming the host,
+    rather than failing.
+  - **AG Properties** — General, Backup Preferences and Read-Only Routing over
+    the existing `PropDialog` shell. Everything routes through `agOnPrimary`,
+    which errors rather than degrades, since `ALTER AVAILABILITY GROUP` is
+    rejected on a secondary. Apply re-resolves the primary and diffs against
+    the values captured at load, so a concurrent change to a replica this user
+    never touched is not written back. Read-only routing is written in three
+    phases (`planAGRoutingOps`) — URLs being set, then every list, then URLs
+    being cleared — because the server refuses a list naming a replica with no
+    URL and refuses to clear a URL a list still names.
+  - **AG Dashboard** — a panel rather than a dialog, in two modes: one group
+    (header rollup, replica grid, per-database grid) or every group from the
+    Always On root. The two numbers worth having are the two SQL Server does
+    not report: estimated data loss, measured against the *primary's* row for
+    the same database, and estimated recovery time from redo queue over redo
+    rate. Both render an em dash when unknown and never 0s — "no data loss"
+    and "we cannot tell" are opposite answers. Refresh rate is `+`/`-` over
+    5/10/30/60 s, matching the Activity Monitor's keys.
+  - **Operations** (`alwayson_menu.go`) — add and remove a database, join and
+    unjoin a secondary's own copy, suspend and resume data movement, add and
+    remove a replica, add, modify and remove a listener, fail over (planned or
+    forced with data loss), and drop a group. Where an operation runs is part
+    of what it means: membership changes go to the primary, suspend and resume
+    to the tree's own connection, and the confirmation says which instance the
+    user is about to affect. Failover lives on the replica being promoted.
+    `agFailoverRefusal` explains rather than sending a statement the cluster
+    type forbids, naming Pacemaker's `crm resource move` for an EXTERNAL
+    group.
+  - **New Availability Group** — four statements across three instances:
+    CREATE on the connected instance, then JOIN and (for automatic seeding)
+    GRANT CREATE ANY DATABASE run by each secondary against itself through
+    `Peer`. `annotateScript` labels every statement in Script Changes with the
+    instance it targets, since running the set whole against the primary would
+    join the primary to its own group. A group created whose secondary cannot
+    join reports exactly that rather than a plain failure.
+  - **Add Replica**, **Add Database**, **Add Listener** and **Listener
+    Properties**. Add Replica reads the endpoint URL through a Connect button
+    rather than at apply time, and replaces what was typed with the instance's
+    own `@@SERVERNAME`; the URL stays editable afterwards for a topology where
+    only the FQDN resolves, with `validateEndpointURL` behind it. A listener
+    takes a list of addresses, and the typed IP/mask counts toward the spec
+    without pressing Add Address.
+  - **New Database Mirroring Endpoint** — creates the certificates, logins,
+    users, endpoints and grants across every replica, exchanging **public**
+    certificates over connections gossms already has (`CERTENCODED` /
+    `CREATE CERTIFICATE ... FROM BINARY`) instead of the documented
+    BACKUP-to-file-and-copy route. No private key is read, transmitted or
+    written. Every step is skipped when what it creates already exists, so a
+    half-configured pair is completed rather than refused.
+  - A database in an availability group carries its state in the **Databases
+    folder** label. The state shown is the local replica's alone.
+- **Log File Viewer** (`log_viewer.go`) — SQL Server and SQL Agent error logs,
+  current or archived, over a grid of Date/Source/Message with a details pane
+  under a draggable divider, a filter field, Refresh and Export. Rows are
+  newest first with the direction marked in the header, and the sort is stable
+  so a startup sequence keeps the order the log wrote it in. Object Explorer
+  grows a **Management** folder (SQL Server Logs) and **Error Logs** under SQL
+  Server Agent.
+- **Object Explorer folder filter** — SSMS's Filter Settings on a folder node,
+  over Name, Schema, Creation Date and Is Memory Optimized. Filtering runs in
+  `fetchChildren` on whatever the loader returned, so a filter survives
+  Refresh, collapse/expand and reconnect without any loader knowing it exists.
+  Sub-folders and error nodes are never filtered out, and the `(filtered)`
+  suffix is rendered rather than stored. `App.savedFilters`, keyed by
+  connection/database/schema/table/node type, keeps a filter across a
+  disconnect for the session; nothing is written to disk.
+- **General Delete and Rename** (`explorer_object_ops.go`) — one table of what
+  each verb means per node type, so a node type absent from it offers neither.
+  Confirmations scale with the blast radius: a plain Yes/No for one object,
+  the retype-the-name dialog for a database. Renaming a database offers the
+  forced form, since the tree's own metadata connections are enough to deny
+  `ALTER DATABASE ... MODIFY NAME` exclusive access, and MULTI_USER is
+  restored even when the rename fails.
+- **Backup and Restore now browse the *server's* filesystem.** Both Browse
+  buttons listed the client's disks and built every path with
+  `path/filepath`, so on a Linux client browsing a Windows instance
+  `C:\...\db.bak` was treated as relative and joined onto the working
+  directory — a destination that could never work, scripted with no error.
+  `dialogs.FileSystem` and `PathRules` (`WindowsPathRules`/`PosixPathRules`)
+  now follow the host being browsed, over gosmo's directory listing and fixed
+  drives. A slow listing paints `Listing <dir> ...` rather than looking hung.
+- **Restore File Locations** (`restore_dialog_files.go`) — a view of its own
+  for relocation, with three explicit choices (relocate when renaming, keep
+  the backup's locations, relocate everything into two named folders), the
+  locations recorded in the backup, a per-file preview, and a Default Location
+  button that fills in the server's own data and log paths. The preview and
+  the `MOVE` clauses come from one function, so they cannot drift.
+- **`Ctrl+Z` reverts a Properties page** to the values it loaded with, without
+  a round trip, reporting either what it restored or that there was nothing to
+  revert. Handled beside `F5` at the top of `HandleKey`, so it works from the
+  page list and button row too. Also a Properties Dialogs section in Help.
+- **Text files keep their encoding.** `internal/tui/text_encoding.go` detects
+  UTF-8, UTF-8-with-BOM and UTF-16 **from a BOM and nothing else** — a guessed
+  encoding rewrites a script in one the user never chose — reports the line
+  ending alongside it, and re-encodes through both on save.
+- **Open dialogs follow a terminal resize.** `ModalDialog.Relayout()`,
+  broadcast from `App.layoutAll` over the dialog stack, above the
+  small-terminal early return.
+- **`internal/fileutil`** — `WriteAtomic`/`syncDir`, extracted from
+  `internal/config` and now behind saved `.sql` scripts and the Log File
+  Viewer's export as well as `config.json`, `gossms.key` and the `.corrupt`
+  sidecar.
+- `dialogs.PromptDialog` — a one-line input with OK/Cancel, a selected initial
+  value and a `Validate` hook — and `core.ClipScreen`.
+
+### Changed
+
+- `gosmo` dependency updated `v0.0.8` → `v0.0.9` — availability groups end to
+  end, certificates and the database master key (including the binary
+  certificate exchange), the database mirroring endpoint, the error log, the
+  server's filesystem, `ErrNotFound`, the `Drop`/`Rename` gaps filled in, and
+  a `Table.Indexes` that no longer costs a round trip per index.
+- **`Table.Indexes` went from N+1 to two queries**, whatever the index count.
+  Measured ~640 ms → ~50-120 ms over an 18-index database, with the output
+  byte-for-byte identical across every index shape.
+- **A per-database fan-out was built, measured, and thrown away.** An 8-wide
+  fan-out of the New Login and User Mapping per-database work was slower than
+  serial on every run at every width from 2 to 8, because each worker needs a
+  physical connection and a handshake costs ~180 ms against ~3.6 ms of query
+  latency. Both halves stay serial, with the numbers in a comment. What was
+  kept is the policy: a database whose fetch fails is skipped rather than
+  failing the whole page, so one inaccessible availability-group secondary no
+  longer takes down a page with 45 other databases on it.
+- **gosmo's `Drop*` methods no longer carry `IF EXISTS`**, so "deleted" means
+  deleted rather than "the object was already gone". Generated *scripts* keep
+  it, since Scripter's output exists to be re-run.
+- `core.Min`/`core.Max` retired in favour of Go's builtins across 145 call
+  sites in 51 files; `core.Clamp` stays, being generic over `cmp.Ordered`.
+  `core.Itoa` is gone in favour of `strconv`.
+- `redrawGrid` and `wireGridEditor` are the one implementation of the
+  grid-plus-detail-editor idiom, and `preservingItems`/`selectPreserving` the
+  one implementation of a dropdown that must not misreport a server value.
+  The six schema-scoped Object Explorer loaders became `loadSchemaScoped` plus
+  `withSystemFolder`, and the two history charts one `historySpec`, each
+  verified byte-identical against the code it replaced.
+- `panel_toolbar.go` holds the toolbar geometry Activity Monitor and the Log
+  Viewer had been duplicating; `dialog_common.go` and `system_principals.go`
+  likewise.
+- `RESTORE` statements are scripted one clause per line, so a relocating
+  restore's `MOVE` clauses are visible in the editor rather than running past
+  the right edge of a ~300-column single line.
+- Backup and Restore failure messages wrap to the space available instead of
+  clipping to one line, in the progress view and the option form both.
+- `applyConfigRows` reads `sys.configurations` once per Apply rather than once
+  per dirty option.
+- The T-SQL for every gosmo write method is now pinned by test (107 cases over
+  the 84 that had no coverage at all), and `dialog_registration_test.go`
+  reflects over `App`'s fields to pin `allDialogs` completeness.
+
+### Fixed
+
+- **Every replica but the first was unreachable on six grid pages** — three AG
+  Properties pages, three New Availability Group pages, plus the owner-transfer
+  dropdown. `DataGrid.SetData` resets the selection to 0,0, and these called it
+  from inside the grid's own `OnSelectRow`, *after* the grid had moved: the
+  move was undone, `propsheet.GridRow` correctly reported "not handled", and
+  `Form` took that as its cue to move focus out of the grid on the very first
+  arrow key. There was no way, mouse or keyboard, to select a second replica —
+  and therefore no way to set its availability mode, failover mode, seeding
+  mode, backup priority, routing URL or routing list, or to include any
+  database but the first in a new group.
+- **`File > Open` was lossy and `File > Save` destroyed the original.**
+  `savedText` was seeded from the raw bytes rather than from what the editor
+  actually held, so a file with a tab, a CRLF or a BOM opened marked dirty —
+  which prompted to save on close, and the save rewrote it. A UTF-8 BOM was
+  sent to the server inside the first batch (`Incorrect syntax near '﻿'`),
+  UTF-16 loaded as mojibake, and a UTF-16 script saved back came out
+  U+FFFD-laden and unrecoverable. The same one-line defect sat in
+  `openCellValuePanel`, under a comment promising the opposite.
+- **`End` on an empty `DataGrid` took the application down.** The four
+  whole-list jumps had no empty-grid guard, so `selRow` reached -1, `Draw`
+  bounded it only from above, and `SliceRowSource.Row(-1)` panicked on the UI
+  goroutine. Three keystrokes from any zero-row query result.
+- **Delete and Rename were offered on system objects, and one of them did
+  damage before failing.** The System * folders emit the same node types as
+  the user ones, so `master` carried both. Rename on a system database ran
+  `SINGLE_USER WITH ROLLBACK IMMEDIATE` *first* and only then found out the
+  server refuses — dropping every connection on the way to an error.
+  `nodeData.IsSystem` now gates the menu and again at the statement.
+- **Login Properties could rename a `##MS_*` login**, which the server permits
+  and does not follow up by fixing the matching users in master and msdb.
+- **A panic left every "busy" latch set for the object's lifetime**, across 16
+  sites. Query execution was the worst: one panic left the panel refusing
+  every later Execute, the context uncancelled, and a ticker waking the event
+  loop once a second for the rest of the process's life. Also both Properties
+  Apply pipelines, where the applying latch makes the sheet ignore *every*
+  button including Cancel; the Log File Viewer's whole toolbar; an Activity
+  Monitor tab stuck at "Running..."; IntelliSense never returning for a
+  database; a backup or restore counted as running forever; and an Object
+  Explorer node or Detail Browser pane stuck on "Loading...".
+  `App.safegoRepair` is the one mechanism.
+- **Wrapped text never broke an over-long word, and every caller clipped it.**
+  A hostname longer than the wrap width was cut at the pane's right edge with
+  no ellipsis, so a connection error showed forty `a`s and never the
+  informative end of the name the user got wrong. Behind the Log File Viewer's
+  details pane, every Alert/Confirm/Prompt dialog, `propsheet`'s notes and the
+  backup and restore messages.
+- **Dialog content overflowed a clamped rect.** On a terminal smaller than the
+  dialog, content still drew at the offsets of the size it asked for: at 30x8
+  the Connect dialog's rows ran past the border and the button row landed on
+  top of them. Content is now clipped to `InnerRect` when clamped, and
+  dialog-level scrollbars go through `ModalDialog.DrawContentScrollbar`.
+- **Ten property-page dropdowns displayed the first option as fact** when the
+  server's own value was not in the list — a job owned by a dropped login, a
+  login whose default database no longer exists. One of the ten wrote it back:
+  ticking E-mail on a job with no operator sent whichever operator sorted
+  first.
+- **`Ctrl+Z` lied on four grids** — the New Availability Group dialog's
+  databases, replicas and backup-priority grids and the New Endpoint dialog's
+  instances grid set `DirtyFn` with no `RevertFn`, so the sheet reported
+  "Reverted to the loaded values" while the grid kept every change. OK from
+  there would have created a group with a database the user had just told the
+  app to forget.
+- **Both user-mapping pages committed the row the user was looking at back
+  over its own Revert**, and the Schema column showed the loaded value rather
+  than the edited one, so a schema change was invisible until Apply.
+- **Config could be lost in two ways.** `Load` treated any read error — a
+  permission change, EIO — as "there is no config", and the next `Save` of
+  some unrelated setting wrote that emptiness over a file that was very likely
+  intact; only `fs.ErrNotExist` is a first run now, and anything else makes
+  `Save` refuse. And `gossms.key`, the one file that can read `config.json`,
+  was the only thing not written atomically — a crash between the two left
+  every saved password unrecoverable. `writeFileAtomic` also now flushes the
+  directory.
+- **`WriteAtomic` re-widened the files it replaced and broke symlinks.** A
+  rename creates a new inode, so a `.sql` chmodded 0600 came back 0644 on the
+  next `Ctrl+S`; the existing mode is now kept with the caller's constant as a
+  ceiling. A symlinked path was replaced by a regular file with the real file
+  left stale, including — after a second pass — when the link dangles.
+- **The Detail Browser's backfill bounded the fetches but not the goroutines**,
+  parking one per row (399 over baseline for 400 rows) whose only job was to
+  wait in line, and could deadlock the loader outright if a worker died. Now a
+  fixed pool of at most 8 workers over a pre-filled queue.
+- **`Restore` used the wrong backup set's file list, `Analyze` reported it, and
+  the Destination field drew empty.** The last is an `InputField` bug of long
+  standing: replacing a long value with a short one scrolled the box past the
+  end of its own text, so every character sat off-screen to the left while the
+  caret was visible.
+- **The endpoint pipeline treated any lookup error as "the login isn't
+  there"**, so a dropped connection surfaced as a failed `CREATE LOGIN` on the
+  dialog where telling those apart is the whole diagnosis; it now tests
+  `gosmo.ErrNotFound` and falls back to the collision on CREATE, which is
+  stronger evidence than a lookup that metadata visibility can silently filter.
+  It also trusted a peer certificate by name, so a reinstalled instance left a
+  stale public certificate in place and the endpoint then refused every
+  connection with nothing saying why; thumbprints are now compared. And its
+  principal names survive a named instance, where `@@SERVERNAME`'s backslash
+  had been producing `[HOST\INST_login]`.
+- **"Jobs Without Schedules" hid the jobs it could not check** — a failed
+  per-job round trip dropped the job from a report whose entire subject is
+  jobs that are missing something. It now reports `Unknown` alongside `None`.
+- **F5 never reached a dashboard panel**, being intercepted globally for query
+  execution; the active panel now gets first refusal, exactly as Tab already
+  did.
+- A UTF-16 file with an unpaired surrogate was decoded lossily and reported as
+  clean; `streamResultSet` skipped `EndSet` for a set whose `BeginSet` failed;
+  `PadRight`/`PadLeft` could return one column wider than asked for on invalid
+  UTF-8; folding an over-long message re-injected spaces into hard-broken
+  words; `scrollToShow` scrolled past the row it was asked to reveal on a
+  zero-height viewport; the New-object dialogs reported `Database "x" created`
+  for a database merely added to a group; the Log File Viewer's details pane
+  left a 1- or 2-column pane unwrapped; and `Clamp`'s behaviour on an empty
+  range is now documented rather than guessed at.
+
 ## [0.0.6] - 2026-08-11
 
 ### Added

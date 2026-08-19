@@ -2830,3 +2830,67 @@ the tree at two tables and the details pane at all eight; the new one shows
 two in both, with row counts and sizes still landing on the right rows. The
 Databases folder's filter survived a real Disconnect and reconnect —
 `Databases (filtered)`, one row in the tree, one in the pane.
+
+---
+
+## Cross-repo review: gosmo write-statement coverage, and Ctrl+Z on the New-X grids (2026-08-18)
+
+A review pass over both repos. The health baseline came back clean —
+`gofmt`, `go vet`, `staticcheck` and `go test -race ./...` all silent in both,
+every one of gosmo's ~60 `'%s'` SQL sites correctly escaped, 336 `X`/`XContext`
+pairs with no DB-op method missing its variant, no `SetData` inside an
+`OnSelectRow`, no bare `postEvent`+`wakeEventLoop`, no dialog-level
+`core.DrawScrollbar` outside the clip. Two things came out of it.
+
+**gosmo: 84 of 183 write methods had no test at all.** Not thin coverage —
+none, offline or live, so the T-SQL each one generates was never asserted
+anywhere. `WithScript` plus a zero-value receiver is a serverless harness for
+exactly this (`&Database{server: &Server{}, name: …}` reaches the exec
+chokepoint before any `*sql.DB`), which is what made the gap cheap to close:
+`script_write_common_test.go` plus five family files, 107 cases, and the count
+is now 4 — `BackupHeaders`, `BackupHistory`, `BackupFileList` and
+`BackupFileListForSet`, which are reads and need a server. Offline coverage
+went 30.4% → 36.2%.
+
+Every case asserts the **whole** statement and feeds a quote-hostile value
+through each parameter that reaches the text: `o'brien` for the literals,
+`a]b` for the brackets, `Sales.Archive` for a name that resolves as two parts
+unbracketed. A substring assert passes straight over both failure modes, which
+is the point of the file-level comment saying so.
+
+The one defect it turned up: **`CreateUserContext` with an empty login emitted
+`CREATE USER [x] FOR LOGIN []`** — `quoteIdent("")` is `[]` — which the server
+rejects with a message naming an empty login the caller never typed. A user
+with no login is `CREATE USER ... WITHOUT LOGIN`, a different statement, so it
+now refuses rather than guessing which was meant, matching the guard already on
+the user name. gossms's only caller always passes a real login, so nothing
+there changes.
+
+**gossms: Ctrl+Z lied on four grids.** `GridRow.Revert()` is a no-op without a
+`RevertFn`, and four pages set `DirtyFn` without one — the New Availability
+Group dialog's databases, replicas and backup-priority grids, and the New
+Database Mirroring Endpoint dialog's instances grid. Every other grid page in
+the app has both.
+
+Reproduced live on ubusql1 with two throwaway FULL-recovery databases:
+tick `zz_revert_a`, move off the row so the checkbox commits, `Ctrl+Z`. The
+group name cleared, the sheet said *Reverted to the loaded values*, and the
+grid still read `zz_revert_a | True` — OK from there would have created the
+group with a database the user had just told the app to forget. A/B'd against
+the fixed binary, where the same sequence puts the row back to `False`.
+
+Each page now snapshots its own state at build time and restores it. The
+shapes differ and that is deliberate: the databases list is a value slice
+(`slices.Clone`); the replicas are pointers, so `cloneAGReplicas` copies each
+one — a shared snapshot would be edited by the changes it exists to undo; the
+Backup Preferences page keys its baseline **by replica name** rather than
+snapshotting the slice, because the replica list belongs to the General page
+and a replica added there after the backup page was built has to survive a
+revert on it. `new_object_revert_test.go` pins all four, and each of its three
+assertions fails against the unfixed closures.
+
+**The dismissing click on an open overlay passes through, and that is the
+convention.** Verified under tmux: the click that closes the panel-tab combo
+also moves the query editor's caret. `widgets.DropDown` does the same on its
+own outside-click branch. Both now say so, since a "fix" to either alone would
+split them.

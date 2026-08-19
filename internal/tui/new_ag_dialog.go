@@ -66,6 +66,18 @@ func (r *newAGReplica) spec() gosmo.AvailabilityReplicaSpec {
 	}
 }
 
+// cloneAGReplicas copies the list and every replica in it, so a snapshot taken
+// for a page's RevertFn is not aliased by the edits it exists to undo — the
+// slice holds pointers, and a plain slices.Clone would share every element.
+func cloneAGReplicas(replicas []*newAGReplica) []*newAGReplica {
+	out := make([]*newAGReplica, len(replicas))
+	for i, r := range replicas {
+		copied := *r
+		out[i] = &copied
+	}
+	return out
+}
+
 // newAGDatabase is one candidate database and whether it is to be included.
 type newAGDatabase struct {
 	name     string

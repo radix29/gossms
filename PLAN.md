@@ -23,12 +23,12 @@ queries, view/edit properties) are solid across all three supported
 platforms and authentication modes, not that every SSMS feature is
 covered — see [Feature backlog](#feature-backlog) for what can wait.
 
-`v0.0.6` (2026-08-11) is the current tag — the Activity Monitor (History,
-Sample, TempDB, Block, Sessions) and the charting library behind it, Find and
-Replace plus block editing in the query editor, the permissions gap-fill
-(`WITH GRANT OPTION`, column-level and effective permissions), per-edit
-editor undo, and the relicensing to GPL-3.0-or-later. Nothing is unreleased
-as of this tag.
+`v0.0.7` (2026-08-19) is the current tag — Always On Availability Groups end
+to end (browse, edit, dashboard, operations, create, and the mirroring
+endpoints behind them), the Log File Viewer, the Object Explorer folder
+filter, general Delete and Rename, server-side filesystem browsing for Backup
+and Restore with a File Locations view, and `Ctrl+Z` on a Properties page.
+Nothing is unreleased as of this tag.
 
 ## Ongoing practices (no end date)
 
@@ -45,25 +45,26 @@ These continue for the life of the project, release or not:
 
 ## Next up (working priority order)
 
-1. **Database Restore** dialog needs a complete rework — remote server
-   directory browsing, moving files, error messages, text trimming.
+1. **SQL Agent** needs a complete rework.
 
-2. **SQL Agent** needs a complete rework.
-
-3. **Database Reports** — the useful ones at server and database level:
+2. **Database Reports** — the useful ones at server and database level:
    disk usage, top tables.
 
-4. **Availability Groups** — viewing and managing AG topology and health.
-
-5. **Light / white theme** — selectable in Tools > Options, dark staying
+3. **Light / white theme** — selectable in Tools > Options, dark staying
    the default.
 
-6. **Authentication testing** — no infrastructure currently available;
+4. **Authentication testing** — no infrastructure currently available;
    blocked until access exists, not a code problem: Entra ID against
    Managed Instances and Azure SQL Database.
 
-7. **Platform testing** — build and exercise on macOS (no Mac available
+5. **Platform testing** — build and exercise on macOS (no Mac available
    yet; blocked on hardware/CI access, same as above).
+
+Closed in `v0.0.7`: the **Database Restore** rework (server-side browsing,
+the File Locations view, wrapped error messages, left-clipped paths — see
+`docs/open-threads.md` § Reworks named in README's Known Issues) and
+**Availability Groups** (viewing and managing AG topology and health). What
+was deliberately left out of each is recorded there rather than here.
 
 ## Feature backlog (later, no particular order)
 
