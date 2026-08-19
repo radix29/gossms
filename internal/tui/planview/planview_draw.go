@@ -16,6 +16,7 @@ import (
 func (v *PlanView) Draw(s tcell.Screen) {
 	v.drawTabBar(s)
 	v.drawStatementBar(s)
+	v.drawMissingIndexBanner(s)
 	switch {
 	case v.err != nil:
 		v.drawMessage(s, fmt.Sprintf("Error parsing execution plan: %v", v.err))

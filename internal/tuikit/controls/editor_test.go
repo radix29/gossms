@@ -225,6 +225,10 @@ func TestEditorToggleLineComments(t *testing.T) {
 	}
 }
 
+// Ctrl+Shift+U reaches the editor as KeyCtrlU+ModShift only because the
+// application layer folds it back there (tui.normalizeCtrlRune) — terminals
+// deliver it as a Ctrl+Shift-modified rune, or, on legacy encodings, as plain
+// Ctrl+U.
 func TestEditorCaseConversion(t *testing.T) {
 	e := newTestEditor("hello world")
 	e.selecting, e.selBlock = true, false

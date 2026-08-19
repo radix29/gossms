@@ -11,11 +11,6 @@ white/light style ? -> options, default dark
 Sequenced by value-per-day, not by section order. Each phase leaves the tool
 coherent.
 
-**Phase 1 — cash in what gosmo already has (mostly S, ~2–3 weeks)**
-4. General scripting engine + `Script … as ▸` on every node (§6.2a)
-5. Missing-index banner on execution plans; open/save `.sqlplan`
-6. Partition Functions/Schemes, Security Policies, Always Encrypted key
-
 **Phase 2 — the reporting and Query Store layer (M, ~3–4 weeks)**
 10. Query Store's seven views + Force/Unforce Plan (§8)
 11. Detach / Attach
@@ -48,7 +43,7 @@ coherent.
 
 - execution plan : graphic representation : align to the top like in SSMS
 
-- kryboar shortcuts for mac (pltform dependednt?)
+- keyboard shortcuts for mac (platform dependednt?)
 --------------
 
 sp_blitz & index with reference built in
@@ -75,6 +70,5 @@ do not commit or tag anything to git.
 
 prepare gossms for release v0.0.7 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
-
 
 

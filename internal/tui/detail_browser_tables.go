@@ -29,11 +29,15 @@ var tablesFolderColumns = []string{
 // fan-out is gone. loadDatabasesFolderDetails still needs its own — see the
 // note there for why the same collapse isn't available for database sizes.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	// data, not node: this runs on a background goroutine and the UI goroutine
+	// writes node.data underneath it (see explorerNode.snapshot). node stays
+	// behind as the identity panicRepair and postFinal key off.
+	data := node.data
 	app.safegoRepair("loading table details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
 
-		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByNameContext(ctx, data.DBName)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -43,7 +47,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
 		}
-		tables = filterObjects(node, tables, func(t *gosmo.Table) nodeData {
+		tables = filterObjects(data.Filter, tables, func(t *gosmo.Table) nodeData {
 			return nodeData{
 				Name: t.Name, Schema: t.Schema,
 				CreateDate: t.CreateDate, IsMemoryOptimized: t.IsMemoryOptimized,

@@ -185,7 +185,7 @@ type App struct {
 func NewApp() *App {
 	return new(App{
 		focus:      "explorer",
-		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  Ctrl+Shift+O Connect  |  Ctrl+Q Quit",
+		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
 }
@@ -363,26 +363,30 @@ func (a *App) buildUI() {
 	a.toolbar.SetButtons(a.buildToolbar())
 
 	a.contextMenu = new(controls.ContextMenu{})
-	a.connectDialog = NewConnectDialog(a)
-	a.findDialog = NewFindReplaceDialog(a)
-	a.helpDialog = NewHelpDialog(a)
-	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
-	a.updateDialog = NewUpdateDialog(a)
-	a.statusHistoryDialog = NewStatusHistoryDialog(a)
-	a.propsDialog = NewPropertiesDialog(a)
-	a.propDialog = NewPropDialog(a)
-	a.newDatabaseDialog = NewNewDatabaseDialog(a)
-	a.newLoginDialog = NewNewLoginDialog(a)
-	a.newJobDialog = NewNewJobDialog(a)
-	a.newScheduleDialog = NewNewScheduleDialog(a)
-	a.newAlertDialog = NewNewAlertDialog(a)
-	a.newOperatorDialog = NewNewOperatorDialog(a)
-	a.agAddDatabaseDialog = NewAGAddDatabaseDialog(a)
-	a.agAddListenerDialog = NewAGAddListenerDialog(a)
-	a.agAddReplicaDialog = NewAGAddReplicaDialog(a)
-	a.newAGDialog = NewNewAGDialog(a)
-	a.newEndpointDialog = NewNewEndpointDialog(a)
-	a.fileDialog = dialogs.NewFileDialog(a.screen)
+
+	// Every dialog is constructed through registerDialog, which is what puts
+	// it in allDialogs. Registration order is only a tie-break for dialogs
+	// that became visible in the same tick; see syncDialogStack.
+	a.connectDialog = registerDialog(a, NewConnectDialog(a))
+	a.findDialog = registerDialog(a, NewFindReplaceDialog(a))
+	a.helpDialog = registerDialog(a, NewHelpDialog(a))
+	a.keyDiagDialog = registerDialog(a, NewKeyDiagnosticsDialog(a))
+	a.updateDialog = registerDialog(a, NewUpdateDialog(a))
+	a.statusHistoryDialog = registerDialog(a, NewStatusHistoryDialog(a))
+	a.propsDialog = registerDialog(a, NewPropertiesDialog(a))
+	a.propDialog = registerDialog(a, NewPropDialog(a))
+	a.newDatabaseDialog = registerDialog(a, NewNewDatabaseDialog(a))
+	a.newLoginDialog = registerDialog(a, NewNewLoginDialog(a))
+	a.newJobDialog = registerDialog(a, NewNewJobDialog(a))
+	a.newScheduleDialog = registerDialog(a, NewNewScheduleDialog(a))
+	a.newAlertDialog = registerDialog(a, NewNewAlertDialog(a))
+	a.newOperatorDialog = registerDialog(a, NewNewOperatorDialog(a))
+	a.agAddDatabaseDialog = registerDialog(a, NewAGAddDatabaseDialog(a))
+	a.agAddListenerDialog = registerDialog(a, NewAGAddListenerDialog(a))
+	a.agAddReplicaDialog = registerDialog(a, NewAGAddReplicaDialog(a))
+	a.newAGDialog = registerDialog(a, NewNewAGDialog(a))
+	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
+	a.fileDialog = registerDialog(a, dialogs.NewFileDialog(a.screen))
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
 		// serverPathBase, not filepath.Base: the path may use the SQL Server
 		// host's separator, not this machine's — filepath.Base of
@@ -395,27 +399,27 @@ func (a *App) buildUI() {
 				}
 			})
 	}
-	a.queryListDialog = NewQueryListDialog(a)
-	a.optionsDialog = NewOptionsDialog(a)
-	a.filterDialog = NewFilterDialog(a)
-	a.promptDialog = dialogs.NewPromptDialog(a.screen)
-	a.tasksDialog = NewTasksDialog(a)
-	a.confirmDialog = dialogs.NewConfirmDialog(a.screen)
-	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(a.screen)
-	a.alertDialog = dialogs.NewAlertDialog(a.screen)
-	a.backupDialog = NewBackupDialog(a)
-	a.restoreDialog = NewRestoreDialog(a)
+	a.queryListDialog = registerDialog(a, NewQueryListDialog(a))
+	a.optionsDialog = registerDialog(a, NewOptionsDialog(a))
+	a.tasksDialog = registerDialog(a, NewTasksDialog(a))
+	a.filterDialog = registerDialog(a, NewFilterDialog(a))
+	a.promptDialog = registerDialog(a, dialogs.NewPromptDialog(a.screen))
+	a.confirmDialog = registerDialog(a, dialogs.NewConfirmDialog(a.screen))
+	a.confirmTypedDialog = registerDialog(a, dialogs.NewTypedConfirmDialog(a.screen))
+	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
+	a.backupDialog = registerDialog(a, NewBackupDialog(a))
+	a.restoreDialog = registerDialog(a, NewRestoreDialog(a))
+}
 
-	// Registration order only matters as a tie-break for dialogs that became
-	// visible in the same tick; see syncDialogStack.
-	a.allDialogs = []Dialog{
-		a.connectDialog, a.findDialog, a.helpDialog, a.keyDiagDialog, a.updateDialog, a.statusHistoryDialog, a.propsDialog, a.propDialog,
-		a.newDatabaseDialog, a.newLoginDialog,
-		a.newJobDialog, a.newScheduleDialog, a.newAlertDialog, a.newOperatorDialog,
-		a.agAddDatabaseDialog, a.agAddListenerDialog, a.agAddReplicaDialog, a.newAGDialog, a.newEndpointDialog,
-		a.fileDialog, a.queryListDialog, a.optionsDialog, a.tasksDialog, a.filterDialog, a.promptDialog,
-		a.confirmDialog, a.confirmTypedDialog, a.alertDialog, a.backupDialog, a.restoreDialog,
-	}
+// registerDialog appends d to a.allDialogs and hands it back, so a dialog is
+// constructed and registered in one expression. syncDialogStack only ever
+// considers what allDialogs names, so a dialog assigned to its App field and
+// not appended is built and shown but never drawn or given input — which has
+// happened, and is what TestEveryAppDialogFieldIsRegisteredInAllDialogs
+// checks for.
+func registerDialog[T Dialog](a *App, d T) T {
+	a.allDialogs = append(a.allDialogs, d)
+	return d
 }
 
 func (a *App) focusExplorer() {

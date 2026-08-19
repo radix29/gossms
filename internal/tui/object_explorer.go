@@ -30,6 +30,22 @@ type explorerNode struct {
 	cancelLoad context.CancelFunc
 }
 
+// snapshot returns a detached copy of n carrying only what a loader reads:
+// its label and its nodeData, by value. Every background fetch takes one of
+// these instead of the live node, because the UI goroutine writes n.data
+// while the fetch is running — applyNodeFilter sets data.Filter, and the
+// object ops write it too — and reading it from the fetch is a data race, not
+// merely a stale read. The live node still travels alongside as the identity
+// the posted callback keys off (endLoad, SetChildren, DetailBrowser.pending),
+// but nothing dereferences it off the UI goroutine.
+//
+// id, parent and children are deliberately dropped: no loader reads them, and
+// leaving them out is what stops a snapshot from being usable as a tree node
+// by mistake.
+func (n *explorerNode) snapshot() *explorerNode {
+	return &explorerNode{label: n.label, data: n.data}
+}
+
 // beginLoad cancels whatever fetch is already in flight for this node (a
 // fast double-expand, or a Refresh before the initial load returned) and
 // starts a new timeout-bound one, derived from parent — the owning

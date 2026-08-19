@@ -24,6 +24,10 @@ const childFetchTimeout = 30 * time.Second
 // so it can never clobber the newer one.
 func (a *App) loadChildren(node *explorerNode) {
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
+	// The fetch reads a snapshot, never the live node: applyNodeFilter writes
+	// node.data.Filter on the UI goroutine while this is in flight. node itself
+	// stays behind for the posted callback, which runs on the UI goroutine.
+	snap := node.snapshot()
 	// safegoRepair, not safego: handleExpand latched the node at "Loading..."
 	// before calling this (data.Loaded is still false), and the SetChildren
 	// below is the only thing that clears it. A panic unwinds past the posted
@@ -31,7 +35,7 @@ func (a *App) loadChildren(node *explorerNode) {
 	// the user happens to collapse and re-expand it — with nothing on screen
 	// saying why.
 	a.safegoRepair("loading Object Explorer children", func() { a.childFetchPanicked(node, seq) }, func() {
-		children := a.fetchChildren(ctx, node)
+		children := a.fetchChildren(ctx, snap)
 		a.postAndWake(func() {
 			if !node.endLoad(seq) {
 				return // superseded by a newer fetch for this node
@@ -111,14 +115,16 @@ func (a *App) showContextMenu(node *explorerNode, x, y int) {
 	a.contextMenu.Show(x, y, a.contextMenuItemsForNode(node))
 }
 
-// contextMenuItemsForNode is the node's own menu plus the two groups every
-// node type gets for free: Rename/Delete (explorer_object_ops.go) and, on a
-// filterable folder, Filter Settings/Remove Filter (explorer_filter.go).
-// Both are spliced in above Refresh, where SSMS puts them, rather than
-// repeated in each branch of nodeMenuItems — which node types offer them is
-// objectOpFor's and filterProps's answer, not something those branches know.
+// contextMenuItemsForNode is the node's own menu plus the three groups every
+// node type gets for free: Script <Noun> as (scripting.go), Rename/Delete
+// (explorer_object_ops.go) and, on a filterable folder, Filter
+// Settings/Remove Filter (explorer_filter.go). All three are spliced in above
+// Refresh, where SSMS puts them, rather than repeated in each branch of
+// nodeMenuItems — which node types offer them is scriptables', objectOpFor's
+// and filterProps's answer, not something those branches know.
 func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 	items := a.nodeMenuItems(node)
+	items = insertBeforeRefresh(items, a.scriptMenuItems(node))
 	items = insertBeforeRefresh(items, a.objectOpsMenuItems(node))
 	return insertBeforeRefresh(items, a.filterMenuItems(node))
 }
@@ -283,9 +289,6 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+tableFQN)
 			}},
 			{Divider: true},
-			{Label: "Script Table as CREATE", Action: func() { a.scriptObject(node, "CREATE") }},
-			{Label: "Script Table as DROP", Action: func() { a.scriptObject(node, "DROP") }},
-			{Divider: true},
 			{Label: "Rebuild All Indexes", Action: func() {
 				a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")
 			}},
@@ -304,7 +307,6 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Label: "Select Top 1000 Rows", Action: func() {
 				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+viewFQN)
 			}},
-			{Label: "Script View as CREATE", Action: func() { a.scriptObject(node, "CREATE") }},
 			{Divider: true},
 			{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
 			{Divider: true},
@@ -335,6 +337,57 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			refresh,
 			{Label: "Properties...", Action: func() {
 				a.showIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+			}},
+		}
+	case NodePartitionFunction:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showPartitionFunctionPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodePartitionScheme:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showPartitionSchemePropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeSecurityPolicy:
+		toggleLabel := "Disable"
+		if !node.data.IsEnabled {
+			toggleLabel = "Enable"
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showSecurityPolicyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+			}},
+		}
+	case NodeColumnMasterKey:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showColumnMasterKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeColumnEncryptionKey:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showColumnEncryptionKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
 			}},
 		}
 	case NodeStatistic:
@@ -441,7 +494,6 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "Script Proc as CREATE", Action: func() { a.scriptObject(node, "CREATE") }},
 			{Label: "Execute Stored Procedure", Action: func() {
 				a.openQueryWithText(sc, node.data.DBName, "EXEC "+procFQN)
 			}},
@@ -466,50 +518,61 @@ func (a *App) showDependencies(node *explorerNode) {
 	a.propsDialog.ShowDependencies(a, sc, node.data.DBName, node.data.Schema, node.data.Name)
 }
 
-func (a *App) scriptObject(node *explorerNode, action string) {
-	sc := resolveConn(node)
-	if sc == nil {
+// toggleSecurityPolicy enables or disables node's row-level security policy
+// — SSMS's Enable/Disable on the policy. Disabling one stops it filtering
+// and blocking anything, so the whole table becomes visible to every user;
+// that is the state change, not a cosmetic flag, and the node's label
+// carries it (see loadSecurityPoliciesChildren), which is why the parent
+// folder is refreshed rather than just the icon repainted.
+func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
 		return
 	}
-	schema, name, dbName := node.data.Schema, node.data.Name, node.data.DBName
+	enable := !node.data.IsEnabled
+	dbName, schema, name := node.data.DBName, node.data.Schema, node.data.Name
 
-	a.safego("scripting an object", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
-		dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
-		if err != nil {
-			a.postAndWake(func() { a.setStatus(fmt.Sprintf("Script error: %v", err)) })
-			return
-		}
-		opts := gosmo.DefaultScriptOptions()
-		opts.ScriptDrops = action == "DROP"
-		scripter := gosmo.NewScripter(dbObj, opts)
-		var ddl string
-		switch node.data.Type {
-		case NodeTable:
-			ddl, err = scripter.ScriptTableContext(ctx, schema, name)
-		case NodeView:
-			ddl, err = scripter.ScriptViewContext(ctx, schema, name)
-		case NodeStoredProcedure:
-			ddl, err = scripter.ScriptStoredProcedureContext(ctx, schema, name)
-		case NodeFunction:
-			ddl, err = scripter.ScriptFunctionContext(ctx, schema, name)
-		default:
-			ddl = fmt.Sprintf("-- Script %s not implemented for this object type\n", action)
-		}
-		a.postAndWake(func() {
-			if err != nil {
-				a.setStatus(fmt.Sprintf("Script error: %v", err))
-				return
+	run := func() {
+		a.safego("enabling/disabling a security policy", func() {
+			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			defer cancel()
+			p, err := findSecurityPolicy(ctx, sc, dbName, schema, name)
+			if err == nil {
+				if enable {
+					err = p.EnableContext(ctx)
+				} else {
+					err = p.DisableContext(ctx)
+				}
 			}
-			a.queryPanelCnt++
-			qp := NewQueryPanel(a, fmt.Sprintf("Script %d", a.queryPanelCnt))
-			qp.editor.SetText(ddl)
-			a.panels.SetActive(a.panels.AddPanel(qp))
-			a.focusPanels()
-			a.connectForQueryPanel(qp, sc, dbName, nil)
+			a.postAndWake(func() {
+				word := "disable"
+				if enable {
+					word = "enable"
+				}
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, fqn(schema, name), err))
+					return
+				}
+				node.data.IsEnabled = enable
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
+				}
+				a.detailBrowser.Invalidate(a, node)
+				a.setStatus(fmt.Sprintf("Security policy %q is now %sd", fqn(schema, name), word))
+			})
 		})
-	})
+	}
+
+	if !enable {
+		a.confirmDialog.ShowConfirm("Disable Security Policy",
+			fmt.Sprintf("Disable %s? Its filter and block predicates stop applying, and every row of the tables it protects becomes visible.", fqn(schema, name)),
+			func(confirmed bool) {
+				if confirmed {
+					run()
+				}
+			})
+		return
+	}
+	run()
 }
 
 // toggleDatabaseOffline takes node's database offline, or brings it back

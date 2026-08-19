@@ -40,8 +40,12 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 
 	key := strings.ToLower(server)
 
+	// peerLive, not IsOpen: Peer runs on background loader goroutines, and a
+	// peer's closed flag is written by closePeers on the UI goroutine outside
+	// peerMu. Reading it here would be a data race; the context Close cancels
+	// first answers the same question race-free.
 	sc.peerMu.Lock()
-	if p, ok := sc.peers[key]; ok && p.IsOpen() {
+	if p, ok := sc.peers[key]; ok && peerLive(p) {
 		sc.peerMu.Unlock()
 		return p, nil
 	}
@@ -65,7 +69,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 		peer.Close()
 		return nil, err
 	}
-	if existing, ok := sc.peers[key]; ok && existing.IsOpen() {
+	if existing, ok := sc.peers[key]; ok && peerLive(existing) {
 		peer.Close()
 		return existing, nil
 	}
@@ -114,6 +118,15 @@ func (sc *ServerConn) isSelf(server string) bool {
 	}
 	return strings.EqualFold(sc.Opts.Server, server)
 }
+
+// peerLive reports whether a cached peer is still usable, without reading the
+// closed flag. Peer's callers are background loader goroutines and Close runs
+// on the UI goroutine, so closed is racy across them; the context Close cancels
+// before anything else is not, which makes this the only safe form of the
+// question here. Not a method on ServerConn: IsOpen is the exported answer for
+// UI-goroutine callers, and this one exists purely because that answer can't be
+// read from here.
+func peerLive(p *ServerConn) bool { return p != nil && p.Context().Err() == nil }
 
 // closePeers closes and drops every cached peer. Called by Close.
 func (sc *ServerConn) closePeers() {

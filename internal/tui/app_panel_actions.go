@@ -76,6 +76,10 @@ func (a *App) openQueryFile() {
 			a.setStatus(fmt.Sprintf("Open failed: %v", err))
 			return
 		}
+		if strings.EqualFold(filepath.Ext(path), sqlPlanExt) {
+			a.openPlanFile(path, data)
+			return
+		}
 		a.queryPanelCnt++
 		qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
 		text, enc, crlf, lossy := decodeTextFile(data)
@@ -101,6 +105,101 @@ func (a *App) openQueryFile() {
 			a.connectForQueryPanel(qp, sc, database, nil)
 		}
 	})
+}
+
+// sqlPlanExt is the extension SSMS gives a saved execution plan, and what
+// File > Open keys off to show one rather than treating it as a script.
+const sqlPlanExt = ".sqlplan"
+
+// openPlanFile shows an already-read .sqlplan in its own PlanPanel. Goes
+// through decodeTextFile like every other file gossms reads: SSMS writes
+// .sqlplan as UTF-16, whose BOM is what identifies it (see text_encoding.go).
+func (a *App) openPlanFile(path string, data []byte) {
+	text, _, _, _ := decodeTextFile(data)
+	plan, err := showplan.Parse([]byte(text))
+	if err != nil {
+		a.setStatus(fmt.Sprintf("Could not parse %s: %v", filepath.Base(path), err))
+		return
+	}
+	pp := NewPlanPanel(a, filepath.Base(path), plan)
+	pp.filePath = path
+	a.panels.SetActive(a.panels.AddPanel(pp))
+	a.focusPanels()
+	a.setStatus("Opened " + path)
+}
+
+// savePlanPanel runs File > Save / Save As... for a plan panel, writing the
+// plan's source XML back out. A panel opened from a file saves straight back
+// to it; anything else prompts.
+//
+// The XML is written as UTF-8 rather than the UTF-16 SSMS emits: it is the
+// document showplan decoded, and re-encoding it would need the declaration
+// rewritten to match or the file would announce an encoding it isn't in.
+func (a *App) savePlanPanel(pp *PlanPanel, saveAs bool) {
+	xml := pp.PlanXML()
+	if xml == "" {
+		a.setStatus("No execution plan to save")
+		return
+	}
+	write := func(path string) {
+		if a.writePlanFile(path, xml) {
+			pp.filePath = path
+		}
+	}
+	if !saveAs && pp.filePath != "" {
+		write(pp.filePath)
+		return
+	}
+	initial := pp.filePath
+	if initial == "" {
+		initial = "plan" + sqlPlanExt
+	}
+	a.fileDialog.ShowSave("Save Execution Plan", initial, write)
+}
+
+// saveExecutionPlanAs runs File > Save Execution Plan As..., which works
+// from a detached plan panel and from a query panel's Execution Plan tab
+// alike — unlike Save, whose meaning in a query panel is the script.
+func (a *App) saveExecutionPlanAs() {
+	switch p := a.panels.ActivePanel().(type) {
+	case *PlanPanel:
+		a.savePlanPanel(p, true)
+	case *QueryPanel:
+		plan := a.activePlan()
+		if plan == nil {
+			a.setStatus("No execution plan to save")
+			return
+		}
+		a.fileDialog.ShowSave("Save Execution Plan", p.Title()+sqlPlanExt, func(path string) {
+			a.writePlanFile(path, plan.XML)
+		})
+	default:
+		a.setStatus("No execution plan to save")
+	}
+}
+
+// activePlan returns the plan the active panel is showing — a detached plan
+// panel's, or a query panel's Execution Plan tab — or nil when there is none.
+func (a *App) activePlan() *showplan.Plan {
+	switch p := a.panels.ActivePanel().(type) {
+	case *PlanPanel:
+		return p.planView.Plan()
+	case *QueryPanel:
+		if p.planView != nil {
+			return p.planView.Plan()
+		}
+	}
+	return nil
+}
+
+// writePlanFile writes one plan document to path, reporting success.
+func (a *App) writePlanFile(path, xml string) bool {
+	if err := fileutil.WriteAtomic(path, []byte(xml), 0o644); err != nil {
+		a.setStatus(fmt.Sprintf("Save failed: %v", err))
+		return false
+	}
+	a.setStatus("Saved to " + path)
+	return true
 }
 
 // closePanelAt removes the panel at index i, first releasing what it owns: an
@@ -350,6 +449,11 @@ func (a *App) setResultsMode(mode ResultsMode) {
 
 // saveQuery runs File > Save (saveAs=false) or File > Save As... (saveAs=true).
 func (a *App) saveQuery(saveAs bool) {
+	// A plan panel holds no editable text — its Save is the .sqlplan.
+	if pp, ok := a.panels.ActivePanel().(*PlanPanel); ok {
+		a.savePlanPanel(pp, saveAs)
+		return
+	}
 	qp := a.activeQueryPanel()
 	if qp == nil {
 		a.setStatus("No active query to save")
@@ -710,4 +814,64 @@ func (a *App) showSchemaPropertiesFor(sc *db.ServerConn, dbName, schemaName stri
 	}
 	a.propDialog.show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,
 		schemaPropPages(sc, dbName, schemaName))
+}
+
+// showPartitionFunctionPropertiesFor opens the read-only Partition Function
+// Properties for a known connection and database.
+func (a *App) showPartitionFunctionPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, dbName, "Partition Function Properties", "Function: "+name, "Database: "+dbName,
+		partitionFunctionPropPages(sc, dbName, name))
+}
+
+// showPartitionSchemePropertiesFor opens the read-only Partition Scheme
+// Properties.
+func (a *App) showPartitionSchemePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, dbName, "Partition Scheme Properties", "Scheme: "+name, "Database: "+dbName,
+		partitionSchemePropPages(sc, dbName, name))
+}
+
+// showSecurityPolicyPropertiesFor opens the read-only Security Policy
+// Properties.
+func (a *App) showSecurityPolicyPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, dbName, "Security Policy Properties", "Policy: "+fqn(schema, name), "Database: "+dbName,
+		securityPolicyPropPages(sc, dbName, schema, name))
+}
+
+// showColumnMasterKeyPropertiesFor opens the read-only Column Master Key
+// Properties.
+func (a *App) showColumnMasterKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, dbName, "Column Master Key Properties", "Key: "+name, "Database: "+dbName,
+		columnMasterKeyPropPages(sc, dbName, name))
+}
+
+// showColumnEncryptionKeyPropertiesFor opens the read-only Column Encryption
+// Key Properties.
+func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.propDialog.show(sc, dbName, "Column Encryption Key Properties", "Key: "+name, "Database: "+dbName,
+		columnEncryptionKeyPropPages(sc, dbName, name))
+}
+
+// canSaveActivePanel gates File > Save / Save As...: a query panel saves its
+// script, a plan panel its .sqlplan, and nothing else has anything to write.
+func (a *App) canSaveActivePanel() bool {
+	if a.activeQueryPanel() != nil {
+		return true
+	}
+	_, ok := a.panels.ActivePanel().(*PlanPanel)
+	return ok
 }

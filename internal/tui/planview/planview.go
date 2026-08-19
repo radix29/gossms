@@ -25,6 +25,7 @@ type PlanView struct {
 	rect          core.Rect
 	tabRect       core.Rect
 	stmtRect      core.Rect
+	bannerRect    core.Rect // missing-index banner; zero when the statement has none
 	contentRect   core.Rect
 	expandBtnRect core.Rect // zero when OnExpand is nil
 
@@ -83,6 +84,13 @@ type PlanView struct {
 	// OnStatus, when set, is called with a one-line status message on
 	// notable actions (statement switch, tab switch, ...).
 	OnStatus func(msg string)
+	// OnMissingIndex, when set, is called with the CREATE INDEX script for
+	// every suggestion on the current statement when the missing-index
+	// banner is activated (Enter, or a click on it) — SSMS's "Missing Index
+	// Details...". The host decides where the script goes. The banner is
+	// still drawn when this is nil, since it says something worth reading on
+	// its own; it just can't be opened.
+	OnMissingIndex func(script string)
 	// OnCopyRequest, when set, is called with clipboard-ready text from the
 	// operator summary's "Copy" menu item, and is what makes that item
 	// appear at all (see controls.DataGrid.OnCopyRequest — the grid can't
@@ -255,6 +263,15 @@ func (v *PlanView) layout() {
 	} else {
 		v.stmtRect = core.Rect{}
 	}
+	// The banner belongs to the statement on screen, so stepping the
+	// statement selector re-runs layout (see stepStatement) rather than
+	// leaving a row reserved for a statement that has no suggestion.
+	if len(v.missingIndexes()) > 0 {
+		v.bannerRect = core.Rect{X: v.rect.X, Y: y, W: v.rect.W, H: 1}
+		y++
+	} else {
+		v.bannerRect = core.Rect{}
+	}
 	h := v.rect.Bottom() - y
 	if h < 0 {
 		h = 0
@@ -305,13 +322,14 @@ func (v *PlanView) stepStatement(delta int) {
 	n := len(v.plan.Statements)
 	v.stmtIdx = ((v.stmtIdx+delta)%n + n) % n
 	v.selectFirstNode()
-	// selectFirstNode alone can leave the new statement's root scrolled out
-	// of view: an unbalanced tree's root tile isn't necessarily near (0,0),
-	// and the Tree pane's prior scroll offset isn't reset by a rebuild that
-	// still fits within it. Mirrors layout's identical follow-up after its
-	// own selectFirstNode call.
-	v.ensureTreeRowVisible()
-	v.ensureTileVisible(v.selectedID)
+	// layout, not just the two ensure* calls it ends with: the missing-index
+	// banner belongs to the statement on screen, so the row it occupies has
+	// to be reclaimed when the next statement carries no suggestion. Its
+	// ensure* tail is needed either way — selectFirstNode alone can leave the
+	// new statement's root scrolled out of view, since an unbalanced tree's
+	// root tile isn't necessarily near (0,0) and a rebuild that still fits
+	// the pane doesn't reset its scroll offset.
+	v.layout()
 }
 
 // statementCostPct returns statement i's share of the batch's total

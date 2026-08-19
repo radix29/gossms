@@ -27,6 +27,19 @@ type ContextMenu struct {
 	// bottom edge draws shifted while hit-testing stays anchored to the
 	// original off-screen request.
 	drawnX, drawnY int
+
+	// cascade holds any open submenu levels (see menuCascade). Cleared by
+	// Show and Hide so a cascade never survives into the menu's next
+	// showing — the same rule ModalDialog.Show follows for its drag latch.
+	cascade menuCascade
+
+	// mouseDragging distinguishes a fresh Button1 press from a continued
+	// hold, needed once a click can leave the menu open: clicking a cascade
+	// item keeps the popup up, and tcell's all-motion tracking resends
+	// Buttons()==Button1 on every motion while the button stays down, so
+	// without the latch a press that twitches over a leaf item would fire
+	// its Action repeatedly.
+	mouseDragging bool
 }
 
 // Show displays the menu at (x,y) with the given items.
@@ -36,10 +49,15 @@ func (cm *ContextMenu) Show(x, y int, items []MenuItem) {
 	cm.items = items
 	cm.hover = -1
 	cm.visible = true
+	cm.cascade.reset()
+	cm.mouseDragging = false
 }
 
-// Hide dismisses the menu.
-func (cm *ContextMenu) Hide() { cm.visible = false }
+// Hide dismisses the menu and every submenu open under it.
+func (cm *ContextMenu) Hide() {
+	cm.visible = false
+	cm.cascade.reset()
+}
 
 // Visible reports whether the menu is shown.
 func (cm *ContextMenu) Visible() bool { return cm.visible }
@@ -80,12 +98,26 @@ func (cm *ContextMenu) Draw(s tcell.Screen) {
 		iy := y + 1 + i
 		drawMenuRow(s, x, iy, w, item, i == cm.hover, borderStyle)
 	}
+	cm.cascade.draw(s, cm.items, r)
+}
+
+// drawnRect returns the box the menu was last painted in, using the same
+// width/height maths as geometry so hit-testing matches what was drawn.
+func (cm *ContextMenu) drawnRect() core.Rect {
+	return core.Rect{X: cm.drawnX, Y: cm.drawnY, W: menuContentWidth(cm.items, 20), H: len(cm.items) + 2}
 }
 
 // HandleKey processes keyboard events.
 func (cm *ContextMenu) HandleKey(ev *tcell.EventKey) bool {
 	if !cm.visible {
 		return false
+	}
+	if run, handled := cm.cascade.handleKey(ev, cm.items); handled {
+		if run != nil {
+			cm.Hide()
+			run()
+		}
+		return true
 	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
@@ -102,8 +134,13 @@ func (cm *ContextMenu) HandleKey(ev *tcell.EventKey) bool {
 		} else {
 			cm.hover = stepSelectableItem(cm.items, cm.hover, 1)
 		}
+	case tcell.KeyRight:
+		cm.cascade.openAt(cm.items, 0, cm.hover)
 	case tcell.KeyEnter:
 		if cm.hover >= 0 && cm.hover < len(cm.items) {
+			if cm.cascade.openAt(cm.items, 0, cm.hover) {
+				return true
+			}
 			item := cm.items[cm.hover]
 			cm.Hide()
 			if !item.Divider && item.Action != nil && item.enabled() {
@@ -120,11 +157,12 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	mx, my := ev.Position()
-	w := menuContentWidth(cm.items, 20)
-	h := len(cm.items) + 2
-	x, y := cm.drawnX, cm.drawnY
+	if ev.Buttons() == tcell.ButtonNone {
+		cm.mouseDragging = false
+	}
 
-	if mx < x || mx >= x+w || my < y || my >= y+h {
+	level, row, inside := cm.cascade.hit(cm.drawnRect(), mx, my)
+	if !inside {
 		// A click outside dismisses the menu and stops there — it must not
 		// also reach whatever it landed on, or one click would both close
 		// the menu and activate the widget underneath (see
@@ -138,19 +176,40 @@ func (cm *ContextMenu) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 
-	itemIdx := my - y - 1
-	if itemIdx >= 0 && itemIdx < len(cm.items) {
-		if it := cm.items[itemIdx]; !it.Divider && it.enabled() {
-			cm.hover = itemIdx
-		}
+	items := cm.cascade.levelItems(cm.items, level)
+	if row < 0 || row >= len(items) {
+		return true
 	}
-	if ev.Buttons() == tcell.Button1 && itemIdx >= 0 && itemIdx < len(cm.items) {
-		item := cm.items[itemIdx]
-		cm.Hide()
-		if !item.Divider && item.Action != nil && item.enabled() {
-			item.Action()
+	item := items[row]
+	if item.Divider || !item.enabled() {
+		// A click anywhere inside the menu dismisses it, even on a row that
+		// can't act — otherwise a disabled item leaves the popup stuck open.
+		if ev.Buttons() == tcell.Button1 && !cm.mouseDragging {
+			cm.mouseDragging = true
+			cm.Hide()
 		}
 		return true
+	}
+
+	// Hovering a row is what opens its submenu, and closes any submenu of a
+	// sibling row that was open — the same level can only show one.
+	if level == 0 {
+		cm.hover = row
+	} else {
+		cm.cascade.setHover(level, row)
+	}
+	if !cm.cascade.openAt(cm.items, level, row) {
+		cm.cascade.popTo(level)
+	}
+
+	if ev.Buttons() == tcell.Button1 && !cm.mouseDragging {
+		cm.mouseDragging = true
+		if len(item.Sub) == 0 {
+			cm.Hide()
+			if item.Action != nil {
+				item.Action()
+			}
+		}
 	}
 	return true
 }

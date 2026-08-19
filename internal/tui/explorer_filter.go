@@ -117,8 +117,12 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name, schema}
 	case NodeDatabases, NodeSystemDatabases, NodeLogins:
 		return []filterProp{name, created}
-	case NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles:
+	case NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
+		NodePartitionFunctions, NodePartitionSchemes,
+		NodeColumnMasterKeys, NodeColumnEncryptionKeys:
 		return []filterProp{name}
+	case NodeSecurityPolicies:
+		return []filterProp{name, schema}
 	}
 	return nil
 }
@@ -268,8 +272,7 @@ func parseFilterBool(s string) (bool, error) {
 // applies to the objects in a folder, not to the sub-folders it holds, and
 // a filter that hid the error node would leave a failed expand looking like
 // an empty one.
-func filterChildren(node *explorerNode, children []*explorerNode) []*explorerNode {
-	f := node.data.Filter
+func filterChildren(f *nodeFilter, children []*explorerNode) []*explorerNode {
 	if !f.active() {
 		return children
 	}
@@ -290,8 +293,12 @@ func filterChildren(node *explorerNode, children []*explorerNode) []*explorerNod
 // they hold collections of gosmo objects rather than *explorerNode and can't
 // go through filterChildren; filtering the collection before rows are built
 // keeps a progressive loader's row indices lined up with it.
-func filterObjects[T any](node *explorerNode, items []T, key func(T) nodeData) []T {
-	f := node.data.Filter
+//
+// Takes the filter, not the folder node: both halves run on a background
+// loader goroutine, and the UI goroutine writes node.data.Filter underneath
+// them (see explorerNode.snapshot). Passing the filter makes the caller read
+// it where that is safe.
+func filterObjects[T any](f *nodeFilter, items []T, key func(T) nodeData) []T {
 	if !f.active() {
 		return items
 	}

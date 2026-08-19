@@ -83,7 +83,12 @@ type MissingIndex struct {
 	Schema   string
 	Table    string
 	Equality []string // columns with EQUALITY usage
-	Include  []string // columns with INCLUDE usage
+	// Inequality holds the INEQUALITY columns, kept apart from Equality
+	// because the generated index has to list every equality column first —
+	// a key ordered the other way around can't seek on the equality
+	// predicates, which is the whole point of the suggestion.
+	Inequality []string
+	Include    []string // columns with INCLUDE usage
 }
 
 // Object identifies the database object an operator touches. All names

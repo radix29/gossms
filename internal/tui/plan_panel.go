@@ -21,6 +21,11 @@ type PlanPanel struct {
 	title    string
 	planView *planview.PlanView
 	active   bool
+
+	// filePath is the .sqlplan this panel was opened from, and where Save
+	// writes back without prompting. Empty for a plan that came from a
+	// query rather than a file.
+	filePath string
 }
 
 // NewPlanPanel creates a detached plan panel already showing plan. plan is
@@ -32,12 +37,28 @@ type PlanPanel struct {
 func NewPlanPanel(app *App, title string, plan *showplan.Plan) *PlanPanel {
 	v := planview.New()
 	v.OnCopyRequest = app.copyWithStatus
+	// A detached plan has no connection of its own, so the missing-index
+	// script opens against whatever the tree points at. The script names its
+	// own database in a USE, so the panel it lands in only decides where it
+	// would run, not what it says.
+	v.OnMissingIndex = func(script string) {
+		sc, database := app.selectedConnTarget()
+		app.openQueryWithText(sc, database, script)
+	}
 	v.SetPlan(plan)
 	return new(PlanPanel{title: title, planView: v})
 }
 
 // Title returns the panel's tab/window title (Panel interface).
 func (pp *PlanPanel) Title() string { return pp.title }
+
+// PlanXML returns the plan's source document, for File > Save.
+func (pp *PlanPanel) PlanXML() string {
+	if plan := pp.planView.Plan(); plan != nil {
+		return plan.XML
+	}
+	return ""
+}
 
 // SetBounds positions the panel, reserving the first row for the title bar.
 func (pp *PlanPanel) SetBounds(x, y, w, h int) {

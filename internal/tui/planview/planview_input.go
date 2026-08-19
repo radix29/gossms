@@ -37,6 +37,10 @@ func (v *PlanView) HandleKey(ev *tcell.EventKey) bool {
 	case ']':
 		v.stepStatement(1)
 		return true
+	case 'm':
+		// Its own key, not Enter: Enter already toggles the Properties strip
+		// in the Plan tab and collapses a subtree in the Tree tab.
+		return v.openMissingIndexDetails()
 	}
 	switch {
 	case v.activeTab == TabXML:
@@ -113,6 +117,17 @@ func (v *PlanView) HandleMouse(ev *tcell.EventMouse) bool {
 		if i := v.tabAt(mx); i >= 0 {
 			v.setActiveTab(Tab(i))
 		}
+		return true
+	}
+	if v.bannerRect.H == 1 && my == v.bannerRect.Y {
+		if ev.Buttons() != tcell.Button1 {
+			return true
+		}
+		if v.mouseDragging {
+			return v.routeToContent(ev)
+		}
+		v.mouseDragging = true
+		v.openMissingIndexDetails()
 		return true
 	}
 	if v.stmtRect.H == 1 && my == v.stmtRect.Y && ev.Buttons() == tcell.Button1 {

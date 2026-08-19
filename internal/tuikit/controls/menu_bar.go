@@ -27,6 +27,11 @@ type MenuBar struct {
 	// click that so much as twitches before release re-toggles the header
 	// it just opened, right back closed — a visible open/close flicker.
 	mouseDragging bool
+
+	// cascade holds any open submenu levels of the open dropdown (see
+	// menuCascade). Cleared whenever the dropdown closes or switches menus,
+	// so a cascade never survives into the next one.
+	cascade menuCascade
 }
 
 // NewMenuBar creates a MenuBar.
@@ -45,8 +50,11 @@ func (mb *MenuBar) SetMenus(menus []Menu) { mb.menus = menus }
 // IsOpen reports whether a dropdown is currently open.
 func (mb *MenuBar) IsOpen() bool { return mb.openMenu >= 0 }
 
-// Close closes any open dropdown.
-func (mb *MenuBar) Close() { mb.openMenu = -1 }
+// Close closes any open dropdown and every submenu under it.
+func (mb *MenuBar) Close() {
+	mb.openMenu = -1
+	mb.cascade.reset()
+}
 
 // Open opens the first menu without requiring a mouse click — used for
 // keyboard-only activation (e.g. the F10 convention from Turbo
@@ -57,6 +65,7 @@ func (mb *MenuBar) Open() {
 		mb.openMenu = 0
 		mb.hoverMenu = 0
 		mb.selectedItem = firstSelectableItem(mb.menus[0].Items)
+		mb.cascade.reset()
 	}
 }
 
@@ -115,6 +124,17 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 		y := mb.rect.Y + 2 + i
 		drawMenuRow(s, col, y, w, item, i == mb.selectedItem, borderStyle)
 	}
+	mb.cascade.draw(s, menu.Items, r)
+}
+
+// dropdownRect returns the open dropdown's box — the anchor the cascade's
+// first submenu level hangs off.
+func (mb *MenuBar) dropdownRect() core.Rect {
+	if mb.openMenu < 0 {
+		return core.Rect{}
+	}
+	col, w, h := mb.dropdownGeometry(mb.openMenu)
+	return core.Rect{X: col, Y: mb.rect.Y + 1, W: w, H: h}
 }
 
 // HandleKey processes keyboard when a dropdown is open.
@@ -122,14 +142,26 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 	if mb.openMenu < 0 {
 		return false
 	}
+	if run, handled := mb.cascade.handleKey(ev, mb.menus[mb.openMenu].Items); handled {
+		if run != nil {
+			mb.Close()
+			run()
+		}
+		return true
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape, tcell.KeyF10:
-		mb.openMenu = -1
+		mb.Close()
 	case tcell.KeyLeft:
 		mb.openMenu = (mb.openMenu - 1 + len(mb.menus)) % len(mb.menus)
 		mb.hoverMenu = mb.openMenu
 		mb.selectedItem = firstSelectableItem(mb.menus[mb.openMenu].Items)
 	case tcell.KeyRight:
+		// Right opens the selected item's submenu when it has one, and only
+		// otherwise moves to the next menu header.
+		if mb.cascade.openAt(mb.menus[mb.openMenu].Items, 0, mb.selectedItem) {
+			return true
+		}
 		mb.openMenu = (mb.openMenu + 1) % len(mb.menus)
 		mb.hoverMenu = mb.openMenu
 		mb.selectedItem = firstSelectableItem(mb.menus[mb.openMenu].Items)
@@ -139,7 +171,10 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 		mb.selectedItem = stepSelectableItem(mb.menus[mb.openMenu].Items, mb.selectedItem, 1)
 	case tcell.KeyEnter:
 		items := mb.menus[mb.openMenu].Items
-		mb.openMenu = -1
+		if mb.cascade.openAt(items, 0, mb.selectedItem) {
+			return true
+		}
+		mb.Close()
 		if mb.selectedItem >= 0 && mb.selectedItem < len(items) {
 			item := items[mb.selectedItem]
 			if !item.Divider && item.Action != nil && item.enabled() {
@@ -173,8 +208,9 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 				if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
 					mb.mouseDragging = true
 					if mb.openMenu == i {
-						mb.openMenu = -1
+						mb.Close()
 					} else {
+						mb.Close()
 						mb.openMenu = i
 						mb.selectedItem = firstSelectableItem(m.Items)
 					}
@@ -187,25 +223,53 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 		// click still dismisses an open menu, but the event itself is
 		// swallowed either way.
 		if wasOpen && ev.Buttons() == tcell.Button1 {
-			mb.openMenu = -1
+			mb.Close()
 		}
 		return wasOpen
 	}
 
 	if wasOpen {
-		if mb.dropdownContains(mx, my) {
-			// Track hover so keyboard (Up/Down) and mouse stay in sync.
-			if itemIdx := my - (mb.rect.Y + 2); itemIdx >= 0 && itemIdx < len(mb.menus[mb.openMenu].Items) {
-				if it := mb.menus[mb.openMenu].Items[itemIdx]; !it.Divider && it.enabled() {
-					mb.selectedItem = itemIdx
-				}
+		root := mb.menus[mb.openMenu].Items
+		level, row, inside := mb.cascade.hit(mb.dropdownRect(), mx, my)
+		if !inside {
+			if ev.Buttons() == tcell.Button1 {
+				mb.Close()
 			}
+			return true
+		}
+		items := mb.cascade.levelItems(root, level)
+		if row < 0 || row >= len(items) {
+			return true
+		}
+		item := items[row]
+		if item.Divider || !item.enabled() {
+			// A click anywhere inside the dropdown dismisses it, even on a row
+			// that can't act — otherwise a disabled item leaves it stuck open.
 			if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
 				mb.mouseDragging = true
-				mb.handleDropdownClick(my)
+				mb.Close()
 			}
-		} else if ev.Buttons() == tcell.Button1 {
-			mb.openMenu = -1
+			return true
+		}
+		// Track hover so keyboard (Up/Down) and mouse stay in sync, and let
+		// hovering a cascade row open its submenu — moving to a sibling row
+		// closes whatever that level had open.
+		if level == 0 {
+			mb.selectedItem = row
+		} else {
+			mb.cascade.setHover(level, row)
+		}
+		if !mb.cascade.openAt(root, level, row) {
+			mb.cascade.popTo(level)
+		}
+		if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
+			mb.mouseDragging = true
+			if len(item.Sub) == 0 {
+				mb.Close()
+				if item.Action != nil {
+					item.Action()
+				}
+			}
 		}
 		return true
 	}
@@ -224,27 +288,4 @@ func (mb *MenuBar) dropdownGeometry(idx int) (col, w, h int) {
 	}
 	h = len(menu.Items) + 2
 	return col, w, h
-}
-
-func (mb *MenuBar) dropdownContains(mx, my int) bool {
-	if mb.openMenu < 0 {
-		return false
-	}
-	col, w, h := mb.dropdownGeometry(mb.openMenu)
-	return mx >= col && mx < col+w && my >= mb.rect.Y+1 && my < mb.rect.Y+1+h
-}
-
-func (mb *MenuBar) handleDropdownClick(my int) {
-	if mb.openMenu < 0 {
-		return
-	}
-	itemIdx := my - (mb.rect.Y + 2)
-	menu := mb.menus[mb.openMenu]
-	mb.openMenu = -1
-	if itemIdx >= 0 && itemIdx < len(menu.Items) {
-		item := menu.Items[itemIdx]
-		if !item.Divider && item.Action != nil && item.enabled() {
-			item.Action()
-		}
-	}
 }

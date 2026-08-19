@@ -155,6 +155,65 @@ var objectOps = map[NodeType]objectOp{
 	NodeForeignKey: {noun: "Foreign Key", drop: dropConstraint, rename: renameObjectIn},
 	NodeCheck:      {noun: "Constraint", drop: dropConstraint, rename: renameObjectIn},
 
+	NodePartitionFunction: {
+		noun:    "Partition Function",
+		warning: "Every partition scheme built on it must be dropped first.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			pf, err := findPartitionFunction(ctx, sc, n.DBName, n.Name)
+			if err != nil {
+				return err
+			}
+			return pf.DropContext(ctx)
+		},
+	},
+	NodePartitionScheme: {
+		noun:    "Partition Scheme",
+		warning: "Every table and index partitioned by it must be moved off it first.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			ps, err := findPartitionScheme(ctx, sc, n.DBName, n.Name)
+			if err != nil {
+				return err
+			}
+			return ps.DropContext(ctx)
+		},
+	},
+	NodeSecurityPolicy: {
+		noun:    "Security Policy",
+		warning: "The tables it protects stop being filtered — every row becomes visible.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			p, err := findSecurityPolicy(ctx, sc, n.DBName, n.Schema, n.Name)
+			if err != nil {
+				return err
+			}
+			return p.DropContext(ctx)
+		},
+	},
+	NodeColumnMasterKey: {
+		noun:    "Column Master Key",
+		warning: "Every column encryption key protected by it must be dropped first.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			k, err := findColumnMasterKey(ctx, sc, n.DBName, n.Name)
+			if err != nil {
+				return err
+			}
+			return k.DropContext(ctx)
+		},
+	},
+	NodeColumnEncryptionKey: {
+		noun: "Column Encryption Key",
+		// Not recoverable: the key material only exists encrypted here, so
+		// every column encrypted with it becomes unreadable ciphertext.
+		warning: "Data in every column encrypted with it becomes permanently unreadable.",
+		typed:   true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			k, err := findColumnEncryptionKey(ctx, sc, n.DBName, n.Name)
+			if err != nil {
+				return err
+			}
+			return k.DropContext(ctx)
+		},
+	},
+
 	NodeLogin: {
 		noun:    "Login",
 		warning: "Database users mapped to it are left orphaned.",

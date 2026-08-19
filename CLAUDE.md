@@ -228,6 +228,19 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   wiring for the grid-plus-detail-editor idiom. A redraw after the row *set*
   changes — an add/remove button, a new result — is a different case and may
   reset the cursor deliberately.
+- **A `Ctrl+Shift+<letter>` chord never arrives as `KeyCtrlX`.** tcell folds a
+  Ctrl-modified rune into `KeyCtrlA..KeyCtrlZ` only when Ctrl is the *sole*
+  modifier, so Kitty reports Ctrl+Shift+O as `KeyRune "o"` and xterm's
+  modifyOtherKeys as `KeyRune "O"`, both with `ModCtrl|ModShift`; legacy
+  terminals cannot encode the chord at all and send plain `0x0F`.
+  `normalizeCtrlRune` (`app_events.go`, called once at the top of `handleKey`)
+  folds it back for the whole app — a binding that tests `KeyCtrlX` *and*
+  `ModShift` works only because of it, and only on terminals with a modern
+  keyboard protocol. Anything that must work everywhere needs a function key
+  or a Ctrl+non-letter as well, the way Connect has F9. Verify a new chord by
+  injecting its encodings with `tmux send-keys -H` and reading Key
+  Diagnostics; a unit test proves nothing here.
+
 - **Every menu item and toolbar button must be context-gated** — never let a
   click or keypress do nothing, do the wrong thing, or crash because a
   precondition (a connection, an active query panel, an Object Explorer

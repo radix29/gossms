@@ -12,6 +12,10 @@ import (
 // Server.Logins() round trip, so unlike the Databases folder there's
 // nothing to backfill progressively.
 func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	// data, not node: this runs on a background goroutine and the UI goroutine
+	// writes node.data underneath it (see explorerNode.snapshot). node stays
+	// behind as the identity panicRepair and postFinal key off.
+	data := node.data
 	app.safegoRepair("loading login details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
@@ -22,7 +26,7 @@ func (db *DetailBrowser) loadLoginsDetails(app *App, sc *dbconn.ServerConn, node
 			return
 		}
 
-		logins = filterObjects(node, logins, func(l *gosmo.Login) nodeData {
+		logins = filterObjects(data.Filter, logins, func(l *gosmo.Login) nodeData {
 			return nodeData{Name: l.Name, CreateDate: l.CreateDate}
 		})
 

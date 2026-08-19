@@ -1,9 +1,37 @@
 package tui
 
 import (
+	"unicode"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
+
+// normalizeCtrlRune folds a Ctrl-modified letter back into its KeyCtrlA..
+// KeyCtrlZ form, keeping the other modifiers.
+//
+// tcell only does that fold when Ctrl is the *sole* modifier, so
+// Ctrl+Shift+<letter> arrives as KeyRune with ModCtrl|ModShift and matches no
+// KeyCtrlX binding: Kitty reports the base-layout rune ('o'), xterm's
+// modifyOtherKeys the shifted one ('O'), hence the ToLower. Without this,
+// every Ctrl+Shift+<letter> chord in the app — Connect, the editor's
+// Uppercase Selection — is dead on exactly the terminals able to encode it.
+func normalizeCtrlRune(ev *tcell.EventKey) *tcell.EventKey {
+	// Ctrl+Shift only. Ctrl+Alt is AltGr on many layouts and produces text,
+	// which must stay a KeyRune.
+	if ev.Key() != tcell.KeyRune || ev.Modifiers()&^tcell.ModShift != tcell.ModCtrl {
+		return ev
+	}
+	str := []rune(ev.Str())
+	if len(str) != 1 {
+		return ev
+	}
+	r := unicode.ToLower(str[0])
+	if r < 'a' || r > 'z' {
+		return ev
+	}
+	return tcell.NewEventKey(tcell.KeyCtrlA+tcell.Key(r-'a'), "", ev.Modifiers())
+}
 
 // handleKey processes keyboard events. Returns true to signal quit.
 func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
@@ -13,6 +41,8 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	if a.keyDiagDialog.Visible() {
 		a.keyDiagDialog.RecordKey(ev)
 	}
+
+	ev = normalizeCtrlRune(ev)
 
 	// Clipboard shortcuts are handled centrally, before any dialog can consume
 	// the key and regardless of what has focus. SetClipboard/GetClipboard are
@@ -66,11 +96,15 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	case tcell.KeyCtrlW:
 		a.closeActivePanel()
 		return false
+	case tcell.KeyF9:
+		a.connectDialog.Show()
+		return false
 	case tcell.KeyCtrlO:
-		// tcell has no KeyCtrlShiftO: Ctrl+<letter> with Shift is only
-		// distinguishable from plain Ctrl+<letter> on terminals with a modern
-		// keyboard protocol (Kitty, some xterm modifyOtherKeys configs).
-		// Elsewhere Ctrl+Shift+O falls through to Open rather than Connect.
+		// Ctrl+Shift+O only reaches here as KeyCtrlO+ModShift because
+		// normalizeCtrlRune folded it back, and only on terminals with a
+		// modern keyboard protocol (Kitty, xterm modifyOtherKeys). Elsewhere
+		// the terminal encodes it as plain Ctrl+O and it opens a file rather
+		// than connecting — F9 is the binding that works everywhere.
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			a.connectDialog.Show()
 		} else {

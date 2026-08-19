@@ -31,7 +31,10 @@ tuikit/
 │               BlockingFileSystem for the "Listing ..." repaint a networked one gets)
 ├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL/XML highlighters, statement select)
 │             — one file per group: menu_bar.go/context_menu.go (+ shared MenuItem/Menu
-│               types in menu_item.go), toolbar.go, treeview.go, listbox.go, tabstrip.go;
+│               types in menu_item.go, and menu_cascade.go's menuCascade, which
+│               both hosts use to draw, hit-test and key-navigate the submenu
+│               chain hanging off a MenuItem.Sub), toolbar.go, treeview.go,
+│               listbox.go, tabstrip.go;
 │               DataGrid is split across datagrid.go (state/data source/column
 │               widths), datagrid_draw.go, datagrid_input.go, and
 │               datagrid_overlay.go (right-click menu, "Show Value" popup);

@@ -51,6 +51,14 @@ var childLoaders = map[NodeType]childLoader{
 	NodeDatabaseRoles:    loadDatabaseRolesChildren,
 	NodeSchemas:          loadSchemasChildren,
 
+	NodeStorage:              loadStorageChildren,
+	NodePartitionFunctions:   loadPartitionFunctionsChildren,
+	NodePartitionSchemes:     loadPartitionSchemesChildren,
+	NodeSecurityPolicies:     loadSecurityPoliciesChildren,
+	NodeAlwaysEncryptedKeys:  loadAlwaysEncryptedKeysChildren,
+	NodeColumnMasterKeys:     loadColumnMasterKeysChildren,
+	NodeColumnEncryptionKeys: loadColumnEncryptionKeysChildren,
+
 	NodeTables:           loadTablesChildren,
 	NodeTable:            loadTableChildren,
 	NodeColumns:          loadColumnsChildren,
@@ -116,7 +124,7 @@ func (a *App) fetchChildren(ctx context.Context, node *explorerNode) []*explorer
 		return []*explorerNode{errExplorerNode(err)}
 	}
 	a.restoreFilters(sc, children)
-	return filterChildren(node, children)
+	return filterChildren(node.data.Filter, children)
 }
 
 // listChildren runs a gosmo collection fetch and maps each item to an

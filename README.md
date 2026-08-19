@@ -22,18 +22,24 @@ required.
 ## Features
 
 - **Object Explorer** — the familiar SSMS tree: databases, tables, views,
-  procedures, functions, triggers, sequences, synonyms, security, and
-  Management. Right-click anything to rename, delete, script as
-  CREATE/DROP, see dependencies, or open Properties. Filter any folder by
-  name, schema, or creation date. Drag a node into the editor to insert its
-  name.
+  procedures, functions, triggers, sequences, synonyms, security (users,
+  roles, schemas, row-level security policies, Always Encrypted keys),
+  storage (partition functions and schemes), and Management. Right-click anything to rename, delete, see dependencies, or
+  open Properties. **Script <object> as** covers every family the tree
+  shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
+  UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
+  clipboard. Filter any folder by name, schema, or creation date. Drag a
+  node into the editor to insert its name.
 - **Query editor** — as many editor+results tabs as you like, `GO` batch
   splitting, a tab per result set, and a Messages tab for `PRINT`, row
   counts, and errors. Results are never row-capped. Syntax highlighting,
   undo/redo, Find & Replace with regex, block (column) selection, and
   IntelliSense for schemas, tables, views, and columns.
 - **Execution plans** — estimated or actual, as a cost-weighted operator
-  graph, a tree, or raw XML. XML and JSON result cells open in their own
+  graph, a tree, or raw XML. A missing-index suggestion shows as a banner
+  above the plan; `m` (or a click on it) opens the `CREATE INDEX` script in
+  a query window. Plans open and save as `.sqlplan`, the same files SSMS
+  reads and writes. XML and JSON result cells open in their own
   syntax-highlighted viewer.
 - **Properties dialogs** — editable, multi-page SSMS-style Properties for
   Server, Database, Login, Table, Schema, roles, users, indexes, keys, and
@@ -80,15 +86,16 @@ and access to a SQL Server instance.
 ```
 
 goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
-or press `Escape` to work offline — `Ctrl+Shift+O` reopens it any time.
+or press `Escape` to work offline — `F9` reopens it any time.
 
 ## Keyboard Reference
 
 | Key | Action |
 |-----|--------|
 | `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
-| `Ctrl+Shift+O` | Connect to server |
-| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query |
+| `F9` | Connect to server (`Ctrl+Shift+O` too, where the terminal can encode it) |
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query (`Ctrl+O` also opens a `.sqlplan`) |
+| `1` `2` `3`, `[` `]`, `m` (plan) | Graph / tree / XML, previous / next statement, missing-index details |
 | `F5` | Execute query (selection if any); also refreshes a tree node or Properties page |
 | `Ctrl+Enter` | Select the statement at the cursor without executing |
 | `Tab` | Switch focus explorer ↔ panels |

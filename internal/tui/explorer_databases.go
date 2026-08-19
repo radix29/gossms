@@ -99,16 +99,71 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		l.node("Sequences", NodeSequences, "", "", dbName),
 		l.node("Synonyms", NodeSynonyms, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
+		l.node("Storage", NodeStorage, "", "", dbName),
 	}, nil
 }
 
-// loadDatabaseSecurityChildren returns a database's Users/Roles/Schemas folders.
+// loadDatabaseSecurityChildren returns a database's security folders, in
+// SSMS's order.
 func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
 		l.node("Roles", NodeDatabaseRoles, "", "", node.data.DBName),
 		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
+		l.node("Security Policies", NodeSecurityPolicies, "", "", node.data.DBName),
+		l.node("Always Encrypted Keys", NodeAlwaysEncryptedKeys, "", "", node.data.DBName),
 	}, nil
+}
+
+// loadSecurityPoliciesChildren lists a database's row-level security
+// policies, each labelled with its state — a disabled policy filters
+// nothing, which is the first thing to know about one.
+func loadSecurityPoliciesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.SecurityPolicy, error) { return dbObj.SecurityPoliciesContext(l.ctx) },
+		func(p *gosmo.SecurityPolicy) *explorerNode {
+			label := p.Schema + "." + p.Name
+			if !p.IsEnabled {
+				label += " (Disabled)"
+			}
+			n := l.node(label, NodeSecurityPolicy, p.Schema, p.Name, node.data.DBName)
+			n.data.IsEnabled = p.IsEnabled
+			return n
+		})
+}
+
+// loadAlwaysEncryptedKeysChildren returns the two Always Encrypted key
+// folders.
+func loadAlwaysEncryptedKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return []*explorerNode{
+		l.node("Column Master Keys", NodeColumnMasterKeys, "", "", node.data.DBName),
+		l.node("Column Encryption Keys", NodeColumnEncryptionKeys, "", "", node.data.DBName),
+	}, nil
+}
+
+func loadColumnMasterKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.ColumnMasterKey, error) { return dbObj.ColumnMasterKeysContext(l.ctx) },
+		func(k *gosmo.ColumnMasterKey) *explorerNode {
+			return l.node(k.Name, NodeColumnMasterKey, "", k.Name, node.data.DBName)
+		})
+}
+
+func loadColumnEncryptionKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.ColumnEncryptionKey, error) { return dbObj.ColumnEncryptionKeysContext(l.ctx) },
+		func(k *gosmo.ColumnEncryptionKey) *explorerNode {
+			return l.node(k.Name, NodeColumnEncryptionKey, "", k.Name, node.data.DBName)
+		})
 }
 
 func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {

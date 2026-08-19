@@ -134,7 +134,7 @@ func TestFilterChildrenKeepsFoldersAndErrors(t *testing.T) {
 		{label: "dbo.Orders", data: nodeData{Type: NodeView, Schema: "dbo", Name: "Orders"}},
 		{label: "boom", data: nodeData{Type: NodeError}},
 	}
-	got := filterChildren(node, children)
+	got := filterChildren(node.data.Filter, children)
 	want := []string{"System Views", "Sales.Customer", "boom"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d children, want %d", len(got), len(want))
@@ -146,7 +146,7 @@ func TestFilterChildrenKeepsFoldersAndErrors(t *testing.T) {
 	}
 
 	node.data.Filter = nil
-	if len(filterChildren(node, children)) != len(children) {
+	if len(filterChildren(node.data.Filter, children)) != len(children) {
 		t.Error("an unfiltered folder must keep every child")
 	}
 }

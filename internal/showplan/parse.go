@@ -433,9 +433,12 @@ func decodeMissingIndexes(dec *xml.Decoder) ([]MissingIndex, error) {
 			case "Column":
 				if cur != nil {
 					name := strings.Trim(attrOf(t, "Name"), "[]")
-					if usage == "INCLUDE" {
+					switch usage {
+					case "INCLUDE":
 						cur.Include = append(cur.Include, name)
-					} else {
+					case "INEQUALITY":
+						cur.Inequality = append(cur.Inequality, name)
+					default:
 						cur.Equality = append(cur.Equality, name)
 					}
 				}

@@ -444,6 +444,24 @@ not act on.
 - **`activity_monitor_proctab.go`'s `"Not connected."` is the only status
   string of ~40 with a trailing period.** Cosmetic.
 
+## Left open by Phase 1 item 6 (2026-08-19)
+
+- **`ScriptTable` doesn't emit a partitioned table's `ON <scheme>(<column>)`
+  clause**, so scripting a partitioned table and running the script elsewhere
+  recreates it on the default filegroup — silently unpartitioned. Found while
+  scripting the item-6 probe database, whose `dbo.Parted` came back on
+  `[PRIMARY]`. The fix needs `Table` to carry its data space (`sys.indexes`'s
+  `data_space_id` for the heap/clustered index, resolved through
+  `sys.partition_schemes` and `sys.index_columns` for the partitioning
+  column); the same clause belongs on `ScriptIndex`.
+
+- **Neither Always Encrypted key can be created from the tree** — no "New
+  Column Master Key..."/"New Column Encryption Key..." dialog. gosmo has
+  `CreateColumnMasterKey`, but its `ENCLAVE_COMPUTATIONS = YES` spelling looks
+  wrong (the real syntax is `ENCLAVE_COMPUTATIONS (SIGNATURE = 0x…)`) and was
+  not exercised live, since the probe keys were created by hand. Verify before
+  building anything on it.
+
 ## gosmo items left from the 2026-08-12 review
 
 - **`CertificateByName`'s `(nil, nil)` was deliberately not changed** when
@@ -616,3 +634,36 @@ on. Nothing here is urgent; the first two are small and self-contained.
   `docs/journal.md`. Note the other three `sc.Opts` clones — the query panel's
   and the Activity Monitor's two — target the same instance and keep the
   database on purpose; this rule is about the cross-instance clone only.
+
+- **`logStatus` writes the Status History ring from background goroutines.**
+  Found 2026-08-19 in the same sweep that produced `explorerNode.snapshot`, and
+  deliberately not fixed with it — the loader race and this one are separate,
+  and widening the change would have put an untested dialog on the same diff.
+  `fetchChildren` calls `a.logStatus` on the loader goroutine
+  (`explorer_loaders.go`), and `logStatus` calls
+  `statusHistoryDialog.Record(msg)`, which appends to a slice the UI goroutine
+  also reads and draws. Same class as the loader race: it is UB, not a stale
+  read, and no test drives both sides so `-race` is quiet. Whichever way it is
+  fixed — a mutex on the ring, or routing the log through `postAndWake` —
+  check the other background `logStatus` callers, not just this one.
+
+- ~~**Five families are looked up by scanning the whole collection.**~~
+  **Fixed** 2026-08-19. gosmo gained the five finders it was missing —
+  `PartitionFunctionByNameContext`, `PartitionSchemeByNameContext`,
+  `SecurityPolicyByNameContext`, `ColumnMasterKeyByNameContext`,
+  `ColumnEncryptionKeyByNameContext` — additively, with every bulk listing
+  kept, and the five gossms helpers are now wrappers that only save the
+  `DatabaseByNameContext` step. The `==` comparison went with the scan:
+  matching happens in SQL, under the server's collation. Covered by
+  `live_bynamefinders_test.go` (`-tags livedb`) in gosmo, which asserts each
+  finder agrees with its listing field by field. See `docs/journal.md`.
+  One deliberate narrowing recorded there: `findSecurityPolicy` no longer
+  treats an empty schema as "match any".
+
+- ~~**Every dialog is registered twice.**~~ **Fixed** 2026-08-19 —
+  `registerDialog` (`app.go`) appends to `allDialogs` and hands the dialog
+  back, so `buildUI` writes `a.x = registerDialog(a, NewX(a))` and there is no
+  second list to forget. `TestEveryAppDialogFieldIsRegisteredInAllDialogs`
+  stays: the helper makes skipping registration awkward, not impossible.
+  Registration order is unchanged, which matters only as the same-tick
+  tie-break `syncDialogStack` uses. See `docs/journal.md`.

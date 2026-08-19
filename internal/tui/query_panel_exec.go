@@ -313,6 +313,7 @@ func (p *QueryPanel) newPlanView() *planview.PlanView {
 	v := planview.New()
 	v.OnStatus = func(msg string) { p.app.setStatus(msg) }
 	v.OnCopyRequest = p.app.copyWithStatus
+	v.OnMissingIndex = func(script string) { p.app.openQueryWithText(p.conn, p.database, script) }
 	v.OnExpand = func() {
 		if plan := v.Plan(); plan != nil {
 			p.app.openPlanPanel("Execution Plan — "+p.Title(), plan)

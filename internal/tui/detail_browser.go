@@ -237,10 +237,14 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 	case NodeTables:
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
+		// The fetch reads a snapshot, never the live node — see
+		// explorerNode.snapshot. node itself stays behind as the identity
+		// postFinal and panicRepair key off, both on the UI goroutine.
+		snap := node.snapshot()
 		app.safegoRepair("loading Object Explorer details", db.panicRepair(node, seq), func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
-			cols, rows, err := fetchNodeDetails(ctx, sc, node)
+			cols, rows, err := fetchNodeDetails(ctx, sc, snap)
 			db.postFinal(app, node, seq, cols, rows, err)
 		})
 	}
@@ -363,7 +367,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
-		dbs = filterObjects(node, dbs, func(d *gosmo.Database) nodeData {
+		dbs = filterObjects(node.data.Filter, dbs, func(d *gosmo.Database) nodeData {
 			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
 		})
 		rows := make([][]string, 0, 4)
@@ -407,7 +411,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
-		views = filterObjects(node, views, func(v *gosmo.View) nodeData {
+		views = filterObjects(node.data.Filter, views, func(v *gosmo.View) nodeData {
 			return nodeData{Name: v.Name, Schema: v.Schema, CreateDate: v.CreateDate}
 		})
 		rows := make([][]string, 0, len(views))
@@ -425,7 +429,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
-		procs = filterObjects(node, procs, func(p *gosmo.StoredProcedure) nodeData {
+		procs = filterObjects(node.data.Filter, procs, func(p *gosmo.StoredProcedure) nodeData {
 			return nodeData{Name: p.Name, Schema: p.Schema, CreateDate: p.CreateDate}
 		})
 		rows := make([][]string, 0, len(procs))
@@ -433,6 +437,10 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 			rows = append(rows, []string{p.Schema + "." + p.Name, formatSQLDate(p.CreateDate), formatSQLDate(p.ModifyDate)})
 		}
 		return []string{"Name", "Created", "Modified"}, rows, nil
+
+	case NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
+		NodeColumnMasterKey, NodeColumnEncryptionKey:
+		return storageSecurityDetail(ctx, sc, node)
 
 	default:
 		if hasChildren(node.data.Type) {
@@ -462,7 +470,7 @@ func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *e
 	if err != nil {
 		return nil, nil, err
 	}
-	children = filterChildren(node, children)
+	children = filterChildren(node.data.Filter, children)
 	rows := make([][]string, 0, len(children))
 	for _, c := range children {
 		rows = append(rows, []string{c.label})

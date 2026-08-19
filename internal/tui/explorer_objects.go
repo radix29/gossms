@@ -116,7 +116,9 @@ func loadConstraintsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 	}
 	return listChildren(func() ([]*gosmo.CheckConstraint, error) { return table.CheckConstraintsContext(l.ctx) },
 		func(cc *gosmo.CheckConstraint) *explorerNode {
-			return l.node(cc.Name, NodeCheck, node.data.Schema, cc.Name, node.data.DBName)
+			n := l.node(cc.Name, NodeCheck, node.data.Schema, cc.Name, node.data.DBName)
+			n.data.TableName = node.data.Name
+			return n
 		})
 }
 
@@ -180,10 +182,6 @@ func viewFields(v *gosmo.View) (string, string, time.Time) { return v.Schema, v.
 
 func procFields(p *gosmo.StoredProcedure) (string, string, time.Time) {
 	return p.Schema, p.Name, p.CreateDate
-}
-
-func funcFields(f *gosmo.UserDefinedFunction) (string, string, time.Time) {
-	return f.Schema, f.Name, f.CreateDate
 }
 
 // loadSchemaScoped lists one kind of schema-scoped object from node's
@@ -254,10 +252,10 @@ func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 // loadFunctionsChildren returns a database's user functions, plus a
 // "System Functions" folder listed first.
 func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	funcs, err := loadSchemaScoped(l, node, NodeFunction, false,
+	funcs, err := loadFunctionNodes(l, node, false,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
 			return d.UserDefinedFunctionsContext(l.ctx)
-		}, funcFields)
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +264,28 @@ func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 
 // loadSystemFunctionsChildren returns the "sys" schema's own functions.
 func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return loadSchemaScoped(l, node, NodeFunction, true,
-		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) { return d.SystemFunctionsContext(l.ctx) }, funcFields)
+	return loadFunctionNodes(l, node, true,
+		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) { return d.SystemFunctionsContext(l.ctx) })
+}
+
+// loadFunctionNodes is loadSchemaScoped for functions, which need one field
+// beyond the three that generic reads: FuncType decides which call template
+// "Script Function as SELECT" produces.
+func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
+	fetch func(*gosmo.Database) ([]*gosmo.UserDefinedFunction, error),
+) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(func() ([]*gosmo.UserDefinedFunction, error) { return fetch(dbObj) },
+		func(f *gosmo.UserDefinedFunction) *explorerNode {
+			n := l.node(f.Schema+"."+f.Name, NodeFunction, f.Schema, f.Name, node.data.DBName)
+			n.data.CreateDate = f.CreateDate
+			n.data.IsSystem = system
+			n.data.FuncType = f.FuncType
+			return n
+		})
 }
 
 // loadTriggersChildren backs the NodeTriggers folder, which appears in two

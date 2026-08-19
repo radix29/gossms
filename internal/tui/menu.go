@@ -16,7 +16,7 @@ import (
 func (a *App) buildMenus() []controls.Menu {
 	return []controls.Menu{
 		{Label: "File", Items: []controls.MenuItem{
-			{Label: "Connect...", Shortcut: "Ctrl+Shift+O", Action: func() { a.connectDialog.Show() }},
+			{Label: "Connect...", Shortcut: "F9", Action: func() { a.connectDialog.Show() }},
 			{Label: "Disconnect", Action: func() { a.disconnectActive() },
 				Enabled: func() bool { return a.selectedServerConn() != nil }},
 			{Divider: true},
@@ -27,9 +27,11 @@ func (a *App) buildMenus() []controls.Menu {
 					return p != nil && layout.PanelClosable(p)
 				}},
 			{Label: "Save", Shortcut: "Ctrl+S", Action: func() { a.saveQuery(false) },
-				Enabled: func() bool { return a.activeQueryPanel() != nil }},
+				Enabled: a.canSaveActivePanel},
 			{Label: "Save As...", Action: func() { a.saveQuery(true) },
-				Enabled: func() bool { return a.activeQueryPanel() != nil }},
+				Enabled: a.canSaveActivePanel},
+			{Label: "Save Execution Plan As...", Action: func() { a.saveExecutionPlanAs() },
+				Enabled: func() bool { return a.activePlan() != nil }},
 			{Divider: true},
 			{Label: "Exit", Shortcut: "Ctrl+Q", Action: func() { a.requestQuit() }},
 		}},

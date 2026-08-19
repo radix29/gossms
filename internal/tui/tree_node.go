@@ -104,6 +104,18 @@ const (
 	NodeForeignKey
 	NodeChecks
 	NodeCheck
+	NodeStorage
+	NodePartitionFunctions
+	NodePartitionFunction
+	NodePartitionSchemes
+	NodePartitionScheme
+	NodeSecurityPolicies
+	NodeSecurityPolicy
+	NodeAlwaysEncryptedKeys
+	NodeColumnMasterKeys
+	NodeColumnMasterKey
+	NodeColumnEncryptionKeys
+	NodeColumnEncryptionKey
 	NodeLoading
 	NodeError
 )
@@ -168,6 +180,9 @@ func isContainerNode(t NodeType) bool {
 		NodeAgentErrorLogs, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
+		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
+		NodeSecurityPolicies, NodeAlwaysEncryptedKeys,
+		NodeColumnMasterKeys, NodeColumnEncryptionKeys,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
 		NodeAgentSchedules, NodeAgentAlerts, NodeAgentEventAlerts,
 		NodeAgentOperators, NodeAgentAdmin,
@@ -273,6 +288,14 @@ func objectIconEmoji(t NodeType) rune {
 		return '✔'
 	case NodeSchema:
 		return '🧩'
+	case NodePartitionFunction:
+		return '📐'
+	case NodePartitionScheme:
+		return '🗄'
+	case NodeSecurityPolicy:
+		return '🛡'
+	case NodeColumnMasterKey, NodeColumnEncryptionKey:
+		return '🔑'
 	case NodeLoading:
 		return '⏳'
 	case NodeError:
@@ -350,6 +373,14 @@ func objectIconSymbols(t NodeType) rune {
 		return '✓'
 	case NodeSchema:
 		return '▧'
+	case NodePartitionFunction:
+		return '∫'
+	case NodePartitionScheme:
+		return '▩'
+	case NodeSecurityPolicy:
+		return '⛨'
+	case NodeColumnMasterKey, NodeColumnEncryptionKey:
+		return '⚿'
 	case NodeLoading:
 		return '…'
 	case NodeError:
@@ -399,6 +430,16 @@ func nodeTypeName(t NodeType) string {
 		return "SQL Server Log"
 	case NodeAgentErrorLog:
 		return "SQL Server Agent Error Log"
+	case NodePartitionFunction:
+		return "Partition Function"
+	case NodePartitionScheme:
+		return "Partition Scheme"
+	case NodeSecurityPolicy:
+		return "Security Policy"
+	case NodeColumnMasterKey:
+		return "Column Master Key"
+	case NodeColumnEncryptionKey:
+		return "Column Encryption Key"
 	default:
 		return "Object"
 	}
@@ -416,6 +457,8 @@ func hasChildren(t NodeType) bool {
 		NodeAgentOperator, NodeAgentReport,
 		NodeSQLServerLog, NodeAgentErrorLog,
 		NodeAvailabilityReplica, NodeAvailabilityDatabase, NodeAGListener,
+		NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
+		NodeColumnMasterKey, NodeColumnEncryptionKey,
 		NodeLoading, NodeError:
 		return false
 	}
@@ -481,6 +524,13 @@ type nodeData struct {
 	// folder above is read from the primary.
 	AGLocalSecondary bool
 	AGLocalJoined    bool
+
+	// FuncType is a NodeFunction's sys.objects type — "FN" scalar, "IF"
+	// inline table-valued, "TF" multi-statement table-valued. Read at load
+	// time because the "Script Function as SELECT" template differs between
+	// them (a scalar function is selected, a table-valued one selected
+	// *from*) and nothing downstream can recover it from the label.
+	FuncType string
 
 	// CreateDate and IsMemoryOptimized back the Object Explorer folder
 	// filter's "Creation Date" and "Is Memory Optimized" criteria (see

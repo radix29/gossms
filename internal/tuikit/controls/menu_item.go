@@ -17,6 +17,11 @@ type MenuItem struct {
 	Divider  bool        // renders as a ──── separator
 	Action   func()      // called when the item is activated
 	Enabled  func() bool // nil means always enabled
+
+	// Sub, when non-empty, makes this item a cascade: it opens a submenu
+	// instead of firing Action, and draws a ▸ marker where a shortcut would
+	// otherwise go. See menuCascade.
+	Sub []MenuItem
 }
 
 // enabled reports whether it can be selected or activated right now.
@@ -65,6 +70,16 @@ func stepSelectableItem(items []MenuItem, from, dir int) int {
 	return -1
 }
 
+// menuRowSuffix returns the right-aligned text of an item: the ▸ cascade
+// marker for a submenu, otherwise its shortcut. An item with a submenu has
+// no shortcut of its own — activating it only opens the submenu.
+func menuRowSuffix(it MenuItem) string {
+	if len(it.Sub) > 0 {
+		return "▸"
+	}
+	return it.Shortcut
+}
+
 // menuContentWidth returns the width, in display columns, of a dropdown or
 // context-menu box wide enough to fit every item's label and shortcut,
 // floored at minW — shared by MenuBar.dropdownGeometry and
@@ -76,7 +91,7 @@ func menuContentWidth(items []MenuItem, minW int) int {
 		// gap between label and shortcut for whichever item ends up
 		// defining w — without the extra margin, that widest item's own
 		// label and shortcut land flush against each other with no gap.
-		if n := core.DisplayWidth(item.Label) + core.DisplayWidth(item.Shortcut) + 6; n > w {
+		if n := core.DisplayWidth(item.Label) + core.DisplayWidth(menuRowSuffix(item)) + 6; n > w {
 			w = n
 		}
 	}
@@ -119,8 +134,8 @@ func drawMenuRow(s tcell.Screen, x, y, w int, item MenuItem, selected bool, bord
 	labelStyle, shortcutStyle := menuRowStyles(item, selected)
 	core.FillRect(s, core.Rect{X: x + 1, Y: y, W: w - 2, H: 1}, ' ', labelStyle)
 	core.DrawTextClipped(s, x+2, y, w-4, labelStyle, item.Label)
-	if item.Shortcut != "" {
-		sx := x + w - 1 - core.DisplayWidth(item.Shortcut) - 1
-		core.DrawText(s, sx, y, shortcutStyle, item.Shortcut)
+	if suffix := menuRowSuffix(item); suffix != "" {
+		sx := x + w - 1 - core.DisplayWidth(suffix) - 1
+		core.DrawText(s, sx, y, shortcutStyle, suffix)
 	}
 }

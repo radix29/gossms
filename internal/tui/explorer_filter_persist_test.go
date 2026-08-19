@@ -28,7 +28,7 @@ func TestFilterObjectsDropsRejectedObjects(t *testing.T) {
 		return nodeData{Name: tb.Name, Schema: tb.Schema, CreateDate: tb.CreateDate, IsMemoryOptimized: tb.IsMemoryOptimized}
 	}
 
-	got := filterObjects(node, tables, key)
+	got := filterObjects(node.data.Filter, tables, key)
 	want := []string{"Customer", "CustomerArchive"}
 	if len(got) != len(want) {
 		t.Fatalf("kept %d tables, want %d", len(got), len(want))
@@ -40,7 +40,7 @@ func TestFilterObjectsDropsRejectedObjects(t *testing.T) {
 	}
 
 	node.data.Filter = nil
-	if len(filterObjects(node, tables, key)) != len(tables) {
+	if len(filterObjects(node.data.Filter, tables, key)) != len(tables) {
 		t.Error("an unfiltered folder must keep every object")
 	}
 }
@@ -64,7 +64,7 @@ func TestFilterObjectsReadsEveryTableProperty(t *testing.T) {
 		{prop: schemaProp(), op: opEquals, value: "dbo"},
 	} {
 		node := &explorerNode{data: nodeData{Type: NodeTables, Filter: &nodeFilter{criteria: []filterCriterion{c}}}}
-		got := filterObjects(node, tables, key)
+		got := filterObjects(node.data.Filter, tables, key)
 		if c.prop.id == fpSchema {
 			if len(got) != 2 {
 				t.Errorf("Schema equals dbo kept %d tables, want 2", len(got))

@@ -32,6 +32,10 @@ func formatMB(mb float64) string {
 // them concurrently (bounded by maxRowFetchConcurrency) means one slow
 // database doesn't hold up the rest.
 func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	// data, not node: this runs on a background goroutine and the UI goroutine
+	// writes node.data underneath it (see explorerNode.snapshot). node stays
+	// behind as the identity panicRepair and postFinal key off.
+	data := node.data
 	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
@@ -42,7 +46,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 			return
 		}
 
-		all = filterObjects(node, all, func(d *gosmo.Database) nodeData {
+		all = filterObjects(data.Filter, all, func(d *gosmo.Database) nodeData {
 			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
 		})
 
