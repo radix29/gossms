@@ -473,3 +473,17 @@ func (d *FileDialog) activateButton() {
 		d.cancel()
 	}
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost: the path or name
+// field while one of them has focus, and nothing while the file list does.
+//
+// The explicit nil is load-bearing — FocusedField returns a typed
+// *widgets.InputField, and a nil one placed in an interface is not a nil
+// interface, so returning it directly would hand the caller a non-nil target
+// whose every method dereferences nil.
+func (d *FileDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if f := d.FocusedField(); f != nil {
+		return f
+	}
+	return nil
+}

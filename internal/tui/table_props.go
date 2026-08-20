@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -247,16 +248,16 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 			if err != nil {
 				return nil, nil, err
 			}
-			tables, err := d.TableChangeTrackingContext(ctx)
+			// A table gosmo does not list — an ms-shipped one, or one dropped
+			// since the tree was populated — shows as "tracking off" rather
+			// than failing the page, which is what the listing scan this
+			// replaced did.
+			current, err := d.TableChangeTrackingForContext(ctx, schema, name)
 			if err != nil {
-				return nil, nil, err
-			}
-			current := &gosmo.TableChangeTracking{Schema: schema, Name: name}
-			for _, tct := range tables {
-				if tct.Schema == schema && tct.Name == name {
-					current = tct
-					break
+				if !errors.Is(err, gosmo.ErrNotFound) {
+					return nil, nil, err
 				}
+				current = &gosmo.TableChangeTracking{Schema: schema, Name: name}
 			}
 
 			enabledRow := propsheet.Select("Table change tracking", onOff, boolIdx(current.Enabled))

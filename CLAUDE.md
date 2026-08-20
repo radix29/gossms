@@ -112,6 +112,73 @@ database layer, verify by running it:
 Tests should assert an outcome, not that nothing panicked — a test that only
 checks "no crash" passes on the very behavior it was written to pin down.
 
+**A round-trip test proves two functions are inverses, never that either is
+right.** Where a load half and a write half read the same parallel
+label/code tables — the schedule dropdowns, the permission-state tables, any
+`items[]`/`values[]` pair — a fault in the shared table cancels out and the
+round-trip passes: swapping two entries in `weekdayBits` leaves the checkbox
+labelled Monday setting Tuesday's bit, and `populate`→`readFrequency` still
+agrees. Pin such a pair by *naming* it (`"Monday"` → `gosmo.WeekdayMonday`)
+and by asserting the two slices are the same length; a label added to one and
+not the other is otherwise absorbed silently. See
+`agent_schedule_form_test.go` and `docs/journal.md` (2026-08-20).
+
+Check a new test by mutating the code it covers and confirming it fails —
+that is what surfaced the blind spot above, and it takes one `sed` and one
+`go test`.
+
+**A Properties page can be driven end to end from a test — use
+`internal/tui/fakedb_test.go`, don't conclude it can't be done.** `gosmo.Server`
+now has a constructor over a caller-supplied `*sql.DB` (`gosmo.NewServer`), and
+the harness on top of it gives you `newFakeConn` (a `*db.ServerConn` backed by a
+scripted `database/sql` driver that records every statement executed),
+`loadPage`, and `textRow` for addressing a form by label rather than by an index
+into `Rows()`. `database_props_files_page_test.go` is the worked example: it runs
+the real `load` and `apply` closures and asserts the statements that reached the
+server. The `gosmo.WithScript` harness the New-X dialogs use does *not* work
+here — a Properties page's `load` and `apply` both open with a by-name read, and
+`WithScript` intercepts writes only.
+
+Rules for writing one, all learned the hard way (`docs/journal.md`,
+2026-08-20 and 2026-08-21). **Drive a row with `Edit`, never
+`SetValue`/`SetSelected`** — the latter move the dirty baseline with the value,
+so apply skips the row and a
+test that asserts "nothing was written" passes for the wrong reason; the
+`editText`/`editSelect`/`editRadio`/`toggleByName` helpers check for it. And
+**address rows and grid cells by name, never by index** — every one of these
+pages reads its grid back positionally against the slice it was built from, so a
+test that also works in indices agrees with a page that has them misaligned.
+Where a page keeps a filtered or pending-removal subset alongside the full list,
+exercise *two* edits: the lists only diverge after the first. And **act on an
+object that is not the first one in its list** — a page that ignores the
+selection entirely still passes when the test picks row 0 (a real missed mutant
+on User Membership, 2026-08-21).
+
+Three more the harness itself needs, each of which produced a wrong answer
+before it existed. **Scope a `fakeResponse` with `db:` when the page reads the
+same query in several databases** — without it every database gets the identical
+answer and the misalignment the test exists to catch is unreachable. **Scope one
+with `arg:` for a by-name read**, and put it *before* the list read: responses
+are matched by substring in order, and `DatabaseByName`'s query contains
+`FROM sys.databases` too, so behind the list answer every object resolves to
+whichever row sorts first. **Assert with `StatementsIn(db)`, not `Statements()`,
+for anything database-scoped** — the bare `USE` is stripped as plumbing, and
+with it the only record of where the write landed; pair it with
+`assertNoStatementsIn` on the databases that should *not* have been touched.
+
+One trap that fails silently in the passing direction: `eachDatabase`
+(`db_scan.go`) and gosmo's `userMappingsIn` both drop a database whose read
+fails rather than failing the page, so an under-scripted fake yields an empty
+grid and an apply that writes nothing. A test on such a page must first assert
+the page actually loaded its rows.
+
+What that harness proves is bounded, and staying inside the bound is the rule:
+queries are matched by substring and answered with whatever the test scripted,
+so it shows the page asked for the right things and built the right request —
+never that the T-SQL is valid or that SQL Server would accept it. Statement text
+is gosmo's own tests; acceptance is a live run. An assertion there that reaches
+for server semantics is asserting the fake.
+
 ## Scope discipline
 
 Avoid unrequested tidying. A bug fix does not need surrounding cleanup, new
@@ -175,6 +242,15 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   the `slices` package, `errors.AsType`.
 - `core.DisplayWidth(s)`, never `len(s)`, for any column-position math —
   terminal columns aren't byte length.
+- **A property-sheet label must fit `propsheet.LabelWidth` (30 columns).**
+  Text/Password/Int/Select pad theirs with `core.PadRight` and Static clips its
+  own; both hard-clip with no ellipsis, so an over-long label silently renders
+  as a shorter, different one — "Auto update statistics asynchronously" became
+  "Auto update statistics asynchr", directly under "Auto update statistics".
+  `TestNoPropertySheetLabelIsTruncated` fails on any literal over the limit and
+  prints what it would render as; shorten the label rather than widening
+  `LabelWidth`, which moves the value column on every page. Check/Radio/
+  Section/Note draw at full width and are exempt.
 - `tuikit` is a strictly one-way dependency graph and knows nothing about
   `tui` (the application layer).
 - Every `tuikit` sub-package is organized one file per type or tightly
@@ -228,6 +304,18 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   wiring for the grid-plus-detail-editor idiom. A redraw after the row *set*
   changes — an add/remove button, a new result — is a different case and may
   reset the cursor deliberately.
+  **The cursor is not the only thing `SetData` discards**, so restoring it by
+  hand is not enough and shipped as its own bug: the scroll position and any
+  dragged column width go too, and `SetSelectedCell` ends in `ensureVisible`,
+  which then scrolls to the selection *from zero* and lands the row the user
+  was on against the bottom edge. Toggling a State half way down Server
+  Properties > Permissions moved the whole list on every click (found and fixed
+  2026-08-20; reproduced and A/B'd live). `redrawGrid` is now a wrapper over
+  `controls.DataGrid.SetDataPreservingView`, which restores all three in an
+  order that matters — widths, then scroll, then selection. Outside
+  `internal/tui`, call `SetDataPreservingView` directly; `propsheet.ToggleGridRow`
+  had the same defect and could not reach `redrawGrid` at all. Never hand-roll
+  the pair again: six pages did, and every one of them dropped the widths.
 - **A `Ctrl+Shift+<letter>` chord never arrives as `KeyCtrlX`.** tcell folds a
   Ctrl-modified rune into `KeyCtrlA..KeyCtrlZ` only when Ctrl is the *sole*
   modifier, so Kitty reports Ctrl+Shift+O as `KeyRune "o"` and xterm's
@@ -262,6 +350,27 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   any pre-release trimming — it decodes tcell's exact Key/Modifiers/rune per
   keypress, which is what separates a real app bug from a terminal
   limitation.
+- **An open dialog owns the clipboard outright — `activeClipboardTarget` must
+  never fall past `topDialog()` to a panel underneath.** Ctrl+C/X/V are
+  consumed centrally in `App.handleKey` *before* any dialog sees them (the
+  Screen clipboard methods only exist in the application layer), so the target
+  is resolved by asking the frontmost dialog for its focused field via
+  `core.ClipboardHost`. The old form was a switch naming three of thirty
+  dialogs with a fall-through for the rest, and Ctrl+X in the Find dialog cut
+  the query editor's selection behind it, silently, reported as "Cut to
+  clipboard" (2026-08-20). A dialog with no text entry deliberately isn't a
+  host, and an inert clipboard is the correct answer there. A new dialog with
+  a text field implements `FocusedClipboardTarget` — returning an **explicit**
+  nil on every miss, since a typed nil widget in an interface is not a nil
+  interface. `TestEveryDialogWithTextEntryIsAClipboardHost` catches a missing
+  host but cannot catch a reintroduced fall-through, which is why this is
+  written here. A dialog that has to *react* to an edit — re-filter a list,
+  refresh a preview — implements `core.ClipboardEditHandler` and checks the
+  target it is handed rather than assuming the edit landed in the field it
+  watches. The paste itself is applied by `App.pasteInto`, which drops the text
+  unless the widget it was aimed at is still the target: every clipboard read
+  is asynchronous, so the dialog may be gone by the time it returns.
+
 - **Never give a procedure you install outside `master` an `sp_` prefix.** An
   `sp_`-prefixed name falls back to `master` when the current database has no
   such procedure, which corrupts DDL on exactly the path that installs one:

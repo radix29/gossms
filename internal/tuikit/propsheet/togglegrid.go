@@ -63,9 +63,9 @@ func (t *ToggleGridRow) SetRows(text [][]string, values [][]bool) {
 // same way as SetRows's values parameter.
 func (t *ToggleGridRow) Values() [][]bool { return t.values }
 
-// render rebuilds the grid's display rows from text and values, interleaving
-// them back into columns order.
-func (t *ToggleGridRow) render() {
+// renderRows builds the grid's display rows from text and values,
+// interleaving them back into columns order.
+func (t *ToggleGridRow) renderRows() [][]string {
 	rows := make([][]string, len(t.text))
 	for i := range rows {
 		row := make([]string, len(t.columns))
@@ -80,7 +80,42 @@ func (t *ToggleGridRow) render() {
 		}
 		rows[i] = row
 	}
-	t.Grid.SetData(t.columns, rows)
+	return rows
+}
+
+// render replaces the grid's rows outright, taking SetData's reset of the cell
+// cursor, the scroll and any dragged column width. For SetRows, whose rows are
+// a different set; a change that leaves the row set alone uses
+// renderPreservingView instead.
+func (t *ToggleGridRow) render() {
+	t.Grid.SetData(t.columns, t.renderRows())
+}
+
+// renderPreservingView re-renders the same rows without moving the grid under
+// the user — see controls.DataGrid.SetDataPreservingView, and redrawGrid in
+// the application layer, which is the same fix for the same reason at the
+// eleven Properties pages that hand-rolled it.
+func (t *ToggleGridRow) renderPreservingView() {
+	t.Grid.SetDataPreservingView(t.columns, t.renderRows())
+}
+
+// Text returns the non-toggle cell text, row-parallel with Values.
+//
+// The pairing is the point: a page reads Values()[i] against its own i'th
+// object, so anything that needs to know *which* row a value belongs to has
+// to be able to read the row's own text. Without it the two are only
+// relatable by an index nobody outside the page can check.
+func (t *ToggleGridRow) Text() [][]string { return t.text }
+
+// Toggle flips one toggle cell the way clicking or pressing Space on it does,
+// including the redraw and the OnToggle callback. row is a row index; col
+// indexes toggleCols, not the raw grid column — the same convention OnToggle
+// reports in.
+func (t *ToggleGridRow) Toggle(row, col int) {
+	if col < 0 || col >= len(t.toggleCols) {
+		return
+	}
+	t.activateCell(row, t.toggleCols[col])
 }
 
 func (t *ToggleGridRow) activateCell(row, col int) {
@@ -89,8 +124,7 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 		return
 	}
 	t.values[row][j] = !t.values[row][j]
-	t.render()
-	t.Grid.SetSelectedCell(row, col)
+	t.renderPreservingView()
 	if t.OnToggle != nil {
 		t.OnToggle(row, j, t.values[row][j])
 	}
@@ -110,7 +144,10 @@ func (t *ToggleGridRow) Dirty() bool {
 
 func (t *ToggleGridRow) Revert() {
 	t.values = cloneBoolMatrix(t.baseline)
-	t.render()
+	// Preserving, not resetting: Ctrl+Z restores the values of the rows
+	// already on screen, so the row the user is on is still the row they
+	// meant — the row set has not changed, only what it says.
+	t.renderPreservingView()
 }
 
 func (t *ToggleGridRow) Validate() error { return nil }

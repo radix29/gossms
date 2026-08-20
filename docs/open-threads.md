@@ -429,11 +429,89 @@ not act on.
   keep-and-document rather than a delete. gosmo's no-removal rule does not
   reach these — they are gossms's own.
 
-- **`internal/tuikit/layout` is the least-covered tuikit package (46.6%)**, and
-  it is where `Splitter` and `PanelManager` keep their drag latches — the class
-  of bug that has shipped here before. `internal/activity` (54.8%) has the
-  collector's backoff/pause/stop paths uncovered. Both are unit-testable with
-  no server and no terminal.
+- ~~**`internal/tuikit/layout` is the least-covered tuikit package (46.6%)**~~
+  **No longer true** — re-measured 2026-08-20 at **73.7%**, second-highest in
+  tuikit, after the drop-down scroll work and its tests. The three below it are
+  now `core` (60.5%), `dialogs` (61.0%) and `propsheet` (62.5%); `theme` is 0%
+  and stays there, being a palette table. The point behind the original entry
+  still stands and is worth keeping: `layout` is where `Splitter` and
+  `PanelManager` keep their drag latches, the class of bug that has shipped
+  here before — most recently `comboSbDragging` surviving a close (fixed
+  2026-08-20). **`internal/activity` (54.8%) is the real gap now**, with the
+  collector's backoff/pause/stop paths uncovered. Unit-testable with no server
+  and no terminal.
+
+- **The Properties pages now have a seam, and fourteen pages use it.** The
+  `propPage` load/apply closures were unreachable from a unit test for as long
+  as `gosmo.Server` could only come from a real connection: both halves open
+  with a by-name read, and `gosmo.WithScript` intercepts writes only, so the
+  script-collector harness the New-X dialogs use fails on the first query.
+  Closed 2026-08-20 by `gosmo.NewServer(ctx, *sql.DB)`, plus
+  `internal/tui/fakedb_test.go` — a scripted `database/sql` driver, a
+  `newFakeConn` that hands back a `*db.ServerConn`, `loadPage`, and `textRow`
+  for addressing a form by label. `database_props_files_page_test.go` is the
+  worked example: it drives the real load and apply closures and reads back the
+  statements that reached the server. The harness grew three things on
+  2026-08-21, each because a page could not be driven without it: a
+  `fakeResponse` can be scoped to the database a `USE` has pinned the
+  connection to (`db:`) or to a query parameter (`arg:`, without which a
+  by-name read is served the list read's answer and every object resolves to
+  whichever row sorts first); `StatementsIn(db)` says *where* a write landed,
+  which is half the meaning of one; and `plainGrid`/`selectGridRow`/
+  `activateGridCell` drive a `controls.DataGrid` page by the keys a user sends,
+  since `SetSelectedRow` deliberately does not fire `OnSelectRow`.
+
+  **Fourteen pages are done**, chosen for what their apply can destroy: Files,
+  Options (the twenty-one label/DatabaseOption pairs, plus Restrict access
+  staying off that path so it keeps WITH ROLLBACK IMMEDIATE), Login > Status
+  (CONNECT SQL grant/deny/revoke and enable/disable), Login > Server Roles
+  (which role a tick grants), Securables (the grant/deny/revoke matrix, its
+  WITH GRANT OPTION and CASCADE transitions, and the filter's row mapping),
+  Filegroups (two toggle columns, and Remove against a shifting visible list),
+  and, 2026-08-21, Login > User Mapping (which database a user is created or
+  dropped in, and the schema/role edits that follow the row they were typed
+  on), Database Scoped Configurations (the eleven label/option pairs and the
+  OFF/ON keyword), Server Properties Memory / Processors / Advanced (the
+  twenty-six label/sp_configure pairs, the affinity bit under each named
+  processor, and RECONFIGURE only when something changed), Database and Server
+  Role Members (which of the two names in ALTER ROLE is which), User
+  Membership, and Change Tracking.
+
+  **What is still open is the other 35 write pages.** The harness costs one
+  `fakeResponse` per query a page reads, matched by substring, and a page whose
+  script is incomplete fails naming the query it missed. Nothing on the
+  "destructive or silent" list is outstanding any more; what remains is the
+  ordinary tail — Agent job steps and schedules, the New-X dialogs' pages, the
+  AG pages, Index/Table/Statistics Properties. Not worth doing for a page that
+  only reads.
+
+  Two shapes recur and are what these tests are actually for. First, a page
+  builds a grid from a slice and reads it back by index — always assert on the
+  *name* in the row, never on the index, or the test agrees with a page that
+  has them misaligned. Second, a page keeps a filtered or pending-removal
+  subset alongside the full list; the index hazard only appears once the two
+  diverge, so a single-item test passes on the broken version. See
+  `TestRemovingTwoFilegroupsRemovesBothTheOnesSelected` for that one, and
+  `TestDatabaseRoleMembersRemovesBothOfTwo` for the same thing on the shared
+  membership form. A third, added 2026-08-21: the object a test acts on must
+  not be the *first* one in the list, or a page that ignores the selection
+  entirely passes. That was a real missed mutant on User Membership.
+
+  Know what it does and does not prove. Queries are answered by substring
+  match, so a test here shows the page asked for the right things and built the
+  right request — never that the T-SQL is valid or that SQL Server would accept
+  it. Statement text is gosmo's own tests; acceptance is a live run. An
+  assertion here that reaches for server semantics is asserting the fake.
+
+  Coverage context, still current: the encoder layer inside the closures is
+  done — `agent_schedule_form.go`, `agent_job_props_steps.go`,
+  `database_props_files.go`, `backup_dialog.go` and `restore_dialog.go` all
+  have their form-to-request encoders at 100%, done over 2026-08-20 with three
+  small extractions (`planJobStepWrites`, and `fileEdit.changed`/`.modify`/
+  `.spec`). See `docs/journal.md` for each, including the one thing a
+  round-trip test provably cannot catch. What remains uncovered in
+  `internal/tui` is the load closures the harness above now reaches, and
+  draw/layout code.
 
 - **`fileutil.WriteAtomic` preserves mode but not owner.** The rename makes the
   replacement file owned by whoever is running, where a write-in-place would
@@ -441,8 +519,12 @@ not act on.
   a user-owned file, which is not a case it supports; recorded so the next
   reader of `modeFor` doesn't assume ownership is handled there too.
 
-- **`activity_monitor_proctab.go`'s `"Not connected."` is the only status
-  string of ~40 with a trailing period.** Cosmetic.
+- **`activity_monitor_proctab.go` has the app's only status strings with a
+  trailing period — three of them, not one.** Re-counted 2026-08-20: `"Not
+  connected."` (`:134`), `"Stopped unexpectedly — see the log for details."`
+  (`:159`) and `"No result returned."` (`:273`). Every other `setStatus` in the
+  app ends without one. Cosmetic, and all three are in the same file, so it is
+  one edit whenever it is worth making.
 
 ## Left open by Phase 1 item 6 (2026-08-19)
 
@@ -577,6 +659,27 @@ Built 2026-08-13 (see `docs/journal.md`).
   bare name, and moving is `ALTER SCHEMA ... TRANSFER`, which Object Explorer
   does not offer (Schema Properties' owner transfer is a different operation).
 
+## Clipboard in a dialog: what is deliberately out of it
+
+The `core.ClipboardHost` fix of 2026-08-20 (see `docs/journal.md`) gave every
+dialog with a text field a working Ctrl+C/X/V and stopped the rest from
+reaching past themselves to the query editor. Two consequences are deliberate,
+not regressions:
+
+- **A dialog with no text entry now has an inert clipboard.** Help, About /
+  Object Dependencies, Confirm, Query List and Background Tasks do not
+  implement the interface, so Ctrl+C there does nothing. It previously copied
+  whatever the panel behind the dialog had selected, which was never the thing
+  the user was looking at.
+
+- **Key Diagnostics cannot copy its log**, and that is the one place the
+  omission is worth revisiting. Its whole purpose is reporting what a terminal
+  actually sent, which is exactly the text someone would want to paste into a
+  bug report — but it draws its log directly rather than holding a
+  `controls.Editor` the way Status History does, so there is no target to
+  hand back. Giving it one is a feature, not part of the fix. Status History
+  *can* copy, for that reason.
+
 ## Deferred scope (repeatedly, deliberately)
 
 - **Windows / Microsoft Entra (Azure AD) authentication**, in Login Properties,
@@ -635,6 +738,47 @@ on. Nothing here is urgent; the first two are small and self-contained.
   and the Activity Monitor's two — target the same instance and keep the
   database on purpose; this rule is about the cross-instance clone only.
 
+- ~~**Schema Properties' Object summary fetched five database-wide listings.**~~
+  **Fixed** 2026-08-20 — the General page counted views, procedures, functions,
+  synonyms and sequences by listing all of them and matching `Schema` in Go,
+  pulling every view and procedure definition across the wire on the way.
+  gosmo gained `Schema.ObjectCountsByType`/`Context`; the page makes one round
+  trip for all six numbers. Six scalar subqueries rather than a `GROUP BY` over
+  `sys.objects`, because the listings' predicates differ in more than the type
+  code — see `docs/journal.md`. Covered by `live_schemacounts_test.go`
+  (`-tags livedb`), which asserts the query equals the listings-and-scan on
+  three schemas.
+
+- ~~**`Scripter.ScriptDatabase` had no `Context` sibling.**~~ **Fixed**
+  2026-08-20, and it turned out not to be a symmetry question: the method
+  renders from the `Database`'s cached metadata, so a bare
+  `Server.Database(name)` handle scripted as `SET RECOVERY ;` and
+  `COMPATIBILITY_LEVEL = 0` — invalid T-SQL. `ScriptDatabaseContext` refills
+  the handle from `sys.databases` first, and each line is still guarded on its
+  own value for the OFFLINE case where the catalog itself returns NULL. gossms
+  was never affected (its `ddl` helper always goes through
+  `DatabaseByNameContext`) but is now uniform with the other twenty-six
+  entries in `scripting.go`'s table. Covered by `scripter_database_test.go`
+  and `live_scriptdatabase_test.go`, which replays the generated script against
+  a dropped database. All 27 `Script*` methods now have both forms.
+
+- ~~**A click never fires `OnSelectRow` on a cell-cursor grid.**~~ Found
+  2026-08-20 while live-testing the redrawGrid column-width fix, held back
+  from that change, and **fixed** the same day on its own.
+  `datagrid_input.go`'s `Button1` handler has two exits: the
+  cell-cursor one (~:255) sets `selRow`/`selCol`, calls `activateCell()` and
+  returns `true`, and the plain-row one below it fires `OnSelectRow`. So on a
+  grid with `SetCellCursor(true)`, clicking a row moves the highlight but never
+  tells the page — a detail panel wired to `OnSelectRow` goes on describing
+  whatever row the keyboard last left it on. Verified live on Job Properties >
+  Schedules: click row 2, the highlight moves and "Selected schedule" still
+  reads row 1; press Down and it catches up. Eleven pages wire `OnSelectRow`
+  onto a cell-cursor grid and all of them were affected. The fix fires
+  `OnSelectRow` before `activateCell` — the order the keyboard already uses —
+  and only when `selRow` actually moved, so a page that redraws from inside
+  `OnActivateCell` is not re-entered on every toggle of the row it is already
+  on. Three tests in `datagrid_cellcursor_test.go`; see `docs/journal.md`.
+
 - **`logStatus` writes the Status History ring from background goroutines.**
   Found 2026-08-19 in the same sweep that produced `explorerNode.snapshot`, and
   deliberately not fixed with it — the loader race and this one are separate,
@@ -659,6 +803,19 @@ on. Nothing here is urgent; the first two are small and self-contained.
   finder agrees with its listing field by field. See `docs/journal.md`.
   One deliberate narrowing recorded there: `findSecurityPolicy` no longer
   treats an empty schema as "match any".
+
+  **Second batch fixed** 2026-08-20 — the other five, which that pass left
+  behind: `findSchema`, `findIndex`, `findStatistic`, `findForeignKey` and the
+  Change Tracking page's table lookup. gosmo gained
+  `Database.SchemaByNameContext`, `Table.IndexByNameContext`,
+  `Table.StatisticByNameContext`, `Table.ForeignKeyByNameContext` and
+  `Database.TableChangeTrackingForContext`, again additively. `IndexByName`
+  keeps `IndexesContext`'s two-query shape rather than collapsing it, and
+  `TableChangeTrackingForContext` keeps "tracking off" as a value rather than
+  an absence. Covered live on both sides —
+  `TestLiveSchemaAndTableChildFindersMatchTheirListings` in gosmo and the new
+  `internal/tui/live_propfinders_test.go` here. No by-name lookup in either
+  repo now scans a listing.
 
 - ~~**Every dialog is registered twice.**~~ **Fixed** 2026-08-19 —
   `registerDialog` (`app.go`) appends to `allDialogs` and hands the dialog

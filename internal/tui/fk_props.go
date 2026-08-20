@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -22,24 +21,17 @@ func fkPropPages(sc *db.ServerConn, dbName, schema, table, name string) []propPa
 }
 
 // findForeignKey resolves dbName/schema/table/name to the owning
-// *gosmo.Table and its *gosmo.ForeignKey — there's no ForeignKeyByName
-// (gosmo only exposes the bulk ForeignKeysContext listing), so this finds
-// it by name the same way findIndex/findStatistic already do.
+// *gosmo.Table and its *gosmo.ForeignKey, mirroring findIndex/findStatistic.
 func findForeignKey(ctx context.Context, sc *db.ServerConn, dbName, schema, table, name string) (*gosmo.Table, *gosmo.ForeignKey, error) {
 	t, err := findTable(ctx, sc, dbName, schema, table)
 	if err != nil {
 		return nil, nil, err
 	}
-	fks, err := t.ForeignKeysContext(ctx)
+	fk, err := t.ForeignKeyByNameContext(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, fk := range fks {
-		if fk.Name == name {
-			return t, fk, nil
-		}
-	}
-	return nil, nil, fmt.Errorf("foreign key %q not found on %s", name, fqn(schema, table))
+	return t, fk, nil
 }
 
 func pageForeignKeyGeneral(sc *db.ServerConn, dbName, schema, table, name string) propPage {

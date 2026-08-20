@@ -206,3 +206,12 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost: the confirmation
+// field while it has focus, nothing while a button does.
+func (d *TypedConfirmDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if d.focus == typedConfirmFocusInput {
+		return d.input
+	}
+	return nil
+}

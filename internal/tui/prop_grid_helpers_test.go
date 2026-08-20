@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -250,4 +251,51 @@ func focusSelect(t *testing.T, row *propsheet.SelectRow) {
 
 func press(row *propsheet.SelectRow, k tcell.Key) {
 	row.HandleKey(tcell.NewEventKey(k, "", tcell.ModNone))
+}
+
+// A grid the user has dragged a column on keeps that width across redrawGrid.
+// DataGrid.SetSource clears the overrides — right for a query grid handed a
+// new result set, wrong for a Properties page redrawing its own fixed columns,
+// where the drag simply vanishes on the next toggle or refresh.
+func TestRedrawGridKeepsDraggedColumnWidths(t *testing.T) {
+	headers := []string{"Attached", "Name", "Enabled"}
+	rows := [][]string{{"[x]", "Nightly", "True"}, {"[ ]", "Weekly", "False"}}
+
+	grid := controls.NewDataGrid()
+	grid.SetCellCursor(true)
+	grid.SetBounds(0, 0, 80, 10)
+	grid.SetData(headers, rows)
+
+	grid.SetColumnWidth(1, 40)
+	widths := grid.ColumnWidthOverrides()
+	if widths[1] != 40 {
+		t.Fatalf("column 1 override = %d before the redraw, want 40", widths[1])
+	}
+
+	rows[1][0] = "[x]"
+	redrawGrid(grid, headers, rows)
+
+	if got := grid.ColumnWidthOverrides(); got[1] != 40 {
+		t.Errorf("column 1 override = %d after the redraw, want 40", got[1])
+	}
+	// The columns the user did not touch stay on their computed default, so a
+	// redraw cannot freeze the whole grid at whatever it happened to be.
+	if got := grid.ColumnWidthOverrides(); got[0] != 0 || got[2] != 0 {
+		t.Errorf("untouched columns picked up overrides: %v", got)
+	}
+}
+
+// A redraw that reshapes the grid starts clean rather than applying the old
+// widths to new columns.
+func TestRedrawGridDropsWidthsPastTheNewColumnCount(t *testing.T) {
+	grid := controls.NewDataGrid()
+	grid.SetBounds(0, 0, 80, 10)
+	grid.SetData([]string{"A", "B", "C"}, [][]string{{"1", "2", "3"}})
+	grid.SetColumnWidth(2, 30)
+
+	redrawGrid(grid, []string{"A", "B"}, [][]string{{"1", "2"}})
+
+	if got := grid.ColumnWidthOverrides(); len(got) != 2 {
+		t.Fatalf("overrides = %v, want two columns' worth", got)
+	}
 }

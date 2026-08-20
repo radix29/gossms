@@ -100,3 +100,73 @@ func TestDataGridRowReturnsUnderlyingCells(t *testing.T) {
 		t.Errorf("Row(5) out of range = %v, want nil", got)
 	}
 }
+
+// A click on a cell-cursor grid has to tell the page its selection moved.
+// The Button1 branch used to set selRow/selCol, call activateCell and return
+// without ever firing OnSelectRow, so every Properties page with a detail
+// panel below its grid — eleven of them — kept describing whatever row the
+// keyboard had last left it on while the highlight sat somewhere else.
+func TestDataGridClickFiresOnSelectRowOnACellCursorGrid(t *testing.T) {
+	g := newCellCursorGrid()
+	g.OnActivateCell = func(row, col int) {}
+
+	var selected []int
+	g.OnSelectRow = func(row int) { selected = append(selected, row) }
+
+	// Row 1, first column. rowAtY puts data row n at rect.Y+2+n.
+	click(t, g, 1, g.rect.Y+3)
+
+	if len(selected) != 1 || selected[0] != 1 {
+		t.Fatalf("OnSelectRow calls = %v, want [1]", selected)
+	}
+	if row, _ := g.SelectedCell(); row != 1 {
+		t.Errorf("SelectedCell row = %d, want 1", row)
+	}
+}
+
+// Selection fires before activation, the order the keyboard already uses: a
+// page syncs its detail widgets to the new row, then the toggle runs against
+// that row.
+func TestDataGridClickSelectsBeforeItActivates(t *testing.T) {
+	g := newCellCursorGrid()
+	var order []string
+	g.OnSelectRow = func(int) { order = append(order, "select") }
+	g.OnActivateCell = func(int, int) { order = append(order, "activate") }
+
+	click(t, g, 1, g.rect.Y+3)
+
+	if len(order) != 2 || order[0] != "select" || order[1] != "activate" {
+		t.Errorf("callback order = %v, want [select activate]", order)
+	}
+}
+
+// Clicking the row that is already selected activates without re-firing
+// OnSelectRow. A page that redraws its grid from inside OnActivateCell —
+// every toggle grid does — would otherwise have its selection callback
+// re-entered on each toggle of the row it is already on.
+func TestDataGridClickOnTheSelectedRowDoesNotRefireOnSelectRow(t *testing.T) {
+	g := newCellCursorGrid()
+	activations := 0
+	g.OnActivateCell = func(int, int) { activations++ }
+	var selected []int
+	g.OnSelectRow = func(row int) { selected = append(selected, row) }
+
+	click(t, g, 1, g.rect.Y+3) // row 1: a move
+	click(t, g, 1, g.rect.Y+3) // row 1 again: not a move
+
+	if len(selected) != 1 {
+		t.Errorf("OnSelectRow calls = %v, want one", selected)
+	}
+	if activations != 2 {
+		t.Errorf("OnActivateCell fired %d times, want 2 — the toggle still runs", activations)
+	}
+}
+
+// click delivers one complete press/release on a cell. The release matters:
+// it clears mouseDragging, which otherwise suppresses the next press on the
+// same cell as a resent motion event.
+func click(t *testing.T, g *DataGrid, x, y int) {
+	t.Helper()
+	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}

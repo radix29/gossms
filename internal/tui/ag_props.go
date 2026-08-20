@@ -248,8 +248,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			if maxRequiredSync < 0 {
 				maxRequiredSync = 0
 			}
-			requiredSyncRow := propsheet.Int("Required synchronized secondaries to commit",
-				int64(ag.RequiredSynchronizedSecondariesToCommit), 0, maxRequiredSync, "")
+			requiredSyncRow := propsheet.Int("Required sync secondaries", int64(ag.RequiredSynchronizedSecondariesToCommit), 0, maxRequiredSync, "")
 			dbFailoverRow := propsheet.Check("Database level health detection", ag.DBFailover)
 			dtcRow := propsheet.Check("Per database DTC support", ag.DTCSupport)
 			failureLevelRow := propsheet.Select("Failure condition level", agFailureConditionItems,

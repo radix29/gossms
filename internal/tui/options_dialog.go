@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -235,4 +236,14 @@ func (d *OptionsDialog) apply() {
 		d.app.logStatus("save config: %v", err)
 	}
 	d.app.explorer.rebuild()
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost: the max-cell-length
+// field, the dialog's only text entry. The radio box, the checkbox and the
+// button row answer nil.
+func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if d.zone == zoneMaxCellLen {
+		return d.fMaxCellLen
+	}
+	return nil
 }

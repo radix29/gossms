@@ -564,9 +564,6 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 			return fmt.Errorf("%s: create endpoint: %w", p.inst.name, err)
 		}
 	}
-	if ep == nil {
-		return nil // scripting
-	}
 	if !strings.EqualFold(ep.State, "STARTED") {
 		if err := ep.StartContext(ctx); err != nil {
 			return fmt.Errorf("%s: start endpoint %s: %w", p.inst.name, ep.Name, err)

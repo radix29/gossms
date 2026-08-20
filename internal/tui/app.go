@@ -158,6 +158,18 @@ type App struct {
 	pasting  bool
 	pasteBuf strings.Builder
 
+	// pendingPaste is the widget a Ctrl+V was aimed at while the terminal's
+	// OSC 52 clipboard reply is outstanding — the fallback path taken when no
+	// native clipboard tool answered. The reply arrives as an
+	// *tcell.EventClipboard an unbounded time later; see App.pasteInto for
+	// why the target is remembered rather than resolved again then.
+	pendingPaste clipboardTarget
+
+	// pendingPasteToken pins which field of pendingPaste the Ctrl+V was aimed
+	// at, for a host that hands back itself rather than the field — see
+	// core.ClipboardTargetTokener and App.pasteInto.
+	pendingPasteToken any
+
 	pendingMu sync.Mutex
 	pending   []func()
 
@@ -250,13 +262,13 @@ func (a *App) Run() error {
 		case *tcell.EventMouse:
 			a.handleMouse(e)
 		case *tcell.EventClipboard:
-			// Response to the GetClipboard() request made from Ctrl+V.
-			if target := a.activeClipboardTarget(); target != nil {
-				target.Paste(string(e.Data()))
-				if a.connectDialog.Visible() {
-					a.connectDialog.updateMatches()
-				}
-			}
+			// Response to the GetClipboard() request made from Ctrl+V, which
+			// recorded what it was aimed at. Clearing it first also means an
+			// unsolicited reply — the terminal answering a request this app
+			// never made — pastes nothing anywhere.
+			target, token := a.pendingPaste, a.pendingPasteToken
+			a.pendingPaste, a.pendingPasteToken = nil, nil
+			a.pasteInto(target, token, string(e.Data()))
 		}
 
 		// Re-sync before drawing: the event just handled may have opened or

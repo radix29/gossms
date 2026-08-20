@@ -226,6 +226,11 @@ func Int(label string, value, min, max int64, unit string) *TextRow {
 	return r
 }
 
+// Label returns the row's label, trimmed of the padding Text/Int applied to
+// align it in the sheet. It is what identifies a row to anything working with
+// a Form it did not build — a test driving a page, or a caller inspecting one.
+func (r *TextRow) Label() string { return strings.TrimRight(r.field.Label(), " ") }
+
 // Value returns the field's current text.
 func (r *TextRow) Value() string { return r.field.Value() }
 
@@ -239,6 +244,26 @@ func (r *TextRow) IntValue() (int64, error) {
 func (r *TextRow) SetValue(v string) {
 	r.field.SetValue(v)
 	r.orig = v
+}
+
+// Edit sets the value the way a keystroke does: the value changes, the row
+// goes dirty, and OnChange fires. It is SetValue's counterpart — SetValue is
+// the post-load setter and moves the baseline with the value, so a row set
+// that way reports itself clean.
+//
+// The distinction is the whole propsheet contract: every apply closure gates
+// its write on Dirty(), so "set the value" and "the user changed the value"
+// are different operations and neither can stand in for the other. Until this
+// existed the second one had no programmatic form at all — it could only come
+// from a real keystroke or a paste, which needs a focused widget and a screen
+// to draw to.
+func (r *TextRow) Edit(v string) {
+	if !r.enabled {
+		return
+	}
+	before := r.field.Value()
+	r.field.SetValue(v)
+	r.notifyChanged(before)
 }
 
 // SetEnabled toggles whether the row can be focused/edited; a disabled
@@ -383,6 +408,15 @@ func (r *CheckRow) Checked() bool { return r.box.Checked() }
 // SetChecked sets the state and resets the dirty baseline.
 func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 
+// Edit sets the state the way pressing Space does: the value changes and the
+// row goes dirty. SetChecked's counterpart — see TextRow.Edit for why the two
+// are different operations and neither can stand in for the other.
+func (r *CheckRow) Edit(v bool) { r.box.SetChecked(v) }
+
+// Label returns the row's label. A checkbox draws its label inline at full
+// width, so unlike Text/Select there is no padding to trim.
+func (r *CheckRow) Label() string { return r.label }
+
 func (r *CheckRow) Height(w int) int { return 1 }
 func (r *CheckRow) Layout(x, y, w int) {
 	r.box.SetBounds(x, y)
@@ -446,6 +480,22 @@ func (r *SelectRow) Items() []string { return r.dd.Items() }
 func (r *SelectRow) SetSelected(i int) {
 	r.dd.SetSelected(i)
 	r.orig = r.dd.Selected()
+}
+
+// Label returns the row's label, trimmed of the padding Select applied to
+// align it in the sheet — TextRow.Label's counterpart.
+func (r *SelectRow) Label() string { return strings.TrimRight(r.dd.Label(), " ") }
+
+// Edit selects by index the way a keystroke does: the selection changes, the
+// row goes dirty, and OnChange fires. SetSelected's counterpart — see
+// TextRow.Edit for why the two are different operations.
+//
+// An out-of-range index is ignored, as DropDown ignores one, so a rejected
+// index cannot leave the row dirty against a value it never took.
+func (r *SelectRow) Edit(i int) {
+	before := r.dd.Value()
+	r.dd.SetSelected(i)
+	r.notifyChanged(before)
 }
 
 // SetDirtyTracked(false) makes the row a view control rather than an edit —
@@ -537,6 +587,15 @@ func (r *RadioRow) SetSelected(i int) {
 	r.rb.SetSelected(i)
 	r.orig = r.rb.Selected()
 }
+
+// Edit selects by index the way a keystroke does, leaving the row dirty —
+// SetSelected's counterpart, for the reason TextRow.Edit documents.
+func (r *RadioRow) Edit(i int) { r.rb.SetSelected(i) }
+
+// Options returns the row's choices, and Label its caption — how a caller
+// working with a Form it did not build identifies the row and its selection.
+func (r *RadioRow) Options() []string { return r.options }
+func (r *RadioRow) Label() string     { return r.rb.Label() }
 
 func (r *RadioRow) Height(w int) int   { return r.rb.Height() }
 func (r *RadioRow) Layout(x, y, w int) { r.rb.SetBounds(x, y) }

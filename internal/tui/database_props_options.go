@@ -71,7 +71,7 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 				dbOptBoolRow(&tracked, gosmo.DBOptAutoCreateStatistics, "Auto create statistics", o.AutoCreateStats),
 				dbOptBoolRow(&tracked, gosmo.DBOptAutoShrink, "Auto shrink", o.AutoShrink),
 				dbOptBoolRow(&tracked, gosmo.DBOptAutoUpdateStatistics, "Auto update statistics", o.AutoUpdateStats),
-				dbOptBoolRow(&tracked, gosmo.DBOptAutoUpdateStatisticsAsync, "Auto update statistics asynchronously", o.AutoUpdateStatsAsync),
+				dbOptBoolRow(&tracked, gosmo.DBOptAutoUpdateStatisticsAsync, "Auto update statistics async", o.AutoUpdateStatsAsync),
 				propsheet.Section("Containment"),
 				dbOptSelectRow(&tracked, gosmo.DBOptContainment, "Containment type", containmentItems, indexOf(containmentItems, o.Containment)),
 				propsheet.Section("Cursor"),

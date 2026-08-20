@@ -33,6 +33,10 @@ func NewRadioBox(label string, options []string) *RadioBox {
 	return new(RadioBox{label: label, options: options})
 }
 
+// Label returns the caption the radio group was created with, unpadded —
+// Radio labels are drawn on their own line, so nothing pads them.
+func (r *RadioBox) Label() string { return r.label }
+
 func (r *RadioBox) SetBounds(x, y int) { r.rect.X, r.rect.Y = x, y }
 func (r *RadioBox) Focus(v bool)       { r.focused = v }
 func (r *RadioBox) Selected() int      { return r.selected }

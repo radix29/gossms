@@ -76,7 +76,9 @@ var (
 	scriptDBRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptDatabaseRoleContext(ctx, n.Name)
 	}
-	scriptDB scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) { return s.ScriptDatabase() }
+	scriptDB scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDatabaseContext(ctx)
+	}
 
 	// The table-scoped families name their table in TableName; Schema/Name
 	// point at the index or constraint itself.

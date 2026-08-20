@@ -58,9 +58,117 @@ func fileEditFromInfo(fl *gosmo.DatabaseFileInfo) *fileEdit {
 	}
 }
 
+// changed reports whether this file's definition differs from what the
+// server reported. Only the four things ALTER DATABASE ... MODIFY FILE can
+// actually change are compared: fileType, fileGroup and path are fixed for
+// an existing file — MODIFY FILE cannot move or retype one — so an edit to
+// them is not a change this page can write, and treating it as one would
+// send an ALTER that silently does nothing.
+//
+// It is a method rather than two copies because the Files page needs the
+// same answer twice, in two places that must agree: GridRow.DirtyFn, which
+// decides whether the page is dirty at all, and apply, which decides whether
+// this particular file gets an ALTER. They were separate expressions listing
+// the same six fields; a field added to one and not the other either makes a
+// page that never reports itself dirty (so OK writes nothing) or one that is
+// always dirty (so OK always writes).
+func (e *fileEdit) changed() bool {
+	return e.name != e.origName || e.sizeKB != e.origSizeKB ||
+		e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||
+		e.growthPercent != e.origGrowthPercent || e.maxSizeKB != e.origMaxSizeKB
+}
+
+// modify builds the partial ALTER for an existing file: every field is left
+// zero unless it actually changed, because gosmo reads a zero as "leave this
+// property alone" and omits it from the statement.
+//
+// That is why each assignment is guarded rather than unconditional. Sending
+// the unchanged current value instead would look harmless and is not: SIZE is
+// the case that bites, since ALTER DATABASE ... MODIFY FILE treats it as a
+// grow-to target and rejects a value below the file's current size outright.
+// A user who edits only the autogrowth of a file that has since grown past
+// its recorded size would get "MODIFY FILE failed. Specified size is less
+// than or equal to current size" for an edit they never made.
+func (e *fileEdit) modify() gosmo.FileModify {
+	var m gosmo.FileModify
+	if e.name != e.origName {
+		m.NewName = e.name
+	}
+	if e.sizeKB != e.origSizeKB {
+		m.SizeKB = e.sizeKB
+	}
+	if e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB || e.growthPercent != e.origGrowthPercent {
+		// Exactly one of the two is set: gosmo lets GrowthPercent win when
+		// both are, and the growth kind is a radio, so sending both would
+		// make the radio's losing half decide nothing while still being
+		// carried.
+		//
+		// A growth of zero has to go through DisableGrowth rather than the
+		// amount fields, because gosmo reads a zero amount as "leave
+		// FILEGROWTH alone" — so turning autogrowth off produced an ALTER
+		// with no FILEGROWTH clause at all, and where growth was the only
+		// edit, no ALTER at all: OK reported success and the file still
+		// grew.
+		switch {
+		case e.growthOff():
+			m.DisableGrowth = true
+		case e.isPercentGrowth:
+			m.GrowthPercent = e.growthPercent
+		default:
+			m.GrowthKB = e.growthKB
+		}
+	}
+	if e.maxSizeKB != e.origMaxSizeKB {
+		m.MaxSizeKB = e.maxSizeKB
+	}
+	return m
+}
+
+// spec builds the CREATE-side description of a brand-new file. Unlike
+// modify, every field is sent: there is no previous value to leave alone.
+func (e *fileEdit) spec() gosmo.DatabaseFileSpec {
+	spec := gosmo.DatabaseFileSpec{
+		Name: e.name, Type: e.fileType, Path: e.path, SizeKB: e.sizeKB, MaxSizeKB: e.maxSizeKB,
+	}
+	// A LOG file belongs to no filegroup, and gosmo ignores the field for
+	// one; leaving it empty keeps the spec honest rather than relying on that.
+	if e.fileType != logFileType {
+		spec.FileGroup = e.fileGroup
+	}
+	switch {
+	case e.growthOff():
+		spec.DisableGrowth = true
+	case e.isPercentGrowth:
+		spec.GrowthPercent = e.growthPercent
+	default:
+		spec.GrowthKB = e.growthKB
+	}
+	return spec
+}
+
+// growthOff reports whether the row asks for autogrowth to be switched off:
+// the growth spinner at zero, in whichever unit the radio has selected.
+// SSMS's equivalent is clearing "Enable Autogrowth"; here the spinner bottoms
+// out at 0 and means the same thing.
+func (e *fileEdit) growthOff() bool {
+	if e.isPercentGrowth {
+		return e.growthPercent == 0
+	}
+	return e.growthKB == 0
+}
+
 func growthText(isPercent bool, growthKB int64, growthPercent int) string {
+	// SQL Server records autogrowth-off as a growth of zero, and the grid has
+	// to say so in words: "0 MB" reads as a field nobody filled in, next to
+	// six columns that are all real values.
 	if isPercent {
+		if growthPercent == 0 {
+			return "None"
+		}
 		return strconv.Itoa(growthPercent) + "%"
+	}
+	if growthKB == 0 {
+		return "None"
 	}
 	return strconv.FormatInt(growthKB/1024, 10) + " MB"
 }
@@ -300,12 +408,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			gridRow := propsheet.NewGridRow(grid, 10)
 			dirty := func() bool {
 				for _, e := range edits {
-					if e.isNew || e.pendingRemove {
-						return true
-					}
-					if e.name != e.origName || e.sizeKB != e.origSizeKB ||
-						e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||
-						e.growthPercent != e.origGrowthPercent || e.maxSizeKB != e.origMaxSizeKB {
+					if e.isNew || e.pendingRemove || e.changed() {
 						return true
 					}
 				}
@@ -345,46 +448,17 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 							return err
 						}
 					case e.isNew && !e.pendingRemove:
-						spec := gosmo.DatabaseFileSpec{
-							Name: e.name, Type: e.fileType, Path: e.path, SizeKB: e.sizeKB, MaxSizeKB: e.maxSizeKB,
-						}
-						if e.fileType != logFileType {
-							spec.FileGroup = e.fileGroup
-						}
-						if e.isPercentGrowth {
-							spec.GrowthPercent = e.growthPercent
-						} else {
-							spec.GrowthKB = e.growthKB
-						}
-						if err := d.AddFileContext(ctx, spec); err != nil {
+						if err := d.AddFileContext(ctx, e.spec()); err != nil {
 							return err
 						}
 					case !e.isNew && !e.pendingRemove:
-						growthChanged := e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB || e.growthPercent != e.origGrowthPercent
-						maxSizeChanged := e.maxSizeKB != e.origMaxSizeKB
-						nameChanged := e.name != e.origName
-						sizeChanged := e.sizeKB != e.origSizeKB
-						if !nameChanged && !sizeChanged && !growthChanged && !maxSizeChanged {
+						if !e.changed() {
 							continue // nothing about this file actually changed
 						}
-						var m gosmo.FileModify
-						if nameChanged {
-							m.NewName = e.name
-						}
-						if sizeChanged {
-							m.SizeKB = e.sizeKB
-						}
-						if growthChanged {
-							if e.isPercentGrowth {
-								m.GrowthPercent = e.growthPercent
-							} else {
-								m.GrowthKB = e.growthKB
-							}
-						}
-						if maxSizeChanged {
-							m.MaxSizeKB = e.maxSizeKB
-						}
-						if err := d.AlterFileContext(ctx, e.origName, m); err != nil {
+						// Addressed by origName, not name: a rename is carried
+						// inside the modify as NEWNAME, so the file still
+						// answers to its old name at this point.
+						if err := d.AlterFileContext(ctx, e.origName, e.modify()); err != nil {
 							return err
 						}
 					}

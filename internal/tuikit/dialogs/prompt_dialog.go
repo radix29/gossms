@@ -222,3 +222,12 @@ func (d *PromptDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost: the value field while
+// it has focus, nothing while a button does.
+func (d *PromptDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if d.focus == promptFocusInput {
+		return d.input
+	}
+	return nil
+}

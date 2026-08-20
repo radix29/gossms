@@ -308,8 +308,7 @@ func buildSecurablesMatrix(
 			return
 		}
 		loadedCols[row].current = nextPermState(loadedCols[row].current)
-		colGrid.SetData([]string{"Column", "State"}, colRows())
-		colGrid.SetSelectedCell(row, col)
+		redrawGrid(colGrid, []string{"Column", "State"}, colRows())
 	}
 
 	permSection := propsheet.Section("Permissions")
@@ -364,8 +363,7 @@ func buildSecurablesMatrix(
 			return
 		}
 		visiblePerms[row].current = nextPermState(visiblePerms[row].current)
-		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
-		permGrid.SetSelectedCell(row, col)
+		redrawGrid(permGrid, []string{"Permission", "State"}, permRowsFor(selectedEdits))
 	}
 
 	var loadColsBusy bool

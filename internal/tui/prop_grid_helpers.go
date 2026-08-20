@@ -139,8 +139,8 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 	return v, v != ""
 }
 
-// redrawGrid replaces a grid's rows while leaving the cell cursor where the
-// user put it.
+// redrawGrid replaces a grid's rows while leaving the cell cursor — and any
+// column the user has dragged to a width of their own — where they put them.
 //
 // `DataGrid.SetData` resets the cursor to 0,0 — correct for a fresh result set,
 // wrong for the redraws a Properties page does to re-render state the user is
@@ -150,10 +150,22 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 // `SelectedCell` either side of the key — then answers "not handled", so `Form`
 // moves focus straight out of the grid on the first arrow key. See
 // `wireGridEditor` (ag_props.go) for the worked example and the bug it fixed.
+//
+// The dragged widths and the scroll position go the same way and for the same
+// reason, and the scroll is the one that is not fixed by restoring the cursor:
+// `SetSelectedCell` ends in `ensureVisible`, which scrolls from wherever it
+// finds the view — from the zero `SetSource` left, just far enough to reach
+// the selected row, putting it against the bottom edge. Toggling a State half
+// way down a long Securables or Scoped Configuration grid therefore jumped the
+// whole list on every click.
+//
+// This is the application layer's name for `DataGrid.SetDataPreservingView`,
+// which does the restoring; the mechanics, and why the three go back in the
+// order they do, are documented there. Kept as a wrapper because a Properties
+// page saying `redrawGrid` reads as the page-level idiom it is, and because
+// CLAUDE.md's rule names it.
 func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
-	r, c := grid.SelectedCell()
-	grid.SetData(headers, rows)
-	grid.SetSelectedCell(r, c)
+	grid.SetDataPreservingView(headers, rows)
 }
 
 // compatLevelItems is the Compatibility level dropdown's base list: the

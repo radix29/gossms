@@ -55,18 +55,30 @@ func newScopedConfigIntEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]
 }
 
 // newScopedConfigBoolEditor is newScopedConfigIntEditor's counterpart for
-// options whose value is conventionally "0"/"1".
-func newScopedConfigBoolEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]scopedConfigBoolRow) func(name, label string) *propsheet.SelectRow {
-	return func(name, label string) *propsheet.SelectRow {
+// options whose value is conventionally "0"/"1". It returns a Row, not a
+// SelectRow, because an option missing on this server/edition renders as the
+// same disabled "N/A" text row the Int editor uses.
+//
+// The N/A row is the point, not a detail: half these options postdate SQL
+// Server 2019, so on an older instance sys.database_scoped_configurations
+// simply has no row for them. This used to hand back an ordinary OFF/ON
+// dropdown that was left out of *tracked, so the user could switch
+// PARAMETER_SNIFFING on, press OK, and be told it succeeded while nothing was
+// ever sent — the "never let a control silently do nothing" rule, one page
+// down from the menus it is usually stated about.
+func newScopedConfigBoolEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]scopedConfigBoolRow) func(name, label string) propsheet.Row {
+	return func(name, label string) propsheet.Row {
 		c := findScopedConfig(configs, name)
+		if c == nil {
+			row := propsheet.Text(label, "N/A", 12)
+			row.SetEnabled(false)
+			return row
+		}
 		idx := 0
-		if c != nil && c.Value == "1" {
+		if c.Value == "1" {
 			idx = 1
 		}
 		row := propsheet.Select(label, onOff, idx)
-		if c == nil {
-			return row
-		}
 		*tracked = append(*tracked, scopedConfigBoolRow{name: name, row: row})
 		return row
 	}

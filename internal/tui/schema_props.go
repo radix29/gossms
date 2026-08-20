@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -30,25 +29,13 @@ func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 	}
 }
 
-// findSchema resolves dbName/schemaName to a *gosmo.Schema — there's no
-// SchemaByNameContext (gosmo only exposes the bulk SchemasContext
-// listing), so this finds it by name the same way
-// pagePrincipalOwnedSchemas already does for its own owner-change apply.
+// findSchema resolves dbName/schemaName to a *gosmo.Schema.
 func findSchema(ctx context.Context, sc *db.ServerConn, dbName, schemaName string) (*gosmo.Schema, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	schemas, err := d.SchemasContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range schemas {
-		if s.Name == schemaName {
-			return s, nil
-		}
-	}
-	return nil, fmt.Errorf("schema %q not found in %q", schemaName, dbName)
+	return d.SchemaByNameContext(ctx, schemaName)
 }
 
 func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
@@ -71,60 +58,13 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			tables, err := d.TablesBySchemaContext(ctx, schemaName)
-			if err != nil {
-				return nil, nil, err
-			}
-			views, err := d.ViewsContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			procs, err := d.StoredProceduresContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			funcs, err := d.UserDefinedFunctionsContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			synonyms, err := d.SynonymsContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-			sequences, err := d.SequencesContext(ctx)
+			counts, err := schema.ObjectCountsByTypeContext(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
 			perms, err := d.SchemaPermissionsContext(ctx, schemaName)
 			if err != nil {
 				return nil, nil, err
-			}
-
-			viewCount, procCount, funcCount, synCount, seqCount := 0, 0, 0, 0, 0
-			for _, v := range views {
-				if v.Schema == schemaName {
-					viewCount++
-				}
-			}
-			for _, p := range procs {
-				if p.Schema == schemaName {
-					procCount++
-				}
-			}
-			for _, fn := range funcs {
-				if fn.Schema == schemaName {
-					funcCount++
-				}
-			}
-			for _, s := range synonyms {
-				if s.Schema == schemaName {
-					synCount++
-				}
-			}
-			for _, s := range sequences {
-				if s.Schema == schemaName {
-					seqCount++
-				}
 			}
 
 			principalsSet := make(map[string]bool)
@@ -173,12 +113,12 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			}
 			rows = append(rows,
 				propsheet.Section("Object summary"),
-				propsheet.Static("Tables", strconv.Itoa(len(tables))),
-				propsheet.Static("Views", strconv.Itoa(viewCount)),
-				propsheet.Static("Stored procedures", strconv.Itoa(procCount)),
-				propsheet.Static("Functions", strconv.Itoa(funcCount)),
-				propsheet.Static("Synonyms", strconv.Itoa(synCount)),
-				propsheet.Static("Sequences", strconv.Itoa(seqCount)),
+				propsheet.Static("Tables", strconv.Itoa(counts.Tables)),
+				propsheet.Static("Views", strconv.Itoa(counts.Views)),
+				propsheet.Static("Stored procedures", strconv.Itoa(counts.StoredProcedures)),
+				propsheet.Static("Functions", strconv.Itoa(counts.Functions)),
+				propsheet.Static("Synonyms", strconv.Itoa(counts.Synonyms)),
+				propsheet.Static("Sequences", strconv.Itoa(counts.Sequences)),
 				propsheet.Section("Permission summary"),
 				propsheet.Static("Explicit principals", strconv.Itoa(len(principalsSet))),
 				propsheet.Static("Explicit grants", strconv.Itoa(grants)),

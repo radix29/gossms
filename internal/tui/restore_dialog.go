@@ -5,6 +5,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -377,4 +378,15 @@ func (d *RestoreDialog) backToForm() {
 
 func (d *RestoreDialog) doProgressButton() {
 	runProgressButton(d.task, d.btnFocus, d.Hide)
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost: the backup-file or
+// target-database field while the option form is showing and has it focused.
+// The inspect, files and progress views all drive their own focus rather than
+// focusable, so each answers nil.
+func (d *RestoreDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if d.mode != restoreModeForm {
+		return nil
+	}
+	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

@@ -80,15 +80,27 @@ func newConfigEditor(configs []*gosmo.ConfigurationOption, tracked *[]configRow)
 	}
 }
 
-// newConfigBoolEditor is newConfigEditor's Check-row counterpart, for
-// options whose value is conventionally 0/1.
-func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]configBoolRow) func(name, label string) *propsheet.CheckRow {
-	return func(name, label string) *propsheet.CheckRow {
+// newConfigBoolEditor is newConfigEditor's Check-row counterpart, for options
+// whose value is conventionally 0/1. It returns a Row, not a CheckRow, because
+// an option missing on this server/edition renders as the same disabled "N/A"
+// row newConfigEditor uses.
+//
+// The N/A row is the point, not a detail: sys.configurations is edition- and
+// version-dependent, so several of the options the Advanced page lists are
+// simply absent on an older or lesser instance. This used to hand back a live
+// checkbox that was left out of *tracked, so the user could tick "xp_cmdshell",
+// press OK, and be told it succeeded while nothing was ever sent — the "never
+// let a control silently do nothing" rule, one page down from the menus it is
+// usually stated about.
+func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]configBoolRow) func(name, label string) propsheet.Row {
+	return func(name, label string) propsheet.Row {
 		c := findConfig(configs, name)
-		row := propsheet.Check(label, c != nil && c.ValueInUse != 0)
 		if c == nil {
+			row := propsheet.Text(label, "N/A", 12)
+			row.SetEnabled(false)
 			return row
 		}
+		row := propsheet.Check(label, c.ValueInUse != 0)
 		*tracked = append(*tracked, configBoolRow{name: name, row: row})
 		return row
 	}

@@ -43,6 +43,10 @@ func NewInputField(label string, w int, password bool) *InputField {
 	return new(InputField{label: label, rect: core.Rect{W: w}, password: password})
 }
 
+// Label returns the inline label the field was created with, padded as the
+// caller padded it. Read-only: the label is fixed at construction.
+func (f *InputField) Label() string { return f.label }
+
 // SetBounds positions the widget. The label is drawn at (x,y); the input
 // box starts immediately after the label.
 func (f *InputField) SetBounds(x, y int) { f.rect.X, f.rect.Y = x, y }

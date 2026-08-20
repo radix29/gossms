@@ -238,3 +238,47 @@ func TestSplitter_ClickAfterDragSelectsTree(t *testing.T) {
 		t.Errorf("selectedID = %d after clicking tree row %d, want %d — click was swallowed by the splitter", v.selectedID, row, want)
 	}
 }
+
+// A press on a tree row belongs to that press alone. All-motion tracking
+// resends Button1 on every motion while the button is down, and the row click
+// toggles: a press held over the selected row expanded and collapsed it once
+// per resent event, and a press on any other row selected it and then toggled
+// it on the very next one — so a click that so much as twitched collapsed
+// whatever it had just selected.
+func TestTreeRowClickIsOnePerPhysicalPress(t *testing.T) {
+	v := newTreeTabView(t)
+	r := v.treePaneRect
+
+	// Row 1 is a child of the root, which starts selected and expanded.
+	target := v.treeSt.rows[1].node
+	y := r.Y + 1
+	collapsedBefore := v.treeSt.collapsed[target.ID]
+
+	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	if v.selectedID != target.ID {
+		t.Fatalf("selectedID = %d after clicking row 1, want %d", v.selectedID, target.ID)
+	}
+	for range 3 {
+		v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	}
+	if v.treeSt.collapsed[target.ID] != collapsedBefore {
+		t.Errorf("holding the press over row 1 toggled its expand state; collapsed = %v, want %v",
+			v.treeSt.collapsed[target.ID], collapsedBefore)
+	}
+
+	// After the release the next press is a fresh one, and on the row that
+	// is now selected it toggles — exactly once.
+	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.ButtonNone, tcell.ModNone))
+	v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	if v.treeSt.collapsed[target.ID] == collapsedBefore {
+		t.Errorf("a fresh press on the selected row did not toggle it; collapsed = %v",
+			v.treeSt.collapsed[target.ID])
+	}
+	for range 3 {
+		v.handleTreeTabMouse(tcell.NewEventMouse(r.X+2, y, tcell.Button1, tcell.ModNone))
+	}
+	if v.treeSt.collapsed[target.ID] == collapsedBefore {
+		t.Errorf("holding that press toggled row 1 back; collapsed = %v, want it left toggled",
+			v.treeSt.collapsed[target.ID])
+	}
+}

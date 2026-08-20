@@ -252,6 +252,7 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 				}
 				return true
 			}
+			prevRow := g.selRow
 			g.selRow = row
 			if g.cellCursor {
 				if col, ok := g.colAt(mx); ok {
@@ -264,6 +265,19 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 					g.mouseDragging = true
 					g.toggleRow, g.toggleCol = row, col
 					g.selCol = col
+					// Select, then activate — the order the keyboard already
+					// uses, and the reason this fires at all: this branch used
+					// to return straight from activateCell, so on a
+					// cell-cursor grid a click moved the highlight and never
+					// told the page. Every detail panel wired to OnSelectRow
+					// went on describing the row the keyboard last left it on.
+					// Gated on an actual move, like the keyboard path: a page
+					// that redraws from inside OnActivateCell must not have
+					// its selection callback re-entered on every toggle of the
+					// row it is already on.
+					if row != prevRow && g.OnSelectRow != nil {
+						g.OnSelectRow(row)
+					}
 					g.activateCell()
 					return true
 				}

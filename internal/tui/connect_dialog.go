@@ -214,6 +214,20 @@ func (d *ConnectDialog) updateMatches() {
 	d.matchOpen = true
 }
 
+// ClipboardEdited re-filters the saved-connections list after Ctrl+X or Ctrl+V
+// changed the server field — the same follow-up HandleKey does after every
+// keystroke there.
+//
+// Only for that field. This used to run for any edit anywhere in the dialog
+// (App.cutSelection and friends checked Visible() and called updateMatches
+// directly), so pasting into Password re-ran the lookup against a server name
+// nobody had touched and could pop the autocomplete list open over it.
+func (d *ConnectDialog) ClipboardEdited(target core.ClipboardTarget) {
+	if target == core.ClipboardTarget(d.fServer) {
+		d.updateMatches()
+	}
+}
+
 // openMatchesForClick opens the saved-connections list on a mouse click in
 // the server field, regardless of how much has been typed — an empty field
 // lists every saved connection. Typing afterwards re-filters through
@@ -636,4 +650,11 @@ func (d *ConnectDialog) matchHit(ev *tcell.EventMouse) (int, bool) {
 		return 0, false
 	}
 	return my - y, true
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost: whichever of the
+// server/port/database/user/password/tenant/client fields or the extra-
+// properties editor has focus. A dropdown, checkbox or button answers nil.
+func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

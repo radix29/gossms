@@ -1,7 +1,9 @@
 package propsheet
 
+import "github.com/radix29/gossms/internal/tuikit/core"
+
 // ---------------------------------------------------------------------------
-// clipboardTarget — see internal/tui/clipboard.go
+// core.ClipboardTarget / core.ClipboardHost — see internal/tui/clipboard.go
 // ---------------------------------------------------------------------------
 
 func (p *PropertySheet) currentCopyText() (string, bool) {
@@ -71,4 +73,30 @@ func (p *PropertySheet) SelectAll() {
 	if cr, ok := p.focusedClipboardRow(); ok {
 		cr.SelectAll()
 	}
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost. The sheet is its own
+// target: every method above already resolves through the focused row, and
+// answers harmlessly when focus is on the page list or the button row instead.
+// Declaring it here is what makes every dialog embedding a PropertySheet — the
+// Properties dialog and all ten New-<object> dialogs — a clipboard host
+// without each having to say so.
+func (p *PropertySheet) FocusedClipboardTarget() core.ClipboardTarget { return p }
+
+// ClipboardTargetToken implements core.ClipboardTargetTokener: the focused
+// row, as the identity behind the sheet-as-target above.
+//
+// Returning the sheet from FocusedClipboardTarget is what makes every dialog
+// embedding a sheet a clipboard host for free, and it costs the application's
+// "is this still the target?" paste guard its resolution — the sheet is the
+// answer whichever row has focus, so the guard cannot tell one row from
+// another. The row itself can.
+//
+// nil is a real answer, for focus on the page list or the button row.
+func (p *PropertySheet) ClipboardTargetToken() any {
+	cr, ok := p.focusedClipboardRow()
+	if !ok {
+		return nil
+	}
+	return cr
 }

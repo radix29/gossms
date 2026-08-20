@@ -44,7 +44,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			execCountRow := propsheet.Int("Custom: execution count", int64(qs.CapturePolicyExecCount), 0, 999999, "")
 			compileCPURow := propsheet.Int("Custom: total compile CPU", qs.CapturePolicyCompileCPUMs, 0, 999999999, "ms")
 			execCPURow := propsheet.Int("Custom: total execution CPU", qs.CapturePolicyExecCPUMs, 0, 999999999, "ms")
-			staleHoursRow := propsheet.Int("Custom: stale capture threshold", int64(qs.CapturePolicyStaleHours), 0, 999999, "hours")
+			staleHoursRow := propsheet.Int("Custom: stale threshold", int64(qs.CapturePolicyStaleHours), 0, 999999, "hours")
 
 			flushCheck := propsheet.Check("Flush data to disk on Apply", false)
 			clearCheck := propsheet.Check("Clear Query Store on Apply", false)

@@ -130,6 +130,53 @@ func (e *jobStepEdit) request() gosmo.JobStepRequest {
 	}
 }
 
+// jobStepWritePlan is the Steps page's pending writes, split into the three
+// passes apply runs them in.
+type jobStepWritePlan struct {
+	updates []*jobStepEdit
+	deletes []*jobStepEdit
+	adds    []*jobStepEdit
+}
+
+// planJobStepWrites splits the page's edits into three fixed passes —
+// updates, then deletes, then adds — because sp_delete_jobstep renumbers
+// every later step's step_id down by one.
+//
+// The order is the whole point and each part of it is load-bearing. Updates
+// run first, while every step_id loaded with the page is still valid.
+// Deletes then run in **descending** step_id order, so each one only
+// renumbers steps that have already been dealt with; ascending order makes
+// the second delete address a step_id that the first delete shifted, which
+// is either "step N not found" or, worse, a successful delete of the wrong
+// step. Adds run last because a new step's number is assigned by msdb and
+// depends on how many steps remain.
+//
+// !editable is already implied by !changed() — commitCurrent never writes to
+// a step this page can't edit — but it is stated again here, because this is
+// the pass that would rewrite a step's subsystem if it ever stopped being
+// implied.
+func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
+	var plan jobStepWritePlan
+	for _, e := range edits {
+		switch {
+		case e.pendingRemove:
+			// A step added and removed in the same sitting was never on the
+			// server, so there is nothing to delete.
+			if !e.isNew {
+				plan.deletes = append(plan.deletes, e)
+			}
+		case e.isNew:
+			plan.adds = append(plan.adds, e)
+		case e.editable() && e.changed():
+			plan.updates = append(plan.updates, e)
+		}
+	}
+	slices.SortFunc(plan.deletes, func(a, b *jobStepEdit) int {
+		return b.orig.StepID - a.orig.StepID
+	})
+	return plan
+}
+
 func stepNumberText(e *jobStepEdit) string {
 	if e.isNew {
 		return "New"
@@ -444,20 +491,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					}
 					return nil, fmt.Errorf("gosmo: step %d not found on job %q", stepID, j.Name)
 				}
-				// Three fixed passes — updates, then deletes, then adds —
-				// because sp_delete_jobstep renumbers every later step's
-				// step_id down by one. Updates run first, while every
-				// loaded step_id is still valid; deletes then run in
-				// descending step_id order, so each delete only renumbers
-				// steps already dealt with.
-				for _, e := range edits {
-					// !editable is already implied by !changed() — commitCurrent
-					// never writes to one — but stated here too, because this is
-					// the loop that would rewrite the step's subsystem if it ever
-					// stopped being implied.
-					if e.isNew || e.pendingRemove || !e.editable() || !e.changed() {
-						continue
-					}
+				// The three passes and their order are planJobStepWrites'.
+				plan := planJobStepWrites(edits)
+				for _, e := range plan.updates {
 					step, err := freshStep(e.orig.StepID)
 					if err != nil {
 						return err
@@ -466,16 +502,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 						return err
 					}
 				}
-				var removals []*jobStepEdit
-				for _, e := range edits {
-					if e.pendingRemove && !e.isNew {
-						removals = append(removals, e)
-					}
-				}
-				slices.SortFunc(removals, func(a, b *jobStepEdit) int {
-					return b.orig.StepID - a.orig.StepID
-				})
-				for _, e := range removals {
+				for _, e := range plan.deletes {
 					step, err := freshStep(e.orig.StepID)
 					if err != nil {
 						return err
@@ -484,11 +511,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 						return err
 					}
 				}
-				for _, e := range edits {
-					if e.isNew && !e.pendingRemove {
-						if err := j.AddStepContext(ctx, e.request()); err != nil {
-							return err
-						}
+				for _, e := range plan.adds {
+					if err := j.AddStepContext(ctx, e.request()); err != nil {
+						return err
 					}
 				}
 				return nil

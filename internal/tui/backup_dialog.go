@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -399,4 +400,15 @@ func (d *BackupDialog) doFormButton() {
 
 func (d *BackupDialog) doProgressButton() {
 	runProgressButton(d.task, d.btnFocus, d.Hide)
+}
+
+// FocusedClipboardTarget implements core.ClipboardHost: the destination path
+// field while the option form is showing and has it focused. The progress view
+// is buttons and a log, and drives its own btnFocus rather than focusable, so
+// it answers nil.
+func (d *BackupDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if d.mode != backupModeForm {
+		return nil
+	}
+	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

@@ -83,24 +83,18 @@ func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, nam
 }
 
 // findIndex resolves dbName/schema/table/name to the owning *gosmo.Table
-// and its *gosmo.Index — there's no IndexByNameContext (gosmo only exposes
-// the bulk IndexesContext listing), so this finds it by name the same way
-// findSchema already does for schemas.
+// and its *gosmo.Index. Both are needed: the pages script and alter through
+// the table, not the index.
 func findIndex(ctx context.Context, sc *db.ServerConn, dbName, schema, table, name string) (*gosmo.Table, *gosmo.Index, error) {
 	t, err := findTable(ctx, sc, dbName, schema, table)
 	if err != nil {
 		return nil, nil, err
 	}
-	idxs, err := t.IndexesContext(ctx)
+	idx, err := t.IndexByNameContext(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, idx := range idxs {
-		if idx.Name == name {
-			return t, idx, nil
-		}
-	}
-	return nil, nil, fmt.Errorf("index %q not found on %s", name, fqn(schema, table))
+	return t, idx, nil
 }
 
 func pageIndexGeneral(sc *db.ServerConn, dbName, schema, table, name string) propPage {

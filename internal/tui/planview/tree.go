@@ -48,6 +48,16 @@ type treeState struct {
 	// scrollbar thumb — see controls.DataGrid's field of the same name and
 	// purpose for the rationale.
 	sbDragging bool
+
+	// rowDragging is true from a press on a tree row until its release.
+	// PlanView.mouseDragging cannot stand in for it: that latch is set
+	// unconditionally on the way down to the content area, precisely so the
+	// XML editor and the graph still receive the resent Button1 events a
+	// selection drag is made of. The row click is the opposite case — it
+	// toggles, so a press held over an already-selected row would expand
+	// and collapse it once per motion event, and a press on an unselected
+	// one selects it and then toggles it on the very next resend.
+	rowDragging bool
 }
 
 // rebuildTreeRows re-flattens the current statement's operator tree,
@@ -514,6 +524,7 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 		}
 	case tcell.ButtonNone:
 		v.treeSt.sbDragging = false
+		v.treeSt.rowDragging = false
 		// The splitter needs to see its own drag-release event to clear
 		// sp.dragging — otherwise it stays stuck true and the next plain
 		// click anywhere in the tab, not just on the bar, is misread as a
@@ -536,6 +547,11 @@ func (v *PlanView) handleTreeTabMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 		if v.treePaneRect.Contains(mx, my) {
+			if v.treeSt.rowDragging {
+				// Still the same physical press — see rowDragging.
+				return true
+			}
+			v.treeSt.rowDragging = true
 			v.bottomFocused = false
 			idx := v.treeSt.scroll + (my - v.treePaneRect.Y)
 			if idx >= 0 && idx < len(v.treeSt.rows) {

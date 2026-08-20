@@ -3,45 +3,36 @@ package tui
 import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
-	"github.com/radix29/gossms/internal/tuikit/widgets"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// clipboardTarget is implemented by any widget that can participate in
-// Copy/Cut/Paste. Both widgets.InputField and controls.Editor satisfy it
-// structurally, which lets one set of App-level methods work across every
-// dialog field and the query editor without tuikit itself needing any
-// notion of "clipboard".
-type clipboardTarget interface {
-	HasSelection() bool
-	SelectedText() string
-	Cut() string
-	Paste(text string)
-	SelectAll()
-}
+// clipboardTarget is any widget that can participate in Copy/Cut/Paste —
+// an alias for core.ClipboardTarget, which is where the interface has to live
+// so that tuikit's own dialogs can hand one back (see core.ClipboardHost).
+// widgets.InputField, controls.Editor, controls.DataGrid and
+// propsheet.PropertySheet all satisfy it structurally, which lets one set of
+// App-level methods work across every dialog field and the query editor.
+type clipboardTarget = core.ClipboardTarget
 
 // activeClipboardTarget resolves which widget Copy/Cut/Paste should act on
-// right now: whichever InputField or Editor is focused in a visible
-// dialog, the active query panel's editor (or its results grid, while that
-// grid's "Show Value" content viewer is open), or a read-only panel's grid
-// while its own content viewer is open. Returns nil if nothing focused
-// right now can participate (e.g. plain Object Explorer focus).
+// right now: whichever field is focused in the frontmost open dialog, the
+// active query panel's editor (or its results grid, while that grid's "Show
+// Value" content viewer is open), or a read-only panel's grid while its own
+// content viewer is open. Returns nil if nothing focused right now can
+// participate (e.g. plain Object Explorer focus).
 func (a *App) activeClipboardTarget() clipboardTarget {
-	switch {
-	case a.fileDialog.Visible():
-		if f := a.fileDialog.FocusedField(); f != nil {
-			return f
-		}
-		return nil
-	case a.propDialog.Visible():
-		return a.propDialog.PropertySheet
-	case a.connectDialog.Visible():
-		if a.connectDialog.focusIdx < len(a.connectDialog.focusable) {
-			switch f := a.connectDialog.focusable[a.connectDialog.focusIdx].(type) {
-			case *widgets.InputField:
-				return f
-			case *controls.Editor:
-				return f
-			}
+	// An open dialog owns the clipboard outright: its focused field, or
+	// nothing. Never fall past it to a panel underneath.
+	//
+	// This used to be a switch naming three dialogs, and every one of the
+	// other twenty-seven fell through to the query editor: with the Find
+	// dialog open, Ctrl+X cut the editor's whole selection — behind the
+	// dialog, reported as "Cut to clipboard", with no way to see it had
+	// happened. A dialog that isn't a ClipboardHost has no text to act on, so
+	// nil is the answer, not a search for somewhere else to put the keystroke.
+	if top := a.topDialog(); top != nil {
+		if h, ok := top.(core.ClipboardHost); ok {
+			return h.FocusedClipboardTarget()
 		}
 		return nil
 	}
@@ -123,8 +114,21 @@ func (a *App) cutSelection() {
 	}
 	a.writeClipboard(target.Cut())
 	a.setStatus("Cut to clipboard")
-	if a.connectDialog.Visible() {
-		a.connectDialog.updateMatches()
+	a.notifyClipboardEdit(target)
+}
+
+// notifyClipboardEdit tells the frontmost dialog that a Cut or a Paste changed
+// one of its fields, so it can follow up the way it follows up a keystroke —
+// see core.ClipboardEditHandler.
+//
+// This was three copies of "if the Connect dialog is open, re-filter its
+// server list", one at each edit site: the same enumerate-the-dialogs shape
+// the resolver above was rewritten to get rid of, and wrong in the same
+// direction — it re-ran that filter for a paste into any field of that dialog,
+// including Password.
+func (a *App) notifyClipboardEdit(target clipboardTarget) {
+	if h, ok := a.topDialog().(core.ClipboardEditHandler); ok {
+		h.ClipboardEdited(target)
 	}
 }
 
@@ -160,27 +164,70 @@ func (a *App) copyWithStatus(text string) {
 // freeze the event loop, then the paste is applied on the UI thread. When
 // no native tool is available it falls back to requesting the terminal
 // clipboard; that response arrives asynchronously as an
-// *tcell.EventClipboard, handled in Run(), which re-resolves
-// activeClipboardTarget() and calls its Paste method.
+// *tcell.EventClipboard, handled in Run(), which applies it to the target
+// recorded here in pendingPaste rather than resolving one afresh.
+//
+// Both halves therefore resolve the target once, now, and carry it: whichever
+// way the text comes back, it is applied by pasteInto, which drops it unless
+// the widget it was aimed at is still the one the clipboard would act on. See
+// there for why re-resolving on arrival is the bug and not the fix.
 func (a *App) pasteFromClipboard() {
-	if a.activeClipboardTarget() == nil {
+	target := a.activeClipboardTarget()
+	if target == nil {
 		return
 	}
+	token := clipboardTargetToken(a.topDialog())
 	a.safego("reading the clipboard", func() {
 		text, ok := osClipboardRead()
 		a.postAndWake(func() {
 			if ok {
-				if t := a.activeClipboardTarget(); t != nil {
-					t.Paste(text)
-					if a.connectDialog.Visible() {
-						a.connectDialog.updateMatches()
-					}
-				}
+				a.pasteInto(target, token, text)
 				return
 			}
+			a.pendingPaste, a.pendingPasteToken = target, token
 			a.screen.GetClipboard()
 		})
 	})
+}
+
+// clipboardTargetToken is the identity of the field a host has focus on right
+// now, or nil from a host that doesn't distinguish its fields (and from no
+// host at all). Only propsheet.PropertySheet answers: it returns itself from
+// FocusedClipboardTarget, so nothing else can tell its rows apart. See
+// core.ClipboardTargetTokener.
+func clipboardTargetToken(top Dialog) any {
+	if t, ok := top.(core.ClipboardTargetTokener); ok {
+		return t.ClipboardTargetToken()
+	}
+	return nil
+}
+
+// pasteInto applies text to the widget the paste was aimed at, and only to
+// that widget.
+//
+// Every clipboard read is asynchronous — the native tool is shelled out to on
+// a background goroutine, the terminal's OSC 52 reply arrives as an event
+// later still — so between Ctrl+V and the text arriving the user can have
+// closed the dialog it was meant for. Re-resolving the target at that point
+// instead of checking it is how a paste aimed at a dialog field lands in the
+// query editor behind it, which is exactly the failure the ClipboardHost work
+// removed from the read half. Dropping the paste is the right answer: the text
+// is still on the clipboard, and the next Ctrl+V goes where the user is now.
+//
+// token carries the same check one level deeper, for a host that answers with
+// itself: a PropertySheet is the active target whichever of its rows has
+// focus, so the identity check above cannot see a move from one row to the
+// next, and a paste aimed at Name arrives in Description. See
+// core.ClipboardTargetTokener.
+func (a *App) pasteInto(target clipboardTarget, token any, text string) {
+	if target == nil || a.activeClipboardTarget() != target {
+		return
+	}
+	if clipboardTargetToken(a.topDialog()) != token {
+		return
+	}
+	target.Paste(text)
+	a.notifyClipboardEdit(target)
 }
 
 // ---------------------------------------------------------------------------
@@ -228,9 +275,7 @@ func (a *App) endBracketedPaste() {
 	}
 	if t := a.activeClipboardTarget(); t != nil {
 		t.Paste(text)
-		if a.connectDialog.Visible() {
-			a.connectDialog.updateMatches()
-		}
+		a.notifyClipboardEdit(t)
 	}
 }
 

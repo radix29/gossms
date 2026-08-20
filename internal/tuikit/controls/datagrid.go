@@ -248,6 +248,36 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.status = strconv.Itoa(rows.Len()) + " rows"
 }
 
+// SetDataPreservingView is SetData for a change that leaves the row set alone
+// — a cell toggled, an edit reverted — where the grid the user is navigating
+// must not jump under them. The cell cursor, the scroll position and any
+// column dragged to a width of its own all go back where they were.
+//
+// SetData discards all three, which is right for a fresh result set and wrong
+// for a redraw of the same rows: the next result set's column 2 has nothing to
+// do with this one's, but a page re-rendering its own fixed headers has the
+// same column 2 it started with.
+//
+// The order the three go back in is load-bearing. Widths first, because
+// ensureVisibleCol decides the horizontal offset by walking colWidths and
+// would otherwise decide it against the recomputed defaults. Scroll before the
+// selection, because SetSelectedCell ends in ensureVisible, which adjusts the
+// scroll it finds — from the restored one it has nothing to do, from the zero
+// SetSource left behind it drags the selected row to the viewport edge.
+func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
+	selRow, selCol := g.SelectedCell()
+	scrollRow, scrollCol := g.scrollRow, g.scrollCol
+	widths := g.ColumnWidthOverrides()
+	g.SetData(columns, rows)
+	for i, w := range widths {
+		if w > 0 {
+			g.SetColumnWidth(i, w)
+		}
+	}
+	g.SetScroll(scrollRow, scrollCol)
+	g.SetSelectedCell(selRow, selCol)
+}
+
 // RefreshColumnWidths recomputes column widths from the grid's current data
 // without resetting scroll position or selection, unlike SetData/SetSource.
 // Call after mutating row cells in place — a progressive background fetch
@@ -295,19 +325,44 @@ func (g *DataGrid) SelectedRow() int {
 	return g.selRow
 }
 
-// ScrollRow returns the index of the topmost visible data row. Read-only view
-// state — it moves on a wheel tick, a scrollbar drag, or a selection scrolled
-// into view, and there is deliberately no setter. Exists so a host can assert
-// an event it meant to swallow never reached the grid; see QueryPanel's
-// mid-drag wheel handling.
+// ScrollRow returns the index of the topmost visible data row. View state a
+// host reads rather than drives — it moves on a wheel tick, a scrollbar drag,
+// or a selection scrolled into view. Exists so a host can assert an event it
+// meant to swallow never reached the grid; see QueryPanel's mid-drag wheel
+// handling.
 func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 
 // ScrollCol returns the index of the leftmost visible column — ScrollRow's
-// horizontal counterpart, read-only for the same reason. A host needs it to
-// tell a Left/Right that scrolled the grid from one the grid ignored, since a
-// grid without a cell cursor reports neither through SelectedCell; see
-// propsheet.GridRow.HandleKey.
+// horizontal counterpart. A host needs it to tell a Left/Right that scrolled
+// the grid from one the grid ignored, since a grid without a cell cursor
+// reports neither through SelectedCell; see propsheet.GridRow.HandleKey.
 func (g *DataGrid) ScrollCol() int { return g.scrollCol }
+
+// SetScroll restores the scroll position (both clamped), for a caller putting
+// the view back after a SetData/SetSource that deliberately discarded it —
+// the scroll counterpart of SetColumnWidth/ColumnWidthOverrides, and used by
+// the same one caller, redrawGrid in the application layer.
+//
+// Not for driving the view. Scrolling is the grid's own response to a wheel,
+// a drag or a selection moving out of sight; a host that sets it directly is
+// fighting ensureVisible, which runs on the next selection change and will
+// undo it. SetSelectedRow/SetSelectedCell are how a host asks for a row to be
+// shown.
+//
+// Call it before restoring the selection, not after: SetSelectedCell ends in
+// ensureVisible, which adjusts the scroll it finds. From the restored one it
+// has nothing to do and leaves the view where the user had it; from the zero
+// SetSource left behind it drags the selected row to the viewport edge.
+func (g *DataGrid) SetScroll(row, col int) {
+	// Bounded by the last row that can be at the *top* of the viewport, the
+	// same bound the wheel uses — not by the last row. Clamping to
+	// rows.Len()-1 would let a redraw that shrank the list leave a two-row
+	// grid scrolled one row down, drawing a blank line above its only visible
+	// row. Columns keep scrollColBy's bound: they vary in width, so there is
+	// no equivalent "last column that fits".
+	g.scrollRow = core.Clamp(row, 0, max(0, g.rows.Len()-(g.rect.H-3)))
+	g.scrollCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
+}
 
 // SetSelectedRow sets the selected row (clamped) and scrolls it into view.
 // Does not fire OnSelectRow.
@@ -449,6 +504,17 @@ func (g *DataGrid) setOverrideWidth(i, w int) {
 		g.colWidthOverride = append(g.colWidthOverride, 0)
 	}
 	g.colWidthOverride[i] = w
+}
+
+// ColumnWidthOverrides returns the width each column was last dragged to, 0
+// for a column still at its computed default — the inverse of SetColumnWidth,
+// and the only way to carry a user's drags across a SetData that deliberately
+// discards them (see redrawGrid in the application layer). The slice is a
+// copy; its length is the column count at the time of the call.
+func (g *DataGrid) ColumnWidthOverrides() []int {
+	out := make([]int, len(g.colWidths))
+	copy(out, g.colWidthOverride)
+	return out
 }
 
 // SetColumnWidth sets column i's width explicitly, as a separator drag would —

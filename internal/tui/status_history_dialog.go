@@ -151,3 +151,11 @@ func (d *StatusHistoryDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	d.editor.HandleMouse(ev)
 	return true
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost. The history editor is
+// read-only, so Copy works and Cut/Paste are no-ops on it — which is the point:
+// without this the dialog fell through to the query editor underneath, and
+// Ctrl+C there copied the user's SQL while they were looking at the log.
+func (d *StatusHistoryDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	return d.editor
+}

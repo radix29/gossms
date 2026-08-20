@@ -1,5 +1,7 @@
 package tui
 
+import "github.com/radix29/gossms/internal/tuikit/core"
+
 // dialog_common.go holds the small behaviours shared by the hand-rolled
 // dialogs — the ones that lay out widgets directly and drive focus with a flat
 // slice, rather than delegating to propsheet.Form's rows. Connect, Backup,
@@ -40,6 +42,24 @@ func indexOfFocusable(list []focusable, w focusable) int {
 		}
 	}
 	return -1
+}
+
+// focusedClipboardTarget answers core.ClipboardHost for a dialog that drives
+// focus with a flat slice: list[i] when the focused widget can take part in
+// Copy/Cut/Paste, and nil otherwise.
+//
+// The explicit nil in the miss arms is load-bearing. A typed nil widget put
+// into an interface is not a nil interface, and every caller of
+// App.activeClipboardTarget tests the result against nil before calling
+// through it.
+func focusedClipboardTarget(list []focusable, i int) core.ClipboardTarget {
+	if i < 0 || i >= len(list) {
+		return nil
+	}
+	if t, ok := list[i].(core.ClipboardTarget); ok {
+		return t
+	}
+	return nil
 }
 
 // nextFocus and prevFocus are Tab and Backtab over a list of n widgets.

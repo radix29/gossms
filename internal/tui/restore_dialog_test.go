@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -366,5 +367,160 @@ func TestFilesTabStaysPutOnASingleEntryCycle(t *testing.T) {
 		if d.filesFocus != 0 {
 			t.Fatalf("Tab %d: filesFocus = %d, want 0", i+1, d.filesFocus)
 		}
+	}
+}
+
+// restoreForm builds only the widgets the accessors below read, the way
+// show() constructs them — no App, no screen, no server. defaultDirs already
+// answers "", "" for a nil connection, which is what makes the whole preview
+// path reachable without one.
+func restoreForm() *RestoreDialog {
+	d := &RestoreDialog{}
+	d.rbSource = widgets.NewRadioBox("Restore From:", []string{"Backup File", "Backup History"})
+	d.fFile = widgets.NewInputField("", 40, false)
+	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, 48)
+	d.fTarget = widgets.NewInputField("", 40, false)
+	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{"Auto", "Original", "Folder"})
+	d.fDataDir = widgets.NewInputField("Data folder:", 30, false)
+	d.fLogDir = widgets.NewInputField("Log folder: ", 30, false)
+	return d
+}
+
+// The device is read from whichever source the radio selects, and the two
+// sources are unrelated: a path the user typed, or the device recorded on
+// the picked history entry. Reading the wrong one restores from a file the
+// user is not looking at.
+func TestDeviceForRestoreFollowsTheSourceRadio(t *testing.T) {
+	d := restoreForm()
+	d.fFile.SetValue(`  C:\backups\AppDB.bak  `)
+	d.history = []*gosmo.BackupInfo{
+		{DeviceName: `E:\hist\one.bak`},
+		{DeviceName: `E:\hist\two.bak`},
+	}
+
+	d.rbSource.SetSelected(0)
+	if got := d.deviceForRestore(); got != `C:\backups\AppDB.bak` {
+		t.Errorf("file source gave %q, want the trimmed typed path", got)
+	}
+
+	// The dropdown has to carry items for a selection to stick — it is
+	// populated from the same history slice in loadHistory.
+	d.ddHistSet = widgets.NewDropDown("Backup Set: ", []string{"set 1", "set 2"}, 48)
+	d.rbSource.SetSelected(1)
+	d.ddHistSet.SetSelected(1)
+	if got := d.deviceForRestore(); got != `E:\hist\two.bak` {
+		t.Errorf("history source gave %q, want the second entry's device", got)
+	}
+
+	// An empty history with the radio on it must yield nothing rather than
+	// index into it — the callers gate on "" to refuse the restore.
+	d.history = nil
+	if got := d.deviceForRestore(); got != "" {
+		t.Errorf("empty history gave %q, want empty", got)
+	}
+}
+
+// relocation snapshots the Files view for a background goroutine, which must
+// not read widgets. A field left unread here means the restore silently
+// ignores a folder the user typed.
+func TestRelocationSnapshotsTheFilesView(t *testing.T) {
+	d := restoreForm()
+	d.rbReloc.SetSelected(relocFolder)
+	d.fDataDir.SetValue(`  F:\NewData  `)
+	d.fLogDir.SetValue(`  G:\NewLog  `)
+
+	want := relocPlan{mode: relocFolder, dataDir: `F:\NewData`, logDir: `G:\NewLog`}
+	if got := d.relocation(); got != want {
+		t.Errorf("relocation() = %+v, want %+v (both folders trimmed)", got, want)
+	}
+}
+
+// plannedPaths is the Files view's preview, and its whole claim is that it
+// cannot drift from what the restore does — both go through relocateFiles.
+// The test states that as an equality rather than by restating the expected
+// paths, so a change to the relocation rules updates both sides at once and
+// only a genuine divergence fails.
+func TestPlannedPathsAgreeWithTheRelocationTheRestoreWillUse(t *testing.T) {
+	for _, mode := range []int{relocAuto, relocOriginal, relocFolder} {
+		d := restoreForm()
+		d.files = backupSetFiles()
+		d.headers = []*gosmo.BackupHeader{hdr(1, "AppDB")}
+		d.fTarget.SetValue("  AppDB_Copy  ")
+		d.rbReloc.SetSelected(mode)
+		d.fDataDir.SetValue(`F:\NewData`)
+		d.fLogDir.SetValue(`G:\NewLog`)
+
+		// defaultDirs answers "","" with no connection, matching what the
+		// preview passes.
+		want := relocateFiles(d.files, d.relocation(), "", "", "AppDB", "AppDB_Copy")
+		got := d.plannedPaths()
+
+		if len(got) != len(want) {
+			t.Errorf("mode %d: preview has %d entries, the restore would move %d", mode, len(got), len(want))
+			continue
+		}
+		for _, m := range want {
+			if got[m.LogicalName] != m.PhysicalName {
+				t.Errorf("mode %d: preview shows %s at %q, the restore would put it at %q",
+					mode, m.LogicalName, got[m.LogicalName], m.PhysicalName)
+			}
+		}
+	}
+}
+
+// The target name is read trimmed, the same way relocateFiles is given it —
+// a padded name would otherwise rename the database to something with
+// leading spaces and derive every relocated file name from it.
+func TestPlannedPathsTrimsTheTargetName(t *testing.T) {
+	d := restoreForm()
+	d.files = backupSetFiles()
+	d.headers = []*gosmo.BackupHeader{hdr(1, "AppDB")}
+	d.rbReloc.SetSelected(relocAuto)
+	d.fTarget.SetValue("   AppDB_Copy   ")
+
+	for logical, path := range d.plannedPaths() {
+		if strings.Contains(path, " AppDB_Copy") || strings.Contains(path, "AppDB_Copy ") {
+			t.Errorf("%s planned at %q — the target name was not trimmed", logical, path)
+		}
+	}
+}
+
+// autoFillTarget must not overwrite a name the user typed themselves. It
+// tracks its own last auto-fill to tell "still the suggestion" from "edited",
+// so picking a different database in the history dropdown re-suggests, while
+// a typed name survives.
+func TestAutoFillTargetKeepsAUserTypedName(t *testing.T) {
+	d := restoreForm()
+
+	d.autoFillTarget("AppDB")
+	if got := d.fTarget.Value(); got != "AppDB" {
+		t.Fatalf("first auto-fill gave %q, want AppDB", got)
+	}
+
+	// Still holding the suggestion: a new pick replaces it.
+	d.autoFillTarget("OtherDB")
+	if got := d.fTarget.Value(); got != "OtherDB" {
+		t.Errorf("an untouched suggestion was not replaced: %q", got)
+	}
+
+	// Edited by hand: a new pick must leave it alone.
+	d.fTarget.SetValue("MyOwnName")
+	d.autoFillTarget("ThirdDB")
+	if got := d.fTarget.Value(); got != "MyOwnName" {
+		t.Errorf("auto-fill overwrote a typed name with %q", got)
+	}
+}
+
+// Same contract as Backup's: a running restore can be hidden or cancelled, a
+// finished one only closed. Offering Cancel on a finished task cancels a
+// context nothing is listening to.
+func TestRestoreProgressButtonsFollowTheTask(t *testing.T) {
+	d := &RestoreDialog{}
+	if got, want := strings.Join(d.progressButtons(), ","), "Hide,Cancel"; got != want {
+		t.Errorf("no task: %q, want %q", got, want)
+	}
+	d.task = &Task{Done: true}
+	if got, want := strings.Join(d.progressButtons(), ","), "Close"; got != want {
+		t.Errorf("finished task: %q, want %q", got, want)
 	}
 }

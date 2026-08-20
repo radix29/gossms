@@ -45,6 +45,10 @@ func (d *DropDown) SetItems(items []string) {
 // Items returns the current item list.
 func (d *DropDown) Items() []string { return d.items }
 
+// Label returns the inline label the dropdown was created with, padded as
+// the caller padded it. Read-only: the label is fixed at construction.
+func (d *DropDown) Label() string { return d.label }
+
 func (d *DropDown) SetBounds(x, y int) { d.rect.X, d.rect.Y = x, y }
 
 // RectX and Width report the widget's position and the visible width of its

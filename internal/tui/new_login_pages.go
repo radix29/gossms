@@ -390,8 +390,7 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 			return
 		}
 		edits[row].current = nextPermState(edits[row].current)
-		grid.SetData([]string{"Permission", "State"}, rowsFor())
-		grid.SetSelectedCell(row, col)
+		redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
 	}
 
 	gridRow := propsheet.NewGridRow(grid, 12)

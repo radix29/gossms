@@ -39,23 +39,17 @@ func statisticPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table,
 }
 
 // findStatistic resolves dbName/schema/table/name to the owning *gosmo.Table
-// and its *gosmo.Statistic — there's no StatisticByNameContext (gosmo only
-// exposes the bulk StatisticsContext listing), mirroring findIndex.
+// and its *gosmo.Statistic, mirroring findIndex.
 func findStatistic(ctx context.Context, sc *db.ServerConn, dbName, schema, table, name string) (*gosmo.Table, *gosmo.Statistic, error) {
 	t, err := findTable(ctx, sc, dbName, schema, table)
 	if err != nil {
 		return nil, nil, err
 	}
-	stats, err := t.StatisticsContext(ctx)
+	st, err := t.StatisticByNameContext(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, st := range stats {
-		if st.Name == name {
-			return t, st, nil
-		}
-	}
-	return nil, nil, fmt.Errorf("statistic %q not found on %s", name, fqn(schema, table))
+	return t, st, nil
 }
 
 func pageStatisticGeneral(sc *db.ServerConn, dbName, schema, table, name string) propPage {

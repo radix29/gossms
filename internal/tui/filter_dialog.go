@@ -522,3 +522,14 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	return true
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost: the focused row's
+// value field. widgetAt answers nil once the focus index is past the rows and
+// into the button row, and an operator dropdown is not a clipboard target, so
+// both fall through to nil here.
+func (d *FilterDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	if t, ok := d.widgetAt(d.focusIdx).(core.ClipboardTarget); ok {
+		return t
+	}
+	return nil
+}

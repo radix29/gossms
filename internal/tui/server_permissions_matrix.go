@@ -187,8 +187,7 @@ func buildPermissionsMatrix(
 		}
 		e := visiblePerms[row]
 		e.current = nextPermState(e.current)
-		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
-		permGrid.SetSelectedCell(row, col)
+		redrawGrid(permGrid, []string{"Permission", "State"}, permRowsFor(selectedEdits))
 	}
 
 	principalFilterRow := propsheet.Text("Filter principals", "", 28)
@@ -328,8 +327,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 					return
 				}
 				visible[row].current = nextPermState(visible[row].current)
-				grid.SetData([]string{"Permission", "State"}, rowsFor())
-				grid.SetSelectedCell(row, col)
+				redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
 			}
 
 			filterRow := propsheet.Text("Filter permissions", "", 28)

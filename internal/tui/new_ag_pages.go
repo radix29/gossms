@@ -70,7 +70,7 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 
 	nameRow := propsheet.Text("Availability group name", "", 30)
 	clusterRow := propsheet.Select("Cluster type", agClusterTypeItems, 0)
-	requiredSyncRow := propsheet.Int("Required synchronized secondaries to commit", 0, 0, 2, "")
+	requiredSyncRow := propsheet.Int("Required sync secondaries", 0, 0, 2, "")
 	dbFailoverRow := propsheet.Check("Database level health detection", false)
 	dtcRow := propsheet.Check("Per database DTC support", false)
 	containedRow := propsheet.Check("Contained", false)

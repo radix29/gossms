@@ -11,14 +11,22 @@ import (
 type fakePanel struct {
 	title    string
 	closable bool
+
+	// mouse records the button state of every event the panel manager
+	// actually routed through, so a test can assert what did not reach the
+	// panel as well as what did.
+	mouse []tcell.ButtonMask
 }
 
-func (p *fakePanel) SetBounds(x, y, w, h int)              {}
-func (p *fakePanel) Draw(s tcell.Screen)                   {}
-func (p *fakePanel) HandleKey(ev *tcell.EventKey) bool     { return false }
-func (p *fakePanel) HandleMouse(ev *tcell.EventMouse) bool { return false }
-func (p *fakePanel) Title() string                         { return p.title }
-func (p *fakePanel) Closable() bool                        { return p.closable }
+func (p *fakePanel) SetBounds(x, y, w, h int)          {}
+func (p *fakePanel) Draw(s tcell.Screen)               {}
+func (p *fakePanel) HandleKey(ev *tcell.EventKey) bool { return false }
+func (p *fakePanel) HandleMouse(ev *tcell.EventMouse) bool {
+	p.mouse = append(p.mouse, ev.Buttons())
+	return false
+}
+func (p *fakePanel) Title() string  { return p.title }
+func (p *fakePanel) Closable() bool { return p.closable }
 
 // TestPanelManagerNonClosablePanelNeverFiresOnCloseTab confirms a panel
 // that implements Closable and returns false (e.g. Object Explorer

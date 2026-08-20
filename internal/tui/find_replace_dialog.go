@@ -583,3 +583,12 @@ func (a *App) hasEditorSearch() bool {
 	qp := a.activeQueryPanel()
 	return qp != nil && qp.editor.HasSearch()
 }
+
+// FocusedClipboardTarget implements core.ClipboardHost: the Find what / Replace
+// with field that has focus, nil on any of the checkboxes.
+//
+// Without it Ctrl+X here cut the *editor's* selection instead — the text the
+// dialog was opened to search, removed behind the dialog it was typed into.
+func (d *FindReplaceDialog) FocusedClipboardTarget() core.ClipboardTarget {
+	return focusedClipboardTarget(d.fields(), d.focusIdx)
+}
