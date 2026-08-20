@@ -1,12 +1,12 @@
 module github.com/radix29/gossms
 
-go 1.26
+go 1.27
 
-toolchain go1.26.6
+toolchain go1.27.0
 
 require (
 	github.com/clipperhouse/displaywidth v0.11.0
-	github.com/gdamore/tcell/v3 v3.4.1
+	github.com/gdamore/tcell/v3 v3.4.2
 	github.com/golang-sql/sqlexp v0.1.0
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/radix29/gosmo v0.0.9
