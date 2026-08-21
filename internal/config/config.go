@@ -381,8 +381,7 @@ func (c *Config) AddOrUpdate(conn Connection) {
 func (c *Config) MatchByServer(prefix string) []Connection {
 	prefix = strings.ToLower(prefix)
 	var out []Connection
-	for i := len(c.Connections) - 1; i >= 0; i-- {
-		conn := c.Connections[i]
+	for _, conn := range slices.Backward(c.Connections) {
 		if strings.HasPrefix(strings.ToLower(conn.Server), prefix) {
 			out = append(out, conn)
 		}

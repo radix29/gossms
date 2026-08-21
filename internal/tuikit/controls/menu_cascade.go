@@ -1,6 +1,8 @@
 package controls
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -126,9 +128,9 @@ func (c *menuCascade) draw(s tcell.Screen, root []MenuItem, rootRect core.Rect) 
 // of the click by the box underneath. Level 0 is the host's own menu; row
 // is negative or past the item count on the box's border rows.
 func (c *menuCascade) hit(rootRect core.Rect, mx, my int) (level, row int, ok bool) {
-	for i := len(c.rects) - 1; i >= 0; i-- {
-		if c.rects[i].Contains(mx, my) {
-			return i + 1, my - c.rects[i].Y - 1, true
+	for i, rect := range slices.Backward(c.rects) {
+		if rect.Contains(mx, my) {
+			return i + 1, my - rect.Y - 1, true
 		}
 	}
 	if rootRect.Contains(mx, my) {

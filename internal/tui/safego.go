@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"runtime/debug"
+	"runtime/pprof"
 )
 
 // safego runs fn on a new goroutine, turning a panic into a status-bar
@@ -27,9 +29,23 @@ import (
 // screen, which has no room for it.
 func (a *App) safego(what string, fn func()) {
 	go func() {
+		labelGoroutine(what)
 		defer a.recoverPanic(what)
 		fn()
 	}()
+}
+
+// labelGoroutine tags the calling goroutine with what, which Go 1.27 prints
+// in the header of every traceback the goroutine appears in — the recovered
+// stack reportPanic logs, a goroutine dump, the goroutineleak profile. Without
+// it each one is headed by an anonymous func literal that says nothing about
+// which background operation it was.
+//
+// Set directly rather than through pprof.Do, whose deferred restore runs while
+// the panic is still unwinding — that is, before the recover below — and would
+// strip the label from the one stack that has to carry it.
+func labelGoroutine(what string) {
+	pprof.SetGoroutineLabels(pprof.WithLabels(context.Background(), pprof.Labels("op", what)))
 }
 
 // safegoRepair is safego for a background operation that latched UI state
@@ -49,6 +65,7 @@ func (a *App) safego(what string, fn func()) {
 // the same reason, as backfillRow's recovery (detail_browser_backfill.go).
 func (a *App) safegoRepair(what string, repair func(), fn func()) {
 	go func() {
+		labelGoroutine(what)
 		defer func() {
 			r := recover()
 			if r == nil {

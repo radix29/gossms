@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tui/dashboard"
 	"github.com/radix29/gossms/internal/tuikit/charts"
@@ -154,8 +156,8 @@ func (am *ActivityMonitor) bucketTime(idx int) string {
 // resolve to the same one on every refresh.
 func (am *ActivityMonitor) bucketIndex(at string) int {
 	times := am.bucketTimes()
-	for i := len(times) - 1; i >= 0; i-- {
-		if times[i] == at {
+	for i, ts := range slices.Backward(times) {
+		if ts == at {
 			return i
 		}
 	}

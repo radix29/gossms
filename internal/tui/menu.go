@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"runtime"
+	"strings"
+
 	gosmoversion "github.com/radix29/gosmo/version"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -215,7 +218,7 @@ func (a *App) showAbout() {
 
 		PropertySection("Runtime"),
 		{Key: "Platform", Value: version.Runtime()},
-		{Key: "Go Version", Value: "1.26"},
+		{Key: "Go Version", Value: strings.TrimPrefix(runtime.Version(), "go")},
 
 		PropertySection("Components"),
 		{Key: "DB Framework", Value: "github.com/radix29/gosmo " + gosmoversion.Version},

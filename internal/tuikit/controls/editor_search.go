@@ -286,8 +286,7 @@ func (e *Editor) FindNext(dir int) bool {
 			// again.
 			row, col, _, _ = e.selectionBounds()
 		}
-		for i := len(matches) - 1; i >= 0; i-- {
-			m := matches[i]
+		for i, m := range slices.Backward(matches) {
 			if m.row < row || (m.row == row && m.endCol <= col) {
 				idx = i
 				break
@@ -402,8 +401,8 @@ func (e *Editor) ReplaceAll() int {
 		return 0
 	}
 	e.pushUndo()
-	for i := len(targets) - 1; i >= 0; i-- {
-		e.replaceMatch(targets[i])
+	for _, target := range slices.Backward(targets) {
+		e.replaceMatch(target)
 	}
 	e.search.cur = -1
 	e.selecting = false

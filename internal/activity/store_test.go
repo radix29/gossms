@@ -96,3 +96,70 @@ func TestStoreEmptyAndReset(t *testing.T) {
 		t.Error("Reset left samples behind")
 	}
 }
+
+func tempdbSampleAt(t time.Time, versionMB float64) TempDBSample {
+	return TempDBSample{
+		At:             t,
+		VersionStoreMB: versionMB,
+		Space:          TempDBSpace{TotalMB: 100, FreeMB: 60},
+		Files:          []TempDBFile{{FileID: 1, Name: "tempdev", Type: "ROWS"}},
+		Sessions:       []TempDBSession{{SessionID: 57, TotalMB: 5}},
+	}
+}
+
+// The tempdb store keeps four hours where the main one keeps thirty
+// minutes: this tab ticks in tens of seconds, and what it exists to show —
+// a version store nothing cleans up, a file filling over an afternoon —
+// builds over hours. Its window is time-based for the same reason.
+func TestTempDBStorePrunesByAge(t *testing.T) {
+	var s TempDBStore
+	start := time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)
+
+	// One sample a minute for six hours, past the four-hour window.
+	for i := range 6 * 60 {
+		s.Append(tempdbSampleAt(start.Add(time.Duration(i)*time.Minute), float64(i)))
+	}
+
+	if s.Len() == 0 {
+		t.Fatal("the store dropped everything")
+	}
+	oldest := s.Samples()[0]
+	newest, _ := s.Latest()
+	if newest.At.Sub(oldest.At) > TempDBRetention {
+		t.Errorf("oldest sample is %v old, past the %v window", newest.At.Sub(oldest.At), TempDBRetention)
+	}
+	if newest.VersionStoreMB != float64(6*60-1) {
+		t.Errorf("newest sample = %v, want the last one appended", newest.VersionStoreMB)
+	}
+}
+
+// The file and session lists are only ever read for the newest sample, and
+// a session list on a busy server is the largest thing this store holds.
+// Older samples keep the space and counter levels every chart plots.
+func TestTempDBStoreKeepsTheListsOnlyForTheNewestSamples(t *testing.T) {
+	var s TempDBStore
+	start := time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)
+	for i := range TempDBDetailWindow * 3 {
+		s.Append(tempdbSampleAt(start.Add(time.Duration(i)*time.Minute), float64(i)))
+	}
+
+	samples := s.Samples()
+	withLists := 0
+	for _, sample := range samples {
+		if sample.Files != nil || sample.Sessions != nil {
+			withLists++
+		}
+		if sample.Space.TotalMB != 100 {
+			t.Fatalf("a sample lost its space breakdown: %+v", sample.Space)
+		}
+	}
+	if withLists > TempDBDetailWindow+1 {
+		t.Errorf("%d samples still hold their file/session lists, want at most %d",
+			withLists, TempDBDetailWindow+1)
+	}
+	// The newest sample is the one the grids read, so it must be among them.
+	newest, ok := s.Latest()
+	if !ok || newest.Files == nil || newest.Sessions == nil {
+		t.Errorf("the newest sample lost its lists: %+v", newest)
+	}
+}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -143,8 +144,8 @@ func clipPathLeft(path string, w int) string {
 	runes := []rune(path)
 	width := core.DisplayWidth("…")
 	cut := len(runes)
-	for i := len(runes) - 1; i >= 0; i-- {
-		rw := core.DisplayWidth(string(runes[i]))
+	for i, r := range slices.Backward(runes) {
+		rw := core.DisplayWidth(string(r))
 		if width+rw > w {
 			break
 		}

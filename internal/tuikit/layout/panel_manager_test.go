@@ -159,10 +159,10 @@ func (p *activatablePanel) SetActive(v bool) { p.active = v }
 // now occupies that slot.
 func TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt(t *testing.T) {
 	pm := NewPanelManager()
-	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
-	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
-	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
-	d := &activatablePanel{fakePanel: fakePanel{title: "D"}}
+	a := &activatablePanel{title: "A"}
+	b := &activatablePanel{title: "B"}
+	c := &activatablePanel{title: "C"}
+	d := &activatablePanel{title: "D"}
 	pm.AddPanel(a)
 	pm.AddPanel(b)
 	pm.AddPanel(c)
@@ -188,9 +188,9 @@ func TestPanelManagerRemovePanelKeepsSamePanelActiveWhenRemovingBeforeIt(t *test
 // a SetActive(true) call.
 func TestPanelManagerRemovePanelActivatesNeighborWhenActiveIsRemoved(t *testing.T) {
 	pm := NewPanelManager()
-	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
-	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
-	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
+	a := &activatablePanel{title: "A"}
+	b := &activatablePanel{title: "B"}
+	c := &activatablePanel{title: "C"}
 	pm.AddPanel(a)
 	pm.AddPanel(b)
 	pm.AddPanel(c)
@@ -212,9 +212,9 @@ func TestPanelManagerRemovePanelActivatesNeighborWhenActiveIsRemoved(t *testing.
 // index at all.
 func TestPanelManagerRemovePanelAfterActiveDoesNotChangeActive(t *testing.T) {
 	pm := NewPanelManager()
-	a := &activatablePanel{fakePanel: fakePanel{title: "A"}}
-	b := &activatablePanel{fakePanel: fakePanel{title: "B"}}
-	c := &activatablePanel{fakePanel: fakePanel{title: "C"}}
+	a := &activatablePanel{title: "A"}
+	b := &activatablePanel{title: "B"}
+	c := &activatablePanel{title: "C"}
 	pm.AddPanel(a)
 	pm.AddPanel(b)
 	pm.AddPanel(c)

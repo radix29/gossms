@@ -352,3 +352,84 @@ func TestCollectorSendAfterContextCancel(t *testing.T) {
 		t.Fatal("SetPaused blocked after a cancelled Run returned")
 	}
 }
+
+// A paused collector must stop reading and resume where it left off. The
+// toolbar's Pause is the only thing between a user reading a stalled server's
+// numbers and the panel replacing them a second later, so a SetPaused that
+// updates the state but never reaches the tick is the whole feature missing.
+func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
+	db := sql.OpenDB(probeOnceConnector{})
+	defer db.Close()
+
+	var mu sync.Mutex
+	probes := 0
+	c := NewCollector(db, nil, func(error) {
+		mu.Lock()
+		probes++
+		mu.Unlock()
+	})
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return probes
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Run(ctx, time.Millisecond)
+	}()
+
+	// The probes fail, so the interval backs off as they go; the pause has to
+	// land while the collector is still ticking fast.
+	c.SetPaused(true)
+	time.Sleep(20 * time.Millisecond)
+	paused := count()
+	time.Sleep(100 * time.Millisecond)
+	if got := count(); got != paused {
+		t.Errorf("%d probes ran while paused (was %d); Pause did not reach the tick", got-paused, paused)
+	}
+
+	c.SetPaused(false)
+	deadline := time.After(time.Second)
+	for count() == paused {
+		select {
+		case <-deadline:
+			t.Fatal("no probe ran after resuming; SetPaused(false) did not reach the tick")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	c.Stop()
+	<-done
+}
+
+// Stop has to end a *paused* collector too. Pausing takes the tick out of
+// the loop, so a Stop that were handled only inside the tick would leave the
+// goroutine running for the process's lifetime and the panel's
+// stopped-callback never posted.
+func TestCollectorStopEndsAPausedRun(t *testing.T) {
+	db := sql.OpenDB(probeOnceConnector{})
+	defer db.Close()
+
+	c := NewCollector(db, nil, func(error) {})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.Run(context.Background(), time.Millisecond)
+	}()
+
+	c.SetPaused(true)
+	time.Sleep(20 * time.Millisecond)
+	c.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after Stop while paused")
+	}
+	c.Stop() // idempotent: a second close would panic
+}

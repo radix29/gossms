@@ -1722,3 +1722,187 @@ asserts the bit, and catches exactly that mutation. The two toggle columns feed
 two different sp_configure options, so they get their own test.
 
 `internal/tui` coverage 31.9% → 34.5%.
+
+## 2026-08-21 — Go 1.27: background goroutines name themselves in a traceback
+
+Two changes out of a survey of what Go 1.27 offers the two repos (the survey
+itself is not repeated here — the short answer was that most of what it adds
+lands on packages neither repo uses, and the bulk of `go fix`'s 74-file output
+is pre-1.27 modernizers that had simply never been run).
+
+Go 1.27 prints a goroutine's `runtime/pprof` labels in the header of every
+traceback it appears in, for modules declaring `go 1.27`. `App.safego` and
+`safegoRepair` already take a `what` string naming the operation, so both now
+set it as a label on their goroutine, and the stack `reportPanic` writes to the
+log is headed `goroutine 42 [running] {op: "loading the thing"}:` instead of an
+anonymous func literal that names nothing. Labels are inherited, so a goroutine
+the operation starts for itself carries it too, and the same label shows up in
+the `goroutineleak` profile 1.27 promoted to GA.
+
+The label is set with `pprof.SetGoroutineLabels` rather than `pprof.Do`, and
+that is the whole subtlety: `Do`'s `defer SetGoroutineLabels(ctx)` restores the
+old (empty) label set *while the panic is still unwinding*, which is before the
+recover — so wrapping `fn` in `pprof.Do` labels every traceback except the one
+that matters. `TestSafegoLabelsItsGoroutineWithTheOperation` takes its stack
+from inside a deferred function during the unwind for that reason; it fails
+with the header `"goroutine 42 [running]:"` when `labelGoroutine` is dropped,
+which is how it was checked.
+
+In gosmo, `declTypeByName`'s eleven `reflect.TypeOf(T{})` keys and the
+`time.Time` comparison in `scriptDeclType` became `reflect.TypeFor[T]()`
+(`go fix -reflecttypefor`) — no composite literal to allocate, and the type is
+named rather than derived from a value.
+
+## 2026-08-21 — The Status History ring was written from a loader goroutine
+
+Recorded in `docs/open-threads.md` on 2026-08-19 and fixed now.
+`App.logStatus` reaches `StatusHistoryDialog.Record`, and `fetchChildren`
+(`explorer_loaders.go`) calls `logStatus` on the Object Explorer's loader
+goroutine — so a failed folder expand appended to `d.lines` while the UI
+goroutine read the same slice to draw the dialog. Undefined behaviour, not a
+stale read, and `-race` was quiet because no test drove both sides.
+
+The slice was only half of it. `Record` also called `SetText` on the dialog's
+`controls.Editor` whenever the dialog was visible, which is a background
+goroutine writing the very widget the UI goroutine is drawing. So the fix is
+two-sided: a `sync.Mutex` over `lines`/`dirty`, and `Record` reduced to
+recording — the editor rebuild moved onto the UI goroutine, into `Show` (as
+before) and now `Draw`, both through `syncIfDirty`. `Draw` reads the line count
+through `lineCount()` for the same reason, and `syncIfDirty` drops the lock
+before `SetText` so a background `Record` never blocks behind the expensive
+half. Behaviour is unchanged from the user's side: a message recorded while the
+dialog is open still appears without reopening it, one frame later, and a frame
+is exactly what the `postAndWake` that produced the message already asks for.
+
+Audited the other callers rather than assuming, since the thread said to:
+`options_dialog.go:236` and `app_connections.go:44` are both on the UI
+goroutine (the latter inside a `postAndWake` callback), and a scan for
+`setStatus`/`logStatus` inside `safego`/`safegoRepair` closures turned up only
+`scripting.go:274`, whose `setStatus` is the *repair* argument —
+`safegoRepair` posts that through `postAndWake` too. `fetchChildren` was the
+only background caller.
+
+Two tests: `TestStatusHistoryDrawSyncsWhatWasRecordedWhileVisible` pins the
+rebuild onto `Draw`, and `TestStatusHistoryRecordIsSafeFromBackgroundGoroutines`
+runs four recorders against a drawing loop and fails under `-race` when the
+mutex is removed from `Record` — checked by removing it. `fakeSizedScreen`
+grew `Get`/`Put`, which `DrawBase`'s shadow needs; it had only `Size` and
+`SetContent`, so no test in `internal/tui` had ever driven a dialog's `Draw`.
+Verified live too: a failed connect, then a click on the status row, shows both
+messages newest-first.
+
+## 2026-08-21 — A scripted partitioned table came back unpartitioned
+
+`ScriptTable` emitted no `ON` clause at all, so a partitioned table's script
+recreated it on the target database's default filegroup. Nothing reports that:
+the script runs clean, the table is there, and it is a single-partition heap or
+clustered index on PRIMARY. Found 2026-08-19 while scripting the item-6 probe
+database, whose `dbo.Parted` came back on `[PRIMARY]`.
+
+gosmo carries the data space now. `DataSpace` (`table.go`) holds the filegroup
+or partition scheme name, whether it *is* a scheme, whether it is the default
+filegroup, and — for a scheme — the partitioning column, since `ON
+[scheme]([column])` is the whole clause and half of it is not one. `Index`
+gained a `DataSpace` field, filled by the index list from `sys.data_spaces`
+plus `sys.index_columns`'s `partition_ordinal`, and `Table.DataSpace`/
+`DataSpaceContext` reads the table's own from index_id 0 or 1 — a query of its
+own precisely because `indexListContext` filters `i.type > 0` and a partitioned
+*heap* has no row in it. Additive throughout: no existing method changed shape.
+
+Two details worth keeping. The partitioning-column subquery is aliased `pic`,
+not `ic`: two tests count round trips by looking for `sys.index_columns ic`,
+and an `OUTER APPLY` mentioning the same table under the same alias made a
+one-query read look like two. And `dataSpaceClause` emits a partition scheme
+always but a filegroup only when it is *not* the default — `ON [PRIMARY]` is
+what the server does anyway, and naming a filegroup the target database may not
+have turns a script that would have worked into one that fails. A scheme with
+no partitioning column emits nothing rather than half a clause.
+
+Every object that has an `ON` clause now gets one: the table, the inline
+primary key, unique constraints, both columnstore forms and the B-tree indexes.
+
+Verified live on win10cli, and this is the part unit tests could not do:
+`live_scripttable_partition_test.go` builds two throwaway databases with the
+same filegroup, partition function and scheme, scripts `dbo.Parted` (clustered,
+partitioned), `dbo.PartedHeap` (a heap on the scheme) and `dbo.OnArchive` (a
+non-default filegroup) out of one, replays each script batch into the other,
+and reads `sys.data_spaces` back — the assertion is where the rows actually
+landed, not what the text says, and it deliberately does not go through gosmo's
+own reader. A/B'd by stubbing `dataSpaceClause` to return `""`: all four
+assertions fail with the replayed objects on `PRIMARY (FG)`, which is the
+reported bug exactly. The unit tests were checked the same way — dropping the
+partitioning column from the clause, dropping the table's clause, and narrowing
+the data-space read to index_id 1 each fail a different test.
+
+## 2026-08-21 — The coverage holes from the 2026-08-18 review
+
+Three separate pieces of the same open thread.
+
+**`internal/activity` 65.2% → 97.4%.** The thread called it 54.8%; it had
+drifted up since. What was actually uncovered was not the collector — its
+backoff, its non-positive-rate normalization and its stop latch were all
+pinned already — but every DMV *reader*: `collectCPUUsage`,
+`collectSchedulerLoad`, `collectFileIO`, `collectMemory`, `collectSchedulers`,
+`collectSessions`, `collectWaits` and the whole of tempdb, all at 0%. Each is a
+query and a scan, and a scan reading a column into the wrong field produces a
+plausible number and no error at all.
+
+`internal/activity/fakedb_test.go` is a scripted `database/sql` driver keyed by
+the *query constant* — `cpuUsageQuery`, `schedQuery`, `tempdbFileQuery` — so a
+test says which read it is answering rather than counting queries in order, and
+an unscripted query is an error naming itself rather than an empty result. On
+top of it: `Collect` and `collectTempDB` driven end to end with a distinct
+value in every column, a failing-read subtest per query (a DMV read that fails
+must fail the tick, not leave a zero-valued part that draws as an idle server),
+`Proc.Find`/`Install`, the `TempDBStore` retention and detail windows, and the
+collector's pause/resume and stop-while-paused. Checked by mutation: swapping
+`RunnableRequests`/`SuspendedTasks` in the sessions scan, dropping the clamp in
+`nonNegativeMB` and making `Find` prefer tempdb each fail a different test.
+
+**gosmo's four untested backup reads** — `BackupHeaders`, `BackupHistory`,
+`BackupFileList`, `BackupFileListForSet` — now have `live_backupreads_test.go`
+(`-tags livedb`). They are reads, so `WithScript` cannot capture them, and
+their column sets are the server's own, which is what `newNamedRow` exists to
+absorb: only a real backup file settles them. The test backs two throwaway
+databases up to one device in three sets and asserts the header positions and
+types, the file list of set 1, and — separately — the file list of set *2*,
+since with no FILE clause the read returns set 1 and a `FileListForSet` that
+ignored its argument would still look right. Verified by making it ignore the
+argument: the set-two subtest fails naming the other database's files.
+
+That mutant run also exposed a fault in the test itself, worth writing down:
+**msdb's backup history outlives the database it describes**, so the history
+assertion counted the previous run's rows too and the test passed only the
+first time. It now clears the history with `sp_delete_database_backuphistory`
+before backing up, and again on the way out. Run twice in a row to confirm, and
+the server is left as it was found — history rows gone, `.bak` removed with
+`xp_delete_files`, both databases dropped.
+
+**Five more Properties pages on the `fakedb_test.go` harness**, leaving about
+thirty. Server Properties' Connections, Database Settings and Security joined
+Memory/Processors/Advanced in `TestEverySpConfigureRowWritesTheOptionItIs
+Labelled` — the same label-to-`sp_configure`-name table, now 44 rows — plus
+FILESTREAM, the one control on those six pages that is not a configRow but a
+Select whose *index* is the value written (level 2 grants file-system access to
+the share, so arriving there by accident matters). Query Store's thirteen
+editors leave through one `QueryStoreOptions` struct and one statement, so they
+are set to thirteen distinct values in a single pass and read back clause by
+clause — a per-field test cannot tell a crossed pair from a correct one when
+every apply rewrites every option — with `OFF` covered separately for its own
+statement shape, and Flush/Clear pinned to run only when ticked. Login
+Properties > General pins the four things that fail silently in the direction
+that looks like success: blank password fields mean *keep the current
+password*, the rename is the last write, changing the mapped credential unmaps
+the old one first, and a Windows login has no password to change while a
+built-in `##` login has no name to change.
+
+Both page suites were mutation-checked. Crossing `FlushIntervalSec` with
+`IntervalMinutes` and swapping two Connections labels each fail; moving the
+rename to the front of Login General's apply produces
+`ALTER LOGIN [appuser] WITH NAME = [appuser2]` followed by two statements aimed
+at a login that no longer exists; dropping the `passwordRow.Value() != ""` gate
+writes `ALTER LOGIN [appuser] WITH PASSWORD = N''` on a page nobody typed a
+password into.
+
+`propsheet.StaticRow` gained a `Label()` accessor to make a read-only row
+addressable by name, matching every other row type.

@@ -1,8 +1,3 @@
-go 1.27
-I have updated the go version to 1.27.0
-here are the release notes for this go version: https://go.dev/doc/go1.27
-check bot projects if something can be optimized using the new functionality of go 1.27
-plan only, do not implement. I will decide afterwards what part of the plan gets implemented.
 
 
 sql agent job step editor: for the command open a multi line big editor. if it is not a big problem maybe use the query editor control.

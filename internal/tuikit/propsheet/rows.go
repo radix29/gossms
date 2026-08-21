@@ -151,6 +151,11 @@ type StaticRow struct {
 // Static returns a read-only label/value row.
 func Static(label, value string) *StaticRow { return &StaticRow{label: label, value: value} }
 
+// Label returns the row's label, the way TextRow.Label does — what
+// identifies a read-only row to anything working with a Form it did not
+// build.
+func (r *StaticRow) Label() string { return strings.TrimRight(r.label, " ") }
+
 // SetValue replaces the displayed value (e.g. after a refresh).
 func (r *StaticRow) SetValue(v string) { r.value = v }
 

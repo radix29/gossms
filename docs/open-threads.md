@@ -415,12 +415,13 @@ The pass closed gosmo's write-statement coverage gap and the New-X grids'
 missing `RevertFn`s (see `docs/journal.md`). These are what it found and did
 not act on.
 
-- **Four gosmo methods still have no test: `BackupHeaders`, `BackupHistory`,
-  `BackupFileList`, `BackupFileListForSet`.** All four are reads —
-  `RESTORE HEADERONLY`/`FILELISTONLY` and an msdb history query — so
-  `WithScript` cannot capture them and only a live server exercises them. They
-  *are* driven by the Restore dialog's Analyze Backup, which was verified live
-  2026-07-19; what is missing is a test, not the verification.
+- ~~**Four gosmo methods still have no test: `BackupHeaders`, `BackupHistory`,
+  `BackupFileList`, `BackupFileListForSet`.**~~ **Fixed** 2026-08-21 —
+  `live_backupreads_test.go` (`-tags livedb`) backs two throwaway databases up
+  to one device in three sets and reads all four back, including the file list
+  of set *2* rather than the set a missing FILE clause would return. See
+  `docs/journal.md`, including the msdb-history trap that made the first
+  version of it pass only once.
 
 - **Five functions in gossms are unreachable, including from tests**:
   `charts.HistoryChart.Plot`, `charts.StackedHistoryChart.Plot`,
@@ -437,11 +438,13 @@ not act on.
   still stands and is worth keeping: `layout` is where `Splitter` and
   `PanelManager` keep their drag latches, the class of bug that has shipped
   here before — most recently `comboSbDragging` surviving a close (fixed
-  2026-08-20). **`internal/activity` (54.8%) is the real gap now**, with the
-  collector's backoff/pause/stop paths uncovered. Unit-testable with no server
-  and no terminal.
+  2026-08-20). ~~**`internal/activity` (54.8%) is the real gap now**~~ —
+  **closed 2026-08-21 at 97.4%**: the gap turned out to be the DMV readers
+  rather than the collector, and `internal/activity/fakedb_test.go` (a scripted
+  driver keyed by each query constant) now drives `Collect` and `collectTempDB`
+  end to end. See `docs/journal.md`.
 
-- **The Properties pages now have a seam, and fourteen pages use it.** The
+- **The Properties pages now have a seam, and nineteen pages use it.** The
   `propPage` load/apply closures were unreachable from a unit test for as long
   as `gosmo.Server` could only come from a real connection: both halves open
   with a by-name read, and `gosmo.WithScript` intercepts writes only, so the
@@ -461,7 +464,7 @@ not act on.
   `activateGridCell` drive a `controls.DataGrid` page by the keys a user sends,
   since `SetSelectedRow` deliberately does not fire `OnSelectRow`.
 
-  **Fourteen pages are done**, chosen for what their apply can destroy: Files,
+  **Nineteen pages are done**, chosen for what their apply can destroy: Files,
   Options (the twenty-one label/DatabaseOption pairs, plus Restrict access
   staying off that path so it keeps WITH ROLLBACK IMMEDIATE), Login > Status
   (CONNECT SQL grant/deny/revoke and enable/disable), Login > Server Roles
@@ -475,9 +478,17 @@ not act on.
   twenty-six label/sp_configure pairs, the affinity bit under each named
   processor, and RECONFIGURE only when something changed), Database and Server
   Role Members (which of the two names in ALTER ROLE is which), User
-  Membership, and Change Tracking.
+  Membership, and Change Tracking. Server Properties' Connections, Database
+  Settings and Security, Query Store and Login > General went in the same day
+  — see the paragraph below and `docs/journal.md`.
 
-  **What is still open is the other 35 write pages.** The harness costs one
+  **What is still open is the other 30 write pages.** Five more went in
+  2026-08-21 — Server Properties' Connections, Database Settings and Security
+  (onto the existing label-to-`sp_configure`-name table, plus FILESTREAM's
+  index-valued Select), Query Store (thirteen editors through one statement,
+  and the two destructive action checkboxes), and Login Properties > General
+  (the blank-password rule, the rename ordering, the credential unmap, and the
+  Windows/built-in refusals). The harness costs one
   `fakeResponse` per query a page reads, matched by substring, and a page whose
   script is incomplete fails naming the query it missed. Nothing on the
   "destructive or silent" list is outstanding any more; what remains is the
@@ -527,15 +538,6 @@ not act on.
   one edit whenever it is worth making.
 
 ## Left open by Phase 1 item 6 (2026-08-19)
-
-- **`ScriptTable` doesn't emit a partitioned table's `ON <scheme>(<column>)`
-  clause**, so scripting a partitioned table and running the script elsewhere
-  recreates it on the default filegroup — silently unpartitioned. Found while
-  scripting the item-6 probe database, whose `dbo.Parted` came back on
-  `[PRIMARY]`. The fix needs `Table` to carry its data space (`sys.indexes`'s
-  `data_space_id` for the heap/clustered index, resolved through
-  `sys.partition_schemes` and `sys.index_columns` for the partitioning
-  column); the same clause belongs on `ScriptIndex`.
 
 - **Neither Always Encrypted key can be created from the tree** — no "New
   Column Master Key..."/"New Column Encryption Key..." dialog. gosmo has
@@ -778,18 +780,6 @@ on. Nothing here is urgent; the first two are small and self-contained.
   and only when `selRow` actually moved, so a page that redraws from inside
   `OnActivateCell` is not re-entered on every toggle of the row it is already
   on. Three tests in `datagrid_cellcursor_test.go`; see `docs/journal.md`.
-
-- **`logStatus` writes the Status History ring from background goroutines.**
-  Found 2026-08-19 in the same sweep that produced `explorerNode.snapshot`, and
-  deliberately not fixed with it — the loader race and this one are separate,
-  and widening the change would have put an untested dialog on the same diff.
-  `fetchChildren` calls `a.logStatus` on the loader goroutine
-  (`explorer_loaders.go`), and `logStatus` calls
-  `statusHistoryDialog.Record(msg)`, which appends to a slice the UI goroutine
-  also reads and draws. Same class as the loader race: it is UB, not a stale
-  read, and no test drives both sides so `-race` is quiet. Whichever way it is
-  fixed — a mutex on the ring, or routing the log through `postAndWake` —
-  check the other background `logStatus` callers, not just this one.
 
 - ~~**Five families are looked up by scanning the whole collection.**~~
   **Fixed** 2026-08-19. gosmo gained the five finders it was missing —

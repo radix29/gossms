@@ -70,7 +70,7 @@ Download the binary for your platform and run it:
 
 https://github.com/radix29/gossms/releases
 
-Or build from source (needs Go 1.26+):
+Or build from source (needs Go 1.27+):
 
 ```bash
 go install github.com/radix29/gossms/cmd/gossms@latest

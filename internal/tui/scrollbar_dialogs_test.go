@@ -21,6 +21,17 @@ type fakeSizedScreen struct {
 func (s *fakeSizedScreen) Size() (int, int)                               { return s.w, s.h }
 func (s *fakeSizedScreen) SetContent(int, int, rune, []rune, tcell.Style) {}
 
+// Get answers a blank cell so DimArea (ModalDialog.DrawBase's shadow) can
+// read the screen back rather than falling through to the nil embedded
+// Screen.
+func (s *fakeSizedScreen) Get(int, int) (string, tcell.Style, int) {
+	return " ", tcell.StyleDefault, 1
+}
+
+func (s *fakeSizedScreen) Put(_, _ int, str string, _ tcell.Style) (string, int) {
+	return str, 1
+}
+
 // TestQueryListDialogScrollbarDragScrolls confirms dragging the query list's
 // scrollbar scrolls it instead of being read as a click that switches to
 // (and closes the dialog on) whatever row sits under it — QueryListDialog's

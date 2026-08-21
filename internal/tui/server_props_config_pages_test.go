@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// The Memory, Processors and Advanced pages are one mechanism seen three
-// times: a label, an sp_configure option name stored next to it, and a
-// tracked-rows slice apply walks. Nothing on screen shows the option name, so
-// a label paired with the wrong one is invisible until the server changes.
+// The Memory, Processors, Advanced, Connections, Database Settings and
+// Security pages are one mechanism seen six times: a label, an sp_configure
+// option name stored next to it, and a tracked-rows slice apply walks. Nothing
+// on screen shows the option name, so a label paired with the wrong one is
+// invisible until the server changes.
 //
 // The blast radius is what makes these worth pinning ahead of the other forty
 // pages. "max server memory (MB)" set to a small number makes an instance
@@ -57,6 +59,27 @@ var configOptionRows = []struct {
 	{"Advanced", "Remote admin connections", "remote admin connections", true},
 	{"Advanced", "Show advanced options", "show advanced options", true},
 	{"Advanced", "xp_cmdshell", "xp_cmdshell", true},
+
+	{"Connections", "Maximum concurrent connections", "user connections", false},
+	{"Connections", "Allow remote connections to this server", "remote access", true},
+	{"Connections", "Require distributed transactions", "remote proc trans", true},
+	{"Connections", "Remote query timeout", "remote query timeout (s)", false},
+	{"Connections", "Remote login timeout", "remote login timeout (s)", false},
+	{"Connections", "Estimated query cost limit", "query governor cost limit", false},
+	{"Connections", "Network packet size", "network packet size (B)", false},
+	{"Connections", "Default language", "default language", false},
+	{"Connections", "Default full-text language", "default full-text language", false},
+	{"Connections", "Two digit year cutoff", "two digit year cutoff", false},
+
+	{"Database Settings", "Default index fill factor", "fill factor (%)", false},
+	{"Database Settings", "Backup media retention", "media retention", false},
+	{"Database Settings", "Backup compression default", "backup compression default", true},
+	{"Database Settings", "Backup checksum default", "backup checksum default", true},
+	{"Database Settings", "Recovery interval", "recovery interval (min)", false},
+
+	{"Security", "Allow contained database authentication", "contained database authentication", true},
+	{"Security", "Cross database ownership chaining", "cross db ownership chaining", true},
+	{"Security", "Enable C2 audit tracing", "c2 audit mode", true},
 }
 
 // configPage returns the page a row belongs to, so the table above can be
@@ -70,6 +93,12 @@ func configPage(t *testing.T, sc *db.ServerConn, name string) propPage {
 		return pageServerProcessors(sc)
 	case "Advanced":
 		return pageServerAdvanced(sc)
+	case "Connections":
+		return pageServerConnections(sc)
+	case "Database Settings":
+		return pageServerDatabaseSettings(sc)
+	case "Security":
+		return pageServerSecurity(sc)
 	}
 	t.Fatalf("no page named %q", name)
 	return propPage{}
@@ -91,6 +120,7 @@ func configResponses() []fakeResponse {
 	}
 	add("affinity mask")
 	add("affinity I/O mask")
+	add("filestream access level")
 
 	// The by-name read the Processors page makes for the two affinity masks,
 	// ahead of the list read: the query contains "FROM   sys.configurations"
@@ -105,6 +135,7 @@ func configResponses() []fakeResponse {
 	return []fakeResponse{
 		byName("affinity mask"),
 		byName("affinity I/O mask"),
+		byName("filestream access level"),
 		{match: "FROM   sys.configurations", cols: 9, rows: rows},
 		{match: "sys.dm_os_sys_memory", cols: 4, rows: [][]driver.Value{
 			{int64(16384), int64(8192), int64(4096), int64(2048)},
@@ -116,6 +147,11 @@ func configResponses() []fakeResponse {
 			{int64(0), int64(0)}, {int64(1), int64(0)}, {int64(2), int64(0)}, {int64(3), int64(0)},
 			{int64(4), int64(1)}, {int64(5), int64(1)}, {int64(6), int64(1)}, {int64(7), int64(1)},
 		}},
+		// Database Settings' disk list and Security's authentication mode.
+		{match: "sys.dm_os_volume_stats", cols: 5, rows: [][]driver.Value{
+			{`C:\`, "OS", `C:\Data\appdb.mdf`, float64(500000), float64(120000)},
+		}},
+		{match: "IsIntegratedSecurityOnly", cols: 1, rows: [][]driver.Value{{"MIXED"}}},
 	}
 }
 
@@ -166,7 +202,8 @@ func TestEverySpConfigureRowWritesTheOptionItIsLabelled(t *testing.T) {
 // on load would reconfigure an instance whose Properties were opened to look
 // at, which applies every *other* pending sp_configure change with it.
 func TestSpConfigurePagesWriteNothingWhenUntouched(t *testing.T) {
-	for _, page := range []string{"Memory", "Processors", "Advanced"} {
+	for _, page := range []string{"Memory", "Processors", "Advanced",
+		"Connections", "Database Settings", "Security"} {
 		t.Run(page, func(t *testing.T) {
 			sc, inst := newFakeConn(t, configResponses()...)
 			_, apply := loadPage(t, configPage(t, sc, page), inst)
@@ -313,4 +350,105 @@ func TestAutomaticProcessorAffinityOverridesTheGrid(t *testing.T) {
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Fatalf("ticking CPUs with automatic affinity still on wrote:\n%s", strings.Join(stmts, "\n"))
 	}
+}
+
+// FILESTREAM is the one control on these six pages that is not a configRow:
+// a three-item Select whose *index* is the value sp_configure takes. Nothing
+// else on the page works that way, so a wrong index here writes a level the
+// user did not choose — and level 2 grants file-system access to the share,
+// which is not a setting to arrive at by accident.
+func TestFilestreamSelectWritesItsLevelNotItsLabel(t *testing.T) {
+	for level, label := range filestreamLevels {
+		if level == 0 {
+			continue // the scripted starting value; selecting it is not an edit
+		}
+		t.Run(label, func(t *testing.T) {
+			sc, inst := newFakeConn(t, configResponses()...)
+			form, apply := loadPage(t, pageServerDatabaseSettings(sc), inst)
+
+			editSelect(t, form, "FILESTREAM access level", label)
+			if err := apply(context.Background()); err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+
+			stmts := inst.Statements()
+			if len(stmts) != 2 {
+				t.Fatalf("want the sp_configure and a RECONFIGURE, got %d:\n%s",
+					len(stmts), strings.Join(stmts, "\n"))
+			}
+			if !strings.Contains(stmts[0], "filestream access level") {
+				t.Errorf("wrote:\n%s\nwant it to name the filestream option", stmts[0])
+			}
+			if !strings.Contains(stmts[0], strconv.Itoa(level)) {
+				t.Errorf("selecting %q wrote:\n%s\nwant level %d", label, stmts[0], level)
+			}
+			if !strings.Contains(strings.ToUpper(stmts[1]), "RECONFIGURE") {
+				t.Errorf("second statement was %q, want RECONFIGURE", stmts[1])
+			}
+		})
+	}
+}
+
+// An instance with no FILESTREAM option at all must not offer a live control
+// for it: the page swaps the list for a single "N/A" item, and apply has no
+// configuration to write to. Same failure the sp_configure rows had — a
+// widget that accepts an edit nothing sends.
+func TestFilestreamOffersNoControlWhenTheServerHasNone(t *testing.T) {
+	resp := configResponses()
+	for i := range resp {
+		if resp[i].arg == "filestream access level" {
+			resp[i].rows = nil
+		}
+		if resp[i].match == "FROM   sys.configurations" && resp[i].arg == "" {
+			var kept [][]driver.Value
+			for _, r := range resp[i].rows {
+				if r[1] != "filestream access level" {
+					kept = append(kept, r)
+				}
+			}
+			resp[i].rows = kept
+		}
+	}
+
+	sc, inst := newFakeConn(t, resp...)
+	form, apply := loadPage(t, pageServerDatabaseSettings(sc), inst)
+
+	row := selectRow(t, form, "FILESTREAM access level")
+	if got := row.Items(); len(got) != 1 || got[0] != "N/A" {
+		t.Errorf("FILESTREAM offers %q for a server without it, want [N/A]", got)
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("an untouched page wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// The authentication mode is read-only here — changing it needs a registry
+// write and a service restart, which this build does not do. It has to stay a
+// Static row: a live-looking editor for it would report a change that never
+// happened.
+func TestServerSecurityAuthenticationModeIsReadOnly(t *testing.T) {
+	sc, inst := newFakeConn(t, configResponses()...)
+	form, _ := loadPage(t, pageServerSecurity(sc), inst)
+
+	for _, r := range form.Rows() {
+		if tr, ok := r.(*propsheet.TextRow); ok && tr.Label() == sheetLabel("Authentication mode") {
+			t.Fatal("Authentication mode is an editable text row; this build cannot write it")
+		}
+	}
+	if _, ok := findStatic(form, "Authentication mode"); !ok {
+		t.Error("Authentication mode is not shown at all")
+	}
+}
+
+// findStatic returns the value of a Static row by label.
+func findStatic(f *propsheet.Form, label string) (string, bool) {
+	for _, r := range f.Rows() {
+		if sr, ok := r.(*propsheet.StaticRow); ok && sr.Label() == label {
+			return sr.Value(), true
+		}
+	}
+	return "", false
 }

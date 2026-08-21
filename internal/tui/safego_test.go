@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -48,4 +49,29 @@ func TestSafegoRepairDoesNotRunWhenNothingPanicked(t *testing.T) {
 	if a.statusText != "" {
 		t.Errorf("statusText = %q, want empty — nothing failed", a.statusText)
 	}
+}
+
+// The stack reportPanic logs is the only record of what a background
+// operation was doing when it died, and it is headed by an anonymous func
+// literal that names neither. Go 1.27 prints the goroutine's pprof labels in
+// that header, so the operation names itself — but only if the label is still
+// set while the panic unwinds, which is what this pins down.
+func TestSafegoLabelsItsGoroutineWithTheOperation(t *testing.T) {
+	a := newTestApp()
+	stacks := make(chan string, 1)
+
+	a.safego("loading the thing", func() {
+		// Taken while the panic is unwinding, which is exactly where a
+		// pprof.Do-style restore would already have dropped the label.
+		defer func() { stacks <- string(debug.Stack()) }()
+		panic("boom")
+	})
+
+	stack := <-stacks
+	header, _, _ := strings.Cut(stack, "\n")
+	if !strings.Contains(header, `op: "loading the thing"`) {
+		t.Errorf("traceback header = %q, want it to name the operation", header)
+	}
+	drainUntil(t, a, func() bool { return strings.Contains(a.statusText, "loading the thing") },
+		"the panic to reach the status bar")
 }

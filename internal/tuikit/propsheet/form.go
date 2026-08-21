@@ -1,6 +1,8 @@
 package propsheet
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -167,8 +169,8 @@ func (f *Form) rowAtLine(n, w int) int {
 // the bottom of its track.
 func (f *Form) maxScroll(w int) int {
 	used := 0
-	for i := len(f.rows) - 1; i >= 0; i-- {
-		used += f.rows[i].Height(w)
+	for i, row := range slices.Backward(f.rows) {
+		used += row.Height(w)
 		if used > f.rect.H {
 			return min(i+1, max(0, len(f.rows)-1))
 		}

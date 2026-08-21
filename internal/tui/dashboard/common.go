@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"slices"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -102,12 +104,11 @@ func drawSectionBar(s tcell.Screen, r core.Rect, title string, kpis []charts.KPI
 	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, style, title)
 
 	right := r.Right()
-	for i := len(kpis) - 1; i >= 0; i-- {
-		w := kpis[i].Width()
+	for _, k := range slices.Backward(kpis) {
+		w := k.Width()
 		if right-w <= r.X+core.DisplayWidth(title)+2 {
 			return
 		}
-		k := kpis[i]
 		k.LabelBg = pal.ChartSectionBg
 		k.Draw(s, core.Rect{X: right - w, Y: r.Y, W: w, H: 1})
 		right -= w + 1

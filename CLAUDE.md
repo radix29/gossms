@@ -6,7 +6,7 @@ to the rest of the docs rather than repeating them.
 ## What this is
 
 goSSMS is a portable, cross-platform terminal TUI reimplementation of SQL
-Server Management Studio, written in Go 1.26. Runs on Linux/macOS/Windows
+Server Management Studio, written in Go 1.27. Runs on Linux/macOS/Windows
 from a single build — no CGO, no build-tag-split files. `runtime.GOOS`
 branching exists in exactly two places: `internal/tui/os_clipboard.go`,
 which shells out to `xclip`/`wl-copy`/`pbcopy`/`clip` with an OSC-52
@@ -238,7 +238,7 @@ ordinary cleanup. The no-removal rule is about gosmo only.
     `datagrid.go`, `secret.go`, `propsheet/common.go` are 33-50% comments,
     mostly rationale, and that rationale has repeatedly been what stopped a
     regression. Judge only *new* comments by the failure-mode bar above.
-- Go 1.26 features in active use: `new(T{...})` composite-literal syntax,
+- Go 1.26+ features in active use: `new(T{...})` composite-literal syntax,
   the `slices` package, `errors.AsType`.
 - `core.DisplayWidth(s)`, never `len(s)`, for any column-position math —
   terminal columns aren't byte length.
