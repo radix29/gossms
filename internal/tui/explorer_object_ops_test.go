@@ -21,24 +21,29 @@ func opNode(t NodeType, schema, name, table string) *explorerNode {
 // missing from the objectOps table makes both unreachable for it.
 func TestObjectOpsMenuItemsPerNodeType(t *testing.T) {
 	tests := []struct {
-		name           string
-		node           *explorerNode
-		rename, delete bool
+		name                 string
+		node                 *explorerNode
+		rename, delete, move bool
 	}{
-		{"table", opNode(NodeTable, "dbo", "Orders", ""), true, true},
-		{"view", opNode(NodeView, "dbo", "vOrders", ""), true, true},
-		{"procedure", opNode(NodeStoredProcedure, "dbo", "pDoWork", ""), true, true},
-		{"function", opNode(NodeFunction, "dbo", "fnAge", ""), true, true},
-		{"index", opNode(NodeIndex, "dbo", "IX_Orders", "Orders"), true, true},
-		{"login", opNode(NodeLogin, "", "app_login", ""), true, true},
-		{"database", opNode(NodeDatabase, "", "AppDB", ""), true, true},
+		{"table", opNode(NodeTable, "dbo", "Orders", ""), true, true, true},
+		{"view", opNode(NodeView, "dbo", "vOrders", ""), true, true, true},
+		{"procedure", opNode(NodeStoredProcedure, "dbo", "pDoWork", ""), true, true, true},
+		{"function", opNode(NodeFunction, "dbo", "fnAge", ""), true, true, true},
+		// A trigger belongs to its table and moves with it; ALTER SCHEMA
+		// TRANSFER refuses one, so the item must not be offered.
+		{"trigger", opNode(NodeTrigger, "dbo", "trAudit", "Orders"), true, true, false},
+		{"index", opNode(NodeIndex, "dbo", "IX_Orders", "Orders"), true, true, false},
+		{"login", opNode(NodeLogin, "", "app_login", ""), true, true, false},
+		{"database", opNode(NodeDatabase, "", "AppDB", ""), true, true, false},
 		// A schema has no rename in SQL Server at all.
-		{"schema", opNode(NodeSchema, "Sales", "Sales", ""), false, true},
+		{"schema", opNode(NodeSchema, "Sales", "Sales", ""), false, true, false},
 		// Agent objects keep their own Delete, with per-type wording.
-		{"agent job", opNode(NodeAgentJob, "", "nightly", ""), true, false},
-		// Folders and columns are not objects these actions apply to.
-		{"tables folder", opNode(NodeTables, "", "", ""), false, false},
-		{"column", opNode(NodeColumn, "dbo", "OrderID", ""), false, false},
+		{"agent job", opNode(NodeAgentJob, "", "nightly", ""), true, false, false},
+		// A folder is not an object these actions apply to.
+		{"tables folder", opNode(NodeTables, "", "", ""), false, false, false},
+		// A column has Delete (ALTER TABLE ... DROP COLUMN) but no rename —
+		// sp_rename's COLUMN class is not wired — and cannot change schema.
+		{"column", opNode(NodeColumn, "dbo", "OrderID", "Orders"), false, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,6 +57,9 @@ func TestObjectOpsMenuItemsPerNodeType(t *testing.T) {
 			}
 			if got := slices.Contains(labels, "Delete..."); got != tt.delete {
 				t.Errorf("Delete present = %v, want %v (menu %v)", got, tt.delete, labels)
+			}
+			if got := slices.Contains(labels, "Move to Schema..."); got != tt.move {
+				t.Errorf("Move to Schema present = %v, want %v (menu %v)", got, tt.move, labels)
 			}
 		})
 	}
@@ -72,6 +80,9 @@ func TestObjectOpsMenuItemsRefusesSystemObjects(t *testing.T) {
 		{"system procedure", opNode(NodeStoredProcedure, "sys", "sp_who", "")},
 		{"system function", opNode(NodeFunction, "sys", "fn_my_permissions", "")},
 		{"system agent job", opNode(NodeAgentJob, "", "syspolicy_purge_history", "")},
+		// Move to Schema is gated by the same flag: transferring sys.objects
+		// is refused by the server, but only after the question was asked.
+		{"system table", opNode(NodeTable, "sys", "objects", "")},
 	}
 	for _, tt := range system {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,11 +118,22 @@ func TestObjectOpsTableIsComplete(t *testing.T) {
 		if op.noun == "" {
 			t.Errorf("objectOps[%v] has no noun", nodeType)
 		}
-		if op.drop == nil && op.rename == nil {
-			t.Errorf("objectOps[%v] offers neither drop nor rename", nodeType)
+		if op.drop == nil && op.dropWithOption == nil && op.rename == nil && op.transfer == nil {
+			t.Errorf("objectOps[%v] offers no action at all", nodeType)
 		}
 		if op.typed && op.drop == nil {
 			t.Errorf("objectOps[%v] is typed-confirm but has no drop", nodeType)
+		}
+		// The option and the drop it modifies are one feature: a label with
+		// no drop behind it draws a checkbox that changes nothing, and a
+		// dropWithOption with no label is a hidden argument nobody can set.
+		if (op.dropOption == "") != (op.dropWithOption == nil) {
+			t.Errorf("objectOps[%v] has dropOption %q and dropWithOption != nil = %v; set both or neither",
+				nodeType, op.dropOption, op.dropWithOption != nil)
+		}
+		// Exactly one drop path, or deleteObject silently ignores one of them.
+		if op.drop != nil && op.dropWithOption != nil {
+			t.Errorf("objectOps[%v] has both drop and dropWithOption", nodeType)
 		}
 	}
 }
@@ -187,6 +209,9 @@ func TestObjectDisplayName(t *testing.T) {
 		want string
 	}{
 		{opNode(NodeTable, "Sales", "Customer", ""), "Sales.Customer"},
+		// A column's Schema/Name are the table's schema and the column's own
+		// name, so the qualifier that means anything is the table's.
+		{opNode(NodeColumn, "Sales", "CustomerID", "Customer"), "Sales.Customer.CustomerID"},
 		{opNode(NodeLogin, "", "sa", ""), "sa"},
 		// A schema node carries its own name in both fields; "Sales.Sales"
 		// would be nonsense.

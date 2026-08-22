@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
@@ -389,4 +390,105 @@ func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 		return
 	}
 	a.setStatus(fmt.Sprintf("Filter removed from %s", node.label))
+}
+
+// pushdown translates f into the server-side form, reporting false when any
+// criterion cannot be expressed there.
+//
+// The push-down is an optimisation and nothing more: filterChildren and
+// filterObjects still run over whatever comes back, and they remain the
+// authority on what a filter means. That is what makes this safe to add — the
+// only way a translation can change a result is by narrowing *further* than
+// the client pass would, so every criterion here either matches the client's
+// own comparison exactly (case-insensitively, whole calendar days, values
+// trimmed the way matchText trims them) or is refused outright.
+//
+// A criterion whose value the client itself cannot parse — a date that isn't a
+// date, a bool that isn't a bool — is refused rather than dropped: dropping it
+// would send a *wider* filter, which is harmless, but refusing keeps the two
+// halves reading the same criterion list and is one less thing to reason about.
+func (f *nodeFilter) pushdown() (gosmo.ObjectFilter, bool) {
+	var out gosmo.ObjectFilter
+	if !f.active() {
+		return out, true
+	}
+	for _, c := range f.criteria {
+		value := strings.TrimSpace(c.value)
+		switch c.prop.kind {
+		case filterDate:
+			day, err := parseFilterDate(value)
+			if err != nil {
+				return gosmo.ObjectFilter{}, false
+			}
+			op, ok := pushdownDateOp(c.op)
+			if !ok {
+				return gosmo.ObjectFilter{}, false
+			}
+			out.Created = append(out.Created, gosmo.DateCriterion{Op: op, Day: day})
+		case filterBool:
+			b, err := parseFilterBool(value)
+			if err != nil {
+				return gosmo.ObjectFilter{}, false
+			}
+			if c.op == opNotEquals {
+				b = !b
+			}
+			if c.prop.id != fpMemoryOptimized {
+				return gosmo.ObjectFilter{}, false
+			}
+			out.MemoryOptimized = &b
+		default:
+			op, ok := pushdownTextOp(c.op)
+			if !ok {
+				return gosmo.ObjectFilter{}, false
+			}
+			crit := gosmo.TextCriterion{Op: op, Value: value}
+			if c.prop.id == fpSchema {
+				out.Schema = append(out.Schema, crit)
+			} else {
+				out.Name = append(out.Name, crit)
+			}
+		}
+	}
+	return out, true
+}
+
+func pushdownTextOp(op filterOp) (gosmo.TextOp, bool) {
+	switch op {
+	case opContains:
+		return gosmo.TextContains, true
+	case opNotContains:
+		return gosmo.TextNotContains, true
+	case opEquals:
+		return gosmo.TextEquals, true
+	case opNotEquals:
+		return gosmo.TextNotEquals, true
+	}
+	return 0, false
+}
+
+// pushdownDateOp maps the date operators. opEquals and opOn are the same
+// comparison here as they are in matchDate — the dialog offers both spellings
+// for a date property and means one thing by them.
+func pushdownDateOp(op filterOp) (gosmo.DateOp, bool) {
+	switch op {
+	case opEquals, opOn:
+		return gosmo.DateOn, true
+	case opBefore:
+		return gosmo.DateBefore, true
+	case opAfter:
+		return gosmo.DateAfter, true
+	}
+	return 0, false
+}
+
+// serverFilter is what a loader passes to a *FilteredContext listing: f's
+// translation, or an empty filter when it cannot be pushed down (in which case
+// the whole folder is read and filterChildren/filterObjects narrow it).
+func serverFilter(f *nodeFilter) gosmo.ObjectFilter {
+	out, ok := f.pushdown()
+	if !ok {
+		return gosmo.ObjectFilter{}
+	}
+	return out
 }

@@ -109,12 +109,22 @@ func hasStringArg(args []driver.NamedValue, want string) bool {
 type fakeExec struct {
 	db  string
 	sql string
+	// args are the statement's parameters. A write that goes through a
+	// system procedure — sp_rename, and every sp_add_job* the Agent pages
+	// use — passes the name it acts on as a parameter, so the statement text
+	// alone reads "EXEC sp_rename @objname = @p1" and says nothing about
+	// which object was renamed to what.
+	args []driver.Value
 }
 
-func (f *fakeInstance) recordExec(db, q string) {
+func (f *fakeInstance) recordExec(db, q string, args []driver.NamedValue) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.execs = append(f.execs, fakeExec{db: db, sql: q})
+	vals := make([]driver.Value, len(args))
+	for i, a := range args {
+		vals[i] = a.Value
+	}
+	f.execs = append(f.execs, fakeExec{db: db, sql: q, args: vals})
 }
 
 // bareUSE matches the standalone "USE [db]" gosmo issues on the pinned
@@ -207,8 +217,8 @@ func (c *fakeConn) Prepare(string) (driver.Stmt, error) { return nil, driver.Err
 func (c *fakeConn) Close() error                        { return nil }
 func (c *fakeConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
 
-func (c *fakeConn) ExecContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Result, error) {
-	c.inst.recordExec(c.curDB, q)
+func (c *fakeConn) ExecContext(_ context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+	c.inst.recordExec(c.curDB, q, args)
 	if m := bareUSE.FindStringSubmatch(strings.TrimSpace(q)); m != nil {
 		c.curDB = m[1]
 	}
@@ -644,4 +654,66 @@ func chooseSelect(t *testing.T, f *propsheet.Form, label, value string) {
 		t.Fatalf("row %q offers %q, not %q", label, row.Items(), value)
 	}
 	row.Edit(i)
+}
+
+// argsFor returns the parameters of the one recorded statement containing
+// want, and fails unless exactly one statement does — a procedure called twice
+// with different arguments must not be asserted on as though it ran once.
+func argsFor(t *testing.T, inst *fakeInstance, want string) []driver.Value {
+	t.Helper()
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	var found []driver.Value
+	n := 0
+	for _, e := range inst.execs {
+		if strings.Contains(e.sql, want) {
+			n++
+			found = e.args
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want exactly one statement containing %q, got %d", want, n)
+	}
+	return found
+}
+
+// assertArgs insists the statement containing want was called with exactly
+// these parameters.
+func assertArgs(t *testing.T, inst *fakeInstance, want string, args ...driver.Value) {
+	t.Helper()
+	got := argsFor(t, inst, want)
+	if len(got) != len(args) {
+		t.Fatalf("%q ran with %d parameters %v, want %d %v", want, len(got), got, len(args), args)
+	}
+	for i := range args {
+		if got[i] != args[i] {
+			t.Errorf("%q parameter %d = %v, want %v", want, i+1, got[i], args[i])
+		}
+	}
+}
+
+// -- dialog-backed pages -----------------------------------------------------
+
+// newFakeDialog builds the PropDialog a page constructor takes when the page
+// has buttons that fetch on demand — Securables' column-permission editor,
+// Job Steps' syntax check — rather than loading everything up front.
+//
+// Those buttons run through PropDialog.runPageAction/runPageActionOnce, which
+// hand the work to App.safego and report back through App.postAndWake, so the
+// page needs an App even though nothing here draws. newTestApp's App has no
+// screen, which makes wakeEventLoop a no-op and leaves the posted callback
+// queued: drainDialog is what runs it, and a test that clicks such a button
+// and asserts without draining is asserting on work that has not happened yet.
+func newFakeDialog(t *testing.T) (*PropDialog, *App) {
+	t.Helper()
+	app := newTestApp()
+	return &PropDialog{app: app, ctx: context.Background()}, app
+}
+
+// drainDialog runs the callbacks a page action posted, until cond holds. It is
+// drainUntil under a name that says which goroutine a Properties page test is
+// waiting on.
+func drainDialog(t *testing.T, app *App, cond func() bool, what string) {
+	t.Helper()
+	drainUntil(t, app, cond, what)
 }

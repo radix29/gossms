@@ -108,6 +108,12 @@ func TestTasksDialogScrollbarDragScrolls(t *testing.T) {
 // TestHelpDialogScrollbarDragScrolls confirms the simpler (no per-row
 // selection) dialogs get the same scrollbar behavior via
 // ModalDialog.ScrollbarDrag.
+//
+// KeyDiagnosticsDialog was tested here too until it moved its log into a
+// read-only controls.Editor, which draws and drags its own scrollbar — the
+// same reason StatusHistoryDialog, built that way from the start, has never
+// had a case here. That half is pinned in
+// internal/tuikit/controls/scrollbar_drag_test.go.
 func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 80, h: 30}
@@ -118,33 +124,6 @@ func TestHelpDialogScrollbarDragScrolls(t *testing.T) {
 	dataH := inner.H - 2
 	if len(helpLines) <= dataH {
 		t.Fatalf("helpLines (%d) must exceed dataH (%d) for this test to mean anything", len(helpLines), dataH)
-	}
-
-	sbX := d.Rect().Right() - 1
-	if !d.HandleMouse(tcell.NewEventMouse(sbX, inner.Y+1+dataH-1, tcell.Button1, tcell.ModNone)) {
-		t.Fatal("HandleMouse on the scrollbar column should be handled")
-	}
-	if d.scroll == 0 {
-		t.Error("scroll should have jumped forward when clicking near the bottom of the track")
-	}
-}
-
-// TestKeyDiagnosticsDialogScrollbarDragScrolls mirrors
-// TestHelpDialogScrollbarDragScrolls for KeyDiagnosticsDialog, which got the
-// identical ScrollbarDrag fix but had no test of its own.
-func TestKeyDiagnosticsDialogScrollbarDragScrolls(t *testing.T) {
-	a := newTestApp()
-	a.screen = &fakeSizedScreen{w: 80, h: 30}
-	d := NewKeyDiagnosticsDialog(a)
-	d.Show()
-	for i := 0; i < 30; i++ {
-		d.lines = append(d.lines, "line")
-	}
-
-	inner := d.InnerRect()
-	dataH := inner.H - 2
-	if len(d.lines) <= dataH {
-		t.Fatalf("test needs more lines than dataH (%d) to exercise scrolling, got %d", dataH, len(d.lines))
 	}
 
 	sbX := d.Rect().Right() - 1

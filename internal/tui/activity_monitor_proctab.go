@@ -131,7 +131,7 @@ func (pt *amProcTab) activate() {
 	// connection is what this tab clones — without one there is nothing to
 	// dial, and saying so beats a button that silently does nothing.
 	if pt.am.conn == nil || pt.am.conn.Server == nil {
-		pt.setStatus("Not connected.")
+		pt.setStatus("Not connected")
 		return
 	}
 	pt.busy = true
@@ -156,7 +156,7 @@ func (pt *amProcTab) panicRepair() {
 		return
 	}
 	pt.busy = false
-	pt.setStatus("Stopped unexpectedly — see the log for details.")
+	pt.setStatus("Stopped unexpectedly — see the log for details")
 	pt.am.buildTools()
 }
 
@@ -229,7 +229,7 @@ func (pt *amProcTab) refresh() {
 		return
 	}
 	if pt.loc == activity.ProcNone {
-		pt.setStatus(pt.proc.MasterName + " is not available.")
+		pt.setStatus(pt.proc.MasterName + " is not available")
 		return
 	}
 	pt.busy = true
@@ -264,13 +264,13 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 				return
 			}
 		}
-		pt.setStatus(qualified + " failed.")
+		pt.setStatus(qualified + " failed")
 		return
 	}
 	pt.result = res
 	if len(res.Sets) == 0 {
 		pt.grid.SetData(nil, nil)
-		pt.setStatus("No result returned.")
+		pt.setStatus("No result returned")
 		return
 	}
 	set := res.Sets[0]

@@ -98,6 +98,15 @@ type NewEndpointDialog struct {
 	masterKeyPass   string
 	commitInputs    func()
 	certificateName func(instance string) string
+
+	// peerServerFor resolves an instance to the gosmo.Server to run its half
+	// of the exchange against. A seam like certificateName above: the default
+	// goes through db.ServerConn.Peer, and a test supplies its own.
+	peerServerFor func(ctx context.Context, inst *newEndpointInstance) (*gosmo.Server, error)
+
+	// scriptedGroups is what the last scripted configure collected, one entry
+	// per instance. Read by runScript, which runs after the pipeline.
+	scriptedGroups []endpointScriptGroup
 }
 
 // NewNewEndpointDialog creates the dialog and wires its callbacks.
@@ -113,7 +122,26 @@ func NewNewEndpointDialog(app *App) *NewEndpointDialog {
 		refresh: func(*db.ServerConn) { refreshExplorerNode(d.app, d.node) },
 	})
 	d.certificateName = func(instance string) string { return endpointPrincipalBase(instance) + "_Cert" }
+	d.peerServerFor = d.defaultPeerServer
+	// The shell's Script Changes emits every statement as one undifferentiated
+	// batch, which here is worse than useless: the statements belong to two or
+	// more instances, and run whole against this one the certificate imports
+	// fail and the GRANTs land on the wrong endpoint. See runScript.
+	d.OnScript = d.runScript
 	return d
+}
+
+// defaultPeerServer is peerServerFor's real implementation: this connection for
+// the local instance, and a peer connection for every other one.
+func (d *NewEndpointDialog) defaultPeerServer(ctx context.Context, inst *newEndpointInstance) (*gosmo.Server, error) {
+	if inst.local {
+		return d.sc.Server, nil
+	}
+	peer, err := d.sc.Peer(ctx, inst.name)
+	if err != nil {
+		return nil, err
+	}
+	return peer.Server, nil
 }
 
 // endpointPrincipalBase is the instance name as it appears in the certificate,
@@ -332,7 +360,7 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 		addNameRow,
 		propsheet.Buttons(addBtn, removeBtn),
 		hint,
-		propsheet.Note("Every instance is reached with this connection's credentials. Each keeps its own certificate; only the public half of each is exchanged, and no private key is read or transmitted."),
+		propsheet.Note("An instance is reached with its own saved connection if you have one, otherwise with this connection's credentials — connect to it once via File > Connect to give it different ones. Each keeps its own certificate; only the public half of each is exchanged, and no private key is read or transmitted."),
 		propsheet.Note("Certificates are named <instance>_Cert, and each peer gets a login and user named <instance>_login and <instance>_user to own the certificate it presents. A named instance contributes HOST$INSTANCE, not HOST\\INSTANCE. Anything already present is left alone."),
 	}, commit
 }
@@ -381,6 +409,33 @@ type endpointPeer struct {
 	master  *gosmo.Database
 	cert    *gosmo.Certificate
 	encoded []byte
+
+	// ctx is the context every write *to this instance* runs against, and
+	// script is what it collects when the run is a scripted one. One collector
+	// per instance rather than one for the whole pipeline: the run is three
+	// phases over N instances with a skip possible at every step, so there is
+	// no positional mapping from a flat statement list back to the instance
+	// each statement belongs to. NewAGDialog.annotateScript keeps one and its
+	// own comment admits how fragile it is; here it would not work at all.
+	ctx    context.Context
+	script *gosmo.ScriptCollector
+
+	// certPending records that this instance has no certificate yet — under
+	// scripting the CREATE was collected, not run, so its public key cannot be
+	// read and nothing depending on it could be scripted.
+	certPending bool
+	// certSkipped names the peers whose certificates could not be imported
+	// here for that reason.
+	certSkipped []string
+}
+
+// endpointScriptGroup is one instance's share of a scripted run: the
+// statements that belong to it, and what the run could not reach.
+type endpointScriptGroup struct {
+	instance    string
+	stmts       []string
+	certPending bool
+	certSkipped []string
 }
 
 // configure is the whole pipeline. See the file comment for the shape; every
@@ -391,42 +446,71 @@ func (d *NewEndpointDialog) configure(ctx context.Context) error {
 		return err
 	}
 
+	d.scriptedGroups = nil
+	scripting := gosmo.Scripting(ctx)
+
 	peers := make([]*endpointPeer, 0, len(d.instances))
 	for _, inst := range d.instances {
-		server := d.sc.Server
-		if !inst.local {
-			peer, err := d.sc.Peer(ctx, inst.name)
-			if err != nil {
-				return fmt.Errorf("connect to %s: %w", inst.name, err)
-			}
-			server = peer.Server
+		server, err := d.peerServerFor(ctx, inst)
+		if err != nil {
+			return fmt.Errorf("connect to %s: %w", inst.name, err)
 		}
-		p := &endpointPeer{inst: inst, server: server, master: server.Database("master")}
-		if err := d.ensureCertificate(ctx, p); err != nil {
+		p := &endpointPeer{inst: inst, server: server, master: server.Database("master"), ctx: ctx}
+		if scripting {
+			p.ctx, p.script = gosmo.WithScript(ctx)
+		}
+		// p.ctx, not ctx: every phase below writes to p, and the collector the
+		// statement lands in is what says which instance it runs on. Reads are
+		// unaffected either way — WithScript only intercepts the two exec
+		// chokepoints — so a peer's own reads still hit the real server, which
+		// is what makes a certificate's public key readable at all.
+		if err := d.ensureCertificate(p.ctx, p); err != nil {
 			return err
 		}
 		peers = append(peers, p)
 	}
 
 	// The exchange proper: every instance gets every other one's public
-	// certificate, owned by a login it can then be granted CONNECT for.
+	// certificate, owned by a login it can then be granted CONNECT for. The
+	// writes land on p, not other, so it is p's context that runs them.
 	for _, p := range peers {
 		for _, other := range peers {
 			if p == other {
 				continue
 			}
-			if err := d.importPeerCertificate(ctx, p, other); err != nil {
+			if err := d.importPeerCertificate(p.ctx, p, other); err != nil {
 				return err
 			}
 		}
 	}
 
 	for _, p := range peers {
-		if err := d.ensureEndpoint(ctx, p, peers); err != nil {
+		if err := d.ensureEndpoint(p.ctx, p, peers); err != nil {
 			return err
 		}
 	}
+	if scripting {
+		d.scriptedGroups = endpointScriptGroupsFrom(peers)
+	}
 	return nil
+}
+
+// endpointScriptGroupsFrom flattens the finished peers into what
+// annotateEndpointScript renders, in the order the instances are listed.
+func endpointScriptGroupsFrom(peers []*endpointPeer) []endpointScriptGroup {
+	groups := make([]endpointScriptGroup, 0, len(peers))
+	for _, p := range peers {
+		g := endpointScriptGroup{
+			instance:    p.inst.name,
+			certPending: p.certPending,
+			certSkipped: p.certSkipped,
+		}
+		if p.script != nil {
+			g.stmts = p.script.Statements
+		}
+		groups = append(groups, g)
+	}
+	return groups
 }
 
 // ensureCertificate gives one instance a master key and a certificate of its
@@ -457,9 +541,13 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 		}
 	}
 	if cert == nil {
-		// Scripting: nothing was really created, so there is nothing to read
-		// back and nothing to exchange. The statements above are the useful
-		// half of the script and the rest is skipped.
+		// Scripting: the CREATE above was collected, not run, so there is no
+		// certificate to read a public key out of and nothing depending on one
+		// can be scripted. Recorded rather than silently skipped — the script
+		// this produces is genuinely partial, and saying so is the difference
+		// between a user running it and being done, and running it and finding
+		// the endpoints refuse each other with nothing explaining why.
+		p.certPending = true
 		return nil
 	}
 	if !cert.HasPrivateKey() {
@@ -476,7 +564,11 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 // to authenticate other.
 func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other *endpointPeer) error {
 	if len(other.encoded) == 0 {
-		return nil // scripting; see ensureCertificate
+		// Scripting, and other's certificate does not exist yet — see
+		// ensureCertificate. Recorded on p, which is the instance whose script
+		// is missing the import.
+		p.certSkipped = append(p.certSkipped, other.inst.name)
+		return nil
 	}
 	login := endpointPrincipalBase(other.inst.name) + "_login"
 	user := endpointPrincipalBase(other.inst.name) + "_user"
@@ -510,8 +602,22 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	default:
 		return fmt.Errorf("%s: look up login %s: %w", p.inst.name, login, err)
 	}
-	if err := p.master.CreateUserContext(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
-		return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
+	// Looked up first rather than created-and-tolerated, for the same reason
+	// the login above is: an unexpected failure has to be reported as itself.
+	// It also keeps a scripted run runnable — CREATE USER is not idempotent,
+	// and the tolerate-the-error path never runs under WithScript, so a user
+	// that already exists would be emitted as a statement that fails. Seen
+	// live on ubusql1/ubusql2, where both users were already there.
+	_, err = p.master.UserByNameContext(ctx, user)
+	switch {
+	case err == nil:
+		// Already there; nothing to create.
+	case errors.Is(err, gosmo.ErrNotFound):
+		if err := p.master.CreateUserContext(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
+			return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
+		}
+	default:
+		return fmt.Errorf("%s: look up user %s: %w", p.inst.name, user, err)
 	}
 
 	existing, err := p.master.CertificateByNameContext(ctx, certName)
@@ -573,11 +679,87 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 		if other == p {
 			continue
 		}
+		if slices.Contains(p.certSkipped, other.inst.name) {
+			// Scripting, and importPeerCertificate skipped this peer, so the
+			// login this would grant to was never created here either. Emitting
+			// the GRANT anyway makes the script fail on a login that does not
+			// exist — and fail *before* the endpoint statements above it have
+			// any effect, if it is run as one batch. The note the script
+			// carries says the grant is missing along with the login.
+			continue
+		}
 		if err := ep.GrantConnectContext(ctx, endpointPrincipalBase(other.inst.name)+"_login"); err != nil {
 			return fmt.Errorf("%s: grant %s connect: %w", p.inst.name, other.inst.name, err)
 		}
 	}
 	return nil
+}
+
+// runScript replaces the shell's, which emits every collected statement as one
+// batch. Here that batch spans two or more instances: run whole against this
+// one, the certificate imports fail (each is FROM BINARY of a key that belongs
+// somewhere else) and the endpoint GRANTs land on the wrong endpoint.
+//
+// The statements are already grouped by the instance they belong to — each peer
+// collects its own, see configure — so nothing here has to map a flat list back
+// onto a list of targets the way NewAGDialog.annotateScript does.
+func (d *NewEndpointDialog) runScript() {
+	scriptCtx, _ := gosmo.WithScript(d.ctx)
+	sc := d.sc
+	d.runPipeline(scriptCtx, func() {
+		d.app.openQueryWithText(sc, "", annotateEndpointScript(d.scriptedGroups))
+	})
+}
+
+// annotateEndpointScript renders one scripted run: a header, then each
+// instance's statements under a comment naming it, then a note wherever the run
+// could not reach something.
+//
+// Pure, so it can be tested without a server — which matters more here than
+// usual, since what it has to get right is precisely the case a live run on
+// already-configured instances never produces.
+func annotateEndpointScript(groups []endpointScriptGroup) string {
+	var b strings.Builder
+	b.WriteString("-- New Database Mirroring Endpoint: these statements do NOT all run on the same instance.\n")
+	b.WriteString("-- Run each block against the instance named above it.\n")
+	b.WriteString("--\n")
+	b.WriteString("-- Each login below is created with a random password and is never signed in as:\n")
+	b.WriteString("-- it exists only to own a peer's certificate and to be the grantee of CONNECT on\n")
+	b.WriteString("-- the endpoint. The password is not recorded anywhere, here or in gossms.\n")
+
+	partial := slices.ContainsFunc(groups, func(g endpointScriptGroup) bool {
+		return g.certPending || len(g.certSkipped) > 0
+	})
+	if partial {
+		b.WriteString("--\n")
+		b.WriteString("-- THIS SCRIPT IS INCOMPLETE. See the notes below: a certificate has to exist\n")
+		b.WriteString("-- before its public key can be read, and the exchange is built from those keys.\n")
+	}
+
+	for _, g := range groups {
+		if len(g.stmts) == 0 && !g.certPending && len(g.certSkipped) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n-- on %s\n", g.instance)
+		for _, stmt := range g.stmts {
+			fmt.Fprintf(&b, "%s\nGO\n", stmt)
+		}
+		if g.certPending {
+			fmt.Fprintf(&b, "-- %s has no certificate yet. Its public key is what every other instance\n"+
+				"-- imports FROM BINARY, and it can only be read from an instance that actually has\n"+
+				"-- one — so nothing that depends on it is in this script.\n", g.instance)
+		}
+		if len(g.certSkipped) > 0 {
+			fmt.Fprintf(&b, "-- Missing here: the certificate, login and user for %s, and the CONNECT grant\n"+
+				"-- that goes with them.\n", strings.Join(g.certSkipped, ", "))
+		}
+	}
+
+	if partial {
+		b.WriteString("\n-- Run the statements above on their instances, then press Script Changes again:\n")
+		b.WriteString("-- with the certificates in place the next script contains the exchange in full.\n")
+	}
+	return b.String()
 }
 
 // randomPassword generates a password for a login that exists only to own a

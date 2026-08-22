@@ -407,7 +407,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
-		views, err := dbObj.ViewsContext(ctx)
+		views, err := dbObj.ViewsFilteredContext(ctx, serverFilter(node.data.Filter))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -425,7 +425,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		if err != nil {
 			return nil, nil, err
 		}
-		procs, err := dbObj.StoredProceduresContext(ctx)
+		procs, err := dbObj.StoredProceduresFilteredContext(ctx, serverFilter(node.data.Filter))
 		if err != nil {
 			return nil, nil, err
 		}

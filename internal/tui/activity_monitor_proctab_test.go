@@ -149,8 +149,8 @@ func TestActivityMonitorProcTabWithoutConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			am := hostedProcMonitor(t, tc.tab)
 			pt := am.procTab()
-			if pt.status != "Not connected." {
-				t.Errorf("status = %q, want %q", pt.status, "Not connected.")
+			if pt.status != "Not connected" {
+				t.Errorf("status = %q, want %q", pt.status, "Not connected")
 			}
 			if pt.conn != nil {
 				t.Error("the tab opened a connection it had no server for")

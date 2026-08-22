@@ -403,3 +403,154 @@ func TestNodeIDAtRejectsBlankSpaceBelowLastNode(t *testing.T) {
 		t.Errorf("NodeIDAt on blank space below the last node = (%d, true), want no node", id)
 	}
 }
+
+// -- OnActivate: Enter and double-click ---------------------------------------
+
+// newTestTreeViewLeaf builds a tree of one leaf (no children), which is what a
+// log file, a table or any other terminal node looks like — the case Enter had
+// no meaning for before OnActivate existed.
+func newTestTreeViewLeaf() *TreeView {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10)
+	tv.SetNodes([]TreeNode{{ID: 7, Label: "Archive #3"}})
+	return tv
+}
+
+// Enter on a node whose host claims it must not also toggle: activating and
+// expanding are different answers to the same key, and a folder that did both
+// would open itself every time it was opened.
+func TestTreeViewEnterActivatesWhenHandled(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	var got TreeNodeID
+	tv.OnActivate = func(id TreeNodeID) bool { got = id; return true }
+
+	tv.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+
+	if got != 1 {
+		t.Errorf("OnActivate fired with %d, want 1", got)
+	}
+	if tv.nodes[0].Expanded {
+		t.Error("a handled Enter expanded the node as well")
+	}
+}
+
+// The other direction, and the reason OnActivate returns a bool: a host that
+// only claims some node types leaves every other one expanding on Enter.
+func TestTreeViewEnterFallsBackToExpand(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		activate func(TreeNodeID) bool
+	}{
+		{"no handler", nil},
+		{"handler declines", func(TreeNodeID) bool { return false }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			tv := newTestTreeViewExpandable()
+			tv.OnActivate = c.activate
+
+			tv.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+
+			if !tv.nodes[0].Expanded {
+				t.Error("Enter neither activated nor expanded")
+			}
+		})
+	}
+}
+
+// Right is expand only — it is the arrow-key half of the tree's navigation and
+// has no "default action" meaning, so it must not activate even when a handler
+// would claim the node.
+func TestTreeViewRightArrowDoesNotActivate(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	fired := false
+	tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
+
+	tv.HandleKey(tcell.NewEventKey(tcell.KeyRight, "", tcell.ModNone))
+
+	if fired {
+		t.Error("Right activated the node")
+	}
+	if !tv.nodes[0].Expanded {
+		t.Error("Right did not expand the node")
+	}
+}
+
+// A second press on the same row is the mouse spelling of Enter. Each press is
+// bracketed by the release tcell sends, which is what clears the drag latch —
+// without it the second press reads as a continued hold.
+func clickRow(tv *TreeView, x, y int) {
+	tv.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+	tv.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+}
+
+func TestTreeViewDoubleClickActivates(t *testing.T) {
+	tv := newTestTreeViewLeaf()
+	calls := 0
+	tv.OnActivate = func(TreeNodeID) bool { calls++; return true }
+
+	clickRow(tv, 10, 1)
+	if calls != 0 {
+		t.Fatalf("a single click activated (%d calls)", calls)
+	}
+	clickRow(tv, 10, 1)
+	if calls != 1 {
+		t.Errorf("double-click fired OnActivate %d times, want 1", calls)
+	}
+	// A third click starts a fresh pair rather than activating again — the
+	// pairing is reset on activation.
+	clickRow(tv, 10, 1)
+	if calls != 1 {
+		t.Errorf("the click after a double-click activated again (%d calls)", calls)
+	}
+}
+
+func TestTreeViewDoubleClickNeedsTheSameRowAndAFreshInterval(t *testing.T) {
+	t.Run("different rows", func(t *testing.T) {
+		tv := NewTreeView()
+		tv.SetBounds(0, 0, 40, 10)
+		tv.SetNodes([]TreeNode{{ID: 1, Label: "one"}, {ID: 2, Label: "two"}})
+		fired := false
+		tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
+
+		clickRow(tv, 10, 1)
+		clickRow(tv, 10, 2)
+
+		if fired {
+			t.Error("clicks on two different rows activated")
+		}
+	})
+
+	t.Run("too slow", func(t *testing.T) {
+		tv := newTestTreeViewLeaf()
+		fired := false
+		tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
+
+		clickRow(tv, 10, 1)
+		// Backdate the first press past the interval rather than sleeping.
+		tv.lastClickAt = tv.lastClickAt.Add(-2 * doubleClickInterval)
+		clickRow(tv, 10, 1)
+
+		if fired {
+			t.Error("two clicks a second apart activated")
+		}
+	})
+}
+
+// A double-click on the expander glyph is two expands, not an activation: that
+// region already means "toggle", and firing the default action from it too
+// would open a log file every time a folder was opened and closed.
+func TestTreeViewDoubleClickOnExpanderOnlyToggles(t *testing.T) {
+	tv := newTestTreeViewExpandable()
+	fired := false
+	tv.OnActivate = func(TreeNodeID) bool { fired = true; return true }
+
+	clickRow(tv, 1, 1)
+	clickRow(tv, 1, 1)
+
+	if fired {
+		t.Error("double-clicking the expander activated the node")
+	}
+	if tv.nodes[0].Expanded {
+		t.Error("two clicks on the expander did not leave it collapsed again")
+	}
+}

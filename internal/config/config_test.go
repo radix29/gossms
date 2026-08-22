@@ -579,3 +579,58 @@ func readStoredPassword(t *testing.T, path string) string {
 	}
 	return onDisk.Connections[0].Password
 }
+
+// PasswordUnreadable separates "no password saved" from "a password is saved
+// and this session cannot open it" — two states Password alone cannot tell
+// apart, since Load blanks it for both. A caller that would sign in with the
+// entry needs the difference: the second is a guaranteed login failure, and
+// the sealed ciphertext behind it is still on its way back to disk untouched.
+func TestPasswordUnreadableDistinguishesNoPasswordFromASealedOne(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		conn Connection
+		want bool
+	}{
+		{"no password at all", Connection{Server: "a"}, false},
+		{"password available", Connection{Server: "a", Password: "pw"}, false},
+		{"sealed and not opened", Connection{Server: "a", sealed: "gAAA-nope"}, true},
+		// Both set cannot happen out of Load, but the password is what a
+		// caller would use, so it wins.
+		{"opened, ciphertext retained", Connection{Server: "a", Password: "pw", sealed: "gAAA"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.conn.PasswordUnreadable(); got != tc.want {
+				t.Errorf("PasswordUnreadable() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// The state above is one Load actually produces: a ciphertext the key cannot
+// open comes back with an empty Password and the ciphertext stashed.
+func TestLoadMarksAnUndecryptablePasswordUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "gossms")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"connections": [
+		{"server": "ubusql2", "user": "sa", "password": "not-a-ciphertext"},
+		{"server": "ubusql3", "auth_method": 1}
+	]}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if len(cfg.Connections) != 2 {
+		t.Fatalf("len(Connections) = %d, want 2", len(cfg.Connections))
+	}
+	if !cfg.Connections[0].PasswordUnreadable() {
+		t.Error("an undecryptable password did not report as unreadable")
+	}
+	if cfg.Connections[1].PasswordUnreadable() {
+		t.Error("a connection that never had a password reports as unreadable")
+	}
+}

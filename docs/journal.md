@@ -1906,3 +1906,1006 @@ password into.
 
 `propsheet.StaticRow` gained a `Label()` accessor to make a read-only row
 addressable by name, matching every other row type.
+
+## 2026-08-21 — The write-path Properties pages, phase 1 (Tier 1)
+
+Continuing the seam opened on 2026-08-20 (`gosmo.NewServer` +
+`internal/tui/fakedb_test.go`). An audit of every `propPage` constructor found
+52 with a real `apply`, 17 of them covered; this pass took the eight whose
+apply reissues an object or rewrites a permission graph.
+
+**Phase 0, the harness gap.** Two of the eight take a `*PropDialog` — Job
+Steps and the database Securables page — and `PropDialog.runPageAction` goes
+through `App.safego`/`postAndWake`, so the page could not be built at all
+without an `App`. `newFakeDialog` in `fakedb_test.go` pairs `newTestApp`'s
+screenless App with a bare `PropDialog{app, ctx}`, and `drainDialog` runs the
+callbacks the action posts (`wakeEventLoop` is a no-op with no screen, so
+without the drain the assertions run before the work does). No production
+change was needed. `fakeExec` also learned to record a statement's
+**parameters**: a write through a system procedure — `sp_rename` here, every
+`sp_add_job*` later — carries the name it acts on as `@p1`, so the statement
+text alone reads `EXEC sp_rename @objname = @p1` and says nothing about what
+was renamed to what. `argsFor`/`assertArgs` read them back.
+
+**Eight pages.** Index Options and Included Columns
+(`index_props_page_test.go`), Key General and Key Options
+(`key_props_page_test.go`), the four permission matrices — Server Properties,
+Database Properties, Schema and Table Properties — in one table-driven file
+(`permissions_pages_test.go`), the database Securables page including its
+column editor (`securables_page_test.go`), and Database Properties > General
+(`database_props_general_page_test.go`).
+
+Every one was checked by mutation, and nine mutants died: the constraint guard
+that keeps `IGNORE_DUP_KEY` out of a PK-backing index's SET; rebuilding
+whenever anything is dirty; naming a compression nobody chose; an off-by-one
+reading the included-columns grid back; key columns not excluded from it;
+`commitRename` dropped, and `sp_rename`'s second argument; Table Permissions
+wired to the database scope and Schema Permissions to the wrong schema;
+`buildPermissionsMatrix` ignoring the principal selection; `applySecurable`
+sending a SCHEMA down the object path; the column editor cycling row 0; and the
+recovery-model write reading the wrong row.
+
+**Two things the mutation pass taught, both worth keeping.** Reordering
+`recoveryItems` — the Recovery model dropdown — does *not* fail any test, and
+correctly so: the items **are** the T-SQL keywords, so display and write index
+the same slice and there is no label/value pair to fall out of step. The
+comment on that test now says what it actually catches rather than claiming a
+reordering it cannot see; this is the round-trip trap from `CLAUDE.md` in its
+benign form. Reordering `databasePermPrincipals`' two lists is likewise
+invisible, and also correctly: the matrix keys its edits by principal *name*,
+so list order carries no meaning. A surviving mutant is not automatically a
+missing test.
+
+**One fake-scripting trap, found the hard way.** `Table.ColumnsContext`'s query
+joins `sys.index_columns ic2` to find the primary key, so a response matched on
+`"sys.index_columns ic"` — meant for the index-column read — was served to a
+scan wanting seventeen columns. The index-column response is matched on
+`ic.key_ordinal` instead. Substring matching is ordered and greedy; a response
+meant for one query has to be matched on something the other cannot contain.
+
+## 2026-08-21 — The write-path Properties pages, phase 2 (Tier 2, SQL Agent)
+
+The nine SQL Server Agent write pages: Job Properties' General, Steps,
+Schedules, Alerts and Notifications, Alert Properties' General and Response,
+Operator Properties > General, and Schedule Properties > General. Four new
+files plus a shared fixture file (`agent_fakedb_test.go`); 33 tests.
+
+**The plan said "msdb-scoped, so `db:msdb` scoping throughout". It is not.**
+Every Agent write gosmo issues is three-part — `EXEC msdb.dbo.sp_update_job` —
+and no `USE` is ever sent, so every statement lands on a connection pinned to
+no database. `StatementsIn("msdb")` returns nothing on all nine pages;
+`Statements()` is the assertion. Stated at the top of `agent_fakedb_test.go`
+so the next Agent test does not start by scripting a database that never
+appears.
+
+`assertArgs`, built in phase 1 for `sp_rename`, went unused after all: the
+`sp_add_job*` family takes no parameters either — gosmo interpolates the names
+into the statement text with `escapeSingle`. It stays for the pages that do.
+
+**Twenty mutants killed.** The order of Steps' three passes, both ways (deletes
+ascending; adds moved ahead of updates); the `(unchanged)` database sentinel
+sent as a real database name; the grid toggling row 0 rather than the selected
+row on Schedules; `commitRename` dropped on Job, Alert and Schedule; the
+enable/disable branches swapped; `sp_attach_schedule` and `sp_detach_schedule`
+swapped; the Job Alerts page dropping its WMI filter, which shifts every edit
+past the WMI row onto its neighbour; `SetTrigger`'s error-number and severity
+arguments swapped; each of the four `<none>`/`<all databases>` sentinels sent
+to the server as a literal name; Notifications' e-mail write gated on the page
+instead of its own rows; an operator's e-mail written from the name field.
+
+**The weekday table is now pinned end to end.** `CLAUDE.md`'s standing example
+of the round-trip trap is `weekdayBits`: swapping Monday and Tuesday leaves the
+checkbox labelled Monday setting Tuesday's bit, and `populate`→`readFrequency`
+still agrees, so `agent_schedule_form_test.go` cannot see it. The Schedule
+Properties page test ticks days *by name* and asserts the number that reaches
+`sp_update_schedule` (`@freq_interval = 10` for Monday and Wednesday) — the
+swap now fails, on that test alone.
+
+**Two survivors, both correct.** A non-T-SQL step is kept out of the write path
+by two independent guards — `commitCurrent` refuses to copy the form onto it,
+and `planJobStepWrites` tests `editable()` again — so removing either one alone
+leaves the test passing. That redundancy is deliberate and documented on
+`planJobStepWrites`; the test kills the pair, and its comment now says so. As
+in phase 1: a surviving mutant is not automatically a missing test.
+
+Coverage on the nine pages' load/apply closures: 74.4%–91.5%, from zero.
+The four read-only Agent pages (Job Targets, Job History, Operator
+Notifications, Schedule Jobs) stay uncovered — no `apply`, nothing to get
+wrong that a test here would see.
+
+## 2026-08-21 — The write-path Properties pages, phase 3 (Tiers 3-4)
+
+The principal and ownership pages: Database Role, Server Role, Database User
+and Schema Properties' General pages; the three owner-transfer pages (Owned
+Schemas, shared by Role and User Properties, and Owned Roles at both database
+and server scope); the shared Extended Properties page; and Table Properties >
+Change Tracking. Five new files over one shared fixture
+(`principal_fakedb_test.go`); 32 tests.
+
+The fixture is one database with a deliberately tangled ownership graph — the
+role `app_admin` owns two other roles and two of the four schemas — so every
+page has more than one row to get wrong and nothing acted on is first in its
+list.
+
+**Seventeen mutants killed, none survived.** The built-in guard on each of the
+four General pages (`isSystemDatabaseRole`, `isSystemServerRole`,
+`isSystemSchema`, `isSystemUser`): forcing `builtin = false` gives the page an
+apply closure and editable rows, and the statement it would then build —
+`ALTER ROLE public WITH NAME = …` — is a syntax error, not a permission
+failure, so the page is the only thing standing between the user and it. The
+rename ordering on Role, Server Role and User (moved first: killed);
+`commitRename` dropped. The owner dropdown built from users only, dropping the
+roles. `(None)` sent to `ALTER USER … WITH LOGIN`. All three owner-transfer
+pages with their `Owner == this principal` filter removed — the failure worth
+naming, since an object that leaks into that list gets handed away on a page
+the user thinks is about something else — plus the shared widget committing
+onto row 0. Extended Properties: `sp_add` where `sp_update` was meant, the drop
+addressing property 0, and a property added *and* removed in one sitting still
+being added. Table Change Tracking: `TRACK_COLUMNS_UPDATED` hard-wired ON, the
+dirty gate removed (an `ENABLE CHANGE_TRACKING` on a table that already has it
+resets the tracking baseline), and an unlisted table loading as tracked.
+
+**A page can refuse to write, and that refusal is testable.** Four of these
+pages return a nil `apply` for a built-in principal and render the same fields
+as `StaticRow`s. The assertion is therefore "the row is not editable", not "the
+row is absent" — `hasEditableRow` in
+`principal_props_general_pages_test.go`.
+
+**One fake-scripting trap, the same shape as phase 1's.** gosmo's database-role
+and server-role queries both end `WHERE r.type = 'R' AND r.name = @p1`, and the
+list forms both contain `r.type = 'R'`; the only thing separating them is that
+the server-side query is indented with tabs. The two are never scripted
+together, and the fixture says so where the responses are declared. Matching on
+whitespace is fragile — if it ever breaks, the fix is a more specific `FROM`
+clause (`FROM   sys.database_principals r` vs `FROM sys.server_principals r`),
+which is what the *list* responses already use.
+
+Coverage on the ten closures: 74.8%–98.9%, from zero.
+
+## 2026-08-21 — The write-path Properties pages, phase 4 (Tier 5, Always On)
+
+The last three write pages: Availability Group Properties' General, Backup
+Preferences and Read-Only Routing. Two new files (`ag_fakedb_test.go`,
+`ag_props_pages_test.go`); 22 tests. With this the write-path sweep that began
+on 2026-08-20 is done — every `propPage` with a real `apply` outside the New-X
+dialogs now has a page test.
+
+**The fixture had one constraint worth writing down.** Every page here reads
+and writes through the group's *primary* replica, and `agOnPrimary` treats an
+unreachable primary as a hard error rather than degrading — a Properties page
+loaded from a secondary would show editable rows whose Apply the server
+rejects. `IsLocalPrimary` compares the group's `primary_replica` against the
+connected server's own name, so the fixture's primary replica has to be called
+what `serverInfoResponse` says the instance is called: there is a replica named
+`FAKE\SQL` in `agReplicasResponse` alongside `ubusql2` and `ubusql3`. Without
+it the pages open a peer connection the fake cannot serve. The per-replica
+routing-list read is scoped with `arg:` on the replica id for the usual reason
+— unscoped, all three replicas report the primary's list.
+
+**Seventeen mutants killed.** The failure-condition level written as the row
+index rather than the level (the labels read plausibly either way round); the
+required-sync ceiling — replica count less the primary — removed; the
+replica-by-name lookup replaced by `replicas[0]` on all three pages; each of
+the six General detail rows wired to its neighbour's setter; the session
+timeout rewritten whenever anything else on the replica changed; two entries of
+`agBackupPreferenceItems` swapped, and the radio read as item 0; the Excluded
+column reporting the loaded priority rather than the edited one; the routing
+URL and list committed onto replica 0; `planAGRoutingOps` no longer holding
+cleared URLs back to the end; the routing-list validator dropped.
+
+**The routing order is the one that is only visible end to end.** SQL Server
+refuses a routing list naming a replica with no routing URL, and refuses to
+clear a URL a list still references, so the writes go out as URLs-being-set,
+then every list, then URLs-being-cleared. `ag_props_test.go` already pinned
+`planAGRoutingOps` directly; the page test now shows the three statements
+arriving in that order from a real edit session, which is what a server error
+would otherwise be the only way to discover.
+
+**`agBackupPreferenceItems` is the third label/keyword pair this sweep has
+pinned by name** (after the schedule weekday bits and the permission-state
+tables). The test walks the whole table rather than one entry — a rotation only
+shows up on the entries a single-value test does not visit — and the one label
+the fixture already has selected is asserted as *selected* rather than edited,
+since a row that is already on the value cannot be made dirty.
+
+Coverage on the three pages: 80.8%–82.0%, and their apply helpers 74.2%–85.0%,
+from zero. `wireGridEditor`, the commit/load/redraw wiring all three share, is
+at 100%.
+
+## 2026-08-21 — Status strings with a trailing period
+
+Cosmetic, closed off `docs/open-threads.md`. The count there said three
+literals in `activity_monitor_proctab.go`; a repo-wide grep for the
+concatenated forms found six across two files — `"Not connected."`,
+`"Stopped unexpectedly — see the log for details."`, `MasterName + " is not
+available."`, `qualified + " failed."`, `"No result returned."`, and
+`log_viewer.go`'s `"Read stopped unexpectedly — see the log for details."`.
+All six now end without one, matching every other `setStatus` in the app.
+`TestActivityMonitorProcTabWithoutConnection` asserted the old wording and was
+updated with it.
+
+## 2026-08-21 — CREATE COLUMN MASTER KEY's enclave clause was never valid syntax
+
+`Database.CreateColumnMasterKeyContext` took an `enclaveComputations bool` and
+emitted `ENCLAVE_COMPUTATIONS = YES`. There is no boolean spelling: the clause
+is `ENCLAVE_COMPUTATIONS (SIGNATURE = 0x...)`, which gosmo's own scripter had
+right all along (`buildColumnMasterKeyScript`). Proved live on win10cli — the
+old form dies with `Msg 102, Level 15 ... Incorrect syntax near '='`, a parse
+error, so it cannot even be caught by TRY/CATCH. The bool signature was
+un-implementable, not just misspelled: the signature is computed client-side
+from the master key's private key, so nothing inside the library can supply
+one.
+
+`CreateColumnMasterKeyWithSignature`/`...Context` now take the signature —
+the same bytes `ColumnMasterKey.Signature` reads back — and both forms share
+`createColumnMasterKey`, which omits the clause entirely when there is no
+signature. The old bool method stays (published API, no-removal rule) and
+returns an error naming the new one when passed `true`, rather than shipping a
+statement the server will reject.
+
+Two tests, because the statement test cannot see this class of bug at all — it
+compares text against text, and the text it was comparing against was the
+error. `script_security_write_test.go` pins the clause and the two refusals;
+`live_columnmasterkey_test.go` (`-tags livedb`) creates both forms against a
+throwaway database, reads `allow_enclave_computations` and `signature` back out
+of `sys.column_master_keys`, and asserts the refused key was never created.
+A/B'd: reintroducing `= YES` fails the live test on the CREATE and leaves the
+unit tests' verdict unchanged unless the text is updated with it.
+
+No gossms caller — there is still no New Column Master Key dialog; see
+`docs/open-threads.md`.
+
+## 2026-08-21 — Five unreachable functions, and what "unreachable" was hiding
+
+The 2026-08-18 audit's list was three different things, not one.
+
+`charts.HistoryChart.Plot`, `StackedHistoryChart.Plot` and `historySpec.plotRect`
+looked dead because nothing called them — but `TimeRow`/`timeRowRect`, built
+the same way in the same files, were reachable only because
+`TestDrawFrameAgreesWithDrawAndTimeRow` used `TimeRow` as its oracle for
+`DrawFrame`'s second rect. `Plot` had been left out of the same test. Deleting
+it would have removed the only way to ask where a chart's plot landed without
+drawing the chart, which is what a mouse hit-test needs (the dashboard records
+its `ChartHit`s from `DrawFrame` because it happens to be drawing; a hit-test
+outside a draw pass has nothing to call). The test now asserts all three agree
+and is renamed `TestDrawFrameAgreesWithDrawPlotAndTimeRow`. Mutant-checked by
+shortening `plotRect`'s rect by a row: eight failures across the four rects it
+runs.
+
+`core.ClearRect` was genuinely dead — `FillRect(s, r, ' ', style)` with a name
+— and is gone.
+
+`theme.SetPalette` stays: `theme/doc.go` advertises it as the extension point a
+host application swaps its palette through, so it is API, not residue. New
+`theme/palette_test.go` pins that `Active()`'s pointer keeps reading the
+palette that was set (a version returning a copy would leave a caller on the
+old colours) and that `StyleMenuBar` follows. Mutant-checked by making
+`SetPalette` a no-op.
+
+Worth carrying forward: `internal/tuikit` is described in its own README as an
+embeddable, application-agnostic library. It is not gosmo — removal there is
+allowed — but "no callers in the app" still asks a question about the test
+suite first, and in three of these five cases that was the whole answer.
+
+## 2026-08-21 — WriteAtomic and ownership: documented, not changed
+
+Closed off `docs/open-threads.md` as a decision rather than a fix. The rename
+leaves the replacement file owned by whoever is running, where a write-in-place
+would have kept the original's uid/gid. Fixing it means a Stat plus a Chown
+that only root can make succeed and that has to be a no-op on Windows — new
+`runtime.GOOS` branching, in a codebase that has it in exactly two files — to
+serve a case gossms does not support (running as root over someone else's
+file). The note now lives on `modeFor`'s doc comment, where the next person
+reading "this preserves the mode" will see what it does not preserve.
+
+## 2026-08-21 - The two Always On writes that had never run live
+
+`SetAvailabilityMode` and `SetFailoverMode` were the last replica setters
+without live coverage, and for a good reason: the only availability group
+standing is AAG1, `cluster_type = EXTERNAL`, and dropping its last synchronous
+replica leaves Pacemaker unable to promote anything - recoverable only by
+recreating the group. The way in was already in the repo:
+`TestLiveAvailabilityGroupCreate` builds a throwaway `CLUSTER_TYPE = NONE`
+group across ubusql1/ubusql2, joins the secondary, and drops it. Nothing
+watches that group, so the modes can be exercised there for real, between the
+join and the drop.
+
+`AVAILABILITY_MODE` round-trips: SYNCHRONOUS_COMMIT to ASYNCHRONOUS_COMMIT and
+back, each half re-read from `sys.availability_replicas` rather than from the
+setter's own mirror.
+
+`FAILOVER_MODE` cannot be round-tripped anywhere available here, and the test
+pins what is true instead of skipping. Probed live first: a NONE group accepts
+MANUAL and refuses both others with "The cluster type of availability group
+'gosmo_agtmp' only supports MANUAL failover mode." AUTOMATIC needs a WSFC;
+EXTERNAL needs a group created EXTERNAL, which is AAG1. The refusal is still
+worth an assertion - it is a *semantic* rejection, so the statement parsed,
+where a malformed one would come back `Msg 102`. The test also pins that
+neither refusal moves `r.FailoverMode`: `setReplicaKeyword` calls
+`setIfApplied` only after `modifyReplica` returns nil, and an optimistic mirror
+would report a mode the server never took.
+
+A/B'd by pointing `SetAvailabilityModeContext` at the `SEEDING_MODE` keyword -
+"Invalid usage of the option SEEDING_MODE in the ALTER AVAILABILITY GROUP
+statement", so the test is reading the real write. Cluster left as found: AAG1
+only, PRIMARY/HEALTHY on ubusql1, SECONDARY/HEALTHY on ubusql2, no throwaway
+group behind.
+
+## 2026-08-21 — Key Diagnostics can copy its log, and the sync rule that took
+
+The last of the `ClipboardHost` work of 2026-08-20. Key Diagnostics was the one
+dialog whose inert clipboard was worth revisiting rather than accepting: its
+whole purpose is reporting what a terminal actually sent, which is exactly the
+text someone pastes into a bug report, and it drew its log directly instead of
+holding a widget, so there was no `core.ClipboardTarget` to hand back.
+
+The log now lives in a read-only `controls.Editor` with the gutter hidden,
+built the way `StatusHistoryDialog` has always been built — `SetReadOnly(true)`,
+`SetActive(true)`, a dirty flag, a `syncIfDirty` called from `Show` and `Draw`,
+`FocusedClipboardTarget` returning the editor. That buys mouse drag-selection,
+Shift+arrows, Ctrl+A and the editor's own scrollbar, all of which the
+hand-rolled list had none of. A `Copy` button sits beside `Close` for the mouse
+route.
+
+**The one thing that is not a copy of Status History, and the reason a straight
+copy fails.** This dialog records the very keys used to copy from it.
+`Editor.SetText` resets cursor, scroll *and* selection, so with a plain
+sync-in-`Draw` the sequence Ctrl+A, Ctrl+C reliably copies nothing: the Ctrl+A
+is itself recorded, marking the log dirty, and the frame drawn between the two
+keystrokes rebuilds the editor and drops the selection the user just made. So
+`syncIfDirty` refuses to rebuild while `d.editor.HasSelection()`; `dirty` stays
+set and the deferred lines flush the moment the selection clears. `Show` writes
+the empty text directly rather than going through `syncIfDirty`, which would
+otherwise let a selection left over from the previous showing pin the last
+session's text on screen.
+
+Confirmed live under tmux rather than assumed: with three lines logged, Ctrl+A
+highlighted all three, the two keys pressed *during* the selection stayed out of
+the editor, Ctrl+C put the exact log on the system clipboard, and pressing Right
+flushed the deferred `Ctrl+A`/`Ctrl+C` lines into view — proving nothing was
+lost, only deferred. Note `Ctrl+C` appears in the log at all because
+`App.handleKey` calls `RecordKey` *before* it consumes the clipboard shortcuts;
+that ordering was already right and needed no change. A mouse drag across two
+rows then Ctrl+C copied exactly the dragged range, ending mid-line.
+
+Three mutants killed: dropping the `HasSelection` guard fails
+`TestKeyDiagnosticsKeepsASelectionWhileMoreKeysArrive` with the reported
+symptom; routing `Show` through `syncIfDirty` fails
+`TestKeyDiagnosticsShowResetsTheLog` with the previous session's text still on
+screen; returning nil from `FocusedClipboardTarget` fails the copy test.
+`TestEveryDialogWithTextEntryIsAClipboardHost` picks the dialog up on its own
+now that it owns an `*controls.Editor`.
+
+`TestKeyDiagnosticsDialogScrollbarDragScrolls` is deleted rather than rewritten:
+it drove the `d.scroll` field the editor replaces, the editor's scrollbar drag
+is pinned in `internal/tuikit/controls/scrollbar_drag_test.go`, and Status
+History — the same shape — has never had a dialog-level case either. A note in
+`scrollbar_dialogs_test.go` says so, so the absence reads as a decision rather
+than an oversight.
+
+One false alarm worth recording, since it cost a detour: the Copy button
+appeared not to work under tmux. It did. A malformed `send-keys -H` sequence
+injected earlier in the session had left `ModalDialog.mouseDragging` latched, so
+the next press was correctly ignored as a drag continuation, and the sentinel
+was read back before the asynchronous `osClipboardWrite` had landed. A clean
+run — fresh dialog, fresh sentinel, 1.5s wait — showed both the selection and
+the clipboard. When a tmux mouse test disagrees with the code, suspect the
+injected sequence before the code.
+
+## 2026-08-21 — Recycle, and why the open viewer has to Refresh
+
+Item 6 of the open-issues list: SSMS's "Recycle" was the one Log File Viewer
+action with no counterpart here. gosmo already had `CycleErrorLog`, fixed to
+the SQL Server family and called by nothing.
+
+**gosmo.** `CycleLog(logType)` / `CycleLogContext(ctx, logType)`, symmetric with
+the `ReadLog`/`EnumErrorLogs` pairs that already take an `ErrorLogType`, over a
+`cycleLogStatements` table: `EXEC sp_cycle_errorlog` for the SQL Server family,
+`EXEC msdb.dbo.sp_cycle_agent_errorlog` for the Agent's. The Agent's is
+three-part on purpose — the procedure is in msdb and the connection may sit in
+any database, whereas `sp_cycle_errorlog` resolves from anywhere through the
+`sp_` prefix's master fallback. `CycleErrorLog`/`Context` stay and delegate; a
+published method is never removed or narrowed.
+
+That table is exactly the shape `CLAUDE.md` warns a round-trip test cannot see —
+swap its two entries and every "cycle then check it cycled" assertion still
+passes while the user's Recycle hits the wrong log family. So
+`TestCycleLogStatements` names both statements outright and asserts the table
+has no more entries than the test names, and `TestCycleErrorLogIsTheSQLServerFamily`
+pins the delegate's family separately. Swapping the entries fails both;
+pointing the delegate at the Agent fails the second.
+
+`live_cyclelog_test.go` is the other half, because `WithScript` only proves the
+statement was *built*. It cycles each family on a real instance and asserts the
+archives renumbered. Both passed against win10cli. It is the rare live test that
+mutates the instance rather than a throwaway object — there is nothing smaller
+to cycle — so its doc comment says so.
+
+**gossms.** A `Recycle...` cell on the viewer's toolbar and a `Recycle` item on
+both log folders' Object Explorer menus, sharing `cycleLogMessage`, which names
+what is lost (the archives renumber; the oldest goes once the instance is at its
+configured maximum).
+
+Two things went in as comments because getting either wrong is silent:
+
+- **The busy latch is taken before the question, not in the answer.** The
+  confirm dialog takes input but does not stop F5 reaching the panel, so a Load
+  begun while the question was up would clear `busy` from under a cycle it knows
+  nothing about. Declining releases it — a latch leaked there dims the entire
+  toolbar for the panel's lifetime, which is also why the goroutine is
+  `safegoRepair` and not `safego`.
+- **An open viewer is refreshed through `Refresh`, never `Load`.** This is the
+  one that a plausible simplification breaks. For the family on screen the two
+  are equivalent — Load overwrites that family's cached enumeration anyway — so
+  the first test written for it (`...RefreshesRatherThanReloads`) passed with
+  the mutant in place. The real case is cross-family: recycle the Agent log from
+  the tree while the viewer sits on SQL Server, and Load re-enumerates only SQL
+  Server, leaving the Agent's pre-cycle numbering cached to be handed over the
+  moment the user flips the selector. `TestExplorerRecycleRefreshesTheOtherFamilyToo`
+  is that case, and it does kill the mutant. The comment on
+  `refreshOpenLogViewer` says why rather than saying "use Refresh".
+
+Seven mutants killed in gossms: the cycle ignoring `lv.logType`, the No answer
+leaking the latch, no repair on panic, a `logTool*` const added without its
+cell, no latch while the question is up, the open viewer put through `Load`, and
+the open viewer not refreshed at all. The Refresh-vs-Load mutant surviving the
+first attempt is the reason the test was retargeted rather than the comment
+being trusted — the test that only exercised the family on screen was asserting
+something that was true either way.
+
+Live, on win10cli, both paths and both families: the tree's Recycle on SQL
+Server Logs (server list renumbered, folder refreshed), the toolbar's on the
+Agent family (declined once — toolbar stayed live and nothing was written — then
+confirmed), and the cross-family case above, where the viewer's SQL Server
+archive list came back matching the server's post-cycle numbering exactly while
+it had been sitting on Agent throughout.
+
+## 2026-08-21 — A peer is reached with its own credentials
+
+Item 5. `db.ServerConn.peerOptions` copied the parent connection's options
+wholesale, so all nine `Peer` call sites reached every instance with whatever
+login the user registered the tree with. A topology with per-instance
+credentials surfaced as a connect error naming the instance, and on the Object
+Explorer's follow-the-primary path as a silent
+`(partial — primary X unreachable)`.
+
+The seam is `internal/db`, not the UI: `peerOptions` is the one place
+credentials are derived, and the Object Explorer's loader — the caller that
+matters most — has no `*App` handle and cannot prompt. So `ServerConn` gained a
+`PeerCredentials` resolver installed with `SetPeerCredentials`, consulted before
+the fallback to the parent's own settings. `Peer` installs it on every peer it
+opens, so the second hop of follow-the-primary resolves through the same table
+rather than inheriting the primary's login.
+
+**A saved connection is taken whole, not field by field.** The plan listed the
+fields to copy — User, Password, AuthMethod, Port, tenant, client, TLS — and a
+hand-copied list is exactly the thing that silently stops carrying whatever
+`config.Connection` gains next. Only `Server` and `Database` are overridden:
+`Server` so the catalog's spelling is what the peer is opened against, and
+`Database` for the reason it was already blanked (2026-08-14 — a database named
+in the connection string has to be openable, and a secondary's may not be).
+
+App answers the resolver from the connections the user has already made, keyed
+by `db.InstanceKey` — lowercased host plus `\instance`, port discarded — which
+is now also `Peer`'s own cache key, so a hit in one and a hit in the other
+always agree about what "that instance" means.
+
+**The FQDN tier was not in the plan and turned out to be most of the value.**
+The first cross-spelling test failed: `@@SERVERNAME`, which is what
+`sys.availability_replicas` reports, is the short machine name, while what
+people type into Connect on a domain network is the FQDN — so a connection
+saved as `ubusql2.fritz.box` would never answer a peer read for `ubusql2`, which
+is the common case rather than an edge one. Collapsing the key to the short host
+was the wrong fix: `sql.a.example` and `sql.b.example` are different instances
+and would have handed each other their logins. Instead a saved connection is
+registered a second time under its short host in a separate, strictly
+lower-priority map, consulted only when the exact host misses. Worst case is the
+connect error that was the behaviour before any of this.
+`TestPeerCredentialsPreferExactHostOverAShortAlias` pins the tiering with three
+instances that share a short name.
+
+Seven mutants killed: `peerOptions` ignoring the resolver, the saved
+connection's Database surviving, `InstanceKey` reduced to a plain lowercase, the
+App map keyed by the raw spelling, `loadPeerCredentials` letting the oldest
+entry win, the alias tier consulted first, and an already-short host also
+registering an alias.
+
+One test could not be written honestly: `Peer`'s own propagation line sits
+behind `Connect`, which needs a real instance, so the unit test pins the two
+halves it composes and the wiring itself is live-verified.
+
+Live on the ubusql1/ubusql2 cluster, and the A/B is what makes it worth
+recording. A throwaway `peer_probe` login on ubusql1 (the primary), saved in
+gossms as ubusql1's connection; the tree then connected to **ubusql2** as `sa`
+and its availability group expanded. `sys.dm_exec_sessions` on ubusql1 showed
+the follow-the-primary reads arriving as `peer_probe`. Deleting that one saved
+connection from the config and repeating the identical expansion showed them
+arriving as `sa` — the old behaviour, back. The login was dropped and the run
+used a scratch `XDG_CONFIG_HOME`, so neither the cluster nor the author's own
+saved connections were touched.
+
+## 2026-08-21 — New Endpoint's Script Changes, and two statements that had to go
+
+Item 4, and the framing in `open-threads.md` was out of date in the worse
+direction. It said the dialog "does not script". In fact
+`newObjectDialog.init` sets `OnScript` unconditionally, so the button was live
+and running the shell's version: every collected statement in one batch, with
+nothing saying that they belong to two or more instances. Run whole against the
+one you are connected to, the certificate imports fail and the endpoint GRANTs
+land on the wrong endpoint.
+
+**One collector per instance, not one for the pipeline.** `endpointPeer` gained
+a `ctx` and a `script`, and each phase writes through `p.ctx`. That is what
+makes the grouping possible at all: the run is three phases over N instances
+with a skip possible at every step, so there is no positional mapping from a
+flat statement list back to the instance each statement belongs to.
+`NewAGDialog.annotateScript` keeps one and its own comment admits how fragile it
+is ("a MANUAL-seeding replica, whose GRANT is skipped, shifts every label after
+it"); here it would not work at all. `TestEndpointConfigureCollectsPerInstance`
+asserts the pipeline-wide collector stays empty and that no instance's group
+creates another's certificate — run the phases against the flat `ctx` and all
+six statements land in one place.
+
+Reads deliberately still hit the real servers. That is not a leak in the
+scripting model, it is the only thing that makes the script useful: a
+certificate's public key can only be read from the instance that holds it, so a
+certificate that already exists scripts as a complete `FROM BINARY` import.
+`WithScript` intercepts only the two exec chokepoints, so this needs no special
+handling.
+
+**Everything a partial script contains has to be runnable.** Two statements
+failed that, and neither was visible from the unit tests as first written.
+
+The first was found by reading the rendered output: `ensureEndpoint` emitted
+`GRANT CONNECT ON ENDPOINT::[…] TO [X_login]` even when `importPeerCertificate`
+had skipped creating `X_login` for want of a certificate. Run as one batch the
+script fails on a login that does not exist — and fails *before* the endpoint
+statements above it take effect. The grant is now skipped for a peer in
+`p.certSkipped`, and the note already says the grant is missing along with the
+login.
+
+The second was found live, which is the point of running it live. Against
+ubusql1/ubusql2 the script opened with `CREATE USER [ubusql2_user] FOR LOGIN
+[ubusql2_login]` — for a user that already existed on both instances. The
+pipeline creates the user unconditionally and tolerates the already-exists
+error, a strategy that works when the statement actually runs and cannot under
+`WithScript`, where the write short-circuits and gosmo never sees the error.
+`importPeerCertificate` now looks the user up first, exactly as it already did
+the login and for the reason already written there. That is one extra read per
+pair per instance on the real path too.
+
+`peerServerFor` is a seam like the `certificateName` above it: the default goes
+through `db.ServerConn.Peer`, and a test supplies its own. It is what lets the
+whole pipeline run against two `fakedb` instances, which is where the pending
+case is covered — a live run on already-configured instances never produces it.
+
+Nine mutants killed, including two the first round missed:
+`TestEndpointDialogOverridesTheShellScript` compares `OnScript`'s code pointer
+against both candidates, because removing the override is the exact bug this
+item started from and nothing else failed when it was absent.
+
+Live, writing nothing to either server, twice:
+
+- **Complete path**, stock binary on ubusql1/ubusql2, whose certificates and
+  endpoints already exist: a correctly grouped script, no INCOMPLETE warning,
+  and — after the `CREATE USER` fix — only the two idempotent re-`GRANT`s. Both
+  were executed against their instances and accepted; the AG stayed HEALTHY.
+- **Pending path**, a scratch binary whose `certificateName` returns
+  `_ScriptProbeCert` so the certificates look absent. Real servers, real reads,
+  nothing written: the INCOMPLETE header, per-instance `CREATE CERTIFICATE`, the
+  pending note naming the instance, the "Missing here" note naming the peer, and
+  no GRANT. Confirmed afterwards that neither instance had gained a certificate
+  and that both replicas were still HEALTHY.
+
+## 2026-08-21 — Always Encrypted: both keys can now be created from the tree
+
+Closes the last item of Phase 1 item 6. gossms gained New Column Master Key and
+New Column Encryption Key on the two folders under a database's Security >
+Always Encrypted Keys; gosmo gained `Database.CreateColumnEncryptionKey`, the
+one write of the pair that was missing. The scope was set with the user: both
+dialogs, key material pasted.
+
+**What the dialogs cannot do, and why that is the design.** Neither the
+master key's enclave signature nor the encryption key's `ENCRYPTED_VALUE` can
+be computed here — both are produced client-side from the master key's private
+key, which lives in a Windows certificate store, a CSP/CNG provider or a Key
+Vault, none of which a portable no-CGO build can reach. Both dialogs therefore
+take the `0x…` blob SSMS or the PowerShell cmdlets print, through one shared
+`parseHexBytes`.
+
+One refusal is worth keeping: a signature pasted with "Allow enclave
+computations" *unticked* is rejected rather than ignored. Ignoring it creates a
+key that succeeds, reads back fine, and is not the key the user was setting
+up — the failure only surfaces later, when an enclave query refuses to run.
+
+**The two create dialogs are the first database-scoped ones.** Every earlier
+`newObjectDialog` is server-scoped, so `show(sc)` was enough; these carry the
+database and the folder node, set before the embedded `show` runs the prefetch
+that reads them, and refresh through `refreshExplorerNode(node)` rather than
+`RefreshFolderByType` — which finds the *first* folder of a type anywhere in
+the tree and would refresh whichever database sorted first. Apply goes through
+`Server.Database(name)`, not `DatabaseByName`: the statement names everything
+it needs, and only the lightweight handle works under Script Changes.
+
+**Two traps in the fake-DB tests, both of which produced a wrong answer first.**
+The listing query is `FROM   sys.column_master_keys` with the whitespace gosmo
+formats its SQL with, so a `fakeResponse` matching `"FROM sys.column_master_keys"`
+never fires and the page loads as an error — the substring is matched against
+the raw query text. And the column *encryption* key read joins
+`sys.column_master_keys`, so behind the master-key answer it is served six
+columns and fails in the scanner rather than missing; its response has to come
+first. Both are the same shape as the `arg:`/`db:` scoping rules already in
+`CLAUDE.md`: the fake answers by substring, in order, and order is meaning.
+
+Mutants killed: swapping provider and key path in the CMK apply, and using the
+first master key instead of the selected one in the CEK apply — the second is
+the "act on something that is not row 0" rule, and the dropdown's selection is
+the only thing that made it fail.
+
+Live on win10cli against a throwaway database, driven through the TUI under
+tmux: both dialogs created their key, both folders refreshed to show it without
+a manual refresh, and `sys.column_encryption_key_values` read the encrypted
+value back byte-for-byte through the hex field. gosmo's own live test
+(`live_columnmasterkey_test.go`, `-tags livedb`) covers the two-value
+mid-rotation form, which the dialog does not offer.
+
+Also this session, unrelated and asked for directly: **a new connection's
+server node is expanded on connect** (`ObjectExplorer.ExpandNode`, called from
+`connectServer`), the way SSMS opens one. The expansion goes through
+`handleExpand`, so it is the same path a click takes — including the
+"Loading..." latch and the background fetch. It is deliberately not inside
+`AddRoot`, which the unit tests call with a connection that has no server
+behind it.
+
+## 2026-08-21 — Delete a column, drop with cascade, move to another schema
+
+Three of the four gaps § Delete/Rename recorded, closed together. gosmo gained
+`Table.DropColumn` and `Database.TransferObject`; gossms gained a `NodeColumn`
+entry in `objectOps`, a checkbox on the table delete confirmation, and a
+"Move to Schema..." item that lists the database's other schemas.
+
+**The cascade is a checkbox on the question, not a second question.**
+`dialogs.ConfirmDialog` grew `ShowConfirmOption`, which draws one
+`widgets.CheckBox` above the separator and leads the Tab cycle with it. Two
+things it has to get right, both covered:
+
+- `CheckBox.HandleKey` refuses every key while unfocused, and focus was only
+  applied in `Draw`. That works in the app, where a frame is drawn before any
+  key arrives, and made every headless test's Space a no-op. Focus is now set
+  where it changes (`setOptFocused`), and Draw only draws.
+- The checkbox must not survive into the next showing — `ConfirmDialog` is one
+  shared instance, so a Delete Table followed by "Discard changes?" would
+  otherwise draw a stray box and put the keyboard on it. `ShowConfirm` and
+  `ShowConfirmCancel` clear it, and a test answers a plain confirm after an
+  option one to prove the focus cycle went back to two stops.
+
+The option is unticked on every showing, deliberately: it widens what the drop
+touches — the foreign keys it drops are on *other* tables — so it is asked for
+each time rather than remembered.
+
+**The column node did not know its own table.** `loadColumnsChildren` set
+Schema and Name (the column's) but never `TableName`, unlike the Keys and
+Indexes loaders. Nothing needed it until a column could be dropped; without it
+`ALTER TABLE ... DROP COLUMN` names the *column* as the table. The fake-DB test
+asserts the whole statement for exactly that reason, and the mutant that builds
+the table handle from `n.Name` fails it.
+
+**What the server will not tell you about a blocked column drop.** Verified
+live: dropping a column with one default constraint on it fails with "ALTER
+TABLE DROP COLUMN note failed because one or more objects access this column."
+— the constraint is not named. The first version of the live test asserted the
+constraint's name and failed, which is how this was found. SSMS never shows it
+because SSMS drops the default first. gossms does not: the confirmation names
+the classes of blocker ("a constraint, index or statistic ... without naming
+which") and the server's refusal is passed through.
+
+**Move to Schema is not a rename.** `sp_rename` takes a bare name and cannot
+cross schemas; `ALTER SCHEMA ... TRANSFER` can, and drops every permission
+granted directly on the object as it goes — which the confirmation says,
+because nothing afterwards does. The schemas are read before the menu opens
+rather than typed into a prompt, and the current schema is filtered out of the
+list (gosmo refuses a same-schema transfer as well, on both spellings of the
+case). `TreeView.SelectionAnchor` was extracted from
+`openContextMenuAtSelection` so the submenu opens where the node is.
+
+Live on win10cli against a throwaway database, all A/B'd: dropping a referenced
+table refused with the box unticked and succeeded with it ticked, leaving the
+referencing table and no foreign keys; a plain column dropped and one with a
+default constraint was refused; a view moved from dbo to arch and the tree
+came back showing `arch.vParent`. gosmo's own live test asserts the transferred
+object keeps its `object_id` — a re-create would be a different object with the
+same name.
+
+## 2026-08-21 — Log File Viewer: Enter on a leaf, and a search the server runs
+
+Two of the three things § Log File Viewer recorded as deliberately out. The
+third — merging several logs into one grid — stays out, at the user's call.
+
+**`TreeView.OnActivate`.** The tree had no activation callback at all: Enter
+was `toggleExpand`, which means nothing on a leaf, so a log file could only be
+opened from its context menu. The hook returns a bool and Enter falls back to
+expand/collapse on false, which is what keeps every folder behaving as before.
+Double-click is the mouse spelling of the same thing, timed with the Editor's
+`doubleClickInterval` so the app has one double-click speed.
+
+Two details that a plausible simplification would get wrong, both pinned:
+`Right` must *not* activate — it is the arrow-key half of navigation, and
+overloading it would make the two keys different on leaves and identical on
+folders; and a double-click on the `[+]`/`[-]` glyph must only toggle, because
+that region already means toggle and activating from it fires on the second
+half of an ordinary open-and-close.
+
+Only `NodeSQLServerLog`/`NodeAgentErrorLog` claim it. An object node's menu
+offers several actions and none is obviously the default; guessing would make
+Enter unpredictable from node to node.
+
+**Server-side search.** gosmo gained `LogSearch` and
+`Server.ReadLogFiltered(Context)` — `xp_readerrorlog`'s arguments 3-6 — with
+`ReadLog` now a call with an empty search. Two findings the statement test
+could not have produced, both from the live run:
+
+- **The date bounds have to be sent as text.** A typed datetime parameter is
+  rejected: "The format for the date filter is incorrect. Please use a valid
+  SQL Server date or datetime format." The procedure parses the string itself,
+  so `readErrorLogCall` formats `YYYY-MM-DD HH:MM:SS` into an `sql.NullString`.
+  Seconds are included deliberately — a bound rounded to the day widens the
+  range the caller asked for.
+- **An unset argument that precedes a set one has to be a typed NULL**, not
+  omitted: the arguments are positional, so dropping one shifts the rest and
+  the date silently arrives as a search string. `sql.NullString{}`/`NullTime{}`
+  carry a type where a bare Go nil does not.
+
+The two search strings are AND-ed by the server, not OR-ed — the live test
+pins it by pairing a real string with an impossible one and asserting zero
+rows, which an OR would answer with the whole first set.
+
+In the panel, Search is a toolbar button and its own small dialog
+(`log_search_dialog.go`, modelled on Find/Replace including the drag-latch and
+`ClipboardHost` rules). The client-side Filter box is untouched and still runs
+over whatever the read returned, so the two compose. The status line names an
+active search: without it, "no entries" on a searched read is indistinguishable
+from an empty log.
+
+Live on win10cli: Enter on an archive opened it, a double-click on another
+switched to it, a text search cut 1035 entries to 147, a `From` bound alone
+cut it to 16 with nothing older than the bound, and an unparseable date was
+refused in the dialog rather than sent. That run also showed the hint line
+clipped at the dialog's width — `DrawTextClipped` truncates silently, and the
+half it dropped was the date format itself, so the hint is now two short lines.
+
+## 2026-08-21 — The Object Explorer filter now runs at the server
+
+Closes the last open item of § Object Explorer folder filter (Owner and
+Durability Type on Tables stay out, at the user's call). gosmo gained
+`ObjectFilter` and seven `…FilteredContext` listings; gossms translates a
+folder's `nodeFilter` into one and passes it to the loader.
+
+**The safety property that made this a small change.** The client-side pass is
+untouched and still runs over whatever comes back, so the push-down is an
+optimisation and can only be wrong by narrowing *further* than the client
+would. `nodeFilter.pushdown` therefore either reproduces the client comparison
+exactly or refuses the whole filter, and `serverFilter` turns a refusal into an
+empty filter — the folder is read whole and narrowed in Go, exactly as before.
+That is also why the value is trimmed here: `matchText` trims what the user
+typed, and a pattern built from the untrimmed value searches for something
+narrower.
+
+**Two rules in the clause builder, either of which silently changes results.**
+Both are stated on `ObjectFilter.clause` and pinned by
+`TestObjectFilterClause`:
+
+- `LOWER(col) LIKE LOWER(@p)`. A bare LIKE inherits the database collation, and
+  on a case-sensitive one it drops rows a case-insensitive filter box is
+  expected to keep.
+- The pattern goes through gosmo's existing `likeEscape` and the LIKE carries
+  `ESCAPE '\'`. `%`, `_` and `[` are all legal in an identifier: unescaped,
+  filtering on `pct_1` also matches `pct1100`.
+
+Dates are half-open day ranges (`>= day AND < day+1`), matching `matchDate`'s
+whole-calendar-day comparison; "after the 20th" starts on the 21st.
+
+**What the live test asserts, and why it is the only one that could.** The
+statement test says what SQL is generated; only a server says whether that SQL
+selects the same objects the caller would have. `live_objectfilter_test.go`
+builds a fixture of deliberately awkward names — `CustOrders`/`custarchive`,
+`pct_100` next to `pct1100`, `100%done`, `br[ackets` — and asserts every
+filtered read equals its own unfiltered read narrowed in Go, per operator and
+per family. All six families plus tables agree, and the date cases pass with
+the parameter sent as a `time.Time`, which is what says the driver is not
+shifting the zone underneath the comparison.
+
+Live in the TUI against a fixture database: filtering Tables on `pct_1` shows
+`dbo.pct_100` and not `pct1100`, in the tree and in the Details pane, which is
+the escape rule end to end.
+
+## 2026-08-22 — Review pass over both trees: three fixes
+
+A read of every uncommitted non-test change in gossms and gosmo, plus the new
+files, against `go vet`, `go test`, and `go test -race` in both repos (all
+green before and after). `staticcheck` is no longer usable here — the installed
+build cannot decode Go 1.27 export data — so this was reading, not tooling.
+
+**A release outside the dialog stranded ConfirmDialog's new checkbox.**
+`ShowConfirmOption` (2026-08-21, Delete Table's cascade) put a `widgets.CheckBox`
+in a dialog whose `HandleMouse` opens with `ConsumeOutsideClick`, which answers
+true for *every* event outside the rect — `ButtonNone` included. So the widget
+never saw the release, its `mouseDragging` latch survived the gesture, and the
+next press on the box was swallowed as a continuation of it: press the box,
+drift off the dialog, release, and the following click does nothing. Invariant 5
+of § Mouse, overlays, and async UI, and the two dialogs written the same week
+(`key_diagnostics_dialog.go`, `log_search_dialog.go`) both forward the release
+first — this one was the odd man out. The regression test drives the three
+events (press the box, release outside, press again) and fails on the pre-fix
+code.
+
+**Key Diagnostics stopped recording after its own Copy button.** `copyAll`
+selects the whole log and leaves the selection standing, and `syncIfDirty`
+deliberately refuses to rebuild the editor while one is live (that rule is what
+keeps Ctrl+A→Ctrl+C from copying nothing). A read-only `controls.Editor` also
+rejects every key that is not a movement key *without* clearing its selection
+(`readOnlySafeKey`), so after pressing Copy the log froze on exactly the keys
+the dialog exists to decode, until the user happened to press an arrow. The fix
+is one line — clear the selection once the text has been read, which is safe
+because `copySelection` reads `SelectedText()` synchronously — and the comment
+on `copyAll` now says why it is there.
+
+**A peer credential resolver must never make an instance less reachable.**
+Yesterday's resolver (above) prefers a saved connection over the parent's own
+settings unconditionally, and is seeded at startup from disk rather than from
+connections proven to work. Two consequences, neither of which the tests could
+see: `config.Load` blanks the password of every entry it cannot decrypt — a
+replaced config key blanks the whole file — so a peer read that used to work
+would sign in with an empty password; and a saved entry that fails for any
+other reason had no second chance, where before the resolver existed the
+parent's credentials were simply used.
+
+Fixed in two halves. `peerOptions` is now only the *preferred* derivation:
+`Peer` keeps `parentPeerOptions` — the pre-resolver form — and retries with it
+once when the resolver's answer will not connect, skipping the retry when the
+two are equal so an agreeing resolver costs nothing. When both fail the first
+error is reported, since it names the credentials the user deliberately
+registered for that instance. And `loadPeerCredentials` no longer seeds an
+entry whose password this session cannot read, which is what
+`config.Connection.PasswordUnreadable` exists to say: `Password` alone cannot,
+because Load blanks it both for "no password saved" and for "saved and
+unopenable". Nothing else is filtered — the fallback is the general answer and
+does not need the filter to be exhaustive.
+
+What the resolver still does on purpose: a saved *low-privilege* login for a
+replica keeps winning over the parent's. That is the feature's premise —
+connecting to an instance once is how it is given different credentials — and
+only the unusable and the failing cases changed.
+
+`Peer` itself is still not unit-testable (it is behind `Connect`, which needs a
+real instance), so the retry is pinned only through the option derivation:
+`TestParentPeerOptionsIgnoreTheResolver` and its sibling assert what the two
+sets are and that they differ, which is the condition the retry turns on.
+`config.Connection` has to stay comparable for that, and the test says so.
+**The wiring itself is unverified live** — the run that would close it is
+expanding Always On on ubusql1/ubusql2, then breaking a saved replica password
+and watching the read still succeed.
+
+Every test added here was checked by mutating the code it covers and confirming
+it fails.
+
+## 2026-08-22 — win10cli as a third instance: the endpoint dialog, the thumbprint check and Add Replica's Connect, all driven live
+
+Three coverage entries in `docs/open-threads.md` had been waiting on hardware:
+the endpoint dialog had never been driven end to end, the peer-certificate
+thumbprint check had never fired, and Add Replica's Connect had never filled
+its endpoint URL row. All three said "needs a third instance". The question was
+whether `win10cli` could be one.
+
+**Answered by probing, not by reasoning.** It cannot be a third *replica* —
+`IsHadrEnabled` 0, `IsClustered` 0, no rows in `sys.dm_os_cluster_nodes`, and
+the host is Windows 10 Pro, which has no Failover Clustering feature for SQL
+Server to require. It can be a third *instance*, because nothing in the
+certificate exchange needs Always On and gossms checks HADR only on the
+instance the dialog is opened from. That asymmetry decided the direction of
+every run below: local ubusql1, peer win10cli, never the reverse.
+
+**The endpoint dialog, scripted first.** win10cli had no master key, no
+certificate and no endpoint, which is the state ubusql1/ubusql2 can no longer
+produce and the reason the scripted path had never been seen doing its real
+job. It came out headed `THIS SCRIPT IS INCOMPLETE`, with ubusql1's block
+reduced to a note naming exactly what was missing there and win10cli's block
+complete and runnable, `CREATE CERTIFICATE [ubusql1_Cert] ... FROM BINARY =
+0x3082...` included — ubusql1's genuine public key, read off the live server
+while the writes were being collected rather than run. Both suppressions the
+design calls for held.
+
+**Then for real.** Every phase landed and every one was checked in the
+catalogs rather than believed from the status line. The assertion that matters
+is the thumbprints: `win10cli_Cert` on ubusql1 and `ubusql1_Cert` on win10cli
+each equal the presenting instance's own, which is what separates a public key
+that crossed from a second key pair generated at the far end. ubusql1's own
+endpoint was left exactly as it was, and AAG1 was verified afterwards as two
+HEALTHY replicas with both databases SYNCHRONIZED.
+
+**The thumbprint check cost far less than the entry claimed.** It said
+reproducing needed "two instances and one of them reinstalled". The comparison
+is by certificate *name*, so one `CREATE CERTIFICATE [ubusql2_Cert]` on
+win10cli with its own material is the entire setup. What made the test leave
+nothing behind was ordering the instance list ubusql1 → win10cli → ubusql2:
+`configure`'s exchange runs `for p, for other` in list order and aborts on the
+first error, so `p=win10cli, other=ubusql2` raises before
+`p=ubusql2, other=win10cli` can write a login, user and certificate onto
+ubusql2 — verified, ubusql2 held no `win10cli_*` principal afterwards. The
+reverse order is equally correct and a dirtier test.
+
+**A refusal on a dialog whose OK would mutate production is testable through
+Script Changes.** `newObjectDialog.runPipeline` calls `preflight()` before the
+first apply function on both paths, so Script Changes runs `validateAddReplica`
+in full with no write path behind it. That is how `validateEndpointURL`'s
+refusal was seen — `endpoint URL "win10cli.fritz.box:5022" has to start with
+tcp:// — the form is tcp://host:port` — on the primary of a real availability
+group, with nothing sent. Connect itself had already filled the row with
+`tcp://win10cli:5022` and reported `Connected to win10cli
+(tcp://win10cli:5022).`, the first live sighting of either.
+
+win10cli is left configured as ubusql1's mirroring peer on purpose: a third
+instance with a STARTED endpoint is what Add Replica's Connect needs, and it is
+inert otherwise. The one thing it still cannot supply is a **named** instance,
+so `endpointPrincipalBase`'s `HOST$INSTANCE` spelling remains unexercised live.
+
+## 2026-08-22 — New Index, New Statistics, and index maintenance as a script
+
+The Indexes folder gained a "New Index ▸" cascade — Clustered, Non-Clustered,
+Clustered Columnstore, Non-Clustered Columnstore, XML and Spatial — the
+Statistics folder a "New Statistics...", an index's Script cascade three
+maintenance verbs (REBUILD, REORGANIZE, UPDATE STATISTICS), and a statistics
+object its own "Update Statistics", which opens the script rather than running
+it.
+
+**The maintenance verbs generate nothing of their own.** `indexMaintenance`
+(`scripting.go`) runs gosmo's `Index.RebuildContext`/`ReorganizeContext`/
+`UpdateStatisticsContext` under `gosmo.WithScript` and returns what they would
+have executed. The alternative — a second copy of the statement in gossms —
+drifts from the one the app runs the moment either side changes, and there is
+nothing to make the drift visible. Same for the statistic's UPDATE.
+
+**gosmo's `CreateIndexRequest` grew the rest of the index types** rather than
+gossms assembling DDL: clustered columnstore (it was refused outright before),
+a columnstore column list without the `ASC`/`DESC` a rowstore one carries, XML
+primary/secondary, spatial tessellation with its bounding box and grid, plus
+`PAD_INDEX`, `DROP_EXISTING`, `DATA_COMPRESSION`, `COMPRESSION_DELAY`, the
+filegroup and the partition scheme. `validate` refuses the combinations SQL
+Server refuses; `TestLiveCreateIndexRefusalsMatchTheServer` executes each of
+those combinations raw against a real instance to prove the refusal is the
+server's and not an invention. `Table.XMLIndexes` is new for the same reason —
+`sys.indexes` cannot say which XML index is the primary one, and a secondary
+index has to name it. `CreateStatisticWithOptions` is the statistics half
+(FULLSCAN, filter, NORECOMPUTE, INCREMENTAL).
+
+**Which pages a New Index dialog has depends on the type it was opened for**
+(`nidxPagesFor`). A single page set would be mostly rows that do not apply, and
+each of those is a statement the server rejects rather than ignores: no
+`INCLUDE` on a clustered index, no fill factor on a columnstore one, no
+`DATA_COMPRESSION` on an XML index, no key columns at all on a clustered
+columnstore index.
+
+**The bug the tests found: the Sort order dropdown never reached the
+request.** The key column grid commits the dropdown onto the selected column
+in its `OnSelectRow`, so the last edit before OK — the usual one — had no
+selection change after it and was dropped. Setting a column to Descending and
+pressing OK created it ascending, with the grid still showing what was asked
+for. `request()` now calls the same commit first (`nidxRows.commitKeyColumn`).
+Live-confirmed afterwards through Script Changes:
+`CREATE UNIQUE NONCLUSTERED INDEX [IX_Orders_Customer] ON [dbo].[Orders]
+([Customer] DESC, [Placed] ASC)`.
+
+Verified live on win10cli against a throwaway database, driving the real
+binary: the nonclustered index above (unique, DESC on the second column, read
+back from `sys.index_columns`), a nonclustered columnstore index with
+`COLUMNSTORE_ARCHIVE`, a primary XML index and then a secondary one `FOR PATH`
+over it, a spatial `GEOMETRY_GRID` index with `LEVEL_1 = LOW` and
+`CELLS_PER_OBJECT = 16` (both read back from
+`sys.spatial_index_tessellations`), a statistics object with `WITH FULLSCAN`,
+and the statistic's generated `UPDATE STATISTICS`, executed in the query panel
+it opened in. The failure path was exercised too: a clustered columnstore index
+on a table with an `xml` column comes back as the server's own message on the
+dialog, which stays open.
+
+Two wording nits came out of that run and were fixed: an "A xml index
+requires..." note built by lowercasing the type's noun, and a columnstore
+Options page explaining a fill factor it has no row for.

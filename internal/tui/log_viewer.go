@@ -58,6 +58,12 @@ type LogViewer struct {
 	// doesn't re-run sp_enumerrorlogs on every click. Refresh drops it.
 	files map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile
 
+	// search is the server-side narrowing in force — xp_readerrorlog's own
+	// search strings and date range, edited by the Search dialog. Zero means
+	// the whole file. Distinct from the filter field below, which narrows
+	// what was already read; see log_search_dialog.go.
+	search gosmo.LogSearch
+
 	// entries is everything the last read returned, shown the filtered subset.
 	// The grid is built from shown; entries is kept whole so clearing the
 	// filter needs no second read.
@@ -230,6 +236,8 @@ const (
 	logToolLogType = iota
 	logToolFile
 	logToolRefresh
+	logToolSearch
+	logToolRecycle
 	logToolExport
 )
 
@@ -241,6 +249,8 @@ func (lv *LogViewer) buildTools() {
 		{action: lv.showLogTypeMenu},
 		{action: lv.showLogFileMenu},
 		{label: "Refresh", action: lv.Refresh},
+		{label: "Search...", action: lv.showSearch},
+		{label: "Recycle...", action: lv.recycle},
 		{label: "Export...", action: lv.export},
 	}
 	lv.refreshToolLabels()
@@ -315,10 +325,10 @@ func (lv *LogViewer) Load() {
 	lv.seq++
 	seq := lv.seq
 	lv.busy = true
-	lv.setStatus(fmt.Sprintf("Reading %s log %s...", lv.logType, lv.currentFileLabel()))
+	lv.setStatus(fmt.Sprintf("Reading %s log %s%s...", lv.logType, lv.currentFileLabel(), lv.searchSuffix()))
 	lv.refreshToolLabels()
 
-	logType, logNum := lv.logType, lv.logNum
+	logType, logNum, search := lv.logType, lv.logNum, lv.search
 	sc := lv.conn
 	// One cancel for the panel to pull, but a fresh deadline per call: sharing
 	// one logReadTimeout let a slow sp_enumerrorlogs eat the read's half of it,
@@ -336,7 +346,7 @@ func (lv *LogViewer) Load() {
 		enumCancel()
 		readCtx, readCancel := context.WithTimeout(ctx, logReadTimeout)
 		defer readCancel()
-		entries, err := sc.Server.ReadLogContext(readCtx, logType, logNum)
+		entries, err := sc.Server.ReadLogFilteredContext(readCtx, logType, logNum, search)
 		lv.app.postAndWake(func() {
 			if seq != lv.seq {
 				return
@@ -369,7 +379,66 @@ func (lv *LogViewer) readPanicked(seq int) {
 	lv.busy = false
 	lv.cancel = nil
 	lv.refreshToolLabels()
-	lv.setStatus("Read stopped unexpectedly — see the log for details.")
+	lv.setStatus("Read stopped unexpectedly — see the log for details")
+}
+
+// recycle closes the current log of the family on screen and starts a new one,
+// after confirming. On success it reloads, which is what replaces the archive
+// numbering the file selector is drawing from — the cycle renumbered every one
+// of them.
+func (lv *LogViewer) recycle() {
+	if !lv.app.requireConn(lv.conn) {
+		return
+	}
+	sc, logType := lv.conn, lv.logType
+	// Latched before the question rather than in the answer: busy is what stops
+	// a read starting underneath the cycle, and the confirm dialog takes input
+	// but does not stop F5 reaching the panel — a Load begun while the question
+	// was up would clear busy from under the cycle it knows nothing about.
+	lv.busy = true
+	lv.app.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
+		if !confirmed {
+			lv.busy = false
+			return
+		}
+		lv.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
+		// safegoRepair for the same reason Load uses it: busy is cleared in the
+		// posted callback, which a panic never reaches, and toolsEnabled gates
+		// the entire toolbar on it.
+		lv.app.safegoRepair("cycling an error log", lv.recyclePanicked, func() {
+			ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
+			defer cancel()
+			err := sc.Server.CycleLogContext(ctx, logType)
+			lv.app.postAndWake(func() {
+				lv.busy = false
+				if err != nil {
+					lv.setStatus(fmt.Sprintf("Recycle failed: %v", err))
+					return
+				}
+				lv.Refresh()
+			})
+		})
+	})
+}
+
+// recyclePanicked releases the busy latch after a panic on the cycle
+// goroutine — recycle's safegoRepair step. No seq guard, unlike readPanicked:
+// busy was held across the whole cycle, so nothing else can have started.
+func (lv *LogViewer) recyclePanicked() {
+	lv.busy = false
+	lv.setStatus("Recycle stopped unexpectedly — see the log for details")
+}
+
+// cycleLogMessage is the confirmation question for recycling a log, shared by
+// the toolbar and the Object Explorer folder's menu. It names what is lost:
+// the archives are renumbered and the instance drops the oldest once it is
+// already holding as many as it is configured to keep.
+func cycleLogMessage(logType gosmo.ErrorLogType, server string) string {
+	return fmt.Sprintf(
+		"Close the current %s error log on %s and start a new one?\n\n"+
+			"Each archive is renumbered one higher, and the oldest is deleted once "+
+			"the instance holds as many archives as it is configured to keep.",
+		logType, server)
 }
 
 // logGridColumns are the entry grid's columns. The marker on Date says which
@@ -411,16 +480,55 @@ func (lv *LogViewer) invalidateDetailCache() {
 }
 
 // summary is the status line under the grid: how much of the file is shown,
-// and which file it is.
+// which file it is, and — when one is in force — what the server was asked
+// for. Naming the search matters: "no entries" on a searched read means the
+// search found nothing, not that the log is empty, and the two are otherwise
+// indistinguishable.
 func (lv *LogViewer) summary() string {
 	if len(lv.entries) == 0 {
-		return fmt.Sprintf("%s log %s — no entries", lv.logType, lv.currentFileLabel())
+		return fmt.Sprintf("%s log %s%s — no entries", lv.logType, lv.currentFileLabel(), lv.searchSuffix())
 	}
 	if len(lv.shown) == len(lv.entries) {
-		return fmt.Sprintf("%s log %s — %d entries", lv.logType, lv.currentFileLabel(), len(lv.entries))
+		return fmt.Sprintf("%s log %s%s — %d entries", lv.logType, lv.currentFileLabel(), lv.searchSuffix(), len(lv.entries))
 	}
-	return fmt.Sprintf("%s log %s — %d of %d entries match the filter",
-		lv.logType, lv.currentFileLabel(), len(lv.shown), len(lv.entries))
+	return fmt.Sprintf("%s log %s%s — %d of %d entries match the filter",
+		lv.logType, lv.currentFileLabel(), lv.searchSuffix(), len(lv.shown), len(lv.entries))
+}
+
+// searchSuffix describes the server-side search for the status line, or "" if
+// there is none.
+func (lv *LogViewer) searchSuffix() string {
+	parts := make([]string, 0, 3)
+	if lv.search.Text1 != "" {
+		parts = append(parts, fmt.Sprintf("%q", lv.search.Text1))
+	}
+	if lv.search.Text2 != "" {
+		parts = append(parts, fmt.Sprintf("%q", lv.search.Text2))
+	}
+	if !lv.search.From.IsZero() || !lv.search.To.IsZero() {
+		parts = append(parts, fmt.Sprintf("%s..%s",
+			orDefault(formatLogSearchTime(lv.search.From), "…"),
+			orDefault(formatLogSearchTime(lv.search.To), "…")))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " searching " + strings.Join(parts, " + ")
+}
+
+// showSearch opens the Search dialog and re-reads with whatever it returns.
+// The read is unconditional, including for an unchanged search: the button
+// exists to fetch, and a press that appeared to do nothing would read as the
+// dialog having failed.
+func (lv *LogViewer) showSearch() {
+	if !lv.app.requireConn(lv.conn) {
+		return
+	}
+	lv.app.logSearchDialog.ShowLogSearch(lv.search, func(search gosmo.LogSearch) {
+		lv.search = search
+		lv.detailScroll = 0
+		lv.Load()
+	})
 }
 
 // setStatus writes the panel's one-line state into the grid's own status
@@ -572,4 +680,50 @@ func (lv *LogViewer) exportText() string {
 		fmt.Fprintf(&b, "%s\t%s\t%s\n", formatSQLDate(e.Date), e.Source(), flattenLogText(e.Text))
 	}
 	return b.String()
+}
+
+// recycleLogFrom cycles a log family from its Object Explorer folder, then
+// refreshes the folder so the renumbered archives appear under it.
+//
+// Any LogViewer already open on the same connection is refreshed too, through
+// Refresh rather than Load, because the viewer may be sitting on the *other*
+// log family: Load re-enumerates only the family on screen, and the cycled
+// one's cached numbering would survive until the user flipped the selector to
+// it and opened an archive that is no longer the one its label named.
+func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
+		if !confirmed {
+			return
+		}
+		a.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
+		a.safego("cycling an error log", func() {
+			ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
+			defer cancel()
+			err := sc.Server.CycleLogContext(ctx, logType)
+			a.postAndWake(func() {
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Recycle failed: %v", err))
+					return
+				}
+				a.setStatus(fmt.Sprintf("%s error log recycled", logType))
+				refreshExplorerNode(a, node)
+				a.refreshOpenLogViewer(sc)
+			})
+		})
+	})
+}
+
+// refreshOpenLogViewer re-reads the LogViewer open on sc, if there is one.
+// There is at most one per connection — see showLogViewerFor.
+func (a *App) refreshOpenLogViewer(sc *db.ServerConn) {
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		lv, ok := p.(*LogViewer)
+		return ok && lv.conn == sc
+	})
+	if idx >= 0 {
+		a.panels.PanelAt(idx).(*LogViewer).Refresh()
+	}
 }

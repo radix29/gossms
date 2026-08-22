@@ -155,6 +155,20 @@ func ConnectionName(server string, port int, database, user string) string {
 	return server + "," + strconv.Itoa(port) + "," + database + "," + user
 }
 
+// PasswordUnreadable reports whether this entry had a stored password that
+// Load could not decrypt — the sealed ciphertext is still held (and will be
+// written back untouched), but the password itself is not available this
+// session.
+//
+// It is the difference between "no password saved for this connection" and
+// "a password is saved and unusable", which Password alone cannot express
+// since Load blanks both. A caller that would otherwise pick this connection
+// up and try to sign in with it needs to know: connecting with the "" is a
+// login failure, not an attempt worth making.
+func (c *Connection) PasswordUnreadable() bool {
+	return c.Password == "" && c.sealed != ""
+}
+
 // DisplayName returns a label for the connection.
 func (c *Connection) DisplayName() string {
 	if c.Name != "" {

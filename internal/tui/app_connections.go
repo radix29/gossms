@@ -29,8 +29,14 @@ func (a *App) connectServer(opts config.Connection) {
 				}
 				return
 			}
+			// Before the tree can start loading off it: an Always On folder
+			// expanded on the first frame reaches its primary through Peer.
+			sc.SetPeerCredentials(a.peerCredentialsFor)
 			a.connections = append(a.connections, sc)
-			a.explorer.AddRoot(sc.Label(), sc)
+			// Expanded straight away, the way SSMS opens a new connection:
+			// the server node alone says nothing, and the first thing anyone
+			// does with it is open it.
+			a.explorer.ExpandNode(a.explorer.AddRoot(sc.Label(), sc))
 			info := sc.Server.Info()
 			a.setStatus(fmt.Sprintf("Connected to %s  |  %s %s", opts.Server, info.Edition, info.ProductVersion))
 			a.ensureSysCompletionInventory(sc)
@@ -40,6 +46,10 @@ func (a *App) connectServer(opts config.Connection) {
 			// capped to config.MaxSavedConnections) for the Connect
 			// dialog's server-field autocomplete.
 			a.cfg.AddOrUpdate(opts)
+			// The same connection, remembered as the way to reach that
+			// instance from any other one: connecting to a replica once is
+			// how the user gives Peer credentials for it.
+			a.rememberPeerCredentials(opts)
 			if err := a.cfg.Save(); err != nil {
 				a.logStatus("save config: %v", err)
 			}
@@ -81,6 +91,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 				newConn.Close()
 				return
 			}
+			newConn.SetPeerCredentials(a.peerCredentialsFor)
 			qp.conn = newConn
 			qp.database = resolvedDB
 			a.setStatus(fmt.Sprintf("Connected to %s", opts.Server))
@@ -118,6 +129,7 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 				newConn.Close()
 				return
 			}
+			newConn.SetPeerCredentials(a.peerCredentialsFor)
 			am.startCollector(newConn)
 		})
 	})

@@ -28,8 +28,9 @@ required.
   open Properties. **Script <object> as** covers every family the tree
   shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
   UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
-  clipboard. Filter any folder by name, schema, or creation date. Drag a
-  node into the editor to insert its name.
+  clipboard; an index adds REBUILD, REORGANIZE and UPDATE STATISTICS, and a
+  statistics object its own UPDATE STATISTICS. Filter any folder by name,
+  schema, or creation date. Drag a node into the editor to insert its name.
 - **Query editor** — as many editor+results tabs as you like, `GO` batch
   splitting, a tab per result set, and a Messages tab for `PRINT`, row
   counts, and errors. Results are never row-capped. Syntax highlighting,
@@ -45,6 +46,14 @@ required.
   Server, Database, Login, Table, Schema, roles, users, indexes, keys, and
   more, plus New Database and New Login. Full permissions editing including
   per-column grants and an Effective Permissions view.
+- **New Index and New Statistics** — a table's Indexes folder creates any
+  index type SQL Server has: clustered and nonclustered (unique, included
+  columns, filter, fill factor, online, partition scheme), clustered and
+  nonclustered columnstore, XML (primary and secondary), and spatial with
+  its tessellation, bounding box and grid. Its Statistics folder creates a
+  statistics object with an ordered column list, a filter, FULLSCAN or a
+  sample percentage, NORECOMPUTE and INCREMENTAL. Both offer Script Changes
+  instead of running the statement.
 - **Backup & Restore** — full option dialogs (destination, type, media,
   compression, point-in-time, file relocation) run as cancellable
   background tasks with live progress. Browse picks paths on the *server's*

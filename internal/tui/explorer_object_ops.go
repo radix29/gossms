@@ -38,6 +38,16 @@ type objectOp struct {
 	// typed gates the delete behind retyping the object's name, for a drop
 	// whose blast radius is bigger than one object.
 	typed bool
+	// dropOption labels a checkbox on the delete confirmation, and
+	// dropWithOption is the drop it feeds. A type that sets these must set
+	// both, and leaves drop nil — deleteObject picks the path from
+	// dropOption, and objectOpsMenuItems from either drop being present.
+	dropOption     string
+	dropWithOption func(ctx context.Context, sc *db.ServerConn, n nodeData, opt bool) error
+	// transfer moves the object into another schema (ALTER SCHEMA ...
+	// TRANSFER), which a rename cannot do. Only the sp_rename 'OBJECT'
+	// families and tables have one.
+	transfer func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error
 	// renameWarning is a question asked between the new-name prompt and the
 	// rename itself, for a rename that costs more than the name change.
 	renameWarning string
@@ -88,22 +98,40 @@ var objectOps = map[NodeType]objectOp{
 	NodeTable: {
 		noun:    "Table",
 		warning: "All of its data is deleted with it.",
-		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			d := dbOf(sc, n)
-			// cascade=false: a table another table references must have that
-			// foreign key dealt with first, the same refusal SSMS gives.
-			return d.DropTableContext(ctx, n.Schema, n.Name, false)
+		// Unticked by default, so the plain gesture is still the one SSMS
+		// gives: a table another table references is refused until that
+		// foreign key is dealt with. Ticking it drops those foreign keys —
+		// on the *other* tables, which is why it is a decision and not a
+		// retry.
+		dropOption: "Also drop the foreign keys that reference it",
+		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, cascade bool) error {
+			return dbOf(sc, n).DropTableContext(ctx, n.Schema, n.Name, cascade)
 		},
+		transfer: transferObjectIn,
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			return dbOf(sc, n).RenameTableContext(ctx, n.Schema, n.Name, newName)
 		},
 	},
-	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropViewContext), rename: renameObjectIn},
-	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedureContext), rename: renameObjectIn},
-	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunctionContext), rename: renameObjectIn},
-	NodeTrigger:         {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTriggerContext), rename: renameObjectIn},
-	NodeSequence:        {noun: "Sequence", drop: dropIn((*gosmo.Database).DropSequenceContext), rename: renameObjectIn},
-	NodeSynonym:         {noun: "Synonym", drop: dropIn((*gosmo.Database).DropSynonymContext), rename: renameObjectIn},
+	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropViewContext), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedureContext), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunctionContext), rename: renameObjectIn, transfer: transferObjectIn},
+	// A trigger belongs to its table and moves with it — ALTER SCHEMA
+	// TRANSFER refuses one, so no transfer here.
+	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTriggerContext), rename: renameObjectIn},
+	NodeSequence: {noun: "Sequence", drop: dropIn((*gosmo.Database).DropSequenceContext), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeSynonym:  {noun: "Synonym", drop: dropIn((*gosmo.Database).DropSynonymContext), rename: renameObjectIn, transfer: transferObjectIn},
+
+	NodeColumn: {
+		noun: "Column",
+		// The server refuses a column anything depends on — a default or
+		// check constraint, an index, a statistic — and its message does not
+		// name what (verified live: "one or more objects access this
+		// column"), so the warning has to name the classes itself.
+		warning: "Its data goes with it, and the server refuses the drop while a constraint, index or statistic depends on the column — without naming which.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return tableOf(sc, n).DropColumnContext(ctx, n.Name)
+		},
+	},
 
 	NodeIndex: {
 		noun: "Index",
@@ -336,6 +364,12 @@ func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName 
 	return dbOf(sc, n).RenameObjectContext(ctx, n.Schema, n.Name, newName)
 }
 
+// transferObjectIn moves a schema-scoped object into another schema. Shared
+// by every family ALTER SCHEMA ... TRANSFER's default OBJECT class covers.
+func transferObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
+	return dbOf(sc, n).TransferObjectContext(ctx, targetSchema, n.Schema, n.Name)
+}
+
 // dropConstraint removes a primary key, unique constraint, foreign key, or
 // CHECK constraint — one ALTER TABLE ... DROP CONSTRAINT for all four.
 func dropConstraint(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -369,7 +403,10 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	if op.rename != nil {
 		items = append(items, controls.MenuItem{Label: "Rename...", Action: func() { a.renameObject(node) }})
 	}
-	if op.drop != nil {
+	if op.transfer != nil {
+		items = append(items, controls.MenuItem{Label: "Move to Schema...", Action: func() { a.moveObjectToSchema(node) }})
+	}
+	if op.drop != nil || op.dropWithOption != nil {
 		items = append(items, controls.MenuItem{Label: "Delete...", Action: func() { a.deleteObject(node) }})
 	}
 	return items
@@ -384,6 +421,11 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 // so "Sales.Sales" would be nonsense — but so would dropping the qualifier
 // from the table Sales.Sales, which a value comparison also matched.
 func objectDisplayName(n *explorerNode) string {
+	// A column's own Schema/Name are the table's schema and the column's
+	// name, so the qualifier that means anything is the table's.
+	if n.data.Type == NodeColumn {
+		return n.data.Schema + "." + n.data.TableName + "." + n.data.Name
+	}
 	if n.data.Schema != "" && n.data.Type != NodeSchema {
 		return n.data.Schema + "." + n.data.Name
 	}
@@ -398,7 +440,7 @@ func (a *App) deleteObject(node *explorerNode) {
 	sc := resolveConn(node)
 	// IsSystem is re-checked here rather than trusted from the menu: this is
 	// the function that issues the DROP, so it is where the guarantee belongs.
-	if op == nil || op.drop == nil || node.data.IsSystem || !a.requireConn(sc) {
+	if op == nil || (op.drop == nil && op.dropWithOption == nil) || node.data.IsSystem || !a.requireConn(sc) {
 		return
 	}
 	name := objectDisplayName(node)
@@ -411,11 +453,16 @@ func (a *App) deleteObject(node *explorerNode) {
 	// it here is what keeps the two apart — the ops take a nodeData by value for
 	// exactly this reason.
 	data := node.data
-	run := func() {
+	run := func(option bool) {
 		a.safego("deleting an object", func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
-			err := op.drop(ctx, sc, data)
+			var err error
+			if op.dropWithOption != nil {
+				err = op.dropWithOption(ctx, sc, data, option)
+			} else {
+				err = op.drop(ctx, sc, data)
+			}
 			a.postAndWake(func() {
 				if err != nil {
 					a.setStatus(fmt.Sprintf("Delete failed: %v", err))
@@ -430,14 +477,24 @@ func (a *App) deleteObject(node *explorerNode) {
 	if op.typed {
 		a.confirmTypedDialog.ShowTypedConfirm(title, msg, node.data.Name, func(confirmed bool) {
 			if confirmed {
-				run()
+				run(false)
+			}
+		})
+		return
+	}
+	if op.dropOption != "" {
+		// Unticked on every showing: the option widens what the drop touches,
+		// so it is asked for each time rather than remembered.
+		a.confirmDialog.ShowConfirmOption(title, msg, op.dropOption, false, func(confirmed, option bool) {
+			if confirmed {
+				run(option)
 			}
 		})
 		return
 	}
 	a.confirmDialog.ShowConfirm(title, msg, func(confirmed bool) {
 		if confirmed {
-			run()
+			run(false)
 		}
 	})
 }
@@ -493,4 +550,93 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 			refreshExplorerNode(a, node.parent)
 		})
 	})
+}
+
+// moveObjectToSchema offers the database's other schemas for node's object
+// and runs ALTER SCHEMA ... TRANSFER on the one picked — Object Explorer's
+// answer to the thing Rename deliberately cannot do (sp_rename takes a bare
+// name and never crosses schemas).
+//
+// The list is fetched before the menu opens rather than typed into a prompt:
+// a mistyped schema reaches the server as "Cannot find the schema", and the
+// set of legal answers is short and already known.
+func (a *App) moveObjectToSchema(node *explorerNode) {
+	op := objectOpFor(node.data.Type)
+	sc := resolveConn(node)
+	// Re-checked here, not trusted from the menu — the same rule deleteObject
+	// follows, since this is the function that issues the statement.
+	if op == nil || op.transfer == nil || node.data.IsSystem || !a.requireConn(sc) {
+		return
+	}
+	data := node.data
+	a.setStatus(fmt.Sprintf("Reading schemas in %q...", data.DBName))
+	a.safego("listing schemas", func() {
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		defer cancel()
+		d, err := sc.Server.DatabaseByNameContext(ctx, data.DBName)
+		var names []string
+		if err == nil {
+			var schemas []*gosmo.Schema
+			if schemas, err = d.SchemasContext(ctx); err == nil {
+				for _, s := range schemas {
+					if !strings.EqualFold(s.Name, data.Schema) {
+						names = append(names, s.Name)
+					}
+				}
+			}
+		}
+		a.postAndWake(func() {
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Could not list schemas: %v", err))
+				return
+			}
+			if len(names) == 0 {
+				a.setStatus(fmt.Sprintf("%q is the only schema in %q — nowhere to move it", data.Schema, data.DBName))
+				return
+			}
+			items := make([]controls.MenuItem, 0, len(names))
+			for _, name := range names {
+				items = append(items, controls.MenuItem{Label: name, Action: func() {
+					a.confirmMoveToSchema(sc, node, op, name)
+				}})
+			}
+			x, y, ok := a.explorer.SelectionAnchor()
+			if !ok {
+				x, y = 0, 0
+			}
+			a.setStatus("")
+			a.contextMenu.Show(x, y+1, items)
+		})
+	})
+}
+
+// confirmMoveToSchema asks before the transfer, because it is not only a
+// move: SQL Server drops every permission granted directly on the object as
+// part of ALTER SCHEMA ... TRANSFER, and nothing afterwards says so.
+func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *objectOp, target string) {
+	name := objectDisplayName(node)
+	a.confirmDialog.ShowConfirm("Move to Schema",
+		fmt.Sprintf("Move %s %q into schema %q? Permissions granted directly on it are dropped by the move.",
+			strings.ToLower(op.noun), name, target),
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			data := node.data
+			a.safego("moving an object between schemas", func() {
+				ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+				defer cancel()
+				err := op.transfer(ctx, sc, data, target)
+				a.postAndWake(func() {
+					if err != nil {
+						a.setStatus(fmt.Sprintf("Move failed: %v", err))
+						return
+					}
+					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
+					// The parent folder, not the node: its label is built by
+					// the folder's loader from the schema the object was in.
+					refreshExplorerNode(a, node.parent)
+				})
+			})
+		})
 }

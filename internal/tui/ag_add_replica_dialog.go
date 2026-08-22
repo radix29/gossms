@@ -29,10 +29,12 @@ import (
 // NewAGDialog.createGroup has for the replicas named in a CREATE, which is why
 // the two read alike.
 //
-// A replica is reached with this connection's credentials, through
-// db.ServerConn.Peer; a topology wanting different ones per instance surfaces
-// as a connect error naming the instance, the same limitation the Object
-// Explorer's follow-the-primary already has.
+// A replica is reached through db.ServerConn.Peer, which uses that instance's
+// own saved connection when there is one and this connection's credentials
+// otherwise — or when that saved connection will not connect, which is what
+// keeps a stale saved login from making a replica unreachable. So a replica
+// wanting a different login or port is reached by connecting to it once via
+// File > Connect first.
 
 // agAddReplicaPrefetch is what the dialog reads from the group's primary before
 // any page is built: what the new replica has to be compatible with, and what

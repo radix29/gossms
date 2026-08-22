@@ -104,6 +104,7 @@ func NewObjectExplorer(app *App) *ObjectExplorer {
 	oe.view.OnCollapse = oe.handleCollapse
 	oe.view.OnSelect = oe.handleSelect
 	oe.view.OnRightClick = oe.handleRightClick
+	oe.view.OnActivate = oe.handleActivate
 	return oe
 }
 
@@ -130,6 +131,17 @@ func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode
 	oe.rebuild()
 	oe.view.SelectID(n.id)
 	return n
+}
+
+// ExpandNode expands n and fetches its children if they have not been loaded
+// yet — the same path a click on the expander glyph takes. Used by connect,
+// which opens a new server node the way SSMS does rather than leaving the
+// tree a single collapsed line.
+func (oe *ObjectExplorer) ExpandNode(n *explorerNode) {
+	if n == nil {
+		return
+	}
+	oe.handleExpand(n.id)
 }
 
 // RemoveRootByConn removes the root belonging to the given connection.
@@ -370,6 +382,30 @@ func (oe *ObjectExplorer) handleExpand(id controls.TreeNodeID) {
 	oe.app.loadChildren(n)
 }
 
+// handleActivate is a node's default action — Enter, or a double-click on its
+// row (controls.TreeView.OnActivate). Only the leaves that stand for something
+// openable claim it; everything else answers false and keeps Enter's expand.
+//
+// Deliberately narrow: an object node's menu offers several actions and none
+// of them is obviously "the" one, so guessing would make Enter unpredictable.
+// A log file has exactly one thing to do with it.
+func (oe *ObjectExplorer) handleActivate(id controls.TreeNodeID) bool {
+	n, ok := oe.byID[id]
+	if !ok {
+		return false
+	}
+	switch n.data.Type {
+	case NodeSQLServerLog, NodeAgentErrorLog:
+		sc := resolveConn(n)
+		if sc == nil {
+			return false
+		}
+		oe.app.showLogViewerFor(sc, n.data.LogType, n.data.LogNumber)
+		return true
+	}
+	return false
+}
+
 func (oe *ObjectExplorer) handleCollapse(id controls.TreeNodeID) {
 	if n, ok := oe.byID[id]; ok {
 		n.expanded = false
@@ -387,6 +423,12 @@ func (oe *ObjectExplorer) handleRightClick(id controls.TreeNodeID, x, y int) {
 	if n, ok := oe.byID[id]; ok {
 		oe.app.showContextMenu(n, x, y)
 	}
+}
+
+// SelectionAnchor is where a menu about the selected node should open — see
+// controls.TreeView.SelectionAnchor.
+func (oe *ObjectExplorer) SelectionAnchor() (x, y int, ok bool) {
+	return oe.view.SelectionAnchor()
 }
 
 // FormatNodePath returns a breadcrumb path for the node ("Server > DB > Tables").

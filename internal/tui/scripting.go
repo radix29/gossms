@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -136,7 +137,7 @@ var scriptables = map[NodeType]scriptable{
 		})})},
 	NodeTrigger: {"Trigger", ddlVerbs(scriptTrigger, true)},
 
-	NodeIndex:      {"Index", ddlVerbs(scriptIndex, false)},
+	NodeIndex:      {"Index", append(ddlVerbs(scriptIndex, false), indexMaintenanceVerbs...)},
 	NodeKey:        {"Key", ddlVerbs(scriptIndex, false)},
 	NodeCheck:      {"Constraint", ddlVerbs(scriptCheck, false)},
 	NodeForeignKey: {"Foreign Key", ddlVerbs(scriptFK, false)},
@@ -155,6 +156,64 @@ var scriptables = map[NodeType]scriptable{
 
 	NodeLogin:      {"Login", serverDDLVerbs(scriptLogin)},
 	NodeServerRole: {"Server Role", serverDDLVerbs(scriptServerRole)},
+}
+
+// indexMaintenanceVerbs are the three maintenance statements an index
+// offers below its DDL ones — SSMS's Rebuild/Reorganize/Update Statistics,
+// as a script rather than as an immediate action.
+var indexMaintenanceVerbs = []scriptVerb{
+	{"REBUILD To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
+		return idx.RebuildContext(ctx, t, 0)
+	})},
+	{"REORGANIZE To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
+		return idx.ReorganizeContext(ctx, t)
+	})},
+	{"UPDATE STATISTICS To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
+		return idx.UpdateStatisticsContext(ctx, t)
+	})},
+}
+
+// statisticUpdateVerb is the UPDATE STATISTICS script behind a statistic
+// node's own "Update Statistics" menu item. A full scan, the same read
+// Statistics Properties' Details page runs.
+var statisticUpdateVerb = scriptVerb{"UPDATE STATISTICS To", func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
+	t, err := findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
+	if err != nil {
+		return "", err
+	}
+	st, err := t.StatisticByNameContext(ctx, n.Name)
+	if err != nil {
+		return "", err
+	}
+	return collectScript(ctx, func(ctx context.Context) error { return st.UpdateContext(ctx, 0) })
+}}
+
+// indexMaintenance binds one of gosmo's index maintenance methods as a
+// script generator. The statement is gosmo's own, collected rather than
+// executed, so the script a user reads is the statement gossms would have
+// run — a second copy built here would drift from it.
+func indexMaintenance(f func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error) scriptGen {
+	return func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
+		t, err := findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
+		if err != nil {
+			return "", err
+		}
+		idx, err := t.IndexByNameContext(ctx, n.Name)
+		if err != nil {
+			return "", err
+		}
+		return collectScript(ctx, func(ctx context.Context) error { return f(ctx, t, idx) })
+	}
+}
+
+// collectScript runs one gosmo write under gosmo.WithScript and returns the
+// statements it would have executed.
+func collectScript(ctx context.Context, write func(context.Context) error) (string, error) {
+	scriptCtx, script := gosmo.WithScript(ctx)
+	if err := write(scriptCtx); err != nil {
+		return "", err
+	}
+	return strings.Join(script.Statements, "\n\n"), nil
 }
 
 // rowVerbs are the four row-level templates a table or view offers.

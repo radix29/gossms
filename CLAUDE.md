@@ -121,7 +121,11 @@ labelled Monday setting Tuesday's bit, and `populate`→`readFrequency` still
 agrees. Pin such a pair by *naming* it (`"Monday"` → `gosmo.WeekdayMonday`)
 and by asserting the two slices are the same length; a label added to one and
 not the other is otherwise absorbed silently. See
-`agent_schedule_form_test.go` and `docs/journal.md` (2026-08-20).
+`agent_schedule_form_test.go` and `docs/journal.md` (2026-08-20). The other
+half of the answer is a page test that asserts the value which reaches the
+server — `agent_schedule_props_page_test.go` ticks weekdays by name and pins
+the `@freq_interval` `sp_update_schedule` is called with, which a swap in
+`weekdayBits` fails and the round trip cannot.
 
 Check a new test by mutating the code it covers and confirming it fails —
 that is what surfaced the blind spot above, and it takes one `sed` and one
@@ -389,6 +393,18 @@ ordinary cleanup. The no-removal rule is about gosmo only.
   count and size into the wrong row. A new detail loader for a filterable
   folder that skips this leaves the pane listing objects the tree next to it
   has filtered away, which is what shipped until 2026-08-15.
+  **Both halves also push the filter into gosmo's `…FilteredContext` listing —
+  and that push-down is an optimisation, never the meaning of the filter.**
+  `filterChildren`/`filterObjects` still run over whatever comes back and stay
+  the authority, so `nodeFilter.pushdown` must either reproduce their
+  comparison exactly (values trimmed as `matchText` trims them, whole calendar
+  days as `matchDate` compares them) or refuse the filter outright, which
+  `serverFilter` turns into "read the whole folder". The two rules inside
+  gosmo's clause builder are the ones a plausible simplification removes:
+  compare `LOWER(col) LIKE LOWER(@p)`, because a bare LIKE follows the database
+  collation and drops rows on a case-sensitive one; and escape the pattern with
+  `likeEscape` plus `ESCAPE`, because `%`, `_` and `[` are legal in an
+  identifier — unescaped, a filter for `pct_1` also matches `pct1100`.
 - **Never call `rows.Next()` speculatively inside `internal/query/executor.go`'s
   `sqlexp.ReturnMessage` loop.** One extra `Next()` on an exhausted result set
   makes the driver consume the protocol message `retmsg.Message(ctx)` is

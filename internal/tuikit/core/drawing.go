@@ -120,11 +120,6 @@ func FillRect(s tcell.Screen, r Rect, ch rune, style tcell.Style) {
 	}
 }
 
-// ClearRect fills a rectangle with spaces.
-func ClearRect(s tcell.Screen, r Rect, style tcell.Style) {
-	FillRect(s, r, ' ', style)
-}
-
 // DimArea fades every cell within r in place by blending its foreground and
 // background colours toward overlay at strength num/den (0 = unchanged,
 // den = fully overlay). It reads the already-drawn content with Screen.Get

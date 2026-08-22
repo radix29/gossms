@@ -338,9 +338,11 @@ func contains(haystack, needle string) bool {
 
 // DrawFrame exists so a caller needing both rects gets them from the layout
 // pass Draw already made, rather than laying the chart out twice — and that
-// is only safe while it answers exactly what Draw and TimeRow do. A rect that
-// drifts puts a caller's pinned-column marker on the wrong row.
-func TestDrawFrameAgreesWithDrawAndTimeRow(t *testing.T) {
+// is only safe while it answers exactly what Draw, Plot and TimeRow do. A
+// rect that drifts puts a caller's pinned-column marker on the wrong row.
+// Plot and TimeRow are the way a caller that is not drawing — a mouse
+// hit-test — asks where the chart's parts landed, so all three have to agree.
+func TestDrawFrameAgreesWithDrawPlotAndTimeRow(t *testing.T) {
 	series := []Series{
 		{Label: "A", Color: colA, Values: []float64{1, 9, 3, 400}},
 		{Label: "B", Color: colB, Values: []float64{7, 2}},
@@ -357,6 +359,9 @@ func TestDrawFrameAgreesWithDrawAndTimeRow(t *testing.T) {
 		if want := h.Draw(NewCanvas(40, 14), r); plot != want {
 			t.Errorf("%+v: DrawFrame plot = %+v, Draw = %+v", r, plot, want)
 		}
+		if want := h.Plot(r); plot != want {
+			t.Errorf("%+v: DrawFrame plot = %+v, Plot = %+v", r, plot, want)
+		}
 		if want := h.TimeRow(r); timeRow != want {
 			t.Errorf("%+v: DrawFrame timeRow = %+v, TimeRow = %+v", r, timeRow, want)
 		}
@@ -365,6 +370,9 @@ func TestDrawFrameAgreesWithDrawAndTimeRow(t *testing.T) {
 		plot, timeRow = sh.DrawFrame(NewCanvas(40, 14), r)
 		if want := sh.Draw(NewCanvas(40, 14), r); plot != want {
 			t.Errorf("%+v: stacked DrawFrame plot = %+v, Draw = %+v", r, plot, want)
+		}
+		if want := sh.Plot(r); plot != want {
+			t.Errorf("%+v: stacked DrawFrame plot = %+v, Plot = %+v", r, plot, want)
 		}
 		if want := sh.TimeRow(r); timeRow != want {
 			t.Errorf("%+v: stacked DrawFrame timeRow = %+v, TimeRow = %+v", r, timeRow, want)

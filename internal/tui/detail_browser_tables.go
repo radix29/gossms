@@ -42,7 +42,9 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
 		}
-		tables, err := dbObj.TablesContext(ctx)
+		// Narrowed at the server where the filter can be expressed, and by
+		// filterObjects below either way — see nodeFilter.pushdown.
+		tables, err := dbObj.TablesFilteredContext(ctx, serverFilter(data.Filter))
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return

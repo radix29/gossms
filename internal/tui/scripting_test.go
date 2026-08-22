@@ -22,7 +22,13 @@ func TestScriptMenuItemsPerNodeType(t *testing.T) {
 			[]string{"CREATE To", "ALTER To", "DROP To", "DROP And CREATE To", "EXECUTE To"}},
 		{"function", opNode(NodeFunction, "dbo", "fnAge", ""), "Script Function as",
 			[]string{"CREATE To", "ALTER To", "DROP To", "DROP And CREATE To", "SELECT To"}},
+		// An index adds the three maintenance statements below its DDL ones.
 		{"index", opNode(NodeIndex, "dbo", "IX_Orders", "Orders"), "Script Index as",
+			[]string{"CREATE To", "DROP To", "DROP And CREATE To",
+				"REBUILD To", "REORGANIZE To", "UPDATE STATISTICS To"}},
+		// A key is an index too, but ALTER INDEX on a constraint-backing one
+		// is Index Properties' business, not the constraint's menu.
+		{"key", opNode(NodeKey, "dbo", "PK_Orders", "Orders"), "Script Key as",
 			[]string{"CREATE To", "DROP To", "DROP And CREATE To"}},
 		{"login", opNode(NodeLogin, "", "app_login", ""), "Script Login as",
 			[]string{"CREATE To", "DROP To", "DROP And CREATE To"}},

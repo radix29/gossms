@@ -12,7 +12,11 @@ func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.Table, error) { return dbObj.TablesContext(l.ctx) },
+	// The folder's filter goes to the server where it can be expressed; what
+	// comes back is filtered again by fetchChildren, which stays the authority
+	// on what the filter means (see nodeFilter.pushdown).
+	filter := serverFilter(node.data.Filter)
+	return listChildren(func() ([]*gosmo.Table, error) { return dbObj.TablesFilteredContext(l.ctx, filter) },
 		func(t *gosmo.Table) *explorerNode {
 			n := l.node(t.Schema+"."+t.Name, NodeTable, t.Schema, t.Name, node.data.DBName)
 			n.data.CreateDate = t.CreateDate
@@ -68,6 +72,10 @@ func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 		typ := formatDataTypeLen(string(c.DataType), c.MaxLength, c.Precision, c.Scale)
 		label := fmt.Sprintf("%s (%s, %s)", c.Name, typ, nullWord)
 		n := l.node(label, NodeColumn, node.data.Schema, c.Name, node.data.DBName)
+		// The owning table, the way the Keys and Indexes loaders carry it:
+		// Name here is the column's own, so without this nothing downstream
+		// can say which table an ALTER TABLE ... DROP COLUMN belongs to.
+		n.data.TableName = node.data.Name
 		n.data.IsPrimaryKey = c.IsPrimaryKey
 		out = append(out, n)
 	}
@@ -216,7 +224,9 @@ func withSystemFolder(l loaderCtx, node *explorerNode, label string, nt NodeType
 // folder listed first.
 func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	views, err := loadSchemaScoped(l, node, NodeView, false,
-		func(d *gosmo.Database) ([]*gosmo.View, error) { return d.ViewsContext(l.ctx) }, viewFields)
+		func(d *gosmo.Database) ([]*gosmo.View, error) {
+			return d.ViewsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+		}, viewFields)
 	if err != nil {
 		return nil, err
 	}
@@ -226,14 +236,18 @@ func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // loadSystemViewsChildren returns the "sys" schema's own catalog views.
 func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadSchemaScoped(l, node, NodeView, true,
-		func(d *gosmo.Database) ([]*gosmo.View, error) { return d.SystemViewsContext(l.ctx) }, viewFields)
+		func(d *gosmo.Database) ([]*gosmo.View, error) {
+			return d.SystemViewsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+		}, viewFields)
 }
 
 // loadStoredProceduresChildren returns a database's user stored procedures,
 // plus a "System Procedures" folder listed first.
 func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	procs, err := loadSchemaScoped(l, node, NodeStoredProcedure, false,
-		func(d *gosmo.Database) ([]*gosmo.StoredProcedure, error) { return d.StoredProceduresContext(l.ctx) }, procFields)
+		func(d *gosmo.Database) ([]*gosmo.StoredProcedure, error) {
+			return d.StoredProceduresFilteredContext(l.ctx, serverFilter(node.data.Filter))
+		}, procFields)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +259,7 @@ func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadSchemaScoped(l, node, NodeStoredProcedure, true,
 		func(d *gosmo.Database) ([]*gosmo.StoredProcedure, error) {
-			return d.SystemStoredProceduresContext(l.ctx)
+			return d.SystemStoredProceduresFilteredContext(l.ctx, serverFilter(node.data.Filter))
 		}, procFields)
 }
 
@@ -254,7 +268,7 @@ func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	funcs, err := loadFunctionNodes(l, node, false,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
-			return d.UserDefinedFunctionsContext(l.ctx)
+			return d.UserDefinedFunctionsFilteredContext(l.ctx, serverFilter(node.data.Filter))
 		})
 	if err != nil {
 		return nil, err
@@ -265,7 +279,9 @@ func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 // loadSystemFunctionsChildren returns the "sys" schema's own functions.
 func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadFunctionNodes(l, node, true,
-		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) { return d.SystemFunctionsContext(l.ctx) })
+		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
+			return d.SystemFunctionsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+		})
 }
 
 // loadFunctionNodes is loadSchemaScoped for functions, which need one field

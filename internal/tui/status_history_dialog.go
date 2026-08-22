@@ -19,10 +19,10 @@ const maxStatusHistoryLines = 256
 // StatusHistoryDialog is a read-only modal listing every status-bar/log
 // message recorded this session, newest first, each prefixed with the
 // timestamp it was recorded at. Content lives in a read-only, line-numbered
-// controls.Editor (SetReadOnly(true), gutter visible by default) rather
-// than a hand-rolled scrolling line list like KeyDiagnosticsDialog, so it's
+// controls.Editor (SetReadOnly(true), gutter visible by default), so it's
 // selectable/copyable via the Editor's own selection — matching the
 // Results-To-Text convention (see query_panel.go's p.resultsText).
+// KeyDiagnosticsDialog is built the same way, for the same reason.
 //
 // Unlike KeyDiagnosticsDialog, Show() is not overridden to reset the log:
 // history accumulates across the whole session, in memory only, and is

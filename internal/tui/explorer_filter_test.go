@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 func nameProp() filterProp   { return filterProp{id: fpName, name: "Name", kind: filterText} }
@@ -252,5 +255,172 @@ func TestFlattenMarksFilteredFolder(t *testing.T) {
 	tables.data.Filter = nil
 	if got := labelOf(); got != "Tables" {
 		t.Errorf("label after clearing = %q, want \"Tables\"", got)
+	}
+}
+
+// -- push-down ----------------------------------------------------------------
+
+// The translation is only safe if it means the same thing the client-side pass
+// means. These pin the mapping criterion by criterion; the equivalence itself
+// (server answer == client answer) is asserted live in gosmo's
+// live_objectfilter_test.go.
+func TestNodeFilterPushdown(t *testing.T) {
+	day := func(s string) time.Time {
+		d, err := time.Parse(filterDateLayout, s)
+		if err != nil {
+			t.Fatalf("bad test date %q: %v", s, err)
+		}
+		return d
+	}
+	pName := nameProp()
+	pSchema := schemaProp()
+	pCreated := dateProp()
+	pMem := filterProp{id: fpMemoryOptimized, name: "Is Memory Optimized", kind: filterBool}
+	yes, no := true, false
+
+	for _, c := range []struct {
+		name   string
+		filter *nodeFilter
+		want   gosmo.ObjectFilter
+		wantOK bool
+	}{
+		{
+			name:   "no filter",
+			filter: nil,
+			wantOK: true,
+		},
+		{
+			name:   "name contains",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pName, op: opContains, value: "cust"}}},
+			want:   gosmo.ObjectFilter{Name: []gosmo.TextCriterion{{Op: gosmo.TextContains, Value: "cust"}}},
+			wantOK: true,
+		},
+		{
+			// matchText trims the typed value; the pattern sent to the server
+			// has to be trimmed the same way or the server narrows further
+			// than the client would and drops rows.
+			name:   "the value is trimmed like matchText trims it",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pName, op: opContains, value: "  cust  "}}},
+			want:   gosmo.ObjectFilter{Name: []gosmo.TextCriterion{{Op: gosmo.TextContains, Value: "cust"}}},
+			wantOK: true,
+		},
+		{
+			name:   "schema criteria land on Schema, not Name",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pSchema, op: opEquals, value: "sales"}}},
+			want:   gosmo.ObjectFilter{Schema: []gosmo.TextCriterion{{Op: gosmo.TextEquals, Value: "sales"}}},
+			wantOK: true,
+		},
+		{
+			name:   "not contains",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pName, op: opNotContains, value: "tmp"}}},
+			want:   gosmo.ObjectFilter{Name: []gosmo.TextCriterion{{Op: gosmo.TextNotContains, Value: "tmp"}}},
+			wantOK: true,
+		},
+		{
+			name:   "not equals",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pName, op: opNotEquals, value: "Orders"}}},
+			want:   gosmo.ObjectFilter{Name: []gosmo.TextCriterion{{Op: gosmo.TextNotEquals, Value: "Orders"}}},
+			wantOK: true,
+		},
+		{
+			// The dialog offers Equals and On for a date and means one thing
+			// by both, exactly as matchDate treats them.
+			name:   "date equals is date on",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pCreated, op: opEquals, value: "2026-08-20"}}},
+			want:   gosmo.ObjectFilter{Created: []gosmo.DateCriterion{{Op: gosmo.DateOn, Day: day("2026-08-20")}}},
+			wantOK: true,
+		},
+		{
+			name:   "date before",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pCreated, op: opBefore, value: "2026-08-20"}}},
+			want:   gosmo.ObjectFilter{Created: []gosmo.DateCriterion{{Op: gosmo.DateBefore, Day: day("2026-08-20")}}},
+			wantOK: true,
+		},
+		{
+			name:   "date after",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pCreated, op: opAfter, value: "2026-08-20"}}},
+			want:   gosmo.ObjectFilter{Created: []gosmo.DateCriterion{{Op: gosmo.DateAfter, Day: day("2026-08-20")}}},
+			wantOK: true,
+		},
+		{
+			name:   "memory optimized equals true",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pMem, op: opEquals, value: "True"}}},
+			want:   gosmo.ObjectFilter{MemoryOptimized: &yes},
+			wantOK: true,
+		},
+		{
+			// "does not equal True" is "equals false" — there is no third
+			// state, and the server has no NOT form for a bit column here.
+			name:   "memory optimized not equals inverts",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pMem, op: opNotEquals, value: "true"}}},
+			want:   gosmo.ObjectFilter{MemoryOptimized: &no},
+			wantOK: true,
+		},
+		{
+			name: "several criteria",
+			filter: &nodeFilter{criteria: []filterCriterion{
+				{prop: pName, op: opContains, value: "cust"},
+				{prop: pSchema, op: opEquals, value: "dbo"},
+			}},
+			want: gosmo.ObjectFilter{
+				Name:   []gosmo.TextCriterion{{Op: gosmo.TextContains, Value: "cust"}},
+				Schema: []gosmo.TextCriterion{{Op: gosmo.TextEquals, Value: "dbo"}},
+			},
+			wantOK: true,
+		},
+		{
+			// The client rejects an unparseable date and matches nothing; the
+			// server would be handed a zero day, so the whole filter is
+			// refused and the folder is read unfiltered instead.
+			name:   "an unparseable date is not pushable",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pCreated, op: opOn, value: "yesterday"}}},
+			wantOK: false,
+		},
+		{
+			name:   "an unparseable bool is not pushable",
+			filter: &nodeFilter{criteria: []filterCriterion{{prop: pMem, op: opEquals, value: "maybe"}}},
+			wantOK: false,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := c.filter.pushdown()
+			if ok != c.wantOK {
+				t.Fatalf("pushdown ok = %v, want %v", ok, c.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if !reflect.DeepEqual(got.Name, c.want.Name) || !reflect.DeepEqual(got.Schema, c.want.Schema) {
+				t.Errorf("text criteria = %+v / %+v, want %+v / %+v", got.Name, got.Schema, c.want.Name, c.want.Schema)
+			}
+			if !reflect.DeepEqual(got.Created, c.want.Created) {
+				t.Errorf("date criteria = %+v, want %+v", got.Created, c.want.Created)
+			}
+			switch {
+			case c.want.MemoryOptimized == nil && got.MemoryOptimized != nil:
+				t.Errorf("MemoryOptimized = %v, want unset", *got.MemoryOptimized)
+			case c.want.MemoryOptimized != nil && got.MemoryOptimized == nil:
+				t.Errorf("MemoryOptimized unset, want %v", *c.want.MemoryOptimized)
+			case c.want.MemoryOptimized != nil && *got.MemoryOptimized != *c.want.MemoryOptimized:
+				t.Errorf("MemoryOptimized = %v, want %v", *got.MemoryOptimized, *c.want.MemoryOptimized)
+			}
+		})
+	}
+}
+
+// serverFilter is what the loaders call: a filter that cannot be pushed down
+// becomes an empty one, so the folder is read whole and narrowed by
+// filterChildren rather than being narrowed wrongly at the server.
+func TestServerFilterFallsBackToTheWholeFolder(t *testing.T) {
+	bad := &nodeFilter{criteria: []filterCriterion{{
+		prop:  filterProp{id: fpCreationDate, kind: filterDate},
+		op:    opOn,
+		value: "not-a-date",
+	}}}
+	if got := serverFilter(bad); !got.Empty() {
+		t.Errorf("serverFilter = %+v, want an empty filter for an unpushable criterion", got)
+	}
+	if got := serverFilter(nil); !got.Empty() {
+		t.Errorf("serverFilter(nil) = %+v, want empty", got)
 	}
 }

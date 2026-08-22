@@ -372,6 +372,22 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 				a.showSecurityPolicyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
 			}},
 		}
+	case NodeColumnMasterKeys:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Column Master Key...", Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
+			{Divider: true},
+			refresh,
+		}
+	case NodeColumnEncryptionKeys:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Column Encryption Key...", Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
+			{Divider: true},
+			refresh,
+		}
 	case NodeColumnMasterKey:
 		return []controls.MenuItem{
 			newQuery,
@@ -390,9 +406,36 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 				a.showColumnEncryptionKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
 			}},
 		}
+	case NodeIndexes:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
+			{Divider: true},
+			{Label: "Rebuild All Indexes", Action: func() {
+				a.openQueryWithText(sc, node.data.DBName,
+					"ALTER INDEX ALL ON "+fqn(node.data.Schema, node.data.Name)+" REBUILD")
+			}},
+			{Divider: true},
+			refresh,
+		}
+	case NodeStatistics:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			{Label: "New Statistics...", Action: func() { a.showNewStatisticsDialog(sc, node) }},
+			{Divider: true},
+			refresh,
+		}
 	case NodeStatistic:
 		return []controls.MenuItem{
 			newQuery,
+			{Divider: true},
+			{Label: "Update Statistics", Action: func() {
+				a.generateScript(sc, node.data, statisticUpdateVerb, func(text string) {
+					a.openQueryWithText(sc, node.data.DBName, text)
+				})
+			}},
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() {
@@ -468,6 +511,7 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			newQuery,
 			{Divider: true},
 			{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
+			{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
 			{Divider: true},
 			refresh,
 		}

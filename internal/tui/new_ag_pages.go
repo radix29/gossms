@@ -327,13 +327,13 @@ func (d *NewAGDialog) replicaRows() ([]propsheet.Row, func()) {
 		propsheet.Section("Add a replica"),
 		addNameRow,
 		propsheet.Buttons(addBtn, removeBtn),
-		propsheet.Note("A replica is reached with this connection's credentials, and must already have a started database mirroring endpoint that this instance can connect to."),
+		propsheet.Note("A replica is reached with its own saved connection if you have one, otherwise with this connection's credentials. It must already have a started database mirroring endpoint that this instance can connect to."),
 		propsheet.Note("AUTOMATIC seeding copies the databases over the endpoint; the secondary is granted CREATE ANY DATABASE for it. MANUAL means restoring each database there WITH NORECOVERY and joining it afterwards."),
 	}, commit
 }
 
-// addReplica resolves an instance name to a replica: connect with this
-// connection's credentials, read its endpoint, and append it.
+// addReplica resolves an instance name to a replica: connect to it (with its
+// own saved credentials if there are any), read its endpoint, and append it.
 //
 // The connect is what makes this worth doing rather than just taking the name
 // on trust — the endpoint URL has to come from the instance itself, and an

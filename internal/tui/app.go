@@ -98,6 +98,10 @@ type App struct {
 	newScheduleDialog   *NewScheduleDialog
 	newAlertDialog      *NewAlertDialog
 	newOperatorDialog   *NewOperatorDialog
+	newIndexDialog      *NewIndexDialog
+	newStatisticsDialog *NewStatisticsDialog
+	newCMKDialog        *NewColumnMasterKeyDialog
+	newCEKDialog        *NewColumnEncryptionKeyDialog
 	agAddDatabaseDialog *AGAddDatabaseDialog
 	agAddListenerDialog *AGAddListenerDialog
 	agAddReplicaDialog  *AGAddReplicaDialog
@@ -107,6 +111,7 @@ type App struct {
 	queryListDialog     *QueryListDialog
 	optionsDialog       *OptionsDialog
 	filterDialog        *FilterDialog
+	logSearchDialog     *LogSearchDialog
 	promptDialog        *dialogs.PromptDialog
 	tasksDialog         *TasksDialog
 	confirmDialog       *dialogs.ConfirmDialog
@@ -136,6 +141,16 @@ type App struct {
 	// the UI goroutine.
 	savedFilters map[filterKey]*nodeFilter
 	filterMu     sync.Mutex
+
+	// peerCreds is how to reach each instance the user has ever connected to,
+	// keyed by db.InstanceKey — the resolver behind db.ServerConn.Peer. See
+	// app_peer_creds.go. peerCredMu guards it for the same reason filterMu
+	// guards savedFilters: background loader goroutines read it through Peer.
+	// peerCredAliases is the same, keyed by the instance's short host name, and
+	// consulted only when peerCreds misses — see shortHostKey.
+	peerCreds       map[string]config.Connection
+	peerCredAliases map[string]config.Connection
+	peerCredMu      sync.Mutex
 
 	// completionInventories caches one metadata snapshot per
 	// server+login+database (see completionInventoryKey), shared by every
@@ -195,11 +210,13 @@ type App struct {
 
 // NewApp constructs the application.
 func NewApp() *App {
-	return new(App{
+	a := new(App{
 		focus:      "explorer",
 		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
+	a.loadPeerCredentials()
+	return a
 }
 
 // Run initialises the screen and enters the event loop.
@@ -393,6 +410,11 @@ func (a *App) buildUI() {
 	a.newScheduleDialog = registerDialog(a, NewNewScheduleDialog(a))
 	a.newAlertDialog = registerDialog(a, NewNewAlertDialog(a))
 	a.newOperatorDialog = registerDialog(a, NewNewOperatorDialog(a))
+	a.newIndexDialog = registerDialog(a, NewNewIndexDialog(a))
+	a.newStatisticsDialog = registerDialog(a, NewNewStatisticsDialog(a))
+	a.newCMKDialog = registerDialog(a, NewNewColumnMasterKeyDialog(a))
+	a.newCEKDialog = registerDialog(a, NewNewColumnEncryptionKeyDialog(a))
+	a.logSearchDialog = registerDialog(a, NewLogSearchDialog(a))
 	a.agAddDatabaseDialog = registerDialog(a, NewAGAddDatabaseDialog(a))
 	a.agAddListenerDialog = registerDialog(a, NewAGAddListenerDialog(a))
 	a.agAddReplicaDialog = registerDialog(a, NewAGAddReplicaDialog(a))

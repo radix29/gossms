@@ -107,3 +107,42 @@ func hexPreview(b []byte) string {
 	}
 	return fmt.Sprintf("0x%s…%s (%d bytes)", s[:24], s[len(s)-8:], len(b))
 }
+
+// parseHexBytes reads a pasted key blob — an enclave signature or an
+// encrypted value — from the "0x..." form SSMS and the PowerShell cmdlets
+// print. The prefix is optional and case doesn't matter; an odd number of
+// digits is rejected rather than silently padded, since a blob that lost a
+// character is not one the server can ever decrypt.
+func parseHexBytes(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "0X"), "0x")
+	if s == "" {
+		return nil, fmt.Errorf("no value")
+	}
+	if len(s)%2 != 0 {
+		return nil, fmt.Errorf("%d hex digits — a byte takes two, so one is missing", len(s))
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("not hexadecimal: expected 0x followed by hex digits")
+	}
+	return b, nil
+}
+
+// showNewColumnMasterKeyDialog and showNewColumnEncryptionKeyDialog are the
+// Object Explorer entry points for the two Always Encrypted create dialogs.
+// Both take the folder node, not just the connection: each key belongs to one
+// database, and that folder is also what gets refreshed afterwards.
+func (a *App) showNewColumnMasterKeyDialog(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newCMKDialog.show(sc, node)
+}
+
+func (a *App) showNewColumnEncryptionKeyDialog(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newCEKDialog.show(sc, node)
+}

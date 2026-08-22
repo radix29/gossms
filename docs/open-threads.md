@@ -229,15 +229,30 @@ Each is a feature, not a defect.
   `ag_listener_props.go` and `new_endpoint_dialog.go`. See `docs/journal.md`.
   What is left is scoped out rather than unfinished:
 
-  **New Database Mirroring Endpoint does not script.** The dialog runs its
-  pipeline for real; there is no Script Changes equivalent of
-  `NewAGDialog.annotateScript` for it. Under a `WithScript` context the
-  certificate exchange cannot work at all — `Certificate.Encoded` has nothing
-  to read back, since nothing was created — so the pipeline stops after the
-  statements it can emit rather than producing a script that looks complete and
-  is not. Making it scriptable properly means emitting the peer's half as
-  `FROM BINARY` literals read live while the rest is captured, which is a
-  different mode, not a flag.
+  ~~**New Database Mirroring Endpoint does not script.**~~ This was out of
+  date and the real state was worse: `newObjectDialog.init` sets `OnScript`
+  unconditionally, so the button was live and running the shell's version —
+  one flat batch spanning two or more instances, with nothing saying only part
+  of it runs here. **Fixed** 2026-08-21.
+
+  Each instance now collects its own statements (`endpointPeer.ctx`/`script`,
+  one `gosmo.WithScript` per peer), which is what makes the grouping possible
+  at all: the pipeline is three phases over N instances with a skip possible at
+  every step, so the positional mapping `NewAGDialog.annotateScript` uses —
+  whose own comment admits how fragile it is — would not work here. Reads still
+  go to the real servers, which is required rather than incidental: a
+  certificate's public key can only be read from the instance that holds it, so
+  a certificate that already exists scripts as a complete `FROM BINARY` import.
+
+  Where one does not exist yet the script says so, naming the instance and the
+  imports each other instance is therefore missing, and everything it does
+  contain is runnable. Two statements had to be suppressed to keep that true —
+  the `GRANT CONNECT` to a login the skipped phase never created, and a
+  `CREATE USER` for a user that already exists. The second was found live: the
+  pipeline created the user unconditionally and tolerated the already-exists
+  error, which works when the statement actually runs and not under
+  `WithScript`, where it never does. `importPeerCertificate` now looks the user
+  up first, the way it already did the login.
 
   **The create dialog has no Read-Only Routing page**, unlike SSMS's. Routing
   is a per-replica setting that AG Properties already covers, and it is
@@ -249,11 +264,43 @@ Each is a feature, not a defect.
   and the one password field is used for whichever instances turn out to have
   no database master key yet, rather than one per instance.
 
-  **A replica that needs different credentials cannot be added.**
+  ~~**A replica that needs different credentials cannot be added.**
   `db.ServerConn.Peer` reuses the tree connection's login for every instance,
   so a topology with per-instance credentials surfaces as a connect error when
   Add Replica runs. Same limitation the Object Explorer's follow-the-primary
-  already has.
+  already has.~~ **Fixed** 2026-08-21 for every `Peer` caller at once, since
+  `peerOptions` is the single credential-derivation point behind all nine.
+  `ServerConn.SetPeerCredentials` installs a resolver it consults before
+  falling back to the parent's settings, and App answers it from the
+  connections the user has already made — so connecting to a replica once via
+  File > Connect is how it is given a different login, port, auth method or
+  TLS setting. A saved connection is taken whole rather than field by field,
+  so it cannot silently stop carrying whatever `config.Connection` gains next.
+  `Peer` installs the resolver on each peer it opens, so it reaches the second
+  hop of the follow-the-primary path too.
+
+  Two things worth knowing about the lookup. It is keyed by `db.InstanceKey`,
+  which normalizes case, port and named-instance spelling — the catalog says
+  `UBUSQL2\PROD` and the user typed `ubusql2\prod,1433`. And because
+  `@@SERVERNAME` is the short machine name while what people type on a domain
+  network is the FQDN, a saved connection is *also* registered under its short
+  host as a strictly lower-priority tier: an exact host match always wins, so
+  `sql.a.example` and `sql.b.example` never hand each other their logins.
+
+  **The resolver may never make an instance less reachable than it was before
+  one existed**, which the first version could: it preferred a saved connection
+  unconditionally and was seeded from disk rather than from connections proven
+  to work. Closed 2026-08-22 (see `docs/journal.md`) in two halves —
+  `Peer` retries once with `parentPeerOptions`, the pre-resolver derivation,
+  when the resolver's answer will not connect; and `loadPeerCredentials` does
+  not seed an entry whose password this session cannot decrypt, the state
+  `config.Connection.PasswordUnreadable` reports and a replaced config key
+  produces for every entry at once. A saved *low-privilege* login still wins
+  over the parent's on purpose — that is the feature, not a defect.
+  Still open: the retry is pinned only through the option derivation, since
+  `Peer` sits behind `Connect`. **Verifying it live** — Always On on
+  ubusql1/ubusql2, then a deliberately broken saved replica password — is the
+  run that would close that.
 
   **A partly created group is left as it is**, and so is a partly added
   replica. If CREATE succeeds and a secondary then fails to JOIN, the error
@@ -267,11 +314,23 @@ Each is a feature, not a defect.
   **An added replica's endpoint URL is editable as of 2026-08-13**, so an
   instance whose short name the other replicas cannot resolve can be given its
   FQDN. Connect still fills it and is still required — it is what proves the
-  endpoint exists and is STARTED. What is left open is coverage: the only other
-  instance is already a replica, so `connect` refuses it before reading an
-  endpoint, and neither Connect filling the row nor `validateEndpointURL`'s
-  refusal has been seen live. Both are unit tested; showing either needs a third
-  instance.
+  endpoint exists and is STARTED. ~~What is left open is coverage.~~ **Covered
+  live 2026-08-22** — win10cli became the third instance the entry was waiting
+  for (see § win10cli as a third instance). Against AAG1 on ubusql1, Connect on
+  a typed `win10cli` filled the row with `tcp://win10cli:5022` and reported
+  `Connected to win10cli (tcp://win10cli:5022).`, and replacing that with
+  `win10cli.fritz.box:5022` was refused with `endpoint URL
+  "win10cli.fritz.box:5022" has to start with tcp:// — the form is
+  tcp://host:port`.
+
+  Two things about how it was run, both worth keeping. The refusal was reached
+  through **Script Changes, not OK**: `newObjectDialog.runPipeline` calls
+  `preflight()` before the first apply function on *both* paths, so Script
+  Changes exercises `validateAddReplica` in full without a write path — the way
+  to test a refusal on a dialog whose OK would mutate a production group. And
+  the run deliberately stops there: win10cli cannot actually join, so ADD
+  REPLICA/JOIN past the validation is not what this covers. AAG1 was verified
+  unchanged afterwards — two replicas, HEALTHY, both databases SYNCHRONIZED.
 
   **Add Replica does not offer initial data synchronization**, unlike SSMS's
   wizard, which can take a full and log backup to a share and restore them on
@@ -317,10 +376,56 @@ Each is a feature, not a defect.
   error, because a page that loaded from a secondary would offer edits the
   server rejects — and that path *is* only unit tested too.
 
-  **`AVAILABILITY_MODE`/`FAILOVER_MODE` writes are unit tested, never run
-  live.** Dropping the last synchronous replica of an EXTERNAL group leaves
-  Pacemaker unable to promote anything, recoverable only by recreating the
-  group, so `TestLiveAvailabilityGroupWrite` deliberately skips both.
+  ~~**`AVAILABILITY_MODE`/`FAILOVER_MODE` writes are unit tested, never run
+  live.**~~ **Covered** 2026-08-21, on the throwaway `CLUSTER_TYPE = NONE`
+  group `TestLiveAvailabilityGroupCreate` already builds and drops — no cluster
+  manager watches it, so the reason `TestLiveAvailabilityGroupWrite` still
+  skips both on AAG1 (dropping the last synchronous replica of an EXTERNAL
+  group leaves Pacemaker unable to promote anything) does not apply there.
+  `AVAILABILITY_MODE` round-trips SYNCHRONOUS_COMMIT to ASYNCHRONOUS_COMMIT and
+  back against the server. `FAILOVER_MODE` cannot be round-tripped anywhere on
+  this cluster and the test says so instead of pretending: a NONE group accepts
+  MANUAL and refuses AUTOMATIC and EXTERNAL with "The cluster type of
+  availability group '...' only supports MANUAL failover mode" — a semantic
+  refusal, not `Msg 102`, which is what proves the statement still reaches the
+  server well-formed. AUTOMATIC needs a WSFC and EXTERNAL needs an EXTERNAL
+  group, which is AAG1, the one group that must not be touched. Also pinned
+  there: a refused write does not move the in-memory field, since
+  `setReplicaKeyword` runs `setIfApplied` only after the ALTER succeeds.
+
+## win10cli as a third instance: what it can and cannot be
+
+Settled 2026-08-22 by probing the instance rather than by reasoning about it,
+and recorded so the question is not reopened. `win10cli` **can** be the third
+instance the Always On coverage entries above were waiting for, and **can never
+be a third availability replica**.
+
+- **It cannot host a replica**, and no amount of configuration changes that.
+  `SERVERPROPERTY('IsHadrEnabled')` is 0, `IsClustered` is 0 and
+  `sys.dm_os_cluster_nodes` is empty; the host is **Windows 10 Pro**, which has
+  no Failover Clustering feature at all, and SQL Server on Windows will not
+  enable Always On for a machine that is not a WSFC node. Even with the feature
+  on, a Windows replica in a Linux availability group is unsupported — a
+  distributed AG is the only cross-platform shape. Do not try to add it to AAG1.
+- **It can do everything an availability group is built *on top of*.** Database
+  mirroring endpoints, certificates, the principals that own them and the
+  CONNECT grants between them are plain T-SQL with no HADR precondition, and
+  gossms checks HADR only on the instance the endpoint dialog is *opened from*.
+  That is what closed the endpoint-dialog and thumbprint-mismatch entries, and
+  it is what lets Add Replica's Connect read a real endpoint off a third
+  instance.
+- **It is now configured as ubusql1's mirroring peer, deliberately left that
+  way.** win10cli holds a database master key, `win10cli_Cert`, ubusql1's
+  imported `ubusql1_Cert`, `ubusql1_login`/`ubusql1_user`, and endpoint `AGEP`
+  STARTED on 5022; ubusql1 holds the matching `win10cli_*` principals and
+  certificate. Left in place because a third instance with a STARTED endpoint is
+  exactly what Add Replica's Connect needs, and rebuilding it costs a live run.
+  It is inert — it is not a replica of anything and nothing connects over it.
+- **What it still cannot supply is a named instance.** `InstanceName` is null,
+  and Linux SQL Server has no named instances at all, so
+  `endpointPrincipalBase`'s `HOST\INSTANCE` → `HOST$INSTANCE` mapping remains
+  unexercised live. Closing that needs a second, *named* SQL Server instance
+  installed on the Windows host — see the entry above.
 
 ## Reworks named in README's Known Issues
 
@@ -423,12 +528,23 @@ not act on.
   `docs/journal.md`, including the msdb-history trap that made the first
   version of it pass only once.
 
-- **Five functions in gossms are unreachable, including from tests**:
-  `charts.HistoryChart.Plot`, `charts.StackedHistoryChart.Plot`,
-  `charts.historySpec.plotRect`, `core.ClearRect`, `theme.SetPalette`. The last
-  is advertised in `theme/doc.go` as the palette extension point, so it is a
-  keep-and-document rather than a delete. gosmo's no-removal rule does not
-  reach these — they are gossms's own.
+- ~~**Five functions in gossms are unreachable, including from tests**~~
+  **Closed** 2026-08-21, and the count was wrong in a way worth recording:
+  `charts.HistoryChart.Plot`/`StackedHistoryChart.Plot` and
+  `charts.historySpec.plotRect` were not dead surface but a missing assertion.
+  `TimeRow`/`timeRowRect`, their exact siblings, were already reachable — as
+  the independent oracle in `TestDrawFrameAgreesWithDrawAndTimeRow` — and
+  `Plot` had simply been left out of it. It is in now (the test is
+  `TestDrawFrameAgreesWithDrawPlotAndTimeRow`), which is what these accessors
+  are for: a mouse hit-test asks where the chart's parts landed *without*
+  drawing, and `DrawFrame` cannot answer that. `core.ClearRect` really was
+  dead — a one-line wrapper over `FillRect(s, r, ' ', style)`, no callers
+  anywhere — and is deleted. `theme.SetPalette` is kept and now covered
+  (`theme/palette_test.go`), since `theme/doc.go` advertises it as the palette
+  extension point for a host application. The general lesson: in a package
+  that is deliberately an embeddable library (`internal/tuikit/README.md`
+  opens by saying so), "no callers" is a question about the test suite before
+  it is a deletion candidate.
 
 - ~~**`internal/tuikit/layout` is the least-covered tuikit package (46.6%)**~~
   **No longer true** — re-measured 2026-08-20 at **73.7%**, second-highest in
@@ -482,7 +598,35 @@ not act on.
   Settings and Security, Query Store and Login > General went in the same day
   — see the paragraph below and `docs/journal.md`.
 
-  **What is still open is the other 30 write pages.** Five more went in
+  **Eight more went in 2026-08-21 (phase 1)** — the Tier 1 pages whose
+  apply reissues an object or rewrites a permission graph — Index Options and
+  Included Columns, Key General and Key Options, the four permission matrices
+  (Server Properties, Database Properties, Schema, Table) in one table-driven
+  file, the database Securables page including its column editor, and Database
+  Properties > General. The harness grew two things for them: `newFakeDialog`/
+  `drainDialog`, which build the `*PropDialog` a page with an on-demand fetch
+  button needs (its action runs through `App.safego` and reports back through
+  `postAndWake`, so with no screen the posted callback has to be drained by
+  hand), and parameter recording on `fakeExec` with `argsFor`/`assertArgs` —
+  without which a write through `sp_rename` or any `sp_add_job*` reads as
+  `@p1` and says nothing about what it acted on. See `docs/journal.md`
+  (2026-08-21) for the mutants killed and the two that survived for good
+  reasons.
+
+  **The nine SQL Server Agent pages went in 2026-08-21 (phase 2)** — Job
+  Properties' General, Steps, Schedules, Alerts and Notifications, Alert
+  Properties' General and Response, Operator Properties > General, and
+  Schedule Properties > General, over a shared `agent_fakedb_test.go`. Twenty
+  mutants died, including both directions of Steps' three-pass ordering and a
+  swap in `weekdayBits` — `CLAUDE.md`'s standing example of what a round-trip
+  test cannot see, now pinned by ticking days by name and asserting the
+  `@freq_interval` that reaches `sp_update_schedule`. One correction to the
+  plan that was written here: these pages are **not** `db:`-scoped. gosmo
+  addresses msdb three-part (`EXEC msdb.dbo.sp_update_job`) and never issues a
+  `USE`, so every Agent write is read back with `Statements()`, and
+  `StatementsIn("msdb")` returns nothing.
+
+  **What is still open is the remaining write pages.** Five more went in
   2026-08-21 — Server Properties' Connections, Database Settings and Security
   (onto the existing label-to-`sp_configure`-name table, plus FILESTREAM's
   index-valued Select), Query Store (thirteen editors through one statement,
@@ -492,9 +636,28 @@ not act on.
   `fakeResponse` per query a page reads, matched by substring, and a page whose
   script is incomplete fails naming the query it missed. Nothing on the
   "destructive or silent" list is outstanding any more; what remains is the
-  ordinary tail — Agent job steps and schedules, the New-X dialogs' pages, the
-  AG pages, Index/Table/Statistics Properties. Not worth doing for a page that
-  only reads.
+  ordinary tail — the New-X dialogs' pages and the read-mostly
+  Index/Table/Statistics pages. Not worth doing for a page that only reads.
+
+  **The principal and ownership pages went in 2026-08-21 (phase 3)** — Role,
+  Server Role, User and Schema General, the three owner-transfer pages, the
+  shared Extended Properties page, and Table Change Tracking. Seventeen mutants
+  died and none survived. Two things generalize. A page that returns a nil
+  `apply` for a built-in principal is testable as such, and the assertion is
+  "the row is not editable" rather than "the row is absent", since the same
+  field is rendered as a `StaticRow`. And an owner-transfer page's filter —
+  `Owner == this principal` — is worth a test of its own: an object that leaks
+  into that list is handed away on a page the user thinks is about something
+  else.
+
+  **The three Always On pages went in 2026-08-21 (phase 4)**, which finishes the
+  sweep: every `propPage` with a real `apply` outside the New-X dialogs now has
+  a page test. Seventeen mutants died. Two things to know before adding another
+  AG test. The fixture's primary replica must be named what
+  `serverInfoResponse` calls the instance (`FAKE\SQL`) — `IsLocalPrimary`
+  compares the two, and `agOnPrimary` opens a peer connection the fake cannot
+  serve when they differ. And the per-replica routing-list read needs `arg:`
+  scoping on the replica id, or all three replicas report the primary's list.
 
   Two shapes recur and are what these tests are actually for. First, a page
   builds a grid from a slice and reads it back by index — always assert on the
@@ -524,27 +687,24 @@ not act on.
   `internal/tui` is the load closures the harness above now reaches, and
   draw/layout code.
 
-- **`fileutil.WriteAtomic` preserves mode but not owner.** The rename makes the
-  replacement file owned by whoever is running, where a write-in-place would
-  have kept the original's uid/gid. It only bites if gossms is run as root over
-  a user-owned file, which is not a case it supports; recorded so the next
-  reader of `modeFor` doesn't assume ownership is handled there too.
+## Always Encrypted: what the two create dialogs deliberately leave out
 
-- **`activity_monitor_proctab.go` has the app's only status strings with a
-  trailing period — three of them, not one.** Re-counted 2026-08-20: `"Not
-  connected."` (`:134`), `"Stopped unexpectedly — see the log for details."`
-  (`:159`) and `"No result returned."` (`:273`). Every other `setStatus` in the
-  app ends without one. Cosmetic, and all three are in the same file, so it is
-  one edit whenever it is worth making.
+Both dialogs went in 2026-08-21 (see `docs/journal.md`), closing "neither key
+can be created from the tree". Three limits are the design, not a gap:
 
-## Left open by Phase 1 item 6 (2026-08-19)
-
-- **Neither Always Encrypted key can be created from the tree** — no "New
-  Column Master Key..."/"New Column Encryption Key..." dialog. gosmo has
-  `CreateColumnMasterKey`, but its `ENCLAVE_COMPUTATIONS = YES` spelling looks
-  wrong (the real syntax is `ENCLAVE_COMPUTATIONS (SIGNATURE = 0x…)`) and was
-  not exercised live, since the probe keys were created by hand. Verify before
-  building anything on it.
+- **Key material is pasted, never computed.** A column master key's enclave
+  signature and a column encryption key's `ENCRYPTED_VALUE` are produced
+  client-side from the master key's private key, which lives in a Windows
+  certificate store, a CNG/CSP provider or a Key Vault — none reachable from a
+  portable no-CGO build. Both dialogs take the `0x…` value SSMS or the
+  `SqlColumnMasterKey`/`SqlColumnEncryptionKey` cmdlets print. A pasted
+  signature with "Allow enclave computations" unticked is *refused* rather than
+  dropped: the key would be created, and would not be the one being set up.
+- **One encrypted value per column encryption key.** A second value is what a
+  master-key rotation adds; gosmo's `CreateColumnEncryptionKey` takes as many
+  as it is given, but the dialog offers one and rotation stays out of the UI.
+- **`RSA_OAEP` is the only algorithm**, because it is the only one SQL Server
+  accepts — a dropdown of one would say nothing, so it is a static row.
 
 ## gosmo items left from the 2026-08-12 review
 
@@ -570,12 +730,25 @@ not act on.
   Note `isAlreadyExists` matches this by its "already exists" substring; its
   `15023` arm is the *user* code, and logins raise 15025.
 
-- **The peer-certificate mismatch check is not exercised live.**
-  `importPeerCertificate` compares `Certificate.Thumbprint` before skipping an
-  import (2026-08-13), so a peer that was rebuilt under the same instance name
-  is named rather than silently left with a stale certificate. Reproducing it
-  needs two instances and one of them reinstalled; only the same-thumbprint
-  path has ever run.
+- ~~**The peer-certificate mismatch check is not exercised live.**~~
+  **Covered** 2026-08-22, and the cost recorded here was wrong: this entry said
+  reproducing it "needs two instances and one of them reinstalled". It needs
+  neither. The check is `existing.Thumbprint != other.cert.Thumbprint` on a
+  certificate looked up **by name**, so creating a `ubusql2_Cert` on win10cli
+  with its own key material is the whole setup — one CREATE CERTIFICATE, no
+  reinstall and no DROP. The dialog then refused with `win10cli already has a
+  different certificate named ubusql2_Cert than the one ubusql2 presents — drop
+  it there and run this again`.
+
+  **Order the instance list so the mismatched peer is reached before any peer
+  that would be written to**, which is what made this run leave nothing behind.
+  `configure`'s exchange is `for p, for other` in list order, and the first
+  error aborts the pipeline; with the list ordered ubusql1 → win10cli →
+  ubusql2, the pair `p=win10cli, other=ubusql2` raises before
+  `p=ubusql2, other=win10cli` can create a login, user and certificate on
+  ubusql2. Verified: ubusql2 held no `win10cli_*` principal afterwards. The
+  reverse order writes to ubusql2 first and then fails, which is correct
+  behaviour but a dirtier test.
 
 - **The named-instance principal names are handled but have never run live.**
   Fixed 2026-08-13: `endpointPrincipalBase` maps `@@SERVERNAME`'s backslash to
@@ -587,45 +760,114 @@ not act on.
   pinning it; the test cluster is all default instances, so no named instance
   has ever gone through the exchange.
 
-- **The endpoint dialog's own branch is still only compiler-checked.**
-  `importPeerCertificate` needs a live `*gosmo.Server` — a concrete struct with
-  no interface to fake — so the three-way switch has no unit test. The gosmo
-  behaviour underneath it is covered by `live_notfound_test.go` (five tests,
-  `-tags livedb`). Driving the dialog end to end still needs two instances and
-  has not been done.
+- ~~**The endpoint dialog's own branch is still only compiler-checked.**~~
+  **Driven end to end** 2026-08-22, against ubusql1 (local) and win10cli (peer).
+  `importPeerCertificate` still needs a live `*gosmo.Server` and still has no
+  unit test; what changed is that the whole pipeline has now run for real, on a
+  peer that had nothing — no database master key, no certificate, no endpoint —
+  which is the case ubusql1/ubusql2 could never produce because both were
+  already configured. Every phase landed and was verified in the catalogs:
+  win10cli got a master key, `win10cli_Cert` with a private key, `ubusql1_Cert`
+  imported, `ubusql1_login`/`ubusql1_user`, endpoint `AGEP` STARTED on 5022, and
+  the CONNECT grant; ubusql1 got `win10cli_Cert`, `win10cli_login`/`_user` and
+  its grant, with its own endpoint untouched. **The imported thumbprints equal
+  the presenting instance's on both sides** — the assertion that says the public
+  key actually crossed rather than a fresh key pair being generated at each end.
+
+  **The direction is forced and is not arbitrary**: `fetchPrefetch` blocks the
+  dialog when the *local* instance has `IsHADREnabled` false, so the run has to
+  originate from ubusql1 with win10cli as the peer, never the other way round.
+  Nothing else in the pipeline asks about HADR, which is why a Windows instance
+  with Always On disabled can still take a full mirroring endpoint and take part
+  in the exchange.
+
+  **The scripted path was run first and is the more valuable half**, because it
+  produces the partial script that a live run on already-configured instances
+  never can: with win10cli having no certificate yet, `ensureCertificate` set
+  `certPending`, and the script came out headed `THIS SCRIPT IS INCOMPLETE`,
+  with ubusql1's block reduced to `-- Missing here: the certificate, login and
+  user for win10cli, and the CONNECT grant that goes with them.` and win10cli's
+  block complete and runnable — including `CREATE CERTIFICATE [ubusql1_Cert]
+  ... FROM BINARY = 0x3082...`, ubusql1's real public key, read from the live
+  server under `WithScript`. Both deliberate suppressions held: no GRANT to a
+  login the skipped phase never created.
 
 ## Log File Viewer: what is deliberately out of it
 
-Built 2026-08-12 (see `docs/journal.md`). Three things SSMS's own viewer has
-were left out on purpose, not forgotten:
+Built 2026-08-12 (see `docs/journal.md`). One thing SSMS's own viewer has is
+still left out on purpose; the other two were closed 2026-08-21:
 
 - **One log file at a time, no merged view.** SSMS's left pane checkboxes let
   several logs (and the Windows event log) be merged into one date-sorted grid.
   The two selectors were chosen instead; merging means a source column, a merge
   sort, and N reads per refresh.
-- **The filter is client-side.** `xp_readerrorlog` takes two search strings and
-  a date range as arguments 3-6, which is what SSMS's "Filter…" uses. Filtering
-  in the panel re-filters instantly with no round trip and is honest about how
-  many of the entries read match; a server-side filter would be needed only for
-  a log too large to hold, which is also when `logReadTimeout` starts to matter.
-- **No Enter / double-click on a log-file leaf.** `controls.TreeView` has no
-  activation callback at all (`Enter` is `toggleExpand`), so a log leaf opens
-  from its context menu like every other leaf in the tree. Adding `OnActivate`
-  to TreeView would be a tuikit change affecting every node type.
+- ~~**The filter is client-side.**~~ **Both now exist, and they are different
+  features — do not merge them.** The toolbar's Filter box still narrows what
+  was read, instantly and with no round trip, and still reports "N of M match".
+  "Search..." (2026-08-21) edits `xp_readerrorlog`'s own arguments 3-6 and
+  changes what the server returns, which is what a log too large to read in one
+  go needs; the status line names it, because "no entries" on a searched read
+  otherwise reads as an empty log. The client-side pass runs over whatever came
+  back, so the two compose.
+  Two things about those arguments that only a live run says: the date bounds
+  must be sent as **text** (`YYYY-MM-DD HH:MM:SS`) — a typed datetime parameter
+  is rejected with "The format for the date filter is incorrect" — and the two
+  search strings are **AND**-ed, not alternatives.
+- ~~**No Enter / double-click on a log-file leaf.**~~ **Fixed** 2026-08-21 —
+  `controls.TreeView.OnActivate`, fired by Enter and by a second click on the
+  same row within `doubleClickInterval`, falling back to expand/collapse when
+  the host declines. Only the two log leaves claim it: an object node's menu
+  has several actions and none of them is obviously "the" one, so guessing
+  would make Enter unpredictable across the tree.
 
 Also not built: the Windows event log (needs WMI, out of scope for a no-CGO
-portable build) and `sp_cycle_errorlog` / `sp_cycle_agent_errorlog` as a
-"Recycle" action — gosmo has `CycleErrorLog`, but nothing in the UI calls it.
+portable build).
+
+~~`sp_cycle_errorlog` / `sp_cycle_agent_errorlog` as a "Recycle" action —
+gosmo has `CycleErrorLog`, but nothing in the UI calls it.~~ **Built**
+2026-08-21. gosmo gained `CycleLog`/`CycleLogContext(logType)` over a
+statement table (`sp_cycle_errorlog` for the SQL Server family,
+`msdb.dbo.sp_cycle_agent_errorlog` — three-part, so it works from any current
+database — for the Agent's); `CycleErrorLog` stays as a delegate. gossms has
+it on the Log File Viewer's toolbar and on both log folders' Object Explorer
+menus, each confirming first and naming that the archives renumber and the
+oldest is dropped.
+
+Two rules came out of it. The toolbar's busy latch is taken **before** the
+confirmation is shown, not in the answer: the confirm dialog takes input but
+does not stop F5 reaching the panel, so a read begun while the question was up
+would clear `busy` from under the cycle. And an open viewer is put through
+`Refresh`, never `Load`, after a cycle started from the tree — `Load`
+re-enumerates only the family on screen, so cycling the Agent log while the
+viewer sits on the SQL Server family would leave the Agent's pre-cycle
+numbering cached and hand it to the user the moment they flipped the selector.
 
 ## Object Explorer folder filter: what is deliberately out of it
 
 Built 2026-08-13 (see `docs/journal.md`). Two gaps left, both deliberate; the
 other two were fixed 2026-08-15.
 
-- **The filter is client-side.** SSMS pushes it into the folder's own query;
-  here the loader fetches the folder as usual and `fetchChildren` drops the
-  rows the filter rejects. A folder large enough for that to matter is a folder
-  whose unfiltered expand is already slow.
+- ~~**The filter is client-side.**~~ **Pushed down** 2026-08-21 for the seven
+  families where folder size can matter — Tables, Views, Stored Procedures,
+  Functions and the three System * variants — through gosmo's `ObjectFilter`
+  and the `…FilteredContext` listings. Three things about it are load-bearing:
+  - **The client-side pass still runs and is still the authority.**
+    `filterChildren`/`filterObjects` narrow whatever comes back, so a
+    translation can only ever be an optimisation. The only way it could change
+    a result is by narrowing *further* than the client would, which is why
+    `nodeFilter.pushdown` trims the value the way `matchText` does and refuses
+    outright (falling back to the whole folder) rather than approximating.
+  - **The comparison is `LOWER(col) LIKE LOWER(@p)`.** A bare LIKE is at the
+    mercy of the database collation, and on a case-sensitive one it drops rows
+    the case-insensitive client keeps.
+  - **The pattern is escaped and carries `ESCAPE`.** `%`, `_` and `[` are all
+    legal in an identifier; unescaped, a search for `pct_1` also matches
+    `pct1100`, and one containing `[` matches nothing at all.
+
+  The other filterable folders (sequences, synonyms, triggers, databases,
+  logins, users, roles, schemas, partition functions/schemes, the Always
+  Encrypted keys, security policies) stay client-side: they are small, and the
+  clause builder is family-agnostic if that ever stops being true.
 - **Owner and Durability Type are not offered on Tables**, though SSMS offers
   both — each is one `TableDetail` query per table. Adding them means a
   folder-wide detail fetch first.
@@ -642,24 +884,32 @@ other two were fixed 2026-08-15.
 
 ## Delete/Rename: what is deliberately out of it
 
-Built 2026-08-13 (see `docs/journal.md`).
+Built 2026-08-13; column Delete, the drop-with-cascade option and Move to
+Schema went in 2026-08-21 (see `docs/journal.md`). What is left out is:
 
-- **No column, no partition, no filegroup Delete.** SSMS deletes a column from
-  the Columns folder; that is an `ALTER TABLE DROP COLUMN` with its own
-  constraint/index preconditions, not a member of the one-statement family the
-  table covers.
-- **No cascade.** A table is dropped with `cascade=false`, so a referenced
-  table is refused by the server until its foreign keys are dealt with — the
-  same refusal SSMS gives. gosmo's `DropTableContext` can cascade; nothing in
-  the UI asks for it yet.
+- **No partition or filegroup Delete from the tree.** Neither has a tree node:
+  partition functions and schemes do and are deletable, and a filegroup is
+  removed from Database Properties > Filegroups.
+- **A column has Delete but no Rename.** `sp_rename`'s `COLUMN` class is not in
+  gosmo, and renaming a column breaks every view, procedure and index that
+  names it without warning — a different feature from the one-statement family
+  here.
+- **A trigger cannot be moved to another schema**, and must not be offered: it
+  belongs to its table and moves with it, and `ALTER SCHEMA ... TRANSFER`
+  refuses one. Indexes, statistics, keys and constraints are the same case.
 - **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
   wording explains what blocks each one; only Rename comes from the shared
   table. Availability groups likewise.
 - **No multi-select delete.** `controls.TreeView` has a single selection, so
-  SSMS's "Delete Object" dialog listing several objects has no equivalent.
-- **Rename does not move an object between schemas** — `sp_rename` takes a
-  bare name, and moving is `ALTER SCHEMA ... TRANSFER`, which Object Explorer
-  does not offer (Schema Properties' owner transfer is a different operation).
+  SSMS's "Delete Object" dialog listing several objects has no equivalent. The
+  author's own answer to this is that it belongs in the Object Explorer Details
+  pane, whose grid already has block selection — not in the tree.
+- **The server does not say what blocks a column drop.** Verified live
+  2026-08-21: `ALTER TABLE DROP COLUMN note failed because one or more objects
+  access this column.` — no constraint, index or statistic named, even when a
+  single default constraint is the whole reason. The delete confirmation
+  therefore names the *classes* of blocker itself; do not "simplify" it to
+  promise the error will identify one.
 
 ## Clipboard in a dialog: what is deliberately out of it
 
@@ -674,13 +924,14 @@ not regressions:
   whatever the panel behind the dialog had selected, which was never the thing
   the user was looking at.
 
-- **Key Diagnostics cannot copy its log**, and that is the one place the
-  omission is worth revisiting. Its whole purpose is reporting what a terminal
-  actually sent, which is exactly the text someone would want to paste into a
-  bug report — but it draws its log directly rather than holding a
-  `controls.Editor` the way Status History does, so there is no target to
-  hand back. Giving it one is a feature, not part of the fix. Status History
-  *can* copy, for that reason.
+- ~~**Key Diagnostics cannot copy its log.**~~ **Fixed** 2026-08-21 — the log
+  moved into a read-only `controls.Editor`, the way Status History has always
+  held its own, and the dialog is a `core.ClipboardHost`. One rule came out of
+  it that Status History does not need and a "simplification" would undo:
+  **`syncIfDirty` must not rebuild the editor while it has a selection.** This
+  dialog records the very keys used to copy from it, so Ctrl+A is itself logged
+  and the next frame's `SetText` — which resets cursor, scroll *and* selection —
+  would drop the selection before the Ctrl+C arrived. See `docs/journal.md`.
 
 ## Deferred scope (repeatedly, deliberately)
 

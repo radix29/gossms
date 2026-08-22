@@ -2,6 +2,7 @@ package controls
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -47,6 +48,13 @@ type TreeView struct {
 	scrollX  int
 	contentW int
 
+	// lastClickIdx/lastClickAt time consecutive presses on the same row,
+	// which is how a double-click — the mouse spelling of Enter's default
+	// action — is recognised. A zero lastClickAt means "no press to pair
+	// with", which is also how a completed double-click is reset.
+	lastClickIdx int
+	lastClickAt  time.Time
+
 	// mouseDragging distinguishes a fresh Button1 press from a continued
 	// hold over the same row — mirrors MenuBar's/DataGrid's/Editor's field
 	// of the same name and purpose. Without it, tcell's all-motion mouse
@@ -62,9 +70,14 @@ type TreeView struct {
 	sbDraggingX bool // same, for the horizontal scrollbar thumb
 
 	// Callbacks — set by the application layer
-	OnExpand     func(nodeID TreeNodeID) // called when a node is expanded
-	OnCollapse   func(nodeID TreeNodeID) // called when a node is collapsed
-	OnSelect     func(nodeID TreeNodeID) // called when selection changes
+	OnExpand   func(nodeID TreeNodeID) // called when a node is expanded
+	OnCollapse func(nodeID TreeNodeID) // called when a node is collapsed
+	OnSelect   func(nodeID TreeNodeID) // called when selection changes
+	// OnActivate is the selected node's default action — Enter, or a second
+	// click on the row within doubleClickInterval. It reports whether it
+	// handled the node; on false (or when unset) the node expands/collapses
+	// as it always has, which is what keeps Enter working on a folder.
+	OnActivate   func(nodeID TreeNodeID) bool
 	OnRightClick func(nodeID TreeNodeID, x, y int)
 }
 
@@ -244,7 +257,14 @@ func (tv *TreeView) HandleKey(ev *tcell.EventKey) bool {
 		tv.ensureVisible(inner.H)
 		tv.fireSelect()
 		return true
-	case tcell.KeyEnter, tcell.KeyRight:
+	case tcell.KeyEnter:
+		// Enter is "do the default thing with this node"; Right is only ever
+		// expand, so the activation hook hangs off Enter alone.
+		if !tv.activateSelected() {
+			tv.toggleExpand()
+		}
+		return true
+	case tcell.KeyRight:
 		tv.toggleExpand()
 		return true
 	case tcell.KeyLeft, tcell.KeyBackspace, tcell.KeyBackspace2:
@@ -343,6 +363,17 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		tv.mouseDragging = true
 		node := &tv.nodes[idx]
+		// A second press on the same row inside the interval is a
+		// double-click: activate rather than re-select. Recorded before the
+		// expander test below so a double-click on the glyph still only
+		// toggles — that region has its own meaning, and activating from it
+		// as well would fire on the second half of an ordinary expand.
+		// doubleClickInterval is the Editor's — one double-click speed for
+		// the whole app.
+		doubleClick := idx == tv.lastClickIdx && !tv.lastClickAt.IsZero() &&
+			time.Since(tv.lastClickAt) <= doubleClickInterval
+		tv.lastClickIdx = idx
+		tv.lastClickAt = time.Now()
 		// Only the "[+]"/"[-]" expander glyph toggles expand/collapse — a
 		// click anywhere else on the row just (re)selects it. This is what
 		// lets a node be click-dragged into the query editor without also
@@ -359,6 +390,13 @@ func (tv *TreeView) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		if onExpander {
 			tv.toggleExpand()
+			return true
+		}
+		if doubleClick {
+			// Cleared so a third click starts a fresh pair rather than
+			// activating again on every click that follows.
+			tv.lastClickAt = time.Time{}
+			tv.activateSelected()
 		}
 		return true
 	case tcell.Button2: // tcell v3: Button2 is Secondary (right-click); Button3 is Middle.
@@ -441,6 +479,17 @@ func (tv *TreeView) scrollRight() {
 	tv.scrollX = min(maxScroll, tv.scrollX+4)
 }
 
+// activateSelected runs the selected node's default action, reporting whether
+// anything handled it. A host with no OnActivate, or one that declines this
+// node, gets false and the caller falls back to expand/collapse.
+func (tv *TreeView) activateSelected() bool {
+	n := tv.SelectedNode()
+	if n == nil || tv.OnActivate == nil {
+		return false
+	}
+	return tv.OnActivate(n.ID)
+}
+
 // toggleExpand flips the selected node's Expanded state and fires
 // OnExpand/OnCollapse. OnExpand fires every time a node is expanded — even
 // if it was already loaded before — so the caller can redisplay cached
@@ -494,16 +543,26 @@ func (tv *TreeView) fireSelect() {
 // openContextMenuAtSelection fires OnRightClick for the selected node,
 // positioned at its row — the keyboard equivalent of a right-click.
 func (tv *TreeView) openContextMenuAtSelection() {
-	n := tv.SelectedNode()
-	if n == nil || tv.OnRightClick == nil {
+	x, y, ok := tv.SelectionAnchor()
+	if !ok || tv.OnRightClick == nil {
 		return
+	}
+	tv.OnRightClick(tv.SelectedNode().ID, x, y)
+}
+
+// SelectionAnchor returns the screen position a menu about the selected node
+// should open at, and whether there is a selection at all. Exported because a
+// host that opens its own menu about the selection — a submenu of choices for
+// one node — needs the same anchor the context menu uses.
+func (tv *TreeView) SelectionAnchor() (x, y int, ok bool) {
+	n := tv.SelectedNode()
+	if n == nil {
+		return 0, 0, false
 	}
 	inner := tv.rect.Inner(1)
 	// n.Depth*2 is a virtual column (see Draw's row-line layout); translate
 	// it back through tv.scrollX like the mouse-click expander hit-test
 	// does, clamped so a node scrolled left of the panel still pops the
 	// menu on-screen rather than off its left edge.
-	x := inner.X + max(0, n.Depth*2-tv.scrollX)
-	y := inner.Y + (tv.sel - tv.scroll)
-	tv.OnRightClick(n.ID, x, y)
+	return inner.X + max(0, n.Depth*2-tv.scrollX), inner.Y + (tv.sel - tv.scroll), true
 }

@@ -126,6 +126,15 @@ func resolveSymlink(path string) string {
 //
 // WriteAtomic has already resolved any symlink by the time this runs, so the
 // mode read here is the target's — the file actually being replaced.
+//
+// Mode is all this preserves: the replacement file is owned by whoever is
+// running, where a write-in-place would have kept the original's uid/gid. That
+// is a property of the rename and is left alone deliberately. It can only bite
+// when gossms runs as root over a file owned by someone else, which is not a
+// case it supports, and the fix — a Stat plus a root-only Chown with a Windows
+// no-op — would add the OS branching this codebase keeps down to two files.
+// Recorded here so the next reader doesn't assume ownership is handled
+// alongside the mode.
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {

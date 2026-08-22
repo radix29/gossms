@@ -4,6 +4,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,14 @@ type ConfirmDialog struct {
 	msgLines []string
 	btnFocus int
 
+	// option is the optional checkbox a ShowConfirmOption showing carries —
+	// one extra decision that belongs to the question rather than to a dialog
+	// of its own ("also drop the foreign keys that reference it"). nil for
+	// every other showing. optFocused puts the keyboard on it, ahead of the
+	// buttons in the Tab cycle.
+	option     *widgets.CheckBox
+	optFocused bool
+
 	// buttons is what the current showing renders and hit-tests, so Draw
 	// and HandleMouse can't disagree about how many there are.
 	buttons  []string
@@ -63,8 +72,29 @@ func NewConfirmDialog(s tcell.Screen) *ConfirmDialog {
 // of the screen's width, or word-wraps onto more lines (growing taller
 // instead) when it doesn't — see fitMessage.
 func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool)) {
+	d.option = nil
 	d.show(title, message, twoButtons, func(a ConfirmAnswer) {
 		onConfirm(a == ConfirmYes)
+	})
+}
+
+// ShowConfirmOption is ShowConfirm with one checkbox above the buttons, whose
+// state is reported alongside the answer. It exists for a question that has a
+// single modifier rather than a second question — SSMS's own Delete Object
+// dialog carries its "close existing connections" the same way — and keeps
+// that modifier where the consequence is described instead of behind another
+// prompt.
+//
+// The checkbox leads the Tab cycle and is reported as it stands when an
+// answer is given, including for a No: a caller reads it only when the answer
+// is yes.
+func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, initial bool, onConfirm func(confirmed, checked bool)) {
+	box := widgets.NewCheckBox(optionLabel)
+	box.SetChecked(initial)
+	d.option = box
+	d.setOptFocused(false)
+	d.show(title, message, twoButtons, func(a ConfirmAnswer) {
+		onConfirm(a == ConfirmYes, box.Checked())
 	})
 }
 
@@ -73,6 +103,7 @@ func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool))
 // before closing?", where No discards unsaved work — Escape must not pick
 // either, and the user needs a way to back out of having asked at all.
 func (d *ConfirmDialog) ShowConfirmCancel(title, message string, onAnswer func(ConfirmAnswer)) {
+	d.option = nil
 	d.show(title, message, threeButtons, onAnswer)
 }
 
@@ -84,7 +115,7 @@ func (d *ConfirmDialog) show(title, message string, buttons []string, onAnswer f
 	d.onAnswer = onAnswer
 	w, h, lines := d.fitMessage(message, confirmDialogMinW, confirmDialogBaseH)
 	d.msgLines = lines
-	d.SetSize(w, h)
+	d.SetSize(w, h+d.optionHeight())
 	d.ModalDialog.Show()
 }
 
@@ -92,7 +123,16 @@ func (d *ConfirmDialog) show(title, message string, buttons []string, onAnswer f
 func (d *ConfirmDialog) Relayout() {
 	w, h, lines := d.fitMessage(d.message, confirmDialogMinW, confirmDialogBaseH)
 	d.msgLines = lines
-	d.SetSize(w, h)
+	d.SetSize(w, h+d.optionHeight())
+}
+
+// optionHeight is the extra height a showing with a checkbox needs: a blank
+// line and the box itself.
+func (d *ConfirmDialog) optionHeight() int {
+	if d.option == nil {
+		return 0
+	}
+	return 2
 }
 
 // Draw renders the confirm dialog.
@@ -109,6 +149,10 @@ func (d *ConfirmDialog) Draw(s tcell.Screen) {
 		x := inner.X + 1 + core.CenterOffset(contentW, core.DisplayWidth(line))
 		core.DrawTextClipped(s, x, inner.Y+2+i, contentW, msgStyle, line)
 	}
+	if d.option != nil {
+		d.option.SetBounds(inner.X+1, inner.Y+2+len(d.msgLines)+1)
+		d.option.Draw(s)
+	}
 	d.DrawSeparator(s)
 	d.DrawButtons(s, d.buttons, d.btnFocus)
 }
@@ -121,17 +165,55 @@ func (d *ConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 	n := len(d.buttons)
+	// The checkbox gets the key first while it has focus, so Space and Enter
+	// toggle it rather than answering the question — an Enter that answered
+	// while the box was focused would commit the state the user was still
+	// setting.
+	if d.optFocused && d.option != nil && d.option.HandleKey(ev) {
+		return true
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		d.finish(ConfirmAnswer(n - 1))
 	case tcell.KeyEnter:
 		d.finish(ConfirmAnswer(d.btnFocus))
 	case tcell.KeyTab, tcell.KeyRight:
-		d.btnFocus = (d.btnFocus + 1) % n
-	case tcell.KeyLeft:
-		d.btnFocus = (d.btnFocus - 1 + n) % n
+		d.focusNext(n, 1)
+	case tcell.KeyLeft, tcell.KeyBacktab:
+		d.focusNext(n, -1)
 	}
 	return true
+}
+
+// focusNext moves the keyboard one step through the checkbox (when there is
+// one) and the buttons, in either direction.
+func (d *ConfirmDialog) focusNext(n, step int) {
+	if d.option == nil {
+		d.btnFocus = (d.btnFocus + step + n) % n
+		return
+	}
+	// Positions 0..n-1 are the buttons and n is the checkbox, so the cycle is
+	// one longer than the button set.
+	cur := d.btnFocus
+	if d.optFocused {
+		cur = n
+	}
+	cur = (cur + step + n + 1) % (n + 1)
+	d.setOptFocused(cur == n)
+	if !d.optFocused {
+		d.btnFocus = cur
+	}
+}
+
+// setOptFocused moves the keyboard onto or off the checkbox. The widget's own
+// focus flag is set here rather than left to Draw: CheckBox.HandleKey refuses
+// every key while it is unfocused, so a dialog that only told it at draw time
+// would drop the first Space of a showing that had not been drawn yet.
+func (d *ConfirmDialog) setOptFocused(v bool) {
+	d.optFocused = v
+	if d.option != nil {
+		d.option.Focus(v)
+	}
 }
 
 // HandleMouse handles mouse events.
@@ -139,7 +221,20 @@ func (d *ConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.visible {
 		return false
 	}
+	// A release must reach the checkbox even when it lands outside the dialog
+	// (consumed below) — otherwise its mouseDragging latch survives the
+	// gesture and swallows the next press as a continuation of it. CheckBox
+	// returns false on ButtonNone, so this only resets the latch.
+	if ev.Buttons() == tcell.ButtonNone && d.option != nil {
+		d.option.HandleMouse(ev)
+	}
 	if d.ConsumeOutsideClick(ev) {
+		return true
+	}
+	// The checkbox is offered the press before the buttons are hit-tested,
+	// and takes focus with it so the keyboard is where the pointer just was.
+	if d.option != nil && d.option.HandleMouse(ev) {
+		d.setOptFocused(true)
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttons); i >= 0 {
