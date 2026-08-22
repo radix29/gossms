@@ -32,6 +32,22 @@ type MenuBar struct {
 	// menuCascade). Cleared whenever the dropdown closes or switches menus,
 	// so a cascade never survives into the next one.
 	cascade menuCascade
+
+	// scrollTop is the index of the first item drawn, for a dropdown taller
+	// than the rows below the bar. A dropdown hangs off its own header and
+	// cannot be shifted up the way a ContextMenu can, so once it doesn't fit
+	// there is nowhere to put the overflow but out of view: Edit's 21 items
+	// need 23 rows, and on a 20-row terminal its last three were painted past
+	// the bottom edge, invisible to the eye and unreachable by mouse. Capping
+	// the height alone would have hidden them behind a tidy bottom border,
+	// which is worse — the truncation at least showed. See drawDropdown.
+	scrollTop int
+
+	// drawnRect caches the box Draw last clamped the dropdown to, for the
+	// same reason ContextMenu caches drawnX/drawnY: only Draw sees a
+	// tcell.Screen, so only Draw knows the screen height the clamp needs, and
+	// HandleMouse must hit-test what was actually painted.
+	drawnRect core.Rect
 }
 
 // NewMenuBar creates a MenuBar.
@@ -54,6 +70,8 @@ func (mb *MenuBar) IsOpen() bool { return mb.openMenu >= 0 }
 func (mb *MenuBar) Close() {
 	mb.openMenu = -1
 	mb.cascade.reset()
+	mb.scrollTop = 0
+	mb.drawnRect = core.Rect{}
 }
 
 // Open opens the first menu without requiring a mouse click — used for
@@ -66,6 +84,7 @@ func (mb *MenuBar) Open() {
 		mb.hoverMenu = 0
 		mb.selectedItem = firstSelectableItem(mb.menus[0].Items)
 		mb.cascade.reset()
+		mb.scrollTop = 0
 	}
 }
 
@@ -112,29 +131,45 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 	p := theme.Active()
 	menu := mb.menus[idx]
 
-	col, w, h := mb.dropdownGeometry(idx)
+	r := mb.dropdownGeometry(s, idx)
+	mb.drawnRect = r
+	rows := r.H - 2
+	mb.scrollTop = clampMenuScroll(mb.scrollTop, mb.selectedItem, len(menu.Items), rows)
 
 	ddStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
 	borderStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Border)
-	r := core.Rect{X: col, Y: mb.rect.Y + 1, W: w, H: h}
 	core.DrawBox(s, r, borderStyle)
 	core.FillRect(s, r.Inner(1), ' ', ddStyle)
 
-	for i, item := range menu.Items {
-		y := mb.rect.Y + 2 + i
-		drawMenuRow(s, col, y, w, item, i == mb.selectedItem, borderStyle)
+	for i := 0; i < rows; i++ {
+		item := mb.scrollTop + i
+		if item >= len(menu.Items) {
+			break
+		}
+		drawMenuRow(s, r.X, r.Y+1+i, r.W, menu.Items[item], item == mb.selectedItem, borderStyle)
 	}
-	mb.cascade.draw(s, menu.Items, r)
+	drawMenuScrollMarks(s, r, mb.scrollTop, len(menu.Items), rows, borderStyle)
+	mb.cascade.draw(s, menu.Items, r, mb.scrollTop)
 }
 
-// dropdownRect returns the open dropdown's box — the anchor the cascade's
-// first submenu level hangs off.
+// dropdownRect returns the open dropdown's box as Draw last clamped it — the
+// anchor the cascade's first submenu level hangs off, and what HandleMouse
+// hit-tests. Reads the cache rather than recomputing, since the clamp needs a
+// screen height only Draw has.
+//
+// Falls back to the unclamped box when nothing has been drawn yet, so a
+// MenuBar driven without a Draw still hit-tests where it would have painted.
+// App.Run draws between the event that opens a dropdown and the next one, so
+// the fallback is not a path the running application takes.
 func (mb *MenuBar) dropdownRect() core.Rect {
 	if mb.openMenu < 0 {
 		return core.Rect{}
 	}
-	col, w, h := mb.dropdownGeometry(mb.openMenu)
-	return core.Rect{X: col, Y: mb.rect.Y + 1, W: w, H: h}
+	if mb.drawnRect.W > 0 {
+		return mb.drawnRect
+	}
+	col, w := mb.dropdownColumn(mb.openMenu)
+	return core.Rect{X: col, Y: mb.rect.Y + 1, W: w, H: len(mb.menus[mb.openMenu].Items) + 2}
 }
 
 // HandleKey processes keyboard when a dropdown is open.
@@ -156,6 +191,7 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 		mb.openMenu = (mb.openMenu - 1 + len(mb.menus)) % len(mb.menus)
 		mb.hoverMenu = mb.openMenu
 		mb.selectedItem = firstSelectableItem(mb.menus[mb.openMenu].Items)
+		mb.scrollTop = 0
 	case tcell.KeyRight:
 		// Right opens the selected item's submenu when it has one, and only
 		// otherwise moves to the next menu header.
@@ -165,6 +201,7 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 		mb.openMenu = (mb.openMenu + 1) % len(mb.menus)
 		mb.hoverMenu = mb.openMenu
 		mb.selectedItem = firstSelectableItem(mb.menus[mb.openMenu].Items)
+		mb.scrollTop = 0
 	case tcell.KeyUp:
 		mb.selectedItem = stepSelectableItem(mb.menus[mb.openMenu].Items, mb.selectedItem, -1)
 	case tcell.KeyDown:
@@ -230,7 +267,15 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 
 	if wasOpen {
 		root := mb.menus[mb.openMenu].Items
+		if mb.handleDropdownWheel(ev, len(root)) {
+			return true
+		}
 		level, row, inside := mb.cascade.hit(mb.dropdownRect(), mx, my)
+		// The cascade reports level 0 as a row within the box it was handed,
+		// which for a scrolled dropdown is not the item's index.
+		if level == 0 && inside && row >= 0 {
+			row += mb.scrollTop
+		}
 		if !inside {
 			if ev.Buttons() == tcell.Button1 {
 				mb.Close()
@@ -276,16 +321,94 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-// dropdownGeometry returns the column, width, and height of the open
-// dropdown for menu index idx, using the same width calculation as
-// drawDropdown so hit-testing always matches what was actually drawn.
-func (mb *MenuBar) dropdownGeometry(idx int) (col, w, h int) {
-	menu := mb.menus[idx]
+// handleDropdownWheel scrolls a scrolled-back dropdown on a wheel event and
+// reports whether it consumed one. Without it the hidden items are reachable
+// by keyboard only, which leaves the scrolling half-built for the mouse user
+// the truncation was worst for.
+func (mb *MenuBar) handleDropdownWheel(ev *tcell.EventMouse, n int) bool {
+	rows := mb.drawnRect.H - 2
+	if rows <= 0 || n <= rows {
+		return false
+	}
+	switch ev.Buttons() {
+	case tcell.WheelUp:
+		mb.scrollTop = core.Clamp(mb.scrollTop-1, 0, n-rows)
+	case tcell.WheelDown:
+		mb.scrollTop = core.Clamp(mb.scrollTop+1, 0, n-rows)
+	default:
+		return false
+	}
+	// The highlight follows the window rather than staying put: it is what
+	// drawDropdown scrolls back to, so leaving it behind makes the very next
+	// draw undo the scroll.
+	mb.selectedItem = core.Clamp(mb.selectedItem, mb.scrollTop, mb.scrollTop+rows-1)
+	return true
+}
+
+// dropdownGeometry returns the box the open dropdown for menu index idx
+// should be drawn in, clamped to the screen on all four sides.
+//
+// A dropdown is anchored under its own header, so unlike a ContextMenu it
+// cannot be shifted up to fit: the height is capped at the rows left below
+// the bar and drawDropdown scrolls the items through it. Both lower clamps
+// matter as much as the upper ones — a menu wider or taller than the screen
+// gave a negative column or a negative height, and a negative height turns
+// the box inside out.
+func (mb *MenuBar) dropdownGeometry(s tcell.Screen, idx int) core.Rect {
+	sw, sh := s.Size()
+	col, w := mb.dropdownColumn(idx)
+	col = core.Clamp(col, 0, max(sw-1, 0))
+	w = core.Clamp(w, 1, max(sw-col, 1))
+
+	y := mb.rect.Y + 1
+	h := core.Clamp(len(mb.menus[idx].Items)+2, 3, max(sh-y, 3))
+	return core.Rect{X: col, Y: y, W: w, H: h}
+}
+
+// dropdownColumn returns where the dropdown for menu idx starts and how wide
+// it is, shifted left to stay inside the bar but not yet clamped to a screen.
+// Split out so dropdownRect can answer before anything has been drawn.
+func (mb *MenuBar) dropdownColumn(idx int) (col, w int) {
 	col = mb.menuHeaderOffset(idx)
-	w = menuContentWidth(menu.Items, 28)
+	w = menuContentWidth(mb.menus[idx].Items, 28)
 	if col+w > mb.rect.X+mb.rect.W {
 		col = mb.rect.X + mb.rect.W - w
 	}
-	h = len(menu.Items) + 2
-	return col, w, h
+	return col, w
+}
+
+// clampMenuScroll returns the first-item index that keeps sel visible in a
+// window of rows items out of n, scrolling as little as possible. rows <= 0
+// (a box with no room for content) yields 0 rather than a negative index.
+func clampMenuScroll(top, sel, n, rows int) int {
+	if rows <= 0 || n <= rows {
+		return 0
+	}
+	top = core.Clamp(top, 0, n-rows)
+	if sel < 0 {
+		return top
+	}
+	if sel < top {
+		return sel
+	}
+	if sel >= top+rows {
+		return sel - rows + 1
+	}
+	return top
+}
+
+// drawMenuScrollMarks paints the ▲/▼ that say a scrolled menu box has items
+// past its top or bottom edge. Without them a partial menu is
+// indistinguishable from a complete one, which is the failure the scrolling
+// exists to fix — a user who cannot see that there is more does not look.
+func drawMenuScrollMarks(s tcell.Screen, r core.Rect, top, n, rows int, style tcell.Style) {
+	if rows <= 0 || n <= rows {
+		return
+	}
+	if top > 0 {
+		core.DrawText(s, r.X+r.W-2, r.Y, style, "▲")
+	}
+	if top+rows < n {
+		core.DrawText(s, r.X+r.W-2, r.Y+r.H-1, style, "▼")
+	}
 }

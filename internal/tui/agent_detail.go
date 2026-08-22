@@ -50,7 +50,7 @@ func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]st
 		{"Event alerts", countOrDash(len(alerts), aErr)},
 		{"Operators", countOrDash(len(operators), oErr)},
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 // agentJobDetail builds a job's detail view.
@@ -88,7 +88,7 @@ func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) 
 		{"Last run", lastRun},
 		{"Next run", nextRun},
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 // agentScheduleDetail builds a schedule's detail view, matching the
@@ -113,7 +113,7 @@ func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 		{"Used by jobs", countOrDash(len(jobs), jErr)},
 		{"Description", sch.Description()},
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 // agentAlertDetail builds an alert's detail view.
@@ -159,7 +159,7 @@ func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode
 	if al.JobName != "" {
 		rows = append(rows, []string{"Response job", al.JobName})
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 // agentOperatorDetail builds an operator's detail view, matching the
@@ -202,7 +202,7 @@ func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 			rows = append(rows, []string{"Notifies (job)", n.JobName + " — " + formatNotifyLevel(n.Level)})
 		}
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 // agentJobActivityDetail builds the "Job Activity" leaf's detail view.

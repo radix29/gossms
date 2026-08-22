@@ -43,6 +43,26 @@ func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Logi
 
 const noneItem = "(None)"
 
+// loginAuthLabel renders a login's type_desc as the authentication wording
+// SSMS uses. Everything but a SQL login used to read "Windows Authentication",
+// which was invisible while the Logins folder listed nothing else — the
+// certificate-mapped ##MS_* logins it now lists are not Windows logins.
+func loginAuthLabel(loginType string) string {
+	switch loginType {
+	case "SQL_LOGIN":
+		return "SQL Server Authentication"
+	case "WINDOWS_LOGIN", "WINDOWS_GROUP":
+		return "Windows Authentication"
+	case "EXTERNAL_LOGIN", "EXTERNAL_GROUP":
+		return "Microsoft Entra Authentication"
+	case "CERTIFICATE_MAPPED_LOGIN":
+		return "Mapped to a certificate"
+	case "ASYMMETRIC_KEY_MAPPED_LOGIN":
+		return "Mapped to an asymmetric key"
+	}
+	return loginType
+}
+
 func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title:   "General",
@@ -57,10 +77,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				return nil, nil, err
 			}
 			isSQLLogin := l.LoginType == "SQL_LOGIN"
-			authType := "Windows Authentication"
-			if isSQLLogin {
-				authType = "SQL Server Authentication"
-			}
+			authType := loginAuthLabel(l.LoginType)
 
 			dbNames, err := databaseNames(ctx, sc)
 			if err != nil {

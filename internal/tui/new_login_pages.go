@@ -383,14 +383,14 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 		return rows
 	}
 	grid := controls.NewDataGrid()
-	grid.SetData([]string{"Permission", "State"}, rowsFor())
+	grid.SetData(permissionStateColumns, rowsFor())
 	grid.SetCellCursor(true)
 	grid.OnActivateCell = func(row, col int) {
 		if col != 1 || row < 0 || row >= len(edits) {
 			return
 		}
 		edits[row].current = nextPermState(edits[row].current)
-		redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
+		redrawGrid(grid, permissionStateColumns, rowsFor())
 	}
 
 	gridRow := propsheet.NewGridRow(grid, 12)
@@ -406,7 +406,7 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 		for _, e := range edits {
 			e.current = ""
 		}
-		redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
+		redrawGrid(grid, permissionStateColumns, rowsFor())
 	}
 
 	f := propsheet.NewForm(

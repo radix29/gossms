@@ -76,7 +76,7 @@ func agentMetadataSummaryReport(ctx context.Context, sc *db.ServerConn) ([]strin
 		{"Job categories", countOrDash(len(jobCats), jcErr)},
 		{"Alert categories", countOrDash(len(alertCats), acErr)},
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
 
 func jobExecutionSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {

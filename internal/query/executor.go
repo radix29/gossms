@@ -556,14 +556,12 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) bool {
 		return false
 	}
 	if isShowplanResultSet(cols) {
-		xml, err := scanPlanXML(rows)
+		plans, err := scanPlanXML(rows)
 		if err != nil {
 			res.addError(err)
 			return false
 		}
-		if xml != "" {
-			res.PlanXML = append(res.PlanXML, xml)
-		}
+		res.PlanXML = append(res.PlanXML, plans...)
 		return true
 	}
 	if sink != nil {
@@ -587,15 +585,22 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) bool {
 }
 
 // scanPlanXML reads the current single-column showplan result set into one XML
-// string. Mirrors gosmo's capturePlan scan loop.
-func scanPlanXML(rows *sql.Rows) (string, error) {
-	var xml string
+// document per row. Every row is a plan, not just the last: SET SHOWPLAN_XML
+// returns a multi-statement batch's plans as consecutive rows of a single
+// result set, so overwriting kept only the final statement's. Mirrors gosmo's
+// capturePlan scan loop.
+func scanPlanXML(rows *sql.Rows) ([]string, error) {
+	var plans []string
 	for rows.Next() {
+		var xml string
 		if err := rows.Scan(&xml); err != nil {
-			return "", err
+			return nil, err
+		}
+		if xml != "" {
+			plans = append(plans, xml)
 		}
 	}
-	return xml, rows.Err()
+	return plans, rows.Err()
 }
 
 // appendGUID appends a uniqueidentifier as SSMS renders it: NULL, or the

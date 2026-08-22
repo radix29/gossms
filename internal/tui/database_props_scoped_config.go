@@ -47,7 +47,19 @@ func newScopedConfigIntEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[]
 			row.SetEnabled(false)
 			return row
 		}
-		v, _ := strconv.ParseInt(c.Value, 10, 64)
+		v, err := strconv.ParseInt(c.Value, 10, 64)
+		if err != nil {
+			// Not every scoped configuration is integer-valued — a secondary
+			// can read PRIMARY, and options added since have keyword values.
+			// Discarding the parse error rendered such a value as 0, which
+			// matches the dirty baseline and so is never written: the row
+			// shows a number the server never held and silently declines to
+			// change it. Show what is actually set instead, and leave it out
+			// of *tracked so nothing pretends to edit it.
+			row := propsheet.Text(label, c.Value, 12)
+			row.SetEnabled(false)
+			return row
+		}
 		row := propsheet.Int(label, v, 0, 2147483647, unit)
 		*tracked = append(*tracked, scopedConfigRow{name: name, row: row})
 		return row

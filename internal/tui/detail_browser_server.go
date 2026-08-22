@@ -36,7 +36,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 			{"Available Memory (MB)", "Loading..."},
 			{"NUMA Nodes", "Loading..."},
 		}
-		cols := []string{"Property", "Value"}
+		cols := propertyValueColumns
 		db.postPartial(app, seq, cols, rows)
 
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
@@ -139,5 +139,5 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			[]string{"First entry", formatSQLDate(entries[0].Date)},
 			[]string{"Last entry", formatSQLDate(entries[len(entries)-1].Date)})
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }

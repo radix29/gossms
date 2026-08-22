@@ -216,3 +216,42 @@ func TestScopedConfigOffersNoControlForAnOptionTheServerDoesNotHave(t *testing.T
 		t.Fatalf("wrote:\n%s", strings.Join(stmts, "\n"))
 	}
 }
+
+// TestScopedConfigKeywordValuedOptionIsShownNotZeroed covers the Int editor's
+// other input. sys.database_scoped_configurations reports value as a
+// sql_variant, and not every option holds a number — a readable secondary can
+// carry PRIMARY, and options added since this page was written are
+// keyword-valued. Parsing that as an integer and discarding the error showed
+// the row as 0: a value the server never held, sitting on the dirty baseline
+// so that Apply would not write it either. The row must show what is set and
+// must not be editable.
+func TestScopedConfigKeywordValuedOptionIsShownNotZeroed(t *testing.T) {
+	resp := scopedConfigResponses()
+	for i := range resp[1].rows {
+		if resp[1].rows[i][1] == "MAXDOP" {
+			resp[1].rows[i][2] = "PRIMARY"
+		}
+	}
+	sc, inst := newFakeConn(t, resp...)
+	form, apply := loadPage(t, pageDatabaseScopedConfig(sc, "appdb"), inst)
+
+	row := textRow(t, form, "Max DOP")
+	if row.Value() != "PRIMARY" {
+		t.Errorf("Max DOP shows %q for a catalog value of PRIMARY, want the value itself "+
+			"(a swallowed parse error renders it as 0)", row.Value())
+	}
+	if row.Focusable() {
+		t.Error("a row whose value this page cannot edit must not be editable, " +
+			"or the user changes it and Apply silently declines")
+	}
+
+	// And it is genuinely out of the apply path, not merely disabled in the UI.
+	row.Edit("4")
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("apply wrote %d statement(s) for an option the page does not edit:\n%s",
+			len(stmts), strings.Join(stmts, "\n"))
+	}
+}

@@ -67,7 +67,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				rows[i] = []string{strconv.Itoa(i + 1), c.Name, order}
 			}
 			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Ord", "Column name", "Sort order"}, rows)
+			grid.SetData(indexKeyColumns, rows)
 			grid.SetCellCursor(true)
 
 			nameRow := propsheet.Text("Key name", idx.Name, 24)

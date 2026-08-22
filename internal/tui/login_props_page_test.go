@@ -13,7 +13,7 @@ import (
 // makes, plus the server-role list the Server Roles page needs.
 func loginResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "type IN ('S','U','G') AND name", cols: 7, rows: [][]driver.Value{{
+		{match: "type IN ('S','U','G','E','X','C','K') AND name", cols: 7, rows: [][]driver.Value{{
 			"appuser", []byte{0x01, 0x02}, "SQL_LOGIN", false, "master", time.Now(), time.Now(),
 		}}},
 		{match: "LOGINPROPERTY(@p1, 'IsLocked')", cols: 12, rows: [][]driver.Value{{
@@ -272,5 +272,28 @@ func TestServerRolesWritesNothingWhenUntouched(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("an untouched Server Roles page wrote %d statements: %q", len(stmts), stmts)
+	}
+}
+
+// Every login type but SQL used to read "Windows Authentication" on the
+// General page. The Logins folder now lists certificate- and asymmetric-key-
+// mapped logins, which are neither.
+func TestLoginAuthLabelNamesEachLoginType(t *testing.T) {
+	for _, tc := range []struct{ typ, want string }{
+		{"SQL_LOGIN", "SQL Server Authentication"},
+		{"WINDOWS_LOGIN", "Windows Authentication"},
+		{"WINDOWS_GROUP", "Windows Authentication"},
+		{"EXTERNAL_LOGIN", "Microsoft Entra Authentication"},
+		{"EXTERNAL_GROUP", "Microsoft Entra Authentication"},
+		{"CERTIFICATE_MAPPED_LOGIN", "Mapped to a certificate"},
+		{"ASYMMETRIC_KEY_MAPPED_LOGIN", "Mapped to an asymmetric key"},
+	} {
+		if got := loginAuthLabel(tc.typ); got != tc.want {
+			t.Errorf("loginAuthLabel(%q) = %q, want %q", tc.typ, got, tc.want)
+		}
+	}
+	// An unknown type_desc reads as itself rather than as a wrong claim.
+	if got := loginAuthLabel("SOMETHING_NEW"); got != "SOMETHING_NEW" {
+		t.Errorf("loginAuthLabel of an unknown type = %q", got)
 	}
 }

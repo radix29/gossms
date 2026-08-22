@@ -108,15 +108,22 @@ func (c *menuCascade) openAt(root []MenuItem, level, row int) bool {
 }
 
 // draw paints every open submenu level. rootRect is where the host drew its
-// own menu, which anchors the first cascade level.
-func (c *menuCascade) draw(s tcell.Screen, root []MenuItem, rootRect core.Rect) {
+// own menu, which anchors the first cascade level, and rootScroll is the
+// index of the first item that box currently shows — non-zero only for a
+// MenuBar dropdown scrolled back, where an item's index is no longer its row.
+// Deeper levels never scroll, so they anchor off the row directly.
+func (c *menuCascade) draw(s tcell.Screen, root []MenuItem, rootRect core.Rect, rootScroll int) {
 	parent, items := rootRect, root
 	for i, row := range c.path {
 		if row < 0 || row >= len(items) {
 			return
 		}
+		anchor := row
+		if i == 0 {
+			anchor -= rootScroll
+		}
 		sub := items[row].Sub
-		r := submenuRect(s, parent, parent.Y+1+row, sub)
+		r := submenuRect(s, parent, parent.Y+1+anchor, sub)
 		drawMenuBox(s, r, sub, c.hover[i])
 		c.rects[i] = r
 		parent, items = r, sub

@@ -228,7 +228,7 @@ func TestPermissionsMatrixWritesNothingWhenUntouched(t *testing.T) {
 // principal lists. Two of each again, and the login acted on is neither first
 // nor last.
 func loginListResponse() fakeResponse {
-	return fakeResponse{match: "FROM sys.server_principals\n\tWHERE type IN ('S','U','G')", cols: 7, rows: [][]driver.Value{
+	return fakeResponse{match: "FROM sys.server_principals\n\tWHERE type IN ('S','U','G','E','X','C','K')", cols: 7, rows: [][]driver.Value{
 		{"appuser", []byte{0x01}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}},
 		{"otheruser", []byte{0x02}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}},
 	}}

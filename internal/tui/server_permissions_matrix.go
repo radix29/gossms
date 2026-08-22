@@ -161,7 +161,7 @@ func buildPermissionsMatrix(
 		selected = -1
 		selectedEdits = nil
 		visiblePerms = visiblePerms[:0]
-		permGrid.SetData([]string{"Permission", "State"}, nil)
+		permGrid.SetData(permissionStateColumns, nil)
 		permSection.SetTitle("Explicit permissions")
 	}
 	loadPrincipal := func(row int) {
@@ -174,7 +174,7 @@ func buildPermissionsMatrix(
 		}
 		selected = row
 		selectedEdits = editsFor(visible[row])
-		permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
+		permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
 		permGrid.SetSelectedRow(0)
 		permSection.SetTitle("Explicit permissions for " + visible[row].Name)
 	}
@@ -187,7 +187,7 @@ func buildPermissionsMatrix(
 		}
 		e := visiblePerms[row]
 		e.current = nextPermState(e.current)
-		redrawGrid(permGrid, []string{"Permission", "State"}, permRowsFor(selectedEdits))
+		redrawGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits))
 	}
 
 	principalFilterRow := propsheet.Text("Filter principals", "", 28)
@@ -214,7 +214,7 @@ func buildPermissionsMatrix(
 	permFilterRow.SetOnChange(func(term string) {
 		permFilter = term
 		if selectedEdits != nil {
-			permGrid.SetData([]string{"Permission", "State"}, permRowsFor(selectedEdits))
+			permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
 			permGrid.SetSelectedRow(0)
 		}
 	})
@@ -238,7 +238,7 @@ func buildPermissionsMatrix(
 			}
 		}
 		if selectedEdits != nil {
-			redrawGrid(permGrid, []string{"Permission", "State"}, permRowsFor(selectedEdits))
+			redrawGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits))
 		}
 	}
 
@@ -320,21 +320,21 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				return rows
 			}
 			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Permission", "State"}, rowsFor())
+			grid.SetData(permissionStateColumns, rowsFor())
 			grid.SetCellCursor(true)
 			grid.OnActivateCell = func(row, col int) {
 				if col != 1 || row < 0 || row >= len(visible) {
 					return
 				}
 				visible[row].current = nextPermState(visible[row].current)
-				redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
+				redrawGrid(grid, permissionStateColumns, rowsFor())
 			}
 
 			filterRow := propsheet.Text("Filter permissions", "", 28)
 			filterRow.SetDirtyTracked(false)
 			filterRow.SetOnChange(func(term string) {
 				filter = term
-				grid.SetData([]string{"Permission", "State"}, rowsFor())
+				grid.SetData(permissionStateColumns, rowsFor())
 				grid.SetSelectedRow(0)
 			})
 
@@ -351,7 +351,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				for _, e := range edits {
 					e.current = e.orig
 				}
-				redrawGrid(grid, []string{"Permission", "State"}, rowsFor())
+				redrawGrid(grid, permissionStateColumns, rowsFor())
 			}
 
 			f := propsheet.NewForm(

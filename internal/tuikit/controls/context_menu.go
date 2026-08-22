@@ -76,6 +76,13 @@ func (cm *ContextMenu) geometry(s tcell.Screen) (x, y, w, h int) {
 	if y+h > sh {
 		y = sh - h
 	}
+	// Lower clamps for a menu bigger than the screen, where the shifts above
+	// go negative and push the box off the opposite edge — the top rows, the
+	// ones hover starts on, being the ones lost. No shipped context menu is
+	// anywhere near that large (the longest is ten items), so this is
+	// defensive; MenuBar's dropdown, which is, scrolls instead.
+	x = max(x, 0)
+	y = max(y, 0)
 	return x, y, w, h
 }
 
@@ -98,7 +105,7 @@ func (cm *ContextMenu) Draw(s tcell.Screen) {
 		iy := y + 1 + i
 		drawMenuRow(s, x, iy, w, item, i == cm.hover, borderStyle)
 	}
-	cm.cascade.draw(s, cm.items, r)
+	cm.cascade.draw(s, cm.items, r, 0)
 }
 
 // drawnRect returns the box the menu was last painted in, using the same

@@ -2909,3 +2909,213 @@ dialog, which stays open.
 Two wording nits came out of that run and were fixed: an "A xml index
 requires..." note built by lowercasing the type's noun, and a columnstore
 Options page explaining a fill factor it has no row for.
+
+## 2026-08-22 — Cross-repo review: menu overflow, the login scripter, and header drift
+
+A review pass over both repos. Baseline first, and it was clean: build, vet,
+gofmt, `go test ./...` and `go test -race ./...` all green in gossms and gosmo;
+`deadcode -test` across gossms returned exactly one hit; tuikit's one-way
+dependency graph had no violations; no `SetData` sat inside an `OnSelectRow`
+anywhere; all 36 drag latches cleared on `ButtonNone`; and every SQL
+interpolation site in gosmo went through `quoteIdent`/`qualifiedName`/
+`escapeSingle` or a validator, with no injection path found. Six things came
+out of it, and two design calls went to `docs/open-threads.md` instead.
+
+**A menu bar dropdown taller than the terminal lost its last items, silently.**
+Found by reading `dropdownGeometry`, which never consulted the screen height at
+all, then reproduced: at 100×20, `F10` `Right` opens Edit's 21 items into a
+23-row box, and Comment/Uncomment Line, Uppercase Selection and Lowercase
+Selection were painted past the bottom edge — invisible, unclickable, and the
+keyboard highlight walked onto them where nothing showed it. `ContextMenu.
+geometry` had the neighbouring defect: it shifts a menu up to fit under the
+bottom edge, and that shift goes *negative* once the menu is taller than the
+screen, taking the top rows — the ones hover starts on — off the other side.
+
+The two needed different answers, which is the part worth keeping. A
+ContextMenu is positioned at the click and can be moved, so the missing lower
+clamps are the whole fix; no shipped context menu is anywhere near large enough
+to need more (the longest is ten items), and that is stated at the clamp. A
+dropdown is anchored under its own header and *cannot* be moved, so clamping
+alone would have hidden the three items behind a tidy bottom border — strictly
+worse than the truncation, which at least showed. `MenuBar` scrolls instead:
+`scrollTop`, a `clampMenuScroll` that follows the selection, ▲/▼ marks so a
+partial menu doesn't read as a complete one, and wheel support, without which
+the hidden items would be keyboard-only — no help to the mouse user they were
+hidden from. `menuCascade.draw` took a `rootScroll` parameter, since a scrolled
+level-0 item's index is no longer its row, and `HandleMouse` adds `scrollTop`
+back onto the row `cascade.hit` reports.
+
+`submenuRect`, added with the cascade work on 2026-08-19, already clamped both
+edges correctly. The two older functions had simply never been given the same
+treatment — worth knowing when the next box-drawing helper lands.
+
+One thing the fix got wrong on the first pass and is the reason `dropdownRect`
+looks the way it does. Caching the drawn rect (the `drawnX`/`drawnY` idiom
+`ContextMenu` documents) broke `TestMenuBarOpensAfterDialogOpeningItem`, which
+drives a `MenuBar` through clicks with no `Draw` between them and had every
+right to. `App.Run` does draw between the event that opens a dropdown and the
+next one, so the app never takes that path — but a widget that only works when
+something else drew it first is a worse widget. `dropdownRect` now falls back
+to the unclamped box when nothing has been drawn, and `dropdownColumn` is split
+out so it can.
+
+**`buildLoginScript` decided its own syntax by grepping its own output.**
+`strings.Contains(stmt, " WITH ")` chose between opening a WITH list and
+continuing one — and " WITH " is legal inside a bracketed identifier, so a
+login named `[svc WITH rights]` got `FROM WINDOWS, DEFAULT_DATABASE = [master]`,
+which does not parse. The branch already knew the answer; it now carries it as
+a bool. Narrow, but the class is not: read the fact from the code that
+established it, never from the text you rendered with it.
+
+**The same function dropped the SID it already had.** `Login.SID` is read from
+`sys.server_principals` and was never scripted, and a login recreated on
+another server with a fresh SID orphans every database user mapped to it —
+which is the main reason to script a login at all. It goes out as
+`SID = 0x…` via the existing `hexLiteral`, in the SQL-login branch only: a
+Windows or external login's SID comes from the directory and naming one is a
+syntax error. The test pins both halves, including that all four
+WINDOWS_/EXTERNAL_ type_descs stay clear of it.
+
+**Repeated column-header literals.** `database_props_files.go` spelled the same
+seven-column header out at four call sites, `securables_matrix.go` three
+different headers at three to five each, and `{"Permission","State"}` appeared
+seventeen times across three files. Every one of these pages reads its grid back
+*positionally* against the slice it was built from, so a header list that drifts
+at one call site misaligns a column against its neighbour — the exact failure
+the page tests exist for, sitting in the one place indices can't catch it. All
+hoisted to named vars, the shared ones into `prop_grid_helpers.go`.
+
+**`newScopedConfigIntEditor` swallowed its parse error.** `sys.database_scoped_
+configurations.value` is a `sql_variant` and not every option holds a number —
+a readable secondary can carry PRIMARY. `strconv.ParseInt(c.Value, 10, 64)`
+with the error discarded rendered such a value as `0`: a number the server
+never held, sitting on the dirty baseline so Apply would not write it back
+either. It now renders the actual value in a disabled row and stays out of
+`*tracked` — the same "never let a control silently do nothing" rule the
+comment eight lines below already states for a *missing* option. Only MAXDOP
+reaches that editor today, so this was latent; the next int option added with a
+keyword value would have hit it.
+
+Every new test was mutation-checked: reverting the height clamp fails four,
+dropping the `scrollTop` offset in the hit-test fails one, restoring the
+`strings.Contains` sniff and dropping the SID each fail their own, and
+restoring the swallowed `ParseInt` fails all three assertions of its test.
+
+**Verified live against win10cli the same day**, which is where two of these
+stopped being claims. gosmo's whole `-tags livedb` suite passes (the four
+Always On tests skip — win10cli has no WSFC and can never be a replica), as do
+gossms's `internal/query` and `internal/tui` live tests.
+
+`live_scriptlogin_test.go` is new and is the acceptance half the unit tests
+cannot reach. It creates a login literally named `gosmo live WITH rights`,
+scripts it, drops it, replays the script, and compares the SIDs — the generated
+statement is `CREATE LOGIN [gosmo live WITH rights] WITH PASSWORD = ...,
+SID = 0x479F…, DEFAULT_DATABASE = [master];`, which the server accepts, so both
+the clause order and the name-with-WITH case are settled by SQL Server rather
+than by a `strings.Contains` in a test. The second test walks the consequence
+end to end: create a login, map a database user to it, drop the login and
+*assert the user is now orphaned* (without that step the last assertion would be
+vacuous), replay the script, and confirm the user is bound again. That is the
+one thing the SID clause is for, and it now fails if the clause is dropped.
+
+The menu scrolling was driven in the built binary at 100×20, which took a live
+connection: without one, every Edit item is disabled and `stepSelectableItem`
+cannot move off the first. Two things worth writing down from that run. The
+first attempt looked like a total failure — eighteen Downs and nothing scrolled
+— because `stepSelectableItem` **wraps**, and with Cut/Copy/Paste disabled (no
+selection) the selectable set is far shorter than the twenty-one rows, so the
+walk cycled back into view. Stepping one key at a time and printing both the
+selection and the box's top row is what made it legible: the scroll first moves
+on Down #9, and Downs #10–12 reach Comment/Uncomment Line, Uppercase Selection
+and Lowercase Selection — the exact three that were painted off-screen before.
+Second, "no highlight anywhere" was a reading error, not a bug: the selected
+row's SGR run sits mid-line and a first-match grep found the menu-bar header
+instead. Confirm a TUI assertion by diffing two captures a single keystroke
+apart before concluding the feature is dead. Finished by pressing Enter on
+Lowercase Selection with `SELECT 1` selected and watching the editor become
+`select 1` — the item was not merely visible but reachable and live.
+
+## 2026-08-22 — The two open design calls, decided: batch plans and login sources
+
+Both items the cross-repo review left open earlier the same day, taken to a
+decision and implemented. Neither was a bug fix; each was a choice about what
+an API should mean, and the choices are recorded here because the code now
+reads as though they were obvious.
+
+**`ExecutionPlan` gained `All []string`; `XML` stays the last one.** A batch
+of several statements produces several plan documents, and `capturePlan`
+overwrote `plan` on every one, so `ExecutionPlan.XML` silently stood for the
+whole batch. `All` holds every document in server order; `XML` is the last of
+them, which is what the field already returned, so no existing caller changes
+behaviour. Live A/B against win10cli, three statements under `SET STATISTICS
+XML`: one plan before, three after.
+
+The live run also settled what the two SET options actually return, which the
+doc comment had blurred and no test could establish. `SET STATISTICS XML`
+appends one plan **result set** per statement — that is the case gosmo was
+losing. `SET SHOWPLAN_XML` returns a **single row for the whole batch**, one
+combined document holding every statement's plan, so an estimated plan is one
+document by design and not a truncation. A batch of `SELECT 1; …; SELECT 3;`
+is a bad probe for either: constant-only statements produced no plan set at
+all, and the first attempt read as a failure of the fix. Three real queries
+against `sys.*` is the shape that shows the behaviour.
+
+gossms's `scanPlanXML` had the same last-row-wins shape *within* one set and
+now appends every row. Being honest about what that fix is worth: no live
+shape on this server produces more than one row in a single showplan set, so
+it is correctness by construction, not an observed bug. The observable
+behaviour is pinned by `internal/query/live_plan_test.go` (`-tags livedb`),
+which asserts three documents for the actual plan and one combined document
+holding three `<StmtSimple>` elements for the estimated one — the distinction
+that would otherwise be re-derived by hand every time someone counts plan tabs.
+
+**`CreateLoginOptions` gained a `Source`, and the login read stopped hiding
+four of the seven login types.** gosmo could script `FROM EXTERNAL PROVIDER`
+but not create it; `password == ""` was carrying the whole SQL-versus-Windows
+decision and cannot carry six. `LoginSource` names all of them, with
+`LoginSourceAuto` (the zero value) resolving from the password exactly as
+before, so `new_login_pages.go` and every other existing caller is untouched.
+
+The read side was the part that had to move first: `Logins`/`LoginByName`
+filtered `type IN ('S','U','G')`, so an Entra login (`'E'`,`'X'`) or a
+certificate/asymmetric-key-mapped one (`'C'`,`'K'`) could not be read at all —
+which is why the scripter's `EXTERNAL` branch, written months ago, had never
+once been reached. The filter now admits all seven, matching what SSMS's
+Logins folder shows. Visible effect in gossms, verified in the built binary:
+the folder lists win10cli's seven `##MS_*SigningCertificate##` logins where it
+listed none, in both the tree and the details pane.
+
+That visibility turned up a second, older wrongness worth a line: Login
+Properties derived its Authentication row from `isSQLLogin`, so *everything*
+that was not a SQL login read "Windows Authentication". Invisible while the
+folder listed only SQL and Windows logins; a plain lie the moment a
+certificate login is on screen. `loginAuthLabel` now names each type, and an
+unknown `type_desc` renders as itself rather than as a confident wrong answer.
+
+**What the live server refused, and why the API is shaped around it.** The
+first working version put `DEFAULT_DATABASE` on an `ALTER LOGIN` for every
+source whose `CREATE` cannot carry it. `FROM CERTIFICATE` and `FROM ASYMMETRIC
+KEY` reject it in *both* statements — "Cannot use the parameter
+DEFAULT_DATABASE for a certificate or asymmetric key login" — even though
+`sys.server_principals` cheerfully reports `master` for such a login. So the
+option is refused up front for those two sources, and `buildLoginScript` omits
+the clause for them rather than scripting back a value the login it came from
+would reject. Only the external-provider path keeps the follow-up ALTER. None
+of that is derivable from the grammar in the docs; it took one live run, and
+`live_certlogin_test.go` pins both halves — including an assertion that the
+server really does refuse the ALTER, so the refusal is not just gosmo being
+timid.
+
+A certificate-mapped login's certificate name lives in `master.sys.certificates`,
+not in the login's row, so it is a second read: `Login.ResolveMapping` fills
+`MappedObject` and is a no-op for every other type. Deliberately not folded
+into the list query — it would put a cross-database join on the path of every
+login enumeration to serve two of seven types. `buildLoginScript` calls it
+through `ScriptLoginContext`, and falls back to an SSMS-style
+`[<certificate name, sysname, >]` placeholder when the mapping cannot be
+resolved, since a script naming nothing would not parse.
+
+Not done, and deliberately: the gossms New Login dialog still offers only SQL
+and Windows. The gosmo capability exists now; the UI for it stays part of the
+standing Entra item in `docs/open-threads.md`. `FROM EXTERNAL PROVIDER` itself
+is pinned by statement text only — win10cli has no Entra to accept it.

@@ -2,11 +2,7 @@ package tui
 
 import (
 	"database/sql/driver"
-	"testing"
 	"time"
-
-	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // Shared fixtures for the SQL Server Agent Properties pages — Job, Alert,
@@ -159,13 +155,4 @@ func agentDatabaseListResponse() fakeResponse {
 		{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch},
 		{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch},
 	}}
-}
-
-// loadAgentPage is loadPage plus the fake instance, for the pages whose whole
-// fixture set is one of the groups above.
-func loadAgentPage(t *testing.T, responses []fakeResponse, page func(sc *db.ServerConn) propPage) (*fakeInstance, propApply, *propsheet.Form) {
-	t.Helper()
-	sc, inst := newFakeConn(t, responses...)
-	form, apply := loadPage(t, page(sc), inst)
-	return inst, apply, form
 }

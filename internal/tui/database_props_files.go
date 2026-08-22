@@ -11,6 +11,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
+// databaseFileColumns heads the Files page grid, which is rebuilt from four
+// call sites and read back by column index.
+var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}
+
 // logFileType is sys.database_files' type_desc for a transaction log file,
 // the one file type that belongs to no filegroup.
 const logFileType = "LOG"
@@ -234,7 +238,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			}
 
 			grid := controls.NewDataGrid()
-			grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
+			grid.SetData(databaseFileColumns, rowsFor())
 			grid.SetCellCursor(true)
 
 			nameField := propsheet.Text("Logical name", "", 24)
@@ -387,7 +391,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					}
 				}
 				edits = append(edits, e)
-				grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
+				grid.SetData(databaseFileColumns, rowsFor())
 				grid.SetSelectedRow(len(visible()) - 1)
 				syncFieldsFromSelection()
 			})
@@ -400,7 +404,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				hint.Clear()
 				e.pendingRemove = true
 				current = nil
-				grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
+				grid.SetData(databaseFileColumns, rowsFor())
 				grid.SetSelectedRow(0)
 				syncFieldsFromSelection()
 			})
@@ -420,7 +424,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				for _, fl := range files {
 					edits = append(edits, fileEditFromInfo(fl))
 				}
-				grid.SetData([]string{"Logical name", "Type", "Filegroup", "Size (MB)", "Autogrowth", "Max size", "Path"}, rowsFor())
+				grid.SetData(databaseFileColumns, rowsFor())
 				syncFieldsFromSelection()
 			}
 

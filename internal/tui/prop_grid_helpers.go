@@ -256,3 +256,20 @@ func buildFilterInfoForm(d *PropDialog, t *gosmo.Table, hasFilter bool, filterDe
 		propsheet.Note("The predicate can only be set when the index or statistic is created — use Script Changes, or DROP + CREATE, to change it. Check Syntax and Estimate Rows run the expression against the live table."),
 	)
 }
+
+// Column headers shared by more than one grid. Each of these pages reads its
+// grid back positionally against the slice it was built from, and several
+// rebuild the same grid from three or four call sites, so a header list
+// spelled out at each one is a list that can drift at one of them — the
+// misalignment then shows as a column labelled for its neighbour, which no
+// test that also works in indices can see.
+var (
+	// permissionStateColumns heads the grant/deny/revoke matrices.
+	permissionStateColumns = []string{"Permission", "State"}
+	// propertyValueColumns heads the Detail Browser's two-column property
+	// readouts.
+	propertyValueColumns = []string{"Property", "Value"}
+	// indexKeyColumns heads the key-column list an index, key or statistic
+	// is built on.
+	indexKeyColumns = []string{"Ord", "Column name", "Sort order"}
+)

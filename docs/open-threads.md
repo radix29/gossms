@@ -1065,3 +1065,31 @@ on. Nothing here is urgent; the first two are small and self-contained.
   stays: the helper makes skipping registration awkward, not impossible.
   Registration order is unchanged, which matters only as the same-tick
   tie-break `syncDialogStack` uses. See `docs/journal.md`.
+
+## Left open by the 2026-08-22 cross-repo review
+
+Both items below were taken to a decision and implemented the same day — see
+`docs/journal.md` § 2026-08-22 "The two open design calls, decided". What
+remains of each is recorded here.
+
+- **Execution plans: done, one caveat.** `ExecutionPlan` now has
+  `All []string` with `XML` kept as the last document, and gossms's
+  `scanPlanXML` appends every row of a showplan set. The caveat is that the
+  gossms half is correctness by construction: no shape observed on a live
+  server puts more than one row in a single showplan result set, since
+  `SET SHOWPLAN_XML` returns one combined document per batch. If a future
+  server or driver version does, `internal/query/live_plan_test.go` is where
+  it would show.
+
+- **Login sources: the gosmo half is done, the gossms UI is not.**
+  `CreateLoginOptions.Source` covers SQL, Windows, external provider,
+  certificate and asymmetric key, and the login read/script path covers all
+  seven `type_desc` values. The **New Login dialog still offers only SQL and
+  Windows** — that stays part of § Deferred scope's standing Entra item, and
+  is now purely a UI question. Two things are still unpinned by a live run:
+  `FROM EXTERNAL PROVIDER` (win10cli has no Entra, so its statement text is
+  pinned by unit test only) and `CREATE LOGIN ... FROM EXTERNAL PROVIDER WITH
+  OBJECT_ID = '...'`, which SQL Server 2022+ accepts and gosmo does not emit —
+  nobody has asked for it, and adding it blind to a form nothing can exercise
+  is how the unreachable `EXTERNAL` scripter branch happened in the first
+  place.

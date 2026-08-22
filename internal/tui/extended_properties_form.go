@@ -10,6 +10,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
+// extendedPropertyColumns heads the extended-properties grid, rebuilt from
+// four call sites.
+var extendedPropertyColumns = []string{"Name", "Value"}
+
 // extPropEdit tracks one extended property's pending state: an existing
 // property whose value changed, or a brand-new one pending Add.
 type extPropEdit struct {
@@ -83,7 +87,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 	}
 
 	grid := controls.NewDataGrid()
-	grid.SetData([]string{"Name", "Value"}, rowsFor())
+	grid.SetData(extendedPropertyColumns, rowsFor())
 
 	nameField := propsheet.Text("Name", "", 24)
 	valueField := propsheet.Text("Value", "", 30)
@@ -149,7 +153,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		}
 		hint.Clear()
 		edits = append(edits, &extPropEdit{name: name, value: valueField.Value(), isNew: true})
-		grid.SetData([]string{"Name", "Value"}, rowsFor())
+		grid.SetData(extendedPropertyColumns, rowsFor())
 		grid.SetSelectedRow(len(visible()) - 1)
 		syncFieldsFromSelection()
 	})
@@ -162,7 +166,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		hint.Clear()
 		e.pendingRemove = true
 		current = nil // its old value is void; don't let commitCurrent write back into it
-		grid.SetData([]string{"Name", "Value"}, rowsFor())
+		grid.SetData(extendedPropertyColumns, rowsFor())
 		grid.SetSelectedRow(0)
 		syncFieldsFromSelection()
 	})
@@ -188,7 +192,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 			kept = append(kept, e)
 		}
 		edits = kept
-		grid.SetData([]string{"Name", "Value"}, rowsFor())
+		grid.SetData(extendedPropertyColumns, rowsFor())
 	}
 
 	f := propsheet.NewForm(

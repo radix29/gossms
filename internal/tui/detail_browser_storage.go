@@ -69,7 +69,7 @@ func storageSecurityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 			}
 			rows = append(rows, []string{label, value})
 		}
-		return []string{"Property", "Value"}, rows, nil
+		return propertyValueColumns, rows, nil
 
 	case NodeColumnMasterKey:
 		k, err := findColumnMasterKey(ctx, sc, n.DBName, n.Name)
@@ -96,7 +96,7 @@ func storageSecurityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 			rows = append(rows, []string{fmt.Sprintf("Value %d", i+1),
 				fmt.Sprintf("%s, %s, %s", v.MasterKeyName, v.EncryptionAlgorithm, hexPreview(v.EncryptedValue))})
 		}
-		return []string{"Property", "Value"}, rows, nil
+		return propertyValueColumns, rows, nil
 	}
 }
 
@@ -107,5 +107,5 @@ func propertyRows(pairs ...string) ([]string, [][]string, error) {
 	for i := 0; i+1 < len(pairs); i += 2 {
 		rows = append(rows, []string{pairs[i], pairs[i+1]})
 	}
-	return []string{"Property", "Value"}, rows, nil
+	return propertyValueColumns, rows, nil
 }
