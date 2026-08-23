@@ -7,10 +7,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// selectionScreenPos returns the screen coordinates of the selected cell —
-// used to position the context menu / "Show Value" popup when it's opened
-// via Ctrl+Space instead of a right-click (see HandleKey). Mirrors the
-// column-width walk drawCellSelection uses to place the same cell on screen.
+// selectionScreenPos returns the screen coordinates of the selected cell, to
+// position the context menu or "Show Value" popup opened with Ctrl+Space.
+// Mirrors drawCellSelection's column-width walk.
 func (g *DataGrid) selectionScreenPos() (x, y int) {
 	x = g.rect.X + g.gutterWidth()
 	for i := g.scrollCol; i < g.selCol && i < len(g.colWidths); i++ {
@@ -21,9 +20,8 @@ func (g *DataGrid) selectionScreenPos() (x, y int) {
 }
 
 // selectionContains reports whether (row, col) falls within the current
-// selection — used by the right-click handler to decide whether a click
-// inside an existing block selection should preserve it (for a block copy)
-// rather than collapsing it to the clicked cell.
+// selection, so the right-click handler can preserve an existing block
+// selection instead of collapsing it to the clicked cell.
 func (g *DataGrid) selectionContains(row, col int) bool {
 	r0, c0, r1, c1 := g.selectionBounds()
 	return row >= r0 && row <= r1 && col >= c0 && col <= c1
@@ -43,23 +41,19 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		g.viewEditor.HandleKey(ev)
 		return true
 	}
-	// Ctrl+Space is the keyboard equivalent of right-clicking the selected
-	// cell — the same "Show Value" popup a read-only grid's mouse
-	// right-click opens (see HandleMouse's Button2 case; an editable grid,
-	// OnActivateCell != nil, has no context menu there either, so this
-	// falls through to the default case below like it always has).
+	// Ctrl+Space is the keyboard equivalent of right-clicking the selected cell.
+	// An editable grid (OnActivateCell != nil) has no context menu there either,
+	// so it falls through to the default case below.
 	if ev.Modifiers()&tcell.ModCtrl != 0 && core.EvRune(ev) == ' ' &&
 		g.cellCursor && g.rows.Len() > 0 && g.OnActivateCell == nil {
 		x, y := g.selectionScreenPos()
 		g.ctxMenu.Show(x, y, g.cellContextMenuItems())
 		return true
 	}
-	// Shift+Arrow extends a multi-cell block selection from the cell the
-	// cursor was on before this key (the anchor stays fixed across repeated
-	// Shift+Arrow presses); a plain arrow collapses back to a single cell.
-	// Only meaningful for a read-only, cell-cursor grid — an editable grid's
-	// Left/Right/Up/Down never select a block (see blockSelecting's field
-	// doc).
+	// Shift+Arrow extends a block selection from the cell the cursor was on
+	// before this key, the anchor staying fixed across repeats; a plain arrow
+	// collapses back to one cell. Read-only cell-cursor grids only — see
+	// blockSelecting.
 	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
 	shiftHeld := ev.Modifiers()&tcell.ModShift != 0
 	isArrowKey := false
@@ -78,13 +72,12 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		}
 	}
 	dataH := g.rect.H - 3
-	// The four whole-list jumps do nothing on an empty grid, the same guard
+	// The four whole-list jumps do nothing on an empty grid, the guard
 	// SetSelectedRow/SetSelectedCell already carry. PgDn and End derive selRow
-	// from rows.Len()-1, which is -1 with no rows; ensureVisible then copies
-	// that into scrollRow, and Draw's row loop only bounds dataIdx from above,
-	// so it reaches rows.Row(-1) and panics on the UI goroutine — which has no
-	// recover, so it takes the whole app down. Up/Down need no guard: both are
-	// already bounded by a live row index.
+	// from rows.Len()-1, which is -1 with no rows; ensureVisible copies that into
+	// scrollRow, and Draw's row loop bounds dataIdx only from above, so it
+	// reaches rows.Row(-1) and panics on the UI goroutine, which has no recover.
+	// Up/Down are already bounded by a live row index.
 	switch ev.Key() {
 	case tcell.KeyPgUp, tcell.KeyPgDn, tcell.KeyHome, tcell.KeyEnd:
 		if g.rows.Len() == 0 {
@@ -179,17 +172,15 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		if g.viewEditor.HandleMouse(ev) {
 			return true
 		}
-		// Everything else is swallowed and the popup stays open. A click
-		// outside it used to dismiss it, which meant a stray click while
-		// reading or part-way through selecting a long value silently threw
-		// it away; Escape and the Close button are the only ways out now.
+		// Everything else is swallowed and the popup stays open: Escape and the
+		// Close button are the only ways out, so a stray click part-way through
+		// selecting a long value can't throw it away.
 		return true
 	}
-	// Reset the drag-vs-fresh-click tracker on every release, regardless of
-	// where it lands or whether a block selection was even in progress —
-	// mirrors Editor's own mouseDragging reset. A side effect only: the
-	// return value below is unaffected, so propsheet.Form's "focused row
-	// gets first refusal" contract still holds (see tuikit/README.md).
+	// Reset the drag-vs-fresh-click tracker on every release, wherever it lands
+	// and whether or not a block selection was in progress — as Editor does. A
+	// side effect only: the return value is unaffected, so propsheet.Form's
+	// "focused row gets first refusal" contract still holds.
 	if ev.Buttons() == tcell.ButtonNone {
 		g.mouseDragging = false
 		g.sbDragging = false
@@ -197,16 +188,16 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		g.colResizing = false
 	}
 	mx, my := ev.Position()
-	// A column-resize drag, like the horizontal scrollbar's below, keeps
-	// control once started even after the pointer leaves the grid — so it's
-	// checked ahead of the bounds test.
+	// A column-resize drag, like the horizontal scrollbar's below, keeps control
+	// once started even after the pointer leaves the grid, so it is checked ahead
+	// of the bounds test.
 	if g.resizeDrag(ev) {
 		return true
 	}
-	// A horizontal-scrollbar drag keeps control once started, even after the
-	// pointer leaves the grid entirely — so it's checked before the bounds
-	// test, unlike the vertical bar, whose track runs the full height of the
-	// data area and so is far harder to drag off.
+	// A horizontal-scrollbar drag keeps control once started even after the
+	// pointer leaves the grid, so it is checked before the bounds test — unlike
+	// the vertical bar, whose track spans the whole data area and is harder to
+	// drag off.
 	if g.hScrollbarDrag(ev) {
 		return true
 	}
@@ -215,10 +206,9 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	dataH := g.rect.H - 3
 
-	// Scrollbar drag/click takes priority over row/cell hit-testing below —
-	// the bar is drawn at rect.Right()-1 (see Draw), which without this
-	// check first would otherwise be read as a click on whatever row/cell
-	// happens to sit in that screen column.
+	// Scrollbar drag/click takes priority over the row/cell hit-testing below:
+	// the bar is drawn at rect.Right()-1, which would otherwise read as a click
+	// on whatever cell sits in that column.
 	if core.HandleScrollbarDrag(ev, g.rect.Right()-1, g.rect.Y+2, dataH, g.rows.Len(), &g.sbDragging, &g.scrollRow) {
 		return true
 	}
@@ -226,11 +216,10 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	canBlockSelect := g.cellCursor && g.OnActivateCell == nil
 	switch ev.Buttons() {
 	case tcell.Button1:
-		// rowAtY is -1 outside the data rows. The bound matters: rect covers
-		// the header, its separator, and the status bar too, and without it a
-		// click on the status bar resolves to scrollRow+dataH — the first row
-		// *below* the view — silently moving the selection somewhere the user
-		// can't see.
+		// rowAtY is -1 outside the data rows. rect covers the header, its
+		// separator and the status bar too, so without the bound a click on the
+		// status bar resolves to scrollRow+dataH — the first row *below* the
+		// view — moving the selection out of sight.
 		if row := g.rowAtY(my); row >= 0 {
 			if canBlockSelect {
 				if col, ok := g.colAt(mx); ok {
@@ -257,24 +246,22 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 			if g.cellCursor {
 				if col, ok := g.colAt(mx); ok {
 					if g.mouseDragging && row == g.toggleRow && col == g.toggleCol {
-						// Still the same cell as the last press/drag-move
-						// event — do not re-toggle on every resent motion
-						// event from one physical, stationary click.
+						// Still the same cell as the last press or drag-move —
+						// don't re-toggle on every resend from one stationary
+						// click.
 						return true
 					}
 					g.mouseDragging = true
 					g.toggleRow, g.toggleCol = row, col
 					g.selCol = col
-					// Select, then activate — the order the keyboard already
-					// uses, and the reason this fires at all: this branch used
-					// to return straight from activateCell, so on a
-					// cell-cursor grid a click moved the highlight and never
-					// told the page. Every detail panel wired to OnSelectRow
-					// went on describing the row the keyboard last left it on.
-					// Gated on an actual move, like the keyboard path: a page
-					// that redraws from inside OnActivateCell must not have
-					// its selection callback re-entered on every toggle of the
-					// row it is already on.
+					// Select, then activate — the order the keyboard uses.
+					// Without the select, a click on a cell-cursor grid moves
+					// the highlight and never tells the page, so a detail panel
+					// wired to OnSelectRow goes on describing the row the
+					// keyboard left it on. Gated on an actual move, like the
+					// keyboard path: a page that redraws from inside
+					// OnActivateCell must not have its selection callback
+					// re-entered on every toggle of the row it is already on.
 					if row != prevRow && g.OnSelectRow != nil {
 						g.OnSelectRow(row)
 					}
@@ -298,11 +285,10 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 			return true
 		}
-		// Right-click on a data cell: select it and, for a read-only grid
-		// (OnActivateCell unset), offer "Copy"/"Show Value". A click inside
-		// an existing block selection preserves it (so "Copy" copies the
-		// whole block); otherwise it collapses to just the clicked cell,
-		// matching ordinary spreadsheet right-click behavior.
+		// Right-click on a data cell: select it and, on a read-only grid, offer
+		// "Copy"/"Show Value". A click inside an existing block selection
+		// preserves it so "Copy" takes the whole block; otherwise it collapses
+		// to the clicked cell, as a spreadsheet does.
 		if row := g.rowAtY(my); g.cellCursor && row >= 0 {
 			if col, ok := g.colAt(mx); ok {
 				if !g.selectionContains(row, col) {
@@ -315,10 +301,9 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 		}
 	case tcell.WheelUp:
-		// Shift+wheel is the common desktop convention for horizontal
-		// scroll; some terminals report it as WheelUp/WheelDown with a
-		// Shift modifier rather than as WheelLeft/WheelRight below, so
-		// honour both.
+		// Shift+wheel is the desktop convention for horizontal scroll, and some
+		// terminals report it that way rather than as WheelLeft/WheelRight
+		// below, so honour both.
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			g.scrollColBy(-horizontalWheelCols)
 		} else if g.scrollRow > 0 {
@@ -338,9 +323,8 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// horizontalWheelCols is how many columns a single horizontal wheel tick
-// (WheelLeft/WheelRight, or Shift+WheelUp/WheelDown) scrolls — matches
-// DataGrid's own 1-row vertical wheel step.
+// horizontalWheelCols is how many columns one horizontal wheel tick scrolls,
+// matching the 1-row vertical step.
 const horizontalWheelCols = 1
 
 // scrollColBy shifts scrollCol by delta (negative scrolls left), clamped
@@ -349,15 +333,13 @@ func (g *DataGrid) scrollColBy(delta int) {
 	g.scrollCol = core.Clamp(g.scrollCol+delta, 0, max(0, len(g.columns)-1))
 }
 
-// hScrollbarDrag handles a Button1 press or drag on the horizontal
-// scrollbar (see DataGrid.hScrollbar), translating a position along the
-// track into a scrollCol. core.HandleScrollbarDragH can't serve here: it
-// treats the track's own width as the visible count, which only works when
-// both are the same unit — this track is characters wide while what it
-// scrolls is a column index. Latches on sbDraggingH for the rest of the
-// gesture, so the thumb keeps following the pointer once it leaves the
-// bar's row. Returns false for anything that isn't a qualifying event, so
-// the caller can chain it ahead of its own hit-testing.
+// hScrollbarDrag handles a Button1 press or drag on the horizontal scrollbar
+// (see DataGrid.hScrollbar), translating a track position into a scrollCol.
+// core.HandleScrollbarDragH can't serve: it treats the track's width as the
+// visible count, and this track is characters wide while what it scrolls is a
+// column index. Latches sbDraggingH for the rest of the gesture, so the thumb
+// keeps following the pointer off the bar's row. Returns false for anything that
+// doesn't qualify, so the caller can chain it ahead of its own hit-testing.
 func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return false
@@ -371,22 +353,19 @@ func (g *DataGrid) hScrollbarDrag(ev *tcell.EventMouse) bool {
 		return false
 	}
 	g.sbDraggingH = true
-	// ScrollOffsetForDrag gives the character offset the track position
-	// asks for, already clamped so the last screenful can't be scrolled
-	// past; colAtOffset rounds that to a column boundary, since scrollCol
-	// is a column index and Draw never splits a cell.
+	// ScrollOffsetForDrag gives the character offset the track position asks
+	// for, clamped so the last screenful can't be scrolled past; colAtOffset
+	// rounds it to a column boundary, since Draw never splits a cell.
 	g.scrollCol = g.colAtOffset(core.ScrollOffsetForDrag(mx-x, w, total, visible))
 	return true
 }
 
-// resizeDrag handles a Button1 press or drag on a column separator in the
-// header row, resizing the column to its left (matching SSMS). A press on
-// a separator latches colResizing for the rest of the gesture, so the edge
-// keeps following the pointer once it has moved off the one-column-wide
-// separator itself; a second press on the same separator within
-// resizeDoubleClickInterval restores that column's default width instead.
-// Returns false for anything that isn't a qualifying event, so the caller
-// can chain it ahead of its own hit-testing.
+// resizeDrag handles a Button1 press or drag on a column separator in the header
+// row, resizing the column to its left as SSMS does. A press latches colResizing
+// for the rest of the gesture, so the edge keeps following the pointer off the
+// one-column-wide separator; a second press on the same separator within
+// resizeDoubleClickInterval restores that column's default width. Returns false
+// for anything that doesn't qualify.
 func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return false
@@ -400,9 +379,9 @@ func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 		if g.sepPressIsDouble(col, ev.When()) {
 			g.SetColumnWidth(col, 0)
 		}
-		// Latched even for the double-click, so the resends tcell sends
-		// while the button stays down are absorbed here rather than
-		// re-entering this branch against the now-moved separator.
+		// Latched even for the double-click, so tcell's resends while the button
+		// is down are absorbed here rather than re-entering this branch against
+		// the now-moved separator.
 		g.colResizing = true
 		g.resizeCol, g.resizeStartX, g.resizeStartW = col, mx, g.colWidths[col]
 		return true
@@ -412,9 +391,9 @@ func (g *DataGrid) resizeDrag(ev *tcell.EventMouse) bool {
 }
 
 // sepColAt returns the column whose right-hand separator is drawn at screen
-// position (x, y) — the column a drag there resizes. Only the header row
-// grabs: the separator glyph runs down every data row, and claiming it
-// there too would steal clicks from cell selection.
+// position (x, y) — the column a drag there resizes. Only the header row grabs:
+// the separator glyph runs down every data row, and claiming it there would
+// steal clicks from cell selection.
 func (g *DataGrid) sepColAt(x, y int) (col int, ok bool) {
 	if y != g.rect.Y || g.rect.H < 3 {
 		return 0, false
@@ -433,9 +412,9 @@ func (g *DataGrid) sepColAt(x, y int) (col int, ok bool) {
 	return 0, false
 }
 
-// sepPressIsDouble reports whether a press on column col's separator at
-// time at follows a previous press on the same separator closely enough to
-// count as a double-click, and records this press for the next call.
+// sepPressIsDouble reports whether a press on column col's separator at time at
+// follows a previous one closely enough to count as a double-click, and records
+// this press for the next call.
 func (g *DataGrid) sepPressIsDouble(col int, at time.Time) bool {
 	double := col == g.lastSepPressCol && !g.lastSepPressAt.IsZero() &&
 		at.Sub(g.lastSepPressAt) <= resizeDoubleClickInterval
@@ -448,9 +427,9 @@ func (g *DataGrid) sepPressIsDouble(col int, at time.Time) bool {
 	return false
 }
 
-// rowAtY returns the data row index drawn at screen row y, or -1 if y
-// isn't one of the data rows — the header, its separator, the status bar,
-// and any blank filler below the last row all return -1.
+// rowAtY returns the data row index drawn at screen row y, or -1 for the
+// header, its separator, the status bar and any blank filler below the last
+// row.
 func (g *DataGrid) rowAtY(y int) int {
 	dataH := g.rect.H - 3
 	line := y - g.rect.Y - 2
@@ -464,9 +443,8 @@ func (g *DataGrid) rowAtY(y int) int {
 	return row
 }
 
-// colAtOffset returns the last column starting at or before character
-// offset off — the inverse of the running sum hScrollbar reports as its
-// offset.
+// colAtOffset returns the last column starting at or before character offset off
+// — the inverse of the running sum hScrollbar reports.
 func (g *DataGrid) colAtOffset(off int) int {
 	acc, col := 0, 0
 	for i, cw := range g.colWidths {
@@ -479,10 +457,9 @@ func (g *DataGrid) colAtOffset(off int) int {
 	return core.Clamp(col, 0, max(0, len(g.colWidths)-1))
 }
 
-// colAt returns the column index whose cell contains screen x, in
-// cell-cursor mode, honouring horizontal scroll and the row-number gutter
-// (if enabled). ok is false if x falls outside every column — including
-// inside the gutter itself, which is never a selectable column.
+// colAt returns the column index whose cell contains screen x in cell-cursor
+// mode, honouring horizontal scroll and the row-number gutter. ok is false if x
+// falls outside every column, the gutter included.
 func (g *DataGrid) colAt(x int) (col int, ok bool) {
 	cx := g.rect.X + g.gutterWidth()
 	for i := g.scrollCol; i < len(g.colWidths); i++ {
@@ -504,10 +481,9 @@ func (g *DataGrid) ensureVisible(dataH int) {
 	}
 }
 
-// ensureVisibleCol scrolls horizontally, if needed, so selCol is on screen
-// — the column analogue of ensureVisible. Columns vary in width, so unlike
-// the row case this can't be a single subtraction: it walks scrollCol
-// rightward until selCol's column fits within the available width.
+// ensureVisibleCol scrolls horizontally so selCol is on screen — ensureVisible's
+// column analogue. Columns vary in width, so instead of one subtraction it walks
+// scrollCol rightward until selCol fits the available width.
 func (g *DataGrid) ensureVisibleCol() {
 	if g.selCol < g.scrollCol {
 		g.scrollCol = g.selCol
@@ -526,11 +502,9 @@ func (g *DataGrid) ensureVisibleCol() {
 	}
 }
 
-// activateCell fires OnActivateCell for grids that define editable
-// cell-activation behavior (toggle grids, permission-state cycling, …).
-// Grids that leave it nil — every plain read-only display grid — do
-// nothing here; right-click's "Show Value" (see HandleMouse) is how those
-// open the full-content viewer.
+// activateCell fires OnActivateCell for grids with editable cells (toggle grids,
+// permission-state cycling). A grid leaving it nil does nothing here;
+// right-click's "Show Value" is how those open the full-content viewer.
 func (g *DataGrid) activateCell() {
 	if g.OnActivateCell != nil {
 		g.OnActivateCell(g.selRow, g.selCol)

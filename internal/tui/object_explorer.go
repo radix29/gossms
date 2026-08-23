@@ -9,9 +9,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// explorerNode is the application's tree model. It owns the SQL-Server
-// specific data (Type, Schema, DBName, child loading state) and is mapped
-// into a flat []controls.TreeNode for rendering by the embedded TreeView.
+// explorerNode is the application's tree model. It owns the SQL Server data
+// (Type, Schema, DBName, child loading state) and is flattened into
+// []controls.TreeNode for the embedded TreeView to render.
 type explorerNode struct {
 	id       int
 	label    string
@@ -20,39 +20,33 @@ type explorerNode struct {
 	parent   *explorerNode
 	children []*explorerNode
 
-	// loadSeq and cancelLoad guard a node's in-flight background fetch
-	// (see App.loadChildren): loadSeq is bumped on every fetch request, so
-	// a fetch whose result arrives after a newer one was started can tell
-	// it's stale and drop itself instead of overwriting fresher children;
-	// cancelLoad stops that superseded fetch's context outright rather
-	// than just ignoring its result.
+	// loadSeq and cancelLoad guard a node's in-flight background fetch (see
+	// App.loadChildren): loadSeq is bumped on every request, so a result
+	// arriving after a newer fetch started drops itself instead of overwriting
+	// fresher children, and cancelLoad stops the superseded fetch outright.
 	loadSeq    int
 	cancelLoad context.CancelFunc
 }
 
-// snapshot returns a detached copy of n carrying only what a loader reads:
-// its label and its nodeData, by value. Every background fetch takes one of
-// these instead of the live node, because the UI goroutine writes n.data
-// while the fetch is running — applyNodeFilter sets data.Filter, and the
-// object ops write it too — and reading it from the fetch is a data race, not
-// merely a stale read. The live node still travels alongside as the identity
-// the posted callback keys off (endLoad, SetChildren, DetailBrowser.pending),
-// but nothing dereferences it off the UI goroutine.
+// snapshot returns a detached copy of n carrying only what a loader reads: its
+// label and its nodeData, by value. Every background fetch takes one instead of
+// the live node, because the UI goroutine writes n.data while the fetch runs —
+// applyNodeFilter sets data.Filter, and the object ops write it too — so reading
+// it from the fetch is a data race, not merely a stale read. The live node still
+// travels alongside as the identity the posted callback keys off, but nothing
+// dereferences it off the UI goroutine.
 //
 // id, parent and children are deliberately dropped: no loader reads them, and
-// leaving them out is what stops a snapshot from being usable as a tree node
-// by mistake.
+// leaving them out stops a snapshot being usable as a tree node by mistake.
 func (n *explorerNode) snapshot() *explorerNode {
 	return &explorerNode{label: n.label, data: n.data}
 }
 
-// beginLoad cancels whatever fetch is already in flight for this node (a
-// fast double-expand, or a Refresh before the initial load returned) and
-// starts a new timeout-bound one, derived from parent — the owning
-// connection's own Context(), so disconnecting cancels this fetch too
-// instead of leaving it to idle out on its own timeout. The caller must
-// pass seq to endLoad once the fetch completes, so a stale result can
-// recognize itself and refuse to overwrite fresher children.
+// beginLoad cancels whatever fetch is in flight for this node and starts a new
+// timeout-bound one derived from parent — the owning connection's Context(), so
+// disconnecting cancels this fetch rather than leaving it to idle out. The
+// caller passes seq to endLoad on completion, so a stale result refuses to
+// overwrite fresher children.
 func (n *explorerNode) beginLoad(parent context.Context, timeout time.Duration) (ctx context.Context, seq int) {
 	if n.cancelLoad != nil {
 		n.cancelLoad()
@@ -62,15 +56,13 @@ func (n *explorerNode) beginLoad(parent context.Context, timeout time.Duration) 
 	return ctx, n.loadSeq
 }
 
-// endLoad reports whether seq (as returned by beginLoad) is still current
-// — false means a newer beginLoad has since superseded it, and the result
-// belonging to seq must be discarded. Clears cancelLoad on success, since
-// the fetch it guarded has now finished.
+// endLoad reports whether seq is still current; false means a newer beginLoad
+// superseded it and seq's result must be discarded. Clears cancelLoad on
+// success.
 //
-// The cancel is called, not just dropped: the fetch's result is already in
-// hand by the time this runs, but the timeout context stays registered on
-// the connection's context with its timer armed until childFetchTimeout
-// expires, for every node ever expanded.
+// The cancel is called, not just dropped: the result is already in hand, but the
+// timeout context stays registered on the connection's context with its timer
+// armed until childFetchTimeout expires, for every node ever expanded.
 func (n *explorerNode) endLoad(seq int) bool {
 	if n.loadSeq != seq {
 		return false
@@ -114,12 +106,10 @@ func (oe *ObjectExplorer) Draw(s tcell.Screen)                   { oe.view.Draw(
 func (oe *ObjectExplorer) HandleKey(ev *tcell.EventKey) bool     { return oe.view.HandleKey(ev) }
 func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.view.HandleMouse(ev) }
 
-// AddRoot adds a new server root node, selecting it — so Object Explorer
-// Details populates immediately after a successful connect, the same as if
-// the user had clicked the new node themselves, rather than sitting empty
-// until the next manual selection change (SetNodes' tv.sel clamp keeps the
-// tree's *previous* selection in bounds, it doesn't mean "select this new
-// node" — see controls.TreeView.SelectID).
+// AddRoot adds a new server root node and selects it, so Object Explorer Details
+// populates immediately after a connect rather than sitting empty until the next
+// manual selection. SetNodes' tv.sel clamp only keeps the *previous* selection
+// in bounds — see controls.TreeView.SelectID.
 func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode {
 	n := &explorerNode{
 		id:    oe.allocID(),
@@ -133,10 +123,9 @@ func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode
 	return n
 }
 
-// ExpandNode expands n and fetches its children if they have not been loaded
-// yet — the same path a click on the expander glyph takes. Used by connect,
-// which opens a new server node the way SSMS does rather than leaving the
-// tree a single collapsed line.
+// ExpandNode expands n and fetches its children if they aren't loaded — the path
+// a click on the expander glyph takes. connect uses it to open a new server node
+// the way SSMS does.
 func (oe *ObjectExplorer) ExpandNode(n *explorerNode) {
 	if n == nil {
 		return
@@ -156,12 +145,10 @@ func (oe *ObjectExplorer) RemoveRootByConn(sc *db.ServerConn) {
 	}
 }
 
-// RefreshDatabasesFolder refreshes sc's "Databases" folder node — used
-// after an action that changes the database list from outside Object
-// Explorer's own expand/refresh flow (e.g. New Database). A folder that's
-// never been loaded (the server node hasn't been expanded yet, or the
-// Databases folder itself hasn't) needs no action: its next expand fetches
-// the current list anyway.
+// RefreshDatabasesFolder refreshes sc's "Databases" folder node, after an action
+// that changes the database list from outside Object Explorer's own
+// expand/refresh flow. A folder never loaded needs no action: its next expand
+// fetches the current list anyway.
 func (oe *ObjectExplorer) RefreshDatabasesFolder(sc *db.ServerConn) {
 	for _, r := range oe.roots {
 		if r.data.conn != sc {
@@ -182,11 +169,9 @@ func (oe *ObjectExplorer) RefreshDatabasesFolder(sc *db.ServerConn) {
 	}
 }
 
-// RefreshLoginsFolder refreshes sc's Security > Logins folder node — used
-// after an action that changes the login list from outside Object
-// Explorer's own expand/refresh flow (e.g. New Login). Mirrors
-// RefreshDatabasesFolder, one level deeper: Databases sits directly under
-// the server root, Logins sits under Security.
+// RefreshLoginsFolder refreshes sc's Security > Logins folder node, after an
+// action that changes the login list from outside Object Explorer's own
+// expand/refresh flow. RefreshDatabasesFolder one level deeper.
 func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
 	for _, r := range oe.roots {
 		if r.data.conn != sc {
@@ -213,14 +198,11 @@ func (oe *ObjectExplorer) RefreshLoginsFolder(sc *db.ServerConn) {
 	}
 }
 
-// RefreshFolderByType refreshes sc's first descendant folder node of type
-// t (depth-first) — used after an action that changes a SQL Server Agent
-// collection from outside Object Explorer's own expand/refresh flow (e.g.
-// New Job/Schedule/Alert/Operator). Unlike RefreshDatabasesFolder/
-// RefreshLoginsFolder, which hand-walk one fixed path each, Agent folders
-// sit at varying depths under SQL Server Agent (Jobs > User Jobs is three
-// levels down, Schedules is two), so this is one generic search instead of
-// one hand-written walk per folder.
+// RefreshFolderByType refreshes sc's first descendant folder node of type t,
+// depth-first, after an action that changes a SQL Server Agent collection from
+// outside Object Explorer's own flow. Agent folders sit at varying depths under
+// SQL Server Agent, so this is one generic search rather than a hand-written
+// walk per folder.
 func (oe *ObjectExplorer) RefreshFolderByType(sc *db.ServerConn, t NodeType) {
 	for _, r := range oe.roots {
 		if r.data.conn != sc {
@@ -273,12 +255,10 @@ func (oe *ObjectExplorer) Selected() *explorerNode {
 	return oe.byID[tn.ID]
 }
 
-// NodeAt returns the application-level node drawn at screen position
-// (mx, my), or nil if that position isn't over one — the scrollbar, the
-// border, or blank space below the last node all report nil. Unlike
-// Selected, this says what a mouse press actually landed on, which is what
-// drag-and-drop arming needs (see App.handleMouse): a press on the
-// scrollbar must not start a drag of whatever happens to be selected.
+// NodeAt returns the node drawn at screen position (mx, my), or nil when that
+// position isn't over one — the scrollbar, the border and blank space below the
+// last node all report nil. Unlike Selected, it says what a press actually
+// landed on, which is what drag-and-drop arming needs.
 func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
 	id, ok := oe.view.NodeIDAt(mx, my)
 	if !ok {
@@ -302,11 +282,9 @@ func (oe *ObjectExplorer) RefreshSelected() {
 	oe.app.detailBrowser.Invalidate(oe.app, n)
 }
 
-// SetChildren installs the loaded children for a node (called from the
-// background-load callback, on the main goroutine via postEvent) and
-// rebuilds the flat view. IDs are allocated here — not during the
-// background fetch — because allocID mutates shared state and must only
-// run on the UI goroutine.
+// SetChildren installs the loaded children for a node, from the background-load
+// callback on the UI goroutine, and rebuilds the flat view. IDs are allocated
+// here rather than during the fetch, since allocID mutates shared state.
 func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode) {
 	for _, c := range children {
 		c.id = oe.allocID()
@@ -328,8 +306,8 @@ func (oe *ObjectExplorer) rebuild() {
 }
 
 func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, depth int) []controls.TreeNode {
-	// The suffix is added here rather than written into n.label, so clearing
-	// the filter doesn't have to unpick it from a string the loaders own.
+	// The suffix is added here rather than written into n.label, so clearing the
+	// filter needn't unpick it from a string the loaders own.
 	label := n.label
 	if n.data.Filter.active() {
 		label += " (filtered)"
@@ -371,10 +349,9 @@ func (oe *ObjectExplorer) handleExpand(id controls.TreeNodeID) {
 	}
 	n.expanded = true
 	if n.data.Loaded {
-		// Already fetched from a previous expand — children are still
-		// sitting in n.children (collapsing never clears them), so just
-		// redisplay them. No loadChildren call, no "Loading...", no
-		// round-trip to the server.
+		// Already fetched from a previous expand: collapsing never clears
+		// n.children, so redisplay them — no loadChildren, no "Loading...", no
+		// round trip.
 		oe.rebuild()
 		return
 	}
@@ -383,12 +360,11 @@ func (oe *ObjectExplorer) handleExpand(id controls.TreeNodeID) {
 }
 
 // handleActivate is a node's default action — Enter, or a double-click on its
-// row (controls.TreeView.OnActivate). Only the leaves that stand for something
-// openable claim it; everything else answers false and keeps Enter's expand.
+// row. Only leaves standing for something openable claim it; everything else
+// answers false and keeps Enter's expand.
 //
-// Deliberately narrow: an object node's menu offers several actions and none
-// of them is obviously "the" one, so guessing would make Enter unpredictable.
-// A log file has exactly one thing to do with it.
+// Deliberately narrow: an object node's menu offers several actions and none is
+// obviously "the" one, so guessing would make Enter unpredictable.
 func (oe *ObjectExplorer) handleActivate(id controls.TreeNodeID) bool {
 	n, ok := oe.byID[id]
 	if !ok {
@@ -451,9 +427,9 @@ func FormatNodePath(n *explorerNode) string {
 	return out
 }
 
-// resolveConn walks up the explorer tree to find the owning connection.
-// Every node created by fetchChildren carries its connection directly; the
-// walk only matters for nodes without one (e.g. error placeholders).
+// resolveConn walks up the explorer tree to find the owning connection. Every
+// node fetchChildren creates carries its connection directly; the walk only
+// matters for nodes without one, such as error placeholders.
 func resolveConn(n *explorerNode) *db.ServerConn {
 	for cur := n; cur != nil; cur = cur.parent {
 		if cur.data.conn != nil {

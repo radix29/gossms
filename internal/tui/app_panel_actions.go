@@ -51,10 +51,9 @@ func (a *App) openQueryWithText(sc *db.ServerConn, database, text string) {
 	}
 }
 
-// openQueryWithTextAndExecute is openQueryWithText plus an immediate run: the
-// panel opens, connects, and executes text as soon as the connection resolves
-// — for actions like "View Backup History" that hand the user a live result
-// set rather than a query to review. A nil sc opens the panel disconnected.
+// openQueryWithTextAndExecute is openQueryWithText plus an immediate run, for
+// actions like "View Backup History" that hand the user a live result set
+// rather than a query to review. A nil sc opens the panel disconnected.
 func (a *App) openQueryWithTextAndExecute(sc *db.ServerConn, database, text string) {
 	a.queryPanelCnt++
 	qp := NewQueryPanel(a, fmt.Sprintf("Query %d", a.queryPanelCnt))
@@ -66,9 +65,9 @@ func (a *App) openQueryWithTextAndExecute(sc *db.ServerConn, database, text stri
 	}
 }
 
-// openQueryFile runs File > Open: prompts for a path and loads its content
-// into a new query panel, never the active one, matching SSMS. The panel's
-// title then tracks the opened file's name.
+// openQueryFile runs File > Open: prompts for a path and loads its content into
+// a new query panel, never the active one, as SSMS does. The panel's title then
+// tracks the file's name.
 func (a *App) openQueryFile() {
 	a.fileDialog.ShowOpen("Open Query File", "", func(path string) {
 		data, err := os.ReadFile(path)
@@ -86,7 +85,7 @@ func (a *App) openQueryFile() {
 		qp.editor.SetText(text)
 		// Read back from the editor, never from text: SetText expands tabs, so
 		// seeding savedText from the source marks a file with one tab in it
-		// dirty the moment it opens, and closing it then prompts to save —
+		// dirty the moment it opens, and closing it then prompts to save,
 		// rewriting a file the user never touched.
 		qp.savedText = qp.editor.Text()
 		qp.filePath = path
@@ -111,9 +110,9 @@ func (a *App) openQueryFile() {
 // File > Open keys off to show one rather than treating it as a script.
 const sqlPlanExt = ".sqlplan"
 
-// openPlanFile shows an already-read .sqlplan in its own PlanPanel. Goes
-// through decodeTextFile like every other file gossms reads: SSMS writes
-// .sqlplan as UTF-16, whose BOM is what identifies it (see text_encoding.go).
+// openPlanFile shows an already-read .sqlplan in its own PlanPanel, through
+// decodeTextFile like every other file gossms reads: SSMS writes .sqlplan as
+// UTF-16, identified by its BOM (see text_encoding.go).
 func (a *App) openPlanFile(path string, data []byte) {
 	text, _, _, _ := decodeTextFile(data)
 	plan, err := showplan.Parse([]byte(text))
@@ -129,11 +128,11 @@ func (a *App) openPlanFile(path string, data []byte) {
 }
 
 // savePlanPanel runs File > Save / Save As... for a plan panel, writing the
-// plan's source XML back out. A panel opened from a file saves straight back
-// to it; anything else prompts.
+// plan's source XML back out. A panel opened from a file saves straight back to
+// it; anything else prompts.
 //
 // The XML is written as UTF-8 rather than the UTF-16 SSMS emits: it is the
-// document showplan decoded, and re-encoding it would need the declaration
+// decoded showplan document, and re-encoding it would need the declaration
 // rewritten to match or the file would announce an encoding it isn't in.
 func (a *App) savePlanPanel(pp *PlanPanel, saveAs bool) {
 	xml := pp.PlanXML()
@@ -157,9 +156,9 @@ func (a *App) savePlanPanel(pp *PlanPanel, saveAs bool) {
 	a.fileDialog.ShowSave("Save Execution Plan", initial, write)
 }
 
-// saveExecutionPlanAs runs File > Save Execution Plan As..., which works
-// from a detached plan panel and from a query panel's Execution Plan tab
-// alike — unlike Save, whose meaning in a query panel is the script.
+// saveExecutionPlanAs runs File > Save Execution Plan As..., which works from a
+// detached plan panel and from a query panel's Execution Plan tab alike —
+// unlike Save, which in a query panel means the script.
 func (a *App) saveExecutionPlanAs() {
 	switch p := a.panels.ActivePanel().(type) {
 	case *PlanPanel:
@@ -204,9 +203,9 @@ func (a *App) writePlanFile(path, xml string) bool {
 
 // closePanelAt removes the panel at index i, first releasing what it owns: an
 // Activity Monitor's collector and per-tab connections, or a QueryPanel's
-// dedicated connection, which nothing else references. Also cancels any
-// in-flight query/plan fetch — otherwise it runs to completion server-side and
-// its postEvent closure fires against a panel that is no longer hosted.
+// dedicated connection. Also cancels any in-flight query or plan fetch, which
+// would otherwise run to completion server-side and fire its postEvent closure
+// against a panel that is no longer hosted.
 func (a *App) closePanelAt(i int) {
 	if am, ok := a.panels.PanelAt(i).(*ActivityMonitor); ok {
 		am.Close()
@@ -228,7 +227,7 @@ func (a *App) closePanelAt(i int) {
 	a.panels.RemovePanel(i)
 }
 
-// closePanelByPointer closes p by locating its current index — for callbacks
+// closePanelByPointer closes p by locating its current index, for callbacks
 // holding only the panel, whose index may have shifted while they were
 // pending.
 func (a *App) closePanelByPointer(p layout.Panel) {
@@ -247,8 +246,8 @@ func (a *App) panelHosted(p layout.Panel) bool {
 // requestClosePanel implements Ctrl+W / File > Close and a tab's [x] button:
 // closes the panel at i outright, unless it is a QueryPanel with unsaved
 // changes, which prompts to save first. A panel whose layout.Closable reports
-// false (Object Explorer Details) can't be closed at all — the tab bar already
-// omits its [x]; this is Ctrl+W's backstop.
+// false (Object Explorer Details) can't be closed at all — the tab bar omits
+// its [x], and this is Ctrl+W's backstop.
 func (a *App) requestClosePanel(i int) {
 	if !layout.PanelClosable(a.panels.PanelAt(i)) {
 		return
@@ -273,10 +272,10 @@ func (a *App) requestClosePanel(i int) {
 		})
 }
 
-// requestQuit implements Ctrl+Q / File > Exit: offers to save every query
-// panel with unsaved changes before tearing the screen down, and abandons the
-// quit if any prompt is cancelled. quit() itself is unconditional, so without
-// this Ctrl+Q discards every dirty panel with no prompt.
+// requestQuit implements Ctrl+Q / File > Exit: offers to save every query panel
+// with unsaved changes before tearing the screen down, and abandons the quit if
+// any prompt is cancelled. quit() itself is unconditional, so without this
+// Ctrl+Q discards every dirty panel with no prompt.
 func (a *App) requestQuit() (quitting bool) {
 	dirty := a.dirtyQueryPanels()
 	if len(dirty) == 0 {
@@ -302,9 +301,9 @@ func (a *App) dirtyQueryPanels() []*QueryPanel {
 // askSaveBeforeQuit walks panels from index i, prompting for each still-dirty
 // one and quitting once it runs off the end. Recursion through the dialog's
 // callback rather than a loop, since each prompt must be answered — and a Yes
-// must finish writing — before the next is asked. Panels are re-checked as
-// they are reached: an earlier Save As may have targeted a file another panel
-// also shows, and a panel may have been closed from the prompt chain itself.
+// must finish writing — before the next is asked. Panels are re-checked as they
+// are reached: an earlier Save As may have targeted a file another panel also
+// shows, and a panel may have been closed from the prompt chain itself.
 //
 // A cancelled prompt, or a Save backed out of at the file dialog, stops the
 // walk and leaves the app open.
@@ -375,8 +374,8 @@ func (a *App) showEstimatedExecutionPlan() {
 }
 
 // toggleActualExecutionPlan flips whether Execute captures the actual
-// (post-run) execution plan alongside a query's results, rebuilding the
-// toolbar and Query menu so both reflect the new state.
+// (post-run) execution plan alongside a query's results, rebuilding the toolbar
+// and Query menu to match.
 func (a *App) toggleActualExecutionPlan() {
 	a.actualPlanEnabled = !a.actualPlanEnabled
 	a.toolbar.SetButtons(a.buildToolbar())
@@ -391,7 +390,7 @@ func (a *App) toggleActualExecutionPlan() {
 
 // toggleOutputColumnMeta flips "Show Output Column Metadata", which lists each
 // result set's columns and declared types in the Messages tab. Applies to the
-// next execution; results already on screen are not re-rendered.
+// next execution; results on screen are not re-rendered.
 func (a *App) toggleOutputColumnMeta() {
 	a.metaEnabled = !a.metaEnabled
 	a.toolbar.SetButtons(a.buildToolbar())
@@ -464,8 +463,7 @@ func (a *App) saveQuery(saveAs bool) {
 
 // saveQueryPanel saves qp — straight to qp.filePath when it has one and saveAs
 // is false, otherwise via a path prompt — calling then only once the write
-// succeeds. requestClosePanel passes a then so the panel closes only after its
-// changes have landed on disk.
+// succeeds, so requestClosePanel's panel closes only after the changes land.
 func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 	if !saveAs && qp.filePath != "" {
 		if a.writeQueryFile(qp, qp.filePath) && then != nil {
@@ -489,7 +487,7 @@ func (a *App) saveQueryPanel(qp *QueryPanel, saveAs bool, then func()) {
 }
 
 // writeQueryFile writes qp's editor content to path, reporting whether it
-// succeeded, so callers can proceed only on success.
+// succeeded so callers can proceed only then.
 //
 // The bytes are re-encoded in whatever shape the panel's file was opened in; a
 // panel never opened from a file writes LF-separated UTF-8, fileEnc/fileCRLF's
@@ -528,10 +526,9 @@ func (a *App) showQueryList() {
 	a.queryListDialog.Show()
 }
 
-// showActivityMonitor runs Tools > Activity Monitor and the toolbar's 📈
-// button on whichever server the selected Object Explorer node belongs to,
-// falling back to the first connection — same resolution as
-// showServerProperties.
+// showActivityMonitor runs Tools > Activity Monitor and the toolbar's 📈 button
+// on whichever server the selected Object Explorer node belongs to, falling
+// back to the first connection — the same resolution as showServerProperties.
 func (a *App) showActivityMonitor() {
 	if sc := a.connOrFirst(); sc != nil {
 		a.showActivityMonitorFor(sc)
@@ -540,10 +537,8 @@ func (a *App) showActivityMonitor() {
 
 // showActivityMonitorFor opens Activity Monitor for a known connection — the
 // shared entry point for the Tools menu/toolbar and the Object Explorer server
-// node's context menu.
-//
-// One panel per server: reopening for a connection that already has one raises
-// that panel instead of starting a second collector against the same instance.
+// node's context menu. One panel per server: reopening raises the existing one
+// instead of starting a second collector against the same instance.
 func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -563,13 +558,11 @@ func (a *App) showActivityMonitorFor(sc *db.ServerConn) {
 	a.focusPanels()
 }
 
-// showLogViewerFor opens the Log File Viewer on one log file of sc — the
-// Object Explorer entry point for the server node, the SQL Server Logs and
-// Agent Error Logs folders, and each log-file leaf.
-//
-// One panel per server, like showActivityMonitorFor: a second log file
-// re-points the existing panel rather than accumulating a tab per archive,
-// which is how SSMS's viewer behaves too.
+// showLogViewerFor opens the Log File Viewer on one log file of sc — the Object
+// Explorer entry point for the server node, the SQL Server Logs and Agent Error
+// Logs folders, and each log-file leaf. One panel per server, like
+// showActivityMonitorFor: a second log file re-points the existing panel rather
+// than accumulating a tab per archive, as SSMS's viewer does.
 func (a *App) showLogViewerFor(sc *db.ServerConn, logType gosmo.ErrorLogType, logNum int) {
 	if !a.requireConn(sc) {
 		return
@@ -642,7 +635,7 @@ func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
 
 // showAGPropertiesFor opens Availability Group Properties for a group on sc,
 // from the Object Explorer context menu. sc need not be the group's primary:
-// every page follows the primary itself, and reports an error when it can't.
+// every page follows the primary itself and reports an error when it can't.
 func (a *App) showAGPropertiesFor(sc *db.ServerConn, agName string) {
 	if !a.requireConn(sc) {
 		return
@@ -702,10 +695,10 @@ func (a *App) showRestoreDialog(sc *db.ServerConn, dbName string) {
 	a.restoreDialog.show(sc, dbName)
 }
 
-// showBackupHistoryFor opens a new query window scoped to msdb, where the
-// backup catalog lives regardless of which database the menu was opened from,
-// pre-filled with backupHistoryQuery(dbName) and run immediately — the context
-// menu's "View Backup History...", database node only.
+// showBackupHistoryFor opens a new query window scoped to msdb, where the backup
+// catalog lives whichever database the menu was opened from, pre-filled with
+// backupHistoryQuery(dbName) and run immediately — the context menu's "View
+// Backup History...", database node only.
 func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 	if !a.requireConn(sc) {
 		return
@@ -764,8 +757,8 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 
 // showKeyPropertiesFor opens Primary/Unique Key Properties for a known
 // connection, database, and schema-qualified table/key. isPrimaryKey picks the
-// dialog title, read off the tree node's nodeData rather than re-fetched since
-// loadKeysChildren already knows it.
+// dialog title and comes off the tree node's nodeData, which loadKeysChildren
+// already knows.
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
 	if !a.requireConn(sc) {
 		return
@@ -786,8 +779,8 @@ func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) 
 }
 
 // showServerRolePropertiesFor opens Server Role Properties for a known
-// connection and role name. Like showLoginProperties, it is a server-level
-// principal with no dbName of its own.
+// connection and role name — a server-level principal with no dbName, like
+// showLoginProperties.
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
 	if !a.requireConn(sc) {
 		return

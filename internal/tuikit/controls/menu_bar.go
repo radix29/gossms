@@ -19,34 +19,30 @@ type MenuBar struct {
 	hoverMenu    int
 	selectedItem int // index within menus[openMenu].Items currently highlighted
 
-	// mouseDragging distinguishes a fresh Button1 press (toggle the header)
-	// from a continued hold over the same header — mirrors DataGrid's and
-	// Editor's field of the same name and purpose. Without it, the mouse
-	// tracking mode gossms enables (core.NewScreen's EnableMouse()) resends
-	// Buttons()==Button1 on every motion while the button stays down, so a
-	// click that so much as twitches before release re-toggles the header
-	// it just opened, right back closed — a visible open/close flicker.
+	// mouseDragging distinguishes a fresh Button1 press, which toggles the
+	// header, from a continued hold over it — DataGrid and Editor have the same
+	// field. Without it, all-motion tracking resends Button1 on every motion
+	// while the button is down, so a click that twitches re-toggles the header
+	// it just opened right back closed.
 	mouseDragging bool
 
 	// cascade holds any open submenu levels of the open dropdown (see
-	// menuCascade). Cleared whenever the dropdown closes or switches menus,
-	// so a cascade never survives into the next one.
+	// menuCascade), cleared whenever the dropdown closes or switches menus.
 	cascade menuCascade
 
-	// scrollTop is the index of the first item drawn, for a dropdown taller
-	// than the rows below the bar. A dropdown hangs off its own header and
-	// cannot be shifted up the way a ContextMenu can, so once it doesn't fit
-	// there is nowhere to put the overflow but out of view: Edit's 21 items
-	// need 23 rows, and on a 20-row terminal its last three were painted past
-	// the bottom edge, invisible to the eye and unreachable by mouse. Capping
-	// the height alone would have hidden them behind a tidy bottom border,
-	// which is worse — the truncation at least showed. See drawDropdown.
+	// scrollTop is the index of the first item drawn, for a dropdown taller than
+	// the rows below the bar. A dropdown hangs off its own header and can't be
+	// shifted up the way a ContextMenu can, so once it doesn't fit the overflow
+	// has nowhere to go but out of view — Edit's 21 items need 23 rows, and on a
+	// 20-row terminal its last three paint past the bottom edge, invisible and
+	// unreachable. Capping the height alone hides them behind a tidy border,
+	// which is worse. See drawDropdown.
 	scrollTop int
 
-	// drawnRect caches the box Draw last clamped the dropdown to, for the
-	// same reason ContextMenu caches drawnX/drawnY: only Draw sees a
-	// tcell.Screen, so only Draw knows the screen height the clamp needs, and
-	// HandleMouse must hit-test what was actually painted.
+	// drawnRect caches the box Draw last clamped the dropdown to, as ContextMenu
+	// caches drawnX/drawnY: only Draw sees a tcell.Screen, so only Draw knows the
+	// screen height the clamp needs, and HandleMouse must hit-test what was
+	// painted.
 	drawnRect core.Rect
 }
 
@@ -74,10 +70,8 @@ func (mb *MenuBar) Close() {
 	mb.drawnRect = core.Rect{}
 }
 
-// Open opens the first menu without requiring a mouse click — used for
-// keyboard-only activation (e.g. the F10 convention from Turbo
-// Vision/Midnight-Commander-style TUIs). Does nothing if there are no
-// menus, or if a menu is already open.
+// Open opens the first menu without a mouse click — the F10 convention. Does
+// nothing if there are no menus, or one is already open.
 func (mb *MenuBar) Open() {
 	if mb.openMenu < 0 && len(mb.menus) > 0 {
 		mb.openMenu = 0
@@ -88,10 +82,9 @@ func (mb *MenuBar) Open() {
 	}
 }
 
-// Draw renders just the menu bar row. Call DrawOverlay afterward, once all
-// other content has been drawn, to render any open dropdown on top — the
-// dropdown extends below the bar into rows other panels also draw into, so
-// it must be painted last or it gets overwritten before Show().
+// Draw renders just the menu bar row. Call DrawOverlay afterwards, once all
+// other content has been drawn, to render any open dropdown on top: it extends
+// below the bar into rows other panels draw into.
 func (mb *MenuBar) Draw(s tcell.Screen) {
 	p := theme.Active()
 	barStyle := theme.StyleMenuBar()
@@ -157,10 +150,9 @@ func (mb *MenuBar) drawDropdown(s tcell.Screen, idx int) {
 // hit-tests. Reads the cache rather than recomputing, since the clamp needs a
 // screen height only Draw has.
 //
-// Falls back to the unclamped box when nothing has been drawn yet, so a
-// MenuBar driven without a Draw still hit-tests where it would have painted.
-// App.Run draws between the event that opens a dropdown and the next one, so
-// the fallback is not a path the running application takes.
+// Falls back to the unclamped box when nothing has been drawn, so a MenuBar
+// driven without a Draw still hit-tests where it would have painted. The running
+// application never takes that path.
 func (mb *MenuBar) dropdownRect() core.Rect {
 	if mb.openMenu < 0 {
 		return core.Rect{}
@@ -193,8 +185,8 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 		mb.selectedItem = firstSelectableItem(mb.menus[mb.openMenu].Items)
 		mb.scrollTop = 0
 	case tcell.KeyRight:
-		// Right opens the selected item's submenu when it has one, and only
-		// otherwise moves to the next menu header.
+		// Right opens the selected item's submenu when it has one, and otherwise
+		// moves to the next menu header.
 		if mb.cascade.openAt(mb.menus[mb.openMenu].Items, 0, mb.selectedItem) {
 			return true
 		}
@@ -222,10 +214,9 @@ func (mb *MenuBar) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
-// HandleMouse processes mouse events for the bar and any open dropdown.
-// While a dropdown is open, every mouse event is swallowed (return true) so
-// nothing underneath can react or take focus; a hover outside the dropdown
-// never closes it, only a click does.
+// HandleMouse processes mouse events for the bar and any open dropdown. While a
+// dropdown is open every event is swallowed, so nothing underneath can react or
+// take focus; a hover outside never closes it, only a click does.
 func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	wasOpen := mb.openMenu >= 0
@@ -256,9 +247,9 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 			col += labelW
 		}
-		// On the bar row but off every label (e.g. over the toolbar): a
-		// click still dismisses an open menu, but the event itself is
-		// swallowed either way.
+		// On the bar row but off every label, over the toolbar say: a click
+		// still dismisses an open menu, and the event is swallowed either
+		// way.
 		if wasOpen && ev.Buttons() == tcell.Button1 {
 			mb.Close()
 		}
@@ -272,7 +263,7 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 		}
 		level, row, inside := mb.cascade.hit(mb.dropdownRect(), mx, my)
 		// The cascade reports level 0 as a row within the box it was handed,
-		// which for a scrolled dropdown is not the item's index.
+		// which on a scrolled dropdown is not the item's index.
 		if level == 0 && inside && row >= 0 {
 			row += mb.scrollTop
 		}
@@ -289,16 +280,17 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 		item := items[row]
 		if item.Divider || !item.enabled() {
 			// A click anywhere inside the dropdown dismisses it, even on a row
-			// that can't act — otherwise a disabled item leaves it stuck open.
+			// that can't act — a disabled item would otherwise leave it stuck
+			// open.
 			if ev.Buttons() == tcell.Button1 && !mb.mouseDragging {
 				mb.mouseDragging = true
 				mb.Close()
 			}
 			return true
 		}
-		// Track hover so keyboard (Up/Down) and mouse stay in sync, and let
-		// hovering a cascade row open its submenu — moving to a sibling row
-		// closes whatever that level had open.
+		// Track hover so Up/Down and the mouse stay in sync, and let hovering a
+		// cascade row open its submenu; moving to a sibling closes whatever that
+		// level had open.
 		if level == 0 {
 			mb.selectedItem = row
 		} else {
@@ -322,9 +314,8 @@ func (mb *MenuBar) HandleMouse(ev *tcell.EventMouse) bool {
 }
 
 // handleDropdownWheel scrolls a scrolled-back dropdown on a wheel event and
-// reports whether it consumed one. Without it the hidden items are reachable
-// by keyboard only, which leaves the scrolling half-built for the mouse user
-// the truncation was worst for.
+// reports whether it consumed one. Without it the hidden items are reachable by
+// keyboard only.
 func (mb *MenuBar) handleDropdownWheel(ev *tcell.EventMouse, n int) bool {
 	rows := mb.drawnRect.H - 2
 	if rows <= 0 || n <= rows {
@@ -338,22 +329,21 @@ func (mb *MenuBar) handleDropdownWheel(ev *tcell.EventMouse, n int) bool {
 	default:
 		return false
 	}
-	// The highlight follows the window rather than staying put: it is what
-	// drawDropdown scrolls back to, so leaving it behind makes the very next
-	// draw undo the scroll.
+	// The highlight follows the window rather than staying put: drawDropdown
+	// scrolls back to it, so leaving it behind makes the next draw undo the
+	// scroll.
 	mb.selectedItem = core.Clamp(mb.selectedItem, mb.scrollTop, mb.scrollTop+rows-1)
 	return true
 }
 
-// dropdownGeometry returns the box the open dropdown for menu index idx
-// should be drawn in, clamped to the screen on all four sides.
+// dropdownGeometry returns the box the open dropdown for menu index idx is drawn
+// in, clamped to the screen on all four sides.
 //
-// A dropdown is anchored under its own header, so unlike a ContextMenu it
-// cannot be shifted up to fit: the height is capped at the rows left below
-// the bar and drawDropdown scrolls the items through it. Both lower clamps
-// matter as much as the upper ones — a menu wider or taller than the screen
-// gave a negative column or a negative height, and a negative height turns
-// the box inside out.
+// A dropdown is anchored under its own header, so unlike a ContextMenu it can't
+// be shifted up to fit: the height is capped at the rows left below the bar and
+// drawDropdown scrolls the items through it. The lower clamps matter as much as
+// the upper ones — a menu wider or taller than the screen gives a negative
+// column or height, and a negative height turns the box inside out.
 func (mb *MenuBar) dropdownGeometry(s tcell.Screen, idx int) core.Rect {
 	sw, sh := s.Size()
 	col, w := mb.dropdownColumn(idx)
@@ -365,9 +355,9 @@ func (mb *MenuBar) dropdownGeometry(s tcell.Screen, idx int) core.Rect {
 	return core.Rect{X: col, Y: y, W: w, H: h}
 }
 
-// dropdownColumn returns where the dropdown for menu idx starts and how wide
-// it is, shifted left to stay inside the bar but not yet clamped to a screen.
-// Split out so dropdownRect can answer before anything has been drawn.
+// dropdownColumn returns where the dropdown for menu idx starts and how wide it
+// is, shifted left to stay inside the bar but not yet clamped to a screen. Split
+// out so dropdownRect can answer before anything has been drawn.
 func (mb *MenuBar) dropdownColumn(idx int) (col, w int) {
 	col = mb.menuHeaderOffset(idx)
 	w = menuContentWidth(mb.menus[idx].Items, 28)
@@ -377,9 +367,9 @@ func (mb *MenuBar) dropdownColumn(idx int) (col, w int) {
 	return col, w
 }
 
-// clampMenuScroll returns the first-item index that keeps sel visible in a
-// window of rows items out of n, scrolling as little as possible. rows <= 0
-// (a box with no room for content) yields 0 rather than a negative index.
+// clampMenuScroll returns the first-item index keeping sel visible in a window
+// of rows items out of n, scrolling as little as possible. rows <= 0 yields 0
+// rather than a negative index.
 func clampMenuScroll(top, sel, n, rows int) int {
 	if rows <= 0 || n <= rows {
 		return 0
@@ -397,10 +387,9 @@ func clampMenuScroll(top, sel, n, rows int) int {
 	return top
 }
 
-// drawMenuScrollMarks paints the ▲/▼ that say a scrolled menu box has items
-// past its top or bottom edge. Without them a partial menu is
-// indistinguishable from a complete one, which is the failure the scrolling
-// exists to fix — a user who cannot see that there is more does not look.
+// drawMenuScrollMarks paints the ▲/▼ saying a scrolled menu box has items past
+// its top or bottom edge. Without them a partial menu is indistinguishable from
+// a complete one.
 func drawMenuScrollMarks(s tcell.Screen, r core.Rect, top, n, rows int, style tcell.Style) {
 	if rows <= 0 || n <= rows {
 		return

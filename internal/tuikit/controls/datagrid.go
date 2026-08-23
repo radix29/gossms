@@ -12,9 +12,8 @@ import (
 // RowSource
 // ---------------------------------------------------------------------------
 
-// RowSource decouples DataGrid from any one in-memory shape for its data.
-// Callers hand it a materialized [][]string via SetData; a paged or streaming
-// result can implement this directly and go through SetSource instead.
+// RowSource supplies the grid's rows. SetData wraps a materialized [][]string;
+// a paged or streaming result implements this and uses SetSource.
 type RowSource interface {
 	// Len returns the number of rows.
 	Len() int
@@ -28,38 +27,34 @@ type SliceRowSource [][]string
 func (s SliceRowSource) Len() int           { return len(s) }
 func (s SliceRowSource) Row(i int) []string { return s[i] }
 
-// colWidthSampleRows caps how many rows computeColWidths inspects, so a source
-// with millions of rows doesn't make every SetSource scan all of them just to
-// size columns. SSMS samples for the same reason.
+// colWidthSampleRows caps how many rows computeColWidths inspects, so sizing
+// columns never scans a million-row source.
 const colWidthSampleRows = 200
 
-// defaultMaxCellWidth is the column-width cap for a grid that doesn't opt into
-// a configurable one via SetMaxCellWidth (only the query-results grid does,
-// tying it to the Options dialog's "max default cell length"). It bounds the
-// width a column is *given*, not the width it may have: a separator drag can
-// widen a column past it.
+// defaultMaxCellWidth caps the width a column is *given* unless SetMaxCellWidth
+// overrides it (only the query-results grid does, from the Options dialog's
+// "max default cell length"). A separator drag may still widen a column past
+// it.
 const defaultMaxCellWidth = 40
 
-// minResizeWidth is the narrowest a column can be dragged to — one column of
-// padding each side of the text plus the separator, below which there is no
-// room for content at all.
+// minResizeWidth is the narrowest a column can be dragged to: a padding column
+// each side of the text plus the separator.
 const minResizeWidth = 4
 
-// resizeDoubleClickInterval is how close two presses on the same separator
-// must fall to count as the double-click that restores a column's default
-// width. tcell reports presses, not clicks, so the timing is done here.
+// resizeDoubleClickInterval is how close two presses on one separator must fall
+// to count as the double-click that restores its default width. tcell reports
+// presses, not clicks, so the timing is done here.
 const resizeDoubleClickInterval = 500 * time.Millisecond
 
-// cellViewerW and cellViewerLines size the built-in "full cell content" popup.
-// It is centred on the whole screen, not the grid's rect, so it reads as a
-// modal even when the grid is small.
+// cellViewerW and cellViewerLines size the built-in "full cell content" popup,
+// which is centred on the screen rather than the grid's rect so it reads as a
+// modal even on a small grid.
 const cellViewerW = 60
 const cellViewerLines = 8
 
 // viewerDimNum/viewerDimDen fade the screen behind the popup toward
-// DialogOverlay; 3/5 leaves it at ~40% of its own colour. Mirrors
-// dialogs.ModalDialog's dialogDimNum/Den, duplicated because controls must
-// not depend on dialogs.
+// DialogOverlay. Duplicates dialogs.ModalDialog's dialogDimNum/Den, since
+// controls must not depend on dialogs.
 const viewerDimNum, viewerDimDen = 3, 5
 
 // ---------------------------------------------------------------------------
@@ -73,8 +68,7 @@ type DataGrid struct {
 	rows      RowSource
 	colWidths []int
 
-	// widthsDirty defers a RefreshColumnWidths request to the next Draw
-	// instead of recomputing on the spot — see there.
+	// widthsDirty defers a RefreshColumnWidths request to the next Draw.
 	widthsDirty bool
 
 	selRow    int
@@ -84,26 +78,22 @@ type DataGrid struct {
 	active    bool
 
 	// statusStyle overrides the status bar's default GridHeader/TextDim look
-	// when hasStatusStyle is set — used by the query-results grid to match
-	// SSMS's yellow execution-status bar without changing every other
-	// DataGrid.
+	// when hasStatusStyle is set — the query-results grid's yellow bar.
 	statusStyle    tcell.Style
 	hasStatusStyle bool
 
-	// cellCursor and selCol are opt-in. Disabled (the default), Left/Right
-	// scroll wide grids horizontally and only whole rows highlight. Enabled,
-	// Left/Right move a per-cell cursor and Draw highlights that single cell —
-	// used by property-sheet toggle grids (permission Grant/Deny columns,
-	// role-membership checkboxes, …).
+	// cellCursor is opt-in. Disabled (the default), Left/Right scroll wide
+	// grids horizontally and whole rows highlight; enabled, they move selCol
+	// and Draw highlights that one cell — property-sheet toggle grids
+	// (permission Grant/Deny, role-membership checkboxes) use it.
 	cellCursor bool
 	selCol     int
 
-	// selAnchorRow/selAnchorCol mark the fixed corner of a multi-cell block
-	// selection; selRow/selCol the moving corner. blockSelecting is true while
-	// one is active — set by Shift+Arrow or a mouse drag, cleared by a plain
-	// arrow key or a fresh non-Shift click. Cell-cursor mode only, and gated
-	// to a read-only grid (OnActivateCell == nil) so an editable toggle grid's
-	// click-drag keeps painting every cell it passes over.
+	// selAnchorRow/selAnchorCol mark the fixed corner of a block selection,
+	// selRow/selCol the moving one. blockSelecting is set by Shift+Arrow or a
+	// drag, cleared by a plain arrow or a fresh non-Shift click. Cell-cursor
+	// mode only, and only on a read-only grid (OnActivateCell == nil), so an
+	// editable toggle grid's click-drag keeps painting the cells it crosses.
 	blockSelecting             bool
 	selAnchorRow, selAnchorCol int
 
@@ -111,36 +101,33 @@ type DataGrid struct {
 	// anchor) from a continued drag (keep the anchor, move the cursor).
 	mouseDragging bool
 
-	// sbDragging latches a scrollbar-thumb drag from press to release.
-	// Separate from mouseDragging: once set, HandleMouse gives every Button1
-	// event to the scrollbar regardless of x, never falling through to
-	// row/cell hit-testing.
+	// sbDragging latches a scrollbar-thumb drag from press to release: while
+	// set, every Button1 event goes to the scrollbar regardless of x, never
+	// falling through to row/cell hit-testing.
 	sbDragging bool
 
-	// colResizing latches a column-separator drag the way sbDragging does for
-	// the scrollbar. resizeStartX/W record the grab point and the column's
-	// width there, so each motion resolves against the original grab instead
-	// of accumulating from the last one.
+	// colResizing latches a column-separator drag. resizeStartX/W record the
+	// grab point and the width there, so each motion resolves against the
+	// original grab instead of accumulating.
 	colResizing  bool
 	resizeCol    int
 	resizeStartX int
 	resizeStartW int
 
-	// lastSepPressCol/lastSepPressAt time consecutive presses on the same
-	// separator, which is how the default-width-restoring double-click is
-	// recognised. -1 means "no press yet".
+	// lastSepPressCol/lastSepPressAt time consecutive presses on one separator
+	// to recognise the default-width-restoring double-click. -1 = no press
+	// yet.
 	lastSepPressCol int
 	lastSepPressAt  time.Time
 
-	// sbDraggingH is sbDragging's counterpart for the horizontal scrollbar
-	// drawn along the status row — a separate latch since the two bars occupy
-	// different edges of the grid.
+	// sbDraggingH is sbDragging's counterpart for the horizontal scrollbar on
+	// the status row — a separate latch, since the bars sit on different
+	// edges.
 	sbDraggingH bool
 
-	// toggleRow/toggleCol record the last cell an editable toggle grid's
-	// click-drag activated, so tcell's Button1 resends at that same cell don't
-	// call OnActivateCell again for one stationary click. A drag onto a
-	// different cell still activates it, keeping paint-as-you-drag.
+	// toggleRow/toggleCol record the last cell a toggle grid's click-drag
+	// activated, so tcell's Button1 resends at the same cell don't re-fire
+	// OnActivateCell. A drag onto another cell still activates it.
 	toggleRow, toggleCol int
 
 	// showRowNumbers prepends a non-selectable, unlabelled row-number column —
@@ -151,42 +138,38 @@ type DataGrid struct {
 	// clamp; 0 means "use the default".
 	maxCellWidth int
 
-	// colWidthOverride holds the width each column was last dragged to by its
-	// right-hand separator, or 0 for "use the computed default". These survive
-	// computeColWidths — a resized column keeps its width across a bounds
-	// change or a progressive backfill's RefreshColumnWidths — and bypass
-	// maxCellWidthOrDefault, which caps the width a column is *given*, not the
-	// width the user may drag it to.
+	// colWidthOverride holds each column's dragged width, or 0 for the computed
+	// default. It survives computeColWidths, so a resized column keeps its
+	// width across a bounds change or a backfill's RefreshColumnWidths, and
+	// bypasses maxCellWidthOrDefault, which caps only the width a column is
+	// *given*.
 	colWidthOverride []int
 
-	// fillLastColumn stretches the last column past its content-based width
-	// (and past maxCellWidthOrDefault's clamp) to consume the rect's remaining
-	// width instead of leaving dead space to the right.
+	// fillLastColumn stretches the last column past its content width (and past
+	// maxCellWidthOrDefault) to consume the rect's remaining width.
 	fillLastColumn bool
 
 	// ctxMenu is the right-click "Show Value" menu — offered on any cell whose
 	// grid doesn't define OnActivateCell, never on an editable one.
 	ctxMenu ContextMenu
 
-	// viewOpen and viewEditor back the built-in "full cell content" popup
-	// opened by ctxMenu's "Show Value": a read-only, word-wrapped Editor over
-	// the cell's untruncated text, so it can be navigated, selected and
-	// copied. Dismissed by Escape or its "[ Close ]" button only, never by a
-	// click elsewhere — the popup exists for selecting a long value, and a
-	// stray click during that must not lose it.
+	// viewOpen and viewEditor back the "full cell content" popup opened by
+	// ctxMenu's "Show Value": a read-only, word-wrapped Editor over the cell's
+	// untruncated text, navigable and copyable. Only Escape or its "[ Close ]"
+	// button dismiss it — a stray click must not lose an in-progress
+	// selection.
 	viewOpen   bool
 	viewHeader string
 	viewEditor *Editor
 
 	// viewCloseRect is the "[ Close ]" button's screen position, laid out by
-	// DrawOverlay (the popup is screen-centred, so it isn't known until then)
-	// and hit-tested by HandleMouse.
+	// DrawOverlay (the popup is screen-centred, so it isn't known before) and
+	// hit-tested by HandleMouse.
 	viewCloseRect core.Rect
 
-	// viewDismissing latches from the press on that button to the release.
-	// The button closes the popup on the press, but tcell resends Button1 on
-	// every motion while held, and by then the popup is gone — the resends
-	// would land on the grid underneath as a fresh cell click.
+	// viewDismissing latches from the press on that button to the release: the
+	// press closes the popup, and tcell's Button1 resends while held would
+	// otherwise land on the grid underneath as fresh cell clicks.
 	viewDismissing bool
 
 	// OnSelectRow fires whenever the selected row changes (keyboard or click).
@@ -196,19 +179,16 @@ type DataGrid struct {
 	OnSelectRow    func(row int)
 	OnActivateCell func(row, col int)
 
-	// OnCopyRequest, if set, is called with clipboard-ready text whenever the
-	// right-click (or Ctrl+Space) menu's "Copy", "Copy All", or "Copy All with
-	// Headers" is chosen. DataGrid has no OS clipboard access of its own — the
-	// one-way dependency rule — so the host app wires this to its own
-	// clipboard plumbing. Grids leaving it nil don't offer those items at all.
+	// OnCopyRequest receives clipboard-ready text from the menu's "Copy", "Copy
+	// All" and "Copy All with Headers". controls may not reach the OS
+	// clipboard, so the host wires it; nil hides those items.
 	OnCopyRequest func(text string)
 
-	// OnShowValue, if set, gets first refusal of the "Show Value" menu item,
-	// handed the cell's column index, column name and full text; true means
-	// the host displayed it its own way and the built-in popup stays closed,
-	// false (or nil) opens the popup. QueryPanel routes an XML cell to a new
-	// highlighted query tab this way — the index is what lets it find the
-	// column's declared type, since duplicate names make the name ambiguous.
+	// OnShowValue gets first refusal of "Show Value", handed the cell's column
+	// index, name and full text; true means the host displayed it and the
+	// built-in popup stays closed, false or nil opens the popup. The index
+	// disambiguates duplicate column names — QueryPanel uses it to find the
+	// declared type when routing an XML cell to a new query tab.
 	OnShowValue func(col int, column, value string) bool
 }
 
@@ -217,9 +197,9 @@ func NewDataGrid() *DataGrid {
 	return new(DataGrid{status: "Ready", rows: SliceRowSource(nil), lastSepPressCol: -1})
 }
 
-// SetBounds positions the grid, recomputing column widths so a resize keeps a
-// fillLastColumn grid's Value column matching the new width. Every other grid
-// gets the same content-based widths back, since those don't depend on rect.W.
+// SetBounds positions the grid and recomputes column widths, so a
+// fillLastColumn grid's last column tracks the new width. Content-based widths
+// don't depend on rect.W, so every other grid gets the same ones back.
 func (g *DataGrid) SetBounds(x, y, w, h int) {
 	g.rect = core.Rect{X: x, Y: y, W: w, H: h}
 	g.computeColWidths()
@@ -238,32 +218,28 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
-	// The widths were dragged for a different set of columns; column 2 of
-	// the next result set has nothing to do with column 2 of this one.
+	// The dragged widths belong to the old columns; this result set's column 2
+	// is unrelated to the last one's.
 	g.colWidthOverride, g.colResizing = nil, false
-	// Only Escape or Close dismiss the viewer, so leaving it open strands a
-	// popup over stale text that still claims every key and mouse event.
+	// Only Escape or Close dismiss the viewer, so leaving it open strands it
+	// over stale text while it still claims every key and mouse event.
 	g.closeViewer()
 	g.computeColWidths()
 	g.status = strconv.Itoa(rows.Len()) + " rows"
 }
 
-// SetDataPreservingView is SetData for a change that leaves the row set alone
-// — a cell toggled, an edit reverted — where the grid the user is navigating
-// must not jump under them. The cell cursor, the scroll position and any
-// column dragged to a width of its own all go back where they were.
+// SetDataPreservingView is SetData for a change that leaves the row set alone —
+// a cell toggled, an edit reverted — where the grid must not jump under the
+// user. The cell cursor, the scroll position and any dragged column width all
+// go back where they were. SetData discards all three, which is right only for
+// a fresh result set.
 //
-// SetData discards all three, which is right for a fresh result set and wrong
-// for a redraw of the same rows: the next result set's column 2 has nothing to
-// do with this one's, but a page re-rendering its own fixed headers has the
-// same column 2 it started with.
-//
-// The order the three go back in is load-bearing. Widths first, because
-// ensureVisibleCol decides the horizontal offset by walking colWidths and
-// would otherwise decide it against the recomputed defaults. Scroll before the
-// selection, because SetSelectedCell ends in ensureVisible, which adjusts the
-// scroll it finds — from the restored one it has nothing to do, from the zero
-// SetSource left behind it drags the selected row to the viewport edge.
+// The order is load-bearing. Widths first, because ensureVisibleCol picks the
+// horizontal offset by walking colWidths and would otherwise walk the
+// recomputed defaults. Scroll before the selection, because SetSelectedCell
+// ends in ensureVisible: from the restored scroll it has nothing to do, from
+// the zero SetSource left behind it drags the selected row to the viewport
+// edge.
 func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
 	selRow, selCol := g.SelectedCell()
 	scrollRow, scrollCol := g.scrollRow, g.scrollCol
@@ -278,15 +254,14 @@ func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
 	g.SetSelectedCell(selRow, selCol)
 }
 
-// RefreshColumnWidths recomputes column widths from the grid's current data
-// without resetting scroll position or selection, unlike SetData/SetSource.
-// Call after mutating row cells in place — a progressive background fetch
-// backfilling columns row by row, where SetData on every update would reset
-// the user's scroll position.
+// RefreshColumnWidths recomputes column widths without resetting scroll or
+// selection, unlike SetData/SetSource. Call it after mutating row cells in
+// place — a progressive backfill, where SetData on every update would throw the
+// user's scroll away.
 //
-// Deferred to the next Draw, the first moment the new widths matter:
-// recomputing on the spot rescans up to colWidthSampleRows rows per call, when
-// a burst of rows between two frames needs one rescan.
+// Deferred to the next Draw, the first moment the widths matter: recomputing on
+// the spot rescans up to colWidthSampleRows rows per call, where a burst of
+// rows between two frames needs one rescan.
 func (g *DataGrid) RefreshColumnWidths() {
 	g.widthsDirty = true
 }
@@ -325,41 +300,35 @@ func (g *DataGrid) SelectedRow() int {
 	return g.selRow
 }
 
-// ScrollRow returns the index of the topmost visible data row. View state a
-// host reads rather than drives — it moves on a wheel tick, a scrollbar drag,
-// or a selection scrolled into view. Exists so a host can assert an event it
-// meant to swallow never reached the grid; see QueryPanel's mid-drag wheel
-// handling.
+// ScrollRow returns the index of the topmost visible data row — view state a
+// host reads rather than drives, so it can tell whether an event it meant to
+// swallow reached the grid. See QueryPanel's mid-drag wheel handling.
 func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 
-// ScrollCol returns the index of the leftmost visible column — ScrollRow's
-// horizontal counterpart. A host needs it to tell a Left/Right that scrolled
-// the grid from one the grid ignored, since a grid without a cell cursor
-// reports neither through SelectedCell; see propsheet.GridRow.HandleKey.
+// ScrollCol returns the index of the leftmost visible column. A grid without a
+// cell cursor reports nothing through SelectedCell, so this is how a host tells
+// a Left/Right that scrolled the grid from one it ignored — see
+// propsheet.GridRow.HandleKey.
 func (g *DataGrid) ScrollCol() int { return g.scrollCol }
 
-// SetScroll restores the scroll position (both clamped), for a caller putting
-// the view back after a SetData/SetSource that deliberately discarded it —
-// the scroll counterpart of SetColumnWidth/ColumnWidthOverrides, and used by
-// the same one caller, redrawGrid in the application layer.
+// SetScroll restores the scroll position (both clamped) after a
+// SetData/SetSource that deliberately discarded it — the counterpart of
+// SetColumnWidth/ColumnWidthOverrides, with the same one caller, redrawGrid.
 //
-// Not for driving the view. Scrolling is the grid's own response to a wheel,
-// a drag or a selection moving out of sight; a host that sets it directly is
-// fighting ensureVisible, which runs on the next selection change and will
-// undo it. SetSelectedRow/SetSelectedCell are how a host asks for a row to be
-// shown.
+// Not for driving the view: scrolling is the grid's own response to a wheel, a
+// drag, or a selection moving out of sight, and ensureVisible undoes on the
+// next selection change anything a host sets. SetSelectedRow/SetSelectedCell
+// are how a host asks for a row to be shown.
 //
 // Call it before restoring the selection, not after: SetSelectedCell ends in
-// ensureVisible, which adjusts the scroll it finds. From the restored one it
-// has nothing to do and leaves the view where the user had it; from the zero
-// SetSource left behind it drags the selected row to the viewport edge.
+// ensureVisible, which from the restored scroll has nothing to do and from the
+// zero SetSource left behind drags the selected row to the viewport edge.
 func (g *DataGrid) SetScroll(row, col int) {
-	// Bounded by the last row that can be at the *top* of the viewport, the
-	// same bound the wheel uses — not by the last row. Clamping to
-	// rows.Len()-1 would let a redraw that shrank the list leave a two-row
-	// grid scrolled one row down, drawing a blank line above its only visible
-	// row. Columns keep scrollColBy's bound: they vary in width, so there is
-	// no equivalent "last column that fits".
+	// Bounded by the last row that can sit at the *top* of the viewport, the
+	// bound the wheel uses — not by the last row. Clamping to rows.Len()-1
+	// would let a redraw that shrank the list leave a two-row grid scrolled one
+	// row down, blank line above its only visible row. Columns keep
+	// scrollColBy's bound: varying widths give no "last column that fits".
 	g.scrollRow = core.Clamp(row, 0, max(0, g.rows.Len()-(g.rect.H-3)))
 	g.scrollCol = core.Clamp(col, 0, max(0, len(g.columns)-1))
 }
@@ -375,10 +344,9 @@ func (g *DataGrid) SetSelectedRow(i int) {
 }
 
 // SetSelectedCell sets the selected row and column (both clamped) and scrolls
-// both into view — the cell-cursor analogue of SetSelectedRow, for a caller
-// (e.g. ToggleGridRow.activateCell) that rebuilds the rows via
-// SetData/SetSource, which resets selCol as well as selRow. Does not fire
-// OnSelectRow.
+// them into view — the cell-cursor analogue of SetSelectedRow, for a caller
+// (e.g. ToggleGridRow.activateCell) that rebuilt the rows via SetData/SetSource
+// and lost selCol with them. Does not fire OnSelectRow.
 func (g *DataGrid) SetSelectedCell(row, col int) {
 	if g.rows.Len() == 0 {
 		return
@@ -414,21 +382,20 @@ func (g *DataGrid) SelectionBounds() (r0, c0, r1, c1 int) { return g.selectionBo
 func (g *DataGrid) CellCursorEnabled() bool { return g.cellCursor }
 
 // SetRowNumbers shows or hides a non-selectable, unlabelled row-number column
-// pinned left of every data column. Off by default; only the query-results
-// grid turns it on.
+// pinned left of the data columns. Off by default.
 func (g *DataGrid) SetRowNumbers(v bool) { g.showRowNumbers = v }
 
-// SetMaxCellWidth overrides the upper bound computeColWidths clamps every
-// column's *default* width to — a cap on how wide content alone may make a
-// column, not on the column: a separator drag widens it past this freely. n is
-// a display-column count including the 1-column padding on each side of the
-// text, so a maxCellLength-character content cap passes maxCellLength+2.
-// n <= 0 restores defaultMaxCellWidth.
+// SetMaxCellWidth overrides the bound computeColWidths clamps every column's
+// *default* width to — a cap on how wide content alone may make a column, not
+// on the column, which a separator drag widens past it freely. n counts display
+// columns including the padding either side of the text, so a
+// maxCellLength-character content cap passes maxCellLength+2. n <= 0 restores
+// defaultMaxCellWidth.
 func (g *DataGrid) SetMaxCellWidth(n int) { g.maxCellWidth = n }
 
 // SetFillLastColumn stretches the last column to fill the grid's remaining
 // width — for a two-column Property/Value view, where a content-clamped Value
-// column wastes most of a wide panel. Off by default: on a grid of
+// column wastes most of a wide panel. Off by default, since on a grid of
 // similarly-important columns it gives the last one outsized width.
 func (g *DataGrid) SetFillLastColumn(v bool) {
 	g.fillLastColumn = v
@@ -443,8 +410,8 @@ func (g *DataGrid) maxCellWidthOrDefault() int {
 	return defaultMaxCellWidth
 }
 
-// Row returns row i's raw cells, or nil if i is out of range — the underlying
-// data behind a selection rather than what's rendered.
+// Row returns row i's raw cells, or nil if i is out of range — the data behind
+// a selection rather than what is rendered.
 func (g *DataGrid) Row(i int) []string {
 	if i < 0 || i >= g.rows.Len() {
 		return nil
@@ -453,8 +420,8 @@ func (g *DataGrid) Row(i int) []string {
 }
 
 // computeColWidths sizes columns from their header plus up to
-// colWidthSampleRows data rows — not every row, so a huge result set
-// doesn't make SetSource itself slow.
+// colWidthSampleRows data rows, so a huge result set doesn't make SetSource
+// slow.
 func (g *DataGrid) computeColWidths() {
 	g.widthsDirty = false
 	g.colWidths = make([]int, len(g.columns))
@@ -479,8 +446,8 @@ func (g *DataGrid) computeColWidths() {
 			g.colWidths[i] = w
 		}
 	}
-	// A last column the user has dragged to a width of their own keeps it —
-	// stretching it back out to the rect would make the drag look ignored.
+	// A last column dragged to a width of its own keeps it; stretching it back
+	// out to the rect would make the drag look ignored.
 	if g.fillLastColumn && len(g.colWidths) > 0 && g.overrideWidth(len(g.colWidths)-1) == 0 {
 		g.growLastColumnToFill()
 	}
@@ -494,8 +461,8 @@ func (g *DataGrid) overrideWidth(i int) int {
 	return g.colWidthOverride[i]
 }
 
-// setOverrideWidth records column i's dragged width (0 clears it), growing
-// the override slice on demand so it always matches the column count.
+// setOverrideWidth records column i's dragged width (0 clears it), growing the
+// override slice on demand to match the column count.
 func (g *DataGrid) setOverrideWidth(i, w int) {
 	if i < 0 || i >= len(g.colWidths) {
 		return
@@ -506,11 +473,10 @@ func (g *DataGrid) setOverrideWidth(i, w int) {
 	g.colWidthOverride[i] = w
 }
 
-// ColumnWidthOverrides returns the width each column was last dragged to, 0
-// for a column still at its computed default — the inverse of SetColumnWidth,
-// and the only way to carry a user's drags across a SetData that deliberately
-// discards them (see redrawGrid in the application layer). The slice is a
-// copy; its length is the column count at the time of the call.
+// ColumnWidthOverrides returns each column's dragged width, 0 for one still at
+// its computed default — the inverse of SetColumnWidth, and the only way to
+// carry drags across a SetData that discards them (see redrawGrid). The slice
+// is a copy, as long as the column count at the time of the call.
 func (g *DataGrid) ColumnWidthOverrides() []int {
 	out := make([]int, len(g.colWidths))
 	copy(out, g.colWidthOverride)
@@ -541,10 +507,10 @@ func (g *DataGrid) ColumnWidth(i int) int {
 	return g.colWidths[i]
 }
 
-// growLastColumnToFill widens the last column to consume whatever width is
-// left once every other column is accounted for, bypassing
-// maxCellWidthOrDefault's clamp — that cap keeps an ordinary column from
-// swallowing the grid, which here is the point.
+// growLastColumnToFill widens the last column to consume the width left once
+// every other column is accounted for, bypassing maxCellWidthOrDefault: that
+// cap keeps an ordinary column from swallowing the grid, which here is the
+// point.
 func (g *DataGrid) growLastColumnToFill() {
 	avail := g.rect.W - g.gutterWidth()
 	last := len(g.colWidths) - 1
@@ -557,9 +523,8 @@ func (g *DataGrid) growLastColumnToFill() {
 	}
 }
 
-// gutterWidth returns the on-screen width of the row-number column, sized
-// to fit the highest row number plus one column of padding on each side, or
-// 0 when SetRowNumbers(true) hasn't been called.
+// gutterWidth returns the row-number column's on-screen width — the highest row
+// number plus a padding column each side — or 0 unless SetRowNumbers is on.
 func (g *DataGrid) gutterWidth() int {
 	if !g.showRowNumbers {
 		return 0

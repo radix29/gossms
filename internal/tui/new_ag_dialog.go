@@ -192,11 +192,23 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 		}
 	}
 
+	// The log backup chain state of every database in one read — CREATE
+	// AVAILABILITY GROUP ... FOR DATABASE enforces the same prerequisite as
+	// ADD DATABASE, so this page applies the same rule.
+	statuses, err := sc.Server.DatabaseRecoveryStatusesContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	logChain := map[string]bool{}
+	for _, st := range statuses {
+		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
+	}
+
 	dbs, err := sc.Server.DatabasesContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eligible, excluded := agEligibleDatabases(agCandidatesFrom(dbs), inGroup)
+	eligible, excluded := agEligibleDatabases(agCandidatesFrom(dbs, logChain), inGroup)
 	for _, name := range eligible {
 		pf.databases = append(pf.databases, newAGDatabase{name: name})
 	}

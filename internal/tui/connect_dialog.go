@@ -15,16 +15,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// maxServerMatches caps how many rows of the server-field autocomplete
-// list are drawn/hit-tested at once. Matches beyond this many simply
-// aren't shown — the list doesn't scroll — so with up to
-// config.MaxSavedConnections (30) saved entries, typing a longer prefix
-// is how the rest are reached.
+// maxServerMatches caps how many rows of the server-field autocomplete list are
+// drawn and hit-tested. The list doesn't scroll, so a longer prefix is how the
+// rest are reached.
 const maxServerMatches = 10
 
-// ConnectDialog is the "Connect to Server" modal dialog. It embeds
-// dialogs.ModalDialog (focus trap, overlay, button row) and composes
-// tuikit/widgets controls for its form fields.
+// ConnectDialog is the "Connect to Server" modal dialog, embedding
+// dialogs.ModalDialog and composing tuikit/widgets controls for its fields.
 type ConnectDialog struct {
 	dialogs.ModalDialog
 	app *App
@@ -40,18 +37,14 @@ type ConnectDialog struct {
 	cbTrust   *widgets.CheckBox
 	cbEncrypt *widgets.CheckBox
 
-	// fExtraProps is a free-form, word-wrapped, editable text box: extra
-	// "key=value" connection-string properties the user wants appended
-	// verbatim, joined onto the built string with a leading "&" (see
-	// refreshConnStrPreview / db.BuildConnectionString). Focusable and in
-	// the Tab cycle.
+	// fExtraProps is a free-form, word-wrapped text box of extra "key=value"
+	// connection-string properties appended verbatim with a leading "&" (see
+	// refreshConnStrPreview and db.BuildConnectionString).
 	fExtraProps *controls.Editor
 
-	// fConnStrPreview is a preview of the connection string that would be
-	// built from the current fields, password shown masked (see
-	// refreshConnStrPreview). Focusable and in the Tab cycle so its text
-	// can be selected/copied; it's still rebuilt from the other fields on
-	// every blur (see setFocus), so any manual edit made here doesn't
+	// fConnStrPreview previews the connection string the current fields would
+	// build, password masked. Focusable so its text can be selected and copied,
+	// but rebuilt on every blur (see setFocus), so a manual edit here doesn't
 	// survive leaving the field.
 	fConnStrPreview *controls.Editor
 
@@ -64,23 +57,19 @@ type ConnectDialog struct {
 	focusable []focusable
 	btnFocus  int // 0=Connect 1=Cancel
 
-	// Server-field autocomplete: saved connections (config.Config,
-	// most-recently-used and capped — see config.MaxSavedConnections)
-	// whose Server matches what's currently typed in fServer, shown as a
-	// list beneath it once at least 4 characters have been typed — or
-	// immediately on a mouse click in the field, whatever its content (see
-	// openMatchesForClick). A connection is saved automatically, auto-named
-	// "server,port,database,user", the moment it succeeds (see
-	// App.connectServer).
+	// Server-field autocomplete: saved connections whose Server matches what is
+	// typed in fServer, listed beneath it once four characters are in — or
+	// immediately on a click in the field, whatever its content (see
+	// openMatchesForClick). A connection is saved automatically the moment it
+	// succeeds (see App.connectServer).
 	matches   []config.Connection
 	matchOpen bool
 	matchSel  int
 
-	// dragField is the input field that claimed the current Button1
-	// gesture, nil between gestures. Motion goes to it wherever the pointer
-	// is, so dragging a selection out of the field's rect keeps extending it
-	// instead of freezing at the boundary — the hit test below it is what
-	// used to stop the drag dead. Same idiom as FindReplaceDialog.
+	// dragField is the input field that claimed the current Button1 gesture, nil
+	// between gestures. Motion goes to it wherever the pointer is, so dragging a
+	// selection out of the field's rect keeps extending it instead of freezing at
+	// the boundary. Same idiom as FindReplaceDialog.
 	dragField *widgets.InputField
 }
 
@@ -128,8 +117,8 @@ func (d *ConnectDialog) rebuildFocusable() {
 	}
 }
 
-// PreFill pre-fills the dialog from an existing connection. Used by
-// applyMatch when a server-field autocomplete suggestion is chosen.
+// PreFill pre-fills the dialog from an existing connection — applyMatch's path
+// when an autocomplete suggestion is chosen.
 func (d *ConnectDialog) PreFill(c *config.Connection) {
 	d.fServer.SetValue(c.Server)
 	d.fPort.SetValue(strconv.Itoa(c.Port))
@@ -150,14 +139,13 @@ func (d *ConnectDialog) PreFill(c *config.Connection) {
 	d.setFocus(0)
 }
 
-// Show opens the dialog, focuses the first field, and refreshes the
-// server-match list against whatever's already in it — fields persist
-// across Show/Hide, so a dialog reopened with a server already typed in
-// should immediately reflect that.
+// Show opens the dialog, focuses the first field, and refreshes the server-match
+// list against whatever is already in it: fields persist across Show/Hide, so a
+// dialog reopened with a server typed in reflects that at once.
 func (d *ConnectDialog) Show() {
 	d.ModalDialog.Show()
-	// A latch must not survive into the next showing: a dialog dismissed
-	// mid-drag would otherwise reopen still routing every click to that field.
+	// A latch must not survive into the next showing: a dialog dismissed mid-drag
+	// would reopen still routing every click to that field.
 	d.dragField = nil
 	d.setFocus(0)
 	d.updateMatches()
@@ -165,20 +153,18 @@ func (d *ConnectDialog) Show() {
 
 func (d *ConnectDialog) setFocus(i int) {
 	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
-	// The autocomplete list only makes sense while the server field has
-	// focus; moving away from it closes the list.
+	// The autocomplete list only makes sense while the server field has focus.
 	if i != 0 {
 		d.matchOpen = false
 	}
-	// Every focus change is a blur of whatever was focused before — the
-	// natural point to refresh the preview so it updates once a field is
-	// left, not on every keystroke inside it.
+	// Every focus change blurs whatever was focused — the point to refresh the
+	// preview, so it updates once a field is left rather than per keystroke.
 	d.refreshConnStrPreview()
 }
 
-// connStrPasswordMask replaces a non-empty password in the connection-
-// string preview — a fixed placeholder rather than a run of '*' the same
-// length as the real password, so the preview can't leak its length.
+// connStrPasswordMask replaces a non-empty password in the connection-string
+// preview. A fixed placeholder rather than a run of '*', so the preview can't
+// leak the password's length.
 const connStrPasswordMask = "XXXXX"
 
 // refreshConnStrPreview rebuilds the connection-string preview from the
@@ -192,10 +178,9 @@ func (d *ConnectDialog) refreshConnStrPreview() {
 	d.fConnStrPreview.SetText(db.BuildConnectionString(opts))
 }
 
-// updateMatches re-runs the server-field autocomplete lookup against
-// whatever's currently typed in fServer. Nothing happens until at least
-// 4 characters have been typed; the list closes itself the moment there
-// are no matches (or the field shrinks back below 4 characters).
+// updateMatches re-runs the server-field autocomplete lookup against what is
+// typed in fServer. Nothing happens below four characters, and the list closes
+// itself once there are no matches.
 func (d *ConnectDialog) updateMatches() {
 	typed := d.fServer.Value()
 	if len(typed) < 4 {
@@ -215,23 +200,19 @@ func (d *ConnectDialog) updateMatches() {
 }
 
 // ClipboardEdited re-filters the saved-connections list after Ctrl+X or Ctrl+V
-// changed the server field — the same follow-up HandleKey does after every
-// keystroke there.
-//
-// Only for that field. This used to run for any edit anywhere in the dialog
-// (App.cutSelection and friends checked Visible() and called updateMatches
-// directly), so pasting into Password re-ran the lookup against a server name
-// nobody had touched and could pop the autocomplete list open over it.
+// changed the server field — the follow-up HandleKey does after a keystroke
+// there. Only for that field: an edit elsewhere, a paste into Password, must not
+// re-run the lookup and pop the list open over it.
 func (d *ConnectDialog) ClipboardEdited(target core.ClipboardTarget) {
 	if target == core.ClipboardTarget(d.fServer) {
 		d.updateMatches()
 	}
 }
 
-// openMatchesForClick opens the saved-connections list on a mouse click in
-// the server field, regardless of how much has been typed — an empty field
-// lists every saved connection. Typing afterwards re-filters through
-// updateMatches, which restores its usual 4-character threshold.
+// openMatchesForClick opens the saved-connections list on a click in the server
+// field however much is typed; an empty field lists every saved connection.
+// Typing afterwards re-filters through updateMatches and its 4-character
+// threshold.
 func (d *ConnectDialog) openMatchesForClick() {
 	d.matches = d.app.cfg.MatchByServer(d.fServer.Value())
 	if len(d.matches) == 0 {
@@ -245,7 +226,7 @@ func (d *ConnectDialog) openMatchesForClick() {
 }
 
 // applyMatch fills the dialog from a saved connection chosen off the
-// server-field autocomplete list, via arrow+Enter or a click.
+// autocomplete list, by arrow+Enter or a click.
 func (d *ConnectDialog) applyMatch(c config.Connection) {
 	d.PreFill(&c)
 	d.matchOpen = false
@@ -289,17 +270,15 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	d.DrawSeparator(s)
 	d.DrawButtons(s, []string{"Connect", "Cancel"}, d.btnFocus)
 
-	// Drawn last so neither the open auth-method list nor the server-match
-	// list gets painted over by the fields/buttons positioned below them.
+	// Drawn last, so neither the auth-method list nor the server-match list is
+	// painted over by the fields and buttons below them.
 	d.ddAuth.DrawOverlay(s)
 	d.drawMatches(s)
 }
 
-// drawMatches renders the server-field autocomplete list as an overlay
-// directly beneath fServer, styled to match ddAuth's own open list
-// (DropDown.DrawOverlay) for visual consistency. Like any combo-box
-// suggestion list, it's necessarily drawn on top of whatever's positioned
-// below fServer (fPort, ddAuth, etc.) while it's open.
+// drawMatches renders the server-field autocomplete list as an overlay directly
+// beneath fServer, styled like ddAuth's open list. While open it necessarily
+// covers whatever sits below fServer.
 func (d *ConnectDialog) drawMatches(s tcell.Screen) {
 	if !d.matchOpen || len(d.matches) == 0 {
 		return
@@ -355,8 +334,8 @@ func (d *ConnectDialog) layoutFields() {
 	row++
 	row++ // blank row below Encrypt Connection
 
-	// Same on-screen width as the Password field's whole visible box
-	// (label + brackets + content), computed from real widget geometry.
+	// Same on-screen width as the Password field's whole visible box (label +
+	// brackets + content), from real widget geometry.
 	previewW := d.fPassword.InputX() + d.fPassword.Width() + 2 - lx
 
 	d.extraPropsLabelY = row
@@ -373,11 +352,9 @@ func (d *ConnectDialog) layoutFields() {
 // Server's own default.
 const defaultPort = 1433
 
-// port reads the Port field, defaulting an empty one, and reports whether
-// it parsed. A field that isn't a valid port number is rejected rather
-// than silently falling back: connecting to 1433 because "14 33" didn't
-// parse looks like the typo worked, and the failure that follows names the
-// wrong port.
+// port reads the Port field, defaulting an empty one, and reports whether it
+// parsed. An invalid port is rejected rather than silently falling back:
+// connecting to 1433 because "14 33" didn't parse looks like the typo worked.
 func (d *ConnectDialog) port() (int, bool) {
 	v := strings.TrimSpace(d.fPort.Value())
 	if v == "" {
@@ -390,9 +367,9 @@ func (d *ConnectDialog) port() (int, bool) {
 	return n, true
 }
 
-// currentOptions assembles a config.Connection from the dialog fields.
-// Name is left as the zero value; config.Config.AddOrUpdate fills in the
-// auto-generated name once a connection actually succeeds.
+// currentOptions assembles a config.Connection from the dialog fields. Name is
+// left zero; config.Config.AddOrUpdate fills in the generated name once a
+// connection succeeds.
 func (d *ConnectDialog) currentOptions() config.Connection {
 	port, ok := d.port()
 	if !ok {
@@ -420,9 +397,9 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 		return false
 	}
 
-	// While the server-field autocomplete list is open, arrows navigate
-	// it and Enter/Escape act on it — taking priority over the field's
-	// own key handling and the dialog's usual Tab-cycling/Enter-confirms.
+	// While the autocomplete list is open, arrows navigate it and Enter/Escape
+	// act on it, ahead of the field's own key handling and the dialog's
+	// Tab-cycling and Enter-confirms.
 	if d.matchOpen && d.focusIdx == 0 {
 		switch ev.Key() {
 		case tcell.KeyDown:
@@ -505,25 +482,23 @@ func (d *ConnectDialog) doButton() {
 	}
 }
 
-// HandleMouse routes mouse events; the embedded ModalDialog blocks all
-// clicks outside its bounds via ConsumeOutsideClick.
+// HandleMouse routes mouse events; the embedded ModalDialog blocks clicks
+// outside its bounds via ConsumeOutsideClick.
 func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release must reach every mouseDragging-latched widget even when it
-	// lands outside the dialog (consumed below) or the widget isn't the
-	// currently focused one — otherwise its next press is swallowed as a
-	// continuation of the stale drag. Each returns false on ButtonNone, so
-	// this has no effect beyond resetting the latch.
+	// A release must reach every mouseDragging-latched widget even when it lands
+	// outside the dialog or on a widget that isn't focused, or its next press is
+	// swallowed as a continuation of the stale drag. Each returns false on
+	// ButtonNone, so this does nothing beyond resetting the latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.cbTrust.HandleMouse(ev)
 		d.cbEncrypt.HandleMouse(ev)
 		d.ddAuth.HandleMouse(ev)
-		// Terminate a text-selection drag in the field that claimed the
-		// press, wherever the release landed. Done before
-		// ConsumeOutsideClick, which returns early on a release outside the
-		// dialog — exactly the case that would otherwise strand the latch.
+		// End a text-selection drag in the field that claimed the press,
+		// wherever the release landed. Before ConsumeOutsideClick, which returns
+		// early on a release outside the dialog and would strand the latch.
 		if d.dragField != nil {
 			d.dragField.HandleMouse(ev)
 			d.dragField = nil
@@ -533,11 +508,10 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	// Always forward a release to whichever field currently has focus, so
-	// a text-selection drag started in it terminates cleanly even if the
-	// release happens elsewhere in the dialog. The Editor arm is why this
-	// stays after the dragField release above: dragField only tracks
-	// InputFields, and Editor keeps its own latch.
+	// Always forward a release to whichever field has focus, so a text-selection
+	// drag started in it ends cleanly even if the release lands elsewhere in the
+	// dialog. After the dragField release above because dragField tracks only
+	// InputFields, while Editor keeps its own latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		if d.focusIdx < len(d.focusable) {
 			switch f := d.focusable[d.focusIdx].(type) {
@@ -555,9 +529,8 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — ahead of the match-list overlay
-	// and every widget below, since none of them can own a gesture this one
-	// already started.
+	// replayed there without hit-testing — ahead of the match-list overlay and
+	// every widget below, none of which can own a gesture this one started.
 	if d.dragField != nil {
 		d.dragField.HandleMouse(ev)
 		return true
@@ -573,10 +546,9 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.matchOpen = false
 	}
 
-	// The auth dropdown's open list is an overlay drawn last, so it gets
-	// first refusal of every click — ahead of ButtonClicked below, which
-	// would otherwise steal a click landing on an open list row that
-	// happens to visually overlap the button row.
+	// The auth dropdown's open list is an overlay drawn last, so it gets first
+	// refusal of every click — ahead of ButtonClicked, which would otherwise
+	// steal a click on a list row overlapping the button row.
 	if d.ddAuth.HandleMouse(ev) {
 		d.refreshConnStrPreview()
 		return true
@@ -597,9 +569,8 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	// fExtraProps/fConnStrPreview.HandleMouse itself checks whether the
-	// click falls within its bounds (Editor has no separate HitTest), so
-	// it doubles as the hit test here.
+	// fExtraProps/fConnStrPreview.HandleMouse checks its own bounds (Editor has
+	// no separate HitTest), so it doubles as the hit test.
 	for _, ed := range []*controls.Editor{d.fExtraProps, d.fConnStrPreview} {
 		if ed.HandleMouse(ev) {
 			for fi, foc := range d.focusable {
@@ -625,8 +596,8 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 					break
 				}
 			}
-			// Position the cursor / start a drag-selection at the click
-			// point, not just switch focus to the field.
+			// Position the cursor or start a drag-selection at the click point,
+			// not just switch focus to the field.
 			f.HandleMouse(ev)
 			d.dragField = f
 			if f == d.fServer {
@@ -638,8 +609,8 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// matchHit reports which server-match-list row (if any) contains the
-// click, as an index into d.matches.
+// matchHit reports which server-match-list row contains the click, as an index
+// into d.matches.
 func (d *ConnectDialog) matchHit(ev *tcell.EventMouse) (int, bool) {
 	mx, my := ev.Position()
 	x := d.fServer.InputX() + 1
@@ -652,9 +623,8 @@ func (d *ConnectDialog) matchHit(ev *tcell.EventMouse) (int, bool) {
 	return my - y, true
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: whichever of the
-// server/port/database/user/password/tenant/client fields or the extra-
-// properties editor has focus. A dropdown, checkbox or button answers nil.
+// FocusedClipboardTarget implements core.ClipboardHost: whichever text field or
+// editor has focus. A dropdown, checkbox or button answers nil.
 func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

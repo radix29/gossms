@@ -12,10 +12,10 @@ import (
 // Find and replace for Editor
 // ---------------------------------------------------------------------------
 
-// SearchOptions describes one find/replace request. Literal and regular
-// expression searches share a single engine: a literal Query is escaped with
-// regexp.QuoteMeta and compiled the same way, so match iteration, whole-word
-// handling and case folding have exactly one implementation.
+// SearchOptions describes one find/replace request. Literal and regexp searches
+// share one engine: a literal Query is escaped with regexp.QuoteMeta and
+// compiled the same way, so match iteration, whole-word handling and case
+// folding have one implementation.
 type SearchOptions struct {
 	Query     string
 	Replace   string
@@ -23,30 +23,28 @@ type SearchOptions struct {
 	WholeWord bool
 	Regexp    bool
 
-	// InSelection restricts ReplaceAll to the selection that was active when
-	// SetSearch ran. It has no effect on FindNext, which always searches the
-	// whole document — a "find next" that stopped at a selection boundary
-	// would be indistinguishable from "no more matches".
+	// InSelection restricts ReplaceAll to the selection active when SetSearch
+	// ran. No effect on FindNext, which always searches the whole document: a
+	// find that stopped at a selection boundary would be indistinguishable from
+	// "no more matches".
 	InSelection bool
 }
 
-// searchMatch is one match, as rune indices into a single logical line.
-// Matches never span lines: the pattern is applied per line, so a regexp
-// can't match across a line break. That also keeps the per-line match list
-// directly usable by the drawing path.
+// searchMatch is one match, as rune indices into a single logical line. The
+// pattern is applied per line, so a match never spans lines — which also keeps
+// the per-line match list directly usable by the drawing path.
 type searchMatch struct {
 	row      int
 	startCol int
 	endCol   int
 }
 
-// editorSearch is Editor's find/replace state: the compiled pattern, the
-// match list derived from it, and which match is current.
+// editorSearch is Editor's find/replace state: the compiled pattern, the match
+// list derived from it, and which match is current.
 //
-// matches is cached against the document version the scan ran on. Draw
-// consults it on every event the app processes, so rescanning per Draw would
-// be an O(document) regexp sweep per keystroke — the same cost the Document
-// version counter exists to remove for the highlighters.
+// matches is cached against the document version the scan ran on. Draw consults
+// it on every event, so rescanning per Draw would be an O(document) regexp sweep
+// per keystroke.
 type editorSearch struct {
 	opts SearchOptions
 	re   *regexp.Regexp
@@ -57,21 +55,18 @@ type editorSearch struct {
 	scanVer    uint64
 	scanDocPtr *Document
 
-	// selStart/selEnd bound an InSelection ReplaceAll. Captured at SetSearch
-	// time because replacing text moves the selection, so the second
-	// replacement onward would otherwise be measured against a range the
-	// first one already invalidated.
+	// selStart/selEnd bound an InSelection ReplaceAll, captured at SetSearch time
+	// because replacing text moves the selection — from the second replacement
+	// on, the range the first invalidated.
 	selValid                 bool
 	selStartRow, selStartCol int
 	selEndRow, selEndCol     int
 }
 
-// SetSearch compiles opts into the editor's active search and drops any
-// previous match state. An invalid regular expression is reported as an
-// error and leaves the editor with no active search, so a half-typed
-// pattern highlights nothing rather than the previous pattern's hits.
-//
-// An empty Query clears the search, same as ClearSearch.
+// SetSearch compiles opts into the editor's active search and drops any previous
+// match state. An invalid regular expression is reported as an error and leaves
+// no active search, so a half-typed pattern highlights nothing rather than the
+// previous pattern's hits. An empty Query clears the search, like ClearSearch.
 func (e *Editor) SetSearch(opts SearchOptions) error {
 	if opts.Query == "" {
 		e.ClearSearch()
@@ -128,11 +123,10 @@ func (e *Editor) scanMatches() []searchMatch {
 		if text == "" {
 			continue
 		}
-		// Byte offsets from the regexp engine are converted to rune indices
-		// once per line rather than per match: every position Editor works
-		// in — cursorCol, selection bounds, ColorRun.Start — is a rune index,
-		// and a byte offset that reaches any of them lands mid-character on
-		// the first non-ASCII line.
+		// Byte offsets from the regexp engine become rune indices once per line
+		// rather than per match: every position Editor works in is a rune index,
+		// and a byte offset reaching one lands mid-character on the first
+		// non-ASCII line.
 		byteToRune := byteRuneIndex(text)
 		for _, loc := range s.re.FindAllStringIndex(text, -1) {
 			start, end := loc[0], loc[1]
@@ -140,9 +134,8 @@ func (e *Editor) scanMatches() []searchMatch {
 				start, end = byteToRune[start], byteToRune[end]
 			}
 			if start == end {
-				// A zero-width match (`^`, `\b`, `x*`) has nothing to select
-				// or replace, and stepping onto one would make Find Next
-				// stall on it forever.
+				// A zero-width match (`^`, `\b`, `x*`) has nothing to select or
+				// replace, and Find Next would stall on it forever.
 				continue
 			}
 			s.matches = append(s.matches, searchMatch{row: row, startCol: start, endCol: end})
@@ -152,16 +145,13 @@ func (e *Editor) scanMatches() []searchMatch {
 	return s.matches
 }
 
-// byteRuneIndex maps every byte offset of s that starts a rune (plus len(s))
-// to that rune's index. Offsets inside a multi-byte rune are left at zero;
-// regexp match bounds always land on rune boundaries, so those are never
-// read.
+// byteRuneIndex maps every byte offset of s that starts a rune (plus len(s)) to
+// that rune's index. Offsets inside a multi-byte rune stay zero; regexp match
+// bounds always land on rune boundaries, so those are never read.
 //
 // Returns nil when s is pure ASCII, where the mapping is the identity and the
-// caller uses the byte offset as the rune index. That is the overwhelmingly
-// common case in T-SQL, and building the map cost one len(s)+1 allocation per
-// line on every rescan — one per line of the whole document, since an edit
-// invalidates the scan.
+// caller uses the byte offset directly. That is the common case in T-SQL, and
+// building the map costs one allocation per line on every rescan.
 func byteRuneIndex(s string) []int {
 	if !hasMultiByte(s) {
 		return nil
@@ -176,8 +166,8 @@ func byteRuneIndex(s string) []int {
 	return idx
 }
 
-// hasMultiByte reports whether s holds any byte outside ASCII, i.e. whether
-// byte offsets and rune indices can differ within it.
+// hasMultiByte reports whether s holds any non-ASCII byte, i.e. whether byte
+// offsets and rune indices can differ within it.
 func hasMultiByte(s string) bool {
 	for i := range len(s) {
 		if s[i] >= utf8.RuneSelf {
@@ -191,9 +181,8 @@ func hasMultiByte(s string) bool {
 // search.
 func (e *Editor) MatchCount() int { return len(e.scanMatches()) }
 
-// MatchPosition returns the 1-based ordinal of the current match and the
-// total match count, for a "Match 2 of 7" readout. i is 0 when no match is
-// current — nothing has been found yet, or an edit invalidated the last one.
+// MatchPosition returns the 1-based ordinal of the current match and the total
+// count, for a "Match 2 of 7" readout. i is 0 when no match is current.
 func (e *Editor) MatchPosition() (i, n int) {
 	matches := e.scanMatches()
 	if e.search.cur < 0 || e.search.cur >= len(matches) {
@@ -202,17 +191,17 @@ func (e *Editor) MatchPosition() (i, n int) {
 	return e.search.cur + 1, len(matches)
 }
 
-// WordAtCursor returns the identifier the caret sits in or next to, or ""
-// when it's on whitespace or punctuation. Used by "find the word under the
-// cursor" (Ctrl+F3), which needs the word without disturbing the selection.
+// WordAtCursor returns the identifier the caret sits in or next to, or "" on
+// whitespace or punctuation — for Ctrl+F3, which needs the word without
+// disturbing the selection.
 func (e *Editor) WordAtCursor() string {
 	line := e.doc.Line(e.cursorRow)
 	if len(line) == 0 {
 		return ""
 	}
 	col := core.Clamp(e.cursorCol, 0, len(line))
-	// Prefer the word to the left when the caret sits just past its last
-	// rune, which is where it lands after double-click or word-jump.
+	// Prefer the word to the left when the caret sits just past its last rune,
+	// where a double-click or word-jump leaves it.
 	probe := col
 	if probe >= len(line) || !core.IsWordRune(line[probe]) {
 		if probe > 0 && core.IsWordRune(line[probe-1]) {
@@ -243,14 +232,12 @@ func (e *Editor) CurrentMatchPos() (line, col int, ok bool) {
 	return m.row + 1, m.startCol + 1, true
 }
 
-// FindNext moves to the next match after the cursor (dir >= 0) or the last
-// one before it (dir < 0), selects it, and scrolls it into view. It wraps
-// around the end of the document, and reports whether a match was found at
-// all — false means the document contains none.
+// FindNext moves to the next match after the cursor (dir >= 0) or the last one
+// before it (dir < 0), selects it, and scrolls it into view. It wraps around the
+// document and reports whether any match was found.
 //
-// The search always starts from the cursor rather than from the previous
-// match's index, so a Find Next after the user has clicked elsewhere
-// continues from where they are looking, matching every other editor.
+// The search starts from the cursor rather than the previous match's index, so a
+// Find Next after clicking elsewhere continues from where the user is looking.
 func (e *Editor) FindNext(dir int) bool {
 	matches := e.scanMatches()
 	if len(matches) == 0 {
@@ -259,13 +246,12 @@ func (e *Editor) FindNext(dir int) bool {
 	}
 	idx := -1
 	if dir >= 0 {
-		// Strictly after the cursor's column, so repeated Find Next steps off
-		// the match it just selected (whose start is at the cursor) instead
-		// of re-selecting it.
+		// Strictly after the cursor's column, so repeated Find Next steps off the
+		// match it just selected instead of re-selecting it.
 		row, col := e.cursorRow, e.cursorCol
 		if e.HasSelection() {
-			// A selection's start is where the current match begins; search
-			// from its end so the match under the selection is skipped.
+			// A selection's start is where the current match begins; search from
+			// its end so the match under it is skipped.
 			_, _, er, ec := e.selectionBounds()
 			row, col = er, ec
 		}
@@ -281,9 +267,8 @@ func (e *Editor) FindNext(dir int) bool {
 	} else {
 		row, col := e.cursorRow, e.cursorCol
 		if e.HasSelection() {
-			// Step back from the selection's *start*, so a Find Previous on
-			// an already-selected match moves off it rather than finding it
-			// again.
+			// Step back from the selection's *start*, so a Find Previous on an
+			// already-selected match moves off it.
 			row, col, _, _ = e.selectionBounds()
 		}
 		for i, m := range slices.Backward(matches) {
@@ -311,21 +296,18 @@ func (e *Editor) selectMatch(m searchMatch) {
 	e.clampCursor()
 	e.desiredCol = e.cursorDisplayCol()
 	e.ensureCursorVisible()
-	// A match far to the right of a long line is inside the viewport
-	// vertically but off it horizontally; ensureCursorVisible only scrolls
-	// the row into view in plain mode when the column is already visible.
+	// A match far along a long line is inside the viewport vertically but off it
+	// horizontally, and ensureCursorVisible scrolls only the row into view.
 	e.ensureColumnVisible()
 }
 
-// ReplaceCurrent replaces the selected match with the active search's
-// Replace text and advances to the next match, reporting whether it
-// replaced anything. It does nothing unless the selection is exactly a
-// match — the SSMS/VS rule that Replace on a fresh dialog finds first and
-// replaces on the second press, rather than overwriting whatever happened
-// to be selected.
+// ReplaceCurrent replaces the selected match with the active search's Replace
+// text and advances to the next match, reporting whether it replaced anything.
+// It does nothing unless the selection is exactly a match — the SSMS/VS rule
+// that Replace on a fresh dialog finds first and replaces on the second press.
 //
-// For a regexp search the replacement goes through Regexp.ReplaceAllString,
-// so $1 group references work; for a literal search it is inserted as-is.
+// For a regexp search the replacement goes through Regexp.ReplaceAllString, so
+// $1 group references work; a literal replacement is inserted as-is.
 func (e *Editor) ReplaceCurrent() bool {
 	if e.readOnly || e.search.re == nil {
 		return false
@@ -339,7 +321,7 @@ func (e *Editor) ReplaceCurrent() bool {
 		return false
 	}
 	// replaceMatch rewrites one line and never changes the line count, so the
-	// step is that one row — Replace/F3 down a large script is a held key.
+	// step is that one row: Replace/F3 down a large script is a held key.
 	e.pushUndoSpan(m.row, m.row+1)
 	e.replaceMatch(m)
 	e.search.cur = -1
@@ -357,8 +339,8 @@ func (e *Editor) selectionIsMatch(m searchMatch) bool {
 }
 
 // replaceMatch substitutes m's text in place. The caller owns the undo step:
-// ReplaceAll pushes exactly one for the whole run, so this must not push its
-// own or a Replace All would take one Ctrl+Z per occurrence to undo.
+// ReplaceAll pushes one for the whole run, so this must not push its own or a
+// Replace All takes one Ctrl+Z per occurrence to undo.
 func (e *Editor) replaceMatch(m searchMatch) {
 	line := e.doc.Line(m.row)
 	old := string(line[m.startCol:m.endCol])
@@ -379,13 +361,13 @@ func (e *Editor) replaceMatch(m searchMatch) {
 	e.clampCursor()
 }
 
-// ReplaceAll replaces every match in the document — or, when the search was
-// compiled with InSelection and a selection was active at that point, every
-// match inside that selection — and returns how many it replaced.
+// ReplaceAll replaces every match in the document — or, under InSelection with a
+// selection active at SetSearch time, every match inside it — and returns how
+// many it replaced.
 //
-// The whole run is one undo step, and each line is rewritten right-to-left
-// so that replacing one match doesn't shift the rune offsets of the matches
-// still to be replaced on the same line.
+// The whole run is one undo step, and each line is rewritten right-to-left so
+// replacing one match doesn't shift the offsets of the matches still to come on
+// that line.
 func (e *Editor) ReplaceAll() int {
 	if e.readOnly || e.search.re == nil {
 		return 0
@@ -419,8 +401,8 @@ func (e *Editor) matchInScope(m searchMatch) bool {
 		return true
 	}
 	if !s.selValid {
-		// InSelection was asked for with nothing selected: replacing the
-		// whole document instead would be the opposite of what was asked.
+		// InSelection was asked for with nothing selected: replacing the whole
+		// document would be the opposite of what was asked.
 		return false
 	}
 	if m.row < s.selStartRow || m.row > s.selEndRow {
@@ -435,15 +417,13 @@ func (e *Editor) matchInScope(m searchMatch) bool {
 	return true
 }
 
-// matchSpansForLine returns every match on row. Used by the drawing path,
-// once per drawn row: the match list is sorted by row, so the row's slice is
-// found by binary search rather than by walking a list that can hold a hit
-// for every line in the buffer. The result aliases the cached list and must
-// not be retained or modified.
+// matchSpansForLine returns every match on row, once per drawn row. The match
+// list is sorted by row, so the row's slice is found by binary search rather
+// than by walking a list that can hold a hit per line. The result aliases the
+// cached list and must not be retained or modified.
 //
-// The current match is included like any other. It is also the editor's
-// selection, and the selection style wins in styleForRune, so it stays
-// visually distinct without being special-cased here.
+// The current match is included like any other: it is also the editor's
+// selection, and the selection style wins in styleForRune.
 func (e *Editor) matchSpansForLine(row int) []searchMatch {
 	matches := e.scanMatches()
 	if len(matches) == 0 {
@@ -463,9 +443,9 @@ func (e *Editor) matchSpansForLine(row int) []searchMatch {
 }
 
 // ensureColumnVisible scrolls horizontally so the cursor's display column is
-// inside the content area. ensureCursorVisible handles the vertical axis
-// only; without this a match found far along a wide line selects and scrolls
-// vertically to a row whose matched text is still off the right edge.
+// inside the content area. ensureCursorVisible handles the vertical axis only,
+// so without this a match far along a wide line scrolls to a row whose matched
+// text is still off the right edge.
 func (e *Editor) ensureColumnVisible() {
 	if e.wrapMode {
 		return

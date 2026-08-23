@@ -13,7 +13,7 @@ import (
 
 // LabelWidth is the display-column width reserved for a row's label before its
 // value begins, so a page reads as an aligned two-column form. Checkbox rows
-// are the exception: they follow widgets.CheckBox's "[x] Label" order.
+// are the exception, following widgets.CheckBox's "[x] Label" order.
 const LabelWidth = 30
 
 const selectControlWidth = 22
@@ -22,9 +22,9 @@ const selectControlWidth = 22
 // Section — non-focusable heading with an underline
 // ---------------------------------------------------------------------------
 
-// SectionRow is a non-focusable heading with an underline. Most callers only
-// need Section's returned Row; SetTitle is for a heading that must reflect a
-// later selection, like "Explicit permissions for <principal>".
+// SectionRow is a non-focusable heading with an underline. Most callers need
+// only Section's returned Row; SetTitle is for a heading that reflects a later
+// selection, like "Explicit permissions for <principal>".
 type SectionRow struct {
 	title   string
 	x, y, w int
@@ -94,7 +94,7 @@ func (r *noteRow) SetDrawHeight(h int) { r.drawHeight = h }
 //
 // A page is built by a plain function with no App or dialog in scope, so
 // without this an Add that hit a duplicate could only `return`, leaving a
-// button that looks broken. A row also sits next to the control the user just
+// button that looks broken. The row also sits next to the control the user just
 // used, unlike the status bar behind the dialog.
 //
 // Not focusable, so it takes no Tab stop, and it reserves its line whether or
@@ -114,7 +114,7 @@ func (r *HintRow) Set(text string) { r.text, r.isError = text, false }
 // SetError writes a failure message (Error colour).
 func (r *HintRow) SetError(text string) { r.text, r.isError = text, true }
 
-// Clear blanks the row — call it from a handler that succeeded, so a stale
+// Clear blanks the row. Call it from a handler that succeeded, so a stale
 // complaint doesn't outlive its cause.
 func (r *HintRow) Clear() { r.text, r.isError = "", false }
 
@@ -142,7 +142,8 @@ func (r *HintRow) Draw(s tcell.Screen, focused bool) {
 // ---------------------------------------------------------------------------
 
 // StaticRow displays a read-only label/value pair. Still focusable — Up/Down
-// and Tab land on it, Ctrl+C copies its value — only editing is unavailable.
+// and Tab land on it and Ctrl+C copies its value — only editing is
+// unavailable.
 type StaticRow struct {
 	label, value string
 	x, y, w      int
@@ -151,9 +152,8 @@ type StaticRow struct {
 // Static returns a read-only label/value row.
 func Static(label, value string) *StaticRow { return &StaticRow{label: label, value: value} }
 
-// Label returns the row's label, the way TextRow.Label does — what
-// identifies a read-only row to anything working with a Form it did not
-// build.
+// Label returns the row's label, the way TextRow.Label does — what identifies a
+// read-only row to anything working with a Form it did not build.
 func (r *StaticRow) Label() string { return strings.TrimRight(r.label, " ") }
 
 // SetValue replaces the displayed value (e.g. after a refresh).
@@ -204,8 +204,8 @@ func Text(label, value string, width int) *TextRow {
 }
 
 // Password returns a masked password row. An empty value means "leave
-// unchanged": treat Dirty()==false as "no change requested", which a
-// SetValue("") baseline gives for free.
+// unchanged": Dirty()==false is "no change requested", which a SetValue("")
+// baseline gives for free.
 func Password(label string, width int) *TextRow {
 	f := widgets.NewInputField(core.PadRight(label, LabelWidth), width, true)
 	return &TextRow{field: f, orig: "", enabled: true}
@@ -232,8 +232,8 @@ func Int(label string, value, min, max int64, unit string) *TextRow {
 }
 
 // Label returns the row's label, trimmed of the padding Text/Int applied to
-// align it in the sheet. It is what identifies a row to anything working with
-// a Form it did not build — a test driving a page, or a caller inspecting one.
+// align it in the sheet — what identifies a row to anything working with a Form
+// it did not build, such as a test driving a page.
 func (r *TextRow) Label() string { return strings.TrimRight(r.field.Label(), " ") }
 
 // Value returns the field's current text.
@@ -244,24 +244,21 @@ func (r *TextRow) IntValue() (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(r.field.Value()), 10, 64)
 }
 
-// SetValue replaces the field's text and resets the dirty baseline — for use
-// after a successful load or Apply, not while the user is editing.
+// SetValue replaces the field's text and resets the dirty baseline — for after
+// a successful load or Apply, not while the user is editing.
 func (r *TextRow) SetValue(v string) {
 	r.field.SetValue(v)
 	r.orig = v
 }
 
-// Edit sets the value the way a keystroke does: the value changes, the row
-// goes dirty, and OnChange fires. It is SetValue's counterpart — SetValue is
-// the post-load setter and moves the baseline with the value, so a row set
-// that way reports itself clean.
+// Edit sets the value the way a keystroke does: the value changes, the row goes
+// dirty, and OnChange fires. SetValue is the counterpart, the post-load setter
+// that moves the baseline with the value, so a row set that way reports itself
+// clean.
 //
 // The distinction is the whole propsheet contract: every apply closure gates
-// its write on Dirty(), so "set the value" and "the user changed the value"
-// are different operations and neither can stand in for the other. Until this
-// existed the second one had no programmatic form at all — it could only come
-// from a real keystroke or a paste, which needs a focused widget and a screen
-// to draw to.
+// its write on Dirty(), so "set the value" and "the user changed the value" are
+// different operations and neither can stand in for the other.
 func (r *TextRow) Edit(v string) {
 	if !r.enabled {
 		return
@@ -271,15 +268,15 @@ func (r *TextRow) Edit(v string) {
 	r.notifyChanged(before)
 }
 
-// SetEnabled toggles whether the row can be focused/edited; a disabled
-// row is skipped by Form's focus cycling and drawn dim.
+// SetEnabled toggles whether the row can be focused or edited; a disabled row
+// is skipped by Form's focus cycling and drawn dim.
 func (r *TextRow) SetEnabled(v bool) {
 	r.enabled = v
 	r.field.SetEnabled(v)
 }
 
-// SetValidate installs a custom validator, replacing Int's numeric one
-// (or adding one to a plain Text row).
+// SetValidate installs a custom validator, replacing Int's numeric one or
+// adding one to a plain Text row.
 func (r *TextRow) SetValidate(fn func(string) error) { r.validate = fn }
 
 func (r *TextRow) Height(w int) int { return 1 }
@@ -415,7 +412,7 @@ func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 
 // Edit sets the state the way pressing Space does: the value changes and the
 // row goes dirty. SetChecked's counterpart — see TextRow.Edit for why the two
-// are different operations and neither can stand in for the other.
+// are different operations.
 func (r *CheckRow) Edit(v bool) { r.box.SetChecked(v) }
 
 // Label returns the row's label. A checkbox draws its label inline at full
@@ -461,8 +458,8 @@ type SelectRow struct {
 func Select(label string, items []string, selected int) *SelectRow {
 	dd := widgets.NewDropDown(core.PadRight(label, LabelWidth), items, selectControlWidth)
 	dd.SetSelected(selected)
-	// orig read back from the widget, not from selected — see SetSelected on
-	// why an out-of-range index must not become the baseline.
+	// orig read back from the widget, not from selected — see SetSelected on why
+	// an out-of-range index must not become the baseline.
 	return &SelectRow{dd: dd, orig: dd.Selected()}
 }
 
@@ -481,22 +478,22 @@ func (r *SelectRow) Items() []string { return r.dd.Items() }
 // The baseline is read back from the widget, not taken from i: DropDown
 // silently ignores an out-of-range index, and storing the rejected i leaves
 // Selected() != orig with no way to reconcile them — a permanently dirty row
-// that reports unsaved changes forever and makes Apply write nobody asked for.
+// that reports unsaved changes forever and makes Apply write what nobody
+// asked for.
 func (r *SelectRow) SetSelected(i int) {
 	r.dd.SetSelected(i)
 	r.orig = r.dd.Selected()
 }
 
-// Label returns the row's label, trimmed of the padding Select applied to
-// align it in the sheet — TextRow.Label's counterpart.
+// Label returns the row's label, trimmed of the padding Select applied to align
+// it in the sheet — TextRow.Label's counterpart.
 func (r *SelectRow) Label() string { return strings.TrimRight(r.dd.Label(), " ") }
 
 // Edit selects by index the way a keystroke does: the selection changes, the
 // row goes dirty, and OnChange fires. SetSelected's counterpart — see
-// TextRow.Edit for why the two are different operations.
-//
-// An out-of-range index is ignored, as DropDown ignores one, so a rejected
-// index cannot leave the row dirty against a value it never took.
+// TextRow.Edit for why the two are different operations. An out-of-range index
+// is ignored, as DropDown ignores one, so a rejected index cannot leave the row
+// dirty against a value it never took.
 func (r *SelectRow) Edit(i int) {
 	before := r.dd.Value()
 	r.dd.SetSelected(i)
@@ -586,8 +583,8 @@ func Radio(label string, options []string, selected int) *RadioRow {
 func (r *RadioRow) Selected() int { return r.rb.Selected() }
 
 // SetSelected sets the selection by index and resets the dirty baseline,
-// reading the baseline back from the widget for the reason SelectRow's own
-// SetSelected documents.
+// reading the baseline back from the widget for the reason SelectRow.SetSelected
+// documents.
 func (r *RadioRow) SetSelected(i int) {
 	r.rb.SetSelected(i)
 	r.orig = r.rb.Selected()
@@ -626,8 +623,8 @@ func (r *RadioRow) Validate() error { return nil }
 // ---------------------------------------------------------------------------
 
 // ButtonsRow is a row of push buttons flowing left from the row's start, unlike
-// ModalDialog's right-aligned DrawButtons — page actions like "Add"/"Remove"
-// read better flush with the rest of the form.
+// ModalDialog's right-aligned DrawButtons: page actions like Add/Remove read
+// better flush with the rest of the form.
 type ButtonsRow struct {
 	buttons []*widgets.Button
 	focus   int

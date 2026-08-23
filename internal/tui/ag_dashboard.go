@@ -16,28 +16,25 @@ import (
 )
 
 // ag_dashboard.go is the Always On dashboard panel — SSMS's "Show Dashboard",
-// in the two forms SSMS offers it.
+// in both forms SSMS offers.
 //
 // Opened on one availability group (agName set) it shows that group's health
 // rollup, every replica's role and connection state, and per-database queue
-// sizes with the two figures a DBA actually decides on, estimated data loss
-// and estimated recovery time. Opened on the Always On root (agName empty) it
-// shows every group on the instance over every group's replicas; the
-// all-groups reading is in ag_dashboard_all.go. Both share this file's refresh
-// loop, layout and input, which is why the two grids are named for their
-// position rather than their contents.
+// sizes with estimated data loss and estimated recovery time. Opened on the
+// Always On root (agName empty) it shows every group on the instance over every
+// group's replicas; that reading is in ag_dashboard_all.go. Both share this
+// file's refresh loop, layout and input, which is why the grids are named for
+// their position rather than their contents.
 //
 // Like AG Properties it reads through the primary (agOnPrimaryFollowed): the
 // send/redo queues and commit times for a *secondary's* copy of a database are
-// reported by the primary, not by that secondary, so a dashboard built from a
-// secondary would show blanks for precisely the replicas being watched.
+// reported by the primary, so a dashboard built from a secondary would show
+// blanks for precisely the replicas being watched.
 
 // agDashboardRates are the refresh intervals the panel offers, and
-// agDashboardDefaultRate indexes the one it opens at. An
-// availability group is a level that moves over seconds to minutes, and each
-// tick is four round trips against the primary — so these start where the
-// Activity Monitor's list ends rather than at its 2-second cadence. 60 s is
-// there for leaving the panel open on a second monitor.
+// agDashboardDefaultRate indexes the one it opens at. An availability group
+// moves over seconds to minutes and each tick is four round trips against the
+// primary, so these start where the Activity Monitor's list ends.
 var agDashboardRates = []time.Duration{
 	5 * time.Second,
 	10 * time.Second,
@@ -50,12 +47,12 @@ var agDashboardRateLabels = []string{"5 s", "10 s", "30 s", "60 s"}
 const agDashboardDefaultRate = 1
 
 // agDashboardTimeout bounds one refresh, mirroring childFetchTimeout: a tick
-// that cannot finish before the next is due must not queue up behind it.
+// that can't finish before the next is due must not queue behind it.
 const agDashboardTimeout = 30 * time.Second
 
-// AGDashboard is an Always On dashboard, hosted by layout.PanelManager like
-// any other panel. It owns a refresh goroutine that polls until the panel is
-// closed or its connection goes away.
+// AGDashboard is an Always On dashboard, hosted by layout.PanelManager. It owns
+// a refresh goroutine that polls until the panel closes or its connection goes
+// away.
 type AGDashboard struct {
 	app  *App
 	conn *db.ServerConn // the registered connection; owned by App, not by this panel
@@ -73,34 +70,33 @@ type AGDashboard struct {
 	// bounds accessor, and mouse routing needs to know which grid was hit.
 	topRect    core.Rect
 	bottomRect core.Rect
-	// topRows/bottomRows are the slices the grids read through. Refreshing
+	// topRows/bottomRows are the slices the grids read through. A refresh
 	// rewrites them in place when the shape is unchanged rather than calling
 	// SetData, which resets scroll and selection — on a 10-second poll that
-	// would yank the user back to the top of the grid mid-read.
+	// yanks the user back to the top mid-read.
 	topRows    [][]string
 	bottomRows [][]string
 
 	// focusBottom picks which grid the keyboard drives; Tab flips it.
 	focusBottom bool
 
-	// snap is the last reading, and err whatever the last refresh failed
-	// with. A failed refresh keeps the previous reading on screen — a
-	// dashboard that blanks itself on one dropped round trip is less useful
-	// than one that says the numbers are stale.
+	// snap is the last reading, err whatever the last refresh failed with. A
+	// failed refresh keeps the previous reading on screen: a dashboard that
+	// blanks itself on one dropped round trip is less useful than one saying the
+	// numbers are stale.
 	snap agSnapshot
 	err  error
 
 	// paused is read by the refresh goroutine and written by the UI
 	// goroutine, so it is atomic rather than a plain bool.
 	paused atomic.Bool
-	// kick forces an immediate refresh (F5) even while paused. Buffered and
-	// sent to non-blockingly: a second F5 while one is already pending is
-	// the same request.
+	// kick forces an immediate refresh (F5) even while paused. Buffered and sent
+	// to non-blockingly: a second F5 while one is pending is the same request.
 	kick chan struct{}
-	// rateIdx indexes agDashboardRates; like paused it is written by the UI
-	// goroutine and read by the refresh goroutine. rateCh wakes that goroutine
-	// so a change takes effect now rather than after the interval it is
-	// replacing — 60 s down to 5 s would otherwise be a minute of no effect.
+	// rateIdx indexes agDashboardRates; like paused, the UI goroutine writes it
+	// and the refresh goroutine reads it. rateCh wakes that goroutine so a change
+	// takes effect now rather than after the interval it replaces — 60 s down to
+	// 5 s would otherwise be a minute of no effect.
 	rateIdx atomic.Int32
 	rateCh  chan struct{}
 	cancel  context.CancelFunc
@@ -112,9 +108,9 @@ type agSnapshot struct {
 	replicas []*gosmo.AvailabilityReplica
 	dbs      []agDatabaseMetrics
 
-	// groups is the all-groups reading, and is what ok() tests in that mode —
-	// an instance with no availability groups at all is a valid reading, and
-	// must not be shown as "Loading..." forever.
+	// groups is the all-groups reading, and what ok() tests in that mode: an
+	// instance with no availability groups is a valid reading and must not show
+	// "Loading..." forever.
 	groups   []agGroupRollup
 	allGroup bool
 
@@ -144,9 +140,9 @@ func NewAGDashboard(app *App, conn *db.ServerConn, agName string) *AGDashboard {
 
 	ctx, cancel := context.WithCancel(conn.Context())
 	d.cancel = cancel
-	// safegoRepair: both grids were latched at "Loading..." above, and only
-	// run's own refreshes ever replace that — a panic leaves the panel
-	// claiming to be loading for as long as it stays open.
+	// safegoRepair: both grids were latched at "Loading..." above and only run's
+	// refreshes replace that, so a panic leaves the panel claiming to load for as
+	// long as it stays open.
 	app.safegoRepair("refreshing an Always On dashboard", d.refreshPanicked, func() { d.run(ctx) })
 	return d
 }
@@ -172,16 +168,15 @@ func (d *AGDashboard) SetActive(v bool) { d.active = v }
 // rather than one named group.
 func (d *AGDashboard) allGroups() bool { return d.agName == "" }
 
-// Close stops the refresh loop. Called from App.closePanelAt — the panel's
-// context is derived from the connection's, which outlives the panel.
+// Close stops the refresh loop. The panel's context derives from the
+// connection's, which outlives the panel.
 func (d *AGDashboard) Close() { cancelIfSet(d.cancel) }
 
 // rate is the interval the panel is currently polling at.
 func (d *AGDashboard) rate() time.Duration { return agDashboardRates[d.rateIdx.Load()] }
 
-// setRate selects an interval by index, reporting whether the index existed —
-// a false at either end of the list leaves the key unhandled rather than
-// swallowing it.
+// setRate selects an interval by index, reporting whether the index existed: a
+// false at either end leaves the key unhandled rather than swallowing it.
 func (d *AGDashboard) setRate(i int) bool {
 	if i < 0 || i >= len(agDashboardRates) {
 		return false
@@ -195,8 +190,8 @@ func (d *AGDashboard) setRate(i int) bool {
 }
 
 // run is the refresh goroutine: read, then wait for the tick, an F5, a rate
-// change, or the panel closing. A timer rather than a ticker, because the
-// interval it re-arms with can have changed while it was waiting.
+// change, or the panel closing. A timer rather than a ticker, since the interval
+// it re-arms with can change while it waits.
 func (d *AGDashboard) run(ctx context.Context) {
 	d.refreshOnce(ctx) // the first reading is never skipped, however the panel opened
 	t := time.NewTimer(d.rate())
@@ -214,8 +209,8 @@ func (d *AGDashboard) run(ctx context.Context) {
 			d.refreshOnce(ctx)
 		case <-d.rateCh:
 			// A rate change re-arms the wait below and takes no reading of its
-			// own: it is not a request for data now, and while paused it must
-			// not produce one at all.
+			// own: it is not a request for data, and while paused must not
+			// produce one.
 		}
 		t.Stop()
 		t.Reset(d.rate())
@@ -253,8 +248,8 @@ func (d *AGDashboard) read(ctx context.Context) (agSnapshot, error) {
 }
 
 // apply installs a reading on the UI goroutine. A failed refresh records the
-// error but keeps the previous reading and its timestamp, so the header can
-// say how stale the numbers on screen are.
+// error but keeps the previous reading and its timestamp, so the header can say
+// how stale the numbers are.
 func (d *AGDashboard) apply(snap agSnapshot, err error) {
 	d.err = err
 	if err != nil {
@@ -267,17 +262,15 @@ func (d *AGDashboard) apply(snap agSnapshot, err error) {
 	d.snap = snap
 	d.setRows(d.topGrid, &d.topRows, d.topColumns(), d.topRowsFrom(snap))
 	d.setRows(d.bottomGrid, &d.bottomRows, d.bottomColumns(), d.bottomRowsFrom(snap))
-	// Re-split now that the top grid's row count is known. SetBounds sizes it
-	// to its contents, and the only layout it has seen so far was the one
-	// before the first reading landed — which showed a two-replica group one
-	// replica.
+	// Re-split now that the top grid's row count is known: SetBounds sizes it to
+	// its contents, and the only layout so far predates the first reading.
 	d.SetBounds(d.rect.X, d.rect.Y, d.rect.W, d.rect.H)
 }
 
-// setRows updates a grid without disturbing the user's scroll position where
-// it can. SetData resets scroll and selection, which on a polling panel throws
-// the reader back to the top every tick, so it is used only when the row count
-// actually changes — a replica or database joining or leaving the group.
+// setRows updates a grid without disturbing the user's scroll position where it
+// can. SetData resets scroll and selection, which on a polling panel throws the
+// reader back to the top every tick, so it runs only when the row count changes
+// — a replica or database joining or leaving the group.
 func (d *AGDashboard) setRows(g *controls.DataGrid, held *[][]string, columns []string, rows [][]string) {
 	if len(rows) != len(*held) {
 		*held = rows
@@ -294,15 +287,14 @@ func (d *AGDashboard) setRows(g *controls.DataGrid, held *[][]string, columns []
 // -- derived metrics -----------------------------------------------------------
 
 // agDatabaseMetrics is one (database, replica) row of the dashboard, carrying
-// the two figures SQL Server does not report directly. Both are computed
-// rather than read, and both are optional: an unknown number is left blank
-// instead of being shown as zero, because "no data loss" and "we cannot tell"
-// are the opposite answers to the question this dashboard exists to answer.
+// the two figures SQL Server does not report directly. Both are computed and
+// both optional: an unknown number is left blank rather than shown as zero,
+// since "no data loss" and "cannot tell" are opposite answers.
 type agDatabaseMetrics struct {
 	DB *gosmo.AvailabilityDatabase
 
 	// DataLoss is how far this secondary's last hardened commit trails the
-	// primary's — what a failover to it would lose right now.
+	// primary's — what a failover to it would lose now.
 	DataLoss    time.Duration
 	HasDataLoss bool
 
@@ -314,9 +306,8 @@ type agDatabaseMetrics struct {
 }
 
 // agComputeDatabaseMetrics derives each secondary row's data loss and recovery
-// time. Both need the whole result set, not one row: data loss is measured
-// against the *primary's* last commit time for the same database, which is a
-// different row.
+// time. Both need the whole result set: data loss is measured against the
+// *primary's* last commit time for the same database, a different row.
 func agComputeDatabaseMetrics(dbs []*gosmo.AvailabilityDatabase) []agDatabaseMetrics {
 	primaryCommit := make(map[string]time.Time, len(dbs))
 	for _, d := range dbs {
@@ -334,9 +325,9 @@ func agComputeDatabaseMetrics(dbs []*gosmo.AvailabilityDatabase) []agDatabaseMet
 		}
 		if pc, ok := primaryCommit[strings.ToLower(d.DatabaseName)]; ok && !d.LastCommitTime.IsZero() {
 			loss := pc.Sub(d.LastCommitTime)
-			// A secondary cannot really be ahead of its primary; a negative
-			// difference is clock skew between the two rows' sources, and
-			// reporting it as "-3s of data loss" would read as a fault.
+			// A secondary cannot be ahead of its primary: a negative difference
+			// is clock skew between the two rows' sources, and "-3s of data
+			// loss" would read as a fault.
 			if loss < 0 {
 				loss = 0
 			}
@@ -348,8 +339,8 @@ func agComputeDatabaseMetrics(dbs []*gosmo.AvailabilityDatabase) []agDatabaseMet
 			m.HasRecoveryTime = true
 		case d.RedoQueueKB == 0:
 			// Nothing queued is a known zero, not an unknown: without this a
-			// fully caught-up secondary shows blank, the same as one whose
-			// rate we cannot see.
+			// caught-up secondary shows blank, like one whose rate is
+			// invisible.
 			m.HasRecoveryTime = true
 		}
 		out = append(out, m)
@@ -357,10 +348,9 @@ func agComputeDatabaseMetrics(dbs []*gosmo.AvailabilityDatabase) []agDatabaseMet
 	return out
 }
 
-// agReplicaIssues names what is wrong with a replica, in the order a reader
-// would want to hear it: not being connected explains every number below it,
-// so it comes first. An empty result means the replica is healthy — this is
-// the column that saves reading the other seven.
+// agReplicaIssues names what is wrong with a replica, worst first: not being
+// connected explains every number below it. An empty result means the replica is
+// healthy — the column that saves reading the other seven.
 func agReplicaIssues(r *gosmo.AvailabilityReplica, dbs []agDatabaseMetrics) string {
 	var issues []string
 	if r.ConnectedState != "" && !strings.EqualFold(r.ConnectedState, "CONNECTED") {
@@ -415,7 +405,7 @@ func agReplicaRows(replicas []*gosmo.AvailabilityReplica, dbs []agDatabaseMetric
 
 // agReplicaSyncSummary rolls this replica's databases up into one
 // synchronization state, listing every distinct one rather than picking a
-// winner — the same reason agDatabaseLabel does not collapse them.
+// winner — as agDatabaseLabel does.
 func agReplicaSyncSummary(r *gosmo.AvailabilityReplica, dbs []agDatabaseMetrics) string {
 	var states []string
 	for _, m := range dbs {
@@ -461,12 +451,12 @@ func agDatabaseGridRows(dbs []agDatabaseMetrics) [][]string {
 	return rows
 }
 
-// agInt renders a queue or rate. A primary's row has no queue of its own, and
-// SQL Server reports 0 there; that is a real zero and is shown as one.
+// agInt renders a queue or rate. A primary's row has no queue of its own and
+// SQL Server reports 0 there, which is a real zero and shown as one.
 func agInt(v int64) string { return strconv.FormatInt(v, 10) }
 
 // agDuration renders a derived time, or an em dash when it could not be
-// computed — never "0s", which would claim a fact the numbers do not support.
+// computed — never "0s", which would claim more than the numbers support.
 func agDuration(d time.Duration, known bool) string {
 	if !known {
 		return "—"
@@ -493,16 +483,16 @@ func (d *AGDashboard) grid() *controls.DataGrid {
 }
 
 // HandleKey handles the panel's own keys and hands everything else to the
-// focused grid, returning what the grid reports — a blanket true here would
-// swallow the application's own accelerators.
+// focused grid, returning what the grid reports — a blanket true would swallow
+// the application's accelerators.
 func (d *AGDashboard) HandleKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyF5:
 		d.forceRefresh()
 		return true
 	case tcell.KeyEnter:
-		// Only from the group grid: Enter on the replica grid below has nothing
-		// to open, and swallowing it there would be a key that does nothing.
+		// Only from the group grid: Enter on the replica grid has nothing to
+		// open, and swallowing it there would be a key that does nothing.
 		if !d.focusBottom {
 			if name := d.selectedGroup(); name != "" {
 				d.app.showAGDashboardFor(d.conn, name)
@@ -530,8 +520,8 @@ func (d *AGDashboard) HandleKey(ev *tcell.EventKey) bool {
 	return d.grid().HandleKey(ev)
 }
 
-// forceRefresh asks the refresh goroutine for an immediate reading. The send
-// is non-blocking: a pending kick already means "refresh now".
+// forceRefresh asks the refresh goroutine for an immediate reading. The send is
+// non-blocking: a pending kick already means "refresh now".
 func (d *AGDashboard) forceRefresh() {
 	select {
 	case d.kick <- struct{}{}:
@@ -539,9 +529,9 @@ func (d *AGDashboard) forceRefresh() {
 	}
 }
 
-// HandleMouse routes to whichever grid was clicked, and makes that click move
-// the keyboard focus too — otherwise scrolling one grid with the wheel and
-// then pressing Down moves the cursor in the other one.
+// HandleMouse routes to whichever grid was clicked and moves keyboard focus
+// with it — otherwise wheeling one grid and then pressing Down moves the cursor
+// in the other.
 func (d *AGDashboard) HandleMouse(ev *tcell.EventMouse) bool {
 	x, y := ev.Position()
 	switch {

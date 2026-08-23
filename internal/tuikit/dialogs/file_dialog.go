@@ -18,9 +18,9 @@ const (
 	FileDialogSave
 )
 
-// Geometry: fileDialogW/H size the dialog; fileListRows is how many entries
-// are visible at once; fileSizeColW/fileModColW are the two right-hand
-// columns' widths (Name takes whatever's left).
+// Geometry: fileDialogW/H size the dialog, fileListRows is how many entries are
+// visible at once, and fileSizeColW/fileModColW are the right-hand columns'
+// widths (Name takes what is left).
 const (
 	fileDialogW  = 76
 	fileDialogH  = 24
@@ -37,22 +37,19 @@ const (
 	ffButtons
 )
 
-// FileDialog is a generic, embeddable Open/Save file picker: a persistent
-// path bar, a scrollable Name/Size/Modified directory listing, and a
-// filename field, with shell-style Tab completion on both text fields. It
-// reaches the filesystem only through a FileSystem — no os/filepath calls of
-// its own, and no gosmo/SQL Server knowledge — so a single instance can be
-// reused (via ShowOpen/ShowSave for the local machine, ShowOpenOn/ShowSaveOn
-// for anything else) everywhere a host app needs to choose a file or a save
-// destination.
+// FileDialog is a generic Open/Save file picker: a persistent path bar, a
+// scrollable Name/Size/Modified listing and a filename field, with shell-style
+// Tab completion on both text fields. It reaches the filesystem only through a
+// FileSystem — no os/filepath calls of its own and no SQL Server knowledge — so
+// one instance serves every host need, local (ShowOpen/ShowSave) or remote
+// (ShowOpenOn/ShowSaveOn).
 type FileDialog struct {
 	ModalDialog
 
 	mode FileDialogMode
 
-	// fs is whose filesystem is being browsed. Every Show* entry point sets
-	// it, so one caller's remote filesystem can never leak into the next
-	// caller's local browse.
+	// fs is whose filesystem is being browsed. Every Show* entry point sets it,
+	// so one caller's remote filesystem can't leak into the next local browse.
 	fs FileSystem
 
 	dir     string
@@ -65,21 +62,18 @@ type FileDialog struct {
 	scroll    int
 	typeahead string
 
-	// listMouseDragging distinguishes a fresh Button1 press on the file/dir
-	// list from a continued hold over the same row — mirrors TreeView's/
-	// DataGrid's field of the same name and purpose. Without it, tcell's
-	// all-motion mouse tracking resends Buttons()==Button1 on every cursor
-	// motion while the button stays down, so a single click on an
-	// already-selected row can call activateSelected() more than once.
-	// Named distinctly from the embedded ModalDialog's own mouseDragging
-	// field (a separate latch, for the button row) to avoid shadowing it.
+	// listMouseDragging distinguishes a fresh Button1 press on the list from a
+	// continued hold over the same row — TreeView and DataGrid have the same
+	// field. Without it, tcell's all-motion tracking resends Button1 on every
+	// motion while the button is down, so one click on an already-selected row
+	// can call activateSelected more than once. Named distinctly from the
+	// embedded ModalDialog's own mouseDragging, a separate latch for the button
+	// row.
 	listMouseDragging bool
 
-	// dragField is the input field that claimed the current Button1
-	// gesture, nil between gestures. Motion goes to it wherever the pointer
-	// is, so dragging a selection out of the field's rect keeps extending it
-	// instead of freezing at the boundary — the hit test below it is what
-	// used to stop the drag dead.
+	// dragField is the input field that claimed the current Button1 gesture, nil
+	// between gestures. Motion goes to it wherever the pointer is, so dragging a
+	// selection out of the field's rect keeps extending it.
 	dragField *widgets.InputField
 
 	pathField *widgets.InputField
@@ -88,16 +82,14 @@ type FileDialog struct {
 	focus    int
 	btnFocus int
 
-	// OnChoose fires once the user confirms a file (Open) or destination
-	// path (Save) — after the OnConfirmOverwrite round-trip, for Save mode,
-	// when the target already exists and a handler is set.
+	// OnChoose fires once the user confirms a file (Open) or destination path
+	// (Save) — in Save mode, after any OnConfirmOverwrite round-trip.
 	OnChoose func(path string)
 	// OnCancel fires on Escape or the Cancel button. Optional.
 	OnCancel func()
-	// OnConfirmOverwrite, if set, is called instead of firing OnChoose
-	// directly (Save mode only) when the chosen path already exists. The
-	// host decides how to ask — typically its own ConfirmDialog — and calls
-	// proceed() to continue, or does nothing to leave the dialog open.
+	// OnConfirmOverwrite, if set, is called instead of OnChoose (Save mode only)
+	// when the chosen path already exists. The host asks however it likes and
+	// calls proceed() to continue, or does nothing to leave the dialog open.
 	OnConfirmOverwrite func(path string, proceed func())
 }
 
@@ -113,9 +105,8 @@ func NewFileDialog(s tcell.Screen) *FileDialog {
 }
 
 // ShowOpen configures the dialog to pick an existing file for reading and
-// displays it. startPath seeds the initial directory (and, if it names a
-// file, the initial selection) — an already-open file's path, or "" for
-// the working directory.
+// displays it. startPath seeds the initial directory and, if it names a file,
+// the initial selection; "" means the working directory.
 func (d *FileDialog) ShowOpen(title, startPath string, onChoose func(path string)) {
 	d.ShowOpenOn(LocalFileSystem{}, title, startPath, onChoose)
 }
@@ -144,8 +135,8 @@ func (d *FileDialog) ShowSaveOn(fs FileSystem, title, startPath string, onChoose
 	d.start(startPath, ffName)
 }
 
-// FileSystem returns the filesystem the dialog is currently browsing. Never
-// nil once any Show* has run; the local machine before that.
+// FileSystem returns the filesystem the dialog is browsing — never nil once a
+// Show* has run, the local machine before that.
 func (d *FileDialog) FileSystem() FileSystem {
 	if d.fs == nil {
 		d.fs = LocalFileSystem{}
@@ -160,14 +151,13 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 	d.nameField.SetValue(name)
 	d.entries, d.listErr = nil, ""
 	d.btnFocus = 0
-	// A latch must not survive into the next showing: a dialog dismissed
-	// mid-drag would otherwise reopen still routing every click to that field.
+	// A latch must not survive into the next showing: a dialog dismissed mid-drag
+	// would reopen still routing every click to that field.
 	d.dragField = nil
 	d.setFocus(initialFocus)
-	// Shown *before* the first listing, not after. That listing is a
-	// FileSystem call like any other, and on a remote filesystem it is the
-	// slowest of the session — showBusy can only paint a dialog that is
-	// already visible, so loading first left the whole open with no feedback.
+	// Shown *before* the first listing: that listing is a FileSystem call like
+	// any other, the slowest of the session on a remote filesystem, and showBusy
+	// can only paint a dialog that is already visible.
 	d.ModalDialog.Show()
 	d.loadDir(dir)
 	if name != "" {
@@ -179,12 +169,10 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 // ahead of a FileSystem call that may block.
 //
 // FileSystem is synchronous by design, so a remote one spends a network round
-// trip inside the event handler and the whole TUI stops until it returns —
-// with the *previous* directory still on screen, which is indistinguishable
-// from a hang. This is the one place tuikit paints outside the app's own draw
-// cycle, so it is limited to the filesystems that need it: only a
-// BlockingFileSystem gets a repaint, which is also what keeps the local
-// browse from flickering on every navigation.
+// trip inside the event handler and the whole TUI stops with the *previous*
+// directory on screen — indistinguishable from a hang. This is the one place
+// tuikit paints outside the app's draw cycle, so only a BlockingFileSystem gets
+// a repaint, which also keeps the local browse from flickering.
 func (d *FileDialog) showBusy(msg string) {
 	if d.screen == nil || !d.Visible() {
 		return
@@ -198,9 +186,9 @@ func (d *FileDialog) showBusy(msg string) {
 }
 
 // entryFor returns the listing row for path when path names something in the
-// directory already on screen, which is where a typed path usually points.
-// It spares a FileSystem.Exists round trip — a remote filesystem answers that
-// one over the network, on a keystroke.
+// directory already on screen, which is where a typed path usually points. It
+// spares a FileSystem.Exists round trip, which a remote filesystem answers over
+// the network on a keystroke.
 func (d *FileDialog) entryFor(path string) (FileEntry, bool) {
 	fs := d.FileSystem()
 	dir, name := fs.Split(path)
@@ -215,9 +203,9 @@ func (d *FileDialog) entryFor(path string) (FileEntry, bool) {
 	return FileEntry{}, false
 }
 
-// splitStartPath separates a caller-supplied initial path into a directory
-// to open and a filename to preselect — "" (no name), a bare filename
-// ("query.sql"), or a full path (an already-open file) are all valid.
+// splitStartPath separates a caller-supplied initial path into a directory to
+// open and a filename to preselect. "", a bare filename and a full path are all
+// valid.
 func (d *FileDialog) splitStartPath(startPath string) (dir, name string) {
 	fs := d.FileSystem()
 	if startPath == "" {
@@ -229,10 +217,9 @@ func (d *FileDialog) splitStartPath(startPath string) (dir, name string) {
 	return fs.Default(), startPath
 }
 
-// loadDir lists dir's contents into d.entries — directories first, then
-// files, both alphabetical case-insensitive — prefixed with a ".." entry
-// unless dir is already the filesystem root. Resets selection/scroll and
-// updates the path field to reflect the new current directory.
+// loadDir lists dir's contents into d.entries — directories first, then files,
+// both case-insensitively alphabetical — prefixed with ".." unless dir is the
+// filesystem root. Resets selection and scroll and updates the path field.
 func (d *FileDialog) loadDir(dir string) {
 	fs := d.FileSystem()
 	sep := fs.Separator()
@@ -288,12 +275,10 @@ func (d *FileDialog) selectByName(name string) {
 	}
 }
 
-// FocusedField returns whichever text field currently has keyboard focus
-// (the path bar or the filename field), or nil when the list or the button
-// row is focused. Exported so a host app's clipboard plumbing — which
-// resolves Cut/Copy/Paste's target from whichever InputField/Editor is
-// focused across every dialog — can participate without FileDialog needing
-// any notion of a clipboard itself.
+// FocusedField returns whichever text field has keyboard focus — the path bar or
+// the filename field — or nil when the list or the button row is focused.
+// Exported so a host's clipboard plumbing can resolve Cut/Copy/Paste's target
+// without FileDialog needing any notion of a clipboard.
 func (d *FileDialog) FocusedField() *widgets.InputField {
 	switch d.focus {
 	case ffPath:
@@ -320,15 +305,14 @@ func (d *FileDialog) buttonLabels() []string {
 }
 
 // listRect returns the on-screen rectangle of the Name/Size/Modified list,
-// shared by Draw and HandleMouse so hit-testing always matches what was
-// actually drawn.
+// shared by Draw and HandleMouse so hit-testing matches what was drawn.
 func (d *FileDialog) listRect() core.Rect {
 	inner := d.InnerRect()
 	return core.Rect{X: inner.X + 1, Y: inner.Y + 4, W: inner.W - 2, H: fileListRows}
 }
 
-// nameColWidth returns the Name column's width for a list area contentW
-// wide — whatever's left after the Size/Modified columns and their gaps.
+// nameColWidth returns the Name column's width for a list area contentW wide —
+// what is left after the Size and Modified columns and their gaps.
 func nameColWidth(contentW int) int {
 	return contentW - fileSizeColW - fileModColW - 2
 }
@@ -337,8 +321,7 @@ func nameColWidth(contentW int) int {
 // Actions
 // ---------------------------------------------------------------------------
 
-// confirmFocused runs Enter's context-dependent action for whichever
-// control currently has focus.
+// confirmFocused runs Enter's action for whichever control has focus.
 func (d *FileDialog) confirmFocused() {
 	switch d.focus {
 	case ffPath:
@@ -352,10 +335,9 @@ func (d *FileDialog) confirmFocused() {
 	}
 }
 
-// navigateTyped runs Enter on the path field: descends into the typed path
-// if it's a directory, selects it in the listing (switching focus to the
-// name field) if it's an existing file, or attempts to list it anyway
-// (surfacing the resulting error) if it's neither.
+// navigateTyped runs Enter on the path field: descends into the typed path if it
+// is a directory, selects it in the listing and focuses the name field if it is
+// an existing file, or tries to list it anyway and surfaces the error.
 func (d *FileDialog) navigateTyped() {
 	fs := d.FileSystem()
 	typed := strings.TrimSpace(d.pathField.Value())
@@ -370,8 +352,8 @@ func (d *FileDialog) navigateTyped() {
 	if e, ok := d.entryFor(target); ok {
 		isFile = !e.IsDir
 	} else {
-		// A failed probe falls through to loadDir, which surfaces the same
-		// failure in listErr rather than swallowing it here.
+		// A failed probe falls through to loadDir, which surfaces the failure in
+		// listErr rather than swallowing it here.
 		exists, isDir, _ := fs.Exists(target)
 		isFile = exists && !isDir
 	}
@@ -387,7 +369,7 @@ func (d *FileDialog) navigateTyped() {
 	d.setFocus(ffList)
 }
 
-// activateSelected runs Enter/a same-row click on the list: descends into
+// activateSelected runs Enter, or a same-row click, on the list: descends into
 // the selected directory, or confirms the selected file as the chosen path.
 func (d *FileDialog) activateSelected() {
 	if d.sel < 0 || d.sel >= len(d.entries) {
@@ -407,9 +389,9 @@ func (d *FileDialog) activateSelected() {
 	d.confirmChoice()
 }
 
-// syncNameFromSelection copies the selected entry's name into the name
-// field, unless it's a directory — matching every desktop file dialog's
-// convention of leaving a typed filename alone while browsing folders.
+// syncNameFromSelection copies the selected entry's name into the name field
+// unless it is a directory, so browsing folders leaves a typed filename
+// alone.
 func (d *FileDialog) syncNameFromSelection() {
 	if d.sel < 0 || d.sel >= len(d.entries) {
 		return
@@ -433,16 +415,15 @@ func (d *FileDialog) confirmChoice() {
 	d.finish(path)
 }
 
-// finish is the common tail of every "the user picked path" route: in Save
-// mode, an existing target is routed through OnConfirmOverwrite (if set)
-// before OnChoose fires.
+// finish is the common tail of every "the user picked path" route: in Save mode
+// an existing target goes through OnConfirmOverwrite, if set, before OnChoose
+// fires.
 func (d *FileDialog) finish(path string) {
 	if d.mode == FileDialogSave && d.OnConfirmOverwrite != nil {
-		// "Couldn't ask" prompts as if the file were there. A remote
-		// filesystem answers this over the network, and treating its timeout
-		// as "not there" skips the overwrite guard silently — the one
-		// outcome worse than an unnecessary prompt, whose Yes does exactly
-		// what the user asked for anyway.
+		// "Couldn't ask" prompts as if the file were there. A remote filesystem
+		// answers over the network, and treating a timeout as "not there" skips
+		// the overwrite guard silently — worse than an unnecessary prompt, whose
+		// Yes does what the user asked for anyway.
 		exists, _, err := d.FileSystem().Exists(path)
 		if exists || err != nil {
 			d.OnConfirmOverwrite(path, func() { d.choose(path) })
@@ -474,13 +455,13 @@ func (d *FileDialog) activateButton() {
 	}
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: the path or name
-// field while one of them has focus, and nothing while the file list does.
+// FocusedClipboardTarget implements core.ClipboardHost: the path or name field
+// while one has focus, nothing while the file list does.
 //
 // The explicit nil is load-bearing — FocusedField returns a typed
 // *widgets.InputField, and a nil one placed in an interface is not a nil
-// interface, so returning it directly would hand the caller a non-nil target
-// whose every method dereferences nil.
+// interface, so returning it directly hands the caller a non-nil target whose
+// every method dereferences nil.
 func (d *FileDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if f := d.FocusedField(); f != nil {
 		return f

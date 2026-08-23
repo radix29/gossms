@@ -16,6 +16,7 @@ func newTestApp() *App {
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
 	a.confirmDialog = dialogs.NewConfirmDialog(nil)
+	a.promptDialog = dialogs.NewPromptDialog(nil)
 	return a
 }
 

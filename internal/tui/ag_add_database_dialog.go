@@ -36,7 +36,7 @@ type agAddDBPrefetch struct {
 }
 
 // agDBCandidate is one database being considered for membership, reduced to
-// the three facts the decision turns on. gosmo.Database keeps its metadata
+// the four facts the decision turns on. gosmo.Database keeps its metadata
 // behind methods and its fields unexported, so the eligibility rule is written
 // against this instead — which also lets it be tested without a server.
 type agDBCandidate struct {
@@ -44,16 +44,25 @@ type agDBCandidate struct {
 	RecoveryModel string
 	State         string
 	IsSystem      bool
+
+	// LogChainStarted is gosmo's DatabaseRecoveryStatus.LogBackupChainStarted:
+	// the database has had a full backup since it entered the FULL recovery
+	// model. It comes from a separate server-wide read rather than from
+	// gosmo.Database, which carries no backup state.
+	LogChainStarted bool
 }
 
-func agCandidatesFrom(dbs []*gosmo.Database) []agDBCandidate {
+// agCandidatesFrom pairs each database with its log backup chain state, keyed
+// by lower-cased name.
+func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCandidate {
 	out := make([]agDBCandidate, 0, len(dbs))
 	for _, d := range dbs {
 		out = append(out, agDBCandidate{
-			Name:          d.Name(),
-			RecoveryModel: string(d.RecoveryModel()),
-			State:         d.State(),
-			IsSystem:      d.IsSystem(),
+			Name:            d.Name(),
+			RecoveryModel:   string(d.RecoveryModel()),
+			State:           d.State(),
+			IsSystem:        d.IsSystem(),
+			LogChainStarted: logChain[strings.ToLower(d.Name())],
 		})
 	}
 	return out
@@ -62,11 +71,14 @@ func agCandidatesFrom(dbs []*gosmo.Database) []agDBCandidate {
 // agEligibleDatabases splits the primary's databases into the ones that can
 // join the group and the ones that cannot, with a reason for each exclusion.
 //
-// The rule SQL Server enforces is full recovery plus an existing full backup.
-// Only the first is checked here: the backup history is a per-database query,
-// and a database that has never been backed up is both rare on a primary and
-// reported clearly by the server ("does not have a full database backup"). The
-// prerequisite is stated in the dialog instead.
+// The rule SQL Server enforces is full recovery plus a started log backup
+// chain, and both are checked. The second is not "has a row in
+// msdb.dbo.backupset": verified live against the AG cluster on 2026-08-23, the
+// backup history is wrong in both directions — a database whose history has
+// been purged still joins, and one backed up before a SIMPLE round trip does
+// not, failing with Msg 1475. What decides it is
+// sys.database_recovery_status.last_log_backup_lsn, which gosmo reports as
+// DatabaseRecoveryStatus.LogBackupChainStarted.
 func agEligibleDatabases(dbs []agDBCandidate, inGroup map[string]bool) (eligible, excluded []string) {
 	for _, d := range dbs {
 		switch {
@@ -78,6 +90,8 @@ func agEligibleDatabases(dbs []agDBCandidate, inGroup map[string]bool) (eligible
 			excluded = append(excluded, fmt.Sprintf("%s — recovery model is %s, must be FULL", d.Name, d.RecoveryModel))
 		case d.State != "" && !strings.EqualFold(d.State, "ONLINE"):
 			excluded = append(excluded, fmt.Sprintf("%s — database is %s", d.Name, strings.ToLower(d.State)))
+		case !d.LogChainStarted:
+			excluded = append(excluded, d.Name+" — no full backup since it entered the FULL recovery model; back it up first")
 		default:
 			eligible = append(eligible, d.Name)
 		}
@@ -143,11 +157,22 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 		}
 	}
 
+	// One server-wide read for the log backup chain state of every database,
+	// rather than a backup-history query per candidate.
+	statuses, err := primary.DatabaseRecoveryStatusesContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	logChain := map[string]bool{}
+	for _, st := range statuses {
+		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
+	}
+
 	dbs, err := primary.DatabasesContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eligible, excluded := agEligibleDatabases(agCandidatesFrom(dbs), inGroup)
+	eligible, excluded := agEligibleDatabases(agCandidatesFrom(dbs, logChain), inGroup)
 	return &agAddDBPrefetch{primary: ag.PrimaryReplicaServerName, eligible: eligible, excluded: excluded}, nil
 }
 
@@ -171,7 +196,8 @@ func (d *AGAddDatabaseDialog) buildPages(pf *agAddDBPrefetch) {
 	}
 	rows = append(rows,
 		propsheet.Section("Prerequisites"),
-		propsheet.Note("The database must be in the FULL recovery model and have a full backup — SQL Server rejects ADD DATABASE otherwise."),
+		propsheet.Note("The database must be in the FULL recovery model and have a full backup taken since — both are checked, and a database missing either is listed above rather than offered."),
+		propsheet.Note("Back one up from the database's Tasks > Back Up, then reopen this dialog."),
 		propsheet.Note("A secondary set to AUTOMATIC seeding seeds itself. One set to MANUAL needs the database restored there WITH NORECOVERY and then joined."),
 	)
 

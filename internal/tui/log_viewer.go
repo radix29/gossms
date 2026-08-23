@@ -22,14 +22,14 @@ import (
 // log_viewer_input.go.
 
 // logReadTimeout bounds one enumeration or one read. The current log on a busy
-// instance runs to tens of thousands of lines and xp_readerrorlog parses the
-// file server-side, so this is generous — but a panel that never comes back is
-// worse than one that says it gave up.
+// instance runs to tens of thousands of lines and xp_readerrorlog parses it
+// server-side, so this is generous — but a panel that never comes back is worse
+// than one that says it gave up.
 const logReadTimeout = 60 * time.Second
 
-// logFilterLabel and logFilterWidth size the toolbar's filter field. It is
-// the only editable control on the row, so it gets whatever the selectors
-// and buttons leave, down to this floor.
+// logFilterLabel and logFilterWidth size the toolbar's filter field, the only
+// editable control on the row: it takes whatever the selectors and buttons
+// leave, down to this floor.
 const (
 	logFilterLabel = "Filter:"
 	logFilterWidth = 24
@@ -39,9 +39,9 @@ const (
 // a details pane showing the selected entry in full, with the log family and
 // archive number chosen from the toolbar.
 //
-// Reads run on the panel's host connection rather than one of its own: each is
-// a one-shot query bounded by logReadTimeout with nothing on a timer, so there
-// is no background traffic for a shared connection to queue behind.
+// Reads run on the panel's host connection rather than one of its own — each is
+// a one-shot query bounded by logReadTimeout with nothing on a timer, so no
+// background traffic queues behind the shared connection.
 type LogViewer struct {
 	app  *App
 	conn *db.ServerConn
@@ -59,14 +59,14 @@ type LogViewer struct {
 	files map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile
 
 	// search is the server-side narrowing in force — xp_readerrorlog's own
-	// search strings and date range, edited by the Search dialog. Zero means
-	// the whole file. Distinct from the filter field below, which narrows
-	// what was already read; see log_search_dialog.go.
+	// search strings and date range, edited by the Search dialog; zero means the
+	// whole file. Distinct from the filter field below, which narrows what was
+	// already read. See log_search_dialog.go.
 	search gosmo.LogSearch
 
-	// entries is everything the last read returned, shown the filtered subset.
-	// The grid is built from shown; entries is kept whole so clearing the
-	// filter needs no second read.
+	// entries is everything the last read returned, shown the filtered subset
+	// the grid is built from. entries is kept whole so clearing the filter needs
+	// no second read.
 	entries []*gosmo.ErrorLogEntry
 	shown   []*gosmo.ErrorLogEntry
 
@@ -75,7 +75,7 @@ type LogViewer struct {
 	splitter *layout.Splitter
 
 	// filterFocused sends keys to the filter field instead of the grid. Tab
-	// toggles it; a click in either one claims it, like QueryPanel's
+	// toggles it, a click in either claims it — like QueryPanel's
 	// resultsFocused.
 	filterFocused bool
 
@@ -94,16 +94,16 @@ type LogViewer struct {
 
 	// detailCache is the last detailLines result, valid for the entry and width
 	// it was built at. The wrap is the panel's only per-frame allocation of any
-	// size — a stack dump entry wraps to hundreds of lines, and both the draw
-	// and every scroll step ask for the whole thing. invalidateDetailCache
-	// clears it wherever the text changes without the entry pointer changing.
+	// size — a stack dump entry wraps to hundreds of lines, and the draw and
+	// every scroll step ask for all of it. invalidateDetailCache clears it where
+	// the text changes without the entry pointer changing.
 	detailCache      []string
 	detailCacheEntry *gosmo.ErrorLogEntry
 	detailCacheWidth int
 
-	// seq guards against a superseded read landing after a newer one: every
-	// load increments it and an async result is applied only if it is still
-	// the most recent. Same role as DetailBrowser.seq.
+	// seq guards against a superseded read landing after a newer one: every load
+	// increments it, and an async result applies only if still the most recent.
+	// Same role as DetailBrowser.seq.
 	seq int
 	// cancel aborts the in-flight read, called by Close so a panel closed
 	// mid-read doesn't leave the query running.
@@ -123,9 +123,9 @@ const (
 	lZoneGrid
 	lZoneFilter
 	lZoneToolbar
-	// lZoneUnclaimed is a press no sub-region wanted. It still owns the
-	// gesture, so the repeats tcell sends while the button is held are
-	// swallowed instead of landing on whatever the pointer drifts over.
+	// lZoneUnclaimed is a press no sub-region wanted. It still owns the gesture,
+	// so the repeats tcell sends while the button is held are swallowed instead
+	// of landing on whatever the pointer drifts over.
 	lZoneUnclaimed
 )
 
@@ -134,8 +134,8 @@ const (
 func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNum int) *LogViewer {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
-	// Message is the column worth reading, so it takes whatever Date and
-	// Source leave rather than being sized to its own longest entry.
+	// Message takes whatever Date and Source leave rather than being sized to
+	// its own longest entry.
 	grid.SetFillLastColumn(true)
 	grid.SetStatusStyle(resultsStatusStyle)
 	grid.OnCopyRequest = app.copyWithStatus
@@ -170,10 +170,9 @@ func (lv *LogViewer) SetActive(v bool) {
 // connection belongs to App, so there is nothing else to release.
 func (lv *LogViewer) Close() { lv.cancelRead() }
 
-// cancelRead aborts the in-flight read. Called when the panel closes and when
-// a new read supersedes one: seq already discards a superseded result, but
-// without cancelling, the query runs on the shared host connection until
-// logReadTimeout.
+// cancelRead aborts the in-flight read, on close and when a new read supersedes
+// one. seq already discards a superseded result, but without cancelling the
+// query runs on the shared host connection until logReadTimeout.
 func (lv *LogViewer) cancelRead() {
 	if lv.cancel != nil {
 		lv.cancel()
@@ -195,9 +194,8 @@ func (lv *LogViewer) SetBounds(x, y, w, h int) {
 	lv.layoutChildren()
 }
 
-// layoutChildren gives the grid and the details pane their halves of the
-// area below the toolbar. Called on every resize and after every splitter
-// drag.
+// layoutChildren gives the grid and the details pane their halves of the area
+// below the toolbar, on every resize and after every splitter drag.
 func (lv *LogViewer) layoutChildren() {
 	lv.gridRect = lv.splitter.FirstRect()
 	lv.detailRect = lv.splitter.SecondRect()
@@ -209,8 +207,8 @@ func (lv *LogViewer) layoutChildren() {
 func (lv *LogViewer) layoutTools() {
 	x := layoutToolButtons(lv.tools, lv.toolRect, "")
 	lv.toolsEnd = x
-	// The field's own width excludes its label and brackets, which is why
-	// the fit test adds them back — see widgets.InputField.Draw.
+	// The field's own width excludes its label and brackets, so the fit test
+	// adds them back — see widgets.InputField.Draw.
 	need := core.DisplayWidth(logFilterLabel) + 1 + logFilterWidth + 2
 	if lv.toolRect.W > 0 && x+need <= lv.toolRect.Right() {
 		lv.filter.SetBounds(x, lv.toolRect.Y)
@@ -218,8 +216,8 @@ func (lv *LogViewer) layoutTools() {
 	}
 	lv.filter.SetBounds(-1, -1)
 	// A field parked off-screen must not keep focus: HandleKey routes on
-	// filterFocused alone, so keystrokes would go into a field that isn't
-	// drawn. Narrowing the terminal mid-typing is enough to hit it.
+	// filterFocused alone, so keystrokes would go into a field that isn't drawn.
+	// Narrowing the terminal mid-typing is enough to hit it.
 	if lv.filterFocused {
 		lv.setFilterFocused(false)
 	}
@@ -229,9 +227,9 @@ func (lv *LogViewer) layoutTools() {
 // A field laid out off-screen must not take focus or draw.
 func (lv *LogViewer) filterVisible() bool { return lv.filter.RectX() >= 0 }
 
-// Toolbar cell indexes, in buildTools' layout order. Named because cells are
-// addressed by index: popMenu anchors a selector's list under its own cell,
-// and HandleKey runs the Refresh cell's action for F5.
+// Toolbar cell indexes, in buildTools' layout order. Cells are addressed by
+// index: popMenu anchors a selector's list under its own cell, and HandleKey
+// runs the Refresh cell's action for F5.
 const (
 	logToolLogType = iota
 	logToolFile
@@ -242,8 +240,8 @@ const (
 )
 
 // buildTools defines the toolbar: the two selectors, then the buttons, in the
-// order the logTool* constants name. Labels are rebuilt on every draw (see
-// refreshToolLabels), since both selectors show what they currently point at.
+// order the logTool* constants name. refreshToolLabels rebuilds the labels on
+// every draw, since both selectors show what they point at.
 func (lv *LogViewer) buildTools() {
 	lv.tools = []toolButton{
 		{action: lv.showLogTypeMenu},
@@ -256,10 +254,9 @@ func (lv *LogViewer) buildTools() {
 	lv.refreshToolLabels()
 }
 
-// toolsEnabled reports whether the toolbar's actions are available — the one
-// answer behind drawToolbar's dimming, the click path and F5, so a cell can
-// never be drawn dimmed and still act on a click. It could, and clicking a
-// dimmed Refresh mid-read started a second read while the first ran on.
+// toolsEnabled reports whether the toolbar's actions are available — one answer
+// behind drawToolbar's dimming, the click path and F5, so a cell drawn dimmed
+// can never still act on a click and start a second read mid-read.
 func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 
 // runTool invokes toolbar cell i's action, or does nothing while the toolbar
@@ -279,8 +276,8 @@ func (lv *LogViewer) refreshToolLabels() {
 	lv.tools[1].label = "File: " + lv.currentFileLabel() + " ▾"
 }
 
-// currentFileLabel names the file on screen, from the cached enumeration when
-// there is one and from the archive number alone when there isn't — the
+// currentFileLabel names the file on screen: from the cached enumeration when
+// there is one, from the archive number alone when there isn't, since the
 // selector is drawn before the first enumeration lands.
 func (lv *LogViewer) currentFileLabel() string {
 	for _, f := range lv.files[lv.logType] {
@@ -294,26 +291,26 @@ func (lv *LogViewer) currentFileLabel() string {
 	return fmt.Sprintf("Archive #%d", lv.logNum)
 }
 
-// ShowLog points the panel at a log file and reads it. Reopening the panel
-// from another tree node comes through here, so an already-open viewer
-// switches files instead of a second one being created.
+// ShowLog points the panel at a log file and reads it. Reopening from another
+// tree node comes through here, so an already-open viewer switches files
+// instead of a second one being created.
 func (lv *LogViewer) ShowLog(logType gosmo.ErrorLogType, logNum int) {
 	lv.logType, lv.logNum = logType, logNum
 	lv.detailScroll = 0
 	lv.Load()
 }
 
-// Refresh re-reads the current file and re-enumerates both families (F5 /
+// Refresh re-reads the current file and re-enumerates both families (F5 or the
 // toolbar). The enumeration is dropped rather than refreshed: a cycled log
-// renumbers every archive, so only a fresh read can correct the cached list.
+// renumbers every archive, so only a fresh read corrects the cached list.
 func (lv *LogViewer) Refresh() {
 	lv.files = make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile)
 	lv.Load()
 }
 
-// Load reads the current file in the background and applies the result on
-// the UI goroutine. The enumeration of the same family rides along, so the
-// file selector has its list without a second round trip.
+// Load reads the current file in the background and applies the result on the
+// UI goroutine. The same family's enumeration rides along, so the file selector
+// has its list without a second round trip.
 func (lv *LogViewer) Load() {
 	if !lv.app.isConnected(lv.conn) {
 		lv.entries, lv.shown = nil, nil
@@ -331,14 +328,14 @@ func (lv *LogViewer) Load() {
 	logType, logNum, search := lv.logType, lv.logNum, lv.search
 	sc := lv.conn
 	// One cancel for the panel to pull, but a fresh deadline per call: sharing
-	// one logReadTimeout let a slow sp_enumerrorlogs eat the read's half of it,
+	// one logReadTimeout lets a slow sp_enumerrorlogs eat the read's half of it,
 	// timing out the file the user asked for because the *list* was slow.
 	ctx, cancel := context.WithCancel(sc.Context())
 	lv.cancel = cancel
 	// safegoRepair, not safego: busy is cleared in the callback below, which a
-	// panic on the read goroutine never reaches. toolsEnabled gates the whole
-	// toolbar on it, so Refresh, Export and both selectors would sit dimmed and
-	// inert until the panel was closed.
+	// panic on the read goroutine never reaches, and toolsEnabled gates the
+	// whole toolbar on it — Refresh, Export and both selectors would sit inert
+	// until the panel was closed.
 	lv.app.safegoRepair("reading an error log", func() { lv.readPanicked(seq) }, func() {
 		defer cancel()
 		enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
@@ -370,7 +367,7 @@ func (lv *LogViewer) Load() {
 
 // readPanicked releases the busy latch after a panic on the read goroutine —
 // Load's safegoRepair step. Guarded by seq like the normal completion path: a
-// newer Load has set busy for itself, and clearing it here would re-enable a
+// newer Load set busy for itself, and clearing it here would re-enable a
 // toolbar whose read is still out.
 func (lv *LogViewer) readPanicked(seq int) {
 	if seq != lv.seq {
@@ -383,18 +380,17 @@ func (lv *LogViewer) readPanicked(seq int) {
 }
 
 // recycle closes the current log of the family on screen and starts a new one,
-// after confirming. On success it reloads, which is what replaces the archive
-// numbering the file selector is drawing from — the cycle renumbered every one
-// of them.
+// after confirming. On success it reloads, replacing the archive numbering the
+// file selector draws from — the cycle renumbered all of it.
 func (lv *LogViewer) recycle() {
 	if !lv.app.requireConn(lv.conn) {
 		return
 	}
 	sc, logType := lv.conn, lv.logType
-	// Latched before the question rather than in the answer: busy is what stops
-	// a read starting underneath the cycle, and the confirm dialog takes input
-	// but does not stop F5 reaching the panel — a Load begun while the question
-	// was up would clear busy from under the cycle it knows nothing about.
+	// Latched before the question, not in the answer: busy is what stops a read
+	// starting underneath the cycle, and the confirm dialog doesn't stop F5
+	// reaching the panel — a Load begun while the question was up would clear
+	// busy from under the cycle it knows nothing about.
 	lv.busy = true
 	lv.app.confirmDialog.ShowConfirm("Recycle Log", cycleLogMessage(logType, sc.Opts.Server), func(confirmed bool) {
 		if !confirmed {
@@ -404,7 +400,7 @@ func (lv *LogViewer) recycle() {
 		lv.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
 		// safegoRepair for the same reason Load uses it: busy is cleared in the
 		// posted callback, which a panic never reaches, and toolsEnabled gates
-		// the entire toolbar on it.
+		// the whole toolbar on it.
 		lv.app.safegoRepair("cycling an error log", lv.recyclePanicked, func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
 			defer cancel()
@@ -421,18 +417,18 @@ func (lv *LogViewer) recycle() {
 	})
 }
 
-// recyclePanicked releases the busy latch after a panic on the cycle
-// goroutine — recycle's safegoRepair step. No seq guard, unlike readPanicked:
-// busy was held across the whole cycle, so nothing else can have started.
+// recyclePanicked releases the busy latch after a panic on the cycle goroutine
+// — recycle's safegoRepair step. No seq guard, unlike readPanicked: busy was
+// held across the whole cycle, so nothing else can have started.
 func (lv *LogViewer) recyclePanicked() {
 	lv.busy = false
 	lv.setStatus("Recycle stopped unexpectedly — see the log for details")
 }
 
 // cycleLogMessage is the confirmation question for recycling a log, shared by
-// the toolbar and the Object Explorer folder's menu. It names what is lost:
-// the archives are renumbered and the instance drops the oldest once it is
-// already holding as many as it is configured to keep.
+// the toolbar and the Object Explorer folder's menu. It names what is lost: the
+// archives are renumbered, and the instance drops the oldest once holding as
+// many as it is configured to keep.
 func cycleLogMessage(logType gosmo.ErrorLogType, server string) string {
 	return fmt.Sprintf(
 		"Close the current %s error log on %s and start a new one?\n\n"+
@@ -446,8 +442,8 @@ func cycleLogMessage(logType gosmo.ErrorLogType, server string) string {
 // log family populates.
 var logGridColumns = []string{"Date ▼", "Source", "Message"}
 
-// logExportColumns are the same columns without the sort marker — a header
-// row in an exported file names the column, it doesn't describe the grid.
+// logExportColumns are the same columns without the sort marker: an exported
+// header row names the column rather than describing the grid.
 var logExportColumns = []string{"Date", "Source", "Message"}
 
 // applyFilter rebuilds shown from entries and hands it to the grid, matching a
@@ -473,17 +469,16 @@ func (lv *LogViewer) applyFilter() {
 
 // invalidateDetailCache forces the next detailLines call to re-wrap. The cache
 // is keyed on the entry pointer, but two of the three lines above the message
-// name the log file rather than the entry — a fresh enumeration can rename
-// "Archive #3" without the selected entry changing.
+// name the log file — a fresh enumeration can rename "Archive #3" without the
+// selected entry changing.
 func (lv *LogViewer) invalidateDetailCache() {
 	lv.detailCacheEntry, lv.detailCache = nil, nil
 }
 
 // summary is the status line under the grid: how much of the file is shown,
-// which file it is, and — when one is in force — what the server was asked
-// for. Naming the search matters: "no entries" on a searched read means the
-// search found nothing, not that the log is empty, and the two are otherwise
-// indistinguishable.
+// which file it is, and what the server was asked for when a search is in
+// force. Naming the search matters — "no entries" on a searched read means the
+// search found nothing, not that the log is empty.
 func (lv *LogViewer) summary() string {
 	if len(lv.entries) == 0 {
 		return fmt.Sprintf("%s log %s%s — no entries", lv.logType, lv.currentFileLabel(), lv.searchSuffix())
@@ -516,10 +511,9 @@ func (lv *LogViewer) searchSuffix() string {
 	return " searching " + strings.Join(parts, " + ")
 }
 
-// showSearch opens the Search dialog and re-reads with whatever it returns.
-// The read is unconditional, including for an unchanged search: the button
-// exists to fetch, and a press that appeared to do nothing would read as the
-// dialog having failed.
+// showSearch opens the Search dialog and re-reads with whatever it returns,
+// unconditionally, including for an unchanged search: a press that appeared to
+// do nothing would read as the dialog having failed.
 func (lv *LogViewer) showSearch() {
 	if !lv.app.requireConn(lv.conn) {
 		return
@@ -531,12 +525,12 @@ func (lv *LogViewer) showSearch() {
 	})
 }
 
-// setStatus writes the panel's one-line state into the grid's own status
-// bar, so it sits with the rows it describes.
+// setStatus writes the panel's one-line state into the grid's own status bar,
+// so it sits with the rows it describes.
 func (lv *LogViewer) setStatus(s string) { lv.grid.SetStatus(s) }
 
-// logEntryMatches reports whether needle (already lowercased) appears in
-// the entry's source or message.
+// logEntryMatches reports whether needle (already lowercased) appears in the
+// entry's source or message.
 func logEntryMatches(e *gosmo.ErrorLogEntry, needle string) bool {
 	return strings.Contains(strings.ToLower(e.Text), needle) ||
 		strings.Contains(strings.ToLower(e.Source()), needle)
@@ -544,8 +538,8 @@ func logEntryMatches(e *gosmo.ErrorLogEntry, needle string) bool {
 
 // flattenLogText makes one grid line out of a log entry's text. An entry can
 // carry embedded newlines and tabs — the startup banner spans four lines — and
-// a grid cell is one row tall, so they become spaces. The details pane below
-// shows the text as written.
+// a grid cell is one row tall, so they become spaces. The details pane shows
+// the text as written.
 func flattenLogText(s string) string {
 	if !strings.ContainsAny(s, "\r\n\t") {
 		return s
@@ -554,9 +548,9 @@ func flattenLogText(s string) string {
 }
 
 // sortLogEntriesDesc orders entries newest first, as SSMS's Log File Viewer
-// opens. The sort is stable, so entries sharing a second keep the order the
-// log wrote them in — reversing those too would scramble a startup sequence or
-// a stack dump.
+// opens. The sort is stable, so entries sharing a second keep the order the log
+// wrote them in — reversing those would scramble a startup sequence or a stack
+// dump.
 func sortLogEntriesDesc(entries []*gosmo.ErrorLogEntry) []*gosmo.ErrorLogEntry {
 	slices.SortStableFunc(entries, func(a, b *gosmo.ErrorLogEntry) int {
 		return b.Date.Compare(a.Date)
@@ -567,8 +561,8 @@ func sortLogEntriesDesc(entries []*gosmo.ErrorLogEntry) []*gosmo.ErrorLogEntry {
 // splitLogLines breaks an entry's text into the lines the log wrote. One
 // xp_readerrorlog row can span several — the startup banner puts the build date
 // and the OS on their own indented lines — and the details pane wraps each
-// separately rather than reflowing them into one paragraph. Line breaks
-// survive; indentation does not, since core.WrapText splits on strings.Fields.
+// separately rather than reflowing them into a paragraph. Line breaks survive;
+// indentation does not, since core.WrapText splits on strings.Fields.
 func splitLogLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
@@ -607,8 +601,8 @@ func (lv *LogViewer) showLogTypeMenu() {
 }
 
 // showLogFileMenu pops the archive selector. With no enumeration cached it
-// offers the current log alone and asks for one, rather than an empty menu
-// that looks like the instance has no logs.
+// offers the current log alone and asks for one, rather than an empty menu that
+// looks like the instance has no logs.
 func (lv *LogViewer) showLogFileMenu() {
 	files := lv.files[lv.logType]
 	if len(files) == 0 {
@@ -641,8 +635,8 @@ func (lv *LogViewer) popMenu(i int, items []controls.MenuItem) {
 	lv.app.contextMenu.Show(r.X, r.Y+1, items)
 }
 
-// export writes the entries currently shown — the filtered set, not the
-// whole file — to a tab-separated file.
+// export writes the entries currently shown — the filtered set, not the whole
+// file — to a tab-separated file.
 func (lv *LogViewer) export() {
 	if len(lv.shown) == 0 {
 		lv.app.setStatus("Nothing to export")
@@ -650,15 +644,15 @@ func (lv *LogViewer) export() {
 	}
 	name := fmt.Sprintf("%s-log-%d.txt", strings.ToLower(strings.ReplaceAll(lv.logType.String(), " ", "-")), lv.logNum)
 	lv.app.fileDialog.ShowSave("Export Log", name, func(path string) {
-		// Rendered here on the UI goroutine, with only the write running off
-		// it: applyFilter reuses shown's backing array, so a snapshot of the
-		// slice would be rewritten under the goroutine by the next keystroke in
-		// the filter field.
+		// Rendered here on the UI goroutine, with only the write running off it:
+		// applyFilter reuses shown's backing array, so a snapshot of the slice
+		// would be rewritten under the goroutine by the next keystroke in the
+		// filter field.
 		text := lv.exportText()
 		n := len(lv.shown)
 		lv.app.safego("exporting a log", func() {
-			// Writing on the UI goroutine freezes the app for the duration — a
-			// big log to a network path is seconds, not milliseconds.
+			// Writing on the UI goroutine would freeze the app: a big log to a
+			// network path takes seconds.
 			err := fileutil.WriteAtomic(path, []byte(text), 0o644)
 			lv.app.postAndWake(func() {
 				if err != nil {
@@ -685,11 +679,11 @@ func (lv *LogViewer) exportText() string {
 // recycleLogFrom cycles a log family from its Object Explorer folder, then
 // refreshes the folder so the renumbered archives appear under it.
 //
-// Any LogViewer already open on the same connection is refreshed too, through
-// Refresh rather than Load, because the viewer may be sitting on the *other*
-// log family: Load re-enumerates only the family on screen, and the cycled
-// one's cached numbering would survive until the user flipped the selector to
-// it and opened an archive that is no longer the one its label named.
+// Any LogViewer open on the same connection is refreshed too, through Refresh
+// rather than Load, because the viewer may be sitting on the *other* family:
+// Load re-enumerates only the family on screen, so the cycled one's cached
+// numbering would survive until the user flipped the selector to it and opened
+// an archive its label no longer named.
 func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return

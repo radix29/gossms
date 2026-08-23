@@ -161,10 +161,11 @@ func TestAGSuspendScopeSaysWhichInstance(t *testing.T) {
 // on — an empty list with no explanation is indistinguishable from a bug.
 func TestAGEligibleDatabases(t *testing.T) {
 	dbs := []agDBCandidate{
-		{Name: "payroll", RecoveryModel: "FULL", State: "ONLINE"},
+		{Name: "payroll", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true},
 		{Name: "scratch", RecoveryModel: "SIMPLE", State: "ONLINE"},
-		{Name: "archive", RecoveryModel: "FULL", State: "RESTORING"},
-		{Name: "testdb_1", RecoveryModel: "FULL", State: "ONLINE"},
+		{Name: "archive", RecoveryModel: "FULL", State: "RESTORING", LogChainStarted: true},
+		{Name: "testdb_1", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true},
+		{Name: "fresh", RecoveryModel: "FULL", State: "ONLINE"},
 		{Name: "master", RecoveryModel: "SIMPLE", State: "ONLINE", IsSystem: true},
 	}
 	eligible, excluded := agEligibleDatabases(dbs, map[string]bool{"testdb_1": true})
@@ -173,7 +174,7 @@ func TestAGEligibleDatabases(t *testing.T) {
 		t.Errorf("eligible = %v, want %v", eligible, want)
 	}
 	joined := strings.Join(excluded, "\n")
-	for _, want := range []string{"scratch — recovery model is SIMPLE", "archive — database is restoring", "testdb_1 — already in an availability group"} {
+	for _, want := range []string{"scratch — recovery model is SIMPLE", "archive — database is restoring", "testdb_1 — already in an availability group", "fresh — no full backup"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("excluded = %v, want an entry %q", excluded, want)
 		}
@@ -182,6 +183,34 @@ func TestAGEligibleDatabases(t *testing.T) {
 	// listing four of them would bury the reasons that matter.
 	if strings.Contains(joined, "master") {
 		t.Errorf("excluded = %v, want system databases left out silently", excluded)
+	}
+}
+
+// The log backup chain is the prerequisite SQL Server checks that nothing
+// about the database's own metadata reveals: a database can be FULL, ONLINE
+// and in no group, and still be refused with Msg 1475 because it has had no
+// full backup since it entered the FULL recovery model. Verified live on the
+// AG cluster 2026-08-23 for both ADD DATABASE and CREATE AVAILABILITY GROUP
+// ... FOR DATABASE. Every other field here says the database is addable, so a
+// rule that dropped this check would offer it and the apply would fail.
+func TestAGEligibleDatabasesExcludesAnUnbackedUpDatabase(t *testing.T) {
+	dbs := []agDBCandidate{
+		{Name: "backed_up", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true},
+		{Name: "never_backed_up", RecoveryModel: "FULL", State: "ONLINE"},
+	}
+	eligible, excluded := agEligibleDatabases(dbs, nil)
+
+	if want := []string{"backed_up"}; !slices.Equal(eligible, want) {
+		t.Errorf("eligible = %v, want %v", eligible, want)
+	}
+	joined := strings.Join(excluded, "\n")
+	if !strings.Contains(joined, "never_backed_up — no full backup") {
+		t.Errorf("excluded = %v, want the unbacked-up database with a reason", excluded)
+	}
+	// The reason has to say what to do about it: this is the one exclusion
+	// the user can clear in a minute.
+	if !strings.Contains(joined, "back it up first") {
+		t.Errorf("excluded = %v, want the reason to name the fix", excluded)
 	}
 }
 

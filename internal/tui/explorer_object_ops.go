@@ -10,23 +10,21 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// explorer_object_ops.go is Object Explorer's general Delete and Rename:
-// one table of what the two mean per node type, and the two shared actions
-// that confirm, run, and refresh around them. A node type absent from the
-// table offers neither — that is how a folder, a system object family, or
-// anything gosmo can't drop stays out of the menu, instead of a menu item
-// that fails when clicked.
+// explorer_object_ops.go is Object Explorer's general Delete and Rename: one
+// table of what the two mean per node type, plus the shared actions that
+// confirm, run and refresh around them. A node type absent from the table
+// offers neither, which is how a folder or anything gosmo can't drop stays out
+// of the menu instead of failing when clicked.
 //
-// SQL Server Agent objects are renameable here but keep their own Delete
-// (see agent_menu.go), whose wording explains what blocks each one.
+// SQL Server Agent objects are renameable here but keep their own Delete (see
+// agent_menu.go).
 
-// objectOp is what Delete and Rename do for one node type. A nil drop or
-// rename means the node doesn't offer that action.
+// objectOp is what Delete and Rename do for one node type. A nil drop or rename
+// means the node doesn't offer that action.
 //
-// Both take a nodeData by value, not the *explorerNode it came off: they run
-// on a background goroutine, and the UI goroutine writes node.data (see
-// applyNodeFilter). The copy is made by deleteObject/runRename before the
-// safego.
+// Both take a nodeData by value, not the *explorerNode it came off: they run on
+// a background goroutine while the UI goroutine writes node.data.
+// deleteObject/runRename make the copy before the safego.
 type objectOp struct {
 	// noun names the object in dialog titles and messages ("Table").
 	noun   string
@@ -38,15 +36,15 @@ type objectOp struct {
 	// typed gates the delete behind retyping the object's name, for a drop
 	// whose blast radius is bigger than one object.
 	typed bool
-	// dropOption labels a checkbox on the delete confirmation, and
-	// dropWithOption is the drop it feeds. A type that sets these must set
-	// both, and leaves drop nil — deleteObject picks the path from
-	// dropOption, and objectOpsMenuItems from either drop being present.
+	// dropOption labels a checkbox on the delete confirmation and dropWithOption
+	// is the drop it feeds. A type setting these sets both and leaves drop nil:
+	// deleteObject picks the path from dropOption, objectOpsMenuItems from either
+	// drop being present.
 	dropOption     string
 	dropWithOption func(ctx context.Context, sc *db.ServerConn, n nodeData, opt bool) error
-	// transfer moves the object into another schema (ALTER SCHEMA ...
-	// TRANSFER), which a rename cannot do. Only the sp_rename 'OBJECT'
-	// families and tables have one.
+	// transfer moves the object into another schema (ALTER SCHEMA ... TRANSFER),
+	// which a rename cannot do. Only the sp_rename 'OBJECT' families and tables
+	// have one.
 	transfer func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error
 	// renameWarning is a question asked between the new-name prompt and the
 	// rename itself, for a rename that costs more than the name change.
@@ -55,30 +53,25 @@ type objectOp struct {
 
 // dbOf is the database a node's object lives in.
 //
-// Server.Database, not DatabaseByName: every statement below names its object
-// in the text and reads nothing off the *gosmo.Database but its name, so the
-// sys.databases round trip DatabaseByName costs bought nothing. It also could
-// not run under a WithScript-derived context, which is what a Script Changes
-// on Delete would need — see gosmo's Server.Database.
+// Server.Database, not DatabaseByName: every statement below names its object in
+// the text and reads nothing off the *gosmo.Database but its name, so the
+// sys.databases round trip buys nothing — and DatabaseByName cannot run under a
+// WithScript-derived context, which Script Changes on Delete needs.
 func dbOf(sc *db.ServerConn, n nodeData) *gosmo.Database {
 	return sc.Server.Database(n.DBName)
 }
 
-// tableOf is the table a table-scoped node (index, statistic, key,
-// constraint) belongs to — nodeData.TableName, since Schema/Name on those
-// point at the index's or constraint's own name.
-//
-// A name-only handle, for the same reason as dbOf. Only DropConstraint uses
-// it; the index and statistic ops need the real object and query for it.
+// tableOf is the table a table-scoped node (index, statistic, key, constraint)
+// belongs to — nodeData.TableName, since Schema/Name there name the index or
+// constraint itself. A name-only handle, for the same reason as dbOf.
 func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
 	return sc.Server.Database(n.DBName).Table(n.Schema, n.TableName)
 }
 
-// objectOps is the per-type table. Every rename that goes through
-// Database.RenameObjectContext is sp_rename's 'OBJECT' class — a view,
-// procedure, function, sequence, synonym, trigger, or constraint; indexes
-// and statistics have their own sp_rename object types and so their own
-// gosmo methods.
+// objectOps is the per-type table. Every rename going through
+// Database.RenameObjectContext is sp_rename's 'OBJECT' class — view, procedure,
+// function, sequence, synonym, trigger, constraint. Indexes and statistics have
+// their own sp_rename object types and gosmo methods.
 var objectOps = map[NodeType]objectOp{
 	NodeDatabase: {
 		noun:    "Database",
@@ -88,8 +81,8 @@ var objectOps = map[NodeType]objectOp{
 			return sc.Server.DropDatabaseContext(ctx, n.Name, true)
 		},
 		// MODIFY NAME needs exclusive access, which the tree's own metadata
-		// connections are enough to deny — so the rename always closes
-		// connections, and always asks first.
+		// connections deny — so the rename always closes connections, and always
+		// asks first.
 		renameWarning: "Renaming a database needs exclusive access to it. Existing connections will be closed and their transactions rolled back. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			return sc.Server.RenameDatabaseContext(ctx, n.Name, newName, true)
@@ -98,11 +91,10 @@ var objectOps = map[NodeType]objectOp{
 	NodeTable: {
 		noun:    "Table",
 		warning: "All of its data is deleted with it.",
-		// Unticked by default, so the plain gesture is still the one SSMS
-		// gives: a table another table references is refused until that
-		// foreign key is dealt with. Ticking it drops those foreign keys —
-		// on the *other* tables, which is why it is a decision and not a
-		// retry.
+		// Unticked by default, so the plain gesture is SSMS's: a referenced
+		// table is refused until the foreign key is dealt with. Ticking it drops
+		// those foreign keys on the *other* tables, which is why it is a
+		// decision and not a retry.
 		dropOption: "Also drop the foreign keys that reference it",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, cascade bool) error {
 			return dbOf(sc, n).DropTableContext(ctx, n.Schema, n.Name, cascade)
@@ -115,21 +107,28 @@ var objectOps = map[NodeType]objectOp{
 	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropViewContext), rename: renameObjectIn, transfer: transferObjectIn},
 	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedureContext), rename: renameObjectIn, transfer: transferObjectIn},
 	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunctionContext), rename: renameObjectIn, transfer: transferObjectIn},
-	// A trigger belongs to its table and moves with it — ALTER SCHEMA
-	// TRANSFER refuses one, so no transfer here.
+	// A trigger belongs to its table and moves with it; ALTER SCHEMA TRANSFER
+	// refuses one.
 	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTriggerContext), rename: renameObjectIn},
 	NodeSequence: {noun: "Sequence", drop: dropIn((*gosmo.Database).DropSequenceContext), rename: renameObjectIn, transfer: transferObjectIn},
 	NodeSynonym:  {noun: "Synonym", drop: dropIn((*gosmo.Database).DropSynonymContext), rename: renameObjectIn, transfer: transferObjectIn},
 
 	NodeColumn: {
 		noun: "Column",
-		// The server refuses a column anything depends on — a default or
-		// check constraint, an index, a statistic — and its message does not
-		// name what (verified live: "one or more objects access this
-		// column"), so the warning has to name the classes itself.
+		// The server refuses a column anything depends on — a default or check
+		// constraint, an index, a statistic — and its message doesn't name what
+		// ("one or more objects access this column"), so the warning names the
+		// classes itself.
 		warning: "Its data goes with it, and the server refuses the drop while a constraint, index or statistic depends on the column — without naming which.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return tableOf(sc, n).DropColumnContext(ctx, n.Name)
+		},
+		// sp_rename updates the column and nothing that names it, and SQL
+		// Server's caution ("may break scripts and stored procedures") is a
+		// notice on a rename that already succeeded — so ask first.
+		renameWarning: "Renaming a column does not update anything that names it. Views, procedures, functions, computed columns, check constraints and filtered indexes keep the old name and break at their next use. Continue?",
+		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
+			return tableOf(sc, n).RenameColumnContext(ctx, n.Name, newName)
 		},
 	},
 
@@ -170,8 +169,8 @@ var objectOps = map[NodeType]objectOp{
 	NodeKey: {
 		noun: "Key",
 		drop: dropConstraint,
-		// A primary key's or unique constraint's name is its backing index's
-		// name in sys.indexes, so it renames as an index, not as an object.
+		// A primary key's or unique constraint's name is its backing index's name
+		// in sys.indexes, so it renames as an index, not as an object.
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			t, idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
@@ -229,8 +228,8 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeColumnEncryptionKey: {
 		noun: "Column Encryption Key",
-		// Not recoverable: the key material only exists encrypted here, so
-		// every column encrypted with it becomes unreadable ciphertext.
+		// Not recoverable: the key material exists only encrypted here, so every
+		// column encrypted with it becomes unreadable ciphertext.
 		warning: "Data in every column encrypted with it becomes permanently unreadable.",
 		typed:   true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
@@ -296,8 +295,7 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeSchema: {
 		// SQL Server has no schema rename — moving a schema's contents is
-		// ALTER SCHEMA ... TRANSFER, a different operation — so Rename is
-		// deliberately absent here rather than offered and failing.
+		// ALTER SCHEMA ... TRANSFER — so Rename is deliberately absent.
 		noun: "Schema",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
@@ -305,8 +303,7 @@ var objectOps = map[NodeType]objectOp{
 		},
 	},
 
-	// Agent objects: Rename only. Their Delete lives in agent_menu.go, with
-	// per-type wording about what blocks it.
+	// Agent objects: Rename only. Their Delete lives in agent_menu.go.
 	NodeAgentJob: {
 		noun: "Job",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
@@ -350,16 +347,15 @@ var objectOps = map[NodeType]objectOp{
 }
 
 // dropIn adapts one of gosmo's Database.DropXxxContext(ctx, schema, name)
-// methods — the shape every schema-scoped object family shares — into a
-// drop function.
+// methods into a drop function.
 func dropIn(fn func(*gosmo.Database, context.Context, string, string) error) func(context.Context, *db.ServerConn, nodeData) error {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 		return fn(dbOf(sc, n), ctx, n.Schema, n.Name)
 	}
 }
 
-// renameObjectIn is sp_rename's 'OBJECT' class, shared by every schema-
-// scoped object that isn't a table, index, or statistic.
+// renameObjectIn is sp_rename's 'OBJECT' class, shared by every schema-scoped
+// object that isn't a table, index, or statistic.
 func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 	return dbOf(sc, n).RenameObjectContext(ctx, n.Schema, n.Name, newName)
 }

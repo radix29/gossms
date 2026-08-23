@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// SET SHOWPLAN_XML ON returns a multi-statement batch's plans as consecutive
-// rows of one result set. scanNext used to keep only the last, so an
-// estimated plan for a three-statement batch showed one statement's plan
-// standing in for the whole batch.
+// A showplan result set carrying several rows must yield several plans:
+// scanNext used to keep only the last. No live server has been seen to send
+// that shape (live_plan_test.go probes for it), so this pins the tolerance
+// scanPlanXML deliberately keeps, not an observed server behaviour.
 func TestScanNextKeepsEveryShowplanRow(t *testing.T) {
 	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
 		{"<plan1/>"}, {"<plan2/>"}, {"<plan3/>"},

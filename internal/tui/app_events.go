@@ -10,12 +10,12 @@ import (
 // normalizeCtrlRune folds a Ctrl-modified letter back into its KeyCtrlA..
 // KeyCtrlZ form, keeping the other modifiers.
 //
-// tcell only does that fold when Ctrl is the *sole* modifier, so
+// tcell does that fold only when Ctrl is the *sole* modifier, so
 // Ctrl+Shift+<letter> arrives as KeyRune with ModCtrl|ModShift and matches no
 // KeyCtrlX binding: Kitty reports the base-layout rune ('o'), xterm's
-// modifyOtherKeys the shifted one ('O'), hence the ToLower. Without this,
-// every Ctrl+Shift+<letter> chord in the app — Connect, the editor's
-// Uppercase Selection — is dead on exactly the terminals able to encode it.
+// modifyOtherKeys the shifted one ('O'), hence the ToLower. Without this, every
+// Ctrl+Shift+<letter> chord in the app is dead on exactly the terminals able to
+// encode it.
 func normalizeCtrlRune(ev *tcell.EventKey) *tcell.EventKey {
 	// Ctrl+Shift only. Ctrl+Alt is AltGr on many layouts and produces text,
 	// which must stay a KeyRune.
@@ -35,9 +35,9 @@ func normalizeCtrlRune(ev *tcell.EventKey) *tcell.EventKey {
 
 // handleKey processes keyboard events. Returns true to signal quit.
 func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
-	// Record every key while the diagnostics dialog is open, before anything
-	// else consumes it — including the clipboard shortcuts and whatever closes
-	// the dialog itself, so those appear in the log too.
+	// Record every key while the diagnostics dialog is open, before anything else
+	// consumes it — including the clipboard shortcuts and whatever closes the
+	// dialog, so those appear in the log too.
 	if a.keyDiagDialog.Visible() {
 		a.keyDiagDialog.RecordKey(ev)
 	}
@@ -45,8 +45,8 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	ev = normalizeCtrlRune(ev)
 
 	// Clipboard shortcuts are handled centrally, before any dialog can consume
-	// the key and regardless of what has focus. SetClipboard/GetClipboard are
-	// Screen methods, available only here in the application layer.
+	// the key and whatever has focus: SetClipboard/GetClipboard are Screen
+	// methods, available only in the application layer.
 	switch ev.Key() {
 	case tcell.KeyCtrlC:
 		a.copySelection()
@@ -77,18 +77,17 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		a.helpDialog.Show()
 		return false
 	case tcell.KeyF10:
-		// Plain F10 activates the menu bar; reaching this case means it
-		// wasn't already open, since the IsOpen() check above intercepts
-		// F10-to-close. Shift+F10 is "open context menu" and falls through to
-		// the focused explorer/panel below.
+		// Plain F10 activates the menu bar; reaching this case means it wasn't
+		// already open, the IsOpen() check above having intercepted F10-to-close.
+		// Shift+F10 is "open context menu" and falls through below.
 		if ev.Modifiers()&tcell.ModShift == 0 {
 			a.menuBar.Open()
 			return false
 		}
 	case tcell.KeyCtrlQ:
-		// Only a quit that went through returns true — with unsaved panels
-		// requestQuit prompts and quits from its callback, so the event loop
-		// must keep running.
+		// Only a quit that went through returns true: with unsaved panels
+		// requestQuit prompts and quits from its callback, so the event loop must
+		// keep running.
 		return a.requestQuit()
 	case tcell.KeyCtrlN:
 		a.newQueryPanel()
@@ -100,11 +99,10 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		a.connectDialog.Show()
 		return false
 	case tcell.KeyCtrlO:
-		// Ctrl+Shift+O only reaches here as KeyCtrlO+ModShift because
-		// normalizeCtrlRune folded it back, and only on terminals with a
-		// modern keyboard protocol (Kitty, xterm modifyOtherKeys). Elsewhere
-		// the terminal encodes it as plain Ctrl+O and it opens a file rather
-		// than connecting — F9 is the binding that works everywhere.
+		// Ctrl+Shift+O reaches here as KeyCtrlO+ModShift only because
+		// normalizeCtrlRune folded it back, and only on terminals with a modern
+		// keyboard protocol. Elsewhere it arrives as plain Ctrl+O and opens a
+		// file — F9 is the binding that works everywhere.
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			a.connectDialog.Show()
 		} else {
@@ -118,9 +116,9 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		a.findDialog.ShowFind()
 		return false
 	case tcell.KeyF3:
-		// Ctrl+F3 searches for the word under the caret; Shift+F3 steps
-		// backwards. Both modifiers decorate a key that works plainly, so a
-		// terminal that can't encode them still gets Find Next.
+		// Ctrl+F3 searches for the word under the caret, Shift+F3 steps
+		// backwards. Both decorate a key that works plainly, so a terminal that
+		// can't encode them still gets Find Next.
 		switch {
 		case ev.Modifiers()&tcell.ModCtrl != 0:
 			a.findWordAtCursor()
@@ -131,11 +129,11 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		}
 		return false
 	case tcell.KeyF5:
-		// Explorer focused: refresh the selected node. Otherwise the active
-		// panel gets first refusal before the "F5 executes" default, as plain
-		// Tab is offered below — a panel that refreshes rather than executes
-		// (the Always On dashboard) has no other way to see the key, and
-		// QueryPanel's own F5 matches executeActiveQuery anyway.
+		// Explorer focused: refresh the selected node. Otherwise the active panel
+		// gets first refusal before the "F5 executes" default, as plain Tab is
+		// offered below — a panel that refreshes rather than executes (the Always
+		// On dashboard) has no other way to see the key, and QueryPanel's own F5
+		// matches executeActiveQuery anyway.
 		switch {
 		case a.focus == "explorer":
 			a.refreshSelected()
@@ -145,14 +143,14 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		return false
 	case tcell.KeyTab:
 		// tcell has no KeyCtrlTab/KeyCtrlShiftTab: both arrive as KeyTab with
-		// ModCtrl (and ModShift), on terminals with a modern keyboard
-		// protocol. Elsewhere — including emulators that reserve Ctrl+Tab for
-		// their own tab switching — they are indistinguishable from plain Tab
-		// and fall through to the focus toggle below. Ctrl+Shift+Right/Left
-		// and Ctrl+0..9 are the reliable alternatives there.
+		// ModCtrl (and ModShift), on terminals with a modern keyboard protocol.
+		// Elsewhere — including emulators that reserve Ctrl+Tab for their own tab
+		// switching — they are indistinguishable from plain Tab and fall through
+		// to the focus toggle below; Ctrl+Shift+Right/Left and Ctrl+0..9 are the
+		// reliable alternatives there.
 		//
-		// Ctrl+Tab cycles focus forward between Object Explorer, the active
-		// query panel's editor and its results pane; Ctrl+Shift+Tab reverses.
+		// Ctrl+Tab cycles focus forward between Object Explorer, the active query
+		// panel's editor and its results pane; Ctrl+Shift+Tab reverses.
 		switch {
 		case ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0:
 			a.cycleFocusReverse()
@@ -164,28 +162,26 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 			a.focusPanels()
 			return false
 		}
-		// Plain Tab while a panel is focused: the panel consumes it first, so
-		// the query editor's Tab/indent beats the "Tab switches pane"
-		// convention. Only a panel that refuses the key falls back to
-		// focusing Explorer.
+		// Plain Tab while a panel is focused: the panel consumes it first, so the
+		// query editor's Tab/indent beats the "Tab switches pane" convention.
+		// Only a panel that refuses the key falls back to focusing Explorer.
 		if a.panels.HandleKey(ev) {
 			return false
 		}
 		a.focusExplorer()
 		return false
 	case tcell.KeyBacktab:
-		// Some terminals report Shift+Tab (and Ctrl+Shift+Tab) as this key
-		// rather than KeyTab+ModShift. Backtab implies Shift, so Ctrl
-		// alongside it reverses the focus cycle; plain Backtab falls through
-		// to the focused explorer/panel, e.g. the editor's Dedent.
+		// Some terminals report Shift+Tab (and Ctrl+Shift+Tab) as this key rather
+		// than KeyTab+ModShift. Backtab implies Shift, so Ctrl alongside it
+		// reverses the focus cycle; plain Backtab falls through to the focused
+		// explorer or panel, e.g. the editor's Dedent.
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
 			a.cycleFocusReverse()
 			return false
 		}
 	case tcell.KeyLeft:
-		// Ctrl+Shift+Left switches to the previous panel/tab. Plain
-		// Ctrl+Left falls through below — explorer resize / editor
-		// word-jump.
+		// Ctrl+Shift+Left switches to the previous panel. Plain Ctrl+Left falls
+		// through below — explorer resize, editor word-jump.
 		if ev.Modifiers()&tcell.ModCtrl != 0 && ev.Modifiers()&tcell.ModShift != 0 {
 			a.prevPanel()
 			return false
@@ -197,9 +193,8 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 			return false
 		}
 	case tcell.KeyRune:
-		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details
-		// is always 0), only while a panel already holds focus — Object
-		// Explorer's tree navigation doesn't use it.
+		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
+		// always 0), only while a panel already holds focus.
 		if a.focus == "panels" && ev.Modifiers()&tcell.ModCtrl != 0 {
 			if r := core.EvRune(ev); r >= '0' && r <= '9' {
 				a.jumpToPanel(int(r - '0'))
@@ -227,9 +222,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	mx, my := ev.Position()
 	_, h := a.screen.Size()
 
-	// freshPress is true only for the Button1 event that begins a gesture —
-	// false for every resend while the button stays down (tcell's all-motion
-	// tracking resends on each motion), however far the cursor has drifted.
+	// freshPress is true only for the Button1 event that begins a gesture, false
+	// for every resend tcell's all-motion tracking sends while the button stays
+	// down, however far the cursor has drifted.
 	freshPress := ev.Buttons() == tcell.Button1 && !a.mouseButtonDown
 	switch ev.Buttons() {
 	case tcell.Button1:
@@ -274,12 +269,12 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Object Explorer → query editor drag-and-drop: once a.dragNode is armed
-	// below it gets first refusal on every event, ahead of the menu/toolbar
-	// row, the status row and the splitter — otherwise a drag crossing row 0
-	// pops a menu and one crossing the status row pops Status History. While
-	// armed every Button1 event is swallowed, so the drag always refers to the
-	// node it started on. The drop happens on the release, in routeRelease.
+	// Object Explorer → query editor drag-and-drop: once a.dragNode is armed it
+	// gets first refusal on every event, ahead of the menu/toolbar row, the
+	// status row and the splitter — otherwise a drag crossing row 0 pops a menu
+	// and one crossing the status row pops Status History. While armed every
+	// Button1 event is swallowed, so the drag always refers to the node it
+	// started on. The drop happens on the release, in routeRelease.
 	if a.dragNode != nil {
 		if ev.Buttons() == tcell.Button1 {
 			// swallow motion; nothing else may react while a drop is pending
@@ -290,14 +285,14 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 
-	// Everything from the press that armed gestureOwner to its release belongs
-	// to the region that claimed it, wherever the pointer has drifted.
+	// Everything from the press that armed gestureOwner to its release belongs to
+	// the region that claimed it, wherever the pointer has drifted.
 	//
-	// A wheel tick mid-gesture is swallowed rather than routed: it isn't part
-	// of the gesture, and letting it through hands it to whatever the pointer
-	// has drifted over — wheeling while dragging the splitter scrolled the
-	// panels underneath. Swallowing keeps the "nothing else may react until the
-	// release" invariant without inventing a wheel meaning per owner.
+	// A wheel tick mid-gesture is swallowed rather than routed: it isn't part of
+	// the gesture, and letting it through hands it to whatever the pointer
+	// drifted over — wheeling while dragging the splitter scrolls the panels
+	// underneath. Swallowing keeps the "nothing else may react until the release"
+	// invariant without inventing a wheel meaning per owner.
 	if a.gestureOwner != ownerNone {
 		if ev.Buttons() == tcell.Button1 {
 			a.routeGesture(ev)
@@ -306,10 +301,9 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	}
 
 	if my == 0 {
-		// Toolbar occupies the right-aligned end of MenuBar's row. MenuBar
-		// still sees every event first so its hover state clears when the
-		// mouse moves off a label into the toolbar; it is a no-op for columns
-		// outside its labels.
+		// Toolbar occupies the right-aligned end of MenuBar's row. MenuBar still
+		// sees every event first, so its hover state clears when the mouse moves
+		// off a label into the toolbar; it is a no-op outside its labels.
 		a.armGesture(ev, ownerMenuRow)
 		a.menuBar.HandleMouse(ev)
 		a.toolbar.HandleMouse(ev)
@@ -340,13 +334,12 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 			a.focusExplorer()
 		}
 		a.explorer.HandleMouse(ev)
-		// Armed from what the press landed on (NodeAt), not from whatever
-		// ends up selected, and only on a fresh press. Selected() is true of
-		// a node the user never touched: a press on the tree's scrollbar, its
-		// border, or blank space below the last node leaves the selection
-		// alone, and arming from it both dragged the wrong object and killed
-		// the scrollbar drag, since the dragNode branch above swallows every
-		// later event and the thumb could no longer follow the mouse.
+		// Armed from what the press landed on (NodeAt), not from whatever ends up
+		// selected, and only on a fresh press. Selected() is true of a node the
+		// user never touched: a press on the tree's scrollbar, its border, or
+		// blank space below the last node leaves the selection alone, so arming
+		// from it drags the wrong object and kills the scrollbar drag — the
+		// dragNode branch above swallows every later event.
 		if freshPress {
 			if n := a.explorer.NodeAt(mx, my); n != nil && isDraggableNode(n.data.Type) {
 				a.dragNode = n
@@ -376,26 +369,25 @@ const (
 )
 
 // routeRelease handles a Button1 release. Every other event stops at the first
-// branch that wants it; a release can't, because a release resets the
-// per-widget mouseDragging latches and the widget holding one is often not the
-// one the release would route to.
+// branch that wants it; a release can't, because it resets the per-widget
+// mouseDragging latches and the widget holding one is often not the one the
+// release would route to.
 //
 // A dialog opens on the *press* — a toolbar button's action, a menu item's — so
 // it is already on the dialog stack when the matching release arrives, and
 // returning early there leaves MenuBar's and Toolbar's latches armed for good.
 // Both then read the next fresh click as a resend and refuse it: the first
 // toolbar click after any dialog-opening one does nothing, and the first click
-// on a menu header doesn't open the menu. Same for an editor/grid/tree drag
-// latch when a background failure pops an alert mid-drag. It is ModalDialog's
-// "a latch must not survive into the next showing" rule one layer up: the
-// dialog clears its own latches, nothing was clearing the ones underneath.
+// on a menu header doesn't open the menu. Same for an editor, grid or tree drag
+// latch when a background failure pops an alert mid-drag. It is ModalDialog's "a
+// latch must not survive into the next showing" rule one layer up.
 //
 // So the top overlay gets the release first, for its own latch, and then every
 // latch owner gets it regardless. The broadcast is a no-op beyond the reset for
-// a release outside a widget's bounds: MenuBar/Toolbar clear their drag flag
-// and bail when off their row; Splitter clears dragging and returns; TreeView
-// clears its latch before its bounds check and acts on no button but
-// Button1/Button2; PanelManager forwards any release to the active panel.
+// a release outside a widget's bounds: MenuBar/Toolbar clear their drag flag and
+// bail when off their row; Splitter clears dragging and returns; TreeView clears
+// its latch before its bounds check and acts on no button but Button1/Button2;
+// PanelManager forwards any release to the active panel.
 func (a *App) routeRelease(ev *tcell.EventMouse) {
 	if top := a.topDialog(); top != nil {
 		top.HandleMouse(ev)
@@ -404,9 +396,9 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	}
 
 	// Finish a pending Object Explorer drop, but only if nothing modal went up
-	// mid-drag: pasting a node's SQL into an editor the user can't see isn't
-	// what the gesture asked for. Either way dragNode is disarmed — left armed
-	// it swallows every subsequent mouse event.
+	// mid-drag: pasting a node's SQL into an editor the user can't see isn't what
+	// the gesture asked for. Either way dragNode is disarmed — left armed it
+	// swallows every subsequent mouse event.
 	if a.dragNode != nil {
 		if a.topDialog() == nil {
 			mx, my := ev.Position()
@@ -422,8 +414,8 @@ func (a *App) routeRelease(ev *tcell.EventMouse) {
 	a.panels.HandleMouse(ev)
 }
 
-// armGesture records that region consumed a Button1 press, so every
-// further event until the release goes back to it — see gestureOwner.
+// armGesture records that region consumed a Button1 press, so every further
+// event until the release goes back to it — see gestureOwner.
 func (a *App) armGesture(ev *tcell.EventMouse, region appGestureOwner) {
 	if ev.Buttons() == tcell.Button1 {
 		a.gestureOwner = region
@@ -431,10 +423,9 @@ func (a *App) armGesture(ev *tcell.EventMouse, region appGestureOwner) {
 }
 
 // routeGesture delivers a held-Button1 event to the region that armed the
-// gesture. ownerMenuRow and ownerStatusRow swallow it: MenuBar and Toolbar
-// acted on the press and suppress repeats with their own latches, and the
-// status row acts only on a fresh press. The point is that no other region
-// sees them.
+// gesture. ownerMenuRow and ownerStatusRow swallow it — MenuBar and Toolbar
+// acted on the press and suppress repeats with their own latches, and the status
+// row acts only on a fresh press — so that no other region sees them.
 func (a *App) routeGesture(ev *tcell.EventMouse) {
 	switch a.gestureOwner {
 	case ownerSplitter:

@@ -13,24 +13,22 @@ import (
 )
 
 // ag_props.go holds Availability Group Properties: the page set, the General
-// page, and the pieces the Backup Preferences and Read-Only Routing pages
-// (ag_props_backup.go, ag_props_routing.go) share with it.
+// page, and the pieces the Backup Preferences and Read-Only Routing pages share
+// with it.
 //
-// Every page reads and writes through the group's *primary* replica. That is
-// not a preference: ALTER AVAILABILITY GROUP is rejected on a secondary, and
-// the sys.dm_hadr_* columns a secondary can see are mostly empty, so a page
-// loaded from one would show blanks it could not save. agOnPrimary is the
-// chokepoint, and unlike the Object Explorer's resolveAGView it treats an
-// unreachable primary as a hard error.
+// Every page reads and writes through the group's *primary* replica: ALTER
+// AVAILABILITY GROUP is rejected on a secondary, and the sys.dm_hadr_* columns a
+// secondary sees are mostly empty, so a page loaded from one would show blanks
+// it could not save. agOnPrimary is the chokepoint, and unlike resolveAGView it
+// treats an unreachable primary as a hard error.
 
-// agPropPages builds the page set for Availability Group Properties: the
-// group's own settings and its replicas' configuration (General), where
-// automated backups should run (Backup Preferences), and read-intent
-// redirection (Read-Only Routing).
+// agPropPages builds the page set for Availability Group Properties: the group's
+// settings and its replicas' configuration (General), where automated backups
+// run (Backup Preferences), and read-intent redirection (Read-Only Routing).
 //
-// Adding and removing databases, replicas and listeners is not here — those
-// are cluster-wide operations with their own confirmation and seeding
-// concerns, and live on the Object Explorer context menus instead.
+// Adding and removing databases, replicas and listeners is not here — those are
+// cluster-wide operations with their own confirmation and seeding concerns, and
+// live on the Object Explorer context menus.
 func agPropPages(sc *db.ServerConn, agName string) []propPage {
 	return []propPage{
 		pageAGGeneral(sc, agName),
@@ -39,13 +37,13 @@ func agPropPages(sc *db.ServerConn, agName string) []propPage {
 	}
 }
 
-// agOnPrimary resolves an availability group by name through a connection to
-// its primary replica, opening one via db.ServerConn.Peer when the tree's own
-// connection is a secondary.
+// agOnPrimary resolves an availability group by name through a connection to its
+// primary replica, opening one via db.ServerConn.Peer when the tree's connection
+// is a secondary.
 //
-// Failure to reach the primary is an error here, deliberately unlike
-// resolveAGView's degrade-to-partial-view: a Properties page that loaded from
-// a secondary would present editable rows whose Apply the server would reject.
+// Failure to reach the primary is an error here, unlike resolveAGView's
+// degrade-to-partial-view: a Properties page loaded from a secondary would
+// present editable rows whose Apply the server would reject.
 func agOnPrimary(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.AvailabilityGroup, error) {
 	ag, _, err := agOnPrimaryFollowed(ctx, sc, name)
 	return ag, err
@@ -73,12 +71,11 @@ func agOnPrimaryFollowed(ctx context.Context, sc *db.ServerConn, name string) (*
 	return ag, true, err
 }
 
-// The keyword sets the replica dropdowns offer, spelled exactly as both ALTER
-// AVAILABILITY GROUP accepts them and the catalog's *_desc columns report
-// them, so a value read off a replica always has a matching item and applying
-// it needs no translation. The Properties pages use the T-SQL spelling
-// throughout, matching Database Properties' recovery-model dropdown rather
-// than the Object Explorer labels.
+// The keyword sets the replica dropdowns offer, spelled as both ALTER
+// AVAILABILITY GROUP accepts them and the catalog's *_desc columns report them,
+// so a value read off a replica always has a matching item and needs no
+// translation. The Properties pages use the T-SQL spelling throughout, like
+// Database Properties' recovery-model dropdown.
 var (
 	agAvailabilityModeItems = []string{"SYNCHRONOUS_COMMIT", "ASYNCHRONOUS_COMMIT", "CONFIGURATION_ONLY"}
 	agFailoverModeItems     = []string{"MANUAL", "AUTOMATIC", "EXTERNAL"}
@@ -88,20 +85,16 @@ var (
 )
 
 // agUnknownItem stands in for a replica setting the connected server version
-// does not report — SeedingMode is empty before SQL Server 2016, and indexOf's
-// not-found 0 would otherwise show "AUTOMATIC" as though the server had said
-// so. agSelectValue maps it back to "", so a replica whose value was never
-// known reads as unchanged instead of being "set" to a literal ALTER rejects.
+// doesn't report — SeedingMode is empty before SQL Server 2016, and indexOf's
+// not-found 0 would show "AUTOMATIC" as though the server had said so.
+// agSelectValue maps it back to "", so a replica whose value was never known
+// reads as unchanged rather than being set to a literal ALTER rejects.
 const agUnknownItem = "(unknown)"
 
-// agSetSelect points an existing row at value, widening the item list when
-// value is not one of the known keywords so the dropdown can never misreport
-// what the server holds.
-//
-// This is selectPreserving's repoint-a-row form — the two share
-// preservingItems. Keep them that way: the Always On pages were where the
-// widening rule was worked out, and the ten property pages that later adopted
-// it did so by generalising this function, not by re-deriving it.
+// agSetSelect points an existing row at value, widening the item list when value
+// is not one of the known keywords, so the dropdown can never misreport what the
+// server holds. selectPreserving's repoint-a-row form; the two share
+// preservingItems and should stay that way.
 func agSetSelect(row *propsheet.SelectRow, base []string, value string) {
 	items, i := preservingItems(base, orDefault(value, agUnknownItem))
 	row.SetItems(items)
@@ -114,10 +107,9 @@ func agSelectValue(row *propsheet.SelectRow) string {
 	return preservedValue(row, agUnknownItem)
 }
 
-// agFailureConditionItems describes FAILURE_CONDITION_LEVEL 1-5 in order, so
-// the row's index maps to the level by +1. The numbers are kept in the text
-// because that is what sys.availability_groups reports and what any T-SQL the
-// user writes alongside will use.
+// agFailureConditionItems describes FAILURE_CONDITION_LEVEL 1-5 in order, so the
+// row's index maps to the level by +1. The numbers stay in the text because that
+// is what sys.availability_groups reports and what T-SQL uses.
 var agFailureConditionItems = []string{
 	"1 - Server down",
 	"2 - Server unresponsive",
@@ -126,12 +118,11 @@ var agFailureConditionItems = []string{
 	"5 - Any qualifying failure condition",
 }
 
-// agReplicaEdit is one replica's pending General-page state, alongside the
-// values it was loaded with. The originals are kept explicitly rather than
-// read back off the gosmo replica at apply time: apply re-resolves the group
-// from the primary, and diffing against those *fresh* values would write a
-// stale setting back over a change someone else made to a replica this user
-// never touched.
+// agReplicaEdit is one replica's pending General-page state alongside the values
+// it loaded with. The originals are kept explicitly rather than read back off
+// the gosmo replica at apply time: apply re-resolves the group from the primary,
+// and diffing against those *fresh* values would write a stale setting back over
+// someone else's change.
 type agReplicaEdit struct {
 	name string
 
@@ -171,10 +162,10 @@ func (e *agReplicaEdit) dirty() bool {
 		e.sessionTimeout != e.origSessionTimeout
 }
 
-// agReplicasByName indexes a freshly-read replica list for apply, which
-// addresses replicas by the name the page loaded rather than by position — a
-// replica added or removed between load and apply would otherwise shift the
-// rows under the edits.
+// agReplicasByName indexes a freshly read replica list for apply, which
+// addresses replicas by the name the page loaded rather than by position: a
+// replica added or removed between load and apply would shift the rows under the
+// edits.
 func agReplicasByName(replicas []*gosmo.AvailabilityReplica) map[string]*gosmo.AvailabilityReplica {
 	byName := make(map[string]*gosmo.AvailabilityReplica, len(replicas))
 	for _, r := range replicas {
@@ -189,21 +180,18 @@ func agMissingReplicaErr(name string) error {
 	return fmt.Errorf("replica %q is no longer part of this availability group — refresh the page and try again", name)
 }
 
-// wireGridEditor connects a per-row detail editor below a DataGrid to the
-// grid's selection, the shape the Backup Preferences and Read-Only Routing
-// pages share: moving off a row commits whatever was typed into the editor,
-// loads the newly selected row into it, then redraws the grid, whose own cells
-// report what was just committed. Returns the redraw a page's RevertFn needs
-// after it has rewritten the edits behind the grid.
+// wireGridEditor connects a per-row detail editor below a DataGrid to the grid's
+// selection, the shape the Backup Preferences and Read-Only Routing pages share:
+// moving off a row commits whatever was typed into the editor, loads the newly
+// selected row into it, then redraws the grid. Returns the redraw a page's
+// RevertFn needs after rewriting the edits behind the grid.
 //
-// The selected cell is saved and restored around SetData because SetData
-// resets it to 0,0, and this redraw runs from inside OnSelectRow — i.e. after
-// the grid has already moved. Without the restore, every replica but the first
-// was unreachable on both pages: a click on any other row selected the first
-// one instead, and because GridRow reports movement by comparing SelectedCell
-// either side of the key (see propsheet.GridRow.HandleKey), a grid that always
-// came back to 0,0 answered "not handled" and the first arrow key threw focus
-// out of the grid entirely. Verified against AAG1's two replicas, 2026-08-14.
+// The selected cell is saved and restored around SetData because SetData resets
+// it to 0,0 and this redraw runs from inside OnSelectRow, after the grid has
+// moved. Without the restore, every row but the first is unreachable: a click on
+// another row selects the first instead, and since GridRow reports movement by
+// comparing SelectedCell either side of the key, a grid that always came back to
+// 0,0 answers "not handled" and the first arrow key throws focus out of it.
 func wireGridEditor(grid *controls.DataGrid, headers []string, gridRows func() [][]string, commitCurrent, syncFromSelection func()) (reload func()) {
 	redraw := func() { redrawGrid(grid, headers, gridRows()) }
 	grid.OnSelectRow = func(int) {
@@ -289,8 +277,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			// both rejected with Msg 47101. Narrowing the dropdown is the whole
 			// gate — agSetSelect widens it again for a replica whose stored value
 			// is not in the list, so an already-illegal value still displays and
-			// can be corrected, rather than being silently reported as one of the
-			// legal ones.
+			// can be corrected.
 			failoverModeItems, clusterWhy := agFailoverModesFor(ag.ClusterType)
 
 			modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, 0)
@@ -308,8 +295,8 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 				return edits[i]
 			}
 			var current *agReplicaEdit
-			// commitCurrent folds the detail rows back into the replica they
-			// were last synced from, before the selection moves off it.
+			// commitCurrent folds the detail rows back into the replica they were
+			// last synced from, before the selection moves off it.
 			commitCurrent := func() {
 				if current == nil {
 					return
@@ -496,8 +483,8 @@ func agAnyReplicaDirty(edits []*agReplicaEdit) bool {
 }
 
 // agFailureConditionIndex maps a FAILURE_CONDITION_LEVEL onto its row in
-// agFailureConditionItems. A level outside 1-5 selects nothing meaningful, so
-// it clamps to the list rather than letting a negative index reach the widget.
+// agFailureConditionItems, clamping to the list rather than letting a negative
+// index reach the widget.
 func agFailureConditionIndex(level int) int {
 	if level < 1 || level > len(agFailureConditionItems) {
 		return 0
@@ -505,9 +492,9 @@ func agFailureConditionIndex(level int) int {
 	return level - 1
 }
 
-// agDatabaseRows renders the group's databases for the General page's
-// read-only grid, one row per database with every distinct state its replicas
-// report — the same reason agDatabaseLabel does not collapse them.
+// agDatabaseRows renders the group's databases for the General page's read-only
+// grid, one row per database with every distinct state its replicas report — as
+// agDatabaseLabel does.
 func agDatabaseRows(dbs []*gosmo.AvailabilityDatabase) [][]string {
 	summaries := summarizeAGDatabases(dbs)
 	rows := make([][]string, len(summaries))

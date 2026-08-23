@@ -363,11 +363,31 @@ Each is a feature, not a defect.
   address is recorded OFFLINE, since the external cluster manager owns it —
   verified live 2026-08-11.
 
-  **Add Database does not check for a full backup.** Full recovery, online and
-  not-already-in-a-group are checked; the backup-chain prerequisite is stated
-  in the dialog and left to the server's own error, because checking it is a
-  per-database query into `msdb`. SSMS's wizard both checks it and offers to
-  take the backup.
+  ~~**Add Database does not check for a full backup.**~~ **Fixed** 2026-08-23,
+  and the reason it had been left out was wrong: checking it is not a
+  per-database `msdb` query, and `msdb` is not where the answer is. gosmo
+  gained `Server.DatabaseRecoveryStatuses`/`Context` and
+  `Database.RecoveryStatus`/`Context` over
+  `sys.database_recovery_status.last_log_backup_lsn`; both Add Database and the
+  New Availability Group dialog make one server-wide read and pass the result
+  into the shared `agEligibleDatabases`, so a database with no started log
+  backup chain is listed under "Not offered" with the fix named rather than
+  offered and refused on apply.
+
+  **The backup history is the wrong signal in both directions**, established on
+  the AG cluster by running the statement in each state (2026-08-23). A
+  database whose `msdb` history was deleted still joins; one that was backed up
+  and then round-tripped through SIMPLE does not, though its history still
+  shows the full backup. Both `ALTER AVAILABILITY GROUP ... ADD DATABASE` and
+  `CREATE AVAILABILITY GROUP ... FOR DATABASE` refuse with **Msg 1475** ("might
+  contain bulk logged changes that have not been backed up"), which is why the
+  New AG page applies the same rule. Driven end to end in the TUI against AAG1,
+  both directions: an unbacked-up database appears under "Not offered", and
+  after `BACKUP DATABASE` the reopened dialog offers it.
+
+  What is deliberately *not* built is SSMS's other half — offering to take the
+  backup from inside the dialog. gossms has a full Backup dialog two clicks
+  away, and the exclusion line names it.
 
   **The unreachable-primary fallback is unit tested but never exercised
   live.** `resolveAGView` degrades to the partial local view and flags it, but
@@ -477,9 +497,38 @@ restore does.
   ten-site family, and fixing them here alone would leave the other seven. See
   § Dropdowns that misreport a value the list doesn't contain, below.
 
-  Two known gaps stay as scope notes, not defects: Start/Stop Job aren't gated
-  on job state (the permitted reactive-error fallback), and there's no step
-  reordering (msdb has no documented procedure for it).
+  ~~**Two known gaps stay as scope notes**: Start/Stop Job aren't gated on job
+  state, and there's no step reordering (msdb has no documented procedure for
+  it).~~ **Both closed** 2026-08-23, and the second one's stated reason was
+  wrong.
+
+  **Start/Stop Job now read the job's state first** and refuse the request the
+  Agent would refuse, in the app's own words ("Job X is already running" / "is
+  not running"), refreshing the node either way. The read is free — both
+  actions already fetched the job, and `JobByNameContext` carries
+  `CurrentState`. The menu items are deliberately *not* greyed out: a job
+  node's cached state is as old as the last folder load, so gating the item
+  would hide a legitimate Stop for a job that started running since. The check
+  belongs where the data is one query old.
+
+  **Step reordering is built** — Move Up / Move Down on Job Properties > Steps,
+  as a fourth apply pass. msdb does have the mechanism: `sp_add_jobstep`
+  accepts `@step_id`, which *inserts* at that position, renumbers the later
+  steps and follows their "go to step N" references. What was actually missing
+  was fidelity, which is why it needed gosmo work: a move is a delete plus an
+  insert, so the step's whole definition has to survive the round trip, and
+  `JobStep` modelled none of `proxy_id`, `additional_parameters`,
+  `cmdexec_success_code`, `server`, `database_user_name` or `os_run_priority`.
+  All six are read and written now, alongside `flags`, and
+  `Job.MoveStep`/`ReorderSteps` do the move.
+
+  Two things established live and worth keeping (2026-08-23, SQL Server 2025):
+  `sp_delete_jobstep` is **not** symmetrical with the insert — it silently
+  resets a reference to a step at or after the deleted one to "quit with
+  success" rather than following it, which is what `ReorderSteps`' repair pass
+  exists for. And that repair pass is invisible to a test that moves the *last*
+  step, because then no reference points past the delete: the live test moves a
+  middle step for exactly that reason (the mutant survived the first version).
 
 ## Dropdowns: what is settled, and the one class left
 
@@ -868,9 +917,11 @@ other two were fixed 2026-08-15.
   logins, users, roles, schemas, partition functions/schemes, the Always
   Encrypted keys, security policies) stay client-side: they are small, and the
   clause builder is family-agnostic if that ever stops being true.
-- **Owner and Durability Type are not offered on Tables**, though SSMS offers
-  both — each is one `TableDetail` query per table. Adding them means a
-  folder-wide detail fetch first.
+- **Owner and Durability Type are not offered on Tables, deliberately.** SSMS
+  offers both; each is one `TableDetail` query per table, so listing them means
+  a folder-wide detail fetch before the pane can draw a single row. Confirmed
+  as the intended trade 2026-08-23 — this is a design decision, not a gap. Do
+  not re-raise.
 - ~~**Object Explorer Details ignores the filter.**~~ **Fixed** 2026-08-15 —
   every detail loader now filters what it lists: `filterObjects` for the ones
   holding gosmo objects, `filterChildren` for `fetchChildObjectsDetail`, which
@@ -890,10 +941,13 @@ Schema went in 2026-08-21 (see `docs/journal.md`). What is left out is:
 - **No partition or filegroup Delete from the tree.** Neither has a tree node:
   partition functions and schemes do and are deletable, and a filegroup is
   removed from Database Properties > Filegroups.
-- **A column has Delete but no Rename.** `sp_rename`'s `COLUMN` class is not in
-  gosmo, and renaming a column breaks every view, procedure and index that
-  names it without warning — a different feature from the one-statement family
-  here.
+- ~~**A column has Delete but no Rename.**~~ **Built** 2026-08-23. gosmo gained
+  `Table.RenameColumn`/`Context` (`sp_rename`'s `COLUMN` class, three-part
+  `@objname`), and the column node offers Rename behind a warning: nothing that
+  names the column is updated, so views, procedures, computed columns, check
+  constraints and filtered indexes keep the old name and break at their next
+  use. The warning is asked *before* the rename because SQL Server's own
+  caution arrives after a rename that already succeeded.
 - **A trigger cannot be moved to another schema**, and must not be offered: it
   belongs to its table and moves with it, and `ALTER SCHEMA ... TRANSFER`
   refuses one. Indexes, statistics, keys and constraints are the same case.
@@ -1072,14 +1126,29 @@ Both items below were taken to a decision and implemented the same day — see
 `docs/journal.md` § 2026-08-22 "The two open design calls, decided". What
 remains of each is recorded here.
 
-- **Execution plans: done, one caveat.** `ExecutionPlan` now has
-  `All []string` with `XML` kept as the last document, and gossms's
-  `scanPlanXML` appends every row of a showplan set. The caveat is that the
-  gossms half is correctness by construction: no shape observed on a live
-  server puts more than one row in a single showplan result set, since
-  `SET SHOWPLAN_XML` returns one combined document per batch. If a future
-  server or driver version does, `internal/query/live_plan_test.go` is where
-  it would show.
+- ~~**Execution plans: done, one caveat.**~~ **Closed** 2026-08-22. The
+  caveat was that gossms's `scanPlanXML` appending every row of a showplan set
+  was correctness by construction, with no live shape to prove it. Probed
+  against win10cli over seven batch shapes — multi-statement, `EXEC` of a
+  procedure, a nested procedure, `WITH RECOMPILE`, control flow, a `WHILE`
+  loop, cursors, `sp_executesql` and `EXEC()` — under both SET options: **every
+  showplan result set holds exactly one row**, always. `SET SHOWPLAN_XML`
+  answers a batch with one combined document holding every statement (the
+  called procedure's included); `SET STATISTICS XML` answers each executed
+  statement with a document in a result set of its own.
+  `TestLivePlanEveryShowplanSetHoldsOneRow` now runs that probe as a test, so
+  a server or driver that ever splits a set says so.
+
+  Two things the pass corrected. Both `scanPlanXML`'s comment and gosmo's
+  `capturePlan` comment asserted the opposite — "SHOWPLAN_XML returns one row
+  per statement in a single result set" — which is not a shape SQL Server
+  sends, and was the reason the caveat could not be checked. Both now describe
+  the observed shapes and keep the loop as an explicit tolerance. And the
+  per-set append is *not* live-testable in either direction: an overwriting
+  `scanPlanXML` passes every live test, because no set has a second row for it
+  to lose. `TestScanNextKeepsEveryShowplanRow` (a scripted driver) is the only
+  thing that kills that mutant, and the cross-*set* append is the only half the
+  live tests pin — both verified by mutation.
 
 - **Login sources: the gosmo half is done, the gossms UI is not.**
   `CreateLoginOptions.Source` covers SQL, Windows, external provider,

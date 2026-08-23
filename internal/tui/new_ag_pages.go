@@ -98,7 +98,7 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 		propsheet.Note("The cluster type fixes every replica's failover mode: EXTERNAL requires EXTERNAL, NONE requires MANUAL, WSFC takes MANUAL or AUTOMATIC. Set each replica's below to match."),
 		propsheet.Section("Availability databases"),
 		dbGridRow, includeRow,
-		propsheet.Note("Each database must be in the FULL recovery model and have a full backup. Databases can also be added after the group exists."),
+		propsheet.Note("Each database must be in the FULL recovery model and have a full backup taken since — one missing either is listed below rather than offered. Databases can also be added after the group exists."),
 	}
 	if len(pf.excluded) > 0 {
 		rows = append(rows, propsheet.Section("Databases not offered"))

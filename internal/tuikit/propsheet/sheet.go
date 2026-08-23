@@ -25,8 +25,8 @@ type pageSlot struct {
 	err   error
 }
 
-// focusZone is which of the sheet's three regions currently has keyboard
-// focus: the page list, the current page's form, or the button row.
+// focusZone is which of the sheet's three regions has keyboard focus: the page
+// list, the current page's form, or the button row.
 type focusZone int
 
 const (
@@ -35,8 +35,8 @@ const (
 	zoneButtons
 )
 
-// zoneNone is not a focusable zone — it's the "no gesture in progress"
-// value of PropertySheet.dragZone.
+// zoneNone is not a focusable zone — it is PropertySheet.dragZone's "no gesture
+// in progress" value.
 const zoneNone focusZone = -1
 
 var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
@@ -45,9 +45,8 @@ const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Rev
 
 const pageListWidth = 24
 
-// PropertySheet is a multi-page, editable properties dialog: a page list
-// on the left, the selected page's Form on the right, and an OK/Cancel/
-// Apply row — the framework behind Server/Database/Login Properties. See
+// PropertySheet is a multi-page, editable properties dialog: a page list on the
+// left, the selected page's Form on the right, and an OK/Cancel/Apply row. See
 // the package doc for the async load contract.
 type PropertySheet struct {
 	dialogs.ModalDialog
@@ -61,14 +60,13 @@ type PropertySheet struct {
 	zone     focusZone
 	btnFocus int
 
-	// dragZone is the zone that claimed the Button1 press currently being
-	// held, or zoneNone between gestures. tcell resends Button1 on every
-	// motion event while the button is down, so without this a drag armed
-	// inside the form (its own scrollbar thumb, a GridRow's DataGrid
-	// selection) that wanders down onto the button row three lines below
-	// would activate OK/Cancel/Apply mid-gesture — ModalDialog's own
-	// mouseDragging latch can't stop that, since it's only armed by a press
-	// that lands on a button. Cleared on the ButtonNone release.
+	// dragZone is the zone that claimed the Button1 press being held, or zoneNone
+	// between gestures. tcell resends Button1 on every motion while the button is
+	// down, so without this a drag armed inside the form — its scrollbar thumb, a
+	// GridRow's DataGrid selection — that wanders onto the button row three lines
+	// below activates OK/Cancel/Apply mid-gesture. ModalDialog's own
+	// mouseDragging latch can't stop that, being armed only by a press on a
+	// button. Cleared on the ButtonNone release.
 	dragZone focusZone
 
 	headerLeft, headerRight string
@@ -77,10 +75,10 @@ type PropertySheet struct {
 	messageIsErr            bool
 	applying                bool
 
-	// OnLoadPage is called whenever a page needs (re)loading — on first
-	// display or via Refresh. The caller should fetch the page's data,
-	// typically on a background goroutine, and report the result via
-	// SetPageForm or SetPageError, passing seq back unchanged.
+	// OnLoadPage is called whenever a page needs (re)loading, on first display or
+	// via Refresh. The caller fetches the page's data, typically on a background
+	// goroutine, and reports the result via SetPageForm or SetPageError, passing
+	// seq back unchanged.
 	OnLoadPage func(page, seq int)
 	// OnApply is called when the user activates the Apply button.
 	OnApply func()
@@ -88,19 +86,18 @@ type PropertySheet struct {
 	OnOK func()
 	// OnClose is called after the sheet hides itself (Cancel or Esc).
 	OnClose func()
-	// ConfirmDiscard is called by Refresh when the target page has unsaved
-	// edits, instead of refreshing immediately; call proceed to continue
-	// the refresh (discarding those edits) or don't to leave them in
-	// place. A nil ConfirmDiscard means Refresh always discards silently.
+	// ConfirmDiscard is called by Refresh when the target page has unsaved edits,
+	// instead of refreshing immediately; call proceed to continue and discard
+	// them, or don't to leave them. nil means Refresh always discards silently.
 	ConfirmDiscard func(page int, proceed func())
-	// OnScript is called when the user activates the Script Changes
-	// button: generate the SQL for every dirty page's pending edits and
-	// hand it off (e.g. to a new query editor) instead of running it.
+	// OnScript is called when the user activates Script Changes: generate the SQL
+	// for every dirty page's pending edits and hand it off instead of running
+	// it.
 	OnScript func()
 }
 
-// NewPropertySheet creates an empty PropertySheet. Call SetPages,
-// SetHeader, and wire the On* callbacks before the first Show.
+// NewPropertySheet creates an empty PropertySheet. Call SetPages, SetHeader and
+// wire the On* callbacks before the first Show.
 func NewPropertySheet(s tcell.Screen, title string) *PropertySheet {
 	p := &PropertySheet{screen: s, current: -1, hints: defaultHints, dragZone: zoneNone}
 	p.InitModal(s, title, 90, 28)
@@ -110,9 +107,8 @@ func NewPropertySheet(s tcell.Screen, title string) *PropertySheet {
 	return p
 }
 
-// SetPages replaces the page list, discarding any previously loaded forms
-// — every page starts NotLoaded again. Call this once per dialog "open"
-// (e.g. from the internal/tui show() wrapper), not on every Draw.
+// SetPages replaces the page list, discarding any loaded forms — every page
+// starts NotLoaded again. Call it once per dialog opening, not on every Draw.
 func (p *PropertySheet) SetPages(titles []string) {
 	p.pages = make([]pageSlot, len(titles))
 	items := make([]string, len(titles))
@@ -131,9 +127,8 @@ func (p *PropertySheet) SetHeader(left, right string) { p.headerLeft, p.headerRi
 // SetHints overrides the default footer key-hint line.
 func (p *PropertySheet) SetHints(hints string) { p.hints = hints }
 
-// SetTitle is re-exposed (ModalDialog already has it) purely so callers
-// working entirely through PropertySheet's own method set don't need to
-// reach into the embedded type — no behavior change.
+// SetTitle is re-exposed from ModalDialog so callers working through
+// PropertySheet's own method set needn't reach into the embedded type.
 func (p *PropertySheet) SetTitle(t string) { p.ModalDialog.SetTitle(t) }
 
 // Show sizes the sheet to the current screen, resets to the first page,
@@ -143,8 +138,8 @@ func (p *PropertySheet) Show() {
 	p.zone = zonePages
 	p.btnFocus = 0
 	p.message = ""
-	// A button action that hides the sheet (OK) leaves the gesture armed —
-	// the release lands while invisible and HandleMouse returns early.
+	// A button action that hides the sheet (OK) leaves the gesture armed: the
+	// release lands while invisible and HandleMouse returns early.
 	p.dragZone = zoneNone
 	p.pageList.Focus(true)
 	p.ModalDialog.Show()
@@ -154,10 +149,9 @@ func (p *PropertySheet) Show() {
 	}
 }
 
-// Relayout re-derives the sheet's screen-relative size, then recentres.
-// Draw does the same thing every frame, so the sheet already followed a
-// resize on its own; overriding here keeps it correct at the moment the
-// host broadcasts, rather than one draw later.
+// Relayout re-derives the sheet's screen-relative size, then recentres. Draw
+// does the same every frame, so this only makes it correct at the moment the
+// host broadcasts rather than one draw later.
 func (p *PropertySheet) Relayout() { p.recomputeSize() }
 
 func (p *PropertySheet) recomputeSize() {
@@ -187,17 +181,14 @@ func (p *PropertySheet) PageState(i int) PageState {
 	return p.pages[i].state
 }
 
-// SelectPage switches the visible page, kicking off its load if it hasn't
-// loaded yet and no Apply/OK/Script is currently running. Navigating to an
-// already-loaded (or still-loading) page is always safe and always allowed
-// — it's specifically starting a *new* load that isn't, while applying:
-// a dirty page's apply closure runs on its own background goroutine and,
-// for pages built around a shared rename pointer (see e.g. user_props.go's
-// *userName), writes to it — a concurrent OnLoadPage dispatch for a
-// not-yet-loaded page can read that same pointer from a second goroutine
-// with no synchronization between the two. Deferred rather than dropped:
-// SetApplying(false) starts the load then, if the page is still selected
-// and still unloaded.
+// SelectPage switches the visible page, starting its load if it hasn't loaded
+// and no Apply/OK/Script is running. Navigating to an already-loaded or
+// still-loading page is always allowed; it is starting a *new* load while
+// applying that isn't. A dirty page's apply closure runs on its own goroutine
+// and, for pages built around a shared rename pointer, writes to it — a
+// concurrent OnLoadPage dispatch would read that pointer from a second goroutine
+// unsynchronized. Deferred rather than dropped: SetApplying(false) starts the
+// load then, if the page is still selected and unloaded.
 func (p *PropertySheet) SelectPage(i int) {
 	if i < 0 || i >= len(p.pages) {
 		return
@@ -220,10 +211,9 @@ func (p *PropertySheet) startLoad(i int) {
 	}
 }
 
-// SetPageForm reports a successful load for page, provided seq still
-// matches — a result for a page that's been refreshed again (or a sheet
-// that's since been hidden) since the load started is silently ignored.
-// Call only from the UI goroutine.
+// SetPageForm reports a successful load for page, provided seq still matches: a
+// result for a page refreshed again, or a sheet since hidden, is ignored. Call
+// only from the UI goroutine.
 func (p *PropertySheet) SetPageForm(page, seq int, f *Form) {
 	if page < 0 || page >= len(p.pages) || !p.Visible() {
 		return
@@ -267,12 +257,12 @@ func (p *PropertySheet) Refresh(page int) {
 
 // RevertPage restores page's rows to the values it loaded with, without
 // re-querying the server, and reports whether anything changed. Refresh is the
-// other half of the pair and the more expensive one: it throws the loaded form
-// away and asks the server again.
+// expensive half of the pair: it throws the loaded form away and asks the server
+// again.
 //
-// Unlike Refresh this asks no confirmation — discarding the edits *is* what
-// was asked for, and the message it leaves says so, since a form that reverts
-// to values identical to what the user typed would otherwise look inert.
+// Unlike Refresh this asks no confirmation — discarding the edits *is* what was
+// asked for — and the message it leaves says so, since a form that reverts to
+// values identical to what was typed would look inert.
 func (p *PropertySheet) RevertPage(page int) bool {
 	if page < 0 || page >= len(p.pages) {
 		return false
@@ -285,9 +275,8 @@ func (p *PropertySheet) RevertPage(page int) bool {
 	return true
 }
 
-// InvalidateAll marks every page NotLoaded (used after a successful
-// Apply, since the server is the source of truth) and reloads the
-// current one immediately.
+// InvalidateAll marks every page NotLoaded, after a successful Apply, and
+// reloads the current one immediately.
 func (p *PropertySheet) InvalidateAll() {
 	for i := range p.pages {
 		p.pages[i].state = PageNotLoaded
@@ -333,19 +322,17 @@ func (p *PropertySheet) Validate() (page int, err error) {
 	return -1, nil
 }
 
-// SetMessage sets the one-line message shown in place of the hint row
-// (e.g. an Apply error); pass "" to clear it back to the hints.
+// SetMessage sets the one-line message shown in place of the hint row; "" clears
+// it back to the hints.
 func (p *PropertySheet) SetMessage(msg string, isErr bool) {
 	p.message = msg
 	p.messageIsErr = isErr
 }
 
-// SetApplying marks whether an Apply/OK is in flight — while true, the
-// button row ignores further activation, so a slow Apply can't be fired
-// twice, and SelectPage won't start a new page load (see its doc comment).
-// Turning it back off retries the currently-selected page's load if the
-// user navigated to a not-yet-loaded page while applying and is still on
-// it — SelectPage deferred that load rather than dropping it.
+// SetApplying marks whether an Apply/OK is in flight. While true the button row
+// ignores further activation, so a slow Apply can't fire twice, and SelectPage
+// won't start a new page load. Turning it off retries the selected page's load
+// if the user navigated to an unloaded page while applying.
 func (p *PropertySheet) SetApplying(v bool) {
 	p.applying = v
 	if !v && p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].state == PageNotLoaded {
@@ -385,15 +372,13 @@ func (p *PropertySheet) activateButton(i int) {
 
 func (p *PropertySheet) cancel() { p.Dismiss() }
 
-// Dismiss closes the sheet and notifies its owner via OnClose. Every path
-// that closes the sheet from the inside — Cancel, Escape, and an OK
-// handler that closes once its save succeeded — must go through here
-// rather than calling Hide, which is ModalDialog's and only takes the
-// dialog off screen. The owner's OnClose is what releases the per-showing
-// resources: for PropDialog and every New* dialog that means cancelling
-// the context their page loads run under, so a fetch still in flight when
-// OK is pressed is dropped instead of running on to its own 30s timeout
-// holding a pooled connection.
+// Dismiss closes the sheet and notifies its owner via OnClose. Every path that
+// closes the sheet from the inside — Cancel, Escape, an OK handler whose save
+// succeeded — goes through here rather than ModalDialog's Hide, which only takes
+// the dialog off screen. OnClose is what releases the per-showing resources: for
+// PropDialog and every New* dialog, cancelling the context their page loads run
+// under, so a fetch in flight when OK is pressed is dropped instead of holding a
+// pooled connection to its own timeout.
 func (p *PropertySheet) Dismiss() {
 	p.Hide()
 	if p.OnClose != nil {

@@ -20,9 +20,8 @@ var securableListColumns = []string{"Securable", "Type"}
 // securableColumnColumns heads the per-column permission editor.
 var securableColumnColumns = []string{"Column", "State"}
 
-// securable identifies one thing a database role's Securables page can
-// grant/deny permissions on: a table, a view, a schema, or the database
-// itself.
+// securable identifies one thing a database role's Securables page can grant or
+// deny permissions on: a table, a view, a schema, or the database itself.
 type securable struct {
 	Type   string // "TABLE", "VIEW", "SCHEMA", "DATABASE"
 	Schema string // empty for DATABASE
@@ -42,8 +41,8 @@ func (s securable) label() string {
 	}
 }
 
-// hasColumns reports whether this securable is one whose columns can carry
-// permissions of their own — only tables and views have any.
+// hasColumns reports whether this securable's columns can carry permissions of
+// their own — only tables and views can.
 func (s securable) hasColumns() bool { return s.Type == "TABLE" || s.Type == "VIEW" }
 
 // catalog returns every permission name grantable on this securable's type.
@@ -67,11 +66,10 @@ type securableEdit struct {
 	current    string
 }
 
-// columnEdit tracks one (securable, permission, column) cell's pending
-// state — the column-level grants SSMS puts behind its "Column
-// Permissions..." button. Keyed on all three because the editor keeps
-// edits made against one securable/permission pair while the user browses
-// to another, and Apply writes every one of them.
+// columnEdit tracks one (securable, permission, column) cell's pending state —
+// the column-level grants behind SSMS's "Column Permissions..." button. Keyed on
+// all three because the editor keeps edits made against one securable/permission
+// pair while the user browses to another, and Apply writes them all.
 type columnEdit struct {
 	sec        securable
 	permission string
@@ -84,17 +82,15 @@ func columnEditKey(sec securable, permission, column string) string {
 	return sec.key() + "\x00" + permission + "\x00" + column
 }
 
-// pageDatabasePrincipalSecurables builds a "Securables" page scoped to one
-// database principal — a user or a database role, which hold explicit
+// pageDatabasePrincipalSecurables builds a "Securables" page for one database
+// principal — a user or a database role, which hold explicit
 // object/schema/database-scoped GRANT/DENY entries the same way, so both
-// Database User Properties and Database Role Properties use this one page.
-// principal is read through a pointer because a rename on the General page
-// changes it while the dialog is open. Its server-level counterpart is
-// pagePrincipalServerPermissions (server_permissions_matrix.go).
+// Properties dialogs use this page. principal is read through a pointer because
+// a rename on the General page changes it while the dialog is open. Its
+// server-level counterpart is pagePrincipalServerPermissions.
 //
-// d is needed for the column-permissions editor alone, which fetches a
-// table's columns on demand through d.runPageAction rather than pulling
-// every table's columns up front.
+// d is needed only for the column-permissions editor, which fetches a table's
+// columns on demand through d.runPageAction.
 func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName string, principal *string) propPage {
 	return propPage{
 		title: "Securables",
@@ -120,10 +116,10 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 					initial = append(initial, s)
 				}
 			}
-			// A securable the principal only holds *column* grants on has no
-			// object-level entry, so it would otherwise not be listed at all
-			// and its column grants would be invisible until the user added
-			// the securable back by hand.
+			// A securable the principal holds only *column* grants on has no
+			// object-level entry, so without this it isn't listed and its
+			// column grants stay invisible until the user adds it back by
+			// hand.
 			for _, e := range colEntries {
 				s := securable{Type: e.ObjectType, Schema: e.Schema, Name: e.Object}
 				if !seen[s.key()] {
@@ -132,12 +128,11 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 				}
 			}
 
-			// The Add picker's candidates come from a name search run
-			// against the server, not from the whole catalog: a database
-			// with thousands of tables made the old "load everything into a
-			// dropdown" both slow to open and useless to pick from. One
-			// capped search here gives the picker something to show before
-			// the user types anything.
+			// The Add picker's candidates come from a name search against the
+			// server, not the whole catalog: loading every table into a
+			// dropdown is slow to open and useless to pick from. One capped
+			// search gives the picker something to show before the user
+			// types.
 			find := func(ctx context.Context, term string) ([]securable, error) {
 				refs, err := database.FindSecurablesContext(ctx,
 					gosmo.SecurableSearch{Name: term, Limit: securableSearchLimit + 1})
@@ -168,40 +163,38 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 	}
 }
 
-// securableApplyFn applies one object/schema/database-scoped state change,
-// and columnApplyFn one column-scoped change — the securables-page
-// counterparts of permApplyFn, which carries no securable.
+// securableApplyFn applies one object/schema/database-scoped state change, and
+// columnApplyFn one column-scoped change — the securables-page counterparts of
+// permApplyFn, which carries no securable.
 type securableApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission string) error
 type columnApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, s securable, permission, column string) error
 
-// securableFindFn searches the server for addable securables whose name
-// contains term, returning at most securableSearchLimit+1 of them — the
-// extra row is how the page knows to say the list was truncated.
+// securableFindFn searches the server for addable securables whose name contains
+// term, returning at most securableSearchLimit+1 — the extra row is how the page
+// knows to say the list was truncated.
 type securableFindFn func(ctx context.Context, term string) ([]securable, error)
 
-// securableSearchLimit is how many candidates the Add picker will list. A
-// dropdown is a keyboard list, not a catalogue browser: past a few hundred
-// entries scrolling to one is slower than typing its name, and the page says
-// so rather than silently showing an arbitrary subset.
+// securableSearchLimit is how many candidates the Add picker lists. A dropdown
+// is a keyboard list, not a catalogue browser, and past a few hundred entries
+// scrolling to one is slower than typing its name — so the page says the list
+// was truncated rather than silently showing a subset.
 const securableSearchLimit = 200
 
-// noSecurableCandidates is what the Add picker shows when the search
-// returned nothing. A dropdown with an empty item list draws as an empty
-// box the user can open and find nothing in, which reads as broken.
+// noSecurableCandidates is what the Add picker shows when the search returned
+// nothing: an empty item list draws as a box the user opens to find nothing in,
+// which reads as broken.
 const noSecurableCandidates = "(no matches)"
 
-// buildSecurablesMatrix builds a Database Role Properties' Securables
-// page: a securable-list grid (top), for whichever securable is selected
-// the full permission catalog for that securable's type x state (middle),
-// and for a table or view the per-column grants for one permission
-// (bottom) — the inverse of buildPermissionsMatrix (that one is "one
-// securable, every principal"; this is "one principal, every securable").
-// initial is every securable the principal already has at least one
-// explicit grant/deny on; candidates seeds the Add picker and find
-// repopulates it from the server as the user types — picking one from the
-// dropdown and clicking Add appends a new, all-"(none)" row.
-// applyFn/colApplyFn are routed to the right gosmo call for the selected
-// securable's Type.
+// buildSecurablesMatrix builds a Securables page: a securable-list grid on top,
+// the selected securable's full permission catalog x state in the middle, and
+// for a table or view the per-column grants for one permission below — the
+// inverse of buildPermissionsMatrix, which is "one securable, every principal"
+// to this one's "one principal, every securable".
+//
+// initial is every securable the principal already has an explicit grant or deny
+// on; candidates seeds the Add picker and find repopulates it from the server as
+// the user types. applyFn and colApplyFn route to the right gosmo call for the
+// selected securable's Type.
 func buildSecurablesMatrix(
 	d *PropDialog, database *gosmo.Database,
 	initial []securable, entries []*gosmo.PrincipalSecurable, colEntries []*gosmo.ColumnPermissionEntry,
@@ -217,9 +210,8 @@ func buildSecurablesMatrix(
 
 	securables := append([]securable(nil), initial...)
 
-	// editsBySecurable is built lazily, one securable at a time, as the
-	// user browses the securable grid — a securable never selected has by
-	// definition nothing to apply or check for dirtiness.
+	// editsBySecurable is built lazily, one securable at a time, as the user
+	// browses the grid: a securable never selected has nothing to apply.
 	editsBySecurable := make(map[string][]*securableEdit)
 	editsFor := func(s securable) []*securableEdit {
 		if e, ok := editsBySecurable[s.key()]; ok {
@@ -236,14 +228,13 @@ func buildSecurablesMatrix(
 	}
 
 	// colEdits holds every column-level edit made this session, keyed by
-	// securable+permission+column and seeded from what the server already
-	// has. A column the user never looked at is simply absent.
+	// securable+permission+column and seeded from the server. A column never
+	// looked at is absent.
 	colEdits := make(map[string]*columnEdit)
 	for _, e := range colEntries {
-		// e.ObjectType, not a hardcoded "TABLE": a view's column grants key
-		// under VIEW, which is the Type the securable list gives them, and
-		// keying them as TABLE made columnEditKey miss so an existing grant
-		// on a view showed as "(none)".
+		// e.ObjectType, not a hardcoded "TABLE": a view's column grants key under
+		// VIEW, the Type the securable list gives them, and keying them as TABLE
+		// makes columnEditKey miss so an existing grant shows as "(none)".
 		sec := securable{Type: e.ObjectType, Schema: e.Schema, Name: e.Object}
 		state := string(e.State)
 		colEdits[columnEditKey(sec, string(e.Permission), e.Column)] = &columnEdit{
@@ -252,8 +243,8 @@ func buildSecurablesMatrix(
 		}
 	}
 
-	// visibleSecurables is the filtered view the top grid's row indices
-	// address; securables stays the full list.
+	// visibleSecurables is the filtered view the top grid's row indices address;
+	// securables stays the full list.
 	securableFilter := ""
 	var visibleSecurables []securable
 	securableRows := func() [][]string {
@@ -298,9 +289,9 @@ func buildSecurablesMatrix(
 	colGrid.SetCellCursor(true)
 	colGrid.SetData(securableColumnColumns, nil)
 	// loadedCols is the column list the bottom grid is showing. Each entry
-	// carries its own securable and permission, so a cycled cell is written
-	// back to what the grid was loaded for rather than to whatever happens
-	// to be selected when the click lands.
+	// carries its own securable and permission, so a cycled cell writes back to
+	// what the grid was loaded for rather than whatever is selected when the
+	// click lands.
 	var loadedCols []*columnEdit
 
 	colRows := func() [][]string {
@@ -320,16 +311,15 @@ func buildSecurablesMatrix(
 
 	permSection := propsheet.Section("Permissions")
 	selected := -1
-	// selectedSec is the securable the middle grid is showing, held by
-	// value rather than as an index into visibleSecurables — the filter
-	// rebuilds that slice underneath, and an index would then name a
-	// different securable than the one on screen.
+	// selectedSec is the securable the middle grid is showing, held by value
+	// rather than as an index into visibleSecurables, which the filter rebuilds
+	// underneath it.
 	var selectedSec securable
 	var selectedEdits []*securableEdit
-	// clearSelection empties both lower grids. A filter that matches nothing
-	// has to reach this: leaving them showing the previously selected
-	// securable means cycling a State there edits — and Apply then writes —
-	// permissions on a securable the page no longer lists.
+	// clearSelection empties both lower grids. A filter matching nothing must
+	// reach this: leaving them on the previously selected securable means
+	// cycling a State there edits, and Apply writes, permissions on a securable
+	// the page no longer lists.
 	clearSelection := func() {
 		selected = -1
 		selectedSec = securable{}
@@ -385,9 +375,9 @@ func buildSecurablesMatrix(
 
 		var cols []*gosmo.Column
 		d.runPageActionOnce(&loadColsBusy, func(ctx context.Context) error {
-			// ObjectColumns, not TableByName + Table.Columns: the latter
-			// reads sys.tables, so it fails outright on a view — and a view
-			// carries column permissions exactly like a table.
+			// ObjectColumns, not TableByName + Table.Columns: the latter reads
+			// sys.tables and so fails on a view, which carries column
+			// permissions exactly like a table.
 			var err error
 			cols, err = database.ObjectColumnsContext(ctx, sec.Schema, sec.Name)
 			return err
@@ -419,10 +409,9 @@ func buildSecurablesMatrix(
 	addSelect.SetDirtyTracked(false)
 	hint := propsheet.Hint()
 
-	// The database itself is a securable but not an object, so no name
-	// search returns it. It is offered whenever the typed term matches its
-	// label, which is what the top grid's own filter does with the same
-	// term.
+	// The database itself is a securable but not an object, so no name search
+	// returns it. It is offered whenever the typed term matches its label, as
+	// the top grid's own filter does.
 	var available []securable
 	setCandidates := func(found []securable, term string) {
 		available = available[:0]
@@ -461,8 +450,8 @@ func buildSecurablesMatrix(
 		}
 		s := available[addSelect.Selected()]
 		if slices.ContainsFunc(securables, func(e securable) bool { return e.key() == s.key() }) {
-			// Already present — say so and move to its row rather than
-			// leaving the button looking broken.
+			// Already present — say so and move to its row rather than leaving
+			// the button looking broken.
 			hint.Set(s.label() + " is already listed — edit its permissions below.")
 		} else {
 			hint.Clear()
@@ -471,8 +460,8 @@ func buildSecurablesMatrix(
 		securableGrid.SetData(securableListColumns, securableRows())
 		row := slices.IndexFunc(visibleSecurables, func(e securable) bool { return e.key() == s.key() })
 		if row < 0 {
-			// Present, but the filter box is hiding it — selecting row 0
-			// instead would silently point the grids at a different one.
+			// Present, but the filter box is hiding it — selecting row 0 would
+			// point the grids at a different securable.
 			hint.Set(s.label() + " is listed, but the filter above is hiding it.")
 			return
 		}
@@ -481,12 +470,11 @@ func buildSecurablesMatrix(
 		loadSecurable(row)
 	})
 
-	// The search box re-queries the server as the user types, coalescing
-	// rather than queueing: at most one search is ever in flight, and if the
-	// term moved on while it was out the completion starts the next one. A
-	// query per keystroke would put five round trips behind "Order" and let
-	// an early one land last, repopulating the picker from a term the user
-	// has already backspaced away.
+	// The search box re-queries the server as the user types, coalescing rather
+	// than queueing: at most one search is in flight, and if the term moved on
+	// while it was out the completion starts the next. A query per keystroke
+	// would put five round trips behind "Order" and let an early one land last,
+	// repopulating the picker from a term already backspaced away.
 	searchTerm, searchedFor := "", ""
 	searchRunning := false
 	var runSearch func()
@@ -572,9 +560,9 @@ func buildSecurablesMatrix(
 		}
 		colGrid.SetData(securableColumnColumns, colRows())
 	}
-	// Both grids report the page's whole dirty state: the sheet asks each
-	// row, and a column edit made while the middle grid is clean would
-	// otherwise leave Apply disabled.
+	// Both grids report the page's whole dirty state: the sheet asks each row,
+	// and a column edit made while the middle grid is clean would otherwise
+	// leave Apply disabled.
 	permsRow.DirtyFn, permsRow.RevertFn = anyDirty, revertAll
 	colsRow.DirtyFn, colsRow.RevertFn = anyDirty, revertAll
 
@@ -599,9 +587,8 @@ func buildSecurablesMatrix(
 
 	// Both loops walk a stable order rather than ranging their map: map order
 	// changes every run, so which statements landed before a mid-apply failure
-	// isn't reproducible and Script Changes reorders its output between
-	// presses. editsFor is only ever called with a securable from the
-	// securables slice, so nothing is missed.
+	// isn't reproducible and Script Changes reorders its output between presses.
+	// editsFor is only called with a securable from the securables slice.
 	apply := func(ctx context.Context) error {
 		for _, s := range securables {
 			for _, e := range editsBySecurable[s.key()] {
@@ -631,10 +618,9 @@ func buildSecurablesMatrix(
 	return f, apply
 }
 
-// applySecurable routes a buildSecurablesMatrix state change to the right
-// gosmo method based on s.Type — tables/views use the object-level trio,
-// schemas the schema-level trio, and the database itself the
-// database-scoped trio.
+// applySecurable routes a buildSecurablesMatrix state change to the right gosmo
+// method by s.Type: tables and views use the object-level trio, schemas the
+// schema-level trio, the database itself the database-scoped trio.
 func applySecurable(ctx context.Context, d *gosmo.Database, verb string, opts gosmo.PermissionOptions, s securable, permission, principal string) error {
 	switch s.Type {
 	case "SCHEMA":
@@ -646,9 +632,8 @@ func applySecurable(ctx context.Context, d *gosmo.Database, verb string, opts go
 	}
 }
 
-// applyColumnSecurable routes a column-level state change. Only tables and
-// views reach it — securable.hasColumns gates the editor that produces
-// these edits.
+// applyColumnSecurable routes a column-level state change. Only tables and views
+// reach it — securable.hasColumns gates the editor that produces these edits.
 func applyColumnSecurable(ctx context.Context, d *gosmo.Database, verb string, opts gosmo.PermissionOptions, s securable, permission, column, principal string) error {
 	p := gosmo.ObjectPermission(permission)
 	cols := []string{column}

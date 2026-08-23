@@ -11,16 +11,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// propFetchTimeout bounds a single property page's load — long enough for
-// a slow or remote server, short enough that a dead connection doesn't
-// leave a page stuck showing "Loading..." forever. Mirrors
-// childFetchTimeout, the equivalent bound for Object Explorer loads.
+// propFetchTimeout bounds a single property page's load — long enough for a slow
+// server, short enough that a dead connection doesn't leave a page on
+// "Loading..." forever. Mirrors childFetchTimeout.
 const propFetchTimeout = 30 * time.Second
 
-// propApply runs one page's pending edits against the server. Returned by
-// a propPage's load func, closing over the row pointers that func created,
-// so it can read their current (possibly edited) values without the
-// dialog needing to know each page's row shapes.
+// propApply runs one page's pending edits against the server. Returned by a
+// propPage's load func, closing over the row pointers that func created, so the
+// dialog needs no knowledge of each page's row shapes.
 type propApply func(ctx context.Context) error
 
 // propPage is one page of a PropDialog: a title for the page list, and a
@@ -30,46 +28,41 @@ type propPage struct {
 	title string
 	load  func(ctx context.Context) (*propsheet.Form, propApply, error)
 
-	// renames marks the page whose apply can rename the object every other
-	// page is addressed by — in practice always the General page, in the
-	// nine dialogs that allow a rename at all. Its apply is sorted last (see
-	// dirtyApplyFns) so the rename is the final write of the run and every
-	// page before it addresses the object by the name the server still has.
+	// renames marks the page whose apply can rename the object every other page
+	// is addressed by — always the General page, in the dialogs that allow a
+	// rename. Its apply is sorted last (see dirtyApplyFns), so the rename is the
+	// run's final write and every page before it uses the name the server still
+	// has.
 	//
-	// This matters most for Script Changes, where the rename is recorded
-	// rather than executed: the sibling pages' statements would otherwise
-	// sit *below* a rename in the generated script and name an object that
-	// no longer exists by the time it runs.
+	// This matters most for Script Changes, where the rename is recorded rather
+	// than executed: the sibling pages' statements would otherwise sit *below* a
+	// rename in the script and name an object that no longer exists.
 	renames bool
 }
 
-// commitRename mirrors a just-completed rename into namePtr — the boxed
-// name every other page of the dialog resolves its object by — but only
-// when the rename really ran.
+// commitRename mirrors a just-completed rename into namePtr — the boxed name
+// every other page resolves its object by — but only when the rename really ran.
 //
-// Under gosmo.WithScript (the Script Changes button) a write is recorded
-// and returns success without the server ever seeing it, while reads still
-// go to the real server. Mirroring the new name there points every sibling
-// page's lookup at an object that doesn't exist, so each one fails with
-// "not found", the run aborts on the first, and no script is produced at
-// all. Worse, namePtr stays wrong for the life of the dialog, so a
-// following real Apply fails the same way.
+// Under gosmo.WithScript a write is recorded and returns success without the
+// server seeing it, while reads still go to the real server. Mirroring the new
+// name there points every sibling page's lookup at an object that doesn't exist,
+// so each fails with "not found", the run aborts on the first, and no script is
+// produced. namePtr also stays wrong for the life of the dialog, so a following
+// real Apply fails the same way.
 //
-// The nine dialogs that can rename all call this from their General page,
-// which is also marked propPage.renames so its apply runs last.
+// Every dialog that can rename calls this from its General page, which is also
+// marked propPage.renames so its apply runs last.
 func commitRename(ctx context.Context, namePtr *string, newName string) {
 	if !gosmo.Scripting(ctx) {
 		*namePtr = newName
 	}
 }
 
-// PropDialog is the app-layer orchestrator for propsheet.PropertySheet:
-// it owns the goroutines that load pages and apply edits, translating
-// between the framework's page-index/seq contract and SQL Server calls.
-// One PropDialog instance is reused for every Server/Database/Login
-// Properties invocation — show() re-seeds it with a fresh page set and a
-// fresh per-session context each time, so cached edits and in-flight
-// loads never leak from one "open" to the next.
+// PropDialog is the app-layer orchestrator for propsheet.PropertySheet: it owns
+// the goroutines that load pages and apply edits, translating between the
+// framework's page-index/seq contract and SQL Server calls. One instance is
+// reused for every Properties invocation — show() re-seeds it with a fresh page
+// set and context, so edits and in-flight loads never leak between openings.
 type PropDialog struct {
 	*propsheet.PropertySheet
 
@@ -99,14 +92,11 @@ func NewPropDialog(app *App) *PropDialog {
 	return d
 }
 
-// show opens the dialog with a fresh page set. sc/database are the
-// connection and (optional) database a Script Changes action should open
-// its new query window against — database is "" for server- and
-// login-scoped dialogs, which have no single database of their own (each
-// database-scoped statement they generate carries its own USE, see
-// gosmo.WithScript). title is the window title; headerLeft/headerRight are
-// the two ends of the header line (e.g. "Instance: SQLMI-PROD" /
-// "Connected: yes").
+// show opens the dialog with a fresh page set. sc and database are what a Script
+// Changes action opens its query window against; database is "" for server- and
+// login-scoped dialogs, whose database-scoped statements carry their own USE.
+// title is the window title, and headerLeft/headerRight the two ends of the
+// header line.
 func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages []propPage) {
 	if d.cancel != nil {
 		d.cancel()
@@ -129,9 +119,9 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 
 func (d *PropDialog) onClose() { cancelIfSet(d.cancel) }
 
-// cancelIfSet calls cancel if it's non-nil — the shared body behind every
-// property/creation dialog's OnClose, cancelling whatever background fetch
-// or apply is still in flight for the session that's closing.
+// cancelIfSet calls cancel if non-nil — the shared body behind every property
+// and creation dialog's OnClose, cancelling whatever fetch or apply is still in
+// flight for the closing session.
 func cancelIfSet(cancel context.CancelFunc) {
 	if cancel != nil {
 		cancel()
@@ -140,10 +130,9 @@ func cancelIfSet(cancel context.CancelFunc) {
 
 func (d *PropDialog) post(fn func()) { d.app.postAndWake(fn) }
 
-// onLoadPage runs page's loader on a background goroutine and reports the
-// result back on the UI goroutine, guarded by seq the same way every other
-// background fetch in this package is (see app_explorer_data.go's
-// loadChildren, or the ShowDatabaseProperties this dialog replaces).
+// onLoadPage runs page's loader on a background goroutine and reports the result
+// back on the UI goroutine, guarded by seq like every other background fetch
+// here (see app_explorer_data.go's loadChildren).
 func (d *PropDialog) onLoadPage(page, seq int) {
 	if page < 0 || page >= len(d.pages) {
 		return
@@ -166,21 +155,18 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 	})
 }
 
-// runPageAction runs fn on a background goroutine (a real network round
-// trip) and reports its result back on the UI goroutine via onDone — the
-// shared "immediate action" pattern for a Properties page's own buttons
-// (Check Syntax, Estimate Rows, Rebuild, Reorganize, Update Statistics, ...)
-// that run immediately, independent of OK/Cancel/Apply. It isn't tied to
-// any page's dirty state; the page decides when its buttons are relevant.
-// Callers needing a value out of fn capture it in an outer variable.
+// runPageAction runs fn on a background goroutine and reports its result back on
+// the UI goroutine via onDone — the shared pattern for a Properties page's own
+// buttons (Check Syntax, Estimate Rows, Rebuild, …), which act immediately and
+// independently of OK/Cancel/Apply. Not tied to any page's dirty state; callers
+// needing a value out of fn capture it in an outer variable.
 func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone func(err error)) {
 	d.app.safego("a properties page action", d.pageActionBody(fn, onDone))
 }
 
-// pageActionBody is the goroutine body both runPageAction and
-// runPageActionOnce hand to safego: one round trip bounded by
-// propFetchTimeout, reported back on the UI goroutine. The two differ only
-// in what happens when it panics.
+// pageActionBody is the goroutine body both runPageAction and runPageActionOnce
+// hand to safego: one round trip bounded by propFetchTimeout, reported back on
+// the UI goroutine. The two differ only in what happens on a panic.
 func (d *PropDialog) pageActionBody(fn func(ctx context.Context) error, onDone func(err error)) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
@@ -190,20 +176,18 @@ func (d *PropDialog) pageActionBody(fn func(ctx context.Context) error, onDone f
 	}
 }
 
-// runPageActionOnce is runPageAction with an in-flight latch, for a button
-// that writes its result into captured variables. Without it a second click
-// while the first round trip is still out puts two goroutines in flight, both
-// writing the same captured variable and both filling the same grid — so the
-// picture that survives is whichever finished last, which can be the older
-// request.
+// runPageActionOnce is runPageAction with an in-flight latch, for a button that
+// writes its result into captured variables. Without it a second click while the
+// first round trip is out puts two goroutines in flight, both writing the same
+// variable and filling the same grid, so what survives is whichever finished
+// last — possibly the older request.
 //
 // inFlight is a plain bool because both halves run on the UI goroutine: the
-// button's click handler, and onDone via d.post.
+// click handler, and onDone via d.post.
 //
-// safegoRepair rather than safego, unlike runPageAction, precisely because
-// there is a latch: onDone is what clears it, and a panic on the action's
-// goroutine unwinds past onDone — leaving the button refusing every later
-// click for the dialog's lifetime, with nothing on screen to say why.
+// safegoRepair rather than safego precisely because there is a latch: onDone
+// clears it, and a panic unwinds past onDone, leaving the button refusing every
+// later click for the dialog's lifetime.
 func (d *PropDialog) runPageActionOnce(inFlight *bool, fn func(ctx context.Context) error, onDone func(err error)) {
 	if *inFlight {
 		return
@@ -217,9 +201,9 @@ func (d *PropDialog) runPageActionOnce(inFlight *bool, fn func(ctx context.Conte
 		}))
 }
 
-// asyncStatusButton returns a button that runs fn via runPageAction,
-// showing busyText in statusRow while it's in flight and either fn's
-// returned text or "Error: ..." once it completes.
+// asyncStatusButton returns a button that runs fn via runPageAction, showing
+// busyText in statusRow while it is in flight and fn's returned text or
+// "Error: …" once it completes.
 func (d *PropDialog) asyncStatusButton(label string, statusRow *propsheet.StaticRow, busyText string, fn func(ctx context.Context) (string, error)) *widgets.Button {
 	var inFlight bool
 	return widgets.NewButton(label, func() {
@@ -242,16 +226,14 @@ func (d *PropDialog) asyncStatusButton(label string, statusRow *propsheet.Static
 	})
 }
 
-// onConfirmDiscard prompts before Refresh discards a dirty page's edits,
-// via the app's shared confirm dialog — shown nested on top of this one,
-// which the dialog stack already supports (see dialog_stack.go).
+// onConfirmDiscard prompts before Refresh discards a dirty page's edits, via the
+// app's shared confirm dialog, shown nested on top of this one.
 func (d *PropDialog) onConfirmDiscard(page int, proceed func()) {
 	d.app.confirmDiscardChanges(proceed)
 }
 
-// validateDirty runs every dirty page's validator, reporting the first
-// failure via SetMessage/SelectPage — the shared preflight for both
-// runApply and runScript.
+// validateDirty runs every dirty page's validator, reporting the first failure
+// via SetMessage/SelectPage — the preflight for both runApply and runScript.
 func (d *PropDialog) validateDirty() bool {
 	if page, err := d.Validate(); err != nil {
 		d.SelectPage(page)
@@ -261,9 +243,8 @@ func (d *PropDialog) validateDirty() bool {
 	return true
 }
 
-// dirtyApplyFns returns the apply closures for every dirty page, in page
-// order except that a renaming page's apply is moved to the end — see
-// propPage.renames.
+// dirtyApplyFns returns the apply closures for every dirty page in page order,
+// except that a renaming page's apply moves to the end — see propPage.renames.
 func (d *PropDialog) dirtyApplyFns() []propApply {
 	dirty := d.DirtyPages()
 	fns := make([]propApply, 0, len(dirty))
@@ -282,16 +263,13 @@ func (d *PropDialog) dirtyApplyFns() []propApply {
 	return append(fns, last...)
 }
 
-// runPipeline is the shared shape behind runApply and runScript: validate
-// every dirty page, then run their apply closures sequentially against
-// runCtx on a background goroutine (each is a real network round trip),
-// then report the result back on the UI goroutine via d.post. noChanges
-// runs (already on the UI goroutine) when there was nothing dirty to do;
-// onSuccess runs once every closure has succeeded. The two callers differ
-// only in what context they run closures against (a real one vs. one
-// derived from gosmo.WithScript) and what "nothing to do"/"it worked"
-// means to them — everything else (validate, collect, SetApplying,
-// sequencing, error reporting) lives here once.
+// runPipeline is the shared shape behind runApply and runScript: validate every
+// dirty page, run their apply closures sequentially against runCtx on a
+// background goroutine, then report back on the UI goroutine via d.post.
+// noChanges runs on the UI goroutine when nothing was dirty; onSuccess once
+// every closure has succeeded. The callers differ only in which context they run
+// against — a real one or one derived from gosmo.WithScript — and what "nothing
+// to do" and "it worked" mean to them.
 func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess func()) {
 	if !d.validateDirty() {
 		return
@@ -324,18 +302,17 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 }
 
 // applyPanicked releases the applying latch after a panic in runPipeline's
-// goroutine — its App.safegoRepair step. While applying, PropertySheet
-// ignores every button (activateButton) and defers page loads, so without
-// this the whole dialog — Cancel included — is inert until it is force-closed.
+// goroutine — its App.safegoRepair step. While applying, PropertySheet ignores
+// every button and defers page loads, so without this the whole dialog, Cancel
+// included, is inert.
 func (d *PropDialog) applyPanicked() {
 	d.SetApplying(false)
 	d.SetMessage("Apply stopped unexpectedly — see the log for details.", true)
 }
 
 // runApply validates and applies every dirty page for real. hideOnSuccess
-// distinguishes Apply (stay open) from OK (close once the save succeeds);
-// on error, neither closes — the edits and the error message both stay
-// visible so the user can fix and retry.
+// distinguishes Apply (stay open) from OK (close on success); on error neither
+// closes, so the edits and the message stay visible.
 func (d *PropDialog) runApply(hideOnSuccess bool) {
 	hide := func() {
 		if hideOnSuccess {
@@ -349,15 +326,12 @@ func (d *PropDialog) runApply(hideOnSuccess bool) {
 	})
 }
 
-// runScript validates every dirty page exactly like Apply, then re-runs
-// their apply closures under gosmo.WithScript — the same code each page
-// would use to save for real, except every write it makes is captured as
-// SQL text instead of executed. The result opens in a new query window
-// (scoped to this dialog's connection/database) for the user to review
-// and run, rather than being applied directly. Any reads an apply closure
-// makes along the way (e.g. re-fetching a ConfigurationOption before
-// changing it) still hit the server — only writes are intercepted — but
-// nothing is ever mutated, since the whole point is a dry run.
+// runScript validates every dirty page like Apply, then re-runs their apply
+// closures under gosmo.WithScript: the same code each page would use to save for
+// real, except every write is captured as SQL text instead of executed. The
+// result opens in a new query window scoped to this dialog's
+// connection/database. Reads along the way still hit the server — only writes
+// are intercepted — but nothing is mutated.
 func (d *PropDialog) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc, database := d.sc, d.database

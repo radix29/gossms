@@ -11,14 +11,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// FilterDialog is Object Explorer's "Filter Settings" dialog — SSMS's
-// per-folder filter, one row per property the folder offers (see
-// filterProps), each an operator dropdown and a value field. Which rows it
-// shows depends entirely on the folder it was opened on, so the widgets are
-// rebuilt on every showing rather than kept across them.
+// FilterDialog is Object Explorer's "Filter Settings" dialog: one row per
+// property the folder offers (see filterProps), each an operator dropdown and a
+// value field. Which rows it shows depends on the folder it was opened on, so
+// the widgets are rebuilt on every showing.
 //
-// Applying is the folder's business, not the dialog's: OK hands the
-// assembled filter to App.applyNodeFilter, which reloads the folder.
+// Applying is the folder's business: OK hands the assembled filter to
+// App.applyNodeFilter, which reloads the folder.
 type FilterDialog struct {
 	dialogs.ModalDialog
 	app *App
@@ -29,9 +28,9 @@ type FilterDialog struct {
 
 	rows []filterDialogRow
 
-	// Column widths for this showing, from columnWidths. Fields rather than
-	// the constants because a dialog clamped to a narrow terminal lays its
-	// rows out inside the width it actually got.
+	// Column widths for this showing, from columnWidths. Fields rather than the
+	// constants because a dialog clamped to a narrow terminal lays its rows out
+	// inside the width it got.
 	propColW int
 	opW      int
 	valueW   int
@@ -39,9 +38,8 @@ type FilterDialog struct {
 	serverName string
 	dbName     string
 
-	// focusIdx walks each row's operator dropdown then its value field, then
-	// the buttons — the same one-cycle-reaches-everything arrangement
-	// FindReplaceDialog uses.
+	// focusIdx walks each row's operator dropdown then its value field, then the
+	// buttons — the one-cycle arrangement FindReplaceDialog uses.
 	focusIdx int
 
 	// dragField is the value field that claimed the current Button1 gesture,
@@ -55,9 +53,9 @@ type FilterDialog struct {
 	messageY int
 }
 
-// filterDialogRow is one property's widgets, plus the operators its kind
-// offers — the dropdown shows their names, so the selected index has to be
-// mapped back through this slice to get the operator itself.
+// filterDialogRow is one property's widgets plus the operators its kind offers:
+// the dropdown shows their names, so the selected index maps back through this
+// slice to the operator.
 type filterDialogRow struct {
 	prop  filterProp
 	ops   []filterOp
@@ -65,13 +63,12 @@ type filterDialogRow struct {
 	value *widgets.InputField
 }
 
-// Column geometry, in columns from the dialog's left text margin: the
-// property name, then the operator dropdown, then the value field. Widths
-// fit the longest property name ("Is Memory Optimized") and the longest
-// operator name ("Does not contain") without clipping.
+// Column geometry, in columns from the dialog's left text margin: property name,
+// operator dropdown, value field. Widths fit the longest property name and the
+// longest operator name without clipping.
 //
-// These are the widths on a terminal wide enough for the whole dialog. On a
-// narrower one they are what columnWidths shrinks from — see its floors.
+// These are the widths on a terminal wide enough for the whole dialog; on a
+// narrower one columnWidths shrinks from them.
 const (
 	filterPropColW  = 21
 	filterOpW       = 17
@@ -80,9 +77,9 @@ const (
 	filterButtonsOK = 1 // index of OK in buttons(), the Enter default
 )
 
-// Column floors for a dialog clamped narrower than filterDialogW. A property
-// name and an operator clip to something still recognisable; the value field
-// needs enough room to see what was typed.
+// Column floors for a dialog clamped narrower than filterDialogW: a property
+// name and an operator clip to something still recognisable, and the value field
+// keeps enough room to see what was typed.
 const (
 	filterPropMinW  = 10
 	filterOpMinW    = 8
@@ -119,14 +116,14 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	d.serverName = server
 	d.dbName = node.data.DBName
 	d.message = ""
-	// A latch must not survive into the next showing: a dialog dismissed
-	// mid-drag would otherwise reopen still routing every click to that field.
+	// A latch must not survive into the next showing: a dialog dismissed mid-drag
+	// would reopen still routing every click to that field.
 	d.dragField = nil
 
 	// Sized before the widgets are built: recentre clamps the dialog to the
-	// terminal, and a widget's width is fixed at construction. Building the
-	// rows at their full widths first is what drew the value fields past the
-	// right border of a dialog clamped to a narrow window.
+	// terminal and a widget's width is fixed at construction, so building the
+	// rows at full width first draws the value fields past the right border of a
+	// clamped dialog.
 	d.SetSize(filterDialogW, d.heightFor(len(props)))
 	d.propColW, d.opW, d.valueW = d.columnWidths()
 
@@ -152,13 +149,11 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 }
 
 // columnWidths divides the row's usable width between the three columns: the
-// full constants when they fit, which is the case on any terminal wide enough
-// for the whole dialog. Otherwise they shrink in the order a narrow dialog can
-// best afford — a clipped property name first (the column header still says
-// what the column is), then the operator, and the value field last, since that
-// is the one the user types into. Every column stops at its floor, so a
-// terminal too narrow even for those still overflows; that is ModalDialog's
-// own limit, not this dialog's.
+// full constants when they fit, otherwise shrinking in the order a narrow dialog
+// can best afford — the property name first, since the column header still says
+// what it is, then the operator, and the value field last. Every column stops at
+// its floor, so a terminal too narrow even for those overflows; that is
+// ModalDialog's limit, not this dialog's.
 func (d *FilterDialog) columnWidths() (propColW, opW, valueW int) {
 	propColW, opW, valueW = filterPropColW, filterOpW, filterValueW
 	// -1 for the left text margin (layout's lx = inner.X+1).
@@ -177,9 +172,9 @@ func (d *FilterDialog) columnWidths() (propColW, opW, valueW int) {
 	return propColW, opW, valueW
 }
 
-// seedFrom fills the rows from the folder's current filter, so reopening
-// the dialog offers back what's actually in force. A criterion whose
-// property the folder no longer offers is simply dropped.
+// seedFrom fills the rows from the folder's current filter, so reopening the
+// dialog offers back what is in force. A criterion whose property the folder no
+// longer offers is dropped.
 func (d *FilterDialog) seedFrom(f *nodeFilter) {
 	if !f.active() {
 		return
@@ -212,17 +207,17 @@ func (d *FilterDialog) headerLines() int {
 
 // heightFor sizes the dialog to a row count: the header, a blank row, the
 // "Filter Criteria:" caption and its column header, one row per property, a
-// blank row and the message line — then the 5 rows ModalDialog reserves
-// below the content (separator, button row, borders). Takes the count rather
-// than reading len(d.rows), since show sizes the dialog before building them.
+// blank row and the message line, plus the 5 rows ModalDialog reserves below.
+// Takes the count rather than len(d.rows), since show sizes the dialog before
+// building the rows.
 func (d *FilterDialog) heightFor(rows int) int {
 	return d.headerLines() + 4 + rows + 1 + 5
 }
 
 func (d *FilterDialog) buttons() []string { return []string{"Clear Filter", "OK", "Cancel"} }
 
-// btnFocus is the index of the focused button, or OK's while focus is still
-// in the rows — so Enter from a value field applies the filter.
+// btnFocus is the index of the focused button, or OK's while focus is in the
+// rows, so Enter from a value field applies the filter.
 func (d *FilterDialog) btnFocus() int {
 	if i := d.focusIdx - d.widgetCount(); i >= 0 {
 		return i
@@ -236,9 +231,8 @@ func (d *FilterDialog) widgetCount() int { return len(d.rows) * 2 }
 
 func (d *FilterDialog) focusCount() int { return d.widgetCount() + len(d.buttons()) }
 
-// widgetAt maps a focus index onto its widget — even indexes are operator
-// dropdowns, odd ones value fields. Returns nil once the index is past the
-// rows and into the button row.
+// widgetAt maps a focus index onto its widget: even indexes are operator
+// dropdowns, odd ones value fields. nil once the index is past the rows.
 func (d *FilterDialog) widgetAt(i int) focusable {
 	if i < 0 || i >= d.widgetCount() {
 		return nil
@@ -256,8 +250,8 @@ func (d *FilterDialog) syncFocus() {
 	}
 }
 
-// openDropDown returns the row's dropdown whose list is currently open, or
-// nil. An open list is drawn last and gets first refusal of every event.
+// openDropDown returns the row's dropdown whose list is open, or nil. An open
+// list is drawn last and gets first refusal of every event.
 func (d *FilterDialog) openDropDown() *widgets.DropDown {
 	for i := range d.rows {
 		if d.rows[i].op.IsOpen() {
@@ -271,15 +265,14 @@ func (d *FilterDialog) openDropDown() *widgets.DropDown {
 // Actions
 // ---------------------------------------------------------------------------
 
-// buildFilter assembles the rows into a filter, or reports the first row
-// whose value the criterion's kind can't parse. A nil filter with no error
-// means every row was left empty — "no filter", which OK applies as a
-// removal.
+// buildFilter assembles the rows into a filter, or reports the first row whose
+// value the criterion's kind can't parse. A nil filter with no error means every
+// row was empty — "no filter", which OK applies as a removal.
 //
 // Values are trimmed here, which is what makes a whitespace-only row count as
-// empty. Matching trims too, so an untrimmed " " reached matchText as an empty
-// needle: `Contains` is true of every row, so the folder got the "(filtered)"
-// label and filtered nothing.
+// empty. Matching trims too, so an untrimmed " " reaches matchText as an empty
+// needle, making `Contains` true of every row: the folder gets the "(filtered)"
+// label and filters nothing.
 func (d *FilterDialog) buildFilter() (*nodeFilter, int, error) {
 	f := &nodeFilter{}
 	for i := range d.rows {
@@ -319,9 +312,8 @@ func (d *FilterDialog) applyAndClose() {
 	d.Hide()
 }
 
-// clearRows empties every value field. The filter itself isn't touched
-// until OK — same as SSMS, where Clear Filter clears the grid and OK is
-// what removes the folder's filter.
+// clearRows empties every value field. The filter itself isn't touched until OK,
+// as in SSMS.
 func (d *FilterDialog) clearRows() {
 	for i := range d.rows {
 		d.rows[i].value.SetValue("")
@@ -389,8 +381,8 @@ func (d *FilterDialog) Draw(s tcell.Screen) {
 	d.DrawSeparator(s)
 	d.DrawButtons(s, d.buttons(), d.btnFocus())
 
-	// Last, over everything else in the dialog — an open list belongs on top
-	// of the rows and buttons below it.
+	// Last, over everything else — an open list belongs on top of the rows and
+	// buttons below it.
 	if dd := d.openDropDown(); dd != nil {
 		dd.DrawOverlay(s)
 	}
@@ -419,8 +411,8 @@ func (d *FilterDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
 	}
-	// An open dropdown list gets first refusal: Up/Down/Enter/Escape belong
-	// to it, not to the dialog's focus cycling.
+	// An open dropdown list gets first refusal: Up/Down/Enter/Escape belong to
+	// it, not to the dialog's focus cycling.
 	if dd := d.openDropDown(); dd != nil && dd.HandleKey(ev) {
 		return true
 	}
@@ -461,9 +453,9 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release has to reach every latch-bearing widget even when it lands
-	// outside the dialog, or the widget's next press is swallowed as the
-	// continuation of a stale drag.
+	// A release must reach every latch-bearing widget even when it lands outside
+	// the dialog, or the widget's next press is swallowed as a continuation of
+	// the stale drag.
 	if ev.Buttons() == tcell.ButtonNone {
 		for i := range d.rows {
 			d.rows[i].op.HandleMouse(ev)
@@ -473,8 +465,8 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			d.dragField = nil
 		}
 	}
-	// An open list may extend below the dialog's own rows, so it is offered
-	// the press before ConsumeOutsideClick can discard it as "outside".
+	// An open list may extend below the dialog's rows, so it is offered the press
+	// before ConsumeOutsideClick can discard it as "outside".
 	if dd := d.openDropDown(); dd != nil && dd.HandleMouse(ev) {
 		return true
 	}
@@ -489,8 +481,8 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — that test is what stops a
-	// selection extending the moment the pointer leaves the field's rect.
+	// replayed there without hit-testing, which would stop a selection extending
+	// the moment the pointer leaves the field's rect.
 	if d.dragField != nil {
 		d.dragField.HandleMouse(ev)
 		return true
@@ -523,10 +515,9 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: the focused row's
-// value field. widgetAt answers nil once the focus index is past the rows and
-// into the button row, and an operator dropdown is not a clipboard target, so
-// both fall through to nil here.
+// FocusedClipboardTarget implements core.ClipboardHost: the focused row's value
+// field. widgetAt answers nil past the rows, and an operator dropdown is not a
+// clipboard target, so both fall through to nil.
 func (d *FilterDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	if t, ok := d.widgetAt(d.focusIdx).(core.ClipboardTarget); ok {
 		return t

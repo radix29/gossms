@@ -3119,3 +3119,165 @@ Not done, and deliberately: the gossms New Login dialog still offers only SQL
 and Windows. The gosmo capability exists now; the UI for it stays part of the
 standing Entra item in `docs/open-threads.md`. `FROM EXTERNAL PROVIDER` itself
 is pinned by statement text only — win10cli has no Entra to accept it.
+
+## 2026-08-22 — The showplan row shape, probed live rather than reasoned about
+
+The last open caveat on execution plans (`docs/open-threads.md` § Left open by
+the 2026-08-22 cross-repo review) was that gossms's `scanPlanXML` keeps every
+row of a showplan result set as a separate plan, and nothing had ever produced
+a set with more than one row — correctness by construction. Closed by probing
+win10cli instead of arguing about it.
+
+A throwaway program ran seven batch shapes under both `SET SHOWPLAN_XML` and
+`SET STATISTICS XML`, printing the column names and row count of every result
+set: three plain statements, `EXEC` of a two-statement procedure, a statement
+followed by that `EXEC`, a nested procedure, one marked `WITH RECOMPILE`,
+`IF`/`ELSE`, a `WHILE` loop, a cursor, `sp_executesql` and `EXEC()`. The answer
+was the same every time: **every showplan set holds exactly one row.**
+`SHOWPLAN_XML` returns one combined document per batch, with the called
+procedure's statements nested inside it (`EXEC dbo.probe_p` on a two-statement
+procedure gave one row holding three `<StmtSimple>` nodes); `STATISTICS XML`
+returns one document per *executed* statement, each in a result set of its own,
+interleaved with the statements' own grids.
+
+**That contradicted what both repos say.** `scanPlanXML` and gosmo's
+`capturePlan` each carried the same claim — "SHOWPLAN_XML returns one row per
+statement in a single result set" — which is not a shape SQL Server sends, and
+was exactly why the caveat could never be checked: the rationale named an
+observation nobody had made. Both comments now describe the two real shapes and
+keep the append loop as a stated tolerance rather than a response to something
+observed. `plan_scan_test.go`'s header said the same thing and is corrected too.
+
+`TestLivePlanEveryShowplanSetHoldsOneRow` (`-tags livedb`) is the probe as a
+test: it reads the driver directly rather than through `execute`, since
+`Result` flattens every set into one `PlanXML` slice and the row-per-set shape
+is the thing under test. `TestLivePlanProcedureCallPlansAllReachResult` pins the
+other half end to end — a batch calling a procedure gives one combined estimated
+document and three actual ones.
+
+**What the mutation check showed, and it is the point of the entry.** Making
+`scanPlanXML` overwrite instead of append (`plans = []string{xml}`) passes
+*every live test*, on every shape above — there is no second row in a set for it
+to lose. Only `TestScanNextKeepsEveryShowplanRow`, over the scripted driver,
+kills it. The cross-*set* append in `scanNext` is the opposite: overwriting
+there (`res.PlanXML = plans`) fails both live tests and is invisible to the
+scripted one, which sees a single set. Two adjacent lines, two disjoint tests,
+neither test covering the other's line — worth remembering before deleting
+either as redundant.
+
+Nothing left on the server: both probe procedures were created in tempdb
+without an `sp_` prefix (an `sp_`-prefixed `DROP` there deletes master's copy —
+`CLAUDE.md`) and dropped, verified by query afterwards.
+
+## 2026-08-23 — The availability-group full-backup prerequisite, and why msdb cannot answer it
+
+`docs/open-threads.md` had carried "Add Database does not check for a full
+backup" as scope, on the reasoning that checking it meant a backup-history
+query per candidate database. Both halves of that turned out to be wrong.
+
+**What SQL Server actually checks**, established on the AG cluster by standing
+up a throwaway `CLUSTER_TYPE = NONE` group on ubusql1 and running the statement
+in each state:
+
+| database | msdb full backups | `last_log_backup_lsn` | `ADD DATABASE` |
+|---|---|---|---|
+| created FULL, never backed up | 0 | NULL | **Msg 1475** |
+| backed up, then `sp_delete_database_backuphistory` | 0 | set | succeeds |
+| backed up, then FULL → SIMPLE → FULL | 1 | NULL | **Msg 1475** |
+
+So the backup history is wrong in *both* directions, and the condition is not
+"has a full backup" but "the log backup chain has been started" — a database in
+FULL recovery that has never been backed up is running pseudo-simple. The error
+is Msg 1475, "might contain bulk logged changes that have not been backed up",
+not the "does not have a full database backup" the old note quoted.
+`CREATE AVAILABILITY GROUP ... FOR DATABASE` refuses identically, which is why
+the New Availability Group page applies the same rule.
+
+gosmo gained `Server.DatabaseRecoveryStatuses`/`Context` (one server-wide read,
+since a caller deciding which databases qualify wants them all) and
+`Database.RecoveryStatus`/`Context`, both over `sys.database_recovery_status`,
+carrying `LastLogBackupLSN` and the `LogBackupChainStarted` the question is
+actually about. `live_recoverystatus_test.go` walks all three transitions and
+asserts the two forms agree; the deleted-history case is in there specifically
+because it is what rules out msdb.
+
+gossms's `agDBCandidate` gained `LogChainStarted` and `agEligibleDatabases` a
+fourth exclusion, so both dialogs get it from the one rule. The exclusion line
+names the fix — "back it up first" — because it is the one exclusion a user can
+clear in a minute, and a test asserts that wording is there.
+
+**Driven live in the TUI**, against AAG1 on ubusql1: `probe_nobk` (FULL, ONLINE,
+in no group, never backed up) appeared under "Not offered" with its reason and
+the dropdown was empty; `BACKUP DATABASE` on it, reopen, and it is the offered
+database. The pre-fix build would have offered it and failed on apply.
+
+Nothing left behind: the throwaway group, its databases, the probe database and
+the backup files were dropped, and AAG1 verified PRIMARY/SECONDARY HEALTHY
+afterwards.
+
+## 2026-08-23 — Column Rename, and the two SQL Agent scope notes closed
+
+Three items off `docs/open-threads.md`, one of which was being kept open by a
+wrong reason.
+
+**Column Rename.** gosmo gained `Table.RenameColumn`/`Context` — `sp_rename`'s
+`COLUMN` class, whose `@objname` is the three-part `[schema].[table].[column]`
+form while `@newname` is bare. The column node offers Rename behind a warning,
+asked *before* the rename rather than after: sp_rename updates the column and
+nothing that names it, and SQL Server's own caution is a notice attached to a
+rename that already happened. Two page tests, one for the write (addressed
+through the table the node hangs off, not the column's own Schema/Name) and one
+for declining the warning writing nothing.
+
+**Start/Stop Job now know the job's state.** Both actions already fetched the
+job through `JobByNameContext`, which carries `CurrentState`, so the check cost
+nothing: a Start on a running job and a Stop on an idle one are refused locally
+with "Job X is already running" / "is not running", and the node is refreshed
+either way. The menu items are deliberately not greyed — a job node's cached
+state is as old as the last folder load, and gating the item would hide a
+legitimate Stop for a job that started since.
+
+**Step reordering, and what was actually blocking it.** The note said msdb has
+no documented procedure for reordering. It has one: `sp_add_jobstep` takes
+`@step_id`, which inserts at that position rather than appending, renumbers the
+later steps, and follows their "go to step N" references. What was really
+missing was fidelity — a move is a delete plus an insert, so the step's whole
+definition has to survive, and `JobStep` modelled seven of the columns
+`sp_add_jobstep` can set but not the other six. `proxy_id` (read back as a
+name), `additional_parameters`, `cmdexec_success_code`, `server`,
+`database_user_name` and `os_run_priority` are read and written now; a moved
+step keeps its proxy, its run-as user and its flags instead of silently losing
+them.
+
+gosmo gained `Job.InsertStep`, `JobStep.SetFlow` (control flow only — every
+other sp_update_jobstep parameter omitted, which msdb reads as "leave alone"),
+`Job.MoveStep` and `Job.ReorderSteps`. gossms gained Move Up / Move Down on Job
+Properties > Steps, applied as a **fourth pass after the existing three**,
+because the step ids a reorder names are the ones updates/deletes/adds leave
+behind — `reorderedStepIDs` computes them, and its unit test is the only thing
+that can check that mapping.
+
+Three things came out of building it, all live findings:
+
+- **`sp_delete_jobstep` is not symmetrical with the insert.** The insert
+  remaps other steps' "go to step N" references; the delete does not — it
+  resets any reference to a step at or after the deleted one to "quit with
+  success", silently. Verified directly on win10cli. That is what the repair
+  pass in `ReorderSteps` exists for, and it means the existing Steps page's
+  *delete* has always had this effect too (SSMS behaves the same; it is the
+  server's).
+- **A reorder test that moves the last step proves nothing about references.**
+  The first version moved step 4 to the front, and deleting the whole repair
+  pass still passed: nothing pointed past the deleted step, and the insert's
+  own remap covered the rest. Moving a *middle* step kills the mutant.
+- **A fidelity test has to move the step that carries the fields.** The first
+  version asserted on the step with flags and an output file — which the move
+  only shifted, never rewrote — so dropping `Flags` from `stepRequestFrom`
+  passed. Both mutants are recorded in the test comments.
+
+Driven end to end in the TUI against a real job on win10cli: Move Up on the
+middle step, Apply, and the server shows it first with its flags, output file,
+database and retry count intact. Script Changes on the same edit produced the
+three statements — delete, insert at position 1, and the `sp_update_jobstep`
+repairing the reference of the step that shifted. Both probe jobs dropped
+afterwards.

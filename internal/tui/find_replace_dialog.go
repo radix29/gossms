@@ -12,15 +12,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// FindReplaceDialog is the query editor's Find and Replace dialog. One
-// dialog serves both modes: Find hides the Replace field and its two
-// buttons, Replace shows them (see ShowFind/ShowReplace).
+// FindReplaceDialog is the query editor's Find and Replace dialog. One dialog
+// serves both modes: Find hides the Replace field and its two buttons, Replace
+// shows them.
 //
-// The dialog is modal, so it necessarily covers part of the editor it is
-// searching — which is why the status line reports "Match 2 of 7 — line
-// 143, col 12" rather than relying on the highlighted hit being visible.
-// Repeat searching is meant to happen with the dialog closed, via F3 /
-// Shift+F3; the search itself, its options, and the match highlighting all
+// Being modal it covers part of the editor it is searching, which is why the
+// status line reports "Match 2 of 7 — line 143, col 12" rather than relying on
+// the highlighted hit being visible. Repeat searching happens with the dialog
+// closed, via F3 / Shift+F3; the search, its options and the highlighting all
 // survive closing it.
 type FindReplaceDialog struct {
 	dialogs.ModalDialog
@@ -33,22 +32,19 @@ type FindReplaceDialog struct {
 	cbRegex  *widgets.CheckBox
 	cbSel    *widgets.CheckBox
 
-	// target is the editor this showing searches, captured at Show time.
-	// The dialog is modal, so the active panel can't change underneath it;
-	// capturing avoids re-resolving it per action anyway.
+	// target is the editor this showing searches, captured at Show time. The
+	// dialog is modal, so the active panel can't change underneath it.
 	target *controls.Editor
 
 	replaceMode bool
 
-	// dragField is the input field that claimed the current Button1 gesture,
-	// nil between gestures. Mouse motion goes to it wherever the pointer is,
-	// so dragging a selection out of the field's rect keeps extending it
-	// instead of stopping at the boundary.
+	// dragField is the input field that claimed the current Button1 gesture, nil
+	// between gestures. Motion goes to it wherever the pointer is, so dragging a
+	// selection out of the field's rect keeps extending it.
 	dragField *widgets.InputField
 
-	// focusIdx walks fields first, then buttons — see focusCount. Buttons
-	// are part of the same cycle rather than a separate F1-cycled group, so
-	// Tab alone reaches everything the dialog can do.
+	// focusIdx walks fields first, then buttons — see focusCount. Buttons are in
+	// the same cycle, so Tab alone reaches everything the dialog can do.
 	focusIdx int
 
 	// status is the readout under the fields: match position, replacement
@@ -62,7 +58,7 @@ type FindReplaceDialog struct {
 }
 
 // NewFindReplaceDialog builds the dialog. Fields and options persist across
-// showings, so reopening it offers the previous search back.
+// showings, so reopening offers the previous search back.
 func NewFindReplaceDialog(app *App) *FindReplaceDialog {
 	d := &FindReplaceDialog{app: app}
 	d.InitModal(app.screen, findDialogTitle(false), findDialogW, 13)
@@ -99,14 +95,13 @@ func (d *FindReplaceDialog) show(replace bool) {
 	d.SetTitle(findDialogTitle(replace))
 	d.SetSize(findDialogW, d.height())
 	d.status, d.statusErr = "", false
-	// A latch must not survive into the next showing: a dialog dismissed
-	// mid-drag would otherwise reopen still routing every click to that field.
+	// A latch must not survive into the next showing: a dialog dismissed mid-drag
+	// would reopen still routing every click to that field.
 	d.dragField = nil
 
-	// Seed from a single-line selection, the way every other editor's Find
-	// does. A multi-line selection is left alone: it's what "in selection
-	// only" is for, and overwriting the search term with a whole paragraph
-	// helps nobody.
+	// Seed from a single-line selection, as every other editor's Find does. A
+	// multi-line selection is left alone — that is what "in selection only" is
+	// for.
 	if d.target.HasSelection() {
 		if sel := d.target.SelectedText(); sel != "" && !strings.Contains(sel, "\n") {
 			d.fFind.SetValue(sel)
@@ -117,13 +112,12 @@ func (d *FindReplaceDialog) show(replace bool) {
 	d.Show()
 }
 
-// findDialogW is wide enough for the Replace mode's four-button row, which
-// is the widest thing the dialog draws — a narrower dialog draws that row
-// straight over its own left border.
+// findDialogW is wide enough for Replace mode's four-button row, the widest
+// thing the dialog draws; narrower, that row runs over the left border.
 const findDialogW = 62
 
-// height is the dialog's total height for the current mode — Replace adds
-// the Replace field and the "in selection only" option.
+// height is the dialog's total height for the current mode; Replace adds the
+// Replace field and the "in selection only" option.
 func (d *FindReplaceDialog) height() int {
 	if d.replaceMode {
 		return 15
@@ -131,8 +125,8 @@ func (d *FindReplaceDialog) height() int {
 	return 13
 }
 
-// buttons returns this mode's button row labels. Index 0 is what Enter
-// presses when focus is still in the fields.
+// buttons returns this mode's button row labels. Index 0 is what Enter presses
+// while focus is still in the fields.
 func (d *FindReplaceDialog) buttons() []string {
 	if d.replaceMode {
 		return []string{"Find Next", "Replace", "Replace All", "Close"}
@@ -148,8 +142,8 @@ func (d *FindReplaceDialog) fields() []focusable {
 	return []focusable{d.fFind, d.cbCase, d.cbWord, d.cbRegex}
 }
 
-// syncFocus applies focusIdx to the widgets. An index past the last field
-// means a button is focused, and no widget is.
+// syncFocus applies focusIdx to the widgets. An index past the last field means
+// a button is focused and no widget is.
 func (d *FindReplaceDialog) syncFocus() {
 	fields := d.fields()
 	for i, f := range fields {
@@ -160,9 +154,8 @@ func (d *FindReplaceDialog) syncFocus() {
 // focusCount is the number of Tab stops: every field, then every button.
 func (d *FindReplaceDialog) focusCount() int { return len(d.fields()) + len(d.buttons()) }
 
-// btnFocus is the index into buttons() of the focused button, or 0 (Find
-// Next) while focus is still in the fields — which is what Enter presses
-// from a text field, the behaviour every find dialog has.
+// btnFocus is the index into buttons() of the focused button, or 0 (Find Next)
+// while focus is in the fields, which is what Enter presses from a text field.
 func (d *FindReplaceDialog) btnFocus() int {
 	if i := d.focusIdx - len(d.fields()); i >= 0 {
 		return i
@@ -174,9 +167,9 @@ func (d *FindReplaceDialog) btnFocus() int {
 // Actions
 // ---------------------------------------------------------------------------
 
-// applyOptions compiles the current field values onto the target editor.
-// Reports false (with the status line set) when the pattern is empty or the
-// regular expression doesn't compile, so every caller can just bail out.
+// applyOptions compiles the current field values onto the target editor. Reports
+// false, with the status line set, when the pattern is empty or the regular
+// expression doesn't compile, so callers can bail out.
 func (d *FindReplaceDialog) applyOptions() bool {
 	if d.target == nil {
 		return false
@@ -195,9 +188,8 @@ func (d *FindReplaceDialog) applyOptions() bool {
 		InSelection: d.replaceMode && d.cbSel.Checked(),
 	})
 	if err != nil {
-		// regexp's own message is prefixed with "error parsing regexp: ",
-		// which costs a third of the dialog's status width and says nothing
-		// the label doesn't already.
+		// regexp's message is prefixed with "error parsing regexp: ", which costs
+		// a third of the status width and says nothing the label doesn't.
 		msg := strings.TrimPrefix(err.Error(), "error parsing regexp: ")
 		d.setStatus("Invalid regex: "+msg, true)
 		return false
@@ -205,9 +197,9 @@ func (d *FindReplaceDialog) applyOptions() bool {
 	return true
 }
 
-// optionsChanged reports whether the target's compiled search still matches
-// what the fields say. Used to avoid recompiling — and so throwing away the
-// current match — on a Find Next that changed nothing.
+// optionsChanged reports whether the target's compiled search still matches what
+// the fields say, so a Find Next that changed nothing doesn't recompile and
+// throw the current match away.
 func (d *FindReplaceDialog) optionsChanged() bool {
 	if d.target == nil || !d.target.HasSearch() {
 		return true
@@ -221,10 +213,9 @@ func (d *FindReplaceDialog) optionsChanged() bool {
 		o.InSelection != (d.replaceMode && d.cbSel.Checked())
 }
 
-// ensureSearch compiles the fields onto the editor only when they differ
-// from the active search. Recompiling unconditionally would reset the
-// current-match position, so Find Next would restart from the cursor
-// instead of stepping on.
+// ensureSearch compiles the fields onto the editor only when they differ from
+// the active search: recompiling resets the current-match position, so Find Next
+// would restart from the cursor instead of stepping on.
 func (d *FindReplaceDialog) ensureSearch() bool {
 	if !d.optionsChanged() {
 		return true
@@ -251,9 +242,8 @@ func (d *FindReplaceDialog) doReplace() {
 		d.reportMatch()
 		return
 	}
-	// Nothing was replaced because no match was current yet: find one, the
-	// SSMS behaviour where the first Replace press finds and the second
-	// replaces.
+	// Nothing was replaced because no match was current: find one, the SSMS
+	// behaviour where the first Replace press finds and the second replaces.
 	d.doFind(1)
 }
 
@@ -272,9 +262,8 @@ func (d *FindReplaceDialog) doReplaceAll() {
 	}
 }
 
-// reportMatch writes the current match's ordinal and position into the
-// status line — the feedback that stands in for the hit itself when the
-// dialog is covering it.
+// reportMatch writes the current match's ordinal and position into the status
+// line — the feedback standing in for a hit the dialog is covering.
 func (d *FindReplaceDialog) reportMatch() {
 	i, n := d.target.MatchPosition()
 	line, col, ok := d.target.CurrentMatchPos()
@@ -321,9 +310,8 @@ func (d *FindReplaceDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, d.buttons(), d.btnFocus())
 }
 
-// layout positions the fields for the current mode and records statusY for
-// Draw. statusY is a field rather than a return value because Draw needs it
-// after the widgets have been placed.
+// layout positions the fields for the current mode and records statusY for Draw,
+// which needs it after the widgets have been placed.
 func (d *FindReplaceDialog) layout() {
 	inner := d.InnerRect()
 	lx := inner.X + 1
@@ -354,7 +342,7 @@ func (d *FindReplaceDialog) layout() {
 // ---------------------------------------------------------------------------
 
 // HandleKey routes keyboard events. Escape closes the dialog but leaves the
-// search active, so F3 keeps working against it.
+// search active, so F3 keeps working.
 func (d *FindReplaceDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
@@ -420,18 +408,17 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	// A release has to reach every latch-bearing widget even when it lands
-	// outside the dialog, or the widget's next press is swallowed as the
-	// continuation of a stale drag. Each returns false on ButtonNone, so
-	// this only resets latches.
+	// A release must reach every latch-bearing widget even when it lands outside
+	// the dialog, or the widget's next press is swallowed as a continuation of
+	// the stale drag. Each returns false on ButtonNone, so this only resets
+	// latches.
 	if ev.Buttons() == tcell.ButtonNone {
 		for _, cb := range d.checkboxes() {
 			cb.HandleMouse(ev)
 		}
-		// Terminate a text-selection drag in the field that claimed the press,
-		// wherever the release landed. Done before ConsumeOutsideClick, which
-		// returns early on a release outside the dialog — exactly the case
-		// that would otherwise strand the field's latch.
+		// End a text-selection drag in the field that claimed the press,
+		// wherever the release landed. Before ConsumeOutsideClick, which returns
+		// early on a release outside the dialog and would strand the latch.
 		if d.dragField != nil {
 			d.dragField.HandleMouse(ev)
 			d.dragField = nil
@@ -448,8 +435,8 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — that test is what used to stop a
-	// selection extending the moment the pointer left the field's rect.
+	// replayed there without hit-testing, which would stop a selection extending
+	// the moment the pointer left the field's rect.
 	if d.dragField != nil {
 		d.dragField.HandleMouse(ev)
 		return true
@@ -479,8 +466,8 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// checkboxes and inputFields are the current mode's widgets by concrete
-// type, for the mouse routing above.
+// checkboxes and inputFields are the current mode's widgets by concrete type,
+// for the mouse routing above.
 func (d *FindReplaceDialog) checkboxes() []*widgets.CheckBox {
 	if d.replaceMode {
 		return []*widgets.CheckBox{d.cbCase, d.cbWord, d.cbRegex, d.cbSel}
@@ -495,8 +482,8 @@ func (d *FindReplaceDialog) inputFields() []*widgets.InputField {
 	return []*widgets.InputField{d.fFind}
 }
 
-// focusWidget moves the Tab cursor onto w, so a clicked widget also becomes
-// the keyboard-focused one.
+// focusWidget moves the Tab cursor onto w, so a clicked widget becomes the
+// keyboard-focused one.
 func (d *FindReplaceDialog) focusWidget(w focusable) {
 	for i, f := range d.fields() {
 		if f == w {
@@ -511,9 +498,9 @@ func (d *FindReplaceDialog) focusWidget(w focusable) {
 // App-side entry points
 // ---------------------------------------------------------------------------
 
-// findNextInEditor repeats the active search in the active query panel's
-// editor with the dialog closed — F3 (dir 1) and Shift+F3 (dir -1). With no
-// search set yet it opens the dialog instead of doing nothing silently.
+// findNextInEditor repeats the active search in the active query panel's editor
+// with the dialog closed — F3 (dir 1) and Shift+F3 (dir -1). With no search set
+// it opens the dialog rather than doing nothing.
 func (a *App) findNextInEditor(dir int) {
 	qp := a.activeQueryPanel()
 	if qp == nil {
@@ -547,10 +534,9 @@ func (a *App) findWordAtCursor() {
 		return
 	}
 	// Whole-word, so Ctrl+F3 on "id" doesn't stop inside every "identity".
-	// Replace comes from the dialog rather than being blanked: it has no
-	// effect on matching, and clearing it would throw away text the user
-	// typed. Errors are impossible here — the term is literal, so it is
-	// escaped before compiling.
+	// Replace comes from the dialog rather than being blanked: it doesn't affect
+	// matching, and clearing it would throw away text the user typed. No error is
+	// possible — the term is literal and escaped before compiling.
 	opts := controls.SearchOptions{
 		Query:     word,
 		Replace:   a.findDialog.fReplace.Value(),
@@ -561,13 +547,11 @@ func (a *App) findWordAtCursor() {
 	a.findNextInEditor(1)
 }
 
-// adoptSearch points the dialog's fields at opts, so what it shows is what
-// the editor is actually searching for. Every field opts has is written,
-// including the ones this caller left zero: a partial sync leaves
-// optionsChanged reporting a difference that isn't real, and the next Find
-// Next recompiles and so restarts from the cursor instead of stepping on to
-// the following match — which is the exact behaviour ensureSearch exists to
-// prevent.
+// adoptSearch points the dialog's fields at opts, so what it shows is what the
+// editor is searching for. Every field of opts is written, including the ones
+// the caller left zero: a partial sync leaves optionsChanged reporting a
+// difference that isn't real, and the next Find Next then recompiles and
+// restarts from the cursor.
 func (d *FindReplaceDialog) adoptSearch(opts controls.SearchOptions) {
 	d.fFind.SetValue(opts.Query)
 	d.fReplace.SetValue(opts.Replace)
@@ -577,18 +561,16 @@ func (d *FindReplaceDialog) adoptSearch(opts controls.SearchOptions) {
 	d.cbSel.SetChecked(opts.InSelection)
 }
 
-// hasEditorSearch reports whether Find Next/Previous have a search to
-// repeat — the Enabled gate on both menu items.
+// hasEditorSearch reports whether Find Next/Previous have a search to repeat —
+// the Enabled gate on both menu items.
 func (a *App) hasEditorSearch() bool {
 	qp := a.activeQueryPanel()
 	return qp != nil && qp.editor.HasSearch()
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: the Find what / Replace
-// with field that has focus, nil on any of the checkboxes.
-//
-// Without it Ctrl+X here cut the *editor's* selection instead — the text the
-// dialog was opened to search, removed behind the dialog it was typed into.
+// FocusedClipboardTarget implements core.ClipboardHost: whichever of the Find
+// what / Replace with fields has focus, nil on the checkboxes. Without it Ctrl+X
+// cuts the *editor's* selection behind the dialog.
 func (d *FindReplaceDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	return focusedClipboardTarget(d.fields(), d.focusIdx)
 }

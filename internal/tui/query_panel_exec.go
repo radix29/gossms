@@ -10,10 +10,9 @@ import (
 	"github.com/radix29/gossms/internal/tui/planview"
 )
 
-// Execute runs the query against the connected server. If the editor has
-// an active text selection, only the selected text is run; otherwise the
-// full editor content is run. This is what both the Query > Execute menu
-// item and F5 call.
+// Execute runs the query against the connected server: the selected text if the
+// editor has a selection, otherwise the whole content. Query > Execute and F5
+// both call it.
 func (p *QueryPanel) Execute() {
 	if sel := p.editor.SelectedText(); sel != "" {
 		p.runQuery(sel)
@@ -22,10 +21,9 @@ func (p *QueryPanel) Execute() {
 	p.runQuery(p.editor.Text())
 }
 
-// ExecuteSelection runs only the editor's selected text, doing nothing but
-// setting a status message if there is no active selection — the
-// toolbar's dedicated "Execute Selection" button, as distinct from
-// Execute, which falls back to running the whole script.
+// ExecuteSelection runs only the editor's selected text, setting a status
+// message and nothing else when there is no selection — the toolbar's "Execute
+// Selection" button, unlike Execute, which falls back to the whole script.
 func (p *QueryPanel) ExecuteSelection() {
 	if sel := p.editor.SelectedText(); sel != "" {
 		p.runQuery(sel)
@@ -44,19 +42,16 @@ func (p *QueryPanel) CancelExecution() {
 	}
 }
 
-// Reconnect re-dials this panel's connection using the same server/login it
-// was last connected with (in whatever database it's currently in, not
-// necessarily the connection's original default — see connectForQueryPanel),
-// replacing whatever connection it holds. This is the query window's escape
-// hatch for a connection dropped out from under it: an idle firewall/NAT
-// timeout, the server killing the session, a failover. A no-op if the panel
-// was never connected, since there's no Opts to redial with.
+// Reconnect re-dials this panel's connection with the same server and login, in
+// whatever database it is currently in (see connectForQueryPanel) — the escape
+// hatch for a connection dropped out from under the panel by an idle timeout, a
+// killed session or a failover. A no-op if the panel was never connected, since
+// there are no Opts to redial with.
 //
-// p.conn is deliberately left as the now-closed old connection rather than
-// nilled out: connectForQueryPanel only reads its Opts, and if the redial
-// fails, keeping p.conn non-nil leaves the panel in the same state as any
-// other with a dropped connection — isConnected still reports false, but
-// Reconnect stays enabled and its Opts stay around to try again.
+// p.conn is left as the now-closed old connection rather than nilled:
+// connectForQueryPanel reads only its Opts, and keeping it non-nil after a
+// failed redial leaves the panel like any other with a dropped connection —
+// isConnected false, Reconnect enabled, Opts still there to try again.
 func (p *QueryPanel) Reconnect() {
 	if p.conn == nil {
 		p.app.setStatus("Nothing to reconnect — this query window was never connected")
@@ -71,10 +66,9 @@ func (p *QueryPanel) Reconnect() {
 	p.app.connectForQueryPanel(p, old, p.database, nil)
 }
 
-// clearResults empties the results area before a new run starts, so the
-// previous run's grid, tabs, messages and plan don't sit there looking
-// current for however long the query takes. setResult repopulates all of
-// it when the run finishes.
+// clearResults empties the results area before a new run, so the previous run's
+// grid, tabs, messages and plan don't sit there looking current. setResult
+// repopulates it when the run finishes.
 func (p *QueryPanel) clearResults() {
 	p.result = nil
 	p.planView = nil
@@ -86,13 +80,12 @@ func (p *QueryPanel) clearResults() {
 	p.layoutChildren() // the tab bar's row goes back to the results area
 }
 
-// runQuery is the shared execution path for Execute. The heavy lifting —
-// GO batch splitting, the USE database switch, result sets, and the
-// message stream — lives in internal/query.
+// runQuery is the shared execution path for Execute. The heavy lifting — GO
+// batch splitting, the USE switch, result sets, the message stream — lives in
+// internal/query.
 //
-// In Results To File mode it asks for the destination first and then runs
-// through query.ExecuteToSink, streaming rows to the file as they are
-// scanned; see startRun.
+// In Results To File mode it asks for the destination first, then runs through
+// query.ExecuteToSink, streaming rows to the file as they are scanned.
 func (p *QueryPanel) runQuery(queryText string) {
 	if queryText == "" {
 		p.resultsNotice = "No query to execute"
@@ -108,26 +101,23 @@ func (p *QueryPanel) runQuery(queryText string) {
 		return
 	}
 	// Snapshotted here rather than read inside the closures below, since the
-	// Query menu can switch modes while the save dialog is open or the query
-	// is running. Every decision that has to agree with how this run was
-	// executed reads the snapshot. See QueryPanel.runMode.
+	// Query menu can switch modes while the save dialog is open or the query is
+	// running. See QueryPanel.runMode.
 	p.runMode = p.resultsMode
 
 	if p.runMode == ResultsModeFile {
-		// The destination has to exist before the first row is scanned, so
-		// the prompt comes first and the run starts from its callback.
-		// Cancelling the dialog runs nothing — the panel keeps its previous
-		// results rather than being cleared for a run that never happened.
+		// The destination must exist before the first row is scanned, so the
+		// prompt comes first and the run starts from its callback. Cancelling
+		// runs nothing, and the panel keeps its previous results.
 		p.promptResultsFile(func(path string) {
 			if p.executing {
 				p.app.setStatus("A query is already executing in this panel")
 				return
 			}
-			// Re-checked, not just carried over from above: the save dialog is
-			// modal but the connection isn't frozen behind it — a server
-			// disconnect (or Reconnect failing) between opening the dialog and
-			// confirming it would otherwise take startRun into
-			// sc.Server.DB() on a dead connection.
+			// Re-checked rather than carried over: the save dialog is modal but
+			// the connection isn't frozen behind it, and a disconnect between
+			// opening and confirming would take startRun into sc.Server.DB() on
+			// a dead connection.
 			if !p.app.isConnected(p.conn) {
 				p.app.setStatus(p.notConnectedMessage())
 				return
@@ -141,19 +131,17 @@ func (p *QueryPanel) runQuery(queryText string) {
 
 // startRun executes queryText, clearing the results area first. exportPath is
 // non-empty only for a Results To File run, which streams every row there
-// instead of retaining it (see csvSink) — so that path is bounded by the file
-// rather than by memory.
+// instead of retaining it — bounded by the file rather than by memory.
 func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.clearResults()
 	sc := p.conn
-	// Snapshotted for the same reason as sc: setResult writes p.database
-	// back from the connection once the script finishes (a mid-script USE),
-	// and connectForQueryPanel writes it on the UI goroutine too — neither
-	// may be read from the goroutine below. Mirrors runEstimatedPlan.
+	// Snapshotted for the same reason as sc: setResult writes p.database back
+	// from the connection once the script finishes, and connectForQueryPanel
+	// writes it on the UI goroutine too, so neither may be read from the
+	// goroutine below.
 	database := p.database
-	// Snapshot now, not read from the goroutine below — the "Include Actual
-	// Execution Plan" toggle can change via the toolbar/Query menu while
-	// this goroutine runs.
+	// Snapshot now, not read from the goroutine below: the "Include Actual
+	// Execution Plan" toggle can change while this goroutine runs.
 	capturePlan := p.app.actualPlanEnabled
 	ctx, cancel := context.WithCancel(sc.Context())
 	p.cancel = cancel
@@ -167,9 +155,9 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	go p.tickExecuting(done)
 
 	p.app.safegoRepair("query execution", p.execPanicked, func() {
-		// Both on every exit, not just the normal one: a panic past them
-		// leaks ctx and leaves tickExecuting waking the event loop once a
-		// second for the rest of the process's life.
+		// Both on every exit, not just the normal one: a panic past them leaks
+		// ctx and leaves tickExecuting waking the event loop once a second for
+		// the life of the process.
 		defer cancel()
 		defer close(done)
 
@@ -184,8 +172,8 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 				break
 			}
 			res = query.ExecuteToSink(ctx, sc.Server.DB(), database, queryText, sink)
-			// Close after the run, whether or not it succeeded: the file has
-			// partial content either way and the handle must not leak.
+			// Close after the run either way: the file has partial content and
+			// the handle must not leak.
 			if cerr := sink.Close(); cerr != nil && exportErr == nil {
 				exportErr = cerr
 			}
@@ -194,20 +182,18 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 		default:
 			res = query.Execute(ctx, sc.Server.DB(), database, queryText)
 		}
-		// cancelled must be read while ctx is still live — the deferred
-		// cancel() above sets ctx.Err() itself, which would make this always
-		// true if it were read after.
+		// cancelled must be read while ctx is still live: the deferred cancel()
+		// sets ctx.Err() itself, so reading it later is always true.
 		cancelled := ctx.Err() != nil
 		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil
 			if !p.app.panelHosted(p) {
-				// Panel was closed while the query was still running —
-				// nothing left to update. The status bar still has to be told,
-				// though: setResult is the only thing that normally replaces
-				// "Executing query...", so returning without one left it
-				// pinned there indefinitely. A file export that was already
-				// under way has been written and closed regardless.
+				// Panel was closed while the query was running, so there is
+				// nothing to update — but the status bar still has to be told:
+				// setResult is the only thing that normally replaces "Executing
+				// query...". A file export already under way has been written
+				// and closed regardless.
 				p.app.setStatus(closedPanelResultStatus(p.Title(), cancelled))
 				return
 			}
@@ -219,10 +205,9 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	})
 }
 
-// closedPanelResultStatus is what the status bar says once a query whose
-// panel was closed mid-flight finally returns. closePanelAt cancels the
-// context on the way out, so this is normally the cancelled wording; a
-// query that had already finished by then reports plainly instead.
+// closedPanelResultStatus is what the status bar says once a query whose panel
+// was closed mid-flight returns. closePanelAt cancels the context on the way
+// out, so this is normally the cancelled wording.
 func closedPanelResultStatus(title string, cancelled bool) string {
 	if cancelled {
 		return fmt.Sprintf("%s was closed — its query was cancelled", title)
@@ -230,13 +215,11 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 	return fmt.Sprintf("%s was closed — its query finished, results discarded", title)
 }
 
-// execPanicked releases the single-flight latch after a panic on an execute
-// or estimated-plan goroutine — the App.safegoRepair step for both. Without
-// it p.executing stays set for the panel's lifetime, and every later Execute
-// is refused by the guards that read it (menu, toolbar, runEstimatedPlan).
-// Needs no seq guard the way LogViewer.readPanicked does: p.executing is
-// itself what stops a second run from starting, so there is never a newer
-// one to clobber.
+// execPanicked releases the single-flight latch after a panic on an execute or
+// estimated-plan goroutine — the App.safegoRepair step for both. Without it
+// p.executing stays set for the panel's lifetime and every later Execute is
+// refused. No seq guard is needed, unlike LogViewer.readPanicked: p.executing is
+// itself what stops a second run starting.
 func (p *QueryPanel) execPanicked() {
 	p.executing = false
 	p.cancel = nil
@@ -244,8 +227,8 @@ func (p *QueryPanel) execPanicked() {
 }
 
 // tickExecuting wakes the event loop once a second while a query runs, so
-// updateResultsStatus's live elapsed-time counter visibly ticks instead of
-// only updating once the query finishes. Exits as soon as done closes.
+// updateResultsStatus's elapsed-time counter visibly ticks. Exits as soon as
+// done closes.
 func (p *QueryPanel) tickExecuting(done chan struct{}) {
 	defer p.app.recoverPanic("the query elapsed-time timer")
 	ticker := time.NewTicker(time.Second)
@@ -260,21 +243,20 @@ func (p *QueryPanel) tickExecuting(done chan struct{}) {
 	}
 }
 
-// setResult installs a finished execution: picks the initial tab (first
-// grid, or Messages when there are no grids or the run had errors — same
-// as SSMS), makes room for the tab bar, and renders.
+// setResult installs a finished execution: picks the initial tab — the first
+// grid, or Messages when there are no grids or the run had errors, as SSMS does
+// — makes room for the tab bar, and renders.
 func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
-	// A mid-script "USE otherdb" changes the session's database out from
-	// under p.database — res.Database (read off the same connection right
-	// after the script ran; see query.Execute) is the source of truth from
-	// here on, so the connection-info bar and the next Execute's own USE
-	// stay in sync with it instead of the stale value from before this run.
+	// A mid-script "USE otherdb" changes the session's database out from under
+	// p.database. res.Database, read off the same connection right after the
+	// script ran, is the source of truth from here on, so the connection-info bar
+	// and the next Execute's own USE stay in sync with it.
 	if res.Database != "" {
 		p.database = res.Database
 	}
-	// Folded into res.Messages once, here, rather than at render time: the
-	// Messages tab is re-rendered on every tab switch (renderActiveTab), so
-	// appending there would repeat the block on each visit.
+	// Folded into res.Messages once here rather than at render time: the Messages
+	// tab is re-rendered on every tab switch, so appending there would repeat the
+	// block on each visit.
 	if p.app.metaEnabled {
 		if meta := columnMetaMessages(res.Sets); len(meta) > 0 {
 			if len(res.Messages) > 0 {
@@ -306,9 +288,8 @@ func (p *QueryPanel) setResult(res *query.Result, cancelled bool) {
 }
 
 // newPlanView builds a PlanView wired into this panel's status bar and its
-// Execution Plan tab's "[ Expand ]" button — shared by setResultPlan
-// (Actual mode) and setEstimatedPlan (Estimated mode) so both get the same
-// behavior from one place.
+// Execution Plan tab's "[ Expand ]" button, shared by setResultPlan and
+// setEstimatedPlan.
 func (p *QueryPanel) newPlanView() *planview.PlanView {
 	v := planview.New()
 	v.OnStatus = func(msg string) { p.app.setStatus(msg) }
@@ -322,21 +303,15 @@ func (p *QueryPanel) newPlanView() *planview.PlanView {
 	return v
 }
 
-// setResultPlan installs or clears the Execution Plan tab that rides
-// alongside a normal Execute when the "Include Actual Execution Plan"
-// toggle was on (see App.actualPlanEnabled and runQuery). Unlike
-// setEstimatedPlan, which replaces Results/Messages entirely since it
-// never runs the query for real, this tab sits alongside res's own
-// Results tabs — resultTabs checks p.result and p.planView independently
-// now, not exclusively.
+// setResultPlan installs or clears the Execution Plan tab that rides alongside a
+// normal Execute when "Include Actual Execution Plan" was on. Unlike
+// setEstimatedPlan, which replaces Results/Messages entirely because it never
+// runs the query, this tab sits alongside res's own Results tabs.
 //
-// res.PlanXML holds one complete document per statement (SET STATISTICS
-// XML ON appends a separate showplan result set after each statement,
-// unlike SHOWPLAN_XML ON's single combined document — see Result.PlanXML),
-// so they're merged with showplan.ParseAll into one Plan and handed to
-// PlanView as a whole; PlanView's own statement selector ("Statement N/M")
-// is what lets the user step through all of them, the same as it already
-// does for a multi-statement estimated plan.
+// res.PlanXML holds one complete document per statement — SET STATISTICS XML ON
+// appends a showplan result set after each statement, unlike SHOWPLAN_XML ON's
+// single combined document — so they are merged with showplan.ParseAll into one
+// Plan. PlanView's statement selector is what steps through them.
 func (p *QueryPanel) setResultPlan(res *query.Result) {
 	if len(res.PlanXML) == 0 {
 		p.planView = nil

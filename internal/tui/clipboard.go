@@ -6,30 +6,25 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// clipboardTarget is any widget that can participate in Copy/Cut/Paste —
-// an alias for core.ClipboardTarget, which is where the interface has to live
-// so that tuikit's own dialogs can hand one back (see core.ClipboardHost).
-// widgets.InputField, controls.Editor, controls.DataGrid and
-// propsheet.PropertySheet all satisfy it structurally, which lets one set of
-// App-level methods work across every dialog field and the query editor.
+// clipboardTarget is any widget that can participate in Copy/Cut/Paste — an
+// alias for core.ClipboardTarget, which lives there so tuikit's own dialogs can
+// hand one back (see core.ClipboardHost). widgets.InputField, controls.Editor,
+// controls.DataGrid and propsheet.PropertySheet all satisfy it structurally, so
+// one set of App-level methods works across every dialog field and the
+// editor.
 type clipboardTarget = core.ClipboardTarget
 
-// activeClipboardTarget resolves which widget Copy/Cut/Paste should act on
-// right now: whichever field is focused in the frontmost open dialog, the
-// active query panel's editor (or its results grid, while that grid's "Show
-// Value" content viewer is open), or a read-only panel's grid while its own
-// content viewer is open. Returns nil if nothing focused right now can
-// participate (e.g. plain Object Explorer focus).
+// activeClipboardTarget resolves which widget Copy/Cut/Paste acts on now:
+// whichever field is focused in the frontmost open dialog, the active query
+// panel's editor (or its results grid while that grid's "Show Value" viewer is
+// open), or a read-only panel's grid while its own viewer is open. nil when
+// nothing focused can participate.
 func (a *App) activeClipboardTarget() clipboardTarget {
-	// An open dialog owns the clipboard outright: its focused field, or
-	// nothing. Never fall past it to a panel underneath.
-	//
-	// This used to be a switch naming three dialogs, and every one of the
-	// other twenty-seven fell through to the query editor: with the Find
-	// dialog open, Ctrl+X cut the editor's whole selection — behind the
-	// dialog, reported as "Cut to clipboard", with no way to see it had
-	// happened. A dialog that isn't a ClipboardHost has no text to act on, so
-	// nil is the answer, not a search for somewhere else to put the keystroke.
+	// An open dialog owns the clipboard outright: its focused field, or nothing.
+	// Never fall past it to a panel underneath — a fall-through lets Ctrl+X with
+	// the Find dialog open cut the query editor's selection behind it, reported
+	// as "Cut to clipboard" with no sign of what happened. A dialog that isn't a
+	// ClipboardHost has no text to act on, so nil is the answer.
 	if top := a.topDialog(); top != nil {
 		if h, ok := top.(core.ClipboardHost); ok {
 			return h.FocusedClipboardTarget()
@@ -37,13 +32,11 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 		return nil
 	}
 	if qp := a.activeQueryPanel(); qp != nil {
-		// Every view below shares the results half of the panel, so which
-		// one is showing only decides the target when that half actually
-		// holds keyboard focus. Without the resultsHasFocus() gate, any
-		// execution that leaves the pane on the Messages tab (or the plan,
-		// or Results To Text) silently redirects Ctrl+V from the SQL editor
-		// the user is typing in to a read-only view whose Paste is a no-op
-		// — the reported "paste does nothing in the query editor".
+		// Every view below shares the results half of the panel, so which one
+		// shows decides the target only when that half holds keyboard focus.
+		// Without the resultsHasFocus() gate, an execution leaving the pane on
+		// Messages, the plan or Results To Text redirects Ctrl+V from the SQL
+		// editor to a read-only view whose Paste is a no-op.
 		if qp.resultsHasFocus() {
 			// The Messages tab's read-only text view, while showing, takes
 			// priority — see QueryPanel.onMessagesTab.
@@ -62,10 +55,10 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 			}
 			return qp.results
 		}
-		// The results grid's built-in "Show Value" content viewer is a modal
-		// overlay: it keeps its own selection while open regardless of which
-		// half is marked focused, so it still wins over the SQL editor — see
-		// controls.DataGrid.HasSelection, true only while that popup shows.
+		// The results grid's "Show Value" viewer is a modal overlay: it keeps its
+		// own selection while open whichever half is focused, so it wins over the
+		// SQL editor. controls.DataGrid.HasSelection is true only while it
+		// shows.
 		if qp.results.HasSelection() {
 			return qp.results
 		}
@@ -74,9 +67,9 @@ func (a *App) activeClipboardTarget() clipboardTarget {
 	if db, ok := a.panels.ActivePanel().(*DetailBrowser); ok && db.HasSelection() {
 		return db
 	}
-	// The Always On dashboard is two grids and nothing else, so whichever one
-	// has the keyboard is the target — copySelection's DataGrid branch then
-	// copies the cell under the cursor even with no viewer open.
+	// The Always On dashboard is two grids and nothing else, so whichever has the
+	// keyboard is the target; copySelection's DataGrid branch then copies the
+	// cell under the cursor even with no viewer open.
 	if dash, ok := a.panels.ActivePanel().(*AGDashboard); ok {
 		return dash.grid()
 	}
@@ -90,10 +83,9 @@ func (a *App) copySelection() {
 	if target == nil {
 		return
 	}
-	// A focused results grid has no "selection" in the clipboardTarget
-	// sense unless its content viewer is open (see
-	// controls.DataGrid.HasSelection), but it always has a cell or block
-	// under its cursor — copy that, matching its right-click "Copy".
+	// A focused results grid has no "selection" in the clipboardTarget sense
+	// unless its content viewer is open, but it always has a cell or block under
+	// its cursor — copy that, matching its right-click "Copy".
 	if g, ok := target.(*controls.DataGrid); ok && !g.HasSelection() {
 		a.copyWithStatus(g.SelectedCellsText())
 		return
@@ -117,29 +109,22 @@ func (a *App) cutSelection() {
 	a.notifyClipboardEdit(target)
 }
 
-// notifyClipboardEdit tells the frontmost dialog that a Cut or a Paste changed
-// one of its fields, so it can follow up the way it follows up a keystroke —
-// see core.ClipboardEditHandler.
-//
-// This was three copies of "if the Connect dialog is open, re-filter its
-// server list", one at each edit site: the same enumerate-the-dialogs shape
-// the resolver above was rewritten to get rid of, and wrong in the same
-// direction — it re-ran that filter for a paste into any field of that dialog,
-// including Password.
+// notifyClipboardEdit tells the frontmost dialog that a Cut or Paste changed one
+// of its fields, so it can follow up as it does after a keystroke — see
+// core.ClipboardEditHandler. The dialog checks which target it was handed rather
+// than assuming the edit landed in the field it watches.
 func (a *App) notifyClipboardEdit(target clipboardTarget) {
 	if h, ok := a.topDialog().(core.ClipboardEditHandler); ok {
 		h.ClipboardEdited(target)
 	}
 }
 
-// writeClipboard sends text to the clipboard off the UI thread — the
-// native OS clipboard (xclip/xsel/wl-copy/pbcopy/clip.exe, see
-// os_clipboard.go) first, falling back to tcell's OSC 52 terminal
-// clipboard when no native tool handled it (e.g. a bare SSH session). The
-// shell-out to the native tool runs in a background goroutine so a slow or
-// stalled clipboard tool can't freeze the single-threaded event loop; the
-// OSC 52 fallback is marshalled back to the UI thread since SetClipboard
-// writes to the terminal.
+// writeClipboard sends text to the clipboard off the UI thread: the native OS
+// clipboard (xclip/xsel/wl-copy/pbcopy/clip.exe, see os_clipboard.go) first,
+// falling back to tcell's OSC 52 terminal clipboard when no native tool handled
+// it. The shell-out runs on a background goroutine so a stalled tool can't
+// freeze the event loop; the OSC 52 fallback returns to the UI thread, since
+// SetClipboard writes to the terminal.
 func (a *App) writeClipboard(text string) {
 	a.safego("writing to the clipboard", func() {
 		if osClipboardWrite(text) {
@@ -149,28 +134,23 @@ func (a *App) writeClipboard(text string) {
 	})
 }
 
-// copyWithStatus is writeClipboard plus the status-line acknowledgement,
-// for the grid context menus whose "Copy" item is the whole interaction —
-// nothing else on screen changes, so without the message there's no sign it
-// worked. Wired into the results grid (NewQueryPanel) and the execution
-// plan's operator summary (PlanView.OnCopyRequest, in both its hosts).
+// copyWithStatus is writeClipboard plus the status-line acknowledgement, for the
+// grid context menus whose "Copy" item is the whole interaction: nothing else on
+// screen changes, so without the message there is no sign it worked.
 func (a *App) copyWithStatus(text string) {
 	a.writeClipboard(text)
 	a.setStatus("Copied to clipboard")
 }
 
-// pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste). The native OS
-// clipboard read happens in a background goroutine so a stalled tool can't
-// freeze the event loop, then the paste is applied on the UI thread. When
-// no native tool is available it falls back to requesting the terminal
-// clipboard; that response arrives asynchronously as an
-// *tcell.EventClipboard, handled in Run(), which applies it to the target
-// recorded here in pendingPaste rather than resolving one afresh.
+// pasteFromClipboard runs Paste (Ctrl+V / Edit > Paste). The native OS clipboard
+// read runs on a background goroutine so a stalled tool can't freeze the event
+// loop, and the paste is applied on the UI thread. With no native tool it falls
+// back to requesting the terminal clipboard, whose reply arrives later as an
+// *tcell.EventClipboard handled in Run().
 //
-// Both halves therefore resolve the target once, now, and carry it: whichever
-// way the text comes back, it is applied by pasteInto, which drops it unless
-// the widget it was aimed at is still the one the clipboard would act on. See
-// there for why re-resolving on arrival is the bug and not the fix.
+// Both halves resolve the target once, now, and carry it: whichever way the text
+// comes back, pasteInto drops it unless the widget it was aimed at is still the
+// one the clipboard would act on.
 func (a *App) pasteFromClipboard() {
 	target := a.activeClipboardTarget()
 	if target == nil {
@@ -190,11 +170,10 @@ func (a *App) pasteFromClipboard() {
 	})
 }
 
-// clipboardTargetToken is the identity of the field a host has focus on right
-// now, or nil from a host that doesn't distinguish its fields (and from no
-// host at all). Only propsheet.PropertySheet answers: it returns itself from
-// FocusedClipboardTarget, so nothing else can tell its rows apart. See
-// core.ClipboardTargetTokener.
+// clipboardTargetToken is the identity of the field a host has focus on, or nil
+// from a host that doesn't distinguish its fields. Only propsheet.PropertySheet
+// answers: it returns itself from FocusedClipboardTarget, so nothing else can
+// tell its rows apart. See core.ClipboardTargetTokener.
 func clipboardTargetToken(top Dialog) any {
 	if t, ok := top.(core.ClipboardTargetTokener); ok {
 		return t.ClipboardTargetToken()
@@ -202,23 +181,20 @@ func clipboardTargetToken(top Dialog) any {
 	return nil
 }
 
-// pasteInto applies text to the widget the paste was aimed at, and only to
-// that widget.
+// pasteInto applies text to the widget the paste was aimed at, and only to that
+// widget.
 //
-// Every clipboard read is asynchronous — the native tool is shelled out to on
-// a background goroutine, the terminal's OSC 52 reply arrives as an event
-// later still — so between Ctrl+V and the text arriving the user can have
-// closed the dialog it was meant for. Re-resolving the target at that point
-// instead of checking it is how a paste aimed at a dialog field lands in the
-// query editor behind it, which is exactly the failure the ClipboardHost work
-// removed from the read half. Dropping the paste is the right answer: the text
-// is still on the clipboard, and the next Ctrl+V goes where the user is now.
+// Every clipboard read is asynchronous — a shell-out on a background goroutine,
+// or the terminal's OSC 52 reply arriving as an event later still — so between
+// Ctrl+V and the text arriving the user can have closed the dialog it was meant
+// for. Re-resolving the target then is how a paste aimed at a dialog field lands
+// in the query editor behind it. Dropping the paste is the right answer: the
+// text is still on the clipboard, and the next Ctrl+V goes where the user is.
 //
 // token carries the same check one level deeper, for a host that answers with
-// itself: a PropertySheet is the active target whichever of its rows has
-// focus, so the identity check above cannot see a move from one row to the
-// next, and a paste aimed at Name arrives in Description. See
-// core.ClipboardTargetTokener.
+// itself: a PropertySheet is the active target whichever row has focus, so the
+// identity check above cannot see a move from one row to the next and a paste
+// aimed at Name arrives in Description. See core.ClipboardTargetTokener.
 func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 	if target == nil || a.activeClipboardTarget() != target {
 		return
@@ -234,21 +210,19 @@ func (a *App) pasteInto(target clipboardTarget, token any, text string) {
 // Terminal bracketed paste
 // ---------------------------------------------------------------------------
 
-// beginBracketedPaste starts collecting pasted content. tcell's
-// EnablePaste (see core.Init) only brackets the paste with EventPaste
-// start/end markers — the content itself still arrives as ordinary
-// EventKeys in between, which is why Run() buffers them here instead of
-// handling them.
+// beginBracketedPaste starts collecting pasted content. tcell's EnablePaste
+// (see core.Init) only brackets the paste with EventPaste start/end markers —
+// the content still arrives as ordinary EventKeys in between, which is why Run()
+// buffers them here.
 func (a *App) beginBracketedPaste() {
 	a.pasting = true
 	a.pasteBuf.Reset()
 }
 
-// bufferPastedKey appends one key of an in-progress bracketed paste to
-// pasteBuf. Anything that isn't a character, newline, or tab (arrow keys,
-// function keys — a terminal shouldn't send them inside a paste, but a
-// stray escape sequence can decode as one) is dropped rather than acted
-// on, so a paste can never trigger a command.
+// bufferPastedKey appends one key of an in-progress bracketed paste to pasteBuf.
+// Anything that isn't a character, newline or tab is dropped rather than acted
+// on — a stray escape sequence can decode as a function key — so a paste can
+// never trigger a command.
 func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 	switch ev.Key() {
 	case tcell.KeyRune:
@@ -260,12 +234,11 @@ func (a *App) bufferPastedKey(ev *tcell.EventKey) {
 	}
 }
 
-// endBracketedPaste applies the whole buffered paste to the current target
-// as one edit. Going through clipboardTarget.Paste rather than replaying
-// the keys is the point: replayed keys run the full typing path, where a
-// pasted newline arrives as KeyEnter and the open IntelliSense popup
-// commits its selected candidate instead — silently rewriting the pasted
-// text. One Paste call is also one undo step.
+// endBracketedPaste applies the whole buffered paste to the current target as
+// one edit. Going through clipboardTarget.Paste rather than replaying the keys
+// is the point: replayed keys run the typing path, where a pasted newline
+// arrives as KeyEnter and the open IntelliSense popup commits its candidate
+// instead, silently rewriting the text. One Paste call is also one undo step.
 func (a *App) endBracketedPaste() {
 	a.pasting = false
 	text := a.pasteBuf.String()
@@ -279,18 +252,17 @@ func (a *App) endBracketedPaste() {
 	}
 }
 
-// selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on
-// whichever widget Copy/Cut/Paste would currently act on.
+// selectAllInTarget runs Select All (Ctrl+A / Edit > Select All) on whichever
+// widget Copy/Cut/Paste would act on.
 func (a *App) selectAllInTarget() {
 	if target := a.activeClipboardTarget(); target != nil {
 		target.SelectAll()
 	}
 }
 
-// showEditorContextMenu pops up a Cut/Copy/Paste/Select All menu at (x,y),
-// wired to the same App-level clipboard actions the keyboard shortcuts and
-// Edit menu use. Fired from a query editor's right-click (see
-// controls.Editor.OnRightClick, wired in NewQueryPanel).
+// showEditorContextMenu pops up a Cut/Copy/Paste/Select All menu at (x,y), wired
+// to the same App-level clipboard actions the keyboard shortcuts and Edit menu
+// use. Fired from a query editor's right-click.
 func (a *App) showEditorContextMenu(x, y int) {
 	a.contextMenu.Show(x, y, []controls.MenuItem{
 		{Label: "Cut", Shortcut: "Ctrl+X", Action: func() { a.cutSelection() }},

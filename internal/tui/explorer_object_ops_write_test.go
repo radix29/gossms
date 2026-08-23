@@ -190,3 +190,72 @@ func TestObjectOpsMenuActionsAreWired(t *testing.T) {
 		}
 	}
 }
+
+// answerPrompt types a new name into the open rename prompt and accepts it,
+// the way a user does — the prompt's own input, not the callback, so the
+// trimming and the "unchanged name" check are exercised too.
+func answerPrompt(t *testing.T, a *App, name string) {
+	t.Helper()
+	if !a.promptDialog.Visible() {
+		t.Fatal("no prompt is open")
+	}
+	a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyCtrlU, "", tcell.ModNone))
+	for _, r := range name {
+		a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(r), tcell.ModNone))
+	}
+	a.promptDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+}
+
+// Renaming a column addresses sp_rename's three-part table.column form, built
+// from the table the node hangs off rather than from the column's own Schema
+// and Name — the same distinction the column Delete gets wrong if TableName is
+// dropped. The rename is also gated on a warning, since nothing that names the
+// column is updated by it.
+func TestRenameColumnRenamesInItsOwnTable(t *testing.T) {
+	a := newTestApp()
+	sc, inst := opTestConn(t)
+	node := opTestNode(sc, NodeColumn, "sales", "flagged", "Orders")
+
+	a.renameObject(node)
+	answerPrompt(t, a, "is_flagged")
+	if !a.confirmDialog.Visible() {
+		t.Fatal("the column rename went ahead without asking about dependent objects")
+	}
+	answerConfirm(t, a, false)
+	waitAndDrain(t, a)
+
+	stmts := inst.StatementsIn("appdb")
+	if len(stmts) != 1 {
+		t.Fatalf("statements = %q, want exactly the sp_rename", stmts)
+	}
+	got := stmts[0]
+	for _, want := range []string{"sp_rename", "COLUMN"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("statement = %q, want it to contain %q", got, want)
+		}
+	}
+	assertArgs(t, inst, "sp_rename", "[sales].[Orders].[flagged]", "is_flagged")
+}
+
+// Declining the warning must leave the column alone: the prompt has already
+// been answered by then, so a rename that runs anyway is invisible until the
+// next Refresh.
+func TestDecliningTheColumnRenameWarningWritesNothing(t *testing.T) {
+	a := newTestApp()
+	sc, inst := opTestConn(t)
+	node := opTestNode(sc, NodeColumn, "sales", "flagged", "Orders")
+
+	a.renameObject(node)
+	answerPrompt(t, a, "is_flagged")
+	if !a.confirmDialog.Visible() {
+		t.Fatal("no confirmation is open")
+	}
+	// Tab moves off Yes to No, Enter answers it.
+	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+	a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	// No wait: declining posts no callback, so there is nothing to drain and
+	// waiting for one is what would fail here.
+	if stmts := inst.StatementsIn("appdb"); len(stmts) != 0 {
+		t.Errorf("statements = %q, want none after declining", stmts)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -124,50 +125,80 @@ func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refre
 
 // ---- Jobs: Start / Stop / View History ----
 
-func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
+// jobIsRunning reports whether a job's current state means sp_start_job would
+// be refused and sp_stop_job accepted. Everything that is not idle counts as
+// running: a job between retries or performing completion actions has a live
+// session, and both procedures treat it as such.
+func jobIsRunning(state gosmo.JobState) bool {
+	return state != gosmo.JobStateIdle
+}
+
+// jobStateRefusal is the message for a Start/Stop asked of a job already in
+// the state it would produce, or "" when the action can go ahead.
+//
+// The state is read at action time rather than gating the menu item, and that
+// is deliberate: a job node's cached state is as old as the last folder load,
+// so greying the item out would hide a legitimate Stop for a job that started
+// running after the tree was populated. Here the check is on data one query
+// old, the request that cannot succeed is never sent, and the node is
+// refreshed either way so the tree stops disagreeing with the server.
+func jobStateRefusal(name string, running, wantRunning bool) string {
+	switch {
+	case running && wantRunning:
+		return fmt.Sprintf("Job %q is already running", name)
+	case !running && !wantRunning:
+		return fmt.Sprintf("Job %q is not running", name)
+	}
+	return ""
+}
+
+// runAgentJobStateAction is Start Job and Stop Job, which differ only in the
+// state they require and the verb they report.
+func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, start bool) {
 	if !a.requireConn(sc) {
 		return
 	}
 	name := node.data.Name
-	a.safego("starting an Agent job", func() {
+	verb, doneVerb, what := "stop", "stopped", "stopping an Agent job"
+	if start {
+		verb, doneVerb, what = "start", "started", "starting an Agent job"
+	}
+	a.safego(what, func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
+		var refusal string
 		j, err := sc.Server.JobByNameContext(ctx, name)
 		if err == nil {
-			err = j.StartContext(ctx, "")
+			refusal = jobStateRefusal(name, jobIsRunning(j.CurrentState), start)
+			switch {
+			case refusal != "":
+			case start:
+				err = j.StartContext(ctx, "")
+			default:
+				err = j.StopContext(ctx)
+			}
 		}
 		a.postAndWake(func() {
-			if err != nil {
-				a.setStatus(fmt.Sprintf("Failed to start job %q: %v", name, err))
+			switch {
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Failed to %s job %q: %v", verb, name, err))
 				return
+			case refusal != "":
+				a.setStatus(refusal)
+			default:
+				a.setStatus(fmt.Sprintf("Job %q %s", name, doneVerb))
 			}
-			a.setStatus(fmt.Sprintf("Job %q started", name))
 			a.detailBrowser.Invalidate(a, node)
 		})
 	})
 }
 
+func (a *App) startAgentJob(sc *db.ServerConn, node *explorerNode) {
+	a.runAgentJobStateAction(sc, node, true)
+}
+
 func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
-	if !a.requireConn(sc) {
-		return
-	}
-	name := node.data.Name
-	a.safego("stopping an Agent job", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
-		j, err := sc.Server.JobByNameContext(ctx, name)
-		if err == nil {
-			err = j.StopContext(ctx)
-		}
-		a.postAndWake(func() {
-			if err != nil {
-				a.setStatus(fmt.Sprintf("Failed to stop job %q: %v", name, err))
-				return
-			}
-			a.setStatus(fmt.Sprintf("Job %q stopped", name))
-			a.detailBrowser.Invalidate(a, node)
-		})
-	})
+	a.runAgentJobStateAction(sc, node, false)
 }
 
 // showAgentJobHistory opens a new query window against msdb, pre-filled

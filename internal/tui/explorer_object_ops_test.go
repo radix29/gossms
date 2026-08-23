@@ -41,9 +41,10 @@ func TestObjectOpsMenuItemsPerNodeType(t *testing.T) {
 		{"agent job", opNode(NodeAgentJob, "", "nightly", ""), true, false, false},
 		// A folder is not an object these actions apply to.
 		{"tables folder", opNode(NodeTables, "", "", ""), false, false, false},
-		// A column has Delete (ALTER TABLE ... DROP COLUMN) but no rename —
-		// sp_rename's COLUMN class is not wired — and cannot change schema.
-		{"column", opNode(NodeColumn, "dbo", "OrderID", "Orders"), false, true, false},
+		// A column has Delete (ALTER TABLE ... DROP COLUMN) and Rename
+		// (sp_rename's COLUMN class, behind a warning), but cannot change
+		// schema: it belongs to its table.
+		{"column", opNode(NodeColumn, "dbo", "OrderID", "Orders"), true, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

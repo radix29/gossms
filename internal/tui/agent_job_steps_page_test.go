@@ -2,9 +2,11 @@ package tui
 
 import (
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -17,13 +19,17 @@ import (
 
 const stepNameCol = 1
 
-// jobStepRow is one row of the 17-column sysjobsteps SELECT.
+// jobStepRow is one row of the 23-column sysjobsteps SELECT. The last six —
+// proxy, additional parameters, CmdExec success code, server, run-as user and
+// OS run priority — are what a reorder has to carry back through
+// sp_add_jobstep, which is why they are read at all.
 func jobStepRow(id int64, name, subsystem, command, database string) []driver.Value {
 	return []driver.Value{
 		id, name, subsystem, command, database,
 		int64(3), int64(0), int64(2), int64(0),
 		int64(1), int64(0), int64(0), int64(0),
 		int64(0), int64(0), "", int64(0),
+		"", "", int64(0), "", "", int64(0),
 	}
 }
 
@@ -31,7 +37,7 @@ func jobStepRow(id int64, name, subsystem, command, database string) []driver.Va
 // step the page may list but never write, and a T-SQL step whose database is
 // not in the server's list — the case the "(unchanged)" sentinel exists for.
 func jobStepsResponse() fakeResponse {
-	return fakeResponse{match: "FROM   msdb.dbo.sysjobsteps", cols: 17, rows: [][]driver.Value{
+	return fakeResponse{match: "FROM   msdb.dbo.sysjobsteps", cols: 23, rows: [][]driver.Value{
 		jobStepRow(1, "Check integrity", tsqlSubsystem, "DBCC CHECKDB", "appdb"),
 		jobStepRow(2, "Rebuild indexes", tsqlSubsystem, "EXEC dbo.usp_reindex", "appdb"),
 		jobStepRow(3, "Notify ops", "PowerShell", "Send-MailMessage", ""),
@@ -191,5 +197,81 @@ func TestJobStepsUntouchedPageWritesNothing(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("an untouched page wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// TestJobStepsMoveUpReordersOnTheServer. Move Up/Move Down only rearrange the
+// page's own list; the write is a fourth pass, and it addresses steps by the
+// numbers msdb will have — a delete and an insert, since msdb has no procedure
+// that renumbers a step in place.
+func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
+	inst, apply, form, grid := loadJobStepsPage(t)
+
+	// Rebuild indexes is step 2; moving it up makes it step 1.
+	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
+	clickButton(t, form, "Move Up")
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 2 {
+		t.Fatalf("want the delete and the insert, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+	if !strings.Contains(stmts[0], "sp_delete_jobstep @job_name = N'Nightly reindex', @step_id = 2") {
+		t.Errorf("first statement should remove the step from its old position:\n%s", stmts[0])
+	}
+	if !strings.Contains(stmts[1], "@step_id = 1") {
+		t.Errorf("the step was not re-inserted at position 1:\n%s", stmts[1])
+	}
+	// The re-add has to carry the step's own definition: it is a new row, so
+	// anything left out is defaulted away rather than kept.
+	for _, want := range []string{"@step_name = N'Rebuild indexes'", "@command = N'EXEC dbo.usp_reindex'", "@database_name = N'appdb'"} {
+		if !strings.Contains(stmts[1], want) {
+			t.Errorf("the re-inserted step lost %s:\n%s", want, stmts[1])
+		}
+	}
+}
+
+// Moving a step and moving it back is not a change, and must write nothing —
+// the page compares orders, not clicks.
+func TestJobStepsMoveThereAndBackWritesNothing(t *testing.T) {
+	inst, apply, form, grid := loadJobStepsPage(t)
+
+	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
+	clickButton(t, form, "Move Up")
+	clickButton(t, form, "Move Down")
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("statements = %v, want none", stmts)
+	}
+}
+
+// reorderedStepIDs is the part a server cannot check: the ids it names are the
+// ones the other three passes leave behind, not the ones the page loaded. A
+// removed step closes its gap and a new step lands at the end, so the page's
+// display numbers say nothing about what the reorder has to send.
+func TestReorderedStepIDsUsesThePostApplyNumbering(t *testing.T) {
+	step := func(id int) *jobStepEdit {
+		return &jobStepEdit{orig: &gosmo.JobStep{StepID: id}, stepID: id}
+	}
+	a, b, c := step(1), step(2), step(3)
+	b.pendingRemove = true
+	d := &jobStepEdit{isNew: true, name: "added"}
+
+	// Page order: c, a, d — with b removed, a and c become steps 1 and 2 and
+	// the new step is 3.
+	got := reorderedStepIDs([]*jobStepEdit{c, a, b, d})
+	want := []int{2, 1, 3}
+	if !slices.Equal(got, want) {
+		t.Errorf("reorderedStepIDs = %v, want %v", got, want)
+	}
+
+	// The same set left in its own order is not a reorder at all.
+	if got := reorderedStepIDs([]*jobStepEdit{a, c, b, d}); got != nil {
+		t.Errorf("reorderedStepIDs = %v for an unchanged order, want nil", got)
 	}
 }

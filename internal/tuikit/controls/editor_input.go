@@ -12,10 +12,10 @@ import (
 // wrap-mode mouse handling)
 // ---------------------------------------------------------------------------
 
-// readOnlySafeKey reports whether ev is one of the movement/selection keys
-// SetReadOnly(true) still lets through. It inspects Key() only: Shift (extend
-// selection) and Ctrl (word-jump) don't change a key's Key() value, so
-// Shift+Left still passes, while every mutating key is rejected.
+// readOnlySafeKey reports whether ev is one of the movement or selection keys
+// SetReadOnly(true) lets through. It inspects Key() only: Shift and Ctrl don't
+// change a key's Key() value, so Shift+Left passes while every mutating key is
+// rejected.
 func readOnlySafeKey(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight,
@@ -27,9 +27,9 @@ func readOnlySafeKey(ev *tcell.EventKey) bool {
 
 // HandleKey handles keyboard input.
 func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
-	// An open completion popup gets first refusal of list-navigation, commit
-	// and dismiss keys. Everything else falls through to the normal handling
-	// below, which calls updateCompletion at the end to keep it in sync.
+	// An open completion popup gets first refusal of list-navigation, commit and
+	// dismiss keys. Everything else falls through below, which calls
+	// updateCompletion at the end to keep it in sync.
 	if e.completionOpen && e.handleCompletionKey(ev) {
 		return true
 	}
@@ -43,10 +43,9 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	shiftHeld := mods&tcell.ModShift != 0
 	altHeld := mods&tcell.ModAlt != 0
 
-	// typedChar marks a plainly typed character — the only key that can start
-	// a completion session from closed, subject to canAutoOpenCompletion's
-	// word-start gate. Everything else only re-syncs an already-open popup;
-	// deleting or undoing never summons IntelliSense.
+	// typedChar marks a plainly typed character — the only key that can start a
+	// completion session from closed, subject to canAutoOpenCompletion's
+	// word-start gate. Everything else only re-syncs an already-open popup.
 	typedChar := false
 	switch ev.Key() {
 	case tcell.KeyEnter, tcell.KeyBackspace, tcell.KeyBackspace2, tcell.KeyDelete,
@@ -68,7 +67,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	// Move Line (Ctrl+Shift+Up/Down) and rectangular block selection
-	// (Alt+Shift+Arrow) both ride on movement keys + Shift, so they are carved
+	// (Alt+Shift+Arrow) both ride on movement keys plus Shift, so they are carved
 	// out of the plain "extend selection" combo below.
 	moveLineCombo := (ev.Key() == tcell.KeyUp || ev.Key() == tcell.KeyDown) && ctrlHeld && shiftHeld && !altHeld
 	blockCombo := isArrowKey && altHeld && shiftHeld && !e.wrapMode
@@ -81,8 +80,8 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol
 	}
 	// dropSelection decides, after the switch below, whether to clear the
-	// selection. True by default — any key that isn't a compatible extension
-	// drops it — and flipped false by any case managing it itself.
+	// selection. True by default, and flipped false by any case managing it
+	// itself.
 	dropSelection := !extending
 
 	switch ev.Key() {
@@ -107,9 +106,9 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			if e.cursorCol > 0 {
 				e.cursorCol = core.WordBoundaryLeft(e.doc.Line(e.cursorRow), e.cursorCol)
 			} else if e.cursorRow > 0 && !e.selBlock {
-				// Column selection never crosses lines via Left/Right — only
-				// Up/Down changes a block's row range. Applies to the
-				// word-jump above as well as the plain move below.
+				// Column selection never crosses lines via Left/Right; only
+				// Up/Down changes a block's row range. Applies to the word-jump
+				// above as well as the plain move below.
 				e.cursorRow--
 				e.cursorCol = len(e.doc.Line(e.cursorRow))
 			}
@@ -219,8 +218,8 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 			e.insertRune(' ')
 		}
 	case tcell.KeyBacktab:
-		// Some terminals report Shift+Tab as this key rather than
-		// KeyTab+ModShift. Backtab always implies Shift was held.
+		// Some terminals report Shift+Tab as this key rather than KeyTab+ModShift.
+		// Backtab always implies Shift.
 		e.DedentLines()
 		dropSelection = false
 	case tcell.KeyCtrlZ:
@@ -245,18 +244,17 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		dropSelection = false
 	default:
 		r := core.EvRune(ev)
-		// Ctrl+/ emits the 0x1F byte on legacy terminals, which tcell v3
-		// decodes as KeyRune '_' with ModCtrl (Ctrl+_), not KeyUS; a modern
-		// keyboard protocol instead reports it as rune '/'. Accept both.
+		// Ctrl+/ emits 0x1F on legacy terminals, which tcell v3 decodes as
+		// KeyRune '_' with ModCtrl, not KeyUS; a modern keyboard protocol
+		// reports rune '/'. Accept both.
 		if ctrlHeld && (r == '/' || r == '_') {
 			e.ToggleLineComments()
 			dropSelection = false
 			break
 		}
-		// Ctrl+Space is SSMS's IntelliSense trigger where a completion
-		// provider is installed; otherwise it is the keyboard equivalent of a
-		// right-click, opening OnRightClick's Cut/Copy/Paste menu at the text
-		// cursor rather than a click position.
+		// Ctrl+Space is SSMS's IntelliSense trigger where a completion provider
+		// is installed; otherwise it opens OnRightClick's Cut/Copy/Paste menu at
+		// the text cursor.
 		if ctrlHeld && r == ' ' {
 			if e.completionProvider != nil {
 				e.triggerCompletionExplicit()
@@ -270,8 +268,8 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if r != 0 && !ctrlHeld && !altHeld {
 			e.pushUndoLocal()
 			if e.blockEditing() {
-				// One character into every row the block spans, leaving it
-				// armed a column further right so the next keystroke follows.
+				// One character into every row the block spans, leaving it armed
+				// a column further right so the next keystroke follows.
 				e.blockInsertRune(r)
 				dropSelection = false
 				break
@@ -293,17 +291,17 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.selBlock = false
 	}
 	e.clampCursor()
-	// Vertical movement preserves the goal column instead of resetting it;
-	// every other cursor-moving key re-anchors it to where the cursor ended.
+	// Vertical movement preserves the goal column; every other cursor-moving key
+	// re-anchors it where the cursor ended.
 	switch ev.Key() {
 	case tcell.KeyUp, tcell.KeyDown, tcell.KeyPgUp, tcell.KeyPgDn:
 	default:
 		e.desiredCol = e.cursorDisplayCol()
 	}
 	e.ensureCursorVisible()
-	// A typed character may only open the popup from closed when the cursor
-	// sits at the end of a word starting with a letter or '['. While it is
-	// already open, every key reaching here re-syncs it.
+	// A typed character may only open the popup from closed when the cursor sits
+	// at the end of a word starting with a letter or '['. While it is open, every
+	// key reaching here re-syncs it.
 	if e.completionOpen || (typedChar && e.canAutoOpenCompletion()) {
 		e.updateCompletion()
 	}
@@ -312,14 +310,14 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 
 // HandleMouse handles mouse events.
 func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
-	// Same reasoning as HandleKey's completionOpen check: the popup floats
-	// independently of the editor's rect, so it gets first refusal before any
-	// position-based routing can misinterpret a click meant for it.
+	// As with HandleKey's completionOpen check: the popup floats independently of
+	// the editor's rect, so it gets first refusal before position-based routing
+	// can misread a click meant for it.
 	if e.completionOpen && e.handleCompletionMouse(ev) {
 		return true
 	}
-	// Always process a release first, regardless of position, so a drag ending
-	// outside the editor's bounds still terminates cleanly instead of leaving
+	// Always process a release first, whatever its position, so a drag ending
+	// outside the editor's bounds terminates cleanly rather than leaving
 	// mouseDragging stuck true.
 	if ev.Buttons() == tcell.ButtonNone {
 		wasDragging := e.mouseDragging || e.sbDragging || e.sbDraggingX
@@ -329,10 +327,10 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		return wasDragging
 	}
 
-	// A horizontal-scrollbar drag keeps control once started, even after the
+	// A horizontal-scrollbar drag keeps control once started even after the
 	// pointer leaves the editor, so it is checked before the bounds test —
-	// unlike the vertical bar, whose track runs the full content height and is
-	// far harder to drag off. Mirrors DataGrid.
+	// unlike the vertical bar, whose track spans the full content height. As in
+	// DataGrid.
 	if e.hScrollbarDrag(ev) {
 		return true
 	}
@@ -352,12 +350,12 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	// Scrollbar drag/click takes priority over the text-click handling below:
-	// the bar is drawn over the rightmost content column, which would otherwise
-	// read as a click positioning the cursor at that line's end. total mirrors
-	// what drawScrollbar passed to core.DrawScrollbar — visual rows in wrap
-	// mode, logical lines otherwise. vls is reused below by handleMouseWrapped
-	// rather than recomputing the same O(document) slice for this event.
+	// Scrollbar drag/click takes priority over the text-click handling below: the
+	// bar is drawn over the rightmost content column, which would otherwise read
+	// as a click positioning the cursor at that line's end. total mirrors what
+	// drawScrollbar passed to core.DrawScrollbar — visual rows in wrap mode,
+	// logical lines otherwise. handleMouseWrapped reuses vls below rather than
+	// recomputing the same O(document) slice.
 	var vls []visualLine
 	haveVLS := false
 	if ev.Buttons() == tcell.Button1 {
@@ -383,21 +381,20 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 		col := e.runeColAtScreenX(row, mx-contentX)
 		if !e.mouseDragging {
 			// Fresh click: reposition the cursor. Without Shift, arm a new
-			// anchor here (HasSelection() stays false until the drag moves
-			// off this point). With Shift, keep whatever anchor is active —
-			// or the pre-click cursor — and move only the cursor, the
-			// click-to-extend behaviour most editors give Shift+Click. Alt on
-			// the press picks block vs. linear selection for the whole drag,
-			// best-effort since terminals vary in reporting it.
+			// anchor here — HasSelection() stays false until the drag moves off
+			// this point. With Shift, keep the active anchor (or the pre-click
+			// cursor) and move only the cursor, the click-to-extend behaviour
+			// most editors give Shift+Click. Alt on the press picks block vs.
+			// linear selection for the whole drag, best-effort since terminals
+			// vary in reporting it.
 			e.mouseDragging = true
-			// A second unmodified press on the same spot selects the word
-			// under it. mouseDragging is latched above, so the resends while
-			// the button stays down land in the drag branch and extend from
-			// the word instead of re-selecting it. pressIsDouble runs for
-			// every fresh press, modified or not, so a Shift- or Alt-clicked
-			// press still counts as "the previous press" for the next one —
-			// which is why the modifier test lives inside it, not in an &&
-			// here that would discard the press before consulting it.
+			// A second unmodified press on the same spot selects the word under
+			// it. mouseDragging is latched above, so resends while the button is
+			// held land in the drag branch and extend from the word.
+			// pressIsDouble runs for every fresh press, modified or not, so a
+			// Shift- or Alt-clicked press still counts as "the previous press" —
+			// which is why the modifier test lives inside it rather than in an
+			// && here that would discard the press before consulting it.
 			if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
 				e.selectWordAt(row, col)
 				return true
@@ -421,9 +418,9 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:
-		// Shift+wheel is the desktop convention for horizontal scroll, and
-		// some terminals report it that way rather than as
-		// WheelLeft/WheelRight below, so honour both. Matches DataGrid.
+		// Shift+wheel is the desktop convention for horizontal scroll, and some
+		// terminals report it that way rather than as WheelLeft/WheelRight
+		// below, so honour both. As in DataGrid.
 		if ev.Modifiers()&tcell.ModShift != 0 {
 			e.scrollColBy(-horizontalWheelChars)
 		} else if e.scrollRow > 0 {
@@ -447,24 +444,24 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	return false
 }
 
-// doubleClickInterval is how close two presses on the same text position must
-// be to count as a double-click. Same value as DataGrid's
-// resizeDoubleClickInterval, so the app has one double-click speed.
+// doubleClickInterval is how close two presses on the same text position must be
+// to count as a double-click — DataGrid's resizeDoubleClickInterval, so the app
+// has one double-click speed.
 const doubleClickInterval = 500 * time.Millisecond
 
 // pressIsDouble reports whether an unmodified press at (row, col) follows a
-// previous press at the same position closely enough to count as a
-// double-click, and records this press for the next call.
+// previous one at the same position closely enough to count as a double-click,
+// and records this press for the next call.
 //
-// mod is taken here rather than tested by the caller because only the false
-// path records the press: a modified press must reach the recording branch, or
-// it leaves no "previous press" for the one after it.
+// mod is taken here rather than tested by the caller because only the false path
+// records the press: a modified press must reach the recording branch, or it
+// leaves no "previous press" for the one after it.
 func (e *Editor) pressIsDouble(row, col int, at time.Time, mod tcell.ModMask) bool {
 	double := mod == tcell.ModNone &&
 		row == e.lastClickRow && col == e.lastClickCol &&
 		!e.lastClickAt.IsZero() && at.Sub(e.lastClickAt) <= doubleClickInterval
 	if double {
-		// Don't let a third press pair with this one as well.
+		// Don't let a third press pair with this one too.
 		e.lastClickAt = time.Time{}
 		return true
 	}
@@ -473,16 +470,15 @@ func (e *Editor) pressIsDouble(row, col int, at time.Time, mod tcell.ModMask) bo
 }
 
 // hScrollbarDrag handles a Button1 press or drag on the horizontal scrollbar.
-// Unlike DataGrid's equivalent it can delegate to core.HandleScrollbarDragH
-// as-is: that helper treats the track's width as the visible count, and here
-// the two are the same number of rune columns. Latches sbDraggingX for the rest
-// of the gesture so the thumb follows the pointer off the bar's row. Returns
-// false for a non-qualifying event, so the caller can chain it ahead of its own
-// hit-testing.
+// Unlike DataGrid's equivalent it delegates to core.HandleScrollbarDragH as-is:
+// that helper treats the track's width as the visible count, and here the two
+// are the same number of rune columns. Latches sbDraggingX for the rest of the
+// gesture, and returns false for a non-qualifying event so the caller can chain
+// it ahead of its own hit-testing.
 func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
 	// A text-selection drag in progress owns the rest of its gesture: the track
 	// spans the full content width, so a selection dragged past the last line
-	// would otherwise land on the bar's row and yank the view sideways.
+	// would land on the bar's row and yank the view sideways.
 	if e.mouseDragging && !e.sbDraggingX {
 		return false
 	}
@@ -493,10 +489,9 @@ func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
 	return core.HandleScrollbarDragH(ev, x, y, w, total, &e.sbDraggingX, &e.scrollCol)
 }
 
-// SetCursorFromScreen moves the cursor to the document position under (x, y)
-// and clears any selection — HandleMouse's fresh-click targeting math, exposed
-// for callers placing the cursor without synthesizing a mouse event, such as
-// Object Explorer's drag-and-drop.
+// SetCursorFromScreen moves the cursor to the document position under (x, y) and
+// clears any selection — HandleMouse's fresh-click targeting math, exposed for
+// callers placing the cursor without synthesizing a mouse event.
 func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
 	row := core.Clamp(e.scrollRow+min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
@@ -510,8 +505,7 @@ func (e *Editor) SetCursorFromScreen(x, y int) {
 // runeColAtScreenX converts an x offset within the content area into a rune
 // index on the given row, clamped to the line's end. dx is a terminal-column
 // offset and the result a rune index, so this is where a wide character earlier
-// on the line is accounted for — reading dx as a rune index directly put the
-// caret left of the click on any line containing one.
+// on the line is accounted for.
 func (e *Editor) runeColAtScreenX(row, dx int) int {
 	if row < 0 || row >= e.doc.Len() {
 		return 0
@@ -528,14 +522,12 @@ func (e *Editor) colForDesired() int {
 	return min(core.RuneIndexAtColumn(line, e.desiredCol), len(line))
 }
 
-// horizontalWheelChars is how many characters one horizontal wheel tick
-// scrolls — meaningful only outside wrapMode, where scrollCol is a character
-// offset rather than unused.
+// horizontalWheelChars is how many characters one horizontal wheel tick scrolls
+// — meaningful only outside wrapMode, where scrollCol is a character offset.
 const horizontalWheelChars = 4
 
-// scrollColBy shifts scrollCol by delta (negative scrolls left), clamped so
-// it can't scroll past showing at least the last character of the buffer's
-// longest line.
+// scrollColBy shifts scrollCol by delta (negative scrolls left), clamped so it
+// can't scroll past the last character of the buffer's longest line.
 func (e *Editor) scrollColBy(delta int) {
 	e.scrollCol = core.Clamp(e.scrollCol+delta, 0, max(0, e.doc.maxDisplayWidth()-1))
 }
