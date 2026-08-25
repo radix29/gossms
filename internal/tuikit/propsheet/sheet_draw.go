@@ -58,7 +58,7 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	if p.zone == zoneButtons {
 		activeIdx = p.btnFocus
 	}
-	p.DrawButtons(s, sheetButtonLabels, activeIdx)
+	p.DrawButtons(s, p.buttonLabels(), activeIdx)
 
 	if p.zone == zoneForm {
 		if f := p.PageForm(p.current); f != nil {

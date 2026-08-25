@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -120,6 +121,9 @@ func (fs *serverFS) List(dir string) ([]dialogs.FileEntry, error) {
 
 	found, err := fs.sc.Server.EnumFileSystemContext(ctx, dir)
 	if err != nil {
+		return nil, displayError(err)
+	}
+	if err := legacyListingRefusal(fs.sc, found); err != nil {
 		return nil, err
 	}
 	entries := make([]dialogs.FileEntry, 0, len(found))
@@ -154,4 +158,30 @@ func (fs *serverFS) Exists(path string) (bool, bool, error) {
 	ctx, cancel := fs.ctx()
 	defer cancel()
 	return fs.sc.Server.FileSystemExistsContext(ctx, path)
+}
+
+// legacyListingRefusal turns the one silent failure in this file into a spoken
+// one.
+//
+// A pre-2017 instance is listed through xp_dirtree, which returns *no rows and
+// no error* to a login that is not sysadmin — indistinguishable from an empty
+// directory, so the browser showed one and the user concluded the folder was
+// empty. There is nothing in the result to detect: the three facts that make it
+// a refusal are the version gate, the empty result, and the login's role.
+//
+// Deliberately conservative on the last of those. The claim is made only when
+// the probe actually ran and actually said "not a sysadmin" — Capabilities
+// answers false for a role it was never asked about, so without Probed() every
+// unprobed connection would report an empty directory as a permissions problem.
+// A sysadmin, or a login we could not ask, still sees the empty listing.
+func legacyListingRefusal(sc *db.ServerConn, found []*gosmo.FileSystemEntry) error {
+	if len(found) > 0 || !sc.Server.EnumFileSystemIsLegacy() {
+		return nil
+	}
+	caps := sc.Capabilities()
+	if !caps.Probed() || caps.IsSysadmin() {
+		return nil
+	}
+	return errors.New("this directory cannot be listed: before SQL Server 2017 the server " +
+		"lists directories through xp_dirtree, which requires sysadmin")
 }

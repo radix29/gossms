@@ -39,6 +39,10 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 
 			f, apply := buildPermissionsMatrix(databasePermPrincipals(users, roles), gosmo.DatabasePermissionNames(), entries, 8, 12,
 				databasePermApply(d))
+			// Same visibility filtering as the server-scope page, one scope
+			// down — see server_props_permissions.go.
+			f.Prepend(visibilityNote(sc.DatabaseCapabilities(ctx, dbName), "VIEW DEFINITION",
+				"users, database roles and permissions")...)
 			return f, apply, nil
 		},
 	}

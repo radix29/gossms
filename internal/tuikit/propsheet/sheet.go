@@ -23,6 +23,12 @@ type pageSlot struct {
 	seq   int
 	form  *Form
 	err   error
+
+	// readOnly is the reason this page cannot be written, or "" when it can.
+	// Set by SetPageReadOnly before the form arrives; SetPageForm turns it into
+	// a Note at the top of the form and a form that refuses focus, and the
+	// button row drops OK and Apply while such a page is showing.
+	readOnly string
 }
 
 // focusZone is which of the sheet's three regions has keyboard focus: the page
@@ -40,6 +46,14 @@ const (
 const zoneNone focusZone = -1
 
 var sheetButtonLabels = []string{"OK", "Cancel", "Apply", "Script Changes"}
+
+// readOnlyButtonLabels is the row a page that cannot be written shows instead.
+// OK and Apply are removed rather than greyed: there is nothing for them to
+// send — a read-only Form cannot become dirty — and a greyed OK on a page the
+// user is looking at reads as "not yet", not as "not ever". Script Changes
+// stays, because generating the statements is exactly what a user without the
+// rights to run them needs.
+var readOnlyButtonLabels = []string{"Close", "Script Changes"}
 
 const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Revert   Ctrl+C Copy   Esc Cancel"
 
@@ -196,6 +210,9 @@ func (p *PropertySheet) SelectPage(i int) {
 	p.current = i
 	p.pageList.SetSelected(i)
 	p.message = ""
+	// The button row is shorter on a read-only page, so a focus index carried
+	// over from a writable one can point past its end.
+	p.btnFocus = min(p.btnFocus, len(p.buttonLabels())-1)
 	if p.pages[i].state == PageNotLoaded && !p.applying {
 		p.startLoad(i)
 	}
@@ -225,6 +242,35 @@ func (p *PropertySheet) SetPageForm(page, seq int, f *Form) {
 	slot.form = f
 	slot.state = PageReady
 	slot.err = nil
+	if f != nil && slot.readOnly != "" {
+		f.Prepend(Note(slot.readOnly))
+		f.SetReadOnly(true)
+	}
+}
+
+// SetPageReadOnly marks page as unwritable, with reason as the sentence shown
+// at the top of it. Call it before SetPageForm for the same page and seq —
+// that is what applies it to the form.
+//
+// Under the same seq/visibility staleness guard as SetPageForm, and on the UI
+// goroutine.
+func (p *PropertySheet) SetPageReadOnly(page, seq int, reason string) {
+	if page < 0 || page >= len(p.pages) || !p.Visible() {
+		return
+	}
+	slot := &p.pages[page]
+	if seq != slot.seq {
+		return
+	}
+	slot.readOnly = reason
+}
+
+// buttonLabels is the button row for the page on screen.
+func (p *PropertySheet) buttonLabels() []string {
+	if p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].readOnly != "" {
+		return readOnlyButtonLabels
+	}
+	return sheetButtonLabels
 }
 
 // SetPageError reports a failed load, under the same seq/visibility
@@ -348,22 +394,29 @@ func (p *PropertySheet) setZone(z focusZone) {
 	p.zone = z
 }
 
+// activateButton dispatches on the button's *label*, not its index: the row
+// has two shapes (see readOnlyButtonLabels) and an index-based switch would
+// run OK when the user pressed Close.
 func (p *PropertySheet) activateButton(i int) {
 	if p.applying {
 		return
 	}
-	switch i {
-	case 0:
+	labels := p.buttonLabels()
+	if i < 0 || i >= len(labels) {
+		return
+	}
+	switch labels[i] {
+	case "OK":
 		if p.OnOK != nil {
 			p.OnOK()
 		}
-	case 1:
+	case "Cancel", "Close":
 		p.cancel()
-	case 2:
+	case "Apply":
 		if p.OnApply != nil {
 			p.OnApply()
 		}
-	case 3:
+	case "Script Changes":
 		if p.OnScript != nil {
 			p.OnScript()
 		}

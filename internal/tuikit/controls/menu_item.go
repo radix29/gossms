@@ -22,6 +22,13 @@ type MenuItem struct {
 	// instead of firing Action, and draws a ▸ marker where a shortcut would
 	// otherwise go. See menuCascade.
 	Sub []MenuItem
+
+	// Note is shown in the shortcut column *while the item is disabled*, to
+	// say why. A disabled item cannot be selected or activated, so there is no
+	// keypress or click left to answer with a status message — without this,
+	// an item withheld for lack of a permission is simply grey and silent.
+	// Its own Shortcut is shown again once the item is enabled.
+	Note string
 }
 
 // enabled reports whether it can be selected or activated right now.
@@ -76,6 +83,9 @@ func stepSelectableItem(items []MenuItem, from, dir int) int {
 func menuRowSuffix(it MenuItem) string {
 	if len(it.Sub) > 0 {
 		return "▸"
+	}
+	if it.Note != "" && !it.enabled() {
+		return it.Note
 	}
 	return it.Shortcut
 }

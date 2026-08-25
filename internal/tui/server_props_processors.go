@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -49,9 +50,20 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				return nil, nil, err
 			}
 			info := sc.Server.Info()
-			proc, err := sc.Server.ProcessorInfoContext(ctx)
-			if err != nil {
-				return nil, nil, err
+			// Not fatal — see server_props_general.go. sys.dm_os_sys_info is
+			// refused for a login without VIEW SERVER PERFORMANCE STATE, which
+			// leaves the three counts unreadable and the affinity grid empty
+			// (LogicalCPUCount is zero for the same reason), but the Threads
+			// and Parallelism rows below are still editable.
+			proc, procErr := sc.Server.ProcessorInfoContext(ctx)
+			if procErr != nil {
+				proc = &gosmo.ProcessorInfo{}
+			}
+			procInt := func(v int) string {
+				if procErr != nil {
+					return unreadableValue
+				}
+				return strconv.Itoa(v)
 			}
 
 			var intRows []configRow
@@ -84,11 +96,11 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 			affinityGrid := propsheet.NewToggleGrid([]string{"CPU", "Affinity", "I/O Affinity", "NUMA"}, []int{1, 2}, min(cpuCount+3, 12))
 			affinityGrid.SetRows(text, values)
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Processor information"),
-				propsheet.Static("Processors", strconv.Itoa(proc.CPUCount)),
-				propsheet.Static("NUMA nodes", strconv.Itoa(proc.NUMANodeCount)),
-				propsheet.Static("Hyperthread ratio", strconv.Itoa(proc.HyperthreadRatio)),
+				propsheet.Static("Processors", procInt(proc.CPUCount)),
+				propsheet.Static("NUMA nodes", procInt(proc.NUMANodeCount)),
+				propsheet.Static("Hyperthread ratio", procInt(proc.HyperthreadRatio)),
 				propsheet.Section("Processor affinity"),
 				autoAffinity,
 				autoIOAffinity,
@@ -100,7 +112,11 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				propsheet.Section("Parallelism"),
 				cfgInt("max degree of parallelism", "Max degree of parallelism", ""),
 				cfgInt("cost threshold for parallelism", "Cost threshold for parallelism", ""),
-			)
+			}
+			if procErr != nil {
+				rows = append(rows, deniedReadNote("VIEW SERVER STATE"))
+			}
+			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
 				changed, err := applyConfigRows(ctx, sc, intRows, boolRows)

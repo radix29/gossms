@@ -31,8 +31,8 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 			{"Collation", info.Collation},
 			{"Data Path", info.DefaultDataPath},
 			{"Log Path", info.DefaultLogPath},
-			{"CPU Count", strconv.Itoa(info.LogicalCPUCount)},
-			{"Memory (MB)", formatMB(float64(info.PhysicalMemoryMB))},
+			{"CPU Count", sysInfoInt(info, int64(info.LogicalCPUCount))},
+			{"Memory (MB)", sysInfoMB(info)},
 			{"Available Memory (MB)", "Loading..."},
 			{"NUMA Nodes", "Loading..."},
 		}

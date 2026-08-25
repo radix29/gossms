@@ -39,16 +39,17 @@ const unsetItem = "(not set)"
 // the rest, and Query Store exposes its full configuration plus
 // Flush/Clear actions.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
+	w := databaseWriteRights()
 	return []propPage{
-		pageDatabaseGeneral(sc, dbName),
-		pageDatabaseFiles(sc, dbName),
-		pageDatabaseFilegroups(sc, dbName),
-		pageDatabaseOptions(sc, dbName),
-		pageDatabaseChangeTracking(sc, dbName),
-		pageDatabaseQueryStore(sc, dbName),
-		pageDatabasePermissions(sc, dbName),
-		pageDatabaseExtendedProperties(sc, dbName),
-		pageDatabaseScopedConfig(sc, dbName),
+		withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseFiles(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseFilegroups(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseOptions(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseChangeTracking(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseQueryStore(sc, dbName), dbName, w...),
+		withRequires(pageDatabasePermissions(sc, dbName), dbName, rightControlDB, rightAlterAnyDatabase),
+		withRequires(pageDatabaseExtendedProperties(sc, dbName), dbName, w...),
+		withRequires(pageDatabaseScopedConfig(sc, dbName), dbName, w...),
 	}
 }
 
@@ -103,6 +104,13 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				}
 			}
 
+			// sys.database_principals is metadata-visibility filtered, so a
+			// login without VIEW DEFINITION counts only the users it can see
+			// and the page would state that smaller number as fact — 5 of
+			// HealthClinic's 8, measured on both test servers.
+			dbCaps := sc.DatabaseCapabilities(ctx, dbName)
+			userCount := valueOrUnreadable(dbCaps, "VIEW DEFINITION", strconv.Itoa(len(users)))
+
 			ownerRow := selectPreserving("Owner", loginNames, opts.Owner, unknownOwnerItem)
 			recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel())))
@@ -115,7 +123,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Date created", formatSQLDate(d.CreateDate())),
 				propsheet.Static("Size (MB)", fmt.Sprintf("%.2f", space.TotalMB)),
 				propsheet.Static("Space available (MB)", fmt.Sprintf("%.2f", space.UnallocatedMB)),
-				propsheet.Static("Number of users", strconv.Itoa(len(users))),
+				propsheet.Static("Number of users", userCount),
 				propsheet.Section("Maintenance"),
 				propsheet.Static("Collation", d.Collation()),
 				propsheet.Static("Compatibility level", strconv.Itoa(int(d.CompatibilityLevel()))),

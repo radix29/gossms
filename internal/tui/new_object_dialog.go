@@ -174,7 +174,7 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 			d.waiting = nil
 			if err != nil {
 				for _, r := range waiting {
-					d.SetPageError(r.page, r.seq, err)
+					d.SetPageError(r.page, r.seq, displayError(err))
 				}
 				return
 			}
@@ -253,7 +253,7 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 		d.post(func() {
 			d.SetApplying(false)
 			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
+				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 				return
 			}
 			onSuccess()

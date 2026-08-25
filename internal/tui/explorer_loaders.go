@@ -144,8 +144,18 @@ func listChildren[T any](fetch func() ([]T, error), toNode func(T) *explorerNode
 
 // errExplorerNode builds a placeholder error node. It carries no id — the
 // id is assigned later by ObjectExplorer.SetChildren on the UI goroutine.
+//
+// A permission refusal is rendered as the server's own sentence about it,
+// rather than the nested plumbing string the wrapping produces
+// ("gosmo: list tables in \"x\": gosmo: USE x: mssql: The server principal…").
+// Only a refusal: any other failure keeps its full text, because a truncated
+// read reported as a permissions problem sends the user after the wrong thing.
 func errExplorerNode(err error) *explorerNode {
-	return &explorerNode{label: err.Error(), data: nodeData{Type: NodeError}}
+	label := err.Error()
+	if denied := accessDeniedText(err); denied != "" {
+		label = denied
+	}
+	return &explorerNode{label: label, data: nodeData{Type: NodeError}}
 }
 
 // fqn brackets a schema-qualified SQL Server identifier for use in

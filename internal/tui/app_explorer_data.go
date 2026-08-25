@@ -108,7 +108,26 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 
 func (a *App) onNodeSelected(node *explorerNode) {
 	a.setStatus(FormatNodePath(node))
+	a.primeDatabaseCapabilities(node)
 	a.detailBrowser.ShowNodeDetails(a, node)
+}
+
+// primeDatabaseCapabilities warms the per-database capability cache for the
+// node the user has just moved to, off the UI goroutine.
+//
+// A menu item's Enabled predicate runs while the menu is being drawn and can
+// only read the cache (CachedDatabaseCapabilities), so without this every
+// database-scope gate would fail open until something else happened to probe.
+// Selecting a node is the move that precedes opening its menu, and the probe
+// is two round trips on the first touch of a database and nothing afterwards.
+func (a *App) primeDatabaseCapabilities(node *explorerNode) {
+	sc, dbName := resolveConn(node), node.data.DBName
+	if sc == nil || dbName == "" {
+		return
+	}
+	a.safego("priming database capabilities", func() {
+		sc.DatabaseCapabilities(sc.Context(), dbName)
+	})
 }
 
 func (a *App) showContextMenu(node *explorerNode, x, y int) {
@@ -194,9 +213,11 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			{Label: "Disconnect", Action: func() { a.disconnectActive() }},
 			{Divider: true},
-			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
 			{Divider: true},
-			{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+			gate(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+				sc, "", rightViewServerState),
 			{Label: "View SQL Server Log", Action: func() {
 				a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
 			}},
@@ -208,7 +229,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
 			{Divider: true},
 			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
 			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
@@ -223,10 +245,13 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
-			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+			gate(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+				sc, node.data.DBName, rightBackupDatabase, rightAlterAnyDatabase),
+			gate(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+				sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase, rightCreateAnyDatabase),
 			{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
-			{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
+			gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
+				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase),
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
@@ -235,7 +260,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
+				sc, "", rightAlterAnyLogin),
 			{Divider: true},
 			refresh,
 		}
@@ -511,7 +537,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			newQuery,
 			{Divider: true},
 			{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
-			{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
+			gate(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
+				sc, "", rightControlServer),
 			{Divider: true},
 			refresh,
 		}

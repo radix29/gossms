@@ -68,6 +68,10 @@ type ServerConn struct {
 	// peerFields caches connections to other instances in the same topology
 	// (Always On replicas) — see peer.go.
 	peerFields
+
+	// capabilityFields caches what the connected login may do — see
+	// capabilities.go.
+	capabilityFields
 }
 
 // Connect opens a connection using the given config.Connection.
@@ -94,7 +98,9 @@ func Connect(opts config.Connection) (*ServerConn, error) {
 	}
 	login, _ := srv.CurrentLogin()
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ServerConn{Opts: opts, Server: srv, Login: login, ctx: ctx, cancel: cancel}, nil
+	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: ctx, cancel: cancel}
+	sc.ProbeCapabilities()
+	return sc, nil
 }
 
 // Close disconnects from SQL Server. Cancelling ctx before closing the pool is

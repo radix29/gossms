@@ -97,35 +97,80 @@ and access to a SQL Server instance.
 goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
 or press `Escape` to work offline — `F9` reopens it any time.
 
-## Keyboard Reference
+## Required rights
 
-| Key | Action |
-|-----|--------|
-| `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
-| `F9` | Connect to server (`Ctrl+Shift+O` too, where the terminal can encode it) |
-| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query (`Ctrl+O` also opens a `.sqlplan`) |
-| `1` `2` `3`, `[` `]`, `m` (plan) | Graph / tree / XML, previous / next statement, missing-index details |
-| `F5` | Execute query (selection if any); also refreshes a tree node or Properties page |
-| `Ctrl+Enter` | Select the statement at the cursor without executing |
-| `Tab` | Switch focus explorer ↔ panels |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous panel |
-| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab |
-| `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
-| `Ctrl+Up` / `Down` | Grow / shrink the query editor |
-| `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
-| `Ctrl+Z` (Properties) | Revert the current page to the values it loaded with |
-| `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
-| `Ctrl+F3` | Find next occurrence of the word at the cursor |
-| `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
-| `Shift+Arrow`, `Alt+Shift+Arrow` | Select text, block (column) select |
-| `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
-| `Shift+F10` / `Menu` key | Context menu for the selected tree node |
-| Right-click a grid cell | "Show Value" — full cell text, copyable |
-| Drag / double-click a header separator | Resize / reset a grid column |
+goSSMS is a client — every button does what SQL Server lets the login you
+connected with do, and nothing more. This table is the minimum right for each
+area, so you can tell "goSSMS can't" from "this login can't".
 
-Replace is Edit > Replace... or the Replace fields in the Find dialog.
-`Ctrl+H` is deliberately unbound — many terminals send it as the same byte
-as Backspace.
+| Feature | Minimum rights |
+|---|---|
+| Connect; browse the Object Explorer tree | `CONNECT SQL` (every login has it) |
+| See a database listed | `VIEW ANY DATABASE` (granted to `public` by default) |
+| Expand a database's folders; size and space figures | `CONNECT` on that database |
+| Object definitions, dependencies, `Script <object> as` | `VIEW DEFINITION` on the object, or `db_owner`, or `VIEW ANY DEFINITION` |
+| Security > Logins, Server Roles | `VIEW ANY DEFINITION` — without it you see only your own login |
+| Server Properties: General, Memory, Processors, Advanced (read) | `public` (`sys.configurations`) plus `VIEW SERVER STATE` for the live figures |
+| Server Properties: applying a change | `ALTER SETTINGS` (`serveradmin` or `sysadmin`) |
+| Server Properties > Permissions (read) | `VIEW ANY DEFINITION`; without it only your own grants are visible |
+| Database Properties (read) | `CONNECT` on the database; `VIEW DATABASE STATE` for space figures |
+| Database Properties (apply), New Index, New Statistics | `ALTER` on the database or the object (`db_owner`, `db_ddladmin`) |
+| New Database | `CREATE ANY DATABASE` or `dbcreator` |
+| New Login, Login Properties (apply) | `ALTER ANY LOGIN` (`securityadmin`) |
+| Backup | `db_backupoperator`, or `BACKUP DATABASE`/`BACKUP LOG` on the database |
+| Restore | `dbcreator` plus `db_owner`, or `sysadmin` |
+| Browse the *server's* filesystem (Backup/Restore path picker) | `public` on SQL Server 2017+; `sysadmin` on older instances, which fall back to `xp_dirtree` |
+| Activity Monitor — all dashboards, TempDB, Sessions | `VIEW SERVER STATE` |
+| Activity Monitor — Blocking tab helper install | `CREATE PROCEDURE` in `master` (effectively `sysadmin`) |
+| Log File Viewer — list the logs | `public` (`sp_enumerrorlogs`) |
+| Log File Viewer — read a log | `EXECUTE` on `xp_readerrorlog` (`securityadmin` or `sysadmin`) |
+| Log File Viewer — Recycle | `sysadmin` |
+| SQL Server Agent — Jobs, Schedules, Alerts, Operators | access to `msdb` plus `SQLAgentUserRole`; `SQLAgentReaderRole` to see other owners' jobs |
+| SQL Server Agent — start/stop a job | `SQLAgentOperatorRole` (`SQLAgentUserRole` covers your own jobs) |
+| Always On — browse groups, replicas, dashboard | `VIEW ANY DEFINITION` plus `VIEW SERVER STATE` |
+| Always On — create, add replica, fail over, endpoints | `ALTER ANY AVAILABILITY GROUP` and `ALTER ANY ENDPOINT`, or `CONTROL SERVER` |
+| Query editor | whatever the query itself needs — goSSMS adds nothing |
+
+On SQL Server 2022 and later `VIEW SERVER STATE` is split into
+`VIEW SERVER PERFORMANCE STATE` and `VIEW SERVER SECURITY STATE`; either of the
+narrower grants covers the corresponding half, and a denial names the narrow
+permission rather than the old one.
+
+A value this login cannot read shows as `N/A` — CPU count and memory without
+`VIEW SERVER STATE`, for instance, or a database's user count without
+`VIEW DEFINITION`. It never shows as `0`, and never as a smaller number taken
+over the rows the login happens to be able to see. A page whose main reads
+succeed opens even when one of them was refused; a grid built from a
+visibility-filtered catalog view says so at the top.
+
+A database this login cannot open keeps its place in Object Explorer but
+expands to a single *Access denied* line rather than nine folders that each
+fail on their own. A read refused on permission grounds is shown as the right
+it needs — *Access denied — Requires SELECT on msdb.dbo.sysjobservers.* —
+rather than the wrapped driver error, and a failed action keeps its own text
+with that sentence appended.
+
+Where SQL Server itself will not say whether an object is missing or merely
+invisible — *"does not exist or you do not have permission"* — goSSMS does not
+say either, and never calls it access denied. On a server whose messages are
+not in English the right cannot be read out of the wording, and the server's
+own sentence is shown unchanged.
+
+An action you do not have the rights for is withheld rather than offered and
+then refused: the menu item is greyed and names the permission it wants, and a
+Properties page whose writes would be rejected opens read-only, with the
+required right at the top and **Close / Script Changes** in place of
+OK/Apply — so you can still generate the statements for someone who can run
+them.
+
+The check is deliberately one-sided. An action is withheld only when the
+server has answered "no" to *every* right that would permit it; anything not
+measured leaves the action offered, so a connection that could not be probed
+behaves exactly as it did before. Some writes are still ungated because no
+permission the probe can read decides them — SQL Agent's New Job/Schedule/
+Alert/Operator among them; see
+[docs/open-threads.md](docs/open-threads.md) § Permission gating, and
+[docs/permissions-plan.md](docs/permissions-plan.md) for the whole design.
 
 ## Configuration
 

@@ -356,7 +356,7 @@ func (lv *LogViewer) Load() {
 			lv.refreshToolLabels()
 			if err != nil {
 				lv.entries, lv.shown = nil, nil
-				lv.grid.SetError(err)
+				lv.grid.SetError(displayError(err))
 				return
 			}
 			lv.entries = sortLogEntriesDesc(entries)
@@ -408,7 +408,7 @@ func (lv *LogViewer) recycle() {
 			lv.app.postAndWake(func() {
 				lv.busy = false
 				if err != nil {
-					lv.setStatus(fmt.Sprintf("Recycle failed: %v", err))
+					lv.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
 					return
 				}
 				lv.Refresh()
@@ -699,7 +699,7 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 			err := sc.Server.CycleLogContext(ctx, logType)
 			a.postAndWake(func() {
 				if err != nil {
-					a.setStatus(fmt.Sprintf("Recycle failed: %v", err))
+					a.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
 					return
 				}
 				a.setStatus(fmt.Sprintf("%s error log recycled", logType))

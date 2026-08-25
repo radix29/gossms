@@ -3281,3 +3281,325 @@ database and retry count intact. Script Changes on the same edit produced the
 three statements — delete, insert at position 1, and the `sp_update_jobstep`
 repairing the reference of the step that shifted. Both probe jobs dropped
 afterwards.
+
+## 2026-08-25 — least-privilege audit, and P0 of the fix
+
+Audited the whole product against logins that are not sysadmin, live on
+`win10cli` and `ubusql1` with the two supplied test logins (`user_dbo` —
+`db_owner` on one database; `user_dr` — `db_datareader` plus, on win10cli only,
+`VIEW SERVER STATE`) plus one disposable `db_owner`-with-`VIEW SERVER STATE`
+login, created and dropped. Findings, the four presentation rules proposed, and
+the P1-P4 phasing are in `docs/permissions-plan.md`; `README.md` § Required
+rights is the user-facing half. Only P0 was implemented.
+
+**The headline finding: nothing worked at all.** `gosmo.Server.loadInfo` read
+fifteen values in one statement — thirteen public `SERVERPROPERTY`/`@@VERSION`
+calls and two columns of `sys.dm_os_sys_info` — so the DMV's permission check
+failed the whole SELECT, and since `Connect` calls `loadInfo`, a `db_owner`
+could not open a connection. `user_dbo` was refused on both servers and
+`user_dr` on ubusql1. Splitting the statement in two, with only the first
+fatal, is the entire fix; the second sets `ServerInfo.SysInfoUnavailable`.
+
+Two things worth keeping from it:
+
+- **The permission a denial names is not the one you granted.** On SQL Server
+  2022+/17 the error is `VIEW SERVER PERFORMANCE STATE`, one of the two
+  narrower rights `VIEW SERVER STATE` was split into. Anything probing for the
+  right by name has to accept all three.
+- **`HAS_PERMS_BY_NAME` returns `NULL`, not an error, for a permission the
+  instance does not know** (verified with a made-up name). That is what makes
+  the single-round-trip capability probe P1 proposes version-proof — but it
+  also means `NULL` must be read as "not available here", never as "denied".
+
+**A zero is a claim.** Splitting `loadInfo` created a second bug next door:
+CPU count and memory would have rendered as `0`, which asserts a machine with
+no processors. `unreadableValue` / `sysInfoInt` / `sysInfoMB`
+(`prop_grid_helpers.go`) render them as `N/A` — the spelling Object Explorer
+Details already used for a database it cannot size. Later phases should use
+that constant rather than invent a second spelling.
+
+**`database/sql` gives you the useless half of a SQL Server error.** Refusing
+`ALTER DATABASE` for want of permission sends Msg 5011 ("User does not have
+permission to alter database 'X'") *and* Msg 5069 ("ALTER DATABASE statement
+failed"), and only the last reaches the caller — so the Properties dialog said
+the statement failed and nothing about why. `mssql.Error.All` had carried both
+all along, and gosmo's own `AsSQLError` already exposed it; nothing that merely
+*printed* the error saw it. `withAllMessages` (gosmo `errors.go`) rewrites such
+an error's text to carry every message of severity 11 and up, hooked in at
+`withRetry`, `Server.execContext` and `Database.withConn` — three places, and
+no display site in gossms had to change. Class-0 messages are dropped, or a
+batch that runs `USE` first prepends "Changed database context to …" to every
+failure.
+
+Both fixes were mutation-checked (reintroduce the bug, watch the test fail) and
+then driven live: `user_dbo` now connects on both servers and browses its own
+database's tables, and the refused recovery-model change now names the
+permission. `HealthClinic` was left unmodified on both instances.
+
+What P0 deliberately did **not** do, and is the first thing P2 will hit: Server
+Properties' General, Memory and Processors pages still fail their whole load
+when `MemoryStatsContext`/`ProcessorInfoContext` are refused, so a `db_owner`
+who can now connect still cannot open Server Properties.
+
+## 2026-08-25 — P1: the capability probe
+
+`gosmo/capabilities.go` plus `internal/db/capabilities.go`: one round trip at
+Connect that asks the server what the login may do, cached on `ServerConn`, and
+a lazy per-database probe on first touch. Nothing consumes it yet — P2 and P3
+do. Full rationale in `docs/permissions-plan.md` § 3.1; the parts worth having
+here are the ones that were wrong in the first draft and got corrected by
+asking a real server.
+
+- **`HAS_PERMS_BY_NAME` has three answers, and the third is not a denial.**
+  NULL means the instance does not define that permission name — a later
+  version's right on an older server, or a typo. `CapabilityState` keeps the
+  three apart, and the method pair is where it pays: `Has` is "known granted,
+  so offer this", `Allows` is "not known denied, so don't withhold this".
+  Everything unknown makes `Allows` say yes, so a probe that failed leaves the
+  app behaving exactly as it did before the gate existed. Gate on the wrong one
+  and a sysadmin whose probe timed out gets an application with every menu item
+  greyed out.
+- **A database-scope permission probed at server scope vanishes silently.**
+  `HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER')` is a question about the *server*,
+  and answers NULL. The DATABASE securable class is not optional:
+  `HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'ALTER')`. `VIEW DATABASE STATE`
+  is the giveaway — NULL at server scope, 1 at database scope, same login.
+- **`HAS_DBACCESS` has to be read before anything inside the database.** The
+  role and permission probe runs inside it, and `Database.query` opens with a
+  `USE` — precisely the statement that fails for a login that cannot connect
+  there. Server scope first, early return, no error. That early return is also
+  the predicate the tree needs to stop showing nine identical failures under
+  one database.
+- **sysadmin implies every server permission but no role membership.**
+  `HAS_PERMS_BY_NAME` answers 1 for `sa` on all twenty probed permissions, so
+  no folding is needed — but `IS_SRVROLEMEMBER('SQLAgentUserRole')` is 0 for
+  `sa`, so an Agent gate must ask `IsSysadmin() || InRole(...)`.
+- **Two names already existed.** `PermissionState` (GRANT/DENY/REVOKE) and
+  `ServerPermissionNames()`/`DatabasePermissionNames()` (the grantable
+  catalogs) are gosmo API since the permissions-matrix work, so the new ones
+  are `CapabilityState` and `Probed*`. Worth knowing before adding anything
+  else in this area.
+- **Read the answers by name.** The probe returns one `(kind, name, answer)`
+  row per name through a `VALUES` constructor with the names bound as
+  parameters. Scanning twenty booleans positionally would make adding a name to
+  the middle of a list silently shift every answer after it — and every answer
+  would still be a plausible bool.
+
+Verified against both servers with a throwaway program before any of it was
+wired in, then end to end through `db.Connect` itself: `user_dbo` gets `public`
+only, `db_owner` on HealthClinic, `backup_test` inaccessible; `user_dr` gets
+the three `VIEW SERVER STATE` forms on win10cli and none of them on ubusql1.
+Zero `unknown` answers on either instance, which is what says all 41 probed
+names are real rather than quietly misspelt. The server probe measures ~3 ms.
+
+Mutation-checked, three each side: folding NULL into denied, probing a database
+without checking access first, making `Allows` an alias of `Has`; caching a
+failed database probe, reporting a failed probe as inaccessible, and skipping
+the probe in `Connect`.
+
+## 2026-08-25 — P2: the read paths stop lying
+
+F2 and F3 of `docs/permissions-plan.md`, plus the Server Properties gap P0 left
+behind. Nothing here writes anything; the whole phase is about what a page says
+when it could not read something.
+
+**One rule decides every placeholder, and it is not the obvious one.**
+`knownDenied` (`permission_display.go`) blanks a value only when the server
+actually answered "no" — `!Allows`, never `!Has`. An unprobed connection, a
+probe that timed out and a permission the instance does not define all leave
+today's output exactly as it was. Gating on `Has` reads identically in both
+directions a test naturally checks (denied → `N/A`, granted → the value) and
+differs only on *unknown*, where it would blank every value on every page for a
+sysadmin whose probe failed. `TestNumberOfUsersIsUnreadableWithoutViewDefinition`
+carries a third arm for exactly that, and it is the arm the mutant fails.
+
+**A count over a filtered catalog view is the dangerous shape.** It is not an
+error and not zero — it is a smaller number, indistinguishable from the truth.
+HealthClinic has 8 users; `user_dr` counts 5, and the page stated 5 as fact.
+Where the filtering hides rows rather than a value — the two permissions
+matrices — there is nothing to blank, so the page carries a note instead.
+
+**A note has to go at the top, and `Add` cannot put it there.** Appended, the
+caveat landed below a grid the sheet has to be scrolled past, and because a
+`Note` is not focusable, Tab never brings it into view — found by driving the
+Permissions page under tmux and failing to reach my own note. Hence
+`propsheet.Form.Prepend`.
+
+**The inaccessible database gets the treatment the offline one already had.**
+`loadDatabaseChildren` short-circuits on `DatabaseCapabilities.Accessible`
+before building the folder skeleton, so nine identical Msg 916s become one
+line. `Accessible` is false only when the server said so — a probe that could
+not run leaves the folders alone.
+
+**Refusals are classified, not translated.** `permissionDeniedMessage` picks
+the *first* qualifying message, because that is the one that names the right:
+a refused DMV read sends Msg 300 ("VIEW SERVER PERFORMANCE STATE permission was
+denied…") and then Msg 297 ("The user does not have permission to perform this
+action"), and `database/sql` surfaces only the second. Note this is the
+opposite ordering from F5's `ALTER DATABASE` pair only by accident — first is
+right in both. Anything not in the number table keeps its full text, because a
+truncated network read reported as a permissions problem sends the user after
+the wrong thing.
+
+**A harness lesson that cost half an hour.** `awk index()` counts *bytes*, and
+a tmux capture of this app is full of box-drawing characters, so the column it
+reports for a button is wrong by however many are to its left — 95 instead of
+87 for the connect dialog's Connect button, which is squarely inside `[ Cancel ]`.
+Every "the click did nothing" symptom in that session was this. Compute a click
+column with Python's `str.index`, never `awk`. Related: at the app level F9
+re-`Show()`s the connect dialog rather than confirming it, and Enter from a
+field runs whichever button has `btnFocus` — which is Cancel unless you have
+tabbed to Connect.
+
+Ten mutation checks, all confirmed failing: the last message instead of the
+first, Msg 916 dropped from the table, every failure treated as a refusal, the
+inaccessible short-circuit removed, the same short-circuit fired on `Has` of a
+right, `knownDenied` on `Has`, the Memory page fatal on the refused DMV again,
+Processors printing the zeroed struct, General's fallback made a number, and
+the visibility note never added.
+
+Live matrix: win10cli as `user_dbo` and `user_dr`. Server Properties General,
+Memory and Processors now open for a `db_owner` (they did not before) with
+`N/A` and the note; HealthClinic's user count is 8 for `user_dbo` and `N/A` for
+`user_dr`; `backup_test` expands to one line; `Agent > Jobs > User Jobs` shows
+"Access denied — The SELECT permission was denied on the object
+'sysjobservers'…"; the Log File Viewer shows the `xp_readerrorlog` refusal as
+its grid error. Which reads are refused at all was measured first, per login
+per server, rather than guessed: only `MemoryStatsContext` and
+`ProcessorInfoContext` fail — everything else succeeds and silently *filters*.
+
+## 2026-08-25 — P3: an action you cannot do is not offered
+
+F4 of `docs/permissions-plan.md`. Two mechanisms, one rule.
+
+**The rule is the same fail-open one, and it is what makes the whole thing
+safe to ship.** `allowsAction` withholds only when the server answered "no" to
+*every* right that would permit the action. Unprobed connection, failed probe,
+permission the instance does not define, database not in the cache — all leave
+the action exactly as it was. Gating on `Has` would empty the menus of a
+sysadmin whose probe timed out, and there is no way for the user to tell that
+apart from a real denial.
+
+**The lists are alternatives, never a conjunction.** Dropping a database needs
+CONTROL on it *or* ALTER ANY DATABASE; a Database Properties page needs ALTER
+*or* CONTROL *or* ALTER ANY DATABASE. Reading one as "all of" withholds from
+almost everybody, and it passes any test written with a single right.
+
+**A database gate must not probe.** `Enabled` runs while the menu is being
+drawn, on the UI goroutine, so the gate reads `CachedDatabaseCapabilities` and
+nothing else; `App.onNodeSelected` primes the cache in the background, which is
+the move that always precedes opening a node's menu.
+`TestADatabaseGateNeverProbes` asserts the query count does not move.
+
+**An inaccessible database answers "unknown" to everything**, because there was
+nothing to ask inside it — and unknown fails open, so Back Up and Delete stayed
+on offer for exactly the databases with no business being written to. `dbAllows`
+folds `Accessible` in as a measured no. Found by writing the test, not by
+driving the app.
+
+**A disabled menu item has no reactive path left.** It cannot be selected or
+clicked, so `setStatus` never gets a chance — the CLAUDE.md rule about actions
+that silently do nothing needed a new answer here. `MenuItem.Note` renders in
+the shortcut column *while the item is disabled* ("needs BACKUP DATABASE") and
+gives the item's real shortcut back once it is enabled. The Activity Monitor's
+toolbar needed the same and got `toolButton.reason`, since a disabled tool
+button swallows its click by design.
+
+**Read-only pages: the property that matters is that nothing can become
+dirty.** `Form.SetReadOnly` makes every row unfocusable and refuses to route a
+click into one, so Apply and Script Changes have nothing to send — that is
+what makes them safe rather than merely discouraged, and it is why OK and Apply
+are *removed* rather than greyed (`readOnlyButtonLabels`). The button row now
+has two shapes, so `activateButton` dispatches on the label; an index-based
+switch runs OK when the user pressed Close, which on a Properties dialog means
+writing. `TestReadOnlyButtonsRunTheActionTheyAreLabelled` pins it.
+
+What was deliberately left ungated is in `docs/open-threads.md` § Permission
+gating: schema-scoped Delete is gated on database-wide rights because the real
+check is per-schema and the probe cannot see it; SQL Agent's New * actions are
+not gated at all, because what permits them is msdb role membership and the
+database-scope EXECUTE the probe reads would withhold them from every
+legitimate Agent user; and a read-only page's rows still draw as though they
+were editable.
+
+Eleven mutation checks, all confirmed failing: `Has` for `Allows`, rights as a
+conjunction, `Accessible` ignored, the gate probing instead of reading the
+cache, `gate` discarding the predicate it was given, `gate` returning the item
+untouched, the read-only button row not swapped, `activateButton` back on
+indices, a read-only form still focusable, the note never prepended, and the
+disabled item's note dropped.
+
+Live on win10cli, both logins, one running app: as `user_dbo` the Activity
+Monitor is dim in the toolbar and the Tools menu, New Login... reads "needs
+ALTER ANY LOGIN", `backup_test` offers none of Back Up / Restore / Take Offline
+/ Rename / Delete and says why for each, Server Properties' Memory and
+Permissions pages open read-only with Close / Script Changes — while
+HealthClinic, where the same login is `db_owner`, keeps every item and a fully
+writable Database Properties. As `user_dr` on the same server the Activity
+Monitor is enabled (it holds VIEW SERVER STATE there) and HealthClinic's own
+menu loses the five write items.
+
+## 2026-08-25 — P4: from "denied" to "you need this"
+
+§3.3 and §3.4 of `docs/permissions-plan.md`, and the end of the phase plan.
+P2 classified a refusal and showed the server's own words; P4 turns the number
+into the right the login is missing.
+
+**Measure the messages before designing the table.** Eight statements run as
+`user_dr` against win10cli, plus the two multi-message pairs read through the
+driver's `All`. Two things fell out that no amount of reasoning would have
+produced:
+
+- **Msg 3701 belonged in the table and was not in the plan**, and **Msg 5011 is
+  ambiguous** — "User does not have permission to alter database 'HealthClinic',
+  *the database does not exist*, or …". The plan had marked only 15151/15247 as
+  ambiguous. So the classifier carries a *kind*: a certain refusal gets P2's
+  "Access denied — " prefix, an ambiguous one must not, because that prefix is a
+  claim the server declined to make and it sends someone hunting a permission
+  for a table that was dropped last week.
+- **Msg 262 is not only CREATE.** A refused BACKUP sends "BACKUP DATABASE
+  permission denied in database 'HealthClinic'" as 262, then the contentless Msg
+  3013 that `database/sql` surfaces — the same first-message trap as P2's
+  300-then-297 pair, in a second family.
+
+**Numbers are not localized; wording is.** Classification keys on the number,
+and only the identifiers are read out of the text with English patterns. A
+pattern that misses yields no advice and the caller falls back to the server's
+sentence verbatim — the only correct thing left to say on a German instance.
+`TestUnreadableWordingFallsBackToTheServersOwn` is that promise, and the mutant
+that returns `accessDeniedLabel + advice()` unconditionally fails it with
+"Access denied — " and nothing after it.
+
+**A role test does not fail open on its own, and that needed a gosmo method.**
+The `xp_dirtree` guard is the plan's one silent-empty case: pre-2017 instances
+list directories through it, and it returns no rows and no error to a
+non-sysadmin, which is indistinguishable from an empty directory. The claim is
+made only when three facts hold — legacy path, empty result, probe ran *and*
+said not-sysadmin. `Capabilities.InServerRole` answers false for a role it was
+never asked about exactly as for one the login is not in, so
+`Capabilities.Probed()` had to exist; without it every unprobed connection
+reports an empty directory as a permissions problem. `EnumFileSystemIsLegacy`
+exposes the version gate `EnumFileSystemContext` already applies — additive,
+and the gate itself now reads it so the two cannot drift.
+
+**A gap the wiring found, not a test.** Driving New Job as `user_dr` showed
+`Error: gosmo: list agent jobs: mssql: The SELECT permission was denied on the
+obje…` — a *page load* failure, which neither P2 nor P4 had wired.
+`SetPageError` at both propsheet dialogs now goes through `displayError`, and
+the same page reads `Error: Access denied — Requires SELECT on
+msdb.dbo.sysjobservers.` on one line.
+
+Eight mutation checks, all confirmed failing: ambiguous numbers marked certain,
+`qualify` dropping database and schema, unreadable wording losing the server's
+sentence, advice replacing the failure instead of appending, the classifier
+taking the last qualifying message, the xp_dirtree guard skipping `Probed()`,
+the same guard firing on a modern instance, and `Probed()` answering true for
+the zero value.
+
+Live on win10cli: the Agent User Jobs node, the Log File Viewer's grid and the
+New Job dialog's failed page all read "Access denied — Requires SELECT/EXECUTE
+on <qualified name>." The ambiguous branch and the `withPermissionAdvice`
+append are unit-tested against live-captured text rather than driven, because
+P3's gates now withhold the actions that would produce them — recorded in
+`docs/open-threads.md` § Permission gating along with the xp_dirtree guard,
+which no server here can exercise.

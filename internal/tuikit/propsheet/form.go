@@ -33,6 +33,11 @@ type Form struct {
 	rect        core.Rect
 	bands       []band
 
+	// readOnly makes every row unfocusable and refuses to route a click into
+	// one, so the form can be read and scrolled but not edited. See
+	// SetReadOnly.
+	readOnly bool
+
 	// sbDragging is true while the form's own scrollbar thumb is being dragged.
 	// Once armed it outranks even the focused row, so the form keeps following
 	// the thumb when the pointer drifts back over a focused GridRow. Only a press
@@ -50,6 +55,36 @@ func NewForm(rows ...Row) *Form {
 
 // Add appends more rows.
 func (f *Form) Add(rows ...Row) { f.rows = append(f.rows, rows...) }
+
+// Prepend inserts rows ahead of the existing ones, for a caveat that has to be
+// read before the page it applies to. Appending one instead puts it below a
+// grid the sheet has to be scrolled past, and a Note is not focusable, so Tab
+// never brings it into view.
+//
+// Only safe before the form is interacted with: focus is an index into rows.
+func (f *Form) Prepend(rows ...Row) { f.rows = append(append([]Row{}, rows...), f.rows...) }
+
+// SetReadOnly makes the form unfocusable and unclickable: no row can take
+// focus, and a press is not routed into one, so nothing on it can be edited.
+// Wheel scrolling and PgUp/PgDn still work — the page is meant to be read.
+//
+// This is how a Properties page whose reads succeed but whose writes would be
+// refused is presented. Nothing can become dirty, so Apply and Script Changes
+// have nothing to send, which is the property that makes it safe rather than
+// merely discouraging.
+func (f *Form) SetReadOnly(v bool) {
+	f.readOnly = v
+	if v {
+		f.focus = -1
+	}
+}
+
+// ReadOnly reports whether SetReadOnly is in force.
+func (f *Form) ReadOnly() bool { return f.readOnly }
+
+// focusableAt reports whether row i can take focus right now — its own answer,
+// unless the whole form is read-only.
+func (f *Form) focusableAt(i int) bool { return f.rows[i].Focusable() && !f.readOnly }
 
 // Rows returns the form's rows in order, for a caller that needs to find one
 // after the form is built.
@@ -79,7 +114,7 @@ func (f *Form) FocusLast() bool { f.focus = len(f.rows); return f.FocusPrev() }
 // to the button zone.
 func (f *Form) FocusNext() bool {
 	for i := f.focus + 1; i < len(f.rows); i++ {
-		if f.rows[i].Focusable() {
+		if f.focusableAt(i) {
 			f.setFocus(i)
 			return true
 		}
@@ -90,7 +125,7 @@ func (f *Form) FocusNext() bool {
 // FocusPrev is FocusNext's mirror image.
 func (f *Form) FocusPrev() bool {
 	for i := f.focus - 1; i >= 0; i-- {
-		if f.rows[i].Focusable() {
+		if f.focusableAt(i) {
 			f.setFocus(i)
 			return true
 		}
@@ -389,6 +424,11 @@ func (f *Form) HandleMouse(ev *tcell.EventMouse) bool {
 	for _, b := range f.bands {
 		if my < b.y || my >= b.y+b.h {
 			continue
+		}
+		if f.readOnly {
+			// Claimed, not routed: the press landed on the form, and letting it
+			// fall through would put it wherever the sheet draws underneath.
+			return true
 		}
 		row := f.rows[b.row]
 		if mh, ok := row.(MouseHandler); ok && mh.HandleMouse(ev) {

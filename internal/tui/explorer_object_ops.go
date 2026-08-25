@@ -395,17 +395,42 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	if op == nil || node.data.IsSystem {
 		return nil
 	}
+	sc, dbName := resolveConn(node), node.data.DBName
+	rights := objectOpRights(node.data.Type)
+
 	var items []controls.MenuItem
 	if op.rename != nil {
-		items = append(items, controls.MenuItem{Label: "Rename...", Action: func() { a.renameObject(node) }})
+		items = append(items, gate(controls.MenuItem{Label: "Rename...",
+			Action: func() { a.renameObject(node) }}, sc, dbName, rights...))
 	}
 	if op.transfer != nil {
-		items = append(items, controls.MenuItem{Label: "Move to Schema...", Action: func() { a.moveObjectToSchema(node) }})
+		items = append(items, gate(controls.MenuItem{Label: "Move to Schema...",
+			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, rights...))
 	}
 	if op.drop != nil || op.dropWithOption != nil {
-		items = append(items, controls.MenuItem{Label: "Delete...", Action: func() { a.deleteObject(node) }})
+		items = append(items, gate(controls.MenuItem{Label: "Delete...",
+			Action: func() { a.deleteObject(node) }}, sc, dbName, rights...))
 	}
 	return items
+}
+
+// objectOpRights is what permits Rename/Move/Delete on a node type — any one
+// of them is enough, and the action is withheld only when the server has
+// denied every one.
+//
+// These are sufficient conditions rather than the exact permission SQL Server
+// checks, which for a schema object is ALTER on its *schema* and is not
+// something the database-scope probe can see. A login granted ALTER on one
+// schema and nothing else therefore loses these three items even though the
+// server would accept them; a login with any of the database-wide rights below
+// keeps them. That trade is deliberate: the failure it prevents — Delete
+// offered on a database the login can only read — is the one the audit found,
+// and the fallback for the other direction is the query editor.
+func objectOpRights(t NodeType) []requiredRight {
+	if t == NodeDatabase {
+		return []requiredRight{rightControlDB, rightAlterAnyDatabase}
+	}
+	return []requiredRight{rightAlterDatabase, rightControlDB, rightAlterAnySchema}
 }
 
 // objectDisplayName is the object's name as the dialogs should say it:
@@ -461,7 +486,7 @@ func (a *App) deleteObject(node *explorerNode) {
 			}
 			a.postAndWake(func() {
 				if err != nil {
-					a.setStatus(fmt.Sprintf("Delete failed: %v", err))
+					a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
 					return
 				}
 				a.setStatus(fmt.Sprintf("%s %q deleted", op.noun, name))
@@ -536,7 +561,7 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 		err := op.rename(ctx, sc, data, newName)
 		a.postAndWake(func() {
 			if err != nil {
-				a.setStatus(fmt.Sprintf("Rename failed: %v", err))
+				a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
 				return
 			}
 			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
@@ -625,7 +650,7 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 				err := op.transfer(ctx, sc, data, target)
 				a.postAndWake(func() {
 					if err != nil {
-						a.setStatus(fmt.Sprintf("Move failed: %v", err))
+						a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
 						return
 					}
 					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))

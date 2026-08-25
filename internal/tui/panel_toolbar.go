@@ -33,6 +33,13 @@ type toolButton struct {
 	disabled bool
 	action   func()
 	rect     core.Rect
+
+	// reason is what to tell the user when they click the button while it is
+	// disabled — the rights they are missing, typically. A disabled button
+	// swallows its click, and swallowing it silently is the thing the
+	// context-gating rule exists to prevent. Empty for a button whose greyed
+	// state speaks for itself (a Refresh already running).
+	reason string
 }
 
 // layoutToolButtons places buttons left to right inside r, after prefix, and

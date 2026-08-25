@@ -716,9 +716,18 @@ func (am *ActivityMonitor) buildTools() {
 		// Offered only while the procedure isn't already in master, where the
 		// button would have nothing to do but write to a system database.
 		if pt.loc != activity.ProcMaster {
+			// Installing a procedure in master is a sysadmin act, and this
+			// button used to offer it to anyone: clicking it as a db_owner
+			// returned "Cannot alter the procedure 'sp_block', because it does
+			// not exist or you do not have permission." CONTROL SERVER rather
+			// than a role test, because HAS_PERMS_BY_NAME answers 1 for a
+			// sysadmin while IS_SRVROLEMEMBER does not fold sysadmin into
+			// anything else.
+			denied := !allowsAction(pt.conn, "", rightControlServer)
 			am.tools = append(am.tools, toolButton{
 				label:    "Install in master",
-				disabled: pt.busy || pt.conn == nil,
+				disabled: pt.busy || pt.conn == nil || denied,
+				reason:   requiresText(rightControlServer),
 				action:   pt.confirmInstallInMaster,
 			})
 		}

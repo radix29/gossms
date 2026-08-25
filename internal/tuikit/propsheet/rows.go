@@ -61,6 +61,10 @@ type noteRow struct {
 // Note returns a non-focusable row of word-wrapped, dimmed text.
 func Note(text string) Row { return &noteRow{text: text, drawHeight: -1} }
 
+// Text returns the note's text. Notes are the only rows on a sheet with no
+// label to address them by, so this is how a caller reads one back.
+func (r *noteRow) Text() string { return r.text }
+
 func (r *noteRow) Height(w int) int { return len(core.WrapText(r.text, w)) }
 func (r *noteRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w

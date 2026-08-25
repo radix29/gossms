@@ -72,7 +72,7 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 				p.btnFocus--
 			}
 		case tcell.KeyRight:
-			if p.btnFocus < len(sheetButtonLabels)-1 {
+			if p.btnFocus < len(p.buttonLabels())-1 {
 				p.btnFocus++
 			}
 		case tcell.KeyEnter:
@@ -137,7 +137,7 @@ func (p *PropertySheet) HandleMouse(ev *tcell.EventMouse) bool {
 			return true
 		}
 	}
-	if i := p.ButtonClicked(ev, sheetButtonLabels); i >= 0 {
+	if i := p.ButtonClicked(ev, p.buttonLabels()); i >= 0 {
 		p.armDrag(ev, zoneButtons)
 		p.setZone(zoneButtons)
 		p.btnFocus = i

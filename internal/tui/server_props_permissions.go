@@ -42,6 +42,13 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 
 			f, apply := buildPermissionsMatrix(principals, gosmo.ServerPermissionNames(), entries, 8, 12,
 				serverPermApply(sc.Server))
+			// sys.server_permissions and sys.server_principals are both
+			// metadata-visibility filtered, so without VIEW ANY DEFINITION a
+			// grant that exists simply is not in the grid — and the cell for it
+			// reads "(none)", which is a positive claim that it is not granted.
+			// There is no cell to blank, so the caveat goes on the page.
+			f.Prepend(visibilityNote(sc.Capabilities(), "VIEW ANY DEFINITION",
+				"logins, server roles and permissions")...)
 			return f, apply, nil
 		},
 	}

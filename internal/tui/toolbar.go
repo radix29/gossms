@@ -23,7 +23,10 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: metaToggleIcon(a.metaEnabled), Tooltip: "Show Output Column Metadata", Action: func() { a.toggleOutputColumnMeta() }},
 		{Divider: true, Icon: "|"},
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
-			Enabled: func() bool { return len(a.connections) > 0 }},
+			Enabled: func() bool {
+				return len(a.connections) > 0 &&
+					allowsAction(a.selectedServerConn(), "", rightViewServerState)
+			}},
 	}
 }
 

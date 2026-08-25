@@ -90,6 +90,15 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		return []*explorerNode{l.node("(Database is offline)", NodeError, "", "", node.data.DBName)}, nil
 	}
 	dbName := node.data.DBName
+	// Same reasoning as the offline case one line up, for the same reason: SQL
+	// Server lists a database the login cannot open, every folder below it
+	// opens with a USE that fails, and the user gets nine separate copies of
+	// Msg 916 instead of one answer. Accessible is only false when the server
+	// itself said so — a probe that could not run leaves the folders in place.
+	if !l.sc.DatabaseCapabilities(l.ctx, dbName).Accessible {
+		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this database is required.",
+			NodeError, "", "", dbName)}, nil
+	}
 	return []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),

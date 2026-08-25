@@ -21,6 +21,31 @@ func boolStr(b bool) string {
 	return "False"
 }
 
+// unreadableValue is what a value the connected login is not allowed to read
+// renders as. "N/A" rather than a blank or a zero: a login without VIEW SERVER
+// STATE gets ServerInfo.SysInfoUnavailable and a zeroed CPU count and memory
+// size, and printing those as numbers states positively that the machine has
+// no CPUs, which is worse than saying nothing.
+const unreadableValue = "N/A"
+
+// sysInfoInt renders one of the two sys.dm_os_sys_info values ServerInfo
+// carries, honouring SysInfoUnavailable. Never format either field directly.
+func sysInfoInt(info *gosmo.ServerInfo, v int64) string {
+	if info.SysInfoUnavailable {
+		return unreadableValue
+	}
+	return strconv.FormatInt(v, 10)
+}
+
+// sysInfoMB renders ServerInfo.PhysicalMemoryMB the way the Object Explorer
+// Details pane shows a size, honouring SysInfoUnavailable.
+func sysInfoMB(info *gosmo.ServerInfo) string {
+	if info.SysInfoUnavailable {
+		return unreadableValue
+	}
+	return formatMB(float64(info.PhysicalMemoryMB))
+}
+
 // engineEditionNames maps SERVERPROPERTY('EngineEdition') (gosmo's
 // ServerInfo.EngineEdition) to the name SSMS's General page shows.
 var engineEditionNames = map[int]string{

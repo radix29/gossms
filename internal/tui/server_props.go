@@ -15,15 +15,18 @@ import (
 // respectively); every other page is editable wherever gosmo has a
 // writer for the field shown.
 func serverPropPages(sc *db.ServerConn) []propPage {
+	// Every page but General writes through sp_configure + RECONFIGURE, which
+	// is ALTER SETTINGS; Permissions issues GRANT/DENY at the server, which is
+	// CONTROL SERVER. General has no apply at all and so needs nothing.
 	return []propPage{
 		pageServerGeneral(sc),
-		pageServerMemory(sc),
-		pageServerProcessors(sc),
-		pageServerSecurity(sc),
-		pageServerConnections(sc),
-		pageServerDatabaseSettings(sc),
-		pageServerAdvanced(sc),
-		pageServerPermissions(sc),
+		withRequires(pageServerMemory(sc), "", rightAlterSettings),
+		withRequires(pageServerProcessors(sc), "", rightAlterSettings),
+		withRequires(pageServerSecurity(sc), "", rightAlterSettings),
+		withRequires(pageServerConnections(sc), "", rightAlterSettings),
+		withRequires(pageServerDatabaseSettings(sc), "", rightAlterSettings),
+		withRequires(pageServerAdvanced(sc), "", rightAlterSettings),
+		withRequires(pageServerPermissions(sc), "", rightControlServer),
 	}
 }
 

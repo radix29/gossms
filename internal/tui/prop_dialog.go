@@ -38,6 +38,19 @@ type propPage struct {
 	// than executed: the sibling pages' statements would otherwise sit *below* a
 	// rename in the script and name an object that no longer exists.
 	renames bool
+
+	// requires are the rights this page's *writes* need — any one of them is
+	// enough. When the server has denied every one, the page still loads and
+	// still reads, but comes up read-only with a note naming them. Leave nil
+	// for a page that only reads, or whose write right the probe cannot see.
+	//
+	// Evaluated on the load goroutine, so a database-scope right here may cost
+	// a probe; the UI goroutine's gates use the cache instead (allowsAction).
+	requires []requiredRight
+
+	// requiresIn is the database whose capabilities a database-scope entry in
+	// requires is read against. Empty for a server-scoped page.
+	requiresIn string
 }
 
 // commitRename mirrors a just-completed rename into namePtr — the boxed name
@@ -137,19 +150,25 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 	if page < 0 || page >= len(d.pages) {
 		return
 	}
-	load := d.pages[page].load
+	p := d.pages[page]
 	sessionCtx := d.ctx
+	sc := d.sc
 
 	d.app.safego("loading a properties page", func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
-		form, apply, err := load(ctx)
+		// Before the load, not after: the probe is what decides whether the
+		// form the load builds is editable, and SetPageReadOnly has to reach
+		// the slot ahead of SetPageForm.
+		readOnly := pageReadOnlyReason(ctx, sc, p)
+		form, apply, err := p.load(ctx)
 		d.post(func() {
 			if err != nil {
-				d.SetPageError(page, seq, err)
+				d.SetPageError(page, seq, displayError(err))
 				return
 			}
 			d.applyFn[page] = apply
+			d.SetPageReadOnly(page, seq, readOnly)
 			d.SetPageForm(page, seq, form)
 		})
 	})
@@ -293,7 +312,7 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 		d.post(func() {
 			d.SetApplying(false)
 			if runErr != nil {
-				d.SetMessage(runErr.Error(), true)
+				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 				return
 			}
 			onSuccess()
@@ -343,4 +362,31 @@ func (d *PropDialog) runScript() {
 		}
 		d.app.openQueryWithText(sc, database, strings.Join(script.Statements, "\n\n"))
 	})
+}
+
+// pageReadOnlyReason is the sentence a page whose writes are refused carries,
+// or "" when it may be written (or when nothing was measured).
+//
+// Runs on the load goroutine, so unlike the menu gates it may probe a database
+// it has not seen before. Same Allows rule as everywhere else: read-only only
+// when the server denied every right that would permit the write.
+func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) string {
+	if len(p.requires) == 0 || sc == nil {
+		return ""
+	}
+	for _, r := range p.requires {
+		if r.db {
+			if p.requiresIn == "" || dbAllows(sc.DatabaseCapabilities(ctx, p.requiresIn), r.name) {
+				return ""
+			}
+			continue
+		}
+		caps := sc.Capabilities()
+		for _, n := range append([]string{r.name}, r.alt...) {
+			if caps.Allows(n) {
+				return ""
+			}
+		}
+	}
+	return "Read-only: this login cannot change these settings. " + requiresText(p.requires...)
 }

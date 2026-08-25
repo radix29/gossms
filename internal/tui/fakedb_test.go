@@ -72,11 +72,23 @@ type fakeInstance struct {
 	// half-scripted a page fails naming the query it missed rather than on
 	// some downstream nil.
 	unmatched []string
+
+	// queries counts every query answered — see QueryCount.
+	queries int
+}
+
+// QueryCount is how many queries have been answered, for a test asserting
+// that some code path reached the server — or, more usefully, that it did not.
+func (f *fakeInstance) QueryCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.queries
 }
 
 func (f *fakeInstance) respond(q, curDB string, args []driver.NamedValue) (*fakeResponse, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.queries++
 	for i := range f.responses {
 		r := &f.responses[i]
 		if r.db != "" && r.db != curDB {
@@ -259,13 +271,24 @@ func init() { sql.Register("fakedb", fakeDriver{}) }
 
 // serverInfoResponse answers the SERVERPROPERTY query gosmo.NewServer runs.
 // Every fake instance needs it, so newFakeConn prepends it rather than making
-// each test restate fifteen columns it does not care about.
+// each test restate thirteen columns it does not care about.
 func serverInfoResponse() fakeResponse {
-	return fakeResponse{match: "SERVERPROPERTY('ServerName')", cols: 15, rows: [][]driver.Value{{
+	return fakeResponse{match: "SERVERPROPERTY('ServerName')", cols: 13, rows: [][]driver.Value{{
 		"FAKE\\SQL", "Developer Edition (64-bit)", "16.0.4085.2", "RTM", "SQL_Latin1_General_CP1_CI_AS",
 		int64(0), int64(0), int64(0), int64(3),
 		"Microsoft SQL Server 2022 ... on Windows",
-		int64(16384), int64(8), `C:\Data`, `C:\Log`, `C:\Backup`,
+		`C:\Data`, `C:\Log`, `C:\Backup`,
+	}}}
+}
+
+// sysInfoResponse answers the sys.dm_os_sys_info half of gosmo's connect-time
+// load, which is a second statement precisely so a login without VIEW SERVER
+// STATE can still connect. newFakeConn prepends it alongside
+// serverInfoResponse; omit it (see newFakeConnWithoutSysInfo) to model that
+// login.
+func sysInfoResponse() fakeResponse {
+	return fakeResponse{match: "dm_os_sys_info", cols: 2, rows: [][]driver.Value{{
+		int64(16384), int64(8),
 	}}}
 }
 
@@ -273,7 +296,15 @@ func serverInfoResponse() fakeResponse {
 // returns the instance so the test can read back what was executed.
 func newFakeConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
 	t.Helper()
-	inst := &fakeInstance{responses: append([]fakeResponse{serverInfoResponse()}, responses...)}
+	return newFakeConnFrom(t, append([]fakeResponse{serverInfoResponse(), sysInfoResponse()}, responses...))
+}
+
+// newFakeConnFrom is the pool-and-server construction the three constructors
+// above share; the responses passed here are the complete script, connect-time
+// reads included.
+func newFakeConnFrom(t *testing.T, responses []fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	inst := &fakeInstance{responses: responses}
 	dsn := "fake" + strconv.FormatInt(fakeDSNSeq.next(), 10)
 	fakeInstances.Store(dsn, inst)
 	t.Cleanup(func() { fakeInstances.Delete(dsn) })
@@ -289,6 +320,57 @@ func newFakeConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fake
 		t.Fatalf("gosmo.NewServer: %v", err)
 	}
 	return &db.ServerConn{Server: srv}, inst
+}
+
+// capabilityResponses scripts gosmo's server- and database-scope capability
+// probes, so a test can drive a page that asks what the login may do.
+//
+// granted/denied name server permissions; everything not named reads back as
+// CapabilityUnknown, which is the fail-open answer. dbGranted/dbDenied do the
+// same one scope down, and dbAccessible is HAS_DBACCESS.
+//
+// A page under test that gates on a capability sees nothing at all unless the
+// ServerConn was probed — call ProbeCapabilities after newFakeConn, or the
+// gate silently fails open and the test passes for the wrong reason.
+func capabilityResponses(dbAccessible bool, granted, denied, dbGranted, dbDenied []string) []fakeResponse {
+	access := int64(0)
+	if dbAccessible {
+		access = 1
+	}
+	answer := func(granted, denied []string) [][]driver.Value {
+		var rows [][]driver.Value
+		for _, n := range granted {
+			rows = append(rows, []driver.Value{"P", n, int64(1)})
+		}
+		for _, n := range denied {
+			rows = append(rows, []driver.Value{"P", n, int64(0)})
+		}
+		return rows
+	}
+	return []fakeResponse{
+		{match: "HAS_DBACCESS", cols: 1, rows: [][]driver.Value{{access}}},
+		{match: "IS_SRVROLEMEMBER", cols: 3, rows: answer(granted, denied)},
+		{match: "IS_ROLEMEMBER", cols: 3, rows: answer(dbGranted, dbDenied)},
+	}
+}
+
+// newFakeConnAtVersion is newFakeConn for an instance reporting a given
+// product version — the only way to reach the pre-2017 code paths (gosmo's
+// xp_dirtree filesystem fallback), whose version gate reads ServerInfo.
+func newFakeConnAtVersion(t *testing.T, version string, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	info := serverInfoResponse()
+	info.rows[0][2] = version
+	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
+}
+
+// newFakeConnWithoutSysInfo is newFakeConn for a login that cannot read
+// sys.dm_os_sys_info — the fake answers the SERVERPROPERTY half and refuses
+// the DMV half, which is what SQL Server does for a login without VIEW SERVER
+// STATE. Use it to model a db_owner with no server-level rights.
+func newFakeConnWithoutSysInfo(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	return newFakeConnFrom(t, append([]fakeResponse{serverInfoResponse()}, responses...))
 }
 
 // loadPage runs a page's load closure and fails the test with the queries it

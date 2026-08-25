@@ -149,7 +149,7 @@ func (db *DetailBrowser) showEmpty() {
 // applyResult renders a completed (cached or freshly finished) result.
 func (db *DetailBrowser) applyResult(r *detailResult) {
 	if r.err != nil {
-		db.grid.SetError(r.err)
+		db.grid.SetError(displayError(r.err))
 		return
 	}
 	db.grid.SetFillLastColumn(isPropertyValueColumns(r.cols))

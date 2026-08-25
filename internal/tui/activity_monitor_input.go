@@ -218,7 +218,10 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 	if am.toolRect.Contains(mx, my) {
 		am.dragZone = amZoneTools
 		if i := toolButtonAt(am.tools, mx, my); i >= 0 {
-			if t := am.tools[i]; t.action != nil && !t.disabled {
+			switch t := am.tools[i]; {
+			case t.disabled && t.reason != "":
+				am.app.setStatus(t.reason)
+			case t.action != nil && !t.disabled:
 				t.action()
 			}
 		}

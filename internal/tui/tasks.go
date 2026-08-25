@@ -119,7 +119,7 @@ func (a *App) markTaskDone(t *Task, err error) {
 	t.Finished = time.Now()
 	t.Cancel()
 	if err != nil {
-		a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, err))
+		a.setStatus(fmt.Sprintf("%s failed: %v", t.Label, withPermissionAdvice(err)))
 	} else {
 		a.setStatus(t.Label + " completed")
 	}

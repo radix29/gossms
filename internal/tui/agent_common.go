@@ -129,7 +129,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 			err := run(ctx)
 			a.postAndWake(func() {
 				if err != nil {
-					a.setStatus(fmt.Sprintf("Delete failed: %v", err))
+					a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
 					return
 				}
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))

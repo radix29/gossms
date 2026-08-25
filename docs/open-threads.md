@@ -1162,3 +1162,62 @@ remains of each is recorded here.
   nobody has asked for it, and adding it blind to a form nothing can exercise
   is how the unreachable `EXTERNAL` scripter branch happened in the first
   place.
+
+## Permission gating: what P3 deliberately leaves out
+
+Added 2026-08-25 with P3 of `docs/permissions-plan.md`. Each of these is a
+known limit of the gate layer, not an oversight.
+
+- **A read-only Properties page still *looks* editable.** `Form.SetReadOnly`
+  makes every row unfocusable and refuses to route a click into one, so
+  nothing can be typed or toggled and the page can never become dirty — which
+  is what makes Apply and Script Changes safe. But a Text row still draws its
+  `[value]` box and a Check row still draws its `[ ]`. The plan's §3.2 asked
+  for those rows to render as `propsheet.Static` instead; doing it properly
+  means a read-only draw state on every row type, not a change at any one of
+  the forty-odd pages. The note at the top of the page and the collapsed
+  button row are what carry the message meanwhile.
+
+- **A schema-scoped Rename/Move/Delete is gated on rights that are sufficient,
+  not necessary.** SQL Server checks ALTER on the object's *schema*, which the
+  database-scope probe cannot see, so `objectOpRights` asks for database-wide
+  ALTER, CONTROL or ALTER ANY SCHEMA instead. A login granted ALTER on one
+  schema and nothing else loses those three menu items on objects it could in
+  fact rename; the query editor still works. Closing this needs a per-schema
+  probe, which is a query per schema per database.
+
+- **SQL Agent's New Job / New Schedule / New Alert / New Operator are not
+  gated at all**, deliberately. What permits them is membership of
+  `SQLAgentUserRole` (or above) in msdb, which grants EXECUTE on individual
+  procedures — not the database-scope EXECUTE the probe reads. Gating on the
+  latter would withhold them from every legitimate Agent user, which is worse
+  than today's behaviour of failing at the server with a now-readable message.
+  A gate here needs the msdb role probe, which `gosmo.ProbedDatabaseRoles`
+  already collects; what is missing is deciding what "or above" means.
+
+- **A few write actions have no probe-visible right and are left ungated**:
+  the two Always Encrypted key dialogs (ALTER ANY COLUMN MASTER KEY), Security
+  Policies' Enable/Disable (ALTER ANY SECURITY POLICY), New Index and New
+  Statistics (ALTER on the table). Adding the permission names to gosmo's
+  `ProbedServerPermissions`/`ProbedDatabasePermissions` is the prerequisite,
+  and each costs a row in every probe.
+
+- **`requiresText` repeats a role it has already named** — "Requires ALTER
+  (db_owner) or CONTROL (db_owner) or ALTER ANY DATABASE (dbcreator)" on
+  Database Properties. Accurate, and wordier than it needs to be.
+
+- **Two refusals the P4 mapping cannot reach, both by design of P3.** The
+  `withPermissionAdvice` append is wired at Apply, Delete/Rename/Move, Recycle,
+  New-object creation and every background task — but on the live matrix the
+  gates now withhold those actions before they can be attempted, so only the
+  *read* refusals (tree node, Log File Viewer grid, a failed page load) were
+  verifiable end to end. The append itself is unit-tested against
+  live-captured message text. Reaching it live needs a login that holds a right
+  the gate reads but not the one the statement checks — a schema-scoped ALTER
+  is the obvious candidate, and is the same gap as the objectOpRights item
+  above.
+
+- **The `xp_dirtree` silent-empty guard is unit-tested only.** Both test
+  servers are 2017 or later and so never take that path;
+  `legacyListingRefusal` is exercised across all five combinations by test but
+  has never run against a real pre-2017 instance.

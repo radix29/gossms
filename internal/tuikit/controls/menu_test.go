@@ -222,3 +222,26 @@ func TestMenuBarHoverDoesNotSelectDisabledItem(t *testing.T) {
 		t.Fatalf("selectedItem = %d after hovering a disabled item, want 1 (unchanged, still \"Middle\")", mb.selectedItem)
 	}
 }
+
+// TestADisabledItemShowsItsNoteInsteadOfItsShortcut. A disabled item cannot be
+// selected or clicked, so no keypress is left to answer with a status message —
+// the note is the only place left to say why it is grey.
+func TestADisabledItemShowsItsNoteInsteadOfItsShortcut(t *testing.T) {
+	enabled := MenuItem{Label: "Back Up Database...", Shortcut: "Ctrl+B", Note: "needs BACKUP DATABASE"}
+	if got := menuRowSuffix(enabled); got != "Ctrl+B" {
+		t.Errorf("suffix = %q for an enabled item, want its shortcut", got)
+	}
+
+	disabled := enabled
+	disabled.Enabled = func() bool { return false }
+	if got := menuRowSuffix(disabled); got != "needs BACKUP DATABASE" {
+		t.Errorf("suffix = %q for a disabled item, want the note", got)
+	}
+
+	// A cascade keeps its marker either way — it has a submenu, not a reason.
+	cascade := MenuItem{Label: "New Index", Note: "needs ALTER", Sub: []MenuItem{{Label: "Clustered"}}}
+	cascade.Enabled = func() bool { return false }
+	if got := menuRowSuffix(cascade); got != "▸" {
+		t.Errorf("cascade suffix = %q, want the submenu marker", got)
+	}
+}

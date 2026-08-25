@@ -268,11 +268,19 @@ func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
 }
 
 // RefreshSelected forces the selected node to reload its children.
+//
+// Refreshing the server root also drops its cached capability answers: rights
+// granted to a login while it is connected take effect on its existing
+// sessions, so a Refresh that re-reads the objects has to re-read what may be
+// done with them, or the tree comes back current and every gate on it stale.
 func (oe *ObjectExplorer) RefreshSelected() {
 	n := oe.Selected()
 	if n == nil {
 		oe.app.setStatus("Select an item in Object Explorer first")
 		return
+	}
+	if n.data.Type == NodeServer {
+		n.data.conn.ClearCapabilityCache()
 	}
 	n.data.Loaded = false
 	n.children = nil

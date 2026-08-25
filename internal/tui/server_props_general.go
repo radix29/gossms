@@ -17,16 +17,21 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			mem, err := sc.Server.MemoryStatsContext(ctx)
-			if err != nil {
-				return nil, nil, err
+			// Not fatal: sys.dm_os_process_memory needs VIEW SERVER
+			// PERFORMANCE STATE, which a db_owner does not have, and failing
+			// the page for it would put every value above out of that login's
+			// reach for the sake of one row.
+			mem, memErr := sc.Server.MemoryStatsContext(ctx)
+			memText := unreadableValue
+			if memErr == nil {
+				memText = strconv.FormatInt(mem.PhysicalMemoryMB, 10) + " MB"
 			}
 			configs, err := sc.Server.ConfigurationsContext(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Server information"),
 				propsheet.Static("Name", sc.Opts.Server),
 				propsheet.Static("Product", "Microsoft SQL Server"),
@@ -43,11 +48,14 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				propsheet.Section("Security"),
 				propsheet.Static("Authentication", sec.AuthenticationMode),
 				propsheet.Section("Resources"),
-				propsheet.Static("CPU count", strconv.Itoa(info.LogicalCPUCount)),
-				propsheet.Static("Memory", strconv.FormatInt(mem.PhysicalMemoryMB, 10)+" MB"),
+				propsheet.Static("CPU count", sysInfoInt(info, int64(info.LogicalCPUCount))),
+				propsheet.Static("Memory", memText),
 				propsheet.Static("Max worker threads", configValue(configs, "max worker threads")),
-			)
-			return f, nil, nil
+			}
+			if memErr != nil || info.SysInfoUnavailable {
+				rows = append(rows, deniedReadNote("VIEW SERVER STATE"))
+			}
+			return propsheet.NewForm(rows...), nil, nil
 		},
 	}
 }
