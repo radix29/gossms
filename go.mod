@@ -8,15 +8,15 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/gdamore/tcell/v3 v3.4.2
 	github.com/golang-sql/sqlexp v0.1.0
-	github.com/microsoft/go-mssqldb v1.10.0
-	github.com/radix29/gosmo v0.0.9
+	github.com/microsoft/go-mssqldb v1.11.0
+	github.com/radix29/gosmo v0.0.10
 )
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.9.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect

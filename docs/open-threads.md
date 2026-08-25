@@ -22,7 +22,10 @@ a settled question being reopened.
   replica limit of `db.ServerConn.Peer`. Each is described in full below — see
   § Reworks named in README's Known Issues and § Unbuilt features README
   already promises. README's Known Issues now names only Reports plus the
-  environment and distribution caveats.
+  environment and distribution caveats. Three of the four were closed in
+  `v0.0.8` — Start/Stop Job read the job's state, Move Up / Move Down are on
+  Job Properties > Steps, and a peer is reached with its own saved
+  credentials; the no-rollback of a partly created group stands.
 
 - **No gosmo `Drop*` write method carries `IF EXISTS`, and that is the
   decision, not an omission.** Settled 2026-08-13 after a review found the
@@ -83,8 +86,9 @@ a settled question being reopened.
   bumping `require`, and commenting out the `replace`/`ignore` pair are steps
   of the release process itself (ARCHITECTURE.md § Developing against a local
   gosmo checkout). A CI release build not resolving gosmo mid-development is
-  the expected consequence. As of `v0.0.7` the pair is commented out and
-  `require` names gosmo `v0.0.9`; re-activate both when work resumes.
+  the expected consequence. As of `v0.0.8` `require` names gosmo `v0.0.10`;
+  comment the pair out for the release build and re-activate both when work
+  resumes.
 
 - **A Grid/Text query result can exhaust memory.** The Max Result Rows option
   and every `maxRows` parameter behind it were removed 2026-08-01: a result

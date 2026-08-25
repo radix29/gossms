@@ -23,12 +23,14 @@ queries, view/edit properties) are solid across all three supported
 platforms and authentication modes, not that every SSMS feature is
 covered — see [Feature backlog](#feature-backlog) for what can wait.
 
-`v0.0.7` (2026-08-19) is the current tag — Always On Availability Groups end
-to end (browse, edit, dashboard, operations, create, and the mirroring
-endpoints behind them), the Log File Viewer, the Object Explorer folder
-filter, general Delete and Rename, server-side filesystem browsing for Backup
-and Restore with a File Locations view, and `Ctrl+Z` on a Properties page.
-Nothing is unreleased as of this tag.
+`v0.0.8` (2026-08-25) is the current tag — permission awareness end to end
+(goSSMS works as a login that is not `sysadmin`, and says which right is
+missing rather than showing a zero or a driver error), `Script <object> as ▸`
+on every family the tree shows, New Index and New Statistics, partition
+functions and schemes, security policies and Always Encrypted keys in the
+tree, a missing-index banner and `.sqlplan` files on execution plans, Log File
+Viewer search and Recycle, and job-step reordering. Nothing is unreleased as
+of this tag.
 
 ## Ongoing practices (no end date)
 
@@ -45,7 +47,9 @@ These continue for the life of the project, release or not:
 
 ## Next up (working priority order)
 
-1. **SQL Agent** needs a complete rework.
+1. **SQL Agent** needs a complete rework. Job step add/remove/reorder,
+   step fidelity and state-aware Start/Stop landed in `v0.0.8`; the rework
+   itself — proxies, categories, targets, and the New Job flow — has not.
 
 2. **Database Reports** — the useful ones at server and database level:
    disk usage, top tables.
@@ -60,11 +64,16 @@ These continue for the life of the project, release or not:
 5. **Platform testing** — build and exercise on macOS (no Mac available
    yet; blocked on hardware/CI access, same as above).
 
+Closed in `v0.0.8`: the **least-privilege pass** (P0-P4, `docs/permissions-
+plan.md`), **scripting** every object family the tree shows, **New Index /
+New Statistics**, and the SQL Agent scope notes that were blocking step
+reordering. What each deliberately left out is in `docs/open-threads.md`
+§ Permission gating and § Deferred scope rather than here.
+
 Closed in `v0.0.7`: the **Database Restore** rework (server-side browsing,
 the File Locations view, wrapped error messages, left-clipped paths — see
 `docs/open-threads.md` § Reworks named in README's Known Issues) and
-**Availability Groups** (viewing and managing AG topology and health). What
-was deliberately left out of each is recorded there rather than here.
+**Availability Groups** (viewing and managing AG topology and health).
 
 ## Feature backlog (later, no particular order)
 

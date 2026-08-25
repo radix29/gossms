@@ -137,7 +137,8 @@ gossms/
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
 │   ├── db/                  # gosmo connection wrapper + DSN builder
-│   │                        #   peer.go: cached same-credential connections to other instances (Always On: read the group from its primary)
+│   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
+│   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
@@ -166,7 +167,8 @@ gossms/
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
-│       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, selectedServerConn helper
+│       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
+│       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
 │       ├── app_explorer_data.go  # background fetch orchestration, context menus, Script object, View Dependencies, Back Up Database/Take-Bring Offline-Online/Rebuild All Indexes task consumers
 │       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Properties/New Database/New Login dialogs
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
@@ -178,13 +180,23 @@ gossms/
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles
+│       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
 │       ├── explorer_management.go # loaders: Server Objects folder (Linked Servers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
-│       ├── explorer_object_ops.go # general Delete/Rename: per-NodeType drop/rename table, confirmation, prompt, parent-folder refresh
+│       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: per-NodeType drop/rename table, confirmation (incl. the cascade checkbox), prompt, parent-folder refresh
+│       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade: which verbs each NodeType offers, how each is generated, and the three destinations
+│       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
+│       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
+│       ├── permission_gate.go    # allowsAction: the right(s) each action needs, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no"
+│       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
+│       ├── permission_error.go   # classifies a SQL Server refusal and names the right it wants, instead of the wrapped driver error
+│       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor and the Log File Viewer (not App's own toolbar)
+│       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
+│       ├── text_encoding.go      # decodeTextFile/encodeTextFile — BOM-detected encoding and the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
 │       ├── clipboard.go          # copy/cut/paste plumbing shared by editor and dialog text fields, incl. bracketed-paste buffering
 │       ├── os_clipboard.go       # OS-native clipboard, shelled out per-platform (fallback path for clipboard.go)
@@ -218,6 +230,7 @@ gossms/
 │       ├── log_viewer.go              # LogViewer state: log-family/archive selectors, filter, read + export; implements layout.Panel
 │       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
+│       ├── log_search_dialog.go       # Log File Viewer search: a query the server runs across the archives, not a filter over what was read
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
@@ -226,6 +239,7 @@ gossms/
 │       ├── detail_browser_databases.go  # Databases folder: name/state/recovery, then per-database size backfill
 │       ├── detail_browser_logins.go     # Logins folder
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
+│       ├── detail_browser_storage.go    # Storage folders: partition functions and schemes
 │       │
 │       │  ── SQL Server Agent ──
 │       ├── agent_common.go              # shared Job/Alert/Notify enum formatters, refreshExplorerNode, generic async enable/disable/delete plumbing for every Agent entity
@@ -291,6 +305,7 @@ gossms/
 │       ├── ag_props_routing.go              # Availability Group Properties > Read-Only Routing page; routing-list text parser and the three-phase apply order
 │       ├── alwayson_menu.go                 # Always On context menus and operations: add/remove database, suspend/resume, listener, remove replica, delete group, failover (with the cluster-type refusal)
 │       ├── ag_add_database_dialog.go        # Add Database to Availability Group: eligibility split and the reason each database was left out
+│       ├── ag_add_replica_dialog.go         # Add Replica: the endpoint URL read through Connect (the instance's own @@SERVERNAME), then made editable
 │       ├── ag_add_listener_dialog.go        # New Availability Group Listener: DNS name, port, DHCP or one address per subnet
 │       ├── ag_listener_props.go             # Availability Group Listener Properties: port and added addresses, the only two things MODIFY LISTENER can change
 │       ├── new_ag_dialog.go                  # New Availability Group: prefetch, shared page state, and the CREATE/JOIN/GRANT pipeline across three instances
@@ -314,12 +329,20 @@ gossms/
 │       ├── index_props.go        # Index Properties: General/Options/Storage/Included Columns/Filter/Fragmentation/Extended Properties
 │       ├── key_props.go          # Primary/Unique Key Properties, reusing most of Index Properties' pages
 │       ├── fk_props.go           # Foreign Key Properties: single read-only General page
+│       ├── partition_props.go    # read-only Properties for a partition function and a partition scheme
+│       ├── security_policy_props.go # read-only Properties for a row-level security policy (state is the context menu's Enable/Disable)
+│       ├── column_key_props.go   # read-only Properties for a column master key and a column encryption key
 │       │
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
 │       ├── new_database_pages.go  # New Database's page definitions
 │       ├── new_login_dialog.go    # New Login — newObjectDialog config, runs CREATE LOGIN
 │       ├── new_login_pages.go     # New Login's page definitions
+│       ├── new_index_dialog.go    # New Index — the six index types the Indexes folder offers, one newObjectDialog config
+│       ├── new_index_pages.go     # New Index's page definitions; which pages exist follows the index type
+│       ├── new_statistics_dialog.go # New Statistics — column list, filter, sampling, NORECOMPUTE, INCREMENTAL
+│       ├── new_column_master_key_dialog.go     # New Column Master Key — the 0x… signature is pasted; it cannot be computed here
+│       ├── new_column_encryption_key_dialog.go # New Column Encryption Key — likewise for ENCRYPTED_VALUE
 │       │
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
@@ -330,7 +353,8 @@ gossms/
 │       ├── restore_dialog.go     # Restore Database dialog — options form, backup-set inspection
 │       ├── restore_dialog_draw.go  # Restore Database rendering
 │       ├── restore_dialog_input.go # Restore Database HandleKey/HandleMouse
-│       └── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
+│       ├── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
+│       └── restore_dialog_files.go # Restore's File Locations view: the three relocation choices, the per-file preview and the MOVE clauses behind it
 ```
 
 ## Common tasks

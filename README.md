@@ -29,8 +29,11 @@ required.
   shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
   UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
   clipboard; an index adds REBUILD, REORGANIZE and UPDATE STATISTICS, and a
-  statistics object its own UPDATE STATISTICS. Filter any folder by name,
-  schema, or creation date. Drag a node into the editor to insert its name.
+  statistics object its own UPDATE STATISTICS. Delete a column, drop a table
+  with its foreign keys, move an object to another schema, or rename one.
+  Filter any folder by name, schema, or creation date — the filter is pushed
+  into the server's own query where it can be expressed exactly. Drag a node
+  into the editor to insert its name.
 - **Query editor** — as many editor+results tabs as you like, `GO` batch
   splitting, a tab per result set, and a Messages tab for `PRINT`, row
   counts, and errors. Results are never row-capped. Syntax highlighting,
@@ -53,7 +56,9 @@ required.
   its tessellation, bounding box and grid. Its Statistics folder creates a
   statistics object with an ordered column list, a filter, FULLSCAN or a
   sample percentage, NORECOMPUTE and INCREMENTAL. Both offer Script Changes
-  instead of running the statement.
+  instead of running the statement. A database's Security folder creates
+  Always Encrypted column master and column encryption keys from the `0x…`
+  blob SSMS or the PowerShell cmdlets print.
 - **Backup & Restore** — full option dialogs (destination, type, media,
   compression, point-in-time, file relocation) run as cancellable
   background tasks with live progress. Browse picks paths on the *server's*
@@ -62,9 +67,11 @@ required.
   memory, I/O latency, and checkpoints, plus TempDB, blocking chains, and a
   Sessions tab powered by sp_WhoIsActive.
 - **Log File Viewer** — SQL Server and SQL Agent error logs, current or
-  archived, with filtering and export.
+  archived, with filtering, a search the server runs across every archive,
+  export, and Recycle.
 - **SQL Server Agent** — Jobs, Schedules, Alerts, and Operators; multi-page
-  Job Properties, run/stop a job, and view run history.
+  Job Properties with add/remove/reorder on the step list, run/stop a job, and
+  view run history.
 - **Always On Availability Groups** — browse groups, replicas, databases,
   and listeners; a live dashboard with estimated data loss and recovery
   time; create groups, add replicas and databases, suspend/resume, fail
@@ -72,6 +79,11 @@ required.
 - **Authentication** — SQL Server, Windows Integrated, and Azure Entra ID
   (Default, Password, MSI, Service Principal, Interactive, Device Code,
   Azure CLI).
+- **Least privilege** — goSSMS works as a login that is not `sysadmin`. A
+  value it cannot read shows as `N/A` rather than `0`, a refusal names the
+  right it needs rather than showing a driver error, and an action you cannot
+  perform is greyed out rather than offered and then rejected. See
+  [Required rights](#required-rights).
 
 ## Install
 
@@ -96,6 +108,41 @@ and access to a SQL Server instance.
 
 goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
 or press `Escape` to work offline — `F9` reopens it any time.
+
+## Keyboard Reference
+
+| Key | Action |
+|-----|--------|
+| `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
+| `F9` | Connect to server |
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query |
+| `F5` | Execute query (selection if any); also refreshes a tree node or Properties page |
+| `Ctrl+Enter` | Select the statement at the cursor without executing |
+| `Tab` | Switch focus explorer ↔ panels |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle focus forward / back (explorer, editor, results) |
+| `Ctrl+Shift+Right` / `Left` | Next / previous panel |
+| `Ctrl+0`..`9` | Jump to panel N from the left (Object Explorer Details is 0) |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab |
+| `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
+| `Ctrl+Up` / `Down` | Grow / shrink the query editor |
+| `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
+| `Ctrl+Z` (Properties) | Revert the current page to the values it loaded with |
+| `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
+| `Ctrl+F3` | Find next occurrence of the word at the cursor |
+| `Ctrl+D` / `Ctrl+L` | Duplicate / delete the current line |
+| `Ctrl+/` | Comment or uncomment the line |
+| `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
+| `Shift+Arrow`, `Alt+Shift+Arrow` | Select text, block (column) select |
+| `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
+| `Shift+F10` / `Menu` key | Context menu for the selected tree node |
+| Right-click a grid cell | "Show Value" — full cell text, copyable |
+| Drag / double-click a header separator | Resize / reset a grid column |
+
+Replace is Edit > Replace... or the Replace fields in the Find dialog.
+`Ctrl+H` is deliberately unbound — many terminals send it as the same byte
+as Backspace. `Ctrl+Shift+O` also opens Connect, but only on terminals with a
+modern keyboard protocol; `F9` is the binding that works everywhere. Help >
+Key Diagnostics shows what your terminal actually sent for any keypress.
 
 ## Required rights
 
