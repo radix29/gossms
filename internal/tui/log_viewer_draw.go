@@ -34,12 +34,12 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 	barStyle := theme.StyleMenuBar()
 	core.FillRect(s, lv.toolRect, ' ', barStyle)
 
-	for _, t := range lv.tools {
+	for i, t := range lv.tools {
 		if t.rect.IsZero() {
 			continue
 		}
 		style := theme.StyleTooltip()
-		if !lv.toolsEnabled() {
+		if lv.toolDisabled(i) {
 			style = style.Foreground(pal.TextDim)
 		}
 		core.FillRect(s, t.rect, ' ', style)

@@ -352,6 +352,107 @@ func TestAutomaticProcessorAffinityOverridesTheGrid(t *testing.T) {
 	}
 }
 
+// configResponsesWithAffinity is configResponses with 'affinity mask' already
+// in use at mask, so a test can tell "left alone" from "already 0".
+func configResponsesWithAffinity(mask int64) []fakeResponse {
+	rs := configResponses()
+	for i := range rs {
+		for _, row := range rs[i].rows {
+			if len(row) > 3 && row[1] == "affinity mask" {
+				row[3] = mask // value_in_use
+			}
+		}
+	}
+	return rs
+}
+
+// withoutResponse is withoutResponses over a script a test has already built,
+// for one that needs both a filtered script and an edited one.
+func withoutResponse(rs []fakeResponse, drop string) []fakeResponse {
+	out := make([]fakeResponse, 0, len(rs))
+	for _, r := range rs {
+		if r.match != drop {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// hasCheckRow reports whether the page carries a checkbox with this label,
+// without failing the test when it does not — checkRow's Fatal is the wrong
+// answer for an assertion about a row being *absent*.
+func hasCheckRow(f *propsheet.Form, label string) bool {
+	for _, r := range f.Rows() {
+		if cr, ok := r.(*propsheet.CheckRow); ok && cr.Label() == label {
+			return true
+		}
+	}
+	return false
+}
+
+// TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable.
+//
+// The affinity grid is sized from sys.dm_os_sys_info's CPU count, which a
+// login without VIEW SERVER STATE is refused — so the grid holds no rows, and
+// bitsToAffinity over no rows is 0. That made applying any *other* edit on the
+// page (MAXDOP here) rewrite a live 'affinity mask' to 0 and RECONFIGURE,
+// unpinning the instance from its CPUs with nothing on screen having said so.
+// The masks come from sp_configure and are still readable; only the per-CPU
+// list is not, so the page shows them and takes both writes out of apply.
+func TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable(t *testing.T) {
+	// Both sys.dm_os_sys_info reads refused, which is what the one right
+	// covers: newFakeConnWithoutSysInfo drops the connect-time one, and the
+	// filter drops the Processors page's own.
+	sc, inst := newFakeConnWithoutSysInfo(t,
+		withoutResponse(configResponsesWithAffinity(15), "cpu_count, hyperthread_ratio")...)
+	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+
+	// A control that cannot mean anything must not be offered: with no CPU
+	// rows, unticking "automatically set ..." selects an empty set.
+	if hasCheckRow(form, "Automatically set processor affinity mask for all processors") ||
+		hasCheckRow(form, "Automatically set I/O affinity mask for all processors") {
+		t.Error("the affinity checkboxes are still editable with no CPU list to apply them to")
+	}
+	if got, ok := findStatic(form, "Processor affinity mask"); !ok || got != "0xf" {
+		t.Errorf("Processor affinity mask reads %q (found=%v), want the mask the server has", got, ok)
+	}
+
+	editText(t, form, "Max degree of parallelism", "4")
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	stmts := inst.Statements()
+	for _, st := range stmts {
+		if strings.Contains(st, "affinity") {
+			t.Fatalf("wrote:\n%s\nwant no affinity write when the CPU list could not be read",
+				strings.Join(stmts, "\n"))
+		}
+	}
+	// The edit that *was* made still has to land, or the assertion above
+	// passes on a page that wrote nothing at all.
+	if len(stmts) != 2 || !strings.Contains(stmts[0], "max degree of parallelism") {
+		t.Fatalf("want the MAXDOP write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+}
+
+// TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable is the other
+// half: the guard above must not disarm the affinity editor on a login that
+// can read the DMV, which is every test server and every sysadmin.
+func TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable(t *testing.T) {
+	sc, inst := newFakeConn(t, configResponsesWithAffinity(15)...)
+	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+
+	editCheck(t, form, "Automatically set processor affinity mask for all processors", true)
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 2 || !strings.Contains(stmts[0], "affinity mask") {
+		t.Fatalf("want the affinity write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+}
+
 // FILESTREAM is the one control on these six pages that is not a configRow:
 // a three-item Select whose *index* is the value sp_configure takes. Nothing
 // else on the page works that way, so a wrong index here writes a level the

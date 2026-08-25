@@ -50,7 +50,7 @@ func pageServerMemory(sc *db.ServerConn) propPage {
 				propsheet.Note("Max server memory should leave memory for the OS, agents, backups, linked components, and monitoring tools."),
 			}
 			if memErr != nil {
-				rows = append(rows, deniedReadNote("VIEW SERVER STATE"))
+				rows = append(rows, deniedReadNote(viewServerStateAdvice))
 			}
 			return propsheet.NewForm(rows...), configApply(sc, intRows, nil), nil
 		},

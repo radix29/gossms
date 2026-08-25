@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -24,7 +23,10 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 			mem, memErr := sc.Server.MemoryStatsContext(ctx)
 			memText := unreadableValue
 			if memErr == nil {
-				memText = strconv.FormatInt(mem.PhysicalMemoryMB, 10) + " MB"
+				// formatMB, not a bare FormatInt: the Object Explorer Details
+				// pane renders the same quantity through sysInfoMB, and two
+				// spellings of one number read as two different readings.
+				memText = formatMB(float64(mem.PhysicalMemoryMB))
 			}
 			configs, err := sc.Server.ConfigurationsContext(ctx)
 			if err != nil {
@@ -53,7 +55,7 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				propsheet.Static("Max worker threads", configValue(configs, "max worker threads")),
 			}
 			if memErr != nil || info.SysInfoUnavailable {
-				rows = append(rows, deniedReadNote("VIEW SERVER STATE"))
+				rows = append(rows, deniedReadNote(viewServerStateAdvice))
 			}
 			return propsheet.NewForm(rows...), nil, nil
 		},

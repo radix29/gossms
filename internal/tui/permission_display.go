@@ -52,6 +52,18 @@ func visibilityNote(c capabilitySet, right, what string) []propsheet.Row {
 		"Only the " + what + " visible to this login are listed. Seeing all of them requires " + right + ".")}
 }
 
+// viewServerStateAdvice names the right a refused sys.dm_os_* read needs.
+//
+// Both halves are named because SQL Server 2022 split VIEW SERVER STATE in
+// two, and every read these notes cover — sys.dm_os_sys_info,
+// sys.dm_os_sys_memory, sys.dm_os_process_memory — falls in the performance
+// half. The wide right fixes it on every version and is what an administrator
+// on 2019 or earlier has to grant; the narrow one is the least privilege that
+// does on 2022 and later, and is the one the server itself names in the
+// refusal. Naming only the wide one asks for more rights than the job needs,
+// in a feature whose whole point is least privilege.
+const viewServerStateAdvice = "VIEW SERVER STATE (or VIEW SERVER PERFORMANCE STATE on SQL Server 2022 and later)"
+
 // deniedReadNote is the note a page carries when one of its reads was refused
 // and the values it fed now render as N/A.
 func deniedReadNote(right string) propsheet.Row {

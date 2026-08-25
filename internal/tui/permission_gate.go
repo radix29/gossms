@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -26,10 +25,12 @@ type requiredRight struct {
 	alt []string
 }
 
-// The rights the application gates on. Every name is in gosmo's Probed* lists;
-// one that is not would read back as CapabilityUnknown forever and gate
-// nothing, which is why they are declared here rather than spelled at each
-// call site.
+// The rights the application gates on. Every name is in gosmo's Probed* list
+// *for its scope*; one that is not would read back as CapabilityUnknown
+// forever and gate nothing, and nothing at run time tells that apart from a
+// login that holds the right. That is why they are declared here rather than
+// spelled at each call site, and why permission_gate_names_test.go reads these
+// literals back and checks each against gosmo.
 var (
 	rightControlServer   = requiredRight{name: "CONTROL SERVER", role: "sysadmin"}
 	rightViewServerState = requiredRight{name: "VIEW SERVER STATE", role: "sysadmin",
@@ -101,23 +102,15 @@ func allowsAction(sc *db.ServerConn, dbName string, rights ...requiredRight) boo
 			// No database to ask about — a folder-level action that will
 			// prompt for one. Nothing measured, so nothing withheld.
 			return true
-		case dbAllows(sc.CachedDatabaseCapabilities(dbName), r.name):
+		// Permits, not Allows: an inaccessible database answers
+		// CapabilityUnknown to every permission and unknown fails open, which
+		// would leave Back Up and Delete offered on exactly the databases the
+		// login cannot open. See gosmo.DatabaseCapabilities.Permits.
+		case sc.CachedDatabaseCapabilities(dbName).Permits(r.name):
 			return true
 		}
 	}
 	return false
-}
-
-// dbAllows is DatabaseCapabilities.Allows plus the accessibility check.
-//
-// A database the login cannot open answers CapabilityUnknown to every
-// permission, because there was nothing to ask inside it — and unknown fails
-// open, which would leave Back Up and Delete offered on exactly the databases
-// the login has no business writing to. Accessible false is a measured "no" to
-// everything; the fail-open value from a probe that could not run reports
-// Accessible true and so still fails open.
-func dbAllows(c *gosmo.DatabaseCapabilities, name string) bool {
-	return c.Accessible && c.Allows(name)
 }
 
 // gate returns item with its Enabled predicate extended to consult the
@@ -126,17 +119,23 @@ func dbAllows(c *gosmo.DatabaseCapabilities, name string) bool {
 // withhold, and neither should cancel the other out.
 func gate(item controls.MenuItem, sc *db.ServerConn, dbName string, rights ...requiredRight) controls.MenuItem {
 	prev := item.Enabled
+	allowed := func() bool { return allowsAction(sc, dbName, rights...) }
 	if len(rights) > 0 {
 		// Shown only while the item is disabled, and only the first right —
 		// the whole "Requires X (role) or Y or Z." sentence would double the
 		// width of every context menu it appears in.
 		item.Note = "needs " + rights[0].name
+		// And only when the rights are why it is disabled. An item its own
+		// predicate has already withheld — a failover offered on secondaries
+		// only — is grey for a reason this note does not describe, and naming
+		// a permission there sends the user after one they may already hold.
+		item.NoteWhen = func() bool { return (prev == nil || prev()) && !allowed() }
 	}
 	item.Enabled = func() bool {
 		if prev != nil && !prev() {
 			return false
 		}
-		return allowsAction(sc, dbName, rights...)
+		return allowed()
 	}
 	return item
 }

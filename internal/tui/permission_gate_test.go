@@ -122,6 +122,138 @@ func TestAWithheldItemSaysWhat(t *testing.T) {
 	}
 }
 
+// TestAWithheldItemDoesNotBlameThePermissionForSomeoneElsesReason. gate ANDs
+// its own predicate with whatever the item already had, so an item can be grey
+// for a reason the note does not describe. Every AG replica menu is like this:
+// the two failover items and Remove Replica carry Enabled: secondary, and on
+// the primary they read "needs ALTER ANY AVAILABILITY GROUP" — a right a
+// sysadmin holding it in full would go and ask for, to no effect.
+func TestAWithheldItemDoesNotBlameThePermissionForSomeoneElsesReason(t *testing.T) {
+	// Holds the right; withheld only by the item's own predicate.
+	f := probedConn(t, "", []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil)
+
+	onPrimary := gate(controls.MenuItem{
+		Label:   "Fail Over to This Replica...",
+		Enabled: func() bool { return false },
+	}, f, "", rightAlterAnyAG)
+
+	if onPrimary.Enabled() {
+		t.Fatal("the item's own predicate was discarded")
+	}
+	if onPrimary.NoteWhen == nil || onPrimary.NoteWhen() {
+		t.Error("the permission note is shown on an item the permission does not withhold")
+	}
+
+	// The other direction: the right is denied and the item's own predicate is
+	// satisfied, so the note is exactly the reason.
+	denied := probedConn(t, "", nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil)
+	onSecondary := gate(controls.MenuItem{
+		Label:   "Fail Over to This Replica...",
+		Enabled: func() bool { return true },
+	}, denied, "", rightAlterAnyAG)
+
+	if onSecondary.Enabled() {
+		t.Fatal("the gate did not withhold an action whose right is denied")
+	}
+	if onSecondary.NoteWhen == nil || !onSecondary.NoteWhen() {
+		t.Error("the permission note is withheld on an item the permission is withholding")
+	}
+}
+
+// TestTheActivityMonitorGateReadsTheConnectionItWouldOpen. The Tools menu item
+// and the toolbar button both name no connection: showActivityMonitor resolves
+// one with connOrFirst, which falls back to connections[0] when the Object
+// Explorer has no selection. The gate read selectedServerConn instead, which
+// is nil in exactly that state — so with nothing selected the item was offered
+// on a fail-open nil while the action went to a connection whose right is
+// denied, and the user got the server's refusal instead of a grey item.
+func TestTheActivityMonitorGateReadsTheConnectionItWouldOpen(t *testing.T) {
+	a := newTestApp()
+	// Not addTestConn: registering a root selects it, and the state this is
+	// about is a connection open with nothing selected in the tree.
+	denied := probedConn(t, "", nil,
+		[]string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE", "VIEW SERVER SECURITY STATE"},
+		nil, nil)
+	a.connections = append(a.connections, denied)
+
+	if a.explorer.Selected() != nil {
+		t.Fatal("the fixture selected a node; this test is about nothing being selected")
+	}
+	if got := a.activeServerConn(); got != denied {
+		t.Fatalf("activeServerConn = %v, want the connection connOrFirst would return", got)
+	}
+
+	// Through the real predicates, not allowsAction directly: the bug was in
+	// which connection these two hand it, so a test that picks the connection
+	// itself cannot see it.
+	if item := menuItemLabelled(t, a.buildMenus(), "Tools", "Activity Monitor"); item.enabledNow() {
+		t.Error("the Tools menu offers Activity Monitor on a connection the server has refused")
+	}
+	if btn := toolbarButtonTipped(t, a.buildToolbar(), "Activity Monitor"); btn.enabledNow() {
+		t.Error("the toolbar offers Activity Monitor on a connection the server has refused")
+	}
+
+	// The gate and the action must not be able to drift apart again.
+	if a.connOrFirst() != a.activeServerConn() {
+		t.Error("the action's target and the gate's target are different connections")
+	}
+}
+
+// menuItemLabelled finds one item by menu header and label.
+func menuItemLabelled(t *testing.T, menus []controls.Menu, menu, label string) gatedItem {
+	t.Helper()
+	for _, m := range menus {
+		if m.Label != menu {
+			continue
+		}
+		for _, it := range m.Items {
+			if it.Label == label {
+				return gatedItem{it.Enabled}
+			}
+		}
+	}
+	t.Fatalf("no %q item in the %q menu", label, menu)
+	return gatedItem{}
+}
+
+// toolbarButtonTipped finds one toolbar button by its tooltip.
+func toolbarButtonTipped(t *testing.T, buttons []controls.ToolbarButton, tooltip string) gatedItem {
+	t.Helper()
+	for _, b := range buttons {
+		if b.Tooltip == tooltip {
+			return gatedItem{b.Enabled}
+		}
+	}
+	t.Fatalf("no toolbar button tooltipped %q", tooltip)
+	return gatedItem{}
+}
+
+// gatedItem is whichever of the two carries the predicate under test.
+type gatedItem struct{ enabled func() bool }
+
+func (g gatedItem) enabledNow() bool { return g.enabled == nil || g.enabled() }
+
+// TestActiveServerConnDoesNotTouchTheStatusBar. It is called from an Enabled
+// predicate, which runs while a menu is being drawn — connOrFirst reports a
+// missing connection there, and doing that on every frame would overwrite
+// whatever the status bar was saying.
+func TestActiveServerConnDoesNotTouchTheStatusBar(t *testing.T) {
+	a := newTestApp()
+	a.setStatus("something the user needs to read")
+
+	if got := a.activeServerConn(); got != nil {
+		t.Fatalf("activeServerConn = %v with nothing connected, want nil", got)
+	}
+	if a.statusText != "something the user needs to read" {
+		t.Errorf("statusText = %q: the gate overwrote the status bar", a.statusText)
+	}
+
+	// connOrFirst is the arm that does report it, and still must.
+	if a.connOrFirst() != nil || a.statusText != notConnectedMessage {
+		t.Errorf("connOrFirst left statusText = %q, want %q", a.statusText, notConnectedMessage)
+	}
+}
+
 // TestRequiresTextNamesTheRoleToo, because "ALTER SETTINGS" is not what an
 // administrator grants — serveradmin is.
 func TestRequiresTextNamesTheRoleToo(t *testing.T) {

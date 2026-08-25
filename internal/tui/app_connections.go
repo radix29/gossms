@@ -214,20 +214,36 @@ func (a *App) requireConn(sc *db.ServerConn) bool {
 // missing — status bar and QueryPanel's results notice alike.
 const notConnectedMessage = "Not connected — use File > Connect"
 
-// connOrFirst resolves the connection a Tools-menu/toolbar action should
-// act on: whichever the Object Explorer selection belongs to, falling back
-// to the first open connection when nothing relevant is selected. Returns
-// nil (having set the status message) when there's nothing connected at
-// all, so callers read as `sc := a.connOrFirst(); if sc == nil { return }`.
-func (a *App) connOrFirst() *db.ServerConn {
+// activeServerConn resolves the connection a Tools-menu/toolbar action acts on
+// when it names none: whichever the Object Explorer selection belongs to,
+// falling back to the first open connection when nothing relevant is selected.
+// nil when nothing is connected at all.
+//
+// Side-effect free, which is the whole reason it exists next to connOrFirst: a
+// menu item's Enabled predicate runs while the menu is being drawn, and
+// connOrFirst sets a status message on its way out. Gate on this and act on
+// connOrFirst, so the item is offered for the connection it would open —
+// gating on selectedServerConn instead left the gate reading nil (fail-open)
+// whenever nothing was selected, while the action went to connections[0].
+func (a *App) activeServerConn() *db.ServerConn {
 	if sc := a.selectedServerConn(); sc != nil {
 		return sc
 	}
 	if len(a.connections) > 0 {
 		return a.connections[0]
 	}
-	a.setStatus(notConnectedMessage)
 	return nil
+}
+
+// connOrFirst is activeServerConn for a caller about to act: it reports the
+// missing connection on the status bar, so callers read as
+// `sc := a.connOrFirst(); if sc == nil { return }`.
+func (a *App) connOrFirst() *db.ServerConn {
+	sc := a.activeServerConn()
+	if sc == nil {
+		a.setStatus(notConnectedMessage)
+	}
+	return sc
 }
 
 // selectedConnTarget resolves what "the current Object Explorer selection"

@@ -376,7 +376,7 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 	}
 	for _, r := range p.requires {
 		if r.db {
-			if p.requiresIn == "" || dbAllows(sc.DatabaseCapabilities(ctx, p.requiresIn), r.name) {
+			if p.requiresIn == "" || sc.DatabaseCapabilities(ctx, p.requiresIn).Permits(r.name) {
 				return ""
 			}
 			continue

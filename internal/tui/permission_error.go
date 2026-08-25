@@ -135,6 +135,13 @@ var (
 // An ambiguous refusal keeps its ambiguity in the wording. SQL Server will not
 // say whether the object is missing or merely invisible, and a sentence that
 // picks one sends the user to fix the wrong thing half the time.
+//
+// Msg 297 deliberately has no branch. Its text names nothing, and it is not
+// only the follow-up to Msg 300 — a refused KILL, sp_readerrorlog and several
+// other procedures raise it alone. Naming a right for it would be inventing
+// one, which is what the whole file is written to avoid; the DMV case that
+// looks like it needs a branch is already handled by classifyRefusal reading
+// the *first* message, which is the 300 that names the right.
 func (r refusal) advice() string {
 	switch r.number {
 	case 229, 230:
@@ -145,8 +152,6 @@ func (r refusal) advice() string {
 		if m := reInDatabaseDenied.FindStringSubmatch(r.message); m != nil {
 			return "Requires " + m[1] + " in " + m[2] + "."
 		}
-	case 297:
-		return "Requires " + rightViewServerState.String() + "."
 	case 300:
 		if m := reServerDenied.FindStringSubmatch(r.message); m != nil {
 			return "Requires " + m[1] + "."

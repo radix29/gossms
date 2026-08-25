@@ -223,6 +223,38 @@ func TestMenuBarHoverDoesNotSelectDisabledItem(t *testing.T) {
 	}
 }
 
+// TestNoteWhenKeepsTheNoteOffAnItemDisabledForAnotherReason. An item can be
+// withheld for more than one reason at once, and Note describes exactly one of
+// them. "Fail Over to This Replica..." is disabled on the primary because a
+// replica cannot fail over to itself, and it read "needs ALTER ANY
+// AVAILABILITY GROUP" — a right the login may well hold, sending them to ask
+// for a permission that would change nothing.
+func TestNoteWhenKeepsTheNoteOffAnItemDisabledForAnotherReason(t *testing.T) {
+	// Disabled, and the note's own reason does not apply.
+	item := MenuItem{
+		Label:    "Fail Over to This Replica...",
+		Shortcut: "",
+		Note:     "needs ALTER ANY AVAILABILITY GROUP",
+		Enabled:  func() bool { return false },
+		NoteWhen: func() bool { return false },
+	}
+	if got := menuRowSuffix(item); got != "" {
+		t.Errorf("suffix = %q, want nothing — the note is not why this item is grey", got)
+	}
+
+	// Same item, now grey for the reason the note does describe.
+	item.NoteWhen = func() bool { return true }
+	if got := menuRowSuffix(item); got != "needs ALTER ANY AVAILABILITY GROUP" {
+		t.Errorf("suffix = %q, want the note", got)
+	}
+
+	// A nil NoteWhen is the unconditional form every other caller relies on.
+	item.NoteWhen = nil
+	if got := menuRowSuffix(item); got != "needs ALTER ANY AVAILABILITY GROUP" {
+		t.Errorf("suffix = %q with no NoteWhen, want the note", got)
+	}
+}
+
 // TestADisabledItemShowsItsNoteInsteadOfItsShortcut. A disabled item cannot be
 // selected or clicked, so no keypress is left to answer with a status message —
 // the note is the only place left to say why it is grey.

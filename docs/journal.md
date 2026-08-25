@@ -3603,3 +3603,220 @@ append are unit-tested against live-captured text rather than driven, because
 P3's gates now withhold the actions that would produce them — recorded in
 `docs/open-threads.md` § Permission gating along with the xp_dirtree guard,
 which no server here can exercise.
+
+## 2026-08-25 — the Processors page cleared `affinity mask` on a login that could not read the CPU list
+
+Found in the cross-repo review of 2026-08-25, in the permission-gating commit's
+own change to `server_props_processors.go`. Making the `ProcessorInfoContext`
+read non-fatal was right; what came with it was not.
+
+`cpuCount` is `min(info.LogicalCPUCount, 32)`, and `LogicalCPUCount` comes from
+the connect-time `sys.dm_os_sys_info` read — refused for a login without VIEW
+SERVER STATE, which leaves it 0. The affinity grid was then built with **zero
+rows**, while `affMask` still came from `sp_configure`, which the same login
+reads fine. Apply did `bitsToAffinity(newCPUAff)` over an empty slice — 0 —
+compared it to a live mask, found them different, and wrote
+`sp_configure N'affinity mask', 0` plus `RECONFIGURE`. The instance was
+unpinned from its CPUs, with nothing on screen having said so and the user
+having touched only MAXDOP.
+
+Reachable exactly as the gating work intends: `GRANT ALTER SETTINGS` (so
+`withRequires` leaves the page editable) without VIEW SERVER PERFORMANCE STATE.
+Before the commit the page failed to load on that read, so this was new.
+
+The fix is `affinityEditable := procErr == nil && cpuCount > 0`. When false the
+two checkboxes and the grid are replaced by two `Static` rows showing the masks
+`sp_configure` reported (`affinityMaskText`, which renders 0 as "Automatic"
+rather than as a mask pinning the instance to no CPU at all) plus a Note, and
+both writes drop out of apply. Showing the masks read-only is the point: they
+are readable, only the per-CPU list is not.
+
+Two tests in `server_props_config_pages_test.go`, over
+`newFakeConnWithoutSysInfo`. `TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable` edits MAXDOP and asserts no statement mentions affinity —
+and asserts the MAXDOP write *did* land, or it would pass on a page that wrote
+nothing at all. `TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable`
+is the other half, so the guard cannot disarm the editor for a sysadmin.
+Mutating `affinityEditable` back to `true` reproduces the exact statement pair.
+
+The general shape, which is `CLAUDE.md`'s round-trip rule in a new place:
+`affinityBits`/`bitsToAffinity` are exact inverses and unit-tested as such, and
+they agree perfectly at `cpuCount == 0`. What the round trip cannot see is that
+the *width* it round-trips at came from a different read than the value it is
+compared against. A guard belongs wherever a form's control count is derived
+from one query and the value it writes from another.
+
+## 2026-08-25 — three corrections to the permission layer, the day after it landed
+
+Group 2 of the cross-repo review of 2026-08-25. All three are in the gating
+work itself; each is a case of the layer saying something it had not measured.
+
+**Msg 297 named a right the server never did.** `refusal.advice` answered
+`"Requires VIEW SERVER STATE (sysadmin)."` for Msg 297 unconditionally, on the
+strength of it being the contentless follow-up to Msg 300. It is not only
+that: a refused KILL, `sp_readerrorlog` and several other procedures raise it
+alone, and the table test only ever paired it with a 300 ahead of it, so the
+standalone shape was never exercised. The branch is gone; a lone 297 keeps its
+kind (it *is* a refusal) and shows the server's own sentence. The DMV case that
+looked like it needed the branch was already handled by `classifyRefusal`
+reading the *first* qualifying message, which is the 300 that names the right —
+`TestAContentlessRefusalNamesNoRight` pins both halves so the fix cannot be
+undone by "restoring" the case. This contradicted `accessDeniedText`'s own
+doc comment, which promised the file never invents a right; the comment was
+right and the code was not.
+
+**`gate` blamed the permission for someone else's reason.** `MenuItem.Note` is
+drawn whenever the item is disabled, and `gate` set it unconditionally — but it
+ANDs its own check with whatever predicate the item already had. Every AG
+replica menu is like this: "Fail Over to This Replica...", "Force Failover..."
+and "Remove Replica from Group..." carry `Enabled: secondary`, so on the
+primary all three read "needs ALTER ANY AVAILABILITY GROUP" — a right a
+sysadmin holding it in full would go and ask for, to no effect. `MenuItem`
+gained `NoteWhen func() bool` (nil = the unconditional form every other caller
+wants) and `gate` sets it to "the item's own predicate is satisfied, and the
+rights are not". Tested on both sides of the AND, in `controls` and in `tui`.
+
+**Nothing pinned the declared rights against gosmo's `Probed*` lists.**
+`permission_gate.go`'s header comment asserted every name was in them; gossms
+imported neither list. Both `Allows` methods fail open, so a name in the wrong
+list — or in the list for the wrong *scope*, which is the likelier slip, since
+`HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER')` asks about the server and answers NULL
+— reads CapabilityUnknown forever and withholds nothing, indistinguishable at
+run time from a login that holds the right. `permission_gate_names_test.go`
+parses the `requiredRight` literals out of the source (Go cannot enumerate
+package-level vars, and a hand-written list here would go stale on the first
+new right — same reasoning as `prop_label_width_test.go`) and checks name,
+`alt`, and scope against gosmo, plus `role` against the two role lists. The
+roles are display-only, so a typo there cannot break a gate: it sends someone
+to an administrator asking for a role that does not exist. All 19 names were
+correct; three mutants — a db-scope name declared at server scope, a typo, a
+wrong role — all die.
+
+## 2026-08-25 — three places the gate layer and the action disagreed
+
+Group 3 of the cross-repo review of 2026-08-25. All three are the same shape:
+two code paths describing one thing, and not agreeing.
+
+**The Activity Monitor gate read a different connection than the action.** The
+Tools item and the toolbar button both gated on `a.selectedServerConn()`, while
+`showActivityMonitor` resolves its target with `connOrFirst` — the Object
+Explorer selection, *else* `connections[0]`. With nothing selected the gate saw
+nil, which fails open, and the action went to a connection whose VIEW SERVER
+STATE may well be denied: the user got the server's refusal where they should
+have got a grey item. `connOrFirst` could not simply be called from the
+predicate, because it reports a missing connection on the status bar and a
+predicate runs on every frame while a menu is drawn. Split into
+`activeServerConn` (the resolution, side-effect free) and `connOrFirst` (that
+plus the status message). The test drives the real `buildMenus`/`buildToolbar`
+predicates rather than calling `allowsAction` itself — the bug was in *which
+connection* those two hand it, so a test that picks the connection cannot see
+it, and the first version of this test passed against the unfixed code.
+
+**Recycle was gated in the tree and ungated in the Log File Viewer.** The
+Object Explorer's Recycle item is gated on CONTROL SERVER; the panel's toolbar
+cell was live for everyone, asked for confirmation, and then failed at the
+server. One action, two answers. The gate is `LogViewer.recycleDenied`, asked
+on demand rather than latched into `toolButton.disabled` the way
+`ActivityMonitor` does it: that panel rebuilds its cells on every draw, while
+this toolbar is built once in `NewLogViewer`, where the probe may not have run
+— a cached flag would be read from build time, and whether a click saw a
+refreshed value would depend on a draw having happened first. `runTool` checks
+busy *before* the right, so a click during a read is never answered with
+"Requires CONTROL SERVER", which is not why it did nothing. The refusal goes to
+the panel's own status line, where "Recycle failed: ..." already goes.
+
+**Physical memory was spelled two ways, and a note asked for more privilege
+than the job needs.** Server Properties > General rendered
+`sys.dm_os_sys_memory`'s figure with a bare `FormatInt` ("16384 MB") while the
+Object Explorer Details pane renders `sys.dm_os_sys_info`'s through `formatMB`
+("16,384 MB") — two spellings of one quantity, which read as two readings.
+General now uses `formatMB`. Separately, `deniedReadNote`'s three call sites
+named only VIEW SERVER STATE; every read they cover (`sys.dm_os_sys_info`,
+`sys.dm_os_sys_memory`, `sys.dm_os_process_memory`) is in the *performance*
+half SQL Server 2022 split it into, so the wide right is what an administrator
+on 2019 or earlier must grant and the narrow one is the least privilege that
+works on 2022 and later. `viewServerStateAdvice` names both. Naming only the
+wide one asks for more rights than the job needs, in a feature whose whole
+point is least privilege; naming only the narrow one is wrong the other way.
+
+## 2026-08-25 — gosmo: Allows fails open on a database that cannot be opened
+
+Group 4 of the cross-repo review of 2026-08-25, and the only item in it. A
+library-API question rather than a gossms bug: gossms had the right behaviour
+and gosmo's documented one was wrong.
+
+`Capabilities.Allows`'s doc says to gate withholding on Allows rather than Has,
+and it is right about that. But at database scope it is not the whole test. A
+database the login cannot open answers CapabilityUnknown to *every* permission
+— there was nothing inside it to ask, and `Accessible false` is the only thing
+the server actually said — so `Allows("BACKUP DATABASE")` returns true for a
+database the login cannot so much as connect to. A consumer following the doc
+offers Back Up and Delete on exactly those.
+
+gossms was never affected: it had a private `dbAllows` doing `c.Accessible &&
+c.Allows(name)`, with the reasoning in a comment. What that means is that the
+workaround lived in the one application that had already hit the problem, and
+the next consumer would hit it again.
+
+`DatabaseCapabilities.Permits` is that test, in gosmo, additively — `Allows` is
+untouched, since narrowing it would be a behaviour change for every caller that
+asked the question it actually answers. The fail-open direction stays where it
+belongs: a probe that could not run at all leaves Accessible true (see
+`Database.CapabilitiesContext`), so Permits still says yes there; only a
+measured "cannot open this" withholds. `Capabilities` gets no counterpart —
+there is no server-scope equivalent of an inaccessible database.
+
+Two things recorded on the method itself. Why the pair is asymmetric, so nobody
+"finishes" it by adding a server-scope Permits. And the shape that will
+otherwise bite: a **nil** `*DatabaseCapabilities` is "nothing known" and fails
+open like every other accessor on the type, but the **zero value** is not — its
+`Accessible` is false, which reads as a measured refusal. Anything standing in
+for a probe that could not run has to set Accessible true, the way gossms's
+`unknownDatabaseCapabilities` already does.
+
+gossms's `dbAllows` is gone; both call sites use `Permits`. Two mutants die in
+gosmo (dropping the accessibility check, and failing closed on nil) and the
+existing `TestAnInaccessibleDatabaseDeniesEveryDatabaseRight` in gossms kills a
+third (`Permits` swapped back to `Allows`), which is what says the two repos
+still agree after the logic moved between them.
+
+## 2026-08-25 — a scripted response that shadowed the one behind it
+
+Group 5 of the cross-repo review of 2026-08-25, found while writing the
+Processors affinity test: `configResponses`'s
+`{match: "cpu_count, hyperthread_ratio"}` was dead on every granted path.
+
+`newFakeConn` prepends `sysInfoResponse` ahead of everything a test scripts,
+`respond` returns the first match, and matched responses are never consumed —
+so a broad match at the front permanently hides a narrower one behind it.
+`sysInfoResponse` matched the view name, `"dm_os_sys_info"`, which is also in
+`Server.ProcessorInfoContext`'s `SELECT cpu_count, hyperthread_ratio FROM
+sys.dm_os_sys_info`. Both are two-column reads of one view, so nothing errored:
+the Processors page simply read the connect-time row instead and reported
+**16384 processors with a hyperthread ratio of 8**, and the response written
+for it was never reached.
+
+Half of this was already known — `withoutResponses`'s comment records "which is
+how this test first passed with a CPU count of 16384" — but the workaround was
+only on the *refused* path, where the fix is to drop a response anyway. Every
+granted path still read the wrong row.
+
+The discriminator is the query's table alias, `sys.dm_os_sys_info osi`. The
+obvious choice, `physical_memory_kb`, is wrong and was tried first: it is a
+prefix of `sys.dm_os_sys_memory`'s `total_physical_memory_kb`, so it shadows
+`MemoryStatsContext` instead and moves the same bug to a different page. That
+failure is recorded on `sysInfoResponse` because it is exactly the mistake the
+next person makes.
+
+What actually pins it is the assertion, not the fix. The granted arm of
+`TestServerPropertiesPagesSurviveARefusedDMVRead` asserted only "not N/A",
+which a shadowed read passes — it returns a number, just the wrong one. It now
+asserts the *scripted* value (8 processors, 16384 MB), and both shadowing
+mutants die on it: the view-name match reports 16384 processors, the
+`physical_memory_kb` match reports N/A memory. A too-broad match anywhere else
+in the prepended pair now fails the same way.
+
+Two smaller corrections came with it. The Processors affinity test was
+modelling a server that refuses one read of `sys.dm_os_sys_info` and serves
+another — one right covers both, so it now drops both (`withoutResponse`, for a
+script a test has already edited). And `withoutResponses`' comment, which
+described the shadow as current, now describes it as history.

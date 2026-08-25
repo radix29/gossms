@@ -286,8 +286,23 @@ func serverInfoResponse() fakeResponse {
 // STATE can still connect. newFakeConn prepends it alongside
 // serverInfoResponse; omit it (see newFakeConnWithoutSysInfo) to model that
 // login.
+//
+// It matches on the query's table alias, not on the view name, because it is
+// prepended ahead of everything a test scripts and responses are matched in
+// order and never consumed. Matching "dm_os_sys_info" therefore also answered
+// Server.ProcessorInfoContext's `SELECT cpu_count, hyperthread_ratio FROM
+// sys.dm_os_sys_info`, whose own response sat behind it, unreachable: the
+// Processors page read this row's two columns instead and reported 16384
+// processors with a hyperthread ratio of 8. Both are two-column reads of one
+// view, so nothing errored — a test scripting the second one simply did not
+// get it.
+//
+// "physical_memory_kb" is not the discriminator either: sys.dm_os_sys_memory
+// has total_physical_memory_kb, so it shadows MemoryStatsContext instead and
+// moves the same bug onto a different page. Keep a prepended response's match
+// to text only its own query carries — here the `osi` alias.
 func sysInfoResponse() fakeResponse {
-	return fakeResponse{match: "dm_os_sys_info", cols: 2, rows: [][]driver.Value{{
+	return fakeResponse{match: "sys.dm_os_sys_info osi", cols: 2, rows: [][]driver.Value{{
 		int64(16384), int64(8),
 	}}}
 }

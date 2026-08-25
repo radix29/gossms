@@ -1,4 +1,3 @@
-inspect and maybe delete the claude memory.
 
 sql agent job step editor: for the command open a multi line big editor. if it is not a big problem maybe use the query editor control.
 

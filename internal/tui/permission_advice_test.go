@@ -115,6 +115,14 @@ var measuredRefusals = []struct {
 		want: "The login user_dbo does not exist, or this login cannot alter it.",
 	},
 	{
+		// Msg 297 on its own, with no Msg 300 ahead of it — what a refused KILL
+		// and several system procedures raise. Its text names nothing, so there
+		// is no right to derive from it.
+		name: "a contentless refusal on its own",
+		msgs: []mssqlMsg{{297, 16, "The user does not have permission to perform this action."}},
+		want: "", certain: true,
+	},
+	{
 		name: "DROP TABLE",
 		msgs: []mssqlMsg{{3701, 14, "Cannot drop the table 'Patients', because it does not exist or you do not have permission."}},
 		want: "The table Patients does not exist, or this login cannot drop it.",
@@ -156,6 +164,34 @@ func TestAnAmbiguousRefusalIsNeverCalledAccessDenied(t *testing.T) {
 				t.Errorf("text = %q dropped the half of the answer that is not about permissions", text)
 			}
 		})
+	}
+}
+
+// TestAContentlessRefusalNamesNoRight. Msg 297 says nothing about which right
+// is missing, and it is not only the follow-up to Msg 300 — a refused KILL,
+// sp_readerrorlog and several other procedures raise it alone. It once
+// answered "Requires VIEW SERVER STATE (sysadmin).", a right the server never
+// named and, for a KILL, the wrong one to go and ask for.
+func TestAContentlessRefusalNamesNoRight(t *testing.T) {
+	const text = "The user does not have permission to perform this action."
+	err := sqlErrOf([]mssqlMsg{{297, 16, text}})
+
+	if got := classifyRefusal(err).advice(); got != "" {
+		t.Errorf("advice = %q, want none — Msg 297 names no right", got)
+	}
+	// Still a refusal, and still shown as one: only the invented right goes.
+	if got := accessDeniedText(err); got != accessDeniedLabel+text {
+		t.Errorf("accessDeniedText = %q, want the server's own sentence", got)
+	}
+
+	// The pairing 297 does appear in must still name the right — which comes
+	// from the Msg 300 ahead of it, and never from 297 itself.
+	pair := sqlErrOf([]mssqlMsg{
+		{300, 14, "VIEW SERVER PERFORMANCE STATE permission was denied on object 'server', database 'master'."},
+		{297, 16, text},
+	})
+	if got, want := classifyRefusal(pair).advice(), "Requires VIEW SERVER PERFORMANCE STATE."; got != want {
+		t.Errorf("advice = %q, want %q", got, want)
 	}
 }
 

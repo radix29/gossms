@@ -77,6 +77,79 @@ func TestLogViewerToolbarConstantsMatchTheirCells(t *testing.T) {
 	}
 }
 
+// TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle. The Object
+// Explorer's Recycle item is gated on CONTROL SERVER; this toolbar cell was
+// not, so the same action was grey in the tree and live here — clicked, it
+// asked for confirmation and then failed at the server.
+func TestLogViewerRecycleIsWithheldFromALoginThatCannotCycle(t *testing.T) {
+	a := newTestApp()
+	sc := probedConn(t, "", nil, []string{"CONTROL SERVER"}, nil, nil)
+	a.connections = append(a.connections, sc)
+
+	lv := newTestLogViewer()
+	lv.app, lv.conn = a, sc
+
+	if !lv.toolDisabled(logToolRecycle) {
+		t.Error("the Recycle cell draws live for a login the server has refused CONTROL SERVER")
+	}
+	if lv.runTool(logToolRecycle) {
+		t.Fatal("Recycle ran for a login that cannot cycle a log")
+	}
+	if a.confirmDialog.Visible() {
+		t.Error("a withheld Recycle still asked for confirmation")
+	}
+	if lv.busy {
+		t.Error("a withheld Recycle latched the toolbar busy")
+	}
+	// A cell that does nothing and says nothing is the thing the context-gating
+	// rule exists to prevent. The panel's own status line, where every other
+	// message it emits goes — "Recycle failed: ..." included.
+	if !strings.Contains(lv.grid.Status(), "CONTROL SERVER") {
+		t.Errorf("panel status = %q, want the missing right named", lv.grid.Status())
+	}
+
+	// Every other cell is untouched — the gate is one action's, not the panel's.
+	if lv.toolDisabled(logToolRefresh) || lv.toolDisabled(logToolExport) {
+		t.Error("the Recycle gate dimmed cells it has nothing to do with")
+	}
+}
+
+// TestLogViewerRecycleStaysLiveForALoginThatMay is the other half: an unprobed
+// or granted connection must keep the cell exactly as it was before any of
+// this existed.
+func TestLogViewerRecycleStaysLiveForALoginThatMay(t *testing.T) {
+	a := newTestApp()
+	granted := probedConn(t, "", []string{"CONTROL SERVER"}, nil, nil, nil)
+	a.connections = append(a.connections, granted)
+
+	lv := newTestLogViewer()
+	lv.app, lv.conn = a, granted
+	if lv.toolDisabled(logToolRecycle) {
+		t.Error("Recycle was withheld from a login that holds CONTROL SERVER")
+	}
+
+	// Unknown fails open, the rule the whole gate layer rests on: a probe that
+	// never ran must not cost the cell.
+	unprobed, _ := newFakeConn(t)
+	lv.conn = unprobed
+	if lv.toolDisabled(logToolRecycle) {
+		t.Error("Recycle was withheld from an unprobed connection")
+	}
+
+	// And busy still dims it, for its own reason.
+	lv.busy = true
+	if !lv.toolDisabled(logToolRecycle) {
+		t.Error("a read in flight left the toolbar live")
+	}
+	lv.setStatus("")
+	if lv.runTool(logToolRecycle) {
+		t.Error("Recycle ran while a read was in flight")
+	}
+	if strings.Contains(lv.grid.Status(), "CONTROL SERVER") {
+		t.Errorf("panel status = %q: busy was reported as a missing permission", lv.grid.Status())
+	}
+}
+
 // TestLogViewerRecycleCyclesTheFamilyOnScreen is the whole path: the toolbar
 // cell, the confirmation, the write, and the Refresh behind it.
 //

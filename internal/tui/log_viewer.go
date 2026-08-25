@@ -254,15 +254,46 @@ func (lv *LogViewer) buildTools() {
 	lv.refreshToolLabels()
 }
 
-// toolsEnabled reports whether the toolbar's actions are available — one answer
-// behind drawToolbar's dimming, the click path and F5, so a cell drawn dimmed
-// can never still act on a click and start a second read mid-read.
+// toolsEnabled reports whether the toolbar's actions are available *at all* —
+// one answer behind drawToolbar's dimming, the click path and F5, so a cell
+// drawn dimmed can never still act on a click and start a second read mid-read.
+// One cell can also be withheld on its own; see toolDisabled.
 func (lv *LogViewer) toolsEnabled() bool { return !lv.busy }
 
-// runTool invokes toolbar cell i's action, or does nothing while the toolbar
-// is disabled. Reports whether the action ran.
+// recycleDenied reports whether the connected login may not cycle a log.
+//
+// Recycle is the one write on this toolbar, and the Object Explorer's Recycle
+// item is gated on the same right. Gating only there left one action answering
+// two ways — grey in the tree, live here, failing at the server.
+//
+// Asked on demand rather than latched into toolButton.disabled the way
+// ActivityMonitor does it: that panel rebuilds its cells on every draw, while
+// this toolbar is built once in NewLogViewer, where the capability probe may
+// not have run. A cached flag would be read from the build, and whether it had
+// been refreshed by the time of a click would depend on a draw having
+// happened first.
+func (lv *LogViewer) recycleDenied() bool {
+	return !allowsAction(lv.conn, "", rightControlServer)
+}
+
+// toolDisabled reports whether cell i is inert right now: the whole toolbar is,
+// or this cell alone is withheld.
+func (lv *LogViewer) toolDisabled(i int) bool {
+	return !lv.toolsEnabled() || (i == logToolRecycle && lv.recycleDenied())
+}
+
+// runTool invokes toolbar cell i's action, or says why it did not. Reports
+// whether the action ran.
+//
+// The busy check comes first deliberately: while a read is in flight every cell
+// is grey for that reason, and answering a click on Recycle with "Requires
+// CONTROL SERVER" would name a right that is not why it did nothing.
 func (lv *LogViewer) runTool(i int) bool {
 	if !lv.toolsEnabled() {
+		return false
+	}
+	if i == logToolRecycle && lv.recycleDenied() {
+		lv.setStatus(requiresText(rightControlServer))
 		return false
 	}
 	lv.tools[i].action()
@@ -272,8 +303,8 @@ func (lv *LogViewer) runTool(i int) bool {
 // refreshToolLabels updates the two selectors' labels from the current
 // selection.
 func (lv *LogViewer) refreshToolLabels() {
-	lv.tools[0].label = "Log: " + lv.logType.String() + " ▾"
-	lv.tools[1].label = "File: " + lv.currentFileLabel() + " ▾"
+	lv.tools[logToolLogType].label = "Log: " + lv.logType.String() + " ▾"
+	lv.tools[logToolFile].label = "File: " + lv.currentFileLabel() + " ▾"
 }
 
 // currentFileLabel names the file on screen: from the cached enumeration when

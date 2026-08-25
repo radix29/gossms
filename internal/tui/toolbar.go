@@ -25,7 +25,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 			Enabled: func() bool {
 				return len(a.connections) > 0 &&
-					allowsAction(a.selectedServerConn(), "", rightViewServerState)
+					allowsAction(a.activeServerConn(), "", rightViewServerState)
 			}},
 	}
 }

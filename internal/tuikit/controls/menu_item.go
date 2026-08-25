@@ -29,6 +29,24 @@ type MenuItem struct {
 	// an item withheld for lack of a permission is simply grey and silent.
 	// Its own Shortcut is shown again once the item is enabled.
 	Note string
+
+	// NoteWhen narrows Note to the reason it actually describes. nil shows
+	// Note whenever the item is disabled; a predicate shows it only when it
+	// answers true.
+	//
+	// An item can be withheld for more than one reason at once, and Note
+	// describes exactly one of them. "Fail Over to This Replica..." is
+	// disabled on the primary because a replica cannot fail over to itself,
+	// and it was labelled "needs ALTER ANY AVAILABILITY GROUP" — a right the
+	// login may well hold, sending them to ask for a permission that would
+	// change nothing.
+	NoteWhen func() bool
+}
+
+// showsNote reports whether Note is the right thing to draw right now: the
+// item is disabled, and NoteWhen (if any) agrees that Note is why.
+func (it MenuItem) showsNote() bool {
+	return it.Note != "" && !it.enabled() && (it.NoteWhen == nil || it.NoteWhen())
 }
 
 // enabled reports whether it can be selected or activated right now.
@@ -84,7 +102,7 @@ func menuRowSuffix(it MenuItem) string {
 	if len(it.Sub) > 0 {
 		return "▸"
 	}
-	if it.Note != "" && !it.enabled() {
+	if it.showsNote() {
 		return it.Note
 	}
 	return it.Shortcut

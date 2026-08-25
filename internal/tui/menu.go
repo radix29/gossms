@@ -131,7 +131,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 				Enabled: func() bool {
 					return len(a.connections) > 0 &&
-						allowsAction(a.selectedServerConn(), "", rightViewServerState)
+						allowsAction(a.activeServerConn(), "", rightViewServerState)
 				}},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},

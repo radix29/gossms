@@ -30,6 +30,17 @@ func bitsToAffinity(bits []bool) int64 {
 	return mask
 }
 
+// affinityMaskText renders an affinity mask for the read-only rendering the
+// page falls back to when the per-CPU grid cannot be built. 0 is how SQL
+// Server stores "automatic", and printing it as a number reads as a mask that
+// pins the instance to no CPU at all.
+func affinityMaskText(mask int64) string {
+	if mask == 0 {
+		return "Automatic"
+	}
+	return "0x" + strconv.FormatInt(mask, 16)
+}
+
 // numaNodeOf renders logical CPU i's NUMA node from a
 // gosmo.ProcessorInfo.CPUNUMANode slice, or "N/A" if the server reported
 // fewer online schedulers than affinity-mask CPUs (e.g. a CPU disabled by
@@ -96,15 +107,32 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 			affinityGrid := propsheet.NewToggleGrid([]string{"CPU", "Affinity", "I/O Affinity", "NUMA"}, []int{1, 2}, min(cpuCount+3, 12))
 			affinityGrid.SetRows(text, values)
 
+			// The grid is sized from sys.dm_os_sys_info's CPU count, so a login
+			// refused that DMV gets zero rows — and bitsToAffinity over zero
+			// rows is 0, which apply would then write over a non-zero
+			// 'affinity mask' as if the user had cleared it. The masks
+			// themselves come from sp_configure and are still readable, so the
+			// fallback shows them and takes both writes out of apply entirely,
+			// rather than leaving controls that silently mean "clear it".
+			affinityEditable := procErr == nil && cpuCount > 0
+			affinityRows := []propsheet.Row{autoAffinity, autoIOAffinity, affinityGrid}
+			if !affinityEditable {
+				affinityRows = []propsheet.Row{
+					propsheet.Static("Processor affinity mask", affinityMaskText(affMask)),
+					propsheet.Static("I/O affinity mask", affinityMaskText(ioMask)),
+					propsheet.Note("Processor affinity cannot be edited here: listing the instance's CPUs requires " + viewServerStateAdvice + "."),
+				}
+			}
+
 			rows := []propsheet.Row{
 				propsheet.Section("Processor information"),
 				propsheet.Static("Processors", procInt(proc.CPUCount)),
 				propsheet.Static("NUMA nodes", procInt(proc.NUMANodeCount)),
 				propsheet.Static("Hyperthread ratio", procInt(proc.HyperthreadRatio)),
 				propsheet.Section("Processor affinity"),
-				autoAffinity,
-				autoIOAffinity,
-				affinityGrid,
+			}
+			rows = append(rows, affinityRows...)
+			rows = append(rows, []propsheet.Row{
 				propsheet.Section("Threads"),
 				cfgInt("max worker threads", "Maximum worker threads", ""),
 				cfgBool("priority boost", "Boost SQL Server priority"),
@@ -112,9 +140,9 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				propsheet.Section("Parallelism"),
 				cfgInt("max degree of parallelism", "Max degree of parallelism", ""),
 				cfgInt("cost threshold for parallelism", "Cost threshold for parallelism", ""),
-			}
+			}...)
 			if procErr != nil {
-				rows = append(rows, deniedReadNote("VIEW SERVER STATE"))
+				rows = append(rows, deniedReadNote(viewServerStateAdvice))
 			}
 			f := propsheet.NewForm(rows...)
 
@@ -123,38 +151,40 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 				if err != nil {
 					return err
 				}
-				newCPUAff := make([]bool, cpuCount)
-				newIOAff := make([]bool, cpuCount)
-				for i, v := range affinityGrid.Values() {
-					newCPUAff[i], newIOAff[i] = v[0], v[1]
-				}
-				wantAffMask := bitsToAffinity(newCPUAff)
-				if autoAffinity.Checked() {
-					wantAffMask = 0
-				}
-				if wantAffMask != affMask {
-					opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity mask")
-					if err != nil {
-						return err
+				if affinityEditable {
+					newCPUAff := make([]bool, cpuCount)
+					newIOAff := make([]bool, cpuCount)
+					for i, v := range affinityGrid.Values() {
+						newCPUAff[i], newIOAff[i] = v[0], v[1]
 					}
-					if err := opt.SetValueContext(ctx, wantAffMask); err != nil {
-						return err
+					wantAffMask := bitsToAffinity(newCPUAff)
+					if autoAffinity.Checked() {
+						wantAffMask = 0
 					}
-					changed = true
-				}
-				wantIOMask := bitsToAffinity(newIOAff)
-				if autoIOAffinity.Checked() {
-					wantIOMask = 0
-				}
-				if wantIOMask != ioMask {
-					opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity I/O mask")
-					if err != nil {
-						return err
+					if wantAffMask != affMask {
+						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity mask")
+						if err != nil {
+							return err
+						}
+						if err := opt.SetValueContext(ctx, wantAffMask); err != nil {
+							return err
+						}
+						changed = true
 					}
-					if err := opt.SetValueContext(ctx, wantIOMask); err != nil {
-						return err
+					wantIOMask := bitsToAffinity(newIOAff)
+					if autoIOAffinity.Checked() {
+						wantIOMask = 0
 					}
-					changed = true
+					if wantIOMask != ioMask {
+						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity I/O mask")
+						if err != nil {
+							return err
+						}
+						if err := opt.SetValueContext(ctx, wantIOMask); err != nil {
+							return err
+						}
+						changed = true
+					}
 				}
 				if changed {
 					return sc.Server.ReconfigureContext(ctx, false)

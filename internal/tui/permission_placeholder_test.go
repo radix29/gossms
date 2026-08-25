@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -154,10 +155,13 @@ func TestAFolderRefusalLosesThePlumbingButKeepsTheReason(t *testing.T) {
 // withoutResponses is configResponses minus the reads a login without VIEW
 // SERVER STATE is refused, which is how the fake models that login: an
 // unmatched query is an error, the same as a denial. Pair it with
-// newFakeConnWithoutSysInfo — sys.dm_os_sys_info is refused for the same
-// login, and the response for it otherwise answers the Processors page's own
-// read of that view, which is how this test first passed with a CPU count of
-// 16384.
+// newFakeConnWithoutSysInfo — the connect-time sys.dm_os_sys_info read is
+// refused for the same login, and dropping only one of the two would model a
+// server that refuses one read of a view and serves another.
+//
+// The two are separate responses now; they were not always. sysInfoResponse
+// used to match the view name and so answered both, which is how this test
+// first passed with a CPU count of 16384 — see its comment in fakedb_test.go.
 func withoutResponses(drop ...string) []fakeResponse {
 	var out []fakeResponse
 	for _, r := range configResponses() {
@@ -177,10 +181,11 @@ func TestServerPropertiesPagesSurviveARefusedDMVRead(t *testing.T) {
 		drop    string
 		label   string
 		want    string
+		granted string // the value the scripted read produces when it is allowed
 		present string // a row that must survive the refusal
 	}{
-		{"Memory", "sys.dm_os_sys_memory", "Physical memory (MB)", unreadableValue, "Maximum server memory"},
-		{"Processors", "cpu_count, hyperthread_ratio", "Processors", unreadableValue, "Max degree of parallelism"},
+		{"Memory", "sys.dm_os_sys_memory", "Physical memory (MB)", unreadableValue, "16384", "Maximum server memory"},
+		{"Processors", "cpu_count, hyperthread_ratio", "Processors", unreadableValue, "8", "Max degree of parallelism"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.page, func(t *testing.T) {
@@ -202,11 +207,16 @@ func TestServerPropertiesPagesSurviveARefusedDMVRead(t *testing.T) {
 				t.Error("the page does not say which right the N/A values need")
 			}
 
-			// And with the read allowed, the number is still the number.
+			// And with the read allowed, the number is still the number — the
+			// one the test scripted, not merely "not N/A". That is what says
+			// the page read the response meant for it: a prepended response
+			// whose match is too broad answers this query instead, and the
+			// page then reports a number out of the wrong row without
+			// erroring. See sysInfoResponse in fakedb_test.go.
 			okSC, okInst := newFakeConn(t, configResponses()...)
 			okForm, _ := loadPage(t, configPage(t, okSC, tt.page), okInst)
-			if got, _ := findStatic(okForm, tt.label); got == unreadableValue {
-				t.Errorf("%s = %q with the read allowed: the placeholder replaced the value", tt.label, got)
+			if got, _ := findStatic(okForm, tt.label); got != tt.granted {
+				t.Errorf("%s = %q with the read allowed, want the scripted %q", tt.label, got, tt.granted)
 			}
 		})
 	}
@@ -223,6 +233,45 @@ func TestServerGeneralRendersUnreadableMemoryAsNA(t *testing.T) {
 	}
 	if got, _ := findStatic(form, "Collation"); got != "SQL_Latin1_General_CP1_CI_AS" {
 		t.Errorf("Collation = %q: the refusal cost the page a value it can read", got)
+	}
+}
+
+// TestServerGeneralRendersMemoryTheWayTheDetailPaneDoes. Server Properties >
+// General and the Object Explorer Details pane both state the machine's
+// physical memory, from two different reads (sys.dm_os_sys_memory and
+// sys.dm_os_sys_info). General spelled it with a bare FormatInt and the pane
+// with formatMB, so one said "16384 MB" and the other "16,384 MB" — two
+// spellings of one number, which read as two different readings.
+func TestServerGeneralRendersMemoryTheWayTheDetailPaneDoes(t *testing.T) {
+	sc, inst := newFakeConn(t, configResponses()...)
+	form, _ := loadPage(t, pageServerGeneral(sc), inst)
+
+	// The same MB figure configResponses scripts for sys.dm_os_sys_memory,
+	// through the helper the Details pane renders it with.
+	want := sysInfoMB(&gosmo.ServerInfo{PhysicalMemoryMB: 16384})
+	got, ok := findStatic(form, "Memory")
+	if !ok {
+		t.Fatal("Server Properties > General has no Memory row")
+	}
+	if got != want {
+		t.Errorf("Memory = %q, want %q — the same quantity spelled two ways", got, want)
+	}
+}
+
+// TestADeniedReadNamesTheLeastPrivilegeThatFixesIt. Every read these notes
+// cover is in the performance half of the VIEW SERVER STATE that SQL Server
+// 2022 split in two, so naming only the wide right asks for more than the job
+// needs — in a feature whose whole point is least privilege. Naming only the
+// narrow one would be wrong the other way, on 2019 and earlier where it does
+// not exist.
+func TestADeniedReadNamesTheLeastPrivilegeThatFixesIt(t *testing.T) {
+	sc, inst := newFakeConnWithoutSysInfo(t, withoutResponses("sys.dm_os_sys_memory")...)
+	form, _ := loadPage(t, pageServerGeneral(sc), inst)
+
+	for _, want := range []string{"VIEW SERVER STATE", "VIEW SERVER PERFORMANCE STATE"} {
+		if !hasNoteMentioning(form, want) {
+			t.Errorf("the page's note does not mention %q", want)
+		}
 	}
 }
 
