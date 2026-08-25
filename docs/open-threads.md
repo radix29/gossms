@@ -86,9 +86,8 @@ a settled question being reopened.
   bumping `require`, and commenting out the `replace`/`ignore` pair are steps
   of the release process itself (ARCHITECTURE.md § Developing against a local
   gosmo checkout). A CI release build not resolving gosmo mid-development is
-  the expected consequence. As of `v0.0.8` `require` names gosmo `v0.0.10`;
-  comment the pair out for the release build and re-activate both when work
-  resumes.
+  the expected consequence. As of `v0.0.8` the pair is commented out and
+  `require` names gosmo `v0.0.10`; re-activate both when work resumes.
 
 - **A Grid/Text query result can exhaust memory.** The Max Result Rows option
   and every `maxRows` parameter behind it were removed 2026-08-01: a result
