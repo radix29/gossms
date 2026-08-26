@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
@@ -69,13 +70,13 @@ func TestJobStepsRunsUpdatesThenDescendingDeletesThenAdds(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
 	// Edit step 1, delete steps 2 and 4, then add one.
-	editText(t, form, "Command", "DBCC CHECKDB WITH NO_INFOMSGS")
+	editEditor(t, form, "Command", "DBCC CHECKDB WITH NO_INFOMSGS")
 	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
 	clickButton(t, form, "Delete")
 	selectGridRow(t, grid, stepNameCol, "Update stats")
 	clickButton(t, form, "Delete")
 	editText(t, form, "Step name", "Reorganize")
-	editText(t, form, "Command", "EXEC dbo.usp_reorg")
+	editEditor(t, form, "Command", "EXEC dbo.usp_reorg")
 	clickButton(t, form, "New")
 
 	if err := apply(t.Context()); err != nil {
@@ -109,7 +110,7 @@ func TestJobStepsCommitsTheStepTheGridMovedOffOf(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
 	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
-	editText(t, form, "Command", "EXEC dbo.usp_reindex_online")
+	editEditor(t, form, "Command", "EXEC dbo.usp_reindex_online")
 	selectGridRow(t, grid, stepNameCol, "Check integrity")
 
 	if err := apply(t.Context()); err != nil {
@@ -133,7 +134,7 @@ func TestJobStepsNeverWritesANonTSQLStep(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
 	selectGridRow(t, grid, stepNameCol, "Notify ops")
-	editText(t, form, "Command", "SELECT 1")
+	editEditor(t, form, "Command", "SELECT 1")
 	selectGridRow(t, grid, stepNameCol, "Check integrity")
 
 	if err := apply(t.Context()); err != nil {
@@ -155,7 +156,7 @@ func TestJobStepsUnchangedDatabaseIsNotSent(t *testing.T) {
 	if got := selectRow(t, form, "Database").Value(); got != unchangedDatabaseItem {
 		t.Fatalf("a step on a database the list cannot show selects %q, want the sentinel", got)
 	}
-	editText(t, form, "Command", "EXEC dbo.usp_stats @full = 1")
+	editEditor(t, form, "Command", "EXEC dbo.usp_stats @full = 1")
 
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -173,7 +174,7 @@ func TestJobStepsAddCarriesTheDatabaseThatWasPicked(t *testing.T) {
 	inst, apply, form, _ := loadJobStepsPage(t)
 
 	editText(t, form, "Step name", "Purge archive")
-	editText(t, form, "Command", "EXEC dbo.usp_purge")
+	editEditor(t, form, "Command", "EXEC dbo.usp_purge")
 	editSelect(t, form, "Database", "salesdb")
 	clickButton(t, form, "New")
 
@@ -273,5 +274,31 @@ func TestReorderedStepIDsUsesThePostApplyNumbering(t *testing.T) {
 	// The same set left in its own order is not a reorder at all.
 	if got := reorderedStepIDs([]*jobStepEdit{a, c, b, d}); got != nil {
 		t.Errorf("reorderedStepIDs = %v for an unchanged order, want nil", got)
+	}
+}
+
+// TestANonTSQLStepsCommandRefusesTyping. The page can write back a T-SQL step
+// only, and it says so in the hint — but a box that takes typing it will throw
+// away is the "a keypress that does nothing" case, and the command is the field
+// whose text a write-back would hand to the query processor.
+func TestANonTSQLStepsCommandRefusesTyping(t *testing.T) {
+	_, _, form, grid := loadJobStepsPage(t)
+	row := editorRow(t, form, "Command")
+	typeX := func() { row.HandleKey(tcell.NewEventKey(tcell.KeyRune, "X", tcell.ModNone)) }
+
+	selectGridRow(t, grid, stepNameCol, "Notify ops")
+	before := row.Value()
+	typeX()
+	if row.Value() != before {
+		t.Errorf("a PowerShell step's command took typing: %q", row.Value())
+	}
+
+	// And the gate lifts again — a page that never re-enabled it would pass the
+	// half above and make every T-SQL step read-only.
+	selectGridRow(t, grid, stepNameCol, "Check integrity")
+	before = row.Value()
+	typeX()
+	if row.Value() == before {
+		t.Error("a T-SQL step's command refused typing")
 	}
 }

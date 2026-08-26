@@ -14,6 +14,13 @@ import (
 
 // -- the classifier ----------------------------------------------------------
 
+// permissionDenied asks classifyRefusal the question these tests are about:
+// is this SQL Server refusing on permission grounds, and in whose words?
+func permissionDenied(err error) (string, bool) {
+	r := classifyRefusal(err)
+	return r.message, r.kind != notARefusal
+}
+
 // TestPermissionRefusalIsNamedByItsFirstMessage. A refused DMV read sends
 // "VIEW SERVER PERFORMANCE STATE permission was denied on object 'server'"
 // (Msg 300) and then the contentless "The user does not have permission to
@@ -27,7 +34,7 @@ func TestPermissionRefusalIsNamedByItsFirstMessage(t *testing.T) {
 		{297, 16, "The user does not have permission to perform this action."},
 	})
 
-	got, ok := permissionDeniedMessage(err)
+	got, ok := permissionDenied(err)
 	if !ok {
 		t.Fatal("a permission refusal was not recognised as one")
 	}
@@ -54,7 +61,7 @@ func TestEveryMeasuredRefusalIsRecognised(t *testing.T) {
 		{5011, "User does not have permission to alter database 'HealthClinic', the database does not exist, or the database is not in a state that allows access checks."},
 	} {
 		err := sqlErrOf([]mssqlMsg{{tt.number, 14, tt.text}})
-		got, ok := permissionDeniedMessage(err)
+		got, ok := permissionDenied(err)
 		if !ok {
 			t.Errorf("Msg %d not recognised as a permission refusal", tt.number)
 			continue
@@ -74,7 +81,7 @@ func TestAnOrdinaryFailureIsNotReportedAsAccessDenied(t *testing.T) {
 		"timeout":             errors.New("context deadline exceeded"),
 		"deadlock":            sqlErrOf([]mssqlMsg{{1205, 13, "Transaction was deadlocked on lock resources."}}),
 	} {
-		if _, ok := permissionDeniedMessage(err); ok {
+		if _, ok := permissionDenied(err); ok {
 			t.Errorf("%s: reported as a permission refusal", name)
 		}
 		if got := accessDeniedText(err); got != "" {
@@ -123,8 +130,8 @@ func TestAnAccessibleDatabaseStillExpands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadDatabaseChildren: %v", err)
 	}
-	if len(children) != 9 {
-		t.Fatalf("got %d children, want the nine object folders", len(children))
+	if len(children) != 10 {
+		t.Fatalf("got %d children, want the ten object folders", len(children))
 	}
 }
 

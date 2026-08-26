@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // TestAReadOnlyFormCannotBeEdited. The point is not that editing is
@@ -116,5 +119,196 @@ func TestReadOnlyButtonsRunTheActionTheyAreLabelled(t *testing.T) {
 	p.activateButton(1) // Script Changes
 	if scriptCalls != 1 {
 		t.Errorf("Script Changes ran OnScript %d times, want 1", scriptCalls)
+	}
+}
+
+// drawRow lays a single row out at the top-left of a 60-column screen and
+// returns what it painted on its first line.
+func drawRow(row Row, readOnly bool) string {
+	f := NewForm(row)
+	f.SetBounds(0, 0, 60, 10)
+	f.SetReadOnly(readOnly)
+	s := &fakeScreen{w: 60, h: 10}
+	f.Draw(s)
+	return s.line(0)
+}
+
+// TestAReadOnlyRowDrawsNoControl. Behaviour and appearance are separate halves
+// of read-only: SetReadOnly already made the page impossible to edit, and a row
+// still drawing its input box or its [ ] reads as a field the terminal is
+// refusing to type into. Each case below fails against a row that keeps its
+// control.
+func TestAReadOnlyRowDrawsNoControl(t *testing.T) {
+	cases := []struct {
+		name       string
+		row        Row
+		wantSubstr string   // what the value must still say
+		wantAbsent []string // control chrome that must be gone
+	}{
+		{"text", Text("Name", "srv01", 20), "srv01", []string{"[", "]"}},
+		{"int with unit", Int("Maximum server memory", 2048, 0, 9999, "MB"), "2048 MB", []string{"[", "]"}},
+		{"password", Password("Password", 20), "Password", []string{"[", "]", "*"}},
+		{"check on", Check("Auto shrink", true), "✓ Auto shrink", []string{"[", "]"}},
+		{"check off", Check("Auto shrink", false), "✗ Auto shrink", []string{"[", "]"}},
+		{"select", Select("Recovery model", []string{"FULL", "SIMPLE"}, 1), "SIMPLE", []string{"[", "]", "▾", "v]"}},
+		{"radio", Radio("Restrict access", []string{"MULTI_USER", "SINGLE_USER"}, 1), "SINGLE_USER", []string{"(o)", "( )"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := drawRow(c.row, true)
+			if !strings.Contains(got, c.wantSubstr) {
+				t.Errorf("read-only draw = %q, want it to say %q", got, c.wantSubstr)
+			}
+			for _, bad := range c.wantAbsent {
+				if strings.Contains(got, bad) {
+					t.Errorf("read-only draw = %q, still draws control chrome %q", got, bad)
+				}
+			}
+		})
+	}
+}
+
+// TestAWritableRowStillDrawsItsControl is the other half: the read-only
+// rendering must be a state the row leaves, not a one-way switch, or a page
+// shared between a gated and an ungated connection comes up unusable.
+func TestAWritableRowStillDrawsItsControl(t *testing.T) {
+	text := Text("Name", "srv01", 20)
+	f := NewForm(text)
+	f.SetBounds(0, 0, 60, 10)
+
+	f.SetReadOnly(true)
+	f.SetReadOnly(false)
+
+	s := &fakeScreen{w: 60, h: 10}
+	f.Draw(s)
+	if got := s.line(0); !strings.Contains(got, "[") {
+		t.Errorf("draw after clearing read-only = %q, want the input box back", got)
+	}
+}
+
+// TestARowAddedToAReadOnlyFormDrawsReadOnly pins the propagation in Add and
+// Prepend: a page whose rows are built after the gate has decided would
+// otherwise draw them editable.
+func TestARowAddedToAReadOnlyFormDrawsReadOnly(t *testing.T) {
+	f := NewForm()
+	f.SetBounds(0, 0, 60, 10)
+	f.SetReadOnly(true)
+	f.Add(Text("Name", "srv01", 20))
+
+	s := &fakeScreen{w: 60, h: 10}
+	f.Draw(s)
+	if got := s.line(0); strings.Contains(got, "[") {
+		t.Errorf("row added to a read-only form = %q, want no input box", got)
+	}
+}
+
+// TestAReadOnlyRadioRowIsOneLine. Collapsing the group to its selected value
+// changes the row's height, so Height has to report it — Form lays rows out
+// from Height every frame, and a row claiming three lines while drawing one
+// leaves two blank lines mid-page.
+func TestAReadOnlyRadioRowIsOneLine(t *testing.T) {
+	r := Radio("Restrict access", []string{"MULTI_USER", "SINGLE_USER", "RESTRICTED_USER"}, 0)
+	before := r.Height(60)
+	r.SetDrawReadOnly(true)
+	if before <= 1 {
+		t.Fatalf("editable radio height = %d, want more than one line", before)
+	}
+	if got := r.Height(60); got != 1 {
+		t.Errorf("read-only radio height = %d, want 1", got)
+	}
+}
+
+// TestAReadOnlyToggleGridDrawsTicksNotCheckboxes. The toggle columns are the
+// last thing on a gated page that looked like a control.
+func TestAReadOnlyToggleGridDrawsTicksNotCheckboxes(t *testing.T) {
+	g := newTestToggleGrid()
+	g.SetDrawReadOnly(true)
+
+	if got := g.Grid.Row(1); got[1] != "✓" || got[2] != "✗" {
+		t.Fatalf("read-only toggle cells = %v, want [✓ ✗]", got[1:])
+	}
+
+	if got := g.Grid.Row(1); got[1] != "✓" || got[2] != "✗" {
+		t.Fatalf("read-only toggle cells = %v, want [✓ ✗]", got[1:])
+	}
+	if got := g.Grid.Row(1)[0]; got != "Processor 1" {
+		t.Errorf("text column = %q, want it untouched", got)
+	}
+
+	g.SetDrawReadOnly(false)
+	if got := g.Grid.Row(1); got[1] != "[x]" || got[2] != "[ ]" {
+		t.Errorf("toggle cells after clearing read-only = %v, want [[x] [ ]]", got[1:])
+	}
+}
+
+// TestAReadOnlyEditorRowKeepsThePagesOwnReadOnly. A job step whose command is
+// not T-SQL is read-only for its own reason; clearing the form's gate must not
+// make it editable.
+func TestAReadOnlyEditorRowKeepsThePagesOwnReadOnly(t *testing.T) {
+	ed := controls.NewEditor(nil)
+	ed.SetReadOnly(true) // the page's own guard
+	r := NewEditorRow("Command", ed, 8)
+
+	r.SetDrawReadOnly(true)
+	r.SetDrawReadOnly(false)
+	if !ed.ReadOnly() {
+		t.Error("clearing the form's gate cleared the page's own read-only guard")
+	}
+
+	plain := controls.NewEditor(nil)
+	pr := NewEditorRow("Command", plain, 8)
+	pr.SetDrawReadOnly(true)
+	if !plain.ReadOnly() {
+		t.Error("a read-only form left its editor row editable")
+	}
+	pr.SetDrawReadOnly(false)
+	if plain.ReadOnly() {
+		t.Error("clearing read-only left the editor row uneditable")
+	}
+}
+
+// TestAReadOnlyToggleGridStillDrawsItsRows. Form.SetReadOnly runs before the
+// sheet has laid the grid out, and re-rendering through SetDataPreservingView
+// there restores a selection against a zero rect: ensureVisible scrolls past
+// every row and the grid draws its header over blank lines. Reproduced live on
+// Server Properties > Processors, whose affinity grid reported "4 rows" and
+// showed none. A grid laid out first hides this, so this test must not lay it
+// out — which is exactly how a Properties page builds one.
+func TestAReadOnlyToggleGridStillDrawsItsRows(t *testing.T) {
+	g := NewToggleGrid([]string{"CPU", "Affinity"}, []int{1}, 10)
+	g.SetRows(
+		[][]string{{"Processor 0"}, {"Processor 1"}},
+		[][]bool{{false}, {true}},
+	)
+
+	f := NewForm(g)
+	f.SetBounds(0, 0, 60, 20)
+	f.SetReadOnly(true)
+
+	s := &fakeScreen{w: 60, h: 20}
+	f.Draw(s)
+	// Line 0 is the header, line 1 the separator, so the rows start at 2.
+	if got := s.line(2); !strings.Contains(got, "Processor 0") {
+		t.Errorf("first grid line = %q, want the grid's first row", got)
+	}
+	if got := s.line(3); !strings.Contains(got, "Processor 1") {
+		t.Errorf("second grid line = %q, want the grid's second row", got)
+	}
+}
+
+// TestFlatValueStartsWhereAnEditableValueDoes. A page that toggles read-only
+// draws the same row two ways, and the two have to line up: a flat value one
+// column short of the editable text makes every value on the page jog sideways
+// when the permission gate closes.
+func TestFlatValueStartsWhereAnEditableValueDoes(t *testing.T) {
+	const x = 4
+	// Built exactly as TextRow builds its field, and positioned as its Layout
+	// positions it.
+	f := widgets.NewInputField(core.PadRight("Name", LabelWidth), 20, false)
+	f.SetBounds(x, 0)
+
+	// InputX is the '[' column; the text starts one past it.
+	if got, want := flatValueX(x), f.InputX()+1; got != want {
+		t.Errorf("flat value column = %d, editable text column = %d", got, want)
 	}
 }

@@ -472,7 +472,19 @@ func (g *DataGrid) colAt(x int) (col int, ok bool) {
 	return 0, false
 }
 
+// ensureVisible scrolls vertically so selRow is on screen, given the height of
+// the data area (rect.H less the header and status rows).
+//
+// A grid that has not been laid out yet has rect.H == 0, so dataH arrives
+// negative and the second test below is true for every row: the scroll would
+// jump past the whole list, and the next Draw paints the header and "N rows"
+// over blank lines. Callers reaching a grid before its first SetBounds are
+// legitimate — SetSelectedCell via SetDataPreservingView is one — so leave the
+// scroll alone until there is a viewport to scroll within.
 func (g *DataGrid) ensureVisible(dataH int) {
+	if dataH <= 0 {
+		return
+	}
 	if g.selRow < g.scrollRow {
 		g.scrollRow = g.selRow
 	}
@@ -489,7 +501,13 @@ func (g *DataGrid) ensureVisibleCol() {
 		g.scrollCol = g.selCol
 		return
 	}
+	// Before the first SetBounds there is no width to fit the columns into,
+	// and a negative avail walks scrollCol all the way to selCol — the first
+	// column scrolls off a grid nobody has drawn yet. See ensureVisible.
 	avail := g.rect.W - g.gutterWidth()
+	if avail <= 0 {
+		return
+	}
 	for g.scrollCol < g.selCol {
 		w := 0
 		for i := g.scrollCol; i <= g.selCol && i < len(g.colWidths); i++ {

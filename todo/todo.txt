@@ -1,21 +1,11 @@
-
-sql agent job step editor: for the command open a multi line big editor. if it is not a big problem maybe use the query editor control.
+- execution plan : graphic representation : align to the top like in SSMS
 
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
 
-white/light style ? -> options, default dark
+- shrink database
 
 -------------
-
-## 14. Suggested order
-
-Sequenced by value-per-day, not by section order. Each phase leaves the tool
-coherent.
-
-**Phase 2 — the reporting and Query Store layer (M, ~3–4 weeks)**
-10. Query Store's seven views + Force/Unforce Plan (§8)
-11. Detach / Attach
 
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 12. Credentials, Audits + Server Audit Specifications, Backup Devices,
@@ -32,8 +22,6 @@ coherent.
 26. Replication (read-only)
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
 
-
-
 -------------
 
 - query editor :
@@ -43,33 +31,30 @@ coherent.
 
 - group by schema
 
-- execution plan : graphic representation : align to the top like in SSMS
+white/light style ? -> options, default dark
 
-- keyboard shortcuts for mac (platform dependednt?)
---------------
+- keyboard shortcuts for mac (platform dependednt?
 
 sp_blitz & index with reference built in
 
-------
+--- bugs and optimizations ---------------------------------------------
 
 review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. think hard, take your time, be honest. plan only, ask before implementing to switch models. do not commit to git
 
-show me the top 10 know bugs,issues etc if thre are any
+show me the top 15 know bugs,issues etc if thre are any
 
 
 go over the source files code comments and compact them. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary
 
 
-bunx ccusage          # Show all detected sources by day (default)
-
---- prepare for release
+--- prepare for release -------------------------------------------------
 
 commit before both projects
 
 prepare gosmo for release v0.0.10 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 
-
+fix go.mod before:
 prepare gossms for release v0.0.8 . Update readme.md, release.md, changelog.md, plan.md and all other documentations. the release document should contain only the changes from the last release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes.
 do not commit or tag anything to git. 
 

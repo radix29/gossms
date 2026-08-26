@@ -344,6 +344,10 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return agentAlertCategoriesDetail(ctx, sc)
 	case NodeAgentReport:
 		return agentReportDetail(ctx, sc, node.data.Name)
+	case NodeQueryStore:
+		return queryStoreFolderDetail(ctx, sc, node.data.DBName)
+	case NodeQueryStoreReport:
+		return queryStoreReportDetail(ctx, sc, node.data.DBName, node.data.Name)
 	case NodeSQLServerLogs:
 		return errorLogFilesDetail(ctx, sc, gosmo.ErrorLogSQLServer)
 	case NodeAgentErrorLogs:

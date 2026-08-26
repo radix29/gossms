@@ -1,6 +1,7 @@
 package propsheet
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -26,6 +27,19 @@ func (s *fakeScreen) SetContent(x, y int, primary rune, comb []rune, style tcell
 		s.cells = map[[2]int]rune{}
 	}
 	s.cells[[2]int{x, y}] = primary
+}
+
+// line returns the text drawn on row y, trailing blanks trimmed.
+func (s *fakeScreen) line(y int) string {
+	out := []rune{}
+	for x := 0; x < s.w; x++ {
+		r, ok := s.cells[[2]int{x, y}]
+		if !ok || r == 0 {
+			r = ' '
+		}
+		out = append(out, r)
+	}
+	return strings.TrimRight(string(out), " ")
 }
 
 // count returns how many cells in column x hold r.

@@ -4,15 +4,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// panel_toolbar.go holds the one-row toolbar shared by the panels that have
-// one — Activity Monitor and the Log File Viewer. It is not App's own toolbar,
-// the icon strip in the menu bar row, which is toolbar.go.
+// panel_toolbar.go holds the one-row toolbar shared by the panels that have one
+// — Activity Monitor, the Log File Viewer and Query Store (which has two rows
+// of it). It is not App's own toolbar, the icon strip in the menu bar row,
+// which is toolbar.go.
 //
-// Only the geometry is shared: what
-// a button does, when it is dimmed and how it is drawn stay with the panel,
-// because the two disagree on all three (Activity Monitor dims per button and
-// renders the active rate selected; the Log Viewer dims the whole row while a
-// read is in flight).
+// Only the geometry is shared: what a button does, when it is dimmed and how it
+// is drawn stay with the panel, because the three disagree on all of it
+// (Activity Monitor dims per button and renders the active rate selected; the
+// Log Viewer dims the whole row while a read is in flight; Query Store asks a
+// predicate per cell and per row).
 
 // toolGap is the blank column between two toolbar buttons; a button's own
 // label is drawn with one space of padding either side.
@@ -24,9 +25,12 @@ const toolGap = 1
 // still has to refuse the click itself, since a dimmed control that acts on a
 // click is the failure both panels have already shipped once.
 //
-// Only Activity Monitor reads disabled at all. The Log Viewer dims and gates
-// on toolsEnabled(), a whole-row state, so setting disabled on one of its
-// buttons is neither drawn nor enforced — it does nothing.
+// Only Activity Monitor reads these two fields at all. The Log Viewer dims and
+// gates on toolsEnabled(), a whole-row state; Query Store asks selDisabled/
+// actDisabled per draw and per click, because its answers depend on a
+// capability probe that has not necessarily run when the row is built. Setting
+// disabled or reason on one of their buttons is neither drawn nor enforced — it
+// does nothing.
 type toolButton struct {
 	label    string
 	selected bool

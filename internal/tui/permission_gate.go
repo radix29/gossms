@@ -51,6 +51,7 @@ var (
 	rightAlterAnyDBRole = requiredRight{name: "ALTER ANY ROLE", role: "db_securityadmin", db: true}
 	rightAlterAnySchema = requiredRight{name: "ALTER ANY SCHEMA", role: "db_ddladmin", db: true}
 	rightCreateTable    = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
+	rightViewDBState    = requiredRight{name: "VIEW DATABASE STATE", role: "db_owner", db: true}
 )
 
 // String renders the right the way the user is told about it: the permission,
@@ -92,8 +93,14 @@ func allowsAction(sc *db.ServerConn, dbName string, rights ...requiredRight) boo
 	for _, r := range rights {
 		switch {
 		case !r.db:
+			// The name and its alternates are asked separately rather than
+			// joined into one slice: this runs per menu item and per toolbar
+			// cell on every draw, and the join allocated each time.
 			caps := sc.Capabilities()
-			for _, n := range append([]string{r.name}, r.alt...) {
+			if caps.Allows(r.name) {
+				return true
+			}
+			for _, n := range r.alt {
 				if caps.Allows(n) {
 					return true
 				}

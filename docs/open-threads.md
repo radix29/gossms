@@ -894,6 +894,46 @@ re-enumerates only the family on screen, so cycling the Agent log while the
 viewer sits on the SQL Server family would leave the Agent's pre-cycle
 numbering cached and hand it to the user the moment they flipped the selector.
 
+## Query Store: what is deliberately out of it
+
+Built 2026-08-26 in three stages (see `docs/journal.md`). The seven SSMS views,
+the panel, and Force/Unforce Plan are in. What is not, and why:
+
+- **No plan comparison.** SSMS can put two plans of one query side by side and
+  highlight what differs. `planview` renders one plan; a comparison needs a
+  second view, a node-matching pass between two operator trees, and a diff
+  presentation. Item 25 of the todo's Phase 5 ("Live Query Statistics; Compare
+  Showplan") is where it belongs, not here.
+- **No regression threshold, and no minimum-execution floor in the UI.**
+  `QueryStoreReportOptions` carries `MinExecCount`, and the Regressed report
+  ranks by absolute growth with no floor, so a query that ran twice can outrank
+  one that ran ten thousand times. SSMS offers both as controls. Two more
+  selectors on an already two-row toolbar was the trade; the option is in gosmo
+  when a caller wants it.
+- **Tracked Queries does not track.** SSMS's view remembers the queries you
+  pinned to it, across sessions. Ours is the costliest captured queries ordered
+  by recency — the list you would *pick* one from. Persisting a per-database
+  set of query ids means a place to keep it (`config.json` is connection
+  profiles, not per-database state) and a story for ids that vanish when Query
+  Store is cleared.
+- **No "Configure" button on the panel.** Query Store's own settings are a
+  Database Properties page, which is where SSMS puts them too; the folder's
+  context menu opens it.
+- **The panel reads on demand only** — no auto-refresh timer. Every read is
+  one-shot and bounded, so nothing queues behind the shared host connection.
+  F5 and the toolbar's Refresh are the whole story.
+- **One metric and one statistic across all seven views.** Each report carries
+  its own default (Total for the two that rank by accumulated cost, Avg for the
+  rest) and the panel opens on it, but switching views afterwards keeps what
+  the user chose rather than resetting. SSMS keeps them per view.
+
+One thing that is *not* deferred and should not be re-raised: **the baseline of
+Regressed Queries stays inside the reported window.** gosmo's default — the
+equally long window immediately before `From` — is right for a caller that
+picked its own range, and wrong for both surfaces here, because it makes the
+report need twice its window of history before it can show a row. Verified
+empty on a database with two minutes of history.
+
 ## Object Explorer folder filter: what is deliberately out of it
 
 Built 2026-08-13 (see `docs/journal.md`). Two gaps left, both deliberate; the
@@ -1153,33 +1193,59 @@ remains of each is recorded here.
   thing that kills that mutant, and the cross-*set* append is the only half the
   live tests pin — both verified by mutation.
 
-- **Login sources: the gosmo half is done, the gossms UI is not.**
-  `CreateLoginOptions.Source` covers SQL, Windows, external provider,
-  certificate and asymmetric key, and the login read/script path covers all
-  seven `type_desc` values. The **New Login dialog still offers only SQL and
-  Windows** — that stays part of § Deferred scope's standing Entra item, and
-  is now purely a UI question. Two things are still unpinned by a live run:
-  `FROM EXTERNAL PROVIDER` (win10cli has no Entra, so its statement text is
-  pinned by unit test only) and `CREATE LOGIN ... FROM EXTERNAL PROVIDER WITH
-  OBJECT_ID = '...'`, which SQL Server 2022+ accepts and gosmo does not emit —
-  nobody has asked for it, and adding it blind to a form nothing can exercise
-  is how the unreachable `EXTERNAL` scripter branch happened in the first
-  place.
+- ~~**Login sources: the gosmo half is done, the gossms UI is not.**~~
+  **Closed** 2026-08-26. The New Login dialog's General page now offers all
+  five of gosmo's sources as one radio group — SQL Server, Windows, Microsoft
+  Entra, mapped to a certificate, mapped to an asymmetric key — with the
+  labels `loginAuthLabel` already used, so a login created here describes
+  itself the same way when reopened in Login Properties. The group drives the
+  rest of the page through `propsheet.RadioRow.SetOnChange`, new for this and
+  mirroring `SelectRow`'s: password and Entra-object-id rows are enabled only
+  for the source that uses them, and the "Mapped to" picker's items are
+  swapped between master's certificates and its asymmetric keys. gosmo gained
+  `Database.AsymmetricKeys`/`AsymmetricKeyByName` for that picker
+  (`asymmetric_key.go`), the read side only — CREATE ASYMMETRIC KEY imports
+  from the server's own filesystem, so there is nothing a client library can
+  create.
+
+  `CREATE LOGIN ... FROM EXTERNAL PROVIDER WITH OBJECT_ID` is emitted too,
+  via `CreateLoginOptions.ObjectID`. **Its grammar is now confirmed on a real
+  server** rather than by unit test alone: on win10cli (SQL Server 2025, no
+  Entra) it and the bare `FROM EXTERNAL PROVIDER` fail with the *same* Msg
+  37525, "Azure Active Directory is not configured for this instance" — the
+  parser accepted both. What is still unverifiable here is whether a login
+  actually gets created, which needs an Entra-joined instance and stays part
+  of § Deferred scope's standing Entra item along with README's known issue.
+
+  Two things settled live and worth keeping. Neither `DEFAULT_DATABASE` nor
+  `DEFAULT_LANGUAGE` can be set for a certificate- or asymmetric-key-mapped
+  login, in CREATE *or* ALTER ("Cannot use the parameter ... for a certificate
+  or asymmetric key login"), so the page refuses either rather than creating
+  the login and then failing — the refusal only fires when the user actually
+  changed one. And `masterMappableNames` swallows its two reads' errors on
+  purpose: `sys.certificates` and `sys.asymmetric_keys` need permission on
+  master, and a login without it must still be able to create ordinary SQL and
+  Windows logins. An empty picker becomes a refusal naming what is missing,
+  not a broken dialog.
+
+  Verified end to end under tmux against win10cli: both mapped sources
+  created, read back as `CERTIFICATE_MAPPED_LOGIN` and
+  `ASYMMETRIC_KEY_MAPPED_LOGIN`, and dropped. `new_login_general_page_test.go`
+  covers all five sources over `fakedb_test.go`; three mutants were killed,
+  including the picker not following the source.
 
 ## Permission gating: what P3 deliberately leaves out
 
 Added 2026-08-25 with P3 of `docs/permissions-plan.md`. Each of these is a
 known limit of the gate layer, not an oversight.
 
-- **A read-only Properties page still *looks* editable.** `Form.SetReadOnly`
-  makes every row unfocusable and refuses to route a click into one, so
-  nothing can be typed or toggled and the page can never become dirty — which
-  is what makes Apply and Script Changes safe. But a Text row still draws its
-  `[value]` box and a Check row still draws its `[ ]`. The plan's §3.2 asked
-  for those rows to render as `propsheet.Static` instead; doing it properly
-  means a read-only draw state on every row type, not a change at any one of
-  the forty-odd pages. The note at the top of the page and the collapsed
-  button row are what carry the message meanwhile.
+- ~~**A read-only Properties page still *looks* editable.**~~ **Fixed**
+  2026-08-26 — `propsheet.ReadOnlyDrawer`, an optional row capability
+  `Form.SetReadOnly`/`Add`/`Prepend` push into every row that implements it.
+  Text/Int/Select/Radio draw as flat label/value pairs, Check and ToggleGrid's
+  toggle cells as `✓`/`✗`, ButtonsRow dimmed; EditorRow keeps its box on
+  purpose. No page changed. See `docs/journal.md`, including the blank affinity
+  grid and the 30-column label the live run caught.
 
 - **A schema-scoped Rename/Move/Delete is gated on rights that are sufficient,
   not necessary.** SQL Server checks ALTER on the object's *schema*, which the
@@ -1224,3 +1290,44 @@ known limit of the gate layer, not an oversight.
   servers are 2017 or later and so never take that path;
   `legacyListingRefusal` is exercised across all five combinations by test but
   has never run against a real pre-2017 instance.
+
+## Detach / Attach
+
+- ~~**Attach's moved-files path is live-verified; one case is not.**~~
+  **Closed** 2026-08-26. The uncorrected-path case was driven live on
+  win10cli: the file list *does* survive the failure, and SQL Server's error
+  is unusable where it lands — its whole content is a long path, and the
+  dialog's one-line message clips it before the file name. The attach now
+  probes each path with `Server.FileSystemExistsContext` from inside its apply
+  closure and refuses naming the files instead. Skipped under
+  `gosmo.Scripting(ctx)` (script now, copy later is a legitimate order), and a
+  probe that cannot run is not a refusal. See `docs/journal.md`.
+
+- **`xp_cmdshell` is on on win10cli and can never be on on ubusql1.**
+  Turned on there 2026-08-26 to move database files on the server host, and
+  left on for the next such test. `sp_configure 'xp_cmdshell', 1` on the Linux
+  instance fails Msg 15392 — "not supported by this edition" — because SQL
+  Server on Linux has no xp_cmdshell at all; file moves on ubusql1/ubusql2 go
+  through ssh instead. Anything in gossms that would depend on xp_cmdshell is
+  therefore Windows-only by construction.
+
+- ~~**A database's file paths are unreadable unless it is ONLINE.**~~
+  **Fixed** 2026-08-26 — gosmo's `Server.DatabaseFiles`/`DatabaseFilesContext`
+  reads `sys.master_files`, and the Detach dialog falls back to it whenever
+  the database-scoped read produced nothing. `FileGroup` is always `""` there
+  (`sys.filegroups` is database-scoped), which is why it is a fallback rather
+  than a replacement. Covered by `live_masterfiles_test.go` in gosmo and
+  verified live against an OFFLINE database. See `docs/journal.md`.
+
+- **A non-T-SQL job step's *other* fields still take typing that is discarded.**
+  The Steps page can write back a T-SQL step only. As of 2026-08-26 the Command
+  box is gated for a PowerShell/CmdExec/SSIS step — read-only, no SQL
+  highlighting — and the hint says so on selection, but Step name, Database, the
+  two on-success/on-failure rows, the retry counts and the output file still
+  accept edits `commitCurrent` throws away. The right fix is the whole edit
+  panel gated as one, which means a per-row read-only switch on the rows
+  `propsheet` builds for it (`TextRow`/`SelectRow`/`IntRow` have `SetDrawReadOnly`
+  for the form's gate, but no page-level one of their own, which is what
+  `EditorRow.SetReadOnly` now is). Left undone deliberately: the command is the
+  field whose text a write-back would hand to the query processor as T-SQL, and
+  it is the one that was gated.

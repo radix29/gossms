@@ -99,14 +99,6 @@ func classifySQLType(sqlType string) cellValueKind {
 	return cellPlain
 }
 
-// looksLikeXML reports whether s should be shown as XML rather than in the
-// grid's built-in value popup. See classifyCellValue.
-func looksLikeXML(s string) bool { return classifyCellValue(s) == cellXML }
-
-// looksLikeJSON reports whether s should be shown as JSON rather than in the
-// grid's built-in value popup. See classifyCellValue.
-func looksLikeJSON(s string) bool { return classifyCellValue(s) == cellJSON }
-
 // openCellValuePanel shows a structured cell value in a brand new query panel
 // with the matching highlighter — the same treatment File > Open gives a .xml
 // file (see openQueryFile), rather than the grid's fixed 60-column value

@@ -231,6 +231,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
+			gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
+				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
 			{Divider: true},
 			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
 			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
@@ -242,7 +244,7 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		if node.data.IsOffline {
 			offlineLabel = "Bring Database Online"
 		}
-		return []controls.MenuItem{
+		items := []controls.MenuItem{
 			newQuery,
 			{Divider: true},
 			gate(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
@@ -252,9 +254,46 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
 			gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
 				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase),
+		}
+		// Detach is offered on user databases only: sp_detach_db refuses a
+		// system database outright, and a permanently grey item explains
+		// nothing the name doesn't already say.
+		if !node.data.IsSystem {
+			items = append(items,
+				gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
+					a.showDetachDatabaseDialog(sc, node.data.DBName)
+				}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase))
+		}
+		return append(items,
+			controls.MenuItem{Divider: true},
+			refresh,
+			controls.MenuItem{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+		)
+	case NodeQueryStore:
+		// The folder's own settings are a Database Properties page, not a
+		// dialog of its own — the same page SSMS puts them on.
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "Open Query Store...", Action: func() {
+				a.showQueryStorePanelFor(sc, node.data.DBName, "")
+			}}, sc, node.data.DBName, rightViewDBState),
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+		}
+	case NodeQueryStoreReport:
+		// The leaf's own Detail Browser grid is the report; this opens the
+		// same view in the panel, where the metric, the statistic and the
+		// window can be changed and a plan can be forced.
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
+				a.showQueryStorePanelFor(sc, node.data.DBName, node.data.Name)
+			}}, sc, node.data.DBName, rightViewDBState),
+			{Divider: true},
+			refresh,
 		}
 	case NodeLogins:
 		return []controls.MenuItem{

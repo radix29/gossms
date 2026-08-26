@@ -37,6 +37,13 @@ type nloginPrefetch struct {
 	langNames     []string
 	serverRoles   []*gosmo.ServerRole
 	dbRoles       []nloginDBRoles
+
+	// certNames and asymKeyNames are master's certificates and asymmetric
+	// keys, for the Mapped-object picker a certificate- or asymmetric-key-
+	// mapped login needs. Either list can be empty because the read failed
+	// rather than because the instance has none — see fetchNewLoginPrefetch.
+	certNames    []string
+	asymKeyNames []string
 }
 
 func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefetch, error) {
@@ -102,13 +109,38 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		return nil, err
 	}
 
+	certNames, asymKeyNames := masterMappableNames(ctx, sc)
+
 	return &nloginPrefetch{
 		existingNames: existing,
 		dbNames:       dbNames,
 		langNames:     langNames,
 		serverRoles:   roles,
 		dbRoles:       dbRoles,
+		certNames:     certNames,
+		asymKeyNames:  asymKeyNames,
 	}, nil
+}
+
+// masterMappableNames reads the certificates and asymmetric keys in master a
+// mapped login can be created from. A failure here is deliberately not the
+// dialog's failure: sys.certificates and sys.asymmetric_keys are readable only
+// with permission on master, and a login that lacks it still creates ordinary
+// SQL and Windows logins. An empty list leaves the picker offering nothing,
+// which the General page's apply turns into a refusal naming the missing pick.
+func masterMappableNames(ctx context.Context, sc *db.ServerConn) (certs, keys []string) {
+	master := sc.Server.Database("master")
+	if cs, err := master.CertificatesContext(ctx); err == nil {
+		for _, c := range cs {
+			certs = append(certs, c.Name)
+		}
+	}
+	if ks, err := master.AsymmetricKeysContext(ctx); err == nil {
+		for _, k := range ks {
+			keys = append(keys, k.Name)
+		}
+	}
+	return certs, keys
 }
 
 // NewLoginDialog is the New Login creation dialog (Object Explorer's
@@ -117,8 +149,8 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 // always runs first — it's what creates the login — before Server Roles/
 // User Mapping/Securables/Status's own applies can target a login that now
 // exists, a fixed five-step sequence rather than a discovered dirty set.
-// External-provider (Entra ID/Azure AD) logins are not offered: gosmo has
-// no support for FROM EXTERNAL PROVIDER.
+// All five of gosmo's login sources are offered — see
+// buildNewLoginGeneralPage.
 type NewLoginDialog struct {
 	newObjectDialog[nloginPrefetch]
 }

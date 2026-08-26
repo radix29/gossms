@@ -179,9 +179,36 @@ func (r *StaticRow) Draw(s tcell.Screen, focused bool) {
 		lst, vst = theme.StyleSelected(), theme.StyleSelected()
 		core.FillRect(s, core.Rect{X: r.x, Y: r.y, W: r.w, H: 1}, ' ', vst)
 	}
-	core.DrawTextClipped(s, r.x, r.y, LabelWidth, lst, r.label)
-	valX := r.x + LabelWidth
-	core.DrawTextClipped(s, valX, r.y, max(0, r.w-LabelWidth), vst, r.value)
+	drawFlatValue(s, r.x, r.y, r.w, r.label, r.value, lst, vst)
+}
+
+// drawFlatValue renders a label/value pair as plain text — what StaticRow draws
+// and what every editable row switches to under Form.SetReadOnly. Shared on
+// purpose: a gated page mixes both kinds of row, and two spellings of "a value
+// you cannot change" would read as two kinds of field.
+//
+// The value never starts on LabelWidth: a label may be exactly that wide (the
+// limit TestNoPropertySheetLabelIsTruncated enforces), and drawn flush the two
+// run together — "Maximum concurrent connections0", live.
+func drawFlatValue(s tcell.Screen, x, y, w int, label, value string, lst, vst tcell.Style) {
+	core.DrawTextClipped(s, x, y, LabelWidth, lst, label)
+	valX := flatValueX(x)
+	core.DrawTextClipped(s, valX, y, max(0, x+w-valX), vst, value)
+}
+
+// flatValueX is the column a flat value starts in: where the same row's text
+// sits when it is editable, so a row switching between the two does not jog its
+// value sideways by a column. An editable row pads its label to LabelWidth and
+// draws '[' after it, with the text one further —
+// TestFlatValueStartsWhereAnEditableValueDoes pins the pair.
+func flatValueX(x int) int { return x + LabelWidth + 2 }
+
+// drawFlatReadOnly is drawFlatValue in the styles a read-only row uses.
+func drawFlatReadOnly(s tcell.Screen, x, y, w int, label, value string) {
+	p := theme.Active()
+	lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+	vst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	drawFlatValue(s, x, y, w, label, value, lst, vst)
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +224,10 @@ type TextRow struct {
 	validate  func(string) error
 	onChange  func(string)
 	untracked bool // see SetDirtyTracked
-	y         int
+	// drawReadOnly renders the row flat instead of as an input box — see
+	// SetDrawReadOnly.
+	drawReadOnly bool
+	x, y, w      int
 }
 
 // Text returns a plain editable text row, width columns wide.
@@ -285,12 +315,25 @@ func (r *TextRow) SetValidate(fn func(string) error) { r.validate = fn }
 
 func (r *TextRow) Height(w int) int { return 1 }
 func (r *TextRow) Layout(x, y, w int) {
-	r.y = y
+	r.x, r.y, r.w = x, y, w
 	r.field.SetBounds(x, y)
 }
 func (r *TextRow) Focusable() bool { return r.enabled }
 
+// SetDrawReadOnly implements ReadOnlyDrawer: the row draws as a flat
+// label/value pair, with no input box. A Password row has nothing to show —
+// its value is empty by construction, "" meaning "leave unchanged".
+func (r *TextRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
+
 func (r *TextRow) Draw(s tcell.Screen, focused bool) {
+	if r.drawReadOnly {
+		v := r.field.Value()
+		if v != "" && r.unit != "" {
+			v += " " + r.unit
+		}
+		drawFlatReadOnly(s, r.x, r.y, r.w, r.Label(), v)
+		return
+	}
 	r.field.Focus(focused && r.enabled)
 	r.field.Draw(s)
 	if r.unit != "" {
@@ -399,6 +442,11 @@ type CheckRow struct {
 	box   *widgets.CheckBox
 	label string
 	orig  bool
+
+	// drawReadOnly renders the row as a tick or a cross instead of a
+	// checkbox — see SetDrawReadOnly.
+	drawReadOnly bool
+	x, y, w      int
 }
 
 // Check returns an editable checkbox row.
@@ -425,10 +473,30 @@ func (r *CheckRow) Label() string { return r.label }
 
 func (r *CheckRow) Height(w int) int { return 1 }
 func (r *CheckRow) Layout(x, y, w int) {
+	r.x, r.y, r.w = x, y, w
 	r.box.SetBounds(x, y)
 }
 func (r *CheckRow) Focusable() bool { return true }
+
+// SetDrawReadOnly implements ReadOnlyDrawer: the row draws its state as a
+// leading tick or cross rather than as a checkbox. Both states are marked —
+// an unmarked label sitting in a column of them reads as a heading, not as an
+// option that is off.
+func (r *CheckRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
+
 func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
+	if r.drawReadOnly {
+		p := theme.Active()
+		mark := "✗"
+		if r.box.Checked() {
+			mark = "✓"
+		}
+		mst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+		lst := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		core.DrawText(s, r.x, r.y, mst, mark)
+		core.DrawTextClipped(s, r.x+2, r.y, max(0, r.w-2), lst, r.label)
+		return
+	}
 	r.box.Focus(focused)
 	r.box.Draw(s)
 }
@@ -456,6 +524,11 @@ type SelectRow struct {
 	orig      int
 	untracked bool // see TextRow.SetDirtyTracked
 	onChange  func(string)
+
+	// drawReadOnly renders the row flat instead of as a dropdown — see
+	// SetDrawReadOnly.
+	drawReadOnly bool
+	x, y, w      int
 }
 
 // Select returns an editable dropdown row.
@@ -517,10 +590,22 @@ func (r *SelectRow) SetItems(items []string) {
 	r.orig = r.dd.Selected()
 }
 
-func (r *SelectRow) Height(w int) int   { return 1 }
-func (r *SelectRow) Layout(x, y, w int) { r.dd.SetBounds(x, y) }
-func (r *SelectRow) Focusable() bool    { return true }
+func (r *SelectRow) Height(w int) int { return 1 }
+func (r *SelectRow) Layout(x, y, w int) {
+	r.x, r.y, r.w = x, y, w
+	r.dd.SetBounds(x, y)
+}
+func (r *SelectRow) Focusable() bool { return true }
+
+// SetDrawReadOnly implements ReadOnlyDrawer: the row draws the selected item
+// as flat text, with no box and no arrow.
+func (r *SelectRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
+
 func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
+	if r.drawReadOnly {
+		drawFlatReadOnly(s, r.x, r.y, r.w, r.Label(), r.dd.Value())
+		return
+	}
 	r.dd.Focus(focused)
 	r.dd.Draw(s)
 }
@@ -571,9 +656,15 @@ func (r *SelectRow) Revert() {
 
 // RadioRow is a radio-button-group row.
 type RadioRow struct {
-	rb      *widgets.RadioBox
-	options []string
-	orig    int
+	rb       *widgets.RadioBox
+	options  []string
+	orig     int
+	onChange func(int)
+
+	// drawReadOnly collapses the group to a single label/value line — see
+	// SetDrawReadOnly.
+	drawReadOnly bool
+	x, y, w      int
 }
 
 // Radio returns an editable radio-group row.
@@ -594,24 +685,70 @@ func (r *RadioRow) SetSelected(i int) {
 	r.orig = r.rb.Selected()
 }
 
-// Edit selects by index the way a keystroke does, leaving the row dirty —
-// SetSelected's counterpart, for the reason TextRow.Edit documents.
-func (r *RadioRow) Edit(i int) { r.rb.SetSelected(i) }
+// Edit selects by index the way a keystroke does: the row goes dirty and
+// OnChange fires. SetSelected's counterpart, for the reason TextRow.Edit
+// documents.
+func (r *RadioRow) Edit(i int) {
+	before := r.rb.Selected()
+	r.rb.SetSelected(i)
+	r.notifyChanged(before)
+}
+
+// SetOnChange installs a callback fired whenever user interaction changes the
+// selection, given the newly selected index — SelectRow.SetOnChange's
+// counterpart, for a group that drives other rows on the same page. Not fired
+// by SetSelected, which is programmatic and would re-enter whatever set it.
+func (r *RadioRow) SetOnChange(fn func(int)) { r.onChange = fn }
+
+func (r *RadioRow) notifyChanged(before int) {
+	if r.onChange != nil && r.rb.Selected() != before {
+		r.onChange(r.rb.Selected())
+	}
+}
 
 // Options returns the row's choices, and Label its caption — how a caller
 // working with a Form it did not build identifies the row and its selection.
 func (r *RadioRow) Options() []string { return r.options }
 func (r *RadioRow) Label() string     { return r.rb.Label() }
 
-func (r *RadioRow) Height(w int) int   { return r.rb.Height() }
-func (r *RadioRow) Layout(x, y, w int) { r.rb.SetBounds(x, y) }
-func (r *RadioRow) Focusable() bool    { return true }
+func (r *RadioRow) Height(w int) int {
+	if r.drawReadOnly {
+		return 1
+	}
+	return r.rb.Height()
+}
+func (r *RadioRow) Layout(x, y, w int) {
+	r.x, r.y, r.w = x, y, w
+	r.rb.SetBounds(x, y)
+}
+func (r *RadioRow) Focusable() bool { return true }
+
+// SetDrawReadOnly implements ReadOnlyDrawer: the group collapses to one
+// label/value line naming the selected option, the same shape SelectRow takes
+// — the unselected options are choices, and a page that cannot be written is
+// not offering them.
+func (r *RadioRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
+
 func (r *RadioRow) Draw(s tcell.Screen, focused bool) {
+	if r.drawReadOnly {
+		drawFlatReadOnly(s, r.x, r.y, r.w, r.Label(), r.CopyText())
+		return
+	}
 	r.rb.Focus(focused)
 	r.rb.Draw(s)
 }
-func (r *RadioRow) HandleKey(ev *tcell.EventKey) bool     { return r.rb.HandleKey(ev) }
-func (r *RadioRow) HandleMouse(ev *tcell.EventMouse) bool { return r.rb.HandleMouse(ev) }
+func (r *RadioRow) HandleKey(ev *tcell.EventKey) bool {
+	before := r.rb.Selected()
+	handled := r.rb.HandleKey(ev)
+	r.notifyChanged(before)
+	return handled
+}
+func (r *RadioRow) HandleMouse(ev *tcell.EventMouse) bool {
+	before := r.rb.Selected()
+	handled := r.rb.HandleMouse(ev)
+	r.notifyChanged(before)
+	return handled
+}
 func (r *RadioRow) CopyText() string {
 	if i := r.rb.Selected(); i >= 0 && i < len(r.options) {
 		return r.options[i]
@@ -619,8 +756,16 @@ func (r *RadioRow) CopyText() string {
 	return ""
 }
 func (r *RadioRow) Dirty() bool     { return r.rb.Selected() != r.orig }
-func (r *RadioRow) Revert()         { r.rb.SetSelected(r.orig) }
 func (r *RadioRow) Validate() error { return nil }
+
+// Revert restores the dirty baseline and fires onChange — SelectRow.Revert,
+// which this matches: a group driving other rows has to drive them back too,
+// or Ctrl+Z leaves the page describing a source it no longer has selected.
+func (r *RadioRow) Revert() {
+	before := r.rb.Selected()
+	r.rb.SetSelected(r.orig)
+	r.notifyChanged(before)
+}
 
 // ---------------------------------------------------------------------------
 // ButtonsRow — a right-flowing row of push buttons (Add/Remove, …)
@@ -632,6 +777,10 @@ func (r *RadioRow) Validate() error { return nil }
 type ButtonsRow struct {
 	buttons []*widgets.Button
 	focus   int
+
+	// drawReadOnly dims the buttons — see SetDrawReadOnly.
+	drawReadOnly bool
+	x, y         int
 }
 
 // Buttons returns a row hosting the given buttons in order.
@@ -641,6 +790,7 @@ func Buttons(btns ...*widgets.Button) *ButtonsRow {
 
 func (r *ButtonsRow) Height(w int) int { return 1 }
 func (r *ButtonsRow) Layout(x, y, w int) {
+	r.x, r.y = x, y
 	col := x
 	for _, b := range r.buttons {
 		b.SetBounds(col, y)
@@ -652,7 +802,24 @@ func (r *ButtonsRow) Focusable() bool { return len(r.buttons) > 0 }
 // Buttons returns the row's buttons, for a host reaching one by label after the
 // row is built.
 func (r *ButtonsRow) Buttons() []*widgets.Button { return r.buttons }
+
+// SetDrawReadOnly implements ReadOnlyDrawer: the buttons draw dimmed. They are
+// already inert on a read-only form — Form refuses to route a press into a row
+// — so what is left is not to look clickable. Drawn here rather than through a
+// widgets.Button state, which no other caller needs.
+func (r *ButtonsRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
+
 func (r *ButtonsRow) Draw(s tcell.Screen, focused bool) {
+	if r.drawReadOnly {
+		p := theme.Active()
+		st := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
+		col := r.x
+		for _, b := range r.buttons {
+			core.DrawText(s, col, r.y, st, "[ "+b.Label()+" ]")
+			col += b.Width() + 2
+		}
+		return
+	}
 	for i, b := range r.buttons {
 		b.Focus(focused && i == r.focus)
 		b.Draw(s)

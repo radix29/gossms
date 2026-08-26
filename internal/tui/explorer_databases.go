@@ -107,9 +107,25 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		l.node("Triggers", NodeTriggers, "", "", dbName),
 		l.node("Sequences", NodeSequences, "", "", dbName),
 		l.node("Synonyms", NodeSynonyms, "", "", dbName),
+		l.node("Query Store", NodeQueryStore, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
 		l.node("Storage", NodeStorage, "", "", dbName),
 	}, nil
+}
+
+// loadQueryStoreChildren returns the Query Store folder's seven report
+// leaves — the views SSMS shows under the same folder, in the same order.
+//
+// The folder is listed whether or not Query Store is turned on: deciding here
+// would cost a sys.database_query_store_options read on every database
+// expansion, for a folder the user may never open. Each report answers for
+// itself instead — see queryStoreReportDetail.
+func loadQueryStoreChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	out := make([]*explorerNode, 0, len(queryStoreReportTitles))
+	for _, title := range queryStoreReportTitles {
+		out = append(out, l.node(title, NodeQueryStoreReport, "", title, node.data.DBName))
+	}
+	return out, nil
 }
 
 // loadDatabaseSecurityChildren returns a database's security folders, in

@@ -10,6 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -86,7 +87,11 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	// whichever database sorts first — see defaultDatabaseItem.
 	dbItems := append([]string{defaultDatabaseItem}, pf.dbNames...)
 	databaseSelect := propsheet.Select("Database", dbItems, 0)
-	commandField := propsheet.Text("Command", "", 60)
+	// The command is a whole T-SQL script, not a field: it gets the query
+	// editor control, with SQL highlighting and the line-number gutter, so a
+	// syntax error reported as "line 12" can be found.
+	commandEditor := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
+	commandField := propsheet.NewEditorRow("Command", commandEditor, 12)
 	onSuccessSelect := propsheet.Select("On success action", jobStepOnActionItems, 2)
 	onSuccessStepField := propsheet.Int("On success go to step", 0, 0, 999, "")
 	onFailSelect := propsheet.Select("On failure action", jobStepOnActionItems, 1)

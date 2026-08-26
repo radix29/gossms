@@ -54,7 +54,10 @@ func NewForm(rows ...Row) *Form {
 }
 
 // Add appends more rows.
-func (f *Form) Add(rows ...Row) { f.rows = append(f.rows, rows...) }
+func (f *Form) Add(rows ...Row) {
+	f.rows = append(f.rows, rows...)
+	f.applyReadOnlyDraw(rows)
+}
 
 // Prepend inserts rows ahead of the existing ones, for a caveat that has to be
 // read before the page it applies to. Appending one instead puts it below a
@@ -62,11 +65,16 @@ func (f *Form) Add(rows ...Row) { f.rows = append(f.rows, rows...) }
 // never brings it into view.
 //
 // Only safe before the form is interacted with: focus is an index into rows.
-func (f *Form) Prepend(rows ...Row) { f.rows = append(append([]Row{}, rows...), f.rows...) }
+func (f *Form) Prepend(rows ...Row) {
+	f.rows = append(append([]Row{}, rows...), f.rows...)
+	f.applyReadOnlyDraw(rows)
+}
 
 // SetReadOnly makes the form unfocusable and unclickable: no row can take
 // focus, and a press is not routed into one, so nothing on it can be edited.
 // Wheel scrolling and PgUp/PgDn still work — the page is meant to be read.
+// Every row implementing ReadOnlyDrawer also switches to its flat rendering,
+// so the page stops offering controls it will not accept input into.
 //
 // This is how a Properties page whose reads succeed but whose writes would be
 // refused is presented. Nothing can become dirty, so Apply and Script Changes
@@ -76,6 +84,18 @@ func (f *Form) SetReadOnly(v bool) {
 	f.readOnly = v
 	if v {
 		f.focus = -1
+	}
+	f.applyReadOnlyDraw(f.rows)
+}
+
+// applyReadOnlyDraw pushes the form's read-only state into the given rows.
+// Called from Add and Prepend as well as SetReadOnly: a page that builds rows
+// after the gate has decided would otherwise draw them editable.
+func (f *Form) applyReadOnlyDraw(rows []Row) {
+	for _, row := range rows {
+		if rd, ok := row.(ReadOnlyDrawer); ok {
+			rd.SetDrawReadOnly(f.readOnly)
+		}
 	}
 }
 

@@ -239,6 +239,9 @@ func (e *Editor) SetWrapMode(v bool) { e.wrapMode = v }
 // Off by default.
 func (e *Editor) SetReadOnly(v bool) { e.readOnly = v }
 
+// ReadOnly reports whether SetReadOnly is in force.
+func (e *Editor) ReadOnly() bool { return e.readOnly }
+
 // SetBounds positions the editor.
 func (e *Editor) SetBounds(x, y, w, h int) { e.rect = core.Rect{X: x, Y: y, W: w, H: h} }
 
@@ -255,6 +258,20 @@ func (e *Editor) SetActive(v bool) {
 // package can hit-test against it without duplicating its geometry — Object
 // Explorer's drag-and-drop target check does.
 func (e *Editor) Bounds() core.Rect { return e.rect }
+
+// CursorPos returns the caret's line and rune column, both zero-based.
+//
+// ScrollPos returns the first visible line and the terminal columns scrolled
+// off to the left. Together they are how a host tells whether a key the editor
+// claimed actually moved anything — HandleKey answers true to Up at the first
+// line and Down at the last, so a host that must fall back to its own
+// navigation (propsheet.EditorRow inside a form) has to detect the movement
+// rather than predict it.
+func (e *Editor) CursorPos() (row, col int) { return e.cursorRow, e.cursorCol }
+
+// ScrollPos returns the topmost visible line and the horizontal scroll offset
+// in terminal columns — see CursorPos.
+func (e *Editor) ScrollPos() (row, col int) { return e.scrollRow, e.scrollCol }
 
 // Focus sets focus state, mirroring the widgets package's Focus(bool)
 // convention so Editor can be Tab-cycled alongside InputField, DropDown and

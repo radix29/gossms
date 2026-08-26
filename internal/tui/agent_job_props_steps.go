@@ -10,6 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -289,7 +290,12 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 
 			nameField := propsheet.Text("Step name", "", 30)
 			databaseSelect := propsheet.Select("Database", dbItems, 0)
-			commandField := propsheet.Text("Command", "", 60)
+			// The command is a whole T-SQL script, not a field: it gets the query
+			// editor control, with SQL highlighting and the line-number gutter, so a
+			// syntax error reported as "line 12" can be found.
+			sqlHighlight := controls.SQLHighlighter(theme.Active())
+			commandEditor := controls.NewEditor(sqlHighlight)
+			commandField := propsheet.NewEditorRow("Command", commandEditor, 12)
 			onSuccessSelect := propsheet.Select("On success action", jobStepOnActionItems, 2)
 			onSuccessStepField := propsheet.Int("On success go to step", 0, 0, 999, "")
 			onFailSelect := propsheet.Select("On failure action", jobStepOnActionItems, 1)
@@ -380,12 +386,19 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				retryAttemptsField.SetValue(strconv.Itoa(current.retryAttempts))
 				retryIntervalField.SetValue(strconv.Itoa(current.retryInterval))
 				outputFileField.SetValue(current.outputFileName)
-				// Say so on selection rather than on OK: a read-only step's
-				// fields still take typing, so the honest moment to explain
-				// nothing will be saved is when the row is picked.
+				// Say so on selection rather than on OK: the step's other fields
+				// still take typing, so the honest moment to explain nothing will
+				// be saved is when the row is picked. The command itself is gated
+				// rather than explained: it is the field whose text a write-back
+				// would hand to the query processor, and highlighting a
+				// PowerShell script as T-SQL claims it is one.
 				if !current.editable() {
+					commandField.SetReadOnly(true)
+					commandEditor.SetHighlighter(nil)
 					hint.Set(current.subsystem + " steps are shown read-only — this page edits T-SQL steps only.")
 				} else {
+					commandField.SetReadOnly(false)
+					commandEditor.SetHighlighter(sqlHighlight)
 					hint.Clear()
 				}
 			}

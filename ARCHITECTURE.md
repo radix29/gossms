@@ -232,6 +232,12 @@ gossms/
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
 │       ├── log_search_dialog.go       # Log File Viewer search: a query the server runs across the archives, not a filter over what was read
 │       │
+│       │  ── Query Store ──
+│       ├── query_store_reports.go     # the seven SSMS views: one table of title/description/default statistic/loader, and the typed rows (qsResult) both surfaces render — the Detail Browser's grid and the panel's chart
+│       ├── query_store_panel.go       # QueryStorePanel state: the report/metric/statistic/window/top selectors, the report and plan reads, Force/Unforce/Show Plan/Script; implements layout.Panel
+│       ├── query_store_panel_draw.go  # the two toolbar rows, the bar chart, and the two grids either side of the splitters
+│       ├── query_store_panel_input.go # HandleKey/HandleMouse: grid focus, splitter keys, gesture zones
+│       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
 │       ├── detail_browser_backfill.go   # bounded per-row backfill fan-out shared by the folder loaders below
@@ -336,6 +342,8 @@ gossms/
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
 │       ├── new_database_pages.go  # New Database's page definitions
+│       ├── detach_database_dialog.go # Detach Database — newObjectDialog config, runs sp_detach_db and shows the files it leaves on disk
+│       ├── attach_database_dialog.go # Attach Database — browses the server for a primary .mdf, reads its file list back with DBCC CHECKPRIMARYFILE, runs CREATE DATABASE ... FOR ATTACH
 │       ├── new_login_dialog.go    # New Login — newObjectDialog config, runs CREATE LOGIN
 │       ├── new_login_pages.go     # New Login's page definitions
 │       ├── new_index_dialog.go    # New Index — the six index types the Indexes folder offers, one newObjectDialog config

@@ -55,6 +55,7 @@ var childLoaders = map[NodeType]childLoader{
 	NodePartitionFunctions:   loadPartitionFunctionsChildren,
 	NodePartitionSchemes:     loadPartitionSchemesChildren,
 	NodeSecurityPolicies:     loadSecurityPoliciesChildren,
+	NodeQueryStore:           loadQueryStoreChildren,
 	NodeAlwaysEncryptedKeys:  loadAlwaysEncryptedKeysChildren,
 	NodeColumnMasterKeys:     loadColumnMasterKeysChildren,
 	NodeColumnEncryptionKeys: loadColumnEncryptionKeysChildren,

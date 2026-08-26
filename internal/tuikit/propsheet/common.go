@@ -99,3 +99,15 @@ type OverlayDrawer interface {
 type OverlayActiver interface {
 	OverlayActive() bool
 }
+
+// ReadOnlyDrawer is implemented by a row that can render itself as flat,
+// uneditable text — no input box, no [ ] brackets, no dropdown arrow. Form
+// switches every row that implements it whenever SetReadOnly changes.
+//
+// Behaviour and appearance are separate halves of read-only and both are
+// needed: Form.SetReadOnly already makes a gated page impossible to edit, but
+// a row that still draws its control reads as a field the terminal is
+// refusing to type into rather than as a value.
+type ReadOnlyDrawer interface {
+	SetDrawReadOnly(v bool)
+}

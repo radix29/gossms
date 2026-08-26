@@ -554,6 +554,29 @@ func editText(t *testing.T, f *propsheet.Form, label, value string) {
 	}
 }
 
+// editorRow finds a multi-line editor row by its label, and editEditor drives
+// one the way editText drives a text row — through Edit, so the row goes dirty
+// and apply doesn't skip it.
+func editorRow(t *testing.T, f *propsheet.Form, label string) *propsheet.EditorRow {
+	t.Helper()
+	for _, r := range f.Rows() {
+		if er, ok := r.(*propsheet.EditorRow); ok && er.Label() == label {
+			return er
+		}
+	}
+	t.Fatalf("no editor row labelled %q on this page", label)
+	return nil
+}
+
+func editEditor(t *testing.T, f *propsheet.Form, label, value string) {
+	t.Helper()
+	row := editorRow(t, f, label)
+	row.Edit(value)
+	if !row.Dirty() {
+		t.Fatalf("row %q is not dirty after editing it to %q — apply will skip it", label, value)
+	}
+}
+
 // typeInto is editText for a row the page deliberately keeps out of dirty
 // tracking — a filter or search box, which drives the view and is never
 // written. Those rows stay clean by design (SetDirtyTracked(false)), so

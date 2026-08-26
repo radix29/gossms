@@ -189,8 +189,10 @@ var diffCorpus = map[string]string{
 	// for the column completion on the last line.
 	"commented go with trailing alias": "SELECT * FROM dbo.Patients p\n/*\nGO\n*/\nWHERE p.",
 
-	// "GO" that is not alone on its line is not a separator.
-	"go not alone": "SELECT 1\nGO 5\nSELECT 2\nXGO\nSELECT 3\nGOO\nSELECT 4",
+	// A repeat count and a trailing line comment are part of a separator; a
+	// "GO" that is the head of a longer word is not one at all.
+	"go with a count":   "SELECT 1\nGO 5\nSELECT 2\nXGO\nSELECT 3\nGOO\nSELECT 4",
+	"go with a comment": "SELECT 1\nGO -- run it\nSELECT 2 FROM dbo.T t\nWHERE t.",
 
 	"semicolon then go":     "SELECT 1;\nGO\nSELECT 2",
 	"go then semicolon":     "SELECT 1\nGO\nSELECT 2; SELECT 3",
@@ -353,19 +355,62 @@ func compareScans(want, got PrefixScan) string {
 	return ""
 }
 
-// isGoSeparatorLine replaced strings.EqualFold(strings.TrimSpace(...), "GO").
-// The one differential check kept: its reference is two calls to the standard
-// library, not a second lexer, so there is nothing here to drift out of sync.
-func TestIsGoSeparatorLineMatchesStringVersion(t *testing.T) {
-	cases := []string{
-		"GO", "go", "Go", "gO", " GO ", "\tGO\t", "  go  ", " GO ",
-		"GO 5", "XGO", "GOO", "G O", "", " ", "\t", "SELECT 1", "G", "O",
-		"GO;", ";GO", "GO--x", "ＧＯ",
-	}
-	for _, c := range cases {
-		want := strings.EqualFold(strings.TrimSpace(c), "GO")
-		if got := isGoSeparatorLine([]rune(c)); got != want {
-			t.Errorf("isGoSeparatorLine(%q) = %v, want %v", c, got, want)
+// goSeparatorLineCases is the definition of a "GO" batch separator, shared
+// verbatim with internal/tuikit/controls's TestGoSeparatorLineCases. The
+// two implementations are duplicated because tuikit must not import tui, so
+// the table is what keeps them from drifting apart; change one list and the
+// other package fails.
+//
+// The executor's own splitter (github.com/microsoft/go-mssqldb/batch.Split) is
+// looser, and deliberately not copied — measured against v1.11.0, it also
+// splits on "GO;", "GO x", "GO_" and "GO/*c*/", each of which leaves the junk
+// at the head of the next batch for the server to reject, and it reads "GO5"
+// as a repeat count of 5 while refusing "GO -- 5 items" because of the digit
+// in the comment.
+var goSeparatorLineCases = []struct {
+	line string
+	want bool
+}{
+	{"GO", true},
+	{"go", true},
+	{"Go", true},
+	{"gO", true},
+	{" GO ", true},
+	{"\tGO\t", true},
+	{"  go  ", true},
+	{"GO 5", true},
+	{"GO 5 ", true},
+	{"GO\t10", true},
+	{"GO 0", true},
+	{"GO -- comment", true},
+	{"GO--x", true},
+	{"GO -- 5 items", true},
+	{"GO 5 -- twice", true},
+	{"", false},
+	{" ", false},
+	{"\t", false},
+	{"G", false},
+	{"O", false},
+	{"G O", false},
+	{"GOO", false},
+	{"GOTO", false},
+	{"gone", false},
+	{"XGO", false},
+	{"SELECT 1", false},
+	{"GO5", false},
+	{"GO_", false},
+	{"GO x", false},
+	{"GO 5x", false},
+	{"GO;", false},
+	{";GO", false},
+	{"GO/*c*/", false},
+	{"\uff27\uff2f", false},
+}
+
+func TestGoSeparatorLineCases(t *testing.T) {
+	for _, tt := range goSeparatorLineCases {
+		if got := isGoSeparatorLine([]rune(tt.line)); got != tt.want {
+			t.Errorf("isGoSeparatorLine(%q) = %v, want %v", tt.line, got, tt.want)
 		}
 	}
 }

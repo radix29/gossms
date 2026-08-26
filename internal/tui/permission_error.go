@@ -84,13 +84,6 @@ func classifyRefusal(err error) refusal {
 	return refusal{}
 }
 
-// permissionDeniedMessage reports whether err is SQL Server refusing on
-// permission grounds and, if so, returns the server's own sentence for it.
-func permissionDeniedMessage(err error) (string, bool) {
-	r := classifyRefusal(err)
-	return r.message, r.kind != notARefusal
-}
-
 // -- turning a refusal into the right it needs -------------------------------
 
 // The patterns below read the identifiers out of SQL Server's own wording, and

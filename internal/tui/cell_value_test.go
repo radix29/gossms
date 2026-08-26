@@ -84,26 +84,6 @@ func TestClassifyCellKind(t *testing.T) {
 	}
 }
 
-// The two predicates must stay consistent with the classifier they now
-// delegate to — a value cannot be both, and each must agree with its kind.
-func TestLooksLikePredicatesAgreeWithClassifier(t *testing.T) {
-	values := []string{
-		"<root/>", `{"a":1}`, "[1]", "[dbo]", "plain", "", "<", "{",
-	}
-	for _, v := range values {
-		kind := classifyCellValue(v)
-		if got, want := looksLikeXML(v), kind == cellXML; got != want {
-			t.Errorf("looksLikeXML(%q) = %v, want %v", v, got, want)
-		}
-		if got, want := looksLikeJSON(v), kind == cellJSON; got != want {
-			t.Errorf("looksLikeJSON(%q) = %v, want %v", v, got, want)
-		}
-		if looksLikeXML(v) && looksLikeJSON(v) {
-			t.Errorf("%q classified as both XML and JSON", v)
-		}
-	}
-}
-
 // TestClassifyCellValueLargeValue pins that detection stays a bracket test on
 // a value far past any parse budget — an xml or json column holding megabytes
 // must still open in its own panel, and a large plain-text one must not.

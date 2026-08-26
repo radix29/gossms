@@ -18,15 +18,53 @@ import (
 // Login Properties' Credential row.
 const serverDefaultLangItem = "(Server default)"
 
-// buildNewLoginGeneralPage builds the General page: login identity
-// (name, authentication type), password/policy (SQL Server auth only),
-// and defaults (database, language). Windows logins are typed directly as
-// "DOMAIN\name" text — there's no principal-browse picker. External
-// provider authentication is not offered (see NewLoginDialog's doc
-// comment).
+// nloginSources are the New Login General page's Authentication options, in
+// the order they appear on the radio group. The labels match loginAuthLabel's
+// wording (login_props.go), so a login created here and then reopened in Login
+// Properties describes itself the same way.
+var nloginSources = []struct {
+	label  string
+	source gosmo.LoginSource
+}{
+	{"SQL Server Authentication", gosmo.LoginSourceSQL},
+	{"Windows Authentication", gosmo.LoginSourceWindows},
+	{"Microsoft Entra Authentication", gosmo.LoginSourceExternalProvider},
+	{"Mapped to a certificate", gosmo.LoginSourceCertificate},
+	{"Mapped to an asymmetric key", gosmo.LoginSourceAsymmetricKey},
+}
+
+// nloginNoMappable is the Mapped-object picker's content for a source that
+// maps to nothing, and for one that does when the instance offers no
+// candidate. It is never a name, so the apply's "pick one" refusal cannot be
+// satisfied by leaving the picker alone.
+const nloginNoMappable = "(None)"
+
+// buildNewLoginGeneralPage builds the General page: login identity (name,
+// authentication source and whatever that source needs), password/policy
+// (SQL Server auth only), and defaults (database, language). Windows logins
+// are typed directly as "DOMAIN\name" text — there's no principal-browse
+// picker.
+//
+// The Authentication group drives the rest of the page through
+// RadioRow.SetOnChange: the rows a source does not use are disabled or
+// emptied rather than left inviting input the CREATE LOGIN cannot carry.
+// Every combination is refused by gosmo as well, so the gating here is the
+// dialog being honest about what it will send, not the only check.
 func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow) {
 	nameField := propsheet.Text("Login name", "", 30)
-	authRow := propsheet.Radio("Authentication", []string{"SQL Server Authentication", "Windows Authentication"}, 0)
+	labels := make([]string, len(nloginSources))
+	for i, src := range nloginSources {
+		labels[i] = src.label
+	}
+	authRow := propsheet.Radio("Authentication", labels, 0)
+	source := func() gosmo.LoginSource { return nloginSources[authRow.Selected()].source }
+
+	// The object id is optional even for an Entra login: with none, SQL Server
+	// resolves the login name against the directory itself, which is the
+	// ordinary case. It is only needed for a display name the directory cannot
+	// resolve on its own.
+	objectIDRow := propsheet.Text("Entra object ID", "", 36)
+	mappedRow := propsheet.Select("Mapped to", []string{nloginNoMappable}, 0)
 
 	passwordRow := propsheet.Password("Password", 20)
 	confirmRow := propsheet.Password("Confirm password", 20)
@@ -38,8 +76,8 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 	// legitimately needs live dirty-gating: a typed password that doesn't
 	// match its confirmation.
 	passwordRow.SetValidate(func(v string) error {
-		if authRow.Selected() != 0 {
-			return nil // Windows logins don't use a password
+		if source() != gosmo.LoginSourceSQL {
+			return nil // only a SQL login has a password
 		}
 		if v != confirmRow.Value() {
 			return fmt.Errorf("passwords do not match")
@@ -55,20 +93,53 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 	langItems := append([]string{serverDefaultLangItem}, pf.langNames...)
 	defaultLangRow := propsheet.Select("Default language", langItems, 0)
 
+	// syncSource repoints the source-specific rows at whatever is selected
+	// now. Password and object id are TextRows and can be disabled outright;
+	// the Mapped-to picker instead has its items replaced, since an
+	// out-of-date certificate name left showing under "Windows
+	// Authentication" is what the apply would otherwise have to guess about.
+	syncSource := func() {
+		src := source()
+		isSQL := src == gosmo.LoginSourceSQL
+		passwordRow.SetEnabled(isSQL)
+		confirmRow.SetEnabled(isSQL)
+		objectIDRow.SetEnabled(src == gosmo.LoginSourceExternalProvider)
+
+		var items []string
+		switch src {
+		case gosmo.LoginSourceCertificate:
+			items = pf.certNames
+		case gosmo.LoginSourceAsymmetricKey:
+			items = pf.asymKeyNames
+		}
+		if len(items) == 0 {
+			items = []string{nloginNoMappable}
+		}
+		mappedRow.SetItems(items)
+	}
+	authRow.SetOnChange(func(int) { syncSource() })
+	syncSource()
+
 	f := propsheet.NewForm(
 		propsheet.Section("Login identity"),
 		nameField, authRow,
+		objectIDRow, mappedRow,
+		propsheet.Note("Type a Windows login as DOMAIN\\name. An Entra object ID is only needed when the display name is ambiguous in the directory."),
 		propsheet.Section("Password"),
 		passwordRow, confirmRow,
 		policyRow, expirationRow, mustChangeRow,
-		propsheet.Note("Password fields only apply for SQL Server Authentication; for Windows Authentication, type the login name as DOMAIN\\name above."),
+		propsheet.Note("Password fields apply to SQL Server Authentication only."),
 		propsheet.Section("Defaults"),
 		defaultDBRow, defaultLangRow,
+		propsheet.Note("A login mapped to a certificate or asymmetric key has no default database or language — SQL Server refuses both."),
 	)
 
 	apply := func(ctx context.Context) error {
 		name := strings.TrimSpace(nameField.Value())
-		isSQL := authRow.Selected() == 0
+		src := source()
+		isSQL := src == gosmo.LoginSourceSQL
+		mapped := src == gosmo.LoginSourceCertificate || src == gosmo.LoginSourceAsymmetricKey
+
 		password := ""
 		if isSQL {
 			password = passwordRow.Value()
@@ -76,8 +147,27 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 				return fmt.Errorf("a password is required for SQL Server Authentication")
 			}
 		}
-		opts := &gosmo.CreateLoginOptions{MustChange: isSQL && mustChangeRow.Checked()}
-		if defaultDBRow.Dirty() {
+		opts := &gosmo.CreateLoginOptions{Source: src, MustChange: isSQL && mustChangeRow.Checked()}
+		if src == gosmo.LoginSourceExternalProvider {
+			opts.ObjectID = strings.TrimSpace(objectIDRow.Value())
+		}
+		if mapped {
+			// Refused rather than dropped: the user picked a database or a
+			// language on a page that then sent neither, and SQL Server's own
+			// message arrives after the login already exists.
+			if defaultDBRow.Dirty() || defaultLangRow.Dirty() {
+				return fmt.Errorf("a login mapped to a certificate or asymmetric key cannot have a default database or language")
+			}
+			if mappedRow.Value() == nloginNoMappable {
+				return fmt.Errorf("select the %s this login maps to", mappedNoun(src))
+			}
+			if src == gosmo.LoginSourceCertificate {
+				opts.CertificateName = mappedRow.Value()
+			} else {
+				opts.AsymmetricKeyName = mappedRow.Value()
+			}
+		}
+		if !mapped && defaultDBRow.Dirty() {
 			opts.DefaultDatabase = defaultDBRow.Value()
 		}
 		if err := sc.Server.CreateLoginContext(ctx, name, password, opts); err != nil {
@@ -88,7 +178,7 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 				return err
 			}
 		}
-		if defaultLangRow.Dirty() {
+		if !mapped && defaultLangRow.Dirty() {
 			if err := sc.Server.Login(name).SetDefaultLanguageContext(ctx, langItems[defaultLangRow.Selected()]); err != nil {
 				return err
 			}
@@ -96,6 +186,15 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 		return nil
 	}
 	return f, apply, nameField
+}
+
+// mappedNoun names the object a mapped source maps to, for the refusal the
+// apply raises when nothing is picked.
+func mappedNoun(src gosmo.LoginSource) string {
+	if src == gosmo.LoginSourceCertificate {
+		return "certificate"
+	}
+	return "asymmetric key"
 }
 
 // buildNewLoginServerRolesPage reuses Login Properties' Server Roles page

@@ -81,41 +81,43 @@ type App struct {
 	// query returns, so it needs no snapshot semantics.
 	metaEnabled bool
 
-	connectDialog       *ConnectDialog
-	findDialog          *FindReplaceDialog
-	helpDialog          *HelpDialog
-	keyDiagDialog       *KeyDiagnosticsDialog
-	updateDialog        *UpdateDialog
-	statusHistoryDialog *StatusHistoryDialog
-	propsDialog         *PropertiesDialog
-	propDialog          *PropDialog
-	newDatabaseDialog   *NewDatabaseDialog
-	newLoginDialog      *NewLoginDialog
-	newJobDialog        *NewJobDialog
-	newScheduleDialog   *NewScheduleDialog
-	newAlertDialog      *NewAlertDialog
-	newOperatorDialog   *NewOperatorDialog
-	newIndexDialog      *NewIndexDialog
-	newStatisticsDialog *NewStatisticsDialog
-	newCMKDialog        *NewColumnMasterKeyDialog
-	newCEKDialog        *NewColumnEncryptionKeyDialog
-	agAddDatabaseDialog *AGAddDatabaseDialog
-	agAddListenerDialog *AGAddListenerDialog
-	agAddReplicaDialog  *AGAddReplicaDialog
-	newAGDialog         *NewAGDialog
-	newEndpointDialog   *NewEndpointDialog
-	fileDialog          *dialogs.FileDialog
-	queryListDialog     *QueryListDialog
-	optionsDialog       *OptionsDialog
-	filterDialog        *FilterDialog
-	logSearchDialog     *LogSearchDialog
-	promptDialog        *dialogs.PromptDialog
-	tasksDialog         *TasksDialog
-	confirmDialog       *dialogs.ConfirmDialog
-	confirmTypedDialog  *dialogs.TypedConfirmDialog
-	alertDialog         *dialogs.AlertDialog
-	backupDialog        *BackupDialog
-	restoreDialog       *RestoreDialog
+	connectDialog        *ConnectDialog
+	findDialog           *FindReplaceDialog
+	helpDialog           *HelpDialog
+	keyDiagDialog        *KeyDiagnosticsDialog
+	updateDialog         *UpdateDialog
+	statusHistoryDialog  *StatusHistoryDialog
+	propsDialog          *PropertiesDialog
+	propDialog           *PropDialog
+	newDatabaseDialog    *NewDatabaseDialog
+	newLoginDialog       *NewLoginDialog
+	newJobDialog         *NewJobDialog
+	newScheduleDialog    *NewScheduleDialog
+	newAlertDialog       *NewAlertDialog
+	newOperatorDialog    *NewOperatorDialog
+	newIndexDialog       *NewIndexDialog
+	newStatisticsDialog  *NewStatisticsDialog
+	newCMKDialog         *NewColumnMasterKeyDialog
+	newCEKDialog         *NewColumnEncryptionKeyDialog
+	agAddDatabaseDialog  *AGAddDatabaseDialog
+	agAddListenerDialog  *AGAddListenerDialog
+	agAddReplicaDialog   *AGAddReplicaDialog
+	newAGDialog          *NewAGDialog
+	newEndpointDialog    *NewEndpointDialog
+	detachDatabaseDialog *DetachDatabaseDialog
+	attachDatabaseDialog *AttachDatabaseDialog
+	fileDialog           *dialogs.FileDialog
+	queryListDialog      *QueryListDialog
+	optionsDialog        *OptionsDialog
+	filterDialog         *FilterDialog
+	logSearchDialog      *LogSearchDialog
+	promptDialog         *dialogs.PromptDialog
+	tasksDialog          *TasksDialog
+	confirmDialog        *dialogs.ConfirmDialog
+	confirmTypedDialog   *dialogs.TypedConfirmDialog
+	alertDialog          *dialogs.AlertDialog
+	backupDialog         *BackupDialog
+	restoreDialog        *RestoreDialog
 
 	// allDialogs lists every dialog exactly once, for syncDialogStack to
 	// scan; dialogStack is the live z-order (see dialog_stack.go).
@@ -412,6 +414,8 @@ func (a *App) buildUI() {
 	a.agAddReplicaDialog = registerDialog(a, NewAGAddReplicaDialog(a))
 	a.newAGDialog = registerDialog(a, NewNewAGDialog(a))
 	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
+	a.detachDatabaseDialog = registerDialog(a, NewDetachDatabaseDialog(a))
+	a.attachDatabaseDialog = registerDialog(a, NewAttachDatabaseDialog(a))
 	a.fileDialog = registerDialog(a, dialogs.NewFileDialog(a.screen))
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
 		// serverPathBase, not filepath.Base: the path uses the SQL Server

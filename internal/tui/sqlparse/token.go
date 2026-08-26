@@ -361,17 +361,20 @@ func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 }
 
 // goSeparatorLineAt reports whether the line beginning at buf[start] — running
-// to the next '\n' or to limit — is a bare "GO" batch separator (exactly "GO"
-// case-insensitively, apart from surrounding whitespace), and returns the offset
-// of the line after it.
+// to the next '\n' or to limit — is a "GO" batch separator, and returns the
+// offset of the line after it.
 //
-// The scan bails on the first rune that can't be part of one, so an ordinary
-// line costs a rune or two rather than a walk to its end: this runs once per
-// line of the whole prefix on every keystroke while the popup is open.
+// A separator is optional leading whitespace, "GO" (case-insensitive, and not
+// the head of a longer word like "goto" or "gone"), then only whitespace, an
+// optional repeat count, and/or a trailing line comment. This is the same rule
+// as controls.isGoSeparatorLine, which is what the editor selects and executes
+// statements by; the two are duplicated because tuikit must not import tui, and
+// TestGoSeparatorLineCases in each package pins the same list of lines so a
+// change to one shows up as a failure in the other.
 //
-// Deliberately simpler than Editor.SelectStatementAtCursor's separator rule,
-// which also accepts a repeat count and a trailing line comment; completion
-// context needs neither.
+// The scan bails on the first rune that can't be part of a separator, so an
+// ordinary line costs a rune or two rather than a walk to its end: this runs
+// once per line of the whole prefix on every keystroke while the popup is open.
 func goSeparatorLineAt(buf []rune, start, limit int) (int, bool) {
 	i := start
 	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {
@@ -383,11 +386,21 @@ func goSeparatorLineAt(buf []rune, start, limit int) (int, bool) {
 		return 0, false
 	}
 	i += 2
-	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {
-		i++
-	}
-	if i < limit && buf[i] != '\n' {
+	if i < limit && (unicode.IsLetter(buf[i]) || unicode.IsDigit(buf[i]) || buf[i] == '_') {
 		return 0, false
+	}
+	for i < limit && buf[i] != '\n' {
+		switch {
+		case unicode.IsSpace(buf[i]), unicode.IsDigit(buf[i]):
+			i++
+		case buf[i] == '-' && i+1 < limit && buf[i+1] == '-':
+			// The rest of the line is a comment; skip to its end.
+			for i < limit && buf[i] != '\n' {
+				i++
+			}
+		default:
+			return 0, false
+		}
 	}
 	return min(i+1, limit), true
 }

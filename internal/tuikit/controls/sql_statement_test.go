@@ -215,3 +215,63 @@ func TestSelectStatementAtCursorIgnoresGoInsideBlockComment(t *testing.T) {
 		t.Fatalf("statement = %q, want the whole script %q — the commented-out GO split it", got, script)
 	}
 }
+
+// goSeparatorLineCases is the definition of a "GO" batch separator, shared
+// verbatim with internal/tui/sqlparse's TestGoSeparatorLineCases. The
+// two implementations are duplicated because tuikit must not import tui, so
+// the table is what keeps them from drifting apart; change one list and the
+// other package fails.
+//
+// The executor's own splitter (github.com/microsoft/go-mssqldb/batch.Split) is
+// looser, and deliberately not copied — measured against v1.11.0, it also
+// splits on "GO;", "GO x", "GO_" and "GO/*c*/", each of which leaves the junk
+// at the head of the next batch for the server to reject, and it reads "GO5"
+// as a repeat count of 5 while refusing "GO -- 5 items" because of the digit
+// in the comment.
+var goSeparatorLineCases = []struct {
+	line string
+	want bool
+}{
+	{"GO", true},
+	{"go", true},
+	{"Go", true},
+	{"gO", true},
+	{" GO ", true},
+	{"\tGO\t", true},
+	{"  go  ", true},
+	{"GO 5", true},
+	{"GO 5 ", true},
+	{"GO\t10", true},
+	{"GO 0", true},
+	{"GO -- comment", true},
+	{"GO--x", true},
+	{"GO -- 5 items", true},
+	{"GO 5 -- twice", true},
+	{"", false},
+	{" ", false},
+	{"\t", false},
+	{"G", false},
+	{"O", false},
+	{"G O", false},
+	{"GOO", false},
+	{"GOTO", false},
+	{"gone", false},
+	{"XGO", false},
+	{"SELECT 1", false},
+	{"GO5", false},
+	{"GO_", false},
+	{"GO x", false},
+	{"GO 5x", false},
+	{"GO;", false},
+	{";GO", false},
+	{"GO/*c*/", false},
+	{"\uff27\uff2f", false},
+}
+
+func TestGoSeparatorLineCases(t *testing.T) {
+	for _, tt := range goSeparatorLineCases {
+		if got := isGoSeparatorLine([]rune(tt.line)); got != tt.want {
+			t.Errorf("isGoSeparatorLine(%q) = %v, want %v", tt.line, got, tt.want)
+		}
+	}
+}

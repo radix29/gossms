@@ -30,6 +30,28 @@ type ToggleGridRow struct {
 	// index, col is the index into toggleCols (not the raw grid column
 	// index), on is the new state.
 	OnToggle func(row, col int, on bool)
+
+	// drawReadOnly renders the toggle cells as ticks and crosses rather than
+	// as checkboxes — see SetDrawReadOnly.
+	drawReadOnly bool
+}
+
+// SetDrawReadOnly implements ReadOnlyDrawer: the toggle columns render their
+// state the way a read-only CheckRow does, so the one thing left on a gated
+// page that still looked like a control stops doing so. The cells are already
+// inert — Form routes no press into a read-only row.
+//
+// render, not renderPreservingView: Form calls this from SetReadOnly, which a
+// page runs before the sheet has ever laid the grid out, and preserving the
+// view of a grid with no rect ends in SetSelectedCell's ensureVisible
+// scrolling past every row — the affinity grid drew four blank lines under its
+// header, live.
+func (t *ToggleGridRow) SetDrawReadOnly(v bool) {
+	if t.drawReadOnly == v {
+		return
+	}
+	t.drawReadOnly = v
+	t.render()
 }
 
 // NewToggleGrid creates a ToggleGridRow. columns are the grid's headers;
@@ -72,7 +94,7 @@ func (t *ToggleGridRow) renderRows() [][]string {
 		ti := 0
 		for c := range t.columns {
 			if j := slices.Index(t.toggleCols, c); j >= 0 {
-				row[c] = toggleCell(t.values[i][j])
+				row[c] = t.toggleCell(t.values[i][j])
 			} else {
 				row[c] = t.text[i][ti]
 				ti++
@@ -160,9 +182,15 @@ func cloneBoolMatrix(m [][]bool) [][]bool {
 	return out
 }
 
-// toggleCell renders a toggle column's boolean value as SSMS-style
-// checkbox text.
-func toggleCell(v bool) string {
+// toggleCell renders a toggle column's boolean value as SSMS-style checkbox
+// text, or as a tick/cross when the row draws read-only.
+func (t *ToggleGridRow) toggleCell(v bool) string {
+	if t.drawReadOnly {
+		if v {
+			return "✓"
+		}
+		return "✗"
+	}
 	if v {
 		return "[x]"
 	}

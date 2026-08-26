@@ -112,6 +112,8 @@ const (
 	NodeSecurityPolicies
 	NodeSecurityPolicy
 	NodeAlwaysEncryptedKeys
+	NodeQueryStore
+	NodeQueryStoreReport
 	NodeColumnMasterKeys
 	NodeColumnMasterKey
 	NodeColumnEncryptionKeys
@@ -181,7 +183,7 @@ func isContainerNode(t NodeType) bool {
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
 		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
-		NodeSecurityPolicies, NodeAlwaysEncryptedKeys,
+		NodeSecurityPolicies, NodeAlwaysEncryptedKeys, NodeQueryStore,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
 		NodeAgentSchedules, NodeAgentAlerts, NodeAgentEventAlerts,
@@ -262,7 +264,7 @@ func objectIconEmoji(t NodeType) rune {
 		return '🕒'
 	case NodeAgentJobCategories, NodeAgentAlertCategories:
 		return '🗂'
-	case NodeAgentReport:
+	case NodeAgentReport, NodeQueryStoreReport:
 		return '📋'
 	case NodeSQLServerLog, NodeAgentErrorLog:
 		return '📄'
@@ -347,7 +349,7 @@ func objectIconSymbols(t NodeType) rune {
 		return '↺'
 	case NodeAgentJobCategories, NodeAgentAlertCategories:
 		return '▨'
-	case NodeAgentReport:
+	case NodeAgentReport, NodeQueryStoreReport:
 		return '≡'
 	case NodeSQLServerLog, NodeAgentErrorLog:
 		return '▤'
@@ -436,6 +438,8 @@ func nodeTypeName(t NodeType) string {
 		return "Partition Scheme"
 	case NodeSecurityPolicy:
 		return "Security Policy"
+	case NodeQueryStoreReport:
+		return "Query Store Report"
 	case NodeColumnMasterKey:
 		return "Column Master Key"
 	case NodeColumnEncryptionKey:
@@ -454,7 +458,7 @@ func hasChildren(t NodeType) bool {
 		NodeView, NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,
 		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
 		NodeAgentSchedule, NodeAgentAlert, NodeAgentAlertCategories,
-		NodeAgentOperator, NodeAgentReport,
+		NodeAgentOperator, NodeAgentReport, NodeQueryStoreReport,
 		NodeSQLServerLog, NodeAgentErrorLog,
 		NodeAvailabilityReplica, NodeAvailabilityDatabase, NodeAGListener,
 		NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,

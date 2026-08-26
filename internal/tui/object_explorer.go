@@ -386,6 +386,13 @@ func (oe *ObjectExplorer) handleActivate(id controls.TreeNodeID) bool {
 		}
 		oe.app.showLogViewerFor(sc, n.data.LogType, n.data.LogNumber)
 		return true
+	case NodeQueryStoreReport:
+		sc := resolveConn(n)
+		if sc == nil {
+			return false
+		}
+		oe.app.showQueryStorePanelFor(sc, n.data.DBName, n.data.Name)
+		return true
 	}
 	return false
 }

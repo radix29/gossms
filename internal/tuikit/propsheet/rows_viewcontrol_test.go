@@ -166,3 +166,48 @@ func TestRevertFiresOnChange(t *testing.T) {
 		t.Errorf("onChange saw %v, want [Database]", picks)
 	}
 }
+
+// RadioRow drives other rows on the same page (New Login's Authentication
+// group enables the password, object-id and mapped-object rows the source it
+// names actually uses), so it has to report a change the way TextRow and
+// SelectRow do.
+func TestRadioRowOnChangeFiresOnKeyAndEdit(t *testing.T) {
+	r := Radio("Authentication", []string{"SQL Server", "Windows", "Certificate"}, 0)
+	var seen []int
+	r.SetOnChange(func(i int) { seen = append(seen, i) })
+
+	r.rb.Focus(true)
+	r.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+	r.Edit(2)
+	// A key that moves nothing must not fire it: Down at the last option.
+	r.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+
+	if len(seen) != 2 || seen[0] != 1 || seen[1] != 2 {
+		t.Errorf("onChange saw %v, want [1 2]", seen)
+	}
+}
+
+// SetSelected is the page's own post-load setter — firing onChange from it
+// re-enters whatever set it.
+func TestRadioRowOnChangeNotFiredBySetSelected(t *testing.T) {
+	r := Radio("Authentication", []string{"SQL Server", "Windows"}, 0)
+	fired := 0
+	r.SetOnChange(func(int) { fired++ })
+	r.SetSelected(1)
+	if fired != 0 {
+		t.Errorf("onChange fired %d times from SetSelected, want 0", fired)
+	}
+}
+
+// Ctrl+Z restores the baseline; the rows the group drives have to follow it
+// back, or the page keeps the password fields of a source no longer selected.
+func TestRadioRowRevertFiresOnChange(t *testing.T) {
+	r := Radio("Authentication", []string{"SQL Server", "Windows"}, 0)
+	var seen []int
+	r.SetOnChange(func(i int) { seen = append(seen, i) })
+	r.Edit(1)
+	r.Revert()
+	if len(seen) != 2 || seen[1] != 0 {
+		t.Errorf("onChange saw %v, want the revert back to 0", seen)
+	}
+}

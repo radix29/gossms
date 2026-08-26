@@ -582,6 +582,39 @@ func (a *App) showLogViewerFor(sc *db.ServerConn, logType gosmo.ErrorLogType, lo
 	a.focusPanels()
 }
 
+// showQueryStorePanelFor opens the Query Store panel on one database, on the
+// report title names — the Object Explorer entry point for the Query Store
+// folder and each of its seven report leaves. One panel per (server,
+// database), like showLogViewerFor: another report re-points the existing
+// panel rather than accumulating a tab per view.
+//
+// An empty title means "no report in particular", which is what the folder's
+// own Open Query Store... passes. It opens a new panel on the first report and
+// leaves an existing one where it is — see the branch below.
+func (a *App) showQueryStorePanelFor(sc *db.ServerConn, dbName, title string) {
+	if !a.requireConn(sc) {
+		return
+	}
+	idx := a.panels.FindIndex(func(p layout.Panel) bool {
+		qs, ok := p.(*QueryStorePanel)
+		return ok && qs.conn == sc && qs.dbName == dbName
+	})
+	if idx < 0 {
+		qs := NewQueryStorePanel(a, sc, dbName, title)
+		idx = a.panels.AddPanel(qs)
+		qs.Load()
+	} else if title != "" {
+		// Only for a leaf, which names its report. queryStoreReportIndex maps
+		// an unrecognised title — "" included — to report 0, which is the right
+		// answer for a panel being created and the wrong one for a panel
+		// already open: Open Query Store... on the folder would throw away the
+		// view the user was reading and re-run it as Regressed Queries.
+		a.panels.PanelAt(idx).(*QueryStorePanel).ShowReport(title)
+	}
+	a.panels.SetActive(idx)
+	a.focusPanels()
+}
+
 func (a *App) refreshSelected() { a.explorer.RefreshSelected() }
 
 func (a *App) showServerProperties() {

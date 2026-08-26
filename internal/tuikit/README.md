@@ -65,7 +65,8 @@ tuikit/
 │               composition every stacked chart shares), history.go,
 │               stacked_history.go, barchart.go, stacked_bar.go, vbar.go, kpi.go
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
-              — doc.go, common.go, rows.go, gridrow.go, togglegrid.go, form.go;
+              — doc.go, common.go, rows.go, gridrow.go, editorrow.go,
+                togglegrid.go, form.go;
                 PropertySheet itself is split across sheet.go (state/page list),
                 sheet_draw.go, sheet_input.go, and sheet_clipboard.go
 ```
@@ -168,7 +169,10 @@ own, the same contract `App.postEvent` already provides for every other
 background-to-UI handoff in `internal/tui`. A `Form`'s rows unify under a
 small `Row` interface plus optional capability interfaces (`Editable`,
 `Copyable`, `KeyHandler`, …) — see `propsheet/common.go` — so adding a new
-row kind never requires touching `Form` itself.
+row kind never requires touching `Form` itself. **A row that draws a control
+implements `ReadOnlyDrawer` too**: `Form.SetReadOnly` already makes a gated
+page impossible to edit, and a row that keeps drawing its `[value]` box or its
+`[ ]` reads as a field the terminal is refusing to type into.
 
 **Overlays are drawn last and get first refusal of input.** A widget whose
 open state floats independently of its own `SetBounds` rect — `DropDown`'s
