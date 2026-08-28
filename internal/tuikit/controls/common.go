@@ -37,17 +37,17 @@ type prefixStates[S comparable] struct {
 func (c *prefixStates[S]) at(doc *Document, idx int, zero S, step func(line []rune, in S) S) S {
 	switch {
 	case !c.valid || c.doc != doc || len(c.states) != doc.Len():
-		// The length test is belt-and-braces: only setLine leaves a non-zero
-		// dirtyFrom and setLine cannot change the line count, so the resume
-		// branch below is already unreachable for a document that grew or
-		// shrank. It costs one comparison and removes the need to re-derive
-		// that argument when either side changes.
+		// The length test is what makes the resume branch below safe for the
+		// mutations that can change the line count — replaceRange leaves a
+		// dirtyFrom of its span's first line whether or not the span kept its
+		// length, and states[] is indexed by line, so a document that grew or
+		// shrank has to start over.
 		c.replay(doc, 0, zero, step, false)
 	case c.version == doc.Version():
 		// Nothing has changed since the last replay.
 	case c.version+1 == doc.Version() && doc.dirtyFrom > 0:
-		// Exactly one mutation since, and it was a single-line rewrite, so
-		// every state at or before the line it touched is still correct.
+		// Exactly one mutation since, and it left every line above dirtyFrom
+		// alone, so every state at or before that line is still correct.
 		c.replay(doc, doc.dirtyFrom, zero, step, true)
 	default:
 		c.replay(doc, 0, zero, step, false)

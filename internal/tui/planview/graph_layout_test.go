@@ -109,11 +109,13 @@ func TestLayoutGraph_CanvasSize(t *testing.T) {
 	}
 }
 
-func TestLayoutGraph_ParentCenteredBetweenFirstAndLastChild(t *testing.T) {
+func TestLayoutGraph_ParentTopAlignedWithFirstChild(t *testing.T) {
 	g := layoutGraph(buildTestTree())
-	a, a1, a2 := g.rects[1], g.rects[3], g.rects[4]
-	wantCenter := (a1.Y + a2.Y) / 2
-	if a.Y != wantCenter {
-		t.Errorf("node a's Y = %d, want %d (centered between a1.Y=%d and a2.Y=%d)", a.Y, wantCenter, a1.Y, a2.Y)
+	root, a, a1 := g.rects[0], g.rects[1], g.rects[3]
+	if a.Y != a1.Y {
+		t.Errorf("node a's Y = %d, want %d (top-aligned with first child a1)", a.Y, a1.Y)
+	}
+	if root.Y != 0 {
+		t.Errorf("root's Y = %d, want 0 (root sits on the canvas's first row, as in SSMS)", root.Y)
 	}
 }

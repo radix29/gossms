@@ -52,8 +52,8 @@ func sysadminCapabilityResponses() []fakeResponse {
 }
 
 // Every message below was captured from win10cli (SQL Server 17.0.1125.2) as
-// user_dr or user_dbo on 2026-08-25, not written from documentation — see
-// docs/permissions-plan.md § 3.3. They are the whole reason this table exists:
+// a least-privileged login, not written from documentation. They are the whole
+// reason this table exists:
 // the wording differs between numbers in ways no amount of reasoning predicts
 // ("permission was denied on the object" vs "permission denied in database").
 var measuredRefusals = []struct {
@@ -126,6 +126,23 @@ var measuredRefusals = []struct {
 		name: "DROP TABLE",
 		msgs: []mssqlMsg{{3701, 14, "Cannot drop the table 'Patients', because it does not exist or you do not have permission."}},
 		want: "The table Patients does not exist, or this login cannot drop it.",
+	},
+	{
+		// Captured 2026-08-27 from a login holding database-wide ALTER but
+		// denied it on the one table — the mismatch that reaches these paths
+		// live. Msg 1088's wording differs from 3701/15151 in three ways at
+		// once: double quotes, no comma before "because", and "permissions"
+		// plural, which is why it needs a pattern of its own.
+		name: "ALTER TABLE on a denied object",
+		msgs: []mssqlMsg{{1088, 16, `Cannot find the object "Invoices" because it does not exist or you do not have permissions.`}},
+		want: "The object Invoices does not exist, or this login has no permission on it.",
+	},
+	{
+		// The same number from CREATE INDEX, where the name arrives
+		// schema-qualified. Different State, same sentence shape.
+		name: "CREATE INDEX on a denied object",
+		msgs: []mssqlMsg{{1088, 16, `Cannot find the object "dbo.Invoices" because it does not exist or you do not have permissions.`}},
+		want: "The object dbo.Invoices does not exist, or this login has no permission on it.",
 	},
 }
 

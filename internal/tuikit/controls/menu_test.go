@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 func newTestMenuBar() *MenuBar {
@@ -270,10 +271,41 @@ func TestADisabledItemShowsItsNoteInsteadOfItsShortcut(t *testing.T) {
 		t.Errorf("suffix = %q for a disabled item, want the note", got)
 	}
 
-	// A cascade keeps its marker either way — it has a submenu, not a reason.
+	// An *enabled* cascade keeps its marker: it has a submenu, not a reason.
+	// A disabled one is the other way round — see
+	// TestADisabledCascadeShowsItsNoteRatherThanTheMarker.
 	cascade := MenuItem{Label: "New Index", Note: "needs ALTER", Sub: []MenuItem{{Label: "Clustered"}}}
-	cascade.Enabled = func() bool { return false }
 	if got := menuRowSuffix(cascade); got != "▸" {
 		t.Errorf("cascade suffix = %q, want the submenu marker", got)
+	}
+}
+
+// TestADisabledCascadeShowsItsNoteRatherThanTheMarker. A cascade that is
+// disabled never opens — ContextMenu.HandleMouse and menuCascade both refuse a
+// disabled row — so its ▸ points at a submenu the user cannot reach, and
+// showing it in place of the note leaves the item grey with nothing saying
+// why. That is what "New Index ▸" did when it was gated on the object-write
+// rights: withheld, and silent about the permission it wanted.
+func TestADisabledCascadeShowsItsNoteRatherThanTheMarker(t *testing.T) {
+	item := MenuItem{
+		Label:   "New Index",
+		Sub:     []MenuItem{{Label: "Non-Clustered..."}},
+		Note:    "needs ALTER",
+		Enabled: func() bool { return false },
+	}
+	if got := menuRowSuffix(item); got != "needs ALTER" {
+		t.Errorf("suffix of a disabled cascade = %q, want its note", got)
+	}
+	// Enabled, the marker is still the whole point: the submenu is reachable
+	// and the note describes nothing.
+	item.Enabled = func() bool { return true }
+	if got := menuRowSuffix(item); got != "▸" {
+		t.Errorf("suffix of an enabled cascade = %q, want the ▸ marker", got)
+	}
+	// And the box has to be wide enough for whichever of the two it draws.
+	item.Enabled = func() bool { return false }
+	narrow := menuContentWidth([]MenuItem{item}, 0)
+	if want := core.DisplayWidth("New Index") + core.DisplayWidth("needs ALTER") + 6; narrow != want {
+		t.Errorf("menu width = %d, want %d — the note must be measured, not the marker", narrow, want)
 	}
 }

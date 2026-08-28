@@ -17,21 +17,25 @@ func (p *QueryStorePanel) Draw(s tcell.Screen) {
 	// button overpainting the tail of this one. Relaying out here keeps the two
 	// in step; it is a handful of width measurements.
 	p.refreshToolLabels()
-	layoutToolButtons(p.sel, p.selRect, "")
-	layoutToolButtons(p.acts, p.actRect, "")
-	p.drawToolRow(s, p.selRect, p.sel, p.selDisabled)
-	p.drawToolRow(s, p.actRect, p.acts, p.actDisabled)
+	p.layoutToolRows()
+	p.drawToolRow(s, p.selRect, p.sel, &p.selMore, p.selDisabled)
+	p.drawToolRow(s, p.actRect, p.acts, &p.actMore, p.actDisabled)
 	p.drawChart(s)
 	p.chartSplit.Draw(s)
 	p.planSplit.Draw(s)
 	p.grid.Draw(s)
 	p.plansGrid.Draw(s)
+	// Last, over both grids: a cell's context menu or value popup is drawn
+	// outside the grid's own rect, and without this the menu a right-click
+	// opens is invisible while still eating every key until Escape.
+	p.grid.DrawOverlay(s)
+	p.plansGrid.DrawOverlay(s)
 }
 
 // drawToolRow paints one toolbar row in the tooltip scheme Activity Monitor's
 // buttons use, dimming each cell the panel would refuse a click on. The dimmed
 // state and the refusal are the same predicate, so a cell that looks inert is.
-func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, tools []toolButton, disabled func(int) bool) {
+func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, tools []toolButton, more *toolButton, disabled func(int) bool) {
 	if r.H != 1 {
 		return
 	}
@@ -48,11 +52,24 @@ func (p *QueryStorePanel) drawToolRow(s tcell.Screen, r core.Rect, tools []toolB
 		core.FillRect(s, t.rect, ' ', style)
 		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
 	}
+	// The stand-in for whatever did not fit. Dimmed only while the whole row
+	// is: what it holds is gated item by item once the menu is open.
+	if more.rect.IsZero() {
+		return
+	}
+	style := theme.StyleTooltip()
+	if p.busy {
+		style = style.Foreground(pal.TextDim)
+	}
+	core.FillRect(s, more.rect, ' ', style)
+	core.DrawText(s, more.rect.X+1, more.rect.Y, style, more.label)
 }
 
-// drawChart plots the report's rows, tallest first for the five reports that
-// rank, chronologically for Overall Resource Consumption. Bars beyond the
-// pane's height are dropped by BarChart itself.
+// drawChart plots the report's rows in the order the loader produced them:
+// tallest first for the five that rank, chronologically for Overall Resource
+// Consumption, and most recently executed first for Tracked Queries — which is
+// a pinned list rather than a ranking, so its bars are deliberately unsorted.
+// Bars beyond the pane's height are dropped by BarChart itself.
 func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 	r := p.chartRect
 	if r.W <= 0 || r.H <= 0 {

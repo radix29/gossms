@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -222,5 +223,88 @@ func TestRefreshButtonMissDelegatesToGrid(t *testing.T) {
 	db.HandleMouse(tcell.NewEventMouse(2, db.refreshRect.Y+4, tcell.Button1, 0))
 	if db.grid.SelectedRow() != 1 {
 		t.Errorf("grid selected row = %d, want 1 (press should reach the grid)", db.grid.SelectedRow())
+	}
+}
+
+// TestDetailBrowserShowValueReadsTheStatementByQueryID. The Detail Browser's
+// grid holds only [][]string, shared with every other node type, so the
+// flattened cell is all it has — and opening that cell in a query panel ships
+// a batch whose FROM clause is inside a line comment. The row's query id is
+// the handle back to the real statement.
+func TestDetailBrowserShowValueReadsTheStatementByQueryID(t *testing.T) {
+	const stored = "SELECT 1 -- pick one\nFROM dbo.t"
+
+	a := newTestApp()
+	sc, inst := newFakeConn(t, fakeResponse{
+		match: "WHERE  q.query_id = @p1", cols: 2,
+		rows: [][]driver.Value{{stored, "dbo.q"}},
+	})
+	db := a.newDetailBrowser()
+
+	node := &explorerNode{
+		label: "Top Resource Consuming Queries",
+		data: nodeData{Type: NodeQueryStoreReport, Name: "Top Resource Consuming Queries",
+			DBName: "appdb", conn: sc},
+	}
+	flat := queryStoreOneLine(stored)
+	db.cache[node] = &detailResult{
+		cols: []string{qsQueryIDColumn, "Object", qsQueryColumn},
+		rows: [][]string{{"7", "dbo.p", "SELECT 9"}, {"12", "dbo.q", flat}},
+	}
+	db.ShowNodeDetails(a, node)
+
+	// The *second* row: a hook that ignored the cursor and read row 0 would
+	// pass with the selection left at the top.
+	queryCol := db.grid.ColumnIndex(qsQueryColumn)
+	db.grid.SetSelectedCell(1, queryCol)
+
+	before := a.panels.Count()
+	if !db.showQueryStoreValue(a, queryCol, qsQueryColumn, flat) {
+		t.Fatal("the hook declined the Query column of a Query Store report")
+	}
+	drainUntil(t, a, func() bool { return a.panels.Count() > before }, "the statement panel to open")
+
+	qp, ok := a.panels.PanelAt(a.panels.Count() - 1).(*QueryPanel)
+	if !ok {
+		t.Fatalf("the new panel is %T, want a query panel", a.panels.PanelAt(a.panels.Count()-1))
+	}
+	if got := qp.editor.Text(); got != stored {
+		t.Errorf("the panel holds %q, want the stored statement %q", got, stored)
+	}
+	// It asked about query 12, not query 7 — a hook that read row 0 gets the
+	// same answer out of this fake, so the bound id is the only witness.
+	args, ok := inst.ReadArgs("WHERE  q.query_id = @p1")
+	if !ok || len(args) != 1 {
+		t.Fatalf("the text read bound %v, want one parameter", args)
+	}
+	if got, _ := args[0].Value.(int64); got != 12 {
+		t.Errorf("the text read asked about query %v, want 12 — the selected row", args[0].Value)
+	}
+}
+
+// TestDetailBrowserShowValueLeavesOtherGridsAlone: every other node type's
+// grid has no query id to read by, and its cells are the only text there is.
+func TestDetailBrowserShowValueLeavesOtherGridsAlone(t *testing.T) {
+	a := newTestApp()
+	db := a.newDetailBrowser()
+	node, _ := newConnectedNode("a-column")
+	db.cache[node] = &detailResult{
+		cols: []string{qsQueryIDColumn, qsQueryColumn},
+		rows: [][]string{{"12", "SELECT 1"}},
+	}
+	db.ShowNodeDetails(a, node)
+	db.grid.SetSelectedCell(0, 1)
+
+	before := a.panels.Count()
+	// Claimed by showSQLCellValue's own path — which opens the cell, because
+	// on a grid that is not a Query Store report the cell is the whole value.
+	db.showQueryStoreValue(a, 1, qsQueryColumn, "SELECT 1")
+	if a.panels.Count() != before+1 {
+		t.Fatalf("panel count %d, want %d", a.panels.Count(), before+1)
+	}
+	if qp, ok := a.panels.PanelAt(a.panels.Count() - 1).(*QueryPanel); ok {
+		if got := qp.editor.Text(); got != "SELECT 1" {
+			t.Errorf("the panel holds %q, want the cell", got)
+		}
 	}
 }

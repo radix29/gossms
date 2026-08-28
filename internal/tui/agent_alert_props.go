@@ -33,11 +33,8 @@ func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 // showAlertProperties opens Alert Properties for a known connection and
 // alert name — the Object Explorer context menu's entry point.
 func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "msdb", "Alert Properties", "Alert: "+alertName, "Server: "+sc.Opts.Server,
-		alertPropPages(sc, alertName))
+		func() []propPage { return alertPropPages(sc, alertName) })
 }
 
 func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {

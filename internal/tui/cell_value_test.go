@@ -100,3 +100,40 @@ func TestClassifyCellValueLargeValue(t *testing.T) {
 		t.Errorf("a large plain-text value classified as %v, want cellPlain", got)
 	}
 }
+
+// TestShowSQLCellValueOpensTheWholeStatement. A Query Store report cell holds
+// the whole statement and only the grid's column width cuts it short, so
+// "Show Value" on the Query column has to open all of it in a query panel —
+// and leave every other column to the grid's own popup.
+func TestShowSQLCellValueOpensTheWholeStatement(t *testing.T) {
+	a := newTestApp()
+	stmt := "SELECT " + strings.Repeat("x", 500) + " FROM dbo.t"
+
+	if a.showSQLCellValue(3, "Object", stmt) {
+		t.Error("an Object cell was claimed; only the Query column opens a panel")
+	}
+	if a.showSQLCellValue(7, qsQueryColumn, "   ") {
+		t.Error("a blank Query cell opened a panel with nothing in it")
+	}
+	if a.panels.Count() != 0 {
+		t.Fatalf("%d panels opened before the Query cell", a.panels.Count())
+	}
+
+	if !a.showSQLCellValue(7, qsQueryColumn, stmt) {
+		t.Fatal("the Query cell was not claimed")
+	}
+	if a.panels.Count() != 1 {
+		t.Fatalf("panels = %d, want the one opened for the statement", a.panels.Count())
+	}
+	qp, ok := a.panels.PanelAt(0).(*QueryPanel)
+	if !ok {
+		t.Fatalf("panel is %T, want a *QueryPanel", a.panels.PanelAt(0))
+	}
+	if got := qp.editor.Text(); got != stmt {
+		t.Errorf("panel holds %d runes, want the whole %d-rune statement", len([]rune(got)), len([]rune(stmt)))
+	}
+	// A panel opened to read a value must not prompt to save on close.
+	if qp.Dirty() {
+		t.Error("the panel was born dirty")
+	}
+}

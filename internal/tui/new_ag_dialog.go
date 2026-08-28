@@ -124,6 +124,20 @@ type NewAGDialog struct {
 	backupPreference  string
 	commitGeneralPage func()
 	commitBackupPage  func()
+
+	// peerFor resolves a replica's connection, defaulting to db.ServerConn.Peer.
+	// A seam for tests, which cannot open a second connection — the same one
+	// new_endpoint_dialog.go's peerServerFor is.
+	peerFor func(ctx context.Context, name string) (*db.ServerConn, error)
+}
+
+// peer resolves a replica's connection through peerFor, or Peer when nothing
+// has replaced it.
+func (d *NewAGDialog) peer(ctx context.Context, name string) (*db.ServerConn, error) {
+	if d.peerFor != nil {
+		return d.peerFor(ctx, name)
+	}
+	return d.sc.Peer(ctx, name)
 }
 
 // NewNewAGDialog creates the dialog and wires its callbacks.
@@ -254,17 +268,99 @@ func (d *NewAGDialog) request() (gosmo.CreateAvailabilityGroupRequest, error) {
 	return req, nil
 }
 
-// createGroup is the whole pipeline: CREATE here, then JOIN and (for automatic
-// seeding) GRANT CREATE ANY DATABASE on each secondary in turn.
+// replicaJoinProblem reports why r could not join the group being created, or
+// "" if nothing is in its way. Everything it asks about is a state that makes
+// the JOIN fail *after* the CREATE has already succeeded — see
+// preflightReplicas.
+func (d *NewAGDialog) replicaJoinProblem(ctx context.Context, r *newAGReplica) string {
+	peer, err := d.peer(ctx, r.name)
+	if err != nil {
+		return fmt.Sprintf("%s cannot be reached: %v", r.name, err)
+	}
+	if info := peer.Server.Info(); info != nil && !info.IsHADREnabled {
+		return fmt.Sprintf("Always On is not enabled on %s, so it cannot host a replica", r.name)
+	}
+	ep, err := replicaEndpoint(ctx, peer)
+	if err != nil {
+		return err.Error()
+	}
+	// The URL the CREATE is about to write was read when the replica was
+	// added, which may have been minutes ago on an instance whose endpoint has
+	// since been recreated on another port. A group naming the old one is
+	// created, looks right, and never connects.
+	if !strings.EqualFold(ep.URL(), r.endpointURL) {
+		return fmt.Sprintf("%s's endpoint is now %s, not %s — remove the replica and add it again", r.name, ep.URL(), r.endpointURL)
+	}
+	// Allows, not Has: the fail-open rule. A peer whose probe could not run
+	// answers unknown and is let through to try the JOIN, exactly as before
+	// this check existed.
+	if !peer.Capabilities().Allows("ALTER ANY AVAILABILITY GROUP") {
+		return fmt.Sprintf("%s's login may not join an availability group — it needs ALTER ANY AVAILABILITY GROUP there", r.name)
+	}
+	return ""
+}
+
+// preflightReplicas asks every secondary whether it could join, before
+// anything is written.
 //
-// A secondary that fails to join leaves a real, created group behind with that
-// replica disconnected — which is why the error names the instance and says the
-// group exists. Rolling back would mean dropping a group the user asked for on
-// the strength of one unreachable peer.
+// This is what keeps a half-built group from existing at all. CREATE is one
+// statement on the primary, but the JOIN that follows runs on each secondary,
+// and every ordinary reason it fails — the peer down, Always On off there, no
+// endpoint or a stopped one, no rights — is knowable first. Checked here, the
+// run is refused with nothing created; checked only by attempting it, the user
+// is left with a real group missing a replica.
+//
+// It deliberately does not re-check the primary: a primary that has become
+// unable to host the group fails the CREATE itself, and leaves nothing behind.
+//
+// Every replica is asked even though only the first problem is shown, so the
+// count is honest — being sent back three times, once per instance, is worse
+// than being told there are three.
+func (d *NewAGDialog) preflightReplicas(ctx context.Context) error {
+	if gosmo.Scripting(ctx) {
+		// Script Changes must work with no peer reachable at all: the script
+		// is what the user takes to those instances.
+		return nil
+	}
+	var problems []string
+	for _, r := range d.replicas {
+		if r.isPrimary {
+			continue
+		}
+		if p := d.replicaJoinProblem(ctx, r); p != "" {
+			problems = append(problems, p)
+		}
+	}
+	switch len(problems) {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("%s. Nothing was created", problems[0])
+	default:
+		return fmt.Errorf("%s (and %d more problem(s) with other replicas). Nothing was created", problems[0], len(problems)-1)
+	}
+}
+
+// createGroup is the whole pipeline: preflight every secondary, CREATE here,
+// then JOIN and (for automatic seeding) GRANT CREATE ANY DATABASE on each
+// secondary in turn.
+//
+// The preflight is what makes a partly created group rare rather than routine —
+// see preflightReplicas. It cannot make it impossible: a peer can still die
+// between the check and the JOIN, and that leaves a real, created group with
+// that replica disconnected, which is why the errors below name the instance
+// and say the group exists. Nothing is rolled back. Dropping the group would
+// mean destroying what the user asked for on the strength of one unreachable
+// peer, and a DROP on the primary cannot reach a secondary that has already
+// joined and is now unreachable — its copy of the group's metadata would
+// survive the rollback and need a local DROP anyway.
 func (d *NewAGDialog) createGroup(ctx context.Context) error {
 	sc := d.sc
 	req, err := d.request()
 	if err != nil {
+		return err
+	}
+	if err := d.preflightReplicas(ctx); err != nil {
 		return err
 	}
 	if _, err := sc.Server.CreateAvailabilityGroupContext(ctx, req); err != nil {
@@ -276,7 +372,7 @@ func (d *NewAGDialog) createGroup(ctx context.Context) error {
 		}
 		target := sc.Server
 		if !gosmo.Scripting(ctx) {
-			peer, err := sc.Peer(ctx, r.name)
+			peer, err := d.peer(ctx, r.name)
 			if err != nil {
 				return fmt.Errorf("availability group %q was created, but connecting to %s to join it failed: %w", req.Name, r.name, err)
 			}

@@ -11,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -31,10 +32,10 @@ import (
 // ran". The Query Store panel makes this selectable.
 const queryStoreDetailWindow = 24 * time.Hour
 
-// queryStoreQueryTextWidth is how much of a query's text a grid cell shows.
-// The full text of a generated statement runs to kilobytes and would push
-// every other column off the pane.
-const queryStoreQueryTextWidth = 80
+// qsQueryColumn is the report column holding a query's text. Named because
+// "Show Value" on it opens the statement in its own query panel — see
+// App.showSQLCellValue.
+const qsQueryColumn = "Query"
 
 // qsResultRow is one row of a report: the cells the grid draws, the bar the
 // chart plots it as, and the query it is about.
@@ -56,6 +57,15 @@ type qsResultRow struct {
 	// Statistics' categories). A zero disables the plan pane and both plan
 	// actions, which have nothing to act on.
 	queryID int64
+
+	// queryText is the statement exactly as Query Store holds it, newlines and
+	// all — what "Show Value" on the Query column opens in a query panel.
+	// Kept beside the flattened cell rather than read back out of it:
+	// queryStoreOneLine collapses the statement onto one line, which turns a
+	// trailing `-- comment` into one that swallows every line after it, so the
+	// cell is a display rendering and never a statement to run. Empty where the
+	// report's rows are not queries.
+	queryText string
 }
 
 // qsResult is one report's output: the grid's columns, its rows, and what the
@@ -69,6 +79,23 @@ type qsResult struct {
 	// the variation rather than the metric itself. Set by the loader that
 	// filled value, so the axis can never disagree with the bars.
 	chartLabel string
+
+	// valueLabel names what the *value column* carries, for the status line
+	// above the rows. Set by the loader from the same string it gave the column
+	// header, for the reason chartLabel is: the panel's own metric and statistic
+	// are not the authority. Query Wait Statistics is the case that proves it —
+	// Query Store records wait time and nothing else per category, so the metric
+	// selector does not reach it, and a status line built from p.metric read
+	// "Avg CPU time" over a grid of milliseconds. Empty where the rows are not
+	// a measurement.
+	valueLabel string
+
+	// note replaces the whole status line where the rows are an explanation
+	// rather than a report — Query Store switched off, nothing tracked yet, a
+	// server too old for wait statistics. Those grids counted their own
+	// explanation as rows and claimed a metric and a window for a query that
+	// never ran.
+	note string
 }
 
 // cells renders the result as the Detail Browser's row table.
@@ -96,6 +123,56 @@ func (r qsResult) bars(buf []charts.Bar, color tcell.Color) []charts.Bar {
 	return out
 }
 
+// qsFilters is the set of toolbar controls one report honours — see
+// queryStoreReport.filters.
+//
+// "Honours" means the control changes what the report returns, not merely that
+// the option reaches gosmo: Tracked Queries carries a TOP like every per-query
+// report, but its row count is the size of the pinned set either way, so the
+// Top selector is dead there and is gated off.
+type qsFilters uint8
+
+const (
+	// qsFilterExecs is gosmo's MinExecCount, the HAVING the ranking reports
+	// carry. qsFilterRegression is MinRegressionPct, which needs the two
+	// windows only Regressed Queries reads.
+	qsFilterExecs qsFilters = 1 << iota
+	qsFilterRegression
+	// qsFilterTracked marks the one report whose rows are the queries the user
+	// pinned rather than a ranking — it is read with Options.QueryIDs, and the
+	// caller has to supply them.
+	qsFilterTracked
+	// qsFilterTop is Options.Top. Overall Resource Consumption ignores it
+	// outright — it was asked for a time range, and dropping intervals out of
+	// the middle of one would misdraw the chart — and Tracked Queries cannot be
+	// capped below the size of the pinned set.
+	qsFilterTop
+	// qsFilterMetric is Options.Metric. Query Wait Statistics is the one report
+	// it does not reach: Query Store records wait time per category and nothing
+	// else, so there is no runtime-stats column for the metric to select.
+	qsFilterMetric
+)
+
+// honours reports whether this report's query carries filter f.
+func (r queryStoreReport) honours(f qsFilters) bool { return r.filters&f != 0 }
+
+// effectiveOptions is the window this report's query really reads, which is not
+// always the one the caller asked for: Regressed Queries compares the two
+// halves of it — see queryStoreRegressionOptions.
+//
+// Applied by the caller, exactly once, rather than inside the loader. The plan
+// pane beside the rows and the status line above them both have to know the
+// range the rows actually cover, and reproducing the split at each of those
+// would be three copies of one rule free to disagree. It is not idempotent —
+// a second application splits the recent half again — so a caller running a
+// report applies it and the loader takes the window as given.
+func (r queryStoreReport) effectiveOptions(opts gosmo.QueryStoreReportOptions) gosmo.QueryStoreReportOptions {
+	if r.honours(qsFilterRegression) {
+		return queryStoreRegressionOptions(opts)
+	}
+	return opts
+}
+
 // queryStoreReport is one of the seven views: its title, the sentence the
 // folder's own grid describes it with, the statistic it is read with where
 // nothing chooses one, and the loader behind it.
@@ -106,6 +183,17 @@ func (r qsResult) bars(buf []charts.Bar, color tcell.Color) []charts.Bar {
 type queryStoreReport struct {
 	Title       string
 	Description string
+
+	// filters are the toolbar controls that change what this report returns.
+	// A report is listed here rather than the panel switching on its title,
+	// because the answer is a property of the query behind it: Overall
+	// Resource Consumption groups by interval and Query Wait Statistics by
+	// wait category, so neither has an execution count per query to floor.
+	//
+	// The panel dims every control a report does not honour and says why —
+	// a selector that changes a number the next read ignores is the silent
+	// wrong-thing the context-gating rule exists to prevent.
+	filters qsFilters
 
 	// defaultStat is what the report means by default — Total for the two
 	// that rank by accumulated cost, Avg for the five that rank by cost per
@@ -121,25 +209,28 @@ type queryStoreReport struct {
 var queryStoreReports = []queryStoreReport{
 	{"Regressed Queries",
 		"Queries whose average duration grew across the reported window",
+		qsFilterExecs | qsFilterRegression | qsFilterTop | qsFilterMetric,
 		gosmo.QSStatAvg, regressedQueriesReport},
 	{"Overall Resource Consumption",
 		"Total duration and executions per Query Store interval",
-		gosmo.QSStatTotal, overallConsumptionReport},
+		qsFilterMetric, gosmo.QSStatTotal, overallConsumptionReport},
 	{"Top Resource Consuming Queries",
 		"Queries ranked by total duration",
-		gosmo.QSStatTotal, topResourceQueriesReport},
+		qsFilterExecs | qsFilterTop | qsFilterMetric, gosmo.QSStatTotal, topResourceQueriesReport},
 	{"Queries With Forced Plans",
 		"Queries pinned to one plan, and which plan",
-		gosmo.QSStatAvg, forcedPlanQueriesReport},
+		qsFilterExecs | qsFilterTop | qsFilterMetric, gosmo.QSStatAvg, forcedPlanQueriesReport},
 	{"Queries With High Variation",
 		"Queries whose duration is least predictable, by coefficient of variation",
-		gosmo.QSStatAvg, highVariationQueriesReport},
+		qsFilterExecs | qsFilterTop | qsFilterMetric, gosmo.QSStatAvg, highVariationQueriesReport},
 	{"Query Wait Statistics",
 		"Wait time by category, for queries Query Store captured",
-		gosmo.QSStatTotal, queryWaitStatisticsReport},
+		qsFilterTop, gosmo.QSStatTotal, queryWaitStatisticsReport},
+	// No floor and no cap: this view shows the queries you pinned, and both
+	// would silently drop one. The Statistic and Window selectors still apply.
 	{"Tracked Queries",
-		"The costliest captured queries and their plans, most recently executed first",
-		gosmo.QSStatAvg, trackedQueriesReport},
+		"The queries pinned to this view, most recently executed first",
+		qsFilterTracked | qsFilterMetric, gosmo.QSStatAvg, trackedQueriesReport},
 }
 
 // queryStoreReportTitles is the leaf label for each report, in folder order.
@@ -211,16 +302,42 @@ func queryStoreReportDetail(ctx context.Context, sc *db.ServerConn, dbName, titl
 		return propertyValueColumns, queryStoreOffRows(info), nil
 	}
 	to := time.Now()
-	res, err := report.load(ctx, d, gosmo.QueryStoreReportOptions{
+	res, err := report.load(ctx, d, report.effectiveOptions(gosmo.QueryStoreReportOptions{
 		Metric:    gosmo.QSMetricDuration,
 		Statistic: report.defaultStat,
 		From:      to.Add(-queryStoreDetailWindow),
 		To:        to,
-	})
+		QueryIDs:  trackedIDsFor(report, sc, dbName),
+	}))
 	if err != nil {
 		return nil, nil, err
 	}
 	return res.columns, res.cells(), nil
+}
+
+// qsQueryIDColumn is the report column holding a query's id. Named because the
+// Detail Browser addresses a row by it to re-read that query's statement — see
+// DetailBrowser.showQueryStoreValue.
+const qsQueryIDColumn = "Query ID"
+
+// queryStoreQueryText reads one query's statement as Query Store holds it.
+// The Detail Browser's grid carries only the flattened cell, so "Show Value"
+// there asks the server for the real text rather than opening a rendering that
+// a `-- comment` has turned into a mostly commented-out batch.
+func queryStoreQueryText(ctx context.Context, sc *db.ServerConn, dbName string, queryID int64) (string, error) {
+	text, _, err := sc.Server.Database(dbName).QueryStoreQueryTextContext(ctx, queryID)
+	return text, err
+}
+
+// trackedIDsFor is the tracked-query set a report reads with, empty for the six
+// that rank the whole database. Read from the file-backed set rather than
+// passed in, so the Detail Browser's grid and the panel — which hold different
+// connections and never see each other — show the same list.
+func trackedIDsFor(report queryStoreReport, sc *db.ServerConn, dbName string) []int64 {
+	if !report.honours(qsFilterTracked) || sc == nil {
+		return nil
+	}
+	return config.Tracked().IDs(sc.Opts.Server, dbName)
 }
 
 // queryStoreOffRows explains a Query Store that is not collecting, and says
@@ -256,7 +373,7 @@ func queryStoreStateText(info *gosmo.QueryStoreInfo) string {
 // queryStoreQueryColumns is the column list every per-query report shares,
 // with the value column named by the caller.
 func queryStoreQueryColumns(value string) []string {
-	return []string{"Query ID", "Object", value, "Executions", "Plans", "Forced Plan", "Last Execution", "Query"}
+	return []string{"Query ID", "Object", value, "Executions", "Plans", "Forced Plan", "Last Execution", qsQueryColumn}
 }
 
 // queryStoreQueryRow renders a QSQueryStat under queryStoreQueryColumns.
@@ -276,13 +393,15 @@ func queryStoreQueryRow(s *gosmo.QSQueryStat, value string) []string {
 // queryStatResult renders a per-query report under the shared columns, each
 // row plotting the value it was ranked by.
 func queryStatResult(stats []*gosmo.QSQueryStat, opts gosmo.QueryStoreReportOptions) qsResult {
-	res := qsResult{columns: queryStoreQueryColumns(qsValueLabel(opts)), chartLabel: qsValueLabel(opts)}
+	label := qsValueLabel(opts)
+	res := qsResult{columns: queryStoreQueryColumns(label), chartLabel: label, valueLabel: label}
 	for _, s := range stats {
 		res.rows = append(res.rows, qsResultRow{
-			cells:   queryStoreQueryRow(s, formatQSValue(opts.Metric, s.Value)),
-			label:   qsQueryBarLabel(s),
-			value:   s.Value,
-			queryID: s.QueryID,
+			cells:     queryStoreQueryRow(s, formatQSValue(opts.Metric, s.Value)),
+			label:     qsQueryBarLabel(s),
+			value:     s.Value,
+			queryID:   s.QueryID,
+			queryText: s.QueryText,
 		})
 	}
 	return res
@@ -304,15 +423,68 @@ func forcedPlanQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.
 	return queryStatResult(stats, opts), nil
 }
 
+// trackedQueriesReport reports the queries the user pinned, and only those.
+// The ids arrive in Options.QueryIDs — the caller holds the set, because the
+// Detail Browser's grid and the panel must show the same list and neither owns
+// the other.
 func trackedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
+	if len(opts.QueryIDs) == 0 {
+		return qsNoTrackedQueriesResult(), nil
+	}
+	// Top would otherwise cap a set larger than the toolbar's row count and
+	// drop tracked queries out of the one report that is not a ranking.
+	if opts.Top < len(opts.QueryIDs) {
+		opts.Top = len(opts.QueryIDs)
+	}
 	stats, err := d.QueryStoreTopResourceQueriesContext(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
-	// Most recently executed first: this is the list a user picks a query to
-	// track *from*, so recency orders it better than cost does.
+	// Most recently executed first: a tracked list is read to see what has
+	// happened lately, not to rank cost — the cost column is right there.
 	sortByLastExecution(stats)
-	return queryStatResult(stats, opts), nil
+	res := queryStatResult(stats, opts)
+	res.rows = append(res.rows, qsMissingTrackedRows(stats, opts)...)
+	return res, nil
+}
+
+// qsMissingTrackedRows accounts for every tracked id the report did not
+// return. A query drops out for two very different reasons — it did not run in
+// the window, or Query Store no longer holds it at all — and silently showing
+// four rows for five tracked queries reads as a bug in the report.
+func qsMissingTrackedRows(stats []*gosmo.QSQueryStat, opts gosmo.QueryStoreReportOptions) []qsResultRow {
+	var rows []qsResultRow
+	for _, id := range opts.QueryIDs {
+		if slices.ContainsFunc(stats, func(s *gosmo.QSQueryStat) bool { return s.QueryID == id }) {
+			continue
+		}
+		cells := make([]string, len(queryStoreQueryColumns(qsValueLabel(opts))))
+		for i := range cells {
+			cells[i] = "-"
+		}
+		cells[0] = strconv.FormatInt(id, 10)
+		cells[len(cells)-1] = "Not in Query Store for this window"
+		// queryID is set even though there is nothing to read for it: it is
+		// what Untrack Query acts on, and a row without one leaves a query
+		// that has left the store pinned with no way to unpin it — the row is
+		// the only place it still appears. The plan pane answers "0 plans",
+		// which is what is true.
+		rows = append(rows, qsResultRow{cells: cells, queryID: id})
+	}
+	return rows
+}
+
+// qsNoTrackedQueriesResult is what the view shows before anything is tracked —
+// the empty grid it used to show reads as a report that failed.
+func qsNoTrackedQueriesResult() qsResult {
+	return qsResult{
+		columns: propertyValueColumns,
+		rows: []qsResultRow{
+			{cells: []string{"Tracked queries", "None yet"}},
+			{cells: []string{"To track one", "Select a query in any report and press Track Query"}},
+		},
+		note: "Tracked Queries — nothing is tracked yet",
+	}
 }
 
 // queryStoreRegressionOptions compares the second half of opts' window
@@ -338,14 +510,18 @@ func queryStoreRegressionOptions(opts gosmo.QueryStoreReportOptions) gosmo.Query
 	return opts
 }
 
+// regressedQueriesReport reads the window it is given. The split into two
+// halves is queryStoreRegressionOptions', applied by the caller through
+// queryStoreReport.effectiveOptions — applying it here as well would split the
+// recent half a second time.
 func regressedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	opts = queryStoreRegressionOptions(opts)
 	stats, err := d.QueryStoreRegressedQueriesContext(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
 	res := qsResult{columns: []string{"Query ID", "Object", qsValueLabel(opts), "Baseline", "Regression",
-		"Executions", "Baseline Execs", "Query"}, chartLabel: "Regression in " + qsValueLabel(opts)}
+		"Executions", "Baseline Execs", qsQueryColumn},
+		chartLabel: "Regression in " + qsValueLabel(opts), valueLabel: qsValueLabel(opts)}
 	for _, s := range stats {
 		res.rows = append(res.rows, qsResultRow{
 			cells: []string{
@@ -362,8 +538,9 @@ func regressedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.Q
 			// The regression, not the value: this report is ranked by how much
 			// a query grew, and plotting the absolute cost would put the
 			// slowest query at the top of a chart about change.
-			value:   s.Regression,
-			queryID: s.QueryID,
+			value:     s.Regression,
+			queryID:   s.QueryID,
+			queryText: s.QueryText,
 		})
 	}
 	return res, nil
@@ -375,7 +552,8 @@ func highVariationQueriesReport(ctx context.Context, d *gosmo.Database, opts gos
 		return qsResult{}, err
 	}
 	res := qsResult{columns: []string{"Query ID", "Object", "Variation", qsValueLabel(opts), "Executions",
-		"Plans", "Forced Plan", "Query"}, chartLabel: "Variation (stdev / avg)"}
+		"Plans", "Forced Plan", qsQueryColumn},
+		chartLabel: "Variation (stdev / avg)", valueLabel: qsValueLabel(opts)}
 	for _, s := range stats {
 		res.rows = append(res.rows, qsResultRow{
 			cells: []string{
@@ -388,9 +566,10 @@ func highVariationQueriesReport(ctx context.Context, d *gosmo.Database, opts gos
 				planIDOrDash(s.ForcedPlanID),
 				queryStoreOneLine(s.QueryText),
 			},
-			label:   qsQueryBarLabel(s),
-			value:   s.Variation,
-			queryID: s.QueryID,
+			label:     qsQueryBarLabel(s),
+			value:     s.Variation,
+			queryID:   s.QueryID,
+			queryText: s.QueryText,
 		})
 	}
 	return res, nil
@@ -402,7 +581,7 @@ func overallConsumptionReport(ctx context.Context, d *gosmo.Database, opts gosmo
 		return qsResult{}, err
 	}
 	res := qsResult{columns: []string{"Interval Start", "Interval End", "Executions", qsValueLabel(opts)},
-		chartLabel: qsValueLabel(opts)}
+		chartLabel: qsValueLabel(opts), valueLabel: qsValueLabel(opts)}
 	for _, iv := range intervals {
 		res.rows = append(res.rows, qsResultRow{
 			cells: []string{
@@ -423,6 +602,7 @@ func queryWaitStatisticsReport(ctx context.Context, d *gosmo.Database, opts gosm
 		return qsResult{
 			columns: propertyValueColumns,
 			rows:    []qsResultRow{{cells: []string{"Query wait statistics", "Requires SQL Server 2017 or later"}}},
+			note:    "Query wait statistics require SQL Server 2017 or later",
 		}, nil
 	}
 	// The metric selects a runtime-stats column, and wait statistics have
@@ -432,8 +612,12 @@ func queryWaitStatisticsReport(ctx context.Context, d *gosmo.Database, opts gosm
 	if err != nil {
 		return qsResult{}, err
 	}
-	res := qsResult{columns: []string{"Wait Category", string(qsStatistic(opts)) + " Wait Time", "Executions"},
-		chartLabel: string(qsStatistic(opts)) + " wait time (ms)"}
+	// The value column, the chart axis and the status line all name wait time
+	// rather than the metric — from one expression, so none of the three can
+	// start claiming the metric selector reached this report.
+	waitLabel := string(qsStatistic(opts)) + " Wait Time"
+	res := qsResult{columns: []string{"Wait Category", waitLabel, "Executions"},
+		chartLabel: waitLabel + " (ms)", valueLabel: waitLabel}
 	for _, w := range waits {
 		res.rows = append(res.rows, qsResultRow{
 			cells: []string{
@@ -513,9 +697,12 @@ func planIDOrDash(id int64) string {
 // queryStoreOneLine flattens a query's text onto one grid line. Query Store
 // keeps the statement exactly as it was submitted, newlines and indentation
 // included, and a raw newline in a grid cell breaks the row it is in.
+//
+// The text is not cut short: DataGrid clamps the column's width and truncates
+// what it draws, so the cell keeps the whole statement for "Show Value" to
+// open in a query panel.
 func queryStoreOneLine(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	return core.Truncate(text, queryStoreQueryTextWidth)
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // sortByLastExecution orders stats most recently executed first.

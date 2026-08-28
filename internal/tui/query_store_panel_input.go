@@ -164,11 +164,19 @@ func (p *QueryStorePanel) HandleMouse(ev *tcell.EventMouse) bool {
 func (p *QueryStorePanel) handleToolbarPress(mx, my int) bool {
 	switch {
 	case p.selRect.H == 1 && my == p.selRect.Y:
+		if p.selMore.rect.Contains(mx, my) {
+			p.showOverflowMenu(p.selMore.rect, p.sel, p.hiddenSel, p.selDisabled, p.selReason, p.runSel)
+			return true
+		}
 		if i := toolButtonAt(p.sel, mx, my); i >= 0 {
 			p.runSel(i)
 		}
 		return true
 	case p.actRect.H == 1 && my == p.actRect.Y:
+		if p.actMore.rect.Contains(mx, my) {
+			p.showOverflowMenu(p.actMore.rect, p.acts, p.hiddenActs, p.actDisabled, p.actReason, p.runAct)
+			return true
+		}
 		if i := toolButtonAt(p.acts, mx, my); i >= 0 {
 			p.runAct(i)
 		}

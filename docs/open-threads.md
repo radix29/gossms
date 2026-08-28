@@ -25,7 +25,22 @@ a settled question being reopened.
   environment and distribution caveats. Three of the four were closed in
   `v0.0.8` — Start/Stop Job read the job's state, Move Up / Move Down are on
   Job Properties > Steps, and a peer is reached with its own saved
-  credentials; the no-rollback of a partly created group stands.
+  credentials; the no-rollback of a partly created group stands, and is now a
+  decision taken deliberately rather than a gap — see the entry below.
+
+- **New Availability Group does not roll back a group whose CREATE succeeded,
+  and that is the decision.** Settled 2026-08-27, with the create-time
+  preflight built the same day (see `docs/journal.md`). Every ordinary reason a
+  secondary's JOIN fails is now checked *before* the CREATE — peer reachable,
+  Always On enabled there, endpoint present, STARTED and still at the address
+  the dialog recorded, rights to join — and any failure refuses with nothing
+  created. What survives is the peer that dies between the check and the JOIN,
+  and there the group is left alone: a rollback would destroy what the user
+  asked for on the strength of one unreachable instance, and it cannot even be
+  complete. Verified live on 2026-08-27 — a group dropped from the primary
+  stayed in the *secondary's* `sys.availability_groups` and needed a local
+  DROP there, so a rollback that cannot reach a joined secondary leaves exactly
+  the residue it exists to prevent.
 
 - **No gosmo `Drop*` write method carries `IF EXISTS`, and that is the
   decision, not an omission.** Settled 2026-08-13 after a review found the
@@ -899,26 +914,33 @@ numbering cached and hand it to the user the moment they flipped the selector.
 Built 2026-08-26 in three stages (see `docs/journal.md`). The seven SSMS views,
 the panel, and Force/Unforce Plan are in. What is not, and why:
 
-- **No plan comparison.** SSMS can put two plans of one query side by side and
-  highlight what differs. `planview` renders one plan; a comparison needs a
-  second view, a node-matching pass between two operator trees, and a diff
-  presentation. Item 25 of the todo's Phase 5 ("Live Query Statistics; Compare
-  Showplan") is where it belongs, not here.
-- **No regression threshold, and no minimum-execution floor in the UI.**
-  `QueryStoreReportOptions` carries `MinExecCount`, and the Regressed report
-  ranks by absolute growth with no floor, so a query that ran twice can outrank
-  one that ran ten thousand times. SSMS offers both as controls. Two more
-  selectors on an already two-row toolbar was the trade; the option is in gosmo
-  when a caller wants it.
-- **Tracked Queries does not track.** SSMS's view remembers the queries you
-  pinned to it, across sessions. Ours is the costliest captured queries ordered
-  by recency — the list you would *pick* one from. Persisting a per-database
-  set of query ids means a place to keep it (`config.json` is connection
-  profiles, not per-database state) and a story for ids that vanish when Query
-  Store is cleared.
+- ~~**No plan comparison.**~~ **Built** 2026-08-27 —
+  `showplan.CompareStatements` and `PlanComparePanel`, opened by the panel's
+  two-press Compare Plans. Two grids, not two plan graphs: an operator tile is
+  eighteen columns wide. Operators pair on physical operator plus object without
+  the index, so a seek that changed index reads as one changed row; a seek that
+  became a scan stays two one-sided rows, which is what happened. What is still
+  out: comparing a plan against a saved `.sqlplan`, and comparing two plans of
+  *different* queries — refused, since they have no operators in common to pair.
+- ~~**No regression threshold, and no minimum-execution floor in the UI.**~~
+  **Built** 2026-08-27, both pushed into the query. `MinRegressionPct` is new in
+  gosmo and is a percentage of the baseline, not an amount — the same report is
+  read under eleven metrics in four units. Which report carries which filter is
+  the `filters` field of `queryStoreReports`; a selector on a report whose query
+  drops it is dimmed and says so.
+- ~~**Tracked Queries does not track.**~~ **Built** 2026-08-27 —
+  `internal/config/tracked.go`, `tracked_queries.json` beside `config.json`,
+  keyed by server and database. A pinned query that has left the store keeps a
+  row saying so, carrying its id so it can still be unpinned. One known limit,
+  deliberate: the tree's Tracked Queries leaf is cached like every other Detail
+  Browser node, so a pin made in the panel shows there after a refresh.
 - **No "Configure" button on the panel.** Query Store's own settings are a
   Database Properties page, which is where SSMS puts them too; the folder's
   context menu opens it.
+- **No per-query time series.** gosmo's `QueryStoreTrackedQueryContext` returns
+  one query's per-plan values interval by interval — SSMS plots it under the
+  Tracked Queries view. Ours shows the tracked queries and their plans; the
+  series is read by nothing. Kept in gosmo deliberately (§ Changing gosmo).
 - **The panel reads on demand only** — no auto-refresh timer. Every read is
   one-shot and bounded, so nothing queues behind the shared host connection.
   F5 and the toolbar's Refresh are the whole story.
@@ -997,10 +1019,17 @@ Schema went in 2026-08-21 (see `docs/journal.md`). What is left out is:
 - **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
   wording explains what blocks each one; only Rename comes from the shared
   table. Availability groups likewise.
-- **No multi-select delete.** `controls.TreeView` has a single selection, so
-  SSMS's "Delete Object" dialog listing several objects has no equivalent. The
-  author's own answer to this is that it belongs in the Object Explorer Details
-  pane, whose grid already has block selection — not in the tree.
+- **Multi-select delete belongs in the Object Explorer Details pane, and is
+  not built there yet.** Settled 2026-08-27: this is a decision about *where*,
+  not a refusal. `controls.TreeView` has a single selection, so SSMS's "Delete
+  Object" dialog listing several objects will never come from the tree —
+  do not propose it there. The Details pane's grid already has block
+  selection, which is the whole reason it is the right host. What it does not
+  have is any write path at all: `DetailBrowser.HandleKey` forwards every key
+  straight to the grid and there is no context menu, so the pane's selection
+  feeds only the clipboard (`HasSelection`/`SelectedText`). Building this means
+  giving the pane its own action route and reusing the existing `objectOps`
+  table and permission gating per selected row, not a new delete path.
 - **The server does not say what blocks a column drop.** Verified live
   2026-08-21: `ALTER TABLE DROP COLUMN note failed because one or more objects
   access this column.` — no constraint, index or statistic named, even when a
@@ -1236,8 +1265,8 @@ remains of each is recorded here.
 
 ## Permission gating: what P3 deliberately leaves out
 
-Added 2026-08-25 with P3 of `docs/permissions-plan.md`. Each of these is a
-known limit of the gate layer, not an oversight.
+Added 2026-08-25 with the write-path phase of the permission work. Each of
+these is a known limit of the gate layer, not an oversight.
 
 - ~~**A read-only Properties page still *looks* editable.**~~ **Fixed**
   2026-08-26 — `propsheet.ReadOnlyDrawer`, an optional row capability
@@ -1247,44 +1276,62 @@ known limit of the gate layer, not an oversight.
   purpose. No page changed. See `docs/journal.md`, including the blank affinity
   grid and the 30-column label the live run caught.
 
-- **A schema-scoped Rename/Move/Delete is gated on rights that are sufficient,
-  not necessary.** SQL Server checks ALTER on the object's *schema*, which the
-  database-scope probe cannot see, so `objectOpRights` asks for database-wide
-  ALTER, CONTROL or ALTER ANY SCHEMA instead. A login granted ALTER on one
-  schema and nothing else loses those three menu items on objects it could in
-  fact rename; the query editor still works. Closing this needs a per-schema
-  probe, which is a query per schema per database.
+- ~~**A schema-scoped Rename/Move/Delete is gated on rights that are
+  sufficient, not necessary.**~~ **Fixed** 2026-08-27 — gosmo's database probe
+  gained a schema block (`ProbedSchemaPermissions`,
+  `DatabaseCapabilities.PermitsOnSchema`) that asks about every schema in one
+  pass, rather than the query-per-schema this entry costed it at, and
+  `objectOpRights` names `rightAlterOnSchema` beside the three database-wide
+  rights. A schema *node* is deliberately excluded — ALTER on a schema does not
+  permit dropping or renaming the schema itself. See `docs/journal.md`.
 
-- **SQL Agent's New Job / New Schedule / New Alert / New Operator are not
-  gated at all**, deliberately. What permits them is membership of
-  `SQLAgentUserRole` (or above) in msdb, which grants EXECUTE on individual
-  procedures — not the database-scope EXECUTE the probe reads. Gating on the
-  latter would withhold them from every legitimate Agent user, which is worse
-  than today's behaviour of failing at the server with a now-readable message.
-  A gate here needs the msdb role probe, which `gosmo.ProbedDatabaseRoles`
-  already collects; what is missing is deciding what "or above" means.
+- ~~**SQL Agent's New Job / New Schedule / New Alert / New Operator are not
+  gated at all.**~~ **Fixed** 2026-08-27. "Or above" needed no decision in the
+  end: the roles nest and `IS_ROLEMEMBER` resolves the nesting, so membership
+  of `SQLAgentUserRole` is the whole test. The work was elsewhere — a role test
+  cannot fail open, because `InRole` answers false for a role never asked about
+  exactly as it does for one the login is not in, so gosmo gained
+  `DatabaseCapabilities.Probed` and `requiredRight` gained a `membership`
+  variant that consults it. `CONTROL SERVER` is in the set because a sysadmin
+  is a member of no `SQLAgent*` role (it maps to `dbo`), and `isAgentNode`
+  primes msdb because an Agent node carries no `DBName`. See
+  `docs/journal.md`, including the note that first named the wrong right.
 
-- **A few write actions have no probe-visible right and are left ungated**:
-  the two Always Encrypted key dialogs (ALTER ANY COLUMN MASTER KEY), Security
-  Policies' Enable/Disable (ALTER ANY SECURITY POLICY), New Index and New
-  Statistics (ALTER on the table). Adding the permission names to gosmo's
-  `ProbedServerPermissions`/`ProbedDatabasePermissions` is the prerequisite,
-  and each costs a row in every probe.
+- ~~**A few write actions have no probe-visible right and are left
+  ungated**~~ **Fixed** 2026-08-27. gosmo's `ProbedDatabasePermissions` gained
+  `ALTER ANY COLUMN MASTER KEY`, `ALTER ANY COLUMN ENCRYPTION KEY` and
+  `ALTER ANY SECURITY POLICY`; the two Always Encrypted key dialogs and
+  Security Policies' Enable/Disable each gate on the one name they need, since
+  `HAS_PERMS_BY_NAME` folds in the wider permissions that imply it. New Index
+  and New Statistics take `objectWriteRights()` — the set Rename/Move/Delete
+  already used. See `docs/journal.md`, including the three facts the live
+  probe settled about which role carries what.
 
-- **`requiresText` repeats a role it has already named** — "Requires ALTER
-  (db_owner) or CONTROL (db_owner) or ALTER ANY DATABASE (dbcreator)" on
-  Database Properties. Accurate, and wordier than it needs to be.
+- ~~**An object-scoped grant is invisible to every gate here.**~~ **Fixed**
+  2026-08-27. The cost this was deferred on — "an OBJECT-scope block is a query
+  per object" — is true of `HAS_PERMS_BY_NAME` and false of the catalog:
+  gosmo's `objectCapabilityQuery` reads `sys.database_permissions` and
+  `sys.objects` against a recursive CTE of the login's principals, answering a
+  whole database in one pass (4 rows, 5 ms live) as a fourth part of the probe
+  that was already running. `ObjectPermissions` is deliberately *sparse* and
+  read only through `HasOnObject`, so `rightAlterOnObject` can add permission
+  and never withhold it. See `docs/journal.md` for the four parts of that read
+  that are load-bearing, ownership included.
 
-- **Two refusals the P4 mapping cannot reach, both by design of P3.** The
-  `withPermissionAdvice` append is wired at Apply, Delete/Rename/Move, Recycle,
-  New-object creation and every background task — but on the live matrix the
-  gates now withhold those actions before they can be attempted, so only the
-  *read* refusals (tree node, Log File Viewer grid, a failed page load) were
-  verifiable end to end. The append itself is unit-tested against
-  live-captured message text. Reaching it live needs a login that holds a right
-  the gate reads but not the one the statement checks — a schema-scoped ALTER
-  is the obvious candidate, and is the same gap as the objectOpRights item
-  above.
+- ~~**`requiresText` repeats a role it has already named**~~ **Fixed**
+  2026-08-27: the roles are gathered into one trailing clause — "Requires ALTER,
+  CONTROL or ALTER ANY DATABASE (db_owner, dbcreator)". A role-less right stays
+  outside it, since `rightAlterOnSchema` names no role on purpose.
+
+- ~~**Two refusals the P4 mapping cannot reach, both by design of P3.**~~
+  **Reached** 2026-08-27. The mismatch is a grant at a wider scope with a DENY
+  at a narrower one — database-wide `ALTER` plus `DENY ALTER` on one table
+  reads 1 for every right the gate asks about and is still refused. Both halves
+  were driven live: Rename raises Msg 297 and correctly gets no advice, Move to
+  Schema raises Msg 15151 and gets the append. The object block added the same
+  day does not close this and is not meant to — it can only add permission, so
+  a DENY it records cannot withhold what the wider rights allow. See
+  `docs/journal.md`.
 
 - **The `xp_dirtree` silent-empty guard is unit-tested only.** Both test
   servers are 2017 or later and so never take that path;
@@ -1311,6 +1358,17 @@ known limit of the gate layer, not an oversight.
   through ssh instead. Anything in gossms that would depend on xp_cmdshell is
   therefore Windows-only by construction.
 
+  **The one place that showed was Server Properties > Advanced, and it is
+  fixed** 2026-08-27. Linux still *lists* `xp_cmdshell` in `sys.configurations`
+  at 0 (confirmed on ubusql1), so the option was not caught by the
+  missing-option path `newConfigBoolEditor` already had: the checkbox rendered,
+  ticked, and failed on OK with the server's raw Msg 15392. `xpCmdshellRow`
+  (`server_props_advanced.go`) reads `ServerInfo.Platform` — which gosmo parses
+  from `@@VERSION`, so it costs no query — and hands back a disabled "Not
+  available on Linux" row instead. `TestXpCmdshellIsNotEditableOnLinux` pins it
+  and `TestXpCmdshellStaysEditableOnWindows` guards the other direction, over a
+  new `newFakeConnOnLinux`.
+
 - ~~**A database's file paths are unreadable unless it is ONLINE.**~~
   **Fixed** 2026-08-26 — gosmo's `Server.DatabaseFiles`/`DatabaseFilesContext`
   reads `sys.master_files`, and the Detach dialog falls back to it whenever
@@ -1319,15 +1377,40 @@ known limit of the gate layer, not an oversight.
   than a replacement. Covered by `live_masterfiles_test.go` in gosmo and
   verified live against an OFFLINE database. See `docs/journal.md`.
 
-- **A non-T-SQL job step's *other* fields still take typing that is discarded.**
-  The Steps page can write back a T-SQL step only. As of 2026-08-26 the Command
-  box is gated for a PowerShell/CmdExec/SSIS step — read-only, no SQL
-  highlighting — and the hint says so on selection, but Step name, Database, the
-  two on-success/on-failure rows, the retry counts and the output file still
-  accept edits `commitCurrent` throws away. The right fix is the whole edit
-  panel gated as one, which means a per-row read-only switch on the rows
-  `propsheet` builds for it (`TextRow`/`SelectRow`/`IntRow` have `SetDrawReadOnly`
-  for the form's gate, but no page-level one of their own, which is what
-  `EditorRow.SetReadOnly` now is). Left undone deliberately: the command is the
-  field whose text a write-back would hand to the query processor as T-SQL, and
-  it is the one that was gated.
+- ~~**A non-T-SQL job step's *other* fields still take typing that is
+  discarded.**~~ **Fixed** 2026-08-27 — `TextRow`/`SelectRow` gained the
+  page-level `SetReadOnly` that `EditorRow` already had, and the Steps page
+  gates its whole edit panel as one on a PowerShell/CmdExec/SSIS step. See
+  `docs/journal.md`, including what the New button had to do to stay usable on a
+  mixed job.
+
+## gosmo: Job.deleteStepAt has no callers left
+
+`ReorderStepsContext` was its only caller and now collects `deleteStepStmt`
+directly into its batch. The method is unexported, so nothing outside the
+package can reach it either — this is not the "no callers in gossms" case the
+never-remove rule covers, it is genuinely uncalled code.
+
+Kept and annotated rather than deleted, because removal is the author's call.
+Note that `JobStep.DeleteContext` builds the same `sp_delete_jobstep` text
+inline and predates `deleteStepStmt`; if `deleteStepAt` goes, that duplication
+is worth folding at the same time.
+
+## Panel toolbars other than Query Store's still drop buttons silently
+
+`layoutToolButtonsOverflow` (`panel_toolbar.go`, added 2026-08-28) collapses the
+buttons a toolbar row is too narrow to draw behind a "More ▾" cell, so none is
+left unreachable. **Only the Query Store panel uses it.** Activity Monitor and
+the Log File Viewer still call `layoutToolButtons`, which gives an overflowing
+button a zero rect — neither painted nor hit-tested.
+
+Whether either actually overflows at realistic widths was not measured; Query
+Store's did badly (the action row wanted 119 columns of a pane that gets 70% of
+the terminal, so Compare Plans was unreachable below a 170-column terminal). The
+work is to measure both rows the way `TestNoToolbarButtonIsUnreachableAtAnyWidth`
+does and switch them over if they overflow — the helper and its tests already
+exist, and neither panel's buttons have key bindings either.
+
+Deliberately not done in the same pass: `layoutToolButtons` is shared, and
+changing its behaviour for all three panels at once is the kind of blast radius
+CLAUDE.md's DataGrid note warns about.

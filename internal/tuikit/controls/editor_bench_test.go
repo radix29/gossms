@@ -124,3 +124,39 @@ func BenchmarkEditorDrawWrappedLargeCell(b *testing.B) {
 		e.Draw(s)
 	}
 }
+
+// BenchmarkEditorUndoRedo20k measures one undo plus one redo of a typed
+// keystroke, each followed by the maxDisplayWidth a Draw's horizontal
+// scrollbar asks for — which is what a dropped per-line width cache makes
+// expensive. replaceRange (the splice both undo and redo apply) used to
+// invalidate every line's width, so holding Ctrl+Z on a large script
+// re-measured every rune in the buffer once per step.
+//
+// B/op is the other half and the sharper signal: the splice is a slices.Replace
+// over the existing buffer, so an undo that does not change the line count
+// allocates nothing. Building the new buffer by hand instead cost one
+// document-sized allocation per step — 968 KB and 1.9 ms here, against 1.7 KB
+// and 0.55 ms.
+//
+// The edit is typed through HandleKey rather than staged with pushUndo,
+// because that is what decides the span: typing records a keystroke-sized one
+// (pushUndoLocal), while pushUndo covers the whole document and would splice
+// from line 0 — where there is nothing above the span to keep.
+func BenchmarkEditorUndoRedo20k(b *testing.B) {
+	e := NewEditor(nil)
+	e.SetText(benchScript(20000))
+	e.SetBounds(0, 0, 100, 40)
+	// Type near the bottom: the further down the span, the more of the width
+	// cache the bounded invalidation gets to keep.
+	e.cursorRow, e.cursorCol = 19000, 0
+	e.HandleKey(runeKey('x', tcell.ModNone))
+	e.doc.maxDisplayWidth()
+
+	b.ResetTimer()
+	for b.Loop() {
+		e.undo()
+		e.doc.maxDisplayWidth()
+		e.redo()
+		e.doc.maxDisplayWidth()
+	}
+}

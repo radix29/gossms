@@ -40,11 +40,8 @@ func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
 // name — the Object Explorer context menu's entry point. database is
 // "msdb" so Script Changes' generated query window opens there.
 func (a *App) showJobPropertiesFor(sc *db.ServerConn, jobName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "msdb", "Job Properties", "Job: "+jobName, "Server: "+sc.Opts.Server,
-		jobPropPages(a.propDialog, sc, jobName))
+		func() []propPage { return jobPropPages(a.propDialog, sc, jobName) })
 }
 
 // findAgentJob wraps gosmo.Server.JobByNameContext so every page's

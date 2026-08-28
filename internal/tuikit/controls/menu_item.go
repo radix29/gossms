@@ -97,13 +97,17 @@ func stepSelectableItem(items []MenuItem, from, dir int) int {
 
 // menuRowSuffix returns the right-aligned text of an item: the ▸ cascade
 // marker for a submenu, otherwise its shortcut. An item with a submenu has
-// no shortcut of its own — activating it only opens the submenu.
+// no shortcut of its own — activating it only opens the submenu — but a
+// disabled one shows its note in place of the marker.
 func menuRowSuffix(it MenuItem) string {
-	if len(it.Sub) > 0 {
-		return "▸"
-	}
+	// The note outranks the ▸: a disabled cascade cannot be opened, so its
+	// marker points at a submenu the user will never see and the note is the
+	// only thing left that says why the item is grey.
 	if it.showsNote() {
 		return it.Note
+	}
+	if len(it.Sub) > 0 {
+		return "▸"
 	}
 	return it.Shortcut
 }

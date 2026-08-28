@@ -164,7 +164,7 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 		verb, doneVerb, what = "start", "started", "starting an Agent job"
 	}
 	a.safego(what, func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := serverWriteContext(sc)
 		defer cancel()
 		var refusal string
 		j, err := sc.Server.JobByNameContext(ctx, name)

@@ -127,6 +127,24 @@ func (a *App) openCellValuePanel(sqlType, column, value string) bool {
 		return false
 	}
 
+	return a.openValuePanel(column, suffix, highlighter, value)
+}
+
+// showSQLCellValue is the DataGrid OnShowValue hook for a grid whose rows
+// carry a query's text: the Query Store reports keep the whole statement in
+// the cell and only the grid's column width cuts it short, so "Show Value" on
+// that column opens the full text in its own SQL-highlighted query panel
+// instead of the 60-column popup. Every other column falls through to it.
+func (a *App) showSQLCellValue(_ int, column, value string) bool {
+	if column != qsQueryColumn || strings.TrimSpace(value) == "" {
+		return false
+	}
+	return a.openValuePanel(column, ".sql", controls.SQLHighlighter(theme.Active()), value)
+}
+
+// openValuePanel puts one cell's value in a new query panel titled after its
+// column, highlighted as suffix's file type.
+func (a *App) openValuePanel(column, suffix string, highlighter controls.Highlighter, value string) bool {
 	title := strings.ToUpper(strings.TrimPrefix(suffix, "."))
 	if column != "" {
 		title = column + suffix

@@ -1,8 +1,14 @@
 package tui
 
 import (
+	"context"
+	"database/sql/driver"
+	"fmt"
 	"strings"
 	"testing"
+
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // New Availability Group's real risk is not the statement text — gosmo pins
@@ -256,5 +262,141 @@ func TestAddReplicaStillNeedsConnectDespiteAnEditableURL(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Connect") {
 		t.Errorf("error = %q, want it to name Connect", err)
+	}
+}
+
+// -- the create-time preflight -----------------------------------------------
+//
+// Every check below is a state that makes ALTER ... JOIN fail on a secondary
+// *after* CREATE has already succeeded on the primary — the shape that leaves a
+// real group missing a replica. The peer is reached through the dialog's peerFor
+// seam, since a test cannot open a second connection.
+
+// agPeerResponses scripts one instance as a would-be replica: its own name and
+// HADR flag in the info row, and its database mirroring endpoint.
+func agPeerResponses(name string, hadr bool, epName string, port int64, state string) []fakeResponse {
+	info := serverInfoResponse()
+	info.rows[0][0] = name
+	if hadr {
+		info.rows[0][6] = int64(1)
+	}
+	out := []fakeResponse{info, sysInfoResponse()}
+	if epName != "" {
+		out = append(out, fakeResponse{match: "sys.database_mirroring_endpoints", cols: 8, rows: [][]driver.Value{
+			{epName, port, state, "ALL", true, "AES", "CERTIFICATE", "sa"},
+		}})
+	} else {
+		out = append(out, fakeResponse{match: "sys.database_mirroring_endpoints", cols: 8})
+	}
+	return out
+}
+
+// agDialogWithPeer builds a New AG dialog whose one secondary resolves to peer.
+func agDialogWithPeer(t *testing.T, local *db.ServerConn, peer *db.ServerConn) *NewAGDialog {
+	t.Helper()
+	d := &NewAGDialog{groupName: "AAG2", clusterType: "EXTERNAL", replicas: newAGReplicaPair()}
+	d.sc = local
+	d.ctx = context.Background()
+	d.peerFor = func(_ context.Context, name string) (*db.ServerConn, error) {
+		if name == "ubusql2" {
+			return peer, nil
+		}
+		return local, nil
+	}
+	return d
+}
+
+func TestPreflightPassesAReplicaThatCouldJoin(t *testing.T) {
+	local, _ := newFakeConn(t)
+	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"))
+	d := agDialogWithPeer(t, local, peer)
+
+	if err := d.preflightReplicas(context.Background()); err != nil {
+		t.Errorf("a replica that could join was refused: %v", err)
+	}
+}
+
+func TestPreflightRefusesTheReplicaStatesThatBreakTheJoin(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		responses []fakeResponse
+		want      string
+	}{
+		{"always on off there", agPeerResponses("ubusql2", false, "AGEP", 5022, "STARTED"), "Always On is not enabled"},
+		{"no endpoint", agPeerResponses("ubusql2", true, "", 0, ""), "no database mirroring endpoint"},
+		{"endpoint stopped", agPeerResponses("ubusql2", true, "AGEP", 5022, "STOPPED"), "not STARTED"},
+		// Added at 5022, moved since: the CREATE would name an address nothing
+		// answers on, and the group comes up looking right and never connects.
+		{"endpoint moved", agPeerResponses("ubusql2", true, "AGEP", 5023, "STARTED"), "is now tcp://ubusql2:5023"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			local, _ := newFakeConn(t)
+			peer, _ := newFakeConnFrom(t, tt.responses)
+			d := agDialogWithPeer(t, local, peer)
+
+			err := d.preflightReplicas(context.Background())
+			if err == nil {
+				t.Fatal("the preflight passed a replica that cannot join")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tt.want)
+			}
+			if !strings.Contains(err.Error(), "Nothing was created") {
+				t.Errorf("error = %q, want it to say nothing was created", err)
+			}
+		})
+	}
+}
+
+// TestPreflightRefusesAPeerThatMayNotJoin. Allows, not Has — a peer whose probe
+// never ran answers unknown and is let through, which is what the passing test
+// above relies on; only a measured denial refuses.
+func TestPreflightRefusesAPeerThatMayNotJoin(t *testing.T) {
+	local, _ := newFakeConn(t)
+	responses := append(agPeerResponses("ubusql2", true, "AGEP", 5022, "STARTED"),
+		capabilityResponses(true, nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil)...)
+	peer, _ := newFakeConnFrom(t, responses)
+	peer.ProbeCapabilities()
+
+	d := agDialogWithPeer(t, local, peer)
+	err := d.preflightReplicas(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "ALTER ANY AVAILABILITY GROUP") {
+		t.Fatalf("error = %v, want a refusal naming the permission", err)
+	}
+}
+
+// TestNothingIsCreatedWhenThePreflightFails is the point of the whole thing:
+// the CREATE must not reach the primary. Asserted on the statements, because a
+// dialog that ran the CREATE and then reported the JOIN problem would return
+// an error that reads almost the same.
+func TestNothingIsCreatedWhenThePreflightFails(t *testing.T) {
+	local, inst := newFakeConn(t)
+	peer, _ := newFakeConnFrom(t, agPeerResponses("ubusql2", false, "AGEP", 5022, "STARTED"))
+	d := agDialogWithPeer(t, local, peer)
+
+	if err := d.createGroup(context.Background()); err == nil {
+		t.Fatal("createGroup succeeded with a replica that cannot join")
+	}
+	for _, stmt := range inst.Statements() {
+		if strings.Contains(strings.ToUpper(stmt), "CREATE AVAILABILITY GROUP") {
+			t.Errorf("the group was created despite the preflight failing:\n%s", stmt)
+		}
+	}
+}
+
+// TestScriptChangesSkipsThePreflight. The script is what the user takes to the
+// other instances, and is asked for precisely when they are not all up yet — a
+// preflight there would refuse to write the thing that fixes them.
+func TestScriptChangesSkipsThePreflight(t *testing.T) {
+	local, _ := newFakeConn(t)
+	d := agDialogWithPeer(t, local, nil) // any peer read would nil-panic
+	d.peerFor = func(context.Context, string) (*db.ServerConn, error) {
+		t.Error("Script Changes opened a peer connection")
+		return nil, fmt.Errorf("unreachable")
+	}
+
+	scriptCtx, _ := gosmo.WithScript(context.Background())
+	if err := d.preflightReplicas(scriptCtx); err != nil {
+		t.Errorf("the preflight ran under Script Changes: %v", err)
 	}
 }

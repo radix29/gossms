@@ -1,6 +1,10 @@
 package controls
 
-import "github.com/radix29/gossms/internal/tuikit/core"
+import (
+	"slices"
+
+	"github.com/radix29/gossms/internal/tuikit/core"
+)
 
 // ---------------------------------------------------------------------------
 // Document — Editor's text buffer and the single chokepoint for mutating it
@@ -18,8 +22,11 @@ import "github.com/radix29/gossms/internal/tuikit/core"
 // previously an O(document) scan per Draw.
 //
 // That only works if the version can never be stale, which is why the
-// buffer is reachable for writing through exactly two methods — setLine and
-// edit — and nothing else. A mutation that reaches the lines any other way
+// buffer is reachable for writing through exactly three methods — setLine,
+// edit and replaceRange — and nothing else. Each ends in a version bump and
+// a cache invalidation of its own; setLines is edit's whole-buffer form. A
+// new mutator belongs alongside them and must do the same. A mutation that
+// reaches the lines any other way
 // leaves every cache above rendering the *previous* document: stale colours,
 // stale wrap segments, a stale scrollbar. That failure is silent and looks
 // like a rendering glitch rather than a missed write, so it is worth the
@@ -98,7 +105,7 @@ func (d *Document) setLine(i int, line []rune) {
 // setLines replaces the whole buffer and bumps the version.
 func (d *Document) setLines(lines [][]rune) {
 	d.lines = lines
-	d.touch()
+	d.touch(0)
 }
 
 // edit hands fn the buffer, installs whatever it returns, and bumps the
@@ -108,7 +115,7 @@ func (d *Document) setLines(lines [][]rune) {
 // return the same slice.
 func (d *Document) edit(fn func(lines [][]rune) [][]rune) {
 	d.lines = fn(d.lines)
-	d.touch()
+	d.touch(0)
 }
 
 // replaceRange substitutes the n lines at row with the lines in with, which
@@ -117,23 +124,37 @@ func (d *Document) edit(fn func(lines [][]rune) [][]rune) {
 // single mutation is what keeps the version counter moving once per undo
 // rather than once per line.
 func (d *Document) replaceRange(row, n int, with [][]rune) {
-	d.edit(func(lines [][]rune) [][]rune {
-		out := make([][]rune, 0, len(lines)-n+len(with))
-		out = append(out, lines[:row]...)
-		out = append(out, with...)
-		return append(out, lines[row+n:]...)
-	})
+	// slices.Replace, not a fresh buffer built by hand: an undo whose span is
+	// the same length it replaces — the common one, since most edits don't
+	// change the line count — then costs a copy of the span instead of a copy
+	// of the whole document plus an allocation the size of it.
+	d.lines = slices.Replace(d.lines, row, row+n, with...)
+	// Not edit's touch(0): the lines before row are the same slices they were,
+	// so their cached widths still hold. Undoing a one-line edit in a 20,000
+	// line script used to re-measure every rune in the buffer on the next
+	// Draw, because dropping the whole per-line cache is what touch does.
+	d.touch(row)
 }
 
-// touch invalidates every version-keyed cache. Called by setLines and edit,
-// which can both change the line count and so cannot keep any per-line
-// width; setLine has its own narrower invalidation. Nothing else should
-// reach past those to call this directly.
-func (d *Document) touch() {
+// touch invalidates every version-keyed cache from line `from` down. Called
+// by setLines and edit with 0, since both can move any line anywhere, and by
+// replaceRange with the first line of its span; setLine has its own narrower
+// invalidation. Nothing else should reach past those to call this directly.
+//
+// `from` must be the lowest line the mutation could have changed the meaning
+// of, never merely the lowest one whose *text* changed: the surviving widths
+// and the resume in prefixStates.at both take it as a promise that every
+// earlier line is untouched. It is therefore never past the end of the new
+// buffer either — the lines before a splice survive it — which is why
+// maxDisplayWidth only ever has to extend lineW. When in doubt, 0 is always
+// correct.
+func (d *Document) touch(from int) {
 	d.version++
 	d.maxWidthValid = false
-	d.lineW = d.lineW[:0]
-	d.dirtyFrom = 0
+	if from < len(d.lineW) {
+		d.lineW = d.lineW[:from]
+	}
+	d.dirtyFrom = from
 }
 
 // maxDisplayWidth returns the display width of the widest line, measured
@@ -144,11 +165,12 @@ func (d *Document) maxDisplayWidth() int {
 	if d.maxWidthValid {
 		return d.maxWidth
 	}
-	if len(d.lineW) != len(d.lines) {
-		d.lineW = append(d.lineW[:0], make([]int, len(d.lines))...)
-		for i := range d.lineW {
-			d.lineW[i] = -1
-		}
+	// Extend rather than rebuild: touch truncates to the first line its
+	// mutation could have changed, so whatever entries are still here describe
+	// lines that did not move, and only the tail is unknown. (The old form
+	// allocated a whole []int per call purely to append it away.)
+	for len(d.lineW) < len(d.lines) {
+		d.lineW = append(d.lineW, -1)
 	}
 	longest := 0
 	for i, line := range d.lines {

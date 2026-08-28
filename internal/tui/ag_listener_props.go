@@ -175,10 +175,7 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 // showAGListenerPropertiesFor opens Listener Properties — the Object Explorer
 // context menu's "Properties..." on a listener.
 func (a *App) showAGListenerPropertiesFor(sc *db.ServerConn, agName, dnsName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "", "Availability Group Listener Properties",
 		"Listener: "+dnsName, "Availability group: "+agName,
-		agListenerPropPages(sc, agName, dnsName))
+		func() []propPage { return agListenerPropPages(sc, agName, dnsName) })
 }

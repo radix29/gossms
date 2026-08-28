@@ -256,10 +256,12 @@ func TestQueryStoreReportRejectsAnUnknownTitle(t *testing.T) {
 	}
 }
 
-// TestQueryStoreOneLineFlattensAndTruncates. Query Store keeps a statement
-// exactly as submitted — newlines and indentation included — and a raw
-// newline in a grid cell breaks the row it is in.
-func TestQueryStoreOneLineFlattensAndTruncates(t *testing.T) {
+// TestQueryStoreOneLineFlattensAndKeepsTheWholeStatement. Query Store keeps a
+// statement exactly as submitted — newlines and indentation included — and a
+// raw newline in a grid cell breaks the row it is in. The text itself is not
+// cut short: the grid truncates what it draws, and "Show Value" opens the
+// whole statement from the cell.
+func TestQueryStoreOneLineFlattensAndKeepsTheWholeStatement(t *testing.T) {
 	got := queryStoreOneLine("SELECT\n\tid,\r\n\tname\nFROM   dbo.t")
 	if strings.ContainsAny(got, "\n\r\t") {
 		t.Errorf("queryStoreOneLine kept whitespace that breaks a grid row: %q", got)
@@ -267,9 +269,9 @@ func TestQueryStoreOneLineFlattensAndTruncates(t *testing.T) {
 	if got != "SELECT id, name FROM dbo.t" {
 		t.Errorf("queryStoreOneLine = %q, want the collapsed statement", got)
 	}
-	long := strings.Repeat("x", queryStoreQueryTextWidth*2)
-	if w := len([]rune(queryStoreOneLine(long))); w > queryStoreQueryTextWidth {
-		t.Errorf("a long statement rendered %d columns wide, want at most %d", w, queryStoreQueryTextWidth)
+	long := strings.Repeat("x", 500)
+	if got := queryStoreOneLine(long); got != long {
+		t.Errorf("a long statement came back %d runes, want the whole %d", len([]rune(got)), len(long))
 	}
 }
 

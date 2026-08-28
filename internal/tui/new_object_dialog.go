@@ -21,9 +21,10 @@ import (
 // pages lazily and applies a dirty-diff, neither of which a create dialog
 // needs.
 
-// errPageLoadPanicked is what a queued page request is failed with when the
-// prefetch goroutine panicked. The panic is already logged and on the status
-// bar, so the page only has to say why it has no content.
+// errPageLoadPanicked is what a page request is failed with when the goroutine
+// loading it panicked — this dialog's prefetch, and PropDialog's per-page load.
+// The panic is already logged and on the status bar, so the page only has to
+// say why it has no content.
 var errPageLoadPanicked = errors.New("loading stopped unexpectedly — see the log for details")
 
 // newObjectConfig is everything that differs between one create dialog and

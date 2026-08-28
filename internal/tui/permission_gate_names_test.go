@@ -37,7 +37,34 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 	}
 	for _, r := range rights {
 		scope, list := "server", gosmo.ProbedServerPermissions
-		if r.db {
+		switch {
+		case r.membership:
+			// A membership right names a fixed database role, not a
+			// permission, and is answered by IS_ROLEMEMBER out of
+			// ProbedDatabaseRoles. A role missing from that list reads false
+			// forever, which for a membership right means withholding the
+			// action from everyone — the opposite failure to the one above,
+			// and the louder of the two, but still silent at run time.
+			if !slices.Contains(gosmo.ProbedDatabaseRoles, r.name) {
+				t.Errorf("%q is declared as a membership right but is not in gosmo's ProbedDatabaseRoles — "+
+					"it will read false for every login and withhold the action from all of them", r.name)
+			}
+			if r.inDB == "" {
+				t.Errorf("membership right %q names no database to be a member in", r.name)
+			}
+			continue
+		case r.schema:
+			// Asked of the per-schema probe, which has a list of its own — a
+			// name only the database-wide list carries reads unknown for
+			// every schema and gates nothing.
+			for _, name := range append([]string{r.name}, r.alt...) {
+				if !slices.Contains(gosmo.ProbedSchemaPermissions, name) {
+					t.Errorf("%q is declared schema-scoped but is not in gosmo's ProbedSchemaPermissions — "+
+						"it will read CapabilityUnknown for every schema and gate nothing", name)
+				}
+			}
+			continue
+		case r.db:
 			scope, list = "database", gosmo.ProbedDatabasePermissions
 		}
 		for _, name := range append([]string{r.name}, r.alt...) {
@@ -81,10 +108,13 @@ func TestEveryGatedRightNamesARealRole(t *testing.T) {
 
 // parsedRight is one requiredRight composite literal as written in the source.
 type parsedRight struct {
-	name string
-	role string
-	db   bool
-	alt  []string
+	name       string
+	role       string
+	db         bool
+	schema     bool
+	membership bool
+	inDB       string
+	alt        []string
 }
 
 // parseRequiredRights returns every `requiredRight{...}` literal in file.
@@ -128,6 +158,14 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 			case "db":
 				id, ok := kv.Value.(*ast.Ident)
 				r.db = ok && id.Name == "true"
+			case "schema":
+				id, ok := kv.Value.(*ast.Ident)
+				r.schema = ok && id.Name == "true"
+			case "membership":
+				id, ok := kv.Value.(*ast.Ident)
+				r.membership = ok && id.Name == "true"
+			case "inDB":
+				r.inDB = stringLit(t, kv.Value)
 			case "alt":
 				alts, ok := kv.Value.(*ast.CompositeLit)
 				if !ok {

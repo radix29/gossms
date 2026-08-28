@@ -56,7 +56,7 @@ func pageServerAdvanced(sc *db.ServerConn) propPage {
 				cfgBool("Ole Automation Procedures", "Ole Automation Procedures"),
 				cfgBool("remote admin connections", "Remote admin connections"),
 				cfgBool("show advanced options", "Show advanced options"),
-				cfgBool("xp_cmdshell", "xp_cmdshell"),
+				xpCmdshellRow(sc, cfgBool),
 				propsheet.Section("All server configuration options (sys.configurations)"),
 				propsheet.NewGridRow(grid, 10),
 				propsheet.Note("The grid above is read-only — edit an option from its group above, or from its own page (Memory, Processors, Connections, Database Settings, Security), if it has one."),
@@ -64,4 +64,19 @@ func pageServerAdvanced(sc *db.ServerConn) propPage {
 			return f, configApply(sc, intRows, boolRows), nil
 		},
 	}
+}
+
+// xpCmdshellRow returns the xp_cmdshell checkbox, or a disabled row on a Linux
+// host. SQL Server on Linux has no xp_cmdshell at all, but still lists the
+// option in sys.configurations at 0 — so the ordinary checkbox renders, ticks,
+// and fails on OK with Msg 15392, "not supported by this edition". The option
+// cannot be turned on there by any means; a row that can only produce that
+// error is the ungated-action case the context-gating rule exists for.
+func xpCmdshellRow(sc *db.ServerConn, cfgBool func(name, label string) propsheet.Row) propsheet.Row {
+	if sc.Server.Info().Platform == "Linux" {
+		row := propsheet.Text("xp_cmdshell", "Not available on Linux", 24)
+		row.SetEnabled(false)
+		return row
+	}
+	return cfgBool("xp_cmdshell", "xp_cmdshell")
 }

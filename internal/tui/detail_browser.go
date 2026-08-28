@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
@@ -521,3 +522,71 @@ func (db *DetailBrowser) SelectedText() string { return db.grid.SelectedText() }
 func (db *DetailBrowser) Cut() string          { return db.grid.Cut() }
 func (db *DetailBrowser) Paste(text string)    { db.grid.Paste(text) }
 func (db *DetailBrowser) SelectAll()           { db.grid.SelectAll() }
+
+// newDetailBrowser builds the Object Explorer Details panel wired to this
+// app: the title bar's refresh button, and the Query Store reports' "Query"
+// column opening its full statement in a query panel.
+func (a *App) newDetailBrowser() *DetailBrowser {
+	db := NewDetailBrowser("Object Explorer Details")
+	db.OnRefresh = func() { db.RefreshCurrent(a) }
+	db.grid.OnShowValue = func(col int, column, value string) bool {
+		return db.showQueryStoreValue(a, col, column, value)
+	}
+	return db
+}
+
+// showQueryStoreValue is the grid's "Show Value" hook. On a Query Store
+// report's Query column it re-reads the statement from the server by the row's
+// query id, rather than opening the cell.
+//
+// The cell cannot be opened: queryStoreOneLine collapses the statement onto one
+// line for the grid, so a `-- comment` anywhere in it swallows every line that
+// followed, and what the panel showed was runnable SQL with most of the query
+// commented out. The panel keeps the real text in memory and needs no round
+// trip (QueryStorePanel.showValue); this grid holds only [][]string, shared with
+// every other node type, so the id is the only handle back to the statement.
+//
+// Every path that cannot produce an id — another column, another node type, a
+// row whose id cell is a dash — falls through to the flattened cell, which is
+// then the only text there is.
+func (db *DetailBrowser) showQueryStoreValue(a *App, col int, column, value string) bool {
+	if column != qsQueryColumn || db.currentNode == nil ||
+		db.currentNode.data.Type != NodeQueryStoreReport {
+		return a.showSQLCellValue(col, column, value)
+	}
+	node := db.currentNode
+	sc := resolveConn(node)
+	idCol := db.grid.ColumnIndex(qsQueryIDColumn)
+	// By name, never by position: these grids are built from whatever the
+	// loader returned, and the reports do not share one column list.
+	cells := db.grid.Row(db.grid.SelectedRow())
+	if sc == nil || idCol < 0 || idCol >= len(cells) {
+		return a.showSQLCellValue(col, column, value)
+	}
+	queryID, err := strconv.ParseInt(cells[idCol], 10, 64)
+	if err != nil {
+		return a.showSQLCellValue(col, column, value)
+	}
+	dbName := node.data.DBName
+	a.setStatus(fmt.Sprintf("Reading the text of query %d...", queryID))
+	// safego, not safegoRepair: nothing is latched here. The status line is the
+	// only thing written before the read, and the next action overwrites it.
+	a.safego("reading a Query Store query's text", func() {
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		defer cancel()
+		text, err := queryStoreQueryText(ctx, sc, dbName, queryID)
+		a.postAndWake(func() {
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Query %d: %v", queryID, displayError(err)))
+				return
+			}
+			if text == "" {
+				// Query Store no longer holds the statement; the flattened
+				// cell is all that is left of it.
+				text = value
+			}
+			a.openValuePanel(column, ".sql", controls.SQLHighlighter(theme.Active()), text)
+		})
+	})
+	return true
+}

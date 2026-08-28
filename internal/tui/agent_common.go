@@ -92,7 +92,7 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool
 		return
 	}
 	a.safego("enabling/disabling an Agent object", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := serverWriteContext(sc)
 		defer cancel()
 		err := run(ctx)
 		a.postAndWake(func() {
@@ -124,7 +124,7 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 			return
 		}
 		a.safego("deleting an Agent object", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			err := run(ctx)
 			a.postAndWake(func() {

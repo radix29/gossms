@@ -62,6 +62,11 @@ func (cm *ContextMenu) Hide() {
 // Visible reports whether the menu is shown.
 func (cm *ContextMenu) Visible() bool { return cm.visible }
 
+// Items returns the entries currently shown, for a caller that has to act on
+// the menu without a screen to click on — the entry in force is bulleted by
+// whoever built the list, so match on a substring rather than the whole label.
+func (cm *ContextMenu) Items() []MenuItem { return cm.items }
+
 // geometry returns the clamped column, row, width, and height the menu
 // should draw at for screen s — shifted left/up from the requested (x,y) if
 // it would otherwise run off the right or bottom edge.

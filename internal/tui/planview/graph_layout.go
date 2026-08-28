@@ -47,10 +47,10 @@ type graphLayout struct {
 
 // layoutGraph places root's operator tree on a virtual canvas. Pure
 // function of the tree shape — no tcell/theme dependency — so it's
-// testable without a screen. Each node's tile is centered vertically
-// between its first and last child's tile (recursive, not globally
-// balanced, but stable and simple); a childless node occupies exactly one
-// tile-height band.
+// testable without a screen. Each node's tile is top-aligned with its
+// first child's tile, matching SSMS — the root lands on the canvas's
+// first row rather than floating to its vertical middle. A childless
+// node occupies exactly one tile-height band.
 func layoutGraph(root *showplan.Node) *graphLayout {
 	g := &graphLayout{rects: make(map[int]core.Rect)}
 	if root == nil {
@@ -67,16 +67,14 @@ func layoutGraph(root *showplan.Node) *graphLayout {
 			return top + graphTileH, top
 		}
 		cursor := top
-		firstY, lastY := 0, 0
+		selfY := 0
 		for i, c := range n.Children {
 			cBottom, cTileY := place(c, depth+1, cursor)
 			if i == 0 {
-				firstY = cTileY
+				selfY = cTileY
 			}
-			lastY = cTileY
 			cursor = cBottom + graphVGap
 		}
-		selfY := (firstY + lastY) / 2
 		r := core.Rect{X: x, Y: selfY, W: graphTileW, H: graphTileH}
 		g.tiles = append(g.tiles, tile{node: n, rect: r})
 		g.rects[n.ID] = r

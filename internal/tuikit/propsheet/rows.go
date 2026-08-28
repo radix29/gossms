@@ -225,8 +225,10 @@ type TextRow struct {
 	onChange  func(string)
 	untracked bool // see SetDirtyTracked
 	// drawReadOnly renders the row flat instead of as an input box — see
-	// SetDrawReadOnly.
+	// SetDrawReadOnly. pageReadOnly is the page's own, independent gate — see
+	// SetReadOnly.
 	drawReadOnly bool
+	pageReadOnly bool
 	x, y, w      int
 }
 
@@ -294,7 +296,7 @@ func (r *TextRow) SetValue(v string) {
 // its write on Dirty(), so "set the value" and "the user changed the value" are
 // different operations and neither can stand in for the other.
 func (r *TextRow) Edit(v string) {
-	if !r.enabled {
+	if !r.enabled || r.pageReadOnly {
 		return
 	}
 	before := r.field.Value()
@@ -318,7 +320,20 @@ func (r *TextRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.field.SetBounds(x, y)
 }
-func (r *TextRow) Focusable() bool { return r.enabled }
+func (r *TextRow) Focusable() bool { return r.enabled && !r.pageReadOnly }
+
+// SetReadOnly is the page's own gate on the row, independent of the form's:
+// the value is shown, the row cannot be focused, typed into or Edit'ed.
+// EditorRow.SetReadOnly's counterpart, and set together with it by a page
+// gating a whole panel — the Steps page's non-T-SQL step is the case.
+//
+// The two gates are separate fields rather than one flag because whichever is
+// set last must not cancel the other out: lifting the form's permission gate
+// must not make a non-T-SQL step editable.
+func (r *TextRow) SetReadOnly(v bool) { r.pageReadOnly = v }
+
+// ReadOnly reports the page's own gate, not the form's.
+func (r *TextRow) ReadOnly() bool { return r.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the row draws as a flat
 // label/value pair, with no input box. A Password row has nothing to show —
@@ -326,7 +341,7 @@ func (r *TextRow) Focusable() bool { return r.enabled }
 func (r *TextRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *TextRow) Draw(s tcell.Screen, focused bool) {
-	if r.drawReadOnly {
+	if r.drawReadOnly || r.pageReadOnly {
 		v := r.field.Value()
 		if v != "" && r.unit != "" {
 			v += " " + r.unit
@@ -360,7 +375,7 @@ func (r *TextRow) notifyChanged(before string) {
 }
 
 func (r *TextRow) HandleKey(ev *tcell.EventKey) bool {
-	if !r.enabled {
+	if !r.enabled || r.pageReadOnly {
 		return false
 	}
 	before := r.field.Value()
@@ -369,7 +384,7 @@ func (r *TextRow) HandleKey(ev *tcell.EventKey) bool {
 	return handled
 }
 func (r *TextRow) HandleMouse(ev *tcell.EventMouse) bool {
-	if !r.enabled {
+	if !r.enabled || r.pageReadOnly {
 		return false
 	}
 	before := r.field.Value()
@@ -526,8 +541,10 @@ type SelectRow struct {
 	onChange  func(string)
 
 	// drawReadOnly renders the row flat instead of as a dropdown — see
-	// SetDrawReadOnly.
+	// SetDrawReadOnly. pageReadOnly is the page's own, independent gate — see
+	// TextRow.SetReadOnly.
 	drawReadOnly bool
+	pageReadOnly bool
 	x, y, w      int
 }
 
@@ -572,6 +589,9 @@ func (r *SelectRow) Label() string { return strings.TrimRight(r.dd.Label(), " ")
 // is ignored, as DropDown ignores one, so a rejected index cannot leave the row
 // dirty against a value it never took.
 func (r *SelectRow) Edit(i int) {
+	if r.pageReadOnly {
+		return
+	}
 	before := r.dd.Value()
 	r.dd.SetSelected(i)
 	r.notifyChanged(before)
@@ -595,14 +615,28 @@ func (r *SelectRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.dd.SetBounds(x, y)
 }
-func (r *SelectRow) Focusable() bool { return true }
+func (r *SelectRow) Focusable() bool { return !r.pageReadOnly }
+
+// SetReadOnly is the page's own gate on the row — see TextRow.SetReadOnly.
+func (r *SelectRow) SetReadOnly(v bool) {
+	r.pageReadOnly = v
+	if v {
+		// Focus(false) closes an open list: a gate applied while it is open
+		// would otherwise leave the overlay drawn over a row nothing routes
+		// events to any more.
+		r.dd.Focus(false)
+	}
+}
+
+// ReadOnly reports the page's own gate, not the form's.
+func (r *SelectRow) ReadOnly() bool { return r.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the row draws the selected item
 // as flat text, with no box and no arrow.
 func (r *SelectRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
-	if r.drawReadOnly {
+	if r.drawReadOnly || r.pageReadOnly {
 		drawFlatReadOnly(s, r.x, r.y, r.w, r.Label(), r.dd.Value())
 		return
 	}
@@ -612,12 +646,18 @@ func (r *SelectRow) Draw(s tcell.Screen, focused bool) {
 func (r *SelectRow) DrawOverlay(s tcell.Screen) { r.dd.DrawOverlay(s) }
 func (r *SelectRow) OverlayActive() bool        { return r.dd.IsOpen() }
 func (r *SelectRow) HandleKey(ev *tcell.EventKey) bool {
+	if r.pageReadOnly {
+		return false
+	}
 	before := r.dd.Value()
 	handled := r.dd.HandleKey(ev)
 	r.notifyChanged(before)
 	return handled
 }
 func (r *SelectRow) HandleMouse(ev *tcell.EventMouse) bool {
+	if r.pageReadOnly {
+		return false
+	}
 	before := r.dd.Value()
 	handled := r.dd.HandleMouse(ev)
 	r.notifyChanged(before)

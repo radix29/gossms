@@ -162,3 +162,14 @@ func loadAgentAdminChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 	}
 	return out, nil
 }
+
+// isAgentNode reports whether t is one of the SQL Server Agent node types.
+//
+// The Agent tree hangs off the server and its nodes carry no DBName, but what
+// permits its actions lives in msdb — so this is what tells
+// primeDatabaseCapabilities which database an Agent node's menu will ask
+// about. The range is the contiguous NodeAgent* block in tree_node.go; a new
+// Agent node type belongs inside it.
+func isAgentNode(t NodeType) bool {
+	return t >= NodeAgentJobs && t <= NodeAgentErrorLog
+}

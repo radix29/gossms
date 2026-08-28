@@ -205,6 +205,12 @@ func TestJobStepsUntouchedPageWritesNothing(t *testing.T) {
 // page's own list; the write is a fourth pass, and it addresses steps by the
 // numbers msdb will have — a delete and an insert, since msdb has no procedure
 // that renumbers a step in place.
+//
+// Both arrive in one statement: gosmo sends a reorder as a single transactional
+// batch, because between the delete and the insert the step's definition exists
+// nowhere but in memory. See gosmo's atomicBatch. The order *within* the batch
+// is what this asserts — the delete of the old position before the insert at
+// the new one — since the two are not interchangeable.
 func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -216,20 +222,27 @@ func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want the delete and the insert, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	if len(stmts) != 1 {
+		t.Fatalf("want one batch carrying the delete and the insert, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
 	}
-	if !strings.Contains(stmts[0], "sp_delete_jobstep @job_name = N'Nightly reindex', @step_id = 2") {
-		t.Errorf("first statement should remove the step from its old position:\n%s", stmts[0])
+	batch := stmts[0]
+	if !strings.Contains(batch, "BEGIN TRANSACTION") || !strings.Contains(batch, "COMMIT TRANSACTION") {
+		t.Errorf("the reorder was not sent as a transaction, so a failure between the "+
+			"delete and the insert loses the step:\n%s", batch)
 	}
-	if !strings.Contains(stmts[1], "@step_id = 1") {
-		t.Errorf("the step was not re-inserted at position 1:\n%s", stmts[1])
+	del := strings.Index(batch, "sp_delete_jobstep @job_name = N'Nightly reindex', @step_id = 2")
+	if del < 0 {
+		t.Errorf("the step is not removed from its old position:\n%s", batch)
+	}
+	add := strings.Index(batch, "sp_add_jobstep")
+	if add < 0 || add < del {
+		t.Errorf("the re-insert is missing or comes before the delete:\n%s", batch)
 	}
 	// The re-add has to carry the step's own definition: it is a new row, so
 	// anything left out is defaulted away rather than kept.
-	for _, want := range []string{"@step_name = N'Rebuild indexes'", "@command = N'EXEC dbo.usp_reindex'", "@database_name = N'appdb'"} {
-		if !strings.Contains(stmts[1], want) {
-			t.Errorf("the re-inserted step lost %s:\n%s", want, stmts[1])
+	for _, want := range []string{"@step_id = 1", "@step_name = N'Rebuild indexes'", "@command = N'EXEC dbo.usp_reindex'", "@database_name = N'appdb'"} {
+		if !strings.Contains(batch[add:], want) {
+			t.Errorf("the re-inserted step lost %s:\n%s", want, batch)
 		}
 	}
 }
@@ -300,5 +313,71 @@ func TestANonTSQLStepsCommandRefusesTyping(t *testing.T) {
 	typeX()
 	if row.Value() == before {
 		t.Error("a T-SQL step's command refused typing")
+	}
+}
+
+// TestANonTSQLStepsWholeEditPanelRefusesTyping. The command was gated first
+// because its text is what a write-back hands to the query processor, but every
+// other row on the panel is written by commitCurrent too — so a row still
+// taking typing is typing the page throws away. This pins the whole panel, and
+// the second half pins the gate lifting again: a page that never re-enabled the
+// rows would pass the first half and make every T-SQL step read-only.
+func TestANonTSQLStepsWholeEditPanelRefusesTyping(t *testing.T) {
+	inst, apply, form, grid := loadJobStepsPage(t)
+
+	texts := [][2]string{
+		{"Step name", "Renamed by the test"},
+		{"On success go to step", "7"},
+		{"On failure go to step", "9"},
+		{"Retry attempts", "5"},
+		{"Retry interval", "6"},
+		{"Output file name", "/tmp/step.out"},
+	}
+	selects := [][2]string{
+		{"Database", "salesdb"},
+		{"On success action", jobStepOnActionItems[0]},
+		{"On failure action", jobStepOnActionItems[2]},
+	}
+
+	selectGridRow(t, grid, stepNameCol, "Notify ops")
+	for _, tc := range texts {
+		row := textRow(t, form, tc[0])
+		before := row.Value()
+		row.Edit(tc[1])
+		if row.Value() != before {
+			t.Errorf("a PowerShell step's %q took an edit: %q", tc[0], row.Value())
+		}
+		if row.Dirty() {
+			t.Errorf("a PowerShell step's %q went dirty", tc[0])
+		}
+	}
+	for _, tc := range selects {
+		row := selectRow(t, form, tc[0])
+		before := row.Value()
+		row.Edit(slices.Index(row.Items(), tc[1]))
+		if row.Value() != before {
+			t.Errorf("a PowerShell step's %q took an edit: %q", tc[0], row.Value())
+		}
+		if row.Dirty() {
+			t.Errorf("a PowerShell step's %q went dirty", tc[0])
+		}
+	}
+
+	// Move off the row so commitCurrent runs against it, then apply: a refused
+	// edit must reach neither the step nor the server.
+	selectGridRow(t, grid, stepNameCol, "Check integrity")
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("a read-only step's panel reached the server:\n%s", strings.Join(stmts, "\n"))
+	}
+
+	// The gate lifts on a T-SQL step — "Check integrity" is selected above.
+	for _, tc := range texts {
+		editText(t, form, tc[0], tc[1])
+	}
+	for _, tc := range selects {
+		editSelect(t, form, tc[0], tc[1])
 	}
 }

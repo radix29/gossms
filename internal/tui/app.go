@@ -374,8 +374,7 @@ func (a *App) buildUI() {
 	a.explorerSplit.SetRatio(0.3)
 
 	a.panels = layout.NewPanelManager()
-	a.detailBrowser = NewDetailBrowser("Object Explorer Details")
-	a.detailBrowser.OnRefresh = func() { a.detailBrowser.RefreshCurrent(a) }
+	a.detailBrowser = a.newDetailBrowser()
 	a.panels.AddPanel(a.detailBrowser)
 	a.panels.OnCloseTab = a.requestClosePanel
 

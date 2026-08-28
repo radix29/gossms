@@ -37,11 +37,8 @@ func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 // and schedule name — the Object Explorer context menu's entry point.
 // database is "msdb" so Script Changes' generated query window opens there.
 func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
-		schedulePropPages(sc, scheduleName))
+		func() []propPage { return schedulePropPages(sc, scheduleName) })
 }
 
 func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {

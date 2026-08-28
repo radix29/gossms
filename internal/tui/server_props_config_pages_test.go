@@ -553,3 +553,47 @@ func findStatic(f *propsheet.Form, label string) (string, bool) {
 	}
 	return "", false
 }
+
+// TestXpCmdshellIsNotEditableOnLinux. SQL Server on Linux has no xp_cmdshell,
+// but still lists the option in sys.configurations at 0 — so the row loads
+// like any other and the only thing that says otherwise is the server's
+// refusal on OK (Msg 15392, "not supported by this edition"). Verified live on
+// ubusql1: the option is present in the catalog there.
+//
+// Asserted through the widget, since a page that offered the checkbox and let
+// the write fail writes a statement this fake would happily accept.
+func TestXpCmdshellIsNotEditableOnLinux(t *testing.T) {
+	sc, inst := newFakeConnOnLinux(t, configResponses()...)
+	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+
+	row := textRow(t, form, "xp_cmdshell")
+	if !strings.Contains(row.Value(), "Linux") {
+		t.Errorf("xp_cmdshell shows %q on a Linux host, want it to say why it is unavailable", row.Value())
+	}
+	row.Edit("1")
+	if row.Dirty() {
+		t.Error("xp_cmdshell accepted an edit on a Linux host, where it can never be turned on")
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Fatalf("a Linux Advanced page wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// TestXpCmdshellStaysEditableOnWindows guards the other direction: the check
+// above is satisfied by a page that withholds the option everywhere.
+func TestXpCmdshellStaysEditableOnWindows(t *testing.T) {
+	sc, inst := newFakeConn(t, configResponses()...)
+	form, apply := loadPage(t, pageServerAdvanced(sc), inst)
+
+	editCheck(t, form, "xp_cmdshell", true)
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 2 || !strings.Contains(stmts[0], "xp_cmdshell") {
+		t.Fatalf("ticking xp_cmdshell on Windows wrote:\n%s", strings.Join(stmts, "\n"))
+	}
+}

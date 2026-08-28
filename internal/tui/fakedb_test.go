@@ -60,6 +60,12 @@ type fakeResponse struct {
 	// query contains "FROM sys.databases" too, so the list answer served it
 	// and every database on the page resolved to whichever row sorted first.
 	arg string
+
+	// block holds a matching query inside the driver until it is closed, so a
+	// test can act while the read is genuinely in flight. Without it this
+	// driver answers instantly and every read has finished — and been
+	// cancelled by its own defer — before the test regains control.
+	block chan struct{}
 }
 
 // fakeInstance is the scripted responses plus the record of every statement
@@ -75,6 +81,61 @@ type fakeInstance struct {
 
 	// queries counts every query answered — see QueryCount.
 	queries int
+	// reads is the text of every query answered, for a test asserting what a
+	// read *asked* rather than what it did with the answer. Statements() and
+	// StatementsIn() cover the write half; a report is all read.
+	reads []string
+
+	// readArgs is the parameter list each read was issued with, in step with
+	// reads. Without it a test can see *that* a read happened but not what it
+	// asked about — and a hook that addressed the wrong row still reaches the
+	// server, so the id it bound is the only thing separating right from wrong.
+	readArgs [][]driver.NamedValue
+
+	// readCtxs is the context each read was issued under, in step with reads.
+	// A cancelled read is otherwise invisible here: this driver answers
+	// immediately and ignores the context, so whether the caller *would* have
+	// aborted a slow query can only be seen by looking at what it passed.
+	readCtxs []context.Context
+}
+
+// ReadArgs returns the parameters of the first query answered whose text
+// contains want, and whether there was one.
+func (f *fakeInstance) ReadArgs(want string) ([]driver.NamedValue, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, q := range f.reads {
+		if strings.Contains(q, want) {
+			return f.readArgs[i], true
+		}
+	}
+	return nil, false
+}
+
+// ReadContext returns the context of the first query answered whose text
+// contains want, and whether there was one.
+func (f *fakeInstance) ReadContext(want string) (context.Context, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, q := range f.reads {
+		if strings.Contains(q, want) {
+			return f.readCtxs[i], true
+		}
+	}
+	return nil, false
+}
+
+// Reads returns every query answered whose text contains want.
+func (f *fakeInstance) Reads(want string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, q := range f.reads {
+		if strings.Contains(q, want) {
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // QueryCount is how many queries have been answered, for a test asserting
@@ -85,10 +146,15 @@ func (f *fakeInstance) QueryCount() int {
 	return f.queries
 }
 
-func (f *fakeInstance) respond(q, curDB string, args []driver.NamedValue) (*fakeResponse, bool) {
+func (f *fakeInstance) respond(ctx context.Context, q, curDB string, args []driver.NamedValue) (*fakeResponse, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.queries++
+	// Appended together, under this one lock, so ReadContext can index one by
+	// the other: two concurrent reads recording separately would interleave.
+	f.reads = append(f.reads, q)
+	f.readCtxs = append(f.readCtxs, ctx)
+	f.readArgs = append(f.readArgs, slices.Clone(args))
 	for i := range f.responses {
 		r := &f.responses[i]
 		if r.db != "" && r.db != curDB {
@@ -237,10 +303,15 @@ func (c *fakeConn) ExecContext(_ context.Context, q string, args []driver.NamedV
 	return driver.ResultNoRows, nil
 }
 
-func (c *fakeConn) QueryContext(_ context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	r, ok := c.inst.respond(q, c.curDB, args)
+func (c *fakeConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	r, ok := c.inst.respond(ctx, q, c.curDB, args)
 	if !ok {
 		return nil, fmt.Errorf("fakedb: no scripted response for query:\n%s", q)
+	}
+	// Outside respond's lock: held under it, one blocked read would stall
+	// every other query against this instance.
+	if r.block != nil {
+		<-r.block
 	}
 	return &fakeRows{resp: r}, nil
 }
@@ -369,6 +440,72 @@ func capabilityResponses(dbAccessible bool, granted, denied, dbGranted, dbDenied
 	}
 }
 
+// capabilityResponsesWithRoles is capabilityResponses plus the fixed database
+// *role* half of the same probe. Roles come back tagged "R" where a permission
+// is tagged "P" — the two travel in one query, and the membership rights SQL
+// Agent gates on read only the "R" rows.
+func capabilityResponsesWithRoles(dbAccessible bool, granted, denied, roleIn, roleNotIn []string) []fakeResponse {
+	out := capabilityResponses(dbAccessible, granted, denied, nil, nil)
+	for i, r := range out {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range roleIn {
+			r.rows = append(r.rows, []driver.Value{"R", n, int64(1)})
+		}
+		for _, n := range roleNotIn {
+			r.rows = append(r.rows, []driver.Value{"R", n, int64(0)})
+		}
+		out[i] = r
+	}
+	return out
+}
+
+// capabilityResponsesWithSchemas is capabilityResponses plus the per-schema
+// block of the same database probe: gosmo asks for the schemas in the same
+// query as the roles and permissions, tagging each row with the permission and
+// naming the schema — see gosmo's schemaCapabilityQuery.
+func capabilityResponsesWithSchemas(dbAccessible bool, granted, denied, dbGranted, dbDenied, schemaGranted, schemaDenied []string) []fakeResponse {
+	out := capabilityResponses(dbAccessible, granted, denied, dbGranted, dbDenied)
+	for i, r := range out {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range schemaGranted {
+			r.rows = append(r.rows, []driver.Value{"S:ALTER", n, int64(1)})
+		}
+		for _, n := range schemaDenied {
+			r.rows = append(r.rows, []driver.Value{"S:ALTER", n, int64(0)})
+		}
+		out[i] = r
+	}
+	return out
+}
+
+// capabilityResponsesWithObjects is capabilityResponses plus the OBJECT-scope
+// block of the same database probe. Objects come back tagged "O:<permission>"
+// with the securable as "schema.object" — see gosmo's objectCapabilityQuery.
+//
+// Only granted, denied and owned objects appear. The map is sparse by design,
+// which is the property the gate has to be right about, so a test naming an
+// object here and nothing else is the realistic shape.
+func capabilityResponsesWithObjects(dbAccessible bool, dbDenied, schemaDenied, objGranted, objDenied []string) []fakeResponse {
+	out := capabilityResponsesWithSchemas(dbAccessible, nil, nil, nil, dbDenied, nil, schemaDenied)
+	for i, r := range out {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range objGranted {
+			r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(1)})
+		}
+		for _, n := range objDenied {
+			r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(0)})
+		}
+		out[i] = r
+	}
+	return out
+}
+
 // newFakeConnAtVersion is newFakeConn for an instance reporting a given
 // product version — the only way to reach the pre-2017 code paths (gosmo's
 // xp_dirtree filesystem fallback), whose version gate reads ServerInfo.
@@ -376,6 +513,17 @@ func newFakeConnAtVersion(t *testing.T, version string, responses ...fakeRespons
 	t.Helper()
 	info := serverInfoResponse()
 	info.rows[0][2] = version
+	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
+}
+
+// newFakeConnOnLinux is newFakeConn for an instance whose @@VERSION says
+// Linux — the only way to reach the code that withholds a Windows-only
+// sp_configure option, since gosmo derives ServerInfo.Platform from that
+// string and from nothing else.
+func newFakeConnOnLinux(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	info := serverInfoResponse()
+	info.rows[0][9] = "Microsoft SQL Server 2025 ... on Linux"
 	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
 }
 

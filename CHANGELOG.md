@@ -10,9 +10,7 @@ entries start with v0.0.2 onward.
 
 - **Permission awareness, end to end** — goSSMS as a login that is not
   `sysadmin`, built in five phases against two real non-admin logins on two
-  instances. `docs/permissions-plan.md` carries the audit, the four
-  presentation rules and the phasing; `README.md` § Required rights is the
-  user-facing half.
+  instances. `README.md` § Required rights is the user-facing half.
   - **P0 — connect at all.** `gosmo.Server.loadInfo` read fifteen values in
     one statement, thirteen public and two from `sys.dm_os_sys_info`, so the
     DMV's permission check failed the whole SELECT and `Connect` failed with

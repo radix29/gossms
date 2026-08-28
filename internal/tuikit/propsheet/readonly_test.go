@@ -312,3 +312,102 @@ func TestFlatValueStartsWhereAnEditableValueDoes(t *testing.T) {
 		t.Errorf("flat value column = %d, editable text column = %d", got, want)
 	}
 }
+
+// TestAPageReadOnlyRowRefusesEveryEditPath. A page gating one row of an
+// otherwise editable form (a job step of a subsystem the page cannot write) has
+// to close every way in, not just the drawn one: Edit is the path a test takes,
+// HandleKey the path a keystroke takes, and Focusable is what stops the row
+// being reachable at all. A row that only *draws* flat still goes dirty and
+// still gets written.
+func TestAPageReadOnlyRowRefusesEveryEditPath(t *testing.T) {
+	text := Text("Step name", "Notify ops", 20)
+	sel := Select("Database", []string{"(unchanged)", "appdb", "salesdb"}, 0)
+
+	text.SetReadOnly(true)
+	sel.SetReadOnly(true)
+
+	text.Edit("Renamed")
+	sel.Edit(2)
+	if text.Value() != "Notify ops" || sel.Selected() != 0 {
+		t.Errorf("Edit went through the page's gate: %q / %d", text.Value(), sel.Selected())
+	}
+	// The field is focused by hand: it ignores keys it is not focused for, so
+	// a row whose gate is missing would still look inert here.
+	text.field.Focus(true)
+	sel.dd.Focus(true)
+	if text.HandleKey(tcell.NewEventKey(tcell.KeyRune, "X", tcell.ModNone)) {
+		t.Error("a page-read-only text row claimed a keystroke")
+	}
+	// Enter, not Down: a closed dropdown lets Up/Down fall through on purpose,
+	// so only the key that opens the list shows the gate holding.
+	if sel.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)) || sel.OverlayActive() {
+		t.Error("a page-read-only select row opened its list")
+	}
+	if text.Value() != "Notify ops" || sel.Selected() != 0 {
+		t.Errorf("a keystroke edited a page-read-only row: %q / %d", text.Value(), sel.Selected())
+	}
+	if text.Focusable() || sel.Focusable() {
+		t.Error("a page-read-only row is still focusable")
+	}
+	if text.Dirty() || sel.Dirty() {
+		t.Error("a page-read-only row went dirty")
+	}
+	// And it looks the part, on a form with no gate of its own: an input box
+	// the terminal refuses to type into reads as a broken terminal.
+	for _, c := range []struct {
+		name string
+		row  Row
+	}{{"text", text}, {"select", sel}} {
+		if got := drawRow(c.row, false); strings.Contains(got, "[") {
+			t.Errorf("page-read-only %s row = %q, still draws its control", c.name, got)
+		}
+	}
+
+	// A gate applied over an already-open list must close it: the overlay is
+	// drawn last and takes every event first, so one left open floats over a
+	// row nothing routes to any more.
+	open := Select("Database", []string{"appdb", "salesdb"}, 0)
+	open.dd.Focus(true)
+	open.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	if !open.OverlayActive() {
+		t.Fatal("the dropdown did not open — the rest of this case proves nothing")
+	}
+	open.SetReadOnly(true)
+	if open.OverlayActive() {
+		t.Error("gating a select row left its list open")
+	}
+
+	text.SetReadOnly(false)
+	sel.SetReadOnly(false)
+	text.Edit("Renamed")
+	sel.Edit(2)
+	if text.Value() != "Renamed" || sel.Selected() != 2 {
+		t.Errorf("lifting the page's gate left the row uneditable: %q / %d", text.Value(), sel.Selected())
+	}
+}
+
+// TestThePagesGateAndTheFormsGateAreIndependent. Whichever is set last must not
+// cancel the other out: lifting a permission gate must not make a non-T-SQL job
+// step editable, and a page gating one row must not make the whole form
+// editable when the permission gate is on. EditorRow's counterpart is above.
+func TestThePagesGateAndTheFormsGateAreIndependent(t *testing.T) {
+	text := Text("Step name", "Notify ops", 20)
+	f := NewForm(text)
+	f.SetBounds(0, 0, 60, 10)
+
+	text.SetReadOnly(true)
+	f.SetReadOnly(true)
+	f.SetReadOnly(false)
+	if !text.ReadOnly() || text.Focusable() {
+		t.Error("clearing the form's gate cleared the page's own")
+	}
+
+	// Asked through the form, not the row: the form's gate is enforced in
+	// Form.focusableAt, so a row's own Focusable() knows nothing about it.
+	f.SetReadOnly(true)
+	text.SetReadOnly(false)
+	f.Focus(true)
+	if f.Focused() != nil || f.FocusNext() {
+		t.Error("clearing the page's gate let a row focus on a read-only form")
+	}
+}

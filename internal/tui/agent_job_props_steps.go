@@ -323,6 +323,34 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				return ""
 			}
+			// setPanelReadOnly gates the whole edit panel as one. Every row
+			// here is written back by commitCurrent, so a row left editable
+			// under a step the page cannot write takes typing that is silently
+			// discarded — the command was gated first and the rest followed.
+			setPanelReadOnly := func(ro bool) {
+				nameField.SetReadOnly(ro)
+				databaseSelect.SetReadOnly(ro)
+				commandField.SetReadOnly(ro)
+				onSuccessSelect.SetReadOnly(ro)
+				onSuccessStepField.SetReadOnly(ro)
+				onFailSelect.SetReadOnly(ro)
+				onFailStepField.SetReadOnly(ro)
+				retryAttemptsField.SetReadOnly(ro)
+				retryIntervalField.SetReadOnly(ro)
+				outputFileField.SetReadOnly(ro)
+			}
+			clearPanel := func() {
+				nameField.SetValue("")
+				databaseSelect.SetSelected(0)
+				commandField.SetValue("")
+				onSuccessSelect.SetSelected(2)
+				onSuccessStepField.SetValue("0")
+				onFailSelect.SetSelected(1)
+				onFailStepField.SetValue("0")
+				retryAttemptsField.SetValue("0")
+				retryIntervalField.SetValue("0")
+				outputFileField.SetValue("")
+			}
 			var current *jobStepEdit
 			commitCurrent := func() {
 				if current == nil {
@@ -357,16 +385,8 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			syncFieldsFromSelection := func() {
 				current = selected()
 				if current == nil {
-					nameField.SetValue("")
-					databaseSelect.SetSelected(0)
-					commandField.SetValue("")
-					onSuccessSelect.SetSelected(2)
-					onSuccessStepField.SetValue("0")
-					onFailSelect.SetSelected(1)
-					onFailStepField.SetValue("0")
-					retryAttemptsField.SetValue("0")
-					retryIntervalField.SetValue("0")
-					outputFileField.SetValue("")
+					clearPanel()
+					setPanelReadOnly(false)
 					return
 				}
 				nameField.SetValue(current.name)
@@ -386,18 +406,17 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				retryAttemptsField.SetValue(strconv.Itoa(current.retryAttempts))
 				retryIntervalField.SetValue(strconv.Itoa(current.retryInterval))
 				outputFileField.SetValue(current.outputFileName)
-				// Say so on selection rather than on OK: the step's other fields
-				// still take typing, so the honest moment to explain nothing will
-				// be saved is when the row is picked. The command itself is gated
-				// rather than explained: it is the field whose text a write-back
-				// would hand to the query processor, and highlighting a
-				// PowerShell script as T-SQL claims it is one.
+				// Said on selection rather than on OK: the whole panel is gated
+				// the moment the row is picked, so the explanation arrives with
+				// the gate. The command loses its highlighting on top of the
+				// gate — highlighting a PowerShell script as T-SQL claims it is
+				// one.
 				if !current.editable() {
-					commandField.SetReadOnly(true)
+					setPanelReadOnly(true)
 					commandEditor.SetHighlighter(nil)
 					hint.Set(current.subsystem + " steps are shown read-only — this page edits T-SQL steps only.")
 				} else {
-					commandField.SetReadOnly(false)
+					setPanelReadOnly(false)
 					commandEditor.SetHighlighter(sqlHighlight)
 					hint.Clear()
 				}
@@ -414,6 +433,18 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				// doubles as the previously selected step's live edit and the
 				// new step's seed name, so committing here would misfile a
 				// freshly typed name as a rename of the wrong step.
+				// A read-only step's panel cannot be borrowed to seed a new one:
+				// its rows refuse typing, and its name is the selected step's.
+				// Clear it and unlock it instead of refusing outright, which
+				// would leave New dead for the whole visit to a mixed job.
+				if current != nil && !current.editable() {
+					current = nil
+					clearPanel()
+					setPanelReadOnly(false)
+					commandEditor.SetHighlighter(sqlHighlight)
+					hint.Set("Type a name for the new step, then press New again.")
+					return
+				}
 				name := nameField.Value()
 				if name == "" {
 					hint.Set("Type a step name first.")

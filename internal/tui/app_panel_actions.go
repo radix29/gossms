@@ -336,20 +336,12 @@ func (a *App) closeActivePanel() {
 }
 
 func (a *App) executeActiveQuery() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.Execute()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.Execute() })
 }
 
 // executeSelectedQuery runs the toolbar's "Execute Selection" button.
 func (a *App) executeSelectedQuery() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.ExecuteSelection()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.ExecuteSelection() })
 }
 
 // activeQueryPanel returns the active panel as a *QueryPanel, or nil if it
@@ -363,14 +355,30 @@ func (a *App) activeQueryPanel() *QueryPanel {
 	return nil
 }
 
+// withQueryPanel runs fn on the active query panel, or says there isn't one.
+// Every Query-menu action and toolbar button that acts on the editor goes
+// through it, so none of them can be the one that quietly does nothing when
+// the active panel is a plan or a dashboard — see CLAUDE.md § Application
+// rules on context-gating. The Enabled predicates gate the same actions
+// ahead of the click; this is what happens when one is reached anyway.
+func (a *App) withQueryPanel(fn func(*QueryPanel)) {
+	qp := a.activeQueryPanel()
+	if qp == nil {
+		a.setStatus(noActiveQueryPanelMessage)
+		return
+	}
+	fn(qp)
+}
+
+// noActiveQueryPanelMessage is the one wording used everywhere an action needs
+// a query panel and the active panel isn't one — the counterpart to
+// notConnectedMessage.
+const noActiveQueryPanelMessage = "No active query panel"
+
 // showEstimatedExecutionPlan runs the toolbar's "Show Estimated Execution
 // Plan" button.
 func (a *App) showEstimatedExecutionPlan() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.ShowEstimatedPlan()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.ShowEstimatedPlan() })
 }
 
 // toggleActualExecutionPlan flips whether Execute captures the actual
@@ -410,40 +418,31 @@ func (a *App) openPlanPanel(title string, plan *showplan.Plan) {
 	a.focusPanels()
 }
 
+// openPlanComparePanel opens a plan comparison in its own panel, the way
+// openPlanPanel opens a single plan.
+func (a *App) openPlanComparePanel(title string, left, right *showplan.Plan) {
+	a.panels.SetActive(a.panels.AddPanel(NewPlanComparePanel(a, title, left, right)))
+	a.focusPanels()
+}
+
 // cancelExecutingQuery runs Query > Cancel Executing Query.
 func (a *App) cancelExecutingQuery() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.CancelExecution()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.CancelExecution() })
 }
 
 // reconnectActiveQuery runs Query > Reconnect.
 func (a *App) reconnectActiveQuery() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.Reconnect()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.Reconnect() })
 }
 
 // refreshCompletionCache runs Query > Refresh IntelliSense Cache.
 func (a *App) refreshCompletionCache() {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.refreshCompletionCache()
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.refreshCompletionCache() })
 }
 
 // setResultsMode runs Query > Results To Grid/Text/File.
 func (a *App) setResultsMode(mode ResultsMode) {
-	if qp := a.activeQueryPanel(); qp != nil {
-		qp.SetResultsMode(mode)
-	} else {
-		a.setStatus("No active query panel")
-	}
+	a.withQueryPanel(func(qp *QueryPanel) { qp.SetResultsMode(mode) })
 }
 
 // saveQuery runs File > Save (saveAs=false) or File > Save As... (saveAs=true).
@@ -513,8 +512,7 @@ func (a *App) showObjectExplorerDetails() {
 		return ok
 	})
 	if idx < 0 {
-		a.detailBrowser = NewDetailBrowser("Object Explorer Details")
-		a.detailBrowser.OnRefresh = func() { a.detailBrowser.RefreshCurrent(a) }
+		a.detailBrowser = a.newDetailBrowser()
 		idx = a.panels.AddPanel(a.detailBrowser)
 	}
 	a.panels.SetActive(idx)
@@ -627,10 +625,8 @@ func (a *App) showServerProperties() {
 // the shared entry point for the Tools menu and the Object Explorer context
 // menu.
 func (a *App) showServerPropertiesFor(sc *db.ServerConn) {
-	if !a.requireConn(sc) {
-		return
-	}
-	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes", serverPropPages(sc))
+	a.propDialog.show(sc, "", "Server Properties", "Instance: "+sc.Opts.Server, "Connected: yes",
+		func() []propPage { return serverPropPages(sc) })
 }
 
 // showNewDatabaseDialog opens New Database for a known connection — the
@@ -659,22 +655,17 @@ func (a *App) showDatabaseProperties() {
 // and database — the shared entry point for the Tools menu and the Object
 // Explorer context menu.
 func (a *App) showDatabasePropertiesFor(sc *db.ServerConn, dbName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Database Properties", "Database: "+dbName, "Server: "+sc.Opts.Server,
-		databasePropPages(sc, dbName))
+		func() []propPage { return databasePropPages(sc, dbName) })
 }
 
 // showAGPropertiesFor opens Availability Group Properties for a group on sc,
 // from the Object Explorer context menu. sc need not be the group's primary:
 // every page follows the primary itself and reports an error when it can't.
 func (a *App) showAGPropertiesFor(sc *db.ServerConn, agName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "", "Availability Group Properties",
-		"Availability group: "+agName, "Server: "+sc.Opts.Server, agPropPages(sc, agName))
+		"Availability group: "+agName, "Server: "+sc.Opts.Server,
+		func() []propPage { return agPropPages(sc, agName) })
 }
 
 // showAGDashboardFor opens the Always On dashboard — the context menu's "Show
@@ -741,51 +732,36 @@ func (a *App) showBackupHistoryFor(sc *db.ServerConn, dbName string) {
 
 // showLoginProperties opens Login Properties for a login on sc.
 func (a *App) showLoginProperties(sc *db.ServerConn, loginName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "", "Login Properties", "Login: "+loginName, "Server: "+sc.Opts.Server,
-		loginPropPages(a.propDialog, sc, loginName))
+		func() []propPage { return loginPropPages(a.propDialog, sc, loginName) })
 }
 
 // showTablePropertiesFor opens Table Properties for a known connection,
 // database, and schema-qualified table, from the Object Explorer context menu.
 func (a *App) showTablePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Table Properties", "Table: "+fqn(schema, name), "Database: "+dbName,
-		tablePropPages(sc, dbName, schema, name))
+		func() []propPage { return tablePropPages(sc, dbName, schema, name) })
 }
 
 // showIndexPropertiesFor opens Index Properties for a known connection,
 // database, and schema-qualified table/index, from the context menu.
 func (a *App) showIndexPropertiesFor(sc *db.ServerConn, dbName, schema, table, index string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Index Properties", "Index: "+index, "Table: "+fqn(schema, table),
-		indexPropPages(a.propDialog, sc, dbName, schema, table, index))
+		func() []propPage { return indexPropPages(a.propDialog, sc, dbName, schema, table, index) })
 }
 
 // showStatisticPropertiesFor opens Statistics Properties for a known
 // connection, database, and schema-qualified table/statistic.
 func (a *App) showStatisticPropertiesFor(sc *db.ServerConn, dbName, schema, table, stat string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Statistics Properties", "Statistic: "+stat, "Table: "+fqn(schema, table),
-		statisticPropPages(a.propDialog, sc, dbName, schema, table, stat))
+		func() []propPage { return statisticPropPages(a.propDialog, sc, dbName, schema, table, stat) })
 }
 
 // showForeignKeyPropertiesFor opens the read-only Foreign Key Properties for a
 // known connection, database, and schema-qualified table/foreign key.
 func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, fk string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Foreign Key Properties", "Key: "+fk, "Table: "+fqn(schema, table),
-		fkPropPages(sc, dbName, schema, table, fk))
+		func() []propPage { return fkPropPages(sc, dbName, schema, table, fk) })
 }
 
 // showKeyPropertiesFor opens Primary/Unique Key Properties for a known
@@ -793,103 +769,73 @@ func (a *App) showForeignKeyPropertiesFor(sc *db.ServerConn, dbName, schema, tab
 // dialog title and comes off the tree node's nodeData, which loadKeysChildren
 // already knows.
 func (a *App) showKeyPropertiesFor(sc *db.ServerConn, dbName, schema, table, key string, isPrimaryKey bool) {
-	if !a.requireConn(sc) {
-		return
-	}
 	title := keyTypeName(isPrimaryKey) + " Properties"
 	a.propDialog.show(sc, dbName, title, "Key: "+key, "Table: "+fqn(schema, table),
-		keyPropPages(a.propDialog, sc, dbName, schema, table, key))
+		func() []propPage { return keyPropPages(a.propDialog, sc, dbName, schema, table, key) })
 }
 
 // showRolePropertiesFor opens Database Role Properties for a known connection,
 // database, and role name.
 func (a *App) showRolePropertiesFor(sc *db.ServerConn, dbName, roleName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Database Role Properties", "Role: "+roleName, "Database: "+dbName,
-		rolePropPages(a.propDialog, sc, dbName, roleName))
+		func() []propPage { return rolePropPages(a.propDialog, sc, dbName, roleName) })
 }
 
 // showServerRolePropertiesFor opens Server Role Properties for a known
 // connection and role name — a server-level principal with no dbName, like
 // showLoginProperties.
 func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "", "Server Role Properties", "Role: "+roleName, "Server: "+sc.Opts.Server,
-		serverRolePropPages(sc, roleName))
+		func() []propPage { return serverRolePropPages(sc, roleName) })
 }
 
 // showUserPropertiesFor opens Database User Properties for a known connection,
 // database, and user name.
 func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Database User Properties", "User: "+userName, "Database: "+dbName,
-		userPropPages(a.propDialog, sc, dbName, userName))
+		func() []propPage { return userPropPages(a.propDialog, sc, dbName, userName) })
 }
 
 // showSchemaPropertiesFor opens Schema Properties for a known connection,
 // database, and schema name.
 func (a *App) showSchemaPropertiesFor(sc *db.ServerConn, dbName, schemaName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Schema Properties", "Schema: "+schemaName, "Database: "+dbName,
-		schemaPropPages(sc, dbName, schemaName))
+		func() []propPage { return schemaPropPages(sc, dbName, schemaName) })
 }
 
 // showPartitionFunctionPropertiesFor opens the read-only Partition Function
 // Properties for a known connection and database.
 func (a *App) showPartitionFunctionPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Partition Function Properties", "Function: "+name, "Database: "+dbName,
-		partitionFunctionPropPages(sc, dbName, name))
+		func() []propPage { return partitionFunctionPropPages(sc, dbName, name) })
 }
 
 // showPartitionSchemePropertiesFor opens the read-only Partition Scheme
 // Properties.
 func (a *App) showPartitionSchemePropertiesFor(sc *db.ServerConn, dbName, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Partition Scheme Properties", "Scheme: "+name, "Database: "+dbName,
-		partitionSchemePropPages(sc, dbName, name))
+		func() []propPage { return partitionSchemePropPages(sc, dbName, name) })
 }
 
 // showSecurityPolicyPropertiesFor opens the read-only Security Policy
 // Properties.
 func (a *App) showSecurityPolicyPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Security Policy Properties", "Policy: "+fqn(schema, name), "Database: "+dbName,
-		securityPolicyPropPages(sc, dbName, schema, name))
+		func() []propPage { return securityPolicyPropPages(sc, dbName, schema, name) })
 }
 
 // showColumnMasterKeyPropertiesFor opens the read-only Column Master Key
 // Properties.
 func (a *App) showColumnMasterKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Column Master Key Properties", "Key: "+name, "Database: "+dbName,
-		columnMasterKeyPropPages(sc, dbName, name))
+		func() []propPage { return columnMasterKeyPropPages(sc, dbName, name) })
 }
 
 // showColumnEncryptionKeyPropertiesFor opens the read-only Column Encryption
 // Key Properties.
 func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, dbName, "Column Encryption Key Properties", "Key: "+name, "Database: "+dbName,
-		columnEncryptionKeyPropPages(sc, dbName, name))
+		func() []propPage { return columnEncryptionKeyPropPages(sc, dbName, name) })
 }
 
 // canSaveActivePanel gates File > Save / Save As...: a query panel saves its

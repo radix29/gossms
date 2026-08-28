@@ -38,8 +38,7 @@ to v0.0.10, Go to 1.27 and `tcell` to v3.4.2.
   still be generated for someone who can run them. The check is one-sided —
   an action is withheld only when the server answered "no" to *every* right
   that would permit it, so an unprobed connection behaves exactly as before.
-  README gains a **Required rights** table; `docs/permissions-plan.md` carries
-  the whole design.
+  README gains a **Required rights** table.
 - **`Script <object> as ▸` on every family the tree shows** — sixteen node
   types, with CREATE, ALTER, DROP, DROP And CREATE and the SELECT / INSERT /
   UPDATE / DELETE / EXECUTE templates, to a new query window, a file, or the

@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/showplan"
 	"github.com/radix29/gossms/internal/tuikit/charts"
@@ -62,6 +64,23 @@ var qsTopCounts = []int{10, 25, 50, 100}
 // qsDefaultTopIdx is 25, gosmo's own QSDefaultTop.
 const qsDefaultTopIdx = 1
 
+// qsMinExecCounts are the execution floors the Min Execs selector offers, the
+// first meaning no floor. A query that ran twice has an average, a variation
+// and a regression, and none of the three mean anything — the floor is how a
+// report about a workload stops being topped by the query that ran once
+// during a backup.
+var qsMinExecCounts = []int64{0, 2, 5, 10, 100, 1000}
+
+// qsRegressionPcts are the thresholds the Regression selector offers, as a
+// percentage of the baseline value; the first means no threshold. A
+// percentage rather than an amount because the same report is read under
+// eleven metrics in four different units — see gosmo's MinRegressionPct.
+var qsRegressionPcts = []float64{0, 10, 25, 50, 100}
+
+// qsDefaultFilterIdx is index 0 of both: the panel opens unfiltered, the way
+// every report it can be opened from was read.
+const qsDefaultFilterIdx = 0
+
 // qsFocus names which grid has the keyboard.
 type qsFocus int
 
@@ -85,13 +104,31 @@ type QueryStorePanel struct {
 	rect   core.Rect
 	active bool
 
-	// What the toolbar selects. Metric and statistic are kept across a report
-	// change: a user who switched to CPU time meant it for the next view too.
+	// What the toolbar selects. The metric is kept across a report change: a
+	// user who switched to CPU time meant it for the next view too.
 	reportIdx int
 	metric    gosmo.QSMetric
 	stat      gosmo.QSStatistic
 	windowIdx int
 	topIdx    int
+
+	// statChosen records that the user picked a statistic from the toolbar.
+	// Until they do, the statistic follows each report's own defaultStat —
+	// Total for the two that rank by accumulated cost, Avg for the five that
+	// rank by cost per execution.
+	//
+	// Without it the default applied at construction only, so the same action
+	// gave two different answers: opening a report leaf produced Total on a
+	// panel created for it and whatever the last view left behind on one
+	// already open. Once the statistic is an explicit choice it is kept, which
+	// is what the metric does unconditionally.
+	statChosen bool
+
+	// minExecIdx and regressIdx index qsMinExecCounts and qsRegressionPcts —
+	// the two filters the server applies, kept across a report change like the
+	// metric and the statistic.
+	minExecIdx int
+	regressIdx int
 
 	// res is the report on screen and plans are the selected query's, both
 	// kept in typed form so the chart, the plan actions and Show Plan address
@@ -111,6 +148,17 @@ type QueryStorePanel struct {
 	sel  []toolButton // the five selectors and Refresh
 	acts []toolButton // the plan actions
 
+	// selMore and actMore are each row's "More ▾" cell, and hiddenSel and
+	// hiddenActs the buttons it stands in for. Both rows are wider than the
+	// pane at ordinary terminal sizes — the action row alone wants 119 columns
+	// of a pane that gets 70% of the screen — and a button that does not fit is
+	// not drawn *and* not clickable, so Track Query and Compare Plans could not
+	// be reached at all below a 170-column terminal.
+	selMore    toolButton
+	actMore    toolButton
+	hiddenSel  []int
+	hiddenActs []int
+
 	selRect   core.Rect
 	actRect   core.Rect
 	chartRect core.Rect
@@ -125,12 +173,25 @@ type QueryStorePanel struct {
 	// the two run independently, so they count separately.
 	seq     int
 	planSeq int
-	cancel  context.CancelFunc
+	// cancel and planCancel abort the in-flight report read and plan read.
+	// Two, not one, for the same reason there are two sequence numbers: a
+	// report reload must not kill the plan read beside it.
+	cancel     context.CancelFunc
+	planCancel context.CancelFunc
 
 	// barBuf is the chart's bar slice, kept across draws so plotting a report
 	// every frame does not allocate one per frame. Rebuilt each time, never
 	// read outside drawChart.
 	barBuf []charts.Bar
+
+	// cmpPlan is the plan marked for comparison by the first press of Compare
+	// Plans, parsed there and then: the plan grid is rebuilt by every report
+	// reload, and a mark that pointed into it would compare whatever row that
+	// index landed on after the next Refresh. cmpQueryID is what it was a plan
+	// of — two plans of different queries are not a comparison.
+	cmpPlan    *showplan.Plan
+	cmpPlanID  int64
+	cmpQueryID int64
 
 	// queryID is the query the plan pane is showing, so a report reload that
 	// lands on the same query does not blank the plans under the cursor.
@@ -170,6 +231,8 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 		stat:       queryStoreReports[idx].defaultStat,
 		windowIdx:  qsDefaultWindowIdx,
 		topIdx:     qsDefaultTopIdx,
+		minExecIdx: qsDefaultFilterIdx,
+		regressIdx: qsDefaultFilterIdx,
 		grid:       newQSGrid(app),
 		plansGrid:  newQSGrid(app),
 		chartSplit: layout.NewHorizontalSplitter("─── Report ─── (drag or Ctrl+Up/Down to resize)"),
@@ -181,6 +244,9 @@ func NewQueryStorePanel(app *App, sc *db.ServerConn, dbName, title string) *Quer
 	// here, never the report grid: SetData from inside a grid's own
 	// OnSelectRow undoes the move that fired it — see the redrawGrid rule.
 	p.grid.OnSelectRow = func(int) { p.selectedQueryChanged() }
+	// The report grid's Query column is a flattened rendering, so "Show Value"
+	// on it must not open the cell — see showValue.
+	p.grid.OnShowValue = p.showValue
 	p.buildTools()
 	return p
 }
@@ -192,8 +258,32 @@ func newQSGrid(app *App) *controls.DataGrid {
 	g.SetCellCursor(true)
 	g.SetStatusStyle(resultsStatusStyle)
 	g.OnCopyRequest = app.copyWithStatus
+	g.OnShowValue = app.showSQLCellValue
 	g.SetMaxCellWidth(app.cfg.MaxCellLength + 2)
 	return g
+}
+
+// showValue is the report grid's "Show Value" hook. It opens the statement
+// Query Store actually holds, not the cell: queryStoreOneLine collapses the
+// statement onto one line for the grid, and a `-- comment` anywhere in it then
+// swallows every line that followed — the panel it opened was runnable SQL with
+// most of the query commented out.
+//
+// The row comes from the grid rather than the hook, whose first parameter is
+// the *column* index. DataGrid.openViewer reads the cell at selRow/selCol, so
+// SelectedRow is the row whose value is being shown.
+func (p *QueryStorePanel) showValue(col int, column, value string) bool {
+	if column == qsQueryColumn {
+		if row := p.grid.SelectedRow(); row >= 0 && row < len(p.res.rows) {
+			// Empty on a report whose rows are not queries, and on a tracked
+			// row for a query Query Store no longer holds — the cell is then
+			// the only text there is.
+			if raw := p.res.rows[row].queryText; raw != "" {
+				value = raw
+			}
+		}
+	}
+	return p.app.showSQLCellValue(col, column, value)
 }
 
 // report is the view on screen.
@@ -218,7 +308,10 @@ func (p *QueryStorePanel) applyFocus() {
 
 // Close cancels any in-flight read. Called from App.closePanelAt; the
 // connection belongs to App, so there is nothing else to release.
-func (p *QueryStorePanel) Close() { p.cancelRead() }
+func (p *QueryStorePanel) Close() {
+	p.cancelRead()
+	p.cancelPlans()
+}
 
 // cancelRead aborts the in-flight read, on close and when a new read
 // supersedes one. seq already discards a superseded result, but without
@@ -227,6 +320,18 @@ func (p *QueryStorePanel) cancelRead() {
 	if p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
+	}
+}
+
+// cancelPlans aborts the in-flight plan read, for the reason cancelRead
+// exists — and more sharply. A plan read fires from the report grid's
+// OnSelectRow, so holding Down through a ranking starts one per row: planSeq
+// discards every superseded *result*, but uncancelled the queries all still run
+// on the shared host connection, each until qsReadTimeout.
+func (p *QueryStorePanel) cancelPlans() {
+	if p.planCancel != nil {
+		p.planCancel()
+		p.planCancel = nil
 	}
 }
 
@@ -241,10 +346,16 @@ func (p *QueryStorePanel) SetBounds(x, y, w, h int) {
 	if h >= 2 {
 		p.actRect = core.Rect{X: x, Y: y + 1, W: w, H: 1}
 	}
-	layoutToolButtons(p.sel, p.selRect, "")
-	layoutToolButtons(p.acts, p.actRect, "")
+	p.layoutToolRows()
 	p.chartSplit.SetBounds(x, y+2, w, h-2)
 	p.layoutChildren()
+}
+
+// layoutToolRows places both toolbar rows, collapsing whatever does not fit
+// into each row's own "More ▾" menu.
+func (p *QueryStorePanel) layoutToolRows() {
+	p.hiddenSel = layoutToolButtonsOverflow(p.sel, p.selRect, &p.selMore)
+	p.hiddenActs = layoutToolButtonsOverflow(p.acts, p.actRect, &p.actMore)
 }
 
 // layoutChildren gives the chart and the two grids their shares of the area
@@ -272,12 +383,19 @@ const (
 	qsToolRefresh
 )
 
-// Action-row cell indexes.
+// Action-row cell indexes. The two filters lead it rather than sitting with
+// the other selectors: the selector row is already 130 columns wide with a
+// long report title, and a cell that does not fit is not drawn at all — which
+// took Refresh off the toolbar of every pane narrower than 150.
 const (
-	qsActForce = iota
+	qsActMinExec = iota
+	qsActRegression
+	qsActForce
 	qsActUnforce
 	qsActShowPlan
 	qsActScript
+	qsActTrack
+	qsActCompare
 )
 
 // buildTools defines the two toolbar rows in the order the qsTool*/qsAct*
@@ -293,10 +411,14 @@ func (p *QueryStorePanel) buildTools() {
 		{label: "Refresh", action: p.Refresh},
 	}
 	p.acts = []toolButton{
+		{action: p.showMinExecMenu},
+		{action: p.showRegressionMenu},
 		{label: "Force Plan", action: func() { p.setPlanForced(true) }},
 		{label: "Unforce Plan", action: func() { p.setPlanForced(false) }},
 		{label: "Show Plan", action: p.showPlan},
 		{label: "Script", action: p.scriptPlanForce},
+		{label: "Track Query", action: p.toggleTracked},
+		{label: "Compare Plans", action: p.comparePlans},
 	}
 	p.refreshToolLabels()
 }
@@ -308,11 +430,85 @@ func (p *QueryStorePanel) refreshToolLabels() {
 	p.sel[qsToolStatistic].label = "Statistic: " + string(p.stat) + " ▾"
 	p.sel[qsToolWindow].label = "Window: " + qsWindows[p.windowIdx].label + " ▾"
 	p.sel[qsToolTop].label = "Top: " + strconv.Itoa(qsTopCounts[p.topIdx]) + " ▾"
+	p.acts[qsActMinExec].label = "Min execs: " + qsMinExecLabel(p.minExecIdx) + " ▾"
+	p.acts[qsActRegression].label = "Regression: " + qsRegressionLabel(p.regressIdx) + " ▾"
+	// The action row's one stateful label. Refreshed on every draw with the
+	// selectors, because it follows the report grid's cursor rather than a
+	// click: a button reading "Track Query" over an already-tracked query would
+	// untrack it on the press.
+	p.acts[qsActTrack].label = "Track Query"
+	if p.isTracked(p.selectedQueryID()) {
+		p.acts[qsActTrack].label = "Untrack Query"
+	}
+	// Script scripts whichever of Force/Unforce applies to the selected plan,
+	// so the label says which rather than leaving it to be discovered in the
+	// panel it opens. Same reason Track Query's label follows the cursor.
+	p.acts[qsActScript].label = "Script"
+	if plan := p.selectedPlan(); plan != nil {
+		if plan.IsForced {
+			p.acts[qsActScript].label = "Script Unforce"
+		} else {
+			p.acts[qsActScript].label = "Script Force"
+		}
+	}
+	// Compare takes two presses, and the button says which one it is on.
+	p.acts[qsActCompare].label = "Compare Plans"
+	if p.cmpPlanID != 0 {
+		p.acts[qsActCompare].label = fmt.Sprintf("Compare with %d", p.cmpPlanID)
+	}
+}
+
+// qsMinExecLabel and qsRegressionLabel name one entry of each filter's table.
+// Index 0 reads "off" rather than "0", which in a selector labelled with a
+// count would read as a floor that admits nothing.
+func qsMinExecLabel(i int) string {
+	if qsMinExecCounts[i] <= 0 {
+		return "off"
+	}
+	return core.FormatThousands(qsMinExecCounts[i])
+}
+
+func qsRegressionLabel(i int) string {
+	if qsRegressionPcts[i] <= 0 {
+		return "off"
+	}
+	return fmt.Sprintf("≥%g%%", qsRegressionPcts[i])
 }
 
 // selDisabled reports whether selector cell i is inert right now. The whole
-// row is, while a read or a write is in flight.
-func (p *QueryStorePanel) selDisabled(int) bool { return p.busy }
+// row is while a read or a write is in flight; Metric and Top are also inert on
+// a report whose query they do not reach, the same way the two filters on the
+// action row are.
+func (p *QueryStorePanel) selDisabled(i int) bool {
+	if p.busy {
+		return true
+	}
+	switch i {
+	case qsToolMetric:
+		return !p.report().honours(qsFilterMetric)
+	case qsToolTop:
+		return !p.report().honours(qsFilterTop)
+	}
+	return false
+}
+
+// selReason is what to tell the user who clicks a dimmed selector. A disabled
+// cell swallows its click, and swallowing it silently is the thing the
+// context-gating rule exists to prevent.
+func (p *QueryStorePanel) selReason(i int) string {
+	switch {
+	case p.busy:
+		return "" // the whole row is grey while a read is out; that speaks for itself
+	case i == qsToolMetric:
+		return "Query Store records wait time and nothing else per category, so a metric does not apply to " +
+			p.report().Title
+	case i == qsToolTop && p.report().honours(qsFilterTracked):
+		return "Tracked Queries shows every query you pinned, so there is no row cap to apply"
+	case i == qsToolTop:
+		return p.report().Title + " reports every interval in the window, so there is no row cap to apply"
+	}
+	return ""
+}
 
 // actDisabled reports whether action cell i is inert: the panel is busy, or
 // the action has no plan to act on, or the login may not force one.
@@ -326,11 +522,30 @@ func (p *QueryStorePanel) actDisabled(i int) bool {
 	if p.busy {
 		return true
 	}
+	// The two filters are inert on a report whose query does not carry them —
+	// a selector that changed a number the next read ignores is the silent
+	// wrong-thing the context-gating rule exists to prevent.
+	switch i {
+	case qsActMinExec:
+		return !p.report().honours(qsFilterExecs)
+	case qsActRegression:
+		return !p.report().honours(qsFilterRegression)
+	}
+	// Track acts on the report grid's query, not on a plan: a tracked query
+	// with no plan left in the window is exactly the case the view exists to
+	// show, so requiring a plan would refuse it.
+	if i == qsActTrack {
+		return p.selectedQueryID() == 0
+	}
 	plan := p.selectedPlan()
 	if plan == nil {
 		return true
 	}
 	switch i {
+	case qsActCompare:
+		// Nothing to compare a plan with no XML against, either as the mark or
+		// as the second half.
+		return plan.QueryPlanXML == ""
 	case qsActForce:
 		return plan.IsForced || p.forceDenied()
 	case qsActUnforce:
@@ -355,6 +570,12 @@ func (p *QueryStorePanel) actReason(i int) string {
 	switch {
 	case p.busy:
 		return "" // the whole row is grey while a read is out; that speaks for itself
+	case i == qsActMinExec:
+		return "An execution floor applies to the reports that rank queries, not to " + p.report().Title
+	case i == qsActRegression:
+		return "A regression threshold applies to Regressed Queries only"
+	case i == qsActTrack:
+		return "Select a query in the report above first"
 	case p.selectedPlan() == nil:
 		return "Select a plan in the plan pane first"
 	case p.forceDenied():
@@ -365,13 +586,18 @@ func (p *QueryStorePanel) actReason(i int) string {
 		return "That plan is already forced"
 	case qsActUnforce:
 		return "That plan is not forced"
+	case qsActCompare:
+		return fmt.Sprintf("Query Store holds no plan XML for plan %d", p.selectedPlan().PlanID)
 	}
 	return ""
 }
 
-// runSel invokes selector cell i's action if the row is live.
+// runSel invokes selector cell i's action, or says why it did not.
 func (p *QueryStorePanel) runSel(i int) {
 	if p.selDisabled(i) {
+		if reason := p.selReason(i); reason != "" {
+			p.setStatus(reason)
+		}
 		return
 	}
 	p.sel[i].action()
@@ -388,14 +614,37 @@ func (p *QueryStorePanel) runAct(i int) {
 	p.acts[i].action()
 }
 
-// popMenu shows items under selector cell i, or at the panel's top-left if
-// that cell didn't fit on the row.
+// popMenu shows items under selector cell i of the selector row.
 func (p *QueryStorePanel) popMenu(i int, items []controls.MenuItem) {
-	r := p.sel[i].rect
+	p.popMenuAt(p.sel[i].rect, items)
+}
+
+// popMenuAt shows items under one toolbar cell, or at the panel's top-left if
+// that cell didn't fit on its row.
+func (p *QueryStorePanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
 	if r.IsZero() {
 		r = core.Rect{X: p.rect.X, Y: p.rect.Y}
 	}
 	p.app.contextMenu.Show(r.X, r.Y+1, items)
+}
+
+// showOverflowMenu pops the buttons a row was too narrow to draw, under its
+// "More ▾" cell. Each entry carries the same gate its button would have — and
+// its reason as the item's Note, which a MenuItem shows precisely while it is
+// disabled, so a withheld action still explains itself the way the dimmed
+// button does.
+func (p *QueryStorePanel) showOverflowMenu(at core.Rect, tools []toolButton, hidden []int,
+	disabled func(int) bool, reason func(int) string, run func(int)) {
+	items := make([]controls.MenuItem, 0, len(hidden))
+	for _, i := range hidden {
+		items = append(items, controls.MenuItem{
+			Label:   tools[i].label,
+			Enabled: func() bool { return !disabled(i) },
+			Note:    reason(i),
+			Action:  func() { run(i) },
+		})
+	}
+	p.popMenuAt(at, items)
 }
 
 // qsMenuItems builds a selector's list, marking the entry in force. The
@@ -430,7 +679,7 @@ func (p *QueryStorePanel) showMetricMenu() {
 func (p *QueryStorePanel) showStatisticMenu() {
 	p.popMenu(qsToolStatistic, qsMenuItems(gosmo.QSStatistics(), p.stat,
 		func(s gosmo.QSStatistic) string { return string(s) },
-		func(s gosmo.QSStatistic) { p.stat = s; p.Load() }))
+		func(s gosmo.QSStatistic) { p.stat, p.statChosen = s, true; p.Load() }))
 }
 
 func (p *QueryStorePanel) showWindowMenu() {
@@ -451,6 +700,26 @@ func (p *QueryStorePanel) showTopMenu() {
 	p.popMenu(qsToolTop, qsMenuItems(idxs, p.topIdx,
 		func(i int) string { return strconv.Itoa(qsTopCounts[i]) },
 		func(i int) { p.topIdx = i; p.Load() }))
+}
+
+func (p *QueryStorePanel) showMinExecMenu() {
+	p.popMenuAt(p.acts[qsActMinExec].rect, qsMenuItems(qsIndexes(len(qsMinExecCounts)), p.minExecIdx,
+		qsMinExecLabel, func(i int) { p.minExecIdx = i; p.Load() }))
+}
+
+func (p *QueryStorePanel) showRegressionMenu() {
+	p.popMenuAt(p.acts[qsActRegression].rect, qsMenuItems(qsIndexes(len(qsRegressionPcts)), p.regressIdx,
+		qsRegressionLabel, func(i int) { p.regressIdx = i; p.Load() }))
+}
+
+// qsIndexes is 0..n-1, for a selector whose menu picks a position in a table
+// rather than a value — the label and the value then come from the same entry.
+func qsIndexes(n int) []int {
+	idxs := make([]int, n)
+	for i := range idxs {
+		idxs[i] = i
+	}
+	return idxs
 }
 
 // availableMetrics is what this instance's Query Store can rank by. The panel
@@ -482,6 +751,9 @@ func (p *QueryStorePanel) database() *gosmo.Database {
 // panel switches view instead of a second one being created.
 func (p *QueryStorePanel) ShowReport(title string) {
 	p.reportIdx = queryStoreReportIndex(title)
+	if !p.statChosen {
+		p.stat = p.report().defaultStat
+	}
 	p.Load()
 }
 
@@ -500,6 +772,70 @@ func (p *QueryStorePanel) options() gosmo.QueryStoreReportOptions {
 		From:      to.Add(-qsWindows[p.windowIdx].back),
 		To:        to,
 		Top:       qsTopCounts[p.topIdx],
+		// Gated here, not left to gosmo: MinExecCount is carried by the same
+		// gosmo query Tracked Queries reads, so a floor set on another view
+		// would drop a query the user had pinned — and the row it left behind
+		// says "Not in Query Store for this window", which is not why it went.
+		// MinRegressionPct only ever reaches the two-window query, but it is
+		// gated the same way so the table stays the single answer.
+		MinExecCount:     filterValue(p, qsFilterExecs, qsMinExecCounts[p.minExecIdx]),
+		MinRegressionPct: filterValue(p, qsFilterRegression, qsRegressionPcts[p.regressIdx]),
+		QueryIDs:         p.trackedIDs(),
+	}
+}
+
+// filterValue is v where the report on screen honours f, and the zero value —
+// which every one of these options reads as "no filter" — where it does not.
+// A function rather than a method: Go has no generic methods.
+func filterValue[T int64 | float64](p *QueryStorePanel, f qsFilters, v T) T {
+	if !p.report().honours(f) {
+		return 0
+	}
+	return v
+}
+
+// trackedIDs is the pinned set for this database, empty on every report but
+// Tracked Queries — QueryIDs restricts a report to those queries, and pinning
+// one would otherwise empty every other view the moment it was tracked.
+func (p *QueryStorePanel) trackedIDs() []int64 {
+	if !p.report().honours(qsFilterTracked) || p.conn == nil {
+		return nil
+	}
+	return config.Tracked().IDs(p.conn.Opts.Server, p.dbName)
+}
+
+// isTracked reports whether one query is pinned, for the action row's label.
+func (p *QueryStorePanel) isTracked(queryID int64) bool {
+	if queryID == 0 || p.conn == nil {
+		return false
+	}
+	return config.Tracked().IsTracked(p.conn.Opts.Server, p.dbName, queryID)
+}
+
+// toggleTracked pins the selected query to the Tracked Queries view or unpins
+// it. The set is per server and database and outlives the session — see
+// config.TrackedQueries.
+func (p *QueryStorePanel) toggleTracked() {
+	id := p.selectedQueryID()
+	if id == 0 || p.conn == nil {
+		return
+	}
+	tracked, err := config.Tracked().Toggle(p.conn.Opts.Server, p.dbName, id)
+	verb := "untracked"
+	if tracked {
+		verb = "tracked"
+	}
+	if err != nil {
+		// The toggle applied in memory even though the file did not take it,
+		// so say both halves: this session behaves as asked, the next does not.
+		p.setStatus(fmt.Sprintf("Query %d %s for this session only — %v", id, verb, err))
+		return
+	}
+	p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
+	// The view whose rows just changed is the one to redraw, and only when it
+	// is the one on screen.
+	if p.report().honours(qsFilterTracked) {
+		p.Refresh()
 	}
 }
 
@@ -524,7 +860,10 @@ func (p *QueryStorePanel) load(keepView bool) {
 	p.setStatus("Running " + p.report().Title + "...")
 	p.refreshToolLabels()
 
-	report, opts, sc, dbName := p.report(), p.options(), p.conn, p.dbName
+	report, sc, dbName := p.report(), p.conn, p.dbName
+	// The window the report's query really reads, which for Regressed Queries
+	// is half the one the toolbar names — see queryStoreReport.effectiveOptions.
+	opts := report.effectiveOptions(p.options())
 	ctx, cancel := context.WithCancel(sc.Context())
 	p.cancel = cancel
 	// safegoRepair, not safego: busy is cleared in the callback below, which a
@@ -567,7 +906,13 @@ func (p *QueryStorePanel) load(keepView bool) {
 // qsOffResult is the explanatory grid a database with Query Store off gets,
 // in place of seven reports that would each come back empty.
 func qsOffResult(info *gosmo.QueryStoreInfo) qsResult {
-	res := qsResult{columns: propertyValueColumns}
+	res := qsResult{
+		columns: propertyValueColumns,
+		// Without this the two explanatory rows are counted as a report's rows,
+		// and the status line claims a metric and a window for a query that
+		// never ran.
+		note: "Query Store is " + queryStoreStateText(info) + " — no report was run",
+	}
 	for _, cells := range queryStoreOffRows(info) {
 		res.rows = append(res.rows, qsResultRow{cells: cells})
 	}
@@ -608,12 +953,48 @@ func (p *QueryStorePanel) applyResult(res qsResult, keepView bool) {
 
 // summary is the status line under the report grid.
 func (p *QueryStorePanel) summary() string {
-	w := qsWindows[p.windowIdx]
-	if len(p.res.rows) == 0 {
-		return fmt.Sprintf("%s — no rows in the last %s", p.report().Title, w.label)
+	// A grid whose rows are an explanation rather than a report says so itself:
+	// counting them and naming a window would describe a query that never ran.
+	if p.res.note != "" {
+		return p.res.note
 	}
-	return fmt.Sprintf("%s — %d rows, %s %s over the last %s",
-		p.report().Title, len(p.res.rows), p.stat, p.metric, w.label)
+	if len(p.res.rows) == 0 {
+		// The filters are named here above all: an empty report reads as "the
+		// server was idle" unless it says a floor was applied.
+		return fmt.Sprintf("%s — no rows in %s%s", p.report().Title, p.windowSummary(), p.filterSummary())
+	}
+	// The value label comes from the result, not from p.stat and p.metric: the
+	// metric selector does not reach every report — see qsResult.valueLabel.
+	return fmt.Sprintf("%s — %d rows, %s over %s%s",
+		p.report().Title, len(p.res.rows), p.res.valueLabel, p.windowSummary(), p.filterSummary())
+}
+
+// windowSummary names the range the rows on screen actually cover. Not simply
+// the Window selector's label: Regressed Queries compares the two halves of
+// that range, so "the last 24 h" would name twice what its rows report on.
+func (p *QueryStorePanel) windowSummary() string {
+	label := qsWindows[p.windowIdx].label
+	if p.report().honours(qsFilterRegression) {
+		return "the last " + label + ", second half against first"
+	}
+	return "the last " + label
+}
+
+// filterSummary names the filters this report actually applied, or "" when it
+// applied none. Gated on the report the same way the selectors are, so a floor
+// left set from another view is not claimed by one whose query ignores it.
+func (p *QueryStorePanel) filterSummary() string {
+	var parts []string
+	if p.report().honours(qsFilterExecs) && qsMinExecCounts[p.minExecIdx] > 0 {
+		parts = append(parts, "≥"+qsMinExecLabel(p.minExecIdx)+" executions")
+	}
+	if p.report().honours(qsFilterRegression) && qsRegressionPcts[p.regressIdx] > 0 {
+		parts = append(parts, "regression "+qsRegressionLabel(p.regressIdx)+" of baseline")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 // selectedQueryID is the query the report grid's cursor is on, 0 for a report
@@ -641,6 +1022,7 @@ func (p *QueryStorePanel) selectedQueryChanged() {
 // reload that has not landed yet.
 func (p *QueryStorePanel) loadPlans(queryID int64) {
 	p.queryID = queryID
+	p.cancelPlans()
 	p.planSeq++
 	seq := p.planSeq
 	if queryID == 0 || !p.app.isConnected(p.conn) {
@@ -650,19 +1032,27 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 		return
 	}
 	p.plansGrid.SetStatus(fmt.Sprintf("Reading plans for query %d...", queryID))
-	opts, sc, dbName := p.options(), p.conn, p.dbName
+	// The report's effective window, not the toolbar's: on Regressed Queries
+	// the rows cover the second half of it, and a plan pane reading the whole
+	// window reported more executions for one plan than the query above it had
+	// altogether.
+	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
+	ctx, cancel := context.WithCancel(sc.Context())
+	p.planCancel = cancel
 	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced
 	// by the callback below, which a panic on the read goroutine never reaches,
 	// and nothing else writes the pane until another query is selected — so the
 	// pane would claim to be reading a query it gave up on.
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), qsReadTimeout)
 		defer cancel()
-		plans, err := sc.Server.Database(dbName).QueryStorePlansContext(ctx, queryID, opts)
+		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
+		defer readCancel()
+		plans, err := sc.Server.Database(dbName).QueryStorePlansContext(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
 			if seq != p.planSeq {
 				return
 			}
+			p.planCancel = nil
 			if err != nil {
 				p.plans = nil
 				p.plansGrid.SetError(displayError(err))
@@ -683,6 +1073,7 @@ func (p *QueryStorePanel) plansPanicked(seq int) {
 	if seq != p.planSeq {
 		return
 	}
+	p.planCancel = nil
 	p.plans = nil
 	p.plansGrid.SetData(qsPlanColumns, nil)
 	p.plansGrid.SetStatus("Reading plans stopped unexpectedly — see the log for details")
@@ -823,6 +1214,51 @@ func (p *QueryStorePanel) showPlan() {
 		return
 	}
 	p.app.openPlanPanel(fmt.Sprintf("Plan %d — query %d (%s)", plan.PlanID, plan.QueryID, p.dbName), parsed)
+}
+
+// comparePlans marks a plan on the first press and compares the second against
+// it — the two plans of one query a comparison is about are two rows of the
+// same pane, and there is nowhere to select both at once.
+//
+// Pressing it again on the marked plan clears the mark, so a mark made by
+// accident is undone the same way it was made.
+func (p *QueryStorePanel) comparePlans() {
+	plan := p.selectedPlan()
+	if plan == nil {
+		return
+	}
+	parsed, err := showplan.Parse([]byte(plan.QueryPlanXML))
+	if err != nil {
+		p.setStatus(fmt.Sprintf("Plan %d could not be read: %v", plan.PlanID, err))
+		return
+	}
+	if p.cmpPlanID == plan.PlanID {
+		p.clearComparison()
+		p.setStatus(fmt.Sprintf("Plan %d unmarked", plan.PlanID))
+		return
+	}
+	if p.cmpPlan == nil {
+		p.cmpPlan, p.cmpPlanID, p.cmpQueryID = parsed, plan.PlanID, plan.QueryID
+		p.setStatus(fmt.Sprintf("Plan %d marked — select another plan and press Compare Plans", plan.PlanID))
+		return
+	}
+	if p.cmpQueryID != plan.QueryID {
+		// Two plans of different queries have no operators in common to pair,
+		// and the row-by-row result would read as one plan replaced wholesale.
+		p.setStatus(fmt.Sprintf("Plan %d is a plan of query %d, not query %d — comparison cleared",
+			plan.PlanID, plan.QueryID, p.cmpQueryID))
+		p.clearComparison()
+		return
+	}
+	title := fmt.Sprintf("Compare plans %d and %d — query %d (%s)",
+		p.cmpPlanID, plan.PlanID, plan.QueryID, p.dbName)
+	p.app.openPlanComparePanel(title, p.cmpPlan, parsed)
+	p.clearComparison()
+}
+
+// clearComparison drops the marked plan, releasing the parsed document with it.
+func (p *QueryStorePanel) clearComparison() {
+	p.cmpPlan, p.cmpPlanID, p.cmpQueryID = nil, 0, 0
 }
 
 // scriptPlanForce opens the statement that would force or unforce the selected

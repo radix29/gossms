@@ -669,3 +669,1109 @@ report changes.
 Also: `panel_toolbar.go`'s header named two panels and Query Store makes three,
 with a third idiom for dimming (a predicate per cell, asked per draw), and
 `internal/tuikit/README.md`'s propsheet file list was missing `editorrow.go`.
+
+## 2026-08-26 — Plan graph: parent tiles top-align with their first child
+
+`layoutGraph` centered each node between its first and last child, so the root
+"Top" operator floated to the vertical middle of the canvas with a screenful of
+dead space above it. SSMS top-aligns instead: a parent sits on the same row as
+its first child, which puts the root on the canvas's first row and makes the
+root→first-child connector a straight horizontal run. One line
+(`selfY := firstY`); nothing else moved — hit-testing, `ensureTileVisible` and
+the scrollbars read `rects`/`canvasH` and are position-agnostic, and `drawEdge`
+already handled a zero-height trunk. `TestLayoutGraph_ParentCentered…` became
+`TestLayoutGraph_ParentTopAlignedWithFirstChild`, which also pins `root.Y == 0`
+— the part the user could actually see. Verified by A/B: the pre-fix binary put
+`Top` seventeen rows down, the fixed one on row one.
+
+## 2026-08-26 — gosmo: a failed exclusive-access write no longer strands SINGLE_USER
+
+Three `Server` writes open by taking exclusive access with `SET SINGLE_USER
+WITH ROLLBACK IMMEDIATE`, which locks the database to one login. Nothing else
+puts it back, so the release is part of each method's contract — and two of the
+three got it wrong in different ways.
+
+**`DropDatabaseContext(force=true)` had no release at all.** Its two siblings in
+the same repo both did (`RenameDatabaseContext`, `DetachDatabaseContext`), which
+is what made the omission visible. A `DROP DATABASE` genuinely can fail after
+the alter succeeded — another session takes the single-user slot, the database
+is in an availability group, the login may set state but not drop — and Object
+Explorer > Delete on a database always passes `force=true`
+(`explorer_object_ops.go`'s `objectOps[NodeDatabase]`), so the everyday gesture
+was the exposed one. Gated on `force`: without it nothing set the access mode,
+and a `MULTI_USER` on the way out would silently undo a `RESTRICTED_USER` the
+database was deliberately left in.
+
+**The other two issued the release on the caller's own context**, which is the
+one context guaranteed to be dead in the case the release exists for.
+`SET SINGLE_USER WITH ROLLBACK IMMEDIATE` waits out the rollback of every
+transaction it killed, so the statement before the release is exactly the one
+likely to have spent the caller's deadline — and gossms drives all of these on
+`childFetchTimeout`, 30 seconds, a budget named and sized for tree metadata
+reads. On the expired context the repair never reaches the server.
+`Server.restoreMultiUser` now holds both halves, deriving its context with
+`context.WithoutCancel` plus a 10s bound. The idiom was already in both repos —
+gosmo's `capturePlan` (`executionplan.go`) and, on the gossms side,
+`restore_dialog_ops.go`'s post-restore cleanup, with a comment saying why. These
+two were the inconsistent ones. `WithoutCancel` keeps ctx's values, so a caller
+under `WithScript` still captures the statement instead of running it — pinned
+by the existing "RenameDatabase force releases under the new name" case.
+
+Found by reading, not by hitting it: the tell was one file containing three
+statements of the same shape with three different endings.
+
+**The tests needed a deadline that expires mid-operation**, which cancelling
+before the call cannot reproduce — the statement that takes SINGLE_USER has to
+have succeeded first, or there is nothing to repair. `detRecorder` grew
+`cancelOn`/`cancel` (`database_attach_test.go`): the nominated statement cancels
+the operation's context and then fails with `ctx.Err()`, the way a real driver
+does. Four mutants killed — repair on `ctx` again (all three "…EvenWhenThe
+ContextIsGone" tests fail), the drop's repair removed, its `if force` guard
+removed, and the repair moved out of the error branch.
+
+Not yet verified live. The unit side is a scripted driver, so it shows the right
+statement is issued on a context that survives — never that the server accepts
+it in that state. Staging a real failed forced drop (a snapshot on the database,
+or a login that may alter but not drop) is the acceptance run.
+
+## 2026-08-26 — Object Explorer writes stop borrowing a folder listing's budget
+
+The other half of the SINGLE_USER stranding above. Delete, Rename and Move to
+Schema all bounded themselves with `childFetchTimeout` — 30 seconds, named and
+sized for "a single Object Explorer expand/refresh" and shared with roughly
+thirty reads across the package. A write is not a read: a drop or a rename waits
+on a lock another session holds, and a database write waits for `SET SINGLE_USER
+WITH ROLLBACK IMMEDIATE` to roll back every transaction it just killed, which is
+routinely minutes. On the read budget the statement was abandoned part-done —
+and that abandonment is what put gosmo's `MULTI_USER` repair on an already-dead
+context, the bug fixed on the gosmo side the same day.
+
+`objectWriteTimeout` (5 minutes) and `objectWriteContext` now hold it, in
+`explorer_object_ops.go` next to the three writes that use it. Bounded rather
+than unlimited: nothing on screen is blocked while a write runs, so a generous
+bound costs only a late status message, but a dead connection still has to
+report rather than leaving the line pending forever. The schema listing that
+Move to Schema opens with is a read and keeps `childFetchTimeout`.
+
+A *helper*, not a second constant spelled at three call sites — the whole
+failure mode is that the read's timeout is what every neighbour in the file
+uses, so there should be nothing per-site to reach for the wrong one of.
+
+**Two tests, three mutants killed.**
+`TestObjectWriteContextOutlivesAFolderRead` measures the deadline the helper
+actually produces rather than comparing the two constants: the mutant worth
+killing is `objectWriteContext` quietly going back to `childFetchTimeout`, which
+leaves `objectWriteTimeout` declared and a constants-only comparison still
+passing. It also fails if the helper stops setting a deadline at all.
+`TestOnlyTheSchemaListingUsesTheReadTimeout` parses the file and counts real
+references to `childFetchTimeout` (identifiers in the AST, so the doc comments
+naming it don't count), pinning it at one — a new write reaching for the read
+budget takes the count to two. Both verified by mutation.
+
+Not verified live in the sense that matters: reproducing the old failure needs a
+write that takes longer than 30 seconds against a real instance (a lock held by
+another session, or a large rollback). What was checked is that the app builds,
+vets, tests clean under `-race`, and still starts and takes a query panel under
+tmux — this changes a budget, not a behaviour.
+
+## 2026-08-26 — Undo stops re-measuring the whole document
+
+`Document.touch` invalidated every version-keyed cache from line 0 down, because
+the two callers it was written for — `setLines` and `edit` — can move any line
+anywhere. `replaceRange` went through `edit`, so undo and redo did too, and each
+step dropped the entire per-line display-width cache. The next Draw's horizontal
+scrollbar then re-measured every rune in the buffer: ~8 ms per step on a
+20,000-line script, once per keystroke with Ctrl+Z held down.
+
+`replaceRange` knows better than `edit` does. The lines above its span are the
+same slices they were, so `touch` now takes the first line the mutation could
+have changed and truncates `lineW` there instead of emptying it; `edit` and
+`setLines` pass 0 and behave exactly as before. `maxDisplayWidth` extends the
+cache to the new line count rather than rebuilding it, which is what makes the
+surviving prefix reachable — and drops the `make([]int, n)` it used to allocate
+per call purely to `append` away.
+
+`BenchmarkEditorUndoRedo20k` (new): ~7.8 ms/op → ~1.7 ms/op, 4.6×. The benchmark
+types its edit through `HandleKey` rather than staging it with `pushUndo` — that
+is what decides the span, since typing records a keystroke-sized one
+(`pushUndoLocal`) while `pushUndo` covers the whole document and splices from
+line 0, where there is nothing above the span to keep. Written the other way
+first, it measured 15 ms/op of `cloneLines` and reported the change as 6%.
+
+The second half is `prefixStates.at`, whose resume branch keys off the same
+`dirtyFrom`. It was previously reachable only from `setLine`, which cannot change
+the line count — so `replaceRange` naming a non-zero line makes it reachable for a
+splice that grows or shrinks the buffer, where the states array is indexed by a
+line number that just moved. The `len(c.states) != doc.Len()` test in `at` was
+already there, described as belt-and-braces; it is now load-bearing, and its
+comment says so.
+
+Mutants killed: `touch(0)` in `replaceRange` (the whole point); `lineW[:from+1]`,
+keeping the width of the one line whose text just changed; dropping the length
+test in `at`, which mis-colours line 7 after a splice that grows. One mutant
+survived — a `len(lineW) > len(lines)` guard in `maxDisplayWidth` — and on
+looking at why, `from` is never past the end of the new buffer (the lines before
+a splice survive it), so the guard was unreachable. Removed, with the invariant
+written on `touch`.
+
+Verified live under tmux, which is the check the unit tests can't make: with
+`select 3` sitting inside an open block comment, closing the comment on the line
+above turns it from comment green to SQL colours, and Ctrl+Z turns it back —
+i.e. the resumed prefix states after an undo agree with a full replay on screen.
+
+## 2026-08-26 — Two guards that were copied instead of shared
+
+Both halves are the same shape: a precondition every call site restated, where
+the cost of one site forgetting is a click that does nothing or does the wrong
+thing.
+
+**`PropDialog.show` now owns the connection guard.** All twenty-three Properties
+entry points opened with the same `if !a.requireConn(sc) { return }`, and the
+one that forgets it opens a dialog whose every page then fails to load — one
+error per page, instead of the status line saying the obvious thing. `show`'s
+`pages` parameter became `func() []propPage` in the same change, and that is not
+cosmetic: the entry points evaluated the page set *as an argument*, so moving the
+guard inwards without the thunk would have left the builders running against a
+closed connection — the thing the guard was in front of. 69 lines of copied
+guard out; `TestPropertiesOnAClosedConnectionNeverBuildsItsPages` pins both
+halves, and its twin pins that the guard doesn't swallow the live case.
+
+**`App.withQueryPanel` replaces seven copies of the same else-branch** in
+`app_panel_actions.go` (Execute, Execute Selection, Display Estimated Plan,
+Cancel, Reconnect, Refresh IntelliSense, Results To ...). The wording is now
+`noActiveQueryPanelMessage`, next to `notConnectedMessage`, and the three sites
+in `find_replace_dialog.go` that do more than one call use the constant while
+keeping their own early returns. `TestQueryActionsReportWhenThereIsNoQueryPanel`
+drives all seven with no panels at all.
+
+Mutants killed: dropping the guard from `show`; calling `pages()` before it;
+`withQueryPanel` staying silent; `withQueryPanel` never calling `fn`.
+
+Live check is partial and worth naming. The Query half's second line is hard to
+reach on purpose — the `Enabled` predicates grey the toolbar button and menu
+item out, so a click never arrives, which is why the table test drives the
+functions directly. The Properties half cannot be exercised at all without a
+server: opening any Properties dialog needs a live connection. What was checked
+under tmux is that the app builds, starts, opens a query panel, and that F5 on
+an unconnected panel still reports "Not connected — use File > Connect" in the
+results notice.
+
+## 2026-08-26 — The permission gate's alternates only counted at server scope
+
+`allowsAction` (`internal/tui/permission_gate.go`) consulted `requiredRight.alt`
+on its server-scope branch and not on its database-scope one — the database case
+was a `switch` arm testing `Permits(r.name)` and nothing else, so a right that
+declared alternates would have had them honoured at one scope and silently
+dropped at the other. Nothing at run time tells that apart from a real denial:
+the action just isn't offered, and the note in the shortcut column names the
+permission the login was in fact refused.
+
+Not a shipped bug — every database-scope right declared today has an empty
+`alt`, so the loop is unreachable outside its test. It is a trap rather than a
+defect, and the reason to close it is that the thing that created the server-scope
+`alt` in the first place (SQL Server 2022 splitting VIEW SERVER STATE into a
+performance half and a security half) is exactly as likely to happen next at
+database scope, and the person adding the right would have no way to know the
+field they filled in does nothing there.
+
+The arm became a `default:` block reading the cached capabilities once and then
+walking `alt` with `Permits`, matching the server branch's shape — including
+its reason for asking each name separately rather than joining them, since this
+runs per menu item per draw.
+
+`TestAnAlternateSatisfiesADatabaseRight` declares the split right locally rather
+than adding one to the package: `BACKUP DATABASE` with `BACKUP LOG` as its
+alternate, both real names in gosmo's `ProbedDatabasePermissions` — a made-up
+name reads back `CapabilityUnknown` and would pass by failing open, which is the
+same silent hole `permission_gate_names_test.go` exists to catch. Three
+assertions, because the first alone is satisfied by a gate that allows
+everything: alternate granted with the named right denied allows; both denied
+withholds; and an *inaccessible* database withholds even though its alternate is
+unknown.
+
+Three mutants, all killed: the alt loop deleted (the pre-fix code) fails the
+first assertion; `Allows` in place of `Permits` and an unconditional `return
+true` both fail the inaccessible-database assertion — which is the one that
+pins that accessibility outranks an unknown alternate, the rule
+`gosmo.DatabaseCapabilities.Permits` exists for.
+
+No live verification: reaching the new loop needs a database-scope right that
+declares an alternate, and there isn't one to exercise against a server.
+
+## 2026-08-26 — A job step reorder became one transaction
+
+gosmo's `Job.ReorderStepsContext` moved a step by deleting it and re-inserting
+it at the target position, as two separate `execContext` calls — msdb has no
+procedure that renumbers a step in place. Between them the step's whole
+definition existed nowhere but in that function's local variable. A failed
+insert, a dropped connection, or a context that ran out of budget (which is
+exactly what Batch 2's write-timeout work was about) left the job one step
+shorter, permanently, with no way to get the step back.
+
+The reference-repair pass at the end is in the same boat and is easy to miss:
+`sp_delete_jobstep` silently resets any "go to step N" reference naming the
+step it deleted, so a reorder that stops after the moves but before the repair
+leaves the job's control flow rewritten to "quit with success" and says nothing.
+Atomicity had to span the whole operation, not each move.
+
+`ReorderStepsContext` now builds every statement first and issues one
+`atomicBatch` (`script.go`). Three statement builders came out of the methods
+that used to issue them — `deleteStepStmt`, `addStepStmt`, `setFlowStmt`, each
+byte-identical to the text it replaced, so `WithScript` output for every *other*
+job-step write is unchanged.
+
+Three decisions inside `atomicBatch`, each of which a plausible simplification
+undoes:
+
+- **TRY/CATCH, not checked return codes.** SSMS's own generated job scripts test
+  `@ReturnCode`, but that needs a batch-scoped `DECLARE`, and a `ScriptCollector`
+  concatenates its statements into one batch — two scripted reorders would then
+  collide on the variable, the same way a second `DECLARE @p1` does (the
+  collision `bindScriptArgs` already documents). msdb's job procedures raise
+  before they return non-zero, so the CATCH sees the failure regardless. That
+  last clause is the one I could not verify offline; it is what the live test
+  is for.
+- **`SET XACT_ABORT ON`.** Not for server-side errors — TRY/CATCH already has
+  those. It is for the *client* going away: a cancelled context sends an
+  attention, which aborts the running statement and, with XACT_ABORT off, leaves
+  the transaction open. Checked in go-mssqldb's source rather than assumed that
+  it doesn't leak onto the next user of the pooled connection: `ResetSession`
+  sets `resetSession`, and `tdsBuffer.BeginPacket` turns that into TDS status
+  bit 0x8 on the next batch/RPC packet, which is `sp_reset_connection` — SET
+  options back to their login defaults, open transactions rolled back.
+- **`THROW`, not a `RAISERROR` of our own**, so the caller gets msdb's message
+  about what actually failed.
+
+Eight mutants, all killed: per-statement execution (the pre-fix code); the
+reference repair moved into a second batch after the COMMIT; `SET XACT_ABORT
+ON` dropped; `THROW` before the rollback; the rollback unguarded by
+`@@TRANCOUNT`; statements not semicolon-terminated; the "nothing moved" early
+return removed; and `checkReorder` short-circuited — that last one to confirm
+the permutation test was not passing because the canned step read failed. It
+had been: `cannedRow` without `cols` yields one column, `Scan` fails with 23
+destinations, and `ReorderStepsContext` returns *an* error, which is all a
+"want an error" assertion looks at. Naming 23 columns fixed it, and the same
+trap is why `TestReorderStepsIsOneAtomicBatch` asserts on statement text rather
+than on an error being nil.
+
+gossms's `TestJobStepsMoveUpReordersOnTheServer` caught the change immediately —
+it counted two statements. It now asserts one batch, that it is a transaction,
+and that the delete precedes the insert inside it, which is what the two-statement
+form was really pinning.
+
+**Not live-verified.** Two things need a server, and `live_atomicbatch_test.go`
+is written for both: that a failure part-way through the batch rolls back what
+already succeeded *and* still returns an error (a batch that rolls back and
+reports success would be worse than the bug being fixed), and that msdb's job
+procedures tolerate running inside an explicit transaction at all — if they did
+not, every reorder would now fail outright, which is the one regression this
+change could introduce.
+
+## 2026-08-26 — Live acceptance for the three review batches, on win10cli
+
+All of it against SQL Server 2025 17.0.1125.2 on `win10cli`, throwaway objects
+only, instance left exactly as found (six databases, all MULTI_USER, no jobs,
+no tempdb leftovers).
+
+**#4, the transactional job step reorder.** `TestLiveAtomicBatch*` and
+`TestLiveJobReorder*` all pass. The regression risk is settled: msdb's
+`sp_add_jobstep` and `sp_delete_jobstep` do run inside an explicit transaction,
+so the batch does not break the ordinary path. And the rollback works — a batch
+whose second `INSERT` fails leaves the table with the rows it started with *and*
+returns SQL Server's own conversion error, which was the pairing that mattered.
+A batch that rolled back and reported success would have been worse than the bug.
+
+**Batch 1, SINGLE_USER stranding.** New `live_singleuser_test.go`, three tests,
+two of which are real A/Bs — reverted to the pre-fix code, both fail:
+
+- A forced drop whose `DROP` fails. Staged with a database snapshot, which SQL
+  Server refuses to let its source be dropped from under (Msg 3709) — a failure
+  that lands *after* the access mode has already changed, which is the only
+  shape that tests anything. Pre-fix the database is left `SINGLE_USER`; the
+  test says so in as many words. Confirmed by hand first, with `sqlcmd`, before
+  writing the test.
+- `restoreMultiUser` on an expired context. The test issues the same `ALTER` on
+  the same dead context both ways: the plain `execContext` returns "context
+  canceled" without reaching the server (asserted, so the A/B cannot be
+  vacuous), and the `WithoutCancel` form arrives. Reverting the `WithoutCancel`
+  fails it.
+- The ordinary forced rename with a second session holding an open transaction
+  inside the database. A regression guard, not an A/B — the pre-fix code passes
+  it too, because the context is not exhausted there.
+
+**Batch 2, the Object Explorer write budget.** Measured rather than argued, with
+a throwaway probe calling `RenameDatabaseContext(force)` under each budget while
+a second session held an uncommitted transaction the rename had to roll back:
+
+| rollback staged | budget | result |
+|---|---|---|
+| 1.6 GB log | 30s (`childFetchTimeout`) | succeeded in **27.3s** |
+| 3.8 GB log | 30s (`childFetchTimeout`) | **failed** at 30.0s — "set single user: context deadline exceeded" |
+| 3.8 GB log | 5m (`objectWriteTimeout`) | succeeded in **1m12s** |
+
+The first row is the interesting one. 27.3s is 91% of the old budget for a
+rename nobody would call unusual — the pre-fix code was one modest transaction
+away from abandoning writes, not a pathological case away. The second row is the
+bug reproducing, and the third is it fixed. Each staging is single-use: the
+attention that kills the client's `ALTER` does not stop the rollback it already
+triggered, so the next attempt finds the work done and returns immediately.
+Re-stage before every measurement, or a fast second run reads as a pass.
+
+## 2026-08-27 — The Steps page gates its whole edit panel, not just the command
+
+`TextRow` and `SelectRow` gained `SetReadOnly`/`ReadOnly` — the page's own gate,
+the one `EditorRow` already had, and deliberately a second field beside
+`drawReadOnly` rather than one flag: whichever of the two gates is set last must
+not cancel the other out, or lifting a permission gate makes a non-T-SQL step
+editable. It closes every way in, not just the drawn one — `Edit`, `HandleKey`,
+`HandleMouse` and `Focusable` — because a row that only *draws* flat still goes
+dirty and still gets written. `SelectRow.SetReadOnly` also closes an open list:
+the overlay is drawn last and takes every event first, so one left open floats
+over a row nothing routes to any more.
+
+Job Properties > Steps then gates the panel as one (`setPanelReadOnly`). What
+was actually broken: the Command box had been read-only since 2026-08-26, but
+Step name, Database, both on-success/on-failure pairs, the retry counts and the
+output file all still took typing that `commitCurrent` dropped on the floor.
+Nothing reached the server either way — `commitCurrent`'s `editable()` guard
+predates this — so the bug was entirely in what the page invited the user to do.
+
+**The New button had to be dealt with, or the fix would have broken it.** New
+seeds a step from the edit panel, so on a mixed job — a PowerShell step
+selected, every row now refusing typing — there was no way to type a name and
+New went dead for the whole visit. First press on a read-only step now clears
+and unlocks the panel and says "Type a name for the new step, then press New
+again"; the second press adds the step as before. Only `commitCurrent` reads
+`current`, so dropping it there loses nothing.
+
+Pinned by `TestANonTSQLStepsWholeEditPanelRefusesTyping` (both halves — the
+gate holding, and lifting again on a T-SQL step, which a page that never
+re-enabled the rows would otherwise pass) and two propsheet tests. Nine mutants
+killed across the two files; two survived the first attempt and are worth
+recording, since both would recur: a row's `HandleKey` guard looks untested
+because `InputField`/`DropDown` ignore keys they are not focused for, so the
+test has to focus the widget by hand, and the select's guard needs `Enter` —
+`Down` on a closed dropdown falls through on purpose.
+
+Live on win10cli against a throwaway job with a T-SQL step and a PowerShell one:
+the T-SQL step draws its boxes, selecting the PowerShell step flattens all ten
+rows (retry interval keeps its "minutes" unit, the hint names the subsystem),
+New clears and unlocks, and Cancel left `sysjobsteps` byte-identical. Job
+dropped afterwards.
+
+## 2026-08-27 — The object-ops gate can see a grant on one schema
+
+Rename, Move to Schema and Delete were gated on database-wide ALTER, CONTROL or
+ALTER ANY SCHEMA — sufficient conditions, none of them what SQL Server actually
+checks for a schema object, which is ALTER on the object's *schema*. A login
+granted ALTER on one schema and nothing else holds no database-wide permission
+at all, so every right the gate asked about read as denied and all three items
+vanished from objects it could in fact rename.
+
+**gosmo grew the probe rather than gossms working around it.** The database
+capability probe now carries a third block —
+
+    SELECT CONCAT('S:', n.v), s.name, HAS_PERMS_BY_NAME(QUOTENAME(s.name), 'SCHEMA', n.v)
+    FROM sys.schemas AS s CROSS JOIN (VALUES (@p33)) AS n(v)
+
+— unioned onto the roles and permissions it already asked for, so the cost is
+one extra block per database probe, not the query-per-schema this was costed at
+in `open-threads.md`. `ProbedSchemaPermissions` holds one name: HAS_PERMS_BY_NAME
+folds in the permissions that imply the one it is asked about, so CONTROL on the
+schema, ALTER ANY SCHEMA and db_owner all answer 1 for ALTER without being asked
+separately. `DatabaseCapabilities` gained `SchemaPermission`/`HasOnSchema`/
+`AllowsOnSchema`/`PermitsOnSchema`, the last folding in accessibility exactly as
+`Permits` does at the scope above it.
+
+Three shapes worth keeping:
+
+- **The permission travels in the kind column and the schema in the name
+  column**, not the other way round. A permission name is ours and fixed; a
+  schema name is user data, and a schema called `P` read back the other way
+  round becomes a database-scope permission answer that overwrites a real one.
+  The test creates a schema named `ALTER` for exactly this.
+- **QUOTENAME on the securable.** A schema whose name needs quoting is otherwise
+  asked about as a different securable, and HAS_PERMS_BY_NAME answers NULL for
+  one that does not exist — which fails open, so the wrong answer is the
+  permissive one.
+- **NULL is not a denial** (`capabilityStateOf`), the rule the database-scope
+  half already followed.
+
+In gossms `requiredRight` gained a `schema` flag, `allowsActionOn`/`gateOn` take
+the schema the node lives in, and `objectOpRights` lists `rightAlterOnSchema`
+beside the three wider rights. A schema *node* answers `""` and keeps the old
+list: ALTER on a schema does not permit dropping or renaming the schema itself
+(that is CONTROL on it, or ALTER ANY SCHEMA), so answering with the node's own
+name would offer three items the server then refuses.
+
+**Two mutants survived the first scripted pass, both about query text a fake
+cannot see** — numbering the schema block's placeholders from 1 instead of the
+next free one, and swapping its two string columns. The fake answers whatever is
+scripted however the probe asks, so the driver now records the database probe's
+text and args and the test asserts on them. Live, the same two are visible for
+free, which is why the live test exists.
+
+Live on win10cli, A/B against a pre-fix binary. A throwaway login with
+`GRANT ALTER ON SCHEMA::Sales` and `GRANT SELECT ON SCHEMA::Archive` (plus
+VIEW SERVER STATE, without which connect-time `loadInfo` fails and the tree comes
+up empty): the old binary greys all three items on `Sales.Orders` with "needs
+ALTER"; the new one offers them there, still greys them on `Archive.OldOrders`,
+and the rename it now offers went through — `sys.tables` reads
+`Sales.OrdersRenamed`. gosmo's `live_schemacaps_test.go` pins the same thing at
+the library level, with the server's own acceptance of a rename in each schema
+as the oracle. Database and login dropped afterwards.
+
+## 2026-08-27 — New Availability Group asks before it writes
+
+Creating a group is one statement on the primary and then an
+`ALTER ... JOIN` on each secondary, run over a peer connection. Everything after
+the CREATE can fail, and when it does the group exists with a replica missing —
+which is what `open-threads.md` carried as "no rollback of a partly created
+group".
+
+**The decision, taken with the author: preflight, never unwind.** Before the
+CREATE, every secondary is asked whether it could join —
+
+- reachable at all (the peer connection opens),
+- Always On enabled there (`Info().IsHADREnabled`),
+- a database mirroring endpoint that exists and is STARTED,
+- an endpoint still at the address the dialog recorded when the replica was
+  added, which may have been minutes ago,
+- and a login that `Allows` ALTER ANY AVAILABILITY GROUP there — Allows, not
+  Has, so a peer whose probe never ran is let through to try.
+
+Any failure refuses with nothing created. Every replica is asked even though
+only the first problem fits the one-line message, so the count is honest: being
+sent back three times, once per instance, is worse than being told there are
+three. The preflight is skipped under `gosmo.Scripting` — the script is what the
+user takes to the instances that are not up yet, and a preflight there would
+refuse to write the very thing that fixes them.
+
+**Why not unwind, settled by the live run rather than by argument.** Dropping
+`zz_gossms_pf` from ubusql1 left it in *ubusql2's* `sys.availability_groups`; the
+secondary needed its own DROP. So a rollback cannot be completed from the
+primary against a secondary that has already joined and then become unreachable —
+which is the exact case a rollback would exist for. It would also destroy a group
+the user asked for on the strength of one bad peer. The post-CREATE errors keep
+naming the instance and saying the group exists.
+
+`peerFor` is a new seam on the dialog, the counterpart of
+`new_endpoint_dialog.go`'s `peerServerFor`: a test cannot open a second
+connection, and without it only the self-named-replica path was reachable. Eight
+mutants died, including running the preflight *after* the CREATE — which returns
+almost the same error and is caught only by asserting on the statements that
+reached the server.
+
+Live A/B against ubusql1, with win10cli (Always On off, since Windows 10 Pro has
+no Failover Clustering) as the unjoinable replica. The pre-fix binary created
+`zz_gossms_pf` and then reported the JOIN failure, leaving the group behind — the
+bug, reproduced. The new one refuses with "Always On is not enabled on win10cli,
+so it cannot host a replica. Nothing was created" and
+`sys.availability_groups` still held only AAG1. Script Changes then produced the
+full labelled script with the same unjoinable peer in the list. And the happy
+path still works: the same dialog with ubusql2 as the replica created the group
+and both replicas came up CONNECTED. Group dropped from both nodes afterwards;
+AAG1 verified HEALTHY on both, `testdb_1` and `HealthClinic` SYNCHRONIZED.
+
+One thing to know before driving this dialog headlessly: the replica list's
+"Instance to add" row sits directly above a `ButtonsRow`, and the Tab that looks
+like it lands on the field lands on `[ Add Replica ]` — typing then goes nowhere
+and reads as a broken text field. Backtab once and type.
+
+## 2026-08-27 — `requiresText` names each role once
+
+`requiresText(rightAlterDatabase, rightControlDB, rightAlterAnyDatabase)` read
+"Requires ALTER (db_owner) or CONTROL (db_owner) or ALTER ANY DATABASE
+(dbcreator)." — db_owner twice, and three permissions presented as six things to
+go and ask for. The alternatives for one action mostly share a role, so the roles
+are now gathered into one trailing clause: "Requires ALTER, CONTROL or ALTER ANY
+DATABASE (db_owner, dbcreator)." 85 characters became 68, which is what takes the
+read-only banner under one line at 80 columns.
+
+A right with no role stays outside the clause. `rightAlterOnSchema` is the only
+one today and it is deliberately role-less — ALTER on a schema is granted on the
+schema, and naming db_ddladmin beside it would send the user after a role that
+confers much more than what is missing. It joins the sentence after the
+parentheses instead: "… (db_owner, db_ddladmin) or ALTER on the object's schema."
+
+`requiredRight.String()` still exists and still names one right with its role —
+`permission_error.go` uses it for the single-right sentence behind Msg 5011.
+`TestRequiresTextFitsTheReadOnlyBanner` pins the length against the prefix the
+banner adds, over the rights lists that actually reach it; a context menu's
+rights never do, since `gateOn` shortens those to "needs <first right>".
+
+## 2026-08-27 — Query Store: the two filters, Tracked Queries, and plan comparison
+
+The three items `open-threads.md` listed as deliberately out of the Query Store
+work, built in one pass.
+
+**The execution floor and the regression threshold.** Both are pushed into the
+query, never applied to the rows afterwards: `Top` has already thrown away
+everything below the cap by the time rows exist, so a client-side floor filters
+the survivors of a ranking the floor should have changed. gosmo already carried
+`MinExecCount`; `MinRegressionPct` is new, and lands in the outer SELECT of the
+Regressed Queries CTE pair where both windows' values are in scope — a HAVING
+inside either CTE would compare a window against itself. It is a *percentage* of
+the baseline rather than an amount because the same report is read under eleven
+metrics in four different units: a threshold of "100" would mean 100 microseconds
+under Duration and 100 8-KB pages under Logical reads. The comparison multiplies
+rather than divides (`(r.value - b.value) >= b.value * @p / 100`), because
+`b.value > 0` excludes a zero baseline but nothing orders the two predicates.
+
+Which reports carry which filter is a `filters` field in the `queryStoreReports`
+table, not a switch on the title: Overall Resource Consumption groups by interval
+and Query Wait Statistics by wait category, so neither has a per-query execution
+count to floor. A selector on a report that ignores it is dimmed and says why —
+a control that changes a number the next read drops is the silent wrong-thing the
+context-gating rule exists to prevent. `TestTheFlagsTableMatchesTheQueryEachReportRuns`
+loads all seven and greps the statement each one actually ran, which is what keeps
+the hand-written table honest.
+
+**A toolbar cell that does not fit is not drawn at all.** Both filters went on
+the selector row first, and at the real pane width — 140 columns, with Object
+Explorer taking the rest — "Refresh" fell off the end. `layoutToolButtons` gives
+an overflowing cell a zero rect, and a zero rect is neither drawn nor clickable,
+so nothing said anything. They now lead the *action* row, which was 85 columns
+wide. Worth remembering for any panel toolbar: an added cell can silently push
+the last one out of existence, and only a live run at a realistic width shows it.
+
+**Tracked Queries now tracks.** The set is per server and per database, in
+`tracked_queries.json` beside `config.json` (`internal/config/tracked.go`) — its
+own file because config.json is connection profiles and settings, every save of
+it rewrites the file holding the encrypted passwords, and a tracked list that
+goes bad costs four keystrokes where config.json's does not. It is a process-wide
+singleton because two surfaces read it — the panel and the Detail Browser's leaf
+grid — and neither owns the other. The ids reach the report through gosmo's new
+`Options.QueryIDs`, applied by the four per-query reports only: `QueryStorePlans`
+and `QueryStoreTrackedQuery` name the one query they are about, and a second id
+predicate there would answer nothing for any query the list did not contain.
+That one is pinned by a test, because it is invisible until a user pins a query
+and the plan pane goes empty.
+
+A tracked query that has left the store still gets a row saying so — four rows
+for five tracked queries reads as a broken report. That row carries its query id,
+which the first version did not: without one, Untrack Query cannot act on it and
+the pin is permanent, since the row is the only place the query still appears.
+Found live, by clearing Query Store under a pinned query.
+
+**Plan comparison** is `showplan.CompareStatements` (pure data, with the pairing
+rules) plus `PlanComparePanel` (two grids: statement properties above, paired
+operators below). Two grids rather than two plan graphs side by side — an
+operator tile is eighteen columns wide, and the question a comparison answers is
+a list, not a picture. Operators pair on physical operator plus object *without*
+the index: a seek that changed index is the comparison this exists for, and
+keying on the index would split it into two one-sided rows with nothing to read
+against each other. A seek that became a scan deliberately does not pair — that
+is what happened, and pairing it would bury it under a row of property changes.
+Estimates compare with a 1% tolerance, or a plan re-costed against refreshed
+statistics reads as "everything changed". The entry point is a two-press
+Compare Plans in the Query Store panel: the two plans of one query are two rows
+of the same pane, and there is nowhere to select both at once. The marked plan is
+parsed at the mark, not held as a row index — the plan grid is rebuilt by every
+reload.
+
+**Live, against a throwaway `zz_gossms_qs` on win10cli** with a real workload:
+a floor of 10 took Top Resource Consuming Queries from 8 rows to 1 and named
+itself in the summary; the same cell on Overall Resource Consumption refused with
+"An execution floor applies to the reports that rank queries, not to Overall
+Resource Consumption"; Regressed Queries over 15 minutes went 5 rows → 2 at ≥25%
+→ 1 at ≥100%, dropping exactly the queries whose regression/baseline ratio fell
+short. Track pinned query 2, the file appeared under `~/.config/gossms`, the view
+showed that query alone, and after a full restart it was still pinned. Clearing
+Query Store turned it into the "Not in Query Store for this window" row, and
+untracking from that row emptied the view and the file. Compare Plans on the two
+plans of one query — one from before an index was added, one from after —
+produced the Clustered Index Scan / Index Seek pair as "Only in A" / "Only in B"
+under a Stream Aggregate whose cost differed 1.1251 vs 0.0035. Database dropped
+and the tracked file removed afterwards.
+
+One known limit, deliberate: the tree's Tracked Queries leaf is cached like every
+other Detail Browser node, so a pin made in the panel shows there after a refresh
+rather than immediately.
+
+## 2026-08-27 — The four ungated write actions
+
+`docs/open-threads.md` § Permission gating listed four write actions the gate
+layer could not reach because the permission behind each was not one gosmo
+probed: both Always Encrypted key dialogs, Security Policies' Enable/Disable,
+and New Index / New Statistics. All four are gated now.
+
+**Three names went into gosmo's `ProbedDatabasePermissions`** — `ALTER ANY
+COLUMN MASTER KEY`, `ALTER ANY COLUMN ENCRYPTION KEY`, `ALTER ANY SECURITY
+POLICY` — and each becomes one `requiredRight` on the item that needs it.
+`HAS_PERMS_BY_NAME` folds in the permissions that imply the one it is asked
+about, so a single name covers every wider right and no alternative list is
+needed. What the live probe on win10cli settled: db_owner answers 1 to all
+three, **db_ddladmin answers 0 to all three**, and a database-wide `ALTER`
+answers 1 for the two key permissions but **0 for `ALTER ANY SECURITY POLICY`**
+— so the toggle really does need its own name, and db_owner is the only fixed
+role any of the three can send the user after.
+
+**New Index and New Statistics take the object-write rights**, the set
+Rename/Move/Delete already used, now named `objectWriteRights()` and shared
+between the two call sites: database-wide ALTER, CONTROL, ALTER ANY SCHEMA, or
+the schema-scoped ALTER. Both folders carry their table's schema
+(`loadTableChildren` propagates it), so `gateOn` can ask about it. The set stops
+at the schema and that is a real limit: a principal granted ALTER on one *table*
+reads 0 at schema and database scope alike (verified live), so it loses both
+items. Recorded in `open-threads.md` — probing it needs a query per object,
+where the schema block costs one per database.
+
+**A live run turned up a second bug in the menu layer.** `New Index` is a
+cascade, and `menuRowSuffix` returned the `▸` marker before it considered the
+note — so the newly gated item greyed out and said nothing about why, which is
+the exact failure `MenuItem.Note` exists to prevent. A disabled cascade never
+opens (both `ContextMenu.HandleMouse` and `menuCascade` refuse a disabled row),
+so the marker points at a submenu the user cannot reach; the note now outranks
+it. `TestADisabledItemShowsItsNoteInsteadOfItsShortcut` had pinned the old
+behaviour on purpose ("it has a submenu, not a reason") and its cascade
+assertion is now the enabled case only.
+
+**Live on win10cli**, throwaway `gate_live_test` and `gate_probe_login` —
+db_datareader plus VIEW DEFINITION, `GRANT ALTER ON SCHEMA::app`, nothing else.
+Both key folders showed `needs ALTER ANY COLUMN MASTER KEY` /
+`... ENCRYPTION KEY`; the policy node showed `Disable  needs ALTER ANY SECURITY
+POLICY` beside a correctly withheld `Delete...`. `New Index` and `New
+Statistics...` were live on `app.t1` and read `needs ALTER` on `dbo.t2` — the
+schema grant, both directions, from one login in one session. The positive
+control matters as much: New Statistics on `app.t1` opened its dialog and built
+the form. Database and login dropped afterwards.
+
+**gosmo gained a live test for the probe lists themselves**
+(`live_probednames_test.go`): every name in all three `Probed*` lists must read
+back something other than `CapabilityUnknown` for a sysadmin. A misspelt or
+non-existent name is silent — `HAS_PERMS_BY_NAME` answers NULL, the state is
+Unknown, and Unknown fails open forever — so nothing but a live run can tell it
+from a login that holds the right. Mutation-checked by misspelling one name.
+
+## 2026-08-27 — SQL Agent's four New-X actions are gated on msdb role membership
+
+The last of P3's deliberate exclusions with real code behind it. What permits
+New Job / New Schedule / New Alert / New Operator is membership of an msdb
+role, which grants EXECUTE on individual procedures rather than the
+database-scope EXECUTE the permission probe reads — so the gate had nothing to
+ask about and the four items were left ungated. `open-threads.md` costed the
+remaining work as "deciding what *or above* means". That turned out to be the
+smaller half.
+
+**The real blocker was that a role test cannot fail open.** The whole gate
+layer rests on withholding only when the server denied *every* right, and the
+permission accessors honour it — `Permits` reads unknown as allowed. `InRole`
+cannot: it answers false for a role never asked about exactly as it does for
+one the login is not in. Gating on `InRole("SQLAgentUserRole")` would have
+withheld all four items from every connection whose msdb probe had not landed.
+gosmo had already met this at server scope — `Capabilities.Probed` exists with
+a comment saying precisely this — but `DatabaseCapabilities` had no
+counterpart, so it gained one. It reads `Roles != nil` rather than
+`Accessible`, because an inaccessible database is a real answer: the probe ran
+and reported that nothing inside could be asked.
+
+Three facts settled live on win10cli, each of which breaks the gate if assumed
+the other way:
+
+- **A sysadmin reads `IS_ROLEMEMBER` = 0 for all three `SQLAgent*` roles.** It
+  maps to `dbo`, and `dbo` is a member of none of them. Gating on the Agent
+  roles alone would have emptied the Agent menus for the one login that
+  certainly may use them, which is why `CONTROL SERVER` is in the set.
+- **The roles nest and `IS_ROLEMEMBER` resolves the nesting** — a member of
+  `SQLAgentOperatorRole` reads 1 for `SQLAgentUserRole`. So the narrowest role
+  is the whole test for "or above"; Reader and Operator need no separate check.
+  That is the answer to the question the entry left open.
+- **msdb `db_owner` is a real non-sysadmin case** covered by neither.
+
+Two things the live run caught that no test would have:
+
+**msdb was never primed.** `primeDatabaseCapabilities` returns early when the
+node carries no `DBName`, and the Agent tree hangs off the server, so nothing
+ever warmed msdb and all four gates would have failed open for the whole
+session — passing every unit test while gating nothing. `isAgentNode` now maps
+the contiguous `NodeAgent*` block to msdb.
+
+**The withheld note named the wrong right.** `gate` shows only `rights[0]` in a
+disabled item's note, and the set led with `CONTROL SERVER`, so the first live
+capture read `New Schedule...  needs CONTROL SERVER` — telling someone who
+wants to create a job to go and ask for sysadmin. The order of an alternatives
+list is a message, not just a test; the narrowest sufficient right goes first,
+and `TestTheSQLAgentNoteNamesTheNarrowestRight` pins it.
+
+Verified end to end under tmux against win10cli with three throwaway logins
+(`SQLAgentUserRole` only, `SQLAgentOperatorRole` only, and no role at all),
+since dropped: all four items dim to `needs SQLAgentUserRole` for the no-role
+login, stay enabled for the role holder, and stay enabled with no note for
+`sa`. The no-role login's *withholding* is also what proves the msdb priming
+runs — an unprimed msdb fails open.
+
+Three mutants killed: dropping the `Probed` guard, dropping `CONTROL SERVER`
+from the set, and unwiring the gate from New Job.
+
+## 2026-08-27 — Object-scoped grants are probed after all, in one query per database
+
+P3's remaining "cost decision": a principal granted ALTER on one *table* holds
+nothing at schema or database scope, so `objectWriteRights()` denied every
+right it asked about and Rename / Move to Schema / Delete / New Index / New
+Statistics went from an object SQL Server would have let it alter. This is the
+one direction the gate layer otherwise avoids. It was left standing because an
+OBJECT-scope probe was costed at a query per object.
+
+**That premise was wrong, and only true of `HAS_PERMS_BY_NAME.`** That function
+answers for one securable per call, but the catalog answers for a whole
+database at once. gosmo's database probe gained a fourth `UNION ALL` block —
+`objectCapabilityQuery` — reading `sys.database_permissions` and `sys.objects`
+against a recursive CTE of every principal the login's permissions can arrive
+through. Measured live: 4 rows, 5 ms, and no extra round trip, since the probe
+was already batching roles, permissions and schemas into one query.
+
+Four parts of that read are load-bearing, each found by it being wrong first:
+
+- **`sys.objects` is not redundant with `sys.database_permissions`.** An
+  object's owner holds implicit CONTROL and has *no* permission row at all —
+  `HAS_PERMS_BY_NAME` said 1 while the grants query returned nothing.
+- **`public` is in the principal set, so the permission filter must stay.**
+  Without it every catalog view's SELECT grant to public comes back: 235 rows
+  on a stock database against the 3 that matter.
+- **`minor_id = 0`** keeps column-level grants out; they share `class = 1` and
+  would report a column grant as a grant on the table.
+- **A DENY comes back with a NULL name.** The deny leaves no permission behind,
+  metadata visibility then hides the object, and `CONCAT` would key it on a
+  bare `"."`. Dropped — such an object is equally invisible in any listing
+  built from the same catalog.
+
+**The map is sparse, and that is the whole safety argument.** Unlike the role,
+permission and schema blocks, it holds a row only for an object explicitly
+granted, denied or owned. Read the way the others are read — "not denied means
+allowed" — it would report every object in the database as permitted. So
+`HasOnObject` is the only accessor, and `rightAlterOnObject` can only ever
+*add* permission: an object with no row leaves the four wider rights to answer
+exactly as they did before. Nothing that was offered can be withheld by this
+change, which is what made it safe to add to five existing call sites.
+
+Verified live against `HealthClinic` with a throwaway login holding no schema
+or database right, since dropped. In one menu: a directly granted table, a
+table granted through *two* levels of role nesting, and a table the login owns
+outright all keep Rename/Move/Delete; a table with no grant in the same schema
+and a table under an explicit DENY both lose them to "needs ALTER". `sa` is
+unaffected. Two mutants killed: reading the map as `Permits` rather than `Has`,
+and unthreading the object name at the call sites.
+
+## 2026-08-27 — The P4 refusal path is reachable live, and Msg 1088 was unclassified
+
+`open-threads.md` recorded that the `withPermissionAdvice` append could not be
+reached end to end: the gates now withhold the write actions before they can be
+attempted, so only the *read* refusals were ever verified live. Reaching it
+needed "a login that holds a right the gate reads but not the one the statement
+checks", and the schema-scoped ALTER that used to be the candidate stopped
+being one when the gate learned to read it. Point 2 removed another.
+
+**One exists, and it is the general shape rather than a curiosity: a grant at a
+wider scope with a DENY at a narrower one.** A login holding database-wide
+`ALTER` and `DENY ALTER` on one table reads `db_ALTER=1 schema_ALTER=1
+obj_ALTER=0`. Every right the gate asks about answers yes, the item is offered,
+and the statement is refused. The new object block does not close it either,
+and deliberately: it can only add permission, so the DENY it records cannot
+withhold what the wider rights allow.
+
+Driven live under tmux against a throwaway table, both halves of the mapping
+reached for the first time:
+
+- **Rename → Msg 297**, appearing on the status line with the server's sentence
+  and no advice, exactly as `advice()`'s comment says it should. That comment
+  is right and stays: 297's text names nothing, and a refused KILL and
+  `sp_readerrorlog` raise it alone, so any right named there would be invented.
+- **Move to Schema → Msg 15151**, with the append working:
+  `… you do not have permission. (15151) — The object zz_p3_target does not
+  exist, or this login cannot transfer it.`
+
+**Msg 1088 was in no table at all.** `ALTER TABLE` and `CREATE INDEX` on a
+denied object both raise `Cannot find the object "dbo.x" because it does not
+exist or you do not have permissions.` — textbook `refusalAmbiguous`, and it
+was falling through as raw text. It now has its own entry and its own pattern,
+because its wording differs from the 3701/15151 sentence in three ways at once:
+double quotes around the identifier, no comma before "because", and
+"permissions" plural. Reusing `reCannotBecause` matches none of them, which a
+mutant confirms. The advice is phrased around the permission rather than the
+verb — SQL Server's verb here is "find", and "this login cannot find it" reads
+as a lookup failure rather than the refusal it is.
+
+**A mistake worth recording.** Hunting the mismatch, `DROP TABLE dbo.Invoices`
+was run as the throwaway login expecting a refusal. It succeeded: `DENY ALTER`
+on a table does not block a drop, which is permitted by ALTER on the *schema* —
+a permission that login had. The table was rebuilt from the two sources that
+survived (`todo/healthclinic_sample_data.sql` section 9 and the still-present
+`vw_UnpaidInvoices`) to 12,440 rows matching the 12,440 billable appointments,
+schema exact, values regenerated to the original distribution; the registered
+backup file was no longer on disk. The rule that would have prevented it: a
+destructive statement goes against a throwaway object even when the expectation
+is that it will be refused.
+
+## 2026-08-27 — xp_cmdshell is offered on Linux, where it can never be on
+
+Found while re-reading `docs/open-threads.md` for a known-issues list, from
+what the Detach/Attach entry already said in passing: SQL Server on Linux has
+no xp_cmdshell at all, and `sp_configure 'xp_cmdshell', 1` there fails Msg
+15392, "not supported by this edition".
+
+**The reason it was not already handled** is the interesting half.
+`newConfigBoolEditor` already has a missing-option path — an option absent from
+`sys.configurations` renders as a disabled `N/A` text row rather than a live
+checkbox left out of the tracked list. xp_cmdshell does not take it: Linux
+*lists* the option, at 0. Confirmed on ubusql1 rather than assumed:
+`SELECT name, value, value_in_use FROM sys.configurations WHERE name LIKE
+'xp_cmdshell%'` returns a row. So the page rendered an ordinary checkbox that
+ticked cleanly and produced the server's raw refusal on OK — the ungated-action
+case § Application rules exists for.
+
+`xpCmdshellRow` (`server_props_advanced.go`) branches on
+`ServerInfo.Platform`, which gosmo derives from `@@VERSION` and nothing else,
+so the check costs no query and works on a pre-2017 instance where
+`sys.dm_os_host_info` does not exist. On Linux it hands back the same disabled
+row shape the missing-option path uses.
+
+**The unit test passed and the live run failed anyway**, which is the entry's
+point. `TestXpCmdshellIsNotEditableOnLinux` asserts through the widget — the
+value says why, an `Edit` leaves it clean, and apply writes nothing — and
+`TestXpCmdshellStaysEditableOnWindows` guards the other direction, since
+withholding the option everywhere satisfies the first test on its own. Both
+pass over `newFakeConnOnLinux`, a `serverInfoResponse` with `@@VERSION` saying
+Linux. Driven under tmux against ubusql1 the row came out
+`xp_cmdshell [ot available on Linux ]`: the field was sized 22 for a 22-column
+value, and `widgets.InputField` scrolled it by one. Widened to 24. No test
+sees this — the value the test reads back is the whole string either way.
+
+## 2026-08-28 — A Query Store report's statement opens in a query panel, and the panel was never drawing its grid overlays
+
+The Query column of every per-query Query Store report was cut to 80 columns in
+the *data*: `queryStoreOneLine` flattened the statement onto one line and then
+`core.Truncate`d it, so the full text existed nowhere in the UI and "Show
+Value" showed the same 80 characters the grid did.
+
+The cut was unnecessary. `DataGrid` clamps a column's width
+(`maxCellWidthOrDefault`) and truncates what it *draws* (`drawRow`'s
+`core.Truncate` to the available width), so the cell can hold the whole
+statement and still render exactly as before. `queryStoreOneLine` now only
+flattens — the newline is the part that would break a grid row — and the two
+hosts route the column to a query panel:
+
+- `App.showSQLCellValue` is the `OnShowValue` hook, claiming the cell only for
+  the `qsQueryColumn` ("Query") column and opening it as `Query.sql` with the
+  SQL highlighter, the same treatment an `xml`/`json` cell gets. It shares
+  `openValuePanel` with `openCellValuePanel`, including the
+  `savedText = editor.Text()` seeding that keeps a panel opened to *read* a
+  value from being born dirty.
+- Wired on both grids the reports appear in: `newQSGrid` (the Query Store
+  panel's report and plan grids) and the Detail Browser's, via a new
+  `App.newDetailBrowser` that also folds in the `OnRefresh` wiring both
+  construction sites were duplicating.
+
+**Found by the live run, as usual.** In the Detail Browser the right-click →
+Show Value → panel path worked first try. In the Query Store *panel* nothing
+happened at all — no menu, no popup, on right-click or Ctrl+Space, while
+keyboard navigation clearly worked. `QueryStorePanel.Draw` called
+`grid.Draw`/`plansGrid.Draw` and never `DrawOverlay`, so both grids' context
+menu and value popup were being opened and then not painted: an invisible menu
+holding every keystroke until Escape. Shipped that way — the panel has had a
+cell context menu ("Copy", "Show Value") since it was written and it has never
+been reachable. `Draw` now ends with both `DrawOverlay` calls, after both
+grids, so an overlay is on top of either.
+
+Pinned by `TestShowSQLCellValueOpensTheWholeStatement` (a 500-rune statement
+comes back whole in a non-dirty panel; a non-Query column and a blank cell are
+left to the grid's own popup) and by the report test, which now asserts
+`queryStoreOneLine` returns the whole statement — mutated back to a truncating
+version, it fails. The missing `DrawOverlay` has no unit test; it is a draw
+call whose absence is visible only on a real screen.
+
+The same audit (`grep` for a `DataGrid.Draw(s)` with no `DrawOverlay` beside it)
+turned up one more: `PlanComparePanel`, which even has an `overlayGrid` for
+input routing and drew neither grid's overlay. Fixed the same way. Nothing else
+in `internal/tui` is missing the call.
+
+## 2026-08-28 — Query Store review: the flattened cell, and the uncancelled plan read
+
+A read-only review of `query_store_panel.go`, `query_store_reports.go` and the
+gosmo report layer behind them turned up two bugs worth fixing ahead of the
+rest, plus a list of gating gaps and inconsistencies still open (see
+`docs/open-threads.md`).
+
+**The Query column's cell was not a statement.** `queryStoreOneLine` joins the
+statement onto one line — it has to, a raw newline breaks the grid row — and
+both surfaces wire `OnShowValue` to `showSQLCellValue`, which opens the cell in
+a query panel with SQL highlighting and a working Execute. A statement whose
+first line ends in `-- comment` therefore opened as
+`SELECT 1 -- pick one FROM dbo.t`: valid SQL, silently missing its FROM clause.
+The function's own comment claimed the cell "keeps the whole statement for Show
+Value to open", which was true of the *characters* and false of the meaning.
+
+Two different fixes, because the two surfaces hold different things. The panel
+already keeps typed rows, so `qsResultRow` gained `queryText` and the panel
+wires its own `showValue` — no round trip. The Detail Browser's grid is
+`[][]string` shared with ~30 node types behind a cache and a progressive-load
+layer, and threading raw text through that for one report family is exactly the
+speculative widening the scope rule warns about; instead
+`showQueryStoreValue` re-reads the statement by the row's `Query ID` through
+gosmo's existing `QueryStoreQueryTextContext`, which was built for this. Every
+path that cannot produce an id falls back to the cell, which is then all there
+is.
+
+The subtle half was `OnShowValue(col int, ...)` — the first parameter is the
+**column** index. `DataGrid.openViewer` reads the cell at `selRow`/`selCol`, so
+`SelectedRow()` is the row being shown, and that is where the row comes from.
+
+**Plan reads were never cancelled.** `load` stores a `cancel` and `cancelRead`
+aborts it, with a comment saying why: uncancelled, the query runs on the shared
+host connection until `qsReadTimeout`. `loadPlans` had no equivalent — and it
+fires from the report grid's `OnSelectRow`, so holding Down through a 25-row
+ranking started 25 plan reads, each with a 120 s ceiling, none cancelled;
+`planSeq` discarded the results while the queries all ran. Closing the panel
+cancelled the report read and left the plan reads going. Added `planCancel`
+beside `cancel` — two, not one, for the same reason there are two sequence
+numbers.
+
+**What the tests needed.** The fake driver answers instantly and ignores the
+context, so a completed read has already cancelled itself via its own `defer`
+and a panel that cancelled nothing would have passed. `fakeResponse` gained a
+`block` channel that holds a matching query inside the driver, and
+`fakeInstance` now records each read's context and parameters (`ReadContext`,
+`ReadArgs`) — the args because the Detail Browser hook reaching the *wrong row*
+still hits the server, and with every id answered alike the bound id is the only
+witness. Each of the four tests was checked by mutating the fix back; the
+row-addressing one only started failing once it asserted the bound id.
+
+## 2026-08-28 — Query Store: a status line that describes the query that ran
+
+Three status-line bugs from the same review, all one defect underneath: the
+panel composed its summary from what the *toolbar* said, and the toolbar is not
+the authority on what a report read.
+
+- **Query Wait Statistics announced a metric it never used.** Query Store records
+  wait time and nothing else per category, so the metric selector does not reach
+  that query — gosmo says so outright — yet the line was built from `p.metric`
+  and read "Avg CPU time" over a grid of milliseconds. The chart label already
+  got this right, because it comes from the loader.
+- **Regressed Queries named twice the range its rows covered.** The report
+  compares the two halves of the window; the line said "over the last 24 h".
+- **Query Store switched off counted its own explanation as a report** — "2 rows,
+  Avg Duration over the last 24 h" for a query that never ran. Nothing tracked
+  yet did the same.
+
+Fixed by extending the idiom `chartLabel` already established in this file — the
+loader that filled a value names it, so the label cannot disagree with the
+column. `qsResult` gained `valueLabel` (what the value column carries, set from
+the same string that became the header) and `note` (a status line supplied
+outright, for grids whose rows are prose).
+
+**The window needed one owner.** `queryStoreRegressionOptions` was applied inside
+`regressedQueriesReport`, so the split was invisible to anyone else — and the
+plan pane, reading `p.options()` independently, covered the whole window while
+the rows above it covered half. One plan therefore reported more executions than
+its query. Moved the call out to `queryStoreReport.effectiveOptions`, applied by
+the caller exactly once: the two report callers and the plan pane now derive
+their window from one function instead of three copies of one rule. It is *not*
+idempotent — a second application splits the recent half again — which is why
+the loader now takes its window as given and says so.
+
+**Testing.** The alignment bug could only be asserted where the two windows
+actually meet: the parameters reaching the server, via the `ReadArgs` recorder
+added in the previous pass. Both windows come from separate `time.Now()` calls,
+so they are never equal — the test allows two seconds and separately asserts the
+plan window is *not* the baseline's, which is the shape of the bug (a twelve-hour
+gap). All five tests were checked by mutating each fix back; the double-split a
+re-added call in the loader would cause is caught by the same test.
+
+One wrinkle worth remembering: `fakeResponse` matches by substring **in order**,
+and every report's query contains the per-query `FROM`, so the interval report
+was being handed twelve-column rows and coming back empty. The table-driven test
+scripts the narrower answers first — otherwise it silently covered six of seven.
+
+## 2026-08-28 — Query Store: the two selectors that did nothing
+
+Third pass of the review. The `qsFilters` table already existed and already did
+the right thing for the two filters on the action row — it just stopped two
+controls short, so Metric and Top stayed live on reports whose queries do not
+read them. Confirmed against gosmo rather than assumed:
+`QueryStoreOverallConsumptionContext` renders no `TOP` at all (it was asked for a
+time range, and dropping intervals out of the middle would misdraw the chart),
+and `QueryStoreWaitCategoriesContext` renders no metric column (Query Store
+records wait time per category and nothing else).
+
+Added `qsFilterTop` and `qsFilterMetric`, gated `selDisabled` on them, and gave
+the selector row the `selReason` half the action row already had — a dimmed cell
+that only greys out is the same dead press with extra steps.
+
+**Tracked Queries needed more than a flag.** Its floor was real: it reads the
+same gosmo query the rankings do, so a floor left set on another view was
+carried in and dropped a pinned query — which then showed up as "Not in Query
+Store for this window", an explanation with nothing to do with why it went. So
+the option is now gated at the caller (`filterValue`) rather than left to gosmo,
+and the table and the query agree again.
+
+Its Top is a different shape of dead: the query *does* carry a `TOP`, but
+`trackedQueriesReport` raises it to fit the pinned set, so the selector can never
+change the answer. That forced the meaning of the table to be stated properly —
+"the toolbar controls that change what this report returns", not "the options
+that reach gosmo" — and forced the test to pin *effect* rather than syntax.
+
+**The test that nearly passed for the wrong reason.** Checking "is 25 among the
+bound parameters" matched a tracked query whose id happened to be 25. Top is
+`@p1` on every per-query report, so the check is now on the first parameter
+alone; the tracked ids moved to 101+ as well. Same failure mode as the
+`fakeResponse` ordering trap from the previous pass — a green table-driven test
+covering less than it claimed.
+
+Four mutations checked: ungating the selectors, ungating the floor, and claiming
+in the table that Tracked honours Top or that Wait honours Metric. Each failed in
+the test meant to catch it. `newTestApp` also gained the `contextMenu` that
+`App.buildUI` builds — a panel popping a selector menu reached a nil one and
+crashed instead of failing its assertion.
+
+## 2026-08-28 — Query Store: the toolbar buttons that were never drawn
+
+Fourth pass. Three small inconsistencies, and one that turned out to be a
+shipped bug hiding behind them.
+
+**The statistic a report opens on.** `defaultStat` was applied in
+`NewQueryStorePanel` only, so opening a report leaf gave Total on a panel
+created for it and whatever the previous view left behind on one already open —
+the same click, two different numbers. Fixed with a `statChosen` flag: until the
+user picks a statistic from the toolbar the panel follows each report's own
+default; once they pick one it is theirs, which is what the metric already did
+unconditionally. Resetting on every report change would have been simpler and
+would have thrown away a deliberate choice.
+
+**`qsDefaultTopIdx`** claimed to be gosmo's `QSDefaultTop` with nothing pinning
+it, while its sibling `qsDefaultWindowIdx` had a test. Now pinned the same way,
+including through `options()`.
+
+**`drawChart`'s comment** described six of the seven orderings — Tracked Queries
+sorts by last execution, being a pinned list rather than a ranking.
+
+**The one that mattered.** The fourth item was to make `Script`'s label say
+which statement it would produce, the way `Track Query`'s label follows the
+cursor. Measuring first — because CLAUDE.md says a toolbar cell that does not
+fit is not drawn at all — showed the action row already wanted 119 columns in a
+pane that gets 70% of the terminal, and that `Compare Plans` was therefore
+invisible below a 170-column terminal, `Track Query` below 132, and `Script`
+below 120. None of the three has a key binding: `HandleKey` handles F5, Tab and
+Ctrl+Up/Down and then delegates to the grid. So two features built in this same
+working tree could not be invoked at all on an ordinary terminal, and adding
+eight columns for `Script Unforce` would have made it worse.
+
+This is the rule's own example turned around: the two filters were moved onto
+the action row to stop the *selector* row dropping Refresh, and that pushed the
+action row's own tail off instead. Moving the problem rather than solving it.
+
+Fixed generally with `layoutToolButtonsOverflow`, which collapses whatever does
+not fit behind a "More ▾" cell and returns the hidden indexes; both Query Store
+rows use it, and each menu entry carries its button's own gate plus its reason
+as `MenuItem.Note`, which is shown precisely while an item is disabled. Every
+action is now reachable at every width, and the stateful `Script` label became
+affordable. `layoutToolButtons` itself is untouched, so Activity Monitor and the
+Log File Viewer keep their current behaviour — both should probably adopt this
+too, which is noted in `docs/open-threads.md`.
+
+**Two tests that passed for the wrong reason.** The suffix check ("the menu holds
+the row's tail, not a scattered subset") passed against a deliberately broken
+layout when run at a single width: the squeeze needs a long button followed by a
+shorter one at exactly the wrong boundary. Sweeping 20..170 catches it. And the
+gate test asserted on `Show Plan`, which still fitted at the width chosen — and
+read `Untrack Query` because the process-wide pin set had leaked from the test
+before it, which is the exact thing `useTempTracked` exists to prevent.

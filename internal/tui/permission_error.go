@@ -26,14 +26,17 @@ const (
 )
 
 // refusalNumbers classifies the SQL Server error numbers that mean a login was
-// refused. Every one was captured from a live instance against the two
-// least-privileged test logins, not taken from documentation — see
-// docs/permissions-plan.md § 3.3.
+// refused. Every one was captured from a live instance against a
+// least-privileged test login, not taken from documentation — which is the
+// point: the wording differs between numbers in ways no amount of reasoning
+// predicts, and a pattern written from the docs matches nothing.
 //
 //	229   The SELECT/EXECUTE permission was denied on the object '…'
 //	230   The SELECT permission was denied on the column '…'
 //	262   CREATE TABLE / BACKUP DATABASE / … permission denied in database '…'
 //	297   The user does not have permission to perform this action
+//	1088  Cannot find the object "…" because it does not exist or you do not
+//	      have permissions
 //	300   VIEW SERVER (PERFORMANCE|SECURITY) STATE permission was denied …
 //	916   The server principal "…" is not able to access the database "…"
 //	3701  Cannot drop the table '…', because it does not exist or …
@@ -48,6 +51,7 @@ var refusalNumbers = map[int32]refusalKind{
 	229: refusalCertain, 230: refusalCertain, 262: refusalCertain,
 	297: refusalCertain, 300: refusalCertain, 916: refusalCertain,
 
+	1088: refusalAmbiguous,
 	3701: refusalAmbiguous, 5011: refusalAmbiguous,
 	15151: refusalAmbiguous, 15247: refusalAmbiguous,
 }
@@ -119,6 +123,14 @@ var (
 	// or you do not have permission."
 	reCannotBecause = regexp.MustCompile(
 		`Cannot (\w+) the ([\w ]+) '([^']*)', because it does not exist or you do not have permission`)
+
+	// 1088: `Cannot find the object "Invoices" because it does not exist or you
+	// do not have permissions.` Three things separate it from the sentence
+	// reCannotBecause reads, and all three are why it needs its own pattern:
+	// the identifier is in double quotes, there is no comma before "because",
+	// and "permissions" is plural. The name may or may not be schema-qualified.
+	reCannotFindObject = regexp.MustCompile(
+		`Cannot find the ([\w ]+) "([^"]*)" because it does not exist or you do not have permission`)
 )
 
 // advice renders the refusal as a sentence naming what the login would need,
@@ -160,6 +172,13 @@ func (r refusal) advice() string {
 	case 3701, 15151:
 		if m := reCannotBecause.FindStringSubmatch(r.message); m != nil {
 			return "The " + m[2] + " " + m[3] + " does not exist, or this login cannot " + m[1] + " it."
+		}
+	case 1088:
+		// Not phrased with the verb the way 3701/15151 are: the verb SQL
+		// Server uses here is "find", and "this login cannot find it" reads as
+		// a lookup failure rather than the refusal it is.
+		if m := reCannotFindObject.FindStringSubmatch(r.message); m != nil {
+			return "The " + m[1] + " " + m[2] + " does not exist, or this login has no permission on it."
 		}
 	}
 	return ""

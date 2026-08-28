@@ -87,7 +87,7 @@ func (d *FindReplaceDialog) ShowReplace() { d.show(true) }
 func (d *FindReplaceDialog) show(replace bool) {
 	qp := d.app.activeQueryPanel()
 	if qp == nil {
-		d.app.setStatus("No active query panel")
+		d.app.setStatus(noActiveQueryPanelMessage)
 		return
 	}
 	d.target = qp.editor
@@ -504,7 +504,7 @@ func (d *FindReplaceDialog) focusWidget(w focusable) {
 func (a *App) findNextInEditor(dir int) {
 	qp := a.activeQueryPanel()
 	if qp == nil {
-		a.setStatus("No active query panel")
+		a.setStatus(noActiveQueryPanelMessage)
 		return
 	}
 	if !qp.editor.HasSearch() {
@@ -525,7 +525,7 @@ func (a *App) findNextInEditor(dir int) {
 func (a *App) findWordAtCursor() {
 	qp := a.activeQueryPanel()
 	if qp == nil {
-		a.setStatus("No active query panel")
+		a.setStatus(noActiveQueryPanelMessage)
 		return
 	}
 	word := qp.editor.WordAtCursor()

@@ -291,3 +291,62 @@ func TestPrefixStatesResumeHandlesLineCountChanges(t *testing.T) {
 		}
 	}
 }
+
+// TestPrefixStatesIncrementalReplayAfterReplaceRange covers the resume path
+// for the *other* mutation that now leaves a non-zero dirtyFrom. replaceRange
+// (undo, redo) used to reset it to 0 and force a full replay; it now names its
+// span's first line, which makes the resume branch reachable for a splice that
+// happens to keep the line count — and only the length test in
+// prefixStates.at keeps it off the ones that don't.
+//
+// Every case is checked against startsInBlockComment over the whole document,
+// so a resume that trusts a stale earlier state shows up as a wrong colour
+// rather than as a passing round trip.
+func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
+	e := NewEditor(nil)
+	e.SetBounds(0, 0, 80, 20)
+	e.SetText(strings.Join([]string{
+		"SELECT 1",
+		"/* opened here",
+		"still inside",
+		"*/ SELECT 2",
+		"SELECT 3",
+		"SELECT 4",
+	}, "\n"))
+	doc := e.Document()
+
+	var cache prefixStates[bool]
+	splices := []struct {
+		name   string
+		row, n int
+		with   []string
+	}{
+		// Same line count: the resume branch, from a line that is not 0.
+		{"a one-line span opens a comment", 4, 1, []string{"SELECT 3 /* now open"}},
+		{"a one-line span closes it", 5, 1, []string{"SELECT 4 */"}},
+		{"a two-line span, same length", 1, 2, []string{"SELECT 1b", "SELECT 1c"}},
+		// Line count changes: must fall back to a full replay however few
+		// versions behind the cache is.
+		{"the span grows", 2, 1, []string{"/* reopened", "inside", "*/ done"}},
+		{"the span shrinks", 1, 3, []string{"SELECT 2 /* left open"}},
+		{"a span at line 0", 0, 1, []string{"SELECT 0 */"}},
+	}
+	for i := range doc.Len() {
+		cache.at(doc, i, false, blockCommentToggleEnd)
+	}
+	for n, sp := range splices {
+		with := make([][]rune, len(sp.with))
+		for i, s := range sp.with {
+			with[i] = []rune(s)
+		}
+		e.doc.replaceRange(sp.row, sp.n, with)
+		for i := range doc.Len() {
+			got := cache.at(doc, i, false, blockCommentToggleEnd)
+			want := startsInBlockComment(doc.all(), i)
+			if got != want {
+				t.Fatalf("after splice %d (%s): line %d starts-in-comment = %v, want %v",
+					n, sp.name, i, got, want)
+			}
+		}
+	}
+}

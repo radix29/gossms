@@ -397,40 +397,71 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 	}
 	sc, dbName := resolveConn(node), node.data.DBName
 	rights := objectOpRights(node.data.Type)
+	schema, object := objectOpSchema(node), objectOpName(node)
 
 	var items []controls.MenuItem
 	if op.rename != nil {
-		items = append(items, gate(controls.MenuItem{Label: "Rename...",
-			Action: func() { a.renameObject(node) }}, sc, dbName, rights...))
+		items = append(items, gateOn(controls.MenuItem{Label: "Rename...",
+			Action: func() { a.renameObject(node) }}, sc, dbName, schema, object, rights...))
 	}
 	if op.transfer != nil {
-		items = append(items, gate(controls.MenuItem{Label: "Move to Schema...",
-			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, rights...))
+		// The source schema, not the target: the target is picked in the
+		// dialog and its ALTER is checked by the server. Gating on the source
+		// is what stops the item being offered on an object the login cannot
+		// touch at all.
+		items = append(items, gateOn(controls.MenuItem{Label: "Move to Schema...",
+			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, schema, object, rights...))
 	}
 	if op.drop != nil || op.dropWithOption != nil {
-		items = append(items, gate(controls.MenuItem{Label: "Delete...",
-			Action: func() { a.deleteObject(node) }}, sc, dbName, rights...))
+		items = append(items, gateOn(controls.MenuItem{Label: "Delete...",
+			Action: func() { a.deleteObject(node) }}, sc, dbName, schema, object, rights...))
 	}
 	return items
+}
+
+// objectOpSchema is the schema whose ALTER permits these operations on node,
+// or "" for a node they are not scoped by.
+//
+// A schema node is excluded deliberately: ALTER on a schema does not permit
+// dropping or renaming the schema itself — that is CONTROL on it, or
+// ALTER ANY SCHEMA — so answering with the node's own name would offer three
+// items the server then refuses.
+func objectOpSchema(n *explorerNode) string {
+	if n.data.Type == NodeSchema {
+		return ""
+	}
+	return n.data.Schema
+}
+
+// objectOpName is the object whose own ALTER permits these operations on
+// node, or "" for a node they are not scoped by.
+//
+// A schema node is excluded for the same reason objectOpSchema excludes it:
+// the schema is not an object, and its own name would answer for a table that
+// happened to share it. A node type gosmo's object probe does not record —
+// an index, a statistic — simply has no row, and the wider rights answer as
+// they did before.
+func objectOpName(n *explorerNode) string {
+	if n.data.Type == NodeSchema {
+		return ""
+	}
+	return n.data.Name
 }
 
 // objectOpRights is what permits Rename/Move/Delete on a node type — any one
 // of them is enough, and the action is withheld only when the server has
 // denied every one.
 //
-// These are sufficient conditions rather than the exact permission SQL Server
-// checks, which for a schema object is ALTER on its *schema* and is not
-// something the database-scope probe can see. A login granted ALTER on one
-// schema and nothing else therefore loses these three items even though the
-// server would accept them; a login with any of the database-wide rights below
-// keeps them. That trade is deliberate: the failure it prevents — Delete
-// offered on a database the login can only read — is the one the audit found,
-// and the fallback for the other direction is the query editor.
+// For a schema object the permission SQL Server checks is ALTER on its
+// *schema*, which rightAlterOnSchema asks about by name — the database-wide
+// rights beside it are the wider ones that also permit the operation, and any
+// one of the four is enough. A database node has no schema and keeps the two
+// server-side rights that let a database be renamed or dropped.
 func objectOpRights(t NodeType) []requiredRight {
 	if t == NodeDatabase {
 		return []requiredRight{rightControlDB, rightAlterAnyDatabase}
 	}
-	return []requiredRight{rightAlterDatabase, rightControlDB, rightAlterAnySchema}
+	return objectWriteRights()
 }
 
 // objectDisplayName is the object's name as the dialogs should say it:
@@ -476,7 +507,7 @@ func (a *App) deleteObject(node *explorerNode) {
 	data := node.data
 	run := func(option bool) {
 		a.safego("deleting an object", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			var err error
 			if op.dropWithOption != nil {
@@ -556,7 +587,7 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 	// deleteObject. node itself is still needed, but only inside postAndWake.
 	data := node.data
 	a.safego("renaming an object", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := serverWriteContext(sc)
 		defer cancel()
 		err := op.rename(ctx, sc, data, newName)
 		a.postAndWake(func() {
@@ -645,7 +676,7 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 			}
 			data := node.data
 			a.safego("moving an object between schemas", func() {
-				ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+				ctx, cancel := serverWriteContext(sc)
 				defer cancel()
 				err := op.transfer(ctx, sc, data, target)
 				a.postAndWake(func() {

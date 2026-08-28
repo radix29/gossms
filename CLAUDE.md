@@ -15,7 +15,7 @@ branching exists in exactly two places: `internal/tui/os_clipboard.go`
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
 - Depends on `github.com/radix29/gosmo`, the author's own companion library for
   SQL Server management objects (https://github.com/radix29/gosmo), and
-  `github.com/gdamore/tcell/v3` (`v3.4.1`) for the TUI backend.
+  `github.com/gdamore/tcell/v3` (`v3.4.2`) for the TUI backend.
 - `go.mod`'s `require` pins a gosmo tag, but the `replace github.com/radix29/gosmo
   => ../gosmo` directive is deliberately **active** during development, so builds
   use the sibling checkout and `HEAD` may depend on untagged gosmo code. The
@@ -169,7 +169,7 @@ narrow a gosmo capability because gossms doesn't call it.** "No callers in
 gossms" is not evidence of dead code — an unused method is one some other
 application (or a future gossms page) depends on. This covers whole files,
 exported methods, exported types and their fields, and struct fields only some
-paths populate. The `*Seq` iterators in `iter.go` are the standing example: 75
+paths populate. The `*Seq` iterators in `iter.go` are the standing example: 91
 exported methods, zero gossms callers, all deliberately kept.
 
 When an audit turns up something unused, the allowed moves are: make it faster,
@@ -331,6 +331,35 @@ gosmo only.
   follows the database collation and drops rows on a case-sensitive one; and escape
   the pattern with `likeEscape` plus `ESCAPE`, because `%`, `_` and `[` are legal in
   an identifier — unescaped, a filter for `pct_1` also matches `pct1100`.
+- **A panel toolbar cell that does not fit its row is not drawn at all.**
+  `layoutToolButtons` gives an overflowing cell a zero rect, and a zero rect is
+  neither painted nor clickable — so adding a cell can silently delete the last
+  one. The Query Store panel's two new filters took `Refresh` off the toolbar of
+  every pane narrower than ~150 columns, and every unit test still passed. Check
+  a new cell against the real pane width (Object Explorer takes ~60 of the
+  terminal), not against the terminal's; the Query Store panel's filters live on
+  the action row for exactly this reason.
+- **A panel that draws a `DataGrid` must also call `grid.DrawOverlay(s)`, after
+  every grid it draws.** The cell context menu and the value popup are drawn
+  outside the grid's own rect, so `Draw` alone paints neither — and the menu
+  still opens and still swallows every key until Escape, which reads as a dead
+  right-click rather than a missing draw call. The Query Store panel shipped
+  that way: its "Copy" / "Show Value" menu had never once been visible.
+- **A grid cell that flattens a multi-line value is a rendering, never the value
+  itself — "Show Value" must be handed the original.** `queryStoreOneLine` joins a
+  Query Store statement onto one line because a raw newline breaks the grid row,
+  and `DataGrid.OnShowValue` opens that cell in a *runnable* query panel: a
+  statement whose first line ends in `-- comment` arrives as
+  `SELECT 1 -- pick one FROM dbo.t`, with the whole FROM clause inside the
+  comment. `OnShowValue`'s first parameter is the **column** index, not the row,
+  so the row comes from `grid.SelectedRow()` (`DataGrid.openViewer` reads the cell
+  at `selRow`/`selCol`). `QueryStorePanel.showValue` resolves it from
+  `qsResultRow.queryText` held in memory; `DetailBrowser.showQueryStoreValue`
+  cannot — its grid is `[][]string` shared with every other node type — so it
+  re-reads the statement by the row's `Query ID` through
+  `gosmo.QueryStoreQueryTextContext`. A test asserting only that *a* read happened
+  cannot catch a hook that addressed the wrong row: the fake answers every id
+  alike, so assert the bound id with `fakeInstance.ReadArgs`.
 - **Never call `rows.Next()` speculatively inside `internal/query/executor.go`'s
   `sqlexp.ReturnMessage` loop.** One extra `Next()` on an exhausted result set makes
   the driver consume the protocol message `retmsg.Message(ctx)` is waiting for: the

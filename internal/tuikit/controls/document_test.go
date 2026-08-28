@@ -119,3 +119,75 @@ func TestDocumentMaxDisplayWidthTracksMutations(t *testing.T) {
 		t.Errorf("maxDisplayWidth after the line grew = %d, want 6 — the cache went stale", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// touch's bounded invalidation
+// ---------------------------------------------------------------------------
+
+// TestReplaceRangeKeepsTheWidthsOfLinesAboveItsSpan pins the promise
+// replaceRange makes by calling touch(row) instead of touch(0): every line
+// above the span is the same slice it was, so its measured width still holds.
+// Dropping the lot is what undo used to do, and re-measuring every rune of a
+// 20,000-line script is ~10ms on the Draw that follows — with Ctrl+Z held
+// down, once per undo.
+//
+// Asserted on the cache itself, not on a timing: the mutant is touch(0), which
+// produces identical widths and only costs work.
+func TestReplaceRangeKeepsTheWidthsOfLinesAboveItsSpan(t *testing.T) {
+	d := docOf([][]rune{[]rune("aaaa"), []rune("bb"), []rune("cccccc"), []rune("dd")})
+	d.maxDisplayWidth() // warm every entry
+	if len(d.lineW) != d.Len() {
+		t.Fatalf("maxDisplayWidth left %d cached widths for %d lines", len(d.lineW), d.Len())
+	}
+
+	d.replaceRange(2, 1, [][]rune{[]rune("c")})
+	if len(d.lineW) != 2 {
+		t.Errorf("after replaceRange(2, ...) %d widths survive, want the 2 above the span", len(d.lineW))
+	}
+	if d.dirtyFrom != 2 {
+		t.Errorf("dirtyFrom = %d after replaceRange(2, ...), want 2 — prefixStates resumes from it", d.dirtyFrom)
+	}
+}
+
+// TestMaxDisplayWidthAfterReplaceRange is the correctness half of the above:
+// the surviving prefix must still produce the right answer, and the truncation
+// must not keep the *first* line of the span, whose text just changed.
+func TestMaxDisplayWidthAfterReplaceRange(t *testing.T) {
+	cases := []struct {
+		name       string
+		row, n     int
+		with       []string
+		wantBefore int
+		wantAfter  int
+	}{
+		// The widest line is the span's own first line: an off-by-one that
+		// kept lineW[row] would still report the old width here.
+		{"the widest line shrinks", 1, 1, []string{"b"}, 10, 4},
+		{"the widest line grows", 1, 1, []string{"bbbbbbbbbbbbbb"}, 10, 14},
+		// The widest line is above the span, so the answer comes from the
+		// surviving cache rather than from a re-measure.
+		{"a narrow line is replaced", 2, 1, []string{"ccccc"}, 10, 10},
+		// Line-count changes, where the tail has to be extended with unknowns.
+		{"the span grows", 1, 2, []string{"b", "b", "b"}, 10, 4},
+		{"the span shrinks", 1, 2, []string{"bbbbbbbbbbbb"}, 10, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := docOf([][]rune{[]rune("aaaa"), []rune("bbbbbbbbbb"), []rune("cc")})
+			if got := d.maxDisplayWidth(); got != tc.wantBefore {
+				t.Fatalf("maxDisplayWidth before = %d, want %d", got, tc.wantBefore)
+			}
+			with := make([][]rune, len(tc.with))
+			for i, s := range tc.with {
+				with[i] = []rune(s)
+			}
+			d.replaceRange(tc.row, tc.n, with)
+			if got := d.maxDisplayWidth(); got != tc.wantAfter {
+				t.Errorf("maxDisplayWidth after = %d, want %d", got, tc.wantAfter)
+			}
+			if len(d.lineW) != d.Len() {
+				t.Errorf("%d cached widths for %d lines", len(d.lineW), d.Len())
+			}
+		})
+	}
+}

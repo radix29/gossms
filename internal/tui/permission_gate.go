@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/radix29/gossms/internal/db"
@@ -16,6 +17,35 @@ type requiredRight struct {
 	name string
 	role string
 	db   bool // database-scope rather than server-scope
+
+	// schema narrows the question to the schema the object lives in, asked of
+	// gosmo's per-schema probe rather than the database-wide one. A principal
+	// granted ALTER on one schema holds no database-wide permission at all, so
+	// this is the only right that can speak for it.
+	schema bool
+
+	// membership makes name a fixed database *role* to be a member of, in the
+	// database inDB, rather than a permission to hold. It exists for SQL
+	// Agent, whose actions are permitted by membership of an msdb role and by
+	// nothing HAS_PERMS_BY_NAME can be asked about.
+	//
+	// A membership right is the only kind that cannot fail open on its own:
+	// InRole answers false for a role never asked about exactly as it does for
+	// one the login is not in, so allowsActionOn checks
+	// gosmo.DatabaseCapabilities.Probed before believing a false.
+	membership bool
+	inDB       string
+
+	// object narrows the question to the object itself, asked of gosmo's
+	// per-object probe. It is the only right that can speak for a principal
+	// granted ALTER on one table and nothing else — such a principal reads 0
+	// at schema and database scope alike.
+	//
+	// It can only ever *add* permission. gosmo's ObjectPermissions map holds a
+	// row for an object explicitly granted, denied or owned and for no other,
+	// so its silence means "no explicit grant", never "not probed" — see
+	// gosmo.DatabaseCapabilities.HasOnObject.
+	object bool
 
 	// alt are narrower permissions that also satisfy this one and are not
 	// named in the message. SQL Server 2022 split VIEW SERVER STATE into two
@@ -52,25 +82,106 @@ var (
 	rightAlterAnySchema = requiredRight{name: "ALTER ANY SCHEMA", role: "db_ddladmin", db: true}
 	rightCreateTable    = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
 	rightViewDBState    = requiredRight{name: "VIEW DATABASE STATE", role: "db_owner", db: true}
+
+	// The three below name db_owner rather than a narrower role because there
+	// isn't one: verified live 2026-08-27, db_ddladmin answers 0 to all three,
+	// and a database-wide ALTER answers 1 for the two key permissions but 0
+	// for ALTER ANY SECURITY POLICY — so no wider right can stand in for it.
+	rightAlterAnyCMK       = requiredRight{name: "ALTER ANY COLUMN MASTER KEY", role: "db_owner", db: true}
+	rightAlterAnyCEK       = requiredRight{name: "ALTER ANY COLUMN ENCRYPTION KEY", role: "db_owner", db: true}
+	rightAlterAnySecPolicy = requiredRight{name: "ALTER ANY SECURITY POLICY", role: "db_owner", db: true}
+
+	// The two SQL Agent rights are memberships, not permissions: what permits
+	// New Job and its three siblings is membership of an msdb role, which
+	// grants EXECUTE on individual procedures rather than the database-scope
+	// EXECUTE a permission probe can ask about. See agentWriteRights.
+	rightSQLAgentUser = requiredRight{name: "SQLAgentUserRole", membership: true, inDB: "msdb"}
+	rightMsdbOwner    = requiredRight{name: "db_owner", membership: true, inDB: "msdb"}
+
+	// rightAlterOnObject is the grant made directly on one object, which no
+	// wider scope reflects: a principal granted ALTER on one table reads 0 for
+	// every database- and schema-scope permission there is.
+	rightAlterOnObject = requiredRight{name: "ALTER", db: true, object: true}
+
+	// rightAlterOnSchema is what SQL Server actually checks for a rename, a
+	// move or a drop of a schema object. No role carries it: it is granted on
+	// the schema itself, and a principal holding it may hold nothing else.
+	rightAlterOnSchema = requiredRight{name: "ALTER", db: true, schema: true}
 )
 
-// String renders the right the way the user is told about it: the permission,
-// and the role that also carries it in parentheses.
+// nameOnly is the permission as the user is told to ask for it, without the
+// role — requiresText gathers the roles into one trailing clause instead.
+//
+// A schema-scoped right is named for the securable and carries no role at all:
+// "ALTER (db_ddladmin)" would send the user after a role that grants something
+// much wider than what is missing.
+func (r requiredRight) nameOnly() string {
+	switch {
+	case r.schema:
+		return r.name + " on the object's schema"
+	case r.membership:
+		return "membership of " + r.name + " in " + r.inDB
+	case r.object:
+		return r.name + " on the object itself"
+	}
+	return r.name
+}
+
+// String renders one right on its own — the permission with the role that also
+// carries it, as permission_error.go names it in a single-right sentence.
+// requiresText does not use it: with several alternatives the roles are
+// collapsed into one clause instead.
 func (r requiredRight) String() string {
 	if r.role == "" {
-		return r.name
+		return r.nameOnly()
 	}
 	return r.name + " (" + r.role + ")"
 }
 
+// orList joins names the way the sentence reads them: "A", "A or B",
+// "A, B or C".
+func orList(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}
+
 // requiresText is the sentence shown when an action is withheld. Any one of
 // the rights is enough, which is why they are joined with "or".
+//
+// The roles are gathered into one trailing clause instead of following each
+// permission, because the alternatives for one action overwhelmingly share a
+// role: three rights spelled out gave "ALTER (db_owner) or CONTROL (db_owner)
+// or ALTER ANY DATABASE (dbcreator)", which names db_owner twice and reads as
+// six things to ask for rather than three. A right with no role stays outside
+// the clause — see requiredRight.String.
 func requiresText(rights ...requiredRight) string {
-	names := make([]string, len(rights))
-	for i, r := range rights {
-		names[i] = r.String()
+	var named, plain, roles []string
+	for _, r := range rights {
+		if r.role == "" {
+			plain = append(plain, r.nameOnly())
+			continue
+		}
+		named = append(named, r.name)
+		if !slices.Contains(roles, r.role) {
+			roles = append(roles, r.role)
+		}
 	}
-	return "Requires " + strings.Join(names, " or ") + "."
+	out := orList(named)
+	if out != "" {
+		out += " (" + strings.Join(roles, ", ") + ")"
+	}
+	if rest := orList(plain); rest != "" {
+		if out != "" {
+			out += " or "
+		}
+		out += rest
+	}
+	return "Requires " + out + "."
 }
 
 // allowsAction reports whether an action needing any one of rights may still
@@ -87,11 +198,51 @@ func requiresText(rights ...requiredRight) string {
 // db.ServerConn.CachedDatabaseCapabilities. This runs on the UI goroutine
 // while a menu is being drawn.
 func allowsAction(sc *db.ServerConn, dbName string, rights ...requiredRight) bool {
+	return allowsActionOn(sc, dbName, "", "", rights...)
+}
+
+// allowsActionOn is allowsAction for an action aimed at one object: schema is
+// the schema that object lives in, which is what a schema-scoped right is
+// asked about. Empty means "not an object in a schema", and a schema-scoped
+// right then grants nothing — the database-wide alternatives beside it still
+// answer, so nothing is withheld that was offered before.
+func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) bool {
 	if sc == nil || len(rights) == 0 {
 		return true
 	}
 	for _, r := range rights {
 		switch {
+		case r.membership:
+			// Unknown must allow explicitly here rather than falling through
+			// to the next right: InRole cannot tell "not a member" from
+			// "never asked", so an unprobed msdb would withhold every SQL
+			// Agent action from the login that holds the role. Probed is the
+			// only thing that separates the two.
+			caps := sc.CachedDatabaseCapabilities(r.inDB)
+			if !caps.Probed() || caps.InRole(r.name) {
+				return true
+			}
+		case r.object:
+			if dbName == "" || schema == "" || object == "" {
+				continue
+			}
+			// Has, not Permits: the map is sparse, so "not denied" is true of
+			// every object in the database and would permit everything. An
+			// object with no row leaves the wider rights beside this one to
+			// answer, exactly as before this right existed.
+			if sc.CachedDatabaseCapabilities(dbName).HasOnObject(schema, object, r.name) {
+				return true
+			}
+		case r.schema:
+			if dbName == "" || schema == "" {
+				continue
+			}
+			// PermitsOnSchema, not AllowsOnSchema: an inaccessible database
+			// answers unknown for every schema, and unknown fails open — see
+			// gosmo.DatabaseCapabilities.Permits.
+			if sc.CachedDatabaseCapabilities(dbName).PermitsOnSchema(schema, r.name) {
+				return true
+			}
 		case !r.db:
 			// The name and its alternates are asked separately rather than
 			// joined into one slice: this runs per menu item and per toolbar
@@ -109,12 +260,28 @@ func allowsAction(sc *db.ServerConn, dbName string, rights ...requiredRight) boo
 			// No database to ask about — a folder-level action that will
 			// prompt for one. Nothing measured, so nothing withheld.
 			return true
-		// Permits, not Allows: an inaccessible database answers
-		// CapabilityUnknown to every permission and unknown fails open, which
-		// would leave Back Up and Delete offered on exactly the databases the
-		// login cannot open. See gosmo.DatabaseCapabilities.Permits.
-		case sc.CachedDatabaseCapabilities(dbName).Permits(r.name):
-			return true
+		default:
+			// Permits, not Allows: an inaccessible database answers
+			// CapabilityUnknown to every permission and unknown fails open,
+			// which would leave Back Up and Delete offered on exactly the
+			// databases the login cannot open. See
+			// gosmo.DatabaseCapabilities.Permits.
+			caps := sc.CachedDatabaseCapabilities(dbName)
+			if caps.Permits(r.name) {
+				return true
+			}
+			// alt is consulted at this scope too. No database-scope right
+			// declares one today, so only the test reaches this loop — but a
+			// right whose alternates counted at server scope and were ignored
+			// here would withhold the action from a login that holds one of
+			// them, and nothing at run time tells that apart from a real
+			// denial. The next 2022-style permission split is as likely to
+			// land at database scope as at server scope.
+			for _, n := range r.alt {
+				if caps.Permits(n) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -125,8 +292,14 @@ func allowsAction(sc *db.ServerConn, dbName string, rights ...requiredRight) boo
 // "no active query panel" and "no rights for this" are both reasons to
 // withhold, and neither should cancel the other out.
 func gate(item controls.MenuItem, sc *db.ServerConn, dbName string, rights ...requiredRight) controls.MenuItem {
+	return gateOn(item, sc, dbName, "", "", rights...)
+}
+
+// gateOn is gate for an action aimed at one object in a schema — see
+// allowsActionOn.
+func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) controls.MenuItem {
 	prev := item.Enabled
-	allowed := func() bool { return allowsAction(sc, dbName, rights...) }
+	allowed := func() bool { return allowsActionOn(sc, dbName, schema, object, rights...) }
 	if len(rights) > 0 {
 		// Shown only while the item is disabled, and only the first right —
 		// the whole "Requires X (role) or Y or Z." sentence would double the
@@ -160,4 +333,49 @@ func withRequires(p propPage, in string, rights ...requiredRight) propPage {
 // Database Properties page but Permissions makes — any one of them.
 func databaseWriteRights() []requiredRight {
 	return []requiredRight{rightAlterDatabase, rightControlDB, rightAlterAnyDatabase}
+}
+
+// objectWriteRights are what permits a write aimed at one object in a schema —
+// a rename, a move, a drop, a new index, new statistics. Any one of them.
+//
+// The set reaches the object itself. SQL Server checks ALTER on the object,
+// and a grant made directly on one table is reflected at no wider scope — such
+// a principal reads 0 for every database- and schema-scope permission, so the
+// four wider rights all deny and the action was withheld from someone who
+// could perform it. rightAlterOnObject is the one that speaks for them.
+//
+// It was left out originally on the grounds that OBJECT scope costs a query
+// per object. That is true of HAS_PERMS_BY_NAME and false of the catalog:
+// gosmo's object block reads the whole database in one pass, as a fourth part
+// of the probe that was already running.
+func objectWriteRights() []requiredRight {
+	return []requiredRight{
+		rightAlterDatabase, rightControlDB, rightAlterAnySchema,
+		rightAlterOnSchema, rightAlterOnObject,
+	}
+}
+
+// agentWriteRights are what permits SQL Agent's New Job / New Schedule /
+// New Alert / New Operator — any one of them.
+//
+// Three facts settled live on 2026-08-27 shape this set, and each of them
+// breaks the gate if it is assumed the other way:
+//
+//   - A sysadmin reads IS_ROLEMEMBER = 0 for all three SQLAgent* roles. It
+//     maps to dbo, and dbo is not a member of any of them. Gating on the
+//     Agent roles alone withholds every Agent action from the one login that
+//     certainly may perform them, which is why CONTROL SERVER is here.
+//   - The roles nest, and IS_ROLEMEMBER resolves the nesting: a member of
+//     SQLAgentOperatorRole reads 1 for SQLAgentUserRole. So the narrowest role
+//     is the whole test for "or above", and SQLAgentReaderRole and
+//     SQLAgentOperatorRole need no separate check.
+//   - msdb db_owner is a real non-sysadmin case and is not covered by either
+//     of the above.
+//
+// The order is the message, not the test: gate shows only rights[0] in a
+// withheld item's note, so the narrowest sufficient right goes first. Led with
+// CONTROL SERVER the note read "needs CONTROL SERVER", which sends a user who
+// wants to create a job away to ask for sysadmin.
+func agentWriteRights() []requiredRight {
+	return []requiredRight{rightSQLAgentUser, rightMsdbOwner, rightControlServer}
 }

@@ -268,6 +268,54 @@ func TestRequiresTextNamesTheRoleToo(t *testing.T) {
 	}
 }
 
+// TestRequiresTextNamesEachRoleOnce: the alternatives for one action mostly
+// share a role, and repeating it made three things to ask for read as six.
+func TestRequiresTextNamesEachRoleOnce(t *testing.T) {
+	got := requiresText(databaseWriteRights()...)
+	want := "Requires ALTER, CONTROL or ALTER ANY DATABASE (db_owner, dbcreator)."
+	if got != want {
+		t.Errorf("requiresText = %q, want %q", got, want)
+	}
+	if strings.Count(got, "db_owner") != 1 {
+		t.Errorf("requiresText = %q, want db_owner named once", got)
+	}
+}
+
+// TestRequiresTextKeepsARolelessRightOutOfTheRoleClause. A schema-scoped ALTER
+// is granted on the schema and no role carries it, so listing it inside the
+// parenthesised roles would send the user after a role that does not confer it.
+func TestRequiresTextKeepsARolelessRightOutOfTheRoleClause(t *testing.T) {
+	got := requiresText(objectOpRights(NodeTable)...)
+	want := "Requires ALTER, CONTROL or ALTER ANY SCHEMA (db_owner, db_ddladmin) " +
+		"or ALTER on the object's schema or ALTER on the object itself."
+	if got != want {
+		t.Errorf("requiresText = %q, want %q", got, want)
+	}
+	// Alone, each is the whole sentence — no empty parentheses, no stray "or".
+	if got, want := requiresText(rightAlterOnSchema), "Requires ALTER on the object's schema."; got != want {
+		t.Errorf("requiresText = %q, want %q", got, want)
+	}
+	if got, want := requiresText(rightAlterOnObject), "Requires ALTER on the object itself."; got != want {
+		t.Errorf("requiresText = %q, want %q", got, want)
+	}
+}
+
+// TestRequiresTextFitsTheReadOnlyBanner. The banner is one line on an 80-column
+// terminal's dialog, and the sentence is appended to a 51-character prefix.
+func TestRequiresTextFitsTheReadOnlyBanner(t *testing.T) {
+	// Only what a page's requires list actually carries: a context menu's
+	// rights never reach the banner, they become gateOn's short Note.
+	for _, rights := range [][]requiredRight{
+		databaseWriteRights(),
+		{rightControlServer},
+		{rightAlterAnyLogin, rightAlterAnyServerRole},
+	} {
+		if n := len(readOnlyBannerPrefix + requiresText(rights...)); n > 120 {
+			t.Errorf("banner for %v is %d columns, want <= 120", rights, n)
+		}
+	}
+}
+
 // -- the read-only Properties page -------------------------------------------
 
 // TestPageReadOnlyReasonNamesTheRight, and stays silent whenever the answer
@@ -393,5 +441,426 @@ func TestTheLoginsFolderWithholdsNewLogin(t *testing.T) {
 	node.data.conn = granted
 	if on, _ := gatedLabels(a.contextMenuItemsForNode(node)); !slices.Contains(on, "New Login...") {
 		t.Error("New Login... was withheld from a securityadmin")
+	}
+}
+
+// TestAnAlternateSatisfiesADatabaseRight. Every database-scope right declared
+// today has an empty alt, so this exercises the branch with a local literal —
+// the case it guards against is the next 2022-style permission split landing at
+// database scope, which would otherwise be honoured at server scope and
+// silently ignored here.
+//
+// The alternate has to be a name gosmo actually probes at database scope
+// (permission_gate_names_test.go says why), so BACKUP LOG stands in for the
+// narrower half of a split BACKUP DATABASE.
+func TestAnAlternateSatisfiesADatabaseRight(t *testing.T) {
+	split := requiredRight{name: "BACKUP DATABASE", role: "db_backupoperator", db: true,
+		alt: []string{"BACKUP LOG"}}
+
+	// The named right is denied and the alternate granted: the login can still
+	// do the thing, so the action stays.
+	holdsAlt := probedConn(t, "appdb", nil, nil, []string{"BACKUP LOG"}, []string{"BACKUP DATABASE"})
+	if !allowsAction(holdsAlt, "appdb", split) {
+		t.Error("an action was withheld from a login holding the alternate permission")
+	}
+
+	// Both denied — the alternates must not turn the gate into a no-op.
+	holdsNeither := probedConn(t, "appdb", nil, nil, nil, []string{"BACKUP DATABASE", "BACKUP LOG"})
+	if allowsAction(holdsNeither, "appdb", split) {
+		t.Error("an action was offered though the named right and its alternate are both denied")
+	}
+
+	// Accessibility outranks the alternate: an inaccessible database answered
+	// nothing at all, so an unknown alternate must not reopen what Permits
+	// closed on the named right.
+	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+	if allowsAction(sc, "appdb", split) {
+		t.Error("an alternate permission reopened an action on a database the login cannot open")
+	}
+}
+
+// schemaProbedConn is probedConn for a login whose only rights are on schemas:
+// nothing at server scope, nothing database-wide, ALTER on the schemas named.
+func schemaProbedConn(t *testing.T, dbName string, schemaGranted, schemaDenied []string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(true, nil, nil, nil,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, schemaGranted, schemaDenied)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), dbName)
+	return sc
+}
+
+// TestAlterOnOneSchemaKeepsTheObjectOpsInThatSchema. The gap this closes: a
+// login granted ALTER on one schema holds no database-wide permission at all,
+// so every right the object-ops gate used to ask about reads as denied and
+// Rename/Move/Delete disappeared from objects the server would have let it
+// rename. The other half matters as much — the items must still go on an
+// object in a schema it was not granted.
+func TestAlterOnOneSchemaKeepsTheObjectOpsInThatSchema(t *testing.T) {
+	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, []string{"dbo"})
+	rights := objectOpRights(NodeTable)
+
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+		t.Error("an object in the granted schema lost its Rename/Move/Delete")
+	}
+	if allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+		t.Error("an object in a schema the login has no ALTER on kept them")
+	}
+	// A schema nobody probed is unknown, and unknown fails open.
+	if !allowsActionOn(sc, "appdb", "Archive", "Orders", rights...) {
+		t.Error("an unprobed schema withheld the items — unknown must fail open")
+	}
+	// And a database-wide right still answers on its own, with no schema.
+	wide := probedConn(t, "appdb", nil, nil, []string{"ALTER"}, nil)
+	if !allowsActionOn(wide, "appdb", "dbo", "Orders", rights...) {
+		t.Error("a database-wide ALTER stopped permitting the object ops")
+	}
+}
+
+// TestASchemaScopedRightGrantsNothingWithoutASchema. A schema-scoped right is
+// asked about only when the caller says which schema; with none it must add
+// nothing — neither withholding what the database-wide rights allow, nor
+// offering what they deny.
+func TestASchemaScopedRightGrantsNothingWithoutASchema(t *testing.T) {
+	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, nil)
+
+	if allowsAction(sc, "appdb", rightAlterOnSchema) {
+		t.Error("a schema-scoped right answered yes with no schema to ask about")
+	}
+	if allowsActionOn(sc, "", "Sales", "Orders", rightAlterOnSchema) {
+		t.Error("a schema-scoped right answered yes with no database to ask in")
+	}
+}
+
+// TestObjectOpsOnASchemaNodeIgnoreItsOwnName. ALTER on a schema does not
+// permit dropping or renaming the schema itself — that is CONTROL on it, or
+// ALTER ANY SCHEMA. Answering with the node's own name would offer three items
+// the server then refuses.
+func TestObjectOpsOnASchemaNodeIgnoreItsOwnName(t *testing.T) {
+	schemaNode := &explorerNode{data: nodeData{Type: NodeSchema, Name: "Sales", Schema: "Sales", DBName: "appdb"}}
+	if got := objectOpSchema(schemaNode); got != "" {
+		t.Errorf("objectOpSchema on a schema node = %q, want \"\"", got)
+	}
+	table := &explorerNode{data: nodeData{Type: NodeTable, Name: "Orders", Schema: "Sales", DBName: "appdb"}}
+	if got := objectOpSchema(table); got != "Sales" {
+		t.Errorf("objectOpSchema on a table = %q, want its schema", got)
+	}
+}
+
+// TestTheMenuItemsThemselvesFollowTheSchemaGrant — through objectOpsMenuItems,
+// not allowsActionOn: the gate is only useful if the items the tree builds ask
+// about the schema the node is in, and a builder that passed "" would pass
+// every test above.
+func TestTheMenuItemsThemselvesFollowTheSchemaGrant(t *testing.T) {
+	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, []string{"dbo"})
+	a := &App{}
+
+	for _, tt := range []struct {
+		schema string
+		want   bool
+	}{{"Sales", true}, {"dbo", false}} {
+		node := &explorerNode{data: nodeData{
+			Type: NodeTable, Name: "Orders", Schema: tt.schema, DBName: "appdb", conn: sc,
+		}}
+		items := a.objectOpsMenuItems(node)
+		if len(items) == 0 {
+			t.Fatalf("schema %s: a table offered no object-ops items at all", tt.schema)
+		}
+		for _, it := range items {
+			if got := it.Enabled == nil || it.Enabled(); got != tt.want {
+				t.Errorf("schema %s: %q enabled = %v, want %v", tt.schema, it.Label, got, tt.want)
+			}
+		}
+	}
+}
+
+// TestAnInaccessibleDatabaseWithholdsTheSchemaScopedRightToo. A database the
+// login cannot open answers unknown for every schema, because there was
+// nothing inside it to ask — and unknown fails open everywhere else. The
+// accessibility fold is what stops Rename/Move/Delete being offered on the
+// objects of a database that cannot even be connected to; the schema-scoped
+// right needs it as much as the database-wide ones do.
+func TestAnInaccessibleDatabaseWithholdsTheSchemaScopedRightToo(t *testing.T) {
+	sc, _ := newFakeConn(t, capabilityResponsesWithSchemas(false, nil, nil, nil, nil, nil, nil)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "shut")
+
+	if allowsActionOn(sc, "shut", "Sales", "Orders", rightAlterOnSchema) {
+		t.Error("a schema-scoped right was allowed in a database the login cannot open")
+	}
+	if allowsActionOn(sc, "shut", "Sales", "Orders", objectOpRights(NodeTable)...) {
+		t.Error("the object ops were offered in a database the login cannot open")
+	}
+}
+
+// agentConn returns a connection whose server probe has run and whose msdb
+// probe has answered the given role memberships.
+func agentConn(t *testing.T, granted, denied, roleIn, roleNotIn []string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, capabilityResponsesWithRoles(true, granted, denied, roleIn, roleNotIn)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "msdb")
+	return sc
+}
+
+// TestAnUnprobedMsdbKeepsEverySQLAgentAction is the case a membership right
+// exists to get right, and the only one the permission rights cannot fail on.
+//
+// InRole answers false for a role that was never asked about exactly as it
+// does for one the login is not in. Believing that false would withhold New
+// Job, New Schedule, New Alert and New Operator from every login on every
+// connection whose msdb probe had not landed — including the sysadmin's, since
+// a sysadmin is not a member of any SQLAgent* role either (verified live
+// 2026-08-27). Only gosmo's DatabaseCapabilities.Probed separates the two.
+func TestAnUnprobedMsdbKeepsEverySQLAgentAction(t *testing.T) {
+	// Probed at server scope and denied everything there, so nothing but the
+	// membership rights can be what keeps the action.
+	sc, _ := newFakeConn(t, capabilityResponses(true, nil, []string{"CONTROL SERVER"}, nil, nil)...)
+	sc.ProbeCapabilities()
+
+	if !allowsAction(sc, "", agentWriteRights()...) {
+		t.Error("a connection whose msdb probe has not run lost every SQL Agent action")
+	}
+	if !allowsAction(nil, "", agentWriteRights()...) {
+		t.Error("a nil connection withheld the SQL Agent actions")
+	}
+}
+
+// TestSQLAgentActionsFollowMsdbRoleMembership. The narrowest role is the whole
+// test: IS_ROLEMEMBER resolves the nesting, so a member of
+// SQLAgentOperatorRole reads 1 for SQLAgentUserRole (verified live
+// 2026-08-27), and Reader/Operator need no separate check.
+func TestSQLAgentActionsFollowMsdbRoleMembership(t *testing.T) {
+	in := agentConn(t, nil, []string{"CONTROL SERVER"},
+		[]string{"SQLAgentUserRole"}, []string{"db_owner"})
+	if !allowsAction(in, "", agentWriteRights()...) {
+		t.Error("a member of SQLAgentUserRole was refused the SQL Agent actions")
+	}
+
+	out := agentConn(t, nil, []string{"CONTROL SERVER"},
+		nil, []string{"SQLAgentUserRole", "db_owner"})
+	if allowsAction(out, "", agentWriteRights()...) {
+		t.Error("a login in no msdb Agent role kept the SQL Agent actions")
+	}
+
+	owner := agentConn(t, nil, []string{"CONTROL SERVER"},
+		[]string{"db_owner"}, []string{"SQLAgentUserRole"})
+	if !allowsAction(owner, "", agentWriteRights()...) {
+		t.Error("msdb db_owner was refused the SQL Agent actions")
+	}
+}
+
+// TestASysadminKeepsTheSQLAgentActions. A sysadmin maps to dbo, and dbo is a
+// member of no SQLAgent* role — IS_ROLEMEMBER answered 0 for all three on the
+// live instance. The set carries CONTROL SERVER for exactly this login, and
+// without it the gate would withhold the Agent actions from the one user who
+// certainly may perform them.
+func TestASysadminKeepsTheSQLAgentActions(t *testing.T) {
+	sc := agentConn(t, []string{"CONTROL SERVER"}, nil,
+		nil, []string{"SQLAgentUserRole", "db_owner"})
+	if !allowsAction(sc, "", agentWriteRights()...) {
+		t.Error("a sysadmin lost the SQL Agent actions to its own msdb role membership")
+	}
+}
+
+// TestTheSQLAgentMenusFollowTheGate drives the menus themselves rather than
+// allowsAction, because a gate that is never wired to an item withholds
+// nothing and every test above still passes.
+func TestTheSQLAgentMenusFollowTheGate(t *testing.T) {
+	labels := map[NodeType]string{
+		NodeAgentUserJobs:    "New Job...",
+		NodeAgentSchedules:   "New Schedule...",
+		NodeAgentEventAlerts: "New Alert...",
+		NodeAgentOperators:   "New Operator...",
+	}
+	for nodeType, label := range labels {
+		denied := agentConn(t, nil, []string{"CONTROL SERVER"},
+			nil, []string{"SQLAgentUserRole", "db_owner"})
+		if enabledInMenu(t, denied, nodeType, label) {
+			t.Errorf("%s stayed enabled for a login in no msdb Agent role", label)
+		}
+		allowed := agentConn(t, nil, []string{"CONTROL SERVER"},
+			[]string{"SQLAgentUserRole"}, []string{"db_owner"})
+		if !enabledInMenu(t, allowed, nodeType, label) {
+			t.Errorf("%s was withheld from a member of SQLAgentUserRole", label)
+		}
+	}
+}
+
+// enabledInMenu builds the node's context menu and reports whether the named
+// item is enabled. A missing item fails the test rather than reading as
+// disabled, which would let a renamed label pass silently.
+func enabledInMenu(t *testing.T, sc *db.ServerConn, nodeType NodeType, label string) bool {
+	t.Helper()
+	app := &App{}
+	node := &explorerNode{data: nodeData{Type: nodeType, conn: sc}}
+	for _, it := range app.nodeMenuItems(node) {
+		if it.Label != label {
+			continue
+		}
+		return it.Enabled == nil || it.Enabled()
+	}
+	t.Fatalf("%s is not in the menu for node type %v", label, nodeType)
+	return false
+}
+
+// TestEverySQLAgentNodeTypeIsSeenAsOne pins isAgentNode against the four node
+// types whose menus gate on msdb. The range in tree_node.go is contiguous, and
+// a new Agent node added outside it would silently stop priming msdb — after
+// which the gates read an unprobed database and fail open forever.
+func TestEverySQLAgentNodeTypeIsSeenAsOne(t *testing.T) {
+	for _, nt := range []NodeType{
+		NodeAgentJobs, NodeAgentUserJobs, NodeAgentSchedules,
+		NodeAgentEventAlerts, NodeAgentOperators, NodeAgentErrorLog,
+	} {
+		if !isAgentNode(nt) {
+			t.Errorf("node type %v is not recognised as a SQL Agent node", nt)
+		}
+	}
+	for _, nt := range []NodeType{NodeManagement, NodeLinkedServers, NodeDatabase} {
+		if isAgentNode(nt) {
+			t.Errorf("node type %v was mistaken for a SQL Agent node", nt)
+		}
+	}
+}
+
+// TestTheSQLAgentNoteNamesTheNarrowestRight. gate puts only rights[0] in the
+// note, so the order of an alternatives list is what the user is sent to ask
+// for. Led with CONTROL SERVER the note read "needs CONTROL SERVER" on the
+// live run — telling someone who wants to create a job to go and ask for
+// sysadmin, when membership of one msdb role is what they need.
+func TestTheSQLAgentNoteNamesTheNarrowestRight(t *testing.T) {
+	if got := agentWriteRights()[0].name; got != "SQLAgentUserRole" {
+		t.Errorf("the note would say %q; the narrowest sufficient right must come first", got)
+	}
+	if !slices.ContainsFunc(agentWriteRights(), func(r requiredRight) bool {
+		return r.name == "CONTROL SERVER"
+	}) {
+		t.Error("CONTROL SERVER left the set — a sysadmin is in no SQLAgent* role and would lose the actions")
+	}
+}
+
+// objectProbedConn returns a connection denied every database- and
+// schema-scope right, with only the named objects carrying an explicit grant.
+// That is the shape of the principal this right exists for: one granted ALTER
+// on a single table and holding nothing at any wider scope.
+func objectProbedConn(t *testing.T, dbName string, objGranted, objDenied []string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
+		[]string{"Sales", "dbo"}, objGranted, objDenied)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), dbName)
+	return sc
+}
+
+// TestAlterOnOneObjectKeepsTheObjectOpsOnThatObject is the gap this right
+// closes, verified live on 2026-08-27: a login granted ALTER on one table
+// reads 0 for ALTER at both database and schema scope, so every wider right
+// denied and Rename/Move/Delete went from an object SQL Server would have let
+// it alter.
+func TestAlterOnOneObjectKeepsTheObjectOpsOnThatObject(t *testing.T) {
+	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
+	rights := objectOpRights(NodeTable)
+
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+		t.Error("the granted object lost its Rename/Move/Delete")
+	}
+	// The other half, and the one that makes the right worth having rather
+	// than merely harmless: a different object in the same schema must still
+	// lose them.
+	if allowsActionOn(sc, "appdb", "Sales", "Customers", rights...) {
+		t.Error("an object with no grant of its own kept the object ops")
+	}
+	if allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+		t.Error("an object of the same name in another schema kept the object ops")
+	}
+}
+
+// TestAnObjectRightNeverWidensWhatIsOffered. ObjectPermissions is sparse — an
+// object nobody granted anything on has no row — so reading it as "not denied
+// means allowed" would permit every write in the database. The right must add
+// permission only where a row actually says so.
+func TestAnObjectRightNeverWidensWhatIsOffered(t *testing.T) {
+	sc := objectProbedConn(t, "appdb", nil, nil)
+
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", rightAlterOnObject) {
+		t.Error("an object with no row was treated as granted — the map is sparse, not exhaustive")
+	}
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+		t.Error("adding the object right resurrected object ops the wider rights had withheld")
+	}
+	// An explicit deny is a row, and must not read as a grant either.
+	denied := objectProbedConn(t, "appdb", nil, []string{"Sales.Orders"})
+	if allowsActionOn(denied, "appdb", "Sales", "Orders", rightAlterOnObject) {
+		t.Error("an explicitly denied object was treated as granted")
+	}
+}
+
+// TestAnObjectScopedRightGrantsNothingWithoutAnObject — the counterpart to
+// TestASchemaScopedRightGrantsNothingWithoutASchema. Asked without the pieces
+// it needs, the right must add nothing rather than answer from whatever is at
+// hand.
+func TestAnObjectScopedRightGrantsNothingWithoutAnObject(t *testing.T) {
+	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
+
+	if allowsAction(sc, "appdb", rightAlterOnObject) {
+		t.Error("an object-scoped right answered yes with no object to ask about")
+	}
+	if allowsActionOn(sc, "appdb", "Sales", "", rightAlterOnObject) {
+		t.Error("an object-scoped right answered yes with an empty object name")
+	}
+	if allowsActionOn(sc, "", "Sales", "Orders", rightAlterOnObject) {
+		t.Error("an object-scoped right answered yes with no database to ask in")
+	}
+	if allowsActionOn(sc, "appdb", "", "Orders", rightAlterOnObject) {
+		t.Error("an object-scoped right answered yes with no schema to qualify the object")
+	}
+}
+
+// TestObjectOpsOnASchemaNodeIgnoreItsOwnObjectName. objectOpName excludes a
+// schema node for the reason objectOpSchema does: a schema is not an object,
+// and passing its name would let a *table* called "Sales" answer for the
+// schema "Sales".
+func TestObjectOpsOnASchemaNodeIgnoreItsOwnObjectName(t *testing.T) {
+	node := &explorerNode{data: nodeData{Type: NodeSchema, Name: "Sales", Schema: "Sales", DBName: "appdb"}}
+	if got := objectOpName(node); got != "" {
+		t.Errorf("objectOpName on a schema node = %q, want \"\"", got)
+	}
+	table := &explorerNode{data: nodeData{Type: NodeTable, Name: "Orders", Schema: "Sales", DBName: "appdb"}}
+	if got := objectOpName(table); got != "Orders" {
+		t.Errorf("objectOpName on a table = %q, want \"Orders\"", got)
+	}
+}
+
+// TestTheObjectOpMenuItemsFollowTheObjectGrant drives the menu rather than
+// allowsActionOn: a right that is never threaded to the call sites changes
+// nothing, and every test above still passes.
+func TestTheObjectOpMenuItemsFollowTheObjectGrant(t *testing.T) {
+	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
+	app := &App{}
+	enabled := func(name string) map[string]bool {
+		node := &explorerNode{data: nodeData{
+			Type: NodeTable, Name: name, Schema: "Sales", DBName: "appdb", conn: sc,
+		}}
+		out := map[string]bool{}
+		for _, it := range app.objectOpsMenuItems(node) {
+			out[it.Label] = it.Enabled == nil || it.Enabled()
+		}
+		return out
+	}
+	granted, other := enabled("Orders"), enabled("Customers")
+	if len(granted) == 0 {
+		t.Fatal("the object-ops menu is empty; the test is addressing the wrong node type")
+	}
+	for label, ok := range granted {
+		if !ok {
+			t.Errorf("%s was withheld on the object the login was granted ALTER on", label)
+		}
+		if other[label] {
+			t.Errorf("%s stayed enabled on an object with no grant of its own", label)
+		}
 	}
 }

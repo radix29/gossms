@@ -110,18 +110,30 @@ func NewPropDialog(app *App) *PropDialog {
 // login-scoped dialogs, whose database-scoped statements carry their own USE.
 // title is the window title, and headerLeft/headerRight the two ends of the
 // header line.
-func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages []propPage) {
+//
+// The connection guard lives here rather than at the twenty-three entry points
+// that call this, which each opened with their own copy of it: a Properties
+// action that forgets one shows a dialog whose every page then fails to load,
+// one error per page, instead of the status line saying the obvious thing.
+//
+// pages is a builder rather than a page set so that it stays behind the guard —
+// the entry points evaluated it before the call, and only the guard sitting in
+// front of them kept it from running against a closed connection.
+func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage) {
+	if !d.app.requireConn(sc) {
+		return
+	}
 	if d.cancel != nil {
 		d.cancel()
 	}
 	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.database = database
-	d.pages = pages
-	d.applyFn = make(map[int]propApply, len(pages))
+	d.pages = pages()
+	d.applyFn = make(map[int]propApply, len(d.pages))
 
-	titles := make([]string, len(pages))
-	for i, p := range pages {
+	titles := make([]string, len(d.pages))
+	for i, p := range d.pages {
 		titles[i] = p.title
 	}
 	d.SetTitle(title)
@@ -146,6 +158,12 @@ func (d *PropDialog) post(fn func()) { d.app.postAndWake(fn) }
 // onLoadPage runs page's loader on a background goroutine and reports the result
 // back on the UI goroutine, guarded by seq like every other background fetch
 // here (see app_explorer_data.go's loadChildren).
+//
+// safegoRepair, not safego: PropertySheet.startLoad latched the slot at
+// PageLoading before calling this, and only the callback below clears it. A
+// panic unwinds past that callback, and SelectPage then refuses to retry a page
+// whose state is not PageNotLoaded — so the page reads "Loading..." for the rest
+// of the showing, with F5 the only way out.
 func (d *PropDialog) onLoadPage(page, seq int) {
 	if page < 0 || page >= len(d.pages) {
 		return
@@ -154,7 +172,9 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 	sessionCtx := d.ctx
 	sc := d.sc
 
-	d.app.safego("loading a properties page", func() {
+	d.app.safegoRepair("loading a properties page", func() {
+		d.SetPageError(page, seq, errPageLoadPanicked)
+	}, func() {
 		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		// Before the load, not after: the probe is what decides whether the
@@ -364,6 +384,9 @@ func (d *PropDialog) runScript() {
 	})
 }
 
+// readOnlyBannerPrefix opens the banner a page whose writes are refused shows.
+const readOnlyBannerPrefix = "Read-only: this login cannot change these settings. "
+
 // pageReadOnlyReason is the sentence a page whose writes are refused carries,
 // or "" when it may be written (or when nothing was measured).
 //
@@ -388,5 +411,5 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 			}
 		}
 	}
-	return "Read-only: this login cannot change these settings. " + requiresText(p.requires...)
+	return readOnlyBannerPrefix + requiresText(p.requires...)
 }

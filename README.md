@@ -175,9 +175,10 @@ How a missing right shows up:
 
 The check is one-sided — an action is withheld only when the server answered
 "no" to *every* right that would permit it, so anything unprobed stays offered.
-Some writes remain ungated (SQL Agent's New Job/Schedule/Alert/Operator among
-them); see [docs/open-threads.md](docs/open-threads.md) § Permission gating and
-[docs/permissions-plan.md](docs/permissions-plan.md).
+A grant made directly on one object counts alongside the wider rights, so a
+login granted ALTER on a single table keeps that table's write actions. For the
+limits that remain, see [docs/open-threads.md](docs/open-threads.md)
+§ Permission gating.
 
 ## Configuration
 

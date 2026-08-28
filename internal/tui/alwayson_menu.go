@@ -236,7 +236,7 @@ func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 		return
 	}
 	a.safego("running an Always On operation", func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := serverWriteContext(sc)
 		defer cancel()
 
 		var err error
@@ -479,7 +479,7 @@ func agFailoverRefusal(clusterType string, force bool) string {
 func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, replica string, force bool) {
 	run := func() {
 		a.safego("failing over an availability group", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			err := agFailover(ctx, sc, agName, replica, force)
 			a.postAndWake(func() {

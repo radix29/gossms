@@ -17,6 +17,34 @@ import (
 // doesn't leave a node stuck showing "Loading..." forever.
 const childFetchTimeout = 30 * time.Second
 
+// serverWriteTimeout bounds one write statement issued from a menu action.
+// Deliberately far longer than childFetchTimeout, which these used to share:
+// that budget is sized for a folder listing, and a write is not a read.
+//
+// A drop, a rename, an offline, a failover waits — for a lock another session
+// holds, and, on a database, for WITH ROLLBACK IMMEDIATE to roll back every
+// transaction it just killed. Minutes is a normal duration for that, and on the
+// 30s budget the statement was abandoned mid-flight: gosmo's repair pass then
+// had to put the database back to MULTI_USER on a context that had already
+// expired (fixed on the gosmo side by Server.restoreMultiUser, which no longer
+// depends on the caller's deadline — but the deadline was the trigger).
+//
+// Bounded, not unlimited: nothing on screen is blocked while this runs, so a
+// generous bound costs only a late message, but a dead connection still has to
+// report rather than leaving the status line pending forever. A write the user
+// waits *in* a dialog for is a different case and takes no deadline at all —
+// see PropDialog.runPipeline, which runs against the dialog's own context so
+// Escape is what stops it.
+const serverWriteTimeout = 5 * time.Minute
+
+// serverWriteContext bounds one such write. Every menu-driven write shares it
+// so there is no per-site timeout to reach for the wrong one of — the mistake
+// being that childFetchTimeout is what every *read* here uses, and the writes
+// sit among them.
+func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(sc.Context(), serverWriteTimeout)
+}
+
 // loadChildren loads child nodes for an explorer node in the background.
 // If node already has a fetch in flight (a fast double-expand, or a
 // Refresh while the initial load hasn't returned yet), beginLoad cancels
@@ -122,6 +150,13 @@ func (a *App) onNodeSelected(node *explorerNode) {
 // is two round trips on the first touch of a database and nothing afterwards.
 func (a *App) primeDatabaseCapabilities(node *explorerNode) {
 	sc, dbName := resolveConn(node), node.data.DBName
+	// A SQL Agent node carries no DBName — it hangs off the server, not a
+	// database — but what permits its New-X actions is membership of an msdb
+	// role, so msdb is the database its menu asks about. Without this the
+	// Agent gates read an unprobed msdb and fail open for the whole session.
+	if isAgentNode(node.data.Type) {
+		dbName = "msdb"
+	}
 	if sc == nil || dbName == "" {
 		return
 	}
@@ -430,7 +465,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+			gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+				sc, node.data.DBName, rightAlterAnySecPolicy),
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() {
@@ -441,7 +477,9 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Column Master Key...", Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
+			gate(controls.MenuItem{Label: "New Column Master Key...",
+				Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
+				sc, node.data.DBName, rightAlterAnyCMK),
 			{Divider: true},
 			refresh,
 		}
@@ -449,7 +487,9 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Column Encryption Key...", Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
+			gate(controls.MenuItem{Label: "New Column Encryption Key...",
+				Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
+				sc, node.data.DBName, rightAlterAnyCEK),
 			{Divider: true},
 			refresh,
 		}
@@ -475,7 +515,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
+			gateOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
+				sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
 			{Divider: true},
 			{Label: "Rebuild All Indexes", Action: func() {
 				a.openQueryWithText(sc, node.data.DBName,
@@ -488,7 +529,9 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Statistics...", Action: func() { a.showNewStatisticsDialog(sc, node) }},
+			gateOn(controls.MenuItem{Label: "New Statistics...",
+				Action: func() { a.showNewStatisticsDialog(sc, node) }},
+				sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
 			{Divider: true},
 			refresh,
 		}
@@ -529,7 +572,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }},
+				sc, "msdb", agentWriteRights()...),
 			{Divider: true},
 			refresh,
 		}
@@ -537,7 +581,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }},
+				sc, "msdb", agentWriteRights()...),
 			{Divider: true},
 			refresh,
 		}
@@ -545,7 +590,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }},
+				sc, "msdb", agentWriteRights()...),
 			{Divider: true},
 			refresh,
 		}
@@ -553,7 +599,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		return []controls.MenuItem{
 			newQuery,
 			{Divider: true},
-			{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
+			gate(controls.MenuItem{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
+				sc, "msdb", agentWriteRights()...),
 			{Divider: true},
 			refresh,
 		}
@@ -643,7 +690,7 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 
 	run := func() {
 		a.safego("enabling/disabling a security policy", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			p, err := findSecurityPolicy(ctx, sc, dbName, schema, name)
 			if err == nil {
@@ -704,7 +751,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 
 	run := func() {
 		a.safego("changing a database's online state", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			d := sc.Server.Database(dbName)
 			var err error

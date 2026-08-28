@@ -5,6 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
@@ -17,6 +18,9 @@ func newTestApp() *App {
 	a.panels = layout.NewPanelManager()
 	a.confirmDialog = dialogs.NewConfirmDialog(nil)
 	a.promptDialog = dialogs.NewPromptDialog(nil)
+	// As App.buildUI does: a panel that pops a selector menu reaches this, and
+	// a nil one crashes rather than failing the assertion the test came for.
+	a.contextMenu = new(controls.ContextMenu{})
 	return a
 }
 

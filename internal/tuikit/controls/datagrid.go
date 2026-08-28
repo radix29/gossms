@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
@@ -417,6 +418,14 @@ func (g *DataGrid) Row(i int) []string {
 		return nil
 	}
 	return g.rows.Row(i)
+}
+
+// ColumnIndex returns the position of the column named name, or -1 if the grid
+// has no such column. For a host that has to address a cell by column name
+// rather than by position — the grids here are built from whatever a loader
+// returned, so an index is only ever right by coincidence.
+func (g *DataGrid) ColumnIndex(name string) int {
+	return slices.Index(g.columns, name)
 }
 
 // computeColWidths sizes columns from their header plus up to

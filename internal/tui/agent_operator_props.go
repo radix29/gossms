@@ -34,11 +34,8 @@ func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 // showOperatorProperties opens Operator Properties for a known connection
 // and operator name — the Object Explorer context menu's entry point.
 func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
-	if !a.requireConn(sc) {
-		return
-	}
 	a.propDialog.show(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
-		operatorPropPages(sc, operatorName))
+		func() []propPage { return operatorPropPages(sc, operatorName) })
 }
 
 func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
