@@ -25,12 +25,18 @@ import (
 func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
-		pageLoginGeneral(sc, namePtr),
-		pageLoginServerRoles(sc, namePtr),
+		withRequires(pageLoginGeneral(sc, namePtr), "", rightAlterAnyLogin),
+		withRequires(pageLoginServerRoles(sc, namePtr), "", rightAlterAnyServerRole),
+		// User Mapping deliberately declares nothing. Its writes create and
+		// drop *database* users, so what permits them is ALTER ANY USER in
+		// each mapped database — a different answer per row of the grid, which
+		// one page-level banner cannot state. A wrong banner here would be
+		// worse than none: it would tell a db_accessadmin they cannot do the
+		// one thing they can.
 		pageLoginUserMapping(sc, namePtr),
-		pageLoginSecurables(sc, namePtr),
+		withRequires(pageLoginSecurables(sc, namePtr), "", rightControlServer),
 		pageLoginEffectivePermissions(d, sc, namePtr),
-		pageLoginStatus(sc, namePtr),
+		withRequires(pageLoginStatus(sc, namePtr), "", rightAlterAnyLogin),
 	}
 }
 

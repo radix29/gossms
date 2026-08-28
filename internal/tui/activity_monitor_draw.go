@@ -63,7 +63,7 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 	pal := theme.Active()
 	barStyle := theme.StyleMenuBar()
 	core.FillRect(s, am.toolRect, ' ', barStyle)
-	if am.toolPrefix != "" {
+	if am.toolPrefix != "" && am.prefixVisible() {
 		core.DrawTextClipped(s, am.toolRect.X+1, am.toolRect.Y, am.toolRect.W-2,
 			barStyle.Foreground(pal.TextDim), am.toolPrefix)
 	}
@@ -105,6 +105,14 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		}
 		core.FillRect(s, t.rect, ' ', style)
 		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
+	}
+	// The stand-in for whatever did not fit. Never dimmed: what it holds is
+	// gated control by control once the menu is open, and this panel disables
+	// per button rather than by the row.
+	if !am.more.rect.IsZero() {
+		style := theme.StyleTooltip()
+		core.FillRect(s, am.more.rect, ' ', style)
+		core.DrawText(s, am.more.rect.X+1, am.more.rect.Y, style, am.more.label)
 	}
 }
 

@@ -98,6 +98,16 @@ type DataGrid struct {
 	blockSelecting             bool
 	selAnchorRow, selAnchorCol int
 
+	// markedRows is the discontiguous selection Ctrl+click builds — the rows
+	// picked out one at a time, which no anchor/cursor rectangle can describe.
+	// marking says the grid is in that mode, and is not the same as len()>0: a
+	// Ctrl+click that unpicks the last row leaves an empty selection, which is
+	// a selection of nothing rather than a fall back to the cursor's row.
+	// Cleared by anything that is not a Ctrl+click, as a file manager's list
+	// does — a plain or Shift+click, an arrow key, a new row set.
+	markedRows map[int]bool
+	marking    bool
+
 	// mouseDragging distinguishes a fresh Button1 press (arm a new selection
 	// anchor) from a continued drag (keep the anchor, move the cursor).
 	mouseDragging bool
@@ -191,6 +201,13 @@ type DataGrid struct {
 	// disambiguates duplicate column names — QueryPanel uses it to find the
 	// declared type when routing an XML cell to a new query tab.
 	OnShowValue func(col int, column, value string) bool
+
+	// OnMenuItems contributes the host's own entries to the cell context menu,
+	// appended below a divider after the built-in Copy / Show Value ones. It is
+	// asked each time the menu opens, so an item can be built from — and gated
+	// on — whatever the selection is at that moment. A grid the host has given
+	// no actions leaves it nil and the menu is the built-in pair.
+	OnMenuItems func() []MenuItem
 }
 
 // NewDataGrid creates a DataGrid.
@@ -219,6 +236,8 @@ func (g *DataGrid) SetSource(columns []string, rows RowSource) {
 	g.rows = rows
 	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	// Row indices from the old set name different objects in this one.
+	g.ClearMarkedRows()
 	// The dragged widths belong to the old columns; this result set's column 2
 	// is unrelated to the last one's.
 	g.colWidthOverride, g.colResizing = nil, false
@@ -274,6 +293,7 @@ func (g *DataGrid) SetError(err error) {
 	g.colWidths = []int{g.rect.W - 2}
 	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
+	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false
 	// See SetSource: an open viewer would strand itself over stale text.
 	g.closeViewer()
@@ -378,6 +398,67 @@ func (g *DataGrid) SelectedCell() (row, col int) { return g.selRow, g.selCol }
 // selection — just the active cell when there's no multi-cell block selection.
 // Exported so a host embedding the grid can tell the two apart.
 func (g *DataGrid) SelectionBounds() (r0, c0, r1, c1 int) { return g.selectionBounds() }
+
+// SelectedRows returns the rows the selection covers, ascending: the rows
+// Ctrl+click marked while a discontiguous selection is in force, otherwise the
+// rows the anchor/cursor rectangle spans — which is the one cursor row when
+// nothing is extended.
+//
+// A host acting on whole objects reads this rather than SelectionBounds: the
+// bounds describe a rectangle, and a Ctrl+click selection is not one.
+func (g *DataGrid) SelectedRows() []int { return g.selectedRows() }
+
+func (g *DataGrid) selectedRows() []int {
+	if g.marking {
+		rows := make([]int, 0, len(g.markedRows))
+		for r := range g.markedRows {
+			rows = append(rows, r)
+		}
+		slices.Sort(rows)
+		return rows
+	}
+	r0, _, r1, _ := g.selectionBounds()
+	if r0 < 0 || r1 < r0 {
+		return nil
+	}
+	rows := make([]int, 0, r1-r0+1)
+	for r := r0; r <= r1; r++ {
+		rows = append(rows, r)
+	}
+	return rows
+}
+
+// ClearMarkedRows drops any Ctrl+click selection, leaving the cursor where it
+// is.
+func (g *DataGrid) ClearMarkedRows() {
+	g.markedRows, g.marking = nil, false
+}
+
+// markRow adds the clicked row to the discontiguous selection, or removes it
+// when it is already in — the toggle Ctrl+click means everywhere.
+//
+// The selection in force at the time is folded in first, so Shift-selecting a
+// run and then Ctrl+clicking one more row keeps the run. That includes the lone
+// cursor row: this grid always highlights one, and every host that acts on the
+// selection acts on that row when nothing else is picked, so a Ctrl+click that
+// dropped it would deselect a row the user can see is selected.
+func (g *DataGrid) markRow(row int) {
+	if !g.marking {
+		g.markedRows = map[int]bool{}
+		for _, r := range g.selectedRows() {
+			g.markedRows[r] = true
+		}
+		g.marking = true
+	}
+	if g.markedRows[row] {
+		delete(g.markedRows, row)
+		return
+	}
+	g.markedRows[row] = true
+}
+
+// rowMarked reports whether row is in a discontiguous selection.
+func (g *DataGrid) rowMarked(row int) bool { return g.marking && g.markedRows[row] }
 
 // CellCursorEnabled reports whether cell-cursor mode is on.
 func (g *DataGrid) CellCursorEnabled() bool { return g.cellCursor }

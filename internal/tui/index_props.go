@@ -65,20 +65,21 @@ func dataCompressionRow(current string) (propsheet.Row, *propsheet.SelectRow) {
 // REBUILD-time-only clauses with no persisted state to show afterward,
 // unlike fill factor, pad index, and the SET-able options this page has.
 func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
+	w := objectWriteRights()
 	return []propPage{
 		pageIndexGeneral(sc, dbName, schema, table, name),
-		pageIndexOptions(sc, dbName, schema, table, name),
+		withRequiresOn(pageIndexOptions(sc, dbName, schema, table, name), dbName, schema, table, w...),
 		pageIndexStorage(sc, dbName, schema, table, &name),
-		pageIndexIncludedColumns(sc, dbName, schema, table, name),
+		withRequiresOn(pageIndexIncludedColumns(sc, dbName, schema, table, name), dbName, schema, table, w...),
 		pageIndexFilter(d, sc, dbName, schema, table, name),
 		pageIndexFragmentation(d, sc, dbName, schema, table, &name),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "INDEX", Level2Name: name,
 			}
-		}),
+		}), dbName, schema, table, w...),
 	}
 }
 

@@ -24,9 +24,10 @@ func findAgentAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo
 // alertPropPages builds the page set for Alert Properties.
 func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 	name := &alertName
+	w := agentWriteRights()
 	return []propPage{
-		pageAlertGeneral(sc, name),
-		pageAlertResponse(sc, name),
+		withRequires(pageAlertGeneral(sc, name), "", w...),
+		withRequires(pageAlertResponse(sc, name), "", w...),
 	}
 }
 

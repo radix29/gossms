@@ -218,12 +218,9 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 	if am.toolRect.Contains(mx, my) {
 		am.dragZone = amZoneTools
 		if i := toolButtonAt(am.tools, mx, my); i >= 0 {
-			switch t := am.tools[i]; {
-			case t.disabled && t.reason != "":
-				am.app.setStatus(t.reason)
-			case t.action != nil && !t.disabled:
-				t.action()
-			}
+			am.runTool(i)
+		} else if am.more.rect.Contains(mx, my) {
+			am.showOverflowMenu()
 		}
 		// Claimed either way: the press landed on the toolbar, and a disabled
 		// control — or the gap between two — must swallow it rather than let

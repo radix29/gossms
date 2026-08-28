@@ -38,10 +38,10 @@ type FindReplaceDialog struct {
 
 	replaceMode bool
 
-	// dragField is the input field that claimed the current Button1 gesture, nil
-	// between gestures. Motion goes to it wherever the pointer is, so dragging a
-	// selection out of the field's rect keeps extending it.
-	dragField *widgets.InputField
+	// drag is the text-selection gesture a click in one of the dialog's text
+	// fields starts — see dialogs.FieldGesture for the ordering its three calls
+	// depend on.
+	drag dialogs.FieldGesture
 
 	// focusIdx walks fields first, then buttons — see focusCount. Buttons are in
 	// the same cycle, so Tab alone reaches everything the dialog can do.
@@ -97,7 +97,7 @@ func (d *FindReplaceDialog) show(replace bool) {
 	d.status, d.statusErr = "", false
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
-	d.dragField = nil
+	d.drag.Clear()
 
 	// Seed from a single-line selection, as every other editor's Find does. A
 	// multi-line selection is left alone — that is what "in selection only" is
@@ -419,10 +419,7 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// End a text-selection drag in the field that claimed the press,
 		// wherever the release landed. Before ConsumeOutsideClick, which returns
 		// early on a release outside the dialog and would strand the latch.
-		if d.dragField != nil {
-			d.dragField.HandleMouse(ev)
-			d.dragField = nil
-		}
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -437,8 +434,7 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// The gesture belongs to whichever field claimed its press, so motion is
 	// replayed there without hit-testing, which would stop a selection extending
 	// the moment the pointer left the field's rect.
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 
@@ -458,8 +454,7 @@ func (d *FindReplaceDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	for _, f := range d.inputFields() {
 		if f.HitTest(mx, my) {
 			d.focusWidget(f)
-			d.dragField = f
-			f.HandleMouse(ev)
+			d.drag.Claim(f, ev)
 			return true
 		}
 	}

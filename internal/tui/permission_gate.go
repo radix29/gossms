@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -72,15 +73,24 @@ var (
 	rightAlterAnyDatabase   = requiredRight{name: "ALTER ANY DATABASE", role: "dbcreator"}
 	rightAlterAnyEndpoint   = requiredRight{name: "ALTER ANY ENDPOINT", role: "sysadmin"}
 	rightAlterAnyAG         = requiredRight{name: "ALTER ANY AVAILABILITY GROUP", role: "sysadmin"}
-	rightAlterAnyLinkedSrv  = requiredRight{name: "ALTER ANY LINKED SERVER", role: "sysadmin"}
+	// Held for a feature that does not exist yet: nothing in the application
+	// creates or alters a linked server, so nothing gates on this. It is
+	// declared here rather than at the future call site because
+	// permission_gate_names_test.go checks every literal in this block against
+	// gosmo's Probed* list — a name added later and misspelled would read back
+	// as CapabilityUnknown forever and gate nothing.
+	rightAlterAnyLinkedSrv = requiredRight{name: "ALTER ANY LINKED SERVER", role: "sysadmin"}
 
 	rightBackupDatabase = requiredRight{name: "BACKUP DATABASE", role: "db_backupoperator", db: true}
 	rightAlterDatabase  = requiredRight{name: "ALTER", role: "db_owner", db: true}
 	rightControlDB      = requiredRight{name: "CONTROL", role: "db_owner", db: true}
 	rightAlterAnyUser   = requiredRight{name: "ALTER ANY USER", role: "db_accessadmin", db: true}
 	rightAlterAnyDBRole = requiredRight{name: "ALTER ANY ROLE", role: "db_securityadmin", db: true}
+	// Held for a feature that does not exist yet — there is no New Table — for
+	// the reason given at rightAlterAnyLinkedSrv.
+	rightCreateTable = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
+
 	rightAlterAnySchema = requiredRight{name: "ALTER ANY SCHEMA", role: "db_ddladmin", db: true}
-	rightCreateTable    = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
 	rightViewDBState    = requiredRight{name: "VIEW DATABASE STATE", role: "db_owner", db: true}
 
 	// The three below name db_owner rather than a narrower role because there
@@ -210,6 +220,23 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 	if sc == nil || len(rights) == 0 {
 		return true
 	}
+	return rightsAllow(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
+}
+
+// rightsAllow is the whole of the Allows rule, in one place: whether an action
+// needing any one of rights may still be offered, given a server capability set
+// and a way to reach a database's.
+//
+// dbCaps is what separates the two callers. The menus pass
+// CachedDatabaseCapabilities, because they run on the UI goroutine while a menu
+// is being drawn and must not issue a query; a Properties page passes the
+// probing form, because its load already runs on a background goroutine. The
+// *rule* must not differ between them, which is why there is only one copy of
+// it — pageReadOnlyReason had its own, and that copy understood neither the
+// membership rights SQL Agent gates on nor the schema- and object-scoped ones,
+// so a login holding ALTER on just the one table would have been shown a
+// read-only banner for a page it could in fact write.
+func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) bool {
 	for _, r := range rights {
 		switch {
 		case r.membership:
@@ -218,7 +245,7 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 			// "never asked", so an unprobed msdb would withhold every SQL
 			// Agent action from the login that holds the role. Probed is the
 			// only thing that separates the two.
-			caps := sc.CachedDatabaseCapabilities(r.inDB)
+			caps := dbCaps(r.inDB)
 			if !caps.Probed() || caps.InRole(r.name) {
 				return true
 			}
@@ -230,7 +257,7 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 			// every object in the database and would permit everything. An
 			// object with no row leaves the wider rights beside this one to
 			// answer, exactly as before this right existed.
-			if sc.CachedDatabaseCapabilities(dbName).HasOnObject(schema, object, r.name) {
+			if dbCaps(dbName).HasOnObject(schema, object, r.name) {
 				return true
 			}
 		case r.schema:
@@ -240,19 +267,18 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 			// PermitsOnSchema, not AllowsOnSchema: an inaccessible database
 			// answers unknown for every schema, and unknown fails open — see
 			// gosmo.DatabaseCapabilities.Permits.
-			if sc.CachedDatabaseCapabilities(dbName).PermitsOnSchema(schema, r.name) {
+			if dbCaps(dbName).PermitsOnSchema(schema, r.name) {
 				return true
 			}
 		case !r.db:
 			// The name and its alternates are asked separately rather than
 			// joined into one slice: this runs per menu item and per toolbar
 			// cell on every draw, and the join allocated each time.
-			caps := sc.Capabilities()
-			if caps.Allows(r.name) {
+			if server.Allows(r.name) {
 				return true
 			}
 			for _, n := range r.alt {
-				if caps.Allows(n) {
+				if server.Allows(n) {
 					return true
 				}
 			}
@@ -266,7 +292,7 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 			// which would leave Back Up and Delete offered on exactly the
 			// databases the login cannot open. See
 			// gosmo.DatabaseCapabilities.Permits.
-			caps := sc.CachedDatabaseCapabilities(dbName)
+			caps := dbCaps(dbName)
 			if caps.Permits(r.name) {
 				return true
 			}
@@ -326,6 +352,18 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 func withRequires(p propPage, in string, rights ...requiredRight) propPage {
 	p.requires = rights
 	p.requiresIn = in
+	return p
+}
+
+// withRequiresOn is withRequires for a page whose object- or schema-scoped
+// rights need to know which securable to ask about — every page set built on
+// objectWriteRights(). object is the *table*: SQL Server checks ALTER on the
+// table for a change to its index, its statistics or one of its keys, and the
+// probe records the table, not the index.
+func withRequiresOn(p propPage, in, schema, object string, rights ...requiredRight) propPage {
+	p = withRequires(p, in, rights...)
+	p.requiresSchema = schema
+	p.requiresObject = object
 	return p
 }
 

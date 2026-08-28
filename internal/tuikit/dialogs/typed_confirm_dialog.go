@@ -13,8 +13,9 @@ import (
 // TypedConfirmDialog — retype-to-confirm
 // ---------------------------------------------------------------------------
 
-// typedConfirmFocus tracks which of the dialog's three focusable elements
-// (the input, then the two buttons) currently has focus.
+// typedConfirmFocus tracks which of the dialog's focusable elements has focus:
+// the input, then one position per button — so focus-1 indexes d.buttons, and a
+// showing with a Script button adds a position rather than renumbering these.
 type typedConfirmFocus int
 
 const (
@@ -42,6 +43,15 @@ type TypedConfirmDialog struct {
 	input    *widgets.InputField
 	focus    typedConfirmFocus
 
+	// buttons is what the current showing renders and hit-tests, and answers
+	// what each of them means — parallel rather than the answer being the
+	// button's index, for the reason ConfirmDialog's pair are.
+	buttons []string
+	answers []ConfirmAnswer
+
+	// onAnswer is the showing's handler. OnConfirm is the two-button form's,
+	// kept as the exported field it has always been.
+	onAnswer  func(ConfirmAnswer)
 	OnConfirm func(confirmed bool)
 }
 
@@ -60,6 +70,30 @@ func NewTypedConfirmDialog(s tcell.Screen) *TypedConfirmDialog {
 // required-text line/input down to make room) when it doesn't — see
 // fitMessage.
 func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, onConfirm func(bool)) {
+	d.OnConfirm = onConfirm
+	d.show(title, message, required, []string{"Confirm", "Cancel"},
+		[]ConfirmAnswer{ConfirmYes, ConfirmNo}, func(a ConfirmAnswer) {
+			if d.OnConfirm != nil {
+				d.OnConfirm(a == ConfirmYes)
+			}
+		})
+}
+
+// ShowTypedConfirmScript is ShowTypedConfirm with a third button answering
+// ConfirmScript — the retype-to-confirm counterpart of
+// ConfirmDialog.ShowConfirmScript, for a delete serious enough to be typed out
+// that the user may want to read as SQL first.
+//
+// Script is not gated on the typed text: it runs nothing, so there is nothing
+// for the retyping to protect. Escape still answers No.
+func (d *TypedConfirmDialog) ShowTypedConfirmScript(title, message, required string, onAnswer func(ConfirmAnswer)) {
+	d.OnConfirm = nil
+	d.show(title, message, required, []string{"Confirm", "Cancel", "Script"},
+		[]ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmScript}, onAnswer)
+}
+
+func (d *TypedConfirmDialog) show(title, message, required string, buttons []string,
+	answers []ConfirmAnswer, onAnswer func(ConfirmAnswer)) {
 	d.SetTitle(title)
 	d.message = message
 	d.required = required
@@ -67,7 +101,8 @@ func (d *TypedConfirmDialog) ShowTypedConfirm(title, message, required string, o
 	d.input = widgets.NewInputField("", max(20, core.DisplayWidth(required)+16), false)
 	d.focus = typedConfirmFocusInput
 	d.syncFocus()
-	d.OnConfirm = onConfirm
+	d.buttons, d.answers = buttons, answers
+	d.onAnswer = onAnswer
 	w, h, lines := d.fitMessage(message, typedConfirmW, typedConfirmH)
 	d.msgLines = lines
 	d.SetSize(w, h)
@@ -89,19 +124,31 @@ func (d *TypedConfirmDialog) matched() bool {
 	return d.required != "" && strings.EqualFold(strings.TrimSpace(d.input.Value()), d.required)
 }
 
-// finish resolves the dialog: a cancel always proceeds, but a confirm whose
+// finish resolves the dialog: every other answer proceeds, but a confirm whose
 // typed text doesn't match is refused in place, with a status message,
 // rather than treated as a cancel — the user should have to either fix
 // their input or explicitly back out.
-func (d *TypedConfirmDialog) finish(confirmed bool) {
-	if confirmed && !d.matched() {
+func (d *TypedConfirmDialog) finish(answer ConfirmAnswer) {
+	if answer == ConfirmYes && !d.matched() {
 		d.status = "Text doesn't match — action not confirmed."
 		return
 	}
 	d.Hide()
-	if d.OnConfirm != nil {
-		d.OnConfirm(confirmed)
+	// Read and cleared before it runs: it commonly opens something else that can
+	// route back here, and a stale handler would then fire a second time.
+	onAnswer := d.onAnswer
+	d.onAnswer = nil
+	if onAnswer != nil {
+		onAnswer(answer)
 	}
+}
+
+// answerAt is what the button at index i answers.
+func (d *TypedConfirmDialog) answerAt(i int) ConfirmAnswer {
+	if i < 0 || i >= len(d.answers) {
+		return ConfirmNo
+	}
+	return d.answers[i]
 }
 
 // Draw renders the message, the required confirmation text, the input, and
@@ -132,13 +179,10 @@ func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	activeIdx := -1
-	switch d.focus {
-	case typedConfirmFocusConfirm:
-		activeIdx = 0
-	case typedConfirmFocusCancel:
-		activeIdx = 1
+	if d.focus != typedConfirmFocusInput {
+		activeIdx = int(d.focus) - 1
 	}
-	d.DrawButtons(s, []string{"Confirm", "Cancel"}, activeIdx)
+	d.DrawButtons(s, d.buttons, activeIdx)
 }
 
 // HandleKey routes keyboard events.
@@ -146,24 +190,26 @@ func (d *TypedConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.visible {
 		return false
 	}
+	n := typedConfirmFocus(len(d.buttons) + 1)
 	switch ev.Key() {
 	case tcell.KeyEscape:
-		d.finish(false)
+		d.finish(ConfirmNo)
 		return true
 	case tcell.KeyTab:
-		d.focus = (d.focus + 1) % 3
+		d.focus = (d.focus + 1) % n
 		d.syncFocus()
 		return true
 	case tcell.KeyBacktab:
-		d.focus = (d.focus + 3 - 1) % 3
+		d.focus = (d.focus + n - 1) % n
 		d.syncFocus()
 		return true
 	case tcell.KeyEnter:
-		switch d.focus {
-		case typedConfirmFocusCancel:
-			d.finish(false)
-		default:
-			d.finish(true)
+		// Enter with the keyboard still in the input answers the question the
+		// dialog is about, as it did when the buttons were Confirm and Cancel.
+		if d.focus == typedConfirmFocusInput {
+			d.finish(ConfirmYes)
+		} else {
+			d.finish(d.answerAt(int(d.focus) - 1))
 		}
 		return true
 	}
@@ -188,8 +234,8 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
-	if i := d.ButtonClicked(ev, []string{"Confirm", "Cancel"}); i >= 0 {
-		d.finish(i == 0)
+	if i := d.ButtonClicked(ev, d.buttons); i >= 0 {
+		d.finish(d.answerAt(i))
 		return true
 	}
 	if ev.Buttons() == tcell.ButtonNone {

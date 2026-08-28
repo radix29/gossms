@@ -28,7 +28,7 @@ func findAgentSchedule(ctx context.Context, sc *db.ServerConn, name string) (*go
 func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 	name := &scheduleName
 	return []propPage{
-		pageScheduleGeneral(sc, name),
+		withRequires(pageScheduleGeneral(sc, name), "", agentWriteRights()...),
 		pageScheduleJobs(sc, name),
 	}
 }

@@ -77,8 +77,6 @@ type permScope struct {
 	// its statements must carry — empty for a scope that has none.
 	permission string
 	on         string
-	// serverScope marks the page whose writes are not pinned to a database.
-	serverScope bool
 }
 
 func permScopes() []permScope {

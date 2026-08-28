@@ -299,11 +299,30 @@ func TestFindWordAtCursorSyncsEveryDialogField(t *testing.T) {
 // A latch must not survive into the next showing (tuikit invariant 4): a
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestFindDialogShowClearsTheDragLatch(t *testing.T) {
-	a, _ := newFindTestApp(t, "select 1")
+	// The screen goes in before the dialog is constructed: InitModal captures
+	// it, and a dialog built without one keeps a zero rect, so every press is
+	// "outside" and arms nothing.
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	a.findDialog = NewFindReplaceDialog(a)
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	a.panels.AddPanel(qp)
+	qp.editor.SetText("select 1")
+
 	d := a.findDialog
-	d.dragField = d.fFind
 	d.ShowFind()
-	if d.dragField != nil {
+	d.layout()
+	// Arm the latch the way a user does — a press inside the field — rather
+	// than by assignment, so the test also pins that a press arms one at all.
+	ix, y := d.fFind.InputX(), d.fFind.RectY()
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	if d.drag.Field() == nil {
+		t.Fatal("the press did not arm a latch — test premise is wrong")
+	}
+
+	d.ShowFind()
+	if d.drag.Field() != nil {
 		t.Error("Show left a drag latch armed from the previous showing")
 	}
 	d.Hide()

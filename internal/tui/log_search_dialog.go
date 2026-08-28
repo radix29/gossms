@@ -46,9 +46,10 @@ type LogSearchDialog struct {
 	// close so a dismissed showing cannot deliver into the next panel.
 	onApply func(gosmo.LogSearch)
 
-	// dragField is the field that claimed the current Button1 gesture — see
-	// FindReplaceDialog's field of the same name.
-	dragField *widgets.InputField
+	// drag is the text-selection gesture a click in one of the dialog's text
+	// fields starts — see dialogs.FieldGesture for the ordering its three calls
+	// depend on.
+	drag dialogs.FieldGesture
 
 	focusIdx int
 
@@ -79,7 +80,7 @@ func (d *LogSearchDialog) ShowLogSearch(current gosmo.LogSearch, onApply func(go
 	d.fTo.SetValue(formatLogSearchTime(current.To))
 	d.status, d.statusErr = "", false
 	// A latch must not survive into the next showing — see ModalDialog.Show.
-	d.dragField = nil
+	d.drag.Clear()
 	d.focusIdx = 0
 	d.syncFocus()
 	d.Show()
@@ -192,10 +193,7 @@ func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if !d.Visible() {
 		return false
 	}
-	if ev.Buttons() == tcell.ButtonNone && d.dragField != nil {
-		d.dragField.HandleMouse(ev)
-		d.dragField = nil
-	}
+	d.drag.Release(ev)
 	if d.ConsumeOutsideClick(ev) {
 		return true
 	}
@@ -205,8 +203,7 @@ func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if ev.Buttons() != tcell.Button1 {
 		return false
 	}
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
@@ -220,8 +217,7 @@ func (d *LogSearchDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		if f.HitTest(mx, my) {
 			d.focusIdx = i
 			d.syncFocus()
-			d.dragField = f
-			f.HandleMouse(ev)
+			d.drag.Claim(f, ev)
 			return true
 		}
 	}

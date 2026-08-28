@@ -127,8 +127,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		hint.Clear()
 		edits = append(edits, &memberEdit{name: name, principalType: cfg.principalType[name], isNew: true})
 		memberNames[name] = true
-		grid.SetData(membershipColumns, rowsFor())
-		grid.SetSelectedRow(len(visible()) - 1)
+		resetGrid(grid, membershipColumns, rowsFor(), len(visible())-1)
 	})
 
 	removeBtn := widgets.NewButton("Remove", func() {
@@ -141,8 +140,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		hint.Clear()
 		delete(memberNames, vis[i].name)
 		vis[i].pendingRemove = true
-		grid.SetData(membershipColumns, rowsFor())
-		grid.SetSelectedRow(0)
+		resetGrid(grid, membershipColumns, rowsFor(), 0)
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 10)
@@ -168,7 +166,7 @@ func buildMembershipForm(cfg membershipConfig) (*propsheet.Form, propApply) {
 		for _, e := range edits {
 			memberNames[e.name] = true
 		}
-		grid.SetData(membershipColumns, rowsFor())
+		resetGrid(grid, membershipColumns, rowsFor(), 0)
 		hint.Clear()
 	}
 

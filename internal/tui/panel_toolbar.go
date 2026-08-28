@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -77,7 +78,10 @@ const overflowLabel = "More ▾"
 // layoutToolButtonsOverflow places buttons like layoutToolButtons, but instead
 // of silently dropping the ones that do not fit it collapses them behind a
 // "More ▾" cell and returns their indexes for the caller to build a menu from.
-// more is given that cell's rect, or a zero one when everything fitted.
+// more is given that cell's rect, or a zero one when everything fitted; end is
+// the column just past the last cell placed, the More cell included, which is
+// where a row's remaining content goes (the Log Viewer's filter field,
+// Activity Monitor's collection state).
 //
 // layoutToolButtons alone deletes a button outright: a zero rect is neither
 // painted nor clickable, so an action with no key binding beside it simply
@@ -88,15 +92,14 @@ const overflowLabel = "More ▾"
 // The hidden set is always a suffix: layout stops at the first button that does
 // not fit rather than skipping it and squeezing in a later, shorter one, so the
 // menu holds the row's tail instead of a scattered subset of it.
-func layoutToolButtonsOverflow(tools []toolButton, r core.Rect, more *toolButton) []int {
+func layoutToolButtonsOverflow(tools []toolButton, r core.Rect, prefix string, more *toolButton) (hidden []int, end int) {
 	more.rect = core.Rect{}
 	if r.H != 1 || len(tools) == 0 {
-		layoutToolButtons(tools, r, "")
-		return nil
+		return nil, layoutToolButtons(tools, r, prefix)
 	}
-	layoutToolButtons(tools, r, "")
+	end = layoutToolButtons(tools, r, prefix)
 	if !anyToolDropped(tools) {
-		return nil
+		return nil, end
 	}
 	// Room for the More cell has to come out of the row before the rest is
 	// laid out, or the cell that stands in for the overflow would overflow.
@@ -104,7 +107,9 @@ func layoutToolButtonsOverflow(tools []toolButton, r core.Rect, more *toolButton
 	right := r.Right() - moreW - toolGap
 
 	x := r.X + 1
-	var hidden []int
+	if prefix != "" {
+		x += core.DisplayWidth(prefix) + 1
+	}
 	for i := range tools {
 		w := core.DisplayWidth(tools[i].label) + 2
 		if len(hidden) > 0 || x+w > right {
@@ -117,13 +122,20 @@ func layoutToolButtonsOverflow(tools []toolButton, r core.Rect, more *toolButton
 	}
 	// The stand-in is placed even when it holds the whole row: a menu that is
 	// the entire toolbar still reaches every action, and suppressing it because
-	// nothing else fitted would leave the pane with no toolbar at all. Only a
-	// row too narrow for the cell itself goes without.
+	// nothing else fitted would leave the pane with no toolbar at all. It also
+	// takes the prefix's place on a row too narrow for both — a label naming
+	// controls that are not on the row is worse than no label, and Activity
+	// Monitor's "Refresh rate:" is 14 columns of the 23 its own cell needs.
+	// Only a row too narrow for the cell itself goes without.
+	if x+moreW > r.Right() && prefix != "" {
+		x = r.X + 1
+	}
 	if x+moreW <= r.Right() {
 		more.label = overflowLabel
 		more.rect = core.Rect{X: x, Y: r.Y, W: moreW, H: 1}
+		x += moreW + toolGap
 	}
-	return hidden
+	return hidden, x
 }
 
 // anyToolDropped reports whether layoutToolButtons gave any button a zero rect.
@@ -134,6 +146,32 @@ func anyToolDropped(tools []toolButton) bool {
 		}
 	}
 	return false
+}
+
+// toolOverflowItems builds the menu behind a row's "More ▾" cell: one entry
+// per button the row was too narrow to draw, each carrying the same gate its
+// button would have — and its reason as the item's Note, which a MenuItem
+// shows precisely while it is disabled, so a withheld action still explains
+// itself the way the dimmed button does.
+//
+// A selected button keeps its bullet in the menu, since the whole point of
+// drawing a rate selector selected is to say which of four is in force.
+func toolOverflowItems(tools []toolButton, hidden []int,
+	disabled func(int) bool, reason func(int) string, run func(int)) []controls.MenuItem {
+	items := make([]controls.MenuItem, 0, len(hidden))
+	for _, i := range hidden {
+		label := tools[i].label
+		if tools[i].selected {
+			label = "• " + label
+		}
+		items = append(items, controls.MenuItem{
+			Label:   label,
+			Enabled: func() bool { return !disabled(i) },
+			Note:    reason(i),
+			Action:  func() { run(i) },
+		})
+	}
+	return items
 }
 
 // toolButtonAt returns the index of the button under (mx, my), or -1. A

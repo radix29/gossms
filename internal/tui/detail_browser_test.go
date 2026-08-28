@@ -139,7 +139,8 @@ func TestFetchNodeDetailsFallsBackToChildList(t *testing.T) {
 	sc := &dbconn.ServerConn{}
 	node := &explorerNode{label: "Server Objects", data: nodeData{Type: NodeServerObjects, conn: sc}}
 
-	cols, rows, err := fetchNodeDetails(context.Background(), sc, node)
+	var objs []nodeData
+	cols, rows, err := fetchNodeDetails(context.Background(), sc, node, &objs)
 	if err != nil {
 		t.Fatalf("fetchNodeDetails: %v", err)
 	}
@@ -166,7 +167,8 @@ func TestFetchNodeDetailsLeafKeepsPropertyValue(t *testing.T) {
 	sc := &dbconn.ServerConn{}
 	node := &explorerNode{label: "my_col", data: nodeData{Type: NodeColumn, conn: sc}}
 
-	cols, _, err := fetchNodeDetails(context.Background(), sc, node)
+	var objs []nodeData
+	cols, _, err := fetchNodeDetails(context.Background(), sc, node, &objs)
 	if err != nil {
 		t.Fatalf("fetchNodeDetails: %v", err)
 	}

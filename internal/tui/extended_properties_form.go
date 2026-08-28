@@ -153,8 +153,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		}
 		hint.Clear()
 		edits = append(edits, &extPropEdit{name: name, value: valueField.Value(), isNew: true})
-		grid.SetData(extendedPropertyColumns, rowsFor())
-		grid.SetSelectedRow(len(visible()) - 1)
+		resetGrid(grid, extendedPropertyColumns, rowsFor(), len(visible())-1)
 		syncFieldsFromSelection()
 	})
 	removeBtn = widgets.NewButton("Remove", func() {
@@ -166,8 +165,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 		hint.Clear()
 		e.pendingRemove = true
 		current = nil // its old value is void; don't let commitCurrent write back into it
-		grid.SetData(extendedPropertyColumns, rowsFor())
-		grid.SetSelectedRow(0)
+		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
@@ -192,7 +190,7 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 			kept = append(kept, e)
 		}
 		edits = kept
-		grid.SetData(extendedPropertyColumns, rowsFor())
+		resetGrid(grid, extendedPropertyColumns, rowsFor(), 0)
 	}
 
 	f := propsheet.NewForm(

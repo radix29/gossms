@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -71,7 +72,7 @@ func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	// where ConsumeOutsideClick would otherwise swallow it and strand the
 	// latch into the next press.
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if d.fServer.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
@@ -85,9 +86,18 @@ func TestConnectDialogShowClearsTheDragLatch(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 100, h: 40}
 	d := NewConnectDialog(a)
-	d.dragField = d.fServer
 	d.Show()
-	if d.dragField != nil {
+	d.layoutFields()
+	// Arm the latch the way a user does — a press inside the field — rather
+	// than by assignment, so the test also pins that a press arms one at all.
+	ix, y := d.fServer.InputX(), d.fServer.RectY()
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	if d.drag.Field() == nil {
+		t.Fatal("the press did not arm a latch — test premise is wrong")
+	}
+
+	d.Show()
+	if d.drag.Field() != nil {
 		t.Error("Show left a drag latch armed from the previous showing")
 	}
 }
@@ -118,7 +128,7 @@ func TestBackupDialogDragOutOfDestKeepsExtending(t *testing.T) {
 	}
 
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if d.fDest.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
@@ -146,7 +156,7 @@ func TestRestoreDialogDragOutOfTargetKeepsExtending(t *testing.T) {
 	// both ConsumeOutsideClick and the mode switch, either of which returns
 	// early and would strand the latch.
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if d.fTarget.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
@@ -173,6 +183,93 @@ func TestOptionsDialogReleaseOutsideClearsTheFieldLatch(t *testing.T) {
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
 
 	if d.fMaxCellLen.HandleMouse(tcell.NewEventMouse(ix+6, y+9, tcell.Button1, tcell.ModNone)) {
+		t.Error("the field is still latched — its next off-rect press was accepted")
+	}
+}
+
+// The two dialogs the drag invariant was never covered on. Both route through
+// dialogs.FieldGesture now; before it they carried their own copy of the
+// protocol, and a copy is only ever one edit away from hit-testing the motion.
+func TestLogSearchDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40} // before the dialog: InitModal captures it
+	d := NewLogSearchDialog(a)
+	d.ShowLogSearch(gosmo.LogSearch{}, func(gosmo.LogSearch) {})
+	d.layout() // Draw's job; the test isn't drawing
+	d.fText1.SetValue("abcdefgh")
+
+	// Two rows down, over fFrom/fTo, which would take the focus out from
+	// under the drag if the motion were hit-tested.
+	ix, y := d.fText1.InputX(), d.fText1.RectY()
+	if got := dragOutOf(t, d, d.fText1, ix+6, y+2); got != "abcde" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
+	}
+	if d.focusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 — a field below stole a gesture fText1 owned", d.focusIdx)
+	}
+
+	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
+	if d.drag.Field() != nil {
+		t.Fatal("a release outside the dialog left the gesture latched")
+	}
+	if d.fText1.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
+		t.Error("the field is still latched — its next off-rect press was accepted")
+	}
+}
+
+func TestFilterDialogDragOutOfAValueFieldKeepsExtending(t *testing.T) {
+	d := showTestFilterDialogOnScreen(t, 100, 40)
+	f := d.rows[0].value
+	f.SetValue("abcdefgh")
+
+	// Two rows down, over another row's operator dropdown — a widget that
+	// answers a press and would swallow the motion.
+	ix, y := f.InputX(), f.RectY()
+	if got := dragOutOf(t, d, f, ix+6, y+2); got != "abcde" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
+	}
+	if d.focusIdx != 1 {
+		t.Errorf("focusIdx = %d, want 1 (row 0's value field) — a widget below stole the gesture", d.focusIdx)
+	}
+
+	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
+	if d.drag.Field() != nil {
+		t.Fatal("a release outside the dialog left the gesture latched")
+	}
+	if f.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
+		t.Error("the field is still latched — its next off-rect press was accepted")
+	}
+}
+
+// FindReplaceDialog is the one the other five copied their comment from, and
+// the only one of the seven with no drag test of its own until now.
+func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40} // before the dialog: InitModal captures it
+	a.findDialog = NewFindReplaceDialog(a)
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	a.panels.AddPanel(qp)
+	qp.editor.SetText("select 1")
+
+	d := a.findDialog
+	d.ShowReplace() // two fields, so there is somewhere below to drag to
+	d.layout()
+	d.fFind.SetValue("abcdefgh")
+
+	ix, y := d.fFind.InputX(), d.fFind.RectY()
+	if got := dragOutOf(t, d, d.fFind, ix+6, y+3); got != "abcde" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
+	}
+	if d.focusIdx != 0 {
+		t.Errorf("focusIdx = %d, want 0 — a widget below stole a gesture fFind owned", d.focusIdx)
+	}
+
+	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
+	if d.drag.Field() != nil {
+		t.Fatal("a release outside the dialog left the gesture latched")
+	}
+	if d.fFind.HandleMouse(tcell.NewEventMouse(ix+6, y+3, tcell.Button1, tcell.ModNone)) {
 		t.Error("the field is still latched — its next off-rect press was accepted")
 	}
 }

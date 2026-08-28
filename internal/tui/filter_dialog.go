@@ -42,10 +42,9 @@ type FilterDialog struct {
 	// buttons — the one-cycle arrangement FindReplaceDialog uses.
 	focusIdx int
 
-	// dragField is the value field that claimed the current Button1 gesture,
-	// nil between gestures, so a selection drag that leaves the field's rect
-	// keeps extending instead of stopping at the boundary.
-	dragField *widgets.InputField
+	// drag is the text-selection gesture a click in a row's value field starts
+	// — see dialogs.FieldGesture for the ordering its three calls depend on.
+	drag dialogs.FieldGesture
 
 	// message is the validation readout above the button row; messageY is
 	// the row it's drawn on, recorded by layout for Draw.
@@ -118,7 +117,7 @@ func (d *FilterDialog) show(node *explorerNode, props []filterProp, server strin
 	d.message = ""
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
-	d.dragField = nil
+	d.drag.Clear()
 
 	// Sized before the widgets are built: recentre clamps the dialog to the
 	// terminal and a widget's width is fixed at construction, so building the
@@ -460,10 +459,7 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		for i := range d.rows {
 			d.rows[i].op.HandleMouse(ev)
 		}
-		if d.dragField != nil {
-			d.dragField.HandleMouse(ev)
-			d.dragField = nil
-		}
+		d.drag.Release(ev)
 	}
 	// An open list may extend below the dialog's rows, so it is offered the press
 	// before ConsumeOutsideClick can discard it as "outside".
@@ -483,8 +479,7 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// The gesture belongs to whichever field claimed its press, so motion is
 	// replayed there without hit-testing, which would stop a selection extending
 	// the moment the pointer leaves the field's rect.
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 
@@ -507,8 +502,7 @@ func (d *FilterDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		if f.HitTest(mx, my) {
 			d.focusIdx = i*2 + 1
 			d.syncFocus()
-			d.dragField = f
-			f.HandleMouse(ev)
+			d.drag.Claim(f, ev)
 			return true
 		}
 	}

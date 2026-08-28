@@ -343,8 +343,7 @@ func buildSecurablesMatrix(
 		selected = row
 		selectedSec = visibleSecurables[row]
 		selectedEdits = editsFor(selectedSec)
-		permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
-		permGrid.SetSelectedRow(0)
+		resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
 		permSection.SetTitle("Permissions for " + selectedSec.label())
 		if selectedSec.hasColumns() {
 			colHint.Set("Click Load Columns to edit per-column grants on " + selectedSec.label() + ".")
@@ -399,8 +398,7 @@ func buildSecurablesMatrix(
 				loadedCols = append(loadedCols, e)
 			}
 			colSection.SetTitle(fmt.Sprintf("Column permissions — %s %s", perm, sec.label()))
-			colGrid.SetData(securableColumnColumns, colRows())
-			colGrid.SetSelectedRow(0)
+			resetGrid(colGrid, securableColumnColumns, colRows(), 0)
 			colHint.Set(fmt.Sprintf("%d columns. Cycling a State here grants on that column only.", len(loadedCols)))
 		})
 	})
@@ -457,7 +455,7 @@ func buildSecurablesMatrix(
 			hint.Clear()
 			securables = append(securables, s)
 		}
-		securableGrid.SetData(securableListColumns, securableRows())
+		redrawGrid(securableGrid, securableListColumns, securableRows())
 		row := slices.IndexFunc(visibleSecurables, func(e securable) bool { return e.key() == s.key() })
 		if row < 0 {
 			// Present, but the filter box is hiding it — selecting row 0 would
@@ -511,7 +509,7 @@ func buildSecurablesMatrix(
 	securableFilterRow.SetDirtyTracked(false)
 	securableFilterRow.SetOnChange(func(term string) {
 		securableFilter = term
-		securableGrid.SetData(securableListColumns, securableRows())
+		redrawGrid(securableGrid, securableListColumns, securableRows())
 		selected = -1
 		securableGrid.SetSelectedRow(0)
 		loadSecurable(0)
@@ -522,8 +520,7 @@ func buildSecurablesMatrix(
 	permFilterRow.SetOnChange(func(term string) {
 		permFilter = term
 		if selectedEdits != nil {
-			permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
-			permGrid.SetSelectedRow(0)
+			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
 		}
 	})
 
@@ -556,9 +553,9 @@ func buildSecurablesMatrix(
 			e.current = e.orig
 		}
 		if selectedEdits != nil {
-			permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
+			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
 		}
-		colGrid.SetData(securableColumnColumns, colRows())
+		resetGrid(colGrid, securableColumnColumns, colRows(), 0)
 	}
 	// Both grids report the page's whole dirty state: the sheet asks each row,
 	// and a column edit made while the middle grid is clean would otherwise

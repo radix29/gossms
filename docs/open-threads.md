@@ -829,9 +829,13 @@ can be created from the tree". Three limits are the design, not a gap:
 
 - ~~**The endpoint dialog's own branch is still only compiler-checked.**~~
   **Driven end to end** 2026-08-22, against ubusql1 (local) and win10cli (peer).
-  `importPeerCertificate` still needs a live `*gosmo.Server` and still has no
-  unit test; what changed is that the whole pipeline has now run for real, on a
-  peer that had nothing — no database master key, no certificate, no endpoint —
+  `importPeerCertificate` ~~still needs a live `*gosmo.Server` and still has no
+  unit test~~ — **covered** 2026-08-28 by `new_endpoint_import_test.go`, which
+  builds its peers over the scripted driver (`newFakeConn` returns a real
+  `*gosmo.Server`) and runs `ensureCertificate` first, so `cert`/`encoded` hold
+  what each instance presents and the exchange runs outside `WithScript` for the
+  first time. What changed before that is that the whole pipeline had run for
+  real, on a peer that had nothing — no database master key, no certificate, no endpoint —
   which is the case ubusql1/ubusql2 could never produce because both were
   already configured. Every phase landed and was verified in the catalogs:
   win10cli got a master key, `win10cli_Cert` with a private key, `ubusql1_Cert`
@@ -931,9 +935,15 @@ the panel, and Force/Unforce Plan are in. What is not, and why:
 - ~~**Tracked Queries does not track.**~~ **Built** 2026-08-27 —
   `internal/config/tracked.go`, `tracked_queries.json` beside `config.json`,
   keyed by server and database. A pinned query that has left the store keeps a
-  row saying so, carrying its id so it can still be unpinned. One known limit,
+  row saying so, carrying its id so it can still be unpinned. ~~One known limit,
   deliberate: the tree's Tracked Queries leaf is cached like every other Detail
-  Browser node, so a pin made in the panel shows there after a refresh.
+  Browser node, so a pin made in the panel shows there after a refresh.~~
+  **Fixed** 2026-08-28: a toggle runs `App.trackedQueriesChanged`, which drops
+  the Detail Browser's cache entry for every Tracked Queries leaf on that server
+  and database — refetching the one on screen — and refreshes any Query Store
+  panel showing that view. Matched by server *address* through
+  `config.SameServer`: the set is keyed by the folded address, and two
+  connections to one instance share it.
 - **No "Configure" button on the panel.** Query Store's own settings are a
   Database Properties page, which is where SSMS puts them too; the folder's
   context menu opens it.
@@ -1019,17 +1029,33 @@ Schema went in 2026-08-21 (see `docs/journal.md`). What is left out is:
 - **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
   wording explains what blocks each one; only Rename comes from the shared
   table. Availability groups likewise.
-- **Multi-select delete belongs in the Object Explorer Details pane, and is
-  not built there yet.** Settled 2026-08-27: this is a decision about *where*,
-  not a refusal. `controls.TreeView` has a single selection, so SSMS's "Delete
-  Object" dialog listing several objects will never come from the tree —
-  do not propose it there. The Details pane's grid already has block
-  selection, which is the whole reason it is the right host. What it does not
-  have is any write path at all: `DetailBrowser.HandleKey` forwards every key
-  straight to the grid and there is no context menu, so the pane's selection
-  feeds only the clipboard (`HasSelection`/`SelectedText`). Building this means
-  giving the pane its own action route and reusing the existing `objectOps`
-  table and permission gating per selected row, not a new delete path.
+- ~~**Multi-select delete belongs in the Object Explorer Details pane, and is
+  not built there yet.**~~ **Built** 2026-08-28, in the pane and nowhere else —
+  `controls.TreeView` has a single selection, so SSMS's "Delete Object" dialog
+  listing several objects will never come from the tree; do not propose it
+  there. `DataGrid.OnMenuItems` gives the host entries in the grid's own cell
+  menu, and `detail_browser_ops.go` contributes Delete over the block
+  selection, gated per object and running through the same
+  `confirmDeleteObjects` the tree's Delete now calls. See `docs/journal.md`.
+  Two limits are the design: **only schema-scoped objects are deleted as a
+  set** — tables, views, procedures, functions, indexes and the rest — while a
+  database, a login, a server role, a user, a database role or an Always
+  Encrypted key is deleted on its own (`objectOp.solo`, implied by `typed`),
+  because a typed confirmation asks for one object's name and a principal's
+  drop reaches past the object (orphaned users, closed connections) further
+  than one shared warning can describe; and **Rename and Move to Schema stay in
+  the tree**, neither meaning anything applied to a set. The solo rule is the
+  *selection's*: one login selected in the pane still deletes, and the tree's
+  Delete is untouched.
+
+  What the pane can delete is what its loaders identify: the folders that go
+  through `fetchChildObjectsDetail` (users, roles, schemas, indexes,
+  statistics, keys, columns, sequences, synonyms, triggers, functions,
+  partition functions/schemes, the Always Encrypted keys, security policies),
+  plus Tables, Views, Stored Procedures, Logins and Databases. A view whose
+  rows are not objects — Property/Value, a Query Store report, System
+  Databases, a log listing — offers nothing, which is the correct answer
+  rather than a gap.
 - **The server does not say what blocks a column drop.** Verified live
   2026-08-21: `ALTER TABLE DROP COLUMN note failed because one or more objects
   access this column.` — no constraint, index or statistic named, even when a
@@ -1384,33 +1410,18 @@ these is a known limit of the gate layer, not an oversight.
   `docs/journal.md`, including what the New button had to do to stay usable on a
   mixed job.
 
-## gosmo: Job.deleteStepAt has no callers left
+## ~~gosmo: Job.deleteStepAt has no callers left~~
 
-`ReorderStepsContext` was its only caller and now collects `deleteStepStmt`
-directly into its batch. The method is unexported, so nothing outside the
-package can reach it either — this is not the "no callers in gossms" case the
-never-remove rule covers, it is genuinely uncalled code.
+**Closed** 2026-08-28, by giving it the caller it should always have had rather
+than by deciding whether to delete it. `JobStep.DeleteContext` built the same
+`sp_delete_jobstep` text inline and predates `deleteStepStmt`; it is now
+`return s.job.deleteStepAt(ctx, s.StepID)`, so one function renders that
+procedure call for every path that deletes a step — the method, the
+number-only form, and `ReorderStepsContext`'s batch through `deleteStepStmt`.
+The statement and the error text are unchanged.
 
-Kept and annotated rather than deleted, because removal is the author's call.
-Note that `JobStep.DeleteContext` builds the same `sp_delete_jobstep` text
-inline and predates `deleteStepStmt`; if `deleteStepAt` goes, that duplication
-is worth folding at the same time.
-
-## Panel toolbars other than Query Store's still drop buttons silently
-
-`layoutToolButtonsOverflow` (`panel_toolbar.go`, added 2026-08-28) collapses the
-buttons a toolbar row is too narrow to draw behind a "More ▾" cell, so none is
-left unreachable. **Only the Query Store panel uses it.** Activity Monitor and
-the Log File Viewer still call `layoutToolButtons`, which gives an overflowing
-button a zero rect — neither painted nor hit-tested.
-
-Whether either actually overflows at realistic widths was not measured; Query
-Store's did badly (the action row wanted 119 columns of a pane that gets 70% of
-the terminal, so Compare Plans was unreachable below a 170-column terminal). The
-work is to measure both rows the way `TestNoToolbarButtonIsUnreachableAtAnyWidth`
-does and switch them over if they overflow — the helper and its tests already
-exist, and neither panel's buttons have key bindings either.
-
-Deliberately not done in the same pass: `layoutToolButtons` is shared, and
-changing its behaviour for all three panels at once is the kind of blast radius
-CLAUDE.md's DataGrid note warns about.
+`TestEveryStepDeleteRendersTheSameCall` (gosmo `agent_job_test.go`) asserts the
+three agree, alongside tests pinning the step number and the escaping of the job
+name. Verified live against win10cli through gosmo itself: step 2 of a
+throwaway three-step job deleted, msdb left holding steps 1 and 2 ("one",
+"three").

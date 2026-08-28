@@ -107,6 +107,13 @@ func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 // into Connect, so a set pinned as HOST\SQL2022 must come back for host\sql2022.
 func serverKey(server string) string { return strings.ToLower(strings.TrimSpace(server)) }
 
+// SameServer reports whether two addresses name the same instance for
+// tracked-query purposes. Exported so a caller deciding which views a toggle
+// made stale asks the same question the sets are keyed by, rather than
+// comparing the two strings itself and missing HOST\SQL2022 against
+// host\sql2022.
+func SameServer(a, b string) bool { return serverKey(a) == serverKey(b) }
+
 // set stores ids for one database, sorted and de-duplicated, or drops the entry
 // when the list is empty — an empty set and no set are the same thing, and
 // leaving the empty one behind grows the file with every database ever visited.

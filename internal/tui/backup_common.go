@@ -179,8 +179,13 @@ func yesNo(b bool) string {
 // sqlStringLiteral renders s as a T-SQL N'...' literal, doubling embedded
 // single quotes — the one escaping rule that matters for a plain
 // identifier-shaped value like a database name.
+//
+// The quoting itself is gosmo.QuoteLiteral, which is the driver's own
+// TSQLQuoter; only the N prefix is added here, since QuoteLiteral deliberately
+// does not emit one. Hand-rolling the doubling is what this used to do, and
+// there is no reason for two implementations of it across the two repos.
 func sqlStringLiteral(s string) string {
-	return "N'" + strings.ReplaceAll(s, "'", "''") + "'"
+	return "N" + gosmo.QuoteLiteral(s)
 }
 
 // backupHistoryQuery returns the msdb query behind "View Backup History"

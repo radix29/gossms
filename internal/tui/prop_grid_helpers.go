@@ -181,6 +181,25 @@ func redrawGrid(grid *controls.DataGrid, headers []string, rows [][]string) {
 	grid.SetDataPreservingView(headers, rows)
 }
 
+// resetGrid is redrawGrid for a change that alters the row *set* — an Add, a
+// Remove, a Revert — where the caller has a row it wants selected afterwards
+// and the old cursor no longer means anything.
+//
+// It exists because SetData is not the right half of that pair either:
+// SetSource clears colWidthOverride along with the cursor, so an Add threw away
+// a column the user had dragged wider. The cursor being set explicitly hid
+// that, which is why the seventeen sites that hand-rolled SetData +
+// SetSelectedRow never showed the GridRow keyboard trap redrawGrid documents —
+// only the widths were lost.
+//
+// The scroll is restored and then moved by SetSelectedRow's own ensureVisible,
+// so appending a row scrolls just far enough to show it rather than jumping the
+// list from zero.
+func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row int) {
+	grid.SetDataPreservingView(headers, rows)
+	grid.SetSelectedRow(row)
+}
+
 // compatLevelItems is the Compatibility level dropdown's base list, from the
 // oldest level SQL Server still accepts to the newest gosmo names. Don't use it
 // directly — a server can report a level outside it in either direction, so

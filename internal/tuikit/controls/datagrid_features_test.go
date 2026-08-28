@@ -471,3 +471,57 @@ func TestDataGridOnShowValueClaimsCell(t *testing.T) {
 		t.Errorf("viewer text = %q, want %q", got, "[ ]")
 	}
 }
+
+// TestHostMenuItemsJoinTheCellMenu. A host with actions of its own — the
+// Object Explorer Details pane's Delete over the selected rows — contributes
+// them through OnMenuItems, and they must arrive in the same menu the built-in
+// entries are in, below a divider, on both the mouse and the keyboard route.
+// A second menu of the host's own would be drawn outside the grid's overlay and
+// would fight the grid's for every keystroke.
+func TestHostMenuItemsJoinTheCellMenu(t *testing.T) {
+	asked := 0
+	g := newCellCursorGrid()
+	g.OnMenuItems = func() []MenuItem {
+		asked++
+		return []MenuItem{{Label: "Delete..."}}
+	}
+
+	x := g.colWidths[0] + 2
+	y := g.rect.Y + 2 + 1
+	g.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button2, tcell.ModNone))
+
+	if len(g.ctxMenu.items) != 3 {
+		t.Fatalf("menu items = %+v, want Show Value, a divider and the host's entry", g.ctxMenu.items)
+	}
+	if g.ctxMenu.items[0].Label != showValueMenuItem {
+		t.Errorf("first item = %q, want the built-in %q still first", g.ctxMenu.items[0].Label, showValueMenuItem)
+	}
+	if !g.ctxMenu.items[1].Divider {
+		t.Error("the host's entries are not separated from the built-in ones")
+	}
+	if g.ctxMenu.items[2].Label != "Delete..." {
+		t.Errorf("last item = %q, want the host's entry", g.ctxMenu.items[2].Label)
+	}
+
+	// Asked again on the next opening, not cached: the entry describes the
+	// selection, and the selection changes between openings.
+	g.ctxMenu.Hide()
+	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
+	if !g.ctxMenu.Visible() {
+		t.Fatal("Ctrl+Space did not open the menu")
+	}
+	if asked != 2 {
+		t.Errorf("OnMenuItems was asked %d times over two openings, want 2", asked)
+	}
+}
+
+// A host that contributes nothing must leave the menu exactly as it was — no
+// trailing divider under the built-in entries.
+func TestAHostContributingNothingLeavesTheMenuAlone(t *testing.T) {
+	g := newCellCursorGrid()
+	g.OnMenuItems = func() []MenuItem { return nil }
+	g.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModCtrl))
+	if len(g.ctxMenu.items) != 1 || g.ctxMenu.items[0].Label != showValueMenuItem {
+		t.Fatalf("menu items = %+v, want the built-in entry alone", g.ctxMenu.items)
+	}
+}

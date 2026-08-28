@@ -57,10 +57,12 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 		})
 
 		rows := make([][]string, len(tables))
+		objs := make([]nodeData, len(tables))
 		for i, t := range tables {
 			rows[i] = []string{t.Schema + "." + t.Name, "…", "…", "…", "…"}
+			objs[i] = nodeData{Type: NodeTable, DBName: data.DBName, Schema: t.Schema, Name: t.Name}
 		}
-		db.postPartial(app, seq, tablesFolderColumns, rows)
+		db.postPartialObjects(app, seq, tablesFolderColumns, rows, objs)
 
 		// Either aggregate failing leaves only its own columns as "N/A" —
 		// they're independent queries and one answering is better than
@@ -97,6 +99,6 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			}
 		})
 
-		db.cacheOnly(app, node, seq, tablesFolderColumns, rows, nil)
+		db.cacheOnlyObjects(app, node, seq, tablesFolderColumns, rows, objs, nil)
 	})
 }

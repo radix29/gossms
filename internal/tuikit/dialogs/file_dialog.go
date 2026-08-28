@@ -71,10 +71,9 @@ type FileDialog struct {
 	// row.
 	listMouseDragging bool
 
-	// dragField is the input field that claimed the current Button1 gesture, nil
-	// between gestures. Motion goes to it wherever the pointer is, so dragging a
-	// selection out of the field's rect keeps extending it.
-	dragField *widgets.InputField
+	// drag is the text-selection gesture a click in pathField or nameField
+	// starts — see FieldGesture for the ordering its three calls depend on.
+	drag FieldGesture
 
 	pathField *widgets.InputField
 	nameField *widgets.InputField
@@ -153,7 +152,7 @@ func (d *FileDialog) start(startPath string, initialFocus int) {
 	d.btnFocus = 0
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
-	d.dragField = nil
+	d.drag.Clear()
 	d.setFocus(initialFocus)
 	// Shown *before* the first listing: that listing is a FileSystem call like
 	// any other, the slowest of the session on a remote filesystem, and showBusy

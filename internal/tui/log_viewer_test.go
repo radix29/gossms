@@ -372,3 +372,131 @@ func TestLogFoldersAreInTheTree(t *testing.T) {
 		t.Errorf(`SQL Server Agent's "Error Logs" child has type %v (present: %v), want NodeAgentErrorLogs`, got, ok)
 	}
 }
+
+// -- the toolbar's overflow ---------------------------------------------------
+
+// lvOverflowFiles is an enumeration whose labels are the ones a real instance
+// produces: the File selector carries the file's date, which is what makes it
+// the row's longest cell — a test run against the bare "Current" label
+// measures a toolbar no user ever sees.
+func lvOverflowFiles() []*gosmo.ErrorLogFile {
+	return []*gosmo.ErrorLogFile{
+		{Number: 0, LastWritten: time.Date(2026, 8, 28, 9, 14, 0, 0, time.UTC)},
+		{Number: 1, LastWritten: time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)},
+	}
+}
+
+// TestNoLogViewerToolbarButtonIsUnreachableAtAnyWidth. A cell that does not fit
+// the row got a zero rect, which is neither painted nor hit-tested — and only
+// Refresh has a key binding (F5), so Search, Recycle and Export simply could
+// not be invoked. The row wants 121 columns with both selectors labelled and
+// the pane gets 70% of the terminal, so that was every ordinary terminal.
+// Every cell must now be drawn or be in the More menu.
+func TestNoLogViewerToolbarButtonIsUnreachableAtAnyWidth(t *testing.T) {
+	sawOverflow := false
+	for w := 20; w <= 200; w++ {
+		lv := newTestLogViewer()
+		lv.files[gosmo.ErrorLogSQLServer] = lvOverflowFiles()
+		lv.SetBounds(0, 0, w, 40)
+		lv.refreshToolLabels()
+		lv.layoutTools()
+
+		inMenu := map[int]bool{}
+		for _, i := range lv.hidden {
+			inMenu[i] = true
+		}
+		for i, tb := range lv.tools {
+			if tb.rect.IsZero() != inMenu[i] {
+				t.Fatalf("width %d: cell %d (%q) is neither drawn nor in the More menu", w, i, tb.label)
+			}
+		}
+		if len(lv.hidden) == 0 {
+			continue
+		}
+		sawOverflow = true
+		if lv.more.rect.IsZero() && w > 12 {
+			t.Fatalf("width %d: the row hides %d cells with no More cell to reach them", w, len(lv.hidden))
+		}
+		if !lv.more.rect.IsZero() && lv.more.rect.Right() > lv.rect.Right() {
+			t.Fatalf("width %d: the More cell runs past the pane", w)
+		}
+		// The hidden set has to be the row's tail, or the menu holds the
+		// middle of the toolbar and the row itself has a gap in it.
+		want := len(lv.tools) - len(lv.hidden)
+		for n, i := range lv.hidden {
+			if i != want+n {
+				t.Fatalf("width %d: hidden cells %v are not the row's tail starting at %d", w, lv.hidden, want)
+			}
+		}
+	}
+	if !sawOverflow {
+		t.Fatal("nothing overflowed at any width, so this proves nothing")
+	}
+}
+
+// TestTheLogViewerOverflowMenuRunsTheHiddenAction end to end: the button is not
+// drawn, the More cell is, and choosing the entry runs the action the button
+// would have.
+func TestTheLogViewerOverflowMenuRunsTheHiddenAction(t *testing.T) {
+	a, lv, _ := newRecycleTestViewer(t)
+	a.logSearchDialog = NewLogSearchDialog(a) // newTestApp builds no dialogs
+	lv.entries = testLogEntries()
+	lv.applyFilter()
+
+	lv.SetBounds(0, 0, 60, 40)
+	lv.refreshToolLabels()
+	lv.layoutTools()
+	if !lv.tools[logToolSearch].rect.IsZero() {
+		t.Fatal("Search still fits at 60 columns, so this proves nothing")
+	}
+	if lv.more.rect.IsZero() {
+		t.Fatal("no More cell to reach it through")
+	}
+
+	// Press the More cell where the mouse would.
+	press := tcell.NewEventMouse(lv.more.rect.X+1, lv.more.rect.Y, tcell.Button1, 0)
+	if !lv.HandleMouse(press) {
+		t.Fatal("the More cell did not take the press")
+	}
+	chooseMenuItem(t, a, "Search...")
+
+	if !a.logSearchDialog.Visible() {
+		t.Error("choosing Search from the More menu did not open the search dialog")
+	}
+}
+
+// TestTheLogViewerOverflowMenuKeepsTheGate. A hidden action must not become
+// reachable in a state its button would have refused, and the withheld entry
+// still has to say why — MenuItem.Note, which shows precisely while disabled.
+func TestTheLogViewerOverflowMenuKeepsTheGate(t *testing.T) {
+	a := newTestApp()
+	sc := probedConn(t, "", nil, []string{"CONTROL SERVER"}, nil, nil)
+	a.connections = append(a.connections, sc)
+
+	lv := newTestLogViewer()
+	lv.app, lv.conn = a, sc
+	lv.SetBounds(0, 0, 60, 40)
+	lv.refreshToolLabels()
+	lv.layoutTools()
+	if !lv.tools[logToolRecycle].rect.IsZero() {
+		t.Fatal("Recycle still fits at 60 columns, so this proves nothing")
+	}
+
+	lv.showOverflowMenu()
+	var found bool
+	for _, it := range a.contextMenu.Items() {
+		if !strings.Contains(it.Label, "Recycle") {
+			continue
+		}
+		found = true
+		if it.Enabled == nil || it.Enabled() {
+			t.Error("Recycle is offered in the More menu to a login refused CONTROL SERVER")
+		}
+		if !strings.Contains(it.Note, "CONTROL SERVER") {
+			t.Errorf("the withheld entry's note is %q, want the missing right named", it.Note)
+		}
+	}
+	if !found {
+		t.Fatalf("Recycle is not in the More menu; it holds %v", a.contextMenu.Items())
+	}
+}

@@ -457,6 +457,33 @@ every key/mouse event while open; and a host with an early `return` in
 returning, or a drag ending outside its bounds leaves the child's latch
 stuck and silently swallowing its next press.
 
+### dialogs.FieldGesture
+
+A dialog with a text field is the second half of that last consequence, and
+it is common enough to have a type. A click inside a `widgets.InputField`
+starts a text-selection drag, and the dialog must (1) end it on the release
+*wherever the pointer landed*, (2) replay motion to the owning field without
+hit-testing, and (3) drop the latch on `Show`. Each of the three has a
+placement that is not local to the call:
+
+- `Release` goes at the very top of `HandleMouse`, **before**
+  `ConsumeOutsideClick` and before any early return for a dialog mode. Both
+  return without looking at the latch, and a release outside the dialog — or
+  one arriving after the dialog switched to a progress view — is precisely
+  the event that strands it.
+- `Replay` goes after `ConsumeOutsideClick` and before any hit-testing.
+  Hit-testing a motion event ends the selection the moment the pointer leaves
+  the field's rect; letting it reach `ButtonClicked` fires a button the moment
+  a selection drag wanders over the button row.
+- `Clear` goes in `Show`, per invariant 4 above.
+
+Seven dialogs had hand-rolled this, each with a comment restating a different
+part of the reasoning; `dialogs.FieldGesture` now holds it once and each
+dialog keeps only its own hit-testing and focus handling, which is where they
+legitimately differ. `TestFileDialogDragOutOfPathFieldKeepsExtending` and the
+five in `internal/tui/dialog_drag_test.go` are the coverage — a mutation to
+any of the three methods fails all of them.
+
 ## Async result delivery: postAndWake
 
 A background goroutine reports its result with `App.postAndWake(fn)`, which

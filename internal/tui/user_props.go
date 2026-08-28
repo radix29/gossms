@@ -26,14 +26,14 @@ import (
 func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
-		pageUserGeneral(sc, dbName, namePtr),
-		pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"),
-		pageUserMembership(sc, dbName, namePtr),
-		pageDatabasePrincipalSecurables(d, sc, dbName, namePtr),
+		withRequires(pageUserGeneral(sc, dbName, namePtr), dbName, rightAlterAnyUser),
+		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"), dbName, rightAlterAnySchema, rightControlDB),
+		withRequires(pageUserMembership(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
 		pagePrincipalEffectivePermissions(d, sc, dbName, namePtr),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
-		}),
+		}), dbName, rightAlterAnyUser),
 	}
 }
 

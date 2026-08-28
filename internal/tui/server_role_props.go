@@ -34,10 +34,10 @@ import (
 func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
-		pageServerRoleGeneral(sc, namePtr),
-		pageServerRoleMembers(sc, namePtr),
-		pageServerRoleOwnedRoles(sc, namePtr),
-		pageServerRoleSecurables(sc, namePtr),
+		withRequires(pageServerRoleGeneral(sc, namePtr), "", rightAlterAnyServerRole),
+		withRequires(pageServerRoleMembers(sc, namePtr), "", rightAlterAnyServerRole),
+		withRequires(pageServerRoleOwnedRoles(sc, namePtr), "", rightAlterAnyServerRole),
+		withRequires(pageServerRoleSecurables(sc, namePtr), "", rightControlServer),
 	}
 }
 

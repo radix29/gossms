@@ -19,13 +19,18 @@ const (
 	confirmDialogBaseH = 9
 )
 
-// ConfirmAnswer is how a three-way ShowConfirmCancel prompt was answered.
+// ConfirmAnswer is how a prompt with more than a Yes and a No was answered.
 type ConfirmAnswer int
 
 const (
 	ConfirmYes ConfirmAnswer = iota
 	ConfirmNo
 	ConfirmCancel
+	// ConfirmScript is a third way out of a question about a write: neither
+	// doing it nor abandoning it, but asking for the statements it would have
+	// run. The caller opens them somewhere the user can read them, and the
+	// question is over — the dialog closes as it does for any other answer.
+	ConfirmScript
 )
 
 // ConfirmDialog shows a question with Yes and No buttons, or — via
@@ -45,15 +50,26 @@ type ConfirmDialog struct {
 	optFocused bool
 
 	// buttons is what the current showing renders and hit-tests, so Draw
-	// and HandleMouse can't disagree about how many there are.
+	// and HandleMouse can't disagree about how many there are, and answers is
+	// what each of them means. The two are parallel rather than the answer
+	// being the button's index: a showing with a Script button has three
+	// buttons and no Cancel, so index 2 is ConfirmScript there and
+	// ConfirmCancel on a three-way prompt.
 	buttons  []string
+	answers  []ConfirmAnswer
+	escape   ConfirmAnswer
 	onAnswer func(ConfirmAnswer)
 }
 
-// twoButtons and threeButtons are the two button sets a showing can use.
+// The button sets a showing can use, each with the answers its buttons mean.
 var (
-	twoButtons   = []string{"Yes", "No"}
-	threeButtons = []string{"Yes", "No", "Cancel"}
+	twoButtons    = []string{"Yes", "No"}
+	threeButtons  = []string{"Yes", "No", "Cancel"}
+	scriptButtons = []string{"Yes", "No", "Script"}
+
+	twoAnswers    = []ConfirmAnswer{ConfirmYes, ConfirmNo}
+	threeAnswers  = []ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmCancel}
+	scriptAnswers = []ConfirmAnswer{ConfirmYes, ConfirmNo, ConfirmScript}
 )
 
 // NewConfirmDialog creates a ConfirmDialog.
@@ -73,7 +89,7 @@ func NewConfirmDialog(s tcell.Screen) *ConfirmDialog {
 // instead) when it doesn't — see fitMessage.
 func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func(bool)) {
 	d.option = nil
-	d.show(title, message, twoButtons, func(a ConfirmAnswer) {
+	d.show(title, message, twoButtons, twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
 		onConfirm(a == ConfirmYes)
 	})
 }
@@ -93,7 +109,7 @@ func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, in
 	box.SetChecked(initial)
 	d.option = box
 	d.setOptFocused(false)
-	d.show(title, message, twoButtons, func(a ConfirmAnswer) {
+	d.show(title, message, twoButtons, twoAnswers, ConfirmNo, func(a ConfirmAnswer) {
 		onConfirm(a == ConfirmYes, box.Checked())
 	})
 }
@@ -104,14 +120,41 @@ func (d *ConfirmDialog) ShowConfirmOption(title, message, optionLabel string, in
 // either, and the user needs a way to back out of having asked at all.
 func (d *ConfirmDialog) ShowConfirmCancel(title, message string, onAnswer func(ConfirmAnswer)) {
 	d.option = nil
-	d.show(title, message, threeButtons, onAnswer)
+	d.show(title, message, threeButtons, threeAnswers, ConfirmCancel, onAnswer)
 }
 
-func (d *ConfirmDialog) show(title, message string, buttons []string, onAnswer func(ConfirmAnswer)) {
+// ShowConfirmScript is ShowConfirm with a third button that answers
+// ConfirmScript — for a question about a write the user may want to read as SQL
+// instead of running. Escape still answers No: Script commits to opening a query
+// window, so it must be asked for.
+//
+// optionLabel adds the ShowConfirmOption checkbox when it isn't empty, and the
+// answer carries its state for the same reason the option form does — the
+// checkbox changes the statements, so a script that ignored it would not be the
+// script the Yes would have run.
+func (d *ConfirmDialog) ShowConfirmScript(title, message, optionLabel string, initial bool, onAnswer func(a ConfirmAnswer, checked bool)) {
+	d.option = nil
+	checked := func() bool { return false }
+	if optionLabel != "" {
+		box := widgets.NewCheckBox(optionLabel)
+		box.SetChecked(initial)
+		d.option = box
+		checked = box.Checked
+	}
+	d.setOptFocused(false)
+	d.show(title, message, scriptButtons, scriptAnswers, ConfirmNo, func(a ConfirmAnswer) {
+		onAnswer(a, checked())
+	})
+}
+
+func (d *ConfirmDialog) show(title, message string, buttons []string, answers []ConfirmAnswer,
+	escape ConfirmAnswer, onAnswer func(ConfirmAnswer)) {
 	d.SetTitle(title)
 	d.message = message
 	d.btnFocus = 0
 	d.buttons = buttons
+	d.answers = answers
+	d.escape = escape
 	d.onAnswer = onAnswer
 	w, h, lines := d.fitMessage(message, confirmDialogMinW, confirmDialogBaseH)
 	d.msgLines = lines
@@ -157,9 +200,9 @@ func (d *ConfirmDialog) Draw(s tcell.Screen) {
 	d.DrawButtons(s, d.buttons, d.btnFocus)
 }
 
-// HandleKey handles keyboard events. Escape answers Cancel on a three-way
-// prompt and No on a two-button one — the closest thing to "I didn't mean
-// to ask" each button set has.
+// HandleKey handles keyboard events. Escape answers whatever the showing named
+// as its way out — Cancel on a three-way prompt, No everywhere else, the closest
+// thing to "I didn't mean to ask" each button set has.
 func (d *ConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.visible {
 		return false
@@ -174,9 +217,9 @@ func (d *ConfirmDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
-		d.finish(ConfirmAnswer(n - 1))
+		d.finish(d.escape)
 	case tcell.KeyEnter:
-		d.finish(ConfirmAnswer(d.btnFocus))
+		d.finish(d.answerAt(d.btnFocus))
 	case tcell.KeyTab, tcell.KeyRight:
 		d.focusNext(n, 1)
 	case tcell.KeyLeft, tcell.KeyBacktab:
@@ -238,9 +281,17 @@ func (d *ConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttons); i >= 0 {
-		d.finish(ConfirmAnswer(i))
+		d.finish(d.answerAt(i))
 	}
 	return true
+}
+
+// answerAt is what the button at index i answers.
+func (d *ConfirmDialog) answerAt(i int) ConfirmAnswer {
+	if i < 0 || i >= len(d.answers) {
+		return d.escape
+	}
+	return d.answers[i]
 }
 
 // finish hides the dialog and reports answer. The handler is read and

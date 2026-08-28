@@ -219,6 +219,11 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 }
 
 func (a *App) handleMouse(ev *tcell.EventMouse) {
+	// As handleKey does, and before anything routes or consumes the event: what
+	// the terminal delivered is the question this dialog exists to answer.
+	if a.keyDiagDialog.Visible() {
+		a.keyDiagDialog.RecordMouse(ev)
+	}
 	mx, my := ev.Position()
 	_, h := a.screen.Size()
 

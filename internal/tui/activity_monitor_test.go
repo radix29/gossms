@@ -926,3 +926,104 @@ func TestActivityMonitorLearnsARunReturned(t *testing.T) {
 		t.Error("nothing was reported about why collection stopped")
 	}
 }
+
+// -- the toolbar's overflow ---------------------------------------------------
+
+// TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth. A control that
+// does not fit the row got a zero rect, which is neither painted nor
+// hit-tested — and none of these has a key binding of its own, so on a pane
+// narrower than 47 columns Pause could not be reached at all. Every control
+// must now be drawn or be in the More menu.
+func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
+	sawOverflow := false
+	for tab := amTab(0); tab < amTabCount; tab++ {
+		for w := 20; w <= 120; w++ {
+			am := newTestActivityMonitor(w, 30)
+			am.setTab(tab)
+
+			inMenu := map[int]bool{}
+			for _, i := range am.hidden {
+				inMenu[i] = true
+			}
+			for i, tb := range am.tools {
+				if tb.rect.IsZero() != inMenu[i] {
+					t.Fatalf("tab %d width %d: control %d (%q) is neither drawn nor in the More menu",
+						tab, w, i, tb.label)
+				}
+			}
+			if len(am.hidden) == 0 {
+				continue
+			}
+			sawOverflow = true
+			if am.more.rect.IsZero() && w > 12 {
+				t.Fatalf("tab %d width %d: the row hides %d controls with no More cell to reach them",
+					tab, w, len(am.hidden))
+			}
+			if !am.more.rect.IsZero() && am.more.rect.Right() > am.rect.Right() {
+				t.Fatalf("tab %d width %d: the More cell runs past the pane", tab, w)
+			}
+			// The hidden set has to be the row's tail, or the menu holds the
+			// middle of the toolbar and the row itself has a gap in it.
+			want := len(am.tools) - len(am.hidden)
+			for n, i := range am.hidden {
+				if i != want+n {
+					t.Fatalf("tab %d width %d: hidden controls %v are not the row's tail starting at %d",
+						tab, w, am.hidden, want)
+				}
+			}
+		}
+	}
+	if !sawOverflow {
+		t.Fatal("nothing overflowed at any width, so this proves nothing")
+	}
+}
+
+// TestTheActivityMonitorOverflowMenuRunsTheHiddenControl end to end: Pause is
+// off the row, the More cell is on it, and choosing the entry pauses the feed
+// the button would have.
+func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
+	am := newTestActivityMonitor(40, 30)
+	pause := len(am.tools) - 1
+	if !am.tools[pause].rect.IsZero() {
+		t.Fatal("Pause still fits at 40 columns, so this proves nothing")
+	}
+	if am.more.rect.IsZero() {
+		t.Fatal("no More cell to reach it through")
+	}
+
+	// Press the More cell where the mouse would.
+	press := tcell.NewEventMouse(am.more.rect.X+1, am.more.rect.Y, tcell.Button1, 0)
+	if !am.HandleMouse(press) {
+		t.Fatal("the More cell did not take the press")
+	}
+	chooseMenuItem(t, am.app, "Pause")
+
+	if !am.feed().paused {
+		t.Error("choosing Pause from the More menu did not pause the feed")
+	}
+}
+
+// TestTheActivityMonitorOverflowMenuMarksTheRateInForce. A rate button is drawn
+// selected because that is the only thing saying which of four is in force;
+// collapsed into the menu it has to keep saying so.
+func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
+	am := newTestActivityMonitor(30, 30)
+	am.setRate(2) // "5 s"
+	if len(am.hidden) == 0 {
+		t.Fatal("nothing overflowed at 30 columns, so this proves nothing")
+	}
+	am.showOverflowMenu()
+
+	var found bool
+	for _, it := range am.app.contextMenu.Items() {
+		if strings.Contains(it.Label, "5 s") {
+			found = true
+			if !strings.HasPrefix(it.Label, "• ") {
+				t.Errorf("the rate in force reads %q in the More menu, want it bulleted", it.Label)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the rate in force is not in the More menu; it holds %v", am.app.contextMenu.Items())
+	}
+}

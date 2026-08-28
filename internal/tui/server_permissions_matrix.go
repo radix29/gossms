@@ -174,8 +174,7 @@ func buildPermissionsMatrix(
 		}
 		selected = row
 		selectedEdits = editsFor(visible[row])
-		permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
-		permGrid.SetSelectedRow(0)
+		resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
 		permSection.SetTitle("Explicit permissions for " + visible[row].Name)
 	}
 	principalGrid.OnSelectRow = loadPrincipal
@@ -199,7 +198,7 @@ func buildPermissionsMatrix(
 				visible = append(visible, p)
 			}
 		}
-		principalGrid.SetData([]string{"Name", "Type"}, principalRowsFor())
+		redrawGrid(principalGrid, []string{"Name", "Type"}, principalRowsFor())
 		// The row that was selected is probably not at the same index (or
 		// present at all) in the new list, so re-select from the top rather
 		// than leave the bottom grid describing a principal that scrolled
@@ -214,8 +213,7 @@ func buildPermissionsMatrix(
 	permFilterRow.SetOnChange(func(term string) {
 		permFilter = term
 		if selectedEdits != nil {
-			permGrid.SetData(permissionStateColumns, permRowsFor(selectedEdits))
-			permGrid.SetSelectedRow(0)
+			resetGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits), 0)
 		}
 	})
 
@@ -334,8 +332,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 			filterRow.SetDirtyTracked(false)
 			filterRow.SetOnChange(func(term string) {
 				filter = term
-				grid.SetData(permissionStateColumns, rowsFor())
-				grid.SetSelectedRow(0)
+				resetGrid(grid, permissionStateColumns, rowsFor(), 0)
 			})
 
 			gridRow := propsheet.NewGridRow(grid, 12)

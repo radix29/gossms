@@ -340,6 +340,52 @@ func trackedIDsFor(report queryStoreReport, sc *db.ServerConn, dbName string) []
 	return config.Tracked().IDs(sc.Opts.Server, dbName)
 }
 
+// trackedQueriesChanged is what a pin or unpin has to run: every view showing
+// that database's tracked set on that server is now describing a set that no
+// longer exists.
+//
+// The tree's Tracked Queries leaf is the reason it exists. Its rows come from a
+// Detail Browser fetch cached per node like every other one, so before this the
+// pin reached the file and the panel and nothing else — the leaf went on
+// listing the old set until the user refreshed it, which reads as the pin not
+// having worked. Any Query Store panel on the same database is stale for the
+// same reason, including the one the toggle came from; they are found by server
+// address rather than by connection, because that is what the set is keyed by
+// and two connections to one instance share it.
+func (a *App) trackedQueriesChanged(server, dbName string) {
+	a.detailBrowser.InvalidateWhere(a, func(n *explorerNode) bool {
+		return isTrackedQueriesLeaf(n, server, dbName)
+	})
+	for i := range a.panels.Count() {
+		qs, ok := a.panels.PanelAt(i).(*QueryStorePanel)
+		if !ok || qs.conn == nil || qs.dbName != dbName ||
+			!config.SameServer(qs.conn.Opts.Server, server) {
+			continue
+		}
+		// Only the view whose rows are the set: the six ranking reports read
+		// the whole database and a pin changes nothing about them.
+		if qs.report().honours(qsFilterTracked) {
+			qs.Refresh()
+		}
+	}
+}
+
+// isTrackedQueriesLeaf reports whether a node is the Tracked Queries report
+// leaf for one server and database. By the report's own qsFilterTracked flag
+// rather than by its title, so the two cannot disagree about which view reads
+// the pinned set.
+func isTrackedQueriesLeaf(n *explorerNode, server, dbName string) bool {
+	if n.data.Type != NodeQueryStoreReport || n.data.DBName != dbName {
+		return false
+	}
+	r, ok := queryStoreReportByTitle(n.data.Name)
+	if !ok || !r.honours(qsFilterTracked) {
+		return false
+	}
+	sc := resolveConn(n)
+	return sc != nil && config.SameServer(sc.Opts.Server, server)
+}
+
 // queryStoreOffRows explains a Query Store that is not collecting, and says
 // where it is turned on. Shared by the Detail Browser and the panel.
 func queryStoreOffRows(info *gosmo.QueryStoreInfo) [][]string {

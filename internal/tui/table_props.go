@@ -19,18 +19,19 @@ import (
 // built — each is version-sensitive and needs its own gosmo DDL/query
 // support.
 func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
+	w := objectWriteRights()
 	return []propPage{
 		pageTableGeneral(sc, dbName, schema, name),
 		pageTableColumns(sc, dbName, schema, name),
 		pageTableStorage(sc, dbName, schema, name),
-		pageTableChangeTracking(sc, dbName, schema, name),
-		pageTablePermissions(sc, dbName, schema, name),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequiresOn(pageTableChangeTracking(sc, dbName, schema, name), dbName, schema, name, w...),
+		withRequires(pageTablePermissions(sc, dbName, schema, name), dbName, rightControlDB),
+		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,
 				Level1Type: "TABLE", Level1Name: name,
 			}
-		}),
+		}), dbName, schema, name, w...),
 	}
 }
 

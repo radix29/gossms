@@ -52,14 +52,16 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 
 		dbs := make([]*gosmo.Database, 0, len(all))
 		rows := make([][]string, 0, len(all))
+		objs := make([]nodeData, 0, len(all))
 		for _, d := range all {
 			if d.IsSystem() {
 				continue
 			}
 			dbs = append(dbs, d)
 			rows = append(rows, []string{d.Name(), d.State(), string(d.RecoveryModel()), "…", "…", "…", "…", "…"})
+			objs = append(objs, nodeData{Type: NodeDatabase, DBName: d.Name(), Name: d.Name()})
 		}
-		db.postPartial(app, seq, databasesFolderColumns, rows)
+		db.postPartialObjects(app, seq, databasesFolderColumns, rows, objs)
 
 		// Unlike the Tables folder, these sizes genuinely need one round trip
 		// per database: every figure but the total comes from FILEPROPERTY,
@@ -86,6 +88,6 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 				}
 			}, markFailed)
 
-		db.cacheOnly(app, node, seq, databasesFolderColumns, rows, nil)
+		db.cacheOnlyObjects(app, node, seq, databasesFolderColumns, rows, objs, nil)
 	})
 }

@@ -27,7 +27,7 @@ import (
 
 // agListenerPropPages builds the property pages for one listener.
 func agListenerPropPages(sc *db.ServerConn, agName, dnsName string) []propPage {
-	return []propPage{pageAGListenerGeneral(sc, agName, dnsName)}
+	return []propPage{withRequires(pageAGListenerGeneral(sc, agName, dnsName), "", rightAlterAnyAG)}
 }
 
 // agFindListener reads one listener by name through the group's primary.

@@ -278,9 +278,8 @@ func (d *RestoreDialog) handleFilesMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	// The gesture belongs to whichever field claimed its press — see
-	// HandleMouse's dragField.
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	// HandleMouse's d.drag.
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, restoreFilesButtons); i >= 0 {
@@ -301,8 +300,7 @@ func (d *RestoreDialog) handleFilesMouse(ev *tcell.EventMouse) bool {
 	for _, f := range []*widgets.InputField{d.fDataDir, d.fLogDir} {
 		if f.Enabled() && f.HitTest(mx, my) {
 			d.focusFilesTo(f)
-			f.HandleMouse(ev)
-			d.dragField = f
+			d.drag.Claim(f, ev)
 			return true
 		}
 	}

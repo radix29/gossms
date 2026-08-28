@@ -25,12 +25,13 @@ func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
 	// and commitRename then updates the cell so PropDialog.InvalidateAll's
 	// reload re-fetches under the new name.
 	name := &jobName
+	w := agentWriteRights()
 	return []propPage{
-		pageJobGeneral(sc, name),
-		pageJobSteps(d, sc, name),
-		pageJobSchedules(sc, name),
-		pageJobAlerts(sc, name),
-		pageJobNotifications(sc, name),
+		withRequires(pageJobGeneral(sc, name), "", w...),
+		withRequires(pageJobSteps(d, sc, name), "", w...),
+		withRequires(pageJobSchedules(sc, name), "", w...),
+		withRequires(pageJobAlerts(sc, name), "", w...),
+		withRequires(pageJobNotifications(sc, name), "", w...),
 		pageJobTargets(sc),
 		pageJobHistory(d, sc, name),
 	}

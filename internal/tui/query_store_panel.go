@@ -354,8 +354,8 @@ func (p *QueryStorePanel) SetBounds(x, y, w, h int) {
 // layoutToolRows places both toolbar rows, collapsing whatever does not fit
 // into each row's own "More ▾" menu.
 func (p *QueryStorePanel) layoutToolRows() {
-	p.hiddenSel = layoutToolButtonsOverflow(p.sel, p.selRect, &p.selMore)
-	p.hiddenActs = layoutToolButtonsOverflow(p.acts, p.actRect, &p.actMore)
+	p.hiddenSel, _ = layoutToolButtonsOverflow(p.sel, p.selRect, "", &p.selMore)
+	p.hiddenActs, _ = layoutToolButtonsOverflow(p.acts, p.actRect, "", &p.actMore)
 }
 
 // layoutChildren gives the chart and the two grids their shares of the area
@@ -629,22 +629,10 @@ func (p *QueryStorePanel) popMenuAt(r core.Rect, items []controls.MenuItem) {
 }
 
 // showOverflowMenu pops the buttons a row was too narrow to draw, under its
-// "More ▾" cell. Each entry carries the same gate its button would have — and
-// its reason as the item's Note, which a MenuItem shows precisely while it is
-// disabled, so a withheld action still explains itself the way the dimmed
-// button does.
+// "More ▾" cell — see toolOverflowItems for what each entry carries.
 func (p *QueryStorePanel) showOverflowMenu(at core.Rect, tools []toolButton, hidden []int,
 	disabled func(int) bool, reason func(int) string, run func(int)) {
-	items := make([]controls.MenuItem, 0, len(hidden))
-	for _, i := range hidden {
-		items = append(items, controls.MenuItem{
-			Label:   tools[i].label,
-			Enabled: func() bool { return !disabled(i) },
-			Note:    reason(i),
-			Action:  func() { run(i) },
-		})
-	}
-	p.popMenuAt(at, items)
+	p.popMenuAt(at, toolOverflowItems(tools, hidden, disabled, reason, run))
 }
 
 // qsMenuItems builds a selector's list, marking the entry in force. The
@@ -829,14 +817,14 @@ func (p *QueryStorePanel) toggleTracked() {
 		// The toggle applied in memory even though the file did not take it,
 		// so say both halves: this session behaves as asked, the next does not.
 		p.setStatus(fmt.Sprintf("Query %d %s for this session only — %v", id, verb, err))
-		return
+	} else {
+		p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
 	}
-	p.setStatus(fmt.Sprintf("Query %d %s", id, verb))
-	// The view whose rows just changed is the one to redraw, and only when it
-	// is the one on screen.
-	if p.report().honours(qsFilterTracked) {
-		p.Refresh()
-	}
+	// Every view of this set, not just this panel's: the tree's Tracked Queries
+	// leaf caches its rows and would go on showing the old set. Run on the
+	// failed save too — the in-memory set took the toggle either way, and it is
+	// what every view reads.
+	p.app.trackedQueriesChanged(p.conn.Opts.Server, p.dbName)
 }
 
 // Load runs the current report in the background and applies the result on the
@@ -1225,6 +1213,13 @@ func (p *QueryStorePanel) showPlan() {
 func (p *QueryStorePanel) comparePlans() {
 	plan := p.selectedPlan()
 	if plan == nil {
+		return
+	}
+	// Same check showPlan makes, and for the same reason: Query Store can hold
+	// a plan row whose XML it no longer has, and Parse then reports a document
+	// error where "there is no plan here" is what happened.
+	if plan.QueryPlanXML == "" {
+		p.setStatus(fmt.Sprintf("Query Store holds no plan XML for plan %d", plan.PlanID))
 		return
 	}
 	parsed, err := showplan.Parse([]byte(plan.QueryPlanXML))

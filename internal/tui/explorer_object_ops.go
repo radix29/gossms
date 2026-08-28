@@ -8,6 +8,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/dialogs"
 )
 
 // explorer_object_ops.go is Object Explorer's general Delete and Rename: one
@@ -34,8 +35,17 @@ type objectOp struct {
 	// something beyond removing the object itself.
 	warning string
 	// typed gates the delete behind retyping the object's name, for a drop
-	// whose blast radius is bigger than one object.
+	// whose blast radius is bigger than one object. A typed confirmation asks
+	// for one name, so it implies solo.
 	typed bool
+	// solo keeps the type out of a multi-object delete: it is deleted one at a
+	// time, from either surface. It marks the principals and the database —
+	// objects whose drop is a server-wide or database-wide act with
+	// consequences elsewhere (orphaned users, a login's sessions, every
+	// connection to a database), where the batch confirmation's shared warning
+	// stops being enough and the deliberation is per object. A schema-scoped
+	// object — table, view, procedure, index — is dropped in a set.
+	solo bool
 	// dropOption labels a checkbox on the delete confirmation and dropWithOption
 	// is the drop it feeds. A type setting these sets both and leaves drop nil:
 	// deleteObject picks the path from dropOption, objectOpsMenuItems from either
@@ -244,6 +254,7 @@ var objectOps = map[NodeType]objectOp{
 	NodeLogin: {
 		noun:    "Login",
 		warning: "Database users mapped to it are left orphaned.",
+		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return sc.Server.DropLoginContext(ctx, n.Name)
 		},
@@ -253,6 +264,7 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeServerRole: {
 		noun: "Server Role",
+		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return sc.Server.DropServerRoleContext(ctx, n.Name)
 		},
@@ -266,6 +278,7 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeUser: {
 		noun: "User",
+		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
 			return d.DropUserContext(ctx, n.Name)
@@ -281,6 +294,7 @@ var objectOps = map[NodeType]objectOp{
 	},
 	NodeDatabaseRole: {
 		noun: "Database Role",
+		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
 			return d.DropDatabaseRoleContext(ctx, n.Name)
@@ -381,6 +395,20 @@ func objectOpFor(t NodeType) *objectOp {
 	return nil
 }
 
+// deletedAlone reports whether a type refuses to be deleted as part of a
+// selection. typed implies it: the confirmation asks for one object's name.
+func deletedAlone(op *objectOp) bool {
+	return op.typed || op.solo
+}
+
+// soloDeleteReason is what to tell the user about a type that has to be deleted
+// on its own — the Details pane's menu note and the status line both, so the
+// wording cannot drift between the withheld item and the refused action.
+func soloDeleteReason(op *objectOp, n nodeData) string {
+	return fmt.Sprintf("%s %q has to be deleted on its own — select just that row",
+		op.noun, objectDataName(n))
+}
+
 // objectOpsMenuItems is the Rename/Delete pair a node offers, or nil.
 //
 // A system object offers neither, the same way a node type absent from
@@ -472,82 +500,251 @@ func objectOpRights(t NodeType) []requiredRight {
 // Schema == Name: loadSchemasChildren puts the schema's name in both fields,
 // so "Sales.Sales" would be nonsense — but so would dropping the qualifier
 // from the table Sales.Sales, which a value comparison also matched.
-func objectDisplayName(n *explorerNode) string {
+func objectDisplayName(n *explorerNode) string { return objectDataName(n.data) }
+
+// objectDataName is objectDisplayName for a nodeData on its own — what the
+// Details pane has, holding no node.
+func objectDataName(n nodeData) string {
 	// A column's own Schema/Name are the table's schema and the column's
 	// name, so the qualifier that means anything is the table's.
-	if n.data.Type == NodeColumn {
-		return n.data.Schema + "." + n.data.TableName + "." + n.data.Name
+	if n.Type == NodeColumn {
+		return n.Schema + "." + n.TableName + "." + n.Name
 	}
-	if n.data.Schema != "" && n.data.Type != NodeSchema {
-		return n.data.Schema + "." + n.data.Name
+	if n.Schema != "" && n.Type != NodeSchema {
+		return n.Schema + "." + n.Name
 	}
-	return n.data.Name
+	return n.Name
 }
 
 // deleteObject confirms, drops, and refreshes the parent folder so the node
 // disappears. The parent is refreshed rather than the node itself: the node
 // is gone, and its own refresh would just re-query a dropped object.
+//
+// The drop runs off the UI goroutine but names the object from nodeData, which
+// the UI goroutine writes (applyNodeFilter sets data.Filter). Copying it here
+// is what keeps the two apart — the ops take a nodeData by value for exactly
+// this reason.
 func (a *App) deleteObject(node *explorerNode) {
-	op := objectOpFor(node.data.Type)
-	sc := resolveConn(node)
-	// IsSystem is re-checked here rather than trusted from the menu: this is
-	// the function that issues the DROP, so it is where the guarantee belongs.
-	if op == nil || (op.drop == nil && op.dropWithOption == nil) || node.data.IsSystem || !a.requireConn(sc) {
+	a.confirmDeleteObjects(resolveConn(node), []nodeData{node.data}, func() {
+		refreshExplorerNode(a, node.parent)
+	})
+}
+
+// confirmDeleteObjects is the whole of Delete for one or more objects: the
+// confirmation, the drops, and after() once they are done. Object Explorer
+// reaches it with a single node; the Details pane reaches it with everything
+// the grid's block selection covers.
+//
+// One path, not two. A second copy would be the place a warning, a typed
+// confirmation or the foreign-key option quietly stops applying — the
+// difference between deleting a table from the tree and from the pane must be
+// where the click landed and nothing else.
+func (a *App) confirmDeleteObjects(sc *db.ServerConn, objs []nodeData, after func()) {
+	// IsSystem and the op are re-checked here rather than trusted from the
+	// menu: this is the function that issues the DROP, so it is where the
+	// guarantee belongs.
+	if len(objs) == 0 || !a.requireConn(sc) {
 		return
 	}
-	name := objectDisplayName(node)
-	msg := fmt.Sprintf("Delete %s %q? This cannot be undone.", strings.ToLower(op.noun), name)
-	if op.warning != "" {
-		msg += " " + op.warning
-	}
-	// The drop runs off the UI goroutine but names the object from nodeData,
-	// which the UI goroutine writes (applyNodeFilter sets data.Filter). Copying
-	// it here is what keeps the two apart — the ops take a nodeData by value for
-	// exactly this reason.
-	data := node.data
-	run := func(option bool) {
-		a.safego("deleting an object", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
-			var err error
-			if op.dropWithOption != nil {
-				err = op.dropWithOption(ctx, sc, data, option)
-			} else {
-				err = op.drop(ctx, sc, data)
-			}
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
-					return
-				}
-				a.setStatus(fmt.Sprintf("%s %q deleted", op.noun, name))
-				refreshExplorerNode(a, node.parent)
-			})
-		})
-	}
-	title := "Delete " + op.noun
-	if op.typed {
-		a.confirmTypedDialog.ShowTypedConfirm(title, msg, node.data.Name, func(confirmed bool) {
-			if confirmed {
-				run(false)
-			}
-		})
-		return
-	}
-	if op.dropOption != "" {
-		// Unticked on every showing: the option widens what the drop touches,
-		// so it is asked for each time rather than remembered.
-		a.confirmDialog.ShowConfirmOption(title, msg, op.dropOption, false, func(confirmed, option bool) {
-			if confirmed {
-				run(option)
-			}
-		})
-		return
-	}
-	a.confirmDialog.ShowConfirm(title, msg, func(confirmed bool) {
-		if confirmed {
-			run(false)
+	ops := make([]*objectOp, len(objs))
+	for i, n := range objs {
+		op := objectOpFor(n.Type)
+		if op == nil || (op.drop == nil && op.dropWithOption == nil) || n.IsSystem {
+			return
 		}
+		ops[i] = op
+	}
+	run := func(option bool) { a.runDeletes(sc, objs, ops, option, after) }
+	// answered routes the two buttons that do something. Script is neither a Yes
+	// nor a No: nothing is dropped, and the statements the Yes would have run
+	// open in a query window for the user to read, edit or run themselves.
+	answered := func(ans dialogs.ConfirmAnswer, option bool) {
+		switch ans {
+		case dialogs.ConfirmYes:
+			run(option)
+		case dialogs.ConfirmScript:
+			a.scriptDeletes(sc, objs, ops, option)
+		}
+	}
+
+	if len(objs) == 1 {
+		op, n := ops[0], objs[0]
+		name := objectDataName(n)
+		msg := fmt.Sprintf("Delete %s %q? This cannot be undone.", strings.ToLower(op.noun), name)
+		if op.warning != "" {
+			msg += " " + op.warning
+		}
+		title := "Delete " + op.noun
+		if op.typed {
+			a.confirmTypedDialog.ShowTypedConfirmScript(title, msg, n.Name, func(ans dialogs.ConfirmAnswer) {
+				answered(ans, false)
+			})
+			return
+		}
+		// The checkbox is unticked on every showing: the option widens what the
+		// drop touches, so it is asked for each time rather than remembered. An
+		// op without one passes "", which shows the question with no checkbox.
+		a.confirmDialog.ShowConfirmScript(title, msg, op.dropOption, false, answered)
+		return
+	}
+
+	// Some types are deleted one at a time, from either surface: a typed
+	// confirmation asks for one object's name and cannot stand for a selection,
+	// and a principal or a database is dropped with a deliberation the batch
+	// confirmation's one shared warning cannot carry.
+	for i, op := range ops {
+		if deletedAlone(op) {
+			a.setStatus(soloDeleteReason(op, objs[i]))
+			return
+		}
+	}
+	// One flowing sentence: ConfirmDialog wraps and centres its message, so a
+	// list laid out with newlines arrives as prose with the names run into it.
+	msg := fmt.Sprintf("Delete these %d objects — %s? This cannot be undone.",
+		len(objs), deleteListText(objs))
+	if w := sharedDeleteWarning(ops); w != "" {
+		// The op's warning is written about one object ("All of its data is
+		// deleted with it"), so it is introduced rather than repeated as-is.
+		msg += " Each object: " + w
+	}
+	// The checkbox is offered only when every selected object answers to it,
+	// since one tick drives every drop in the batch.
+	a.confirmDialog.ShowConfirmScript("Delete Objects", msg, sharedDropOption(ops), false, answered)
+}
+
+// scriptDeletes opens the DROP statements this delete would have run in a new
+// query window, without running any of them: the same drop closures, under
+// gosmo.WithScript, so what the user reads is what the Yes would have executed
+// rather than a second rendering built here that could drift from it.
+//
+// The option is passed through for the same reason it reaches run — the
+// checkbox changes the statement, and a script that ignored it would answer a
+// different question from the one on screen.
+func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool) {
+	a.safego("scripting deletes", func() {
+		ctx, cancel := serverWriteContext(sc)
+		defer cancel()
+		scriptCtx, script := gosmo.WithScript(ctx)
+		var err error
+		for i, n := range objs {
+			if ops[i].dropWithOption != nil {
+				err = ops[i].dropWithOption(scriptCtx, sc, n, option)
+			} else {
+				err = ops[i].drop(scriptCtx, sc, n)
+			}
+			if err != nil {
+				break
+			}
+		}
+		text := strings.Join(script.Statements, "\n\n")
+		// The database the first object lives in: a selection comes from one
+		// folder, and a server-level principal's is "", which opens the panel on
+		// the connection's own default.
+		database := objs[0].DBName
+		a.postAndWake(func() {
+			switch {
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Script failed: %v", withPermissionAdvice(err)))
+			case text == "":
+				a.setStatus("Nothing to script.")
+			default:
+				a.openQueryWithText(sc, database, text)
+			}
+		})
+	})
+}
+
+// maxDeleteListNames caps how many object names the multi-object confirmation
+// spells out; the rest are counted. A selection can be the whole folder, and a
+// dialog listing four hundred names says less than one listing ten and a count.
+const maxDeleteListNames = 10
+
+// deleteListText is the object list the multi-object confirmation shows.
+func deleteListText(objs []nodeData) string {
+	var b strings.Builder
+	for i, n := range objs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if i == maxDeleteListNames {
+			fmt.Fprintf(&b, "and %d more", len(objs)-i)
+			break
+		}
+		b.WriteString(objectDataName(n))
+	}
+	return b.String()
+}
+
+// sharedDropOption is the drop checkbox the whole selection answers to, or ""
+// when they do not all carry the same one.
+func sharedDropOption(ops []*objectOp) string {
+	opt := ops[0].dropOption
+	for _, op := range ops[1:] {
+		if op.dropOption != opt {
+			return ""
+		}
+	}
+	return opt
+}
+
+// sharedDeleteWarning is the extra sentence the confirmation carries when every
+// selected object has the same one — "All of its data is deleted with it." for
+// a set of tables. A mixed selection drops it rather than showing a warning
+// that is true of only some of what is about to go.
+func sharedDeleteWarning(ops []*objectOp) string {
+	w := ops[0].warning
+	for _, op := range ops[1:] {
+		if op.warning != w {
+			return ""
+		}
+	}
+	return w
+}
+
+// runDeletes drops each object in turn on one background goroutine and reports
+// what happened. Sequential rather than concurrent: DDL, and a batch that half
+// succeeded has to say which half — a fan-out would report whichever error
+// arrived first as if it were the only one.
+func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool, after func()) {
+	a.safego("deleting objects", func() {
+		ctx, cancel := serverWriteContext(sc)
+		defer cancel()
+		done := 0
+		var failed nodeData
+		var failedErr error
+		for i, n := range objs {
+			var err error
+			if ops[i].dropWithOption != nil {
+				err = ops[i].dropWithOption(ctx, sc, n, option)
+			} else {
+				err = ops[i].drop(ctx, sc, n)
+			}
+			if err != nil {
+				failed, failedErr = n, err
+				break
+			}
+			done++
+		}
+		a.postAndWake(func() {
+			switch {
+			case failedErr != nil && done == 0 && len(objs) == 1:
+				a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(failedErr)))
+			case failedErr != nil:
+				// The count first: the drops already ran, and which of them
+				// landed is what the user has to know before retrying.
+				a.setStatus(fmt.Sprintf("Deleted %d of %d — %s failed: %v",
+					done, len(objs), objectDataName(failed), withPermissionAdvice(failedErr)))
+			case len(objs) == 1:
+				a.setStatus(fmt.Sprintf("%s %q deleted", ops[0].noun, objectDataName(objs[0])))
+			default:
+				a.setStatus(fmt.Sprintf("Deleted %d objects", done))
+			}
+			// Even a partial batch refreshes: some objects are gone, and a
+			// folder still listing them is worse than the failure itself.
+			if done > 0 || failedErr == nil {
+				after()
+			}
+		})
 	})
 }
 

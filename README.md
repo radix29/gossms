@@ -30,7 +30,14 @@ required.
   UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
   clipboard; an index adds REBUILD, REORGANIZE and UPDATE STATISTICS, and a
   statistics object its own UPDATE STATISTICS. Delete a column, drop a table
-  with its foreign keys, move an object to another schema, or rename one.
+  with its foreign keys, move an object to another schema, or rename one. In
+  Object Explorer Details, Shift+click (or Alt+click, for terminals that keep
+  Shift for themselves) extends the selection and Ctrl+click picks rows out one
+  at a time, over several schema-scoped objects — tables, views, procedures,
+  indexes — which are then deleted in one confirmation; databases, logins and
+  roles are always deleted one at a time. Every delete confirmation has a
+  **Script** button that opens the DROP statements in a query window instead of
+  running them.
   Filter any folder by name, schema, or creation date — the filter is pushed
   into the server's own query where it can be expressed exactly. Drag a node
   into the editor to insert its name.

@@ -193,6 +193,10 @@ func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 			lv.runTool(i)
 			return true
 		}
+		if lv.more.rect.Contains(mx, my) {
+			lv.showOverflowMenu()
+			return true
+		}
 		return true
 	}
 	if ev.Buttons() == tcell.Button1 || ev.Buttons() == tcell.Button2 {

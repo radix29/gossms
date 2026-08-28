@@ -45,6 +45,16 @@ func (lv *LogViewer) drawToolbar(s tcell.Screen) {
 		core.FillRect(s, t.rect, ' ', style)
 		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
 	}
+	// The stand-in for whatever did not fit. Dimmed only while the whole row
+	// is: what it holds is gated item by item once the menu is open.
+	if !lv.more.rect.IsZero() {
+		style := theme.StyleTooltip()
+		if !lv.toolsEnabled() {
+			style = style.Foreground(pal.TextDim)
+		}
+		core.FillRect(s, lv.more.rect, ' ', style)
+		core.DrawText(s, lv.more.rect.X+1, lv.more.rect.Y, style, lv.more.label)
+	}
 	if lv.filterVisible() {
 		lv.filter.Draw(s)
 	}

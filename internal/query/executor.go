@@ -601,7 +601,8 @@ func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	return append(dst, g.UUID.String()...)
 }
 
-// formatGUID is appendGUID's standalone form.
+// formatGUID is appendGUID's standalone form, kept for the tests that assert
+// on rendered text rather than on an append buffer.
 func formatGUID(g mssql.NullUniqueIdentifier) string {
 	return string(appendGUID(nil, g))
 }
@@ -721,7 +722,8 @@ func appendFloat(dst []byte, f float64, bits int) []byte {
 	return strconv.AppendFloat(dst, f, 'f', -1, bits)
 }
 
-// formatFloat is appendFloat's standalone form.
+// formatFloat is appendFloat's standalone form, kept for the tests that assert
+// on rendered text rather than on an append buffer.
 func formatFloat(f float64, bits int) string {
 	return string(appendFloat(nil, f, bits))
 }

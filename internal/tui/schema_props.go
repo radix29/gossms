@@ -21,11 +21,11 @@ import (
 // sys.schemas has no create_date/modify_date columns.
 func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 	return []propPage{
-		pageSchemaGeneral(sc, dbName, schemaName),
-		pageSchemaPermissions(sc, dbName, schemaName),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequires(pageSchemaGeneral(sc, dbName, schemaName), dbName, rightAlterAnySchema, rightControlDB),
+		withRequires(pageSchemaPermissions(sc, dbName, schemaName), dbName, rightControlDB),
+		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schemaName}
-		}),
+		}), dbName, rightAlterAnySchema, rightControlDB),
 	}
 }
 

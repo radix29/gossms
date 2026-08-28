@@ -149,10 +149,7 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// Terminate a text-selection drag in the field that claimed the
 		// press even if focus has since moved elsewhere; the switch above
 		// only covers the still-focused case.
-		if d.dragField != nil {
-			d.dragField.HandleMouse(ev)
-			d.dragField = nil
-		}
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -164,8 +161,7 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// replayed there without hit-testing — ahead of ButtonClicked below,
 	// which would otherwise fire a button the moment a selection drag
 	// wandered over the button row.
-	if d.dragField != nil && ev.Buttons() == tcell.Button1 {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttonLabels()); i >= 0 {
@@ -179,14 +175,12 @@ func (d *FileDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	case tcell.Button1:
 		if d.pathField.HitTest(mx, my) {
 			d.setFocus(ffPath)
-			d.pathField.HandleMouse(ev)
-			d.dragField = d.pathField
+			d.drag.Claim(d.pathField, ev)
 			return true
 		}
 		if d.nameField.HitTest(mx, my) {
 			d.setFocus(ffName)
-			d.nameField.HandleMouse(ev)
-			d.dragField = d.nameField
+			d.drag.Claim(d.nameField, ev)
 			return true
 		}
 		lr := d.listRect()

@@ -28,13 +28,13 @@ func statisticPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table,
 		pageStatisticDetails(d, sc, dbName, schema, table, name),
 		pageStatisticHistogram(sc, dbName, schema, table, name),
 		pageStatisticDensityVector(sc, dbName, schema, table, name),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "STATISTICS", Level2Name: name,
 			}
-		}),
+		}), dbName, schema, table, objectWriteRights()...),
 	}
 }
 

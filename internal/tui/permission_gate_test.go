@@ -314,6 +314,22 @@ func TestRequiresTextFitsTheReadOnlyBanner(t *testing.T) {
 			t.Errorf("banner for %v is %d columns, want <= 120", rights, n)
 		}
 	}
+
+	// The two sets that cannot fit one line, and are allowed not to. A page
+	// gated on either names five alternatives or spells out two msdb
+	// memberships, and dropping any of them would send a reader after a
+	// permission that is not the one they can actually be granted. The note
+	// wraps — objectWriteRights() takes three lines in Table Properties'
+	// ~83-column form, verified live — so the cost is vertical space. The cap
+	// is here because propsheet's Shrinkable clips a note's *trailing* lines
+	// when the form is tight, and those are the lines carrying the permission
+	// names; the first line, which says the page is read-only at all, always
+	// survives.
+	for _, rights := range [][]requiredRight{objectWriteRights(), agentWriteRights()} {
+		if n := len(readOnlyBannerPrefix + requiresText(rights...)); n > 200 {
+			t.Errorf("banner for %v is %d columns, want <= 200", rights, n)
+		}
+	}
 }
 
 // -- the read-only Properties page -------------------------------------------
@@ -862,5 +878,57 @@ func TestTheObjectOpMenuItemsFollowTheObjectGrant(t *testing.T) {
 		if other[label] {
 			t.Errorf("%s stayed enabled on an object with no grant of its own", label)
 		}
+	}
+}
+
+// TestAnObjectScopedPageAnswersForTheObject. Before the page's read-only check
+// and the menus' gate shared one rule (rightsAllow), this check knew only about
+// database- and server-scope rights: a principal granted ALTER on the one table
+// reads 0 for every wider permission there is, so every right in
+// objectWriteRights() denied and the page they can write opened with a banner
+// telling them they cannot.
+func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
+	ctx := context.Background()
+	page := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Patient", objectWriteRights()...)
+
+	denied := []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}
+	granted, _ := newFakeConn(t, capabilityResponsesWithObjects(true, denied, []string{"dbo"}, []string{"dbo.Patient"}, nil)...)
+	granted.ProbeCapabilities()
+	if got := pageReadOnlyReason(ctx, granted, page); got != "" {
+		t.Errorf("reason = %q though the login holds ALTER on dbo.Patient", got)
+	}
+
+	// The same login on a table it was not granted: the object map is sparse,
+	// so silence there must not be read as a grant.
+	other := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Visit", objectWriteRights()...)
+	if got := pageReadOnlyReason(ctx, granted, other); got == "" {
+		t.Error("a page on a table with no grant anywhere is still writable")
+	}
+
+	elsewhere, _ := newFakeConn(t, capabilityResponsesWithObjects(true, denied, []string{"dbo"}, nil, []string{"dbo.Patient"})...)
+	elsewhere.ProbeCapabilities()
+	if got := pageReadOnlyReason(ctx, elsewhere, page); got == "" {
+		t.Error("a page on an object the login is denied ALTER on is still writable")
+	}
+}
+
+// TestAnAgentPageAnswersForMsdbMembership. SQL Agent's rights are memberships
+// of an msdb role, which HAS_PERMS_BY_NAME cannot be asked about — read as a
+// server permission they come back unknown, and the banner never appears for
+// anyone.
+func TestAnAgentPageAnswersForMsdbMembership(t *testing.T) {
+	ctx := context.Background()
+	page := withRequires(propPage{title: "General"}, "", agentWriteRights()...)
+
+	member, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"SQLAgentUserRole"}, []string{"db_owner"})...)
+	member.ProbeCapabilities()
+	if got := pageReadOnlyReason(ctx, member, page); got != "" {
+		t.Errorf("reason = %q for a member of SQLAgentUserRole", got)
+	}
+
+	outsider, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, nil, []string{"SQLAgentUserRole", "db_owner"})...)
+	outsider.ProbeCapabilities()
+	if got := pageReadOnlyReason(ctx, outsider, page); got == "" {
+		t.Error("an Agent page is writable for a login in neither msdb role and denied CONTROL SERVER")
 	}
 }

@@ -24,18 +24,19 @@ import (
 // reload re-fetches under the new name.
 func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	namePtr := &name
+	w := objectWriteRights()
 	return []propPage{
-		pageKeyGeneral(sc, dbName, schema, table, namePtr),
-		pageKeyOptions(sc, dbName, schema, table, namePtr),
+		withRequiresOn(pageKeyGeneral(sc, dbName, schema, table, namePtr), dbName, schema, table, w...),
+		withRequiresOn(pageKeyOptions(sc, dbName, schema, table, namePtr), dbName, schema, table, w...),
 		pageIndexStorage(sc, dbName, schema, table, namePtr),
 		pageIndexFragmentation(d, sc, dbName, schema, table, namePtr),
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "INDEX", Level2Name: *namePtr,
 			}
-		}),
+		}), dbName, schema, table, w...),
 	}
 }
 

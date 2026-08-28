@@ -17,6 +17,10 @@ func newTestApp() *App {
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
 	a.confirmDialog = dialogs.NewConfirmDialog(nil)
+	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(nil)
+	// handleKey and handleMouse both ask it whether it is open, as App.buildUI
+	// guarantees it exists.
+	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
 	a.promptDialog = dialogs.NewPromptDialog(nil)
 	// As App.buildUI does: a panel that pops a selector menu reaches this, and
 	// a nil one crashes rather than failing the assertion the test came for.

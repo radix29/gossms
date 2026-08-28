@@ -51,6 +51,12 @@ type DetailBrowser struct {
 	// *explorerNode values, which miss the cache. Final results only.
 	cache map[*explorerNode]*detailResult
 
+	// rowObjs is the object each grid row describes, parallel to the rows on
+	// screen — see detailResult.objs. Empty for a view whose rows are not
+	// objects, and reset by every applyResult/postPartial so it can never
+	// describe the previous node's rows.
+	rowObjs []nodeData
+
 	// pending records, per node, the seq of the most recent fetch dispatched for
 	// it — set by fetch, checked by postFinal/cacheOnly before writing cache.
 	// Reselecting a node mid-fetch dispatches a second fetch for the same
@@ -62,6 +68,13 @@ type DetailBrowser struct {
 type detailResult struct {
 	cols []string
 	rows [][]string
+	// objs identifies the object each row describes, for the views whose rows
+	// are objects — the handle the pane's Delete needs, since a row is
+	// [][]string shared with every other node type and its Name cell is a
+	// rendering (a decorated label, or a schema-qualified name that a parse
+	// could get subtly wrong). nil everywhere else, and Delete is then not
+	// offered at all.
+	objs []nodeData
 	err  error
 }
 
@@ -98,8 +111,14 @@ func (db *DetailBrowser) SetBounds(x, y, w, h int) {
 	}
 }
 
-// SetActive marks this panel focused (affects title bar colour).
-func (db *DetailBrowser) SetActive(v bool) { db.active = v }
+// SetActive marks this panel focused: the title bar's colour, and the grid's
+// own, so the selected rows are drawn as a selection rather than in the
+// alternating-row grey an inactive grid falls back to. That matters here now
+// that the selection means something — it is what Delete acts on.
+func (db *DetailBrowser) SetActive(v bool) {
+	db.active = v
+	db.grid.Focus(v)
+}
 
 // Closable reports false: Object Explorer Details is a fixed, always-present
 // panel, so the tab bar's [x] and Ctrl+W can't close it.
@@ -145,16 +164,32 @@ func (db *DetailBrowser) showEmpty() {
 	db.title = "Object Explorer Details"
 	db.grid.SetFillLastColumn(false)
 	db.grid.SetData([]string{"Name", "Type"}, nil)
+	db.rowObjs = nil
 }
 
 // applyResult renders a completed (cached or freshly finished) result.
 func (db *DetailBrowser) applyResult(r *detailResult) {
 	if r.err != nil {
+		db.setRowObjects(nil, nil)
 		db.grid.SetError(displayError(r.err))
 		return
 	}
 	db.grid.SetFillLastColumn(isPropertyValueColumns(r.cols))
 	db.grid.SetData(r.cols, r.rows)
+	db.setRowObjects(r.rows, r.objs)
+}
+
+// setRowObjects installs the row-to-object mapping for what is now on screen,
+// and refuses one that does not line up with the rows: the pane deletes by
+// row index, so a mapping one short — a loader that filtered rows after
+// building it, say — would delete the object the *next* row describes. Losing
+// Delete is the safe failure; the wrong DROP is not.
+func (db *DetailBrowser) setRowObjects(rows [][]string, objs []nodeData) {
+	if len(objs) != len(rows) {
+		db.rowObjs = nil
+		return
+	}
+	db.rowObjs = objs
 }
 
 // isPropertyValueColumns reports whether cols is the Property/Value shape of a
@@ -175,6 +210,33 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 	delete(db.pending, node)
 	if db.currentNode == node {
 		db.ShowNodeDetails(app, node)
+	}
+}
+
+// InvalidateWhere drops every cached and pending entry whose node matches, and
+// refetches the one on screen — Invalidate for a change that stales a class of
+// nodes rather than one known pointer.
+//
+// The predicate runs over cached nodes and over currentNode, which is not
+// necessarily among them: a node whose fetch failed, or is still in flight, has
+// no cache entry and is still the one the user is looking at.
+func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) bool) {
+	if db == nil {
+		return
+	}
+	for node := range db.cache {
+		if match(node) {
+			delete(db.cache, node)
+			delete(db.pending, node)
+		}
+	}
+	for node := range db.pending {
+		if match(node) {
+			delete(db.pending, node)
+		}
+	}
+	if db.currentNode != nil && match(db.currentNode) {
+		db.Invalidate(app, db.currentNode)
 	}
 }
 
@@ -237,8 +299,9 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		app.safegoRepair("loading Object Explorer details", db.panicRepair(node, seq), func() {
 			ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 			defer cancel()
-			cols, rows, err := fetchNodeDetails(ctx, sc, snap)
-			db.postFinal(app, node, seq, cols, rows, err)
+			var objs []nodeData
+			cols, rows, err := fetchNodeDetails(ctx, sc, snap, &objs)
+			db.postFinalObjects(app, node, seq, cols, rows, objs, err)
 		})
 	}
 }
@@ -273,19 +336,30 @@ func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
 // postPartial displays cols/rows immediately if node and seq are still current,
 // without caching — a progressive loader's fast first stage.
 func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]string) {
+	db.postPartialObjects(app, seq, cols, rows, nil)
+}
+
+// postPartialObjects is postPartial for a view whose rows are objects.
+func (db *DetailBrowser) postPartialObjects(app *App, seq int, cols []string, rows [][]string, objs []nodeData) {
 	app.postAndWake(func() {
 		if seq != db.seq {
 			return
 		}
 		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
 		db.grid.SetData(cols, rows)
+		db.setRowObjects(rows, objs)
 	})
 }
 
 // postFinal caches the completed result for node, unless a newer fetch has been
 // dispatched since, and displays it if still current. Called once per fetch.
 func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
-	result := &detailResult{cols: cols, rows: rows, err: err}
+	db.postFinalObjects(app, node, seq, cols, rows, nil, err)
+}
+
+// postFinalObjects is postFinal for a view whose rows are objects.
+func (db *DetailBrowser) postFinalObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
+	result := &detailResult{cols: cols, rows: rows, objs: objs, err: err}
 	app.postAndWake(func() {
 		if db.pending[node] == seq {
 			db.cache[node] = result
@@ -302,9 +376,16 @@ func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols [
 // and postFinal's SetData would reset the scroll position. Gated by pending like
 // postFinal.
 func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
+	db.cacheOnlyObjects(app, node, seq, cols, rows, nil, err)
+}
+
+// cacheOnlyObjects is cacheOnly for a view whose rows are objects. The mapping
+// is cached with the rows so a reselect, which is served from the cache
+// without refetching, still offers Delete.
+func (db *DetailBrowser) cacheOnlyObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
 	app.postAndWake(func() {
 		if db.pending[node] == seq {
-			db.cache[node] = &detailResult{cols: cols, rows: rows, err: err}
+			db.cache[node] = &detailResult{cols: cols, rows: rows, objs: objs, err: err}
 		}
 	})
 }
@@ -323,7 +404,13 @@ const maxRowFetchConcurrency = 8
 // a background goroutine, so it must not touch DetailBrowser or any other UI
 // state — only return data for the caller to apply via postAndWake. ctx bounds
 // the whole call.
-func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+//
+// objs is an out-parameter rather than a fourth result because only the handful
+// of arms whose rows are objects have anything to say about it: they set it to
+// one nodeData per row, and every other arm — a Property/Value view, a report,
+// a log listing — leaves it nil, which is what withholds the pane's Delete.
+// See detailResult.objs.
+func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	switch node.data.Type {
 	case NodeAgentJobs:
 		return agentServerDetail(ctx, sc)
@@ -410,6 +497,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		rows := make([][]string, 0, len(views))
 		for _, v := range views {
 			rows = append(rows, []string{v.Schema + "." + v.Name, formatSQLDate(v.CreateDate)})
+			*objs = append(*objs, nodeData{Type: NodeView, DBName: node.data.DBName, Schema: v.Schema, Name: v.Name})
 		}
 		return []string{"Name", "Created"}, rows, nil
 
@@ -428,6 +516,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		rows := make([][]string, 0, len(procs))
 		for _, p := range procs {
 			rows = append(rows, []string{p.Schema + "." + p.Name, formatSQLDate(p.CreateDate), formatSQLDate(p.ModifyDate)})
+			*objs = append(*objs, nodeData{Type: NodeStoredProcedure, DBName: node.data.DBName, Schema: p.Schema, Name: p.Name})
 		}
 		return []string{"Name", "Created", "Modified"}, rows, nil
 
@@ -437,7 +526,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 
 	default:
 		if hasChildren(node.data.Type) {
-			return fetchChildObjectsDetail(ctx, sc, node)
+			return fetchChildObjectsDetail(ctx, sc, node, objs)
 		}
 		return []string{"Property", "Value"}, [][]string{
 			{"Name", node.label},
@@ -454,7 +543,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 // folder-shaped detail view rather than a Property/Value grid. Holding
 // *explorerNode, it applies the folder's filter through filterChildren rather
 // than filterObjects.
-func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	loader, ok := childLoaders[node.data.Type]
 	if !ok {
 		return []string{"Name"}, nil, nil
@@ -467,6 +556,10 @@ func fetchChildObjectsDetail(ctx context.Context, sc *dbconn.ServerConn, node *e
 	rows := make([][]string, 0, len(children))
 	for _, c := range children {
 		rows = append(rows, []string{c.label})
+		// The child's own nodeData, not one rebuilt from the label: the label
+		// carries type and state decoration ("IX_x (Nonclustered, Unique)")
+		// and nothing in it identifies the table an index belongs to.
+		*objs = append(*objs, c.data)
 	}
 	return []string{"Name"}, rows, nil
 }
@@ -524,14 +617,16 @@ func (db *DetailBrowser) Paste(text string)    { db.grid.Paste(text) }
 func (db *DetailBrowser) SelectAll()           { db.grid.SelectAll() }
 
 // newDetailBrowser builds the Object Explorer Details panel wired to this
-// app: the title bar's refresh button, and the Query Store reports' "Query"
-// column opening its full statement in a query panel.
+// app: the title bar's refresh button, the Query Store reports' "Query" column
+// opening its full statement in a query panel, and the cell menu's Delete over
+// the selected rows (detail_browser_ops.go).
 func (a *App) newDetailBrowser() *DetailBrowser {
 	db := NewDetailBrowser("Object Explorer Details")
 	db.OnRefresh = func() { db.RefreshCurrent(a) }
 	db.grid.OnShowValue = func(col int, column, value string) bool {
 		return db.showQueryStoreValue(a, col, column, value)
 	}
+	db.grid.OnMenuItems = func() []controls.MenuItem { return a.detailMenuItems(db) }
 	return db
 }
 

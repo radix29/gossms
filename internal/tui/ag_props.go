@@ -31,9 +31,9 @@ import (
 // live on the Object Explorer context menus.
 func agPropPages(sc *db.ServerConn, agName string) []propPage {
 	return []propPage{
-		pageAGGeneral(sc, agName),
-		pageAGBackupPreferences(sc, agName),
-		pageAGReadOnlyRouting(sc, agName),
+		withRequires(pageAGGeneral(sc, agName), "", rightAlterAnyAG),
+		withRequires(pageAGBackupPreferences(sc, agName), "", rightAlterAnyAG),
+		withRequires(pageAGReadOnlyRouting(sc, agName), "", rightAlterAnyAG),
 	}
 }
 

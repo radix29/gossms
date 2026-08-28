@@ -124,10 +124,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// press, wherever the release landed. Done before
 		// ConsumeOutsideClick and the mode switch below, both of which
 		// return early — exactly the cases that would strand the latch.
-		if d.dragField != nil {
-			d.dragField.HandleMouse(ev)
-			d.dragField = nil
-		}
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -163,8 +160,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// The gesture belongs to whichever field claimed its press, so motion is
 	// replayed there without hit-testing — ahead of every widget below,
 	// since none of them can own a gesture this one already started.
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 
@@ -226,8 +222,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	for _, f := range fields {
 		if f.HitTest(mx, my) {
 			d.focusTo(f)
-			f.HandleMouse(ev)
-			d.dragField = f
+			d.drag.Claim(f, ev)
 			return true
 		}
 	}

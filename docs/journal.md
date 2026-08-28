@@ -1775,3 +1775,562 @@ shorter one at exactly the wrong boundary. Sweeping 20..170 catches it. And the
 gate test asserted on `Show Plan`, which still fitted at the width chosen — and
 read `Untrack Query` because the process-wide pin set had leaked from the test
 before it, which is the exact thing `useTempTracked` exists to prevent.
+
+## Cross-repo review: the grid-width loss, the extended-property read, and three small ones
+
+2026-08-28. A full read-through of both repos for bugs, inconsistencies and
+refactoring. Worth recording what the sweep found *and* what it did not: every
+mechanical check was already clean in both repos (`go vet`, `gofmt -l`,
+`go test`, `go test -race`, and staticcheck down to cosmetics), there is no
+`TODO`/`FIXME` in either tree, and every invariant in CLAUDE.md that can be
+checked by grep held — no `SetData` inside an `OnSelectRow`, no grid drawn
+without `DrawOverlay`, no `safego` where a latch needs `safegoRepair`, no
+identifier reaching a T-SQL literal unbracketed, no filterable Detail Browser
+loader missing `filterObjects`. Five things came out of it.
+
+**Seventeen pages threw away a dragged column width, and the deliberate cursor
+is what hid it.** The `redrawGrid` rule already says never to hand-roll
+`SetData` plus a restore. What it did not cover is the *other* case: a page
+whose row set changed and which therefore wants the cursor placed deliberately
+— an Add selecting the row it just appended, a Remove falling back to row 0.
+Seventeen sites wrote that as `grid.SetData(...)` then `grid.SetSelectedRow(n)`,
+and `SetSource` clears `colWidthOverride` on the way through
+(`datagrid.go:224`). So every Add, Remove and Revert on Role Members, Job Steps
+(both the Properties page and New Job), Extended Properties, Database Files, and
+the two permission matrices snapped a dragged column back to its computed width.
+
+The reason this survived is instructive: the shipped symptom of the *other* half
+of the same mistake is a keyboard trap — the cursor jumps to row 0, `GridRow`
+diffs `SelectedCell`, reports "not handled", and `Form` moves focus out on the
+first arrow key. Setting the cursor explicitly suppresses all of that. Nothing
+jumps, nothing traps; a column just quietly narrows. No test could see it either,
+because none of them had a width to lose.
+
+`resetGrid` (`prop_grid_helpers.go`) is now the third member of the family —
+`SetDataPreservingView` then `SetSelectedRow` — and `redrawGrid`'s note in
+CLAUDE.md names it. The scroll behaviour is a small bonus: the restored scroll
+plus `SetSelectedRow`'s own `ensureVisible` means appending a row scrolls just
+far enough to show it, where `SetData`'s zero scroll drove `ensureVisible` from
+the top and landed the new row against the bottom edge.
+
+Pinned by `prop_grid_reset_test.go`, including a test that asserts `SetData`
+*does* discard the width — so if `DataGrid` ever changes, the reason `resetGrid`
+exists fails loudly rather than going stale.
+
+**gosmo's extended-property read could not express database level.**
+`ExtendedPropertiesContext` spelled level 0 with hard-coded quotes
+(`N'%s', N'%s'` over `escapeSingle`) while `AddExtendedProperty`,
+`SetExtendedProperty` and `DropExtendedProperty` all ran the same two arguments
+through `nullableStr`. A zero `ExtendedPropertyLevel` therefore *wrote*
+`@level0type = NULL` and *read* `fn_listextendedproperty(NULL, N'', N'', ...)`,
+which SQL Server reads as a level named by the empty string — the property was
+written against the database and read back as no rows, silently, on both sides.
+
+gossms never hit it: `database_props_permissions.go` passes a zero level to the
+form but reads through `DatabaseExtendedPropertiesContext`, which is a plain
+`sys.extended_properties` query. So this was a trap for the next caller rather
+than a live bug, which is exactly the kind gosmo has to fix — it is a library
+first. Now `nullableStr` throughout, pinned by `extended_properties_read_test.go`
+over the capture driver in `identifier_quoting_test.go`; the write side was
+already pinned by `script_extended_properties_write_test.go`, and `WithScript`
+cannot reach a read.
+
+**Three small ones.** `QueryStorePanel.comparePlans` parsed `QueryPlanXML`
+without the empty check `showPlan` makes twenty lines above, so a plan row Query
+Store no longer holds the XML for reported a document error instead of saying
+there is no plan. `newObjectDialog.runScript` had no zero-statement guard where
+`PropDialog.runScript` has one. And `sqlStringLiteral` (`backup_common.go`)
+hand-rolled quote-doubling that is `gosmo.QuoteLiteral` — now `"N" +
+QuoteLiteral(s)`, with the existing injection-case test passing unchanged
+against it, which is the whole verification for that one.
+
+**A claim from the review that was wrong.** `deadcode ./cmd/...` reported
+`formatValue`, `formatGUID` and `formatFloat` in `internal/query/executor.go` as
+unreachable and the review wrote them up as dead. They are not: `deadcode` walks
+the production build only, and all three are used by `executor_test.go` and
+`bench_scan_test.go`. Removing two of them broke the build immediately. Their
+doc comments now say what they are for, so the next `deadcode` run does not
+raise them again. The only genuinely dead declaration the sweep found was an
+unused `serverScope` field in `permissions_pages_test.go`.
+
+**Four `requiredRight` values are unused on purpose** — `ALTER ANY LINKED
+SERVER`, `ALTER ANY USER`, `ALTER ANY ROLE`, `CREATE TABLE` — because there is
+no New User, New Role, New Table or linked-server feature to gate. They are
+declared in that block rather than at a future call site because
+`permission_gate_names_test.go` checks every literal there against gosmo's
+`Probed*` list, and a name misspelled later would read back as
+`CapabilityUnknown` forever and gate nothing. Now commented as such.
+
+Left open, and recorded in `docs/open-threads.md`: `withRequires` reaches only
+Database and Server Properties, and six dialogs hand-roll the same `dragField`
+mouse routing.
+
+## 2026-08-28 — every writable Properties page now declares its rights
+
+The A2 half of the same review. `withRequires` was called from
+`database_props.go` and `server_props.go` and nowhere else, so seventeen other
+dialogs opened fully editable for a login whose writes the server would refuse.
+All nineteen are wired now, per *page* rather than per dialog, and the choice of
+right is the page's own: Login General and Status take `ALTER ANY LOGIN` while
+Login Server Roles takes `ALTER ANY SERVER ROLE` and Login Securables takes
+`CONTROL SERVER`, because those are three different answers to "who may do
+this".
+
+**The interesting part was not the wiring — it was that the check was a second
+copy of the rule.** `pageReadOnlyReason` understood server-scope and
+database-scope rights and nothing else. `allowsActionOn`, the menus' gate, also
+understood membership rights (SQL Agent's msdb roles), schema-scoped rights and
+object-scoped ones. Wiring `objectWriteRights()` into Table/Index/Key would have
+shipped the divergence as a bug: a principal granted `ALTER` on one table reads
+0 for every database- and schema-wide permission there is, so all five rights in
+the set would have denied and the page they *can* write would have opened with a
+banner telling them they cannot. `agentWriteRights()` would have failed the
+other way — a membership read as a server permission comes back
+`CapabilityUnknown`, which fails open, so the banner would never have appeared
+for anyone.
+
+So both now go through one function, `rightsAllow`. The only thing that differs
+between the callers is how a database's capabilities are reached: the menus pass
+`CachedDatabaseCapabilities`, because they run on the UI goroutine while a menu
+is being drawn, and a page passes the probing `DatabaseCapabilities`, because
+its `load` is already on a background goroutine. `propPage` gained
+`requiresSchema`/`requiresObject` and `withRequiresOn` to carry the securable an
+object-scoped right is asked about — for an index, a statistic or a key that is
+the *table*, which is what SQL Server checks and what the probe records.
+
+`prop_page_requires_test.go` is what makes `withRequires`'s docstring true.
+It builds every dialog's page set and fails on a page that declares no rights
+unless it is named in `pagesThatOnlyRead`, fails on a stale entry in that list,
+fails on an object-scoped page that used plain `withRequires` (which compiles
+and looks right), and parses the package back with `go/ast` to fail when a new
+`[]propPage` constructor is not listed. All four were checked by mutation.
+Twenty-nine pages are exempt because they have no `apply` at all; the one
+exemption that is not a read-only page is Login > User Mapping, whose writes
+create and drop *database* users, so what permits them is `ALTER ANY USER` in
+each mapped database — a different answer per row of the grid, which one
+page-level banner cannot state. A wrong banner there would be worse than none.
+
+Verified live on win10cli with a throwaway login (`gossms_a2`, dropped
+afterwards) holding `VIEW SERVER STATE`/`VIEW ANY DEFINITION`/`VIEW ANY
+DATABASE` and, in `HealthClinic`, `ALTER` on `dbo.Doctors` and nothing else:
+
+- Table Properties > Change Tracking on `dbo.Doctors` — editable dropdowns,
+  OK/Cancel/Apply/Script Changes. The object-scope grant is honoured.
+- The same page on `dbo.Invoices` — the banner, flat `OFF` renderings,
+  Close/Script Changes.
+- Login Properties > General on itself — "Requires ALTER ANY LOGIN
+  (securityadmin)."
+- As `sa`, both `dbo.Invoices` and Job Properties came up fully editable, which
+  is the half that proves the gate is not just always-on.
+
+One thing the live run showed that no test would have: the
+`objectWriteRights()` banner wraps to *three* lines in Table Properties'
+~83-column form. It is not clipped there, and `TestRequiresTextFitsTheReadOnlyBanner`
+now carries a second, looser cap for the two sets that cannot fit one line,
+with a note that Shrinkable clips a note's trailing lines first — so the line
+that survives is always the one saying the page is read-only.
+
+## 2026-08-28 — dialogs.FieldGesture, one copy of the drag-latch protocol
+
+The B1 half of the review, and the last of it. Seven dialogs — `ConnectDialog`,
+`FindReplaceDialog`, `LogSearchDialog`, `FilterDialog`, `BackupDialog`,
+`RestoreDialog` and `dialogs.FileDialog` — each carried their own `dragField`
+and their own three-part protocol for the text-selection gesture a click in an
+`InputField` starts. `ARCHITECTURE.md` § The mouseDragging idiom is the one
+piece of this codebase that says an idiom goes wrong when copied, and it had
+been copied seven times.
+
+`dialogs.FieldGesture` now holds it: `Release`, `Replay`, `Claim`, `Clear`. What
+is worth having in one place is not the code — each body is two lines — but the
+*placement*, none of which is local to the call it constrains. `Release` has to
+run above `ConsumeOutsideClick` **and** above any early return for a dialog mode,
+because both return without looking at the latch and a release outside the
+dialog is exactly what strands it. `Replay` has to run after
+`ConsumeOutsideClick` and before any hit-test, because hit-testing motion ends
+the selection at the box edge and letting it reach `ButtonClicked` fires a
+button when the drag wanders over the button row. Seven comments each restated a
+different one of those; the type states all three once.
+
+**What was deliberately not extracted.** The plan proposed a
+`Route(ev, fields, buttons, onButton)` covering the whole `HandleMouse`. That
+would have been worse: the middles genuinely differ — ConnectDialog hit-tests a
+match-list overlay before `ConsumeOutsideClick`, RestoreDialog switches on four
+modes and has a second entry point in its Files view, FilterDialog offers an
+open dropdown first refusal, and the six set focus by three different mechanisms
+(`focusIdx` by index, `focusTo(w)`, `setFocus(ffPath)`). Forcing them into one
+router would have replaced honest duplication with a parameter list. Hit-testing
+and focus stayed with each dialog, which is where they legitimately differ.
+
+Coverage went from three dialogs to six. `dialog_drag_test.go` gained
+`LogSearchDialog`, `FilterDialog` and `FindReplaceDialog` — the last being the
+one the other five copied their comment from, and the only one with no drag test
+of its own. Mutating each of the three methods in turn fails every one of the
+seven dialogs' tests, which is the check that the shared helper is actually on
+the path. The two "Show clears the latch" tests now arm the latch with a real
+press instead of by assignment, so they also pin that a press arms one at all;
+that needed the fake screen set *before* the dialog is constructed, since
+`InitModal` captures it and a dialog with a zero rect treats every press as
+outside.
+
+Verified live under tmux on the real terminal path, which the unit tests cannot
+reach (they synthesise events; tmux sends xterm SGR, and motion arrives as
+button 32, not Button1): in Connect > Server, a press then a drag two rows down
+over Port/Auth selected `abcde` and neither widget below stole it; the release
+landed at (5,45), well outside the dialog, and the next single click cleared the
+selection — which it can only do if the press was not swallowed as a stale drag.
+Same sequence in File > Open's Path field, dragging down into the file list.
+
+## 2026-08-28 — the other two panel toolbars stopped dropping buttons
+
+`layoutToolButtonsOverflow` had one caller. Activity Monitor and the Log File
+Viewer still used `layoutToolButtons`, which gives an overflowing button a zero
+rect — neither painted nor hit-tested. Both were measured rather than reasoned
+about, and both overflow at ordinary sizes:
+
+- **The Log Viewer wants 121 columns** once both selectors carry the labels a
+  real instance produces (`File: Current — 2026-08-28 00:00 ▾` is 34 of them),
+  85 with the placeholder labels a panel that has not enumerated yet shows. The
+  pane gets 70% of the terminal, so Search, Recycle and Export were unreachable
+  on every terminal narrower than ~173 columns, and only Refresh has a key
+  binding (F5). Confirmed live on win10cli at 110×32: the three sat behind the
+  new More menu, and Search opened its dialog from it.
+- **Activity Monitor wants 47** on the two dashboard tabs (rate selector plus
+  Pause/Continue) and 30 on the procedure-backed ones. Pause has no key binding
+  either, so it went off the row below a ~68-column terminal. Confirmed live at
+  62×30: `10 s` and `Pause` behind the menu, and choosing Pause paused the feed
+  — the entry read `Continue` when the menu was reopened.
+
+Three things came out of the work.
+
+`layoutToolButtonsOverflow` gained the prefix `layoutToolButtons` already took,
+because Activity Monitor's row opens with `Refresh rate:` — 14 of the 23 columns
+its own More cell needs. **The More cell displaces the prefix on a row too
+narrow for both**: a label naming controls that are not on the row is worse than
+no label, and drawn together the label's tail survives beside the cell that
+replaced it. `ActivityMonitor.prefixVisible` is the draw side of that. Verified
+at 28 columns, where the row is the More cell alone.
+
+It also returns the end column now, which is not cosmetic: the Log Viewer puts
+its filter field there and Activity Monitor fits the collector's state line into
+what is left, and both must start past the More cell rather than under it.
+
+The menu builder moved to `panel_toolbar.go` as `toolOverflowItems` — three
+copies of "same gate as the button, reason as the item's Note" was one too many.
+It marks a `selected` button with the bullet the drawn cell shows, since a rate
+selector collapsed into a menu still has to say which of four is in force; only
+Activity Monitor sets that field, so Query Store's rows are unchanged.
+
+Each panel got the two tests Query Store's row already had — every cell drawn or
+in the menu at every width from 20 to 200, the hidden set a suffix, the More cell
+inside the pane — plus an end-to-end one that presses the cell and runs the
+entry, and a gate test (Recycle withheld from a login refused CONTROL SERVER is
+withheld in the menu too, with the right named in its Note). Mutating each
+panel's `layoutTools` back to `layoutToolButtons` fails all of them.
+
+## 2026-08-28 — the Details pane got a write path: Delete over a selection
+
+Object Explorer's Delete had one shape — one node, one object — because
+`controls.TreeView` has one selection. The Details pane's grid has had block
+selection all along and no route to an action, so its selection fed only the
+clipboard. That is the whole of what was missing, and it is now built.
+
+**Three pieces, one of them in tuikit.** `DataGrid.OnMenuItems` lets a host add
+entries to the grid's own cell context menu, below a divider after Copy / Show
+Value, asked afresh each time the menu opens so an entry can describe the
+selection in force. A second menu of the pane's own would have been drawn
+outside the grid's overlay and would have fought the grid's for every key —
+`DrawOverlay` and `OverlayActive` exist precisely because that menu is not on
+the grid's rect.
+
+**The pane deletes objects, not rows.** A detail grid is `[][]string` shared
+with every other node type, and its Name cell is a *rendering* — a decorated
+label (`IX_x (Nonclustered, Unique)`), or a schema-qualified name a parse could
+get subtly wrong. So `detailResult` carries `objs []nodeData`, one per row,
+filled by the loaders whose rows are objects: `fetchChildObjectsDetail` hands
+over each child's own `nodeData` (which is what covers thirteen families at
+once), and the Views, Stored Procedures, Tables, Databases and Logins loaders
+build theirs from the listing they already made. `fetchNodeDetails` takes it as
+an out-parameter rather than a fourth result, because only a handful of its
+twenty-odd arms have anything to say about it. `setRowObjects` refuses a
+mapping whose length does not match the rows: the pane deletes by row index, so
+one short would drop the object the *next* row describes, and losing Delete is
+the safe failure.
+
+**One delete path, not two.** `deleteObject` is now a one-object call into
+`confirmDeleteObjects`, which both surfaces share. A second copy would be where
+a warning, a typed confirmation or the foreign-key option quietly stopped
+applying — the difference between deleting a table from the tree and from the
+pane has to be where the click landed and nothing else. The batch runs
+sequentially on one goroutine and reports `Deleted 2 of 3 — dbo.T3 failed: …`
+rather than a single error standing for the whole selection.
+
+Three rules the batch needed that a single delete never did. A **typed**
+op — a database, a column master or encryption key — is refused in a multi-row
+selection and named, because a typed confirmation asks for *one* object's name.
+The **drop option** checkbox is offered only when every selected object carries
+the same one, since one tick drives every drop. And the shared **warning** is
+introduced ("Each object: All of its data is deleted with it.") rather than
+repeated, because every op's warning is written about a single object.
+
+**Gating is per object, not per folder.** `rightAlterOnSchema` and
+`rightAlterOnObject` answer about a named securable, so a selection spanning
+two schemas can be permitted in one and refused in the other; one answer for
+the batch would be right about at most one of them. The withheld item's note
+names the object that is the problem — "needs ALTER" over a forty-row selection
+says nothing about what to deselect. `nodeData.IsSystem` is checked the same
+way, and re-checked inside `confirmDeleteObjects`, which is the function that
+issues the DROP.
+
+**What the live run changed.** Two things no unit test had an opinion about.
+The confirmation's object list was laid out with newlines, and `ConfirmDialog`
+wraps and centres — so it arrived as `…This cannot be undone. sales.Beta
+sales.Gamma All of its…`, prose with the names run into it. It is one flowing
+sentence now, names comma-separated. And `DetailBrowser.SetActive` never
+reached the grid, so its cell cursor drew in the inactive palette; harmless
+while the selection meant nothing, wrong now that it is what Delete acts on.
+
+Driven end to end against win10cli on a throwaway database: three tables
+selected with Shift+Down and dropped (the two unselected ones untouched, both
+verified in `sys.tables`), the same selection cancelled with No and nothing
+dropped, two databases refused with `Database "backup_test" has to be deleted
+on its own — select just that row`, the System Databases view offering no
+Delete at all, and finally the throwaway database itself deleted from the pane
+through the typed confirmation — which is what cleaned up after the test.
+
+Mutation-checked: acting on the first rows instead of the selected ones,
+dropping only the first object, gating on only the first object, and removing
+the typed refusal each fail a test. `selectPaneRows` in the test file carries
+its own warning — `SetSelectedCell` moves the cursor and leaves the previous
+block selection's anchor where it was, so a test that used it twice selected
+from the old anchor and passed for the wrong reason once already.
+
+## 2026-08-28 — multi-select Delete stops at the schema boundary
+
+The pane's batch Delete was refused only for a `typed` op — a database, either
+Always Encrypted key. That left logins, server roles, users and database roles
+batch-deletable, which is not what a Delete over a selection is for: dropping a
+login orphans every database user mapped to it, dropping a user or a role
+silently removes memberships and the permissions that came with them, and the
+batch confirmation carries *one* shared warning for the whole set, written
+about one object. A schema-scoped object — table, view, procedure, index — is
+the case where a set genuinely reads as a set.
+
+So `objectOp` gained `solo`, "deleted one at a time", set on Login, Server
+Role, User and Database Role, with `typed` implying it (`deletedAlone`).
+`confirmDeleteObjects` refuses on that instead of on `typed`, and the pane's
+menu now *shows* the refusal rather than waiting for the click: the item is
+built, disabled, and given `soloDeleteReason` as its Note, naming the row to
+keep. Leaving it out of the menu entirely was the alternative and is worse — a
+Delete that disappears when a second row is selected reads as the pane having
+no Delete. Both halves take their wording from the one function, so the
+withheld item and the status line cannot drift apart.
+
+The rule is the selection's, not the type's: one login selected in the pane
+still deletes through the same path, and the tree — single selection, always
+the `len(objs) == 1` branch — is untouched.
+
+`TestOnlySchemaScopedObjectsAreDeletedAsASelection` pins both buckets by node
+type, so a new principal added to `objectOps` without `solo` fails; the pane
+tests cover the withheld item, the single-login delete that still works, and
+`confirmDeleteObjects` refusing a batch it is handed directly, since the menu
+gate is not the enforcement. Mutation-checked by dropping `|| op.solo`: four
+failures, one per surface.
+
+## 2026-08-28 — a pin now reaches the tree's Tracked Queries leaf
+
+Tracked Queries shipped with a known limit: the tree's leaf is a Detail Browser
+node like any other, its rows cached per node, so pinning a query in the Query
+Store panel left the leaf listing the set from before — which reads as the pin
+not having worked, since the leaf is where you go to see what is pinned.
+
+`DetailBrowser` had `Invalidate(app, node)` for one known pointer. What a
+toggle needs is a class: gained `InvalidateWhere(app, match)`, which drops every
+matching cache and pending entry and refetches `currentNode` when it matches —
+currentNode separately, because a node whose fetch failed or is still in flight
+is not in the cache map and is still the one on screen.
+
+`App.trackedQueriesChanged(server, dbName)` is the single entry point, and
+covers Query Store panels as well as the tree: one panel exists per (connection,
+database), so a second connection to the same instance has its own panel reading
+the same file-backed set. Both are matched on the *server address* through the
+new `config.SameServer`, which folds it the way the sets are keyed —
+`HOST\SQL2022` and `host\sql2022` are one set, and a string comparison in the
+caller would have made them two. The tracked leaf is recognised by its report's
+`qsFilterTracked` flag rather than by the title "Tracked Queries", so the flag
+stays the one definition of which view reads the pinned set.
+
+`toggleTracked` calls it on the failed-save path too — the in-memory set took
+the toggle either way, and that is what every view reads.
+
+A/B'd against win10cli on a throwaway `l3demo` (Query Store on, capture mode
+ALL, since AUTO records nothing for four trivial statements): visit the leaf
+first so it caches "None yet", pin query 10 in the panel, come back to the leaf.
+The pre-fix binary still says "None yet"; this one lists query 10. Three tests,
+each killed by its own mutation: dropping the call from `toggleTracked`, and
+comparing the two addresses with `==` instead of `SameServer`.
+
+One tmux lesson worth keeping: `awk 'index($0,"Track Query")'` over a
+`capture-pane` line gives a *byte* offset, and the Object Explorer's folder
+emoji make that several columns off — every click on the panel toolbar landed
+in empty space and looked like a dead button. Compute the display column
+(east-asian width) before building the SGR sequence.
+
+## 2026-08-28 — the certificate exchange got tested
+
+`importPeerCertificate` was the endpoint pipeline's one untested phase. Every
+existing test drives `configure` under `WithScript`, and that is precisely the
+run where the exchange does *not* happen: nothing was really created, so no
+public key can be read and each peer is recorded as skipped. The exchange proper
+had only ever run against live instances.
+
+It turns out not to need one. `newFakeConn` hands back a real `*gosmo.Server`
+over the scripted driver, so a peer can be built the way `configure` builds it —
+`ensureCertificate` first, against an instance scripted as already having a
+master key and its own certificate, which fills `cert` and `encoded` — and the
+exchange then runs for real, emitting statements the fake records.
+
+Six tests, each mutation-checked against the defect it exists for: importing
+`p.encoded` instead of `other.encoded` (the direction), dropping the thumbprint
+comparison on an existing certificate (the reinstalled-peer case, which
+otherwise reports success and leaves the endpoint refusing the peer), treating
+every login lookup failure as absence (which reports the CREATE LOGIN error
+instead of the permission error that really stopped the pipeline), recording the
+skip on the peer rather than on the instance whose script is missing the import,
+creating the user unconditionally (CREATE USER is not idempotent, and a
+half-configured pair is the ordinary second run), and skipping the existing-
+certificate read.
+
+The one that took a second attempt to state properly is the direction. Asserting
+"a CREATE CERTIFICATE ... FROM BINARY ran" passes against an instance importing
+its own key, so the test compares the hex against `other.encoded` *and* asserts
+this instance's own bytes do not appear — the two peers are scripted with
+distinguishable keys (`UBUSQL1-public-key`, `UBUSQL2-public-key`) for exactly
+that. It also asserts nothing at all was written to the peer being read from.
+
+The harness's limits still hold: this says the phase asked for the right things
+and built the right statements, never that the T-SQL is valid — the live run of
+2026-08-22 is what says that.
+
+## 2026-08-28 — the two sp_delete_jobstep renderings became one
+
+`Job.deleteStepAt` had been uncalled since `ReorderStepsContext` became one
+transactional batch, and the open thread left the question as the author's:
+delete it, or keep it. Neither was needed. `JobStep.DeleteContext` was building
+the same `sp_delete_jobstep` call inline — it predates `deleteStepStmt` — so it
+now reads `return s.job.deleteStepAt(ctx, s.StepID)`. The uncalled function has
+a caller, the duplication is gone, and one function renders that procedure call
+for every path that deletes a step: the method, the number-only form, and the
+reorder batch through `deleteStepStmt`. Statement text and error text are
+unchanged, which is what makes this behaviour-preserving at the API surface.
+
+Nothing was removed. The no-removal rule is about exported surface, but the
+point generalises: an uncalled unexported helper is better answered by finding
+its missing caller than by arguing over its deletion.
+
+Three tests in gosmo, each mutation-checked: sending step 1 instead of the
+step's own number (a delete that removes a step the caller never named, and
+succeeds doing it), dropping `escapeSingle` from the job name, and reinstating
+the inline duplicate with a drifted spelling — `@step_id=%d` without the space
+fails all three at once, which is precisely the drift the fold prevents.
+
+Verified live against win10cli through gosmo directly rather than through the
+dialog: a throwaway three-step job, step 2 deleted with `JobStep.DeleteContext`,
+msdb left holding "one" and "three" renumbered to 1 and 2. Driving the Steps
+page under tmux was the first attempt and was abandoned — injected SGR clicks on
+the page's `[ Delete ]` button never registered, while clicks on the tree, the
+context menu and the panel tabs all did. Worth a look if a later test needs that
+button; the statement path itself is the same either way.
+
+## 2026-08-28 — Ctrl+click in the Details pane, and a Script button on every delete
+
+Two requests, both about the same gesture: picking objects to delete and
+deciding what happens to them.
+
+**Ctrl+click.** The Details grid already had Shift+click and drag — a block
+selection, an anchor and a cursor and everything between. What it could not
+express is "these two and not the one between them", which is exactly what a
+selection built for deleting needs. `DataGrid` grew `markedRows`/`marking`
+beside the block fields: Ctrl+click folds the selection in force into a set of
+row indices and then toggles the clicked row, and anything that is *not* a
+Ctrl+click — a plain click, a Shift+click, an arrow key, a new row set — drops
+the set, which is the rule a file manager's list follows.
+
+Three details that are not obvious:
+
+- The fold-in includes the lone cursor row. This grid always highlights one, and
+  every host that acts on the selection acts on that row when nothing else is
+  picked, so a first Ctrl+click that dropped it would deselect a row the user can
+  see is selected.
+- Unpicking the last marked row leaves an empty selection, not a fall back to the
+  cursor's row — hence `marking` as a flag separate from `len(markedRows) > 0`.
+  The menu then offers nothing, which is right.
+- One toggle per *press*. tcell resends `Button1` for as long as the button is
+  held, and without the `mouseDragging` latch the second resend undoes the first
+  before the user lets go: the row flickers and ends up unselected.
+
+The half that matters outside the widget is `SelectedRows()`. A host reading
+`SelectionBounds()` gets a rectangle — rows 1 and 3 come back as 1..3 — so the
+Details pane would have deleted the row the user deliberately left out while the
+confirmation named only the two they picked. `selectedRowObjects` was the one
+caller and now walks the row list; the rule is in `CLAUDE.md`.
+
+**The Script button.** `dbOf`'s comment had said for months that it uses
+`Server.Database` rather than `DatabaseByName` because "Script Changes on Delete
+needs it" — a feature that did not exist yet. It does now, and it needed no new
+statement-building code: `scriptDeletes` runs the same `objectOp.drop` /
+`dropWithOption` closures under `gosmo.WithScript` and opens what they would have
+executed. A second rendering built beside the drops is exactly the thing that
+drifts from them.
+
+`ConfirmDialog` and `TypedConfirmDialog` both answered by button *index* — Escape
+was `ConfirmAnswer(n - 1)`, the last button. Adding a third button would have made
+Escape answer Script, so both dialogs now carry a `buttons`/`answers` pair and an
+explicit escape answer. In the typed dialog Script is not gated on the retyped
+name: it runs nothing, so there is nothing for the retyping to protect.
+
+Found while testing: `answerConfirm` in the tests reached the checkbox by
+Tabbing twice past the buttons, which broke the moment there were three. One
+Backtab reaches it whatever the button count is — the checkbox sits last in the
+cycle.
+
+**Live on win10cli**, throwaway `ctrldemo` with four tables. Ctrl+click on the
+first and third rows of four gave `Delete 2 Tables...` and dropped exactly those
+two; Shift+click still gave a run of three; Script on that pair opened the two
+`DROP TABLE`s with the tables still on the server afterwards; Script on the
+database's typed confirmation, with the name field left empty, produced the
+`SET SINGLE_USER WITH ROLLBACK IMMEDIATE` that a hand-written script would have
+forgotten. The database was then dropped through the dialog itself, which also
+showed the typed gate still refusing an empty Confirm.
+
+## 2026-08-28 — Shift+click was never reaching the app
+
+Reported straight after the Ctrl+click work landed: Shift+click does not extend
+the selection in the Details pane, while drag and Shift+arrows both do. The code
+was right — the same gesture, injected as an SGR sequence under tmux, selected a
+run of three rows. That is the whole diagnosis: **a tmux harness bypasses the
+terminal.**
+
+xfce4-terminal is VTE, and VTE keeps Shift+mouse for its own text selection
+whenever an application has mouse reporting on. It forwards nothing, so the app
+sees no event at all — indistinguishable, from inside, from a binding that does
+nothing. It is not a preference and cannot be turned off; it is how VTE decides
+the user meant the terminal's selection rather than the app's. Ctrl and Alt are
+delivered.
+
+Two changes, neither of them to the selection logic:
+
+- `extendSelectionMods` (`datagrid_input.go`) is `ModShift | ModAlt`. Alt+click
+  extends exactly as Shift+click does, and is the gesture that works where Shift
+  is taken. The test runs both modifiers through the same case, because a
+  fallback that behaves differently from the gesture it stands in for is a
+  second thing to learn rather than a way round the terminal.
+- Key Diagnostics logs mouse events — button, modifiers, position — because
+  nothing else in the app can answer "did the terminal deliver this". Drag
+  resends collapse: only a change of buttons or modifiers is recorded, so a
+  drag is two lines and not two hundred, and the press that started it stays
+  visible. Verified live: plain, Shift, Alt and Ctrl clicks each logged one
+  press and one release with the right `Mod=`.
+
+The rule went into `CLAUDE.md`: a Shift+mouse gesture needs a second modifier
+meaning the same thing and a keyboard route as well, and a green tmux run proves
+nothing about whether a modifier survives the terminal.

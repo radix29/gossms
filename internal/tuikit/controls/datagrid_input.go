@@ -27,6 +27,17 @@ func (g *DataGrid) selectionContains(row, col int) bool {
 	return row >= r0 && row <= r1 && col >= c0 && col <= c1
 }
 
+// extendSelectionMods are the modifiers that make a click extend the selection
+// from the anchor rather than start a new one.
+//
+// Alt as well as Shift, because Shift+click is not ours to rely on: a VTE
+// terminal (xfce4-terminal, GNOME Terminal) holds Shift back for its own text
+// selection whenever an application has mouse reporting on, so the app never
+// sees the click at all. Alt+click is delivered, and is the same gesture
+// wherever Shift is taken. Key Diagnostics logs mouse events, which is how a
+// terminal that keeps a modifier is told apart from a binding that is wrong.
+const extendSelectionMods = tcell.ModShift | tcell.ModAlt
+
 // HandleKey handles keyboard navigation.
 func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 	if g.ctxMenu.Visible() {
@@ -70,6 +81,14 @@ func (g *DataGrid) HandleKey(ev *tcell.EventKey) bool {
 		} else {
 			g.blockSelecting = false
 		}
+	}
+	// Any move of the cursor drops a Ctrl+click selection, Shift+Arrow included
+	// — the same rule a file manager's list follows, and the reason a marked set
+	// can only ever be extended by more Ctrl+clicks.
+	switch ev.Key() {
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft, tcell.KeyRight,
+		tcell.KeyPgUp, tcell.KeyPgDn, tcell.KeyHome, tcell.KeyEnd:
+		g.ClearMarkedRows()
 	}
 	dataH := g.rect.H - 3
 	// The four whole-list jumps do nothing on an empty grid, the guard
@@ -223,9 +242,32 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		if row := g.rowAtY(my); row >= 0 {
 			if canBlockSelect {
 				if col, ok := g.colAt(mx); ok {
+					// Ctrl+click picks one row out, and does it once per press:
+					// tcell resends Button1 for as long as the button is held,
+					// and a second toggle would undo the first before the user
+					// let go. It never drags, either — the modifier says "this
+					// row", not "this run".
+					if ev.Modifiers()&tcell.ModCtrl != 0 {
+						if !g.mouseDragging {
+							g.mouseDragging = true
+							g.markRow(row)
+							g.selRow, g.selCol = row, col
+							g.selAnchorRow, g.selAnchorCol = row, col
+							g.blockSelecting = false
+							if g.OnSelectRow != nil {
+								g.OnSelectRow(g.selRow)
+							}
+						}
+						return true
+					}
 					if !g.mouseDragging {
 						g.mouseDragging = true
-						if ev.Modifiers()&tcell.ModShift != 0 {
+						// A press without Ctrl starts a new selection, so
+						// whatever Ctrl+click had marked is gone — including
+						// under Shift, which extends from the anchor rather
+						// than adding to the marked set.
+						g.ClearMarkedRows()
+						if ev.Modifiers()&extendSelectionMods != 0 {
 							if !g.blockSelecting {
 								g.selAnchorRow, g.selAnchorCol = g.selRow, g.selCol
 							}
@@ -291,9 +333,10 @@ func (g *DataGrid) HandleMouse(ev *tcell.EventMouse) bool {
 		// to the clicked cell, as a spreadsheet does.
 		if row := g.rowAtY(my); g.cellCursor && row >= 0 {
 			if col, ok := g.colAt(mx); ok {
-				if !g.selectionContains(row, col) {
+				if !g.selectionContains(row, col) && !g.rowMarked(row) {
 					g.selRow, g.selCol = row, col
 					g.blockSelecting = false
+					g.ClearMarkedRows()
 				}
 				if g.OnActivateCell == nil {
 					g.ctxMenu.Show(mx, my, g.cellContextMenuItems())

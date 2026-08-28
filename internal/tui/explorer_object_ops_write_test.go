@@ -44,8 +44,11 @@ func answerConfirm(t *testing.T, a *App, tickOption bool) {
 		t.Fatal("no confirmation is open")
 	}
 	if tickOption {
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
-		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
+		// Backtab, not Tab: the checkbox sits last in the cycle, so one step
+		// back reaches it whatever the button count is — Tab's distance to it
+		// changed when Delete grew its Script button. The Tab afterwards lands
+		// back on the first button, which is Yes in every showing.
+		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModNone))
 		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyRune, " ", tcell.ModNone))
 		a.confirmDialog.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	}

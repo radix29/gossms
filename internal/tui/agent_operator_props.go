@@ -26,7 +26,7 @@ func findAgentOperator(ctx context.Context, sc *db.ServerConn, name string) (*go
 func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 	name := &operatorName
 	return []propPage{
-		pageOperatorGeneral(sc, name),
+		withRequires(pageOperatorGeneral(sc, name), "", agentWriteRights()...),
 		pageOperatorNotifications(sc, name),
 	}
 }

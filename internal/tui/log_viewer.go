@@ -84,9 +84,17 @@ type LogViewer struct {
 	detailRect core.Rect
 
 	tools []toolButton
-	// toolsEnd is the column just past the last laid-out button, where the
+	// toolsEnd is the column just past the last laid-out cell, where the
 	// filter field starts — mirrors ActivityMonitor.toolsEnd.
 	toolsEnd int
+
+	// more is the "More ▾" cell standing in for the buttons this row was too
+	// narrow to draw, and hidden the indexes it holds. The row wants 121
+	// columns once both selectors carry a real file label, and the pane gets
+	// 70% of the terminal — so Export and Recycle were unreachable on any
+	// ordinary terminal, neither having a key binding.
+	more   toolButton
+	hidden []int
 
 	// detailScroll is the first drawn line of the details pane, so a long
 	// message can be read past the pane's height without resizing it.
@@ -202,10 +210,12 @@ func (lv *LogViewer) layoutChildren() {
 	lv.grid.SetBounds(lv.gridRect.X, lv.gridRect.Y, lv.gridRect.W, lv.gridRect.H)
 }
 
-// layoutTools places the toolbar cells (see layoutToolButtons), then the
-// filter field in whatever is left.
+// layoutTools places the toolbar cells, collapsing whatever does not fit into
+// the "More ▾" menu (see layoutToolButtonsOverflow), then the filter field in
+// whatever is left.
 func (lv *LogViewer) layoutTools() {
-	x := layoutToolButtons(lv.tools, lv.toolRect, "")
+	var x int
+	lv.hidden, x = layoutToolButtonsOverflow(lv.tools, lv.toolRect, "", &lv.more)
 	lv.toolsEnd = x
 	// The field's own width excludes its label and brackets, so the fit test
 	// adds them back — see widgets.InputField.Draw.
@@ -280,6 +290,32 @@ func (lv *LogViewer) recycleDenied() bool {
 // or this cell alone is withheld.
 func (lv *LogViewer) toolDisabled(i int) bool {
 	return !lv.toolsEnabled() || (i == logToolRecycle && lv.recycleDenied())
+}
+
+// toolReason is what to tell the user about cell i while it is withheld, or
+// "" for a cell whose grey speaks for itself. Same order as runTool's refusals:
+// while a read is in flight every cell is grey for that reason, and naming
+// CONTROL SERVER there would name a right that is not why it did nothing.
+func (lv *LogViewer) toolReason(i int) string {
+	if !lv.toolsEnabled() {
+		return ""
+	}
+	if i == logToolRecycle && lv.recycleDenied() {
+		return requiresText(rightControlServer)
+	}
+	return ""
+}
+
+// showOverflowMenu pops the buttons the row was too narrow to draw, under the
+// "More ▾" cell — each gated exactly as its button is.
+func (lv *LogViewer) showOverflowMenu() {
+	r := lv.more.rect
+	if r.IsZero() {
+		r = core.Rect{X: lv.rect.X, Y: lv.rect.Y}
+	}
+	lv.app.contextMenu.Show(r.X, r.Y+1,
+		toolOverflowItems(lv.tools, lv.hidden, lv.toolDisabled, lv.toolReason,
+			func(i int) { lv.runTool(i) }))
 }
 
 // runTool invokes toolbar cell i's action, or says why it did not. Reports

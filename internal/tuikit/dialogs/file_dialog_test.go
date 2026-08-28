@@ -409,7 +409,7 @@ func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {
 	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
 		t.Fatal("the press inside the path field was refused — test premise is wrong")
 	}
-	if d.dragField != d.pathField {
+	if d.drag.Field() != d.pathField {
 		t.Fatal("the press did not claim the gesture for the path field")
 	}
 
@@ -434,7 +434,7 @@ func TestFileDialogDragOutOfPathFieldKeepsExtending(t *testing.T) {
 	// The release ends it and clears the latch, so the next press routes
 	// positionally again.
 	d.HandleMouse(tcell.NewEventMouse(dragX, dragY, tcell.ButtonNone, tcell.ModNone))
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Error("the release left the gesture latched")
 	}
 	d.HandleMouse(tcell.NewEventMouse(lr.X+1, lr.Y+1, tcell.Button1, tcell.ModNone))
@@ -452,7 +452,7 @@ func TestFileDialogReleaseOutsideTheDialogClearsTheDragLatch(t *testing.T) {
 	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
 	d.HandleMouse(tcell.NewEventMouse(0, 0, tcell.ButtonNone, tcell.ModNone))
 
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Fatal("a release outside the dialog left the gesture latched")
 	}
 	if d.pathField.HandleMouse(tcell.NewEventMouse(ix+3, y+9, tcell.Button1, tcell.ModNone)) {
@@ -464,9 +464,13 @@ func TestFileDialogReleaseOutsideTheDialogClearsTheDragLatch(t *testing.T) {
 // dialog dismissed mid-drag would reopen routing every click to that field.
 func TestFileDialogShowClearsTheDragLatch(t *testing.T) {
 	d, dir := newPlacedFileDialog(t)
-	d.dragField = d.pathField
+	ix, y := d.pathField.InputX(), d.pathField.RectY()
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	if d.drag.Field() == nil {
+		t.Fatal("the press did not arm a latch — test premise is wrong")
+	}
 	d.ShowOpen("Open", dir, func(string) {})
-	if d.dragField != nil {
+	if d.drag.Field() != nil {
 		t.Error("Show left a drag latch armed from the previous showing")
 	}
 }

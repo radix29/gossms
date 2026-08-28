@@ -391,8 +391,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					}
 				}
 				edits = append(edits, e)
-				grid.SetData(databaseFileColumns, rowsFor())
-				grid.SetSelectedRow(len(visible()) - 1)
+				resetGrid(grid, databaseFileColumns, rowsFor(), len(visible())-1)
 				syncFieldsFromSelection()
 			})
 			removeBtn = widgets.NewButton("Remove", func() {
@@ -404,8 +403,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				hint.Clear()
 				e.pendingRemove = true
 				current = nil
-				grid.SetData(databaseFileColumns, rowsFor())
-				grid.SetSelectedRow(0)
+				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
 				syncFieldsFromSelection()
 			})
 
@@ -424,7 +422,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				for _, fl := range files {
 					edits = append(edits, fileEditFromInfo(fl))
 				}
-				grid.SetData(databaseFileColumns, rowsFor())
+				resetGrid(grid, databaseFileColumns, rowsFor(), 0)
 				syncFieldsFromSelection()
 			}
 

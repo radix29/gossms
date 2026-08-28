@@ -20,7 +20,8 @@ const maxKeyDiagLines = 200
 // values plus ev.Name()'s human-readable decode (e.g. "Shift+Left"). It
 // exists to turn "a shortcut doesn't seem to work" from a guessing game
 // into a 10-second check of whether the terminal is actually delivering
-// the modifier bits goSSMS expects; see internal/tuikit/controls/editor.go
+// the modifier bits goSSMS expects. Mouse events are logged the same way,
+// for the same reason — a terminal can keep Shift+click for itself; see internal/tuikit/controls/editor.go
 // and widgets/input_field.go for the Shift+Arrow selection handling this
 // is most often used to debug.
 //
@@ -39,6 +40,11 @@ type KeyDiagnosticsDialog struct {
 	lines  []string
 	editor *controls.Editor
 	dirty  bool // lines changed since the editor's text was last rebuilt
+
+	// lastMouse is the buttons/modifiers of the last mouse event recorded, so
+	// RecordMouse can drop the resends tcell sends throughout a drag. -1 means
+	// nothing recorded yet, which no real event matches.
+	lastMouse int
 }
 
 // NewKeyDiagnosticsDialog creates the key diagnostics dialog.
@@ -70,6 +76,77 @@ func (d *KeyDiagnosticsDialog) RecordKey(ev *tcell.EventKey) {
 	d.dirty = true
 }
 
+// RecordMouse appends a description of a mouse event: the buttons, the
+// modifiers, and where it landed. Same call rule as RecordKey.
+//
+// A mouse gesture is not one event. tcell resends the held button for every
+// pixel of a drag, and a hundred identical lines would bury the press that
+// started it, so only a change of buttons or modifiers is recorded — a press, a
+// release, a wheel tick. The position on each line is wherever that change
+// happened.
+//
+// This is here because a modifier the terminal keeps for itself is invisible
+// from inside the app: xfce4-terminal (VTE) handles Shift+click as its own text
+// selection while mouse reporting is on and never forwards it, which reads
+// exactly like a broken Shift+click. One line in this log, or none, tells the
+// two apart.
+func (d *KeyDiagnosticsDialog) RecordMouse(ev *tcell.EventMouse) {
+	state := int(ev.Buttons())<<8 | int(ev.Modifiers())
+	if state == d.lastMouse {
+		return
+	}
+	d.lastMouse = state
+	x, y := ev.Position()
+	line := fmt.Sprintf("%-20s  Btn=%-4d Mod=%-3d At=%d,%d",
+		mouseEventName(ev), ev.Buttons(), ev.Modifiers(), x, y)
+	d.lines = append([]string{line}, d.lines...)
+	if len(d.lines) > maxKeyDiagLines {
+		d.lines = d.lines[:maxKeyDiagLines]
+	}
+	d.dirty = true
+}
+
+// mouseEventName is EventKey.Name()'s counterpart for a mouse event: the
+// modifiers the terminal delivered, then the button. EventMouse has no Name of
+// its own, and the modifier names are the point of the line — "Shift+Button1"
+// against a bare "Button1" is the whole diagnosis.
+func mouseEventName(ev *tcell.EventMouse) string {
+	var parts []string
+	for _, m := range []struct {
+		mask tcell.ModMask
+		name string
+	}{
+		{tcell.ModCtrl, "Ctrl"},
+		{tcell.ModAlt, "Alt"},
+		{tcell.ModShift, "Shift"},
+		{tcell.ModMeta, "Meta"},
+	} {
+		if ev.Modifiers()&m.mask != 0 {
+			parts = append(parts, m.name)
+		}
+	}
+	button := "Release"
+	switch b := ev.Buttons(); {
+	case b&tcell.WheelUp != 0:
+		button = "WheelUp"
+	case b&tcell.WheelDown != 0:
+		button = "WheelDown"
+	case b&tcell.WheelLeft != 0:
+		button = "WheelLeft"
+	case b&tcell.WheelRight != 0:
+		button = "WheelRight"
+	case b&tcell.Button1 != 0:
+		button = "Button1"
+	case b&tcell.Button2 != 0:
+		button = "Button2"
+	case b&tcell.Button3 != 0:
+		button = "Button3"
+	case b != tcell.ButtonNone:
+		button = "Button"
+	}
+	return strings.Join(append(parts, button), "+")
+}
+
 // syncIfDirty rebuilds the editor's content from d.lines if RecordKey has
 // run since the last rebuild.
 //
@@ -97,6 +174,7 @@ func (d *KeyDiagnosticsDialog) syncIfDirty() {
 func (d *KeyDiagnosticsDialog) Show() {
 	d.lines = nil
 	d.dirty = false
+	d.lastMouse = -1
 	if d.editor != nil {
 		d.editor.SetText("")
 	}

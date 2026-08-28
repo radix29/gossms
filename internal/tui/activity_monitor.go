@@ -146,9 +146,17 @@ type ActivityMonitor struct {
 	// still connecting keeps them live.
 	tools      []toolButton
 	toolPrefix string
-	// toolsEnd is the column just past the last laid-out control, so the
-	// right-aligned collector state fits into what is left of the row.
+	// toolsEnd is the column just past the last laid-out control, the More
+	// cell included, so the right-aligned collector state fits into what is
+	// left of the row.
 	toolsEnd int
+
+	// more is the "More ▾" cell standing in for the controls this row was too
+	// narrow to draw, and hidden the indexes it holds. A dashboard row wants 47
+	// columns and the pane gets 70% of the terminal, so Pause — which has no
+	// key binding — went off the row on anything under a 68-column terminal.
+	more   toolButton
+	hidden []int
 
 	// hits is where each History chart's plot landed on the canvas, in canvas
 	// coordinates, recorded by the last draw.
@@ -735,9 +743,43 @@ func (am *ActivityMonitor) buildTools() {
 	am.layoutTools()
 }
 
-// layoutTools assigns each control its screen rect — see layoutToolButtons.
+// layoutTools assigns each control its screen rect, collapsing whatever does
+// not fit into the "More ▾" menu — see layoutToolButtonsOverflow.
 func (am *ActivityMonitor) layoutTools() {
-	am.toolsEnd = layoutToolButtons(am.tools, am.toolRect, am.toolPrefix)
+	am.hidden, am.toolsEnd = layoutToolButtonsOverflow(am.tools, am.toolRect, am.toolPrefix, &am.more)
+}
+
+// prefixVisible reports whether the rate selector's label is drawn. The "More
+// ▾" cell takes its place on a row too narrow for both — see
+// layoutToolButtonsOverflow — and the two would otherwise overlap, leaving the
+// tail of the label beside the cell that replaced it.
+func (am *ActivityMonitor) prefixVisible() bool {
+	return am.more.rect.IsZero() || am.more.rect.X > am.toolRect.X+1
+}
+
+// runTool invokes toolbar cell i's action, or says why it did not — the one
+// gate behind the click path and the overflow menu, so a control withheld on
+// the row is withheld in the menu for the same stated reason.
+func (am *ActivityMonitor) runTool(i int) {
+	switch t := am.tools[i]; {
+	case t.disabled && t.reason != "":
+		am.app.setStatus(t.reason)
+	case t.action != nil && !t.disabled:
+		t.action()
+	}
+}
+
+// showOverflowMenu pops the controls the row was too narrow to draw, under the
+// "More ▾" cell.
+func (am *ActivityMonitor) showOverflowMenu() {
+	r := am.more.rect
+	if r.IsZero() {
+		r = core.Rect{X: am.rect.X, Y: am.rect.Y}
+	}
+	am.app.contextMenu.Show(r.X, r.Y+1, toolOverflowItems(am.tools, am.hidden,
+		func(i int) bool { return am.tools[i].disabled },
+		func(i int) string { return am.tools[i].reason },
+		am.runTool))
 }
 
 // resolution names the active tab's sampling interval as the dashboards show

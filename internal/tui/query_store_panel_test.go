@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
+	dbconn "github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
@@ -1872,5 +1873,102 @@ func TestTheScriptLabelSaysWhichStatement(t *testing.T) {
 	p.refreshToolLabels()
 	if got := p.acts[qsActScript].label; got != "Script Unforce" {
 		t.Errorf("over a forced plan the label is %q, want Script Unforce", got)
+	}
+}
+
+// -- a pin reaches the views that show the set -----------------------------
+
+// qsLeaf is a Query Store report leaf as the tree builds it, wired to sc.
+func qsLeaf(sc *dbconn.ServerConn, dbName, title string) *explorerNode {
+	return &explorerNode{label: title,
+		data: nodeData{Type: NodeQueryStoreReport, Name: title, DBName: dbName, conn: sc}}
+}
+
+// TestAPinStalesOnlyTheViewsThatShowTheTrackedSet. The tree's Tracked Queries
+// leaf caches its rows per node like every other Detail Browser view, so a pin
+// made in the panel has to drop that entry — and only that one. Dropping more
+// would re-read the server for folders a pin cannot have changed.
+func TestAPinStalesOnlyTheViewsThatShowTheTrackedSet(t *testing.T) {
+	a := newTestApp()
+	a.detailBrowser = a.newDetailBrowser()
+	sc, _ := newFakeConn(t)
+	sc.Opts.Server = `HOST\SQL2022`
+	other, _ := newFakeConn(t)
+	other.Opts.Server = "elsewhere"
+
+	tracked := qsLeaf(sc, "appdb", "Tracked Queries")
+	ranking := qsLeaf(sc, "appdb", "Top Resource Consuming Queries")
+	otherDB := qsLeaf(sc, "reporting", "Tracked Queries")
+	otherServer := qsLeaf(other, "appdb", "Tracked Queries")
+	for _, n := range []*explorerNode{tracked, ranking, otherDB, otherServer} {
+		a.detailBrowser.cache[n] = &detailResult{cols: []string{"Query ID"}, rows: [][]string{{"11"}}}
+	}
+
+	// The address the panel holds is the one the user typed into Connect, which
+	// is not necessarily how the tree's node spells it — the set is keyed by
+	// neither, so the match cannot be a string comparison.
+	a.trackedQueriesChanged(`host\sql2022`, "appdb")
+
+	if _, ok := a.detailBrowser.cache[tracked]; ok {
+		t.Error("the Tracked Queries leaf kept its rows, so the pin shows there only after a refresh")
+	}
+	for name, n := range map[string]*explorerNode{
+		"another report on the same database": ranking,
+		"Tracked Queries in another database": otherDB,
+		"Tracked Queries on another server":   otherServer,
+	} {
+		if _, ok := a.detailBrowser.cache[n]; !ok {
+			t.Errorf("%s was invalidated too", name)
+		}
+	}
+}
+
+// The leaf the user is looking at is refetched, not merely dropped: a view that
+// went on showing the old set until the next reselect is the bug this fixes.
+func TestAPinRefetchesTheTrackedLeafOnScreen(t *testing.T) {
+	a := newTestApp()
+	a.detailBrowser = a.newDetailBrowser()
+	sc, _ := newFakeConn(t)
+	sc.Opts.Server = "host"
+	a.connections = append(a.connections, sc)
+
+	leaf := qsLeaf(sc, "appdb", "Tracked Queries")
+	a.detailBrowser.cache[leaf] = &detailResult{cols: []string{"Query ID"}, rows: [][]string{{"11"}}}
+	a.detailBrowser.ShowNodeDetails(a, leaf)
+	if got := a.detailBrowser.grid.Row(0); len(got) == 0 || got[0] != "11" {
+		t.Fatalf("the leaf is showing %v, want the cached row", got)
+	}
+
+	a.trackedQueriesChanged("host", "appdb")
+
+	if _, ok := a.detailBrowser.cache[leaf]; ok {
+		t.Fatal("the displayed leaf kept its cache entry")
+	}
+	if got := a.detailBrowser.grid.Status(); got != "Loading..." {
+		t.Errorf("grid status = %q, want the leaf refetched on the spot", got)
+	}
+}
+
+// The whole path, driven the way a user drives it: the panel's Track Query
+// button, and the tree's leaf loses the rows it was holding. A test on
+// trackedQueriesChanged alone passes against a toggle that never calls it.
+func TestTheTrackButtonStalesTheTreesTrackedLeaf(t *testing.T) {
+	useTempTracked(t)
+	p, a, _ := newQSPanel(t, "Top Resource Consuming Queries",
+		qsOptionsResponse("READ_WRITE", "READ_WRITE"),
+		qsPlansResponse(),
+		qsReportResponse(qsStatRow(11, "dbo.p", "SELECT 1", 2500, 1234, 0, 1)))
+	p.conn.Opts.Server = "host"
+	a.detailBrowser = a.newDetailBrowser()
+	leaf := qsLeaf(p.conn, "appdb", "Tracked Queries")
+	a.detailBrowser.cache[leaf] = &detailResult{cols: []string{"Query ID"}, rows: [][]string{{"11"}}}
+
+	p.Load()
+	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
+	p.grid.SetSelectedCell(0, 0)
+	p.runAct(qsActTrack)
+
+	if _, ok := a.detailBrowser.cache[leaf]; ok {
+		t.Error("Track Query left the tree's Tracked Queries leaf holding the set from before the pin")
 	}
 }

@@ -50,7 +50,12 @@ func (g *DataGrid) Draw(s tcell.Screen) {
 		}
 		cells := g.rows.Row(dataIdx)
 		g.drawRow(s, y, cells, style, gw)
-		if g.cellCursor && dataIdx >= r0 && dataIdx <= r1 {
+		// A Ctrl+click-marked row is highlighted whole: the marked set is rows,
+		// not cells, so a rectangle's column range says nothing about it.
+		switch {
+		case g.rowMarked(dataIdx):
+			g.drawCellSelection(s, y, cells, gw, 0, max(0, len(g.columns)-1))
+		case g.cellCursor && dataIdx >= r0 && dataIdx <= r1:
 			g.drawCellSelection(s, y, cells, gw, c0, c1)
 		}
 	}

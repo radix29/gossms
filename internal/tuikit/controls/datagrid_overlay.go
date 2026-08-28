@@ -13,10 +13,16 @@ import (
 // separated columns and newline-separated rows — what the right-click
 // menu's "Copy" item hands to OnCopyRequest.
 func (g *DataGrid) selectedCellsText() string {
-	r0, c0, r1, c1 := g.selectionBounds()
+	_, c0, _, c1 := g.selectionBounds()
+	rows := g.selectedRows()
+	// A Ctrl+click selection is whole rows — there is no column range to take,
+	// so it copies every column.
+	if g.marking {
+		c0, c1 = 0, max(0, len(g.columns)-1)
+	}
 	var b strings.Builder
-	for r := r0; r <= r1; r++ {
-		if r > r0 {
+	for i, r := range rows {
+		if i > 0 {
 			b.WriteByte('\n')
 		}
 		cells := g.rows.Row(r)
@@ -70,14 +76,23 @@ func (g *DataGrid) requestCopy(text string) {
 // cellContextMenuItems builds the right-click (or Ctrl+Space) menu for a
 // selected cell/block: "Copy" only when OnCopyRequest is wired, plus "Show
 // Value" for a single cell — a block selection has no one cell's full
-// content to show, so that item is omitted while blockSelecting is true.
+// content to show, so that item is omitted while blockSelecting is true —
+// then whatever the host contributes through OnMenuItems.
 func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	var items []MenuItem
 	if g.OnCopyRequest != nil {
 		items = append(items, MenuItem{Label: "Copy", Action: func() { g.requestCopy(g.selectedCellsText()) }})
 	}
-	if !g.blockSelecting {
+	if !g.blockSelecting && len(g.selectedRows()) <= 1 {
 		items = append(items, MenuItem{Label: showValueMenuItem, Action: g.openViewer})
+	}
+	if g.OnMenuItems != nil {
+		if host := g.OnMenuItems(); len(host) > 0 {
+			if len(items) > 0 {
+				items = append(items, MenuItem{Divider: true})
+			}
+			items = append(items, host...)
+		}
 	}
 	return items
 }

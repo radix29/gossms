@@ -481,8 +481,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				e.outputFileName = outputFileField.Value()
 				edits = append(edits, e)
-				grid.SetData(cols, rowsFor())
-				grid.SetSelectedRow(len(visible()) - 1)
+				resetGrid(grid, cols, rowsFor(), len(visible())-1)
 				syncFieldsFromSelection()
 			})
 			// moveSelected moves the selected step one place up (delta -1) or
@@ -505,8 +504,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				a := slices.Index(edits, vis[i])
 				b := slices.Index(edits, vis[i+delta])
 				edits[a], edits[b] = edits[b], edits[a]
-				redrawGrid(grid, cols, rowsFor())
-				grid.SetSelectedRow(i + delta)
+				resetGrid(grid, cols, rowsFor(), i+delta)
 				syncFieldsFromSelection()
 			}
 			moveUpBtn := widgets.NewButton("Move Up", func() { moveSelected(-1) })
@@ -521,8 +519,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				hint.Clear()
 				e.pendingRemove = true
 				current = nil
-				grid.SetData(cols, rowsFor())
-				grid.SetSelectedRow(0)
+				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
 			})
 
@@ -559,7 +556,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				for _, s := range steps {
 					edits = append(edits, jobStepEditFromStep(s))
 				}
-				grid.SetData(cols, rowsFor())
+				resetGrid(grid, cols, rowsFor(), 0)
 				syncFieldsFromSelection()
 			}
 

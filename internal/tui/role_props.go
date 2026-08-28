@@ -33,17 +33,17 @@ import (
 func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
-		pageRoleGeneral(sc, dbName, namePtr),
-		pageRoleMembers(sc, dbName, namePtr),
-		pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"),
-		pageRoleOwnedRoles(sc, dbName, namePtr),
-		pageDatabasePrincipalSecurables(d, sc, dbName, namePtr),
+		withRequires(pageRoleGeneral(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		withRequires(pageRoleMembers(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"), dbName, rightAlterAnySchema, rightControlDB),
+		withRequires(pageRoleOwnedRoles(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
 		// A database role is classed as USER in sp_addextendedproperty's
 		// level names — it's a database principal like a user, not a
 		// level of its own.
-		pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
-		}),
+		}), dbName, rightAlterAnyDBRole),
 	}
 }
 

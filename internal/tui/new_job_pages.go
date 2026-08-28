@@ -218,8 +218,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		}
 		e.outputFileName = outputFileField.Value()
 		edits = append(edits, e)
-		grid.SetData(cols, rowsFor())
-		grid.SetSelectedRow(len(visible()) - 1)
+		resetGrid(grid, cols, rowsFor(), len(visible())-1)
 		syncFieldsFromSelection()
 	})
 	deleteBtn = widgets.NewButton("Delete", func() {
@@ -231,8 +230,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		hint.Clear()
 		e.pendingRemove = true
 		current = nil
-		grid.SetData(cols, rowsFor())
-		grid.SetSelectedRow(0)
+		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	})
 
@@ -240,7 +238,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	gridRow.DirtyFn = func() bool { return len(visible()) > 0 }
 	gridRow.RevertFn = func() {
 		edits = nil
-		grid.SetData(cols, rowsFor())
+		resetGrid(grid, cols, rowsFor(), 0)
 		syncFieldsFromSelection()
 	}
 

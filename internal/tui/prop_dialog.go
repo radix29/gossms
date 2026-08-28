@@ -51,6 +51,18 @@ type propPage struct {
 	// requiresIn is the database whose capabilities a database-scope entry in
 	// requires is read against. Empty for a server-scoped page.
 	requiresIn string
+
+	// requiresSchema and requiresObject name the securable an object- or
+	// schema-scoped entry in requires is asked about — the schema the object
+	// lives in, and the object itself. Both empty for a page whose rights are
+	// all database- or server-wide.
+	//
+	// Without them objectWriteRights() cannot answer for the principal it
+	// exists for: a grant of ALTER made directly on one table is reflected at
+	// no wider scope, so every other right in the set denies and the page that
+	// principal *can* write comes up read-only. See withRequiresOn.
+	requiresSchema string
+	requiresObject string
 }
 
 // commitRename mirrors a just-completed rename into namePtr — the boxed name
@@ -397,19 +409,13 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 	if len(p.requires) == 0 || sc == nil {
 		return ""
 	}
-	for _, r := range p.requires {
-		if r.db {
-			if p.requiresIn == "" || sc.DatabaseCapabilities(ctx, p.requiresIn).Permits(r.name) {
-				return ""
-			}
-			continue
-		}
-		caps := sc.Capabilities()
-		for _, n := range append([]string{r.name}, r.alt...) {
-			if caps.Allows(n) {
-				return ""
-			}
-		}
+	// The probing form of DatabaseCapabilities, which the menu gates may not
+	// use — see rightsAllow, which is the single copy of the rule both follow.
+	dbCaps := func(name string) *gosmo.DatabaseCapabilities {
+		return sc.DatabaseCapabilities(ctx, name)
+	}
+	if rightsAllow(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...) {
+		return ""
 	}
 	return readOnlyBannerPrefix + requiresText(p.requires...)
 }

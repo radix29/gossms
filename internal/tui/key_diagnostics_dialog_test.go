@@ -202,3 +202,65 @@ func TestKeyDiagnosticsKeepsRecordingAfterCopy(t *testing.T) {
 		t.Errorf("a key pressed after Copy never reached the log: %q", d.editor.Text())
 	}
 }
+
+// mouseAt builds a mouse event at a fixed position, since only the buttons and
+// modifiers decide what gets recorded.
+func mouseAt(b tcell.ButtonMask, m tcell.ModMask) *tcell.EventMouse {
+	return tcell.NewEventMouse(10, 5, b, m)
+}
+
+// TestKeyDiagnosticsRecordsTheModifiersOnAClick is what the log is for: a
+// Shift+click that arrives and a plain one that does not are otherwise
+// indistinguishable from inside the app.
+func TestKeyDiagnosticsRecordsTheModifiersOnAClick(t *testing.T) {
+	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
+	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
+
+	if len(d.lines) != 2 {
+		t.Fatalf("len(lines) = %d, want the press and the release", len(d.lines))
+	}
+	if !strings.Contains(d.lines[1], "Shift+Button1") {
+		t.Errorf("the press was logged as %q, want it to name the Shift it carried", d.lines[1])
+	}
+	if !strings.Contains(d.lines[0], "Release") {
+		t.Errorf("the release was logged as %q, want it named as one", d.lines[0])
+	}
+	if !strings.Contains(d.lines[0], "At=10,5") {
+		t.Errorf("line %q does not say where the event landed", d.lines[0])
+	}
+}
+
+// A drag is one press and hundreds of resends. Logging each would bury the
+// press that started it — and the press is the line being looked for.
+func TestKeyDiagnosticsCollapsesADrag(t *testing.T) {
+	d := &KeyDiagnosticsDialog{lastMouse: -1}
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
+	for range 20 {
+		d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
+	}
+	d.RecordMouse(mouseAt(tcell.ButtonNone, tcell.ModNone))
+
+	if len(d.lines) != 2 {
+		t.Fatalf("a drag logged %d lines, want the press and the release: %q", len(d.lines), d.lines)
+	}
+	// A modifier appearing part-way through is a change, not a resend: that is
+	// how a Shift held after the press shows up at all.
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModShift))
+	if len(d.lines) != 4 {
+		t.Fatalf("lines = %q, want the modifier change recorded", d.lines)
+	}
+}
+
+// Each showing starts a fresh session, the collapse state included: a first
+// click that matched the last one of the previous showing must still be logged.
+func TestKeyDiagnosticsShowResetsTheMouseCollapse(t *testing.T) {
+	_, d := keyDiagDialogForTest(t)
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
+	d.Show()
+	d.RecordMouse(mouseAt(tcell.Button1, tcell.ModNone))
+	if len(d.lines) != 1 {
+		t.Fatalf("lines after reopening = %q, want the first click of the new session", d.lines)
+	}
+}

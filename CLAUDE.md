@@ -259,8 +259,27 @@ gosmo only.
   `SetDataPreservingView` directly (`propsheet.ToggleGridRow` cannot reach
   `redrawGrid`). Never hand-roll the pair — six pages did, all dropped the widths.
   `wireGridEditor` (`ag_props.go`) packages the commit/load/redraw wiring for the
-  grid-plus-detail-editor idiom. A redraw after the row *set* changes is a
-  different case and may reset the cursor deliberately.
+  grid-plus-detail-editor idiom.
+  **A redraw after the row *set* changes is `resetGrid`, not bare `SetData`.**
+  An Add/Remove/Revert does want the cursor placed deliberately, but `SetData`
+  discards the dragged widths on the way and setting the cursor afterwards hides
+  that there was anything to notice — no cursor jump, no keyboard trap, just a
+  column snapping back. Seventeen sites shipped as `SetData` + `SetSelectedRow`
+  for that reason. `resetGrid(grid, headers, rows, row)`
+  (`prop_grid_helpers.go`) is `SetDataPreservingView` followed by
+  `SetSelectedRow`, and is the only correct form: `redrawGrid` keeps the old
+  cursor, which a changed row set has invalidated.
+- **A mouse gesture's modifier is not yours to rely on — Shift+click especially.**
+  A VTE terminal (xfce4-terminal, GNOME Terminal) handles Shift+mouse as its own
+  text selection whenever an application has mouse reporting on, and forwards
+  nothing: the app sees no event at all, which reads exactly like a broken
+  binding. Ctrl and Alt are delivered. So a Shift+mouse gesture needs a second
+  modifier that means the same thing — `extendSelectionMods` in
+  `datagrid_input.go` is `ModShift | ModAlt` for this reason — and a keyboard
+  route as well. Key Diagnostics logs mouse events (button, modifiers, position,
+  drags collapsed), which is what tells a swallowed modifier from a wrong
+  binding; a tmux harness cannot, since injecting the SGR sequence bypasses the
+  terminal that would have eaten it.
 - **A `Ctrl+Shift+<letter>` chord never arrives as `KeyCtrlX`.** tcell folds a
   Ctrl-modified rune into `KeyCtrlA..KeyCtrlZ` only when Ctrl is the *sole*
   modifier, so Ctrl+Shift+O arrives as `KeyRune "o"` (Kitty) or `"O"` (xterm
@@ -277,6 +296,27 @@ gosmo only.
   `MenuItem`/`ToolbarButton` have an `Enabled func() bool`; the reactive fallback is
   a guard plus `setStatus(...)` in existing wording ("Not connected — use File >
   Connect", "No active query panel").
+- **Every Properties page that can write declares the rights its writes need, and
+  the rights are the *page's*, not the dialog's.** `withRequires` at the
+  `[]propPage` constructor, or `withRequiresOn` when any right is schema- or
+  object-scoped — an object-scoped right asked without a securable answers for
+  nobody, so a page on `objectWriteRights()` wrapped in plain `withRequires`
+  compiles, looks right, and shows a read-only banner to the one principal who
+  could actually write it. The securable for an index, a statistic or a key is the
+  **table**: that is what SQL Server checks and what gosmo's probe records.
+  Login General takes ALTER ANY LOGIN, Login Server Roles takes ALTER ANY SERVER
+  ROLE and Login Securables takes CONTROL SERVER — one list per dialog would have
+  been wrong on two of the three. `prop_page_requires_test.go` fails on a page
+  that declares nothing (unless it is named in `pagesThatOnlyRead`, which is only
+  for pages with no `apply`), on a stale exemption, on an object-scoped page with
+  no securable, and on a new `[]propPage` constructor absent from its list.
+  **The banner's check and the menus' gate are one function, `rightsAllow`
+  (`permission_gate.go`) — never add a second copy.** They had diverged: the
+  banner's half knew only server and database scope, so it would have shown a
+  false read-only for every object-scoped right and never fired at all for SQL
+  Agent's msdb memberships, which fail open when read as server permissions. The
+  callers differ in one thing only, how a database's capabilities are reached —
+  cached for the UI goroutine, probing for a page's `load`.
 - **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a terminal too small for its
   requested size the content is clipped to `InnerRect` (`App.drawDialogs` wraps the
@@ -339,6 +379,13 @@ gosmo only.
   a new cell against the real pane width (Object Explorer takes ~60 of the
   terminal), not against the terminal's; the Query Store panel's filters live on
   the action row for exactly this reason.
+- **A host acting on whole objects reads `DataGrid.SelectedRows()`, never
+  `SelectionBounds()`.** The bounds are a rectangle, which is the wrong shape for
+  a Ctrl+click selection: rows 1 and 3 come back as 1..3, so a Details pane
+  reading them deletes the row the user deliberately left out, with the
+  confirmation naming only the two they picked. `selectedRowObjects`
+  (`detail_browser_ops.go`) is the worked example. The bounds are still right for
+  a *cell* range — the block copy is what they exist for.
 - **A panel that draws a `DataGrid` must also call `grid.DrawOverlay(s)`, after
   every grid it draws.** The cell context menu and the value popup are drawn
   outside the grid's own rect, so `Draw` alone paints neither — and the menu
@@ -386,6 +433,14 @@ invariants, and where each is implemented:
    clears both.
 5. A host that returns early from `HandleMouse` must still forward `ButtonNone` to a
    latch-bearing child.
+
+**A dialog with a text field uses `dialogs.FieldGesture` — never a hand-rolled
+`dragField`.** Points 1, 4 and 5 all land on the same three calls
+(`Release`/`Replay`/`Clear`), and each has a placement that is not local to it:
+`Release` above `ConsumeOutsideClick` *and* above any mode switch, `Replay` after
+`ConsumeOutsideClick` and before any hit-test, `Clear` in `Show`. Seven dialogs had
+their own copy. `ARCHITECTURE.md` § dialogs.FieldGesture has the failure each
+placement prevents; the dialog keeps only its own hit-testing and focus handling.
 
 An overlay drawn last gets **first refusal** of every key/mouse event while open —
 `DataGrid.OverlayActive()` at the top of `QueryPanel.HandleKey`/`HandleMouse`; the

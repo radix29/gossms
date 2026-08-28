@@ -66,11 +66,10 @@ type ConnectDialog struct {
 	matchOpen bool
 	matchSel  int
 
-	// dragField is the input field that claimed the current Button1 gesture, nil
-	// between gestures. Motion goes to it wherever the pointer is, so dragging a
-	// selection out of the field's rect keeps extending it instead of freezing at
-	// the boundary. Same idiom as FindReplaceDialog.
-	dragField *widgets.InputField
+	// drag is the text-selection gesture a click in one of the dialog's text
+	// fields starts — see dialogs.FieldGesture for the ordering its three calls
+	// depend on.
+	drag dialogs.FieldGesture
 }
 
 // NewConnectDialog creates the connection dialog.
@@ -146,7 +145,7 @@ func (d *ConnectDialog) Show() {
 	d.ModalDialog.Show()
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
-	d.dragField = nil
+	d.drag.Clear()
 	d.setFocus(0)
 	d.updateMatches()
 }
@@ -499,10 +498,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		// End a text-selection drag in the field that claimed the press,
 		// wherever the release landed. Before ConsumeOutsideClick, which returns
 		// early on a release outside the dialog and would strand the latch.
-		if d.dragField != nil {
-			d.dragField.HandleMouse(ev)
-			d.dragField = nil
-		}
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
 		return true
@@ -510,7 +506,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 	// Always forward a release to whichever field has focus, so a text-selection
 	// drag started in it ends cleanly even if the release lands elsewhere in the
-	// dialog. After the dragField release above because dragField tracks only
+	// dialog. After the d.drag release above because the gesture tracks only
 	// InputFields, while Editor keeps its own latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		if d.focusIdx < len(d.focusable) {
@@ -531,8 +527,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// The gesture belongs to whichever field claimed its press, so motion is
 	// replayed there without hit-testing — ahead of the match-list overlay and
 	// every widget below, none of which can own a gesture this one started.
-	if d.dragField != nil {
-		d.dragField.HandleMouse(ev)
+	if d.drag.Replay(ev) {
 		return true
 	}
 
@@ -598,8 +593,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 			}
 			// Position the cursor or start a drag-selection at the click point,
 			// not just switch focus to the field.
-			f.HandleMouse(ev)
-			d.dragField = f
+			d.drag.Claim(f, ev)
 			if f == d.fServer {
 				d.openMatchesForClick()
 			}

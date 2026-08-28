@@ -307,10 +307,21 @@ func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosm
 	return sc.Server.AlertByNameContext(ctx, name)
 }
 
+// runScript re-runs every page's apply under gosmo.WithScript, opening the
+// statements it collects in a query window instead of executing them — the
+// create-dialog half of PropDialog.runScript.
+//
+// The empty check is the same one PropDialog makes: a page set can validate,
+// report itself as having work to do, and still collect nothing (every write
+// on it conditional), and an empty query window says less than a message does.
 func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
+		if len(script.Statements) == 0 {
+			d.SetMessage("No changes to script.", false)
+			return
+		}
 		d.app.openQueryWithText(sc, d.scriptDatabase, strings.Join(script.Statements, "\n\n"))
 	})
 }
