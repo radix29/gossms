@@ -24,7 +24,7 @@ const toolGap = 1
 //
 // selected and disabled are drawn, not enforced: a panel that dims a button
 // still has to refuse the click itself, since a dimmed control that acts on a
-// click is the failure both panels have already shipped once.
+// click is the failure the context-gating rule exists to prevent.
 //
 // Only Activity Monitor reads these two fields at all. The Log Viewer dims and
 // gates on toolsEnabled(), a whole-row state; Query Store asks selDisabled/
@@ -85,9 +85,10 @@ const overflowLabel = "More ▾"
 //
 // layoutToolButtons alone deletes a button outright: a zero rect is neither
 // painted nor clickable, so an action with no key binding beside it simply
-// cannot be reached. The Query Store panel's action row shipped that way —
-// 119 columns of buttons in a pane that gets 70% of the terminal, so Compare
-// Plans was gone below a 170-column terminal and Track Query below 132.
+// cannot be reached. The Query Store panel's action row is the case in point:
+// 119 columns of buttons in a pane that gets 70% of the terminal, so without an
+// overflow menu Compare Plans is gone below a 170-column terminal and Track
+// Query below 132.
 //
 // The hidden set is always a suffix: layout stops at the first button that does
 // not fit rather than skipping it and squeezing in a later, shorter one, so the

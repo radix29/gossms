@@ -75,7 +75,7 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 // two instances really can be "sql.a.example" and "sql.b.example", and folding
 // them onto one key would hand one of them the other's login. As a fallback
 // consulted only when the exact host misses, the worst case is the connect
-// error that was the behaviour before any of this.
+// error a miss gives anyway.
 func shortHostKey(key string) string {
 	host, instance, hasInstance := strings.Cut(key, "\\")
 	short, _, dotted := strings.Cut(host, ".")

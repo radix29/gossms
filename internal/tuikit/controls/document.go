@@ -18,8 +18,8 @@ import (
 // processes, keystrokes included. Three caches are keyed on it: the syntax
 // highlighters' block-comment prefix states (sql_highlighter.go,
 // xml_highlighter.go), Editor's wrap-mode visual-row flattening
-// (buildVisualLines), and maxDisplayWidth below. Each of the three was
-// previously an O(document) scan per Draw.
+// (buildVisualLines), and maxDisplayWidth below. Each would otherwise be an
+// O(document) scan per Draw.
 //
 // That only works if the version can never be stale, which is why the
 // buffer is reachable for writing through exactly three methods — setLine,
@@ -130,9 +130,9 @@ func (d *Document) replaceRange(row, n int, with [][]rune) {
 	// of the whole document plus an allocation the size of it.
 	d.lines = slices.Replace(d.lines, row, row+n, with...)
 	// Not edit's touch(0): the lines before row are the same slices they were,
-	// so their cached widths still hold. Undoing a one-line edit in a 20,000
-	// line script used to re-measure every rune in the buffer on the next
-	// Draw, because dropping the whole per-line cache is what touch does.
+	// so their cached widths still hold. touch(0) drops the whole per-line cache,
+	// so undoing a one-line edit in a 20,000-line script would re-measure every
+	// rune in the buffer on the next Draw.
 	d.touch(row)
 }
 

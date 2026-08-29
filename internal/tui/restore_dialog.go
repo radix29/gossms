@@ -67,7 +67,7 @@ const (
 const maxHistorySets = 10
 
 // Button rows. The form's labels are kept short deliberately: five buttons
-// at "Analyze Backup" width no longer fit inside restoreDialogW. The inspect
+// at "Analyze Backup" width don't fit inside restoreDialogW. The inspect
 // row has room to spell "File Locations" out, but says "Files" like the form
 // does because both buttons open the same view — two names for one
 // destination reads as two destinations.

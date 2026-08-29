@@ -161,7 +161,7 @@ func buildPermissionsMatrix(
 		selected = -1
 		selectedEdits = nil
 		visiblePerms = visiblePerms[:0]
-		permGrid.SetData(permissionStateColumns, nil)
+		resetGrid(permGrid, permissionStateColumns, nil, 0)
 		permSection.SetTitle("Explicit permissions")
 	}
 	loadPrincipal := func(row int) {

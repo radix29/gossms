@@ -19,8 +19,7 @@ import (
 // # The rule, and why it isn't "everything SQL Server made"
 //
 // A principal is treated as built-in when the server refuses to drop or rename
-// it, so that the UI never offers an action that cannot work. Verified on
-// win10cli (SQL Server 17.0) by attempting each one in a throwaway database:
+// it, so that the UI never offers an action that cannot work:
 //
 //	dbo, guest, sys, INFORMATION_SCHEMA   both refused, as users and as schemas
 //	the fixed database roles              both refused

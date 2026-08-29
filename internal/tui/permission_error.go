@@ -45,8 +45,7 @@ const (
 //	15151 Cannot alter the login '…', because it does not exist or …
 //	15247 User does not have permission to perform this action
 //
-// A number missing from this map only means the error keeps its raw text,
-// which is what every one of them did before this existed.
+// A number missing from this map only means the error keeps its raw text.
 var refusalNumbers = map[int32]refusalKind{
 	229: refusalCertain, 230: refusalCertain, 262: refusalCertain,
 	297: refusalCertain, 300: refusalCertain, 916: refusalCertain,

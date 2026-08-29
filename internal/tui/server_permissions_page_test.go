@@ -20,9 +20,9 @@ func serverPermissionsResponse() fakeResponse {
 	}}
 }
 
-// gridRowFor finds the page's grid row, and permRow the grid row index whose
-// first column is perm — by name, because the page maps grid rows onto its
-// edit slice through a filtered `visible` slice, and an index agreed on by
+// permGrid finds the page's grid row, and permRowIndex the grid row index
+// whose first column is perm — by name, because the page maps grid rows onto
+// its edit slice through a filtered `visible` slice, and an index agreed on by
 // both the test and the page would agree about a misalignment too.
 func permGrid(t *testing.T, f *propsheet.Form) *propsheet.GridRow {
 	t.Helper()

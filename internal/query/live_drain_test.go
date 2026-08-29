@@ -18,6 +18,7 @@ package query
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"strings"
 	"testing"
@@ -195,4 +196,64 @@ func hasNotice(tr *trace, want string) bool {
 		}
 	}
 	return false
+}
+
+// liveEndFailSink accepts every row of every set and then fails to close the
+// set out — what csvSink does when the flush at the end of a set hits a full
+// disk or a network share that has gone away.
+type liveEndFailSink struct {
+	sets int
+	rows int
+}
+
+func (s *liveEndFailSink) BeginSet([]string) error { s.sets++; return nil }
+func (s *liveEndFailSink) Row([]string) error      { s.rows++; return nil }
+func (s *liveEndFailSink) EndSet(int) error        { return errors.New("end failed") }
+
+// The export bug the drain gate hides: a sink that fails only at EndSet has
+// nonetheless read its set to the end, so there is nothing to drain — and
+// draining it anyway spends the extra Next() that eats the rest of the batch.
+// scanNext used to infer "rows still pending" from "returned an error", so
+// every set after the first vanished on the one run the user most needs the
+// output of.
+//
+// Runs the real runBatch over the real driver, which is the only place the
+// swallowing happens: the fake driver in stream_test.go implements the sqlexp
+// contract but not TDS, so the unit tests in executor_drain_test.go pin what
+// scanNext decides and this pins what that decision costs.
+func TestLiveExportThatFailsAtEndSetKeepsTheRestOfTheBatch(t *testing.T) {
+	conn, ctx, done := liveConn(t)
+	defer done()
+
+	var res Result
+	sink := &liveEndFailSink{}
+	runBatch(ctx, conn, liveBatch, &res, sink)
+
+	t.Logf("sets begun=%d rows=%d RowsWritten=%d messages=%d",
+		sink.sets, sink.rows, res.RowsWritten, len(res.Messages))
+	for _, m := range res.Messages {
+		t.Logf("  message: %s", m.Text)
+	}
+
+	// Both sets must have been offered to the sink. Before the fix the second
+	// never was: the drain after the first set's EndSet failure swallowed
+	// everything that followed it.
+	if sink.sets != 2 {
+		t.Errorf("the sink was offered %d result sets, want 2 — the batch's later "+
+			"output was lost to the drain after the first EndSet failure", sink.sets)
+	}
+	if sink.rows != 7 {
+		t.Errorf("the sink was handed %d rows, want 7 (5 + 2)", sink.rows)
+	}
+	// The PRINT between the sets is the other casualty, and the one a user
+	// would notice as "no messages at all".
+	found := false
+	for _, m := range res.Messages {
+		if strings.Contains(m.Text, "between the sets") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the PRINT between the two sets never reached Messages")
+	}
 }

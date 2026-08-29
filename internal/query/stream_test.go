@@ -132,7 +132,7 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	defer streamDB.Close()
 	streamRows := queryFakeRows(t, streamDB)
 	sink := &recordingSink{}
-	n, err := streamResultSet(streamRows, sink)
+	n, _, err := streamResultSet(streamRows, sink)
 	streamRows.Close()
 	if err != nil {
 		t.Fatalf("streamResultSet: %v", err)
@@ -175,7 +175,7 @@ func TestStreamResultSetWritesEveryRow(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &recordingSink{}
-	n, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink)
 	r.Close()
 	if err != nil {
 		t.Fatalf("streamResultSet: %v", err)
@@ -198,7 +198,7 @@ func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &recordingSink{failOn: 2}
-	n, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink)
 	r.Close()
 	if err == nil {
 		t.Fatal("streamResultSet returned nil error after the sink failed")
@@ -226,7 +226,7 @@ func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &beginFailSink{}
-	n, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink)
 	r.Close()
 
 	if err == nil {

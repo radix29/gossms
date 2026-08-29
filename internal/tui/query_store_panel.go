@@ -39,10 +39,9 @@ type qsWindow struct {
 // table rather than a label list beside a duration list — a "24 h" that read
 // seven days is invisible in every unit test.
 var qsWindows = []qsWindow{
-	// The two short ranges are there for the workload you just ran: Regressed
-	// Queries compares the two halves of its own window, so on an hour it can
-	// only see a change that straddles the half-hour mark — and a development
-	// database's whole history is usually minutes old.
+	// The two short ranges are for the workload you just ran: a development
+	// database's whole history is often minutes old, and Regressed Queries
+	// compares the two halves of its own window.
 	{"5 m", 5 * time.Minute},
 	{"15 m", 15 * time.Minute},
 	{"1 h", time.Hour},
@@ -114,14 +113,10 @@ type QueryStorePanel struct {
 
 	// statChosen records that the user picked a statistic from the toolbar.
 	// Until they do, the statistic follows each report's own defaultStat —
-	// Total for the two that rank by accumulated cost, Avg for the five that
-	// rank by cost per execution.
-	//
-	// Without it the default applied at construction only, so the same action
-	// gave two different answers: opening a report leaf produced Total on a
-	// panel created for it and whatever the last view left behind on one
-	// already open. Once the statistic is an explicit choice it is kept, which
-	// is what the metric does unconditionally.
+	// Total for the three read as accumulated cost, Avg for the other four,
+	// which are about cost per execution. Applying the default at construction
+	// only makes one action give two answers: Total on a panel opened for the
+	// report, whatever the last view left behind on one already open.
 	statChosen bool
 
 	// minExecIdx and regressIdx index qsMinExecCounts and qsRegressionPcts —
@@ -514,10 +509,8 @@ func (p *QueryStorePanel) selReason(i int) string {
 // the action has no plan to act on, or the login may not force one.
 //
 // Asked on demand rather than latched into toolButton.disabled: the toolbar is
-// built once in NewQueryStorePanel, where the capability probe may not have
-// run, and whether a cached flag had been refreshed by the time of a click
-// would depend on a draw having happened first. Same reasoning as
-// LogViewer.recycleDenied.
+// built in NewQueryStorePanel, before the capability probe has necessarily run.
+// Same reasoning as LogViewer.recycleDenied.
 func (p *QueryStorePanel) actDisabled(i int) bool {
 	if p.busy {
 		return true
@@ -636,7 +629,7 @@ func (p *QueryStorePanel) showOverflowMenu(at core.Rect, tools []toolButton, hid
 }
 
 // qsMenuItems builds a selector's list, marking the entry in force. The
-// bullet is what tells a user which of six windows they are looking at
+// bullet is what tells a user which of eight windows they are looking at
 // without reading the button they just covered with the menu.
 func qsMenuItems[T comparable](values []T, current T, label func(T) string, choose func(T)) []controls.MenuItem {
 	items := make([]controls.MenuItem, 0, len(values))
@@ -1015,7 +1008,7 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	seq := p.planSeq
 	if queryID == 0 || !p.app.isConnected(p.conn) {
 		p.plans = nil
-		p.plansGrid.SetData(qsPlanColumns, nil)
+		resetGrid(p.plansGrid, qsPlanColumns, nil, 0)
 		p.plansGrid.SetStatus("No query selected")
 		return
 	}
@@ -1047,7 +1040,12 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 				return
 			}
 			p.plans = plans
-			p.plansGrid.SetData(qsPlanColumns, qsPlanRows(plans, opts))
+			// resetGrid, not SetData: the plan pane's columns are qsPlanColumns
+			// on every load, so a column dragged wider stays meaningful — and
+			// SetData drops it every time the report cursor moves to another
+			// query. resetGrid rather than redrawGrid because these are a
+			// different query's plans, so the old cursor means nothing.
+			resetGrid(p.plansGrid, qsPlanColumns, qsPlanRows(plans, opts), 0)
 			p.plansGrid.SetStatus(fmt.Sprintf("Query %d — %d plans", queryID, len(plans)))
 		})
 	})
@@ -1063,7 +1061,7 @@ func (p *QueryStorePanel) plansPanicked(seq int) {
 	}
 	p.planCancel = nil
 	p.plans = nil
-	p.plansGrid.SetData(qsPlanColumns, nil)
+	resetGrid(p.plansGrid, qsPlanColumns, nil, 0)
 	p.plansGrid.SetStatus("Reading plans stopped unexpectedly — see the log for details")
 }
 

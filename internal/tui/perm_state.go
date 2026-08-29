@@ -54,9 +54,9 @@ const permStateCycleNote = "Space/Enter (or click) on State cycles Grant → Gra
 // permApplyFn issues one GRANT/DENY/REVOKE at whatever scope the page
 // edits. verb is "GRANT", "DENY" or "REVOKE"; opts carries the WITH GRANT
 // OPTION / CASCADE / GRANT OPTION FOR modifiers permTransition worked out.
-// One function rather than the grant/deny/revoke triple these grids used to
-// take, because the modifiers are decided from the *pair* of states and a
-// three-way split has nowhere to put that.
+// One function rather than a grant/deny/revoke triple, because the modifiers
+// are decided from the *pair* of states and a three-way split has nowhere to
+// put that.
 type permApplyFn func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error
 
 // permTransition returns the single statement that moves a permission from

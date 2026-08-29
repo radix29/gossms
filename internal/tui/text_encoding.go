@@ -78,9 +78,9 @@ func encodeTextFile(text string, enc fileEncoding, crlf bool) []byte {
 // Both ways of losing something have to be reported, because utf16.Decode
 // itself reports neither: a trailing odd byte is dropped here, and Decode
 // maps an unpaired surrogate to U+FFFD, so the result is always valid UTF-8
-// whatever the file held. An unflagged U+FFFD is the same failure File >
-// Open shipped in 2026-08 — the panel opens looking fine and Save writes the
-// replacement characters back over the user's script for good.
+// whatever the file held. An unflagged U+FFFD is the failure this exists to
+// catch: the panel opens looking fine and Save writes the replacement
+// characters back over the user's script for good.
 func decodeUTF16(b []byte, bigEndian bool) (text string, lossy bool) {
 	units := make([]uint16, 0, len(b)/2)
 	for i := 0; i+1 < len(b); i += 2 {

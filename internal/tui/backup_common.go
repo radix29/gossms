@@ -182,8 +182,8 @@ func yesNo(b bool) string {
 //
 // The quoting itself is gosmo.QuoteLiteral, which is the driver's own
 // TSQLQuoter; only the N prefix is added here, since QuoteLiteral deliberately
-// does not emit one. Hand-rolling the doubling is what this used to do, and
-// there is no reason for two implementations of it across the two repos.
+// does not emit one. Hand-rolling the doubling would duplicate it across the
+// two repos.
 func sqlStringLiteral(s string) string {
 	return "N" + gosmo.QuoteLiteral(s)
 }

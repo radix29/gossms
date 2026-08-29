@@ -23,8 +23,8 @@ import (
 // SELECT after WITH ... AS (...), and INSERT ... SELECT are recognised as
 // continuations of the same statement, not new ones (see sqlStatementAt
 // below — the same heuristic internal/tui's IntelliSense scopes column
-// completion with, dmlStatementStarts in
-// internal/tui/completion_provider.go, reimplemented here in row/column form
+// completion with, DMLStatementStarts in
+// internal/tui/sqlparse/scope.go, reimplemented here in row/column form
 // since tuikit must never import tui). All boundary kinds are ignored inside
 // string literals ('...'), bracketed/quoted identifiers ([...], "..."), and
 // comments (--... and /* ... */), so one of those characters appearing
@@ -33,7 +33,7 @@ import (
 // This is a lexical approximation, not a full T-SQL parser: only
 // INSERT ... VALUES followed by a later, genuinely separate SELECT with no
 // ';' between them is (rarely) missed — a known limitation, matching
-// dmlStatementStarts' own.
+// DMLStatementStarts' own.
 //
 // No-ops (returns false, selection untouched) if the statement at the
 // cursor is empty or all-whitespace — e.g. the cursor sits on a blank line
@@ -54,7 +54,7 @@ func (e *Editor) SelectStatementAtCursor() bool {
 }
 
 // dmlStatementLeaders are the T-SQL keywords that can only ever begin a new
-// statement — mirrors internal/tui/completion_provider.go's map of the same
+// statement — mirrors internal/tui/sqlparse/scope.go's map of the same
 // name exactly (kept in sync by hand; tuikit cannot import tui to share it).
 var dmlStatementLeaders = map[string]bool{
 	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true,
@@ -66,8 +66,8 @@ var dmlStatementLeaders = map[string]bool{
 // VALUES (clears a pending INSERT ... SELECT/CTE main-query suppression),
 // and UNION/EXCEPT/INTERSECT/ALL (recognise a chained SELECT as a
 // continuation, not a new statement). Every other keyword is irrelevant to
-// this narrow heuristic, so — unlike completion_tokenizer.go's much larger
-// sqlKeywords table, which also drives clause detection and FROM-scope
+// this narrow heuristic, so — unlike internal/tui/sqlparse/token.go's much
+// larger sqlKeywordList, which also drives clause detection and FROM-scope
 // parsing — this set only needs to be exactly these.
 var dmlBoundaryKeywords = map[string]bool{
 	"SELECT": true, "INSERT": true, "UPDATE": true, "DELETE": true,
@@ -94,7 +94,7 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 
 	// DML-leader statement-boundary tracking (see the doc comment above) —
 	// reset at every ';'/GO batch boundary, since a boundary of either kind
-	// always falls at paren depth 0 in valid SQL and dmlStatementStarts (the
+	// always falls at paren depth 0 in valid SQL and DMLStatementStarts (the
 	// tui-side analogue) is likewise given a fresh token stream per batch.
 	parenDepth := 0
 	prevKeyword, prevPrevKeyword := "", ""

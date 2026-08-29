@@ -137,29 +137,26 @@ var sqlKeywords = map[string]bool{
 // SQLHighlighter is the built-in SQL syntax highlighter for Editor.
 //
 // The returned Highlighter is stateful and belongs to exactly one Editor —
-// see the memo below. Build a fresh one per Editor, as every call site does.
+// see the cache below. Build a fresh one per Editor, as every call site does.
 //
 // Editor.Draw calls it once per visible row, and Draw runs on every event the
 // app processes — every keystroke, mouse-move tick and timer tick included.
 // Deciding whether a line starts inside an unterminated /* */ means replaying
 // every prior line (startsInBlockComment): O(N) per line, O(H*N) per Draw for
 // a viewport of H rows. Measured on a 40-row viewport scrolled to the bottom
-// of the document, that was ~4.6ms per pass at 1,000 lines and ~48ms at
-// 10,000 — i.e. typing in a large script was bounded by the highlighter.
+// of the document, that is ~4.6ms per pass at 1,000 lines and ~48ms at 10,000
+// — i.e. typing in a large script is bounded by the highlighter.
 //
-// blockStarts below replays the document once and keeps the answer for every
-// line, so each call is an array index. It is rebuilt only when the document
-// changes, which the version counter reports exactly (see Document) — so a
-// pass that only scrolled, or redrew for an unrelated event, costs nothing at
-// all, and an edit costs one replay rather than one per pass.
+// The starts cache below replays the document once and keeps the answer for
+// every line, so each call is an array index. It is rebuilt only when the
+// document changes, which the version counter reports exactly (see Document) —
+// so a pass that only scrolled, or redrew for an unrelated event, costs nothing
+// at all, and an edit costs one replay rather than one per pass.
 //
-// This replaced a memo that cached just the previous call's end-of-line state
-// and reused it when idx == lastIdx+1. That made rows 2..H of a pass O(1) but
-// could never help row 1: a pass starts at scrollRow and the previous pass
-// ended at scrollRow+H-1, so the sequence breaks at every pass boundary by
-// construction. Keying on the version instead removes the last O(document)
-// step from a redraw. Same treatment, for the same reason, as XMLHighlighter
-// (xml_highlighter.go).
+// Not a one-line memo of the previous call's end-of-line state: a pass starts
+// at scrollRow where the previous pass ended at scrollRow+H-1, so the sequence
+// breaks at every pass boundary by construction and row 1 is never helped.
+// Same treatment, for the same reason, as XMLHighlighter (xml_highlighter.go).
 func SQLHighlighter(p *theme.Palette) Highlighter {
 	kwStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	strStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorString)
@@ -266,12 +263,9 @@ func blockCommentEnd(line []rune, from int) int {
 // "inside a comment" for the whole rest of the document and every following
 // line rendered as one.
 //
-// This is the single definition of that per-line step, shared by
-// startsInBlockComment's replay and SQLHighlighter's memo. They must agree
-// exactly: the replay is what the first row of a Draw pass uses and the memo
-// what every later row uses, so any divergence colours a line differently
-// depending only on whether it happened to be the first visible row, which
-// reads as a flicker while scrolling.
+// This is the single definition of that per-line step, shared by the
+// prefixStates cache SQLHighlighter reads and startsInBlockComment's full
+// replay, which is the reference that cache's tests check against.
 //
 // An unterminated string ends at the end of its line, which is also what the
 // main loop does — a genuinely multi-line literal is still mis-scanned, and

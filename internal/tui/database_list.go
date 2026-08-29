@@ -8,9 +8,8 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// The rule for which databases a dropdown offers, in one place because
-// thirteen call sites used to each decide it separately and only one of them
-// decided anything.
+// The rule for which databases a dropdown offers, in one place rather than
+// decided separately at each of thirteen call sites.
 //
 // It turns on *when* the name is resolved, not on what looks tidy:
 //

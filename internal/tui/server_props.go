@@ -90,11 +90,10 @@ func newConfigEditor(configs []*gosmo.ConfigurationOption, tracked *[]configRow)
 //
 // The N/A row is the point, not a detail: sys.configurations is edition- and
 // version-dependent, so several of the options the Advanced page lists are
-// simply absent on an older or lesser instance. This used to hand back a live
-// checkbox that was left out of *tracked, so the user could tick "xp_cmdshell",
-// press OK, and be told it succeeded while nothing was ever sent — the "never
-// let a control silently do nothing" rule, one page down from the menus it is
-// usually stated about.
+// simply absent on an older or lesser instance. A live checkbox there is left
+// out of *tracked, so the user ticks "xp_cmdshell", presses OK, and is told it
+// succeeded while nothing was ever sent — the "never let a control silently do
+// nothing" rule, one page down from the menus it is usually stated about.
 func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]configBoolRow) func(name, label string) propsheet.Row {
 	return func(name, label string) propsheet.Row {
 		c := findConfig(configs, name)

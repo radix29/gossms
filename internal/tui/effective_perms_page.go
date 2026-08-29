@@ -41,7 +41,11 @@ func effectivePermsGrid() (*controls.DataGrid, func(perms []*gosmo.EffectivePerm
 		for i, p := range perms {
 			rows[i] = []string{p.Permission, p.Subentity, p.Entity}
 		}
-		grid.SetData(effectivePermsCols, rows)
+		// resetGrid, not SetData: the columns are effectivePermsCols on every
+		// run, so a column the user dragged wider stays meaningful across a
+		// re-Show — SetData discarded it. Row 0 because these are a different
+		// principal's or scope's permissions, so the old cursor means nothing.
+		resetGrid(grid, effectivePermsCols, rows, 0)
 	}
 	return grid, fill
 }

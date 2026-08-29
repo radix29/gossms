@@ -325,9 +325,9 @@ func buildSecurablesMatrix(
 		selectedSec = securable{}
 		selectedEdits = nil
 		visiblePerms = visiblePerms[:0]
-		permGrid.SetData(permissionStateColumns, nil)
+		resetGrid(permGrid, permissionStateColumns, nil, 0)
 		loadedCols = nil
-		colGrid.SetData(securableColumnColumns, nil)
+		resetGrid(colGrid, securableColumnColumns, nil, 0)
 		permSection.SetTitle("Permissions")
 		colSection.SetTitle("Column permissions")
 		colHint.Set("No securable selected.")

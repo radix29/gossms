@@ -108,9 +108,9 @@ func resolveSymlink(path string) string {
 // Preserving the existing mode is what stops a rename-based write behaving
 // differently from a write-in-place one. Every caller passes a constant — 0600
 // for config.json and gossms.key, 0644 for a saved script — and applying it
-// blindly re-widens a file on every save: a .sql the user chmodded 0600
-// silently came back 0644 the next time Ctrl+S ran. os.WriteFile never did that,
-// because it doesn't create a new inode; this must not either.
+// blindly re-widens a file on every save: a .sql the user chmodded 0600 comes
+// back 0644 on the next Ctrl+S. os.WriteFile does not do that, because it
+// doesn't create a new inode; this must not either.
 //
 // Capping at perm is what stops that preservation becoming a security bug. The
 // caller's perm is the widest the file is ever allowed to be, so a config.json
@@ -118,11 +118,6 @@ func resolveSymlink(path string) string {
 // restore from a backup taken elsewhere — is tightened back to 0600 on the next
 // save rather than kept wide forever. Preserving the mode *exactly* would make
 // that permanent, which is the one outcome worse than the bug this fixes.
-//
-// The cost is narrow and accepted: a script at 0664 in a group-writable tree
-// comes back 0644, losing group write. Erring toward the tighter mode is the
-// right direction for a file that may hold credentials, and no caller passes a
-// perm wider than it means.
 //
 // WriteAtomic has already resolved any symlink by the time this runs, so the
 // mode read here is the target's — the file actually being replaced.
@@ -133,8 +128,6 @@ func resolveSymlink(path string) string {
 // when gossms runs as root over a file owned by someone else, which is not a
 // case it supports, and the fix — a Stat plus a root-only Chown with a Windows
 // no-op — would add the OS branching this codebase keeps down to two files.
-// Recorded here so the next reader doesn't assume ownership is handled
-// alongside the mode.
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {

@@ -172,8 +172,8 @@ func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
 // The dragged widths and the scroll position go the same way, and the scroll is
 // not fixed by restoring the cursor: SetSelectedCell ends in ensureVisible,
 // which scrolls from the zero SetSource left just far enough to reach the
-// selected row, putting it against the bottom edge. Toggling a State half way
-// down a long grid therefore jumped the whole list on every click.
+// selected row, putting it against the bottom edge — so toggling a State half
+// way down a long grid jumps the whole list on every click.
 //
 // This is the application layer's name for DataGrid.SetDataPreservingView, which
 // does the restoring and documents why the three go back in the order they do.

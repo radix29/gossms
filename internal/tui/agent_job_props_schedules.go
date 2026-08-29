@@ -219,7 +219,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				for _, e := range edits {
 					e.attached = e.origAttached
 				}
-				grid.SetData(cols, rowsFor())
+				redrawGrid(grid, cols, rowsFor())
 			}
 
 			f := propsheet.NewForm(

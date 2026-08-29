@@ -126,7 +126,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 				for _, e := range edits {
 					e.linked = e.origLinked
 				}
-				grid.SetData(cols, rowsFor())
+				redrawGrid(grid, cols, rowsFor())
 			}
 
 			f := propsheet.NewForm(
@@ -234,9 +234,9 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 					// preservedValue turns noneItem back into "", which
 					// SetEmailNotify documents as "leave the operator
 					// unchanged" — the only thing it can mean, since
-					// sp_update_job has no value that clears one. Ticking
-					// E-mail on a job with no operator configured used to
-					// send whichever operator sorted first.
+					// sp_update_job has no value that clears one. Without it,
+					// ticking E-mail on a job with no operator configured
+					// sends to whichever operator sorts first.
 					if err := j.SetEmailNotifyContext(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
 						return err
 					}

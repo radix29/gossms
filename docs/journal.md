@@ -2334,3 +2334,183 @@ Two changes, neither of them to the selection logic:
 The rule went into `CLAUDE.md`: a Shift+mouse gesture needs a second modifier
 meaning the same thing and a keyboard route as well, and a green tmux run proves
 nothing about whether a modifier survives the terminal.
+
+## The cross-repo review of 2026-08-29
+
+A read of both repos for bugs, then four fixes and three tests widened. What
+follows is what was found and — for two of them — what turned out not to be a
+bug after all.
+
+**gosmo's object search compared under the database's collation.**
+`Database.SearchContext` was the one statement in gosmo using a bare
+`o.name LIKE '%' + @p1 + '%'`. `ObjectFilter.clause` had documented the rule
+since the Object Explorer filter's push-down went in — compare
+`LOWER(col) LIKE LOWER(@p)`, because a bare LIKE follows the collation — and
+`securable_search.go` follows it; `search.go` predated it and never came
+along. On a `..._CS_AS` database a search for `customer` did not find
+`Customer`: no error, an empty result, on exactly the kind of database where
+the user is least able to guess the casing. The doc comment made it worse by
+promising the behaviour as a feature ("case-insensitivity follows the
+database's own collation"), so that changed too.
+
+`search.go` had no test at all. The new one asserts the *whole* predicate off
+the capture driver, not that `LOWER` appears somewhere: lowering only the
+column also contains `LOWER`, and is the worse mutant — it matches nothing at
+all, on every collation, for any pattern with an upper-case letter. Three
+mutants killed (bare, column-only, ESCAPE dropped).
+
+Verified live on `win10cli` against a throwaway `Latin1_General_CS_AS`
+database holding `dbo.Customer` and `dbo.CUSTOMER_ARCHIVE` (dropped after).
+The shipped statement found `[]` for `customer`, `[Customer]` for `Customer`
+and `[CUSTOMER_ARCHIVE]` for `CUSTOMER` — three different answers to the same
+question. `SearchContext` now returns both tables for all three.
+
+**New Endpoint could add one instance twice.** Add Instance checks the typed
+name against the list, but `addInstance` then replaces it with the instance's
+own `@@SERVERNAME` — deliberately, since the certificate, login and user names
+have to match on both sides — so an alias, an address or a bare hostname walked
+past the check. `configure`'s pairwise loop skips a pair only on pointer
+identity, so the instance became its own peer: it imported its own certificate,
+and `<inst>_login`/`<inst>_user` were created in its own master and granted
+CONNECT on its own endpoint. The thumbprint check made the CREATE CERTIFICATE a
+no-op, which is why nothing failed loudly. `AGAddReplicaDialog.connect` has had
+the same guard against the same mistake since Always On went in; New Endpoint
+now re-checks after the connect answers.
+
+The callback was untestable — `addInstance` reaches `sc.Peer` directly — so it
+gained a `resolveInstance` seam, the same idiom as the existing
+`peerServerFor` and `certificateName`. The test drives the real form through
+`textRow(...).Edit` and `clickButton`.
+
+A/B'd live on `ubusql1`, where `@@SERVERNAME` is `ubusql1` and the connection
+is opened as `ubusql1.fritz.box` — so the local instance is its own duplicate
+and no second host is needed. Pre-fix binary: two rows, `ubusql1` as "This
+connection" and `ubusql1` as "Peer", same endpoint. Fixed binary: one row, and
+the hint reads "ubusql1.fritz.box answers as ubusql1, which is already in the
+list." Nothing was applied, and `sys.certificates` on ubusql1 is unchanged.
+Note for a future run: that hint sits below the last focusable row, so Tab
+never scrolls to it — the mouse wheel over the form does.
+
+**Ten more bare `SetData` calls, and a test rule that could not see them.**
+`TestNoBareSetDataInAPropPageCallback` globbed `*props*.go` and flagged a
+`SetData` nested two function literals deep. Both halves let real sites
+through: the New-X and Add-X dialogs build their grid in a plain method rather
+than a page `load`, so their button callbacks are one literal deep and look
+exactly like a legitimate first `SetData`, and none of those files is named
+`*props*.go`.
+
+What actually separates the two is not nesting depth but whether the grid
+already existed when the call ran: the initial `SetData` is in the same
+function body as the `NewDataGrid` that made it, and every redraw reaches a
+grid built elsewhere. The test now checks that, over every `.go` in the
+package, and needs no allowlist — the `clearSelection` closures in the two
+permission matrices, which had been earmarked for one, are
+`resetGrid(…, nil, 0)` instead, which is `SetData` plus keeping the widths
+since `SetSelectedRow` is a no-op on empty rows. Fixed: Add/Remove Address in
+`ag_add_listener_dialog.go`, Add/Remove Instance plus a `RevertFn` that wanted
+`resetGrid` and a `commit` that wanted `redrawGrid` in `new_endpoint_dialog.go`,
+`effective_perms_page.go`'s `fill`, the two matrices, and `AGDashboard.setRows`.
+Both Removes now select `min(i, len(rows)-1)` so a run of removals works from
+one key instead of snapping back to the top.
+
+The Query Store plan pane was the same defect in a shape the test cannot
+reach — its grid is a struct field, so there is no declaration site to compare
+against. `loadPlans` used `SetData` on a pane whose columns are `qsPlanColumns`
+on every load, so a dragged width was thrown away every time the report cursor
+moved to another query. That one has a behavioural test instead, and the first
+version of it passed against the mutant: `drainUntil(… len(p.plans) > 0)`
+returns immediately, because `loadPlans` leaves the previous query's plans in
+place while it reads. Waiting on `p.planCancel == nil` is what makes it bite.
+
+A/B'd live on `win10cli`'s HealthClinic: drag the Plan ID separator ~14 columns
+wider, then click another query in the report. Pre-fix, the header snapped from
+`Plan ID              |` back to `Plan ID|`; fixed, it stays.
+
+**`bindScriptArgs` substituted into string literals.** Textual substitution over
+the whole statement, documented as safe because "q is always one of this
+package's own statement constants". True today, and one method away from being
+false: the first scripted write to both interpolate a name and bind a parameter
+would corrupt an object actually named `@p1` — rewriting it inside its
+`escapeSingle`'d literal, in DDL the user is handed to run by hand. That is the
+failure `scriptLiteral` already refuses to risk for a literal it cannot render,
+so the substitution now skips string literals, quoted identifiers (both kinds),
+line comments and nested block comments.
+
+The risk of skipping is the opposite bug — a live placeholder swallowed by a
+mis-parse leaves `@p1` in the script, which fails by hand with "Must declare
+the scalar variable", the bug `bindScriptArgs` was written for. A placeholder
+that occurs *only* inside skipped text is therefore an error, since the two
+readings are indistinguishable from inside. Each test case uses `@p2` twice,
+once skipped and once live: either alone passes for a scan that skips nothing,
+or for one that swallows the statement whole.
+
+**Two things looked wrong and were not.** `PlanComparePanel` tracked its
+gesture owner as a bool — the operators grid, or not — which put the splitter
+and the properties grid in one case and offered a held event to the splitter
+first. Nothing comes of it: the splitter's own `mouseDragging` latch is set by
+the very press that started the drag elsewhere, so it declines the event as not
+fresh, and a grid clamps a drag that leaves its rows. The owner is a three-way
+zone now, routed by `routeDrag` like `QueryStorePanel`'s, because ownership is
+the invariant and those are the second line of defence — but the change fixes
+no symptom, and the test pins the ownership rather than pretending to reproduce
+one. Two attempts at an observable assertion (the splitter's ratio, then the
+grid's selection) both passed against the mutant before that was clear.
+
+`planview.PlanView` and `propsheet.GridRow` were both reported by the widened
+overlay-pairing test as drawing a grid with no `DrawOverlay`. Both are correct:
+an overlay has to land after every *other* widget in the frame, so a host that
+has one cannot draw it from the same method that draws the grid — it exposes
+its own `DrawOverlay` for its host to call last. The test's rule is now per
+receiver type rather than per method, and reaches `internal/tui/planview` and
+`internal/tuikit/propsheet` as well as `internal/tui`, matching a grid by the
+text of the expression naming it so `v.summarySt.grid` pairs. Its two limits
+are written into the test: it cannot tell that a type's `DrawOverlay` is ever
+*called*, and a grid copied into a local first is not matched at all.
+
+`notifyConditionItems`/`notifyConditionLevels` are now pinned by name, the way
+the schedule dropdowns are. Nothing was wrong with them; the pair is the shape
+where a fault cancels itself out, since `notifyConditionIndex` displays from
+the same table the apply writes from. Swap the last two entries and "When the
+job fails" both displays for and writes `NotifyOnComplete` — the job e-mails on
+every success, and the page still reads back exactly what it wrote.
+
+## 2026-08-29 — the comment-drift survey, worked through
+
+A mechanical survey of every comment in the tree (stale doc-comment names,
+references to identifiers and files that no longer exist, doc-vs-signature
+mismatches, numeric claims against nearby code, `doc.go` file lists) turned up
+nine items, all comment-only, and they are now all applied.
+
+The dead pointers were the ones worth fixing first, since each sends a reader
+to a file that isn't there. `controls/sql_statement.go` still cited
+`dmlStatementStarts` in `internal/tui/completion_provider.go` and a
+`completion_tokenizer.go` that has never existed under that name; the tui-side
+analogue is `sqlparse.DMLStatementStarts` and the keyword table is
+`sqlparse`'s `sqlKeywordList`. The contrast that comment draws — this file's
+eleven-keyword set against the tokenizer's much larger one, which also drives
+clause detection and FROM-scope parsing — survived the rename intact:
+`sqlKeywordList`'s own doc claims exactly those two jobs. `planview`'s
+`graphLayout` cited an `exec.png` mockup that is not in the tree.
+
+Three claims were simply wrong. `dialog_common.go`'s header named Tasks and
+Query List as flat-`focusable` dialogs (they use only `scrollToShow`) while
+Find/Replace and Log Search, which do, went unnamed, and it counted "roughly
+forty accesses across five files" against an actual 9 across 4. The count is
+gone rather than corrected — it re-drifts on the next refactor and the argument
+it decorates holds without it. `xmlOpenBlock`'s doc said "reports whether",
+inherited from `startsInBlockComment`, which really does return a bool; this
+one returns a three-valued `xmlBlockState`. And `query_store_reports.go` said
+"the six ranking reports" where five rank — the set it means is the six
+non-tracked ones.
+
+Two long comments lost a paragraph each, both history rather than state:
+`modeFor`'s accepted-cost note about a 0664 script and its "recorded here so
+the next reader…" meta-line, and `system_principals.go`'s "verified on win10cli
+by attempting each one in a throwaway database". Everything `CLAUDE.md`
+protects in those two stayed verbatim — both "load-bearing in opposite
+directions" halves, the refusal table, and the `public`-is-not-`is_fixed_role`
+trap.
+
+The survey's blind spot is worth stating: the detectors only find drift that
+names a stale symbol, number, or file. A comment whose prose misdescribes the
+logic without naming anything stale would not have surfaced.

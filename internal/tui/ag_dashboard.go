@@ -274,7 +274,10 @@ func (d *AGDashboard) apply(snap agSnapshot, err error) {
 func (d *AGDashboard) setRows(g *controls.DataGrid, held *[][]string, columns []string, rows [][]string) {
 	if len(rows) != len(*held) {
 		*held = rows
-		g.SetData(columns, rows)
+		// resetGrid rather than SetData: the columns never change, so a column
+		// dragged wider survives a replica joining or leaving. The cursor still
+		// goes back to the top — the rows are a different set.
+		resetGrid(g, columns, rows, 0)
 		return
 	}
 	for i := range rows {

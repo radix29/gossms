@@ -18,16 +18,14 @@ import (
 const childFetchTimeout = 30 * time.Second
 
 // serverWriteTimeout bounds one write statement issued from a menu action.
-// Deliberately far longer than childFetchTimeout, which these used to share:
-// that budget is sized for a folder listing, and a write is not a read.
+// Deliberately far longer than childFetchTimeout: that budget is sized for a
+// folder listing, and a write is not a read.
 //
 // A drop, a rename, an offline, a failover waits — for a lock another session
 // holds, and, on a database, for WITH ROLLBACK IMMEDIATE to roll back every
-// transaction it just killed. Minutes is a normal duration for that, and on the
-// 30s budget the statement was abandoned mid-flight: gosmo's repair pass then
-// had to put the database back to MULTI_USER on a context that had already
-// expired (fixed on the gosmo side by Server.restoreMultiUser, which no longer
-// depends on the caller's deadline — but the deadline was the trigger).
+// transaction it just killed. Minutes is a normal duration for that; on a 30s
+// budget the statement is abandoned mid-flight, leaving gosmo's repair pass to
+// put the database back to MULTI_USER on an expired context.
 //
 // Bounded, not unlimited: nothing on screen is blocked while this runs, so a
 // generous bound costs only a late message, but a dead connection still has to
@@ -86,11 +84,10 @@ var errChildFetchPanicked = errors.New("loading failed unexpectedly — see the 
 // produces for an ordinary loader failure.
 //
 // Note what that costs, deliberately: SetChildren marks the node Loaded, so
-// Refresh is what retries — collapsing and re-expanding now redisplays the
-// error instead of refetching, which is what it did before this repair
-// existed. That is the same bargain an ordinary loader error already makes,
-// and being told the expand failed is worth more than a silent retry on a
-// gesture most users won't think to make.
+// Refresh is what retries — collapsing and re-expanding redisplays the error
+// instead of refetching. That is the same bargain an ordinary loader error
+// makes, and being told the expand failed is worth more than a silent retry on
+// a gesture most users won't think to make.
 //
 // Guarded by seq exactly as the success path is: a newer expand has already
 // latched the node for itself, and overwriting its children with this one's

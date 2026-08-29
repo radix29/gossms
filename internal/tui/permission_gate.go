@@ -200,9 +200,9 @@ func requiresText(rights ...requiredRight) string {
 // The test is Allows, never Has: an action is withheld only when the server
 // answered "no" to *every* right that would permit it. An unprobed connection,
 // a probe that failed, a database whose answer is not cached yet, and a
-// permission this instance does not define all leave the action offered
-// exactly as it was before any of this existed. Gating on Has instead would
-// empty the menus of a sysadmin whose probe timed out.
+// permission this instance does not define all leave the action offered.
+// Gating on Has instead would empty the menus of a sysadmin whose probe timed
+// out.
 //
 // Database-scope rights are read from the cache only — see
 // db.ServerConn.CachedDatabaseCapabilities. This runs on the UI goroutine
@@ -256,7 +256,7 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			// Has, not Permits: the map is sparse, so "not denied" is true of
 			// every object in the database and would permit everything. An
 			// object with no row leaves the wider rights beside this one to
-			// answer, exactly as before this right existed.
+			// answer.
 			if dbCaps(dbName).HasOnObject(schema, object, r.name) {
 				return true
 			}
@@ -382,10 +382,9 @@ func databaseWriteRights() []requiredRight {
 // four wider rights all deny and the action was withheld from someone who
 // could perform it. rightAlterOnObject is the one that speaks for them.
 //
-// It was left out originally on the grounds that OBJECT scope costs a query
-// per object. That is true of HAS_PERMS_BY_NAME and false of the catalog:
-// gosmo's object block reads the whole database in one pass, as a fourth part
-// of the probe that was already running.
+// OBJECT scope costs no query per object, whatever HAS_PERMS_BY_NAME would
+// cost: gosmo's object block reads the whole database in one pass, as a fourth
+// part of the probe that was already running.
 func objectWriteRights() []requiredRight {
 	return []requiredRight{
 		rightAlterDatabase, rightControlDB, rightAlterAnySchema,

@@ -89,8 +89,8 @@ func (sc *ServerConn) DatabaseCapabilities(ctx context.Context, name string) *go
 // This is the accessor for anything that runs on the UI goroutine — a menu
 // item's Enabled predicate is evaluated while the menu is being drawn, and a
 // probe there would block the whole application on a slow server. A database
-// nobody has asked about yet answers "nothing known", which fails open, so an
-// action is offered exactly as it was before this existed.
+// nobody has asked about yet answers "nothing known", which fails open, so the
+// action stays offered.
 //
 // Prime the cache off the UI goroutine (App.onNodeSelected does) so the answer
 // is there by the time a menu is opened.

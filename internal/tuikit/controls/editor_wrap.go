@@ -86,14 +86,13 @@ type visualLine struct {
 // version and that width.
 //
 // The memo is the point. Draw calls this once per pass, HandleMouse twice
-// more per wrap-mode event, and Draw runs on *every* event the app
-// processes — so without it the whole document was re-segmented several
-// times per keystroke, mouse-move tick and timer tick, however little of it
-// was on screen. That cost is bounded by the document, not the viewport, and
-// wrap mode's large call site is DataGrid's cell viewer, where one logical
-// line of a varchar(max)/XML value is thousands of segments behind a ~15-row
-// window. That viewer is read-only, so its version never moves and it now
-// segments exactly once.
+// more per wrap-mode event, and Draw runs on *every* event the app processes —
+// so without it the whole document is re-segmented several times per keystroke,
+// mouse-move tick and timer tick, however little of it is on screen. That cost
+// is bounded by the document, not the viewport, and wrap mode's large call site
+// is DataGrid's cell viewer, where one logical line of a varchar(max)/XML value
+// is thousands of segments behind a ~15-row window. That viewer is read-only,
+// so its version never moves and it segments exactly once.
 //
 // Correctness rests entirely on Document.Version() being impossible to leave
 // stale — see Document. A mutation that bypassed setLine/edit would leave

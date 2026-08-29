@@ -345,7 +345,7 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 				res.addNotice(fmt.Sprintf("(%d rows affected)", m.Count))
 			}
 		case sqlexp.MsgNext:
-			if !scanNext(rows, res, sink) {
+			if scanNext(rows, res, sink) {
 				// scanNext gave up part-way through the set, and the message
 				// loop can't advance past one with rows still pending. Drain it
 				// here and only here: an extra Next() on an exhausted set makes
@@ -488,10 +488,15 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 // nothing, and returns how many rows it wrote — what makes Results To File
 // independent of result size, where scanResultSet holds every row for the
 // lifetime of the panel.
-func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
+//
+// exhausted reports whether the row loop reached the end of the set, and is
+// deliberately not derivable from err: the deferred EndSet can fail on a set
+// that was read right through, and draining that one costs the caller a
+// message (see scanNext).
+func streamResultSet(rows *sql.Rows, sink RowSink) (n int, exhausted bool, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	// Paired with BeginSet on every exit, so a scan or Row failure part-way
 	// through still closes the set out. Registered *before* BeginSet: a sink
@@ -505,21 +510,23 @@ func streamResultSet(rows *sql.Rows, sink RowSink) (n int, err error) {
 		}
 	}()
 	if err = sink.BeginSet(sc.cols); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	// One row buffer for the whole set: sink.Row must consume what it is given
 	// before returning, so it can be overwritten.
 	row := make([]string, len(sc.cols))
 	for rows.Next() {
 		if err = sc.scan(rows, row, nil); err != nil {
-			return n, err
+			return n, false, err
 		}
 		if err = sink.Row(row); err != nil {
-			return n, err
+			return n, false, err
 		}
 		n++
 	}
-	return n, nil
+	// Next() said the set was over, so it is exhausted however the deferred
+	// EndSet above then goes.
+	return n, true, nil
 }
 
 // showplanColumnName is the column name SQL Server uses for SET STATISTICS XML
@@ -534,42 +541,48 @@ func isShowplanResultSet(cols []string) bool {
 
 // scanNext consumes the result set sqlexp's MsgNext just announced, appending
 // it to res as either a showplan XML document or a grid of rows. Errors are
-// recorded on res rather than returned, since a batch keeps running after one;
-// a false return means the set was abandoned with rows still pending for the
-// caller to drain.
-func scanNext(rows *sql.Rows, res *Result, sink RowSink) bool {
+// recorded on res rather than returned, since a batch keeps running after one.
+//
+// It returns whether the set was abandoned with rows still pending — the one
+// case in which the caller may drain it. That is not the same question as
+// whether the set failed, and deriving one from the other is how the drain
+// prohibition gets broken from the inside: streamResultSet's deferred EndSet
+// and scanPlanXML's trailing rows.Err() both report a failure on a set already
+// read to its end, and draining one of those spends the extra Next() that
+// makes the driver swallow the message retmsg is waiting for.
+func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 	cols, err := rows.Columns()
 	if err != nil {
 		res.addError(err)
-		return false
-	}
-	if isShowplanResultSet(cols) {
-		plans, err := scanPlanXML(rows)
-		if err != nil {
-			res.addError(err)
-			return false
-		}
-		res.PlanXML = append(res.PlanXML, plans...)
 		return true
 	}
+	if isShowplanResultSet(cols) {
+		plans, exhausted, err := scanPlanXML(rows)
+		if err != nil {
+			res.addError(err)
+			return !exhausted
+		}
+		res.PlanXML = append(res.PlanXML, plans...)
+		return false
+	}
 	if sink != nil {
-		n, err := streamResultSet(rows, sink)
+		n, exhausted, err := streamResultSet(rows, sink)
 		res.RowsWritten += n
 		res.sinkSets++
 		if err != nil {
 			res.addError(err)
-			return false
+			return !exhausted
 		}
 		res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
-		return true
+		return false
 	}
 	rs, err := scanResultSet(rows)
 	if err != nil {
 		res.addError(err)
-		return false
+		return true
 	}
 	res.Sets = append(res.Sets, rs)
-	return true
+	return false
 }
 
 // scanPlanXML reads the current single-column showplan result set into one XML
@@ -578,18 +591,21 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) bool {
 // combined document per batch, STATISTICS XML one per executed statement, each
 // in its own set). A server that split a set across rows would lose all but one
 // plan to an overwrite, so the loop stays. Mirrors gosmo's capturePlan.
-func scanPlanXML(rows *sql.Rows) ([]string, error) {
-	var plans []string
+//
+// exhausted reports whether the loop reached the end of the set, which the
+// trailing rows.Err() does not: Err() reports a set that ended in failure just
+// as readily as one that ended, and both have no rows left to drain.
+func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	for rows.Next() {
 		var xml string
 		if err := rows.Scan(&xml); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if xml != "" {
 			plans = append(plans, xml)
 		}
 	}
-	return plans, rows.Err()
+	return plans, true, rows.Err()
 }
 
 // appendGUID appends a uniqueidentifier as SSMS renders it: NULL, or the

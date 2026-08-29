@@ -50,9 +50,9 @@ func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Logi
 const noneItem = "(None)"
 
 // loginAuthLabel renders a login's type_desc as the authentication wording
-// SSMS uses. Everything but a SQL login used to read "Windows Authentication",
-// which was invisible while the Logins folder listed nothing else — the
-// certificate-mapped ##MS_* logins it now lists are not Windows logins.
+// SSMS uses. Each type gets its own wording rather than everything non-SQL
+// reading "Windows Authentication": the certificate-mapped ##MS_* logins the
+// Logins folder lists are not Windows logins.
 func loginAuthLabel(loginType string) string {
 	switch loginType {
 	case "SQL_LOGIN":

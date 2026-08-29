@@ -59,7 +59,7 @@ func NewStatusHistoryDialog(app *App) *StatusHistoryDialog {
 // Show and Draw when dirty. A background goroutine that called
 // Editor.SetText here would be writing the widget the UI goroutine is
 // drawing — App.logStatus reaches Record from the Object Explorer's loader
-// goroutine, which is how that shipped.
+// goroutine.
 //
 // Deferring the rebuild also keeps it off the hot path: it is a full
 // strings.Join and SetText of up to maxStatusHistoryLines lines, and a busy

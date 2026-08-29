@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql/driver"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1970,5 +1971,52 @@ func TestTheTrackButtonStalesTheTreesTrackedLeaf(t *testing.T) {
 
 	if _, ok := a.detailBrowser.cache[leaf]; ok {
 		t.Error("Track Query left the tree's Tracked Queries leaf holding the set from before the pin")
+	}
+}
+
+// TestThePlanPaneKeepsADraggedColumnWidth. The plan pane's columns are
+// qsPlanColumns on every load, whatever query is selected — so a column the
+// user dragged wider (Last Execution, say, which is clipped at its computed
+// width) means the same thing for the next query as it did for this one.
+//
+// loadPlans reached it with a bare SetData, which clears colWidthOverride along
+// with the cursor, so the width snapped back every time the report cursor moved
+// to another query. It is the one part of the view that a *changed row set*
+// does not invalidate, which is why resetGrid restores it and SetData is wrong
+// here even though row 0 is the right place to put the cursor.
+func TestThePlanPaneKeepsADraggedColumnWidth(t *testing.T) {
+	p, a, _ := newQSPanel(t, "Top Resource Consuming Queries",
+		qsOptionsResponse("READ_WRITE", "READ_WRITE"),
+		qsPlansResponse(qsPlanRow(41, 12, false, "", 5, 100)),
+		qsReportResponse(
+			qsStatRow(11, "dbo.p", "SELECT 1", 2500, 1234, 0, 1),
+			qsStatRow(12, "dbo.q", "SELECT 2", 900, 40, 0, 2),
+		))
+	p.Load()
+	drainUntil(t, a, func() bool { return !p.busy }, "the report to load")
+	drainUntil(t, a, func() bool { return len(p.plans) > 0 }, "the first query's plans")
+
+	// The user drags the Last Execution column wider.
+	const dragged = 30
+	col := slices.Index(qsPlanColumns, "Last Execution")
+	p.plansGrid.SetColumnWidth(col, dragged)
+
+	// ...then moves to the next query, which loads a different set of plans
+	// into the same columns.
+	if !p.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone)) {
+		t.Fatal("the report grid did not take Down")
+	}
+	// planCancel, not len(p.plans): loadPlans leaves the previous query's plans
+	// in place while it reads, so a wait on them being non-empty returns before
+	// the new ones land and the assertion below reads the old grid.
+	drainUntil(t, a, func() bool { return p.queryID == 12 && p.planCancel == nil },
+		"the second query's plans")
+
+	if got := p.plansGrid.ColumnWidth(col); got != dragged {
+		t.Errorf("ColumnWidth(%d) = %d after moving to another query, want the "+
+			"dragged %d — SetData drops the width the user set", col, got, dragged)
+	}
+	if got := p.plansGrid.SelectedRow(); got != 0 {
+		t.Errorf("plan cursor on row %d, want row 0 — these are another query's plans", got)
 	}
 }

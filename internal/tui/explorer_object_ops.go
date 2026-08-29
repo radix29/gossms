@@ -480,11 +480,12 @@ func objectOpName(n *explorerNode) string {
 // of them is enough, and the action is withheld only when the server has
 // denied every one.
 //
-// For a schema object the permission SQL Server checks is ALTER on its
-// *schema*, which rightAlterOnSchema asks about by name — the database-wide
-// rights beside it are the wider ones that also permit the operation, and any
-// one of the four is enough. A database node has no schema and keeps the two
-// server-side rights that let a database be renamed or dropped.
+// For a schema object the permission SQL Server checks is ALTER on its own
+// schema or on the object itself, which rightAlterOnSchema and
+// rightAlterOnObject ask about by name — the database-wide rights beside them
+// are the wider ones that also permit the operation, and any one of the set is
+// enough. A database node has no schema and keeps the two server-side rights
+// that let a database be renamed or dropped.
 func objectOpRights(t NodeType) []requiredRight {
 	if t == NodeDatabase {
 		return []requiredRight{rightControlDB, rightAlterAnyDatabase}

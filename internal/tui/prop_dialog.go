@@ -123,14 +123,13 @@ func NewPropDialog(app *App) *PropDialog {
 // title is the window title, and headerLeft/headerRight the two ends of the
 // header line.
 //
-// The connection guard lives here rather than at the twenty-three entry points
-// that call this, which each opened with their own copy of it: a Properties
-// action that forgets one shows a dialog whose every page then fails to load,
-// one error per page, instead of the status line saying the obvious thing.
+// The connection guard lives here rather than in each of the twenty-three entry
+// points that call this: one that forgets it shows a dialog whose every page
+// then fails to load, one error per page, instead of the status line saying the
+// obvious thing.
 //
-// pages is a builder rather than a page set so that it stays behind the guard —
-// the entry points evaluated it before the call, and only the guard sitting in
-// front of them kept it from running against a closed connection.
+// pages is a builder rather than a page set so that it stays behind the guard;
+// evaluated at the call site it would run against a closed connection.
 func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, headerRight string, pages func() []propPage) {
 	if !d.app.requireConn(sc) {
 		return

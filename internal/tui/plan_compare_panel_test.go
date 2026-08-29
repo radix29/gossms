@@ -154,3 +154,69 @@ func TestComparePanelSkipsAStatementWithNoPlan(t *testing.T) {
 		t.Errorf("the comparison shows %q, want the index change from the statement that has a plan", seek[len(seek)-1])
 	}
 }
+
+// TestAGestureStaysWithThePaneThatClaimedIt. Rule 1 of the mouseDragging idiom
+// (ARCHITECTURE.md § The mouseDragging idiom): a gesture belongs to whatever
+// claimed its first press, until the release.
+//
+// The panel tracked its owner as a bool — the operators grid, or not — so the
+// splitter and the properties grid shared one case and a held event during a
+// properties drag was offered to the splitter before the grid that owned it.
+// Nothing came of that in the shipped build: the splitter's own mouseDragging
+// latch is set by the very press that started the drag elsewhere, so it
+// declines the event as not fresh, and a grid clamps a drag that leaves its
+// rows. Ownership is the invariant and those are the second line of defence,
+// which is why the owner is now a three-way zone routed by routeDrag.
+//
+// This pins the ownership itself, which is the part that is actually the
+// panel's own: each region claims its press, keeps the claim while the button
+// is held even as the pointer crosses another region, and gives it up on the
+// release — and the splitter resizes only for a gesture it claimed. All three
+// zones are exercised, because a router that answers the same for every one of
+// them passes any single case.
+func TestAGestureStaysWithThePaneThatClaimedIt(t *testing.T) {
+	a := newTestApp()
+	plan := mustParsePlan(t, comparePlanXML("IX_date", 10, 1))
+	p := NewPlanComparePanel(a, "Compare", plan, mustParsePlan(t, comparePlanXML("IX_customer", 4000, 8)))
+	p.SetBounds(0, 0, 80, 24)
+
+	bar := p.split.SplitPos()
+	props, ops := p.split.FirstRect(), p.split.SecondRect()
+	press := func(x, y int, b tcell.ButtonMask) {
+		p.HandleMouse(tcell.NewEventMouse(x, y, b, tcell.ModNone))
+	}
+
+	cases := []struct {
+		name string
+		y    int
+		want pcDragZone
+	}{
+		{"the properties grid", props.Y + 2, pcZoneProps},
+		{"the operators grid", ops.Y + 2, pcZoneOps},
+		{"the splitter", bar, pcZoneSplit},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+" keeps the gesture it claimed", func(t *testing.T) {
+			press(5, tc.y, tcell.Button1)
+			if p.dragZone != tc.want {
+				t.Fatalf("dragZone = %d after a press in %s, want %d", p.dragZone, tc.name, tc.want)
+			}
+			// The pointer crosses into another region with the button down.
+			ratio := p.split.Ratio()
+			press(5, bar+2, tcell.Button1)
+			if p.dragZone != tc.want {
+				t.Errorf("dragZone = %d mid-drag, want %s to still own the gesture", p.dragZone, tc.name)
+			}
+			if moved := p.split.Ratio() != ratio; moved != (tc.want == pcZoneSplit) {
+				t.Errorf("splitter moved = %v during a gesture owned by %s, want %v",
+					moved, tc.name, tc.want == pcZoneSplit)
+			}
+			press(5, bar+2, tcell.ButtonNone)
+			if p.dragZone != pcZoneNone {
+				t.Errorf("dragZone = %d after the release, want pcZoneNone", p.dragZone)
+			}
+			p.split.SetRatio(0.4)
+			p.layoutChildren()
+		})
+	}
+}

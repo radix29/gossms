@@ -15,9 +15,8 @@ import (
 
 // ag_add_replica_dialog.go is "Add Replica..." on a group's Availability
 // Replicas folder — SSMS's Add Replica to Availability Group wizard. It is the
-// one Always On verb that had no path in the UI once a group existed: New
-// Availability Group's own Add Replica button only edits the CREATE it is about
-// to issue.
+// only path to the verb once a group exists: New Availability Group's own Add
+// Replica button just edits the CREATE it is about to issue.
 //
 // # Adding a replica is three statements on two instances
 //

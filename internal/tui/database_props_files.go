@@ -72,10 +72,10 @@ func fileEditFromInfo(fl *gosmo.DatabaseFileInfo) *fileEdit {
 // It is a method rather than two copies because the Files page needs the
 // same answer twice, in two places that must agree: GridRow.DirtyFn, which
 // decides whether the page is dirty at all, and apply, which decides whether
-// this particular file gets an ALTER. They were separate expressions listing
-// the same six fields; a field added to one and not the other either makes a
-// page that never reports itself dirty (so OK writes nothing) or one that is
-// always dirty (so OK always writes).
+// this particular file gets an ALTER. As two expressions listing the same six
+// fields they drift: a field added to one and not the other either makes a page
+// that never reports itself dirty (so OK writes nothing) or one that is always
+// dirty (so OK always writes).
 func (e *fileEdit) changed() bool {
 	return e.name != e.origName || e.sizeKB != e.origSizeKB ||
 		e.isPercentGrowth != e.origIsPercentGrowth || e.growthKB != e.origGrowthKB ||

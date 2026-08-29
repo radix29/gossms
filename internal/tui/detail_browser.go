@@ -636,8 +636,8 @@ func (a *App) newDetailBrowser() *DetailBrowser {
 //
 // The cell cannot be opened: queryStoreOneLine collapses the statement onto one
 // line for the grid, so a `-- comment` anywhere in it swallows every line that
-// followed, and what the panel showed was runnable SQL with most of the query
-// commented out. The panel keeps the real text in memory and needs no round
+// follows, and what opens is runnable SQL with most of the query commented
+// out. The panel keeps the real text in memory and needs no round
 // trip (QueryStorePanel.showValue); this grid holds only [][]string, shared with
 // every other node type, so the id is the only handle back to the statement.
 //

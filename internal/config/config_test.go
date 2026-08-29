@@ -347,7 +347,7 @@ func TestSaveIsAtomic(t *testing.T) {
 	}
 }
 
-// TestSaveCarriesFieldsItDoesNotNameExplicitly confirms Save copies the
+// TestSaveCarriesUnnamedFields confirms Save copies the
 // whole Config rather than re-listing its fields — the hand-written literal
 // it replaced silently dropped any field added to Config later.
 func TestSaveCarriesUnnamedFields(t *testing.T) {

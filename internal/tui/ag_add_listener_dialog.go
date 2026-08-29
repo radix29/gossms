@@ -180,7 +180,8 @@ func (d *AGAddListenerDialog) addressRows(ipRow, maskRow *propsheet.TextRow) (pr
 		d.addrs = append(d.addrs, ip)
 		ipRow.SetValue("")
 		maskRow.SetValue("")
-		grid.SetData(headers, rowsFor())
+		rows := rowsFor()
+		resetGrid(grid, headers, rows, len(rows)-1)
 	})
 	removeBtn := widgets.NewButton("Remove Address", func() {
 		i := grid.SelectedRow()
@@ -188,7 +189,12 @@ func (d *AGAddListenerDialog) addressRows(ipRow, maskRow *propsheet.TextRow) (pr
 			return
 		}
 		d.addrs = append(d.addrs[:i], d.addrs[i+1:]...)
-		grid.SetData(headers, rowsFor())
+		// The row that took the removed one's place, so a run of removals
+		// works from one key rather than throwing the cursor back to the top
+		// each time. SetData did the latter, and also dropped any column the
+		// user had dragged wider.
+		rows := rowsFor()
+		resetGrid(grid, headers, rows, min(i, len(rows)-1))
 	})
 
 	gridRow := propsheet.NewGridRow(grid, 5)

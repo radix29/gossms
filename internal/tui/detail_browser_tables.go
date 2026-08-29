@@ -19,15 +19,13 @@ var tablesFolderColumns = []string{
 // the fast table-list query returns, then fills every row's row count and
 // space columns from two whole-database aggregate queries.
 //
-// Two queries for the folder, not two per table. This used to fan out
-// Table.RowCount and Table.SpaceUsed per row, bounded to
-// maxRowFetchConcurrency at a time — 2N round trips, each on its own pooled
-// connection, so a database with a few hundred tables cost a few hundred
-// queries and visibly trickled in. gosmo's TableRowCounts and
-// TableSpaceUsedAll answer the same question for every table at once (same
-// aggregates, grouped by object_id instead of filtered to one), so the
-// fan-out is gone. loadDatabasesFolderDetails still needs its own — see the
-// note there for why the same collapse isn't available for database sizes.
+// Two queries for the folder, not two per table. Fanning Table.RowCount and
+// Table.SpaceUsed out per row costs 2N round trips, each on its own pooled
+// connection, so a database with a few hundred tables visibly trickles in.
+// gosmo's TableRowCounts and TableSpaceUsedAll answer the same question for
+// every table at once (same aggregates, grouped by object_id instead of
+// filtered to one). loadDatabasesFolderDetails still fans out — see the note
+// there for why the same collapse isn't available for database sizes.
 func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// data, not node: this runs on a background goroutine and the UI goroutine
 	// writes node.data underneath it (see explorerNode.snapshot). node stays

@@ -49,9 +49,26 @@ type PlanComparePanel struct {
 	// qsFocus does.
 	focusOps bool
 
-	dragOps bool // the grid that claimed the in-progress gesture
-	dragged bool
+	// dragZone names the sub-region that claimed the in-progress gesture, the
+	// way QueryStorePanel's qsDragZone does. A bool naming only "the ops grid
+	// or not" was one owner short: the splitter and the properties grid shared
+	// the false case, and the held-button branch then re-offered the event to
+	// the splitter first — so a selection dragged in the properties grid was
+	// taken over by the splitter the moment the pointer crossed it, and the
+	// pane resized instead. A gesture belongs to whatever claimed its first
+	// press until the release; see ARCHITECTURE.md § The mouseDragging idiom.
+	dragZone pcDragZone
 }
+
+// pcDragZone names the sub-region owning a gesture between press and release.
+type pcDragZone int
+
+const (
+	pcZoneNone pcDragZone = iota
+	pcZoneSplit
+	pcZoneOps
+	pcZoneProps
+)
 
 // NewPlanComparePanel builds the comparison of two parsed plans. Only each
 // plan's first statement is compared: a Query Store plan is one statement by
@@ -291,19 +308,12 @@ func (p *PlanComparePanel) HandleMouse(ev *tcell.EventMouse) bool {
 		if p.ops.HandleMouse(ev) {
 			handled = true
 		}
-		p.dragged = false
+		p.dragZone = pcZoneNone
 		return handled
 	}
-	if p.dragged {
+	if p.dragZone != pcZoneNone {
 		if ev.Buttons() == tcell.Button1 {
-			if p.dragOps {
-				return p.ops.HandleMouse(ev)
-			}
-			if p.split.HandleMouse(ev) {
-				p.layoutChildren()
-				return true
-			}
-			return p.props.HandleMouse(ev)
+			return p.routeDrag(ev)
 		}
 		return true
 	}
@@ -313,26 +323,43 @@ func (p *PlanComparePanel) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if p.split.HandleMouse(ev) {
 		p.layoutChildren()
-		p.armDrag(ev, false)
+		p.armDrag(ev, pcZoneSplit)
 		return true
 	}
 	if p.ops.HandleMouse(ev) {
-		p.armDrag(ev, true)
+		p.armDrag(ev, pcZoneOps)
 		p.setFocus(true)
 		return true
 	}
 	if p.props.HandleMouse(ev) {
-		p.armDrag(ev, false)
+		p.armDrag(ev, pcZoneProps)
 		p.setFocus(false)
 		return true
 	}
 	return false
 }
 
-func (p *PlanComparePanel) armDrag(ev *tcell.EventMouse, ops bool) {
+func (p *PlanComparePanel) armDrag(ev *tcell.EventMouse, zone pcDragZone) {
 	if ev.Buttons() == tcell.Button1 {
-		p.dragged, p.dragOps = true, ops
+		p.dragZone = zone
 	}
+}
+
+// routeDrag delivers a held-Button1 event to the sub-region that armed the
+// gesture, and to nothing else — the point of owning it is that no other
+// sub-region sees the repeats.
+func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse) bool {
+	switch p.dragZone {
+	case pcZoneSplit:
+		if p.split.HandleMouse(ev) {
+			p.layoutChildren()
+		}
+	case pcZoneOps:
+		p.ops.HandleMouse(ev)
+	case pcZoneProps:
+		p.props.HandleMouse(ev)
+	}
+	return true
 }
 
 // HasSelection, SelectedText, Cut, Paste and SelectAll implement

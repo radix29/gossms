@@ -50,9 +50,8 @@ var (
 // execution-plan XML.
 //
 // starts below holds the answer for every line, replayed once per change to
-// the document and reused for every redraw in between — see prefixStates,
-// and SQLHighlighter for why the previous one-line memo could not help the
-// first row of a pass.
+// the document and reused for every redraw in between — see prefixStates, and
+// SQLHighlighter for why a one-line memo cannot help the first row of a pass.
 func XMLHighlighter(p *theme.Palette) Highlighter {
 	tagStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorKeyword).Bold(true)
 	attrStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
@@ -219,11 +218,12 @@ func xmlFindClose(line []rune, from int, closer []rune) int {
 	return -1
 }
 
-// xmlOpenBlock reports whether line idx begins already inside an
+// xmlOpenBlock returns which block, if any, line idx begins inside: an
 // unterminated <!-- --> comment or <![CDATA[ ]]> section carried over from
-// an earlier line — found by replaying every line before it and toggling
-// state on each construct's start/end delimiter, mirroring
-// startsInBlockComment in sql_highlighter.go.
+// an earlier line, or xmlNone. Found by replaying every line before it and
+// toggling state on each construct's start/end delimiter — the same role
+// startsInBlockComment plays in sql_highlighter.go, over three states rather
+// than two.
 //
 // XMLHighlighter does not call it: it reads prefixStates instead, which
 // answers the same question in O(1) per line. This is the O(idx) reference

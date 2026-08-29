@@ -36,7 +36,7 @@ type edge struct {
 
 // graphLayout is the result of laying out one statement's operator tree
 // as a left-to-right node-and-edge graph — root at the smallest X,
-// children extending rightward, matching real SSMS (exec.png).
+// children extending rightward, matching real SSMS.
 type graphLayout struct {
 	tiles   []tile
 	edges   []edge

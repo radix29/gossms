@@ -94,7 +94,7 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 			gridRow.RevertFn = func() {
 				pending = nil
 				hint.Clear()
-				grid.SetData(headers, rowsFor())
+				resetGrid(grid, headers, rowsFor(), 0)
 			}
 			addBtn := widgets.NewButton("Add Address", func() {
 				ip, err := agListenerIPFrom(ipRow.Value(), maskRow.Value())
@@ -117,7 +117,8 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 				pending = append(pending, ip)
 				ipRow.SetValue("")
 				maskRow.SetValue("")
-				grid.SetData(headers, rowsFor())
+				rows := rowsFor()
+				resetGrid(grid, headers, rows, len(rows)-1)
 				hint.Set(fmt.Sprintf("%s will be added when you apply.", ip.IPAddress))
 			})
 

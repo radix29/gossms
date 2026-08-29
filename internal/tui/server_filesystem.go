@@ -32,10 +32,9 @@ import (
 //
 // Do not read the "ten seconds" in ARCHITECTURE.md § The other direction:
 // FileDialog.showBusy as a live figure — it predates gosmo's WHERE level = 0
-// filter on sys.dm_os_enumerate_filesystem, which stopped a listing walking
-// the whole subtree. showBusy still earns its place (a second of frozen UI is
-// worth labelling), but the wait it was written for is ~8x smaller now, and
-// that stale figure is what made raising this look justified.
+// filter on sys.dm_os_enumerate_filesystem, which stops a listing walking the
+// whole subtree. showBusy still earns its place (a second of frozen UI is worth
+// labelling), but the wait it was written for is ~8x smaller.
 const serverFileSystemTimeout = 15 * time.Second
 
 // serverFS browses the SQL Server host's filesystem — the machine the backup

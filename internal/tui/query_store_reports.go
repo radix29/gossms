@@ -195,10 +195,11 @@ type queryStoreReport struct {
 	// wrong-thing the context-gating rule exists to prevent.
 	filters qsFilters
 
-	// defaultStat is what the report means by default — Total for the two
-	// that rank by accumulated cost, Avg for the five that rank by cost per
-	// execution. The Detail Browser always uses it; the panel opens on it and
-	// then follows the toolbar.
+	// defaultStat is what the report means by default — Total for the three
+	// read as accumulated cost (Overall Resource Consumption, Top Resource
+	// Consuming Queries, Query Wait Statistics), Avg for the other four, which
+	// are about cost per execution. The Detail Browser always uses it; the
+	// panel opens on it and then follows the toolbar.
 	defaultStat gosmo.QSStatistic
 
 	load func(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error)
@@ -344,14 +345,13 @@ func trackedIDsFor(report queryStoreReport, sc *db.ServerConn, dbName string) []
 // that database's tracked set on that server is now describing a set that no
 // longer exists.
 //
-// The tree's Tracked Queries leaf is the reason it exists. Its rows come from a
-// Detail Browser fetch cached per node like every other one, so before this the
-// pin reached the file and the panel and nothing else — the leaf went on
-// listing the old set until the user refreshed it, which reads as the pin not
-// having worked. Any Query Store panel on the same database is stale for the
-// same reason, including the one the toggle came from; they are found by server
-// address rather than by connection, because that is what the set is keyed by
-// and two connections to one instance share it.
+// The tree's Tracked Queries leaf is the reason it exists: its rows come from a
+// Detail Browser fetch cached per node like every other one, so without this it
+// goes on listing the old set until the user refreshes it, which reads as the
+// pin not having worked. Any Query Store panel on the same database is stale for
+// the same reason, including the one the toggle came from; they are found by
+// server address rather than by connection, because that is what the set is
+// keyed by and two connections to one instance share it.
 func (a *App) trackedQueriesChanged(server, dbName string) {
 	a.detailBrowser.InvalidateWhere(a, func(n *explorerNode) bool {
 		return isTrackedQueriesLeaf(n, server, dbName)
@@ -362,7 +362,7 @@ func (a *App) trackedQueriesChanged(server, dbName string) {
 			!config.SameServer(qs.conn.Opts.Server, server) {
 			continue
 		}
-		// Only the view whose rows are the set: the six ranking reports read
+		// Only the view whose rows are the set: the other six reports read
 		// the whole database and a pin changes nothing about them.
 		if qs.report().honours(qsFilterTracked) {
 			qs.Refresh()
@@ -521,7 +521,7 @@ func qsMissingTrackedRows(stats []*gosmo.QSQueryStat, opts gosmo.QueryStoreRepor
 }
 
 // qsNoTrackedQueriesResult is what the view shows before anything is tracked —
-// the empty grid it used to show reads as a report that failed.
+// an empty grid there reads as a report that failed.
 func qsNoTrackedQueriesResult() qsResult {
 	return qsResult{
 		columns: propertyValueColumns,
@@ -539,10 +539,10 @@ func qsNoTrackedQueriesResult() qsResult {
 // gosmo's default baseline is the equally long window immediately *before*
 // From, which is right for a caller that chose its own range — but here it
 // would mean the report needed twice its window of Query Store history before
-// it could ever show a row. Verified on a database with two minutes of
-// history: the default left the pane permanently empty, which reads as a
-// broken report rather than a young database. Splitting keeps the requirement
-// at the window the other six reports already need.
+// it could show a row: on a database with two minutes of history that leaves
+// the pane permanently empty, which reads as a broken report rather than a
+// young database. Splitting keeps the requirement at the window the other six
+// reports already need.
 func queryStoreRegressionOptions(opts gosmo.QueryStoreReportOptions) gosmo.QueryStoreReportOptions {
 	if opts.To.IsZero() {
 		opts.To = time.Now()

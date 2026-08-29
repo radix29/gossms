@@ -37,10 +37,10 @@ import (
 // any worker's wg.Done, so a cacheOnly posted after this returns is
 // necessarily appended last and drains last.
 //
-// The pool is a fixed maxRowFetchConcurrency workers pulling row indices off
-// a channel, rather than n goroutines each waiting on a token: the work was
-// always bounded, but a folder with hundreds of entries parked hundreds of
-// goroutines to enforce that bound, all of them idle. Workers, not tokens.
+// The pool is a fixed maxRowFetchConcurrency workers pulling row indices off a
+// channel, rather than n goroutines each waiting on a token: both bound the
+// work, but the token form parks hundreds of idle goroutines on a folder with
+// hundreds of entries.
 func (db *DetailBrowser) backfillRows(
 	app *App,
 	sc *dbconn.ServerConn,

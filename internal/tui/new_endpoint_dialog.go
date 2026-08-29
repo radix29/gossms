@@ -101,6 +101,11 @@ type NewEndpointDialog struct {
 	// default goes through db.ServerConn.Peer.
 	peerServerFor func(ctx context.Context, inst *newEndpointInstance) (*gosmo.Server, error)
 
+	// resolveInstance connects to a typed instance name and answers with what
+	// it already has — a test seam like peerServerFor; the default is
+	// addInstance. Asynchronous: done runs on the UI goroutine.
+	resolveInstance func(name string, done func(*newEndpointInstance, error))
+
 	// scriptedGroups is what the last scripted configure collected, one entry
 	// per instance. Read by runScript, which runs after the pipeline.
 	scriptedGroups []endpointScriptGroup
@@ -120,6 +125,7 @@ func NewNewEndpointDialog(app *App) *NewEndpointDialog {
 	})
 	d.certificateName = func(instance string) string { return endpointPrincipalBase(instance) + "_Cert" }
 	d.peerServerFor = d.defaultPeerServer
+	d.resolveInstance = d.addInstance
 	// The shell's Script Changes emits every statement as one undifferentiated
 	// batch, which here is worse than useless: the statements belong to two or
 	// more instances, and run whole against this one the certificate imports
@@ -303,14 +309,29 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 			}
 		}
 		hint.Set("Connecting to " + name + "...")
-		d.addInstance(name, func(added *newEndpointInstance, err error) {
+		d.resolveInstance(name, func(added *newEndpointInstance, err error) {
 			if err != nil {
 				hint.Set(err.Error())
 				return
 			}
+			// The typed name was checked against the list above, but addInstance
+			// answers with the instance's own @@SERVERNAME — so an alias, an
+			// address, or a hostname for an instance already listed gets past
+			// that check and lands here as a second entry for one instance.
+			// configure's pairwise loop skips only on pointer identity, so the
+			// instance then imports its own certificate: <inst>_login and
+			// <inst>_user are created in its own master and granted CONNECT on
+			// its own endpoint, and a scripted run emits two groups for it.
+			for _, inst := range d.instances {
+				if strings.EqualFold(inst.name, added.name) {
+					hint.Set(fmt.Sprintf("%s answers as %s, which is already in the list.", name, added.name))
+					return
+				}
+			}
 			d.instances = append(d.instances, added)
 			addNameRow.SetValue("")
-			grid.SetData(headers, rowsFor())
+			rows := rowsFor()
+			resetGrid(grid, headers, rows, len(rows)-1)
 			if added.hasEndpoint {
 				hint.Set(fmt.Sprintf("Added %s, which already has %s.", added.name, added.endpointURL))
 				return
@@ -327,8 +348,12 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 			hint.Set("This connection's own instance is always part of the exchange.")
 			return
 		}
+		// The row that took the removed one's place, so a run of removals works
+		// from one key instead of throwing the cursor back to the top each time
+		// — and, unlike SetData, keeping any column the user dragged wider.
 		d.instances = append(d.instances[:i], d.instances[i+1:]...)
-		grid.SetData(headers, rowsFor())
+		rows := rowsFor()
+		resetGrid(grid, headers, rows, min(i, len(rows)-1))
 	})
 
 	// The instance list the page opened with — this connection's own instance
@@ -343,10 +368,14 @@ func (d *NewEndpointDialog) instanceRows() ([]propsheet.Row, func()) {
 	gridRow.RevertFn = func() {
 		d.instances = slices.Clone(baseline)
 		hint.Set("")
-		redrawGrid(grid, headers, rowsFor())
+		// resetGrid, not redrawGrid: Revert changes the row set, so the cursor
+		// it would have kept points at a row that is no longer there.
+		resetGrid(grid, headers, rowsFor(), 0)
 	}
 
-	commit := func() { grid.SetData(headers, rowsFor()) }
+	// The same rows re-rendered, not a changed set — redrawGrid, which keeps
+	// the cursor where the user left it.
+	commit := func() { redrawGrid(grid, headers, rowsFor()) }
 
 	return []propsheet.Row{
 		propsheet.Section("Instances"),

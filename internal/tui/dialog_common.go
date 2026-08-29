@@ -4,13 +4,15 @@ import "github.com/radix29/gossms/internal/tuikit/core"
 
 // dialog_common.go holds the small behaviours shared by the hand-rolled
 // dialogs — the ones that lay out widgets directly and drive focus with a flat
-// slice, rather than delegating to propsheet.Form's rows. Connect, Backup,
-// Restore, Tasks and Query List are all of that kind.
+// slice, rather than delegating to propsheet.Form's rows: Connect, Backup,
+// Restore, Find/Replace and Log Search. Tasks and Query List share only the
+// list-scroll helper.
 //
 // Each dialog keeps its own state (`focusable`, `focusIdx`, `sel`, `scroll`,
-// `task`); only the operations over that state live here. That is deliberate:
-// the alternative, embedded structs owning the fields, renames roughly forty
-// direct `d.focusable[d.focusIdx]` accesses across five files for no
+// `task`); only the operations over that state live here — focus and scroll
+// movement, the Backup/Restore progress button, and the discard-changes
+// confirmation. That is deliberate: the alternative, embedded structs owning
+// the fields, renames every direct `d.focusable[d.focusIdx]` access for no
 // behavioural gain.
 
 // focusable is satisfied by any tuikit widget that supports keyboard focus.
@@ -20,8 +22,7 @@ type focusable interface {
 
 // setFocusIn focuses list[i], blurring every other entry, and reports the
 // index that ended up focused. An out-of-range i blurs everything and answers
-// cur — leaving the caller's index where it was, which is what the three
-// dialogs' own setFocus did before this was lifted out of them.
+// cur, leaving the caller's index where it was.
 func setFocusIn(list []focusable, i, cur int) int {
 	for _, f := range list {
 		f.Focus(false)

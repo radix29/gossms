@@ -22,6 +22,12 @@ func (lv *LogViewer) Draw(s tcell.Screen) {
 	lv.grid.Draw(s)
 	lv.splitter.Draw(s)
 	lv.drawDetails(s)
+	// Last, over everything else: the grid's cell context menu and its
+	// "Show Value" popup are drawn outside the grid's own rect, so Draw alone
+	// paints neither — and HandleKey/HandleMouse still give OverlayActive()
+	// first refusal, so a right-click opens a menu nobody can see that eats
+	// every key until Escape.
+	lv.grid.DrawOverlay(s)
 }
 
 // drawToolbar paints the toolbar row: the two selectors and the buttons in
