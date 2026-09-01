@@ -175,7 +175,10 @@ func signature(n *Node) string {
 //
 // Estimates are compared with a relative tolerance: a plan re-estimated
 // against slightly different statistics moves every row count in the tree by a
-// hair, and a comparison where every operator says "Changed" says nothing.
+// hair, and a comparison where every operator says "Changed" says nothing. The
+// two runtime numbers are compared exactly — they are measurements of the two
+// runs being compared, not predictions, and a reads delta the pane hides is
+// hidden on the number the user is tuning against.
 func nodeChanges(l, r *Node) []string {
 	var out []string
 	if l.Object.Index != r.Object.Index && (l.Object.Index != "" || r.Object.Index != "") {
@@ -194,10 +197,10 @@ func nodeChanges(l, r *Node) []string {
 		out = append(out, fmt.Sprintf("Est subtree cost %s → %s", cost(l.EstSubtreeCost), cost(r.EstSubtreeCost)))
 	}
 	if l.Runtime != nil && r.Runtime != nil {
-		if moved(float64(l.Runtime.Rows), float64(r.Runtime.Rows)) {
+		if l.Runtime.Rows != r.Runtime.Rows {
 			out = append(out, fmt.Sprintf("Actual rows %d → %d", l.Runtime.Rows, r.Runtime.Rows))
 		}
-		if moved(float64(l.Runtime.LogicalReads), float64(r.Runtime.LogicalReads)) {
+		if l.Runtime.LogicalReads != r.Runtime.LogicalReads {
 			out = append(out, fmt.Sprintf("Logical reads %d → %d", l.Runtime.LogicalReads, r.Runtime.LogicalReads))
 		}
 	}
@@ -211,15 +214,13 @@ const changeTolerance = 0.01
 
 // moved reports whether two numbers differ by more than the tolerance. A move
 // away from zero always counts — the tolerance is relative, and relative to
-// zero everything is infinite.
+// zero everything is infinite. Two zeros are equal, so the equality test above
+// is also what keeps scale non-zero; no separate guard is needed.
 func moved(a, b float64) bool {
 	if a == b {
 		return false
 	}
 	scale := math.Max(math.Abs(a), math.Abs(b))
-	if scale == 0 {
-		return false
-	}
 	return math.Abs(a-b)/scale > changeTolerance
 }
 

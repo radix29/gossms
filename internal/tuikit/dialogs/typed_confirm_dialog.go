@@ -43,6 +43,10 @@ type TypedConfirmDialog struct {
 	input    *widgets.InputField
 	focus    typedConfirmFocus
 
+	// drag owns the text-selection gesture a press in input starts. See
+	// FieldGesture for why its three calls sit where they do in HandleMouse.
+	drag FieldGesture
+
 	// buttons is what the current showing renders and hit-tests, and answers
 	// what each of them means — parallel rather than the answer being the
 	// button's index, for the reason ConfirmDialog's pair are.
@@ -101,6 +105,9 @@ func (d *TypedConfirmDialog) show(title, message, required string, buttons []str
 	d.input = widgets.NewInputField("", max(20, core.DisplayWidth(required)+16), false)
 	d.focus = typedConfirmFocusInput
 	d.syncFocus()
+	// input is rebuilt above, so a gesture held from the last showing points
+	// at a discarded widget — and would route every click there.
+	d.drag.Clear()
 	d.buttons, d.answers = buttons, answers
 	d.onAnswer = onAnswer
 	w, h, lines := d.fitMessage(message, typedConfirmW, typedConfirmH)
@@ -226,12 +233,18 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	// A release must reach d.input even when it lands outside the dialog
 	// (consumed below) — otherwise its next press is swallowed as a
-	// continuation of the stale drag. HandleMouse returns false on
-	// ButtonNone, so this has no effect beyond resetting the latch.
+	// continuation of the stale drag.
 	if ev.Buttons() == tcell.ButtonNone {
-		d.input.HandleMouse(ev)
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
+		return true
+	}
+	// The gesture belongs to the field that claimed its press, so motion is
+	// replayed there without hit-testing — ahead of ButtonClicked below,
+	// which would otherwise answer the confirmation the moment a selection
+	// drag in the retype field wandered down onto the button row.
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttons); i >= 0 {
@@ -248,7 +261,7 @@ func (d *TypedConfirmDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.input.HitTest(mx, my) {
 		d.focus = typedConfirmFocusInput
 		d.syncFocus()
-		d.input.HandleMouse(ev)
+		d.drag.Claim(d.input, ev)
 	}
 	return true
 }

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"database/sql/driver"
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
@@ -117,5 +119,122 @@ func TestNewIndexAndNewStatisticsSurviveADatabaseWideGrant(t *testing.T) {
 		if item := itemNamed(t, folderNode(tt.node, sc), tt.label); !itemEnabled(item) {
 			t.Errorf("%q was withheld from a login with a database-wide ALTER", tt.label)
 		}
+	}
+}
+
+// deniedObjectConn returns a connection holding a database-wide ALTER and a
+// schema-wide one — the shape of a db_owner — with an explicit DENY of ALTER
+// recorded on the named objects. That is the case no wider answer can see: all
+// three of the wider rights read 1, and SQL Server refuses the write anyway.
+func deniedObjectConn(t *testing.T, dbName string, objDenied []string, sysadmin bool) *db.ServerConn {
+	t.Helper()
+	res := capabilityResponsesWithSchemas(true, nil, nil,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}, nil, []string{"Sales"}, nil)
+	for i, r := range res {
+		switch r.match {
+		case "IS_ROLEMEMBER":
+			for _, n := range objDenied {
+				r.rows = append(r.rows, []driver.Value{"O:ALTER", n, int64(0)})
+			}
+		case "IS_SRVROLEMEMBER":
+			if sysadmin {
+				r.rows = append(r.rows, []driver.Value{"R", "sysadmin", int64(1)})
+			}
+		}
+		res[i] = r
+	}
+	sc, _ := newFakeConn(t, res...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), dbName)
+	return sc
+}
+
+// TestADenyOnTheObjectWithholdsWhatEveryWiderRightPermits. SQL Server resolves
+// an object-scope DENY over every wider grant: verified live 2026-09-01, a user
+// with database-wide ALTER reads HAS_PERMS_BY_NAME 0 on a table denied ALTER
+// and its rename fails Msg 297. Before this, the gate asked the wider rights,
+// got 1 from all of them, and offered three items the server then refused.
+func TestADenyOnTheObjectWithholdsWhatEveryWiderRightPermits(t *testing.T) {
+	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
+	rights := objectOpRights(NodeTable)
+
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+		t.Error("an object with an explicit DENY kept its object ops, though every wider right is overridden by it")
+	}
+	// The other half: the denial reaches that object and nothing else. A
+	// blanket withhold would be just as wrong, and passes the check above.
+	if !allowsActionOn(sc, "appdb", "Sales", "Customers", rights...) {
+		t.Error("an object with no denial of its own lost its object ops")
+	}
+	if !allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+		t.Error("an object of the same name in another schema lost its object ops")
+	}
+	// And an action that names no object still reads the wider rights only.
+	if !allowsAction(sc, "appdb", databaseWriteRights()...) {
+		t.Error("a database-scope action was withheld by an object's denial")
+	}
+}
+
+// TestASysadminIsNotWithheldByAnObjectDeny. gosmo's object probe reads the
+// catalog through every principal the login's permissions can arrive through,
+// public included, so a DENY made to public is recorded for a sysadmin too —
+// who bypasses the check entirely. Verified live 2026-09-01: with
+// DENY ALTER ON OBJECT::dbo.t2 TO public in place, sa reads
+// HAS_PERMS_BY_NAME 1 and the rename succeeds.
+func TestASysadminIsNotWithheldByAnObjectDeny(t *testing.T) {
+	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, true)
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+		t.Error("a sysadmin lost the object ops to a DENY that does not apply to them")
+	}
+}
+
+// TestTheObjectOpMenuItemsFollowTheObjectDeny drives the menu, not
+// allowsActionOn: the denial is only worth having where the items are built,
+// and it must not name a right in the note — the login holds ALTER already,
+// and being sent to ask for it is the wrong instruction.
+func TestTheObjectOpMenuItemsFollowTheObjectDeny(t *testing.T) {
+	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
+	app := &App{}
+	items := func(name string) []controls.MenuItem {
+		return app.objectOpsMenuItems(&explorerNode{data: nodeData{
+			Type: NodeTable, Name: name, Schema: "Sales", DBName: "appdb", conn: sc,
+		}})
+	}
+	denied, other := items("Orders"), items("Customers")
+	if len(denied) == 0 {
+		t.Fatal("the object-ops menu is empty; the test is addressing the wrong node type")
+	}
+	for i, it := range denied {
+		if itemEnabled(it) {
+			t.Errorf("%s was offered on an object the server denies ALTER on", it.Label)
+		}
+		if it.Note != "ALTER denied on this object" {
+			t.Errorf("%s disabled note = %q, want it to name the denial rather than a right to ask for",
+				it.Label, it.Note)
+		}
+		if it.NoteWhen == nil || !it.NoteWhen() {
+			t.Errorf("%s did not show its note", it.Label)
+		}
+		if !itemEnabled(other[i]) {
+			t.Errorf("%s was withheld on an object with no denial of its own", other[i].Label)
+		}
+	}
+}
+
+// TestAPageDeniedOnItsObjectSaysSoRatherThanNamingARight. The banner is the
+// page half of the same rule, and the wording is the point: "Requires ALTER
+// (db_owner)" on a page whose login is db_owner describes neither what is
+// wrong nor what would fix it.
+func TestAPageDeniedOnItsObjectSaysSoRatherThanNamingARight(t *testing.T) {
+	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
+	page := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Orders", objectWriteRights()...)
+
+	got := pageReadOnlyReason(context.Background(), sc, page)
+	if want := readOnlyBannerPrefix + "ALTER is denied on this object."; got != want {
+		t.Errorf("banner = %q, want %q", got, want)
+	}
+	ok := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Customers", objectWriteRights()...)
+	if got := pageReadOnlyReason(context.Background(), sc, ok); got != "" {
+		t.Errorf("a page on an object with no denial was made read-only: %q", got)
 	}
 }

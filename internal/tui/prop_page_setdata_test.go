@@ -132,8 +132,7 @@ func TestNoBareSetDataOnAGridBuiltElsewhere(t *testing.T) {
 // variable as far as an enclosing call is concerned.
 func declaresLocal(body *ast.BlockStmt, name string) bool {
 	found := false
-	var walk func(ast.Node) bool
-	walk = func(n ast.Node) bool {
+	walk := func(n ast.Node) bool {
 		if _, ok := n.(*ast.FuncLit); ok {
 			return false
 		}

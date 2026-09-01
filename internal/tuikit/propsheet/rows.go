@@ -36,6 +36,11 @@ func Section(title string) *SectionRow { return &SectionRow{title: title} }
 // SetTitle changes the heading text in place.
 func (r *SectionRow) SetTitle(title string) { r.title = title }
 
+// Title is the heading text. It is what separates two rows carrying the same
+// label — a New Database page has a "Logical name" under both "Data file" and
+// "Log file", and nothing else on the row distinguishes them.
+func (r *SectionRow) Title() string { return r.title }
+
 func (r *SectionRow) Height(w int) int   { return 2 }
 func (r *SectionRow) Layout(x, y, w int) { r.x, r.y, r.w = x, y, w }
 func (r *SectionRow) Focusable() bool    { return false }

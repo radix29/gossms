@@ -277,7 +277,11 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 	// Re-applied per result, like QueryPanel.renderActiveTab, so a change to
 	// the Options dialog's max cell length reaches this grid too.
 	pt.grid.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
-	pt.grid.SetData(set.Columns, set.Rows)
+	// resetGrid, not SetData: a refresh runs the same procedure again, so the
+	// columns are the ones the user just dragged to fit a wide sql_text, while
+	// the rows are a different set of sessions — widths are worth keeping, the
+	// old cursor row is not.
+	resetGrid(pt.grid, set.Columns, set.Rows, 0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",
 		len(set.Rows), time.Now().Format("15:04:05"), qualified))
 }

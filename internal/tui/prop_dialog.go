@@ -416,5 +416,11 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 	if rightsAllow(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...) {
 		return ""
 	}
+	// A DENY on the object is a different sentence: the login may hold every
+	// right the page lists, and telling it to go and ask for one of them
+	// describes neither what is wrong nor what would fix it.
+	if r, denied := objectDenial(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...); denied {
+		return readOnlyBannerPrefix + deniedText(r)
+	}
 	return readOnlyBannerPrefix + requiresText(p.requires...)
 }

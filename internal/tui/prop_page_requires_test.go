@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -155,27 +155,30 @@ var propPageConstructors = []string{
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	names, err := filepath.Glob("*.go")
 	if err != nil {
-		t.Fatalf("parse package: %v", err)
+		t.Fatalf("glob: %v", err)
 	}
 	var found []string
-	for _, pkg := range pkgs {
-		for _, f := range pkg.Files {
-			for _, decl := range f.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Recv != nil || fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
-					continue
-				}
-				arr, ok := fn.Type.Results.List[0].Type.(*ast.ArrayType)
-				if !ok {
-					continue
-				}
-				if id, ok := arr.Elt.(*ast.Ident); ok && id.Name == "propPage" {
-					found = append(found, fn.Name.Name)
-				}
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+				continue
+			}
+			arr, ok := fn.Type.Results.List[0].Type.(*ast.ArrayType)
+			if !ok {
+				continue
+			}
+			if id, ok := arr.Elt.(*ast.Ident); ok && id.Name == "propPage" {
+				found = append(found, fn.Name.Name)
 			}
 		}
 	}

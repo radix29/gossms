@@ -121,19 +121,15 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 				return nil, nil, err
 			}
 
-			fillFactorRow := propsheet.Int("Fill factor", int64(idx.FillFactor), 0, 100, "%")
-			padRow := propsheet.Check("Pad index", idx.IsPadded)
+			rebuild := newRebuildOptions(idx)
 			rowLocksRow := propsheet.Check("Allow row locks", idx.AllowRowLocks)
 			pageLocksRow := propsheet.Check("Allow page locks", idx.AllowPageLocks)
-			compressionLayoutRow, compressionRow := dataCompressionRow(idx.DataCompression)
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Key options"),
-				fillFactorRow, padRow, rowLocksRow, pageLocksRow,
-				propsheet.Section("Compression"),
-				compressionLayoutRow,
-				propsheet.Note("Fill factor, pad index, and data compression only take effect after a rebuild — Apply issues one automatically when any of these three change."),
-			)
+				rebuild.fillFactor, rebuild.pad, rowLocksRow, pageLocksRow,
+			}
+			f := propsheet.NewForm(append(rows, rebuild.compressionRows()...)...)
 
 			apply := func(ctx context.Context) error {
 				t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
@@ -145,23 +141,7 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 						return err
 					}
 				}
-				// Nil when the server reports a compression outside the
-				// editable set (see dataCompressionRow).
-				compressionDirty := compressionRow != nil && compressionRow.Dirty()
-				if fillFactorRow.Dirty() || padRow.Dirty() || compressionDirty {
-					fillFactor, err := fillFactorRow.IntValue()
-					if err != nil {
-						return err
-					}
-					compression := ""
-					if compressionDirty {
-						compression = compressionRow.Value()
-					}
-					if err := idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), padRow.Checked(), compression); err != nil {
-						return err
-					}
-				}
-				return nil
+				return rebuild.apply(ctx, t, idx)
 			}
 			return f, apply, nil
 		},

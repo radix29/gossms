@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -265,16 +266,22 @@ func (d *LogSearchDialog) dismiss() {
 // parse turns the four fields into a LogSearch, rejecting an unparseable date
 // rather than sending it to a server that answers with a formatting lecture.
 func (d *LogSearchDialog) parse() (gosmo.LogSearch, error) {
+	// These three are capitalized on purpose: the dialog draws err.Error()
+	// verbatim as its status line, so the leading word is the field's own
+	// label as the user sees it. Nothing wraps them into a larger sentence.
 	from, err := parseLogSearchTime(d.fFrom.Value())
 	if err != nil {
+		//lint:ignore ST1005 the capital is the "From" field's label
 		return gosmo.LogSearch{}, fmt.Errorf("From: %w", err)
 	}
 	to, err := parseLogSearchTime(d.fTo.Value())
 	if err != nil {
+		//lint:ignore ST1005 the capital is the "To" field's label
 		return gosmo.LogSearch{}, fmt.Errorf("To: %w", err)
 	}
 	if !from.IsZero() && !to.IsZero() && to.Before(from) {
-		return gosmo.LogSearch{}, fmt.Errorf("To is before From")
+		//lint:ignore ST1005 both capitals are field labels
+		return gosmo.LogSearch{}, errors.New("To is before From")
 	}
 	return gosmo.LogSearch{
 		Text1: strings.TrimSpace(d.fText1.Value()),

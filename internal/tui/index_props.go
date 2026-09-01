@@ -58,6 +58,58 @@ func dataCompressionRow(current string) (propsheet.Row, *propsheet.SelectRow) {
 	return propsheet.Static("Data compression", current+" (not editable here)"), nil
 }
 
+// rebuildOptions groups the three index options SQL Server only honours after a
+// rebuild — fill factor, pad index and data compression — for the two pages
+// that offer them, Index Properties > Options and Key Properties > Options.
+type rebuildOptions struct {
+	fillFactor *propsheet.TextRow
+	pad        *propsheet.CheckRow
+
+	// compression is nil when the server reports a compression outside the
+	// editable set; layout is then a Static saying so and there is nothing to
+	// rebuild from, but the rest of the page still applies.
+	compression *propsheet.SelectRow
+	layout      propsheet.Row
+}
+
+func newRebuildOptions(idx *gosmo.Index) rebuildOptions {
+	layout, compression := dataCompressionRow(idx.DataCompression)
+	return rebuildOptions{
+		fillFactor:  propsheet.Int("Fill factor", int64(idx.FillFactor), 0, 100, "%"),
+		pad:         propsheet.Check("Pad index", idx.IsPadded),
+		compression: compression,
+		layout:      layout,
+	}
+}
+
+// compressionRows are the trailing rows both pages draw, including the note
+// saying why Apply issues a rebuild of its own.
+func (r rebuildOptions) compressionRows() []propsheet.Row {
+	return []propsheet.Row{
+		propsheet.Section("Compression"),
+		r.layout,
+		propsheet.Note("Fill factor, pad index, and data compression only take effect after a rebuild — Apply issues one automatically when any of these three change."),
+	}
+}
+
+// apply rebuilds the index if any of the three changed, and issues nothing
+// otherwise.
+func (r rebuildOptions) apply(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
+	compressionDirty := r.compression != nil && r.compression.Dirty()
+	if !r.fillFactor.Dirty() && !r.pad.Dirty() && !compressionDirty {
+		return nil
+	}
+	fillFactor, err := r.fillFactor.IntValue()
+	if err != nil {
+		return err
+	}
+	compression := ""
+	if compressionDirty {
+		compression = r.compression.Value()
+	}
+	return idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), r.pad.Checked(), compression)
+}
+
 // indexPropPages builds the page set for Index Properties. There's no
 // Permissions page: an index isn't a SQL Server securable class, so
 // GRANT/DENY/REVOKE against one isn't valid T-SQL. Sort in tempdb, Online
@@ -166,13 +218,11 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			// SetOptions.
 			constrained := idx.IsPrimaryKey || idx.IsUniqueConstraint
 
-			fillFactorRow := propsheet.Int("Fill factor", int64(idx.FillFactor), 0, 100, "%")
-			padRow := propsheet.Check("Pad index", idx.IsPadded)
+			rebuild := newRebuildOptions(idx)
 			rowLocksRow := propsheet.Check("Allow row locks", idx.AllowRowLocks)
 			pageLocksRow := propsheet.Check("Allow page locks", idx.AllowPageLocks)
-			compressionLayoutRow, compressionRow := dataCompressionRow(idx.DataCompression)
 
-			rows := []propsheet.Row{propsheet.Section("Index options"), fillFactorRow, padRow}
+			rows := []propsheet.Row{propsheet.Section("Index options"), rebuild.fillFactor, rebuild.pad}
 			var ignoreDupRow *propsheet.CheckRow
 			if constrained {
 				rows = append(rows, propsheet.Static("Ignore duplicate keys", "n/a (enforces a primary or unique constraint)"))
@@ -180,11 +230,8 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 				ignoreDupRow = propsheet.Check("Ignore duplicate keys", idx.IgnoreDupKey)
 				rows = append(rows, ignoreDupRow)
 			}
-			rows = append(rows, rowLocksRow, pageLocksRow,
-				propsheet.Section("Compression"),
-				compressionLayoutRow,
-				propsheet.Note("Fill factor, pad index, and data compression only take effect after a rebuild — Apply issues one automatically when any of these three change."),
-			)
+			rows = append(rows, rowLocksRow, pageLocksRow)
+			rows = append(rows, rebuild.compressionRows()...)
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
@@ -201,24 +248,7 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 						return err
 					}
 				}
-				// compressionRow is nil when the server reports a compression
-				// outside the editable set, so there is nothing to rebuild
-				// from — the rest of the page still applies.
-				compressionDirty := compressionRow != nil && compressionRow.Dirty()
-				if fillFactorRow.Dirty() || padRow.Dirty() || compressionDirty {
-					fillFactor, err := fillFactorRow.IntValue()
-					if err != nil {
-						return err
-					}
-					compression := ""
-					if compressionDirty {
-						compression = compressionRow.Value()
-					}
-					if err := idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), padRow.Checked(), compression); err != nil {
-						return err
-					}
-				}
-				return nil
+				return rebuild.apply(ctx, t, idx)
 			}
 			return f, apply, nil
 		},

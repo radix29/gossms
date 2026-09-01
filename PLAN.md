@@ -6,12 +6,10 @@ This is a spare-time project — no deadlines, no sprints, no committed
 velocity. Work happens in whatever order priorities and available time
 allow; this document tracks *what's next*, not *when*.
 
-Three companion documents carry the detail this one deliberately doesn't:
+Two companion documents carry the detail this one deliberately doesn't:
 
 - `docs/open-threads.md` — work found, decided, or deferred but not
   finished, including the decisions that must not be re-raised.
-- `docs/journal.md` — why a design is the way it is, and how a bug was
-  found, for the work since the current tag. Trimmed at each release.
 - `CHANGELOG.md` / `RELEASE.md` — what actually shipped, per tag.
 
 ## Release target

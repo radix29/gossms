@@ -105,70 +105,22 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 	return f, apply, nameField
 }
 
-// buildNewDatabaseOptionsPage reuses database_props.go's pageDatabaseOptions
-// row-building/apply idiom (dbOptSelectRow/dbOptBoolRow plus a tracked
-// []dbOptRow list, applied only when a row is Dirty()), fed from model's
-// current options instead of an existing database's. CREATE DATABASE
-// inherits all of these from model, so a dirty row means the user chose
-// something other than what would have been inherited, and only those need
-// a follow-on ALTER DATABASE SET once dbName() exists.
+// buildNewDatabaseOptionsPage builds databaseOptionRows from model's current
+// options rather than an existing database's. CREATE DATABASE inherits all of
+// these from model, so a dirty row means the user chose something other than
+// what would have been inherited, and only those need a follow-on ALTER
+// DATABASE SET once dbName() exists.
 func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func() string) (*propsheet.Form, propApply) {
-	o := pf.modelOptions
-	var tracked []dbOptRow
-
-	pageVerifyItems := []string{"NONE", "TORN_PAGE_DETECTION", "CHECKSUM"}
-	containmentItems := []string{"NONE", "PARTIAL"}
-	cursorDefaultItems := []string{"GLOBAL", "LOCAL"}
-	userAccessItems := []string{"MULTI_USER", "SINGLE_USER", "RESTRICTED_USER"}
-	snapshotIsolationOn := o.SnapshotIsolation == "ON" || o.SnapshotIsolation == "ENABLED"
-
-	userAccessRow := propsheet.Select("Restrict access", userAccessItems, indexOf(userAccessItems, o.UserAccess))
-
-	f := propsheet.NewForm(
-		propsheet.Section("Automatic"),
-		dbOptBoolRow(&tracked, gosmo.DBOptAutoClose, "Auto close", o.AutoClose),
-		dbOptBoolRow(&tracked, gosmo.DBOptAutoCreateStatistics, "Auto create statistics", o.AutoCreateStats),
-		dbOptBoolRow(&tracked, gosmo.DBOptAutoShrink, "Auto shrink", o.AutoShrink),
-		dbOptBoolRow(&tracked, gosmo.DBOptAutoUpdateStatistics, "Auto update statistics", o.AutoUpdateStats),
-		dbOptBoolRow(&tracked, gosmo.DBOptAutoUpdateStatisticsAsync, "Auto update statistics async", o.AutoUpdateStatsAsync),
-		propsheet.Section("Containment"),
-		dbOptSelectRow(&tracked, gosmo.DBOptContainment, "Containment type", containmentItems, indexOf(containmentItems, o.Containment)),
-		propsheet.Section("Cursor"),
-		dbOptBoolRow(&tracked, gosmo.DBOptCursorCloseOnCommit, "Close cursor on commit", o.CursorCloseOnCommit),
-		dbOptSelectRow(&tracked, gosmo.DBOptCursorDefault, "Default cursor", cursorDefaultItems, indexOf(cursorDefaultItems, o.DefaultCursor)),
-		propsheet.Section("Miscellaneous"),
-		dbOptBoolRow(&tracked, gosmo.DBOptANSINullDefault, "ANSI NULL default", o.ANSINullDefault),
-		dbOptBoolRow(&tracked, gosmo.DBOptANSINulls, "ANSI NULLS enabled", o.ANSINulls),
-		dbOptBoolRow(&tracked, gosmo.DBOptANSIPadding, "ANSI padding enabled", o.ANSIPadding),
-		dbOptBoolRow(&tracked, gosmo.DBOptANSIWarnings, "ANSI warnings enabled", o.ANSIWarnings),
-		dbOptBoolRow(&tracked, gosmo.DBOptArithAbort, "Arithmetic abort enabled", o.ArithAbort),
-		dbOptBoolRow(&tracked, gosmo.DBOptConcatNullYieldsNull, "Concat null yields null", o.ConcatNullYieldsNull),
-		dbOptBoolRow(&tracked, gosmo.DBOptNumericRoundAbort, "Numeric round-abort", o.NumericRoundAbort),
-		dbOptBoolRow(&tracked, gosmo.DBOptQuotedIdentifier, "Quoted identifier", o.QuotedIdentifier),
-		dbOptBoolRow(&tracked, gosmo.DBOptRecursiveTriggers, "Recursive triggers", o.RecursiveTriggers),
-		dbOptBoolRow(&tracked, gosmo.DBOptReadCommittedSnapshot, "Read committed snapshot", o.ReadCommittedSnapshot),
-		dbOptBoolRow(&tracked, gosmo.DBOptSnapshotIsolation, "Allow snapshot isolation", snapshotIsolationOn),
-		dbOptSelectRow(&tracked, gosmo.DBOptPageVerify, "Page verify", pageVerifyItems, indexOf(pageVerifyItems, o.PageVerify)),
-		userAccessRow,
-		dbOptBoolRow(&tracked, gosmo.DBOptTrustworthy, "Trustworthy", o.IsTrustworthy),
-	)
+	rows, tracked, userAccessRow := databaseOptionRows(pf.modelOptions)
+	f := propsheet.NewForm(rows...)
 
 	apply := func(ctx context.Context) error {
 		d := sc.Server.Database(dbName())
-		for _, r := range tracked {
-			if !r.row.Dirty() {
-				continue
-			}
-			value := r.items[r.row.Selected()]
-			if err := d.SetDatabaseOptionContext(ctx, r.opt, value); err != nil {
-				return err
-			}
+		if err := applyTrackedOptions(ctx, d, tracked); err != nil {
+			return err
 		}
-		if userAccessRow.Dirty() {
-			mode := userAccessItems[userAccessRow.Selected()]
-			if err := d.SetUserAccessContext(ctx, mode); err != nil {
-				return err
-			}
+		if err := applyRestrictAccess(ctx, d, userAccessRow); err != nil {
+			return err
 		}
 		return nil
 	}

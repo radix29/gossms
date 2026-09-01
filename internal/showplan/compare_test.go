@@ -234,3 +234,33 @@ func TestCompareSurvivesAStatementWithNoPlan(t *testing.T) {
 		t.Errorf("a nil statement produced properties %v", got)
 	}
 }
+
+// TestCompareCountsEveryActualRowAndRead. The two runtime numbers are
+// measurements of the runs being compared, not predictions, so they are
+// compared exactly while the estimates beside them keep their tolerance. A
+// tolerance here hides the reads delta on the number a user opens the pane to
+// tune against: 100,000 reads → 100,500 is 500 pages of work that appeared,
+// and the operator would have read "Same".
+func TestCompareCountsEveryActualRowAndRead(t *testing.T) {
+	withRuntime := func(n *Node, rows, reads int64) *Statement {
+		n.Runtime = &Runtime{Rows: rows, LogicalReads: reads, Executions: 1}
+		return stmt(n)
+	}
+	a := withRuntime(node(0, "Index Seek", "orders", "IX_date", 1000, 1.0), 100000, 100000)
+	b := withRuntime(node(0, "Index Seek", "orders", "IX_date", 1000, 1.0), 100500, 100000)
+	got := CompareStatements(a, b)
+	if got[0].Kind != ChangeDifferent {
+		t.Errorf("a 0.5%% move in actual rows reads as %v with changes %v", got[0].Kind, got[0].Changes)
+	}
+
+	c := withRuntime(node(0, "Index Seek", "orders", "IX_date", 1000, 1.0), 100000, 100500)
+	if got := CompareStatements(a, c); got[0].Kind != ChangeDifferent {
+		t.Errorf("a 0.5%% move in logical reads reads as %v with changes %v", got[0].Kind, got[0].Changes)
+	}
+
+	// The estimates on the same node keep the tolerance they were given.
+	d := withRuntime(node(0, "Index Seek", "orders", "IX_date", 1005, 1.005), 100000, 100000)
+	if got := CompareStatements(a, d); got[0].Kind != ChangeSame {
+		t.Errorf("a 0.5%% re-estimate reads as %v with changes %v", got[0].Kind, got[0].Changes)
+	}
+}

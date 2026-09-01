@@ -168,6 +168,91 @@ func TestRestoreDialogDragOutOfTargetKeepsExtending(t *testing.T) {
 // worked — but its ButtonNone latch-reset list omitted the field, so a
 // release outside the dialog (eaten by ConsumeOutsideClick) left it armed
 // and the field swallowed the next press.
+// newOptionsForDrag builds an Options dialog with fMaxCellLen laid out where
+// Draw puts it — inner.Y+6, five rows above the button row — so a drag from
+// the field down onto the buttons is the gesture the user can actually make.
+func newOptionsForDrag(t *testing.T) *OptionsDialog {
+	t.Helper()
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	d := NewOptionsDialog(a)
+	d.Show()
+	inner := d.InnerRect()
+	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
+	d.fMaxCellLen.SetValue("2000")
+	return d
+}
+
+// The Options dialog is the one dialog with a text field that never adopted
+// dialogs.FieldGesture. Routing its press by an explicit HitTest rather than by
+// InputField's own bounds check is what fixes the two failures below, and this
+// is what that must not cost: the gesture still belongs to the field once the
+// pointer leaves it.
+func TestOptionsDialogDragOutOfTheFieldKeepsExtending(t *testing.T) {
+	d := newOptionsForDrag(t)
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	// Past the right edge of the five-wide box and two rows down, over the
+	// IntelliSense checkbox, which would otherwise take the gesture out from
+	// under the drag.
+	if got := dragOutOf(t, d, d.fMaxCellLen, ix+8, y+2); got != "2000" {
+		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "2000")
+	}
+	if d.zone != zoneMaxCellLen {
+		t.Errorf("zone = %d, want zoneMaxCellLen — a widget below stole a gesture the field owned", d.zone)
+	}
+}
+
+// The half that cost more than a frozen selection: a drag that reached the
+// button row fired the button under it. ButtonClicked keeps its own latch, but
+// the press that started this gesture landed in the field and never set it, so
+// the first Button1 event over a button read as a fresh click.
+func TestOptionsDialogDragOverTheButtonRowDoesNotPressIt(t *testing.T) {
+	d := newOptionsForDrag(t)
+	before := d.app.cfg.MaxCellLength
+
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	if !d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone)) {
+		t.Fatal("the press inside the field was refused — test premise is wrong")
+	}
+	r, by := d.Rect(), d.ButtonRowY()
+	if by <= y {
+		t.Fatalf("button row at y=%d is not below the field at y=%d — test premise is wrong", by, y)
+	}
+	for mx := r.X; mx < r.X+r.W; mx++ {
+		d.HandleMouse(tcell.NewEventMouse(mx, by, tcell.Button1, tcell.ModNone))
+		if !d.Visible() {
+			t.Fatalf("a button at x=%d fired during a text-selection drag", mx)
+		}
+	}
+	if d.app.cfg.MaxCellLength != before {
+		t.Errorf("MaxCellLength = %d, want %d — OK applied mid-drag", d.app.cfg.MaxCellLength, before)
+	}
+}
+
+// Invariant 4, in the shape this dialog gets it wrong: it routes a press to
+// fMaxCellLen by the field's own bounds check, and InputField skips that check
+// while it is latched. A dialog dismissed mid-drag — Escape with the button
+// still down, so no release ever arrives — therefore reopened consuming a
+// press anywhere on screen.
+func TestOptionsDialogShowClearsTheDragLatch(t *testing.T) {
+	d := newOptionsForDrag(t)
+	ix, y := d.fMaxCellLen.InputX(), d.fMaxCellLen.RectY()
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	if d.drag.Field() == nil {
+		t.Fatal("the press did not arm a latch — test premise is wrong")
+	}
+	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	d.Show()
+	if d.drag.Field() != nil {
+		t.Error("Show left a drag latch armed from the previous showing")
+	}
+	// And the widget's own latch is no longer consulted: a press well clear of
+	// the field must land on whatever is actually there.
+	if d.HandleMouse(tcell.NewEventMouse(ix+40, y+2, tcell.Button1, tcell.ModNone)); d.zone == zoneMaxCellLen {
+		t.Error("a press outside the field was routed to it by a latch from the previous showing")
+	}
+}
+
 func TestOptionsDialogReleaseOutsideClearsTheFieldLatch(t *testing.T) {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 100, h: 40}

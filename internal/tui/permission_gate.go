@@ -237,6 +237,14 @@ func allowsActionOn(sc *db.ServerConn, dbName, schema, object string, rights ...
 // so a login holding ALTER on just the one table would have been shown a
 // read-only banner for a page it could in fact write.
 func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) bool {
+	// A DENY on the object itself is the one answer in the whole gate that
+	// withholds rather than adds, and it has to be asked before the rights
+	// below rather than among them: SQL Server resolves it over every wider
+	// grant, so any one of them would otherwise answer yes for a write it
+	// then refuses. See objectDenial.
+	if _, denied := objectDenial(server, dbCaps, dbName, schema, object, rights...); denied {
+		return false
+	}
 	for _, r := range rights {
 		switch {
 		case r.membership:
@@ -313,6 +321,68 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 	return false
 }
 
+// objectDenial reports the right whose DENY on the object itself withholds an
+// action, and whether there is one. It is the only part of the gate that
+// withholds on an object-scope answer, and it is sound for a reason
+// HasOnObject's sparseness argument does not cover: it asks for a state the
+// probe recorded, so silence stays silence.
+//
+// Three facts it rests on, each verified live on 2026-09-01 and each a wrong
+// gate if assumed the other way:
+//
+//   - An object-scope DENY beats every wider grant. A principal holding
+//     database-wide ALTER, or db_owner, reads HAS_PERMS_BY_NAME 0 on a table
+//     denied ALTER, and its rename fails Msg 297 — which is what the login saw
+//     instead of a greyed-out item before this check existed.
+//   - A member of sysadmin bypasses the check, and must be asked about first.
+//     The probe's principal set includes public, so a DENY made to public is
+//     recorded for everyone including a sysadmin, whose write SQL Server then
+//     allows anyway.
+//   - The object's owner needs no exception. SQL Server refuses a DENY aimed
+//     at the owner of the securable, and ALTER AUTHORIZATION deletes an
+//     existing DENY row as it transfers ownership, so an owner never carries
+//     one. An owner denied through public *is* refused by the server.
+//
+// A database that was never probed records nothing, which reads as no denial —
+// unknown fails open here as everywhere else.
+func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, bool) {
+	if dbName == "" || schema == "" || object == "" || server.InServerRole("sysadmin") {
+		return requiredRight{}, false
+	}
+	var caps *gosmo.DatabaseCapabilities
+	asked := false
+	for _, r := range rights {
+		if !r.object {
+			continue
+		}
+		if !asked {
+			caps, asked = dbCaps(dbName), true
+		}
+		if caps.DeniedOnObject(schema, object, r.name) {
+			return r, true
+		}
+	}
+	return requiredRight{}, false
+}
+
+// deniedOnObject is objectDenial for a live connection — the shape the menu
+// gates ask it in, with the cached capabilities the UI goroutine may use.
+func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) (requiredRight, bool) {
+	if sc == nil {
+		return requiredRight{}, false
+	}
+	return objectDenial(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
+}
+
+// deniedText is the sentence for an action withheld by a DENY on the object
+// rather than by a missing right — requiresText's counterpart. It names no
+// role and asks for nothing, because there is nothing to ask for: the login
+// may hold every right in the list already, and the DENY overrides all of
+// them. Only the object's own permission can be changed.
+func deniedText(r requiredRight) string {
+	return r.name + " is denied on this object."
+}
+
 // gate returns item with its Enabled predicate extended to consult the
 // capability set, keeping any predicate it already had. The two are ANDed:
 // "no active query panel" and "no rights for this" are both reasons to
@@ -331,6 +401,13 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 		// the whole "Requires X (role) or Y or Z." sentence would double the
 		// width of every context menu it appears in.
 		item.Note = "needs " + rights[0].name
+		// Unless a DENY on the object is what withheld it, and then naming a
+		// right sends the user after one they may already hold — the denial
+		// beats it. Read once here rather than in the predicate: the menu is
+		// rebuilt each time it opens, and Note is a string, not a callback.
+		if r, denied := deniedOnObject(sc, dbName, schema, object, rights...); denied {
+			item.Note = r.name + " denied on this object"
+		}
 		// And only when the rights are why it is disabled. An item its own
 		// predicate has already withheld — a failover offered on secondaries
 		// only — is grey for a reason this note does not describe, and naming

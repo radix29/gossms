@@ -95,6 +95,34 @@ func TestActivityMonitorProcTabKeepsRowsOnError(t *testing.T) {
 	}
 }
 
+// A refresh reruns the same procedure, so the column the user dragged wider to
+// read a wrapped sql_text has to survive it — SetData would recompute every
+// width from the new rows and snap it back, on the one action the user takes
+// deliberately. The cursor is not kept: the rows are a different set of
+// sessions, so it would land on an unrelated one.
+func TestActivityMonitorProcTabRefreshKeepsADraggedColumnWidth(t *testing.T) {
+	for _, tc := range procTabs {
+		t.Run(tc.name, func(t *testing.T) {
+			am := hostedProcMonitor(t, tc.tab)
+			pt := am.procTab()
+			pt.loc = activity.ProcTempDB
+			pt.applyResult(procResult())
+
+			pt.grid.SetColumnWidth(2, 40)
+			pt.grid.SetSelectedCell(1, 0)
+
+			pt.applyResult(procResult())
+
+			if got := pt.grid.ColumnWidth(2); got != 40 {
+				t.Errorf("the dragged width of the sql text column is %d after a refresh, want 40", got)
+			}
+			if row, _ := pt.grid.SelectedCell(); row != 0 {
+				t.Errorf("the cursor sits on row %d after a refresh, want the top row", row)
+			}
+		})
+	}
+}
+
 // "Install in master" is offered only while master hasn't got the procedure.
 func TestActivityMonitorProcTabInstallButtonGating(t *testing.T) {
 	for _, tc := range procTabs {

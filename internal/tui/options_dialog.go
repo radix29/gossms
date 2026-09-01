@@ -31,6 +31,11 @@ type OptionsDialog struct {
 	fMaxCellLen    *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
+	// drag owns the text-selection gesture a press in fMaxCellLen starts —
+	// see dialogs.FieldGesture for why the three calls it drives have to sit
+	// where they do in HandleMouse.
+	drag dialogs.FieldGesture
+
 	zone     optionsZone
 	btnFocus int // 0=OK 1=Cancel
 }
@@ -66,6 +71,9 @@ func (d *OptionsDialog) Show() {
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setZone(zoneIconStyle)
 	d.ModalDialog.Show()
+	// A latch must not survive into the next showing: a dialog dismissed
+	// mid-drag would reopen still routing every click to that field.
+	d.drag.Clear()
 }
 
 func (d *OptionsDialog) setZone(z optionsZone) {
@@ -179,12 +187,21 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// HandleMouse calls further down ever see it, leaving their
 	// mouseDragging latch set and swallowing the next press. Reset it here
 	// first; each returns false on ButtonNone so this has no other effect.
+	// drag.Release does the same for fMaxCellLen, and must likewise come
+	// before ConsumeOutsideClick.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.rbIconStyle.HandleMouse(ev)
 		d.cbIntelliSense.HandleMouse(ev)
-		d.fMaxCellLen.HandleMouse(ev)
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
+		return true
+	}
+	// The gesture belongs to the field that claimed its press, so motion is
+	// replayed there without hit-testing — ahead of ButtonClicked below,
+	// which would otherwise fire OK the moment a selection drag wandered
+	// down onto the button row.
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, []string{"OK", "Cancel"}); i >= 0 {
@@ -193,8 +210,11 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.doButton()
 		return true
 	}
-	if d.fMaxCellLen.HandleMouse(ev) {
+	// Hit-tested here rather than left to InputField.HandleMouse's own
+	// bounds check, which a latch left over from a previous showing skips.
+	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fMaxCellLen.HitTest(mx, my) {
 		d.setZone(zoneMaxCellLen)
+		d.drag.Claim(d.fMaxCellLen, ev)
 		return true
 	}
 	if d.rbIconStyle.HandleMouse(ev) {

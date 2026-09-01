@@ -42,7 +42,6 @@ Before adding to any of them:
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
 | `PLAN.md` | What's next: release target, current priorities, feature backlog |
 | `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
-| `docs/journal.md` | Dated archive of what was built and how bugs were found. Never required reading |
 
 `README.md` is user-facing and owns features and the keyboard reference. When
 a rule needs to appear in two places, the second one summarizes in a sentence

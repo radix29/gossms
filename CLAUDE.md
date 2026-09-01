@@ -38,7 +38,6 @@ entry names a section, not a whole document; read the section.
 | A goroutine delivering a result to the UI | `ARCHITECTURE.md` § Async result delivery: postAndWake |
 | gosmo changes / the `replace` directive | the `dev-with-local-gosmo` skill; `ARCHITECTURE.md` § Developing against a local gosmo checkout |
 | Known bugs, deferred scope, release blockers | `docs/open-threads.md` — check before reporting something as newly found |
-| Why a design is the way it is | search `docs/journal.md` — work since the current tag only; older entries are in git history (not required reading) |
 
 ## The one rule that matters most: verify against real source, don't guess
 
@@ -194,8 +193,7 @@ gosmo only.
     read back from the widget, why `escapeSingle` goes on top of bracket-quoting.
     Each is a shipped bug a plausible "simplification" would bring back.
   - Not worth writing: rejected alternatives, restatements of the line, and
-    narration of how the code came to look this way — those belong in
-    `docs/journal.md`.
+    narration of how the code came to look this way.
   - Prefer one sharp sentence naming the failure to a paragraph, and keep an
     earned long comment on the declaration it protects.
   - Existing long comments are not a cleanup target — `app.go`, `datagrid.go`,
@@ -317,6 +315,12 @@ gosmo only.
   Agent's msdb memberships, which fail open when read as server permissions. The
   callers differ in one thing only, how a database's capabilities are reached —
   cached for the UI goroutine, probing for a page's `load`.
+  **Inside it, the object-scope DENY is asked first and separately.** Every right
+  in a set is an alternative that can only *add* permission, but SQL Server
+  resolves a DENY on the object over all of them, so `objectDenial` runs before
+  the loop rather than as another case in it — and it exempts sysadmin, because
+  the probe reads permissions through `public` and a DENY to public is recorded
+  for the one login the server never applies it to.
 - **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a terminal too small for its
   requested size the content is clipped to `InnerRect` (`App.drawDialogs` wraps the
@@ -441,6 +445,17 @@ invariants, and where each is implemented:
 `ConsumeOutsideClick` and before any hit-test, `Clear` in `Show`. Seven dialogs had
 their own copy. `ARCHITECTURE.md` § dialogs.FieldGesture has the failure each
 placement prevents; the dialog keeps only its own hit-testing and focus handling.
+Two meta-tests enforce it, and both are needed: `TestEveryDialogWithATextFieldOwns
+AFieldGesture` walks the built dialogs for one that owns a loose
+`*widgets.InputField` and no gesture, and
+`TestFieldGestureCallsAreOrderedCorrectly` reads the source of both dialog
+packages for the order — `Release` above `ConsumeOutsideClick`, `Replay` below it
+and above the last `ButtonClicked`, `Claim` used at all, `Clear` on the path that
+shows the dialog. Options, Prompt and TypedConfirm each hand-rolled the protocol
+and got it wrong long after the other seven were converted, with every test
+passing: a drag from the field to the button row pressed the button under the
+pointer, which on Prompt *accepted* the rename and on TypedConfirm answered the
+confirmation the retyping exists to slow down.
 
 An overlay drawn last gets **first refusal** of every key/mouse event while open —
 `DataGrid.OverlayActive()` at the top of `QueryPanel.HandleKey`/`HandleMouse`; the
@@ -485,4 +500,3 @@ will be loaded again:
 - A rule about the code or the workflow → this file, or `ARCHITECTURE.md` if it
   needs more than a paragraph.
 - Work knowingly left undone, or a bug found and not fixed → `docs/open-threads.md`.
-- What was built and how a bug was found → `docs/journal.md`.

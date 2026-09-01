@@ -79,7 +79,7 @@ type scriptedConnector struct {
 }
 
 func (c scriptedConnector) Connect(context.Context) (driver.Conn, error) {
-	return scriptedConn{answers: c.answers, log: c.log}, nil
+	return scriptedConn(c), nil
 }
 
 func (scriptedConnector) Driver() driver.Driver { return nil }

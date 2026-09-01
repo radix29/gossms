@@ -44,6 +44,10 @@ type PromptDialog struct {
 	input    *widgets.InputField
 	focus    promptFocus
 
+	// drag owns the text-selection gesture a press in input starts. See
+	// FieldGesture for why its three calls sit where they do in HandleMouse.
+	drag FieldGesture
+
 	// OnAccept receives the trimmed value once it passes Validate. Not
 	// called on cancel — a dialog the user backed out of reports nothing.
 	OnAccept func(value string)
@@ -76,6 +80,9 @@ func (d *PromptDialog) ShowPrompt(title, message, label, initial string, onAccep
 	d.input.SelectAll()
 	d.focus = promptFocusInput
 	d.syncFocus()
+	// input is rebuilt above, so a gesture held from the last showing points
+	// at a discarded widget — and would route every click there.
+	d.drag.Clear()
 	w, h, lines := d.fitMessage(message, promptW, promptH)
 	d.msgLines = lines
 	d.SetSize(w, h)
@@ -192,12 +199,18 @@ func (d *PromptDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	// A release must reach d.input even when it lands outside the dialog
 	// (consumed below) — otherwise its next press is swallowed as a
-	// continuation of the stale drag. HandleMouse returns false on
-	// ButtonNone, so this only resets the latch.
+	// continuation of the stale drag.
 	if ev.Buttons() == tcell.ButtonNone {
-		d.input.HandleMouse(ev)
+		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
+		return true
+	}
+	// The gesture belongs to the field that claimed its press, so motion is
+	// replayed there without hit-testing — ahead of ButtonClicked below,
+	// which would otherwise press OK the moment a selection drag wandered
+	// down onto the button row, accepting the value being edited.
+	if d.drag.Replay(ev) {
 		return true
 	}
 	if i := d.ButtonClicked(ev, d.buttons()); i >= 0 {
@@ -218,7 +231,7 @@ func (d *PromptDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	if d.input.HitTest(mx, my) {
 		d.focus = promptFocusInput
 		d.syncFocus()
-		d.input.HandleMouse(ev)
+		d.drag.Claim(d.input, ev)
 	}
 	return true
 }
