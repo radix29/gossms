@@ -549,6 +549,49 @@ can be created from the tree". Three limits are the design, not a gap:
   pinning it; the test cluster is all default instances, so no named instance
   has ever gone through the exchange.
 
+## A job's state comes from Agent, not from msdb
+
+Fixed 2026-09-02. The old note here said six of gossms's eight
+`formatJobState` arms were unreachable, and it was worse than that: gosmo's
+`JobState` constants were not sp_help_job's encoding at all, only a set of
+names consistent with gosmo's own `CASE ... THEN 4 ELSE 1`. Read live from
+`msdb.dbo.sp_get_composite_job_info`, the real encoding is
+1 Executing, 2 WaitingForThread, 3 BetweenRetries, 4 Idle, 5 Suspended,
+6 WaitingForStepToFinish, 7 PerformingCompletionActions, with 0 meaning a job
+Agent does not run itself. `Server.jobStates` now reads it from
+`master.dbo.xp_sqlagent_enum_jobs` — the only place it exists, since msdb has
+no such column — in **one** call for the whole instance, and overlays it onto
+`Jobs`/`JobByName`.
+
+Three things about it are load-bearing:
+
+- **The `INSERT ... EXECUTE` table shape must match the extended procedure's
+  thirteen columns exactly**, which is why `jobStateColumns` is copied from
+  `sp_get_composite_job_info` rather than trimmed to the two columns gosmo
+  reads.
+- **A failed state read is not a failed listing.** `applyJobStates` swallows
+  the error and leaves the `sysjobactivity` derivation in place: the extended
+  procedure is unreachable whenever Agent is stopped, which is no reason to
+  stop listing jobs. The derivation now emits the *same* encoding
+  (`THEN 1 ELSE 4`), so the two paths cannot disagree — verified live against a
+  job in each state.
+- **`jobIsRunning` answers "unknown" for `JobStateUnknown` and
+  `JobStateSuspended`, and `jobStateRefusal` then refuses nothing.** Unknown
+  means Agent had nothing to say; Suspended is genuinely ambiguous —
+  sp_help_job's own "not idle or suspended" filter groups it with idle, while a
+  suspended job still holds a session. Sending the request and letting the
+  server answer is better than refusing an action that would have worked.
+
+Still open: **the Agent-stopped fallback has not been run live.**
+`xp_cmdshell 'net stop SQLSERVERAGENT'` on win10cli fails with "Access is
+denied" — the SQL Server service account cannot control the Agent service — so
+the fallback is reasoned from the encoding and pinned only by the corrected
+`CASE`, which *was* verified live in both states. Two deprecated constants
+also remain: `JobStateCancelling` and `JobStateRunning` name states Agent's
+encoding does not have. They carry negative values so no switch over the real
+encoding reaches them, and are kept only so existing callers compile
+(§ Changing gosmo) — worth retiring in a release that can take the break.
+
 ## Log File Viewer: what is deliberately out of it
 
 Built 2026-08-12. One thing SSMS's own viewer has is
@@ -805,6 +848,35 @@ remains of each is recorded here.
   permission on master, and a login without it must still be able to create
   ordinary SQL and Windows logins — an empty picker becomes a refusal naming
   what is missing, not a broken dialog.
+## Left open by the 2026-09-02 cross-repo review
+
+The three defects (§1 audit rename, §2 ungated Delete/Rename on server-level
+nodes, §3 the doubled width scan) and §A/§B/§C are implemented. What was
+declined, and why:
+
+- **`charts.HistoryChart.Draw` and `StackedHistoryChart.Draw` stay, though
+  nothing in the binary reaches them.** The review flagged them as dead code
+  with the check attached: whether `doc.go` advertises `Draw` as the entry
+  point. It does — "every chart draws into a `tcell.Screen` through a
+  `core.Rect`" — and all six chart types implement `Draw`. The dashboard uses
+  `DrawFrame` only because it also wants the time row, which `DrawFrame`'s own
+  comment says. Removing two of six would break the package's one uniform
+  method for four lines.
+- **The five `staticcheck` U1000 findings in `clipboard_host_test.go` and
+  `dialog_gesture_test.go` are suppressed, not deleted.** The review said
+  delete. They cannot be: the fields are read by the reflection walk each test
+  exists to exercise, so `type page`/`field p`/`field row` *are* the fixture —
+  deleting `p` leaves `lazy` with nothing behind the nil pointer and the test
+  asserts nothing. Each carries a `//lint:ignore U1000` naming the reader.
+- **`rightAlterAnyLinkedSrv` and `rightCreateTable` still read as unused**, as
+  the review recorded. Deliberate; pinned by `permission_gate_names_test.go`.
+- **`core.NewRect`, `core.JoinPath` and `activity.WaitCategory.String` are
+  genuinely idle** and left alone — `tuikit` and `internal/activity` are
+  gossms-internal, so removal would be allowed, but the review costed it as
+  low value either way.
+- **The `internal/tui` package split is not attempted.** § Architecture of the
+  review has the cost; nothing here changes it.
+
 ## Permission gating: what P3 deliberately leaves out
 
 Added 2026-08-25 with the write-path phase of the permission work. Each of
@@ -864,3 +936,47 @@ these is a known limit of the gate layer, not an oversight.
   available on Linux" row instead. `TestXpCmdshellIsNotEditableOnLinux` pins it
   and `TestXpCmdshellStaysEditableOnWindows` guards the other direction, over a
   new `newFakeConnOnLinux`.
+
+## Server-level families (Phase 3 item 12): what is deliberately out of them
+
+Added 2026-09-02 with Credentials, Backup Devices, Server DDL Triggers,
+Endpoints, Audits and Server Audit Specifications. Each of these is a decision
+taken while building those six, not work that was forgotten.
+
+- **Viewing audit records is absent.** `sys.fn_get_audit_file` is a feature the
+  size of the Log File Viewer — a reader, a grid, a filter, paging over files
+  the audit rolled over. SSMS's "View Audit Logs" command is therefore not
+  offered at all rather than offered and empty.
+- **Database Audit Specifications** are `todo.txt` item 15, not part of item 12.
+  gosmo covers the server-scope half only; `sys.database_audit_specifications`
+  has no reads.
+- **Database-scope DDL triggers** (`parent_class = 0`) are item 13.
+  `Database.triggersWhere`'s `parent_class = 1` was deliberately left alone —
+  widening it would change what the existing per-database Triggers folder
+  lists.
+- **Cryptographic Providers** get no folder, and **database-scoped credentials**
+  (`sys.database_credentials`) get no reads. A credential's provider *binding*
+  is shown and scripted; registering a provider is not offered.
+- **Creating TSQL, Service Broker and SOAP endpoints** is out. Endpoints are a
+  read/state/drop family; the existing New Database Mirroring Endpoint dialog
+  stays the only creation path, and SSMS's multi-page New Endpoint dialog is
+  not reproduced.
+- **Tape and virtual backup devices** are listed, scripted and dropped but not
+  creatable — the New Backup Device dialog offers disk only, as SSMS's does.
+- **An audit's destination cannot be changed from Properties.** ALTER SERVER
+  AUDIT does accept a new `TO` clause on a disabled audit, but switching a FILE
+  audit to a Windows log discards the whole file block and starts a new audit
+  file. SSMS greys it and so does goSSMS; gosmo's `AlterContext` still accepts
+  any destination, because the library is not the UI.
+- **Neither audit object offers Rename from the tree.** A server audit
+  specification has no `MODIFY NAME` form at all — it is a parse error, not a
+  permission failure. An audit has one, but only while disabled, so a tree
+  rename would silently stop auditing for its duration; the rename lives on the
+  Properties page, where the disable is visible in Script Changes.
+- **Audit Properties is one page**, where SSMS has General and a separate
+  Filter tab. `ALTER SERVER AUDIT` replaces every setting at once, so a second
+  page with its own apply would either write a second ALTER reverting the
+  first, or need the filter's value before the page holding it had been opened.
+- **No Object Explorer filter is offered on any of the six folders.** Adding
+  one later means `nodeFilter.pushdown` has to reproduce
+  `filterChildren`/`filterObjects` exactly or refuse — see CLAUDE.md.

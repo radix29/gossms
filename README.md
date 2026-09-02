@@ -22,9 +22,11 @@ required.
 ## Features
 
 - **Object Explorer** — the familiar SSMS tree: databases, tables, views,
-  procedures, functions, triggers, sequences, synonyms, security (users,
-  roles, schemas, row-level security policies, Always Encrypted keys),
-  storage (partition functions and schemes), and Management. Right-click anything to rename, delete, see dependencies, or
+  procedures, functions, triggers, sequences, synonyms, server security
+  (logins, server roles, credentials), database security (users, roles,
+  schemas, row-level security policies, Always Encrypted keys),
+  storage (partition functions and schemes), server objects (backup devices,
+  linked servers), and Management. Right-click anything to rename, delete, see dependencies, or
   open Properties. **Script <object> as** covers every family the tree
   shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
   UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the

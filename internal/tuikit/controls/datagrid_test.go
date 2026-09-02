@@ -354,3 +354,37 @@ func TestClickOnStatusRowDoesNotSelectOffscreenRow(t *testing.T) {
 		t.Errorf("selRow after clicking the last data row = %d, want %d", g.selRow, want)
 	}
 }
+
+// TestRestoringUndraggedWidthsDoesNotRescan pins the common case of
+// SetDataPreservingView: on a grid nobody has resized there is nothing to
+// reinstate, and SetData has already computed the widths. Recomputing anyway
+// doubled the scan on the path that runs on every keystroke of a grid-backed
+// Properties page — the one the helper exists to make cheaper.
+func TestRestoringUndraggedWidthsDoesNotRescan(t *testing.T) {
+	rows := make([][]string, 100)
+	for i := range rows {
+		rows[i] = []string{"a", "b"}
+	}
+	counting := &countingRowSource{RowSource: SliceRowSource(rows)}
+	g := newTestDataGrid()
+	g.SetSource([]string{"A", "B"}, counting)
+
+	base := counting.calls
+	g.restoreOverrideWidths(g.ColumnWidthOverrides())
+	if counting.calls != base {
+		t.Errorf("an un-dragged restore rescanned %d rows, want 0", counting.calls-base)
+	}
+
+	// A dragged width still survives one, and is worth the single rescan.
+	g.SetColumnWidth(1, 25)
+	widths := g.ColumnWidthOverrides()
+	g.SetSource([]string{"A", "B"}, counting) // discards the overrides
+	base = counting.calls
+	g.restoreOverrideWidths(widths)
+	if counting.calls == base {
+		t.Error("a restored drag did not recompute the column widths")
+	}
+	if g.colWidths[1] != 25 {
+		t.Errorf("colWidths[1] = %d after restore, want the dragged 25", g.colWidths[1])
+	}
+}

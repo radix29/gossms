@@ -189,8 +189,14 @@ func TestHoldsTextEntryFollowsAnInterfaceField(t *testing.T) {
 // The value walk stops at a nil pointer, so the type walk takes over there: a
 // sub-struct a dialog builds lazily still counts as owned.
 func TestHoldsTextEntryFallsBackToTheTypeAtANilPointer(t *testing.T) {
+	// Both of these are read only through reflection, which staticcheck's
+	// U1000 cannot see — the walk under test is the reader.
+	//lint:ignore U1000 reached by holdsTextEntry's reflection walk
 	type page struct{ input *widgets.InputField }
-	type lazy struct{ p *page }
+	type lazy struct {
+		//lint:ignore U1000 reached by the reflection walk under test
+		p *page
+	}
 
 	if !holdsTextEntry(reflect.ValueOf(&lazy{}), map[uintptr]bool{}) {
 		t.Error("holdsTextEntry missed a text field behind an unbuilt sub-struct")

@@ -61,6 +61,13 @@ type fakeResponse struct {
 	// and every database on the page resolved to whichever row sorted first.
 	arg string
 
+	// colNames, if set, names the result's columns — for a read that scans by
+	// column *name* rather than by position (RESTORE HEADERONLY and
+	// FILELISTONLY, through gosmo's namedRow). Unnamed columns leave such a
+	// read scanning nothing and reporting a grid of zero values, which looks
+	// like a page that read the wrong thing. It must have exactly cols entries.
+	colNames []string
+
 	// block holds a matching query inside the driver until it is closed, so a
 	// test can act while the read is genuinely in flight. Without it this
 	// driver answers instantly and every read has finished — and been
@@ -321,8 +328,13 @@ type fakeRows struct {
 	i    int
 }
 
-func (r *fakeRows) Columns() []string { return make([]string, r.resp.cols) }
-func (r *fakeRows) Close() error      { return nil }
+func (r *fakeRows) Columns() []string {
+	if len(r.resp.colNames) == r.resp.cols {
+		return r.resp.colNames
+	}
+	return make([]string, r.resp.cols)
+}
+func (r *fakeRows) Close() error { return nil }
 func (r *fakeRows) Next(dest []driver.Value) error {
 	if r.i >= len(r.resp.rows) {
 		return io.EOF

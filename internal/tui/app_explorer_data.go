@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -358,6 +359,121 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showServerRolePropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeCredentials:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
+				sc, "", rightAlterAnyCredential),
+			{Divider: true},
+			refresh,
+		}
+	case NodeCredential:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showCredentialPropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeAudits:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
+				sc, "", rightAlterAnyAudit),
+			{Divider: true},
+			refresh,
+		}
+	case NodeAudit:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: auditToggleLabel(node),
+				Action: func() { a.toggleAudit(sc, node) }},
+				sc, "", rightAlterAnyAudit),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showAuditPropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeServerAuditSpecifications:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Server Audit Specification...",
+				Action: func() { a.showNewServerAuditSpecificationDialog(sc) }},
+				sc, "", rightAlterAnyAudit),
+			{Divider: true},
+			refresh,
+		}
+	case NodeServerAuditSpecification:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: auditToggleLabel(node),
+				Action: func() { a.toggleServerAuditSpecification(sc, node) }},
+				sc, "", rightAlterAnyAudit),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeBackupDevices:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
+				sc, "", rightDiskAdmin),
+			{Divider: true},
+			refresh,
+		}
+	case NodeBackupDevice:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showBackupDevicePropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeServerTriggers:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+		}
+	case NodeServerTrigger:
+		toggleLabel := "Disable"
+		if !node.data.IsEnabled {
+			toggleLabel = "Enable"
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleServerTrigger(sc, node) }},
+				sc, "", rightControlServer),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showServerTriggerPropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeEndpoints:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+		}
+	case NodeEndpoint:
+		stateItem := func(label string, state gosmo.EndpointState) controls.MenuItem {
+			return gate(controls.MenuItem{Label: label,
+				Action: func() { a.setEndpointState(sc, node, state) }},
+				sc, "", rightAlterAnyEndpoint)
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			stateItem("Start", gosmo.EndpointStarted),
+			stateItem("Stop", gosmo.EndpointStopped),
+			stateItem("Disable", gosmo.EndpointDisabled),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() { a.showEndpointPropertiesFor(sc, node.data.Name) }},
 		}
 	case NodeDatabaseRole:
 		return []controls.MenuItem{
@@ -719,6 +835,196 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 	if !enable {
 		a.confirmDialog.ShowConfirm("Disable Security Policy",
 			fmt.Sprintf("Disable %s? Its filter and block predicates stop applying, and every row of the tables it protects becomes visible.", fqn(schema, name)),
+			func(confirmed bool) {
+				if confirmed {
+					run()
+				}
+			})
+		return
+	}
+	run()
+}
+
+// toggleServerTrigger enables or disables node's server-scope DDL or logon
+// trigger — SSMS's Enable/Disable on one. Disabling is what stops the policy
+// it enforces from applying anywhere on the instance, so it is confirmed;
+// enabling is not. The node's label carries the state (see
+// loadServerTriggersChildren), which is why the parent folder is refreshed
+// rather than the icon repainted.
+func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	enable := !node.data.IsEnabled
+	name := node.data.Name
+
+	run := func() {
+		a.safego("enabling/disabling a server trigger", func() {
+			ctx, cancel := serverWriteContext(sc)
+			defer cancel()
+			t := sc.Server.ServerTrigger(name)
+			var err error
+			if enable {
+				err = t.EnableContext(ctx)
+			} else {
+				err = t.DisableContext(ctx)
+			}
+			a.postAndWake(func() {
+				word := "disable"
+				if enable {
+					word = "enable"
+				}
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
+					return
+				}
+				node.data.IsEnabled = enable
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
+				}
+				a.detailBrowser.Invalidate(a, node)
+				a.setStatus(fmt.Sprintf("Server trigger %q is now %sd", name, word))
+			})
+		})
+	}
+
+	if !enable {
+		a.confirmDialog.ShowConfirm("Disable Server Trigger",
+			fmt.Sprintf("Disable %s? The DDL or logon policy it enforces stops applying server-wide.", name),
+			func(confirmed bool) {
+				if confirmed {
+					run()
+				}
+			})
+		return
+	}
+	run()
+}
+
+// auditToggleLabel is the Enable/Disable item's wording for an audit or a
+// server audit specification, read from the node's cached state.
+func auditToggleLabel(node *explorerNode) string {
+	if node.data.IsEnabled {
+		return "Disable"
+	}
+	return "Enable"
+}
+
+// toggleAudit enables or disables node's server audit — SSMS's Enable/Disable
+// Audit. Disabling stops the instance recording anything through it, so it is
+// confirmed; enabling is not. The node's label carries the state (see
+// loadAuditsChildren), which is why the parent folder is refreshed rather than
+// the icon repainted.
+func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
+	a.toggleAuditState(sc, node, "audit",
+		"Disable Audit",
+		"Disable %s? The instance stops recording anything through it.",
+		func(ctx context.Context, name string, on bool) error {
+			return sc.Server.ServerAudit(name).SetStateContext(ctx, on)
+		})
+}
+
+// toggleServerAuditSpecification enables or disables node's specification.
+func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNode) {
+	a.toggleAuditState(sc, node, "server audit specification",
+		"Disable Server Audit Specification",
+		"Disable %s? The action groups it names stop being recorded.",
+		func(ctx context.Context, name string, on bool) error {
+			return sc.Server.ServerAuditSpecification(name).SetStateContext(ctx, on)
+		})
+}
+
+// toggleAuditState is the shared half of the two above: an audit and a
+// specification differ only in the wording and the gosmo call.
+func (a *App) toggleAuditState(sc *db.ServerConn, node *explorerNode, noun, title, prompt string,
+	set func(ctx context.Context, name string, on bool) error) {
+	if !a.requireConn(sc) {
+		return
+	}
+	enable := !node.data.IsEnabled
+	name := node.data.Name
+
+	run := func() {
+		a.safego("enabling/disabling a "+noun, func() {
+			ctx, cancel := serverWriteContext(sc)
+			defer cancel()
+			err := set(ctx, name, enable)
+			a.postAndWake(func() {
+				word := "disable"
+				if enable {
+					word = "enable"
+				}
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
+					return
+				}
+				node.data.IsEnabled = enable
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
+				}
+				a.detailBrowser.Invalidate(a, node)
+				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], name, word))
+			})
+		})
+	}
+
+	if !enable {
+		a.confirmDialog.ShowConfirm(title, fmt.Sprintf(prompt, name), func(confirmed bool) {
+			if confirmed {
+				run()
+			}
+		})
+		return
+	}
+	run()
+}
+
+// setEndpointState starts, stops or disables node's endpoint — SSMS's
+// Start/Stop/Disable on one. Stopping or disabling takes the listener away
+// from everything connecting through it, so both are confirmed; starting is
+// not.
+//
+// A built-in endpoint is refused here with a message rather than by leaving
+// the item greyed: greyed-out says the login may not do this, and the reason
+// is the endpoint, not the login. gosmo refuses it a second time — this is the
+// explanation, not the guard.
+func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosmo.EndpointState) {
+	if !a.requireConn(sc) {
+		return
+	}
+	if node.data.IsSystem {
+		a.setStatus(fmt.Sprintf("%q is a built-in endpoint — SQL Server does not allow its state to be changed", node.data.Name))
+		return
+	}
+	name := node.data.Name
+
+	run := func() {
+		a.safego("changing an endpoint's state", func() {
+			ctx, cancel := serverWriteContext(sc)
+			defer cancel()
+			e, err := sc.Server.EndpointByNameContext(ctx, name)
+			if err == nil {
+				err = e.SetStateContext(ctx, state)
+			}
+			a.postAndWake(func() {
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
+					return
+				}
+				node.data.IsEnabled = state == gosmo.EndpointStarted
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
+				}
+				a.detailBrowser.Invalidate(a, node)
+				a.setStatus(fmt.Sprintf("Endpoint %q is now %s", name, endpointStateLabel(string(state))))
+			})
+		})
+	}
+
+	if state != gosmo.EndpointStarted {
+		a.confirmDialog.ShowConfirm("Change Endpoint State",
+			fmt.Sprintf("Set %s to %s? Availability replicas, mirroring partners and Service Broker routes connecting through it stop being able to.",
+				name, state),
 			func(confirmed bool) {
 				if confirmed {
 					run()

@@ -1,7 +1,5 @@
 
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
-12. Credentials, Audits + Server Audit Specifications, Backup Devices,
-    server DDL Triggers, Endpoints
 13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
     Database Snapshots, Tables sub-folders
 14. Service Broker (whole subtree)
@@ -15,6 +13,8 @@
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
 
 -------------
+
+new connect dialog design. keep both, configure in options which design to use.
 
 - query editor :
     - word wrap (display only, line numbers)
@@ -44,6 +44,7 @@ review both projects and check for bugs, inconsistencies, optimizations, simplif
 
 show me the top 15 know bugs,issues etc if thre are any
 
+ optimize and compact calude.md , architecture.md, plan.md etc in both projects
 
 go over the source files code comments and compact them. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
 

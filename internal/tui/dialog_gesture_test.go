@@ -454,14 +454,21 @@ func TestGestureWalkStopsAtWidgetsThatOwnTheirOwnGesture(t *testing.T) {
 // to the dialogs to exercise: a dialog that builds a field lazily must still
 // be found, and nothing else would notice if the fallback were dropped.
 func TestGestureWalkFallsBackToTheTypeAtANilPointer(t *testing.T) {
+	// Read only through reflection, which staticcheck's U1000 cannot see —
+	// the walk under test is the reader.
+	//lint:ignore U1000 reached by the gesture walk's reflection
 	type page struct{ input *widgets.InputField }
-	type lazy struct{ p *page }
+	type lazy struct {
+		//lint:ignore U1000 reached by the reflection walk under test
+		p *page
+	}
 
 	if !reaches(reflect.ValueOf(&lazy{}), gestureFieldType(), map[uintptr]bool{}) {
 		t.Error("the walk missed an input field behind an unbuilt sub-struct")
 	}
 	// The stops apply to the type walk too, or the fallback would reintroduce
 	// every dialog holding an unbuilt propsheet row.
+	//lint:ignore U1000 reached by the gesture walk's reflection
 	type lazySheet struct{ row *propsheet.TextRow }
 	if reaches(reflect.ValueOf(&lazySheet{}), gestureFieldType(), map[uintptr]bool{}) {
 		t.Error("the type walk counted a field inside an unbuilt propsheet row")

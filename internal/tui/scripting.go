@@ -115,6 +115,24 @@ var (
 	scriptServerRole serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptServerRoleContext(ctx, n.Name)
 	}
+	scriptCredential serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptCredentialContext(ctx, n.Name)
+	}
+	scriptServerAudit serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptServerAuditContext(ctx, n.Name)
+	}
+	scriptServerAuditSpecification serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptServerAuditSpecificationContext(ctx, n.Name)
+	}
+	scriptBackupDevice serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptBackupDeviceContext(ctx, n.Name)
+	}
+	scriptServerTrigger serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptServerTriggerContext(ctx, n.Name)
+	}
+	scriptEndpoint serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptEndpointContext(ctx, n.Name)
+	}
 )
 
 // scriptables is the per-type table. Verb order follows SSMS: CREATE, ALTER,
@@ -154,8 +172,14 @@ var scriptables = map[NodeType]scriptable{
 	NodeColumnMasterKey:     {"Column Master Key", ddlVerbs(scriptCMK, false)},
 	NodeColumnEncryptionKey: {"Column Encryption Key", ddlVerbs(scriptCEK, false)},
 
-	NodeLogin:      {"Login", serverDDLVerbs(scriptLogin)},
-	NodeServerRole: {"Server Role", serverDDLVerbs(scriptServerRole)},
+	NodeLogin:                    {"Login", serverDDLVerbs(scriptLogin)},
+	NodeServerRole:               {"Server Role", serverDDLVerbs(scriptServerRole)},
+	NodeCredential:               {"Credential", serverDDLVerbs(scriptCredential)},
+	NodeAudit:                    {"Audit", serverDDLVerbs(scriptServerAudit)},
+	NodeServerAuditSpecification: {"Server Audit Specification", serverDDLVerbs(scriptServerAuditSpecification)},
+	NodeBackupDevice:             {"Backup Device", serverDDLVerbs(scriptBackupDevice)},
+	NodeServerTrigger:            {"Server Trigger", serverDDLVerbs(scriptServerTrigger)},
+	NodeEndpoint:                 {"Endpoint", serverDDLVerbs(scriptEndpoint)},
 }
 
 // indexMaintenanceVerbs are the three maintenance statements an index

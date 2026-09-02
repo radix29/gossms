@@ -524,6 +524,36 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return storageSecurityDetail(ctx, sc, node)
 
+	case NodeCredentials:
+		return credentialsFolderDetail(ctx, sc, node, objs)
+	case NodeCredential:
+		return credentialDetail(ctx, sc, node)
+
+	case NodeAudits:
+		return auditsFolderDetail(ctx, sc, node, objs)
+	case NodeAudit:
+		return auditDetail(ctx, sc, node)
+
+	case NodeServerAuditSpecifications:
+		return serverAuditSpecificationsFolderDetail(ctx, sc, node, objs)
+	case NodeServerAuditSpecification:
+		return serverAuditSpecificationDetail(ctx, sc, node)
+
+	case NodeBackupDevices:
+		return backupDevicesFolderDetail(ctx, sc, node, objs)
+	case NodeBackupDevice:
+		return backupDeviceDetail(ctx, sc, node)
+
+	case NodeServerTriggers:
+		return serverTriggersFolderDetail(ctx, sc, node, objs)
+	case NodeServerTrigger:
+		return serverTriggerDetail(ctx, sc, node)
+
+	case NodeEndpoints:
+		return endpointsFolderDetail(ctx, sc, node, objs)
+	case NodeEndpoint:
+		return endpointDetail(ctx, sc, node)
+
 	default:
 		if hasChildren(node.data.Type) {
 			return fetchChildObjectsDetail(ctx, sc, node, objs)

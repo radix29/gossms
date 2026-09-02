@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"database/sql/driver"
 	"slices"
 	"strings"
 	"testing"
@@ -931,4 +932,273 @@ func TestAnAgentPageAnswersForMsdbMembership(t *testing.T) {
 	if got := pageReadOnlyReason(ctx, outsider, page); got == "" {
 		t.Error("an Agent page is writable for a login in neither msdb role and denied CONTROL SERVER")
 	}
+}
+
+// serverRoleConn returns a connection whose server probe has answered the
+// given fixed-server-role memberships. Roles come back tagged "R" where a
+// permission is tagged "P", both out of the same IS_SRVROLEMEMBER query.
+func serverRoleConn(t *testing.T, granted, denied, roleIn, roleNotIn []string) *db.ServerConn {
+	t.Helper()
+	resp := capabilityResponses(true, granted, denied, nil, nil)
+	for i, r := range resp {
+		if r.match != "IS_SRVROLEMEMBER" {
+			continue
+		}
+		for _, n := range roleIn {
+			r.rows = append(r.rows, []driver.Value{"R", n, int64(1)})
+		}
+		for _, n := range roleNotIn {
+			r.rows = append(r.rows, []driver.Value{"R", n, int64(0)})
+		}
+		resp[i] = r
+	}
+	sc, _ := newFakeConn(t, resp...)
+	sc.ProbeCapabilities()
+	return sc
+}
+
+// TestBackupDeviceActionsFollowDiskadminMembership. sp_addumpdevice and
+// sp_dropdevice are permitted by membership of diskadmin and by no server
+// *permission* at all, which is why rightDiskAdmin is a serverRole right.
+// Gating on CONTROL SERVER instead would withhold the family from the one
+// principal it is for.
+func TestBackupDeviceActionsFollowDiskadminMembership(t *testing.T) {
+	in := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
+		[]string{"diskadmin"}, []string{"sysadmin"})
+	if !allowsAction(in, "", rightDiskAdmin) {
+		t.Error("a member of diskadmin was refused the backup device actions")
+	}
+
+	out := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
+		nil, []string{"diskadmin", "sysadmin"})
+	if allowsAction(out, "", rightDiskAdmin) {
+		t.Error("a login in neither diskadmin nor sysadmin kept the backup device actions")
+	}
+
+	// A sysadmin is a member of no other fixed server role — IS_SRVROLEMEMBER
+	// answers 0 for diskadmin — while being permitted everything diskadmin
+	// carries. Asking only about the named role withholds the family from the
+	// one login that certainly may use it.
+	admin := serverRoleConn(t, nil, nil, []string{"sysadmin"}, []string{"diskadmin"})
+	if !allowsAction(admin, "", rightDiskAdmin) {
+		t.Error("a sysadmin lost the backup device actions to its own diskadmin membership")
+	}
+}
+
+// A server-role right cannot fail open on its own: InServerRole answers false
+// for a role never asked about exactly as it does for a login that is not in
+// it. Only Capabilities.Probed separates the two, and believing the false
+// would withhold New Backup Device from everyone on an unprobed connection.
+func TestAnUnprobedServerKeepsTheBackupDeviceActions(t *testing.T) {
+	sc, _ := newFakeConn(t) // never probed
+	if !allowsAction(sc, "", rightDiskAdmin) {
+		t.Error("a connection whose capability probe has not run lost the backup device actions")
+	}
+	if !allowsAction(nil, "", rightDiskAdmin) {
+		t.Error("a nil connection withheld the backup device actions")
+	}
+}
+
+// A gate that is never wired to the menu item withholds nothing, and every
+// test above still passes.
+func TestTheNewBackupDeviceMenuItemFollowsTheGate(t *testing.T) {
+	denied := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
+		nil, []string{"diskadmin", "sysadmin"})
+	if enabledInMenu(t, denied, NodeBackupDevices, "New Backup Device...") {
+		t.Error("New Backup Device stayed enabled for a login in neither diskadmin nor sysadmin")
+	}
+	allowed := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
+		[]string{"diskadmin"}, []string{"sysadmin"})
+	if !enabledInMenu(t, allowed, NodeBackupDevices, "New Backup Device...") {
+		t.Error("New Backup Device was withheld from a member of diskadmin")
+	}
+}
+
+// Enable/Disable on a server trigger is an immediate write ON ALL SERVER, and
+// CONTROL SERVER is what SQL Server checks for it. A menu item that is offered
+// and then fails is the failure mode the gate exists to prevent — the gate has
+// to be wired to the item, which every other test here would still pass
+// without.
+func TestTheServerTriggerToggleFollowsControlServer(t *testing.T) {
+	// enabledInMenu builds a node with IsEnabled unset, so the toggle is
+	// labelled Enable.
+	denied := serverRoleConn(t, nil, []string{"CONTROL SERVER"}, nil, []string{"sysadmin"})
+	if enabledInMenu(t, denied, NodeServerTrigger, "Enable") {
+		t.Error("the toggle stayed enabled for a login with neither CONTROL SERVER nor sysadmin")
+	}
+	allowed := serverRoleConn(t, []string{"CONTROL SERVER"}, nil, nil, []string{"sysadmin"})
+	if !enabledInMenu(t, allowed, NodeServerTrigger, "Enable") {
+		t.Error("the toggle was withheld from a login holding CONTROL SERVER")
+	}
+}
+
+// Start/Stop/Disable on an endpoint is an immediate ALTER ENDPOINT, and ALTER
+// ANY ENDPOINT is what SQL Server checks for it. A menu item that is offered
+// and then fails is the failure mode the gate exists to prevent — and the gate
+// has to be wired to all three items, which one test on one item would miss.
+func TestTheEndpointStateItemsFollowAlterAnyEndpoint(t *testing.T) {
+	denied := serverRoleConn(t, nil, []string{"ALTER ANY ENDPOINT"}, nil, []string{"sysadmin"})
+	allowed := serverRoleConn(t, []string{"ALTER ANY ENDPOINT"}, nil, nil, []string{"sysadmin"})
+	for _, label := range []string{"Start", "Stop", "Disable"} {
+		if enabledInMenu(t, denied, NodeEndpoint, label) {
+			t.Errorf("%s stayed enabled for a login with neither ALTER ANY ENDPOINT nor sysadmin", label)
+		}
+		if !enabledInMenu(t, allowed, NodeEndpoint, label) {
+			t.Errorf("%s was withheld from a login holding ALTER ANY ENDPOINT", label)
+		}
+	}
+}
+
+// Enable/Disable on an audit or a specification is an immediate ALTER, and
+// ALTER ANY SERVER AUDIT is what SQL Server checks for it — a right nothing
+// before this family probed, so a typo here would read CapabilityUnknown
+// forever and gate nothing. The New items on both folders take the same right.
+func TestTheAuditItemsFollowAlterAnyServerAudit(t *testing.T) {
+	denied := serverRoleConn(t, nil, []string{"ALTER ANY SERVER AUDIT"}, nil, []string{"sysadmin"})
+	allowed := serverRoleConn(t, []string{"ALTER ANY SERVER AUDIT"}, nil, nil, []string{"sysadmin"})
+	for _, tc := range []struct {
+		node  NodeType
+		label string
+	}{
+		// enabledInMenu builds a node with IsEnabled unset, so the toggle
+		// reads "Enable" on both leaves.
+		{NodeAudit, "Enable"},
+		{NodeServerAuditSpecification, "Enable"},
+		{NodeAudits, "New Audit..."},
+		{NodeServerAuditSpecifications, "New Server Audit Specification..."},
+	} {
+		if enabledInMenu(t, denied, tc.node, tc.label) {
+			t.Errorf("%q stayed enabled for a login with neither ALTER ANY SERVER AUDIT nor sysadmin", tc.label)
+		}
+		if !enabledInMenu(t, allowed, tc.node, tc.label) {
+			t.Errorf("%q was withheld from a login holding ALTER ANY SERVER AUDIT", tc.label)
+		}
+	}
+}
+
+// -- Rename/Delete on a node that lives outside a database ----------------------
+
+// deniedEverythingConn is a probed connection holding no server permission, no
+// fixed server role and no msdb role — the principal every Rename/Delete on a
+// server-level object must be withheld from.
+func deniedEverythingConn(t *testing.T) *db.ServerConn {
+	t.Helper()
+	resp := capabilityResponsesWithRoles(true, nil, serverScopedRightNames(), nil, msdbRoleNames())
+	for i, r := range resp {
+		if r.match != "IS_SRVROLEMEMBER" {
+			continue
+		}
+		for _, n := range []string{"sysadmin", "diskadmin", "securityadmin"} {
+			r.rows = append(r.rows, []driver.Value{"R", n, int64(0)})
+		}
+		resp[i] = r
+	}
+	sc, _ := newFakeConn(t, resp...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "msdb")
+	return sc
+}
+
+func serverScopedRightNames() []string {
+	var names []string
+	for _, rights := range serverScopedOpRights {
+		for _, r := range rights {
+			if !r.db && !r.membership && !r.serverRole && !slices.Contains(names, r.name) {
+				names = append(names, r.name)
+				names = append(names, r.alt...)
+			}
+		}
+	}
+	return names
+}
+
+func msdbRoleNames() []string {
+	var names []string
+	for _, rights := range serverScopedOpRights {
+		for _, r := range rights {
+			if r.membership && !slices.Contains(names, r.name) {
+				names = append(names, r.name)
+			}
+		}
+	}
+	return names
+}
+
+// databaseScopedOpTypes is every objectOps node type that lives inside a
+// database, and so carries a DBName the gate can measure. It exists only to be
+// the other half of a total classification: a new objectOps entry in neither
+// this list nor serverScopedOpRights fails the test below, which is what stops
+// the next server-level family arriving with Delete ungated.
+var databaseScopedOpTypes = []NodeType{
+	NodeDatabase, NodeTable, NodeView, NodeStoredProcedure, NodeFunction,
+	NodeTrigger, NodeSequence, NodeSynonym, NodeColumn, NodeIndex,
+	NodeStatistic, NodeKey, NodeForeignKey, NodeCheck, NodePartitionFunction,
+	NodePartitionScheme, NodeSecurityPolicy, NodeColumnMasterKey,
+	NodeColumnEncryptionKey, NodeUser, NodeDatabaseRole, NodeSchema,
+}
+
+// TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review
+// asked for. objectOpRights fell through to objectWriteRights() for everything
+// but NodeDatabase, and every one of those rights is database-, schema- or
+// object-scoped — so with the empty DBName a server-level node carries,
+// rightsAllow took its "no database to ask about" branch and answered yes for
+// a principal holding nothing. Delete and Rename were offered on every login,
+// credential, audit, endpoint and Agent job, then refused by the server.
+func TestServerScopedOpsAreGated(t *testing.T) {
+	sc := deniedEverythingConn(t)
+	for nodeType := range objectOps {
+		_, server := serverScopedOpRights[nodeType]
+		database := slices.Contains(databaseScopedOpTypes, nodeType)
+		switch {
+		case server && database:
+			t.Errorf("objectOps[%v] is classified both server- and database-scoped", nodeType)
+		case !server && !database:
+			t.Errorf("objectOps[%v] is in neither serverScopedOpRights nor databaseScopedOpTypes; "+
+				"a server-level node with no entry is offered Delete unconditionally", nodeType)
+		case !server:
+			continue
+		}
+		// The empty dbName is what the node actually carries, and is the whole
+		// bug: asked with it, a database-scoped right set answers yes.
+		if allowsActionOn(sc, "", "", "obj", objectOpRights(nodeType)...) {
+			t.Errorf("objectOps[%v] offers Rename/Delete to a principal holding nothing", nodeType)
+		}
+	}
+}
+
+// The rights must also be the ones the matching New-X item names, or a login
+// permitted to create an object of the type is refused the item that deletes
+// it (and the reverse — the pair reads as arbitrary).
+func TestServerScopedOpRightsMatchTheNewItemRights(t *testing.T) {
+	for _, tc := range []struct {
+		node  NodeType
+		right requiredRight
+	}{
+		{NodeLogin, rightAlterAnyLogin},
+		{NodeServerRole, rightAlterAnyServerRole},
+		{NodeCredential, rightAlterAnyCredential},
+		{NodeAudit, rightAlterAnyAudit},
+		{NodeServerAuditSpecification, rightAlterAnyAudit},
+		{NodeBackupDevice, rightDiskAdmin},
+		{NodeEndpoint, rightAlterAnyEndpoint},
+	} {
+		rights := objectOpRights(tc.node)
+		if len(rights) != 1 || rights[0].name != tc.right.name {
+			t.Errorf("objectOpRights(%v) = %v, want [%s]", tc.node, rights, tc.right.name)
+		}
+	}
+	for _, n := range []NodeType{NodeAgentJob, NodeAgentSchedule, NodeAgentAlert, NodeAgentOperator} {
+		got, want := rightNames(objectOpRights(n)), rightNames(agentWriteRights())
+		if !slices.Equal(got, want) {
+			t.Errorf("objectOpRights(%v) = %v, want %v", n, got, want)
+		}
+	}
+}
+
+func rightNames(rights []requiredRight) []string {
+	names := make([]string, len(rights))
+	for i, r := range rights {
+		names[i] = r.name
+	}
+	return names
 }

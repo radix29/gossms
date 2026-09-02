@@ -789,6 +789,82 @@ func (a *App) showServerRolePropertiesFor(sc *db.ServerConn, roleName string) {
 		func() []propPage { return serverRolePropPages(sc, roleName) })
 }
 
+// showCredentialPropertiesFor opens Credential Properties for a known
+// connection and credential name.
+func (a *App) showCredentialPropertiesFor(sc *db.ServerConn, credName string) {
+	a.propDialog.show(sc, "", "Credential Properties", "Credential: "+credName, "Server: "+sc.Opts.Server,
+		func() []propPage { return credentialPropPages(sc, credName) })
+}
+
+// showNewCredentialDialog opens New Credential for a known connection.
+func (a *App) showNewCredentialDialog(sc *db.ServerConn) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newCredentialDialog.show(sc)
+}
+
+// showBackupDevicePropertiesFor opens Backup Device Properties for a known
+// connection and device name.
+func (a *App) showBackupDevicePropertiesFor(sc *db.ServerConn, devName string) {
+	a.propDialog.show(sc, "", "Backup Device Properties", "Device: "+devName, "Server: "+sc.Opts.Server,
+		func() []propPage { return backupDevicePropPages(sc, devName) })
+}
+
+// showServerTriggerPropertiesFor opens Server Trigger Properties for a known
+// connection and trigger name.
+func (a *App) showServerTriggerPropertiesFor(sc *db.ServerConn, trigName string) {
+	a.propDialog.show(sc, "", "Server Trigger Properties", "Trigger: "+trigName, "Server: "+sc.Opts.Server,
+		func() []propPage { return serverTriggerPropPages(sc, trigName) })
+}
+
+// showEndpointPropertiesFor opens Endpoint Properties for a known connection
+// and endpoint name.
+func (a *App) showEndpointPropertiesFor(sc *db.ServerConn, epName string) {
+	a.propDialog.show(sc, "", "Endpoint Properties", "Endpoint: "+epName, "Server: "+sc.Opts.Server,
+		func() []propPage { return endpointPropPages(sc, epName) })
+}
+
+// showAuditPropertiesFor opens Audit Properties for a known connection and
+// audit name.
+func (a *App) showAuditPropertiesFor(sc *db.ServerConn, auditName string) {
+	a.propDialog.show(sc, "", "Audit Properties", "Audit: "+auditName, "Server: "+sc.Opts.Server,
+		func() []propPage { return auditPropPages(sc, auditName) })
+}
+
+// showServerAuditSpecificationPropertiesFor opens Server Audit Specification
+// Properties for a known connection and specification name.
+func (a *App) showServerAuditSpecificationPropertiesFor(sc *db.ServerConn, specName string) {
+	a.propDialog.show(sc, "", "Server Audit Specification Properties",
+		"Specification: "+specName, "Server: "+sc.Opts.Server,
+		func() []propPage { return serverAuditSpecificationPropPages(sc, specName) })
+}
+
+// showNewAuditDialog opens New Audit for a known connection.
+func (a *App) showNewAuditDialog(sc *db.ServerConn) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newAuditDialog.show(sc)
+}
+
+// showNewServerAuditSpecificationDialog opens New Server Audit Specification
+// for a known connection.
+func (a *App) showNewServerAuditSpecificationDialog(sc *db.ServerConn) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newAuditSpecificationDialog.show(sc)
+}
+
+// showNewBackupDeviceDialog opens New Backup Device for a known connection.
+func (a *App) showNewBackupDeviceDialog(sc *db.ServerConn) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newBackupDeviceDialog.show(sc)
+}
+
 // showUserPropertiesFor opens Database User Properties for a known connection,
 // database, and user name.
 func (a *App) showUserPropertiesFor(sc *db.ServerConn, dbName, userName string) {

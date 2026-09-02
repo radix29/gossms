@@ -196,9 +196,12 @@ func resolveServer(server string, dialogPort int) string {
 	return fmt.Sprintf("%s%s%d", server, sep, port)
 }
 
-// encryptString converts config.Connection's boolean Encrypt into the string
-// gosmo.ConnectionOptions.Encrypt expects, mirroring go-mssqldb's "encrypt" DSN
-// parameter.
+// encryptString renders one of config.Connection's booleans as the string
+// go-mssqldb's DSN parameters take, mirroring its "encrypt" and
+// "TrustServerCertificate" spelling — which is also what
+// gosmo.ConnectionOptions.Encrypt expects. Shared by Connect, which fills the
+// options struct, and BuildConnectionString, which writes the DSN the Connect
+// dialog previews: the two must agree, and they disagreed by being two copies.
 func encryptString(encrypt bool) string {
 	if encrypt {
 		return "true"
@@ -247,15 +250,6 @@ func BuildConnectionString(opts config.Connection) string {
 	if port == 0 {
 		port = 1433
 	}
-	encrypt := "false"
-	if opts.Encrypt {
-		encrypt = "true"
-	}
-	trustCert := "false"
-	if opts.TrustServerCertificate {
-		trustCert = "true"
-	}
-
 	q := url.Values{}
 	// Omitted when empty, matching Connect, which sets
 	// ConnectionOptions.Database only for a non-empty value: a preview carrying a
@@ -263,8 +257,8 @@ func BuildConnectionString(opts config.Connection) string {
 	if opts.Database != "" {
 		q.Set("database", opts.Database)
 	}
-	q.Set("encrypt", encrypt)
-	q.Set("TrustServerCertificate", trustCert)
+	q.Set("encrypt", encryptString(opts.Encrypt))
+	q.Set("TrustServerCertificate", encryptString(opts.TrustServerCertificate))
 
 	u := &url.URL{
 		Scheme: "sqlserver",

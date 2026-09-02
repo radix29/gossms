@@ -37,6 +37,20 @@ type requiredRight struct {
 	membership bool
 	inDB       string
 
+	// serverRole makes name a fixed *server* role to be a member of rather
+	// than a permission to hold — membership's server-scope twin. It exists
+	// for the writes SQL Server permits by role membership alone: a backup
+	// device is added and dropped by sp_addumpdevice/sp_dropdevice, which
+	// diskadmin carries and no server permission answers for.
+	//
+	// Like membership it cannot fail open on its own — InServerRole answers
+	// false for a role never asked about exactly as it does for a login that
+	// is not in it — so rightsAllow checks gosmo.Capabilities.Probed before
+	// believing a false. And it asks about sysadmin too: membership of
+	// sysadmin implies membership of no other fixed role, so a sysadmin reads
+	// 0 for diskadmin while being permitted everything it carries.
+	serverRole bool
+
 	// object narrows the question to the object itself, asked of gosmo's
 	// per-object probe. It is the only right that can speak for a principal
 	// granted ALTER on one table and nothing else — such a principal reads 0
@@ -69,9 +83,11 @@ var (
 	rightAlterSettings      = requiredRight{name: "ALTER SETTINGS", role: "serveradmin"}
 	rightAlterAnyLogin      = requiredRight{name: "ALTER ANY LOGIN", role: "securityadmin"}
 	rightAlterAnyServerRole = requiredRight{name: "ALTER ANY SERVER ROLE", role: "securityadmin"}
+	rightAlterAnyCredential = requiredRight{name: "ALTER ANY CREDENTIAL", role: "securityadmin"}
 	rightCreateAnyDatabase  = requiredRight{name: "CREATE ANY DATABASE", role: "dbcreator"}
 	rightAlterAnyDatabase   = requiredRight{name: "ALTER ANY DATABASE", role: "dbcreator"}
 	rightAlterAnyEndpoint   = requiredRight{name: "ALTER ANY ENDPOINT", role: "sysadmin"}
+	rightAlterAnyAudit      = requiredRight{name: "ALTER ANY SERVER AUDIT", role: "sysadmin"}
 	rightAlterAnyAG         = requiredRight{name: "ALTER ANY AVAILABILITY GROUP", role: "sysadmin"}
 	// Held for a feature that does not exist yet: nothing in the application
 	// creates or alters a linked server, so nothing gates on this. It is
@@ -105,6 +121,14 @@ var (
 	// New Job and its three siblings is membership of an msdb role, which
 	// grants EXECUTE on individual procedures rather than the database-scope
 	// EXECUTE a permission probe can ask about. See agentWriteRights.
+	// A backup device is added and dropped by sp_addumpdevice/sp_dropdevice,
+	// which diskadmin carries and which no server *permission* answers for —
+	// so this is a role membership, not a permission. CONTROL SERVER would be
+	// a knowingly wrong gate here: a pure diskadmin, the one principal the
+	// feature is for, would be shown a read-only banner on a page they can in
+	// fact write.
+	rightDiskAdmin = requiredRight{name: "diskadmin", serverRole: true}
+
 	rightSQLAgentUser = requiredRight{name: "SQLAgentUserRole", membership: true, inDB: "msdb"}
 	rightMsdbOwner    = requiredRight{name: "db_owner", membership: true, inDB: "msdb"}
 
@@ -131,6 +155,8 @@ func (r requiredRight) nameOnly() string {
 		return r.name + " on the object's schema"
 	case r.membership:
 		return "membership of " + r.name + " in " + r.inDB
+	case r.serverRole:
+		return "membership of the " + r.name + " server role"
 	case r.object:
 		return r.name + " on the object itself"
 	}
@@ -255,6 +281,15 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			// only thing that separates the two.
 			caps := dbCaps(r.inDB)
 			if !caps.Probed() || caps.InRole(r.name) {
+				return true
+			}
+		case r.serverRole:
+			// Unknown must allow explicitly, for membership's reason:
+			// InServerRole cannot tell "not a member" from "never asked". And
+			// sysadmin is asked separately — it implies membership of no other
+			// fixed role, so a sysadmin reads 0 for diskadmin while being
+			// permitted everything diskadmin carries.
+			if !server.Probed() || server.InServerRole(r.name) || server.IsSysadmin() {
 				return true
 			}
 		case r.object:

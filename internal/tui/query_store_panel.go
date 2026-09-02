@@ -543,9 +543,13 @@ func (p *QueryStorePanel) actDisabled(i int) bool {
 		return plan.IsForced || p.forceDenied()
 	case qsActUnforce:
 		return !plan.IsForced || p.forceDenied()
-	case qsActScript:
-		return p.forceDenied()
 	}
+	// Script is deliberately not gated on forceDenied. It writes nothing — it
+	// opens the statement in a query panel — and Object Explorer's whole
+	// "Script <Noun> as ▸" cascade is ungated for the same reason: reading the
+	// T-SQL a write would issue is how someone without the permission asks for
+	// it. Gating it here withheld the text from exactly the login that needed
+	// to send it to a DBA.
 	return false
 }
 
@@ -664,21 +668,13 @@ func (p *QueryStorePanel) showStatisticMenu() {
 }
 
 func (p *QueryStorePanel) showWindowMenu() {
-	idxs := make([]int, len(qsWindows))
-	for i := range qsWindows {
-		idxs[i] = i
-	}
-	p.popMenu(qsToolWindow, qsMenuItems(idxs, p.windowIdx,
+	p.popMenu(qsToolWindow, qsMenuItems(qsIndexes(len(qsWindows)), p.windowIdx,
 		func(i int) string { return qsWindows[i].label },
 		func(i int) { p.windowIdx = i; p.Load() }))
 }
 
 func (p *QueryStorePanel) showTopMenu() {
-	idxs := make([]int, len(qsTopCounts))
-	for i := range qsTopCounts {
-		idxs[i] = i
-	}
-	p.popMenu(qsToolTop, qsMenuItems(idxs, p.topIdx,
+	p.popMenu(qsToolTop, qsMenuItems(qsIndexes(len(qsTopCounts)), p.topIdx,
 		func(i int) string { return strconv.Itoa(qsTopCounts[i]) },
 		func(i int) { p.topIdx = i; p.Load() }))
 }

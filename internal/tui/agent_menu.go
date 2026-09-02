@@ -125,12 +125,27 @@ func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refre
 
 // ---- Jobs: Start / Stop / View History ----
 
-// jobIsRunning reports whether a job's current state means sp_start_job would
-// be refused and sp_stop_job accepted. Everything that is not idle counts as
-// running: a job between retries or performing completion actions has a live
-// session, and both procedures treat it as such.
-func jobIsRunning(state gosmo.JobState) bool {
-	return state != gosmo.JobStateIdle
+// jobIsRunning reports whether a job's state means sp_start_job would be
+// refused and sp_stop_job accepted, and whether the state answers the
+// question at all.
+//
+// Only the states that certainly have a live session answer it. Agent reports
+// JobStateUnknown for a job it does not run itself, and gosmo falls back to it
+// whenever xp_sqlagent_enum_jobs is unreachable; JobStateSuspended is
+// genuinely ambiguous — sp_help_job's own "not idle or suspended" filter
+// groups it with idle, while a suspended job still holds a session. Both
+// return known=false, which sends the request and lets the server answer
+// rather than refusing an action that would have worked.
+func jobIsRunning(state gosmo.JobState) (running, known bool) {
+	switch state {
+	case gosmo.JobStateExecuting, gosmo.JobStateWaitingForWorker,
+		gosmo.JobStateBetweenRetries, gosmo.JobStateWaitingForStepToFinish,
+		gosmo.JobStatePerformingCompletionActions:
+		return true, true
+	case gosmo.JobStateIdle:
+		return false, true
+	}
+	return false, false
 }
 
 // jobStateRefusal is the message for a Start/Stop asked of a job already in
@@ -142,8 +157,11 @@ func jobIsRunning(state gosmo.JobState) bool {
 // running after the tree was populated. Here the check is on data one query
 // old, the request that cannot succeed is never sent, and the node is
 // refreshed either way so the tree stops disagreeing with the server.
-func jobStateRefusal(name string, running, wantRunning bool) string {
+func jobStateRefusal(name string, state gosmo.JobState, wantRunning bool) string {
+	running, known := jobIsRunning(state)
 	switch {
+	case !known:
+		return ""
 	case running && wantRunning:
 		return fmt.Sprintf("Job %q is already running", name)
 	case !running && !wantRunning:
@@ -169,7 +187,7 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 		var refusal string
 		j, err := sc.Server.JobByNameContext(ctx, name)
 		if err == nil {
-			refusal = jobStateRefusal(name, jobIsRunning(j.CurrentState), start)
+			refusal = jobStateRefusal(name, j.CurrentState, start)
 			switch {
 			case refusal != "":
 			case start:

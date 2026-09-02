@@ -3,14 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -59,15 +57,7 @@ func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.For
 func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply, func() int) {
 	var edits []*jobStepEdit
 
-	visible := func() []*jobStepEdit {
-		out := make([]*jobStepEdit, 0, len(edits))
-		for _, e := range edits {
-			if !e.pendingRemove {
-				out = append(out, e)
-			}
-		}
-		return out
-	}
+	visible := func() []*jobStepEdit { return visibleSteps(edits) }
 	cols := []string{"Step", "Name", "Database"}
 	rowsFor := func() [][]string {
 		vis := visible()
@@ -81,24 +71,10 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	grid := controls.NewDataGrid()
 	grid.SetData(cols, rowsFor())
 
-	nameField := propsheet.Text("Step name", "", 30)
 	// The sentinel goes first, so a step the user never picked a database
 	// for is created against the server's own default rather than against
 	// whichever database sorts first — see defaultDatabaseItem.
-	dbItems := append([]string{defaultDatabaseItem}, pf.dbNames...)
-	databaseSelect := propsheet.Select("Database", dbItems, 0)
-	// The command is a whole T-SQL script, not a field: it gets the query
-	// editor control, with SQL highlighting and the line-number gutter, so a
-	// syntax error reported as "line 12" can be found.
-	commandEditor := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
-	commandField := propsheet.NewEditorRow("Command", commandEditor, 12)
-	onSuccessSelect := propsheet.Select("On success action", jobStepOnActionItems, 2)
-	onSuccessStepField := propsheet.Int("On success go to step", 0, 0, 999, "")
-	onFailSelect := propsheet.Select("On failure action", jobStepOnActionItems, 1)
-	onFailStepField := propsheet.Int("On failure go to step", 0, 0, 999, "")
-	retryAttemptsField := propsheet.Int("Retry attempts", 0, 0, 999, "")
-	retryIntervalField := propsheet.Int("Retry interval", 0, 0, 999, "minutes")
-	outputFileField := propsheet.Text("Output file name", "", 40)
+	panel := newJobStepPanel(defaultDatabaseItem, pf.dbNames)
 
 	selected := func() *jobStepEdit {
 		vis := visible()
@@ -108,81 +84,20 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		}
 		return vis[i]
 	}
-	// pickedDatabase maps the dropdown back to what gosmo should be sent: the
-	// sentinel means "the server's default", which JobStepRequest spells as
-	// the empty string.
-	pickedDatabase := func() string {
-		if v := databaseSelect.Value(); v != defaultDatabaseItem {
-			return v
-		}
-		return ""
-	}
 	var current *jobStepEdit
-	commitCurrent := func() {
-		if current == nil {
-			return
-		}
-		current.name = nameField.Value()
-		current.database = pickedDatabase()
-		current.command = commandField.Value()
-		current.onSuccessAction = onSuccessSelect.Selected() + 1
-		current.onFailAction = onFailSelect.Selected() + 1
-		if n, err := onSuccessStepField.IntValue(); err == nil {
-			current.onSuccessStepID = int(n)
-		}
-		if n, err := onFailStepField.IntValue(); err == nil {
-			current.onFailStepID = int(n)
-		}
-		if n, err := retryAttemptsField.IntValue(); err == nil {
-			current.retryAttempts = int(n)
-		}
-		if n, err := retryIntervalField.IntValue(); err == nil {
-			current.retryInterval = int(n)
-		}
-		current.outputFileName = outputFileField.Value()
-	}
 	syncFieldsFromSelection := func() {
 		current = selected()
-		if current == nil {
-			nameField.SetValue("")
-			databaseSelect.SetSelected(0)
-			commandField.SetValue("")
-			onSuccessSelect.SetSelected(2)
-			onSuccessStepField.SetValue("0")
-			onFailSelect.SetSelected(1)
-			onFailStepField.SetValue("0")
-			retryAttemptsField.SetValue("0")
-			retryIntervalField.SetValue("0")
-			outputFileField.SetValue("")
-			return
-		}
-		nameField.SetValue(current.name)
-		// indexOfOK, not indexOf: dbItems is a closed set with a sentinel at
-		// 0, so a step with no database of its own selects the sentinel
-		// instead of the first real database.
-		if i, ok := indexOfOK(pf.dbNames, current.database); ok {
-			databaseSelect.SetSelected(i + 1)
-		} else {
-			databaseSelect.SetSelected(0)
-		}
-		commandField.SetValue(current.command)
-		onSuccessSelect.SetSelected(current.onSuccessAction - 1)
-		onSuccessStepField.SetValue(strconv.Itoa(current.onSuccessStepID))
-		onFailSelect.SetSelected(current.onFailAction - 1)
-		onFailStepField.SetValue(strconv.Itoa(current.onFailStepID))
-		retryAttemptsField.SetValue(strconv.Itoa(current.retryAttempts))
-		retryIntervalField.SetValue(strconv.Itoa(current.retryInterval))
-		outputFileField.SetValue(current.outputFileName)
+		panel.write(current)
 	}
 	grid.OnSelectRow = func(row int) {
-		commitCurrent()
+		panel.read(current)
 		syncFieldsFromSelection()
 	}
 
 	hint := propsheet.Hint()
 	var newBtn, deleteBtn *widgets.Button
 	newBtn = widgets.NewButton("New", func() {
-		name := nameField.Value()
+		name := panel.nameField.Value()
 		if name == "" {
 			hint.Set("Type a step name first.")
 			return
@@ -198,26 +113,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 			}
 		}
 		hint.Clear()
-		e := &jobStepEdit{
-			isNew: true, subsystem: tsqlSubsystem,
-			name: name, database: pickedDatabase(), command: commandField.Value(),
-		}
-		e.onSuccessAction = onSuccessSelect.Selected() + 1
-		e.onFailAction = onFailSelect.Selected() + 1
-		if n, err := onSuccessStepField.IntValue(); err == nil {
-			e.onSuccessStepID = int(n)
-		}
-		if n, err := onFailStepField.IntValue(); err == nil {
-			e.onFailStepID = int(n)
-		}
-		if n, err := retryAttemptsField.IntValue(); err == nil {
-			e.retryAttempts = int(n)
-		}
-		if n, err := retryIntervalField.IntValue(); err == nil {
-			e.retryInterval = int(n)
-		}
-		e.outputFileName = outputFileField.Value()
-		edits = append(edits, e)
+		edits = append(edits, panel.newStep())
 		resetGrid(grid, cols, rowsFor(), len(visible())-1)
 		syncFieldsFromSelection()
 	})
@@ -242,20 +138,17 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 		syncFieldsFromSelection()
 	}
 
-	f := propsheet.NewForm(
-		propsheet.Section("Job steps"),
-		gridRow,
-		propsheet.Section("Selected step"),
-		nameField, databaseSelect, commandField,
-		onSuccessSelect, onSuccessStepField, onFailSelect, onFailStepField,
-		retryAttemptsField, retryIntervalField, outputFileField,
+	rows := []propsheet.Row{propsheet.Section("Job steps"), gridRow, propsheet.Section("Selected step")}
+	rows = append(rows, panel.rows()...)
+	rows = append(rows,
 		propsheet.Buttons(newBtn, deleteBtn),
 		hint,
 		propsheet.Note("Only T-SQL steps are supported. Database \"(default)\" lets the server pick the step's database. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 	)
+	f := propsheet.NewForm(rows...)
 
 	apply := func(ctx context.Context) error {
-		commitCurrent()
+		panel.read(current)
 		j, err := scriptSafeJob(ctx, sc, jobName())
 		if err != nil {
 			return err

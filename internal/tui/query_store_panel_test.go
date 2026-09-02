@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"database/sql/driver"
 	"path/filepath"
 	"slices"
@@ -2018,5 +2019,46 @@ func TestThePlanPaneKeepsADraggedColumnWidth(t *testing.T) {
 	}
 	if got := p.plansGrid.SelectedRow(); got != 0 {
 		t.Errorf("plan cursor on row %d, want row 0 — these are another query's plans", got)
+	}
+}
+
+// TestScriptIsOfferedToALoginThatCannotForce. Script writes nothing — it opens
+// the force/unforce statement in a query panel — and Object Explorer's whole
+// "Script <Noun> as ▸" cascade is ungated for that reason. This panel gated it
+// on the same permission as Force itself, so the one login that needed to read
+// the T-SQL and send it to a DBA was the one login refused it.
+func TestScriptIsOfferedToALoginThatCannotForce(t *testing.T) {
+	res := capabilityResponsesWithRoles(true, nil, []string{"ALTER ANY DATABASE"}, nil, []string{"db_owner"})
+	for i, r := range res {
+		switch r.match {
+		case "IS_ROLEMEMBER":
+			r.rows = append(r.rows,
+				[]driver.Value{"P", "ALTER", int64(0)},
+				[]driver.Value{"P", "CONTROL", int64(0)})
+		case "IS_SRVROLEMEMBER":
+			r.rows = append(r.rows, []driver.Value{"R", "dbcreator", int64(0)})
+		}
+		res[i] = r
+	}
+	sc, _ := newFakeConn(t, res...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	a := newTestApp()
+	p := NewQueryStorePanel(a, sc, "appdb", "Top Resource Consuming Queries")
+	p.SetBounds(0, 0, 120, 40)
+	p.plans = []*gosmo.QSPlan{{PlanID: 7, QueryID: 3, IsForced: false}}
+	p.plansGrid.SetData(qsPlanColumns, qsPlanRows(p.plans, p.options()))
+
+	// The premise, asserted rather than assumed: without it every check below
+	// passes because nothing was withheld from anyone.
+	if !p.forceDenied() {
+		t.Fatal("the fake login can force a plan — the permission responses did not take")
+	}
+	if !p.actDisabled(qsActForce) || !p.actDisabled(qsActUnforce) {
+		t.Error("Force/Unforce are live for a login without the permission to force")
+	}
+	if p.actDisabled(qsActScript) {
+		t.Error("Script is withheld from a login that cannot force — it writes nothing")
 	}
 }

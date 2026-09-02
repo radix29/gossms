@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
@@ -140,4 +141,149 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			[]string{"Last entry", formatSQLDate(entries[len(entries)-1].Date)})
 	}
 	return propertyValueColumns, rows, nil
+}
+
+// backupDevicesFolderDetail lists every logical backup device. It reads gosmo
+// independently of the tree, so the folder's filter is applied here too — over
+// the gosmo objects, before the rows are built.
+func backupDevicesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	devices, err := sc.Server.BackupDevicesContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	devices = filterObjects(node.data.Filter, devices, func(d *gosmo.BackupDevice) nodeData {
+		return nodeData{Name: d.Name}
+	})
+
+	rows := make([][]string, 0, len(devices))
+	out := make([]nodeData, 0, len(devices))
+	for _, d := range devices {
+		rows = append(rows, []string{d.Name, d.Type, d.PhysicalName})
+		out = append(out, nodeData{Type: NodeBackupDevice, Name: d.Name})
+	}
+	*objs = out
+	return []string{"Name", "Type", "Physical Location"}, rows, nil
+}
+
+// backupDeviceDetail is one backup device's Property/Value view. What the
+// device *holds* is not read here: RESTORE HEADERONLY opens the media, which
+// on a missing file or an offline tape is a failure the Details pane would
+// report as the device being unreadable. The Media Contents page of Backup
+// Device Properties is where that read belongs.
+func backupDeviceDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	d, err := sc.Server.BackupDeviceByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", d.Name,
+		"Type", d.Type,
+		"Physical Location", d.PhysicalName,
+	)
+}
+
+// serverTriggersFolderDetail lists every server-scope DDL and logon trigger.
+// It reads gosmo independently of the tree, so the folder's filter is applied
+// here too — over the gosmo objects, before the rows are built.
+func serverTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	triggers, err := sc.Server.ServerTriggersContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	triggers = filterObjects(node.data.Filter, triggers, func(t *gosmo.ServerTrigger) nodeData {
+		return nodeData{Name: t.Name, CreateDate: t.CreateDate}
+	})
+
+	rows := make([][]string, 0, len(triggers))
+	out := make([]nodeData, 0, len(triggers))
+	for _, t := range triggers {
+		rows = append(rows, []string{
+			t.Name, enabledText(t.IsEnabled), strings.Join(t.Events, ", "),
+			formatSQLDate(t.CreateDate), formatSQLDate(t.ModifyDate),
+		})
+		out = append(out, nodeData{Type: NodeServerTrigger, Name: t.Name})
+	}
+	*objs = out
+	return []string{"Name", "Status", "Events", "Created", "Modified"}, rows, nil
+}
+
+// serverTriggerDetail is one server trigger's Property/Value view. The
+// definition is not shown here — it is multi-line, which a grid row flattens;
+// the Properties dialog's Definition page is where it belongs.
+func serverTriggerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	t, err := sc.Server.ServerTriggerByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", t.Name,
+		"Status", enabledText(t.IsEnabled),
+		"Events", strings.Join(t.Events, ", "),
+		"Created", formatSQLDate(t.CreateDate),
+		"Modified", formatSQLDate(t.ModifyDate),
+	)
+}
+
+// endpointsFolderDetail lists every endpoint on the server. It reads gosmo
+// independently of the tree, so the folder's filter is applied here too — over
+// the gosmo objects, before the rows are built.
+func endpointsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	endpoints, err := sc.Server.EndpointsContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	endpoints = filterObjects(node.data.Filter, endpoints, func(e *gosmo.Endpoint) nodeData {
+		return nodeData{Name: e.Name}
+	})
+
+	rows := make([][]string, 0, len(endpoints))
+	out := make([]nodeData, 0, len(endpoints))
+	for _, e := range endpoints {
+		rows = append(rows, []string{
+			e.Name, e.Protocol, e.Type, endpointStateLabel(e.State),
+			endpointPortText(e), e.Owner,
+		})
+		// IsSystem travels with the row object, not just the tree node: the
+		// pane's own Delete reads these, and a built-in endpoint deleted from
+		// here would fail on a statement SQL Server refuses.
+		out = append(out, nodeData{Type: NodeEndpoint, Name: e.Name, IsSystem: e.IsSystem})
+	}
+	*objs = out
+	return []string{"Name", "Protocol", "Type", "State", "Port", "Owner"}, rows, nil
+}
+
+// endpointDetail is one endpoint's Property/Value view.
+func endpointDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	e, err := sc.Server.EndpointByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", e.Name,
+		"Protocol", e.Protocol,
+		"Type", e.Type,
+		"State", endpointStateLabel(e.State),
+		"Port", endpointPortText(e),
+		"Owner", e.Owner,
+		"System endpoint", yesNo(e.IsSystem),
+	)
+}
+
+// endpointPortText renders the listener port. A non-TCP endpoint has none, and
+// the built-in TCP ones report 0 rather than the instance's real port — "0"
+// in either column reads as a port the caller could connect to.
+func endpointPortText(e *gosmo.Endpoint) string {
+	if e.Port == 0 {
+		return ""
+	}
+	return strconv.Itoa(e.Port)
+}
+
+// enabledText renders an is-enabled flag the way the Details pane and the
+// Properties pages both name it.
+func enabledText(enabled bool) string {
+	if enabled {
+		return "Enabled"
+	}
+	return "Disabled"
 }

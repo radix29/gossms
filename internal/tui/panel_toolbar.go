@@ -165,10 +165,22 @@ func toolOverflowItems(tools []toolButton, hidden []int,
 		if tools[i].selected {
 			label = "• " + label
 		}
+		// Note is a string and so is fixed when the menu is built, while
+		// Enabled is asked again on every draw. Ask reason only for a cell that
+		// is withheld right now: a reason function is free to answer for a
+		// state the cell isn't in — the Query Store panel's returns the
+		// permission text whenever the login can't force a plan, including for
+		// the cells that don't need the permission — and an enabled item never
+		// shows its note anyway. A menu is a modal popup, so nothing underneath
+		// it changes while it is open.
+		note := ""
+		if disabled(i) {
+			note = reason(i)
+		}
 		items = append(items, controls.MenuItem{
 			Label:   label,
 			Enabled: func() bool { return !disabled(i) },
-			Note:    reason(i),
+			Note:    note,
 			Action:  func() { run(i) },
 		})
 	}

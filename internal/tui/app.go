@@ -81,43 +81,47 @@ type App struct {
 	// query returns, so it needs no snapshot semantics.
 	metaEnabled bool
 
-	connectDialog        *ConnectDialog
-	findDialog           *FindReplaceDialog
-	helpDialog           *HelpDialog
-	keyDiagDialog        *KeyDiagnosticsDialog
-	updateDialog         *UpdateDialog
-	statusHistoryDialog  *StatusHistoryDialog
-	propsDialog          *PropertiesDialog
-	propDialog           *PropDialog
-	newDatabaseDialog    *NewDatabaseDialog
-	newLoginDialog       *NewLoginDialog
-	newJobDialog         *NewJobDialog
-	newScheduleDialog    *NewScheduleDialog
-	newAlertDialog       *NewAlertDialog
-	newOperatorDialog    *NewOperatorDialog
-	newIndexDialog       *NewIndexDialog
-	newStatisticsDialog  *NewStatisticsDialog
-	newCMKDialog         *NewColumnMasterKeyDialog
-	newCEKDialog         *NewColumnEncryptionKeyDialog
-	agAddDatabaseDialog  *AGAddDatabaseDialog
-	agAddListenerDialog  *AGAddListenerDialog
-	agAddReplicaDialog   *AGAddReplicaDialog
-	newAGDialog          *NewAGDialog
-	newEndpointDialog    *NewEndpointDialog
-	detachDatabaseDialog *DetachDatabaseDialog
-	attachDatabaseDialog *AttachDatabaseDialog
-	fileDialog           *dialogs.FileDialog
-	queryListDialog      *QueryListDialog
-	optionsDialog        *OptionsDialog
-	filterDialog         *FilterDialog
-	logSearchDialog      *LogSearchDialog
-	promptDialog         *dialogs.PromptDialog
-	tasksDialog          *TasksDialog
-	confirmDialog        *dialogs.ConfirmDialog
-	confirmTypedDialog   *dialogs.TypedConfirmDialog
-	alertDialog          *dialogs.AlertDialog
-	backupDialog         *BackupDialog
-	restoreDialog        *RestoreDialog
+	connectDialog               *ConnectDialog
+	findDialog                  *FindReplaceDialog
+	helpDialog                  *HelpDialog
+	keyDiagDialog               *KeyDiagnosticsDialog
+	updateDialog                *UpdateDialog
+	statusHistoryDialog         *StatusHistoryDialog
+	propsDialog                 *PropertiesDialog
+	propDialog                  *PropDialog
+	newDatabaseDialog           *NewDatabaseDialog
+	newLoginDialog              *NewLoginDialog
+	newJobDialog                *NewJobDialog
+	newScheduleDialog           *NewScheduleDialog
+	newAlertDialog              *NewAlertDialog
+	newOperatorDialog           *NewOperatorDialog
+	newCredentialDialog         *NewCredentialDialog
+	newBackupDeviceDialog       *NewBackupDeviceDialog
+	newAuditDialog              *NewAuditDialog
+	newAuditSpecificationDialog *NewAuditSpecificationDialog
+	newIndexDialog              *NewIndexDialog
+	newStatisticsDialog         *NewStatisticsDialog
+	newCMKDialog                *NewColumnMasterKeyDialog
+	newCEKDialog                *NewColumnEncryptionKeyDialog
+	agAddDatabaseDialog         *AGAddDatabaseDialog
+	agAddListenerDialog         *AGAddListenerDialog
+	agAddReplicaDialog          *AGAddReplicaDialog
+	newAGDialog                 *NewAGDialog
+	newEndpointDialog           *NewEndpointDialog
+	detachDatabaseDialog        *DetachDatabaseDialog
+	attachDatabaseDialog        *AttachDatabaseDialog
+	fileDialog                  *dialogs.FileDialog
+	queryListDialog             *QueryListDialog
+	optionsDialog               *OptionsDialog
+	filterDialog                *FilterDialog
+	logSearchDialog             *LogSearchDialog
+	promptDialog                *dialogs.PromptDialog
+	tasksDialog                 *TasksDialog
+	confirmDialog               *dialogs.ConfirmDialog
+	confirmTypedDialog          *dialogs.TypedConfirmDialog
+	alertDialog                 *dialogs.AlertDialog
+	backupDialog                *BackupDialog
+	restoreDialog               *RestoreDialog
 
 	// allDialogs lists every dialog exactly once, for syncDialogStack to
 	// scan; dialogStack is the live z-order (see dialog_stack.go).
@@ -403,6 +407,10 @@ func (a *App) buildUI() {
 	a.newScheduleDialog = registerDialog(a, NewNewScheduleDialog(a))
 	a.newAlertDialog = registerDialog(a, NewNewAlertDialog(a))
 	a.newOperatorDialog = registerDialog(a, NewNewOperatorDialog(a))
+	a.newCredentialDialog = registerDialog(a, NewNewCredentialDialog(a))
+	a.newBackupDeviceDialog = registerDialog(a, NewNewBackupDeviceDialog(a))
+	a.newAuditDialog = registerDialog(a, NewNewAuditDialog(a))
+	a.newAuditSpecificationDialog = registerDialog(a, NewNewAuditSpecificationDialog(a))
 	a.newIndexDialog = registerDialog(a, NewNewIndexDialog(a))
 	a.newStatisticsDialog = registerDialog(a, NewNewStatisticsDialog(a))
 	a.newCMKDialog = registerDialog(a, NewNewColumnMasterKeyDialog(a))

@@ -18,8 +18,8 @@ branching exists in exactly two places: `internal/tui/os_clipboard.go`
   `github.com/gdamore/tcell/v3` (`v3.4.2`) for the TUI backend.
 - `go.mod`'s `require` pins a gosmo tag, but the `replace github.com/radix29/gosmo
   => ../gosmo` directive is deliberately **active** during development, so builds
-  use the sibling checkout and `HEAD` may depend on untagged gosmo code. The
-  author's layout has both repos as siblings: `~/go/gossms`, `~/go/gosmo`.
+  use the sibling checkout and `HEAD` may depend on untagged gosmo code. Both
+  repos are siblings: `~/go/gossms`, `~/go/gosmo`.
 - Version resolves automatically from the pushed git tag — see
   `internal/version/version.go` — never hand-edited.
 
@@ -187,18 +187,16 @@ gosmo only.
 
 - **Comments: describe what the code does. Add the "why" only when getting it
   wrong reintroduces a bug, and then say so concretely.** The bar is whether the
-  next person would break something without the note.
-  - Load-bearing here: the invariant a `mouseDragging` latch protects, why
-    `postAndWake`'s two halves can't be called by hand, why `SelectRow.orig` is
-    read back from the widget, why `escapeSingle` goes on top of bracket-quoting.
-    Each is a shipped bug a plausible "simplification" would bring back.
-  - Not worth writing: rejected alternatives, restatements of the line, and
-    narration of how the code came to look this way.
-  - Prefer one sharp sentence naming the failure to a paragraph, and keep an
-    earned long comment on the declaration it protects.
-  - Existing long comments are not a cleanup target — `app.go`, `datagrid.go`,
-    `secret.go`, `propsheet/common.go` are 33-50% comments, and that rationale
-    has repeatedly stopped a regression. Judge only *new* comments by the bar above.
+  next person would break something without the note. Load-bearing here: the
+  invariant a `mouseDragging` latch protects, why `postAndWake`'s two halves can't
+  be called by hand, why `SelectRow.orig` is read back from the widget, why
+  `escapeSingle` goes on top of bracket-quoting — each a shipped bug a plausible
+  "simplification" would bring back. Not worth writing: rejected alternatives,
+  restatements of the line, how the code came to look this way. Prefer one sharp
+  sentence naming the failure to a paragraph, on the declaration it protects.
+  Existing long comments are not a cleanup target — `app.go`, `datagrid.go`,
+  `secret.go`, `propsheet/common.go` are 33-50% comments and that rationale has
+  repeatedly stopped a regression. Judge only *new* comments by this bar.
 - Go 1.26+ features in active use: `new(T{...})` composite-literal syntax, the
   `slices` package, `errors.AsType`.
 - `core.DisplayWidth(s)`, never `len(s)`, for any column-position math.
@@ -241,53 +239,46 @@ gosmo only.
   reached QueryPanel, DetailBrowser and Activity Monitor, which rely on the blanket
   answer. Detect movement, never predict it; a grid with no cell cursor scrolls
   without changing `SelectedCell`.
-- **Never call `DataGrid.SetData` on a grid the user is navigating without
-  restoring the view — use `redrawGrid` (`prop_grid_helpers.go`).** `SetData`
-  discards three things: the cell cursor (reset to 0,0), the scroll position, and
-  any dragged column width. From inside the grid's own `OnSelectRow` it is worst,
-  because the callback runs *after* the grid moved: the move is undone, `GridRow`
-  reports "not handled", and `Form` moves focus out on the first arrow key — six
-  sites shipped that way and every row but the first was unselectable by mouse
-  *and* keyboard. Restoring only the cursor is not enough either:
+- **Never call `DataGrid.SetData` on a grid the user is navigating — use
+  `redrawGrid` (`prop_grid_helpers.go`), or `resetGrid` when the row *set*
+  changed.** `SetData` discards three things: the cell cursor (reset to 0,0), the
+  scroll position, and any dragged column width. From inside the grid's own
+  `OnSelectRow` it is worst — the callback runs *after* the grid moved, so the move
+  is undone, `GridRow` reports "not handled", and `Form` moves focus out on the
+  first arrow key; six sites shipped that way, every row but the first unselectable
+  by mouse *and* keyboard. Restoring only the cursor is not enough either:
   `SetSelectedCell` ends in `ensureVisible`, which scrolls from zero and lands the
-  user's row against the bottom edge (Server Properties > Permissions moved the
-  whole list on every toggle). `redrawGrid` wraps
-  `controls.DataGrid.SetDataPreservingView`, which restores widths, then scroll,
-  then selection, in that order. Outside `internal/tui` call
+  row against the bottom edge (Server Properties > Permissions moved the whole list
+  on every toggle). `redrawGrid` wraps `controls.DataGrid.SetDataPreservingView`
+  (widths, then scroll, then selection); outside `internal/tui` call
   `SetDataPreservingView` directly (`propsheet.ToggleGridRow` cannot reach
-  `redrawGrid`). Never hand-roll the pair — six pages did, all dropped the widths.
+  `redrawGrid`), and never hand-roll the pair — six pages did, all dropped the
+  widths. After an Add/Remove/Revert the cursor *is* placed deliberately, but
+  `SetData` + `SetSelectedRow` (seventeen sites) still drops the dragged widths
+  with no visible symptom: use `resetGrid(grid, headers, rows, row)`.
   `wireGridEditor` (`ag_props.go`) packages the commit/load/redraw wiring for the
   grid-plus-detail-editor idiom.
-  **A redraw after the row *set* changes is `resetGrid`, not bare `SetData`.**
-  An Add/Remove/Revert does want the cursor placed deliberately, but `SetData`
-  discards the dragged widths on the way and setting the cursor afterwards hides
-  that there was anything to notice — no cursor jump, no keyboard trap, just a
-  column snapping back. Seventeen sites shipped as `SetData` + `SetSelectedRow`
-  for that reason. `resetGrid(grid, headers, rows, row)`
-  (`prop_grid_helpers.go`) is `SetDataPreservingView` followed by
-  `SetSelectedRow`, and is the only correct form: `redrawGrid` keeps the old
-  cursor, which a changed row set has invalidated.
 - **A mouse gesture's modifier is not yours to rely on — Shift+click especially.**
   A VTE terminal (xfce4-terminal, GNOME Terminal) handles Shift+mouse as its own
   text selection whenever an application has mouse reporting on, and forwards
   nothing: the app sees no event at all, which reads exactly like a broken
   binding. Ctrl and Alt are delivered. So a Shift+mouse gesture needs a second
-  modifier that means the same thing — `extendSelectionMods` in
-  `datagrid_input.go` is `ModShift | ModAlt` for this reason — and a keyboard
-  route as well. Key Diagnostics logs mouse events (button, modifiers, position,
-  drags collapsed), which is what tells a swallowed modifier from a wrong
-  binding; a tmux harness cannot, since injecting the SGR sequence bypasses the
-  terminal that would have eaten it.
+  modifier meaning the same thing — `extendSelectionMods` (`datagrid_input.go`) is
+  `ModShift | ModAlt` for this reason — and a keyboard route as well. Key
+  Diagnostics logs mouse events (button, modifiers, position, drags collapsed),
+  which is what tells a swallowed modifier from a wrong binding; a tmux harness
+  cannot, since injecting the SGR sequence bypasses the terminal that would have
+  eaten it.
 - **A `Ctrl+Shift+<letter>` chord never arrives as `KeyCtrlX`.** tcell folds a
   Ctrl-modified rune into `KeyCtrlA..KeyCtrlZ` only when Ctrl is the *sole*
   modifier, so Ctrl+Shift+O arrives as `KeyRune "o"` (Kitty) or `"O"` (xterm
   modifyOtherKeys) with `ModCtrl|ModShift`, and legacy terminals send plain `0x0F`.
   `normalizeCtrlRune` (`app_events.go`, called once atop `handleKey`) folds it back
   app-wide — a binding testing `KeyCtrlX` *and* `ModShift` works only because of it,
-  and only on modern keyboard protocols. Anything that must work everywhere needs a
-  function key or Ctrl+non-letter too, the way Connect has F9. Verify a new chord by
-  injecting its encodings with `tmux send-keys -H` and reading Key Diagnostics; a
-  unit test proves nothing here.
+  and only on modern keyboard protocols, so anything that must work everywhere needs
+  a function key or Ctrl+non-letter too, the way Connect has F9. Verify a new chord
+  by injecting its encodings with `tmux send-keys -H` and reading Key Diagnostics;
+  a unit test proves nothing here.
 - **Every menu item and toolbar button must be context-gated** — never let a click
   or keypress do nothing, do the wrong thing, or crash on an unmet precondition (a
   connection, an active query panel, an Object Explorer selection).
@@ -302,19 +293,19 @@ gosmo only.
   compiles, looks right, and shows a read-only banner to the one principal who
   could actually write it. The securable for an index, a statistic or a key is the
   **table**: that is what SQL Server checks and what gosmo's probe records.
-  Login General takes ALTER ANY LOGIN, Login Server Roles takes ALTER ANY SERVER
-  ROLE and Login Securables takes CONTROL SERVER — one list per dialog would have
-  been wrong on two of the three. `prop_page_requires_test.go` fails on a page
-  that declares nothing (unless it is named in `pagesThatOnlyRead`, which is only
-  for pages with no `apply`), on a stale exemption, on an object-scoped page with
-  no securable, and on a new `[]propPage` constructor absent from its list.
+  Login General takes ALTER ANY LOGIN, Login Server Roles ALTER ANY SERVER ROLE
+  and Login Securables CONTROL SERVER — one list per dialog would have been wrong
+  on two of the three. `prop_page_requires_test.go` fails on a page that declares
+  nothing (unless named in `pagesThatOnlyRead`, only for pages with no `apply`),
+  on a stale exemption, on an object-scoped page with no securable, and on a new
+  `[]propPage` constructor absent from its list.
   **The banner's check and the menus' gate are one function, `rightsAllow`
   (`permission_gate.go`) — never add a second copy.** They had diverged: the
-  banner's half knew only server and database scope, so it would have shown a
-  false read-only for every object-scoped right and never fired at all for SQL
-  Agent's msdb memberships, which fail open when read as server permissions. The
-  callers differ in one thing only, how a database's capabilities are reached —
-  cached for the UI goroutine, probing for a page's `load`.
+  banner's half knew only server and database scope, so it showed a false
+  read-only for every object-scoped right and never fired at all for SQL Agent's
+  msdb memberships, which fail open when read as server permissions. The callers
+  differ in one thing only — how a database's capabilities are reached, cached for
+  the UI goroutine, probing for a page's `load`.
   **Inside it, the object-scope DENY is asked first and separately.** Every right
   in a set is an alternative that can only *add* permission, but SQL Server
   resolves a DENY on the object over all of them, so `objectDenial` runs before
@@ -340,15 +331,15 @@ gosmo only.
   dialog for its focused field via `core.ClipboardHost`. The old form was a switch
   naming three of thirty dialogs with a fall-through, and Ctrl+X in the Find dialog
   silently cut the query editor's selection behind it. A dialog with no text entry
-  deliberately isn't a host, and an inert clipboard is correct there. A new dialog
-  with a text field implements `FocusedClipboardTarget`, returning an **explicit**
-  nil on every miss (a typed nil widget in an interface is not a nil interface).
+  deliberately isn't a host; an inert clipboard is correct there. A new dialog with
+  a text field implements `FocusedClipboardTarget`, returning an **explicit** nil on
+  every miss (a typed nil widget in an interface is not a nil interface).
   `TestEveryDialogWithTextEntryIsAClipboardHost` catches a missing host but cannot
   catch a reintroduced fall-through — which is why this is written here. A dialog
   that must *react* to an edit (re-filter a list, refresh a preview) implements
   `core.ClipboardEditHandler` and checks the target it is handed rather than
   assuming the edit landed in the field it watches. `App.pasteInto` drops the text
-  unless the widget it was aimed at is still the target: every clipboard read is
+  unless the widget it was aimed at is still the target — every clipboard read is
   asynchronous, so the dialog may be gone by the time it returns.
 - **Never give a procedure you install outside `master` an `sp_` prefix.** An
   `sp_` name falls back to `master` when the current database has no such
@@ -371,10 +362,10 @@ gosmo only.
   (values trimmed as `matchText` trims them, whole calendar days as `matchDate`
   compares them) or refuse the filter, which `serverFilter` turns into "read the
   whole folder". Two rules in gosmo's clause builder are the ones a plausible
-  simplification removes: compare `LOWER(col) LIKE LOWER(@p)`, because a bare LIKE
-  follows the database collation and drops rows on a case-sensitive one; and escape
-  the pattern with `likeEscape` plus `ESCAPE`, because `%`, `_` and `[` are legal in
-  an identifier — unescaped, a filter for `pct_1` also matches `pct1100`.
+  simplification removes: `LOWER(col) LIKE LOWER(@p)`, because a bare LIKE follows
+  the database collation and drops rows on a case-sensitive one; and `likeEscape`
+  plus `ESCAPE`, because `%`, `_` and `[` are legal in an identifier — unescaped, a
+  filter for `pct_1` also matches `pct1100`.
 - **A panel toolbar cell that does not fit its row is not drawn at all.**
   `layoutToolButtons` gives an overflowing cell a zero rect, and a zero rect is
   neither painted nor clickable — so adding a cell can silently delete the last
@@ -401,10 +392,10 @@ gosmo only.
   Query Store statement onto one line because a raw newline breaks the grid row,
   and `DataGrid.OnShowValue` opens that cell in a *runnable* query panel: a
   statement whose first line ends in `-- comment` arrives as
-  `SELECT 1 -- pick one FROM dbo.t`, with the whole FROM clause inside the
-  comment. `OnShowValue`'s first parameter is the **column** index, not the row,
-  so the row comes from `grid.SelectedRow()` (`DataGrid.openViewer` reads the cell
-  at `selRow`/`selCol`). `QueryStorePanel.showValue` resolves it from
+  `SELECT 1 -- pick one FROM dbo.t`, the whole FROM clause inside the comment.
+  `OnShowValue`'s first parameter is the **column** index, not the row, so the row
+  comes from `grid.SelectedRow()` (`DataGrid.openViewer` reads the cell at
+  `selRow`/`selCol`). `QueryStorePanel.showValue` resolves it from
   `qsResultRow.queryText` held in memory; `DetailBrowser.showQueryStoreValue`
   cannot — its grid is `[][]string` shared with every other node type — so it
   re-reads the statement by the row's `Query ID` through
@@ -439,22 +430,19 @@ invariants, and where each is implemented:
    latch-bearing child.
 
 **A dialog with a text field uses `dialogs.FieldGesture` — never a hand-rolled
-`dragField`.** Points 1, 4 and 5 all land on the same three calls
-(`Release`/`Replay`/`Clear`), and each has a placement that is not local to it:
-`Release` above `ConsumeOutsideClick` *and* above any mode switch, `Replay` after
-`ConsumeOutsideClick` and before any hit-test, `Clear` in `Show`. Seven dialogs had
-their own copy. `ARCHITECTURE.md` § dialogs.FieldGesture has the failure each
-placement prevents; the dialog keeps only its own hit-testing and focus handling.
-Two meta-tests enforce it, and both are needed: `TestEveryDialogWithATextFieldOwns
-AFieldGesture` walks the built dialogs for one that owns a loose
-`*widgets.InputField` and no gesture, and
-`TestFieldGestureCallsAreOrderedCorrectly` reads the source of both dialog
-packages for the order — `Release` above `ConsumeOutsideClick`, `Replay` below it
-and above the last `ButtonClicked`, `Claim` used at all, `Clear` on the path that
-shows the dialog. Options, Prompt and TypedConfirm each hand-rolled the protocol
-and got it wrong long after the other seven were converted, with every test
-passing: a drag from the field to the button row pressed the button under the
-pointer, which on Prompt *accepted* the rename and on TypedConfirm answered the
+`dragField`.** Points 1, 4 and 5 all land on the same three calls, each with a
+placement that is not local to it: `Release` above `ConsumeOutsideClick` *and*
+above any mode switch, `Replay` after `ConsumeOutsideClick` and before any
+hit-test, `Clear` in `Show`. The dialog keeps only its own hit-testing and focus
+handling; `ARCHITECTURE.md` § dialogs.FieldGesture has the failure each placement
+prevents. Two meta-tests enforce it and both are needed —
+`TestEveryDialogWithATextFieldOwnsAFieldGesture` walks the built dialogs for one
+owning a loose `*widgets.InputField` and no gesture;
+`TestFieldGestureCallsAreOrderedCorrectly` reads both dialog packages' source for
+the order plus `Claim` used at all. Options, Prompt and TypedConfirm hand-rolled
+it and got it wrong long after the other seven were converted, every test passing:
+a drag from the field to the button row pressed the button under the pointer,
+which on Prompt *accepted* the rename and on TypedConfirm answered the
 confirmation the retyping exists to slow down.
 
 An overlay drawn last gets **first refusal** of every key/mouse event while open —
@@ -471,13 +459,11 @@ legitimate bare `wakeEventLoop()` caller: it has no callback to post, only a red
 **A background operation that latches UI state before it starts must use
 `App.safegoRepair`, not `App.safego`** — a busy flag, a "loading" placeholder, a
 toolbar the flag dims. The latch is released by the callback the goroutine posts
-when it finishes, and a panic unwinds straight past that callback, so the latch
-survives for the object's lifetime: the Log File Viewer's whole toolbar stays
-inert, an Activity Monitor tab sits at "Running..." forever, a Properties page's
-button refuses every later click. `safego` alone reports the panic and leaves the
-UI stuck; the repair step is the way out. Cover it the way
-`TestPageActionLatchClearsWhenTheActionPanics` does — panic the action, then assert
-the *next* click still runs.
+when it finishes, and a panic unwinds straight past that callback, so it survives
+for the object's lifetime: the Log File Viewer's toolbar stays inert, an Activity
+Monitor tab sits at "Running..." forever, a Properties page's button refuses every
+later click. Cover it the way `TestPageActionLatchClearsWhenTheActionPanics` does
+— panic the action, then assert the *next* click still runs.
 
 ## Splitting a file that's grown too large
 
@@ -491,6 +477,18 @@ against the original; only then delete the source section/file.
   SQL. Don't build from it or act on it unless asked, and leave it out of cleanups.
 - `CHANGELOG.md` and `RELEASE.md` cover the release process. Don't edit either as
   part of a feature or fix unless asked.
+- **Check a path exists before writing to it.** A shell `cat > file` or a
+  `Write` overwrites without asking, and a plausible new filename is often
+  already taken — `internal/tui/agent_job_state_test.go` looked like a new test
+  file and was an existing one, silently replaced. `ls` (or Read) the path
+  first; recover a committed one with `git show HEAD:<path> > /tmp/...` and
+  merge, never with `git checkout`.
+- **Never `git checkout` / `git restore` a file to undo an edit of your own.** The
+  working tree here routinely carries a large body of uncommitted work, and the
+  command discards *that* along with the edit, silently and unrecoverably — a
+  mutation check on `datagrid.go` took its uncommitted `restoreOverrideWidths`
+  and `SetError` changes with it. Copy the file aside first and copy it back,
+  or reverse the edit with the same tool that made it.
 
 ## Self learning
 

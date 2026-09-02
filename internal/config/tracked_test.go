@@ -131,3 +131,38 @@ func TestTrackedQueriesKeepsACorruptFileAside(t *testing.T) {
 		t.Errorf("Toggle after a corrupt load: %v", err)
 	}
 }
+
+// The two halves of a set's key are treated differently on purpose: the server
+// address is folded, the database name is compared exactly. Both directions
+// matter, so both are asserted here — folding the database would merge Sales
+// and sales, which are two databases on a case-sensitive server collation, and
+// not folding the server would split a set the moment the user typed the
+// instance in a different case in Connect.
+func TestServerIsFoldedAndDatabaseIsNot(t *testing.T) {
+	tq := LoadTrackedQueriesFrom(filepath.Join(t.TempDir(), trackedFileName))
+	if _, err := tq.Toggle(`HOST\SQL2022`, "Sales", 7); err != nil {
+		t.Fatalf("Toggle: %v", err)
+	}
+
+	if got := tq.IDs(`host\sql2022`, "Sales"); len(got) != 1 || got[0] != 7 {
+		t.Errorf("IDs(host\\sql2022, Sales) = %v, want [7] — the server address is meant to fold", got)
+	}
+	if got := tq.IDs(`HOST\SQL2022`, "sales"); len(got) != 0 {
+		t.Errorf("IDs(HOST\\SQL2022, sales) = %v, want none — a case-sensitive server has both Sales and sales", got)
+	}
+}
+
+// A nil set answers the readers rather than panicking, and must refuse the
+// writers rather than reporting a pin it never recorded.
+func TestNilTrackedQueriesRefusesToWrite(t *testing.T) {
+	var tq *TrackedQueries
+	if tq.IsTracked("s", "d", 1) || tq.IDs("s", "d") != nil {
+		t.Error("a nil set should read as empty")
+	}
+	if tracked, err := tq.Toggle("s", "d", 1); err == nil || tracked {
+		t.Errorf("Toggle on a nil set = (%v, %v), want (false, an error)", tracked, err)
+	}
+	if err := tq.Save(); err == nil {
+		t.Error("Save on a nil set should report that there is nothing to save")
+	}
+}

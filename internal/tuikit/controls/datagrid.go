@@ -265,11 +265,7 @@ func (g *DataGrid) SetDataPreservingView(columns []string, rows [][]string) {
 	scrollRow, scrollCol := g.scrollRow, g.scrollCol
 	widths := g.ColumnWidthOverrides()
 	g.SetData(columns, rows)
-	for i, w := range widths {
-		if w > 0 {
-			g.SetColumnWidth(i, w)
-		}
-	}
+	g.restoreOverrideWidths(widths)
 	g.SetScroll(scrollRow, scrollCol)
 	g.SetSelectedCell(selRow, selCol)
 }
@@ -287,11 +283,22 @@ func (g *DataGrid) RefreshColumnWidths() {
 }
 
 // SetError shows an error row.
+//
+// It resets the same view state SetSource does, scrollCol included: the error
+// is one column at index 0, so a grid left scrolled right draws nothing at all
+// — drawRow starts its walk at scrollCol and never reaches column 0. Every
+// caller in the application (the Detail Browser, both Query Store grids, the
+// Log File Viewer) is a wide grid the user can have scrolled.
+//
+// It also drops a queued RefreshColumnWidths: the column is sized to the whole
+// rect by hand here, and the next Draw would otherwise recompute over it and
+// clip the message to the width of the word "Error".
 func (g *DataGrid) SetError(err error) {
 	g.columns = []string{"Error"}
 	g.rows = SliceRowSource{{err.Error()}}
 	g.colWidths = []int{g.rect.W - 2}
-	g.selRow, g.selCol, g.scrollRow = 0, 0, 0
+	g.widthsDirty = false
+	g.selRow, g.selCol, g.scrollRow, g.scrollCol = 0, 0, 0, 0
 	g.blockSelecting, g.mouseDragging, g.sbDragging, g.sbDraggingH = false, false, false, false
 	g.ClearMarkedRows()
 	g.colWidthOverride, g.colResizing = nil, false
@@ -561,6 +568,30 @@ func (g *DataGrid) setOverrideWidth(i, w int) {
 		g.colWidthOverride = append(g.colWidthOverride, 0)
 	}
 	g.colWidthOverride[i] = w
+}
+
+// restoreOverrideWidths reinstates a whole column set's dragged widths and
+// recomputes once, for SetDataPreservingView. Calling SetColumnWidth per column
+// instead runs a full computeColWidths — a rescan of up to colWidthSampleRows
+// rows — once per column, and that pair runs on every redrawGrid, which is
+// every keystroke on a grid-backed Properties page. Applies SetColumnWidth's
+// minResizeWidth floor so a restored width is the width a drag would have set.
+//
+// The recompute is conditional because widths is always as long as the column
+// count (ColumnWidthOverrides pads it), all zeros on a grid nobody has
+// resized. Recomputing unconditionally doubled the scan on exactly the hot
+// path this helper exists for: SetData has already computed the widths.
+func (g *DataGrid) restoreOverrideWidths(widths []int) {
+	restored := false
+	for i, w := range widths {
+		if w > 0 {
+			g.setOverrideWidth(i, max(w, minResizeWidth))
+			restored = true
+		}
+	}
+	if restored {
+		g.computeColWidths()
+	}
 }
 
 // ColumnWidthOverrides returns each column's dragged width, 0 for one still at

@@ -53,6 +53,17 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 				t.Errorf("membership right %q names no database to be a member in", r.name)
 			}
 			continue
+		case r.serverRole:
+			// A server-role right names a fixed server role, not a
+			// permission, and is answered by IS_SRVROLEMEMBER out of
+			// ProbedServerRoles. A role missing from that list reads false
+			// forever, which for this kind of right means withholding the
+			// action from everyone — membership's failure, at server scope.
+			if !slices.Contains(gosmo.ProbedServerRoles, r.name) {
+				t.Errorf("%q is declared as a server-role right but is not in gosmo's ProbedServerRoles — "+
+					"it will read false for every login and withhold the action from all of them", r.name)
+			}
+			continue
 		case r.schema:
 			// Asked of the per-schema probe, which has a list of its own — a
 			// name only the database-wide list carries reads unknown for
@@ -114,6 +125,7 @@ type parsedRight struct {
 	schema     bool
 	membership bool
 	inDB       string
+	serverRole bool
 	alt        []string
 }
 
@@ -166,6 +178,9 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 				r.membership = ok && id.Name == "true"
 			case "inDB":
 				r.inDB = stringLit(t, kv.Value)
+			case "serverRole":
+				id, ok := kv.Value.(*ast.Ident)
+				r.serverRole = ok && id.Name == "true"
 			case "alt":
 				alts, ok := kv.Value.(*ast.CompositeLit)
 				if !ok {

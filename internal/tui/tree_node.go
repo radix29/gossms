@@ -53,7 +53,19 @@ const (
 	NodeLogin
 	NodeServerRoles
 	NodeServerRole
+	NodeCredentials
+	NodeCredential
+	NodeAudits
+	NodeAudit
+	NodeServerAuditSpecifications
+	NodeServerAuditSpecification
 	NodeServerObjects
+	NodeBackupDevices
+	NodeBackupDevice
+	NodeServerTriggers
+	NodeServerTrigger
+	NodeEndpoints
+	NodeEndpoint
 	NodeManagement
 	NodeSQLServerLogs
 	NodeSQLServerLog
@@ -178,7 +190,9 @@ func isContainerNode(t NodeType) bool {
 		NodeStatistics, NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
 		NodeSecurity, NodeLogins,
-		NodeServerRoles, NodeServerObjects, NodeManagement, NodeSQLServerLogs,
+		NodeServerRoles, NodeCredentials, NodeAudits, NodeServerAuditSpecifications,
+		NodeServerObjects, NodeBackupDevices, NodeServerTriggers, NodeEndpoints,
+		NodeManagement, NodeSQLServerLogs,
 		NodeAgentErrorLogs, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
@@ -250,6 +264,16 @@ func objectIconEmoji(t NodeType) rune {
 		return '👤'
 	case NodeServerRole, NodeDatabaseRole:
 		return '🎭'
+	case NodeCredential:
+		return '🪪'
+	case NodeAudit:
+		return '📋'
+	case NodeServerAuditSpecification:
+		return '📑'
+	case NodeBackupDevice:
+		return '💾'
+	case NodeEndpoint:
+		return '🔌'
 	case NodeAgentJob:
 		return '⏱'
 	case NodeAgentSchedule:
@@ -278,7 +302,7 @@ func objectIconEmoji(t NodeType) rune {
 		return '🛢'
 	case NodeAGListener:
 		return '📡'
-	case NodeTrigger:
+	case NodeTrigger, NodeServerTrigger:
 		return '⚡'
 	case NodeSequence:
 		return '🔢'
@@ -335,6 +359,16 @@ func objectIconSymbols(t NodeType) rune {
 		return '◇'
 	case NodeServerRole, NodeDatabaseRole:
 		return '▣'
+	case NodeCredential:
+		return '⊞'
+	case NodeAudit:
+		return '⊟'
+	case NodeServerAuditSpecification:
+		return '⊡'
+	case NodeBackupDevice:
+		return '⛁'
+	case NodeEndpoint:
+		return '⊸'
 	case NodeAgentJob:
 		return '▶'
 	case NodeAgentSchedule:
@@ -363,7 +397,7 @@ func objectIconSymbols(t NodeType) rune {
 		return '⬢'
 	case NodeAGListener:
 		return '◎'
-	case NodeTrigger:
+	case NodeTrigger, NodeServerTrigger:
 		return '⚡'
 	case NodeSequence:
 		return '↑'
@@ -420,6 +454,18 @@ func nodeTypeName(t NodeType) string {
 		return "Login"
 	case NodeUser:
 		return "User"
+	case NodeCredential:
+		return "Credential"
+	case NodeAudit:
+		return "Audit"
+	case NodeServerAuditSpecification:
+		return "Server Audit Specification"
+	case NodeBackupDevice:
+		return "Backup Device"
+	case NodeServerTrigger:
+		return "Server Trigger"
+	case NodeEndpoint:
+		return "Endpoint"
 	case NodeAvailabilityGroup:
 		return "Availability Group"
 	case NodeAvailabilityReplica:
@@ -453,6 +499,8 @@ func nodeTypeName(t NodeType) string {
 func hasChildren(t NodeType) bool {
 	switch t {
 	case NodeColumn, NodeLogin, NodeUser, NodeServerRole, NodeDatabaseRole,
+		NodeCredential, NodeAudit, NodeServerAuditSpecification,
+		NodeBackupDevice, NodeServerTrigger, NodeEndpoint,
 		NodeSchema, NodeForeignKey, NodeCheck, NodeSequence, NodeSynonym,
 		NodeIndex, NodeTrigger, NodeKey, NodeStatistic,
 		NodeView, NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,

@@ -51,9 +51,9 @@ func loginGeneralResponses(name, loginType string) []fakeResponse {
 			{int64(0), "us_english", "English"},
 			{int64(6), "Français", "French"},
 		}},
-		{match: "FROM   sys.credentials", cols: 4, rows: [][]driver.Value{
-			{"cred_old", "DOMAIN\\svc_old", time.Now(), time.Now()},
-			{"cred_new", "DOMAIN\\svc_new", time.Now(), time.Now()},
+		{match: "FROM   sys.credentials", cols: 7, rows: [][]driver.Value{
+			{int64(1), "cred_old", "DOMAIN\\svc_old", time.Now(), time.Now(), nil, nil},
+			{int64(2), "cred_new", "DOMAIN\\svc_new", time.Now(), time.Now(), nil, nil},
 		}},
 	}
 }

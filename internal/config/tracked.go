@@ -105,6 +105,14 @@ func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 // serverKey folds a server address to one spelling. Addresses are
 // case-insensitive and the same instance is reached by whatever the user typed
 // into Connect, so a set pinned as HOST\SQL2022 must come back for host\sql2022.
+//
+// The database half of the key is deliberately *not* folded, and the asymmetry
+// is the point: a server address is free text the user types, while every
+// database name reaching this file comes from sys.databases by way of an
+// Object Explorer node, in the server's own spelling. Folding it would merge
+// two genuinely different databases on a case-sensitive server collation,
+// where Sales and sales both exist — which is what SQL Server compares
+// database names with. TestServerIsFoldedAndDatabaseIsNot pins it.
 func serverKey(server string) string { return strings.ToLower(strings.TrimSpace(server)) }
 
 // SameServer reports whether two addresses name the same instance for
@@ -167,6 +175,11 @@ func (t *TrackedQueries) IsTracked(server, database string, id int64) bool {
 // failed write costs the user the list at next start rather than the toggle
 // they just made.
 func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool, err error) {
+	if t == nil {
+		// The readers above tolerate a nil set; a writer must not answer
+		// "pinned" for a pin it did not record.
+		return false, errors.New("tracked queries: no set loaded")
+	}
 	t.mu.Lock()
 	ids := slices.Clone(t.sets[serverKey(server)][database])
 	if i := slices.Index(ids, id); i >= 0 {
@@ -184,6 +197,9 @@ func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool
 // Save writes the file. Refuses to write over a file that could not be read —
 // see the unreadable field.
 func (t *TrackedQueries) Save() error {
+	if t == nil {
+		return errors.New("tracked queries: no set loaded")
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.unreadable != nil {

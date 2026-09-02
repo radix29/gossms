@@ -77,12 +77,18 @@ var childLoaders = map[NodeType]childLoader{
 	NodeSequences:        loadSequencesChildren,
 	NodeSynonyms:         loadSynonymsChildren,
 
-	NodeSecurity:    loadSecurityChildren,
-	NodeLogins:      loadLoginsChildren,
-	NodeServerRoles: loadServerRolesChildren,
+	NodeSecurity:                  loadSecurityChildren,
+	NodeLogins:                    loadLoginsChildren,
+	NodeServerRoles:               loadServerRolesChildren,
+	NodeCredentials:               loadCredentialsChildren,
+	NodeAudits:                    loadAuditsChildren,
+	NodeServerAuditSpecifications: loadServerAuditSpecificationsChildren,
 
-	NodeServerObjects: loadServerObjectsChildren,
-	NodeLinkedServers: loadLinkedServersChildren,
+	NodeServerObjects:  loadServerObjectsChildren,
+	NodeBackupDevices:  loadBackupDevicesChildren,
+	NodeServerTriggers: loadServerTriggersChildren,
+	NodeEndpoints:      loadEndpointsChildren,
+	NodeLinkedServers:  loadLinkedServersChildren,
 
 	NodeManagement:    loadManagementChildren,
 	NodeSQLServerLogs: loadSQLServerLogsChildren,

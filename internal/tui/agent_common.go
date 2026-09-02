@@ -14,20 +14,25 @@ import (
 // (Job, Schedule, Alert, Operator) shares.
 
 // formatJobState renders a gosmo.JobState for display.
+//
+// The states come from SQL Server Agent itself (gosmo.JobState); when that
+// read is unavailable — Agent stopped, or a login with neither sysadmin nor
+// SQLAgentReaderRole — gosmo falls back to a derivation that can only say
+// Executing or Idle, so those two are what a restricted login sees.
 func formatJobState(s gosmo.JobState) string {
 	switch s {
 	case gosmo.JobStateIdle:
 		return "Idle"
 	case gosmo.JobStateSuspended:
 		return "Suspended"
-	case gosmo.JobStateExecuting, gosmo.JobStateRunning:
+	case gosmo.JobStateExecuting:
 		return "Running"
 	case gosmo.JobStateWaitingForWorker:
 		return "Waiting for worker thread"
 	case gosmo.JobStateBetweenRetries:
 		return "Between retries"
-	case gosmo.JobStateCancelling:
-		return "Cancelling"
+	case gosmo.JobStateWaitingForStepToFinish:
+		return "Waiting for step to finish"
 	case gosmo.JobStatePerformingCompletionActions:
 		return "Performing completion actions"
 	default:

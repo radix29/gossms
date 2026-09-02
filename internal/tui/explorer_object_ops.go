@@ -262,6 +262,91 @@ var objectOps = map[NodeType]objectOp{
 			return sc.Server.Login(n.Name).RenameContext(ctx, newName)
 		},
 	},
+	NodeCredential: {
+		noun: "Credential",
+		// A credential is dropped by name and nothing cascades, but a login
+		// or a job step mapped to it stops being able to reach outside the
+		// server — and the secret is unrecoverable, so this is not a delete
+		// that can be undone by recreating the object from what is on screen.
+		warning: "Logins and job steps mapped to it lose their external identity, and the stored secret cannot be recovered.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return sc.Server.Credential(n.Name).DropContext(ctx)
+		},
+	},
+	NodeAudit: {
+		noun: "Audit",
+		// Dropping the audit takes every specification bound to it with it —
+		// or rather leaves them orphaned, since SQL Server allows the drop and
+		// the specifications stay behind pointing at nothing.
+		warning: "Server audit specifications bound to it stop recording and are left without an audit.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return sc.Server.ServerAudit(n.Name).DropContext(ctx)
+		},
+		// No rename: ALTER SERVER AUDIT ... MODIFY NAME exists, but only on a
+		// disabled audit, and gosmo's Rename does the off/on dance for it.
+		// Wiring it here would offer a rename that silently stops auditing for
+		// the duration.
+	},
+	NodeServerAuditSpecification: {
+		noun:    "Server Audit Specification",
+		warning: "The action groups it names stop being recorded by its audit.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return sc.Server.ServerAuditSpecification(n.Name).DropContext(ctx)
+		},
+		// No rename: ALTER SERVER AUDIT SPECIFICATION has no MODIFY NAME form
+		// at all — verified live, it is a parse error.
+	},
+	NodeBackupDevice: {
+		noun: "Backup Device",
+		// The alias is all that is dropped by default; the .bak behind it stays
+		// on disk, which is what SSMS does and what makes an accidental delete
+		// recoverable by adding the device again.
+		warning: "Backup jobs and maintenance plans naming it stop working.",
+		solo:    true,
+		// Unticked by default: @delfile deletes the backup file itself, which
+		// no other command here can undo.
+		dropOption: "Also delete the backup file on the server",
+		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, deleteFile bool) error {
+			return sc.Server.BackupDevice(n.Name).DropContext(ctx, deleteFile)
+		},
+	},
+	NodeServerTrigger: {
+		noun: "Server Trigger",
+		// A DDL trigger is what enforces or audits a policy across the whole
+		// instance; dropping one removes that enforcement everywhere at once,
+		// and a logon trigger's removal is what unblocks logins it was
+		// refusing.
+		warning: "The DDL or logon policy it enforces stops applying server-wide.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return sc.Server.ServerTrigger(n.Name).DropContext(ctx)
+		},
+		// No rename: sp_rename has no class for a server-scope trigger, and
+		// the name is baked into the definition CREATE TRIGGER stores.
+	},
+	NodeEndpoint: {
+		noun: "Endpoint",
+		// Dropping an endpoint takes its listener away from everything using
+		// it at once: a mirroring endpoint is what every availability replica
+		// ships log through, and there is no per-database warning to give.
+		warning: "Availability replicas, mirroring partners and Service Broker routes using it stop connecting.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			// Read the endpoint rather than acting on a name-only handle: the
+			// built-in ones cannot be dropped, and IsSystem — which is what
+			// gosmo refuses on — is part of what the read populates.
+			e, err := sc.Server.EndpointByNameContext(ctx, n.Name)
+			if err != nil {
+				return err
+			}
+			return e.DropContext(ctx)
+		},
+		// No rename: ALTER ENDPOINT has no WITH NAME, and sp_rename has no
+		// class for one.
+	},
 	NodeServerRole: {
 		noun: "Server Role",
 		solo: true,
@@ -490,7 +575,40 @@ func objectOpRights(t NodeType) []requiredRight {
 	if t == NodeDatabase {
 		return []requiredRight{rightControlDB, rightAlterAnyDatabase}
 	}
+	if rights, ok := serverScopedOpRights[t]; ok {
+		return rights
+	}
 	return objectWriteRights()
+}
+
+// serverScopedOpRights is Rename/Delete's right set for the node types that
+// live outside a database, keyed to the same rights the matching New-X item
+// already gates on.
+//
+// Without an entry a node falls to objectWriteRights(), every member of which
+// is database-, schema- or object-scoped, and the node carries no DBName — so
+// rightsAllow takes its `dbName == ""` branch and answers yes unconditionally.
+// That branch is right for what it was written for (a folder-level action that
+// prompts for a database) but not for Delete on a login, which was offered to
+// every principal and then refused by the server. A new server-level family
+// missing from this table is what TestServerScopedOpsAreGated catches.
+var serverScopedOpRights = map[NodeType][]requiredRight{
+	NodeLogin:                    {rightAlterAnyLogin},
+	NodeServerRole:               {rightAlterAnyServerRole},
+	NodeCredential:               {rightAlterAnyCredential},
+	NodeAudit:                    {rightAlterAnyAudit},
+	NodeServerAuditSpecification: {rightAlterAnyAudit},
+	NodeBackupDevice:             {rightDiskAdmin},
+	NodeEndpoint:                 {rightAlterAnyEndpoint},
+	// There is no ALTER ANY SERVER DDL TRIGGER; CONTROL SERVER is what SQL
+	// Server checks for a server-scoped DDL trigger.
+	NodeServerTrigger: {rightControlServer},
+	// The Agent objects live in msdb, and the msdb role memberships are what
+	// permit them — the same set the Agent menus use.
+	NodeAgentJob:      agentWriteRights(),
+	NodeAgentSchedule: agentWriteRights(),
+	NodeAgentAlert:    agentWriteRights(),
+	NodeAgentOperator: agentWriteRights(),
 }
 
 // objectDisplayName is the object's name as the dialogs should say it:

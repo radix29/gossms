@@ -10,7 +10,6 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
@@ -261,15 +260,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				edits[i] = jobStepEditFromStep(s)
 			}
 
-			visible := func() []*jobStepEdit {
-				out := make([]*jobStepEdit, 0, len(edits))
-				for _, e := range edits {
-					if !e.pendingRemove {
-						out = append(out, e)
-					}
-				}
-				return out
-			}
+			visible := func() []*jobStepEdit { return visibleSteps(edits) }
 			cols := []string{"Step", "Name", "Type", "Database"}
 			rowsFor := func() [][]string {
 				vis := visible()
@@ -285,24 +276,8 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 
 			// The sentinel goes first so index 0 is the "can't show what the
 			// server reported" fallback rather than a real database — see
-			// unchangedDatabaseItem and indexOf.
-			dbItems := append([]string{unchangedDatabaseItem}, dbNames...)
-
-			nameField := propsheet.Text("Step name", "", 30)
-			databaseSelect := propsheet.Select("Database", dbItems, 0)
-			// The command is a whole T-SQL script, not a field: it gets the query
-			// editor control, with SQL highlighting and the line-number gutter, so a
-			// syntax error reported as "line 12" can be found.
-			sqlHighlight := controls.SQLHighlighter(theme.Active())
-			commandEditor := controls.NewEditor(sqlHighlight)
-			commandField := propsheet.NewEditorRow("Command", commandEditor, 12)
-			onSuccessSelect := propsheet.Select("On success action", jobStepOnActionItems, 2)
-			onSuccessStepField := propsheet.Int("On success go to step", 0, 0, 999, "")
-			onFailSelect := propsheet.Select("On failure action", jobStepOnActionItems, 1)
-			onFailStepField := propsheet.Int("On failure go to step", 0, 0, 999, "")
-			retryAttemptsField := propsheet.Int("Retry attempts", 0, 0, 999, "")
-			retryIntervalField := propsheet.Int("Retry interval", 0, 0, 999, "minutes")
-			outputFileField := propsheet.Text("Output file name", "", 40)
+			// unchangedDatabaseItem.
+			panel := newJobStepPanel(unchangedDatabaseItem, dbNames)
 
 			hint := propsheet.Hint()
 
@@ -314,138 +289,54 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				return vis[i]
 			}
-			// pickedDatabase maps the dropdown back to what gosmo is sent: the
-			// sentinel means "the server's value", which JobStepRequest spells
-			// as the empty string.
-			pickedDatabase := func() string {
-				if v := databaseSelect.Value(); v != unchangedDatabaseItem {
-					return v
-				}
-				return ""
-			}
-			// setPanelReadOnly gates the whole edit panel as one. Every row
-			// here is written back by commitCurrent, so a row left editable
-			// under a step the page cannot write takes typing that is silently
-			// discarded — the command was gated first and the rest followed.
-			setPanelReadOnly := func(ro bool) {
-				nameField.SetReadOnly(ro)
-				databaseSelect.SetReadOnly(ro)
-				commandField.SetReadOnly(ro)
-				onSuccessSelect.SetReadOnly(ro)
-				onSuccessStepField.SetReadOnly(ro)
-				onFailSelect.SetReadOnly(ro)
-				onFailStepField.SetReadOnly(ro)
-				retryAttemptsField.SetReadOnly(ro)
-				retryIntervalField.SetReadOnly(ro)
-				outputFileField.SetReadOnly(ro)
-			}
-			clearPanel := func() {
-				nameField.SetValue("")
-				databaseSelect.SetSelected(0)
-				commandField.SetValue("")
-				onSuccessSelect.SetSelected(2)
-				onSuccessStepField.SetValue("0")
-				onFailSelect.SetSelected(1)
-				onFailStepField.SetValue("0")
-				retryAttemptsField.SetValue("0")
-				retryIntervalField.SetValue("0")
-				outputFileField.SetValue("")
-			}
 			var current *jobStepEdit
-			commitCurrent := func() {
-				if current == nil {
-					return
-				}
-				// A step this page can't edit is never written back. Returning
-				// before the first assignment keeps it out of changed() and so
-				// out of apply — otherwise sp_update_jobstep turns a PowerShell
-				// step into a T-SQL one carrying its old script.
-				if !current.editable() {
-					return
-				}
-				current.name = nameField.Value()
-				current.database = pickedDatabase()
-				current.command = commandField.Value()
-				current.onSuccessAction = onSuccessSelect.Selected() + 1
-				current.onFailAction = onFailSelect.Selected() + 1
-				if n, err := onSuccessStepField.IntValue(); err == nil {
-					current.onSuccessStepID = int(n)
-				}
-				if n, err := onFailStepField.IntValue(); err == nil {
-					current.onFailStepID = int(n)
-				}
-				if n, err := retryAttemptsField.IntValue(); err == nil {
-					current.retryAttempts = int(n)
-				}
-				if n, err := retryIntervalField.IntValue(); err == nil {
-					current.retryInterval = int(n)
-				}
-				current.outputFileName = outputFileField.Value()
-			}
 			syncFieldsFromSelection := func() {
 				current = selected()
+				panel.write(current)
 				if current == nil {
-					clearPanel()
-					setPanelReadOnly(false)
+					panel.setReadOnly(false)
 					return
 				}
-				nameField.SetValue(current.name)
-				// indexOfOK, not indexOf: dbItems is a closed set with a
-				// sentinel at 0, so a database the list can't show selects the
-				// sentinel rather than the first real database.
-				if i, ok := indexOfOK(dbNames, current.database); ok {
-					databaseSelect.SetSelected(i + 1)
-				} else {
-					databaseSelect.SetSelected(0)
-				}
-				commandField.SetValue(current.command)
-				onSuccessSelect.SetSelected(current.onSuccessAction - 1)
-				onSuccessStepField.SetValue(strconv.Itoa(current.onSuccessStepID))
-				onFailSelect.SetSelected(current.onFailAction - 1)
-				onFailStepField.SetValue(strconv.Itoa(current.onFailStepID))
-				retryAttemptsField.SetValue(strconv.Itoa(current.retryAttempts))
-				retryIntervalField.SetValue(strconv.Itoa(current.retryInterval))
-				outputFileField.SetValue(current.outputFileName)
 				// Said on selection rather than on OK: the whole panel is gated
 				// the moment the row is picked, so the explanation arrives with
 				// the gate. The command loses its highlighting on top of the
 				// gate — highlighting a PowerShell script as T-SQL claims it is
 				// one.
 				if !current.editable() {
-					setPanelReadOnly(true)
-					commandEditor.SetHighlighter(nil)
+					panel.setReadOnly(true)
+					panel.commandEditor.SetHighlighter(nil)
 					hint.Set(current.subsystem + " steps are shown read-only — this page edits T-SQL steps only.")
 				} else {
-					setPanelReadOnly(false)
-					commandEditor.SetHighlighter(sqlHighlight)
+					panel.setReadOnly(false)
+					panel.commandEditor.SetHighlighter(panel.sqlHighlight)
 					hint.Clear()
 				}
 			}
 			grid.OnSelectRow = func(row int) {
-				commitCurrent()
+				panel.read(current)
 				syncFieldsFromSelection()
 			}
 			syncFieldsFromSelection()
 
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {
-				// Deliberately doesn't call commitCurrent() first: nameField
-				// doubles as the previously selected step's live edit and the
-				// new step's seed name, so committing here would misfile a
-				// freshly typed name as a rename of the wrong step.
+				// Deliberately doesn't call panel.read(current) first: the
+				// name row doubles as the previously selected step's live edit
+				// and the new step's seed name, so committing here would
+				// misfile a freshly typed name as a rename of the wrong step.
 				// A read-only step's panel cannot be borrowed to seed a new one:
 				// its rows refuse typing, and its name is the selected step's.
 				// Clear it and unlock it instead of refusing outright, which
 				// would leave New dead for the whole visit to a mixed job.
 				if current != nil && !current.editable() {
 					current = nil
-					clearPanel()
-					setPanelReadOnly(false)
-					commandEditor.SetHighlighter(sqlHighlight)
+					panel.clear()
+					panel.setReadOnly(false)
+					panel.commandEditor.SetHighlighter(panel.sqlHighlight)
 					hint.Set("Type a name for the new step, then press New again.")
 					return
 				}
-				name := nameField.Value()
+				name := panel.nameField.Value()
 				if name == "" {
 					hint.Set("Type a step name first.")
 					return
@@ -461,26 +352,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					}
 				}
 				hint.Clear()
-				e := &jobStepEdit{
-					isNew: true, subsystem: tsqlSubsystem,
-					name: name, database: pickedDatabase(), command: commandField.Value(),
-				}
-				e.onSuccessAction = onSuccessSelect.Selected() + 1
-				e.onFailAction = onFailSelect.Selected() + 1
-				if n, err := onSuccessStepField.IntValue(); err == nil {
-					e.onSuccessStepID = int(n)
-				}
-				if n, err := onFailStepField.IntValue(); err == nil {
-					e.onFailStepID = int(n)
-				}
-				if n, err := retryAttemptsField.IntValue(); err == nil {
-					e.retryAttempts = int(n)
-				}
-				if n, err := retryIntervalField.IntValue(); err == nil {
-					e.retryInterval = int(n)
-				}
-				e.outputFileName = outputFileField.Value()
-				edits = append(edits, e)
+				edits = append(edits, panel.newStep())
 				resetGrid(grid, cols, rowsFor(), len(visible())-1)
 				syncFieldsFromSelection()
 			})
@@ -489,7 +361,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			// step pending removal still sits between two visible ones, and
 			// swapping the visible copies would leave edits disagreeing.
 			moveSelected := func(delta int) {
-				commitCurrent()
+				panel.read(current)
 				vis := visible()
 				i := grid.SelectedRow()
 				if i < 0 || i >= len(vis) {
@@ -560,21 +432,18 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				syncFieldsFromSelection()
 			}
 
-			f := propsheet.NewForm(
-				propsheet.Section("Job steps"),
-				gridRow,
-				propsheet.Section("Selected step"),
-				nameField, databaseSelect, commandField,
-				onSuccessSelect, onSuccessStepField, onFailSelect, onFailStepField,
-				retryAttemptsField, retryIntervalField, outputFileField,
+			rows := []propsheet.Row{propsheet.Section("Job steps"), gridRow, propsheet.Section("Selected step")}
+			rows = append(rows, panel.rows()...)
+			rows = append(rows,
 				propsheet.Buttons(newBtn, deleteBtn, moveUpBtn, moveDownBtn, startBtn),
 				hint,
 				statusRow,
 				propsheet.Note("Steps of other subsystems are listed but read-only; only T-SQL steps can be edited or created here. Database \"(unchanged)\" leaves the step's own database alone. \"Go to step\" fields only take effect when the matching action above is set to \"Go to step...\"."),
 			)
+			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				commitCurrent()
+				panel.read(current)
 				j, err := findAgentJob(ctx, sc, *jobName)
 				if err != nil {
 					return err
