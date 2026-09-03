@@ -1,5 +1,6 @@
 // Package dialogs provides the ModalDialog base type and generic re-usable
-// dialog implementations (AlertDialog, ConfirmDialog, PropertiesDialog).
+// dialog implementations (AlertDialog, ConfirmDialog, TypedConfirmDialog,
+// PromptDialog, PropertiesDialog, FileDialog).
 //
 // Every dialog embeds ModalDialog which:
 //   - Fades the underlying UI in place (keeping it visible) before its own box
@@ -11,6 +12,10 @@
 //
 //   - modal.go              — ModalDialog base type
 //   - common.go             — helpers shared across more than one dialog file
+//   - field_gesture.go      — FieldGesture, the text-field drag latch every
+//     dialog with an InputField drives from HandleMouse
+//   - prompt_dialog.go      — PromptDialog (single-line text prompt)
+//   - file_system.go        — the FileSystem abstraction FileDialog browses
 //   - properties_dialog.go  — PropertiesDialog (generic key/value viewer)
 //   - alert_dialog.go       — AlertDialog (single-button info message)
 //   - confirm_dialog.go     — ConfirmDialog (two-button yes/no)

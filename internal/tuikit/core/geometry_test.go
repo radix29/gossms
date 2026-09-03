@@ -3,7 +3,7 @@ package core
 import "testing"
 
 func TestRectRightBottom(t *testing.T) {
-	r := NewRect(2, 3, 10, 5)
+	r := Rect{2, 3, 10, 5}
 	if got := r.Right(); got != 12 {
 		t.Errorf("Right() = %d, want 12", got)
 	}
@@ -13,7 +13,7 @@ func TestRectRightBottom(t *testing.T) {
 }
 
 func TestRectInner(t *testing.T) {
-	r := NewRect(0, 0, 10, 10)
+	r := Rect{0, 0, 10, 10}
 	got := r.Inner(1)
 	want := Rect{1, 1, 8, 8}
 	if got != want {
@@ -22,7 +22,7 @@ func TestRectInner(t *testing.T) {
 }
 
 func TestRectContains(t *testing.T) {
-	r := NewRect(2, 2, 3, 3) // covers x in [2,5), y in [2,5)
+	r := Rect{2, 2, 3, 3} // covers x in [2,5), y in [2,5)
 	cases := []struct {
 		x, y int
 		want bool
@@ -47,10 +47,10 @@ func TestRectIsZero(t *testing.T) {
 	}
 	// X/Y alone don't make a rect "zero" per the current implementation —
 	// only W and H are considered.
-	if !(NewRect(1, 1, 0, 0)).IsZero() {
+	if !(Rect{1, 1, 0, 0}).IsZero() {
 		t.Error("Rect{X:1,Y:1,W:0,H:0} should still report IsZero() == true")
 	}
-	if (NewRect(0, 0, 5, 5)).IsZero() {
+	if (Rect{0, 0, 5, 5}).IsZero() {
 		t.Error("a rect with nonzero W/H must not report IsZero() == true")
 	}
 }

@@ -14,6 +14,12 @@ import (
 // *real* item — so an alert whose category has since been deleted displays as
 // though it belonged to whichever category sorts first, and applying the page
 // silently moves it there.
+//
+// The six pages that used this shape now build the row with selectPreserving
+// instead, which shows the deleted category's own name (see
+// prop_select_preserving_pages_test.go). This stays because indexOf still
+// builds the fixed-vocabulary rows and the New-X dialogs' defaults, where the
+// value is one of the list by construction.
 func TestIndexOfSentinelListFallsBackToSentinel(t *testing.T) {
 	names := []string{"Alpha", "Beta", "Gamma"}
 	items := append([]string{noneItem}, names...)

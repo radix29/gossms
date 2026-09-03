@@ -115,8 +115,8 @@ func (t *ToggleGridRow) render() {
 
 // renderPreservingView re-renders the same rows without moving the grid under
 // the user — see controls.DataGrid.SetDataPreservingView, and redrawGrid in
-// the application layer, which is the same fix for the same reason at the
-// eleven Properties pages that hand-rolled it.
+// the application layer, which is the same fix for the same reason on the
+// Properties pages that hand-rolled it.
 func (t *ToggleGridRow) renderPreservingView() {
 	t.Grid.SetDataPreservingView(t.columns, t.renderRows())
 }

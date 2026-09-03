@@ -159,7 +159,7 @@ func (d *TypedConfirmDialog) answerAt(i int) ConfirmAnswer {
 }
 
 // Draw renders the message, the required confirmation text, the input, and
-// the Confirm/Cancel button row.
+// the showing's button row.
 func (d *TypedConfirmDialog) Draw(s tcell.Screen) {
 	if !d.visible {
 		return

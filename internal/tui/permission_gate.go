@@ -268,7 +268,7 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 	// below rather than among them: SQL Server resolves it over every wider
 	// grant, so any one of them would otherwise answer yes for a write it
 	// then refuses. See objectDenial.
-	if _, denied := objectDenial(server, dbCaps, dbName, schema, object, rights...); denied {
+	if _, _, denied := objectDenial(server, dbCaps, dbName, schema, object, rights...); denied {
 		return false
 	}
 	for _, r := range rights {
@@ -356,8 +356,9 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 	return false
 }
 
-// objectDenial reports the right whose DENY on the object itself withholds an
-// action, and whether there is one. It is the only part of the gate that
+// objectDenial reports the right whose DENY on the object withholds an action,
+// the column that DENY sits on where it is column-scoped, and whether there is
+// one. It is the only part of the gate that
 // withholds on an object-scope answer, and it is sound for a reason
 // HasOnObject's sparseness argument does not cover: it asks for a state the
 // probe recorded, so silence stays silence.
@@ -380,9 +381,15 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 //
 // A database that was never probed records nothing, which reads as no denial —
 // unknown fails open here as everywhere else.
-func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, bool) {
+//
+// A DENY on one *column* of the object withholds just as hard, and is asked
+// about second: SQL Server resolves it over every wider grant the same way, so
+// a statement touching the whole table fails for a login holding the
+// permission on the table itself. Nothing gossms writes is scoped to named
+// columns, so a column denial is a denial of the action outright.
+func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, string, bool) {
 	if dbName == "" || schema == "" || object == "" || server.InServerRole("sysadmin") {
-		return requiredRight{}, false
+		return requiredRight{}, "", false
 	}
 	var caps *gosmo.DatabaseCapabilities
 	asked := false
@@ -394,17 +401,20 @@ func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 			caps, asked = dbCaps(dbName), true
 		}
 		if caps.DeniedOnObject(schema, object, r.name) {
-			return r, true
+			return r, "", true
+		}
+		if col, denied := caps.DeniedOnAnyColumn(schema, object, r.name); denied {
+			return r, col, true
 		}
 	}
-	return requiredRight{}, false
+	return requiredRight{}, "", false
 }
 
 // deniedOnObject is objectDenial for a live connection — the shape the menu
 // gates ask it in, with the cached capabilities the UI goroutine may use.
-func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) (requiredRight, bool) {
+func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) (requiredRight, string, bool) {
 	if sc == nil {
-		return requiredRight{}, false
+		return requiredRight{}, "", false
 	}
 	return objectDenial(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
 }
@@ -414,7 +424,10 @@ func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...
 // role and asks for nothing, because there is nothing to ask for: the login
 // may hold every right in the list already, and the DENY overrides all of
 // them. Only the object's own permission can be changed.
-func deniedText(r requiredRight) string {
+func deniedText(r requiredRight, column string) string {
+	if column != "" {
+		return r.name + " is denied on column " + column + " of this object."
+	}
 	return r.name + " is denied on this object."
 }
 
@@ -440,8 +453,11 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 		// right sends the user after one they may already hold — the denial
 		// beats it. Read once here rather than in the predicate: the menu is
 		// rebuilt each time it opens, and Note is a string, not a callback.
-		if r, denied := deniedOnObject(sc, dbName, schema, object, rights...); denied {
+		if r, col, denied := deniedOnObject(sc, dbName, schema, object, rights...); denied {
 			item.Note = r.name + " denied on this object"
+			if col != "" {
+				item.Note = r.name + " denied on column " + col
+			}
 		}
 		// And only when the rights are why it is disabled. An item its own
 		// predicate has already withheld — a failover offered on secondaries

@@ -174,10 +174,10 @@ func (g *DataGrid) drawRow(s tcell.Screen, y int, cells []string, style tcell.St
 // NULL reads visually distinct from an empty or ordinary string value.
 const nullCellText = "NULL"
 
-// drawCellSelection highlights the selected block's cells in row y (data
-// row dataIdx, though this function only needs the row's own cells) —
-// every column in [c0,c1] that's actually on screen (scrollCol onward). A
-// single selected cell is just the c0 == c1 == selCol case.
+// drawCellSelection highlights the selected block's cells in the row drawn at
+// screen row y, whose cells the caller passes — every column in [c0,c1] that's
+// actually on screen (scrollCol onward). A single selected cell is just the
+// c0 == c1 == selCol case.
 func (g *DataGrid) drawCellSelection(s tcell.Screen, y int, cells []string, xOffset, c0, c1 int) {
 	p := theme.Active()
 	st := theme.StyleGridSelected()

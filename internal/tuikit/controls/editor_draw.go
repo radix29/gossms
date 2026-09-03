@@ -83,8 +83,9 @@ func (e *Editor) Draw(s tcell.Screen) {
 }
 
 // lineRow is one call's worth of arguments to drawLineRow, grouped rather than
-// passed positionally: there are eleven, several of them ints that would be
-// trivial to transpose. Passed by value, so grouping costs no allocation.
+// passed positionally: there are more than a dozen, several of them ints that
+// would be trivial to transpose. Passed by value, so grouping costs no
+// allocation.
 type lineRow struct {
 	x, y, w int
 	// fromCol is the terminal column of the line that lands at x — the
@@ -283,9 +284,9 @@ func (e *Editor) drawScrollbar(s tcell.Screen, p *theme.Palette, total int) {
 	core.DrawScrollbar(s, e.rect.Right()-1, e.rect.Y, h, total, h, e.scrollRow, sbStyle, sbThumb)
 }
 
-// hScrollbar returns the horizontal scrollbar's screen span and the
-// total/visible/offset describing it, or ok false when the widest line fits or
-// there is no room for a bar.
+// hScrollbar returns the horizontal scrollbar's screen span and the total and
+// offset describing it, or ok false when the widest line fits or there is no
+// room for a bar. The visible count a scrollbar also needs is w itself.
 //
 // The unit throughout is terminal columns, matching scrollCol, the caret's x and
 // drawLineRow's window. That keeps track width and visible count the same

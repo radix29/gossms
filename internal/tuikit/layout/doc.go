@@ -3,7 +3,8 @@
 // These types are pure layout infrastructure; they have no dependency on any
 // application-level code.
 //
-//   - panel.go         — Panel and Activatable interfaces
+//   - panel.go         — the Panel interface and its optional companions
+//     (Activatable, Dirty, Closable)
 //   - panel_manager.go — PanelManager
 //   - splitter.go      — SplitterDir, Splitter
 package layout

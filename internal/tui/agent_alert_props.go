@@ -69,15 +69,12 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 			triggerRow := propsheet.Radio("Trigger", []string{"SQL Server error number", "Severity level"}, triggerIdx)
 			errorField := propsheet.Int("Error number", int64(al.ErrorNumber), 0, 2147483647, "")
 			severityField := propsheet.Int("Severity", int64(al.Severity), 0, 25, "")
-			// Searched against dbItems, not dbNames: a database that no
-			// longer exists then falls back to the leading <all databases>
-			// rather than to whichever database sorts first.
 			dbItems := append([]string{allDatabasesItem}, dbNames...)
-			dbRow := propsheet.Select("Database", dbItems, indexOf(dbItems, al.DatabaseName))
+			dbRow := selectPreserving("Database", dbItems, al.DatabaseName, allDatabasesItem)
 			delayField := propsheet.Int("Delay between responses", int64(al.DelayBetweenResponses/time.Second), 0, 86400, "sec")
 			messageField := propsheet.Text("Notification message", al.NotificationMessage, 50)
 			catItems := append([]string{noneItem}, catNames...)
-			categoryRow := propsheet.Select("Category", catItems, indexOf(catItems, al.Category))
+			categoryRow := selectPreserving("Category", catItems, al.Category, noneItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Alert identity"),
@@ -118,11 +115,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					}
 				}
 				if dbRow.Dirty() {
-					target := ""
-					if dbRow.Selected() != 0 {
-						target = dbRow.Value()
-					}
-					if err := al.SetDatabaseContext(ctx, target); err != nil {
+					if err := al.SetDatabaseContext(ctx, preservedValue(dbRow, allDatabasesItem)); err != nil {
 						return err
 					}
 				}
@@ -138,11 +131,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 					}
 				}
 				if categoryRow.Dirty() {
-					target := ""
-					if categoryRow.Selected() != 0 {
-						target = categoryRow.Value()
-					}
-					if err := al.SetCategoryContext(ctx, target); err != nil {
+					if err := al.SetCategoryContext(ctx, preservedValue(categoryRow, noneItem)); err != nil {
 						return err
 					}
 				}
@@ -205,7 +194,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 				jobNames[i] = j.Name
 			}
 			jobItems := append([]string{noneItem}, jobNames...)
-			responseJobSelect := propsheet.Select("Response job", jobItems, indexOf(jobItems, al.JobName))
+			responseJobSelect := selectPreserving("Response job", jobItems, al.JobName, noneItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Operators to e-mail on this alert"),
@@ -233,11 +222,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 					}
 				}
 				if responseJobSelect.Dirty() {
-					target := ""
-					if responseJobSelect.Selected() != 0 {
-						target = responseJobSelect.Value()
-					}
-					if err := al.SetJobResponseContext(ctx, target); err != nil {
+					if err := al.SetJobResponseContext(ctx, preservedValue(responseJobSelect, noneItem)); err != nil {
 						return err
 					}
 				}

@@ -83,9 +83,9 @@ func (cm *ContextMenu) geometry(s tcell.Screen) (x, y, w, h int) {
 	}
 	// Lower clamps for a menu bigger than the screen, where the shifts above
 	// go negative and push the box off the opposite edge — the top rows, the
-	// ones hover starts on, being the ones lost. No shipped context menu is
-	// anywhere near that large (the longest is ten items), so this is
-	// defensive; MenuBar's dropdown, which is, scrolls instead.
+	// ones hover starts on, being the ones lost. This is defensive — a
+	// context menu is short enough to fit any usable terminal; MenuBar's
+	// dropdown, which need not be, scrolls instead.
 	x = max(x, 0)
 	y = max(y, 0)
 	return x, y, w, h

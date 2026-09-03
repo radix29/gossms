@@ -120,6 +120,12 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name}
 	case NodeSecurityPolicies:
 		return []filterProp{name, schema}
+	case NodeCredentials, NodeAudits, NodeServerAuditSpecifications, NodeServerTriggers:
+		return []filterProp{name, created}
+	case NodeBackupDevices, NodeEndpoints:
+		// No Creation Date: neither sys.backup_devices nor sys.endpoints
+		// records one, so the criterion would reject every row.
+		return []filterProp{name}
 	}
 	return nil
 }

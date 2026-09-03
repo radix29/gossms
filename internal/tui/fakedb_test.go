@@ -68,6 +68,20 @@ type fakeResponse struct {
 	// like a page that read the wrong thing. It must have exactly cols entries.
 	colNames []string
 
+	// err, if set, fails a matching query instead of answering it — the seam
+	// for a read that partly succeeds. A report that fetches per object (the
+	// Agent reports' one round trip per job) has an arm for the object whose
+	// fetch failed, and it is reachable no other way: a live server either
+	// answers every job or none. Scope it with arg so exactly one object
+	// fails; a bare match fails them all and proves nothing about the arm.
+	//
+	// It fails a matching *write* too, which is how an apply that commits one
+	// statement and fails the next is reached — the Audit pages' disable
+	// window, where the settings ALTER lands and the re-enable is refused.
+	// Only a response carrying an err is consulted for a write, so an answer
+	// meant for a read cannot fail an exec that happens to contain its match.
+	err error
+
 	// block holds a matching query inside the driver until it is closed, so a
 	// test can act while the read is genuinely in flight. Without it this
 	// driver answers instantly and every read has finished — and been
@@ -176,6 +190,30 @@ func (f *fakeInstance) respond(ctx context.Context, q, curDB string, args []driv
 	}
 	f.unmatched = append(f.unmatched, q)
 	return nil, false
+}
+
+// execError fails a matching write — see fakeResponse.err. Only a response
+// carrying an err is consulted, so the read answers a page also scripted stay
+// out of its writes.
+func (f *fakeInstance) execError(q, curDB string, args []driver.NamedValue) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.responses {
+		r := &f.responses[i]
+		if r.err == nil {
+			continue
+		}
+		if r.db != "" && r.db != curDB {
+			continue
+		}
+		if r.arg != "" && !hasStringArg(args, r.arg) {
+			continue
+		}
+		if strings.Contains(q, r.match) {
+			return r.err
+		}
+	}
+	return nil
 }
 
 func hasStringArg(args []driver.NamedValue, want string) bool {
@@ -303,7 +341,13 @@ func (c *fakeConn) Close() error                        { return nil }
 func (c *fakeConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
 
 func (c *fakeConn) ExecContext(_ context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+	// Recorded before the failure check: the statement was attempted, and a
+	// test asserting which writes an aborted apply got as far as needs to see
+	// the one that failed.
 	c.inst.recordExec(c.curDB, q, args)
+	if err := c.inst.execError(q, c.curDB, args); err != nil {
+		return nil, err
+	}
 	if m := bareUSE.FindStringSubmatch(strings.TrimSpace(q)); m != nil {
 		c.curDB = m[1]
 	}
@@ -319,6 +363,9 @@ func (c *fakeConn) QueryContext(ctx context.Context, q string, args []driver.Nam
 	// every other query against this instance.
 	if r.block != nil {
 		<-r.block
+	}
+	if r.err != nil {
+		return nil, r.err
 	}
 	return &fakeRows{resp: r}, nil
 }
@@ -516,6 +563,23 @@ func capabilityResponsesWithObjects(dbAccessible bool, dbDenied, schemaDenied, o
 		out[i] = r
 	}
 	return out
+}
+
+// withDeniedColumns adds a column-scope DENY of ALTER to a capability script,
+// naming each column as "schema.object.column" — the key gosmo's probe records
+// them under. The rows ride on the database probe beside the object-scope
+// ones, which is how the server returns them.
+func withDeniedColumns(responses []fakeResponse, columns ...string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range columns {
+			r.rows = append(r.rows, []driver.Value{"C:ALTER", n, int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
 }
 
 // newFakeConnAtVersion is newFakeConn for an instance reporting a given

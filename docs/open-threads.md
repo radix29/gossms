@@ -276,10 +276,15 @@ Each is a feature, not a defect.
   *low-privilege* login still wins over the parent's on purpose — that is the
   feature, not a defect.
 
-  Still open: the retry is pinned only through the option derivation, since
-  `Peer` sits behind `Connect`. **Verifying it live** — Always On on
-  ubusql1/ubusql2, then a deliberately broken saved replica password — is the
-  run that would close that.
+  **The retry is verified live** (2026-09-03), against AAG1 on
+  ubusql1/ubusql2: with the resolver answering for `ubusql2` with a throwaway
+  login and a wrong password, `Peer` still returned a working connection
+  authenticated as the parent's `sa`, cached and carrying the resolver on to
+  its own peers; with the same login and its real password, the resolver's
+  answer was used as given. `internal/db/live_peer_test.go` (build tag
+  `livedb`) is the run — see its header for the flags. Both halves are needed:
+  deleting the retry fails only the first, and ignoring the resolver fails only
+  the second.
 
   **A partly created group is left as it is**, and so is a partly added
   replica. If CREATE succeeds and a secondary then fails to JOIN, the error
@@ -355,12 +360,40 @@ Each is a feature, not a defect.
   backup from inside the dialog. gossms has a full Backup dialog two clicks
   away, and the exclusion line names it.
 
-  **The unreachable-primary fallback is unit tested but never exercised
-  live.** `resolveAGView` degrades to the partial local view and flags it, but
-  no test has actually made a replica unreachable. Note that AG Properties
-  takes the opposite line — `agOnPrimary` treats an unreachable primary as an
-  error, because a page that loaded from a secondary would offer edits the
-  server rejects — and that path *is* only unit tested too.
+  **The unreachable-primary fallback is verified live** (2026-09-03), against
+  AAG1 with ubusql2 primary: connected to the secondary ubusql1 as a login that
+  exists only there, so both halves of `Peer` — the resolver hit and its
+  `parentPeerOptions` retry — fail against a healthy group. `resolveAGView`
+  returned the local view with `unreachable = "ubusql2"`, and the Availability
+  Replicas folder still listed both replicas plus
+  `(partial — primary ubusql2 unreachable)`. AG Properties took the opposite
+  line on the same connection: `agOnPrimary` failed with `connect to primary
+  replica ubusql2: ... Login failed for user 'gossms_ag_probe'`, so no page
+  opens on a secondary's blanks. `internal/tui/live_alwayson_test.go` (build
+  tag `livedb`) is the run, with a third test pinning that working credentials
+  do follow the primary; each half was checked by inverting the other's
+  choice in the source and watching only its own test fail.
+
+  **The network flavour is covered too** (same day), with
+  `iptables -I INPUT -s <client> -p tcp --dport 1433 -j DROP` on the primary so
+  packets are dropped rather than refused: `resolveAGView` still degraded to the
+  partial view and `agOnPrimary` still failed naming the replica
+  (`dial tcp 192.168.178.98:1433: i/o timeout`), neither running into the
+  loader's own deadline. `TestLiveAGHandlesABlackholedPrimary` is gated on
+  `-live-primary-blackholed` so it cannot pass silently on an unblocked cluster.
+
+  That run measured what nobody had: each call cost the driver's full 15s
+  connect timeout, and **only opened peers were cached**, so a blackholed
+  primary charged 15s to every AG folder expansion and every Properties open —
+  30s where a saved replica credential makes `Peer` try its `parentPeerOptions`
+  fallback as well. **Fixed the same day** with a negative half to the peer
+  cache: `ServerConn.recordPeerFailure` holds the last connect failure per
+  `InstanceKey` for `peerFailureTTL` (30s) and `Peer` answers from it before
+  dialling. Re-measured under the same blackhole: first call 15.0s, second
+  9.7ms. The TTL is short deliberately — there is no invalidation hook, and a
+  failover changes which instance is asked for anyway — so a primary that comes
+  back is unreachable in the UI for at most half a minute. The connect timeout
+  itself was left alone: a peer across a WAN may legitimately need it.
 
 ## win10cli as a third instance: what it can and cannot be
 
@@ -430,11 +463,14 @@ restore does.
   operator nobody picked, and a dropped owner login shown as a real one — are
   **fixed** (2026-08-12); what is left is below.
 
-  **The `Unknown` path in "Jobs Without Schedules" has no live coverage.** The
-  report carries a Schedules column reading `None`/`Unknown`, and a cancelled
-  context returns the cancellation rather than a page of `Unknown`; aiming a
-  failure at one job's round trip while the others succeed has no easy
-  handle.
+  **The `Unknown` path in "Jobs Without Schedules" is covered** (2026-09-03).
+  The report carries a Schedules column reading `None`/`Unknown`, and a
+  cancelled context returns the cancellation rather than a page of `Unknown`.
+  Aiming a failure at one job's round trip while the others succeed is what a
+  live run cannot do — a real server answers every job or none — so the seam
+  is `fakeResponse.err` scoped by `arg` to one `job_id`
+  (`agent_reports_test.go`); both arms are pinned in one run alongside the
+  `None` and omitted cases.
   **Start/Stop Job now read the job's state first** and refuse the request the
   Agent would refuse, in the app's own words ("Job X is already running" / "is
   not running"), refreshing the node either way. The read is free — both
@@ -470,19 +506,28 @@ The ten-site misreporting family found 2026-08-12 is **fixed** — one helper,
 of Always On's `agSetSelect`, with `changedTo` gating every write. Two
 things survive it.
 
-- **Do not re-unify the eight remaining `indexOf` sites.** They are a
-  different, already-safe class: every one indexes a list that *begins with a
-  sentinel* (`(None)`, `<All databases>`) — `login_props.go:119`,
-  `agent_operator_props.go:66`, `user_props.go:154`, `agent_alert_props.go:78`,
-  `:82`, `:210`, plus `new_database_pages.go:46` whose value is the dialog's
-  own. A miss there falls back to the sentinel, not to a real value, which is
-  the correct answer and is pinned by
-  `TestIndexOfSentinelListFallsBackToSentinel`.
-  Converting them to `selectPreserving` *would* be a further improvement — a
-  category deleted out from under an alert would then display its real name
-  instead of `(None)` — but it changes documented, tested behaviour for a
-  strictly smaller error, so it is a deliberate non-goal rather than an
-  oversight. Raise it as its own change if ever wanted.
+- **The six sentinel-list `indexOf` sites are converted too** (2026-09-03),
+  as the change the previous note here said to raise separately. Falling back
+  to `(None)` or `<All databases>` is a smaller error than naming the wrong
+  principal, but it is still a wrong statement about the object: the pages that
+  showed it are Login General's mapped credential, User General's login,
+  Operator and Alert General's category, Alert General's database and Alert
+  Response's job — every one a name the server supplied against a list read
+  separately, so the value goes missing whenever the object is dropped between
+  the two reads or the caller cannot see it. Each now reads the row back with
+  `preservedValue`/`changedTo` rather than by comparing the selected index
+  against 0, which is what a widened list breaks. Live-verified on win10cli
+  with an alert scoped to a dropped database: the row reads `zz_tmpdb`, not
+  `<All databases>`.
+
+  `indexOf` stays, and is still right, for the two classes that are not this
+  one: the fixed vocabularies (recovery model, page verify, Query Store state
+  and capture mode, compatibility level) — where the list is written out in the
+  page, the write is `items[row.Selected()]`, and a value outside it means
+  gossms is behind SQL Server, not that an object vanished — and the New-X
+  dialogs' own defaults (`new_database_pages.go:46`, `new_login_pages.go:92`),
+  whose value is one of the list by construction.
+  `TestIndexOfSentinelListFallsBackToSentinel` still pins the helper.
 
 - **"A job whose owner login was dropped" is not reachable that way, and the
   old note here said it was.** Verified live on win10cli 2026-08-12: SQL Server
@@ -509,9 +554,11 @@ can be created from the tree". Three limits are the design, not a gap:
   `SqlColumnMasterKey`/`SqlColumnEncryptionKey` cmdlets print. A pasted
   signature with "Allow enclave computations" unticked is *refused* rather than
   dropped: the key would be created, and would not be the one being set up.
-- **One encrypted value per column encryption key.** A second value is what a
-  master-key rotation adds; gosmo's `CreateColumnEncryptionKey` takes as many
-  as it is given, but the dialog offers one and rotation stays out of the UI.
+- **One encrypted value per *create*.** The New dialog still offers one value,
+  which is the only shape a key is created in. The second value a master-key
+  rotation adds is no longer out of scope: Column Encryption Key Properties
+  adds and drops values through gosmo's `ColumnEncryptionKey.AddValue` /
+  `DropValue` (2026-09-03), which is how SSMS rotates one too.
 - **`RSA_OAEP` is the only algorithm**, because it is the only one SQL Server
   accepts — a dropdown of one would say nothing, so it is a static row.
 
@@ -769,19 +816,43 @@ fixed nine items — stale doc-comment names, comment references to identifiers
 that no longer exist, doc-vs-signature mismatches, numeric claims vs nearby
 code — plus a semantic read of two batches of files. What is left:
 
-- **The per-file semantic read is only two batches deep.** Drift whose *prose*
-  misdescribes the logic without naming anything stale surfaces to no
-  mechanical detector; only reading each file against its code finds it. Batch
-  1 (`internal/query/executor.go`, `internal/tui/app_events.go`,
-  `permission_gate.go`, `prop_grid_helpers.go`,
+- **The per-file semantic read now covers all of `internal/tuikit`; the rest of
+  `internal/**` is unread.** Drift whose *prose* misdescribes the logic without
+  naming anything stale surfaces to no mechanical detector; only reading each
+  file against its code finds it. Batch 1 (`internal/query/executor.go`,
+  `internal/tui/app_events.go`, `permission_gate.go`, `prop_grid_helpers.go`,
   `internal/tuikit/propsheet/form.go`,
   `internal/tuikit/controls/datagrid_input.go`) found no drift; batch 2
   (`query_store_panel.go`, `activity_monitor.go`, `log_viewer.go`,
   `explorer_object_ops.go`, `app_panel_actions.go`, `detail_browser.go`) found
   three wrong counts, each a number whose subject is a table two files away.
-  **Batches 3 and 4 have not been read** — `internal/tuikit/controls/datagrid.go`,
-  `editor*.go`, `treeview.go`, `internal/tuikit/propsheet/rows.go`,
-  `internal/tuikit/layout/panel_manager.go`, then everything else.
+  Batch 3 (2026-09-03: `controls/datagrid*.go`, `controls/editor*.go`,
+  `controls/treeview.go`, `propsheet/rows.go`, `layout/panel_manager.go`) found
+  fourteen, and batch 4 — every remaining non-test file under
+  `internal/tuikit/**` — another ten. The recurring shapes, worth checking
+  first in any later batch: a doc naming the wrong caller after a helper was
+  extracted (`DataGrid.SetScroll` still said `redrawGrid`); a package `doc.go`
+  whose file list or dependency claim predates a split (`core`, `controls`,
+  `widgets`, `dialogs`, `layout`); a count of anything (`lineRow`'s "eleven"
+  arguments, `sheet_input.go`'s "21 RevertFn closures", `sheet_clipboard.go`'s
+  "ten New-<object> dialogs", `context_menu.go`'s "longest is ten items" — all
+  wrong); a claim about *which* types implement an interface
+  (`propsheet.ClipboardRow` "today only TextRow"); and an inverted sentence
+  that reads fluently either way (`Editor.completionProvider` said the SQL
+  editor was the one *without* a provider).
+  **What is left is `internal/tui/**` (the bulk of it), `internal/query`,
+  `internal/db`, `internal/activity`, `internal/showplan`, `internal/config`,
+  `internal/fileutil`** — minus the batch-1/2 files above.
+
+- **Two things the batch-3/4 read turned up that are not comment fixes.**
+  `EditorRow`'s `controls.Editor` never sees Ctrl+Z: `PropertySheet.HandleKey`
+  consumes it for page-revert before the form, so undo inside a job step's
+  T-SQL box reverts the whole page instead. Deliberate for every other row kind
+  — the fix, if wanted, is to let the focused row refuse it first. And
+  `editor_search.go`'s `ensureColumnVisible` has duplicated
+  `ensureCursorVisible`'s horizontal half since the day it was written
+  (`selectMatch` calls both); harmless, kept, its comment now says what it does
+  rather than claiming a reason that was never true.
 
 - **Explicitly out of scope, and not to be re-proposed**: the 39 long comment
   blocks `CLAUDE.md` § Coding conventions protects, and the failure-naming
@@ -905,12 +976,26 @@ these is a known limit of the gate layer, not an oversight.
   transfers ownership, so an owner never carries one. An owner denied through
   `public` is genuinely refused by the server, which is what the gate then
   reports.
-  **What remains open**: only object-class securables have a DENY row to read.
-  `ProbedObjectPermissions` is `ALTER` alone and gosmo's object block reads
-  `class = 1` with `minor_id = 0`, so a DENY on a *column* (class 1, minor_id > 0,
-  deliberately excluded — it would read as a denial on the table) and a DENY at
-  any other class the tree acts on is still invisible, and the wider grant still
-  answers for it. Nothing gossms writes today is column-scoped.
+  **Column scope is closed** (2026-09-03). gosmo's object block splits on
+  `minor_id` instead of filtering `> 0` away: column rows are tagged `C:` and
+  keyed `schema.object.column` into a separate `ColumnPermissions` map, read
+  through `HasOnColumn`/`DeniedOnColumn`/`DeniedOnAnyColumn`. Separate, not
+  folded into the object map, because a column row answers for the column
+  alone — recorded on the table it would report one denied column as a denial
+  of the whole table. `objectDenial` asks `DeniedOnAnyColumn` after
+  `DeniedOnObject`, since every action gossms gates this way touches the whole
+  object, and the withheld item and the page banner name the column
+  ("ALTER is denied on column SSN of this object.").
+  Verified live 2026-09-03 on win10cli against a throwaway user with
+  `GRANT SELECT ON dbo.Appointments` plus `DENY SELECT ON
+  dbo.Appointments(PatientID)`: the probe returns `O:SELECT dbo.Appointments 1`
+  and `C:SELECT dbo.Appointments.PatientID 0` — the T-SQL is valid and the two
+  scopes stay apart. Only the *probe list* is unexercised in production:
+  `ProbedObjectPermissions` is `ALTER`, which is not column-grantable, so no
+  column row can appear until SELECT/UPDATE/REFERENCES joins it.
+
+  **What remains open**: a DENY at any class other than 1 that the tree acts on
+  is still invisible, and the wider grant answers for it.
 - **The `xp_dirtree` silent-empty guard is unit-tested only.** Both test
   servers are 2017 or later and so never take that path;
   `legacyListingRefusal` is exercised across all five combinations by test but
@@ -963,11 +1048,32 @@ taken while building those six, not work that was forgotten.
   not reproduced.
 - **Tape and virtual backup devices** are listed, scripted and dropped but not
   creatable — the New Backup Device dialog offers disk only, as SSMS's does.
-- **An audit's destination cannot be changed from Properties.** ALTER SERVER
-  AUDIT does accept a new `TO` clause on a disabled audit, but switching a FILE
-  audit to a Windows log discards the whole file block and starts a new audit
-  file. SSMS greys it and so does goSSMS; gosmo's `AlterContext` still accepts
-  any destination, because the library is not the UI.
+- **An audit's destination is editable from Properties** (changed 2026-09-03),
+  where SSMS greys it. `ALTER SERVER AUDIT` accepts a new `TO` clause on a
+  disabled audit and the page's apply already runs inside a disable window, so
+  the only cost is the one the page's note states: switching away from FILE
+  discards the file block, and a FILE audit resumed later starts a new audit
+  file. The file rows are always present — the destination can be changed *to*
+  FILE — and gated on the dropdown rather than on the destination the audit
+  loaded with; an empty path under FILE is refused before anything is disabled,
+  because the server's own answer (Msg 33072, "The audit log file path is
+  invalid") arrives only after the audit has been turned off.
+
+  Live-verified on win10cli 2026-09-03, both directions and all three
+  destinations, with Script Changes read before each Apply.
+- **A failed apply that changed the server anyway reloads the sheet**
+  (2026-09-03). A failed apply otherwise leaves every page exactly as it was,
+  which is right when nothing landed and a lie when something did: switching an
+  *enabled* audit to SECURITY LOG commits the ALTER and then fails to re-enable
+  unless the service account may write the Windows security log, and the page
+  went on showing "State: Enabled" for an audit its own apply had stopped.
+  `committedApplyError` (`prop_dialog.go`) marks such a failure and
+  `runPipeline` reloads on it, after setting the message so it still stands;
+  `auditApplyFailure` (`audit_props.go`) decides by re-reading the state, since
+  gosmo's disable window reports the restore's error with everything before it
+  committed and there is no other way to tell that from the ordinary failure
+  whose edits must survive to be retried. The note leads the message because
+  the sheet's message line hard-clips. Live-verified on win10cli.
 - **Neither audit object offers Rename from the tree.** A server audit
   specification has no `MODIFY NAME` form at all — it is a parse error, not a
   permission failure. An audit has one, but only while disabled, so a tree
@@ -977,6 +1083,12 @@ taken while building those six, not work that was forgotten.
   Filter tab. `ALTER SERVER AUDIT` replaces every setting at once, so a second
   page with its own apply would either write a second ALTER reverting the
   first, or need the filter's value before the page holding it had been opened.
-- **No Object Explorer filter is offered on any of the six folders.** Adding
-  one later means `nodeFilter.pushdown` has to reproduce
-  `filterChildren`/`filterObjects` exactly or refuse — see CLAUDE.md.
+- **All six folders offer an Object Explorer filter** (added 2026-09-03).
+  Client-side only: none of the six listings takes a `gosmo.ObjectFilter`, so
+  nothing is pushed down and the tree's `filterChildren` and the pane's
+  `filterObjects` are the whole of it. Credentials, Audits, Server Audit
+  Specifications and Server DDL Triggers offer Name and Creation Date; Backup
+  Devices and Endpoints offer Name alone, because neither
+  `sys.backup_devices` nor `sys.endpoints` records a creation date and a
+  criterion over a zero `nodeData.CreateDate` rejects every row.
+  Live-verified on win10cli, both halves narrowing together.

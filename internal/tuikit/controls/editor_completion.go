@@ -241,7 +241,7 @@ func (e *Editor) commitCompletionItem(item CompletionItem, from int) {
 	nl = append(nl, line[to:]...)
 	e.doc.setLine(row, nl)
 	e.cursorCol = from + len(text)
-	e.desiredCol = e.cursorCol
+	e.desiredCol = e.cursorDisplayCol()
 	e.ensureCursorVisible()
 }
 

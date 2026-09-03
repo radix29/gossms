@@ -8,7 +8,8 @@ import (
 )
 
 // selectionScreenPos returns the screen coordinates of the selected cell, to
-// position the context menu or "Show Value" popup opened with Ctrl+Space.
+// position the context menu Ctrl+Space opens where a right-click on that cell
+// would have. The "Show Value" popup needs no position — it is screen-centred.
 // Mirrors drawCellSelection's column-width walk.
 func (g *DataGrid) selectionScreenPos() (x, y int) {
 	x = g.rect.X + g.gutterWidth()

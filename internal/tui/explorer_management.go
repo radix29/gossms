@@ -106,6 +106,7 @@ func loadServerTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 				label += " (Disabled)"
 			}
 			n := l.node(label, NodeServerTrigger, "", t.Name, "")
+			n.data.CreateDate = t.CreateDate
 			n.data.IsEnabled = t.IsEnabled
 			return n
 		})

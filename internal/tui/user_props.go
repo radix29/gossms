@@ -135,11 +135,7 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 					loginNames[i] = l.Name
 				}
 				loginItems := append([]string{noneItem}, loginNames...)
-				loginSelected := 0
-				if u.LoginName != "" {
-					loginSelected = indexOf(loginItems, u.LoginName)
-				}
-				loginRow = propsheet.Select("Login name", loginItems, loginSelected)
+				loginRow = selectPreserving("Login name", loginItems, u.LoginName, noneItem)
 
 				schemaNames := make([]string, len(schemas))
 				for i, s := range schemas {
@@ -189,8 +185,8 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 							return err
 						}
 					}
-					if loginRow.Dirty() && loginRow.Value() != noneItem {
-						if err := u.SetLoginContext(ctx, loginRow.Value()); err != nil {
+					if login, ok := changedTo(loginRow, noneItem); ok {
+						if err := u.SetLoginContext(ctx, login); err != nil {
 							return err
 						}
 					}

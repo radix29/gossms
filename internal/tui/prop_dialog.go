@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -82,6 +83,26 @@ func commitRename(ctx context.Context, namePtr *string, newName string) {
 		*namePtr = newName
 	}
 }
+
+// committedApplyError marks an apply failure that changed the server anyway, so
+// the sheet reloads before the message is shown. A failed apply otherwise keeps
+// every page exactly as it was — right when the write never landed, and a lie
+// when it partly did. Audit Properties is the case: its ALTER runs inside a
+// disable window, and a window that cannot re-enable the audit reports the
+// restore's error with the ALTER committed and auditing stopped, leaving the
+// page's State row claiming Enabled for an audit the server has switched off.
+//
+// Reloading discards the page's edits, which is why only a *committed* failure
+// is marked: the edits are already on the server, and what the user needs to
+// see next is what the server now has.
+type committedApplyError struct{ err error }
+
+func (e committedApplyError) Error() string { return e.err.Error() }
+func (e committedApplyError) Unwrap() error { return e.err }
+
+// applyCommitted marks err as a failure that still changed the server — see
+// committedApplyError.
+func applyCommitted(err error) error { return committedApplyError{err} }
 
 // PropDialog is the app-layer orchestrator for propsheet.PropertySheet: it owns
 // the goroutines that load pages and apply edits, translating between the
@@ -344,6 +365,11 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 			d.SetApplying(false)
 			if runErr != nil {
 				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
+				// After the message, not before: the reload leaves it
+				// standing, and it is the only account of what went wrong.
+				if _, ok := errors.AsType[committedApplyError](runErr); ok {
+					d.InvalidateAll()
+				}
 				return
 			}
 			onSuccess()
@@ -419,8 +445,8 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 	// A DENY on the object is a different sentence: the login may hold every
 	// right the page lists, and telling it to go and ask for one of them
 	// describes neither what is wrong nor what would fix it.
-	if r, denied := objectDenial(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...); denied {
-		return readOnlyBannerPrefix + deniedText(r)
+	if r, col, denied := objectDenial(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...); denied {
+		return readOnlyBannerPrefix + deniedText(r, col)
 	}
 	return readOnlyBannerPrefix + requiresText(p.requires...)
 }

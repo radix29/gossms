@@ -311,7 +311,11 @@ gosmo only.
   resolves a DENY on the object over all of them, so `objectDenial` runs before
   the loop rather than as another case in it — and it exempts sysadmin, because
   the probe reads permissions through `public` and a DENY to public is recorded
-  for the one login the server never applies it to.
+  for the one login the server never applies it to. **A DENY on one *column* is
+  asked right after, through gosmo's `DeniedOnAnyColumn`**, and it is a separate
+  question because gosmo keeps column rows in their own map: every gated action
+  touches the whole object, so one denied column withholds it, but recording the
+  row on the table would make it a denial of every column.
 - **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`, not
   `core.DrawScrollbar` at `Rect().Right()-1`.** On a terminal too small for its
   requested size the content is clipped to `InnerRect` (`App.drawDialogs` wraps the

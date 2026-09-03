@@ -162,6 +162,8 @@ var filterableFolders = []NodeType{
 	NodeFunctions, NodeSystemFunctions, NodeSequences, NodeSynonyms, NodeTriggers,
 	NodeDatabases, NodeSystemDatabases, NodeLogins, NodeUsers, NodeDatabaseRoles,
 	NodeSchemas, NodeServerRoles,
+	NodeCredentials, NodeAudits, NodeServerAuditSpecifications,
+	NodeBackupDevices, NodeServerTriggers, NodeEndpoints,
 }
 
 // propBacking is the nodeData field each filterable property is supposed to

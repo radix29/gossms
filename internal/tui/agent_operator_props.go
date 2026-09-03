@@ -60,7 +60,7 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 			enabledCheck := propsheet.Check("Enabled", o.Enabled)
 			emailField := propsheet.Text("E-mail address", o.EmailAddress, 40)
 			catItems := append([]string{noneItem}, catNames...)
-			categoryRow := propsheet.Select("Category", catItems, indexOf(catItems, o.Category))
+			categoryRow := selectPreserving("Category", catItems, o.Category, noneItem)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Operator identity"),
@@ -94,11 +94,7 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 					}
 				}
 				if categoryRow.Dirty() {
-					target := ""
-					if categoryRow.Selected() != 0 {
-						target = categoryRow.Value()
-					}
-					if err := o.SetCategoryContext(ctx, target); err != nil {
+					if err := o.SetCategoryContext(ctx, preservedValue(categoryRow, noneItem)); err != nil {
 						return err
 					}
 				}

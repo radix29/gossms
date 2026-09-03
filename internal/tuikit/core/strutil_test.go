@@ -215,22 +215,6 @@ func TestWrapTextPreservesEveryWord(t *testing.T) {
 	}
 }
 
-func TestJoinPath(t *testing.T) {
-	cases := []struct {
-		parts []string
-		want  string
-	}{
-		{[]string{"a", "b", "c"}, "a > b > c"},
-		{[]string{"only"}, "only"},
-		{nil, ""},
-	}
-	for _, c := range cases {
-		if got := JoinPath(c.parts); got != c.want {
-			t.Errorf("JoinPath(%v) = %q, want %q", c.parts, got, c.want)
-		}
-	}
-}
-
 // evRuneStub implements the minimal interface{ Str() string } EvRune expects,
 // standing in for a real tcell.EventKey.
 type evRuneStub struct{ s string }

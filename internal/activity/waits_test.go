@@ -23,7 +23,7 @@ func TestCategorizeGroupsByWaitFamily(t *testing.T) {
 		"SOMETHING_BRAND_NEW": WaitOther,
 	} {
 		if got := categorize(wait); got != want {
-			t.Errorf("categorize(%q) = %s, want %s", wait, got, want)
+			t.Errorf("categorize(%q) = %s, want %s", wait, WaitCategoryNames[got], WaitCategoryNames[want])
 		}
 	}
 }

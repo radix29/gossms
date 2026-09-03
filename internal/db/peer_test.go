@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/radix29/gossms/internal/config"
 )
@@ -260,5 +262,63 @@ func TestParentPeerOptionsEqualTheResolverWhenItAgrees(t *testing.T) {
 
 	if parent.peerOptions("ubusql2") != parent.parentPeerOptions("ubusql2") {
 		t.Error("an agreeing resolver produced a different option set, so Peer would retry for nothing")
+	}
+}
+
+// TestPeerReturnsACachedFailureWithoutDialling pins the negative half of the
+// peer cache. A blackholed instance costs the driver's whole connect timeout,
+// so re-dialling it on every read is what made expanding an availability
+// group's folders stall for a multiple of it.
+func TestPeerReturnsACachedFailureWithoutDialling(t *testing.T) {
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	want := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
+	sc.recordPeerFailure(InstanceKey("ubusql2"), want)
+
+	// Called with a different spelling than the one recorded, on purpose: the
+	// two have to agree through InstanceKey or the cache misses for the caller
+	// that has the catalog's spelling.
+	start := time.Now()
+	peer, err := sc.Peer(context.Background(), "UBUSQL2,1433")
+	if !errors.Is(err, want) {
+		t.Fatalf("Peer = %v, %v; want the cached failure %v", peer, err, want)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the cached failure took %v to answer; that is a dial, not a cache hit", elapsed)
+	}
+}
+
+// The entry has to expire, or a primary that came back stays unreachable in the
+// UI until the connection is closed. Asserted through Peer: an aged entry means
+// a real connect attempt, whose failure is the dial's, not the cached one.
+func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
+	// Port 1 on loopback refuses immediately, so the retry this test forces
+	// costs no timeout and reaches no other host.
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	key := InstanceKey("127.0.0.1:1")
+	cached := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
+	sc.recordPeerFailure(key, cached)
+	sc.peerMu.Lock()
+	f := sc.peerFails[key]
+	f.at = time.Now().Add(-peerFailureTTL - time.Second)
+	sc.peerFails[key] = f
+	sc.peerMu.Unlock()
+
+	_, err := sc.Peer(context.Background(), "127.0.0.1:1")
+	if err == nil {
+		t.Fatal("something answered on 127.0.0.1:1; the test cannot tell a retry from a cache hit")
+	}
+	if errors.Is(err, cached) {
+		t.Errorf("Peer answered with the expired failure %v; the entry outlived peerFailureTTL", cached)
+	}
+	// And the fresh failure replaces it, so the next burst is collapsed too.
+	sc.peerMu.Lock()
+	fresh, ok := sc.peerFails[key]
+	sc.peerMu.Unlock()
+	if !ok || errors.Is(fresh.err, cached) {
+		t.Error("the retry did not record its own failure; the expired entry is still what answers")
 	}
 }

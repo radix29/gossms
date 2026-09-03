@@ -47,6 +47,11 @@ func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Logi
 	return sc.Server.LoginByNameContext(ctx, name)
 }
 
+// noneItem is the stand-in for a mapping the server reports as absent — a
+// login mapped to no credential, a user to no login, an alert or operator in
+// no category. Passed to selectPreserving as its unset value, so a mapping
+// naming something the matching list doesn't carry shows that name rather
+// than reading as "nothing is mapped".
 const noneItem = "(None)"
 
 // loginAuthLabel renders a login's type_desc as the authentication wording
@@ -147,11 +152,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			defaultDBRow := selectPreserving("Default database", dbNames, l.DefaultDatabase, unsetItem)
 			defaultLangRow := selectPreserving("Default language", langNames, det.DefaultLanguage, unsetItem)
 			origCredential := det.CredentialName
-			credSelected := 0
-			if origCredential != "" {
-				credSelected = indexOf(credItems, origCredential)
-			}
-			credentialRow := propsheet.Select("Map to credential", credItems, credSelected)
+			credentialRow := selectPreserving("Map to credential", credItems, origCredential, noneItem)
 
 			rows := []propsheet.Row{
 				propsheet.Section("Login identity"),
@@ -213,7 +214,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 							return err
 						}
 					}
-					if v := credentialRow.Value(); v != noneItem {
+					if v := preservedValue(credentialRow, noneItem); v != "" {
 						if err := l.MapCredentialContext(ctx, v); err != nil {
 							return err
 						}

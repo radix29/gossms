@@ -209,21 +209,9 @@ func TestWaitQueryExcludesTheBenignWaits(t *testing.T) {
 	}
 }
 
-// WaitCategory.String is what labels the chart's series, and it is indexed
-// into a fixed array — an out-of-range category must name something rather
-// than panicking the draw.
-func TestWaitCategoryString(t *testing.T) {
-	if got := WaitCPU.String(); got != "CPU" {
-		t.Errorf("WaitCPU.String() = %q, want CPU", got)
-	}
-	if got := WaitOther.String(); got != "Other" {
-		t.Errorf("WaitOther.String() = %q, want Other", got)
-	}
-	for _, c := range []WaitCategory{-1, waitCategoryCount, waitCategoryCount + 5} {
-		if got := c.String(); got != "Other" {
-			t.Errorf("WaitCategory(%d).String() = %q, want Other", c, got)
-		}
-	}
+// WaitCategoryNames labels the chart's series, indexed by WaitCategory, so a
+// blank entry would leave the legend empty.
+func TestWaitCategoryNames(t *testing.T) {
 	for i := range waitCategoryCount {
 		if WaitCategoryNames[i] == "" {
 			t.Errorf("WaitCategory(%d) has no name; the chart legend would be blank", i)

@@ -72,7 +72,7 @@ var pagesThatOnlyRead = []string{
 	"Foreign Key/General",
 	"Partition Function/General", "Partition Scheme/General",
 	"Security Policy/General",
-	"Column Master Key/General", "Column Encryption Key/General",
+	"Column Master Key/General",
 	"Backup Device/General", "Backup Device/Media Contents",
 	"Server Trigger/General", "Server Trigger/Definition",
 	"Endpoint/General", "Endpoint/Type Properties",

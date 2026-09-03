@@ -154,8 +154,8 @@ type Editor struct {
 	stepOpen bool
 
 	// Completion: see editor_completion.go. completionProvider is nil for every
-	// Editor but the SQL query editor, where Ctrl+Space opens OnRightClick's menu
-	// instead and no popup ever appears.
+	// Editor but the SQL query editor; where it is nil, Ctrl+Space opens
+	// OnRightClick's menu instead and no popup ever appears.
 	completionProvider CompletionProvider
 	completionOpen     bool
 	completionItems    []CompletionItem

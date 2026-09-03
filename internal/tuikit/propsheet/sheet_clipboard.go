@@ -79,8 +79,8 @@ func (p *PropertySheet) SelectAll() {
 // target: every method above already resolves through the focused row, and
 // answers harmlessly when focus is on the page list or the button row instead.
 // Declaring it here is what makes every dialog embedding a PropertySheet — the
-// Properties dialog and all ten New-<object> dialogs — a clipboard host
-// without each having to say so.
+// Properties dialog and every New-<object> dialog — a clipboard host without
+// each having to say so.
 func (p *PropertySheet) FocusedClipboardTarget() core.ClipboardTarget { return p }
 
 // ClipboardTargetToken implements core.ClipboardTargetTokener: the focused

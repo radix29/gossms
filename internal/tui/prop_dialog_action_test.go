@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -244,4 +245,51 @@ func TestPropertiesPageReloadsAfterALoaderPanic(t *testing.T) {
 	if loads != 2 {
 		t.Errorf("the loader ran %d times, want 2 — the retry never reached it", loads)
 	}
+}
+
+// applyDialog builds a one-page dirty dialog whose apply fails with err, and
+// counts the reloads that follow. newSheetDialog's own OnLoadPage installs the
+// dirty form; this only wraps it.
+func applyDialog(t *testing.T, err error) (*PropDialog, *int) {
+	t.Helper()
+	pages := []propPage{{title: "General"}}
+	applies := map[int]propApply{0: func(context.Context) error { return err }}
+	d := newSheetDialog(t, pages, applies, nil)
+	loads := 0
+	base := d.OnLoadPage
+	d.OnLoadPage = func(page, seq int) {
+		loads++
+		base(page, seq)
+	}
+	d.app = &App{}
+	d.ctx = context.Background()
+	return d, &loads
+}
+
+// A failed apply keeps every page as it was, so the user can correct the edit
+// and try again — the write never landed.
+func TestApplyKeepsThePagesAfterAnOrdinaryFailure(t *testing.T) {
+	d, loads := applyDialog(t, errors.New("permission denied"))
+
+	d.runApply(false)
+	// A reload that should not happen needs time to fail in, not a single
+	// drain: the apply reports back from its own goroutine.
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		d.app.drainPending()
+		time.Sleep(time.Millisecond)
+	}
+	if *loads != 0 {
+		t.Errorf("an ordinary failure reloaded the sheet %d times, discarding the edits", *loads)
+	}
+}
+
+// A failure that changed the server anyway must reload: the page is otherwise
+// left showing pre-apply values the server no longer has — Audit Properties'
+// State row still reading Enabled for an audit its own apply switched off.
+func TestApplyReloadsThePagesAfterACommittedFailure(t *testing.T) {
+	d, loads := applyDialog(t, applyCommitted(errors.New("auditing is now stopped")))
+
+	d.runApply(false)
+	drainUntil(t, d.app, func() bool { return *loads > 0 }, "the sheet to reload")
 }

@@ -69,7 +69,9 @@ required.
   sample percentage, NORECOMPUTE and INCREMENTAL. Both offer Script Changes
   instead of running the statement. A database's Security folder creates
   Always Encrypted column master and column encryption keys from the `0x…`
-  blob SSMS or the PowerShell cmdlets print.
+  blob SSMS or the PowerShell cmdlets print, and a column encryption key's
+  Properties rotates its master key — add the value encrypted under the new
+  key, then drop the old one once every client has it.
 - **Backup & Restore** — full option dialogs (destination, type, media,
   compression, point-in-time, file relocation) run as cancellable
   background tasks with live progress. Browse picks paths on the *server's*

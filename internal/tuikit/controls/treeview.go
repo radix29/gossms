@@ -30,8 +30,8 @@ type TreeNode struct {
 }
 
 // TreeView is a collapsible/expandable tree control. The application populates
-// it with SetNodes and wires up the OnExpand, OnSelect and OnRightClick
-// callbacks.
+// it with SetNodes and wires up the callbacks it needs — OnExpand, OnCollapse,
+// OnSelect, OnActivate and OnRightClick.
 type TreeView struct {
 	rect core.Rect
 

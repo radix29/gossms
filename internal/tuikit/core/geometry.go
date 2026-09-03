@@ -9,9 +9,6 @@ type Rect struct {
 	X, Y, W, H int
 }
 
-// NewRect constructs a Rect.
-func NewRect(x, y, w, h int) Rect { return Rect{x, y, w, h} }
-
 // Right returns the exclusive right edge (X + W).
 func (r Rect) Right() int { return r.X + r.W }
 

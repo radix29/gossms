@@ -28,13 +28,6 @@ var WaitCategoryNames = [waitCategoryCount]string{
 	"CPU", "Disk IO", "Locking", "Latches", "Memory", "Log", "Network", "Other",
 }
 
-func (c WaitCategory) String() string {
-	if c < 0 || c >= waitCategoryCount {
-		return "Other"
-	}
-	return WaitCategoryNames[c]
-}
-
 // waitRow is one wait type's cumulative totals.
 type waitRow struct {
 	waitMs   int64

@@ -75,9 +75,10 @@ func (g *DataGrid) requestCopy(text string) {
 
 // cellContextMenuItems builds the right-click (or Ctrl+Space) menu for a
 // selected cell/block: "Copy" only when OnCopyRequest is wired, plus "Show
-// Value" for a single cell — a block selection has no one cell's full
-// content to show, so that item is omitted while blockSelecting is true —
-// then whatever the host contributes through OnMenuItems.
+// Value" for a single cell — neither a block selection nor a Ctrl+click
+// selection of several rows has one cell's full content to show, so that item
+// is omitted unless the selection is a single row and not a block — then
+// whatever the host contributes through OnMenuItems.
 func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	var items []MenuItem
 	if g.OnCopyRequest != nil {
@@ -97,8 +98,8 @@ func (g *DataGrid) cellContextMenuItems() []MenuItem {
 	return items
 }
 
-// showValueMenuItem is the sole context-menu entry offered on a
-// right-clicked cell — see HandleMouse's Button2 case.
+// showValueMenuItem labels the context-menu entry that opens a cell's full
+// content — the built-in popup, or the host's own display via OnShowValue.
 const showValueMenuItem = "Show Value"
 
 // openViewer shows the full-content popup for the currently selected
@@ -131,8 +132,9 @@ func (g *DataGrid) openViewer() {
 	g.viewDismissing = false
 }
 
-// closeViewer hides the full-content popup. Its two callers are Escape and
-// the "[ Close ]" button; nothing else dismisses it.
+// closeViewer hides the full-content popup. Only Escape and the "[ Close ]"
+// button dismiss it from the UI; SetSource and SetError also call it, since a
+// viewer left open over a replaced row set strands itself on stale text.
 func (g *DataGrid) closeViewer() {
 	g.viewOpen = false
 	g.viewCloseRect = core.Rect{}

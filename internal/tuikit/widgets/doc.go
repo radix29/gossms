@@ -2,7 +2,8 @@
 // render themselves onto a tcell.Screen.  Each widget follows a common
 // pattern:
 //
-//   - Bounds are set with SetBounds(x, y) or SetRect(core.Rect).
+//   - Bounds are set with SetBounds(x, y); each widget's width comes from
+//     its constructor.
 //   - Keyboard input is handled with HandleKey(*tcell.EventKey) bool.
 //   - Mouse input is handled with HandleMouse(*tcell.EventMouse) bool.
 //   - Rendering is done with Draw(tcell.Screen).

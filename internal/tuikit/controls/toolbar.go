@@ -44,7 +44,7 @@ type Toolbar struct {
 	// mouseDragging distinguishes a fresh Button1 press (fire the button's
 	// Action) from a continued hold over the same button — mirrors
 	// MenuBar's and TreeView's field of the same name and purpose. Without
-	// it, the mouse tracking mode gossms enables (core.NewScreen's
+	// it, the mouse tracking mode gossms enables (core.Init's
 	// EnableMouse()) resends Buttons()==Button1 on every motion event while
 	// the button stays down, so a click that so much as twitches before
 	// release fires Action again — visibly flickering a toggle button

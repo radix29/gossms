@@ -218,11 +218,6 @@ func padSpaces(s string, n int, left bool) string {
 	return sb.String() + strings.Repeat(" ", n-width)
 }
 
-// JoinPath joins path segments with " > ".
-func JoinPath(parts []string) string {
-	return strings.Join(parts, " > ")
-}
-
 // FormatThousands renders n in base 10 with "," every three digits, e.g.
 // 1234567 -> "1,234,567".
 //

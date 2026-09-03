@@ -57,7 +57,8 @@ type Editable interface {
 }
 
 // ClipboardRow is implemented by rows that support the full cut/paste/
-// select-all cycle, not just a copyable value — today only TextRow. It's
+// select-all cycle, not just a copyable value — TextRow, EditorRow and
+// GridRow (the last only while its cell viewer is open). It's
 // the row-level analogue of the clipboardTarget contract every other
 // tuikit-backed dialog field in internal/tui satisfies structurally
 // (widgets.InputField, controls.Editor); PropertySheet forwards to it from

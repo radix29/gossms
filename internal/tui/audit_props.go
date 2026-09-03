@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -53,11 +54,11 @@ var auditFileCountItems = []string{"Unlimited rollover files", "Rollover files",
 
 // pageAuditGeneral is Audit Properties > General.
 //
-// The destination is static: SSMS greys it, and while ALTER SERVER AUDIT does
-// accept a new TO clause, switching a FILE audit to a Windows log discards the
-// whole file block and starts a new audit file. That is a different operation
-// from editing an audit's settings, and offering it here would make it look
-// like one.
+// The destination is editable, where SSMS greys it: ALTER SERVER AUDIT accepts
+// a new TO clause on a disabled audit, and the apply already runs inside a
+// disable window. Changing it away from FILE discards the file block and
+// starts a new audit file on the way back, which the page's note says out
+// loud; it is not a reason to withhold the write.
 func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 	return propPage{
 		title:   "General",
@@ -73,6 +74,46 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 			failureRow := propsheet.Select("On audit log failure", auditFailureItems,
 				max(slices.Index(auditFailureValues, a.OnFailure), 0))
 
+			destRow := propsheet.Select("Audit destination", auditDestinationItems,
+				max(slices.Index(auditDestinationValues, a.Type), 0))
+
+			// The file rows exist whatever the audit writes to now, because
+			// the destination can be changed to FILE here, and switching to
+			// FILE with no FILEPATH fails Msg 33072 "The audit log file path
+			// is invalid" — verified live. A log audit has no row in
+			// sys.server_file_audits, so they come up empty and the sync
+			// below greys them.
+			pathRow := propsheet.Text("File path", a.LogFilePath, 50)
+			sizeRow := propsheet.Int("Maximum file size", a.MaxFileSize, 0, 2147483647, "MB (0 = unlimited)")
+
+			kind, count := auditFileCountUnlimited, int64(0)
+			switch {
+			case a.MaxFiles > 0:
+				kind, count = auditFileCountMax, int64(a.MaxFiles)
+			case a.MaxRolloverFiles > 0 && a.MaxRolloverFiles != gosmo.AuditUnlimited:
+				kind, count = auditFileCountRollover, int64(a.MaxRolloverFiles)
+			}
+			countKindRow := propsheet.Select("File count limit", auditFileCountItems, kind)
+			countRow := propsheet.Int("Number of files", count, 0, 2147483647, "")
+			reserveRow := propsheet.Check("Reserve disk space", a.ReserveDiskSpace)
+
+			writesToFile := func() bool {
+				return auditDestinationValues[destRow.Selected()] == gosmo.AuditToFile
+			}
+			// The file block is only sent for a FILE target, so a log audit's
+			// file rows are gated rather than left inviting input the ALTER
+			// will not carry.
+			syncDest := func() {
+				f := writesToFile()
+				pathRow.SetEnabled(f)
+				sizeRow.SetEnabled(f)
+				countRow.SetEnabled(f)
+				countKindRow.SetReadOnly(!f)
+				reserveRow.SetReadOnly(!f)
+			}
+			destRow.SetOnChange(func(string) { syncDest() })
+			syncDest()
+
 			rows := []propsheet.Row{
 				propsheet.Section("Audit"),
 				nameRow,
@@ -81,32 +122,9 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 				delayRow,
 				failureRow,
 				propsheet.Section("Audit destination"),
-				propsheet.Static("Audit destination", a.Type),
-			}
-
-			isFile := a.Type == gosmo.AuditToFile
-			var pathRow, sizeRow, countRow *propsheet.TextRow
-			var countKindRow *propsheet.SelectRow
-			var reserveRow *propsheet.CheckRow
-			if isFile {
-				pathRow = propsheet.Text("File path", a.LogFilePath, 50)
-				sizeRow = propsheet.Int("Maximum file size", a.MaxFileSize, 0, 2147483647, "MB (0 = unlimited)")
-
-				kind, count := auditFileCountUnlimited, int64(0)
-				switch {
-				case a.MaxFiles > 0:
-					kind, count = auditFileCountMax, int64(a.MaxFiles)
-				case a.MaxRolloverFiles > 0 && a.MaxRolloverFiles != gosmo.AuditUnlimited:
-					kind, count = auditFileCountRollover, int64(a.MaxRolloverFiles)
-				}
-				countKindRow = propsheet.Select("File count limit", auditFileCountItems, kind)
-				countRow = propsheet.Int("Number of files", count, 0, 2147483647, "")
-				reserveRow = propsheet.Check("Reserve disk space", a.ReserveDiskSpace)
-
-				rows = append(rows, pathRow, sizeRow, countKindRow, countRow, reserveRow)
-			} else {
-				rows = append(rows, propsheet.Note(
-					"An audit writing to a Windows event log has no file settings. The destination is fixed once the audit exists."))
+				destRow,
+				pathRow, sizeRow, countKindRow, countRow, reserveRow,
+				propsheet.Note("The file settings apply to a File audit only. Changing the destination discards the settings the old one had, and a File audit resumed later starts a new audit file."),
 			}
 
 			predicateRow := propsheet.Text("Filter predicate", a.Predicate, 60)
@@ -122,7 +140,9 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				dirty := delayRow.Dirty() || failureRow.Dirty() || predicateRow.Dirty()
+				isFile := writesToFile()
+				dirty := delayRow.Dirty() || failureRow.Dirty() || predicateRow.Dirty() ||
+					destRow.Dirty()
 				if isFile {
 					dirty = dirty || pathRow.Dirty() || sizeRow.Dirty() ||
 						countKindRow.Dirty() || countRow.Dirty() || reserveRow.Dirty()
@@ -130,12 +150,15 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 				if !dirty && !nameRow.Dirty() {
 					return nil
 				}
+				if isFile && strings.TrimSpace(pathRow.Value()) == "" {
+					return fmt.Errorf("a file audit needs a file path")
+				}
 				// One disable window for the whole apply. Each write opens its
 				// own otherwise, so a settings-plus-rename Apply stops auditing
 				// twice and a rename that fails leaves the ALTER committed with
 				// the audit off.
 				handle := sc.Server.ServerAudit(*auditName)
-				return handle.WithDisabled(ctx, func(ctx context.Context) error {
+				err := handle.WithDisabled(ctx, func(ctx context.Context) error {
 					if dirty {
 						delay, err := delayRow.IntValue()
 						if err != nil {
@@ -146,7 +169,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 						// value left out is a value cleared.
 						spec := gosmo.ServerAuditSpec{
 							Name:       *auditName,
-							Type:       a.Type,
+							Type:       auditDestinationValues[destRow.Selected()],
 							QueueDelay: int(delay),
 							OnFailure:  auditFailureValues[failureRow.Selected()],
 							Predicate:  predicateRow.Value(),
@@ -160,7 +183,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 							if err != nil {
 								return fmt.Errorf("number of files: %w", err)
 							}
-							spec.FilePath = pathRow.Value()
+							spec.FilePath = strings.TrimSpace(pathRow.Value())
 							spec.MaxFileSize = size
 							spec.ReserveDiskSpace = reserveRow.Checked()
 							switch countKindRow.Selected() {
@@ -186,8 +209,36 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 					}
 					return nil
 				})
+				if err != nil {
+					return auditApplyFailure(ctx, sc, *auditName, a.IsEnabled, err)
+				}
+				return nil
 			}
 			return f, apply, nil
 		},
 	}
+}
+
+// auditApplyFailure reports a failed Audit Properties apply, marking it
+// committed when the audit has been left switched off.
+//
+// The whole apply runs inside gosmo's disable window, which re-enables the
+// audit last and reports that failure with everything before it already
+// committed. Switching an enabled audit to SECURITY LOG does exactly this on a
+// host whose service account may not write the Windows security log: the ALTER
+// lands, the restore is refused, and the page goes on showing "State: Enabled"
+// for an audit the server has stopped — verified live on win10cli. Re-reading
+// the state is the only way to tell that from the ordinary failure where
+// nothing landed and the user's edits must survive to be retried.
+func auditApplyFailure(ctx context.Context, sc *db.ServerConn, name string, wasEnabled bool, applyErr error) error {
+	if !wasEnabled || gosmo.Scripting(ctx) {
+		return applyErr
+	}
+	a, err := sc.Server.ServerAuditByNameContext(ctx, name)
+	if err != nil || a.IsEnabled {
+		return applyErr
+	}
+	// The note leads: the sheet's message line hard-clips, and SQL Server's
+	// own reason is long enough to push anything appended off the end.
+	return applyCommitted(fmt.Errorf("auditing is now stopped — %w", applyErr))
 }

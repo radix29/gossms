@@ -246,8 +246,9 @@ func (e *Editor) FindNext(dir int) bool {
 	}
 	idx := -1
 	if dir >= 0 {
-		// Strictly after the cursor's column, so repeated Find Next steps off the
-		// match it just selected instead of re-selecting it.
+		// From the cursor's column onward — and, with a match selected, from its
+		// end — so repeated Find Next steps off the match it just selected
+		// instead of re-selecting it.
 		row, col := e.cursorRow, e.cursorCol
 		if e.HasSelection() {
 			// A selection's start is where the current match begins; search from
@@ -443,9 +444,9 @@ func (e *Editor) matchSpansForLine(row int) []searchMatch {
 }
 
 // ensureColumnVisible scrolls horizontally so the cursor's display column is
-// inside the content area. ensureCursorVisible handles the vertical axis only,
-// so without this a match far along a wide line scrolls to a row whose matched
-// text is still off the right edge.
+// inside the content area — the horizontal half of ensureCursorVisible, spelt
+// out on its own so selectMatch states that a match far along a wide line has
+// to be scrolled to sideways as well as vertically.
 func (e *Editor) ensureColumnVisible() {
 	if e.wrapMode {
 		return

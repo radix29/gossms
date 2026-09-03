@@ -464,8 +464,10 @@ type CheckRow struct {
 	orig  bool
 
 	// drawReadOnly renders the row as a tick or a cross instead of a
-	// checkbox — see SetDrawReadOnly.
+	// checkbox — see SetDrawReadOnly. pageReadOnly is the page's own,
+	// independent gate — see TextRow.SetReadOnly.
 	drawReadOnly bool
+	pageReadOnly bool
 	x, y, w      int
 }
 
@@ -485,7 +487,12 @@ func (r *CheckRow) SetChecked(v bool) { r.box.SetChecked(v); r.orig = v }
 // Edit sets the state the way pressing Space does: the value changes and the
 // row goes dirty. SetChecked's counterpart — see TextRow.Edit for why the two
 // are different operations.
-func (r *CheckRow) Edit(v bool) { r.box.SetChecked(v) }
+func (r *CheckRow) Edit(v bool) {
+	if r.pageReadOnly {
+		return
+	}
+	r.box.SetChecked(v)
+}
 
 // Label returns the row's label. A checkbox draws its label inline at full
 // width, so unlike Text/Select there is no padding to trim.
@@ -496,7 +503,13 @@ func (r *CheckRow) Layout(x, y, w int) {
 	r.x, r.y, r.w = x, y, w
 	r.box.SetBounds(x, y)
 }
-func (r *CheckRow) Focusable() bool { return true }
+func (r *CheckRow) Focusable() bool { return !r.pageReadOnly }
+
+// SetReadOnly is the page's own gate on the row — see TextRow.SetReadOnly.
+func (r *CheckRow) SetReadOnly(v bool) { r.pageReadOnly = v }
+
+// ReadOnly reports the page's own gate, not the form's.
+func (r *CheckRow) ReadOnly() bool { return r.pageReadOnly }
 
 // SetDrawReadOnly implements ReadOnlyDrawer: the row draws its state as a
 // leading tick or cross rather than as a checkbox. Both states are marked —
@@ -505,7 +518,7 @@ func (r *CheckRow) Focusable() bool { return true }
 func (r *CheckRow) SetDrawReadOnly(v bool) { r.drawReadOnly = v }
 
 func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
-	if r.drawReadOnly {
+	if r.drawReadOnly || r.pageReadOnly {
 		p := theme.Active()
 		mark := "✗"
 		if r.box.Checked() {
@@ -520,8 +533,16 @@ func (r *CheckRow) Draw(s tcell.Screen, focused bool) {
 	r.box.Focus(focused)
 	r.box.Draw(s)
 }
-func (r *CheckRow) HandleKey(ev *tcell.EventKey) bool { return r.box.HandleKey(ev) }
+func (r *CheckRow) HandleKey(ev *tcell.EventKey) bool {
+	if r.pageReadOnly {
+		return false
+	}
+	return r.box.HandleKey(ev)
+}
 func (r *CheckRow) HandleMouse(ev *tcell.EventMouse) bool {
+	if r.pageReadOnly {
+		return false
+	}
 	return r.box.HandleMouse(ev)
 }
 func (r *CheckRow) CopyText() string {
@@ -816,9 +837,9 @@ func (r *RadioRow) Revert() {
 // ButtonsRow — a right-flowing row of push buttons (Add/Remove, …)
 // ---------------------------------------------------------------------------
 
-// ButtonsRow is a row of push buttons flowing left from the row's start, unlike
-// ModalDialog's right-aligned DrawButtons: page actions like Add/Remove read
-// better flush with the rest of the form.
+// ButtonsRow is a row of push buttons laid out rightward from the row's start,
+// unlike ModalDialog's right-aligned DrawButtons: page actions like Add/Remove
+// read better flush left with the rest of the form.
 type ButtonsRow struct {
 	buttons []*widgets.Button
 	focus   int

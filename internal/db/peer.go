@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
@@ -50,6 +51,10 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 		sc.peerMu.Unlock()
 		return p, nil
 	}
+	if f, ok := sc.peerFails[key]; ok && time.Since(f.at) < peerFailureTTL {
+		sc.peerMu.Unlock()
+		return nil, f.err
+	}
 	sc.peerMu.Unlock()
 
 	// Connect outside the lock: it does network I/O, and holding the mutex across
@@ -68,11 +73,11 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 		// the user deliberately registered for that instance.
 		fallback := sc.parentPeerOptions(server)
 		if fallback == opts {
-			return nil, err
+			return nil, sc.recordPeerFailure(key, err)
 		}
 		var ferr error
 		if peer, ferr = Connect(fallback); ferr != nil {
-			return nil, err
+			return nil, sc.recordPeerFailure(key, err)
 		}
 	}
 	// A peer's own peers resolve through the same table: Object Explorer follows
@@ -97,8 +102,35 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	if sc.peers == nil {
 		sc.peers = map[string]*ServerConn{}
 	}
+	delete(sc.peerFails, key)
 	sc.peers[key] = peer
 	return peer, nil
+}
+
+// peerFailureTTL is how long a failed connect answers for the instance that
+// failed. It is short because the entry is only there to collapse a burst: the
+// user expands three folders of one group and each one asks for the same
+// primary. Long enough and a primary that came back stays unreachable in the UI
+// for no reason; there is no invalidation hook, since a failover changes which
+// instance is asked for anyway.
+const peerFailureTTL = 30 * time.Second
+
+// recordPeerFailure caches err as the answer for key and returns it unchanged,
+// so a caller reads `return nil, sc.recordPeerFailure(...)`.
+//
+// Without it a primary whose packets are dropped rather than refused costs the
+// driver's full connect timeout — 15s measured, 30s when a saved replica
+// credential makes the fallback try a second time — on *every* call, and
+// nothing caches a peer that was never opened: expanding an availability
+// group's three folders stalled 45s, then Properties another 15s.
+func (sc *ServerConn) recordPeerFailure(key string, err error) error {
+	sc.peerMu.Lock()
+	defer sc.peerMu.Unlock()
+	if sc.peerFails == nil {
+		sc.peerFails = map[string]peerFailure{}
+	}
+	sc.peerFails[key] = peerFailure{err: err, at: time.Now()}
+	return err
 }
 
 // peerOptions is the connection options for reaching server: the ones a resolver
@@ -227,7 +259,17 @@ func (sc *ServerConn) closePeers() {
 type peerFields struct {
 	peerMu sync.Mutex
 	peers  map[string]*ServerConn
+	// peerFails holds the last connect failure per instance, so a peer that
+	// cannot be opened is not re-dialled on every read for peerFailureTTL.
+	// Guarded by peerMu.
+	peerFails map[string]peerFailure
 	// creds resolves an instance to its own saved connection; nil means every
 	// peer is reached with this connection's settings. Guarded by peerMu.
 	creds PeerCredentials
+}
+
+// peerFailure is one instance's last failed connect, and when it happened.
+type peerFailure struct {
+	err error
+	at  time.Time
 }

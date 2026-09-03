@@ -340,8 +340,9 @@ func (g *DataGrid) ScrollRow() int { return g.scrollRow }
 func (g *DataGrid) ScrollCol() int { return g.scrollCol }
 
 // SetScroll restores the scroll position (both clamped) after a
-// SetData/SetSource that deliberately discarded it — the counterpart of
-// SetColumnWidth/ColumnWidthOverrides, with the same one caller, redrawGrid.
+// SetData/SetSource that deliberately discarded it — the scroll half of what
+// SetDataPreservingView puts back, alongside restoreOverrideWidths and
+// SetSelectedCell, and called from there alone.
 //
 // Not for driving the view: scrolling is the grid's own response to a wheel, a
 // drag, or a selection moving out of sight, and ensureVisible undoes on the
@@ -596,8 +597,9 @@ func (g *DataGrid) restoreOverrideWidths(widths []int) {
 
 // ColumnWidthOverrides returns each column's dragged width, 0 for one still at
 // its computed default — the inverse of SetColumnWidth, and the only way to
-// carry drags across a SetData that discards them (see redrawGrid). The slice
-// is a copy, as long as the column count at the time of the call.
+// carry drags across a SetData that discards them (see SetDataPreservingView,
+// its one caller). The slice is a copy, as long as the column count at the time
+// of the call.
 func (g *DataGrid) ColumnWidthOverrides() []int {
 	out := make([]int, len(g.colWidths))
 	copy(out, g.colWidthOverride)

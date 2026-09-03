@@ -1202,3 +1202,48 @@ func rightNames(rights []requiredRight) []string {
 	}
 	return names
 }
+
+// columnDeniedConn is objectProbedConn with a DENY on named columns as well —
+// "schema.object.column" each.
+func columnDeniedConn(t *testing.T, dbName string, objGranted, colDenied []string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, withDeniedColumns(capabilityResponsesWithObjects(true,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
+		[]string{"Sales", "dbo"}, objGranted, nil), colDenied...)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), dbName)
+	return sc
+}
+
+// TestADenyOnAColumnWithholdsTheObjectOps. A column-scope DENY beats every
+// wider grant exactly as an object-scope one does — the table's own grant of
+// ALTER included — so an action touching the whole object must be withheld,
+// and the reason it names must be the column rather than a right the login
+// already holds.
+//
+// Only a table-wide action is gated this way: nothing gossms writes is scoped
+// to named columns, so there is no case where the denied column could be left
+// out of the statement.
+func TestADenyOnAColumnWithholdsTheObjectOps(t *testing.T) {
+	sc := columnDeniedConn(t, "appdb", []string{"Sales.Orders"}, []string{"Sales.Orders.SSN"})
+
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", rightAlterOnObject) {
+		t.Error("a column denial did not withhold the action — the table's grant answered for it")
+	}
+	r, col, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", rightAlterOnObject)
+	if !denied || col != "SSN" {
+		t.Fatalf("deniedOnObject = %q, %q, %v; want ALTER, \"SSN\", true", r.name, col, denied)
+	}
+	if got, want := deniedText(r, col), "ALTER is denied on column SSN of this object."; got != want {
+		t.Errorf("deniedText = %q, want %q", got, want)
+	}
+	// The object's own sentence is unchanged where the DENY is on the object.
+	if got, want := deniedText(r, ""), "ALTER is denied on this object."; got != want {
+		t.Errorf("deniedText for an object denial = %q, want %q", got, want)
+	}
+	// And the denial stays on the object it was recorded for: a sibling table
+	// keeps whatever the wider scopes gave it.
+	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Customers", rightAlterOnObject); denied {
+		t.Error("a column denial on one table read as a denial on another")
+	}
+}
