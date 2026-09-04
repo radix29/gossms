@@ -335,3 +335,83 @@ func TestPosixPathRules(t *testing.T) {
 		t.Errorf("Join = %q, want %q", got, "/var/opt/db.bak")
 	}
 }
+
+// A listing error is a whole sentence — a server's refusal, or gossms's own
+// explanation of one — and the list area is barely 70 columns wide. Drawn on
+// one clipped line it stopped mid-word with no ellipsis, which reads as the
+// complete message: the pre-2017 xp_dirtree refusal ended at "the server
+// lists". It wraps across the rows the list would have used.
+func TestFileDialogWrapsALongListingError(t *testing.T) {
+	const msg = "this directory cannot be listed: before SQL Server 2017 the server " +
+		"lists directories through xp_dirtree, which requires sysadmin"
+
+	fs := newFakeWindowsFS()
+	rec := newDrawScreen(120, 40)
+	d := NewFileDialog(rec)
+	d.ShowOpenOn(fs, "Select Backup File", `C:\Backup\`, nil)
+	d.listErr = msg
+	d.entries = nil
+	d.Draw(rec)
+
+	lr := d.listRect()
+	var drawn []string
+	for row := 0; row < lr.H; row++ {
+		var line []rune
+		for x := lr.X; x < lr.Right(); x++ {
+			line = append(line, rec.at(x, lr.Y+row))
+		}
+		drawn = append(drawn, strings.TrimRight(string(line), " \x00"))
+	}
+	got := strings.TrimSpace(strings.Join(drawn, " "))
+	if got != msg {
+		t.Errorf("the list area rendered\n  %q\nwant the whole message\n  %q", got, msg)
+	}
+	if drawn[1] == "" {
+		t.Error("the message occupies one row; it was clipped rather than wrapped")
+	}
+}
+
+// A FileSystem that cannot report sizes or timestamps — goSSMS listing a
+// pre-2017 SQL Server, where xp_dirtree returns names and the directory flag
+// and nothing else — used to have every file rendered "0 B" and dated
+// 0001-01-01, which states two things that are not true.
+func TestFileDialogLeavesAnUnknownSizeAndDateBlank(t *testing.T) {
+	fs := newFakeWindowsFS()
+	fs.tree[`C:\Backup`] = []FileEntry{
+		{Name: "keyfile.dll", SizeUnknown: true},
+		{Name: "empty.bak"},
+	}
+	rec := newDrawScreen(120, 40)
+	d := NewFileDialog(rec)
+	d.ShowOpenOn(fs, "Select Backup File", `C:\Backup\`, nil)
+	d.Draw(rec)
+
+	lr := d.listRect()
+	// By name, not by index: the dialog sorts, so an index picks whichever
+	// row happens to land there.
+	row := func(name string) string {
+		t.Helper()
+		for y := 0; y < lr.H; y++ {
+			var line []rune
+			for x := lr.X; x < lr.Right(); x++ {
+				line = append(line, rec.at(x, lr.Y+y))
+			}
+			if got := strings.TrimRight(string(line), " \x00"); strings.Contains(got, name) {
+				return got
+			}
+		}
+		t.Fatalf("no row for %q", name)
+		return ""
+	}
+	if got := row("keyfile.dll"); strings.Contains(got, "0 B") || strings.Contains(got, "0001-01-01") {
+		t.Errorf("unknown-size row rendered %q; want no size and no date", got)
+	}
+	// A file that really is empty still says so — SizeUnknown is the only
+	// thing that distinguishes the two, and conflating them loses a fact.
+	if got := row("empty.bak"); !strings.Contains(got, "0 B") {
+		t.Errorf("a genuinely empty file rendered %q; want its size", got)
+	}
+	if got := row("empty.bak"); strings.Contains(got, "0001-01-01") {
+		t.Errorf("a file with no timestamp rendered %q; want no date", got)
+	}
+}

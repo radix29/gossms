@@ -5,10 +5,10 @@ import (
 	"database/sql"
 )
 
-// SchedStats is the CPU-pressure picture sys.dm_os_schedulers gives. This
-// is the only CPU source used: the ring buffers carry a process-CPU
-// percentage but need XML shredding and extra permissions, and the numbers
-// here are enough to show pressure.
+// SchedStats is the CPU-pressure picture sys.dm_os_schedulers gives: how much
+// work is queued for the schedulers that run user tasks. It is not the host's
+// CPU percentage — that is CPUUsage, shredded out of the scheduler-monitor
+// ring buffer in cpu.go — and the two answer different questions.
 type SchedStats struct {
 	RunnableTasks float64
 	CurrentTasks  float64

@@ -59,7 +59,8 @@ func NewNewAuditDialog(app *App) *NewAuditDialog {
 
 // auditDestinationItems and auditDestinationValues are one table split in two,
 // the same pairing rule as audit_props.go's on-failure pair: item i means
-// value i, and new_audit_dialog_test.go pins it by name.
+// value i, and new_audit_dialog_test.go pins it by name and asserts the two
+// are the same length.
 var (
 	auditDestinationItems  = []string{"File", "Application Log", "Security Log"}
 	auditDestinationValues = []string{

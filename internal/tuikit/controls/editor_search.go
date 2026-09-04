@@ -444,9 +444,9 @@ func (e *Editor) matchSpansForLine(row int) []searchMatch {
 }
 
 // ensureColumnVisible scrolls horizontally so the cursor's display column is
-// inside the content area — the horizontal half of ensureCursorVisible, spelt
-// out on its own so selectMatch states that a match far along a wide line has
-// to be scrolled to sideways as well as vertically.
+// inside the content area. It is the horizontal half of ensureCursorVisible,
+// which calls it for the unwrapped case; selectMatch calls it on its own so a
+// match far along a wide line is scrolled to sideways as well as vertically.
 func (e *Editor) ensureColumnVisible() {
 	if e.wrapMode {
 		return
@@ -455,6 +455,8 @@ func (e *Editor) ensureColumnVisible() {
 	if contentW <= 0 {
 		return
 	}
+	// In display columns: a line of wide characters scrolls twice as far per
+	// caret step as an ASCII one, which is what the eye expects.
 	col := e.cursorDisplayCol()
 	if col < e.scrollCol {
 		e.scrollCol = col

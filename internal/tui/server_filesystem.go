@@ -125,13 +125,19 @@ func (fs *serverFS) List(dir string) ([]dialogs.FileEntry, error) {
 	if err := legacyListingRefusal(fs.sc, found); err != nil {
 		return nil, err
 	}
+	// A pre-2017 instance is listed through xp_dirtree, which reports names
+	// and the directory flag only: every Size is 0 and every LastModified is
+	// the zero time. Saying so is what stops the dialog printing "0 B" and
+	// 0001-01-01 for every file on such a server.
+	sizeUnknown := fs.sc.Server.EnumFileSystemIsLegacy()
 	entries := make([]dialogs.FileEntry, 0, len(found))
 	for _, e := range found {
 		entries = append(entries, dialogs.FileEntry{
-			Name:    e.Name,
-			IsDir:   e.IsDirectory,
-			Size:    e.Size,
-			ModTime: e.LastModified,
+			Name:        e.Name,
+			IsDir:       e.IsDirectory,
+			Size:        e.Size,
+			ModTime:     e.LastModified,
+			SizeUnknown: sizeUnknown,
 		})
 	}
 	return entries, nil

@@ -547,10 +547,12 @@ type nodeData struct {
 	// SET SINGLE_USER WITH ROLLBACK IMMEDIATE before the server refuses the
 	// rename, and renaming a system Agent job succeeds outright.
 	IsSystem bool
-	// IsEnabled mirrors a SQL Server Agent job/schedule/alert/operator's
-	// own Enabled flag — set at load time so the context menu can offer a
-	// single "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the
-	// same single-flag-drives-one-label idiom).
+	// IsEnabled mirrors the object's own enabled flag — a SQL Server Agent
+	// job, schedule, alert or operator, a server trigger, a server audit or
+	// audit specification, a security policy, and an endpoint, where it means
+	// STARTED. Set at load time so the context menu can offer a single
+	// "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the same
+	// one-flag-drives-the-presentation idiom).
 	IsEnabled bool
 
 	// AGName is the owning availability group's name for any node under it

@@ -13,6 +13,29 @@ delete an item once it is done. The "do not re-raise" sections
 below are the deliberate exception: they are not history, they are what stops
 a settled question being reopened.
 
+## Version support: gosmo is not version-aware, plan written 2026-09-03
+
+The target is **SQL Server 2016 SP1 and later**; the floor is 2016 SP1 rather
+than RTM because `procedure.go`, `scripter.go` and gossms's
+`internal/activity/block.go` emit `CREATE OR ALTER`. gosmo is currently written
+against whatever the two instances in the house are (majors 14 and 17), and the
+first run on anything older than 2019 found nine defects — four gosmo reads
+select catalog columns that do not exist before 2019/2022 and fail outright
+(Column Master Keys, Query Store options, `Table.Detail`'s `ledger_type_desc`,
+which kills **Table Properties > General** on every table, and
+`Statistic.Header`, where DBCC returns 10 columns and the code scans 11). For
+the 2016 target the biggest item is **`STRING_AGG` in seven queries** — a 2017
+function — which would kill partition functions and schemes, server and
+database triggers, foreign keys and audit specifications.
+
+There is no major 13, 15 or 16 instance and no way to run one here (no Docker,
+3 GB RAM), so the plan is built around verification that does not need them.
+**Acquiring a real SQL Server 2016 on `win10cli` is the highest-value thing
+that could be added.** All findings, the gating mechanism, the three
+verification layers and the reproduction recipe are in
+**`docs/version-support-plan.md`**, which is the resume point — nothing is
+fixed yet.
+
 ## By design — not issues, do not re-raise
 
 - **Three items came off README's Known Issues 2026-08-18, as scope notes
@@ -330,12 +353,22 @@ Each is a feature, not a defect.
   the lossless form, with `Msg 47122`, and allows the forced one. Both
   verified live.
 
-  **`RemoveReplica` and `Drop` have no live coverage against a real group.**
-  Both were verified by standing up a throwaway `CLUSTER_TYPE = NONE` group
-  across ubusql1/ubusql2 and tearing it down, since running them on AAG1 would
-  destroy the test cluster. `TestLiveAvailabilityGroupOperations` deliberately
-  skips them; only add/remove database, suspend/resume, the listener round
-  trip and the failover refusal run there.
+  **`RemoveReplica` and `Drop` have live coverage — closed 2026-09-04.** Not
+  against AAG1, which running them on would destroy, but against the throwaway
+  `CLUSTER_TYPE = NONE` group `TestLiveAvailabilityGroupCreate` builds across
+  ubusql1/ubusql2 and tears down: `Drop` on the primary and on the secondary's
+  stale row was already asserted there, and `RemoveReplica` is now a subtest of
+  the same test — the secondary's 41190 refusal of removing itself, the removal
+  from the primary, and the stale row the removed instance keeps.
+  `TestLiveAvailabilityGroupOperations` still skips both deliberately; only
+  add/remove database, suspend/resume, the listener round trip and the failover
+  refusal run against the standing group.
+
+  The guard that makes this safe is worth knowing about before touching that
+  test: `liveDropGroupEverywhere` runs *before* the create as well as after it,
+  so `-liveag-create-name` is a flag that reaches `DROP AVAILABILITY GROUP` on a
+  live cluster. It refuses, fatally, any group whose cluster type is not NONE —
+  verified by aiming the flag at AAG1, which was left untouched.
 
   **A listener address cannot be removed and a listener cannot be renamed.**
   Not a gap in gossms: `ALTER AVAILABILITY GROUP ... MODIFY LISTENER` has no
@@ -390,10 +423,30 @@ Each is a feature, not a defect.
   cache: `ServerConn.recordPeerFailure` holds the last connect failure per
   `InstanceKey` for `peerFailureTTL` (30s) and `Peer` answers from it before
   dialling. Re-measured under the same blackhole: first call 15.0s, second
-  9.7ms. The TTL is short deliberately — there is no invalidation hook, and a
-  failover changes which instance is asked for anyway — so a primary that comes
-  back is unreachable in the UI for at most half a minute. The connect timeout
-  itself was left alone: a peer across a WAN may legitimately need it.
+  9.7ms. The TTL is short deliberately, so a primary that comes back is
+  unreachable in the UI for at most half a minute. The connect timeout itself
+  was left alone: a peer across a WAN may legitimately need it.
+
+  **Invalidated explicitly since 2026-09-03**, so the half minute no longer has
+  to be waited out: `ServerConn.ForgetPeerFailure(server)` drops one instance's
+  entry and `ForgetPeerFailures()` drops all, both recursing into the cached
+  peers because a chained read (the tree follows a group to its primary and
+  reads on from there) records its failure on the peer, not on the connection
+  the user is acting on. Called on the two events that prove the cached answer
+  stale: a successful direct `File > Connect` to that instance
+  (`App.forgetPeerFailure`), and a Refresh anywhere in the Always On subtree
+  (`forgetPeerFailuresForRefresh`, on both the context-menu item and F5). A
+  Refresh elsewhere deliberately leaves the cache alone — it is evidence about
+  nothing. Verified live against AAG1 by
+  `TestLiveAGForgetsAPeerFailureWhenThePrimaryComesBack`, which produces the
+  stale entry with a login the primary lacks, creates it there mid-test, and
+  A/B'd: with the drop stubbed out the recovered primary stays refused. Also
+  under the real blackhole (`iptables -I INPUT -s <client> -p tcp --dport 1433
+  -j DROP` on the primary): `TestLiveAGHandlesABlackholedPrimary`'s third stage
+  measured 15.02s / 11.6ms cached / 15.01s after `ForgetPeerFailures`, and a
+  throwaway run with the rule dropped *mid-session* is the scenario itself —
+  the cache still refused in 9.1µs, and after `ForgetPeerFailures` the peer
+  connected in 381ms.
 
 ## win10cli as a third instance: what it can and cannot be
 
@@ -423,11 +476,16 @@ be a third availability replica**.
   certificate. Left in place because a third instance with a STARTED endpoint is
   exactly what Add Replica's Connect needs, and rebuilding it costs a live run.
   It is inert — it is not a replica of anything and nothing connects over it.
-- **What it still cannot supply is a named instance.** `InstanceName` is null,
-  and Linux SQL Server has no named instances at all, so
-  `endpointPrincipalBase`'s `HOST\INSTANCE` → `HOST$INSTANCE` mapping remains
-  unexercised live. Closing that needs a second, *named* SQL Server instance
-  installed on the Windows host — see the entry above.
+- **The named instance it could not supply now exists — closed 2026-09-04.**
+  The default instance's `InstanceName` is still null and Linux SQL Server has
+  no named instances, but the host also runs `win10cli\sql2016` and
+  `win10cli\sql2017`, and `endpointPrincipalBase`'s `HOST\INSTANCE` →
+  `HOST$INSTANCE` mapping has been run live across all three by
+  `internal/tui/live_endpoint_test.go` — including two named instances in one
+  exchange, which is the case the mapping exists for. The measured fact behind
+  it: the unmapped name is not quietly taken as a Windows principal, it is
+  refused, Msg 15006. The exchange test writes to all three instances and drops
+  everything it creates, so the deliberate `ubusql1_*` config above survives it.
 
 ## Reworks named in README's Known Issues
 
@@ -629,11 +687,21 @@ Three things about it are load-bearing:
   suspended job still holds a session. Sending the request and letting the
   server answer is better than refusing an action that would have worked.
 
-Still open: **the Agent-stopped fallback has not been run live.**
-`xp_cmdshell 'net stop SQLSERVERAGENT'` on win10cli fails with "Access is
-denied" — the SQL Server service account cannot control the Agent service — so
-the fallback is reasoned from the encoding and pinned only by the corrected
-`CASE`, which *was* verified live in both states. Two deprecated constants
+Verified live 2026-09-03 on ubusql1, Agent stopped for real
+(`mssql-conf set sqlagent.enabled false` + a service restart, the cluster in
+maintenance-mode; `xp_cmdshell 'net stop SQLSERVERAGENT'` on win10cli is
+refused, which is what had blocked it). gosmo's
+`live_jobstate_test.go` is the harness — three flag-gated steps, since a job
+has to be left mid-run *before* Agent goes down — and it corrected one thing
+the reasoning had wrong: **with Agent stopped `xp_sqlagent_enum_jobs` does not
+fail.** It runs and returns zero rows, so `jobStates` returns an empty map with
+no error and `applyJobStates` overlays nothing; the fallback is reached by
+covering no job, not by an error. The error return is still right for the other
+case (a caller the procedure refuses), and the doc comment now says both. With
+Agent down, a job interrupted mid-run reports Executing and a job that never
+ran reports Idle, through `JobByName` and through the whole `Jobs` listing —
+mutation-checked by flipping the derivation's `CASE` to `THEN 4 ELSE 1`, which
+fails all four assertions. Two deprecated constants
 also remain: `JobStateCancelling` and `JobStateRunning` name states Agent's
 encoding does not have. They carry negative values so no switch over the real
 encoding reaches them, and are kept only so existing callers compile
@@ -840,15 +908,28 @@ code — plus a semantic read of two batches of files. What is left:
   (`propsheet.ClipboardRow` "today only TextRow"); and an inverted sentence
   that reads fluently either way (`Editor.completionProvider` said the SQL
   editor was the one *without* a provider).
-  **What is left is `internal/tui/**` (the bulk of it), `internal/query`,
-  `internal/db`, `internal/activity`, `internal/showplan`, `internal/config`,
-  `internal/fileutil`** — minus the batch-1/2 files above.
+  Batch 5 (2026-09-04) finished the six small packages — `internal/config`,
+  `internal/fileutil`, `internal/db`, `internal/query`, `internal/showplan`,
+  `internal/activity`, every non-test file — and found four, two of them real:
+  `db/capabilities.go`'s "both probes are single round trips" (the database
+  probe is two), and `activity/sched.go`'s claim to be "the only CPU source
+  used", which `cpu.go` stopped being true of. In `internal/tui` it read
+  `app.go`, `app_explorer_data.go`, `tree_node.go`, `object_explorer.go` and
+  `new_endpoint_dialog.go` plus the three subpackage `doc.go`s (one drift:
+  `nodeData.IsEnabled` documented as Agent-only), then swept two shapes
+  mechanically across all 192 non-test files: every checkable count is right,
+  and two of 157 file references named files that do not exist — one a deleted
+  test, one a test that had never been written, which is now written.
+  **What is left is the per-file semantic read of the other 187 files of
+  `internal/tui/**`.**
 
-- **Two things the batch-3/4 read turned up that are not comment fixes.**
-  `EditorRow`'s `controls.Editor` never sees Ctrl+Z: `PropertySheet.HandleKey`
-  consumes it for page-revert before the form, so undo inside a job step's
-  T-SQL box reverts the whole page instead. Deliberate for every other row kind
-  — the fix, if wanted, is to let the focused row refuse it first. And
+- **One thing the batch-3/4 read turned up that is not a comment fix.**
+  (`EditorRow`'s stolen Ctrl+Z was the other, fixed 2026-09-03:
+  `PropertySheet.HandleKey` now gives the focused row first refusal through
+  `focusedRowHandles` before taking Ctrl+Z for the page revert, so undo inside a
+  job step's T-SQL box no longer discards every other row's edits. A read-only
+  editor still refuses the key, so a non-T-SQL step reverts as before.
+  A/B'd live on win10cli against a pre-fix binary.)
   `editor_search.go`'s `ensureColumnVisible` has duplicated
   `ensureCursorVisible`'s horizontal half since the day it was written
   (`selectMatch` calls both); harmless, kept, its comment now says what it does
@@ -941,12 +1022,15 @@ declined, and why:
   asserts nothing. Each carries a `//lint:ignore U1000` naming the reader.
 - **`rightAlterAnyLinkedSrv` and `rightCreateTable` still read as unused**, as
   the review recorded. Deliberate; pinned by `permission_gate_names_test.go`.
-- **`core.NewRect`, `core.JoinPath` and `activity.WaitCategory.String` are
-  genuinely idle** and left alone — `tuikit` and `internal/activity` are
-  gossms-internal, so removal would be allowed, but the review costed it as
-  low value either way.
 - **The `internal/tui` package split is not attempted.** § Architecture of the
   review has the cost; nothing here changes it.
+
+The bullet that named `core.NewRect`, `core.JoinPath` and
+`activity.WaitCategory.String` as idle-but-kept was deleted 2026-09-04: none of
+the three is in the tree any more. The rest were re-checked against the code on
+the same date and all still hold — both chart `Draw` methods, the five
+`//lint:ignore U1000` fixtures, `rightAlterAnyLinkedSrv`/`rightCreateTable` and
+the unsplit `internal/tui`.
 
 ## Permission gating: what P3 deliberately leaves out
 
@@ -990,16 +1074,68 @@ these is a known limit of the gate layer, not an oversight.
   `GRANT SELECT ON dbo.Appointments` plus `DENY SELECT ON
   dbo.Appointments(PatientID)`: the probe returns `O:SELECT dbo.Appointments 1`
   and `C:SELECT dbo.Appointments.PatientID 0` — the T-SQL is valid and the two
-  scopes stay apart. Only the *probe list* is unexercised in production:
-  `ProbedObjectPermissions` is `ALTER`, which is not column-grantable, so no
-  column row can appear until SELECT/UPDATE/REFERENCES joins it.
+  scopes stay apart.
 
-  **What remains open**: a DENY at any class other than 1 that the tree acts on
-  is still invisible, and the wider grant answers for it.
-- **The `xp_dirtree` silent-empty guard is unit-tested only.** Both test
-  servers are 2017 or later and so never take that path;
-  `legacyListingRefusal` is exercised across all five combinations by test but
-  has never run against a real pre-2017 instance.
+  **The column path is dormant in production, and that is settled** (decided
+  2026-09-03, do not re-raise). `ProbedObjectPermissions` is `ALTER`, which is
+  not column-grantable, so `ColumnPermissions` is empty on every real
+  connection and `DeniedOnAnyColumn` never withholds anything. Adding `SELECT`
+  to the list would not change that on its own: `objectDenial` asks the column
+  question only for the rights an action lists, and the only object-scoped
+  right gossms declares is `rightAlterOnObject`. Firing the path needs a gossms
+  *consumer* — an action gated on `SELECT` at object scope — and the only
+  candidate is Select Top 1000 Rows, which hands the user generated text in a
+  query panel rather than performing the read, so withholding it would grey a
+  menu item for a statement the user can still type. The machinery stays, live
+  T-SQL-verified, for the first action that genuinely reads an object's data.
+  Two facts for whoever picks it up: `SELECT` in the probe list brings public's
+  catalog-view grants back into `ObjectPermissions` (232 rows on HealthClinic,
+  measured 2026-09-03) and they must not be filtered out by `is_ms_shipped`,
+  because those grants are real and a system view would otherwise be withheld
+  from a login that can read it; and `permission_gate_names_test.go` checks an
+  object-scoped right against `ProbedDatabasePermissions`, not
+  `ProbedObjectPermissions`, so a new one would gate nothing silently.
+
+  **Schema scope is closed** (2026-09-03). The `S:` rows the probe already had
+  could not answer it: `HAS_PERMS_BY_NAME` returns 0 for a schema permission
+  simply never granted exactly as it does for one explicitly denied, and that is
+  the ordinary case — withholding on it would empty the menus of every login
+  working through a database-wide grant. So gosmo reads the catalog beside the
+  probe: `explicitSchemaCapabilityQuery` selects class 3 rows out of
+  `sys.database_permissions` through the same recursive `cap_me` principal set,
+  tags them `E:` and keys them by schema into `ExplicitSchemaPermissions`, read
+  through `DeniedOnSchema`. `objectDenial` asks it after `DeniedOnObject` and
+  `DeniedOnAnyColumn`, under the same sysadmin exemption, and the withheld item
+  and page banner name the schema ("ALTER is denied on schema dbo.").
+  Verified live 2026-09-03 on win10cli against a throwaway login with
+  `GRANT ALTER` on `HealthClinic` plus `DENY ALTER ON SCHEMA::dbo`: the probe
+  returns `E:ALTER dbo 0` in one round trip while `HAS_PERMS_BY_NAME` on the
+  database still answers 1, `sp_rename` fails Msg 297, and the pre-fix binary
+  offered Rename/Move to Schema/Delete in full colour where the fixed one greys
+  all three with the reason. One side note from that run: the DENY also hides
+  every object in the schema by metadata visibility, so a table needs some other
+  grant before the denial is even reachable in the tree.
+
+  **What remains open**: a DENY at a class other than 1 or 3 that the tree acts
+  on is still invisible; and a database-scope (class 0) DENY beneath a narrower
+  object- or schema-scope grant is too — `Permits` sees it, but
+  `rightAlterOnObject` answers yes beside it and SQL Server resolves the wider
+  DENY over the narrower grant.
+- **The `xp_dirtree` silent-empty guard has now run live** (2026-09-04), on
+  `win10cli\sql2016` (major 13). `internal/tui/live_legacyfs_test.go` is the
+  standing test: the sysadmin half pins that the listing degrades rather than
+  fails (entries, no Size, no LastModified), and the non-sysadmin half creates
+  a throwaway login and pins the whole premise — `xp_dirtree` really does
+  return no rows *and no error*, `legacyListingRefusal` speaks, and
+  `serverFS.List` carries it to the Browse dialog. It fails rather than skips
+  on a 2017+ instance, where every assertion would pass for the wrong reason.
+  Driven end to end in the TUI as well, and that run found two rendering
+  defects the unit tests could not, both fixed: `FileDialog` clipped the
+  refusal to one line ("…before SQL Server 2017 the server lists") and now
+  wraps it with `core.WrapTextLimit`; and it rendered the missing size and
+  timestamp as `0 B` and `0001-01-01 00:00` on every legacy entry, so
+  `FileEntry.SizeUnknown` plus a zero-`ModTime` check now leave both columns
+  blank.
 
 ## Detach / Attach
 
@@ -1092,3 +1228,19 @@ taken while building those six, not work that was forgotten.
   `sys.backup_devices` nor `sys.endpoints` records a creation date and a
   criterion over a zero `nodeData.CreateDate` rejects every row.
   Live-verified on win10cli, both halves narrowing together.
+- **SQL Server names the constraint blocking a DROP COLUMN after all, and
+  gossms's warning still says it will not** (2026-09-03, found by gosmo's
+  `TestLiveDropColumnAndTransferObject` failing on both instances). The test
+  exists as a tripwire on exactly that: it asserted the refusal does *not* name
+  the blocker, claiming that was verified on SQL Server 17. It is not true on
+  either major — 14 and 17 both answer
+  `The object 'DF_Orders_flagged' is dependent on column 'flagged'. ALTER TABLE
+  DROP COLUMN flagged failed because one or more objects access this column.`
+  (the server sends two messages and the driver concatenates them), so the
+  assertion was wrong when written rather than overtaken by a new release.
+  Nothing is broken — the drop is still refused and gosmo still passes the
+  server's text through — but gossms's own pre-drop warning describes the
+  *classes* of blocker on the premise that the server names none, and it could
+  name the blocker instead. Unfixed: the assertion has to be re-aimed rather
+  than deleted (it is still worth pinning that the dependency refusal arrives),
+  and the gossms wording is a separate change.

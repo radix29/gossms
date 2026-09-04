@@ -151,11 +151,12 @@ func (d *NewEndpointDialog) defaultPeerServer(ctx context.Context, inst *newEndp
 // login and user names the exchange creates.
 //
 // A named instance reports @@SERVERNAME as HOST\INSTANCE, and the backslash
-// makes the raw name unusable: [HOST\INST_login] is the spelling of a Windows
-// principal, so CREATE LOGIN ... FROM CERTIFICATE on it is a name SQL Server
-// also accepts from an authentication path unrelated to this certificate. It
-// becomes HOST$INST, the convention SQL Server's own service accounts use
-// (MSSQL$INSTANCE).
+// makes the raw name unusable: a backslash is how SQL Server spells a Windows
+// principal, and the login this pipeline creates carries a password, so
+// CREATE LOGIN [HOST\INST_login] WITH PASSWORD is refused outright — Msg
+// 15006, "not a valid name because it contains invalid characters", measured
+// on WIN10CLI\SQL2016. It becomes HOST$INST, the convention SQL Server's own
+// service accounts use (MSSQL$INSTANCE).
 //
 // Not truncated to the host the way gosmo's endpointURL does — right for a TCP
 // host, wrong here, since two named instances on one machine would then share

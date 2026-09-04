@@ -131,6 +131,27 @@ go install github.com/radix29/gossms/cmd/gossms@latest
 You need a terminal with 256 colours and UTF-8 support (most modern ones)
 and access to a SQL Server instance.
 
+### Supported SQL Server versions
+
+**SQL Server 2016 SP1 (13.0.4001) and later**, on Windows and on Linux.
+
+SP1 rather than 2016 RTM because of `CREATE OR ALTER`, which arrived in
+13.0.4001. Three statements use it unconditionally: the stored-procedure create
+in [gosmo](https://github.com/radix29/gosmo), and the two procedures Activity
+Monitor installs — its blocking-chain helper and `sp_WhoIsActive`. Those three
+are what set the floor; every other statement that needs a later release is
+gated on the connected instance's version instead.
+
+Features the connected instance is too old for are *not* offered rather than
+offered-and-failing: Query Store's CUSTOM capture mode and wait-stats settings,
+compatibility levels the server rejects, and enclave-enabled column master keys
+all disappear below the version that introduced them. Later columns read back
+as zero values instead of failing the page they are on.
+
+Verified live on SQL Server 2017 and 2025. 2016, 2019 and 2022 are argued from
+the catalog documentation and pinned by tests rather than exercised — no
+instance of those majors is available.
+
 ## Usage
 
 ```bash

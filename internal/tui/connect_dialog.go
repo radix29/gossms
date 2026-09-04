@@ -85,7 +85,6 @@ func NewConnectDialog(app *App) *ConnectDialog {
 
 	d.fServer = widgets.NewInputField("Server:  ", 38, false)
 	d.fPort = widgets.NewInputField("Port:    ", 6, false)
-	d.fPort.SetValue("1433")
 	d.fDatabase = widgets.NewInputField("Database:", 38, false)
 	d.fUser = widgets.NewInputField("User:    ", 38, false)
 	d.fPassword = widgets.NewInputField("Password:", 38, true)
@@ -120,7 +119,7 @@ func (d *ConnectDialog) rebuildFocusable() {
 // when an autocomplete suggestion is chosen.
 func (d *ConnectDialog) PreFill(c *config.Connection) {
 	d.fServer.SetValue(c.Server)
-	d.fPort.SetValue(strconv.Itoa(c.Port))
+	d.fPort.SetValue(portFieldValue(c.Port))
 	d.fDatabase.SetValue(c.Database)
 	d.fUser.SetValue(c.User)
 	d.fPassword.SetValue(c.Password)
@@ -267,7 +266,8 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	d.fConnStrPreview.Draw(s)
 
 	d.DrawSeparator(s)
-	d.DrawButtons(s, []string{"Connect", "Cancel"}, d.btnFocus)
+	d.DrawButtonsGated(s, []string{"Connect", "Cancel"}, d.btnFocus,
+		[]bool{!d.canConnect()})
 
 	// Drawn last, so neither the auth-method list nor the server-match list is
 	// painted over by the fields and buttons below them.
@@ -347,17 +347,30 @@ func (d *ConnectDialog) layoutFields() {
 	d.fConnStrPreview.SetBounds(lx, row, previewW, 4)
 }
 
-// defaultPort is the port used when the Port field is left empty — SQL
-// Server's own default.
+// defaultPort is SQL Server's own default TCP port, the one the driver dials
+// when the address carries none.
 const defaultPort = 1433
 
-// port reads the Port field, defaulting an empty one, and reports whether it
-// parsed. An invalid port is rejected rather than silently falling back:
+// portFieldValue renders a stored port for the Port field, leaving the default
+// and the unset one blank: the field is optional, and a named instance resolves
+// its port through SQL Browser, so a pre-filled "1433" reads as a requirement
+// and, once carried into the address, overrides the instance lookup.
+func portFieldValue(port int) string {
+	if port == 0 || port == defaultPort {
+		return ""
+	}
+	return strconv.Itoa(port)
+}
+
+// port reads the Port field and reports whether it parsed. An empty field means
+// "unspecified" — 0, which resolveServer leaves out of the address entirely
+// rather than pinning to 1433, since a named instance takes its port from SQL
+// Browser. An invalid port is rejected rather than silently falling back:
 // connecting to 1433 because "14 33" didn't parse looks like the typo worked.
 func (d *ConnectDialog) port() (int, bool) {
 	v := strings.TrimSpace(d.fPort.Value())
 	if v == "" {
-		return defaultPort, true
+		return 0, true
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 1 || n > 65535 {
@@ -372,7 +385,7 @@ func (d *ConnectDialog) port() (int, bool) {
 func (d *ConnectDialog) currentOptions() config.Connection {
 	port, ok := d.port()
 	if !ok {
-		port = defaultPort
+		port = 0
 	}
 	authMethod := config.AllAuthMethods()[d.ddAuth.Selected()]
 	return config.Connection{
@@ -465,9 +478,21 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
+// canConnect reports whether Connect has enough to dial: the driver rejects an
+// empty Server outright, so Connect is gated on it rather than reporting
+// "Could not connect to : ConnectionOptions.Server is required" — which is
+// what pressing Enter on the dialog gossms opens at startup used to produce.
+func (d *ConnectDialog) canConnect() bool {
+	return strings.TrimSpace(d.fServer.Value()) != ""
+}
+
 func (d *ConnectDialog) doButton() {
 	switch d.btnFocus {
 	case 0: // Connect
+		if !d.canConnect() {
+			d.app.setStatus("Enter a server name to connect")
+			return
+		}
 		if _, ok := d.port(); !ok {
 			d.app.alertDialog.ShowAlert("Connect",
 				fmt.Sprintf("Port must be a number from 1 to 65535, not %q", strings.TrimSpace(d.fPort.Value())))

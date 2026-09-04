@@ -124,17 +124,59 @@ func TestBuildConnectionStringDefaultsPortTo1433(t *testing.T) {
 	}
 }
 
+// TestBuildConnectionStringNamedInstance pins that a named instance with no
+// port is previewed without one. The preview must be the DSN Connect actually
+// dials: a named instance takes its port from SQL Browser (win10cli\SQL2017
+// answers on 55253), so a ":1433" written in here would name the *default*
+// instance — and copying the preview out would reach it.
 func TestBuildConnectionStringNamedInstance(t *testing.T) {
 	got := BuildConnectionString(config.Connection{Server: `myserver\SQLEXPRESS`})
 	u, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("url.Parse(%q): %v", got, err)
 	}
-	if u.Host != "myserver:1433" {
-		t.Errorf("host = %q, want myserver:1433 (no %%5C mangling)", u.Host)
+	if u.Host != "myserver" {
+		t.Errorf("host = %q, want myserver (no port, no %%5C mangling)", u.Host)
 	}
 	if u.Path != "/SQLEXPRESS" {
 		t.Errorf("path = %q, want /SQLEXPRESS", u.Path)
+	}
+}
+
+// TestBuildConnectionStringNamedInstanceDefaultPortDropped is the same for a
+// Port field left at 1433 — the value the dialog used to pre-fill. Treating it
+// as "unspecified" is what keeps the browser lookup alive.
+func TestBuildConnectionStringNamedInstanceDefaultPortDropped(t *testing.T) {
+	got := BuildConnectionString(config.Connection{Server: `myserver\SQLEXPRESS`, Port: 1433})
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", got, err)
+	}
+	if u.Host != "myserver" {
+		t.Errorf("host = %q, want myserver", u.Host)
+	}
+	if u.Path != "/SQLEXPRESS" {
+		t.Errorf("path = %q, want /SQLEXPRESS", u.Path)
+	}
+}
+
+// TestResolveServerLeavesNamedInstanceAlone pins the address handed to gosmo,
+// which is what Connect dials — the preview above only renders it. A port
+// appended here (":1433" or ",1433") suppresses the SQL Browser lookup and
+// lands on the default instance instead.
+func TestResolveServerLeavesNamedInstanceAlone(t *testing.T) {
+	for _, port := range []int{0, 1433} {
+		if got := resolveServer(`myserver\SQLEXPRESS`, port); got != `myserver\SQLEXPRESS` {
+			t.Errorf("resolveServer(port=%d) = %q, want myserver\\SQLEXPRESS", port, got)
+		}
+	}
+	if got := resolveServer(`myserver\SQLEXPRESS`, 55253); got != `myserver\SQLEXPRESS,55253` {
+		t.Errorf("resolveServer(port=55253) = %q, want myserver\\SQLEXPRESS,55253", got)
+	}
+	for _, port := range []int{0, 1433} {
+		if got := resolveServer("myserver", port); got != "myserver" {
+			t.Errorf("resolveServer(host, port=%d) = %q, want myserver", port, got)
+		}
 	}
 }
 

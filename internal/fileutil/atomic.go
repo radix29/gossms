@@ -107,10 +107,10 @@ func resolveSymlink(path string) string {
 //
 // Preserving the existing mode is what stops a rename-based write behaving
 // differently from a write-in-place one. Every caller passes a constant — 0600
-// for config.json and gossms.key, 0644 for a saved script — and applying it
-// blindly re-widens a file on every save: a .sql the user chmodded 0600 comes
-// back 0644 on the next Ctrl+S. os.WriteFile does not do that, because it
-// doesn't create a new inode; this must not either.
+// for config.json, gossms.key and tracked_queries.json, 0644 for a saved
+// script — and applying it blindly re-widens a file on every save: a .sql the
+// user chmodded 0600 comes back 0644 on the next Ctrl+S. os.WriteFile does not
+// do that, because it doesn't create a new inode; this must not either.
 //
 // Capping at perm is what stops that preservation becoming a security bug. The
 // caller's perm is the widest the file is ever allowed to be, so a config.json

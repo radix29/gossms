@@ -3,9 +3,12 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // Query Store's page is thirteen editors that all leave through one
@@ -154,5 +157,126 @@ func TestQueryStoreActionsRunOnlyWhenTicked(t *testing.T) {
 				t.Errorf("ticking %q ran the other action:\n%s", tc.label, inst.Statements()[0])
 			}
 		})
+	}
+}
+
+// queryStoreResponsesAt answers the page's two reads the way the gated SELECT
+// answers them on a given major: wait stats blank before 2017, the capture
+// policy zeroed before 2019 (gosmo substitutes a typed NULL for each column
+// the instance lacks, and the page reads the zero value back).
+func queryStoreResponsesAt(major int) []fakeResponse {
+	r := queryStoreResponses()
+	if major < 15 {
+		r[1].rows[0][12], r[1].rows[0][13] = int64(0), int64(0)
+		r[1].rows[0][14], r[1].rows[0][15] = int64(0), int64(0)
+	}
+	if major < 14 {
+		r[1].rows[0][11] = ""
+	}
+	return r
+}
+
+// rowLabels is every labelled row on a form, for asserting a row is absent —
+// which no by-label lookup can do.
+func rowLabels(f *propsheet.Form) []string {
+	var out []string
+	for _, r := range f.Rows() {
+		if l, ok := r.(interface{ Label() string }); ok {
+			out = append(out, l.Label())
+		}
+	}
+	return out
+}
+
+// A7: the page offered controls the server can only reject. CUSTOM capture
+// mode and the four Custom: rows write QUERY_CAPTURE_POLICY, which is 2019 and
+// later — and the CUSTOM keyword itself is too — while Wait stats capture
+// writes WAIT_STATS_CAPTURE_MODE, which is 2017 and later.
+func TestQueryStorePageHidesControlsTheServerRejects(t *testing.T) {
+	customRows := []string{
+		"Custom: execution count", "Custom: total compile CPU",
+		"Custom: total execution CPU", "Custom: stale threshold",
+	}
+
+	t.Run("2016 offers neither CUSTOM nor wait stats", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
+		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+
+		if items := selectRow(t, form, "Query capture mode").Items(); slices.Contains(items, "CUSTOM") {
+			t.Errorf("2016 offers CUSTOM: %v", items)
+		}
+		labels := rowLabels(form)
+		for _, l := range append(customRows, "Wait stats capture") {
+			if slices.Contains(labels, sheetLabel(l)) {
+				t.Errorf("2016 draws %q, which it has no setting for", l)
+			}
+		}
+	})
+
+	t.Run("2017 offers wait stats but not CUSTOM", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", queryStoreResponsesAt(14)...)
+		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+
+		if items := selectRow(t, form, "Query capture mode").Items(); slices.Contains(items, "CUSTOM") {
+			t.Errorf("2017 offers CUSTOM, which it rejects: %v", items)
+		}
+		labels := rowLabels(form)
+		if !slices.Contains(labels, sheetLabel("Wait stats capture")) {
+			t.Error("2017 has WAIT_STATS_CAPTURE_MODE; the row must be there")
+		}
+		for _, l := range customRows {
+			if slices.Contains(labels, sheetLabel(l)) {
+				t.Errorf("2017 draws %q, which it has no setting for", l)
+			}
+		}
+	})
+
+	t.Run("2019 offers everything", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "15.0.4123.1", queryStoreResponsesAt(15)...)
+		form, _ := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+
+		if items := selectRow(t, form, "Query capture mode").Items(); !slices.Contains(items, "CUSTOM") {
+			t.Errorf("2019 does not offer CUSTOM: %v", items)
+		}
+		labels := rowLabels(form)
+		for _, l := range append(customRows, "Wait stats capture") {
+			if !slices.Contains(labels, sheetLabel(l)) {
+				t.Errorf("2019 is missing %q", l)
+			}
+		}
+	})
+}
+
+// The other half of A7, and the one a row-presence test cannot reach: with the
+// row gone, Apply must not write the value anyway. indexOf resolved the 2016
+// read's empty wait-stats value to onOff[0] — "ON", which the server never
+// reported — and gosmo's allowlist then rejected the blank before that, so
+// every Apply on 2016 failed whatever the user changed.
+func TestQueryStoreApplyOn2016WritesNoWaitStatsClause(t *testing.T) {
+	sc, inst := newFakeConnAtVersion(t, "13.0.4001.0", queryStoreResponsesAt(13)...)
+	form, apply := loadPage(t, pageDatabaseQueryStore(sc, "appdb"), inst)
+
+	editText(t, form, "Max size", "512")
+
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply on 2016: %v", err)
+	}
+	// The write is an ALTER DATABASE naming the database in the statement, so
+	// it runs on the connection's own database, not inside appdb.
+	stmts := inst.Statements()
+	if len(stmts) != 1 {
+		t.Fatalf("want one statement, got %d: %q", len(stmts), stmts)
+	}
+	if !strings.Contains(stmts[0], "ALTER DATABASE [appdb]") {
+		t.Errorf("statement does not name the database:\n%s", stmts[0])
+	}
+	if strings.Contains(stmts[0], "WAIT_STATS_CAPTURE_MODE") {
+		t.Errorf("2016 apply writes WAIT_STATS_CAPTURE_MODE:\n%s", stmts[0])
+	}
+	if strings.Contains(stmts[0], "QUERY_CAPTURE_POLICY") {
+		t.Errorf("2016 apply writes QUERY_CAPTURE_POLICY:\n%s", stmts[0])
+	}
+	if !strings.Contains(stmts[0], "MAX_STORAGE_SIZE_MB = 512") {
+		t.Errorf("the edit that was made did not reach the server:\n%s", stmts[0])
 	}
 }

@@ -63,8 +63,8 @@ func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan
 // visible and a regression toward it is obvious.
 //
 // It reconstructs that shape out of the production pieces rather than out of
-// the standalone baseline it used to call, which was deleted with the
-// differential tests (see completion_prefix_scan_test.go). Only the ';'
+// the standalone baseline it used to call, which was deleted along with the
+// differential tests that compared the two. Only the ';'
 // boundary is applied, not the GO scan the real one also did: what this
 // measures is the cost of materialising every token in the prefix and then
 // throwing most of them away, and that is unchanged by where exactly the

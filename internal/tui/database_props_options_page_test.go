@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,64 @@ func TestRestrictAccessDoesNotGoThroughSetDatabaseOption(t *testing.T) {
 	if !strings.Contains(stmts[0], "WITH ROLLBACK IMMEDIATE") {
 		t.Errorf("Restrict access did not go through SetUserAccess:\n%s", stmts[0])
 	}
+}
+
+// A6: the Compatibility level dropdown must offer only levels the connected
+// server accepts. Against 2017 the fixed 100..170 list offered 150, 160 and
+// 170, and picking one got "Valid values of the database compatibility level
+// are 100, 110, 120, 130 or 140. (15048)" — a dropdown entry that can only
+// fail.
+func TestCompatibilityLevelDropdownIsCappedAtTheServerVersion(t *testing.T) {
+	resp := func(level int64) []fakeResponse {
+		r := optionsPageResponses()
+		r[0].rows[0][4] = level
+		return r
+	}
+
+	t.Run("2017 offers nothing above 140", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", resp(140)...)
+		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+
+		items := selectRow(t, form, "Compatibility level").Items()
+		for _, bad := range []string{"150", "160", "170"} {
+			if slices.Contains(items, bad) {
+				t.Errorf("2017 offers %q, which the server rejects: %v", bad, items)
+			}
+		}
+		if got := items[len(items)-1]; got != "140" {
+			t.Errorf("highest level offered is %q, want 140: %v", got, items)
+		}
+	})
+
+	// The cap must not hide what the database actually is: one restored from a
+	// newer instance still displays its real level, selected, even though the
+	// server cannot be asked to set it.
+	t.Run("a restored database above the cap still shows its level", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "14.0.2120.1", resp(160)...)
+		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+
+		row := selectRow(t, form, "Compatibility level")
+		items := row.Items()
+		if !slices.Contains(items, "160") {
+			t.Fatalf("the database's own level 160 is missing: %v", items)
+		}
+		if got := items[row.Selected()]; got != "160" {
+			t.Errorf("selected %q, want 160: %v", got, items)
+		}
+		if slices.Contains(items, "150") || slices.Contains(items, "170") {
+			t.Errorf("levels the server rejects are still offered: %v", items)
+		}
+	})
+
+	t.Run("2025 offers 170", func(t *testing.T) {
+		sc, inst := newFakeConnAtVersion(t, "17.0.1125.2", resp(170)...)
+		form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+
+		items := selectRow(t, form, "Compatibility level").Items()
+		if got := items[len(items)-1]; got != "170" {
+			t.Errorf("highest level offered is %q, want 170: %v", got, items)
+		}
+	})
 }
 
 // TestCompatibilityLevelWritesItsOwnStatement covers the other row outside the

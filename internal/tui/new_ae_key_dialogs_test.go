@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -292,5 +293,64 @@ func TestParseHexBytes(t *testing.T) {
 		if string(got) != string(c.want) {
 			t.Errorf("parseHexBytes(%q) = %x, want %x", c.in, got, c.want)
 		}
+	}
+}
+
+// B2: ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects the
+// whole CREATE below that, so the dialog must not offer the two controls on an
+// older instance — an ungated control that can only fail on Apply is what
+// CLAUDE.md § Application rules rules out. The apply is exercised, not just the
+// row list: a hidden checkbox that the apply still reads would send the clause
+// anyway.
+func TestNewColumnMasterKeyDialogHidesEnclavesBelow2019(t *testing.T) {
+	for _, c := range []struct {
+		name, version string
+		wantRows      bool
+	}{
+		{"2016", "13.0.4001.0", false},
+		{"2017", "14.0.2120.1", false},
+		{"2019", "15.0.4123.1", true},
+		{"2022", "16.0.4085.2", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := newTestApp()
+			d := NewNewColumnMasterKeyDialog(a)
+			sc, inst := newFakeConnAtVersion(t, c.version, aeKeyResponses()...)
+			d.show(sc, &explorerNode{data: nodeData{Type: NodeColumnMasterKeys, DBName: "appdb"}})
+			waitAndDrain(t, a)
+			form := d.forms[0]
+			if form == nil {
+				t.Fatal("the prefetch did not build the General page")
+			}
+
+			labels := rowLabels(form)
+			for _, l := range []string{"Allow enclave computations", "Signature (hex)"} {
+				if got := slices.Contains(labels, sheetLabel(l)); got != c.wantRows {
+					t.Errorf("%s draws %q = %v, want %v", c.name, l, got, c.wantRows)
+				}
+			}
+			if !c.wantRows {
+				// The Check row draws at full width, so its label is not padded.
+				if slices.Contains(labels, "Allow enclave computations") {
+					t.Errorf("%s draws the enclave checkbox", c.name)
+				}
+			}
+
+			editText(t, form, "Name", "CMK_v")
+			editText(t, form, "Key path", "CurrentUser/My/DDDD")
+			if err := d.preflight(); err != nil {
+				t.Fatalf("preflight: %v", err)
+			}
+			if err := d.applyFns[0](context.Background()); err != nil {
+				t.Fatalf("apply: %v", err)
+			}
+			stmts := inst.StatementsIn("appdb")
+			if len(stmts) != 1 {
+				t.Fatalf("statements in appdb = %q, want exactly the CREATE", stmts)
+			}
+			if strings.Contains(stmts[0], "ENCLAVE_COMPUTATIONS") {
+				t.Errorf("%s sent the enclave clause with the box untouched:\n%s", c.name, stmts[0])
+			}
+		})
 	}
 }

@@ -8,6 +8,18 @@ import (
 // Input
 // ---------------------------------------------------------------------------
 
+// focusedRowHandles gives the current page's focused row the chance to consume
+// a key the sheet would otherwise take for itself. Asked only for keys with a
+// sheet-wide meaning, so it never reaches Form's own focus cycling.
+func (p *PropertySheet) focusedRowHandles(ev *tcell.EventKey) bool {
+	f := p.PageForm(p.current)
+	if f == nil {
+		return false
+	}
+	kh, ok := f.Focused().(KeyHandler)
+	return ok && kh.HandleKey(ev)
+}
+
 func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 	if !p.Visible() {
 		return false
@@ -20,10 +32,17 @@ func (p *PropertySheet) HandleKey(ev *tcell.EventKey) bool {
 	// reaches Form.Revert and the RevertFn closures behind it. Handled here
 	// rather than in zoneForm so it works from the page list and button row
 	// too, and ahead of the focused row for the same reason F5 is:
-	// widgets.InputField takes Ctrl+A and Ctrl+U but not Ctrl+Z. The one
-	// exception is an EditorRow, whose controls.Editor has its own Ctrl+Z undo
-	// and never sees the key — see docs/open-threads.md.
+	// widgets.InputField takes Ctrl+A and Ctrl+U but not Ctrl+Z.
+	//
+	// The focused row still gets first refusal, because EditorRow's
+	// controls.Editor is the one row widget with a Ctrl+Z of its own: without
+	// this, an undo inside a job step's T-SQL box reverted the whole page and
+	// took every other row's edits with it. A read-only editor refuses the key
+	// (readOnlySafeKey), so a non-T-SQL step still reverts.
 	if ev.Key() == tcell.KeyCtrlZ {
+		if p.zone == zoneForm && p.focusedRowHandles(ev) {
+			return true
+		}
 		if p.RevertPage(p.current) {
 			p.SetMessage("Reverted to the loaded values.", false)
 		} else {

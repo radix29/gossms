@@ -146,7 +146,14 @@ type Connection struct {
 // It doesn't fold in AuthMethod, so Windows Auth and Entra Default to the same
 // server/port/database — both with an empty User — generate the same name and
 // overwrite each other in the saved list.
+//
+// An unspecified port (0) is spelled as the default 1433 it dials, so an entry
+// saved before the Connect dialog stopped pre-filling "1433" still dedups
+// against the same server connected to today rather than doubling in the list.
 func ConnectionName(server string, port int, database, user string) string {
+	if port == 0 {
+		port = 1433
+	}
 	return server + "," + strconv.Itoa(port) + "," + database + "," + user
 }
 

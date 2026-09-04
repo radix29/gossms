@@ -49,7 +49,14 @@ func (d *FileDialog) Draw(s tcell.Screen) {
 	if note != "" {
 		core.FillRect(s, lr, ' ', baseStyle)
 		noteStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.TextDim)
-		core.DrawTextClipped(s, lr.X, lr.Y, lr.W, noteStyle, note)
+		// Wrapped across the list area, not clipped to its first line: a
+		// listing error is a whole sentence from the server or the caller and
+		// the box is barely 70 columns, so a one-line clip cut the reason off
+		// mid-word with no ellipsis — "before SQL Server 2017 the server lists"
+		// is where the pre-2017 xp_dirtree refusal stopped.
+		for i, line := range core.WrapTextLimit(note, lr.W, lr.H) {
+			core.DrawTextClipped(s, lr.X, lr.Y+i, lr.W, noteStyle, line)
+		}
 	} else {
 		for row := 0; row < lr.H; row++ {
 			idx := d.scroll + row
@@ -102,13 +109,20 @@ func (d *FileDialog) drawEntry(s tcell.Screen, y, x, nameColW, idx int) {
 	}
 	core.DrawTextClipped(s, x, y, nameColW, st, marker+icon+" "+name)
 
-	sizeText := formatFileSize(e.Size)
-	if e.IsDir {
+	// An unreported size or timestamp is left blank rather than rendered:
+	// a FileSystem that cannot supply them (goSSMS listing a pre-2017 SQL
+	// Server through xp_dirtree) otherwise dates every entry 0001-01-01 and
+	// calls every file empty, which reads as fact rather than as absence.
+	sizeText := ""
+	switch {
+	case e.IsDir:
 		sizeText = "DIR"
+	case !e.SizeUnknown:
+		sizeText = formatFileSize(e.Size)
 	}
 	core.DrawTextRight(s, x+nameColW+1, y, fileSizeColW, st, sizeText)
 
-	if e.Name != ".." {
+	if e.Name != ".." && !e.ModTime.IsZero() {
 		modX := x + nameColW + 1 + fileSizeColW + 1
 		core.DrawTextRight(s, modX, y, fileModColW, st, e.ModTime.Format("2006-01-02 15:04"))
 	}

@@ -13,6 +13,14 @@ type FileEntry struct {
 	IsDir   bool
 	Size    int64
 	ModTime time.Time
+
+	// SizeUnknown marks an entry whose FileSystem could not report a size, as
+	// opposed to one that is genuinely empty. A zero ModTime says the same
+	// thing for the timestamp and needs no flag — no file is dated year 1 —
+	// but a zero Size cannot, and a listing that prints "0 B" for every file
+	// is stating something false. goSSMS's server-side listing sets it on
+	// pre-2017 instances, where xp_dirtree reports names and nothing else.
+	SizeUnknown bool
 }
 
 // FileSystem is the filesystem a FileDialog browses. Every path operation

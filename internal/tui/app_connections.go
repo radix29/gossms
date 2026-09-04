@@ -50,6 +50,10 @@ func (a *App) connectServer(opts config.Connection) {
 			// instance from any other one: connecting to a replica once is
 			// how the user gives Peer credentials for it.
 			a.rememberPeerCredentials(opts)
+			// A direct connect that succeeded is proof the instance is up,
+			// which is exactly what the negative peer cache on every other
+			// connection is claiming otherwise for up to peerFailureTTL.
+			a.forgetPeerFailure(opts.Server)
 			if err := a.cfg.Save(); err != nil {
 				a.logStatus("save config: %v", err)
 			}

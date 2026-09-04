@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -111,9 +113,50 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 // failed. It is short because the entry is only there to collapse a burst: the
 // user expands three folders of one group and each one asks for the same
 // primary. Long enough and a primary that came back stays unreachable in the UI
-// for no reason; there is no invalidation hook, since a failover changes which
-// instance is asked for anyway.
+// for no reason, which is what ForgetPeerFailure exists to cut short.
 const peerFailureTTL = 30 * time.Second
+
+// ForgetPeerFailure drops the cached connect failure for server, so the next
+// Peer for it dials again instead of replaying the error for the rest of
+// peerFailureTTL. Called when something proves the cached answer stale — a
+// successful direct connect to that instance.
+func (sc *ServerConn) ForgetPeerFailure(server string) {
+	sc.forgetPeerFailures(InstanceKey(server), map[*ServerConn]bool{})
+}
+
+// ForgetPeerFailures drops every cached connect failure — the answer to an
+// explicit Refresh, where the user is asking for the reads to be retried and
+// has no way to say which instance came back.
+func (sc *ServerConn) ForgetPeerFailures() {
+	sc.forgetPeerFailures("", map[*ServerConn]bool{})
+}
+
+// forgetPeerFailures clears one instance's cached failure, or every one when
+// key is "".
+//
+// It recurses into the cached peers because a peer read chains: Object Explorer
+// follows a group to its primary and reads on from there, so the failure to
+// reach a third instance is recorded on the primary's connection, not on sc.
+// seen guards the cycle two instances that have each opened the other make.
+func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) {
+	if sc == nil || seen[sc] {
+		return
+	}
+	seen[sc] = true
+
+	sc.peerMu.Lock()
+	if key == "" {
+		clear(sc.peerFails)
+	} else {
+		delete(sc.peerFails, key)
+	}
+	peers := slices.Collect(maps.Values(sc.peers))
+	sc.peerMu.Unlock()
+
+	for _, p := range peers {
+		p.forgetPeerFailures(key, seen)
+	}
+}
 
 // recordPeerFailure caches err as the answer for key and returns it unchanged,
 // so a caller reads `return nil, sc.recordPeerFailure(...)`.

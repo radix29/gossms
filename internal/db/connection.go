@@ -175,6 +175,14 @@ func (sc *ServerConn) Label() string {
 // the single address gosmo.ConnectionOptions.Server expects. Server alone may
 // already be any form gosmo.ParseServerAddress understands, and a port it
 // already carries wins rather than having the dialog's default appended on top.
+//
+// An unset (0) or default (1433) dialogPort is left out of the address rather
+// than written into it: the driver already dials 1433 when none is given, and a
+// port pinned onto a "host\instance" address suppresses the SQL Browser lookup
+// that resolves the instance's real, dynamically assigned port — win10cli\sql2017
+// listens on 55253, so an appended 1433 silently reaches the default instance
+// instead.
+//
 // When Server carries a "\instance" but no port, a non-default dialogPort is
 // appended with a comma: gosmo recognises a trailing port after an instance name
 // only when comma-separated, and a colon becomes part of the instance name.
@@ -183,10 +191,7 @@ func resolveServer(server string, dialogPort int) string {
 		return server
 	}
 	port := dialogPort
-	if port == 0 {
-		port = 1433
-	}
-	if port == 1433 {
+	if port == 0 || port == 1433 {
 		return server
 	}
 	sep := ":"
@@ -247,9 +252,6 @@ func toGosmoAuth(m config.AuthMethod) gosmo.AuthMethod {
 // backslash percent-escapes to a misleading "%5C".
 func BuildConnectionString(opts config.Connection) string {
 	host, instance, port := gosmo.ParseServerAddress(resolveServer(opts.Server, opts.Port))
-	if port == 0 {
-		port = 1433
-	}
 	q := url.Values{}
 	// Omitted when empty, matching Connect, which sets
 	// ConnectionOptions.Database only for a non-empty value: a preview carrying a
@@ -260,9 +262,16 @@ func BuildConnectionString(opts config.Connection) string {
 	q.Set("encrypt", encryptString(opts.Encrypt))
 	q.Set("TrustServerCertificate", encryptString(opts.TrustServerCertificate))
 
-	u := &url.URL{
-		Scheme: "sqlserver",
-		Host:   fmt.Sprintf("%s:%d", host, port),
+	// A named instance with no port is dialed without one, so the browser
+	// lookup resolves the instance's real port; writing ":1433" in only the
+	// preview would show a DSN that reaches the *default* instance, and copying
+	// it out would do exactly that. A plain host gets the default spelled out.
+	u := &url.URL{Scheme: "sqlserver", Host: host}
+	if port == 0 && instance == "" {
+		port = 1433
+	}
+	if port != 0 {
+		u.Host = fmt.Sprintf("%s:%d", host, port)
 	}
 	if instance != "" {
 		u.Path = "/" + instance

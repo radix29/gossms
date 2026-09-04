@@ -114,3 +114,12 @@ func (a *App) loadPeerCredentials() {
 		a.rememberPeerCredentials(c)
 	}
 }
+
+// forgetPeerFailure tells every open connection that server is reachable
+// again, dropping the cached connect failure that would otherwise answer for
+// it until it expires. See db.ServerConn.ForgetPeerFailure.
+func (a *App) forgetPeerFailure(server string) {
+	for _, sc := range a.connections {
+		sc.ForgetPeerFailure(server)
+	}
+}

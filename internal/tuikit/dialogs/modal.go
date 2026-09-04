@@ -239,7 +239,16 @@ func (d *ModalDialog) buttonRowStartX(labels []string) int {
 // DrawButtons renders a row of buttons at ButtonRowY, right-aligned within
 // the dialog. activeIdx highlights that button.
 func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int) {
+	d.DrawButtonsGated(s, labels, activeIdx, nil)
+}
+
+// DrawButtonsGated draws the button row with every button whose index is true
+// in disabled painted in the disabled foreground, the way a gated menu item is.
+// disabled may be nil or shorter than labels. Drawing it gated does not gate
+// it: the dialog's own handler still has to refuse the button.
+func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeIdx int, disabled []bool) {
 	p := theme.Active()
+	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
 	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
 	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
 	col := d.buttonRowStartX(labels)
@@ -255,6 +264,9 @@ func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int
 		st := btnStyle
 		if i == activeIdx {
 			st = activeStyle
+		}
+		if i < len(disabled) && disabled[i] {
+			st = disabledStyle
 		}
 		text := "[ " + label + " ]"
 		core.DrawText(s, col, y, st, text)

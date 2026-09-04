@@ -89,9 +89,9 @@ func TestIndexOfOKReportsAMiss(t *testing.T) {
 // not fall back to 100 — which is itself a valid level and so reads as fact.
 func TestCompatItemsForInsertsAnUnlistedLevel(t *testing.T) {
 	t.Run("a level below the list is inserted first", func(t *testing.T) {
-		items := compatItemsFor(90)
+		items := compatItemsFor(90, 0)
 		if items[0] != "90" {
-			t.Fatalf("compatItemsFor(90) = %v, want 90 first", items)
+			t.Fatalf("compatItemsFor(90, 0) = %v, want 90 first", items)
 		}
 		if got := indexOf(items, "90"); got != 0 {
 			t.Errorf("indexOf(items, \"90\") = %d, want 0", got)
@@ -99,30 +99,76 @@ func TestCompatItemsForInsertsAnUnlistedLevel(t *testing.T) {
 	})
 
 	t.Run("a level above the list is inserted last", func(t *testing.T) {
-		items := compatItemsFor(180)
+		items := compatItemsFor(180, 0)
 		if items[len(items)-1] != "180" {
-			t.Fatalf("compatItemsFor(180) = %v, want 180 last", items)
+			t.Fatalf("compatItemsFor(180, 0) = %v, want 180 last", items)
 		}
 	})
 
 	t.Run("a listed level leaves the list alone", func(t *testing.T) {
 		for _, level := range []int{100, 150, 170} {
-			if got := compatItemsFor(level); len(got) != len(compatLevelItems) {
-				t.Errorf("compatItemsFor(%d) = %v, want the base list unchanged", level, got)
+			if got := compatItemsFor(level, 0); len(got) != len(compatLevelItems) {
+				t.Errorf("compatItemsFor(%d, 0) = %v, want the base list unchanged", level, got)
 			}
 		}
 	})
 
 	t.Run("an unpopulated level adds nothing", func(t *testing.T) {
-		if got := compatItemsFor(0); len(got) != len(compatLevelItems) {
-			t.Errorf("compatItemsFor(0) = %v, want the base list unchanged", got)
+		if got := compatItemsFor(0, 0); len(got) != len(compatLevelItems) {
+			t.Errorf("compatItemsFor(0, 0) = %v, want the base list unchanged", got)
 		}
 	})
 
 	// The base list must not be mutated by an insert — both call sites read it.
 	t.Run("the base list is never mutated", func(t *testing.T) {
-		compatItemsFor(90)
-		compatItemsFor(180)
+		compatItemsFor(90, 0)
+		compatItemsFor(180, 0)
+		if compatLevelItems[0] != "100" || len(compatLevelItems) != 8 {
+			t.Fatalf("compatLevelItems was mutated: %v", compatLevelItems)
+		}
+	})
+}
+
+// A6: the dropdown must not offer a level the server rejects. On 2017 the
+// fixed list offered 150, 160 and 170, and the server answered "Valid values
+// of the database compatibility level are 100, 110, 120, 130 or 140. (15048)"
+// on both New Database and Database Properties.
+func TestCompatItemsForCapsTheListAtTheServerMajor(t *testing.T) {
+	t.Run("each major caps at its own level", func(t *testing.T) {
+		for major, want := range map[int]string{13: "130", 14: "140", 15: "150", 16: "160", 17: "170"} {
+			items := compatItemsFor(0, major)
+			if got := items[len(items)-1]; got != want {
+				t.Errorf("major %d offers up to %q, want %q (%v)", major, got, want, items)
+			}
+		}
+	})
+
+	// The one case the cap must not swallow: a database restored from a newer
+	// instance still has to display the level it really is, even though the
+	// server cannot be asked to set it.
+	t.Run("a current level above the cap is still shown", func(t *testing.T) {
+		items := compatItemsFor(160, 14)
+		if items[len(items)-1] != "160" {
+			t.Fatalf("compatItemsFor(160, 14) = %v, want 160 present and last", items)
+		}
+		if got := indexOf(items, "160"); got != len(items)-1 {
+			t.Errorf("indexOf(items, \"160\") = %d, want %d", got, len(items)-1)
+		}
+	})
+
+	// An unread version is treated as newest, the convention gosmo's own
+	// version gates follow — degrading to the oldest list would hide levels a
+	// modern server does accept.
+	t.Run("an unknown major is uncapped", func(t *testing.T) {
+		for _, major := range []int{0, 99} {
+			if got := compatItemsFor(0, major); len(got) != len(compatLevelItems) {
+				t.Errorf("major %d = %v, want the full list", major, got)
+			}
+		}
+	})
+
+	t.Run("the base list is never mutated by a cap", func(t *testing.T) {
+		compatItemsFor(160, 13)
 		if compatLevelItems[0] != "100" || len(compatLevelItems) != 8 {
 			t.Fatalf("compatLevelItems was mutated: %v", compatLevelItems)
 		}

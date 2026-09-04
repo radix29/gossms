@@ -8,10 +8,11 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// capabilityProbeTimeout bounds one capability probe. Both probes are single
-// round trips against catalog functions with no I/O behind them, so this is a
-// liveness bound rather than a work budget: the server probe runs inside
-// Connect, where a hang would look like a hung login dialog.
+// capabilityProbeTimeout bounds one capability probe — the server's single
+// round trip, or the database's two. Both ask catalog functions with no I/O
+// behind them, so this is a liveness bound rather than a work budget: the
+// server probe runs inside Connect, where a hang would look like a hung login
+// dialog.
 const capabilityProbeTimeout = 10 * time.Second
 
 // capabilityFields is the ServerConn state behind Capabilities and

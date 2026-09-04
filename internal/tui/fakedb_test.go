@@ -582,6 +582,24 @@ func withDeniedColumns(responses []fakeResponse, columns ...string) []fakeRespon
 	return responses
 }
 
+// withDeniedSchemas adds a schema-scope DENY of ALTER to a capability script,
+// naming each schema as gosmo's catalog block records it — tagged "E:", the
+// rows read out of sys.database_permissions rather than the "S:" rows
+// HAS_PERMS_BY_NAME answers. The two are not interchangeable: an "S:" 0 is what
+// a schema simply never granted anything on also produces.
+func withDeniedSchemas(responses []fakeResponse, schemas ...string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range schemas {
+			r.rows = append(r.rows, []driver.Value{"E:ALTER", n, int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
 // newFakeConnAtVersion is newFakeConn for an instance reporting a given
 // product version — the only way to reach the pre-2017 code paths (gosmo's
 // xp_dirtree filesystem fallback), whose version gate reads ServerInfo.

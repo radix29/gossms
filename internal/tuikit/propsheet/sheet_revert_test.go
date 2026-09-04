@@ -122,3 +122,90 @@ func TestRevertPageIsSafeOnAnUnloadedOrOutOfRangePage(t *testing.T) {
 		}
 	}
 }
+
+// editorSheet returns a shown sheet whose one page holds an EditorRow followed
+// by a TextRow, with the form focused on whichever index focus names.
+func editorSheet(t *testing.T, focus int) (*PropertySheet, *EditorRow, *TextRow) {
+	t.Helper()
+	p := newTestSheet("Steps")
+	var page, seq int
+	p.OnLoadPage = func(pg, s int) { page, seq = pg, s }
+	p.Show()
+
+	ed := NewEditorRow("Command", controls.NewEditor(nil), 6)
+	ed.SetValue("SELECT 1")
+	txt := Text("Name", "step1", 20)
+	f := NewForm(ed, txt)
+	p.SetPageForm(page, seq, f)
+
+	p.setZone(zoneForm)
+	f.FocusFirst()
+	for range focus {
+		f.FocusNext()
+	}
+	return p, ed, txt
+}
+
+// typeIntoEditor drives the editor the way a keystroke does, so the edit lands
+// on its own undo stack — SetValue and Edit would not.
+func typeIntoEditor(r *EditorRow, ch rune) {
+	r.HandleKey(tcell.NewEventKey(tcell.KeyRune, string(ch), tcell.ModNone))
+}
+
+// Ctrl+Z inside an EditorRow is the editor's undo, not the page's revert: the
+// sheet consumed the key before the form ever saw it, so an undo in a job
+// step's T-SQL box reverted the whole page and discarded every other row's
+// edits with it.
+func TestSheetCtrlZInAnEditorRowUndoesInsteadOfRevertingThePage(t *testing.T) {
+	p, ed, txt := editorSheet(t, 0)
+	txt.Paste("-edited")
+	typeIntoEditor(ed, 'X')
+	if ed.Value() == "SELECT 1" {
+		t.Fatal("typing did not reach the editor — the test proves nothing")
+	}
+
+	if !p.HandleKey(ctrlZ()) {
+		t.Fatal("Ctrl+Z was not consumed")
+	}
+
+	if got := ed.Value(); got != "SELECT 1" {
+		t.Errorf("editor text after Ctrl+Z = %q, want the undone %q", got, "SELECT 1")
+	}
+	if got := txt.Value(); got != "step1-edited" {
+		t.Errorf("the text row was reverted to %q — the page revert ran when "+
+			"the editor's undo should have", got)
+	}
+}
+
+// The other direction: with focus anywhere but an editor, Ctrl+Z is still the
+// sheet's page revert. No other row kind claims the key.
+func TestSheetCtrlZOutsideAnEditorRowStillRevertsThePage(t *testing.T) {
+	p, ed, txt := editorSheet(t, 1)
+	txt.Paste("-edited")
+
+	if !p.HandleKey(ctrlZ()) {
+		t.Fatal("Ctrl+Z was not consumed")
+	}
+
+	if got := txt.Value(); got != "step1" {
+		t.Errorf("text row after Ctrl+Z = %q, want the loaded %q", got, "step1")
+	}
+	if ed.Value() != "SELECT 1" {
+		t.Errorf("editor text = %q, want it untouched", ed.Value())
+	}
+}
+
+// A read-only editor refuses Ctrl+Z (controls.readOnlySafeKey), so a job step
+// whose command is not T-SQL keeps the page revert even with the box focused.
+func TestSheetCtrlZInAReadOnlyEditorRowRevertsThePage(t *testing.T) {
+	p, ed, txt := editorSheet(t, 0)
+	ed.SetReadOnly(true)
+	txt.Paste("-edited")
+
+	if !p.HandleKey(ctrlZ()) {
+		t.Fatal("Ctrl+Z was not consumed")
+	}
+	if got := txt.Value(); got != "step1" {
+		t.Errorf("text row after Ctrl+Z = %q, want the loaded %q", got, "step1")
+	}
+}

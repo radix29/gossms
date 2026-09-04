@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -55,9 +57,28 @@ func newDatabaseResponses() []fakeResponse {
 
 func newDatabaseDialog(t *testing.T) (*NewDatabaseDialog, *fakeInstance) {
 	t.Helper()
+	sc, inst := newFakeConn(t, newDatabaseResponses()...)
+	return newDatabaseDialogOn(t, sc, inst)
+}
+
+// newDatabaseDialogAtVersion is newDatabaseDialog against an instance of a
+// given product version, for the rows the dialog gates on it.
+func newDatabaseDialogAtVersion(t *testing.T, version string, modelCompat int64) (*NewDatabaseDialog, *fakeInstance) {
+	t.Helper()
+	// model's own compatibility level cannot exceed the instance's, so it
+	// moves with the version — left at the fixture's 160 against a 2017
+	// server, the dialog would rightly insert 160 as model's real level and
+	// the cap would look broken.
+	resp := newDatabaseResponses()
+	resp[0].rows[0][4] = modelCompat
+	sc, inst := newFakeConnAtVersion(t, version, resp...)
+	return newDatabaseDialogOn(t, sc, inst)
+}
+
+func newDatabaseDialogOn(t *testing.T, sc *db.ServerConn, inst *fakeInstance) (*NewDatabaseDialog, *fakeInstance) {
+	t.Helper()
 	a := newTestApp()
 	d := NewNewDatabaseDialog(a)
-	sc, inst := newFakeConn(t, newDatabaseResponses()...)
 	d.show(sc)
 	waitAndDrain(t, a)
 	for i, f := range d.forms {
@@ -341,5 +362,24 @@ func TestNewDatabasePreflightRejectsANameThatExists(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("nothing should have been written:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// A6, the other call site: New Database's Compatibility level dropdown is
+// capped the same way Database Properties' is. Two pages read the one helper,
+// and only one of them passing the server major would look right in every
+// unit test of the helper itself.
+func TestNewDatabaseCompatibilityLevelIsCappedAtTheServerVersion(t *testing.T) {
+	d, _ := newDatabaseDialogAtVersion(t, "14.0.2120.1", 140)
+	form, _ := d.page(t, "General")
+
+	items := selectRow(t, form, "Compatibility level").Items()
+	for _, bad := range []string{"150", "160", "170"} {
+		if slices.Contains(items, bad) {
+			t.Errorf("2017 offers %q, which the server rejects: %v", bad, items)
+		}
+	}
+	if got := items[len(items)-1]; got != "140" {
+		t.Errorf("highest level offered is %q, want 140: %v", got, items)
 	}
 }

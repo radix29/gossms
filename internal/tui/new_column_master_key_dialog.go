@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/radix29/gosmo"
+
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -99,14 +101,28 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 	enclaveRow := propsheet.Check("Allow enclave computations", false)
 	signatureField := propsheet.Text("Signature (hex)", "", 40)
 
-	d.forms[0] = propsheet.NewForm(
-		propsheet.Section("Column master key"),
-		nameField, providerField, pathField,
-		propsheet.Note("Provider names SQL Server ships with: "+strings.Join(cmkProviders, ", ")+". The key path is that provider's own — e.g. CurrentUser/My/<thumbprint> for a certificate store."),
+	// ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects
+	// the whole CREATE below that, so the two controls are replaced by a note
+	// rather than offered as a row that can only fail on Apply. An unread
+	// version (0) is treated as newest.
+	hasEnclaves := serverMajor(sc) == 0 || serverMajor(sc) >= int(gosmo.SQLServer2019)
+	enclaveRows := []propsheet.Row{
 		propsheet.Section("Secure enclaves"),
 		enclaveRow, signatureField,
 		propsheet.Note("ENCLAVE_COMPUTATIONS takes a signature over this key's metadata, computed from the master key's private key. Only a client holding that key can produce it — create the key in SSMS or with the SqlColumnMasterKey cmdlets and paste the signature here."),
-	)
+	}
+	if !hasEnclaves {
+		enclaveRows = []propsheet.Row{
+			propsheet.Section("Secure enclaves"),
+			propsheet.Note("Enclave-enabled column master keys require SQL Server 2019 or later; this instance is older."),
+		}
+	}
+
+	d.forms[0] = propsheet.NewForm(append([]propsheet.Row{
+		propsheet.Section("Column master key"),
+		nameField, providerField, pathField,
+		propsheet.Note("Provider names SQL Server ships with: " + strings.Join(cmkProviders, ", ") + ". The key path is that provider's own — e.g. CurrentUser/My/<thumbprint> for a certificate store."),
+	}, enclaveRows...)...)
 	d.objectName = func() string { return strings.TrimSpace(nameField.Value()) }
 	d.preflight = func() error {
 		name := d.objectName()
@@ -122,8 +138,11 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		if strings.TrimSpace(pathField.Value()) == "" {
 			return fmt.Errorf("key path is required")
 		}
-		sig := strings.TrimSpace(signatureField.Value())
-		if enclaveRow.Checked() {
+		sig := ""
+		if hasEnclaves {
+			sig = strings.TrimSpace(signatureField.Value())
+		}
+		if hasEnclaves && enclaveRow.Checked() {
 			if sig == "" {
 				return fmt.Errorf("a key that allows enclave computations needs its signature, which SSMS or the SqlColumnMasterKey cmdlets produce")
 			}
@@ -147,7 +166,7 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		name := d.objectName()
 		provider := strings.TrimSpace(providerField.Value())
 		path := strings.TrimSpace(pathField.Value())
-		if !enclaveRow.Checked() {
+		if !hasEnclaves || !enclaveRow.Checked() {
 			return dbObj.CreateColumnMasterKeyContext(ctx, name, provider, path, false)
 		}
 		sig, err := parseHexBytes(strings.TrimSpace(signatureField.Value()))

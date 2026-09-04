@@ -48,7 +48,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 
 	recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 	recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(pf.modelRecovery)))
-	compatItems := compatItemsFor(int(pf.modelCompat))
+	compatItems := compatItemsFor(int(pf.modelCompat), serverMajor(sc))
 	compatRow := propsheet.Select("Compatibility level", compatItems, indexOf(compatItems, strconv.Itoa(int(pf.modelCompat))))
 
 	dataNameField := propsheet.Text("Logical name", "", 24)

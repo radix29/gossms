@@ -234,3 +234,37 @@ func TestAGJoinedCopiesMatchesTheReplicaNameCaseInsensitively(t *testing.T) {
 		t.Errorf("joined = %v, want testdb_1 keyed lower-case and matched", joined)
 	}
 }
+
+// The peer cache is dropped on a Refresh anywhere in the Always On subtree —
+// that is the only tree whose loaders read through db.ServerConn.Peer, and the
+// only place a user who has just repaired the network has to be able to say
+// "try again" instead of waiting out peerFailureTTL.
+//
+// Pinned by name rather than by the contiguous run of NodeType values it
+// happens to be: a type inserted between them would silently join or leave the
+// set.
+func TestIsAlwaysOnNodeCoversTheSubtree(t *testing.T) {
+	in := []NodeType{
+		NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityGroup,
+		NodeAvailabilityReplicas, NodeAvailabilityReplica,
+		NodeAvailabilityDatabases, NodeAvailabilityDatabase,
+		NodeAGListeners, NodeAGListener,
+	}
+	for _, tp := range in {
+		if !isAlwaysOnNode(tp) {
+			t.Errorf("isAlwaysOnNode(%v) = false; a Refresh there leaves the peer cache stale", tp)
+		}
+	}
+	// A Refresh outside the subtree must not throw the cache away: the entry is
+	// there to collapse a burst of reads for one unreachable primary, and
+	// refreshing Databases says nothing about whether it came back.
+	out := []NodeType{
+		NodeServer, NodeDatabases, NodeDatabase, NodeTables, NodeTable,
+		NodeSecurity, NodeManagement, NodeError, NodeLoading,
+	}
+	for _, tp := range out {
+		if isAlwaysOnNode(tp) {
+			t.Errorf("isAlwaysOnNode(%v) = true; an unrelated Refresh drops the peer cache", tp)
+		}
+	}
+}

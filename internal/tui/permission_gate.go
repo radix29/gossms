@@ -23,6 +23,9 @@ type requiredRight struct {
 	// gosmo's per-schema probe rather than the database-wide one. A principal
 	// granted ALTER on one schema holds no database-wide permission at all, so
 	// this is the only right that can speak for it.
+	//
+	// It is also the right objectDenial asks the schema DENY question through —
+	// there, and only there, a schema-scoped right can *withhold*.
 	schema bool
 
 	// membership makes name a fixed database *role* to be a member of, in the
@@ -356,8 +359,15 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 	return false
 }
 
-// objectDenial reports the right whose DENY on the object withholds an action,
-// the column that DENY sits on where it is column-scoped, and whether there is
+// denialSite names the securable a DENY was found on, for the sentence the
+// user is shown. At most one field is set; both empty means the object itself.
+type denialSite struct {
+	column string // a column of the object
+	schema string // the object's schema
+}
+
+// objectDenial reports the right whose DENY withholds an action, the securable
+// that DENY sits on where it is not the object itself, and whether there is
 // one. It is the only part of the gate that
 // withholds on an object-scope answer, and it is sound for a reason
 // HasOnObject's sparseness argument does not cover: it asks for a state the
@@ -387,34 +397,56 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 // a statement touching the whole table fails for a login holding the
 // permission on the table itself. Nothing gossms writes is scoped to named
 // columns, so a column denial is a denial of the action outright.
-func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, string, bool) {
-	if dbName == "" || schema == "" || object == "" || server.InServerRole("sysadmin") {
-		return requiredRight{}, "", false
+//
+// A DENY on the object's *schema* is asked about last, and for the same
+// reason: SQL Server resolves it over a database-wide grant, so a principal
+// with ALTER on the database and DENY ALTER on dbo was offered every rename
+// and drop in it and met Msg 297 on each. It is asked of gosmo's
+// DeniedOnSchema rather than of PermitsOnSchema because HAS_PERMS_BY_NAME
+// answers 0 for a schema permission simply never granted — which is the
+// ordinary case, and withholding on it would empty the menus of every login
+// that works through a database-wide grant.
+func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, denialSite, bool) {
+	if dbName == "" || schema == "" || server.InServerRole("sysadmin") {
+		return requiredRight{}, denialSite{}, false
 	}
 	var caps *gosmo.DatabaseCapabilities
 	asked := false
-	for _, r := range rights {
-		if !r.object {
-			continue
-		}
+	ask := func() *gosmo.DatabaseCapabilities {
 		if !asked {
 			caps, asked = dbCaps(dbName), true
 		}
-		if caps.DeniedOnObject(schema, object, r.name) {
-			return r, "", true
-		}
-		if col, denied := caps.DeniedOnAnyColumn(schema, object, r.name); denied {
-			return r, col, true
+		return caps
+	}
+	if object != "" {
+		for _, r := range rights {
+			if !r.object {
+				continue
+			}
+			if ask().DeniedOnObject(schema, object, r.name) {
+				return r, denialSite{}, true
+			}
+			if col, denied := ask().DeniedOnAnyColumn(schema, object, r.name); denied {
+				return r, denialSite{column: col}, true
+			}
 		}
 	}
-	return requiredRight{}, "", false
+	for _, r := range rights {
+		if !r.schema {
+			continue
+		}
+		if ask().DeniedOnSchema(schema, r.name) {
+			return r, denialSite{schema: schema}, true
+		}
+	}
+	return requiredRight{}, denialSite{}, false
 }
 
 // deniedOnObject is objectDenial for a live connection — the shape the menu
 // gates ask it in, with the cached capabilities the UI goroutine may use.
-func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) (requiredRight, string, bool) {
+func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) (requiredRight, denialSite, bool) {
 	if sc == nil {
-		return requiredRight{}, "", false
+		return requiredRight{}, denialSite{}, false
 	}
 	return objectDenial(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
 }
@@ -424,9 +456,12 @@ func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...
 // role and asks for nothing, because there is nothing to ask for: the login
 // may hold every right in the list already, and the DENY overrides all of
 // them. Only the object's own permission can be changed.
-func deniedText(r requiredRight, column string) string {
-	if column != "" {
-		return r.name + " is denied on column " + column + " of this object."
+func deniedText(r requiredRight, at denialSite) string {
+	switch {
+	case at.column != "":
+		return r.name + " is denied on column " + at.column + " of this object."
+	case at.schema != "":
+		return r.name + " is denied on schema " + at.schema + "."
 	}
 	return r.name + " is denied on this object."
 }
@@ -453,10 +488,14 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 		// right sends the user after one they may already hold — the denial
 		// beats it. Read once here rather than in the predicate: the menu is
 		// rebuilt each time it opens, and Note is a string, not a callback.
-		if r, col, denied := deniedOnObject(sc, dbName, schema, object, rights...); denied {
-			item.Note = r.name + " denied on this object"
-			if col != "" {
-				item.Note = r.name + " denied on column " + col
+		if r, at, denied := deniedOnObject(sc, dbName, schema, object, rights...); denied {
+			switch {
+			case at.column != "":
+				item.Note = r.name + " denied on column " + at.column
+			case at.schema != "":
+				item.Note = r.name + " denied on schema " + at.schema
+			default:
+				item.Note = r.name + " denied on this object"
 			}
 		}
 		// And only when the rights are why it is disabled. An item its own

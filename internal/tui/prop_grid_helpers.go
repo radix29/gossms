@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -202,29 +203,69 @@ func resetGrid(grid *controls.DataGrid, headers []string, rows [][]string, row i
 
 // compatLevelItems is the Compatibility level dropdown's base list, from the
 // oldest level SQL Server still accepts to the newest gosmo names. Don't use it
-// directly — a server can report a level outside it in either direction, so
-// build the list with compatItemsFor.
+// directly — a server can report a level outside it in either direction, and
+// offers only the levels its own version knows, so build the list with
+// compatItemsFor.
 var compatLevelItems = []string{"100", "110", "120", "130", "140", "150", "160", "170"}
 
+// maxCompatForMajor is the highest compatibility level each SQL Server major
+// accepts. Offering one it does not leaves the user a dropdown entry the server
+// answers with "Valid values of the database compatibility level are 100, 110,
+// 120, 130 or 140. (15048)" — 2017 rejected 150, 160 and 170 that way on both
+// New Database and Database Properties.
+//
+// major*10 holds for every version gossms can reach, but an explicit map makes
+// a future irregular release a compile-time edit rather than a silent wrong
+// answer.
+var maxCompatForMajor = map[int]int{
+	13: 130, // 2016
+	14: 140, // 2017
+	15: 150, // 2019
+	16: 160, // 2022
+	17: 170, // 2025
+}
+
 // compatItemsFor returns the Compatibility level items for a database currently
-// at level, inserting level in numeric order when the base list lacks it — a
-// database restored from an older instance, or a level a newer SQL Server adds.
+// at level on a server of the given major version.
+//
+// The list is capped at what major accepts; an unknown major (0, or one newer
+// than the map knows) is uncapped, the same "treat it as newest" convention
+// gosmo's own version gates follow. level is inserted in numeric order when the
+// capped list lacks it — a database restored from an older instance, or one
+// above the cap — because it still has to display as the level it really is
+// even though it cannot be selected.
 //
 // Selecting into the fixed list with indexOf's not-found 0 displays such a
 // database as level 100, itself a real level and so read as fact. A level of 0
 // (an unpopulated lightweight handle) adds nothing.
-func compatItemsFor(level int) []string {
-	s := strconv.Itoa(level)
-	if level <= 0 || slices.Contains(compatLevelItems, s) {
-		return compatLevelItems
+func compatItemsFor(level, major int) []string {
+	items := compatLevelItems
+	if max, ok := maxCompatForMajor[major]; ok {
+		items = slices.DeleteFunc(slices.Clone(items), func(s string) bool {
+			n, _ := strconv.Atoi(s)
+			return n > max
+		})
 	}
-	items := append(slices.Clone(compatLevelItems), s)
+	s := strconv.Itoa(level)
+	if level <= 0 || slices.Contains(items, s) {
+		return items
+	}
+	items = append(slices.Clone(items), s)
 	slices.SortFunc(items, func(a, b string) int {
 		ai, _ := strconv.Atoi(a)
 		bi, _ := strconv.Atoi(b)
 		return cmp.Compare(ai, bi)
 	})
 	return items
+}
+
+// serverMajor is the connected instance's major version, or 0 when it is
+// unknown — which every version-gated helper here treats as newest.
+func serverMajor(sc *db.ServerConn) int {
+	if sc == nil || sc.Server == nil || sc.Server.Info() == nil {
+		return 0
+	}
+	return sc.Server.Info().VersionMajor
 }
 
 // orDefault returns s, or def if s is empty — for server fields that come back

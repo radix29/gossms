@@ -247,6 +247,77 @@ func TestLiveAGHandlesABlackholedPrimary(t *testing.T) {
 	if second > time.Second {
 		t.Errorf("the second call took %v; a cached failure answers at once, a re-dial pays the connect timeout", second)
 	}
+
+	// And the entry has to be droppable on demand: the user who repairs the
+	// network and hits Refresh must not be told the primary is down for the
+	// rest of peerFailureTTL. Asserted while the blackhole is still up, since
+	// the observable difference is a real dial — the connect timeout again —
+	// rather than the millisecond the cache answers in.
+	sc.ForgetPeerFailures()
+	start = time.Now()
+	if _, err = agOnPrimary(ctx, sc, *liveAG); err == nil {
+		t.Fatal("agOnPrimary succeeded with the primary blackholed")
+	}
+	third := time.Since(start)
+	t.Logf("agOnPrimary after ForgetPeerFailures took %v: %v", third, err)
+	if third <= time.Second {
+		t.Errorf("the call after ForgetPeerFailures took %v; that is still the cache answering", third)
+	}
+}
+
+// A cached peer failure has to be droppable the moment something proves it
+// stale, or the user who repairs the reason for it is told the primary is down
+// for the rest of peerFailureTTL. Produced here the way the fixture already
+// produces an unreachable primary — a login the primary does not have — and
+// repaired by creating it there mid-test, which is the same shape as a network
+// coming back: nothing the client can observe without dialling again.
+func TestLiveAGForgetsAPeerFailureWhenThePrimaryComesBack(t *testing.T) {
+	sc, ctx, primary := liveAGUnreachablePrimary(t)
+
+	// The failure is now cached (the fixture's own Peer call recorded it).
+	if _, err := agOnPrimary(ctx, sc, *liveAG); err == nil {
+		t.Fatal("agOnPrimary reached the primary; the fixture is not producing a failure")
+	}
+
+	// Repair it out of band: the login the probe connects as now exists on the
+	// primary too, so a fresh dial would succeed.
+	raw, err := sql.Open("sqlserver", "sqlserver://"+*liveSA+":"+*liveSAPass+"@"+primary+"?TrustServerCertificate=true")
+	if err != nil {
+		t.Fatalf("open %s: %v", primary, err)
+	}
+	// Registered before the drop below, so it runs after it: cleanups are LIFO
+	// and a closed pool cannot drop anything.
+	t.Cleanup(func() { raw.Close() })
+	for _, q := range []string{
+		"IF SUSER_ID('" + liveAGProbeLogin + "') IS NULL CREATE LOGIN [" + liveAGProbeLogin + "] WITH PASSWORD = '" + liveAGProbePass + "', CHECK_POLICY = OFF",
+		"GRANT VIEW SERVER STATE, VIEW ANY DEFINITION, VIEW ANY DATABASE TO [" + liveAGProbeLogin + "]",
+	} {
+		if _, err := raw.ExecContext(context.Background(), q); err != nil {
+			t.Fatalf("prepare the probe login on the primary %s: %.60q: %v", primary, q, err)
+		}
+	}
+	t.Cleanup(func() {
+		// The peer this test opened to the primary is still logged in as the
+		// probe, and SQL Server refuses to drop a login with a live session
+		// (Msg 15434). Close is idempotent, so the fixture's own Close is
+		// still fine.
+		sc.Close()
+		if _, err := raw.ExecContext(context.Background(),
+			"IF SUSER_ID('"+liveAGProbeLogin+"') IS NOT NULL DROP LOGIN ["+liveAGProbeLogin+"]"); err != nil {
+			t.Errorf("drop login %s on %s: %v", liveAGProbeLogin, primary, err)
+		}
+	})
+
+	// Without the invalidation this is the whole bug: the primary is reachable
+	// and gossms still refuses, from a cache entry that is now wrong.
+	if _, err := agOnPrimary(ctx, sc, *liveAG); err == nil {
+		t.Fatal("agOnPrimary succeeded before the cache was dropped; nothing was being cached, so the next assertion proves nothing")
+	}
+
+	sc.ForgetPeerFailures()
+	if _, err := agOnPrimary(ctx, sc, *liveAG); err != nil {
+		t.Fatalf("agOnPrimary = %v after ForgetPeerFailures; the recovered primary is still unreachable", err)
+	}
 }
 
 // The control both tests need: with credentials that *do* reach the primary,

@@ -1230,20 +1230,73 @@ func TestADenyOnAColumnWithholdsTheObjectOps(t *testing.T) {
 	if allowsActionOn(sc, "appdb", "Sales", "Orders", rightAlterOnObject) {
 		t.Error("a column denial did not withhold the action — the table's grant answered for it")
 	}
-	r, col, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", rightAlterOnObject)
-	if !denied || col != "SSN" {
-		t.Fatalf("deniedOnObject = %q, %q, %v; want ALTER, \"SSN\", true", r.name, col, denied)
+	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", rightAlterOnObject)
+	if !denied || at.column != "SSN" {
+		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, column SSN, true", r.name, at, denied)
 	}
-	if got, want := deniedText(r, col), "ALTER is denied on column SSN of this object."; got != want {
+	if got, want := deniedText(r, at), "ALTER is denied on column SSN of this object."; got != want {
 		t.Errorf("deniedText = %q, want %q", got, want)
 	}
 	// The object's own sentence is unchanged where the DENY is on the object.
-	if got, want := deniedText(r, ""), "ALTER is denied on this object."; got != want {
+	if got, want := deniedText(r, denialSite{}), "ALTER is denied on this object."; got != want {
 		t.Errorf("deniedText for an object denial = %q, want %q", got, want)
 	}
 	// And the denial stays on the object it was recorded for: a sibling table
 	// keeps whatever the wider scopes gave it.
 	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Customers", rightAlterOnObject); denied {
 		t.Error("a column denial on one table read as a denial on another")
+	}
+}
+
+// TestADenyOnASchemaWithholdsTheObjectOps. The gate closed for objects and for
+// columns and stayed blind at schema scope, where SQL Server resolves a DENY
+// over a database-wide grant just as firmly: a login with ALTER on the database
+// and DENY ALTER ON SCHEMA::Sales was offered every rename, move and drop in
+// that schema and met Msg 297 on each.
+//
+// The distinction the test turns on is that the login *holds* the wider rights.
+// A set-up where it holds nothing would pass with the schema check deleted.
+func TestADenyOnASchemaWithholdsTheObjectOps(t *testing.T) {
+	sc, _ := newFakeConn(t, withDeniedSchemas(capabilityResponsesWithObjects(true,
+		nil, nil, nil, nil), "Sales")...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+		t.Error("a schema denial did not withhold the action — the database-wide grant answered for it")
+	}
+	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...)
+	if !denied || at.schema != "Sales" {
+		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, schema Sales, true", r.name, at, denied)
+	}
+	if got, want := deniedText(r, at), "ALTER is denied on schema Sales."; got != want {
+		t.Errorf("deniedText = %q, want %q", got, want)
+	}
+	// A schema with no DENY row keeps whatever the wider scopes gave it. dbo is
+	// in the same probe and answers HAS_PERMS_BY_NAME 0 for ALTER, which is what
+	// every schema never granted anything answers — reading that as a denial
+	// would withhold the action on the whole database.
+	if _, _, denied := deniedOnObject(sc, "appdb", "dbo", "Orders", objectWriteRights()...); denied {
+		t.Error("a schema HAS_PERMS_BY_NAME answered 0 for read as an explicit denial")
+	}
+	if !allowsActionOn(sc, "appdb", "dbo", "Orders", objectWriteRights()...) {
+		t.Error("an ungranted schema withheld the action the database-wide grant permits")
+	}
+}
+
+// TestASysadminIsExemptFromASchemaDenial. The probe reads permissions through
+// public, so a DENY made to public is recorded for a sysadmin too — and SQL
+// Server applies it to nobody. objectDenial's sysadmin exemption covers the
+// schema question for the same reason it covers the object one.
+func TestASysadminIsExemptFromASchemaDenial(t *testing.T) {
+	sc, _ := newFakeConn(t, withDeniedSchemas(sysadminCapabilityResponses(), "Sales")...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...); denied {
+		t.Error("a sysadmin was withheld by a DENY the server would not apply to it")
+	}
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+		t.Error("a sysadmin was refused an action on a denied schema")
 	}
 }

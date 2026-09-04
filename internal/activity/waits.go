@@ -76,7 +76,7 @@ var waitQuery = buildWaitQuery()
 // buildWaitQuery excludes the benign waits by name and the benign families
 // by pattern. ESCAPE is needed because the family patterns contain
 // underscores, which LIKE would otherwise treat as single-character
-// wildcards — "SLEEP_%" would then also match SLEEPING_ANYTHING.
+// wildcards — an unescaped "QDS_%" would also match QDSXANYTHING.
 func buildWaitQuery() string {
 	var b strings.Builder
 	b.WriteString("SELECT wait_type, wait_time_ms, signal_wait_time_ms, waiting_tasks_count ")

@@ -322,3 +322,73 @@ func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
 		t.Error("the retry did not record its own failure; the expired entry is still what answers")
 	}
 }
+
+// A cached failure that outlives the outage is what ForgetPeerFailure exists
+// to cut short: the user fixes the network, hits Refresh, and is told the peer
+// is down for the rest of peerFailureTTL. Asserted through Peer, since the
+// point is that the next call dials rather than replaying the entry.
+func TestForgetPeerFailureDropsTheEntry(t *testing.T) {
+	// Port 1 on loopback refuses immediately, so the dial this forces costs no
+	// timeout and reaches no other host.
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	cached := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
+	sc.recordPeerFailure(InstanceKey("127.0.0.1:1"), cached)
+
+	// Forgotten under a different spelling than the one recorded, on purpose:
+	// File > Connect holds what the user typed, the cache what the catalog
+	// reported, and only InstanceKey makes the two agree.
+	sc.ForgetPeerFailure("127.0.0.1,1")
+
+	_, err := sc.Peer(context.Background(), "127.0.0.1:1")
+	if err == nil {
+		t.Fatal("something answered on 127.0.0.1:1; the test cannot tell a dial from a cache hit")
+	}
+	if errors.Is(err, cached) {
+		t.Errorf("Peer answered with the forgotten failure %v; ForgetPeerFailure did not drop it", cached)
+	}
+}
+
+// Forgetting one instance must not clear the others: the burst the cache exists
+// to collapse is several folders asking for the same unreachable primary, and a
+// connect to a different replica is no evidence about that one.
+func TestForgetPeerFailureLeavesOtherInstances(t *testing.T) {
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	want := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
+	sc.recordPeerFailure(InstanceKey("ubusql2"), want)
+	sc.recordPeerFailure(InstanceKey("ubusql3"), errors.New("other"))
+
+	sc.ForgetPeerFailure("ubusql3")
+
+	if _, err := sc.Peer(context.Background(), "ubusql2"); !errors.Is(err, want) {
+		t.Errorf("Peer(ubusql2) = %v; want the still-cached failure %v", err, want)
+	}
+}
+
+// A peer read chains — Object Explorer follows a group to its primary and reads
+// on from there — so the failure to reach a third instance is recorded on the
+// primary's connection, not on the one the user is refreshing. Two instances
+// that have each opened the other are a cycle; without the seen set this test
+// does not fail, it hangs.
+func TestForgetPeerFailuresReachCachedPeers(t *testing.T) {
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+	primary := newTestConn("ubusql2")
+	defer primary.Close()
+
+	sc.peers = map[string]*ServerConn{"ubusql2": primary}
+	primary.peers = map[string]*ServerConn{"ubusql1": sc}
+	primary.recordPeerFailure(InstanceKey("ubusql3"), errors.New("dial tcp: i/o timeout"))
+
+	sc.ForgetPeerFailures()
+
+	primary.peerMu.Lock()
+	n := len(primary.peerFails)
+	primary.peerMu.Unlock()
+	if n != 0 {
+		t.Errorf("the peer still holds %d cached failure(s); a chained read stays blackholed", n)
+	}
+}

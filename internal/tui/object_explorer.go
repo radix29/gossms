@@ -282,6 +282,7 @@ func (oe *ObjectExplorer) RefreshSelected() {
 	if n.data.Type == NodeServer {
 		n.data.conn.ClearCapabilityCache()
 	}
+	forgetPeerFailuresForRefresh(resolveConn(n), n)
 	n.data.Loaded = false
 	n.children = nil
 	if n.expanded {

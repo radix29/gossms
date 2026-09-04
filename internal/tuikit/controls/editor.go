@@ -368,16 +368,7 @@ func (e *Editor) ensureCursorVisible() {
 	if e.cursorRow >= e.scrollRow+contentH {
 		e.scrollRow = e.cursorRow - contentH + 1
 	}
-	contentW := e.rect.W - e.gutterWidth()
-	// In display columns: a line of wide characters scrolls twice as far per
-	// caret step as an ASCII one, which is what the eye expects.
-	curCol := e.cursorDisplayCol()
-	if curCol < e.scrollCol {
-		e.scrollCol = curCol
-	}
-	if curCol >= e.scrollCol+contentW {
-		e.scrollCol = curCol - contentW + 1
-	}
+	e.ensureColumnVisible()
 }
 
 // insertRune inserts r at the cursor, going through setLine rather than edit

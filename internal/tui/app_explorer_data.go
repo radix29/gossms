@@ -231,6 +231,7 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	newQuery := controls.MenuItem{Label: "New Query", Action: func() { a.newQueryPanelForConn(sc, node.data.DBName) }}
 	refresh := controls.MenuItem{Label: refreshMenuLabel, Action: func() {
+		forgetPeerFailuresForRefresh(sc, node)
 		node.data.Loaded = false
 		node.children = nil
 		if node.expanded {
@@ -1095,4 +1096,31 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 		return
 	}
 	run()
+}
+
+// forgetPeerFailuresForRefresh drops sc's cached peer connect failures when the
+// node being refreshed is part of the Always On subtree — the only tree the
+// peer cache answers for, and the one place a user who has just fixed the
+// network has to be able to say "try again" rather than wait out
+// peerFailureTTL.
+func forgetPeerFailuresForRefresh(sc *db.ServerConn, node *explorerNode) {
+	if sc == nil || node == nil {
+		return
+	}
+	if isAlwaysOnNode(node.data.Type) {
+		sc.ForgetPeerFailures()
+	}
+}
+
+// isAlwaysOnNode reports whether t is in the Always On subtree — the only tree
+// a peer read serves, so the only Refresh the peer cache should answer to.
+func isAlwaysOnNode(t NodeType) bool {
+	switch t {
+	case NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityGroup,
+		NodeAvailabilityReplicas, NodeAvailabilityReplica,
+		NodeAvailabilityDatabases, NodeAvailabilityDatabase,
+		NodeAGListeners, NodeAGListener:
+		return true
+	}
+	return false
 }
