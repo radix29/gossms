@@ -65,6 +65,19 @@ type requiredRight struct {
 	// gosmo.DatabaseCapabilities.HasOnObject.
 	object bool
 
+	// deniedOnPrincipal names the DATABASE_PRINCIPAL-scope (class 4)
+	// permission whose DENY withholds this right, or "" for a right no class-4
+	// DENY can reach. It is deliberately not r.name: the right is the
+	// database-wide ALTER ANY USER, while the DENY that beats it sits on the
+	// user itself as plain ALTER.
+	//
+	// It is also what keeps the principal arm of objectDenial from firing on
+	// the wrong kind of node. objectDenial is asked about a table by the same
+	// name as a denied user just as readily, and only a right declaring this
+	// field makes it ask the class-4 question at all — the way r.object and
+	// r.schema discriminate the arms above.
+	deniedOnPrincipal string
+
 	// alt are narrower permissions that also satisfy this one and are not
 	// named in the message. SQL Server 2022 split VIEW SERVER STATE into two
 	// halves, and a login holding either half can do the thing — but naming
@@ -103,8 +116,30 @@ var (
 	rightBackupDatabase = requiredRight{name: "BACKUP DATABASE", role: "db_backupoperator", db: true}
 	rightAlterDatabase  = requiredRight{name: "ALTER", role: "db_owner", db: true}
 	rightControlDB      = requiredRight{name: "CONTROL", role: "db_owner", db: true}
-	rightAlterAnyUser   = requiredRight{name: "ALTER ANY USER", role: "db_accessadmin", db: true}
+	rightAlterAnyUser   = requiredRight{name: "ALTER ANY USER", role: "db_accessadmin", db: true,
+		deniedOnPrincipal: "ALTER"}
+	// No deniedOnPrincipal twin, and the asymmetry is SQL Server's rather than
+	// an omission: verified live on majors 13, 14 and 17, DROP ROLE and
+	// ALTER ROLE ... WITH NAME check ALTER ANY ROLE at database scope and go
+	// through with DENY ALTER ON ROLE::x in place — while the same DENY on a
+	// *user* refuses both of the matching statements. Declaring it here would
+	// withhold two items the server allows — a gate refusing what the server
+	// would have run, which is the one failure the class-4 work exists to
+	// avoid; see docs/open-threads.md § Permission gating. gosmo records the
+	// role rows anyway and says so on DatabaseCapabilities.DeniedOnPrincipal.
 	rightAlterAnyDBRole = requiredRight{name: "ALTER ANY ROLE", role: "db_securityadmin", db: true}
+	// rightAlterAnyDBRoleMembers is the same right for the pages that edit a
+	// role's *membership*, where the class-4 DENY the comment above says
+	// withholds nothing does withhold: ALTER ROLE r ADD MEMBER u is refused
+	// under DENY ALTER ON ROLE::r (Msg 15151), verified live 2026-09-04 on
+	// majors 13 and 17, while the rename and the drop beside it go through.
+	//
+	// So the split is per action, not per object, and the two rights exist to
+	// carry it: naming this one on the General page would withhold a rename
+	// the server allows, and naming the plain one on Members offers an edit it
+	// refuses. See docs/open-threads.md § Permission gating.
+	rightAlterAnyDBRoleMembers = requiredRight{name: "ALTER ANY ROLE", role: "db_securityadmin", db: true,
+		deniedOnPrincipal: "ALTER"}
 	// Held for a feature that does not exist yet — there is no New Table — for
 	// the reason given at rightAlterAnyLinkedSrv.
 	rightCreateTable = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
@@ -360,10 +395,12 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 }
 
 // denialSite names the securable a DENY was found on, for the sentence the
-// user is shown. At most one field is set; both empty means the object itself.
+// user is shown. At most one field is set; all empty means the object itself.
 type denialSite struct {
-	column string // a column of the object
-	schema string // the object's schema
+	column    string // a column of the object
+	schema    string // the object's schema
+	database  string // the database the object lives in
+	principal string // the database user the action is aimed at
 }
 
 // objectDenial reports the right whose DENY withholds an action, the securable
@@ -398,7 +435,7 @@ type denialSite struct {
 // permission on the table itself. Nothing gossms writes is scoped to named
 // columns, so a column denial is a denial of the action outright.
 //
-// A DENY on the object's *schema* is asked about last, and for the same
+// A DENY on the object's *schema* is asked about third, and for the same
 // reason: SQL Server resolves it over a database-wide grant, so a principal
 // with ALTER on the database and DENY ALTER on dbo was offered every rename
 // and drop in it and met Msg 297 on each. It is asked of gosmo's
@@ -406,8 +443,28 @@ type denialSite struct {
 // answers 0 for a schema permission simply never granted — which is the
 // ordinary case, and withholding on it would empty the menus of every login
 // that works through a database-wide grant.
+//
+// A DENY at *database* scope is asked about last, and is the one arm that
+// exists for a grant *narrower* than itself rather than wider. The r.object
+// and r.schema arms of rightsAllow answer yes on HasOnObject and
+// PermitsOnSchema, neither of which can see a class-0 row, so a principal
+// granted ALTER on one table and denied ALTER on the database was offered
+// every write on that table. Verified live 2026-09-04: with GRANT ALTER ON
+// OBJECT::dbo.t1 and DENY ALTER at database scope, the server answers
+// HAS_PERMS_BY_NAME('dbo.t1','OBJECT','ALTER') = 0 and refuses the ALTER —
+// the wider DENY beats the narrower GRANT, which is the opposite of the
+// column-level exception and the reason this arm cannot be folded into the
+// loop. It is asked only of rights declared db-scoped, the way the arms above
+// ask only of the scope they can answer for.
+//
+// It goes through gosmo's DeniedOnDatabase, never Permission/Permits: those
+// answer HAS_PERMS_BY_NAME, whose 0 means "does not hold" and is the *ordinary*
+// reading for a principal working through a narrower grant, so withholding on
+// it takes the write away from exactly the principal it was granted to. Only
+// the catalog can say a DENY row exists — the same distinction
+// ExplicitSchemaPermissions exists for, one scope wider.
 func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, denialSite, bool) {
-	if dbName == "" || schema == "" || server.InServerRole("sysadmin") {
+	if dbName == "" || server.InServerRole("sysadmin") {
 		return requiredRight{}, denialSite{}, false
 	}
 	var caps *gosmo.DatabaseCapabilities
@@ -417,6 +474,27 @@ func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 			caps, asked = dbCaps(dbName), true
 		}
 		return caps
+	}
+	// The class-4 arm comes before the schema guard below because it is the
+	// one securable here that has no schema: a user node carries an empty
+	// Schema and its own name as the object.
+	if object != "" {
+		for _, r := range rights {
+			if r.deniedOnPrincipal == "" {
+				continue
+			}
+			if ask().DeniedOnPrincipal(object, r.deniedOnPrincipal) {
+				return r, denialSite{principal: object}, true
+			}
+		}
+	}
+	// Everything below is scoped by the object's schema, and answers nothing
+	// without one. The guard stays here rather than moving up to the top so
+	// that a schema-less node reaches the arm above and nothing else — the
+	// wider arms were never asked for one and extending them is a separate
+	// question with its own live answer to establish.
+	if schema == "" {
+		return requiredRight{}, denialSite{}, false
 	}
 	if object != "" {
 		for _, r := range rights {
@@ -437,6 +515,14 @@ func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Databas
 		}
 		if ask().DeniedOnSchema(schema, r.name) {
 			return r, denialSite{schema: schema}, true
+		}
+	}
+	for _, r := range rights {
+		if !r.db {
+			continue
+		}
+		if ask().DeniedOnDatabase(r.name) {
+			return r, denialSite{database: dbName}, true
 		}
 	}
 	return requiredRight{}, denialSite{}, false
@@ -462,6 +548,19 @@ func deniedText(r requiredRight, at denialSite) string {
 		return r.name + " is denied on column " + at.column + " of this object."
 	case at.schema != "":
 		return r.name + " is denied on schema " + at.schema + "."
+	case at.database != "":
+		return r.name + " is denied on database " + at.database + "."
+	case at.principal != "":
+		// r.deniedOnPrincipal, not r.name: the right is the database-wide
+		// ALTER ANY USER and the DENY that beats it is plain ALTER on the
+		// principal, so naming the right here would describe a row that does
+		// not exist.
+		//
+		// "principal", not "user": class 4 covers database roles too, and the
+		// membership pages ask this question about a role. The gate is given a
+		// name and cannot tell the two apart — only the catalog can — so it
+		// says the word that is true of both.
+		return r.deniedOnPrincipal + " is denied on principal " + at.principal + "."
 	}
 	return r.name + " is denied on this object."
 }
@@ -494,6 +593,10 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 				item.Note = r.name + " denied on column " + at.column
 			case at.schema != "":
 				item.Note = r.name + " denied on schema " + at.schema
+			case at.database != "":
+				item.Note = r.name + " denied on database " + at.database
+			case at.principal != "":
+				item.Note = r.deniedOnPrincipal + " denied on principal " + at.principal
 			default:
 				item.Note = r.name + " denied on this object"
 			}

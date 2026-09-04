@@ -144,7 +144,12 @@ func endpointServiceBrokerForm(ctx context.Context, e *gosmo.Endpoint) (*propshe
 		propsheet.Section("Service Broker"),
 		propsheet.Static("Connection auth", d.ConnectionAuth),
 		propsheet.Static("Certificate", d.CertificateName),
-		propsheet.Static("Encryption", d.EncryptionAlgorithm),
+		// "Algorithm", not "Encryption", so the label means the same thing it
+		// does on the mirroring page above, where "Encryption" carries the
+		// yes/no. ServiceBrokerDetail has no enabled flag of its own — the
+		// scripter derives one from this very field — and deriving it here too
+		// would put that rule in two places.
+		propsheet.Static("Algorithm", d.EncryptionAlgorithm),
 		propsheet.Section("Message forwarding"),
 		propsheet.Static("Forwarding", enabledText(d.IsMessageForwardingEnabled)),
 	}

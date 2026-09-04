@@ -60,7 +60,7 @@ type serverFS struct {
 // all: falling back to dialogs.LocalFileSystem looks like it worked and hands
 // back a path off *this* machine's disks, which is a directory the server
 // cannot see and a destination BACKUP cannot write — the "a click does the
-// wrong thing" case CLAUDE.md § Application rules rules out.
+// wrong thing" case docs/ui-rules.md rules out.
 func newServerFS(sc *db.ServerConn) (dialogs.FileSystem, bool) {
 	if sc == nil || sc.Server == nil {
 		return nil, false

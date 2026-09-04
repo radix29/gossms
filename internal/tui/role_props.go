@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -34,7 +33,12 @@ func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []
 	namePtr := &roleName
 	return []propPage{
 		withRequires(pageRoleGeneral(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
-		withRequires(pageRoleMembers(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		// Members, alone on this dialog, is gated on the role itself: a class-4
+		// DENY on the role withholds ADD/DROP MEMBER while leaving the rename
+		// and the drop the other pages make alone. The name is the one the
+		// dialog was opened with — a rename is not blocked by that DENY, and
+		// the probe that answers the question recorded the old name too.
+		withRequiresOn(pageRoleMembers(sc, dbName, namePtr), dbName, "", roleName, rightAlterAnyDBRoleMembers),
 		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"), dbName, rightAlterAnySchema, rightControlDB),
 		withRequires(pageRoleOwnedRoles(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
 		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
@@ -72,33 +76,31 @@ func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
 }
 
 func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPage {
-	return propPage{
-		title:   "General",
-		renames: true,
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+	return roleGeneralPage(roleName,
+		func(ctx context.Context) (roleGeneral, error) {
 			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			role, err := d.RoleByNameContext(ctx, *roleName)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			users, err := d.UsersContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			roles, err := d.DatabaseRolesContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			schemas, err := d.SchemasContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			securables, err := d.PermissionsForPrincipalContext(ctx, *roleName)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 
 			ownedSchemas := 0
@@ -113,6 +115,8 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 					ownedRoles++
 				}
 			}
+			// Counted distinct: one securable with SELECT, INSERT and UPDATE
+			// on it is one securable, not three permission rows.
 			distinctSecurables := make(map[string]bool)
 			for _, e := range securables {
 				distinctSecurables[securable{e.SecurableType, e.Schema, e.Name}.key()] = true
@@ -123,68 +127,23 @@ func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPag
 			if builtin {
 				roleType = "Fixed database role"
 			}
-
-			rows := []propsheet.Row{propsheet.Section("Role information")}
-			var nameRow *propsheet.TextRow
-			var ownerRow *propsheet.SelectRow
-			if builtin {
-				rows = append(rows,
-					propsheet.Static("Role name", role.Name),
-					propsheet.Static("Owner", role.Owner),
-				)
-			} else {
-				ownerNames := principalNames(users, roles)
-				nameRow = propsheet.Text("Role name", role.Name, 24)
-				ownerRow = selectPreserving("Owner", ownerNames, role.Owner, unknownOwnerItem)
-				rows = append(rows, nameRow, ownerRow)
-			}
-			rows = append(rows,
-				propsheet.Static("Role type", roleType),
-				propsheet.Static("Is fixed role", boolStr(role.IsFixedRole)),
-				propsheet.Section("Identity"),
-				propsheet.Static("Principal ID", strconv.Itoa(role.ID)),
-				propsheet.Static("SID", fmt.Sprintf("0x%X", role.SID)),
-				propsheet.Static("Created", formatSQLDate(role.CreateDate)),
-				propsheet.Static("Modified", formatSQLDate(role.ModifyDate)),
-				propsheet.Section("Summary"),
-				propsheet.Static("Direct members", strconv.Itoa(len(role.Members))),
-				propsheet.Static("Owned schemas", strconv.Itoa(ownedSchemas)),
-				propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
-				propsheet.Static("Explicit securables", strconv.Itoa(len(distinctSecurables))),
-			)
-			if builtin {
-				rows = append(rows,
-					propsheet.Section("Built-in behavior"),
-					propsheet.Note("This is a built-in role. Its name, owner, and implicit permission set can't be changed; only membership is editable (see Members)."),
-				)
-			}
-
-			f := propsheet.NewForm(rows...)
-
-			var apply propApply
-			if !builtin {
-				apply = func(ctx context.Context) error {
-					role, err := findRole(ctx, sc, dbName, *roleName)
-					if err != nil {
-						return err
-					}
-					if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-						if err := role.ChangeOwnerContext(ctx, owner); err != nil {
-							return err
-						}
-					}
-					if nameRow.Dirty() {
-						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
-							return err
-						}
-						commitRename(ctx, roleName, nameRow.Value())
-					}
-					return nil
-				}
-			}
-			return f, apply, nil
+			return roleGeneral{
+				name: role.Name, owner: role.Owner, isFixedRole: role.IsFixedRole,
+				id: role.ID, sid: role.SID, created: role.CreateDate, modified: role.ModifyDate,
+				members: len(role.Members),
+				builtin: builtin, roleType: roleType,
+				ownerNames: principalNames(users, roles),
+				summary: []propsheet.Row{
+					propsheet.Static("Owned schemas", strconv.Itoa(ownedSchemas)),
+					propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
+					propsheet.Static("Explicit securables", strconv.Itoa(len(distinctSecurables))),
+				},
+			}, nil
 		},
-	}
+		func(ctx context.Context) (roleWriter, error) {
+			return findRole(ctx, sc, dbName, *roleName)
+		},
+	)
 }
 
 func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPage {

@@ -28,7 +28,13 @@ func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []
 	return []propPage{
 		withRequires(pageUserGeneral(sc, dbName, namePtr), dbName, rightAlterAnyUser),
 		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"), dbName, rightAlterAnySchema, rightControlDB),
-		withRequires(pageUserMembership(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		// Gated on the user, not on the roles it lists: membership checks ALTER
+		// on the member as well as on the role, so a user carrying a class-4
+		// DENY cannot be added to any role — verified live 2026-09-04, ALTER
+		// ROLE db_datareader ADD MEMBER u refused under DENY ALTER ON USER::u.
+		// The per-role half is not expressible in one page-level banner, the
+		// same reason Login Properties' User Mapping declares nothing.
+		withRequiresOn(pageUserMembership(sc, dbName, namePtr), dbName, "", userName, rightAlterAnyDBRoleMembers),
 		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
 		pagePrincipalEffectivePermissions(d, sc, dbName, namePtr),
 		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {

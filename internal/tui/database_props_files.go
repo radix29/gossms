@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -18,6 +19,13 @@ var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size (M
 // logFileType is sys.database_files' type_desc for a transaction log file,
 // the one file type that belongs to no filegroup.
 const logFileType = "LOG"
+
+// addableFileTypes are the file types this page can create — the two
+// sys.database_files reports that ALTER DATABASE ... ADD FILE can add from
+// here. It is not the set of types a file can *have*: FilesContext also
+// reports FILESTREAM, so the picker is widened for display when a selected
+// file's type is outside this list.
+var addableFileTypes = []string{"ROWS", logFileType}
 
 // noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The
 // list is filegroup names with no empty entry, so indexOf's not-found 0 left
@@ -242,7 +250,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 			grid.SetCellCursor(true)
 
 			nameField := propsheet.Text("Logical name", "", 24)
-			typeSelect := propsheet.Select("File type", []string{"ROWS", logFileType}, 0)
+			typeSelect := propsheet.Select("File type", addableFileTypes, 0)
 			filegroupSelect := propsheet.Select("Filegroup", fgNames, 0)
 			pathField := propsheet.Text("Path", "", 40)
 			sizeField := propsheet.Int("Initial size", 0, 0, 16777216, "MB")
@@ -267,8 +275,17 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					filegroupSelect.SetItems([]string{noFilegroupItem})
 					return
 				}
-				filegroupSelect.SetItems(fgNames)
-				filegroupSelect.SetSelected(indexOf(fgNames, fileGroup))
+				if fileGroup == "" {
+					filegroupSelect.SetItems(fgNames)
+					filegroupSelect.SetSelected(0)
+					return
+				}
+				// Widened for the same reason as the type picker: a file can
+				// sit in a filegroup FileGroupsContext didn't list, and a
+				// stand-in name would read as the server's answer.
+				items, i := preservingItems(fgNames, fileGroup)
+				filegroupSelect.SetItems(items)
+				filegroupSelect.SetSelected(i)
 			}
 			// pickedFilegroup reads the dropdown back, as "" for a LOG file —
 			// which is what DatabaseFileInfo.FileGroup already holds for one.
@@ -288,9 +305,20 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				current.name = nameField.Value()
-				current.fileType = typeSelect.Value()
-				current.fileGroup = pickedFilegroup(current.fileType)
-				current.path = pathField.Value()
+				// Only a new file reads type/filegroup/path back. They are
+				// fixed for an existing one — changed() deliberately excludes
+				// them because MODIFY FILE can neither retype nor move a file
+				// — so writing them here could only ever record something
+				// untrue: a FILESTREAM file's type is outside the picker's
+				// two items, so the picker showed a stand-in and merely
+				// selecting the row rewrote the file as ROWS, which the grid
+				// then reported as fact. Same defect as the noFilegroupItem
+				// comment above, one field over.
+				if current.isNew {
+					current.fileType = typeSelect.Value()
+					current.fileGroup = pickedFilegroup(current.fileType)
+					current.path = pathField.Value()
+				}
 				if n, err := sizeField.IntValue(); err == nil {
 					current.sizeKB = n * 1024
 				}
@@ -319,7 +347,13 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				nameField.SetValue(current.name)
-				typeSelect.SetSelected(indexOf([]string{"ROWS", logFileType}, current.fileType))
+				// preservingItems, not indexOf: sys.database_files also
+				// reports FILESTREAM (and memory-optimized) files, whose type
+				// is in neither of the two items this page can create. indexOf
+				// would show "ROWS" for one as though the server had said so.
+				typeItems, typeIdx := preservingItems(addableFileTypes, current.fileType)
+				typeSelect.SetItems(typeItems)
+				typeSelect.SetSelected(typeIdx)
 				showFilegroupFor(current.fileType, current.fileGroup)
 				pathField.SetValue(current.path)
 				sizeField.SetValue(strconv.FormatInt(current.sizeKB/1024, 10))
@@ -357,6 +391,13 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				name := nameField.Value()
 				if name == "" {
 					hint.Set("Type a logical file name first.")
+					return
+				}
+				// The type picker widens to show a selected file's real type
+				// (FILESTREAM, say); Add must not carry one of those into a
+				// spec this page can't build correctly.
+				if !slices.Contains(addableFileTypes, typeSelect.Value()) {
+					hint.Set("Set File type to ROWS or LOG — this page adds data and log files only.")
 					return
 				}
 				for i, e := range visible() {

@@ -100,6 +100,50 @@ type newObjectDialog[P any] struct {
 	created bool
 }
 
+// probeReplicaEndpoint reaches instance name with this dialog's credentials and
+// reads its database mirroring endpoint, delivering both to onOK on the UI
+// goroutine. onErr handles a failure; nil shows the error in the dialog.
+//
+// Shared by Add Replica and New Availability Group, which both have to know an
+// instance's real endpoint URL before they can write ADD REPLICA — guessing one
+// produces a replica that never connects. The parts worth having in one place
+// are the two easy to get wrong: the session-context snapshot compared again on
+// delivery, so a result from a dialog the user has since closed and reopened is
+// dropped rather than written into the new one, and the timeout deriving from
+// that same context, so a disconnect tears the probe down.
+func (d *newObjectDialog[P]) probeReplicaEndpoint(label, name string,
+	onOK func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint),
+	onErr func(error)) {
+
+	sc := d.sc
+	sessionCtx := d.ctx
+	d.SetMessage("Connecting to "+name+"...", false)
+	d.app.safego(label, func() {
+		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
+		defer cancel()
+
+		peer, err := sc.Peer(ctx, name)
+		var ep *gosmo.DatabaseMirroringEndpoint
+		if err == nil {
+			ep, err = replicaEndpoint(ctx, peer)
+		}
+		d.app.postAndWake(func() {
+			if d.ctx != sessionCtx {
+				return
+			}
+			if err != nil {
+				if onErr != nil {
+					onErr(err)
+					return
+				}
+				d.SetMessage(err.Error(), true)
+				return
+			}
+			onOK(peer, ep)
+		})
+	})
+}
+
 // init wires cfg into d and hooks up the PropertySheet callbacks. Call it from
 // the concrete dialog's constructor, after the concrete value exists — cfg.build
 // is normally that value's buildPages method.

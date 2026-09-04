@@ -75,7 +75,11 @@ func (db *DetailBrowser) backfillRows(
 			// goroutine, where nothing else can catch it — the process dies
 			// and Run's screen.Fini() never restores the terminal. Every other
 			// goroutine in this package gets that cover from App.safego; this
-			// one is spawned directly, so it has to ask for it.
+			// one is spawned directly, so it has to ask for it — for both
+			// halves of what safego provides, the label as well as the
+			// recover, or the traceback that loses its heading is exactly the
+			// panicking backfill.
+			labelGoroutine(what)
 			defer app.recoverPanic(what)
 			for i := range rowIdx {
 				db.backfillRow(app, sc, seq, i, what, fetch, markFailed)

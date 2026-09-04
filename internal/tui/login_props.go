@@ -158,6 +158,12 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				propsheet.Section("Login identity"),
 				identityRow,
 				propsheet.Static("Authentication", authType),
+				// Static, and the reason has to be on the page: the row is the
+				// first thing that reads as a bug otherwise. ALTER LOGIN has no
+				// form that changes the kind, so the only way to do it is a drop
+				// and recreate — which issues a new SID and orphans every
+				// database user mapped to the old one.
+				propsheet.Note("The authentication kind can't be changed. ALTER LOGIN has no form for it, and recreating the login gives it a new SID, orphaning every database user mapped to it."),
 				propsheet.Section("Password"),
 				passwordRow, confirmRow,
 				propsheet.Note("Leave both password fields blank to keep the current password."),

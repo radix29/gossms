@@ -252,8 +252,8 @@ func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 // fake that ignores the retmsg out-param just ends the loop immediately,
 // producing a test that passes without exercising anything. The rows-to-cells
 // logic it adds is covered above via streamResultSet; the wiring (Sets stays
-// empty, RowsWritten totals the rows) needs the live-server check CLAUDE.md
-// calls for. The one decision a unit test can still reach is which messages
+// empty, RowsWritten totals the rows) needs the live-server check
+// docs/testing.md calls for. The one decision a unit test can still reach is which messages
 // the run ends with — see below.
 
 // TestShouldReportSuccessCountsSetsNotRows pins that an *empty* result set

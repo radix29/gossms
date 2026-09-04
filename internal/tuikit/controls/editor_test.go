@@ -1057,7 +1057,7 @@ func TestEditorCursorFromScreenSkipsScrollbarRow(t *testing.T) {
 // A selection dragged downward off the last text line reaches the bar's
 // row, and the track spans the whole content width — the gesture has to
 // stay with the text, not be taken over by the bar. See the gesture-
-// ownership rule in CLAUDE.md.
+// ownership rule in docs/ui-rules.md.
 func TestEditorSelectionDragIsNotStolenByHScrollbar(t *testing.T) {
 	e := wideTestEditor()
 	_, barY, _, _, _, _ := e.hScrollbar()

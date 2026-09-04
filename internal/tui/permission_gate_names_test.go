@@ -36,6 +36,19 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 		t.Fatalf("found only %d requiredRight literals; the parser has stopped seeing them", len(rights))
 	}
 	for _, r := range rights {
+		// Checked before the scope switch and outside it, because
+		// deniedOnPrincipal is not a scope the right is asked at — it is an
+		// extra question asked *about* a right that also has one of the scopes
+		// below. A name missing from gosmo's class-4 list reads
+		// CapabilityUnknown for every principal, DeniedOnPrincipal answers
+		// false, and the arm withholds nothing: the silent failure this whole
+		// test exists for, one map over.
+		if r.deniedOnPrincipal != "" &&
+			!slices.Contains(gosmo.ProbedPrincipalPermissions, r.deniedOnPrincipal) {
+			t.Errorf("%q declares deniedOnPrincipal %q, which is not in gosmo's "+
+				"ProbedPrincipalPermissions — the class-4 DENY arm will never fire",
+				r.name, r.deniedOnPrincipal)
+		}
 		scope, list := "server", gosmo.ProbedServerPermissions
 		switch {
 		case r.membership:
@@ -75,6 +88,22 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 				}
 			}
 			continue
+		case r.object:
+			// Asked of the per-object probe, which has a list of its own — a
+			// name only the database-wide list carries reads unknown for
+			// every object and gates nothing.
+			for _, name := range append([]string{r.name}, r.alt...) {
+				if !slices.Contains(gosmo.ProbedObjectPermissions, name) {
+					t.Errorf("%q is declared object-scoped but is not in gosmo's ProbedObjectPermissions — "+
+						"it will read CapabilityUnknown for every object and gate nothing", name)
+				}
+			}
+			// Object scope does not replace the wider one: rightAlterOnObject
+			// is db:true as well, and rightsAllow asks both arms, so the name
+			// has to be in the wider list too. Hence no continue here.
+			if r.db {
+				scope, list = "database", gosmo.ProbedDatabasePermissions
+			}
 		case r.db:
 			scope, list = "database", gosmo.ProbedDatabasePermissions
 		}
@@ -123,10 +152,14 @@ type parsedRight struct {
 	role       string
 	db         bool
 	schema     bool
+	object     bool
 	membership bool
-	inDB       string
-	serverRole bool
-	alt        []string
+	// deniedOnPrincipal is read as a string rather than a flag: it names the
+	// class-4 permission, not the right's own.
+	deniedOnPrincipal string
+	inDB              string
+	serverRole        bool
+	alt               []string
 }
 
 // parseRequiredRights returns every `requiredRight{...}` literal in file.
@@ -173,6 +206,11 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 			case "schema":
 				id, ok := kv.Value.(*ast.Ident)
 				r.schema = ok && id.Name == "true"
+			case "object":
+				id, ok := kv.Value.(*ast.Ident)
+				r.object = ok && id.Name == "true"
+			case "deniedOnPrincipal":
+				r.deniedOnPrincipal = stringLit(t, kv.Value)
 			case "membership":
 				id, ok := kv.Value.(*ast.Ident)
 				r.membership = ok && id.Name == "true"

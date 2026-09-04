@@ -97,25 +97,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	hint := propsheet.Hint()
 	var newBtn, deleteBtn *widgets.Button
 	newBtn = widgets.NewButton("New", func() {
-		name := panel.nameField.Value()
-		if name == "" {
-			hint.Set("Type a step name first.")
-			return
-		}
-		for i, e := range visible() {
-			if e.name == name {
-				// Already present — say so and select it, rather than
-				// leaving the button looking broken.
-				hint.Set("A step named " + name + " is already listed — its row is selected below.")
-				grid.SetSelectedRow(i)
-				syncFieldsFromSelection()
-				return
-			}
-		}
-		hint.Clear()
-		edits = append(edits, panel.newStep())
-		resetGrid(grid, cols, rowsFor(), len(visible())-1)
-		syncFieldsFromSelection()
+		panel.addStep(grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
 	})
 	deleteBtn = widgets.NewButton("Delete", func() {
 		e := selected()

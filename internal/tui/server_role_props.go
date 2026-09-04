@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -62,25 +61,23 @@ func serverPrincipalNames(logins []*gosmo.Login, roles []*gosmo.ServerRole) []st
 }
 
 func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
-	return propPage{
-		title:   "General",
-		renames: true,
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+	return roleGeneralPage(roleName,
+		func(ctx context.Context) (roleGeneral, error) {
 			role, err := findServerRole(ctx, sc, *roleName)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			logins, err := sc.Server.LoginsContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			roles, err := sc.Server.ServerRolesContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 			perms, err := sc.Server.ServerPermissionsContext(ctx)
 			if err != nil {
-				return nil, nil, err
+				return roleGeneral{}, err
 			}
 
 			ownedRoles := 0
@@ -101,67 +98,22 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 			if builtin {
 				roleType = "Fixed server role"
 			}
-
-			rows := []propsheet.Row{propsheet.Section("Role information")}
-			var nameRow *propsheet.TextRow
-			var ownerRow *propsheet.SelectRow
-			if builtin {
-				rows = append(rows,
-					propsheet.Static("Role name", role.Name),
-					propsheet.Static("Owner", role.Owner),
-				)
-			} else {
-				ownerNames := serverPrincipalNames(logins, roles)
-				nameRow = propsheet.Text("Role name", role.Name, 24)
-				ownerRow = selectPreserving("Owner", ownerNames, role.Owner, unknownOwnerItem)
-				rows = append(rows, nameRow, ownerRow)
-			}
-			rows = append(rows,
-				propsheet.Static("Role type", roleType),
-				propsheet.Static("Is fixed role", boolStr(role.IsFixedRole)),
-				propsheet.Section("Identity"),
-				propsheet.Static("Principal ID", strconv.Itoa(role.ID)),
-				propsheet.Static("SID", fmt.Sprintf("0x%X", role.SID)),
-				propsheet.Static("Created", formatSQLDate(role.CreateDate)),
-				propsheet.Static("Modified", formatSQLDate(role.ModifyDate)),
-				propsheet.Section("Summary"),
-				propsheet.Static("Direct members", strconv.Itoa(len(role.Members))),
-				propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
-				propsheet.Static("Explicit permissions", strconv.Itoa(explicitPerms)),
-			)
-			if builtin {
-				rows = append(rows,
-					propsheet.Section("Built-in behavior"),
-					propsheet.Note("This is a built-in role. Its name, owner, and implicit permission set can't be changed; only membership is editable (see Members)."),
-				)
-			}
-
-			f := propsheet.NewForm(rows...)
-
-			var apply propApply
-			if !builtin {
-				apply = func(ctx context.Context) error {
-					role, err := findServerRole(ctx, sc, *roleName)
-					if err != nil {
-						return err
-					}
-					if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-						if err := role.ChangeOwnerContext(ctx, owner); err != nil {
-							return err
-						}
-					}
-					if nameRow.Dirty() {
-						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
-							return err
-						}
-						commitRename(ctx, roleName, nameRow.Value())
-					}
-					return nil
-				}
-			}
-			return f, apply, nil
+			return roleGeneral{
+				name: role.Name, owner: role.Owner, isFixedRole: role.IsFixedRole,
+				id: role.ID, sid: role.SID, created: role.CreateDate, modified: role.ModifyDate,
+				members: len(role.Members),
+				builtin: builtin, roleType: roleType,
+				ownerNames: serverPrincipalNames(logins, roles),
+				summary: []propsheet.Row{
+					propsheet.Static("Owned roles", strconv.Itoa(ownedRoles)),
+					propsheet.Static("Explicit permissions", strconv.Itoa(explicitPerms)),
+				},
+			}, nil
 		},
-	}
+		func(ctx context.Context) (roleWriter, error) {
+			return findServerRole(ctx, sc, *roleName)
+		},
+	)
 }
 
 func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {

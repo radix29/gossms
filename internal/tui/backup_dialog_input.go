@@ -12,19 +12,7 @@ func (d *BackupDialog) HandleKey(ev *tcell.EventKey) bool {
 	}
 
 	if d.mode == backupModeProgress {
-		switch ev.Key() {
-		case tcell.KeyEscape:
-			d.Hide()
-		case tcell.KeyEnter:
-			d.btnFocus = min(d.btnFocus, len(d.progressButtons())-1)
-			d.doProgressButton()
-		case tcell.KeyTab, tcell.KeyF1:
-			d.btnFocus = (d.btnFocus + 1) % len(d.progressButtons())
-		case tcell.KeyBacktab:
-			n := len(d.progressButtons())
-			d.btnFocus = (d.btnFocus - 1 + n) % n
-		}
-		return true
+		return progressModeKey(ev, &d.btnFocus, d.progressButtons(), d.Hide, d.doProgressButton)
 	}
 
 	switch ev.Key() {

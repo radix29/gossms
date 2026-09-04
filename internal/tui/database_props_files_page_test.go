@@ -129,3 +129,92 @@ func TestFilesPageRenamesByTheOldName(t *testing.T) {
 		t.Errorf("the rename did not reach the statement:\n%s", stmts[0])
 	}
 }
+
+// filestreamFilesResponses is filesPageResponses plus a FILESTREAM file, the
+// third type sys.database_files reports and the one the page's Type picker
+// cannot offer — ALTER DATABASE ... ADD FILE from this page builds ROWS and
+// LOG files only.
+func filestreamFilesResponses() []fakeResponse {
+	r := filesPageResponses()
+	r[2].rows = append(r[2].rows, []driver.Value{
+		int64(3), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "fsgroup", "ONLINE", int64(0), int64(0), int64(0), false,
+	})
+	r[3].rows = append(r[3].rows, []driver.Value{
+		"fsgroup", false, false, "appdb_fs", `C:\data\appdb_fs`, int64(0), int64(0), int64(0), false, false,
+	})
+	return r
+}
+
+// TestFilesPageDoesNotRetypeAFilestreamFile pins the fact the page displays
+// about a file it cannot create.
+//
+// The Type picker holds two items, ROWS and LOG. A FILESTREAM file's type is
+// in neither, so an indexOf-shaped lookup left "ROWS" showing — a real option,
+// not a sentinel — and commitCurrent, which runs on every row change, wrote
+// that back onto the edit. Nothing wrong reached the server (changed() ignores
+// the type), but the next grid rebuild reported the file as ROWS: a wrong fact
+// about the database, in a properties dialog, which is what this page is for.
+//
+// Driven through the keys a user presses, because OnSelectRow is where the
+// commit happens and SetSelectedRow deliberately doesn't fire it.
+func TestFilesPageDoesNotRetypeAFilestreamFile(t *testing.T) {
+	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
+	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	const nameCol, typeCol, fgCol = 0, 1, 2
+	g := plainGrid(t, form)
+
+	selectGridRow(t, g, nameCol, "appdb_fs")
+	if got := selectRow(t, form, "File type").Value(); got != "FILESTREAM" {
+		t.Errorf("File type reads %q for a FILESTREAM file, want FILESTREAM", got)
+	}
+	if got := selectRow(t, form, "Filegroup").Value(); got != "fsgroup" {
+		t.Errorf("Filegroup reads %q for a FILESTREAM file, want fsgroup", got)
+	}
+
+	// Selecting away commits the row just left; Remove then rebuilds the grid
+	// from the edits, which is where a rewritten type becomes visible.
+	selectGridRow(t, g, nameCol, "appdb")
+	clickButton(t, form, "Remove")
+
+	row := g.Row(gridRowIndex(t, g, nameCol, "appdb_fs"))
+	if row[typeCol] != "FILESTREAM" || row[fgCol] != "fsgroup" {
+		t.Errorf("the grid now reports the FILESTREAM file as %q/%q", row[typeCol], row[fgCol])
+	}
+
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 1 {
+		t.Fatalf("want exactly the one REMOVE FILE, got %d: %q", len(stmts), stmts)
+	}
+	if strings.Contains(stmts[0], "appdb_fs") {
+		t.Errorf("the FILESTREAM file was written to:\n%s", stmts[0])
+	}
+}
+
+// TestFilesPageWontAddAFileTypeItCannotBuild is the other side of the widened
+// picker: showing FILESTREAM so an existing file reads correctly must not make
+// it a choice for Add, whose spec builder handles ROWS and LOG only.
+func TestFilesPageWontAddAFileTypeItCannotBuild(t *testing.T) {
+	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
+	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	g := plainGrid(t, form)
+	selectGridRow(t, g, 0, "appdb_fs") // widens the picker to FILESTREAM
+	editText(t, form, "Logical name", "appdb_fs2")
+	clickButton(t, form, "Add")
+
+	if h := hintText(t, form); h == "" {
+		t.Error("Add accepted a FILESTREAM file type without saying anything")
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for _, s := range inst.Statements() {
+		if strings.Contains(s, "ADD FILE") {
+			t.Errorf("a file this page cannot build was added:\n%s", s)
+		}
+	}
+}

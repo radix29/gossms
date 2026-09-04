@@ -189,6 +189,44 @@ func (p *jobStepPanel) newStep() *jobStepEdit {
 	return e
 }
 
+// addStep is the New button's body on both Steps pages: seed a step from the
+// panel as it stands, refuse a name already in the list, and leave the new row
+// selected with the panel showing it.
+//
+// Shared for the reason the panel itself is. The duplicate-name branch is the
+// part that matters: it selects the existing row and re-syncs rather than
+// returning silently, so the button never looks broken, and a copy that only
+// set the hint would look correct in review.
+//
+// It deliberately does not read the panel into the *current* step first — the
+// name row doubles as that step's live edit and this step's seed name, so
+// committing here would misfile a freshly typed name as a rename of the row
+// the user just left. Callers with a precondition (the Properties page's
+// read-only step) check it before calling.
+func (p *jobStepPanel) addStep(grid *controls.DataGrid, hint *propsheet.HintRow,
+	cols []string, edits *[]*jobStepEdit, rowsFor func() [][]string, sync func()) {
+
+	name := p.nameField.Value()
+	if name == "" {
+		hint.Set("Type a step name first.")
+		return
+	}
+	for i, e := range visibleSteps(*edits) {
+		if e.name == name {
+			// Already present — say so and select it, rather than leaving the
+			// button looking broken.
+			hint.Set("A step named " + name + " is already listed — its row is selected below.")
+			grid.SetSelectedRow(i)
+			sync()
+			return
+		}
+	}
+	hint.Clear()
+	*edits = append(*edits, p.newStep())
+	resetGrid(grid, cols, rowsFor(), len(visibleSteps(*edits))-1)
+	sync()
+}
+
 // visibleSteps is the edit list minus the rows pending removal, in order.
 func visibleSteps(edits []*jobStepEdit) []*jobStepEdit {
 	out := make([]*jobStepEdit, 0, len(edits))

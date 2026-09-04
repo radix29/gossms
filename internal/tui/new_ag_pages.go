@@ -350,26 +350,8 @@ func (d *NewAGDialog) addReplica(name string, done func()) {
 		}
 	}
 
-	sc := d.sc
-	sessionCtx := d.ctx
-	d.SetMessage("Connecting to "+name+"...", false)
-	d.app.safego("adding an availability replica", func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-
-		peer, err := sc.Peer(ctx, name)
-		var ep *gosmo.DatabaseMirroringEndpoint
-		if err == nil {
-			ep, err = replicaEndpoint(ctx, peer)
-		}
-		d.app.postAndWake(func() {
-			if d.ctx != sessionCtx {
-				return
-			}
-			if err != nil {
-				d.SetMessage(err.Error(), true)
-				return
-			}
+	d.probeReplicaEndpoint("adding an availability replica", name,
+		func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint) {
 			// Seeding and failover default to the primary's, which is nearly
 			// always what a second replica of the same group wants.
 			primary := d.replicas[0]
@@ -386,8 +368,7 @@ func (d *NewAGDialog) addReplica(name string, done func()) {
 			})
 			d.SetMessage(fmt.Sprintf("Added %s (%s).", peer.Server.Name(), ep.URL()), false)
 			done()
-		})
-	})
+		}, nil)
 }
 
 func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {

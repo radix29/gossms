@@ -294,27 +294,8 @@ func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done
 		return
 	}
 
-	sc := d.sc
-	sessionCtx := d.ctx
-	d.SetMessage("Connecting to "+name+"...", false)
-	d.app.safego("connecting to an availability replica", func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
-
-		peer, err := sc.Peer(ctx, name)
-		var ep *gosmo.DatabaseMirroringEndpoint
-		if err == nil {
-			ep, err = replicaEndpoint(ctx, peer)
-		}
-		d.app.postAndWake(func() {
-			if d.ctx != sessionCtx {
-				return
-			}
-			if err != nil {
-				d.resolved.name, d.resolved.endpointURL = "", ""
-				d.SetMessage(err.Error(), true)
-				return
-			}
+	d.probeReplicaEndpoint("connecting to an availability replica", name,
+		func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint) {
 			// The instance's own @@SERVERNAME, not what was typed: ADD REPLICA
 			// addresses the replica by the name the catalog will report, and an
 			// alias or an address here makes JOIN find no matching replica.
@@ -327,8 +308,14 @@ func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done
 			}
 			d.SetMessage(fmt.Sprintf("Connected to %s (%s).", d.resolved.name, d.resolved.endpointURL), false)
 			done(d.resolved)
+		},
+		func(err error) {
+			// Cleared, not left as it was: preflight reads these to decide the
+			// dialog can write ADD REPLICA at all, and a stale pair from an
+			// earlier successful Connect would let it.
+			d.resolved.name, d.resolved.endpointURL = "", ""
+			d.SetMessage(err.Error(), true)
 		})
-	})
 }
 
 // addReplica is the whole pipeline: ADD REPLICA on the primary, then JOIN and

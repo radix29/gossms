@@ -1300,3 +1300,307 @@ func TestASysadminIsExemptFromASchemaDenial(t *testing.T) {
 		t.Error("a sysadmin was refused an action on a denied schema")
 	}
 }
+
+// TestADatabaseDenialWithholdsAnObjectGrant is the gap the database arm of
+// objectDenial closes, verified live on 2026-09-04: with
+// GRANT ALTER ON OBJECT::dbo.t1 and DENY ALTER at database scope, the server
+// answers HAS_PERMS_BY_NAME('dbo.t1','OBJECT','ALTER') = 0 and refuses the
+// ALTER. SQL Server resolves the wider DENY over the narrower GRANT — only a
+// *column* grant overrides an object DENY, and that runs the other way.
+//
+// The distinction the test turns on is that the login *holds* the object
+// grant. A set-up where it holds nothing would pass with the database check
+// deleted, because the object arm would have had nothing to answer with.
+func TestADatabaseDenialWithholdsAnObjectGrant(t *testing.T) {
+	sc, _ := newFakeConn(t, withDatabaseDenials(capabilityResponsesWithObjects(true,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
+		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil), "ALTER")...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	// Without the database arm this is the object arm answering yes on
+	// HasOnObject, for a write the server refuses.
+	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+		t.Error("a database-scope denial did not withhold the action — the object grant answered for it")
+	}
+	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...)
+	if !denied || at.database != "appdb" {
+		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, database appdb, true", r.name, at, denied)
+	}
+	if got, want := deniedText(r, at), "ALTER is denied on database appdb."; got != want {
+		t.Errorf("deniedText = %q, want %q", got, want)
+	}
+}
+
+// TestNotHoldingADatabaseRightIsNotADenial is the other half, and the one that
+// makes the arm safe: HAS_PERMS_BY_NAME answers 0 both for a permission
+// explicitly denied and for one simply never granted, and the second is the
+// *ordinary* state of a principal granted ALTER on one table. Reading it as a
+// denial would take the write away from exactly the principal it was granted
+// to — which is why the arm asks gosmo's DeniedOnDatabase and not Permits.
+func TestNotHoldingADatabaseRightIsNotADenial(t *testing.T) {
+	// Identical to the test above but for the missing "D:ALTER" row.
+	sc, _ := newFakeConn(t, capabilityResponsesWithObjects(true,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
+		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...); denied {
+		t.Error("a permission HAS_PERMS_BY_NAME answered 0 for read as an explicit denial")
+	}
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+		t.Error("the object grant lost its Rename/Move/Delete to a denial that does not exist")
+	}
+}
+
+// TestASysadminIsExemptFromADatabaseDenial. The probe reads permissions through
+// public, so a DENY made to public is recorded for a sysadmin too — and SQL
+// Server applies it to nobody. objectDenial's sysadmin exemption covers the
+// database question for the same reason it covers the object and schema ones.
+func TestASysadminIsExemptFromADatabaseDenial(t *testing.T) {
+	sc, _ := newFakeConn(t, withDatabaseDenials(sysadminCapabilityResponses(), "ALTER")...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...); denied {
+		t.Error("a sysadmin was withheld by a DENY the server would not apply to it")
+	}
+	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+		t.Error("a sysadmin was refused an action in a database denied the right")
+	}
+}
+
+// TestTheMenuNoteNamesTheDatabaseDenial. gate's note is a second switch over
+// denialSite, separate from deniedText, and a site it has no case for falls
+// through to "denied on this object" — which sends the user to the object's
+// permissions to remove a DENY that is not there. It shipped that way for the
+// database case and was caught only by reading the live menu, so it is pinned
+// here rather than left to the next live run.
+func TestTheMenuNoteNamesTheDatabaseDenial(t *testing.T) {
+	sc, _ := newFakeConn(t, withDatabaseDenials(capabilityResponsesWithObjects(true,
+		[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"},
+		[]string{"Sales", "dbo"}, []string{"Sales.Orders"}, nil), "ALTER")...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+
+	app := &App{}
+	node := &explorerNode{data: nodeData{
+		Type: NodeTable, Name: "Orders", Schema: "Sales", DBName: "appdb", conn: sc,
+	}}
+	items := app.objectOpsMenuItems(node)
+	if len(items) == 0 {
+		t.Fatal("the object-ops menu is empty; the test is addressing the wrong node type")
+	}
+	var checked int
+	for _, it := range items {
+		if it.Enabled != nil && !it.Enabled() && it.Note != "" {
+			checked++
+			if it.Note != "ALTER denied on database appdb" {
+				t.Errorf("%s note = %q, want it to name the database the DENY is on", it.Label, it.Note)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no withheld item carried a note — the database denial did not reach the menu")
+	}
+}
+
+// TestDbAccessadminKeepsRenameAndDeleteOnAUser is the gap principalOpRights
+// closes, verified live on win10cli 2026-09-04: a member of db_accessadmin
+// drops a user, and reads HAS_PERMS_BY_NAME 0 for ALTER, CONTROL and
+// ALTER ANY SCHEMA on the database alike. Every right in objectWriteRights()
+// is one of those three or is scoped to a schema or an object, and a user is
+// neither — so the two items were withheld from exactly the fixed role that
+// exists to perform them, while User Properties, gating on ALTER ANY USER,
+// stayed writable on the same node. db_securityadmin and a database role are
+// the same case one name over.
+func TestDbAccessadminKeepsRenameAndDeleteOnAUser(t *testing.T) {
+	for _, tc := range []struct {
+		node  NodeType
+		right string
+	}{
+		{NodeUser, "ALTER ANY USER"},
+		{NodeDatabaseRole, "ALTER ANY ROLE"},
+	} {
+		// The narrow right and nothing else, with the three wide ones the old
+		// set asked about all answered 0 — the live shape exactly.
+		sc := probedConn(t, "appdb", nil, nil,
+			[]string{tc.right}, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
+		// The empty schema is what a user node actually carries.
+		if !allowsActionOn(sc, "appdb", "", "bob", objectOpRights(tc.node)...) {
+			t.Errorf("%v: Rename/Delete withheld from a principal holding %s", tc.node, tc.right)
+		}
+		// The other half: holding none of them still withholds, or the entry
+		// would just be another unconditional yes.
+		none := probedConn(t, "appdb", nil, nil, nil,
+			[]string{tc.right, "ALTER", "CONTROL", "ALTER ANY SCHEMA"})
+		if allowsActionOn(none, "appdb", "", "bob", objectOpRights(tc.node)...) {
+			t.Errorf("%v: Rename/Delete offered to a principal holding nothing", tc.node)
+		}
+	}
+}
+
+// principalDeniedConn is a login holding ALTER ANY USER at database scope with
+// a class-4 DENY of ALTER recorded on the named principals — the live shape
+// exactly: HAS_PERMS_BY_NAME says 1 at database scope, and only the catalog
+// rows say the write is refused on those two.
+func principalDeniedConn(t *testing.T, denied ...string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, withPrincipalDenials(
+		capabilityResponses(true, nil, nil,
+			[]string{"ALTER ANY USER", "ALTER ANY ROLE"}, []string{"ALTER", "CONTROL"}),
+		"ALTER", denied...)...)
+	sc.ProbeCapabilities()
+	sc.DatabaseCapabilities(context.Background(), "appdb")
+	return sc
+}
+
+// TestAPrincipalDenialWithholdsRenameAndDeleteOnThatUser is the class-4 arm's
+// reason, verified live on majors 13, 14 and 17 (2026-09-04, identical on all
+// three): a principal holding ALTER ANY USER at database scope is refused both
+// ALTER USER ... WITH NAME and DROP USER on a user carrying DENY ALTER, and
+// HAS_PERMS_BY_NAME still answers 1 for ALTER ANY USER throughout — so nothing
+// but the catalog rows can tell the gate to withhold.
+func TestAPrincipalDenialWithholdsRenameAndDeleteOnThatUser(t *testing.T) {
+	sc := principalDeniedConn(t, "bob")
+	rights := objectOpRights(NodeUser)
+	// A user node carries an empty schema and its own name as the object.
+	if allowsActionOn(sc, "appdb", "", "bob", rights...) {
+		t.Error("Rename/Delete offered on a user carrying a class-4 DENY")
+	}
+	// The other half, and the one that keeps the arm safe: the denial is on
+	// bob alone, and every other user is still writable through the same
+	// database-wide grant.
+	if !allowsActionOn(sc, "appdb", "", "carol", rights...) {
+		t.Error("a denial on one user withheld the action on every other")
+	}
+}
+
+// TestARoleDenialWithholdsNoRenameOrDrop pins the asymmetry rather than an
+// omission. gosmo records class-4 DENY rows for database roles as well — they
+// are the same class and the catalog does not distinguish them — but SQL Server
+// checks ALTER ANY ROLE at database scope for DROP ROLE and ALTER ROLE ... WITH
+// NAME and performs both with the DENY in place, verified live on all three
+// majors. Gating the explorer's Rename/Delete on it would withhold two items
+// the server allows, so rightAlterAnyDBRole deliberately declares no
+// deniedOnPrincipal.
+//
+// Rename and drop only: the same DENY *does* withhold ADD/DROP MEMBER, which
+// is rightAlterAnyDBRoleMembers' reason — see
+// TestARoleDenialWithholdsMembershipButNotTheRename.
+func TestARoleDenialWithholdsNoRenameOrDrop(t *testing.T) {
+	sc := principalDeniedConn(t, "auditors")
+	if !allowsActionOn(sc, "appdb", "", "auditors", objectOpRights(NodeDatabaseRole)...) {
+		t.Error("a class-4 DENY on a role withheld Rename/Delete, which SQL Server permits")
+	}
+}
+
+// TestATableSharingAUsersNameIsNotDenied. objectDenial is asked about a table
+// by name just as it is about a user, so the arm has to be discriminated by the
+// right rather than by the node — a table called "bob" beside a denied user
+// "bob" is the collision that makes that non-obvious.
+func TestATableSharingAUsersNameIsNotDenied(t *testing.T) {
+	sc := principalDeniedConn(t, "bob")
+	if !allowsActionOn(sc, "appdb", "Sales", "bob", objectOpRights(NodeTable)...) {
+		t.Error("a table sharing a denied user's name lost its Rename/Move/Delete")
+	}
+}
+
+// TestTheMenuNoteNamesTheDeniedPrincipal. Two switches over denialSite need
+// every new case, not one — deniedText and the note switch in gateOn — and
+// missing the second is invisible to every other test, which is how the
+// database case shipped reading "denied on this object". The note must also
+// name the class-4 permission rather than the right: the DENY row says ALTER,
+// while the right asked about is the database-wide ALTER ANY USER.
+//
+// "principal", not "user": class 4 records database roles as well, and the
+// membership pages ask this same question about a role (see
+// rightAlterAnyDBRoleMembers). The gate is handed a name and cannot tell which
+// it is, so the sentence must be true of both.
+func TestTheMenuNoteNamesTheDeniedPrincipal(t *testing.T) {
+	sc := principalDeniedConn(t, "bob")
+	rights := objectOpRights(NodeUser)
+	item := gateOn(controls.MenuItem{Label: "Delete..."}, sc, "appdb", "", "bob", rights...)
+	if want := "ALTER denied on principal bob"; item.Note != want {
+		t.Errorf("menu note = %q, want %q", item.Note, want)
+	}
+	r, at, denied := deniedOnObject(sc, "appdb", "", "bob", rights...)
+	if !denied {
+		t.Fatal("deniedOnObject reported no denial")
+	}
+	if want := "ALTER is denied on principal bob."; deniedText(r, at) != want {
+		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	}
+}
+
+// TestARoleDenialWithholdsMembershipButNotTheRename is the split the two
+// ALTER ANY ROLE rights exist for, and the reason it cannot be decided per
+// object: under DENY ALTER ON ROLE::r, verified live 2026-09-04 on majors 13
+// and 17, the server refuses ALTER ROLE r ADD MEMBER and allows both
+// ALTER ROLE r WITH NAME and DROP ROLE r — with HAS_PERMS_BY_NAME reporting 0
+// for ALTER on the role throughout.
+//
+// Gating the whole dialog on the DENY would take away a rename the server
+// performs; gating none of it offers a membership edit the server refuses with
+// Msg 15151 after the user has ticked the boxes.
+func TestARoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
+	sc := principalDeniedConn(t, "sales_role")
+
+	if allowsActionOn(sc, "appdb", "", "sales_role", rightAlterAnyDBRoleMembers) {
+		t.Error("Members offered on a role carrying a class-4 DENY")
+	}
+	if !allowsActionOn(sc, "appdb", "", "sales_role", rightAlterAnyDBRole) {
+		t.Error("the plain right withheld a rename the server allows")
+	}
+	// The denial is on that role alone; every other role is still editable
+	// through the same database-wide grant.
+	if !allowsActionOn(sc, "appdb", "", "hr_role", rightAlterAnyDBRoleMembers) {
+		t.Error("a denial on one role withheld membership on every other")
+	}
+}
+
+// TestAUserDenialWithholdsBeingAddedToARole. Membership checks ALTER on the
+// member as well as on the role — ALTER ROLE db_datareader ADD MEMBER u is
+// refused under DENY ALTER ON USER::u alone (live, 2026-09-04) — which is why
+// User Properties' Membership page is gated on the user it is about rather
+// than on the roles it lists.
+func TestAUserDenialWithholdsBeingAddedToARole(t *testing.T) {
+	sc := principalDeniedConn(t, "bob")
+	if allowsActionOn(sc, "appdb", "", "bob", rightAlterAnyDBRoleMembers) {
+		t.Error("Membership offered for a user carrying a class-4 DENY")
+	}
+}
+
+// TestMembershipPagesAreGatedOnThePrincipalTheyEdit pins the wiring the two
+// tests above cannot see. They ask allowsActionOn directly; what actually
+// reaches it on a Properties dialog is the page's own requires/requiresObject,
+// and a page left on withRequires — no object — asks the class-4 question about
+// nothing and withholds nothing, silently.
+func TestMembershipPagesAreGatedOnThePrincipalTheyEdit(t *testing.T) {
+	sc, _ := newFakeConn(t)
+
+	for _, tc := range []struct {
+		what   string
+		pages  []propPage
+		title  string
+		object string
+	}{
+		{"Database Role Properties", rolePropPages(nil, sc, "appdb", "sales_role"), "Members", "sales_role"},
+		{"Database User Properties", userPropPages(nil, sc, "appdb", "bob"), "Membership", "bob"},
+	} {
+		i := slices.IndexFunc(tc.pages, func(p propPage) bool { return p.title == tc.title })
+		if i < 0 {
+			t.Fatalf("%s has no %q page", tc.what, tc.title)
+		}
+		p := tc.pages[i]
+		if p.requiresObject != tc.object {
+			t.Errorf("%s > %s asks about object %q, want %q — the class-4 arm is never reached",
+				tc.what, tc.title, p.requiresObject, tc.object)
+		}
+		if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnPrincipal != "" }) {
+			t.Errorf("%s > %s declares no right carrying deniedOnPrincipal, so a DENY on %s is invisible to it",
+				tc.what, tc.title, tc.object)
+		}
+	}
+}

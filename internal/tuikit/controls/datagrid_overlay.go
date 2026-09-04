@@ -128,7 +128,7 @@ func (g *DataGrid) openViewer() {
 	g.viewEditor.SetActive(true)
 	g.viewOpen = true
 	// A latch must not survive into the next showing of the same widget —
-	// see viewDismissing, and the same rule for ModalDialog in CLAUDE.md.
+	// see viewDismissing, and the same rule for ModalDialog in docs/ui-rules.md.
 	g.viewDismissing = false
 }
 

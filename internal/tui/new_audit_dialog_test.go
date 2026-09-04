@@ -9,8 +9,8 @@ import (
 )
 
 // The New Audit dialog's two parallel tables. Both are the round-trip trap
-// CLAUDE.md names — a label list beside a value list, where swapping one
-// entry leaves the dialog reading itself back consistently and writing the
+// docs/testing.md names — a label list beside a value list, where swapping
+// one entry leaves the dialog reading itself back consistently and writing the
 // wrong TO clause — and neither had a test, though the declaration said one
 // existed.
 

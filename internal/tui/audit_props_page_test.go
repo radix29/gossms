@@ -14,8 +14,8 @@ import (
 // Every case acts on "HIPAA", which is the *second* audit in the list — a page
 // that ignored the name it was opened with would still pass on the first.
 
-// TestAuditFailureLabelsAndValuesArePaired is the round-trip trap CLAUDE.md
-// names: the label list and the value list are parallel, so swapping two
+// TestAuditFailureLabelsAndValuesArePaired is the round-trip trap
+// docs/testing.md names: the label list and the value list are parallel, so swapping two
 // entries in one leaves load and apply agreeing with each other while the page
 // writes SHUTDOWN for "Fail operation". Pinning by name is the only thing that
 // catches it.

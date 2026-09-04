@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gdamore/tcell/v3"
+)
 
 // fakeFocusable records what Focus was last told, so a test can assert which
 // entry of a list actually ended up focused rather than only which index was
@@ -179,3 +183,70 @@ func TestRunProgressButtonCancelsARunningTask(t *testing.T) {
 		t.Error("button 0 did not hide the dialog")
 	}
 }
+
+// TestProgressModeKeyClampsFocusToTheShorterButtonList.
+//
+// The Backup and Restore progress views lose their Cancel button the moment
+// the task finishes, so a btnFocus of 1 recorded while it was running indexes
+// past a one-button list. Enter is where that lands: it is the only key that
+// reads the focused button rather than just moving between them, and an
+// unclamped index there panics on a run that completed between the draw and
+// the keypress — the ordinary way of pressing Enter on a backup that just
+// finished.
+func TestProgressModeKeyClampsFocusToTheShorterButtonList(t *testing.T) {
+	btnFocus := 1
+	fired := 0
+	progressModeKey(key(tcell.KeyEnter), &btnFocus, []string{"Close"}, func() {}, func() { fired++ })
+
+	if btnFocus != 0 {
+		t.Errorf("btnFocus = %d after Enter on a one-button view, want 0", btnFocus)
+	}
+	if fired != 1 {
+		t.Errorf("the button fired %d times, want 1", fired)
+	}
+}
+
+// TestProgressModeKeyRotatesAndHides pins the rest of the progress view's
+// keyboard, including that it swallows everything: the view is modal over the
+// dialog's form, and a key falling through would edit rows the user cannot see.
+func TestProgressModeKeyRotatesAndHides(t *testing.T) {
+	buttons := []string{"Hide", "Cancel"}
+	btnFocus := 0
+	hidden := false
+	hide := func() { hidden = true }
+	fire := func() { t.Error("a rotation key fired the button") }
+
+	for _, k := range []tcell.Key{tcell.KeyTab, tcell.KeyF1} {
+		btnFocus = 0
+		if !progressModeKey(key(k), &btnFocus, buttons, hide, fire) {
+			t.Errorf("%v was not handled", k)
+		}
+		if btnFocus != 1 {
+			t.Errorf("%v left btnFocus at %d, want 1", k, btnFocus)
+		}
+	}
+
+	// Three buttons, not this view's two: with two, forward and backward from
+	// the first land on the same index, so a Backtab wired to nextFocus would
+	// pass. Nothing in the dialogs has three, but the wiring is what is under
+	// test.
+	btnFocus = 0
+	progressModeKey(key(tcell.KeyBacktab), &btnFocus, []string{"a", "b", "c"}, hide, fire)
+	if btnFocus != 2 {
+		t.Errorf("Backtab from the first button left btnFocus at %d, want the last (2)", btnFocus)
+	}
+
+	if !progressModeKey(key(tcell.KeyEscape), &btnFocus, buttons, hide, fire) {
+		t.Error("Escape was not handled")
+	}
+	if !hidden {
+		t.Error("Escape did not hide the dialog")
+	}
+
+	// An unbound key is still swallowed.
+	if !progressModeKey(key(tcell.KeyLeft), &btnFocus, buttons, hide, fire) {
+		t.Error("an unbound key fell through to the form under the progress view")
+	}
+}
+
+func key(k tcell.Key) *tcell.EventKey { return tcell.NewEventKey(k, "", tcell.ModNone) }

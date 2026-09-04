@@ -332,7 +332,7 @@ func newScheduleDialog(t *testing.T) (*NewScheduleDialog, *fakeInstance) {
 // A weekly schedule's @freq_interval is a weekday bitmask, and the label a day
 // is ticked by and the bit it sets come from two parallel tables
 // (weekdayNames/weekdayBits). Ticking by name and asserting the bit is what a
-// round trip through the same pair cannot see — see CLAUDE.md.
+// round trip through the same pair cannot see — see docs/testing.md.
 func TestNewScheduleWeeklyTicksTheDayItIsLabelled(t *testing.T) {
 	d, inst := newScheduleDialog(t)
 	form := d.forms[0]

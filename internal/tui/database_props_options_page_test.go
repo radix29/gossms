@@ -24,7 +24,7 @@ func optionsPageResponses() []fakeResponse {
 }
 
 // TestEveryDatabaseOptionRowWritesTheOptionItIsLabelled is the test this page
-// most needed, and the one CLAUDE.md's round-trip rule is about.
+// most needed, and the one docs/testing.md's round-trip rule is about.
 //
 // The page is twenty-one label/DatabaseOption/items triples built by
 // dbOptBoolRow and dbOptSelectRow, and load and apply read the same table —

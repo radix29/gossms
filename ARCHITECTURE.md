@@ -37,7 +37,10 @@ Before adding to any of them:
 
 | Document | Authoritative for |
 |---|---|
-| `CLAUDE.md` | Agent-facing working rules: verification standards, coding conventions, the short enforceable form of each idiom |
+| `CLAUDE.md` | Agent-facing working rules that apply to every task: conventions, hygiene, and where to read next. Kept short — it loads every session |
+| `docs/ui-rules.md` | The short enforceable form of every `internal/tui`/`internal/tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse and async |
+| `docs/db-rules.md` | Permission gating, the T-SQL a page emits, Object Explorer filters, query execution |
+| `docs/testing.md` | What counts as verification: the tmux and live-server harnesses, and the `fakedb_test.go` rules |
 | `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
 | `PLAN.md` | What's next: release target, current priorities, feature backlog |
@@ -604,10 +607,10 @@ hand-edited before a release.
 
 **`go test ./...` passing is not verification.** The test suite is worth
 keeping green, but nearly every real bug in this project was caught by
-driving the built binary against a real SQL Server, not by a test. CLAUDE.md's
-"Green tests are not verification" section is authoritative for how to do
-that — the tmux harness for TUI behavior, disposable objects for database
-behavior, A/B against a pre-fix binary for anything subtle.
+driving the built binary against a real SQL Server, not by a test.
+`docs/testing.md` is authoritative for how to do that — the tmux harness
+for TUI behavior, disposable objects for database behavior, A/B against a
+pre-fix binary for anything subtle.
 
 ## Developing against a local gosmo checkout
 

@@ -55,7 +55,7 @@ func TestClosePanelAtNoQueryRunningDoesNotPanic(t *testing.T) {
 //
 // The Enabled predicates gate these ahead of the click, so this is the second
 // line: an action reached anyway must say why nothing happened rather than
-// doing nothing (CLAUDE.md § Application rules on context-gating). Each of the
+// doing nothing (docs/ui-rules.md on context-gating). Each of the
 // seven carried its own copy of the check, which is the arrangement where one
 // gets added without it.
 func TestQueryActionsReportWhenThereIsNoQueryPanel(t *testing.T) {

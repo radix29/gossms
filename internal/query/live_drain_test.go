@@ -164,7 +164,7 @@ func TestLiveDrainGateAfterAnAbandonedSet(t *testing.T) {
 
 // The other half of the gate: an extra Next() past an exhausted set makes
 // the driver swallow the message retmsg is waiting for. This is the shipped
-// bug (empty grid, no error, no Messages tab) that CLAUDE.md forbids
+// bug (empty grid, no error, no Messages tab) that docs/testing.md forbids
 // reintroducing — pinned here against the real driver.
 func TestLiveExtraNextPastAnExhaustedSetSwallowsTheMessage(t *testing.T) {
 	conn, ctx, done := liveConn(t)

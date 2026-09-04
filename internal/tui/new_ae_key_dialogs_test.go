@@ -299,7 +299,7 @@ func TestParseHexBytes(t *testing.T) {
 // B2: ENCLAVE_COMPUTATIONS is SQL Server 2019 syntax and the parser rejects the
 // whole CREATE below that, so the dialog must not offer the two controls on an
 // older instance — an ungated control that can only fail on Apply is what
-// CLAUDE.md § Application rules rules out. The apply is exercised, not just the
+// docs/ui-rules.md rules out. The apply is exercised, not just the
 // row list: a hidden checkbox that the apply still reads would send the clause
 // anyway.
 func TestNewColumnMasterKeyDialogHidesEnclavesBelow2019(t *testing.T) {

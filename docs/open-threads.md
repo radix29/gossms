@@ -13,31 +13,46 @@ it was verified with it. The "do not re-raise" sections are the deliberate
 exception: they are not history, they are what stops a settled question being
 reopened.
 
-## Version support: gosmo is not version-aware
+## Version support: the policy, and how it is held
 
-The target is **SQL Server 2016 SP1 and later**; the floor is 2016 SP1 rather
-than RTM because `procedure.go`, `scripter.go` and gossms's
-`internal/activity/block.go` emit `CREATE OR ALTER`. gosmo is written against
-whatever the two instances in the house are (majors 14 and 17), and the first
-run on anything older than 2019 found nine defects — four gosmo reads select
-catalog columns that do not exist before 2019/2022 and fail outright (Column
-Master Keys, Query Store options, `Table.Detail`'s `ledger_type_desc`, which
-kills **Table Properties > General** on every table, and `Statistic.Header`,
-where DBCC returns 10 columns and the code scans 11). For the 2016 target the
-biggest item is **`STRING_AGG` in seven queries** — a 2017 function — which
-would kill partition functions and schemes, server and database triggers,
-foreign keys and audit specifications.
+The target is **SQL Server 2016 SP1 and later**. The floor is SP1 rather than
+RTM because `procedure.go`, `scripter.go` and gossms's
+`internal/activity/block.go` emit `CREATE OR ALTER`, which SP1 introduced.
 
 Three real instances exist — majors **13** (`win10cli\SQL2016`, SP3), **14**
 (`win10cli\SQL2017`) and **17** — so the floor itself can be exercised. There
 is no major **15 or 16** and no way to run one here (no Docker, 3 GB RAM), so
 those two stay argued from the catalog documentation and pinned by tests.
 
-**Nothing in this section is fixed yet**, and the write-up that held the
-findings, the gating mechanism, the three verification layers and the
-reproduction recipe was never committed — `docs/version-support-plan.md` does
-not exist, and references to it elsewhere are dangling. The resume point is
-this section plus a fresh `livedb` run against 13 and 14.
+**The standing check is `TestLiveVersionSweep`** (`~/go/gosmo/live_versionsweep_test.go`):
+it calls every read gosmo exposes against the connected instance and reports
+what the server rejects. Run it on the *oldest* instance available after any
+query change. A query naming a column the instance does not have fails the
+whole read, and nothing in `go test ./...` says so — which is how nine such
+defects reached a shipped state before the first 2016/2017 run found them.
+
+The nine are **closed**, verified 2026-09-04 by a sweep on all three instances:
+219 calls / 0 failures on 13 and 14, 233 / 0 on 17. The gates that closed them,
+recorded because the next audit will otherwise re-derive them from scratch:
+
+| Was | Held by |
+|---|---|
+| `STRING_AGG` (2017) in seven queries — partition functions and schemes, server and database triggers, foreign keys, audit specifications | `sql_agg.go` `commaList` renders the `FOR XML PATH`/`STUFF` form, valid from 2008. No raw `STRING_AGG` remains in non-test source. |
+| Column Master Keys: `allow_enclave_computations`, `signature` (2019) | `security.go`, `colSince(major, SQLServer2019, …)` |
+| Query Store options: the 2017 and 2019 columns | `query_store.go`, `colSince` per column |
+| `Table.Detail`'s `ledger_type_desc` (2022), which killed **Table Properties > General** on every table | `table.go`, `colSince(…, SQLServer2022, …)` |
+| `Statistic.Header`: DBCC returns 10 columns before 2019, 11 after | `statistics.go` binds **by column name**, with the failure named in the comment |
+
+Two reads are refused outright on 13 rather than gated per column, which is the
+gate working and not a defect: `Database.QueryStoreWaitCategoriesContext` and
+`Database.QueryStoreWaitingQueriesContext` return `ErrUnsupportedVersion`
+("requires SQL Server 2017 or later"). The sweep counts those separately.
+
+A sweep run of 0 failures is not proof on its own — it passes just as happily
+if a read was never reached. When re-verifying, confirm the reads in question
+were actually *called*: the sweep's `call` helper takes a label, and logging it
+lists every method and object swept. That is how the five rows above were
+checked on 13.
 
 ## Unbuilt features README already promises
 
@@ -115,11 +130,100 @@ was never true.
 
 ## Permission gating: what remains open
 
-- **A DENY at a class other than 1 (object) or 3 (schema) that the tree acts on
-  is still invisible**, and so is a database-scope (class 0) DENY beneath a
-  narrower object- or schema-scope grant — `Permits` sees it, but
-  `rightAlterOnObject` answers yes beside it and SQL Server resolves the wider
-  DENY over the narrower grant.
+- **Classes 0, 1, 3 and 4 are done; the residue is the server classes.**
+  The database-scope (class 0) DENY beneath a narrower object- or schema-scope
+  grant was closed 2026-09-04 — `objectDenial` gained a fourth arm asking gosmo's
+  `DeniedOnDatabase`, which reads explicit DENY rows from the catalog because
+  `HAS_PERMS_BY_NAME`'s 0 cannot tell "denied" from "never granted". What is
+  still invisible, enumerated from `objectOps` and the `withRequires` calls
+  rather than guessed:
+  - ~~**Class 4, DATABASE_PRINCIPAL**~~ — **closed 2026-09-04.** gosmo's
+    `explicitPrincipalCapabilityQuery` reads class-4 DENY rows into
+    `ExplicitPrincipalPermissions`, and `objectDenial` gained a fifth arm
+    asking `DeniedOnPrincipal` for any right declaring `deniedOnPrincipal`.
+    Two live results shaped it, identical on majors 13, 14 and 17 and both
+    worth not rediscovering: a class-4 DENY on a **database role** withholds
+    nothing (`DROP ROLE` and `ALTER ROLE ... WITH NAME` check `ALTER ANY ROLE`
+    at database scope and go through with the DENY in place, while
+    `HAS_PERMS_BY_NAME` reports 0 for `ALTER` on the role), so the arm is asked
+    for users only; and `GRANT ALTER ON USER::x` permits *nothing*, so unlike
+    object and schema scope there is no grant direction at this class and the
+    block reads DENY rows alone.
+  - **Classes 101 SERVER_PRINCIPAL and 105 ENDPOINT (and 108 AVAILABILITY
+    GROUP)** — the only half still open, and here the gap is wider than a
+    missing arm: `gosmo.Capabilities` carries no explicit-permission map at
+    all, `sys.server_permissions` is never read, so *every* server-class DENY
+    is invisible. One new probe block covers them.
+
+    **There is no class 110.** Logins and server roles are both class **101
+    SERVER_PRINCIPAL** in `sys.server_permissions`; the two are told apart by
+    the *principal's* `type_desc` (`SQL_LOGIN`/`WINDOWS_LOGIN` vs
+    `SERVER_ROLE`), exactly as class 4 tells a user from a database role. A
+    design that probes a separate class 110 finds nothing and gates nothing.
+
+    **Probed live 2026-09-04** on win10cli (major 17) and `win10cli\SQL2016`
+    (major 13, gosmo's floor), actor holding `ALTER ANY LOGIN` +
+    `ALTER ANY SERVER ROLE` + `ALTER ANY ENDPOINT` and one DENY per target.
+    Identical on both majors; every refusal is Msg 15151 except the endpoint's,
+    which is Msg 6004:
+
+    | DENY ALTER on | withholds | does **not** withhold |
+    |---|---|---|
+    | `LOGIN::x` (101) | `ALTER LOGIN` (rename, password), `DROP LOGIN` | — |
+    | `SERVER ROLE::r` (101) | `ALTER SERVER ROLE ... ADD/DROP MEMBER` | rename (`WITH NAME`), `DROP SERVER ROLE` |
+    | `ENDPOINT::e` (105) | `ALTER ENDPOINT` | — |
+
+    So a server role repeats the database role's split rather than the login's
+    all-or-nothing: **the gate must not withhold a server role's rename or
+    drop, and must withhold its membership edits.** `HAS_PERMS_BY_NAME` reads 0
+    for the denied `ALTER` in every one of these rows, including the two the
+    server goes on to allow — which is why the arm has to be asked per action,
+    not per object.
+
+    **Membership checks ALTER on the *member* too**, at both scopes: adding a
+    login denied `ALTER` to a role that is not denied is refused (and the same
+    for a database user). A membership gate that asks only about the role is
+    half a gate.
+
+    `ALTER AUTHORIZATION` proved nothing here and is not evidence either way:
+    it was refused on an *undenied* role at both scopes, because changing an
+    owner needs more than `ALTER ANY` (CONTROL on the role, plus IMPERSONATE on
+    the new owner). Class 108 AVAILABILITY GROUP is still unprobed — win10cli
+    has no HADR, so it needs the AAG cluster.
+
+  - ~~**The class-4 note above is too broad, and this is a live gap in shipped
+    code.**~~ — **closed 2026-09-04.** "A class-4 DENY on a database role
+    withholds nothing" held for `DROP ROLE` and `ALTER ROLE ... WITH NAME`
+    only — the two writes that were probed. `ALTER ROLE r ADD MEMBER u` under `DENY ALTER ON ROLE::r` is
+    **refused** (Msg 15151, majors 13 and 17), and `deniedOnPrincipal` is asked
+    for users only, so Database Role Properties > Members and Database User
+    Properties > Membership are offered, and editable, to a principal the
+    server will refuse.
+
+    Fixed by splitting the right: `rightAlterAnyDBRoleMembers` is
+    `rightAlterAnyDBRole` plus `deniedOnPrincipal`, and the two membership pages
+    moved to `withRequiresOn` so the arm is asked about the principal the page
+    edits — the role for Database Role Properties > Members, the user for
+    Database User Properties > Membership, since membership checks ALTER on the
+    member too. The per-role half of that second page (which of the listed roles
+    the user may be added to) stays ungated for the reason Login Properties >
+    User Mapping declares nothing: it is a different answer per row, and one
+    page-level banner cannot state it. The denial sentence now reads "denied on
+    principal x" rather than "on user x", because the gate is handed a name and
+    only the catalog knows which kind it is.
+
+    Verified end to end against win10cli, not only in tests: a login holding
+    ALTER ANY ROLE with `DENY ALTER ON ROLE::gate_role` sees that role's Members
+    page read-only under "ALTER is denied on principal gate_role", its General
+    page editable, and an undenied role's Members page fully editable. The
+    matching user half (Database User Properties > Membership) is pinned by
+    `TestMembershipPagesAreGatedOnThePrincipalTheyEdit` and rides the same arm
+    that was already live-verified for a user's General page; it was not driven
+    in the UI.
+  No other class is reachable: gossms's `NodeType` list has no certificate,
+  assembly, symmetric/asymmetric key, fulltext catalog, XML schema collection or
+  Service Broker node, and column master/encryption keys, partition functions
+  and partition schemes have no securable class of their own.
 - **The column path is dormant in production, and that is settled — do not
   re-raise.** `ProbedObjectPermissions` is `ALTER`, which is not
   column-grantable, so `ColumnPermissions` is empty on every real connection
@@ -182,12 +286,13 @@ working through a database-wide grant.
   idempotence at the write, not a better sentinel. Note `isAlreadyExists`
   matches by the "already exists" substring; its `15023` arm is the *user*
   code, and logins raise 15025.
-- **`JobStateCancelling` and `JobStateRunning` are deprecated constants** naming
-  states Agent's encoding does not have. They carry negative values so no switch
-  over the real encoding reaches them, and are kept only so existing callers
-  compile (§ Changing gosmo) — worth retiring in a release that can take the
-  break. The real encoding, read from `xp_sqlagent_enum_jobs`, is 1 Executing,
-  2 WaitingForThread, 3 BetweenRetries, 4 Idle, 5 Suspended,
+- ~~**`JobStateCancelling` and `JobStateRunning` are deprecated constants**~~ —
+  **removed 2026-09-04** from gosmo's `HEAD` (`CHANGELOG.md` § Unreleased
+  § Removed), the author's call being that gossms is gosmo's only consumer, so
+  `v0.0.x` is a boundary that can carry the break. They named states Agent's
+  encoding does not have; nothing in either repo referenced them. `JobState`'s
+  real encoding, read from `xp_sqlagent_enum_jobs`, is 1 Executing,
+  2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, with 0 meaning a job
   Agent does not run itself.
 
@@ -245,6 +350,23 @@ Three things about the job-state read are load-bearing and easy to undo:
 - **`TestLiveAvailabilityGroupOperations` deliberately skips Drop and
   RemoveReplica** against the standing group AAG1; only add/remove database,
   suspend/resume, the listener round trip and the failover refusal run there.
+
+## Database Properties > Files: FILESTREAM, not live-confirmed
+
+The Files page shows a file whose type is neither ROWS nor LOG — FILESTREAM,
+and memory-optimized data — with a widened Type picker (`preservingItems`), and
+no longer rewrites such a file's recorded type when the row is merely selected;
+Add refuses a type outside `addableFileTypes`. Pinned by
+`TestFilesPageDoesNotRetypeAFilestreamFile` and
+`TestFilesPageWontAddAFileTypeItCannotBuild` against a scripted
+`sys.database_files`, both mutation-checked.
+
+**Not confirmed against a real FILESTREAM database.** win10cli can host one.
+Two things a live run should settle: what `FileGroupsContext` actually returns
+for a FILESTREAM filegroup (the widening of the Filegroup picker exists in case
+it returns nothing), and whether this page should offer to *add* a FILESTREAM
+file at all — SSMS does, which would mean a spec builder that omits SIZE and
+takes a directory path rather than a file path.
 
 ## Always On: what is deliberately out of scope
 
@@ -408,7 +530,7 @@ numbering the moment they flipped the selector.
   schemas, partition functions/schemes, the Always Encrypted keys, security
   policies) stay client-side: they are small, and the clause builder is
   family-agnostic if that ever stops being true. The push-down rules that a
-  plausible simplification removes are in `CLAUDE.md` § Application rules.
+  plausible simplification removes are in `docs/db-rules.md`.
 - **Owner and Durability Type are not offered on Tables, deliberately.** SSMS
   offers both; each is one `TableDetail` query per table, so listing them means
   a folder-wide detail fetch before the pane can draw a single row. This is the
@@ -756,3 +878,27 @@ numbering the moment they flipped the selector.
   failure on every rename-restore from an appended `.bak`. And **the relocation
   preview and the MOVE clauses must keep sharing `relocateFiles`**, or the paths
   the Files view lists stop describing what the restore does.
+
+- **A whole-repo review on 2026-09-04 swept both repos for these, and found
+  nothing.** Recorded so the next review spends its time elsewhere; every one
+  was run over gossms and gosmo together, and every item it *did* find is
+  fixed. `go build`, `go vet`, `gofmt -l`, `go test ./...` and `go test -race
+  ./...` were clean in both. `staticcheck ./...` reported only the two U1000s
+  this file records as deliberate in gossms, and one ST1005 in a gosmo *test*
+  error string. In gosmo: every `Query`/`query` pairs `defer rows.Close()` with
+  a `rows.Err()` check — the fifteen apparent misses all delegate to a shared
+  scanner that checks it; there is no `FooContext` without a plain `Foo`
+  wrapper; and no query runs inside a `rows.Next()` loop. In gossms: exactly one
+  goroutine is spawned outside `safego`/`safegoRepair`, the backfill worker,
+  which is deliberate and takes both the label and the recover by hand; no
+  `context.Background()` appears in a request path, every fetch deriving from
+  `sc.Context()` with a named timeout; and every keyword-valued interpolation
+  into SQL goes through an allowlist. Two things were checked against real
+  source rather than memory: `mssql.ServerError` really is fatal-only
+  (`go-mssqldb@v1.9.4/error.go:79`, and `mssql.go:1352` "Ignore non-fatal server
+  errors"), so gosmo's `IsRetryable` treating it as retryable is correct; and
+  the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
+  real and applied. No restructuring was proposed: the `internal/tui`
+  file/package splits are closed above on measured numbers, and gosmo's "one
+  file per subject area" makes `availability_group.go` at 1965 lines compliant
+  rather than a candidate.

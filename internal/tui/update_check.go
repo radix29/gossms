@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,7 +85,10 @@ func fetchLatestRelease() (githubRelease, error) {
 	}
 
 	var rel githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	// The 10s context bounds how long the response may take, not how big it
+	// may be; cap the bytes decoded so a broken or hostile response can't
+	// grow the heap. GitHub's real payload is a few KB.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
 		return githubRelease{}, err
 	}
 	return rel, nil

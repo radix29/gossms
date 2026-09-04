@@ -73,8 +73,8 @@ func TestSheetCtrlZRunsAGridRowsRevertFn(t *testing.T) {
 	}
 }
 
-// Every key must do something or say why not (CLAUDE.md § context-gating), and
-// a clean page has nothing to restore.
+// Every key must do something or say why not (docs/ui-rules.md on
+// context-gating), and a clean page has nothing to restore.
 func TestSheetCtrlZOnACleanPageReportsThereIsNothingToRevert(t *testing.T) {
 	p := newTestSheet("General")
 	var page, seq int

@@ -600,6 +600,50 @@ func withDeniedSchemas(responses []fakeResponse, schemas ...string) []fakeRespon
 	return responses
 }
 
+// withDatabaseDenials adds a database-scope (class 0) DENY of each permission
+// to a capability script. The rows ride on the database probe beside the
+// schema- and object-scope ones, tagged "D:" with the database as the name,
+// which is how gosmo's explicitDatabaseCapabilityQuery returns them.
+//
+// It is deliberately separate from capabilityResponsesWithSchemas's dbDenied
+// argument: that one makes HAS_PERMS_BY_NAME answer 0, which means "does not
+// hold" and is what a principal working through a narrower grant reads
+// anyway. Only these rows say a DENY exists.
+func withDatabaseDenials(responses []fakeResponse, perms ...string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range perms {
+			r.rows = append(r.rows, []driver.Value{"D:" + n, "appdb", int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
+// withPrincipalDenials adds a DATABASE_PRINCIPAL-scope (class 4) DENY of perm
+// on each named principal to a capability script. The rows ride on the database
+// probe tagged "N:" with the principal as the name, which is how gosmo's
+// explicitPrincipalCapabilityQuery returns them.
+//
+// Only the DENY direction is scriptable here because it is the only one that
+// exists: a GRANT ALTER ON USER::x permits neither the rename nor the drop —
+// both need ALTER ANY USER at database scope — so gosmo's block selects DENY
+// rows alone. See gosmo.ProbedPrincipalPermissions.
+func withPrincipalDenials(responses []fakeResponse, perm string, principals ...string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for _, n := range principals {
+			r.rows = append(r.rows, []driver.Value{"N:" + perm, n, int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
 // newFakeConnAtVersion is newFakeConn for an instance reporting a given
 // product version — the only way to reach the pre-2017 code paths (gosmo's
 // xp_dirtree filesystem fallback), whose version gate reads ServerInfo.

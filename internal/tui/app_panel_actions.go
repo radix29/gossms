@@ -358,9 +358,9 @@ func (a *App) activeQueryPanel() *QueryPanel {
 // withQueryPanel runs fn on the active query panel, or says there isn't one.
 // Every Query-menu action and toolbar button that acts on the editor goes
 // through it, so none of them can be the one that quietly does nothing when
-// the active panel is a plan or a dashboard — see CLAUDE.md § Application
-// rules on context-gating. The Enabled predicates gate the same actions
-// ahead of the click; this is what happens when one is reached anyway.
+// the active panel is a plan or a dashboard — see docs/ui-rules.md on
+// context-gating. The Enabled predicates gate the same actions ahead of
+// the click; this is what happens when one is reached anyway.
 func (a *App) withQueryPanel(fn func(*QueryPanel)) {
 	qp := a.activeQueryPanel()
 	if qp == nil {

@@ -126,10 +126,11 @@ var objectOps = map[NodeType]objectOp{
 	NodeColumn: {
 		noun: "Column",
 		// The server refuses a column anything depends on — a default or check
-		// constraint, an index, a statistic — and its message doesn't name what
-		// ("one or more objects access this column"), so the warning names the
-		// classes itself.
-		warning: "Its data goes with it, and the server refuses the drop while a constraint, index or statistic depends on the column — without naming which.",
+		// constraint, an index, a statistic — and names the blocker in the
+		// error ("The object 'DF_Orders_flagged' is dependent on column
+		// 'flagged'."), so the warning says the drop is refused and leaves the
+		// naming to the server rather than listing classes.
+		warning: "Its data goes with it, and the drop is refused while a constraint, index or statistic depends on the column — the server's error names the object that blocks it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			return tableOf(sc, n).DropColumnContext(ctx, n.Name)
 		},
@@ -578,7 +579,33 @@ func objectOpRights(t NodeType) []requiredRight {
 	if rights, ok := serverScopedOpRights[t]; ok {
 		return rights
 	}
+	if rights, ok := principalOpRights[t]; ok {
+		return rights
+	}
 	return objectWriteRights()
+}
+
+// principalOpRights is Rename/Delete's right set for the two database-level
+// node types that are not schema objects. A user and a database role are
+// class-4 securables, and not one member of objectWriteRights() speaks for
+// them: verified live 2026-09-04 on win10cli, a member of db_accessadmin drops
+// a user while reading HAS_PERMS_BY_NAME 0 for ALTER, CONTROL and
+// ALTER ANY SCHEMA on the database alike, and db_securityadmin reads the same
+// three zeroes and drops a role. So Rename and Delete were withheld from
+// exactly the two fixed roles that exist to perform them — while User
+// Properties and Role Properties, which gate on ALTER ANY USER and
+// ALTER ANY ROLE, stayed writable on the same node.
+//
+// The wider database rights stay in the set rather than being replaced by the
+// narrow one: sys.fn_builtin_permissions gives ALTER on DATABASE as
+// ALTER ANY USER's and ALTER ANY ROLE's covering permission, so a principal
+// holding it may perform these and must not be gated out either.
+//
+// Narrowest first, because gateOn shows only rights[0] in a withheld item's
+// note — see agentWriteRights for the same ordering rule.
+var principalOpRights = map[NodeType][]requiredRight{
+	NodeUser:         {rightAlterAnyUser, rightAlterDatabase, rightControlDB},
+	NodeDatabaseRole: {rightAlterAnyDBRole, rightAlterDatabase, rightControlDB},
 }
 
 // serverScopedOpRights is Rename/Delete's right set for the node types that
