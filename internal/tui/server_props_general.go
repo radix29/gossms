@@ -42,7 +42,11 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				propsheet.Static("Engine edition", engineEditionName(info.EngineEdition)),
 				propsheet.Static("Collation", info.Collation),
 				propsheet.Static("Language", "English"),
-				propsheet.Static("Platform", info.OSVersion),
+				propsheet.Static("Platform", platformText(info)),
+				// @@VERSION verbatim, collapsed to one line. The row clips at
+				// the sheet's value width — Ctrl+C on it copies the whole
+				// banner, which is what it is here for.
+				propsheet.Static("Version string", versionBanner(info)),
 				propsheet.Section("Availability"),
 				propsheet.Static("Is clustered", boolStr(info.IsClustered)),
 				propsheet.Static("HADR enabled", boolStr(info.IsHADREnabled)),

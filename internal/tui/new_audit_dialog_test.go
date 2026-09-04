@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"slices"
 	"testing"
 
@@ -55,5 +56,31 @@ func TestAuditFileCountLabelsMatchTheirConstants(t *testing.T) {
 	}
 	if len(auditFileCountItems) != auditFileCountMax+1 {
 		t.Errorf("%d items against %d constants", len(auditFileCountItems), auditFileCountMax+1)
+	}
+}
+
+// New Audit's queue delay row must carry the same rule Audit Properties does —
+// 0 or at least 1000 ms — rather than the bare 0..maxint the Int row gives.
+// Built through the real dialog so a second, unvalidated row cannot creep back.
+func TestNewAuditQueueDelayRefusesSubSecondDelays(t *testing.T) {
+	app := newTestApp()
+	d := NewNewAuditDialog(app)
+	// show() is what allocates forms/applyFns; it needs a live connection, so
+	// the test does that one line itself and then builds the pages directly.
+	d.forms = make([]*propsheet.Form, len(d.pages))
+	d.applyFns = make([]propApply, len(d.pages))
+	d.buildPages(&nauditPrefetch{existingNames: map[string]bool{}, defaultDir: `C:\Backup\`})
+
+	row := textRow(t, d.forms[0], "Queue delay")
+	if row.Value() != "1000" {
+		t.Errorf("Queue delay defaults to %q, want the minimum SQL Server accepts", row.Value())
+	}
+	row.Edit("500")
+	if err := d.forms[0].Validate(); err == nil {
+		t.Error("New Audit accepted a queue delay SQL Server refuses")
+	}
+	row.Edit("0")
+	if err := d.forms[0].Validate(); err != nil {
+		t.Errorf("0 (synchronous) was refused: %v", err)
 	}
 }

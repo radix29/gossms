@@ -184,3 +184,42 @@ func TestCredentialGeneralShowsTheProviderOnlyForAProviderCredential(t *testing.
 		}
 	}
 }
+
+// SQL Server stores IDENTITY verbatim, so a pasted value with trailing
+// whitespace produces a credential that fails to authenticate for a reason
+// nothing on the page shows. Both this page and New Credential trim it.
+func TestCredentialGeneralTrimsTheIdentity(t *testing.T) {
+	inst, apply, form := loadCredentialGeneralPage(t)
+
+	editText(t, form, "Identity", "  DOMAIN\\svc_other  ")
+	editText(t, form, "Password", "hunter2")
+	editText(t, form, "Confirm password", "hunter2")
+
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stmts := inst.Statements()
+	if len(stmts) != 1 {
+		t.Fatalf("want one statement, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+	if !strings.Contains(stmts[0], `IDENTITY = N'DOMAIN\svc_other'`) {
+		t.Errorf("the identity reached the server untrimmed:\n%s", stmts[0])
+	}
+}
+
+// An identity that is only whitespace is refused rather than sent as an empty
+// IDENTITY, which the engine rejects with a message naming nothing useful.
+func TestCredentialGeneralRefusesABlankIdentity(t *testing.T) {
+	inst, apply, form := loadCredentialGeneralPage(t)
+
+	editText(t, form, "Identity", "   ")
+	editText(t, form, "Password", "hunter2")
+	editText(t, form, "Confirm password", "hunter2")
+
+	if err := apply(t.Context()); err == nil {
+		t.Fatal("a blank identity was accepted")
+	}
+	if stmts := inst.Statements(); len(stmts) != 0 {
+		t.Errorf("a statement was sent anyway:\n%s", strings.Join(stmts, "\n"))
+	}
+}

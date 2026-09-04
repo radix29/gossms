@@ -118,8 +118,12 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
 		spec := gosmo.CredentialSpec{
-			Name:     d.objectName(),
-			Identity: identityField.Value(),
+			Name: d.objectName(),
+			// Trimmed to match what the preflight validated: SQL Server
+			// stores IDENTITY verbatim, so a pasted trailing space becomes
+			// part of the account name and the credential then fails to
+			// authenticate with nothing on the page saying why.
+			Identity: strings.TrimSpace(identityField.Value()),
 			Secret:   passwordField.Value(),
 		}
 		if providerRow != nil && providerRow.Selected() != 0 {

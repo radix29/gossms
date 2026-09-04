@@ -223,7 +223,11 @@ gosmo only.
   U+FFFD-laden UTF-8 on disk. Anything reading a text file goes through
   `decodeTextFile`/`encodeTextFile` (`text_encoding.go`), which detect encoding
   **from a BOM only** — a guessed encoding rewrites the user's script in one they
-  never chose — and preserve the file's line endings.
+  never chose — and preserve the file's line endings. "Preserve" means the
+  *majority* ending (`majorityCRLF`): the editor folds CRLF to LF when the text
+  is set, so which lines carried a CR is gone before Save can ask, and testing
+  for CRLF's mere presence turned one stray CRLF into a whole-file rewrite of a
+  mostly-LF script.
 - **A widget's `HandleKey`/`HandleMouse` returns `true` only for events it actually
   acted on** — never "I'm focused, so I consumed it." `propsheet.Form` gives the
   focused row first refusal and falls back to its own Tab/Up/Down cycling only on

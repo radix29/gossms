@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -100,7 +101,14 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 				// taken from the form and the write addresses the credential
 				// by name, so the extra round trip buys nothing and would not
 				// work under Script Changes.
-				return sc.Server.Credential(*credName).AlterContext(ctx, identityRow.Value(), &typed)
+				// Trimmed for the reason New Credential trims it: SQL Server
+				// stores IDENTITY verbatim, so trailing whitespace silently
+				// breaks authentication.
+				identity := strings.TrimSpace(identityRow.Value())
+				if identity == "" {
+					return fmt.Errorf("identity is required")
+				}
+				return sc.Server.Credential(*credName).AlterContext(ctx, identity, &typed)
 			}
 			return f, apply, nil
 		},

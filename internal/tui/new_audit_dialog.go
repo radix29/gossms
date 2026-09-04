@@ -74,7 +74,7 @@ func (d *NewAuditDialog) buildPages(pf *nauditPrefetch) {
 	sc := d.sc
 
 	nameField := propsheet.Text("Audit name", "", 40)
-	delayField := propsheet.Int("Queue delay", 1000, 0, 2147483647, "ms")
+	delayField := auditQueueDelayRow(1000)
 	failureField := propsheet.Select("On audit log failure", auditFailureItems, 0)
 	destField := propsheet.Select("Audit destination", auditDestinationItems, 0)
 	pathField := propsheet.Text("File path", pf.defaultDir, 50)

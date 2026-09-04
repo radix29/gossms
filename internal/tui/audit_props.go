@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -40,6 +41,29 @@ var (
 	}
 )
 
+// auditQueueDelayRow builds the "Queue delay" row shared by Audit Properties
+// and New Audit. QUEUE_DELAY takes 0 (synchronous) or at least 1000 ms —
+// 1..999 is refused by the engine, and on the properties page that rejection
+// arrives after WithDisabled has already stopped the audit, so the row refuses
+// the value itself rather than letting the round trip find it.
+func auditQueueDelayRow(value int64) *propsheet.TextRow {
+	r := propsheet.Int("Queue delay", value, 0, 2147483647, "ms")
+	r.SetValidate(func(v string) error {
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return fmt.Errorf("must be a whole number")
+		}
+		if n < 0 || n > 2147483647 {
+			return fmt.Errorf("must be between 0 and 2147483647")
+		}
+		if n > 0 && n < 1000 {
+			return fmt.Errorf("queue delay must be 0 or at least 1000 ms")
+		}
+		return nil
+	})
+	return r
+}
+
 // The file-count choices. MAX_ROLLOVER_FILES and MAX_FILES are mutually
 // exclusive in the statement, and the catalog leaves max_rollover_files at its
 // UNLIMITED sentinel even when max_files is the one in force — so the choice
@@ -70,7 +94,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 			}
 
 			nameRow := propsheet.Text("Audit name", a.Name, 40)
-			delayRow := propsheet.Int("Queue delay", int64(a.QueueDelay), 0, 2147483647, "ms")
+			delayRow := auditQueueDelayRow(int64(a.QueueDelay))
 			failureRow := propsheet.Select("On audit log failure", auditFailureItems,
 				max(slices.Index(auditFailureValues, a.OnFailure), 0))
 

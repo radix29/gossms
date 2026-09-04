@@ -49,6 +49,40 @@ func TestDecodeEncodeRoundTripsEveryEncodingWeDetect(t *testing.T) {
 	}
 }
 
+// TestMixedLineEndingsSaveAsTheMajority pins that one stray ending does not
+// decide the file. Detecting CRLF by presence made Save rewrite every line
+// ending of a mostly-LF script — a whole-file change of something the user
+// never edited. The assertions count endings in the saved bytes rather than
+// checking the flag, so a majority rule that then wrote the other ending
+// cannot pass.
+func TestMixedLineEndingsSaveAsTheMajority(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		data     string
+		wantCRLF int // in the bytes Save writes
+		wantLF   int
+	}{
+		{"mostly lf, one stray crlf", "a\nb\r\nc\nd\n", 0, 4},
+		{"mostly crlf, one stray lf", "a\r\nb\nc\r\nd\r\n", 4, 0},
+		{"half and half keeps crlf", "a\r\nb\n", 2, 0},
+		{"no line endings at all", "SELECT 1", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text, enc, crlf, lossy := decodeTextFile([]byte(tc.data))
+			if lossy {
+				t.Fatal("decode reported a loss on plain ASCII")
+			}
+			// The editor normalizes to LF, which is what Save hands back.
+			out := string(encodeTextFile(strings.ReplaceAll(text, "\r\n", "\n"), enc, crlf))
+			gotCRLF := strings.Count(out, "\r\n")
+			if gotCRLF != tc.wantCRLF || strings.Count(out, "\n")-gotCRLF != tc.wantLF {
+				t.Errorf("saved %q: %d CRLF and %d bare LF, want %d and %d",
+					out, gotCRLF, strings.Count(out, "\n")-gotCRLF, tc.wantCRLF, tc.wantLF)
+			}
+		})
+	}
+}
+
 // TestDecodeStripsTheUTF8BOM pins the defect with the worst symptom: an
 // unstripped U+FEFF reaches the server inside the first batch and SQL Server
 // answers "Incorrect syntax near" pointing at an invisible character.

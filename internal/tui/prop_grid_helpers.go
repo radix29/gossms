@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -342,3 +343,41 @@ var (
 	// is built on.
 	indexKeyColumns = []string{"Ord", "Column name", "Sort order"}
 )
+
+// platformText renders ServerInfo.Platform for a Static row. Platform is empty
+// when @@VERSION names neither Windows nor Linux; "Unknown" beats a blank row.
+// Never show ServerInfo.OSVersion here — that field is @@VERSION verbatim, a
+// multi-line banner that clips to a meaningless first line at any row width.
+func platformText(info *gosmo.ServerInfo) string {
+	if info.Platform == "" {
+		return "Unknown"
+	}
+	return info.Platform
+}
+
+// versionBanner renders ServerInfo.OSVersion — @@VERSION verbatim — for a
+// single-line row. The banner's own line breaks and tabs would break a grid
+// row, so every whitespace run collapses to one space; the full text is still
+// what a grid's Show Value popup and a Static row's Ctrl+C hand back.
+func versionBanner(info *gosmo.ServerInfo) string {
+	s := strings.Join(strings.Fields(info.OSVersion), " ")
+	if s == "" {
+		return "Unknown"
+	}
+	return s
+}
+
+// mustPropertyRowIndex returns the index of the label/value row carrying the
+// given label. A loader that backfills a row after an async read addresses it
+// this way rather than by a constant, so inserting a row above it cannot
+// silently redirect the write into the wrong row. The label is a literal in
+// the same function, so a miss is a typo, not a runtime condition: it panics
+// rather than silently backfilling nothing.
+func mustPropertyRowIndex(rows [][]string, label string) int {
+	for i, r := range rows {
+		if len(r) > 0 && r[0] == label {
+			return i
+		}
+	}
+	panic("no property row labelled " + label)
+}

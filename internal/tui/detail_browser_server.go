@@ -23,20 +23,26 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 	// app.go for why that's unsafe.
 	app.safegoRepair("loading server details", db.panicRepair(node, seq), func() {
 		info := sc.Server.Info()
-		const availMemRow, numaRow = 9, 10
 		rows := [][]string{
 			{"Server", sc.Opts.Server},
 			{"Version", info.ProductVersion},
 			{"Edition", info.Edition},
-			{"OS Version", info.OSVersion},
+			{"Platform", platformText(info)},
 			{"Collation", info.Collation},
 			{"Data Path", info.DefaultDataPath},
 			{"Log Path", info.DefaultLogPath},
 			{"CPU Count", sysInfoInt(info, int64(info.LogicalCPUCount))},
 			{"Memory (MB)", sysInfoMB(info)},
+			{"Version String", versionBanner(info)},
 			{"Available Memory (MB)", "Loading..."},
 			{"NUMA Nodes", "Loading..."},
 		}
+		// The two backfilled rows are found by label, not by a fixed index:
+		// adding a row above them silently redirected the backfill into the
+		// wrong row when these were constants.
+		availMemRow := mustPropertyRowIndex(rows, "Available Memory (MB)")
+		numaRow := mustPropertyRowIndex(rows, "NUMA Nodes")
+
 		cols := propertyValueColumns
 		db.postPartial(app, seq, cols, rows)
 

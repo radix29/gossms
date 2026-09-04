@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -350,4 +352,57 @@ func TestRedrawGridDropsWidthsPastTheNewColumnCount(t *testing.T) {
 	if got := grid.ColumnWidthOverrides(); len(got) != 2 {
 		t.Fatalf("overrides = %v, want two columns' worth", got)
 	}
+}
+
+// The Platform rows on Server Properties > General and the Object Explorer
+// server Details pane must render ServerInfo.Platform, never OSVersion — the
+// latter is @@VERSION verbatim, whose first line alone overflows the row and
+// clips to a banner fragment ("Microsoft SQL Server 2025 (RTM-GDR) (KB51023").
+// Both pages shipped that way.
+func TestPlatformTextUsesPlatformNotTheVersionBanner(t *testing.T) {
+	banner := "Microsoft SQL Server 2025 (RTM-GDR) (KB5102333) - 17.0.1125.2 (X64)\n" +
+		"\tJul 10 2026 ...\n\ton Windows 10 Pro 10.0 <X64>"
+	info := &gosmo.ServerInfo{OSVersion: banner, Platform: "Windows"}
+	if got := platformText(info); got != "Windows" {
+		t.Fatalf("platformText = %q, want %q", got, "Windows")
+	}
+	info = &gosmo.ServerInfo{OSVersion: banner}
+	if got := platformText(info); got != "Unknown" {
+		t.Fatalf("platformText with no Platform = %q, want %q", got, "Unknown")
+	}
+}
+
+// The banner keeps its content but loses its line breaks and tabs: a raw
+// newline breaks a DataGrid row, and the Details pane's Show Value popup shows
+// whatever the cell holds.
+func TestVersionBannerCollapsesToOneLine(t *testing.T) {
+	info := &gosmo.ServerInfo{OSVersion: "Microsoft SQL Server 2025 (RTM-GDR) - 17.0.1125.2 (X64) \n\tJun 18 2026 14:38:44 \n\tCopyright (C) 2025 Microsoft Corporation\n\tEnterprise Developer Edition (64-bit) on Windows 10 Pro"}
+	got := versionBanner(info)
+	if strings.ContainsAny(got, "\n\t\r") {
+		t.Errorf("the banner still carries line breaks, which break a grid row: %q", got)
+	}
+	if !strings.Contains(got, "17.0.1125.2 (X64) Jun 18 2026") {
+		t.Errorf("collapsing lost or mangled the text: %q", got)
+	}
+	if !strings.HasSuffix(got, "on Windows 10 Pro") {
+		t.Errorf("the tail naming the host OS was dropped: %q", got)
+	}
+	if got := versionBanner(&gosmo.ServerInfo{}); got != "Unknown" {
+		t.Errorf("an empty banner renders as %q, want %q", got, "Unknown")
+	}
+}
+
+// mustPropertyRowIndex is what keeps the Details pane's async backfills on the
+// rows they name; adding a row above one used to redirect it silently.
+func TestMustPropertyRowIndexFindsRowsByLabel(t *testing.T) {
+	rows := [][]string{{"Server", "a"}, {"Version", "b"}, {"NUMA Nodes", "Loading..."}}
+	if got := mustPropertyRowIndex(rows, "NUMA Nodes"); got != 2 {
+		t.Errorf("index = %d, want 2", got)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("a missing label returned quietly instead of panicking")
+		}
+	}()
+	mustPropertyRowIndex(rows, "Nope")
 }

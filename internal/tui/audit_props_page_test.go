@@ -394,3 +394,50 @@ func TestAuditGeneralApplyReportsAFailedReEnable(t *testing.T) {
 		t.Errorf("the destination change did not go out before the failure: %q", stmts[1])
 	}
 }
+
+// QUEUE_DELAY takes 0 (synchronous) or at least 1000 ms; 1..999 is refused by
+// the engine, and on the properties page that rejection arrives only after
+// WithDisabled has already stopped the audit. The row refuses it first.
+func TestAuditQueueDelayRowRefusesSubSecondDelays(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		ok    bool
+	}{
+		{"0", true},
+		{"1", false},
+		{"500", false},
+		{"999", false},
+		{"1000", true},
+		{"60000", true},
+		{"-1", false},
+		{"nope", false},
+	} {
+		r := auditQueueDelayRow(2000)
+		r.Edit(tc.value)
+		err := r.Validate()
+		if tc.ok && err != nil {
+			t.Errorf("queue delay %q was refused: %v", tc.value, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("queue delay %q was accepted", tc.value)
+		}
+	}
+	r := auditQueueDelayRow(2000)
+	r.Edit("500")
+	if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "0 or at least 1000") {
+		t.Errorf("the message does not say what is allowed: %v", err)
+	}
+}
+
+// The page and the New Audit dialog must share the row, so the rule cannot
+// drift between them: both go through auditQueueDelayRow.
+func TestAuditGeneralQueueDelayRowIsTheValidatedOne(t *testing.T) {
+	sc, inst := newFakeConn(t, auditByName("HIPAA"), auditRows())
+	form, _ := loadPage(t, pageAuditGeneral(sc, ptr("HIPAA")), inst)
+
+	row := textRow(t, form, "Queue delay")
+	row.Edit("500")
+	if err := row.Validate(); err == nil {
+		t.Error("Audit Properties accepted a queue delay SQL Server refuses")
+	}
+}

@@ -48,18 +48,17 @@ optimize and compact calude.md , architecture.md, plan.md etc in both projects
 
 go over the source files code comments and compact them. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
 
-resume with the plan from comment-drif-plan.md from where it stopped.
-
 
 --- prepare for release -------------------------------------------------
 
 commit before both projects
 
-prepare gosmo for release v0.0.10 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gosmo for release v0.0.11 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 
-fix go.mod before:
-prepare gossms for release v0.0.8 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+fix go.mod before, reference the new :
+
+prepare gossms for release v0.0.9 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 
 
