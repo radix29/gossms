@@ -134,7 +134,7 @@ gossms/
 │   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file (not part of the release build)
 │   └── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
 ├── internal/
-│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/)
+│   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json
 │   ├── db/                  # gosmo connection wrapper + DSN builder
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
@@ -143,7 +143,7 @@ gossms/
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
-│   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; no TUI/DB deps
+│   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan). No TUI/DB deps
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
@@ -153,10 +153,10 @@ gossms/
 │   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
-│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog (+ FileSystem: local or remote)
+│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
-│   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework
+│   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView with tuikit/charts; no App, no connection
@@ -178,9 +178,9 @@ gossms/
 │       ├── explorer_loaders.go   # childLoader registry (NodeType → fetch func) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
-│       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles
+│       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles, Credentials, Audits, Server Audit Specifications
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
-│       ├── explorer_management.go # loaders: Server Objects folder (Linked Servers), Management folder, SQL Server Logs / Agent Error Logs file lists
+│       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
@@ -190,10 +190,10 @@ gossms/
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
-│       ├── permission_gate.go    # allowsAction: the right(s) each action needs, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no"
+│       ├── permission_gate.go    # rightsAllow: the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function"
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # classifies a SQL Server refusal and names the right it wants, instead of the wrapped driver error
-│       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor and the Log File Viewer (not App's own toolbar)
+│       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor, the Log File Viewer and Query Store, incl. the "More ▾" overflow menu a too-narrow row collapses into (not App's own toolbar)
 │       ├── dialog_common.go      # focus/layout behaviour shared by the hand-rolled dialogs (Connect, Backup, Restore, Tasks, Query List)
 │       ├── text_encoding.go      # decodeTextFile/encodeTextFile — BOM-detected encoding and the file's own line endings, so File > Save writes back what File > Open read
 │       ├── database_list.go      # the one rule for which databases a dropdown offers: all of them when the name is resolved later, only backup-able ones when acted on now
@@ -236,6 +236,7 @@ gossms/
 │       ├── query_store_panel.go       # QueryStorePanel state: the report/metric/statistic/window/top selectors, the report and plan reads, Force/Unforce/Show Plan/Script; implements layout.Panel
 │       ├── query_store_panel_draw.go  # the two toolbar rows, the bar chart, and the two grids either side of the splitters
 │       ├── query_store_panel_input.go # HandleKey/HandleMouse: grid focus, splitter keys, gesture zones
+│       ├── plan_compare_panel.go     # Compare Showplan: two plans of one query as two grids (operators, statement properties); implements layout.Panel
 │       │
 │       │  ── Detail Browser ──
 │       ├── detail_browser.go            # Detail Browser, implements layout.Panel
@@ -245,6 +246,8 @@ gossms/
 │       ├── detail_browser_logins.go     # Logins folder
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
 │       ├── detail_browser_storage.go    # Storage folders: partition functions and schemes
+│       ├── detail_browser_security.go   # server Security families that are not logins: Credentials, Audits, Server Audit Specifications
+│       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       │
 │       │  ── SQL Server Agent ──
 │       ├── agent_common.go              # shared Job/Alert/Notify enum formatters, refreshExplorerNode, generic async enable/disable/delete plumbing for every Agent entity
@@ -253,7 +256,8 @@ gossms/
 │       ├── agent_detail.go              # Object Explorer Details grids for every Agent node type (server/job/schedule/alert/operator/activity/history/categories)
 │       ├── agent_reports.go             # the "SQL-only administration" folder's canned reports, plus the View History query behind a job's History action
 │       ├── agent_job_props.go           # Job Properties dialog: page-set wiring + General/Targets page definitions
-│       ├── agent_job_props_steps.go     # Job Properties Steps page: T-SQL step grid/inline editor, Start at Step, ordered update/delete/add apply
+│       ├── agent_job_props_steps.go     # Job Properties Steps page: step grid, Start at Step, ordered update/delete/add/reorder apply
+│       ├── agent_job_step_panel.go       # the "Selected step" edit panel shared by Job Properties > Steps and New Job > Steps — the one mapping to and from a jobStepEdit
 │       ├── agent_job_props_schedules.go # Job Properties Schedules page: attach/detach toggle grid against every shared schedule on the server
 │       ├── agent_job_props_alerts.go    # Job Properties Alerts (job-response link toggle) and Notifications (e-mail operator/auto-delete condition) pages
 │       ├── agent_job_props_history.go   # Job Properties read-only History page: recent run-level outcomes + selected-run message detail
@@ -336,7 +340,13 @@ gossms/
 │       ├── fk_props.go           # Foreign Key Properties: single read-only General page
 │       ├── partition_props.go    # read-only Properties for a partition function and a partition scheme
 │       ├── security_policy_props.go # read-only Properties for a row-level security policy (state is the context menu's Enable/Disable)
-│       ├── column_key_props.go   # read-only Properties for a column master key and a column encryption key
+│       ├── column_key_props.go   # Properties for the two Always Encrypted keys — the master key read-only, the column encryption key rotating its master key via ADD/DROP VALUE
+│       ├── credential_props.go   # Credential Properties: identity and the secret (write-only)
+│       ├── audit_props.go        # Server Audit Properties: single General page; its ALTER runs inside a disable window, so a failed re-enable is an applyCommitted error
+│       ├── audit_specification_props.go # Server Audit Specification Properties: single General page
+│       ├── backup_device_props.go # Backup Device Properties: General + Media Contents, the only place RESTORE HEADERONLY is run
+│       ├── endpoint_props.go     # Endpoint Properties: General + Type Properties (protocol and payload)
+│       ├── server_trigger_props.go # Server Trigger Properties: General + Definition, which a Detail Browser grid row cannot show
 │       │
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
@@ -350,6 +360,10 @@ gossms/
 │       ├── new_statistics_dialog.go # New Statistics — column list, filter, sampling, NORECOMPUTE, INCREMENTAL
 │       ├── new_column_master_key_dialog.go     # New Column Master Key — the 0x… signature is pasted; it cannot be computed here
 │       ├── new_column_encryption_key_dialog.go # New Column Encryption Key — likewise for ENCRYPTED_VALUE
+│       ├── new_credential_dialog.go            # New Credential
+│       ├── new_audit_dialog.go                 # New Server Audit — file/application-log/security-log destination and the queue-delay rule
+│       ├── new_audit_specification_dialog.go   # New Server Audit Specification — the audit to bind to and its action groups
+│       ├── new_backup_device_dialog.go         # New Backup Device — the disk or tape alias a backup destination can name
 │       │
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs

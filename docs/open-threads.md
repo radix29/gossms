@@ -28,11 +28,16 @@ biggest item is **`STRING_AGG` in seven queries** — a 2017 function — which
 would kill partition functions and schemes, server and database triggers,
 foreign keys and audit specifications.
 
-There is no major 13, 15 or 16 instance and no way to run one here (no Docker,
-3 GB RAM), so the plan is built around verification that does not need them.
-All findings, the gating mechanism, the three verification layers and the
-reproduction recipe are in **`docs/version-support-plan.md`**, which is the
-resume point — nothing is fixed yet.
+Three real instances exist — majors **13** (`win10cli\SQL2016`, SP3), **14**
+(`win10cli\SQL2017`) and **17** — so the floor itself can be exercised. There
+is no major **15 or 16** and no way to run one here (no Docker, 3 GB RAM), so
+those two stay argued from the catalog documentation and pinned by tests.
+
+**Nothing in this section is fixed yet**, and the write-up that held the
+findings, the gating mechanism, the three verification layers and the
+reproduction recipe was never committed — `docs/version-support-plan.md` does
+not exist, and references to it elsewhere are dangling. The resume point is
+this section plus a fresh `livedb` run against 13 and 14.
 
 ## Unbuilt features README already promises
 
@@ -41,10 +46,16 @@ resume point — nothing is fixed yet.
 
 ## Deferred scope (repeatedly, deliberately)
 
-- **Windows / Microsoft Entra (Azure AD) authentication**, in Login Properties,
-  New Login, and the External Provider login type generally. gosmo-side work
-  needed first. Re-deferred on every properties/dialog pass; this is the
-  standing answer to "why isn't this in the UI?".
+- **Changing a login's authentication kind in Login Properties.** New Login
+  creates all five kinds as of `v0.0.9` (SQL, Windows, Entra, certificate- and
+  asymmetric-key-mapped), and the Connect dialog offers the Windows and Entra
+  connection methods, but Login Properties still shows the kind as a static
+  row: `ALTER LOGIN` cannot change it, so this would be a drop-and-recreate,
+  which loses the SID and orphans every database user mapped to it. Not a
+  gosmo gap — a deliberate refusal. This is the standing answer to "why isn't
+  this editable?".
+- **No principal-browse picker.** A Windows login is typed as `DOMAIN\name`;
+  there is no directory browse, and none is planned.
 - **Entra logins stay unverifiable here.** `CREATE LOGIN ... FROM EXTERNAL
   PROVIDER WITH OBJECT_ID` is emitted and its grammar is confirmed on a real
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail

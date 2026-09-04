@@ -21,13 +21,13 @@ queries, view/edit properties) are solid across all three supported
 platforms and authentication modes, not that every SSMS feature is
 covered — see [Feature backlog](#feature-backlog) for what can wait.
 
-`v0.0.8` (2026-08-25) is the current tag — permission awareness end to end
-(goSSMS works as a login that is not `sysadmin`, and says which right is
-missing rather than showing a zero or a driver error), `Script <object> as ▸`
-on every family the tree shows, New Index and New Statistics, partition
-functions and schemes, security policies and Always Encrypted keys in the
-tree, a missing-index banner and `.sqlplan` files on execution plans, Log File
-Viewer search and Recycle, and job-step reordering. Nothing is unreleased as
+`v0.0.9` (2026-09-04) is the current tag — Query Store (SSMS's seven views, as
+Object Explorer leaves and as a panel that charts them, with Force/Unforce
+Plan, Track Query and Compare Plans), Compare Showplan, Detach and Attach
+Database, six more server-level families in the tree (credentials, audits,
+audit specifications, backup devices, server triggers, endpoints), multi-object
+Delete from Object Explorer Details, a Script button on every delete
+confirmation, and all five login kinds in New Login. Nothing is unreleased as
 of this tag.
 
 ## Ongoing practices (no end date)
@@ -45,32 +45,44 @@ These continue for the life of the project, release or not:
 
 ## Next up (working priority order)
 
-1. **SQL Agent** needs a complete rework. Job step add/remove/reorder,
-   step fidelity and state-aware Start/Stop landed in `v0.0.8`; the rework
-   itself — proxies, categories, targets, and the New Job flow — has not.
+1. **Version support.** The floor is SQL Server 2016 SP1, and `README.md`
+   now states it, but gosmo is not version-aware: the first runs against
+   majors 13 and 14 found reads that select catalog columns which do not
+   exist before 2019/2022, and `STRING_AGG` (a 2017 function) in seven
+   queries. See `docs/open-threads.md` § Version support — this is the
+   resume point, and nothing in it is fixed yet.
 
-2. **Database Reports** — the useful ones at server and database level:
+2. **SQL Agent** needs a complete rework. Job step add/remove/reorder, step
+   fidelity, state-aware Start/Stop and a real editor for a step's command
+   landed in `v0.0.8`–`v0.0.9`; the rework itself — proxies, categories,
+   targets, and the New Job flow — has not.
+
+3. **Database Reports** — the useful ones at server and database level:
    disk usage, top tables.
 
-3. **Light / white theme** — selectable in Tools > Options, dark staying
+4. **Light / white theme** — selectable in Tools > Options, dark staying
    the default.
 
-4. **Authentication testing** — no infrastructure currently available;
+5. **Authentication testing** — no infrastructure currently available;
    blocked until access exists, not a code problem: Entra ID against
    Managed Instances and Azure SQL Database.
 
-5. **Platform testing** — build and exercise on macOS (no Mac available
+6. **Platform testing** — build and exercise on macOS (no Mac available
    yet; blocked on hardware/CI access, same as above).
 
-Closed in `v0.0.8`: the **least-privilege pass** (P0-P4, `docs/permissions-
-plan.md`), **scripting** every object family the tree shows, **New Index /
-New Statistics**, and the SQL Agent scope notes that were blocking step
-reordering. What each deliberately left out is in `docs/open-threads.md`
-§ Permission gating and § Deferred scope rather than here.
+Closed in `v0.0.9`: **Query Store**, **Compare Showplan**, **Detach/Attach
+Database**, the **server-level families** (credentials, audits, audit
+specifications, backup devices, server triggers, endpoints), **multi-object
+Delete** from Object Explorer Details, and **all five login kinds** in New
+Login. What each deliberately left out is in `docs/open-threads.md` —
+§ Query Store, § Server-level families and § Delete/Rename — rather than here.
+
+Closed in `v0.0.8`: the **least-privilege pass** (P0-P4), **scripting** every
+object family the tree shows, **New Index / New Statistics**, and the SQL Agent
+scope notes that were blocking step reordering.
 
 Closed in `v0.0.7`: the **Database Restore** rework (server-side browsing,
-the File Locations view, wrapped error messages, left-clipped paths — see
-`docs/open-threads.md` § Reworks named in README's Known Issues) and
+the File Locations view, wrapped error messages, left-clipped paths) and
 **Availability Groups** (viewing and managing AG topology and health).
 
 ## Feature backlog (later, no particular order)

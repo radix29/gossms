@@ -62,3 +62,4 @@ prepare gossms for release v0.0.9 . Update readme.md, release.md, changelog.md, 
 do not commit or tag anything to git. 
 
 
+make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md

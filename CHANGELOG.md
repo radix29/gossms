@@ -4,6 +4,383 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.9] - 2026-09-04
+
+### Added
+
+- **Query Store**, SSMS's seven views under every database
+  (`query_store_reports.go`, `query_store_panel*.go`) — Regressed Queries,
+  Overall Resource Consumption, Top Resource Consuming Queries, Queries With
+  Forced Plans, Queries With High Variation, Query Wait Statistics and Tracked
+  Queries. One report layer serves two surfaces: the Detail Browser grid a
+  tree leaf shows, and `QueryStorePanel`, which plots the same rows and makes
+  the metric, the statistic, the time window and the row count selectable.
+  Opening a leaf raises the panel. From there **Force Plan** / **Unforce
+  Plan** (confirmed, with a Script alternative that opens the
+  `sp_query_store_force_plan` call instead of running it), **Show Plan** into
+  the same graphical plan view an executed query gets, **Track Query**, and
+  **Compare Plans**.
+  - The Detail Browser's own reports open on a wider window than SSMS's hour
+    (`queryStoreDetailWindow`): the pane has no time selector to widen it
+    with, and an empty hour of a development instance reads as "Query Store is
+    broken" rather than "nothing ran".
+  - Tracked-query sets live in `tracked_queries.json` beside `config.json`
+    (`internal/config/tracked.go`), keyed by server and database. Its own file
+    on purpose — a set of query ids is neither a connection profile nor an
+    application setting, and every pin would otherwise rewrite the file
+    holding the encrypted passwords.
+  - The report grid's Query column is a flattened rendering, so **Show Value**
+    is handed the original statement rather than the cell: `queryStoreOneLine`
+    joins a statement onto one line, and a first line ending in `-- comment`
+    would otherwise arrive in a runnable query panel with its whole FROM
+    clause inside the comment. The panel resolves it from `qsResultRow.
+    queryText`; the Detail Browser, whose grid is `[][]string` shared with
+    every other node type, re-reads it by the row's Query ID.
+- **Compare Showplan** (`internal/showplan/compare.go`,
+  `plan_compare_panel.go`) — two plans of one query paired over the operator
+  tree, with what differs about each row named. Two grids rather than two plan
+  graphs: an operator tile is eighteen columns wide, and the question a
+  comparison answers is a list, not a picture. `showplan.CompareStatements` is
+  pure data and decides what counts as a difference; the panel decides nothing.
+- **Detach and Attach Database.** Detach (`detach_database_dialog.go`) runs
+  `sp_detach_db` with its three options — drop connections, update statistics,
+  drop the full-text index files — and shows the paths it leaves on disk.
+  Attach (`attach_database_dialog.go`) browses the *server's* filesystem for a
+  primary `.mdf`, reads the database's whole file list back out of it with
+  `DBCC CHECKPRIMARYFILE`, lets the path of any file that has moved be
+  corrected, and attaches under a chosen name and owner — or rebuilds a lost
+  log. Detach is offered on user databases only: `sp_detach_db` refuses a
+  system database outright, and a permanently grey item explains nothing the
+  name doesn't already say.
+- **Six server-level families in Object Explorer** — Credentials, Audits,
+  Server Audit Specifications, Backup Devices, Server Triggers and Endpoints,
+  each with a loader, icon, filter entry, Detail Browser view, Script entries,
+  Delete and Properties (`explorer_management.go`,
+  `detail_browser_security.go`, `detail_browser_server.go`, `audit_props.go`,
+  `audit_specification_props.go`, `backup_device_props.go`,
+  `credential_props.go`, `server_trigger_props.go`, `endpoint_props.go`), plus
+  **New Credential**, **New Audit**, **New Server Audit Specification** and
+  **New Backup Device**. An audit, an audit specification and a server trigger
+  get Enable/Disable, with `IsEnabled` carried on the node so the label says
+  which state it is in — a disabled DDL trigger is inert and nothing else in
+  the row says so.
+  - Rename is deliberately absent from three of them, each for its own reason
+    measured against a server: `ALTER SERVER AUDIT ... MODIFY NAME` works only
+    on a *disabled* audit, so wiring it would silently stop auditing for the
+    duration; `ALTER SERVER AUDIT SPECIFICATION` has no `MODIFY NAME` form at
+    all (a parse error, verified live); and `sp_rename` has no class for a
+    server-scope trigger or an endpoint.
+  - The five built-in endpoints are listed, as SSMS lists them — an endpoint
+    missing from the folder is one whose port nothing explains — and marked
+    `IsSystem`, which is what withholds Rename and Delete.
+  - A backup device's Detail Browser view does not open the media:
+    `RESTORE HEADERONLY` on a missing file or an offline tape would be
+    reported as the device being unreadable. That read belongs to the Media
+    Contents page of Backup Device Properties.
+- **Object Explorer Details deletes a selection, not a row**
+  (`detail_browser_ops.go`). `Ctrl+click` picks rows out one at a time and
+  `Shift+click` (or `Alt+click`) extends a run; the grid's context menu then
+  offers one Delete over the whole set, in one confirmation. It lives in the
+  pane rather than the tree because `controls.TreeView` has a single
+  selection, so SSMS's Delete Object dialog listing several objects can never
+  come from there.
+  - The pane reads `DataGrid.SelectedRows()`, never `SelectionBounds()`: the
+    bounds are a rectangle, and rows 1 and 3 come back as 1..3 — a Details
+    pane reading them deletes the row the user deliberately left out.
+  - `setRowObjects` refuses a row-to-object mapping that does not line up with
+    the rows on screen. The pane deletes by row index, so a mapping one short
+    would drop the object the *next* row describes; losing Delete is the safe
+    failure, the wrong DROP is not.
+  - Principals and databases are marked `solo` and still delete one at a time:
+    their drop is a server- or database-wide act with consequences elsewhere
+    (orphaned users, a login's sessions, every connection to a database),
+    where a batch confirmation's shared warning stops being enough.
+- **Every delete confirmation has a Script button**
+  (`dialogs.ConfirmDialog.ShowConfirmScript`,
+  `TypedConfirmDialog.ShowTypedConfirmScript`) — a third way out of a question
+  about a write: neither running it nor abandoning it, but reading the DROP
+  statements in a query window. Script is not gated on the typed text of a
+  typed confirmation, since it runs nothing and there is nothing for the
+  retyping to protect; Escape still answers No.
+- **New Login creates any of SQL Server's five login kinds**
+  (`new_login_pages.go`) — SQL Server, Windows, Microsoft Entra, and mapped to
+  a certificate or an asymmetric key. The Authentication radio group drives
+  the rest of the page: rows a source does not use are disabled or emptied
+  rather than left inviting input `CREATE LOGIN` cannot carry, and the
+  mapped-object picker's items are *replaced* per source, since a stale
+  certificate name left showing under "Windows Authentication" is what the
+  apply would otherwise have to guess about.
+- **Column encryption key rotation** (`column_key_props.go`). A column master
+  key has no `ALTER`, so it is rotated by re-encrypting the column encryption
+  keys under a new one: `ALTER ... ADD VALUE` puts the key under a second
+  master key and `ALTER ... DROP VALUE` retires the first once every client
+  has it. Add runs before drop in a single apply, so a failure part-way leaves
+  the rotation half done rather than the data unreadable, and `checkRotation`
+  refuses the combinations that are not a rotation before the round trip.
+- **A job step's command is edited in the query editor itself** —
+  `propsheet.EditorRow` embeds a `controls.Editor` as a form row, so the
+  command is multi-line, SQL-highlighted, with line numbers, mouse
+  drag-selection and its own undo. `agent_job_step_panel.go` is the ten-row
+  step panel shared by Job Properties > Steps and New Job > Steps: one type
+  rather than a copy per page, because the two read the same rows back into a
+  `jobStepEdit` and a mapping right in one copy and wrong in the other writes
+  a step with somebody else's settings.
+- **A toolbar too narrow for its buttons collapses them into a "More ▾"
+  menu** (`layoutToolButtonsOverflow`, `panel_toolbar.go`), used by Activity
+  Monitor, the Log File Viewer and Query Store. The hidden set is always a
+  suffix, and the More cell takes the row prefix's place on a row too narrow
+  for both.
+- **New Availability Group asks every secondary whether it could join, before
+  anything is written** (`preflightReplicas`, `replicaJoinProblem`). CREATE is
+  one statement on the primary, but the JOIN that follows runs on each
+  secondary, and every ordinary reason it fails — the peer down, Always On off
+  there, no endpoint or a stopped one, no rights — is knowable first. It also
+  re-reads the endpoint URL the CREATE is about to write, which was read when
+  the replica was added and may name an endpoint since recreated on another
+  port: a group naming the old one is created, looks right, and never
+  connects. The check asks `Allows`, not `Has`, so a peer whose probe could
+  not run is let through to try the JOIN exactly as before.
+- **Key Diagnostics logs mouse events** — button, modifiers and position, with
+  a drag's resends collapsed to the press, the release and each wheel tick.
+  A modifier the terminal keeps for itself is invisible from inside the app:
+  xfce4-terminal (VTE) handles Shift+click as its own text selection while
+  mouse reporting is on and never forwards it, which reads exactly like a
+  broken binding. One line in this log, or none, tells the two apart.
+- **A read-only Properties page stops drawing controls** — rows implement
+  `propsheet.ReadOnlyDrawer` and render as a flat label/value pair, with
+  `ToggleGridRow`'s toggle columns drawn as ticks and crosses. `SetReadOnly`
+  already made a gated page impossible to edit; a row still drawing its
+  `[value]` box read as a field the terminal was refusing to type into.
+- **`dialogs.FieldGesture`** — the drag latch a dialog with a text field needs,
+  as a type rather than an idiom repeated per dialog. The idiom is only correct
+  in one order, and the order is a property of what `ConsumeOutsideClick` and a
+  dialog's mode switch do to the events the latch depends on. See
+  ARCHITECTURE.md § dialogs.FieldGesture.
+- **Index and Key Properties rebuild what needs rebuilding** — fill factor, pad
+  index and data compression are grouped as `rebuildOptions`, with a note
+  saying why Apply issues a rebuild of its own, and nothing is issued when none
+  of the three changed.
+- **Supported version floor, stated and enforced** — SQL Server 2016 SP1
+  (13.0.4001) and later, set by the three unconditional `CREATE OR ALTER`
+  statements. Features the connected instance is too old for are withheld
+  rather than offered and then refused: Query Store's CUSTOM capture mode and
+  its `QUERY_CAPTURE_POLICY` (2019+), `WAIT_STATS_CAPTURE_MODE` (2017+),
+  compatibility levels the server rejects (`maxCompatForMajor`), and
+  enclave-enabled column master keys.
+
+### Changed
+
+- `gosmo` dependency updated `v0.0.10` → `v0.0.11`.
+- **The Connect dialog's Port field is no longer pre-filled with `1433`,** and
+  an empty one now means *unspecified* rather than 1433. A port pinned onto a
+  `host\instance` address suppresses the SQL Browser lookup that resolves the
+  instance's real, dynamically assigned port — `win10cli\sql2017` listens on
+  55253, so an appended 1433 silently reached the *default* instance instead.
+  `config.Connection`'s dedup spells an unspecified port as the 1433 it dials,
+  so an entry saved before this change still matches the same server connected
+  to today rather than doubling in the list.
+- **Connect is gated on a non-empty Server.** The driver rejects an empty one
+  outright, so pressing Enter on the dialog goSSMS opens at startup produced
+  "Could not connect to : ConnectionOptions.Server is required".
+- **The permission banner and the menus' gate are one function,
+  `rightsAllow`.** They had diverged: the banner's copy knew only server and
+  database scope, so it showed a false read-only for every object-scoped right
+  and never fired at all for SQL Agent's msdb memberships. The callers now
+  differ in one thing only — how a database's capabilities are reached, cached
+  for the UI goroutine, probing for a page's `load`.
+  - **Object- and schema-scoped rights are asked with their securable**
+    (`allowsActionOn`, `withRequiresOn`, `propPage.requiresSchema`/
+    `requiresObject`). A grant of ALTER made directly on one table is reflected
+    at no wider scope, so without the securable every other right in the set
+    denies and the page that principal *can* write comes up read-only.
+  - **An object-scope DENY is asked first and separately** (`objectDenial`).
+    Every right in a set is an alternative that can only add permission, but
+    SQL Server resolves a DENY on the object over all of them — a principal
+    holding database-wide ALTER, or `db_owner`, reads `HAS_PERMS_BY_NAME` 0 on
+    a denied table and its rename fails Msg 297. A DENY on one *column* is
+    asked right after (gosmo's `DeniedOnAnyColumn`): every gated action touches
+    the whole object, so one denied column withholds it. A DENY on the object's
+    *schema* is asked last, for the same reason. sysadmin is exempt — the probe
+    reads through `public`, and a DENY to public is recorded for the one login
+    the server never applies it to.
+  - The refusal's wording gathers the roles into one trailing clause instead of
+    following each permission: three alternatives spelled out gave "ALTER
+    (db_owner) or CONTROL (db_owner) or ALTER ANY DATABASE (dbcreator)", which
+    names db_owner twice and reads as six things to ask for rather than three.
+- **A menu-driven write gets its own timeout** (`serverWriteContext`,
+  `serverWriteTimeout`), far longer than `childFetchTimeout`. A drop, a rename,
+  an offline or a failover waits — for a lock another session holds, and, on a
+  database, for `WITH ROLLBACK IMMEDIATE` to roll back every transaction it
+  just killed. On the 30-second read budget the statement was abandoned
+  mid-flight, leaving gosmo's repair pass to put the database back to
+  MULTI_USER on an expired context. A write the user waits *in* a dialog for
+  takes no deadline at all — `PropDialog.runPipeline` runs against the dialog's
+  own context, so Escape is what stops it.
+- **A failed connect to a peer instance is cached briefly** and can be
+  forgotten (`peerFailureTTL`, `ForgetPeerFailure`, `ForgetPeerFailures`), so
+  expanding three folders of one availability group does not dial the same
+  unreachable primary three times, while a Refresh or a successful direct
+  connect retries at once. Forgetting recurses into cached peers, because a
+  peer read chains: the failure to reach a third instance is recorded on the
+  primary's connection, not on the one the user is looking at.
+- **Database Properties > Options and New Database > Options are one row set**
+  (`databaseOptionRows`), tracked for a `Dirty()`-gated apply. Restrict access
+  stays outside it deliberately: it is written with `SetUserAccessContext`,
+  whose ALTER carries `WITH ROLLBACK IMMEDIATE`, where the same choice through
+  `SetDatabaseOption` emits a bare `SET SINGLE_USER` that blocks until every
+  other connection leaves — a dialog that appears to hang, on a database nobody
+  can reconnect to.
+- **Highlighting a large script is no longer bounded by the highlighter.**
+  `SQLHighlighter` and `XMLHighlighter` replay the document once and cache the
+  per-line block-comment state, rebuilt only when the document's version
+  counter changes — so a pass that only scrolled costs nothing and an edit
+  costs one replay rather than one per pass. `controls.Document` gained
+  per-line width caches invalidated from the first line a mutation could have
+  changed, and `replaceRange` uses `slices.Replace` and a narrow `touch`, so
+  undoing a one-line edit in a 20,000-line script no longer re-measures every
+  rune in the buffer.
+- **The server filesystem listing filters server-side**, on
+  `sys.dm_os_enumerate_filesystem`, which stops a listing walking the whole
+  subtree — roughly an eightfold cut in the wait `showBusy` was written for.
+- **`SelectRow`, `EditorRow` and the other rows keep two independent read-only
+  gates.** A page's own gate (a non-T-SQL job step) and the form's permission
+  gate are separate fields, because whichever is set last must not cancel the
+  other out — lifting the permission gate must not make a non-T-SQL step
+  editable.
+- **Release binaries are built for four targets**, not six:
+  `windows/amd64`, `linux/amd64`, `linux/arm64` and `darwin/arm64`.
+  `windows/arm64` and `darwin/amd64` are dropped.
+- `docs/journal.md` and `docs/permissions-plan.md` are removed, and
+  `docs/open-threads.md` pruned to open work and settled decisions only.
+
+### Fixed
+
+- **A query could come back with an empty grid, no error and no Messages
+  tab** (`internal/query/executor.go`). The `sqlexp.ReturnMessage` loop drained
+  a result set on `!scanNext(...)`, i.e. whenever the set *failed* — but two of
+  those failures are reported on a set already read to its end:
+  `streamResultSet`'s deferred `EndSet` and `scanPlanXML`'s trailing
+  `rows.Err()`. Draining one of those spends the extra `Next()` that makes the
+  driver consume the protocol message `retmsg.Message(ctx)` is waiting for.
+  `scanNext` now reports whether the set was *abandoned mid-scan*, which is a
+  different question from whether it failed, and `streamResultSet` and
+  `scanPlanXML` return `exhausted` alongside their error rather than having it
+  inferred. `executor_drain_test.go` and `live_drain_test.go` cover it; unit
+  tests alone do not catch it.
+- **Saving a mostly-LF script no longer rewrites every line ending in it.**
+  `decodeTextFile` reported CRLF on its mere *presence*, so one stray CRLF in
+  an otherwise LF file turned Save into a whole-file rewrite. `majorityCRLF`
+  now decides, which is the best available answer: the editor folds CRLF to LF
+  when the text is set, so which lines carried a CR is gone before Save can
+  ask. Pure LF and pure CRLF are unaffected; a tie keeps CRLF.
+- **Saving a file no longer re-widens its permissions.** `fileutil`'s atomic
+  write created a new inode and applied a default mode, so a `.sql` the user
+  had chmodded 0600 came back 0644 on the next `Ctrl+S`. `os.WriteFile` does
+  not do that, and this no longer does either.
+- **A toolbar button that did not fit was silently deleted.**
+  `layoutToolButtons` gives an overflowing cell a zero rect, and a zero rect is
+  neither painted nor clickable — so Export and Recycle were unreachable in the
+  Log File Viewer on any ordinary terminal (the row wants 121 columns, the pane
+  gets 70% of the terminal), Activity Monitor's Pause went off the row below 68
+  columns, and Query Store's Compare Plans and Track Query below 170 and 132.
+  None of the four has a key binding. Every unit test passed throughout.
+- **A `DataGrid` scrolled right went blank on an error.** `SetError` builds one
+  column at index 0, and `drawRow` starts its walk at `scrollCol`, so the
+  message was never reached; it now resets `scrollCol` with the rest of the
+  view state and drops a queued `RefreshColumnWidths`, which would otherwise
+  recompute over the hand-sized column and clip the message to the width of the
+  word "Error".
+- **A grid reached before its first `SetBounds` scrolled past its own rows.**
+  `rect.H` is 0 there, so `ensureVisible`'s `dataH` arrived negative and the
+  scroll jumped past the whole list, painting the header and "N rows" over
+  blank lines; the horizontal half walked `scrollCol` all the way to `selCol`.
+  `SetSelectedCell` via `SetDataPreservingView` is a legitimate such caller.
+- **`SetData` + `SetSelectedRow` dropped a dragged column width at seventeen
+  sites.** `resetGrid` (`prop_grid_helpers.go`) is the pair done right, for an
+  Add/Remove/Revert where the cursor is placed deliberately: `SetSource` clears
+  `colWidthOverride` along with the cursor, and the cursor being set explicitly
+  hid the loss, which is why those sites never showed the `GridRow` keyboard
+  trap `redrawGrid` documents.
+- **`Ctrl+Z` inside a job step's command box reverted the whole page** and took
+  every other row's edits with it. The sheet still handles `Ctrl+Z`, but the
+  focused row now gets first refusal, because `EditorRow`'s `controls.Editor`
+  is the one row widget with an undo of its own. A read-only editor refuses the
+  key, so a non-T-SQL step still reverts.
+- **A read-only label and its value ran together** —
+  "Maximum concurrent connections0", live. A label may be exactly `LabelWidth`
+  wide, so `drawFlatValue` starts the value at `flatValueX`, which is also
+  where the same row's text sits when it is editable, so a row switching
+  between the two no longer jogs its value sideways by a column.
+- **`ToggleGridRow.SetDrawReadOnly` blanked the grid it was gating.** `Form`
+  calls it from `SetReadOnly`, which a page runs before the sheet has laid the
+  grid out, and preserving the view of a grid with no rect ends in
+  `ensureVisible` scrolling past every row — the affinity grid drew four blank
+  lines under its header. It renders outright instead.
+- **A Properties page whose apply failed after changing the server showed
+  stale values.** Audit Properties is the case: its ALTER runs inside a disable
+  window, and a window that cannot re-enable the audit reports the restore's
+  error with the ALTER committed and auditing stopped, leaving the State row
+  claiming Enabled for an audit the server had switched off.
+  `applyCommitted`/`committedApplyError` marks such a failure so the sheet
+  reloads before the message is shown.
+- **A Properties page whose load panicked read "Loading..." for the rest of
+  the showing**, with F5 the only way out: `PropertySheet.startLoad` latches the
+  slot at `PageLoading` and only the posted callback clears it, and a panic
+  unwinds straight past that callback. The load runs under `safegoRepair` now.
+  The connection guard also moved into `PropDialog.show`, so one of the
+  twenty-three entry points forgetting it no longer opens a dialog whose every
+  page fails to load, one error per page.
+- **The Detail Browser's backfilled rows are found by label, not by a fixed
+  index** — adding a row above them silently redirected the backfill into the
+  wrong row.
+- **The `xp_cmdshell` checkbox is disabled on a Linux host.** SQL Server on
+  Linux has no `xp_cmdshell` at all but still lists the option in
+  `sys.configurations` at 0, so the ordinary checkbox rendered, ticked, and
+  failed on OK with Msg 15392 — a row that can only produce that error.
+- **The Activity Monitor's Blocking-tab install button is gated on CONTROL
+  SERVER.** Installing a procedure in `master` is a sysadmin act; offered to a
+  `db_owner` it returned "Cannot alter the procedure 'sp_block', because it does
+  not exist or you do not have permission." `HAS_PERMS_BY_NAME` is the test
+  rather than a role check, because it answers 1 for a sysadmin while
+  `IS_SRVROLEMEMBER` does not fold sysadmin into anything else.
+- **SQL Agent's New Job / Schedule / Alert / Operator gates read an unprobed
+  `msdb` and failed open for the whole session.** An Agent node carries no
+  `DBName` — it hangs off the server, not a database — but what permits its
+  actions is membership of an msdb role, so msdb is the database its menu now
+  asks about.
+- **Start/Stop on a job no longer refuses an action that would have worked.**
+  `jobIsRunning` answers "unknown" for `JobStateUnknown` (which Agent reports
+  for a job it does not run itself, and gosmo falls back to whenever
+  `xp_sqlagent_enum_jobs` is unreachable) and for `JobStateSuspended`, which is
+  genuinely ambiguous — the request is sent and the server answers.
+- **Database Properties > Query Store no longer writes back a value the server
+  never reported.** Below 2017 the wait-stats read has no column and returns
+  `""`, which `indexOf` resolved to the first item — written back on Apply as
+  though the server had said it. `indexOfOK` keeps "not found" apart from
+  "index 0", and a capture mode the list no longer offers still displays.
+- **New Database Mirroring Endpoint no longer imports an instance's own
+  certificate.** `addInstance` answers with the instance's own `@@SERVERNAME`,
+  so an alias, an address or a hostname for an instance already listed got past
+  the typed-name check and landed as a second entry for one instance;
+  `configure`'s pairwise loop skips on pointer identity, so that instance then
+  created `<inst>_login` and `<inst>_user` in its own master and granted
+  CONNECT on its own endpoint.
+- **The connection-string preview and the connection agree.** `encryptString`
+  is one function shared by `Connect` and `BuildConnectionString`; the two were
+  copies, and the preview wrote `:1433` onto a named instance the connection
+  itself dialed without one — copying the previewed DSN out reached the default
+  instance.
+- **The server filesystem picker says when it cannot know.** A pre-2017
+  instance is listed through `xp_dirtree`, which reports names and the
+  directory flag only, so every Size was drawn as "0 B" and every date as
+  0001-01-01.
+- **`sqlparse`'s `GO` scan no longer walks each line to its end.** It runs once
+  per line of the whole prefix on every keystroke while the IntelliSense popup
+  is open, and now bails on the first rune that cannot be part of a separator.
+  `TestGoSeparatorLineCases` pins the same list of lines in `sqlparse` and
+  `controls`, so the two copies — which exist because `tuikit` must not import
+  `tui` — cannot drift.
+
 ## [0.0.8] - 2026-08-25
 
 ### Added

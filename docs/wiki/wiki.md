@@ -19,6 +19,13 @@ A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
 One executable — no GUI, no installer, no SQL client tools or drivers
 required. More content here soon.
 
+Current release: **v0.0.9**. See
+[RELEASE.md](https://github.com/radix29/gossms/blob/main/RELEASE.md) for what
+changed and
+[CHANGELOG.md](https://github.com/radix29/gossms/blob/main/CHANGELOG.md) for
+the detail behind it. Supported servers: **SQL Server 2016 SP1 and later**, on
+Windows and Linux.
+
 # Gallery
 
 ### Connection
@@ -30,9 +37,10 @@ specify server, database and credentials.
 
 ### Object Explorer
 
-**Browse your servers** — A tree view of instances, databases and all their
-dbo-schema objects. Expand folders to inspect tables, views, stored procedures
-and more.
+**Browse your servers** — A tree view of instances, databases and their
+objects in every schema. Expand folders to inspect tables, views, stored
+procedures, security, storage, server objects and auditing. Right-click to
+rename, delete, enable/disable, script or open Properties.
 
 ![object explorer](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/02_object_explorer.png)
 
@@ -95,6 +103,28 @@ wait breakdown. Blocking chains and running sessions have tabs of their own.
 table allocations and internal object churn in real time.
 
 ![act mon tempdb](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/11_act_mon_tempdb.png)
+
+### Query Store
+
+**The seven SSMS views** — Regressed Queries, Overall Resource Consumption, Top
+Resource Consuming Queries, Queries With Forced Plans, Queries With High
+Variation, Query Wait Statistics and Tracked Queries, under every database.
+Each is an Object Explorer leaf whose report shows in the details pane, and
+opening one raises the Query Store panel: the metric, statistic, time window
+and row count are selectable, the rows are charted, and the selected query's
+plans are listed. Force Plan, Unforce Plan, Show Plan, Track Query and Compare
+Plans act from there — each writing action confirmed, and each offering the
+script instead of running it.
+
+*(Screenshots for this section are not captured yet.)*
+
+### Plan Comparison
+
+**Compare Showplan** — Two plans of one query paired over the operator tree,
+as two grids: the operators with what differs about each row named, and the
+statement-level properties side by side.
+
+*(Screenshots for this section are not captured yet.)*
 
 ### Always On
 

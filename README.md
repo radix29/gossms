@@ -26,7 +26,9 @@ required.
   (logins, server roles, credentials), database security (users, roles,
   schemas, row-level security policies, Always Encrypted keys),
   storage (partition functions and schemes), server objects (backup devices,
-  linked servers), and Management. Right-click anything to rename, delete, see dependencies, or
+  endpoints, linked servers, server-scope DDL and logon triggers), auditing
+  (server audits and audit specifications), and Management. Right-click
+  anything to rename, delete, enable/disable, see dependencies, or
   open Properties. **Script <object> as** covers every family the tree
   shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
   UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
@@ -96,9 +98,11 @@ required.
   one raises the Query Store panel, where the metric, statistic, time window
   and row count are selectable, the rows are charted, and the selected
   query's plans are listed. From there: **Force Plan** / **Unforce Plan**
-  (with a confirmation and a Script-to-editor alternative) and **Show Plan**,
+  (with a confirmation and a Script-to-editor alternative), **Show Plan**,
   which opens the stored plan in the same graphical plan view an executed
-  query gets.
+  query gets, **Track Query**, which pins a query to the Tracked Queries view,
+  and **Compare Plans**, which pairs two plans of one query over the operator
+  tree and names what differs about each row.
 - **SQL Server Agent** — Jobs, Schedules, Alerts, and Operators; multi-page
   Job Properties with add/remove/reorder on the step list, a step's command
   edited in the query editor itself — multi-line, SQL-highlighted, with line
@@ -160,6 +164,52 @@ instance of those majors is available.
 
 goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
 or press `Escape` to work offline — `F9` reopens it any time.
+
+## Keyboard Reference
+
+| Key | Action |
+|-----|--------|
+| `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
+| `F9` | Connect to server |
+| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query |
+| `F5` | Execute query (selection if any); also refreshes a tree node, a Properties page, or a panel |
+| `Ctrl+Enter` | Select the statement at the cursor without executing |
+| `Tab` | Switch focus explorer ↔ panels, and between a panel's own grids |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle focus forward / back (explorer, editor, results) |
+| `Ctrl+Shift+Right` / `Left` | Next / previous panel |
+| `Ctrl+0`..`9` | Jump to panel N from the left (Object Explorer Details is 0) |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab |
+| `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
+| `Ctrl+Up` / `Down` | Grow / shrink the query editor |
+| `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
+| `Ctrl+Z` (Properties) | Revert the current page to the values it loaded with |
+| `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
+| `Ctrl+F3` | Find next occurrence of the word at the cursor |
+| `Ctrl+D` / `Ctrl+L` | Duplicate / delete the current line |
+| `Ctrl+/` | Comment or uncomment the line |
+| `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
+| `Ctrl+Space` (grid, tree) | Context menu — the keyboard's right-click |
+| `Shift+Arrow`, `Alt+Shift+Arrow` | Select text, block (column) select |
+| `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
+| `Shift+F10` / `Menu` key | Context menu for the selected tree node |
+| `1` / `2` / `3` (plan) | Plan graph / operator tree / raw XML |
+| `[` / `]` (plan) | Previous / next statement of the batch |
+| `m` (plan) | Missing-index details, when the banner is showing |
+| `/`, `n` / `N` (plan) | Search operators, next / previous match |
+| Right-click a grid cell | "Show Value" — full cell text, copyable |
+| `Ctrl+click` a grid row | Add or remove that row from the selection |
+| `Shift+click` / `Alt+click` a grid row | Extend the selection to that row |
+| Drag / double-click a header separator | Resize / reset a grid column |
+
+Replace is Edit > Replace... or the Replace fields in the Find dialog.
+`Ctrl+H` is deliberately unbound — many terminals send it as the same byte
+as Backspace. `Ctrl+Shift+O` also opens Connect, but only on terminals with a
+modern keyboard protocol; `F9` is the binding that works everywhere.
+`Alt+click` duplicates `Shift+click` because VTE terminals (xfce4-terminal,
+GNOME Terminal) keep `Shift`+mouse for their own text selection and forward
+nothing. A panel toolbar too narrow for its buttons collapses them into a
+**More ▾** menu rather than dropping them. Help > Key Diagnostics shows what
+your terminal actually sent for any key or mouse event.
 
 ## Required rights
 
