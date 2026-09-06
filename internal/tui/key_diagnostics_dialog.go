@@ -147,8 +147,8 @@ func mouseEventName(ev *tcell.EventMouse) string {
 	return strings.Join(append(parts, button), "+")
 }
 
-// syncIfDirty rebuilds the editor's content from d.lines if RecordKey has
-// run since the last rebuild.
+// syncIfDirty rebuilds the editor's content from d.lines if RecordKey or
+// RecordMouse has run since the last rebuild.
 //
 // It must not rebuild while the editor has a selection. This dialog records
 // the very keys used to copy from it, and Editor.SetText resets cursor,

@@ -14,7 +14,9 @@ import (
 // userPropPages builds the page set for Database User Properties. General
 // is editable except for the fixed system users (dbo/guest/sys/
 // INFORMATION_SCHEMA, which reject ALTER USER entirely); Owned Schemas,
-// Membership, Securables, and Extended Properties are always editable.
+// Membership, Securables, and Extended Properties are always editable, and
+// Effective Permissions is a read-only listing by design (see
+// effectivePermsNote).
 // Contained/password users and external Microsoft Entra users aren't built.
 //
 // userName is boxed in a *string shared by every page below: renaming a user
@@ -26,7 +28,12 @@ import (
 func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []propPage {
 	namePtr := &userName
 	return []propPage{
-		withRequires(pageUserGeneral(sc, dbName, namePtr), dbName, rightAlterAnyUser),
+		// withRequiresOn, not withRequires: rightAlterAnyUser carries the
+		// class-4 arm, and a page that names no securable asks it about ""
+		// and withholds nothing — the page opened editable for a user carrying
+		// DENY ALTER ON USER::x and its rename was refused on Apply with
+		// Msg 15151. Caught by TestAnObjectScopedPageNamesItsSecurable.
+		withRequiresOn(pageUserGeneral(sc, dbName, namePtr), dbName, "", userName, rightAlterAnyUser),
 		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "user"), dbName, rightAlterAnySchema, rightControlDB),
 		// Gated on the user, not on the roles it lists: membership checks ALTER
 		// on the member as well as on the role, so a user carrying a class-4
@@ -37,9 +44,12 @@ func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []
 		withRequiresOn(pageUserMembership(sc, dbName, namePtr), dbName, "", userName, rightAlterAnyDBRoleMembers),
 		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
 		pagePrincipalEffectivePermissions(d, sc, dbName, namePtr),
-		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
+		// Named for the same reason General is: sp_addextendedproperty at
+		// @level0type = N'USER' checks ALTER on that user, which the class-4
+		// DENY withholds.
+		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
-		}), dbName, rightAlterAnyUser),
+		}), dbName, "", userName, rightAlterAnyUser),
 	}
 }
 

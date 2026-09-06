@@ -15,7 +15,7 @@ tuikit/
 │             — geometry.go, screen.go, drawing.go, strutil.go, mathutil.go,
 │               runecol.go (rune index ↔ display column), wordutil.go
 │               (word boundaries, shared by Editor and InputField)
-├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox — one file per widget
+├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file per widget
 ├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
 │             — panel.go, panel_manager.go, splitter.go
 ├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, TypedConfirmDialog, PromptDialog, FileDialog
@@ -111,6 +111,18 @@ children never reach upward to ask "how much space do I have?".
 state and expose it through getters (`Value()`, `Checked()`, `Selected()`).
 The application reads state when it needs it; it does not push state into
 private fields.
+
+**An animation is a function of elapsed time, not a timer.**
+`widgets.Spinner` (the busy-indicator catalogue — `SpinnerBraille`,
+`SpinnerCodex`, `SpinnerDots3`, … , walkable via `widgets.Spinners` and
+resolvable from a config string with `SpinnerByName`) holds no start time and
+starts no goroutine: `Frame(elapsed)`/`FrameSince(start)` answer which frame
+shows, and the host drives the redraw from a clock it already has. Every frame
+of one Spinner is the same display width, so a repaint overwrites the previous
+frame exactly — a narrower frame leaves the tail of the last one on screen,
+which no static frame listing shows and only animation reveals
+(`TestSpinnerFramesAreUniformWidth`). `cmd/spindemo` renders the whole
+catalogue side by side for picking one by eye.
 
 **Optional capability interfaces.** `layout.Panel` only requires the five
 methods every panel needs (`SetBounds`, `Draw`, `HandleKey`, `HandleMouse`,

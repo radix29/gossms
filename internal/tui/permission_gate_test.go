@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -1601,6 +1602,321 @@ func TestMembershipPagesAreGatedOnThePrincipalTheyEdit(t *testing.T) {
 		if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnPrincipal != "" }) {
 			t.Errorf("%s > %s declares no right carrying deniedOnPrincipal, so a DENY on %s is invisible to it",
 				tc.what, tc.title, tc.object)
+		}
+	}
+}
+
+// serverDeniedConn is principalDeniedConn at server scope: a connection whose
+// login holds the three server-wide ALTER ANY rights and carries one explicit
+// class-101/105 DENY per name given, on the securable kind named.
+//
+// It is not a sysadmin — capabilityResponses scripts no role rows — which
+// matters, because objectDenial's first act is to let a sysadmin past every
+// arm below it.
+func serverDeniedConn(t *testing.T, kind gosmo.ServerSecurableKind, denied ...string) *db.ServerConn {
+	t.Helper()
+	sc, _ := newFakeConn(t, withServerDenials(
+		capabilityResponses(true,
+			[]string{"ALTER ANY LOGIN", "ALTER ANY SERVER ROLE", "ALTER ANY ENDPOINT"}, nil, nil, nil),
+		kind, "ALTER", denied...)...)
+	sc.ProbeCapabilities()
+	return sc
+}
+
+// TestALoginDenialWithholdsEveryWriteOnTheLogin. The login's class-101 DENY is
+// all-or-nothing — DENY ALTER ON LOGIN::x refuses ALTER LOGIN and DROP LOGIN
+// alike, verified live on majors 13 and 17 — so the single arm on
+// rightAlterAnyLogin has to reach Properties, Rename and Delete together.
+//
+// The server-wide ALTER ANY LOGIN reads *granted* throughout, which is the
+// whole point: nothing but the catalog read can tell that the write will fail,
+// and before this arm existed the user filled in the rename dialog and met
+// Msg 15151.
+func TestALoginDenialWithholdsEveryWriteOnTheLogin(t *testing.T) {
+	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "gate_login")
+
+	if !allowsAction(sc, "", rightAlterAnyLogin) {
+		t.Fatal("the server-wide grant did not read back; this fixture no longer isolates the DENY")
+	}
+	if allowsActionOn(sc, "", "", "gate_login", objectOpRights(NodeLogin)...) {
+		t.Error("Rename/Delete offered on a login carrying a class-101 DENY")
+	}
+	if allowsActionOn(sc, "", "", "gate_login", rightAlterAnyLogin) {
+		t.Error("Login Properties offered on a login carrying a class-101 DENY")
+	}
+	// The denial is on that login alone; every other one is still editable
+	// through the same server-wide grant.
+	if !allowsActionOn(sc, "", "", "other_login", objectOpRights(NodeLogin)...) {
+		t.Error("a denial on one login withheld the writes on every other")
+	}
+}
+
+// TestAServerRoleDenialWithholdsMembershipButNotTheRename is the split the two
+// ALTER ANY SERVER ROLE rights exist for, and the server-scope twin of
+// TestARoleDenialWithholdsMembershipButNotTheRename: under
+// DENY ALTER ON SERVER ROLE::r, verified live on majors 13 and 17, the server
+// refuses ADD/DROP MEMBER and allows both ALTER SERVER ROLE ... WITH NAME and
+// DROP SERVER ROLE.
+//
+// Gating the whole dialog on the DENY would take away a rename the server
+// performs; gating none of it offers a membership edit it refuses with
+// Msg 15151 after the user has ticked the boxes.
+func TestAServerRoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
+	sc := serverDeniedConn(t, gosmo.ServerSecurableServerRole, "gate_role")
+
+	if allowsActionOn(sc, "", "", "gate_role", rightAlterAnyServerRoleMembers) {
+		t.Error("Members offered on a server role carrying a class-101 DENY")
+	}
+	if !allowsActionOn(sc, "", "", "gate_role", rightAlterAnyServerRole) {
+		t.Error("the plain right withheld a rename the server allows")
+	}
+	if !allowsActionOn(sc, "", "", "gate_role", objectOpRights(NodeServerRole)...) {
+		t.Error("Rename/Delete withheld on a server role, which the server permits under this DENY")
+	}
+	if !allowsActionOn(sc, "", "", "other_role", rightAlterAnyServerRoleMembers) {
+		t.Error("a denial on one server role withheld membership on every other")
+	}
+}
+
+// TestALoginDenialDoesNotWithholdAServerRoleOrEndpointOfTheSameName. The three
+// kinds share one class-101/105 map and are told apart by gosmo's key alone,
+// so the arm has to be discriminated by the right's declared kind — and the
+// consequence of getting it wrong is not symmetric: a login's all-or-nothing
+// answer read for a server role would grey a rename the server performs.
+func TestALoginDenialDoesNotWithholdAServerRoleOrEndpointOfTheSameName(t *testing.T) {
+	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "shared")
+
+	if allowsActionOn(sc, "", "", "shared", rightAlterAnyLogin) {
+		t.Fatal("the login's own denial did not read back")
+	}
+	if !allowsActionOn(sc, "", "", "shared", rightAlterAnyServerRoleMembers) {
+		t.Error("a login's DENY withheld a server role's membership edits")
+	}
+	if !allowsActionOn(sc, "", "", "shared", rightAlterAnyEndpoint) {
+		t.Error("a login's DENY withheld an endpoint's ALTER")
+	}
+}
+
+// TestAnEndpointDenialWithholdsItsStateChanges. The endpoint's class is 105
+// rather than 101 and its refusal is Msg 6004 rather than 15151, but the arm
+// is the same shape: Start/Stop/Disable and Delete all write ALTER/DROP
+// ENDPOINT, and the server-wide ALTER ANY ENDPOINT does not survive the DENY.
+func TestAnEndpointDenialWithholdsItsStateChanges(t *testing.T) {
+	sc := serverDeniedConn(t, gosmo.ServerSecurableEndpoint, "gate_ep")
+
+	if allowsActionOn(sc, "", "", "gate_ep", rightAlterAnyEndpoint) {
+		t.Error("an endpoint's writes were offered under a class-105 DENY")
+	}
+	if !allowsActionOn(sc, "", "", "other_ep", rightAlterAnyEndpoint) {
+		t.Error("a denial on one endpoint withheld the writes on every other")
+	}
+	// New Endpoint names no securable, so the arm is never asked and the
+	// folder item stays offered — a DENY on one endpoint says nothing about
+	// creating another.
+	if !allowsAction(sc, "", rightAlterAnyEndpoint) {
+		t.Error("a DENY on one endpoint withheld New Endpoint, which it does not refuse")
+	}
+}
+
+// TestASysadminIsNotWithheldByAServerDenial. The probe's principal set includes
+// public, so a DENY made to public is recorded for a sysadmin too — whose write
+// SQL Server then performs anyway. objectDenial's first act is the bypass, and
+// the server arm sits above the dbName guard, which is exactly where a new arm
+// can end up on the wrong side of it.
+func TestASysadminIsNotWithheldByAServerDenial(t *testing.T) {
+	// capabilityResponsesWithRoles scripts *database* role rows; sysadmin is a
+	// fixed server role and has to be answered by the server probe, so the row
+	// goes in by hand.
+	responses := withServerDenials(
+		capabilityResponses(true, []string{"ALTER ANY LOGIN"}, nil, nil, nil),
+		gosmo.ServerSecurableLogin, "ALTER", "gate_login")
+	for i, r := range responses {
+		if r.match == "IS_SRVROLEMEMBER" {
+			r.rows = append(r.rows, []driver.Value{"R", "sysadmin", int64(1)})
+			responses[i] = r
+		}
+	}
+	sc, _ := newFakeConn(t, responses...)
+	sc.ProbeCapabilities()
+
+	if !allowsActionOn(sc, "", "", "gate_login", rightAlterAnyLogin) {
+		t.Error("a sysadmin was withheld by a server-class DENY the server ignores for them")
+	}
+}
+
+// TestTheMenuNoteNamesTheDeniedServerSecurable. Two switches over denialSite
+// need every new case, not one — deniedText and the note switch in gateOn —
+// and missing the second is invisible to every other test, which is how the
+// class-4 case shipped reading "denied on this object".
+//
+// The sentence names the *kind* where the class-4 one says the vaguer
+// "principal": the right declared which securable it asked about, and "denied
+// on gate_login" would not tell a login from an endpoint beside it.
+func TestTheMenuNoteNamesTheDeniedServerSecurable(t *testing.T) {
+	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "gate_login")
+	rights := objectOpRights(NodeLogin)
+	item := gateOn(controls.MenuItem{Label: "Delete..."}, sc, "", "", "gate_login", rights...)
+	if want := "ALTER denied on login gate_login"; item.Note != want {
+		t.Errorf("menu note = %q, want %q", item.Note, want)
+	}
+	r, at, denied := deniedOnObject(sc, "", "", "gate_login", rights...)
+	if !denied {
+		t.Fatal("deniedOnObject reported no denial")
+	}
+	if want := "ALTER is denied on login gate_login."; deniedText(r, at) != want {
+		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	}
+}
+
+// TestServerScopedPagesAreGatedOnTheSecurableTheyEdit pins the wiring the tests
+// above cannot see — TestMembershipPagesAreGatedOnThePrincipalTheyEdit at
+// server scope. They ask allowsActionOn directly; what actually reaches it on a
+// Properties dialog is the page's own requires/requiresObject, and a page left
+// on withRequires — no object — asks the server-class question about nothing
+// and withholds nothing, silently.
+func TestServerScopedPagesAreGatedOnTheSecurableTheyEdit(t *testing.T) {
+	sc, _ := newFakeConn(t)
+
+	for _, tc := range []struct {
+		what   string
+		pages  []propPage
+		title  string
+		object string
+	}{
+		{"Login Properties", loginPropPages(nil, sc, "gate_login"), "General", "gate_login"},
+		{"Login Properties", loginPropPages(nil, sc, "gate_login"), "Status", "gate_login"},
+		{"Server Role Properties", serverRolePropPages(sc, "gate_role"), "Members", "gate_role"},
+	} {
+		i := slices.IndexFunc(tc.pages, func(p propPage) bool { return p.title == tc.title })
+		if i < 0 {
+			t.Fatalf("%s has no %q page", tc.what, tc.title)
+		}
+		p := tc.pages[i]
+		if p.requiresObject != tc.object {
+			t.Errorf("%s > %s asks about object %q, want %q — the server-class arm is never reached",
+				tc.what, tc.title, p.requiresObject, tc.object)
+		}
+		if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnServer != "" }) {
+			t.Errorf("%s > %s declares no right carrying deniedOnServer, so a DENY on %s is invisible to it",
+				tc.what, tc.title, tc.object)
+		}
+	}
+}
+
+// TestLoginServerRolesDeclaresNoServerDenialArm pins a deliberate absence, the
+// way TestARoleDenialWithholdsNoRenameOrDrop does one scope down. Login
+// Properties > Server Roles writes ALTER SERVER ROLE r ADD/DROP MEMBER, and at
+// server scope — unlike at database scope — a DENY on the *login* being added
+// does not refuse it: measured on majors 13 and 17, 2026-09-05. A login-kind
+// arm here would grey a page the server writes.
+func TestLoginServerRolesDeclaresNoServerDenialArm(t *testing.T) {
+	sc, _ := newFakeConn(t)
+	pages := loginPropPages(nil, sc, "gate_login")
+	i := slices.IndexFunc(pages, func(p propPage) bool { return p.title == "Server Roles" })
+	if i < 0 {
+		t.Fatal("Login Properties has no Server Roles page")
+	}
+	if slices.ContainsFunc(pages[i].requires, func(r requiredRight) bool { return r.deniedOnServer != "" }) {
+		t.Error("Login Properties > Server Roles declares a server-class DENY arm; " +
+			"the server permits a denied login to be added to an undenied role")
+	}
+}
+
+// TestAnAvailabilityGroupDenialWithholdsEveryGroupWrite. The class-108 DENY is
+// the login's all-or-nothing shape: probed live on the two-node cluster
+// 2026-09-05, every ALTER AVAILABILITY GROUP — the options SET, ADD/REMOVE
+// DATABASE, MODIFY REPLICA and FAILOVER — is refused Msg 15151 while the
+// server-wide ALTER ANY AVAILABILITY GROUP reads 1.
+func TestAnAvailabilityGroupDenialWithholdsEveryGroupWrite(t *testing.T) {
+	sc, _ := newFakeConn(t, withAGAnswers(
+		capabilityResponses(true, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil),
+		[]string{"AAG2"}, []string{"AAG1"})...)
+	sc.ProbeCapabilities()
+
+	if !allowsAction(sc, "", rightAlterAnyAG) {
+		t.Fatal("the server-wide grant did not read back; this fixture no longer isolates the DENY")
+	}
+	if allowsActionOn(sc, "", "", "AAG1", rightAlterAnyAG) {
+		t.Error("a group's writes were offered under a class-108 DENY")
+	}
+	if !allowsActionOn(sc, "", "", "AAG2", rightAlterAnyAG) {
+		t.Error("a denial on one group withheld the writes on every other")
+	}
+	// New Availability Group names no group, so the arm is never asked — a
+	// DENY on one group says nothing about creating another.
+	if !allowsAction(sc, "", rightAlterAnyAG) {
+		t.Error("a DENY on one group withheld New Availability Group")
+	}
+}
+
+// TestAGroupIsNotDeniedWhenTheWideRightIsMissing pins the guard that makes the
+// class-108 arm readable at all. gosmo answers this scope with
+// HAS_PERMS_BY_NAME, whose 0 means "denied on this group" *or* "holds nothing
+// here" — so the arm fires only while the server-wide right is held. Without
+// the guard every login lacking ALTER ANY AVAILABILITY GROUP is told the group
+// is denied instead of which right to ask for.
+func TestAGroupIsNotDeniedWhenTheWideRightIsMissing(t *testing.T) {
+	sc, _ := newFakeConn(t, withAGAnswers(
+		capabilityResponses(true, nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil),
+		nil, []string{"AAG1"})...)
+	sc.ProbeCapabilities()
+
+	if _, _, denied := deniedOnObject(sc, "", "", "AAG1", rightAlterAnyAG); denied {
+		t.Error("a login holding no availability-group right was told the group is denied")
+	}
+	item := gateOn(controls.MenuItem{Label: "Add Database..."}, sc, "", "", "AAG1", rightAlterAnyAG)
+	if want := "needs ALTER ANY AVAILABILITY GROUP"; item.Note != want {
+		t.Errorf("menu note = %q, want %q", item.Note, want)
+	}
+}
+
+// TestTheMenuNoteNamesTheDeniedAvailabilityGroup. denialSite's third new case,
+// and the third pair of switches that has to grow together — see
+// TestTheMenuNoteNamesTheDeniedServerSecurable.
+func TestTheMenuNoteNamesTheDeniedAvailabilityGroup(t *testing.T) {
+	sc, _ := newFakeConn(t, withAGAnswers(
+		capabilityResponses(true, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil),
+		nil, []string{"AAG1"})...)
+	sc.ProbeCapabilities()
+
+	item := gateOn(controls.MenuItem{Label: "Delete Availability Group..."}, sc, "", "", "AAG1", rightAlterAnyAG)
+	if want := "ALTER denied on availability group AAG1"; item.Note != want {
+		t.Errorf("menu note = %q, want %q", item.Note, want)
+	}
+	r, at, denied := deniedOnObject(sc, "", "", "AAG1", rightAlterAnyAG)
+	if !denied {
+		t.Fatal("deniedOnObject reported no denial")
+	}
+	if want := "ALTER is denied on availability group AAG1."; deniedText(r, at) != want {
+		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	}
+}
+
+// TestAvailabilityGroupPagesAreGatedOnTheGroupTheyEdit is
+// TestServerScopedPagesAreGatedOnTheSecurableTheyEdit for class 108: a page
+// left on plain withRequires asks the group question about "" and withholds
+// nothing, silently.
+func TestAvailabilityGroupPagesAreGatedOnTheGroupTheyEdit(t *testing.T) {
+	sc, _ := newFakeConn(t)
+
+	for _, tc := range []struct {
+		what  string
+		pages []propPage
+	}{
+		{"Availability Group Properties", agPropPages(sc, "AAG1")},
+		{"AG Listener Properties", agListenerPropPages(sc, "AAG1", "ubuaag")},
+	} {
+		for _, p := range tc.pages {
+			if len(p.requires) == 0 {
+				continue
+			}
+			if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnAG != "" }) {
+				continue
+			}
+			if p.requiresObject != "AAG1" {
+				t.Errorf("%s > %s asks about object %q, want \"AAG1\" — the class-108 arm is never reached",
+					tc.what, p.title, p.requiresObject)
+			}
 		}
 	}
 }

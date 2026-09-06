@@ -27,7 +27,10 @@ import (
 
 // agListenerPropPages builds the property pages for one listener.
 func agListenerPropPages(sc *db.ServerConn, agName, dnsName string) []propPage {
-	return []propPage{withRequires(pageAGListenerGeneral(sc, agName, dnsName), "", rightAlterAnyAG)}
+	// Named on the group, not the listener: its apply is
+	// ALTER AVAILABILITY GROUP ... MODIFY LISTENER, so the class-108 DENY that
+	// withholds it sits on the group.
+	return []propPage{withRequiresOn(pageAGListenerGeneral(sc, agName, dnsName), "", "", agName, rightAlterAnyAG)}
 }
 
 // agFindListener reads one listener by name through the group's primary.

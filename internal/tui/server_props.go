@@ -10,10 +10,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// serverPropPages builds the page set for Server Properties. General and
-// Advanced stay read-only (an info page, and a 100+ row raw config dump
-// respectively); every other page is editable wherever gosmo has a
-// writer for the field shown.
+// serverPropPages builds the page set for Server Properties. General stays
+// read-only — it is an info page with no apply at all; every other page is
+// editable wherever gosmo has a writer for the field shown. Advanced is
+// editable too: a group of sp_configure rows over a read-only grid of every
+// remaining option (see pageServerAdvanced).
 func serverPropPages(sc *db.ServerConn) []propPage {
 	// Every page but General writes through sp_configure + RECONFIGURE, which
 	// is ALTER SETTINGS; Permissions issues GRANT/DENY at the server, which is

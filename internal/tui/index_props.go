@@ -392,8 +392,8 @@ func pageIndexFilter(d *PropDialog, sc *db.ServerConn, dbName, schema, table, na
 // pageIndexFragmentation is Index Properties' Fragmentation page: current
 // fragmentation/page-density (sys.dm_db_index_physical_stats, SAMPLED), a
 // recommendation using Microsoft's own documented thresholds, and
-// Refresh/Reorganize/Rebuild/Update Statistics actions that run
-// immediately, independent of OK/Cancel/Apply.
+// Rebuild/Reorganize/Update Statistics actions that run immediately,
+// independent of OK/Cancel/Apply. F5 re-reads the numbers.
 // name is *string — see pageIndexStorage's doc comment.
 func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, table string, name *string) propPage {
 	return propPage{

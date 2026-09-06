@@ -16,7 +16,8 @@ import (
 
 // findSecurityPolicy resolves a policy by schema-qualified name. gosmo's
 // finder requires the schema, and every security policy node carries one:
-// loadSecurityPoliciesChildren reads it from SCHEMA_NAME.
+// loadSecurityPoliciesChildren stores each policy's Schema on the node it
+// builds.
 func findSecurityPolicy(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.SecurityPolicy, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 	if err != nil {

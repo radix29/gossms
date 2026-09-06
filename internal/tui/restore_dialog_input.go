@@ -93,9 +93,9 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return false
 	}
 	// A release must reach every mouseDragging-latched widget even when it
-	// lands outside the dialog (consumed below) or in a mode with an early
-	// return above — otherwise its next press is swallowed as a
-	// continuation of the stale drag. Each returns false on ButtonNone, so
+	// lands outside the dialog or arrives in a mode of its own — both of
+	// which return below, before any widget sees the event, so its next
+	// press would be swallowed as a continuation of the stale drag. Each returns false on ButtonNone, so
 	// this has no effect beyond resetting the latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.rbSource.HandleMouse(ev)

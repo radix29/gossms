@@ -20,8 +20,9 @@ var securableListColumns = []string{"Securable", "Type"}
 // securableColumnColumns heads the per-column permission editor.
 var securableColumnColumns = []string{"Column", "State"}
 
-// securable identifies one thing a database role's Securables page can grant or
-// deny permissions on: a table, a view, a schema, or the database itself.
+// securable identifies one thing a database principal's Securables page can
+// grant or deny permissions on — the page a user and a database role share:
+// a table, a view, a schema, or the database itself.
 type securable struct {
 	Type   string // "TABLE", "VIEW", "SCHEMA", "DATABASE"
 	Schema string // empty for DATABASE

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // filesPageResponses scripts a one-data-file, one-log-file database for the
@@ -26,8 +28,8 @@ func filesPageResponses() []fakeResponse {
 			{int64(1), "appdb", `C:\data\appdb.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(204800), int64(-1), int64(8192), false},
 			{int64(2), "appdb_log", `C:\data\appdb_log.ldf`, "LOG", "", "ONLINE", int64(51200), int64(-1), int64(1280), false},
 		}},
-		{match: "fg.name, fg.is_default, fg.is_read_only", cols: 10, rows: [][]driver.Value{
-			{"PRIMARY", true, false, "appdb", `C:\data\appdb.mdf`, int64(204800), int64(-1), int64(8192), false, true},
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 11, rows: [][]driver.Value{
+			{"PRIMARY", gosmo.RowsFileGroup, true, false, "appdb", `C:\data\appdb.mdf`, int64(204800), int64(-1), int64(8192), false, true},
 		}},
 	}
 }
@@ -136,11 +138,14 @@ func TestFilesPageRenamesByTheOldName(t *testing.T) {
 // LOG files only.
 func filestreamFilesResponses() []fakeResponse {
 	r := filesPageResponses()
+	// Size 0, growth 0, max size -1 (UNLIMITED) and a physical name with no
+	// extension, because that is what a real FILESTREAM file reports — measured
+	// against a FILESTREAM database on win10cli, 2026-09-05.
 	r[2].rows = append(r[2].rows, []driver.Value{
-		int64(3), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "fsgroup", "ONLINE", int64(0), int64(0), int64(0), false,
+		int64(3), "appdb_fs", `C:\data\appdb_fs`, "FILESTREAM", "fsgroup", "ONLINE", int64(0), int64(-1), int64(0), false,
 	})
 	r[3].rows = append(r[3].rows, []driver.Value{
-		"fsgroup", false, false, "appdb_fs", `C:\data\appdb_fs`, int64(0), int64(0), int64(0), false, false,
+		"fsgroup", gosmo.FileStreamFileGroup, true, false, "appdb_fs", `C:\data\appdb_fs`, int64(0), int64(-1), int64(0), false, false,
 	})
 	return r
 }
@@ -216,5 +221,71 @@ func TestFilesPageWontAddAFileTypeItCannotBuild(t *testing.T) {
 		if strings.Contains(s, "ADD FILE") {
 			t.Errorf("a file this page cannot build was added:\n%s", s)
 		}
+	}
+}
+
+// TestFilesPageAddsAFilestreamFileWithoutSizeOrGrowth drives the Add the live
+// run said this page was one clause away from being able to make.
+//
+// The Filegroup picker has always listed the FILESTREAM filegroup —
+// FileGroupsContext returns it like any other — so the combination was already
+// reachable, and the statement it built carried SIZE and FILEGROWTH, which SQL
+// Server refuses outright: "The properties SIZE or FILEGROWTH cannot be
+// specified for the FILESTREAM data file" (Msg 5509), measured on win10cli
+// 2026-09-05. There is no file type to pick for it, so the filegroup is the
+// whole of the decision, which is what the assertions below pin.
+func TestFilesPageAddsAFilestreamFileWithoutSizeOrGrowth(t *testing.T) {
+	sc, inst := newFakeConn(t, filestreamFilesResponses()...)
+	form, apply := loadPage(t, pageDatabaseFiles(sc, "appdb"), inst)
+
+	editText(t, form, "Logical name", "appdb_fs2")
+	editSelect(t, form, "Filegroup", "fsgroup")
+
+	// Picking the filegroup is what decides this, so it is also what has to
+	// gate the two spinners the file cannot carry. Focusable is the observable
+	// side of SetEnabled: a disabled row is skipped by the form's focus cycling
+	// and drawn dim, which is how the page says the value would be dropped
+	// rather than dropping it silently.
+	for _, label := range []string{"Initial size", "Growth amount"} {
+		if textRow(t, form, label).Focusable() {
+			t.Errorf("%q is still live for a FILESTREAM file", label)
+		}
+	}
+
+	editText(t, form, "Path", `C:\data\appdb_fs2`)
+	clickButton(t, form, "Add")
+
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	var added string
+	for _, s := range inst.Statements() {
+		if strings.Contains(s, "ADD FILE") {
+			added = s
+		}
+	}
+	if added == "" {
+		t.Fatalf("no file was added; statements: %q", inst.Statements())
+	}
+	if !strings.Contains(added, "TO FILEGROUP [fsgroup]") {
+		t.Errorf("the file did not go into the FILESTREAM filegroup:\n%s", added)
+	}
+	// SIZE, not "SIZE" — MAXSIZE contains it, and MAXSIZE is accepted on a
+	// FILESTREAM file, so the test that reads "no SIZE clause" has to be the
+	// one that can tell them apart.
+	if strings.Contains(added, "(NAME") && strings.Contains(added, ", SIZE = ") {
+		t.Errorf("SIZE was sent for a FILESTREAM file, which Msg 5509 refuses:\n%s", added)
+	}
+	if strings.Contains(added, "FILEGROWTH") {
+		t.Errorf("FILEGROWTH was sent for a FILESTREAM file, which Msg 5509 refuses:\n%s", added)
+	}
+	// The grid has to say what the file is, not what was picked: the type
+	// picker read ROWS throughout, and a row claiming ROWS for a file the
+	// server will report as FILESTREAM is the same wrong-fact defect
+	// TestFilesPageDoesNotRetypeAFilestreamFile pins from the other side.
+	g := plainGrid(t, form)
+	row := g.Row(gridRowIndex(t, g, 0, "appdb_fs2"))
+	if row[1] != "FILESTREAM" {
+		t.Errorf("the grid reports the new file as %q, want FILESTREAM", row[1])
 	}
 }

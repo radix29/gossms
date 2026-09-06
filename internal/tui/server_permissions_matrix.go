@@ -274,9 +274,9 @@ func buildPermissionsMatrix(
 // login or server role. Shared by Login Properties and Server Role
 // Properties, both server-level principals that can hold explicit
 // server-scoped GRANT/DENY entries the same way. Unlike
-// buildPermissionsMatrix (Server Properties' own Permissions page,
-// server_props.go), which browses every principal at once, this only ever
-// shows principalName's own entries — no principal picker.
+// buildPermissionsMatrix — the Permissions page of Server, Database, Schema and
+// Table Properties — which browses every principal at once, this only ever
+// shows principalName's own entries: no principal picker.
 func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) propPage {
 	return propPage{
 		title: "Securables",

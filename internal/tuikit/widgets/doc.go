@@ -13,7 +13,12 @@
 // know nothing about the application.  The caller reads values via Value(),
 // Checked(), Selected(), etc.
 //
+// spinner.go is the exception to the pattern above: a Spinner is a busy
+// indicator, not an input, so it has no bounds, focus or event handling — it
+// is a value that answers which frame shows for a given elapsed duration, and
+// leaves the redraw clock to the host.
+//
 // One file per widget: input_field.go, dropdown.go, checkbox.go, button.go,
-// radiobox.go. common.go holds small helpers shared across more than one of
-// them.
+// radiobox.go, spinner.go. common.go holds small helpers shared across more
+// than one of them.
 package widgets

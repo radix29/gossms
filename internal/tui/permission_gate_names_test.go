@@ -49,6 +49,35 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 				"ProbedPrincipalPermissions — the class-4 DENY arm will never fire",
 				r.name, r.deniedOnPrincipal)
 		}
+		// deniedOnServer is checked here for deniedOnPrincipal's reason, one
+		// scope out: a name missing from gosmo's server-securable list reads
+		// CapabilityUnknown for every securable, DeniedOnServerSecurable
+		// answers false, and the arm withholds nothing. And a right that names
+		// the permission without the kind asks the map for the key
+		// "::<name>", which nothing is ever filed under.
+		if r.deniedOnServer != "" {
+			if !slices.Contains(gosmo.ProbedServerSecurablePermissions, r.deniedOnServer) {
+				t.Errorf("%q declares deniedOnServer %q, which is not in gosmo's "+
+					"ProbedServerSecurablePermissions — the server-class DENY arm will never fire",
+					r.name, r.deniedOnServer)
+			}
+			if r.serverSecurable == "" {
+				t.Errorf("%q declares deniedOnServer %q but no serverSecurable kind — "+
+					"the arm asks about a securable nothing is filed under", r.name, r.deniedOnServer)
+			}
+		}
+		// deniedOnAG is the same check against class 108's own list, which is
+		// separate because gosmo asks that scope with HAS_PERMS_BY_NAME rather
+		// than reading the catalog — see requiredRight.deniedOnAG.
+		if r.deniedOnAG != "" && !slices.Contains(gosmo.ProbedAvailabilityGroupPermissions, r.deniedOnAG) {
+			t.Errorf("%q declares deniedOnAG %q, which is not in gosmo's "+
+				"ProbedAvailabilityGroupPermissions — the class-108 arm will never fire",
+				r.name, r.deniedOnAG)
+		}
+		if r.serverSecurable != "" && r.deniedOnServer == "" {
+			t.Errorf("%q declares a serverSecurable kind but no deniedOnServer permission, "+
+				"so the arm is never asked at all", r.name)
+		}
 		scope, list := "server", gosmo.ProbedServerPermissions
 		switch {
 		case r.membership:
@@ -157,9 +186,15 @@ type parsedRight struct {
 	// deniedOnPrincipal is read as a string rather than a flag: it names the
 	// class-4 permission, not the right's own.
 	deniedOnPrincipal string
-	inDB              string
-	serverRole        bool
-	alt               []string
+	// deniedOnServer and serverSecurable are read the same way, and the kind
+	// is read as its *identifier* rather than as a string: it is written
+	// gosmo.ServerSecurableLogin, not "LOGIN", so stringLit would fail on it.
+	deniedOnServer  string
+	serverSecurable string
+	deniedOnAG      string
+	inDB            string
+	serverRole      bool
+	alt             []string
 }
 
 // parseRequiredRights returns every `requiredRight{...}` literal in file.
@@ -211,6 +246,17 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 				r.object = ok && id.Name == "true"
 			case "deniedOnPrincipal":
 				r.deniedOnPrincipal = stringLit(t, kv.Value)
+			case "deniedOnServer":
+				r.deniedOnServer = stringLit(t, kv.Value)
+			case "deniedOnAG":
+				r.deniedOnAG = stringLit(t, kv.Value)
+			case "serverSecurable":
+				// A qualified identifier — gosmo.ServerSecurableLogin — so
+				// what is read back is the selector's name, which is enough
+				// for the "declared or not" checks above.
+				if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
+					r.serverSecurable = sel.Sel.Name
+				}
 			case "membership":
 				id, ok := kv.Value.(*ast.Ident)
 				r.membership = ok && id.Name == "true"

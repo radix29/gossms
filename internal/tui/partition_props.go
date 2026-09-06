@@ -18,7 +18,7 @@ import (
 // PARTITION SCHEME only names the next filegroup to use.
 
 // findPartitionFunction resolves a partition function by name. It exists
-// only to save the DatabaseByNameContext step at the four call sites; the
+// only to save the DatabaseByNameContext step at its three call sites; the
 // lookup itself is gosmo's, which matches the name in SQL and so under the
 // server's collation.
 func findPartitionFunction(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionFunction, error) {

@@ -631,6 +631,46 @@ func withDatabaseDenials(responses []fakeResponse, perms ...string) []fakeRespon
 // exists: a GRANT ALTER ON USER::x permits neither the rename nor the drop —
 // both need ALTER ANY USER at database scope — so gosmo's block selects DENY
 // rows alone. See gosmo.ProbedPrincipalPermissions.
+// withServerDenials is withPrincipalDenials at server scope: it appends the
+// "V:" rows gosmo's server-scope catalog block returns, one per securable, to
+// the *server* probe's answer rather than the database one.
+//
+// The key is ServerSecurableKey's, kind and all, because that is what the
+// probe builds and what DeniedOnServerSecurable looks up — a row filed under
+// the bare name reads back as no denial at all.
+func withServerDenials(responses []fakeResponse, kind gosmo.ServerSecurableKind, perm string, names ...string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_SRVROLEMEMBER" {
+			continue
+		}
+		for _, n := range names {
+			r.rows = append(r.rows, []driver.Value{"V:" + perm, gosmo.ServerSecurableKey(kind, n), int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
+// withAGAnswers appends the "G:" rows gosmo's availability-group block returns
+// to the server probe's answer — HAS_PERMS_BY_NAME answers, not catalog rows,
+// so a group must be listed as permitted as well as denied: the block is not
+// sparse, and a group with no row means "the probe did not run".
+func withAGAnswers(responses []fakeResponse, permitted, denied []string) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_SRVROLEMEMBER" {
+			continue
+		}
+		for _, n := range permitted {
+			r.rows = append(r.rows, []driver.Value{"G:ALTER", n, int64(1)})
+		}
+		for _, n := range denied {
+			r.rows = append(r.rows, []driver.Value{"G:ALTER", n, int64(0)})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
 func withPrincipalDenials(responses []fakeResponse, perm string, principals ...string) []fakeResponse {
 	for i, r := range responses {
 		if r.match != "IS_ROLEMEMBER" {

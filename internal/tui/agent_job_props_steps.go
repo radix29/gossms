@@ -143,8 +143,10 @@ type jobStepWritePlan struct {
 // "step N not found" or a successful delete of the wrong step. Adds run last
 // because msdb assigns a new step's number from how many steps remain.
 //
-// !editable is already implied by !changed(), but is stated again here because
-// this is the pass that would rewrite a step's subsystem if it stopped being.
+// editable() is already implied by changed(): the panel refuses to copy itself
+// back onto a step of another subsystem, so such a step never reports a change.
+// It is tested again anyway, because this is the pass that would rewrite that
+// step's subsystem if the panel ever stopped refusing.
 func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	var plan jobStepWritePlan
 	for _, e := range edits {

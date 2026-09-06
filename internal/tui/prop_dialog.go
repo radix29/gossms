@@ -144,8 +144,8 @@ func NewPropDialog(app *App) *PropDialog {
 // title is the window title, and headerLeft/headerRight the two ends of the
 // header line.
 //
-// The connection guard lives here rather than in each of the twenty-three entry
-// points that call this: one that forgets it shows a dialog whose every page
+// The connection guard lives here rather than in each of the many entry points
+// that call this: one that forgets it shows a dialog whose every page
 // then fails to load, one error per page, instead of the status line saying the
 // obvious thing.
 //

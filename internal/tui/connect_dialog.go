@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
@@ -56,6 +57,19 @@ type ConnectDialog struct {
 	focusIdx  int
 	focusable []focusable
 	btnFocus  int // 0=Connect 1=Cancel
+
+	// connecting is set from the moment Connect is pressed until the attempt
+	// resolves: the dialog stays open, every control but Cancel is inert, and
+	// a spinner runs on the button row. connectStarted is what the spinner
+	// reads its frame off, and connectAttempt closing both stops the ticker
+	// goroutine and marks the attempt abandoned — a callback whose channel is
+	// no longer d.connectAttempt belongs to a superseded or cancelled attempt
+	// and must not touch the dialog. db.Connect takes no context, so Cancel
+	// abandons an attempt in flight rather than aborting it; a connection that
+	// then succeeds still lands in Object Explorer.
+	connecting     bool
+	connectStarted time.Time
+	connectAttempt chan struct{}
 
 	// Server-field autocomplete: saved connections whose Server matches what is
 	// typed in fServer, listed beneath it once four characters are in — or
@@ -267,7 +281,10 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	d.DrawButtonsGated(s, []string{"Connect", "Cancel"}, d.btnFocus,
-		[]bool{!d.canConnect()})
+		[]bool{!d.canConnect() || d.connecting})
+	// After the buttons, never before: on a clamped rect DrawButtonsGated
+	// clears the whole button row, which would wipe the spinner.
+	d.drawConnecting(s, labelStyle)
 
 	// Drawn last, so neither the auth-method list nor the server-match list is
 	// painted over by the fields and buttons below them.
@@ -403,10 +420,106 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 	}
 }
 
+// connectSpinner is the busy indicator shown while a connection attempt is in
+// flight. Braille: one cell wide, so the "Connecting..." after it never moves.
+var connectSpinner = widgets.SpinnerBraille
+
+// drawConnecting paints the spinner and its label at the left end of the button
+// row, opposite the buttons themselves.
+func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
+	if !d.connecting {
+		return
+	}
+	x := d.InnerRect().X + 1
+	y := d.ButtonRowY()
+	connectSpinner.DrawSince(s, x, y, style, d.connectStarted)
+	core.DrawText(s, x+connectSpinner.Width()+1, y, style, "Connecting...")
+}
+
+// startConnect puts the dialog into its connecting state and dials. The dialog
+// stays up: it closes on success, and on failure returns to normal with the
+// fields as typed, so a wrong password is corrected in place rather than
+// retyped into a reopened dialog.
+func (d *ConnectDialog) startConnect(opts config.Connection) {
+	d.stopConnecting()
+	attempt := make(chan struct{})
+	d.connecting = true
+	d.connectStarted = time.Now()
+	d.connectAttempt = attempt
+	// Cancel is the only live control from here, so focus is moved onto it.
+	d.btnFocus = 1
+	d.matchOpen = false
+
+	d.app.safego("animating the connect dialog spinner", func() {
+		ticker := time.NewTicker(connectSpinner.Period)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-attempt:
+				return
+			case <-ticker.C:
+				// A bare wake, the way QueryPanel's elapsed timer does it:
+				// there is no result to post, only a frame to redraw.
+				d.app.wakeEventLoop()
+			}
+		}
+	})
+
+	d.app.connectServer(opts, func(err error) bool {
+		if d.connectAttempt != attempt {
+			// Cancelled, or superseded by a later attempt — this one no
+			// longer owns the dialog, and connectServer winds it back.
+			return false
+		}
+		d.stopConnecting()
+		if err == nil {
+			d.Hide()
+			return true
+		}
+		// Back onto Connect: startConnect moved the button focus to Cancel
+		// for the duration, and leaving it there would make the Enter that
+		// dismisses the error alert's successor keystroke close the dialog
+		// the failed attempt deliberately kept open.
+		d.btnFocus = 0
+		return true
+	})
+}
+
+// stopConnecting leaves the connecting state, stopping the spinner goroutine
+// and abandoning whatever attempt was in flight. Idempotent.
+func (d *ConnectDialog) stopConnecting() {
+	if d.connectAttempt != nil {
+		close(d.connectAttempt)
+		d.connectAttempt = nil
+	}
+	d.connecting = false
+}
+
+// Hide leaves the connecting state as it closes, so a dialog dismissed
+// mid-attempt doesn't reopen with a spinner running and its fields inert.
+func (d *ConnectDialog) Hide() {
+	d.stopConnecting()
+	d.ModalDialog.Hide()
+}
+
 // HandleKey routes keyboard events.
 func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 	if !d.Visible() {
 		return false
+	}
+
+	// While an attempt is in flight every control but Cancel is inert, so the
+	// fields can't be edited out from under the connection being made. Escape
+	// and Enter both reach Cancel, which is where focus already is; everything
+	// else is swallowed rather than passed on, so Tab can't walk into a
+	// disabled field.
+	if d.connecting {
+		switch ev.Key() {
+		case tcell.KeyEscape, tcell.KeyEnter:
+			d.btnFocus = 1
+			d.doButton()
+		}
+		return true
 	}
 
 	// While the autocomplete list is open, arrows navigate it and Enter/Escape
@@ -498,9 +611,10 @@ func (d *ConnectDialog) doButton() {
 				fmt.Sprintf("Port must be a number from 1 to 65535, not %q", strings.TrimSpace(d.fPort.Value())))
 			return
 		}
-		opts := d.currentOptions()
-		d.Hide()
-		d.app.connectServer(opts)
+		if d.connecting {
+			return
+		}
+		d.startConnect(d.currentOptions())
 	case 1: // Cancel
 		d.Hide()
 	}
@@ -547,6 +661,16 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 
 	if ev.Buttons() != tcell.Button1 {
 		return false
+	}
+
+	// While an attempt is in flight only Cancel answers a click — same gating
+	// as HandleKey, and ahead of every field hit-test below.
+	if d.connecting {
+		if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i == 1 {
+			d.btnFocus = 1
+			d.doButton()
+		}
+		return true
 	}
 
 	// The gesture belongs to whichever field claimed its press, so motion is

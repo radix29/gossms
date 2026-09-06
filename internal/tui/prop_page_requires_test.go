@@ -142,6 +142,17 @@ func TestAnObjectScopedPageNamesItsSecurable(t *testing.T) {
 				t.Errorf("%s requires %q on the object itself but names no object — use withRequiresOn", key, r.name)
 				break
 			}
+			// The three DENY arms are asked about a *name* and nothing else — a
+			// user, a role, a login, a server role, an endpoint — so a page
+			// that carries one of these rights on plain withRequires asks the
+			// question about "" and withholds nothing, silently. This is the
+			// failure TestServerScopedPagesAreGatedOnTheSecurableTheyEdit and
+			// TestMembershipPagesAreGatedOnThePrincipalTheyEdit pin for the
+			// pages that exist today; this catches the next one to arrive.
+			if (r.deniedOnPrincipal != "" || r.deniedOnServer != "" || r.deniedOnAG != "") && p.requiresObject == "" {
+				t.Errorf("%s requires %q with a DENY arm but names no securable — use withRequiresOn", key, r.name)
+				break
+			}
 		}
 	}
 }

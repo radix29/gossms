@@ -78,6 +78,37 @@ type requiredRight struct {
 	// r.schema discriminate the arms above.
 	deniedOnPrincipal string
 
+	// deniedOnServer names the *server*-scope permission whose explicit DENY
+	// withholds this right, or "" for a right no server-class DENY can reach,
+	// and serverSecurable says which kind of securable that DENY sits on.
+	// deniedOnPrincipal's server-scope twin, and read the same way: the right
+	// is the server-wide ALTER ANY LOGIN while the DENY that beats it sits on
+	// the login itself as plain ALTER.
+	//
+	// The kind is part of the declaration rather than inferred from the node,
+	// because objectDenial is handed a bare name and only gosmo's catalog read
+	// knows what that name is. It is also what keeps the arm from firing on
+	// the wrong family — a login and an endpoint of the same name are two
+	// securables, and the map keeps them apart.
+	deniedOnServer  string
+	serverSecurable gosmo.ServerSecurableKind
+
+	// deniedOnAG names the AVAILABILITY GROUP-scope (class 108) permission
+	// whose absence on the group withholds this right, or "" for a right no
+	// class-108 DENY can reach. deniedOnServer's sibling, asked of a different
+	// gosmo map for a reason that is SQL Server's: class 108's major_id is an
+	// internal id no supported view maps back to a name, so gosmo asks
+	// HAS_PERMS_BY_NAME per group instead of reading sys.server_permissions —
+	// see gosmo.ProbedAvailabilityGroupPermissions.
+	//
+	// The consequence here is that the answer is only read as a *denial* while
+	// the right beside it is held. HAS_PERMS_BY_NAME reads 0 both for a group
+	// carrying DENY ALTER and for a login holding nothing at this scope at
+	// all, and the second is already withheld by the server-wide right — where
+	// naming the group would replace "needs ALTER ANY AVAILABILITY GROUP" with
+	// a denial the user cannot act on.
+	deniedOnAG string
+
 	// alt are narrower permissions that also satisfy this one and are not
 	// named in the message. SQL Server 2022 split VIEW SERVER STATE into two
 	// halves, and a login holding either half can do the thing — but naming
@@ -96,15 +127,62 @@ var (
 	rightControlServer   = requiredRight{name: "CONTROL SERVER", role: "sysadmin"}
 	rightViewServerState = requiredRight{name: "VIEW SERVER STATE", role: "sysadmin",
 		alt: []string{"VIEW SERVER PERFORMANCE STATE", "VIEW SERVER SECURITY STATE"}}
-	rightAlterSettings      = requiredRight{name: "ALTER SETTINGS", role: "serveradmin"}
-	rightAlterAnyLogin      = requiredRight{name: "ALTER ANY LOGIN", role: "securityadmin"}
+	rightAlterSettings = requiredRight{name: "ALTER SETTINGS", role: "serveradmin"}
+	// The login's class-101 DENY is all-or-nothing, which is why one arm on
+	// the one right covers Login Properties, Rename and Delete alike: verified
+	// live on majors 13 and 17, DENY ALTER ON LOGIN::x withholds ALTER LOGIN —
+	// the rename and the password both — *and* DROP LOGIN, every refusal
+	// Msg 15151. The server role below repeats none of that; see
+	// rightAlterAnyServerRoleMembers.
+	rightAlterAnyLogin = requiredRight{name: "ALTER ANY LOGIN", role: "securityadmin",
+		deniedOnServer: "ALTER", serverSecurable: gosmo.ServerSecurableLogin}
+	// No deniedOnServer twin, and the asymmetry is SQL Server's rather than an
+	// omission — the database role's split at server scope: verified live on
+	// majors 13 and 17, ALTER SERVER ROLE ... WITH NAME and DROP SERVER ROLE
+	// check ALTER ANY SERVER ROLE at server scope and go through with
+	// DENY ALTER ON SERVER ROLE::r in place, while the same DENY refuses the
+	// membership edits. Declaring it here would withhold a rename and a drop
+	// the server allows. See docs/open-threads.md § Permission gating.
 	rightAlterAnyServerRole = requiredRight{name: "ALTER ANY SERVER ROLE", role: "securityadmin"}
+	// rightAlterAnyServerRoleMembers is the same right for the page that edits
+	// a server role's *membership*, where the class-101 DENY the comment above
+	// says withholds nothing does withhold: ALTER SERVER ROLE r ADD MEMBER is
+	// refused under DENY ALTER ON SERVER ROLE::r (Msg 15151), verified live on
+	// majors 13 and 17, while the rename and the drop beside it go through.
+	//
+	// The split is per action, not per object, and the two rights exist to
+	// carry it — rightAlterAnyDBRole/rightAlterAnyDBRoleMembers one scope up.
+	//
+	// Unlike the database scope, the *member* is not asked about. Adding a
+	// login carrying a class-101 DENY to an undenied server role goes through
+	// (majors 13 and 17, 2026-09-05) where adding a class-4-denied user to an
+	// undenied database role is refused — so there is no login-side twin of
+	// this right, and Login Properties > Server Roles declares the plain one.
+	rightAlterAnyServerRoleMembers = requiredRight{name: "ALTER ANY SERVER ROLE", role: "securityadmin",
+		deniedOnServer: "ALTER", serverSecurable: gosmo.ServerSecurableServerRole}
 	rightAlterAnyCredential = requiredRight{name: "ALTER ANY CREDENTIAL", role: "securityadmin"}
 	rightCreateAnyDatabase  = requiredRight{name: "CREATE ANY DATABASE", role: "dbcreator"}
 	rightAlterAnyDatabase   = requiredRight{name: "ALTER ANY DATABASE", role: "dbcreator"}
-	rightAlterAnyEndpoint   = requiredRight{name: "ALTER ANY ENDPOINT", role: "sysadmin"}
-	rightAlterAnyAudit      = requiredRight{name: "ALTER ANY SERVER AUDIT", role: "sysadmin"}
-	rightAlterAnyAG         = requiredRight{name: "ALTER ANY AVAILABILITY GROUP", role: "sysadmin"}
+	// The endpoint's class-105 DENY withholds ALTER ENDPOINT, and its refusal
+	// is Msg 6004 rather than the 15151 every class-101 one carries — verified
+	// live on majors 13 and 17. One arm on the one right: the folder's New
+	// Endpoint names no securable and so never reaches it.
+	rightAlterAnyEndpoint = requiredRight{name: "ALTER ANY ENDPOINT", role: "sysadmin",
+		deniedOnServer: "ALTER", serverSecurable: gosmo.ServerSecurableEndpoint}
+	rightAlterAnyAudit = requiredRight{name: "ALTER ANY SERVER AUDIT", role: "sysadmin"}
+	// The availability group's class-108 DENY is all-or-nothing, the login's
+	// shape rather than the server role's split: probed live on the two-node
+	// cluster 2026-09-05, DENY ALTER ON AVAILABILITY GROUP::g withholds every
+	// ALTER AVAILABILITY GROUP there is — the options SET, ADD/REMOVE
+	// DATABASE, MODIFY REPLICA and FAILOVER — each Msg 15151, with the
+	// server-wide right reading 1 throughout.
+	//
+	// It leaves the ALTER DATABASE ... SET HADR family alone, which is checked
+	// against the database instead: Resume and Join both went through with the
+	// DENY in place. Suspend/Resume, Join and Unjoin therefore stay on plain
+	// gate — see alwayson_menu.go.
+	rightAlterAnyAG = requiredRight{name: "ALTER ANY AVAILABILITY GROUP", role: "sysadmin",
+		deniedOnAG: "ALTER"}
 	// Held for a feature that does not exist yet: nothing in the application
 	// creates or alters a linked server, so nothing gates on this. It is
 	// declared here rather than at the future call site because
@@ -401,6 +479,19 @@ type denialSite struct {
 	schema    string // the object's schema
 	database  string // the database the object lives in
 	principal string // the database user the action is aimed at
+
+	// serverSecurable is the login, server role or endpoint the action is
+	// aimed at, and serverKind which of the three it is. The kind is carried
+	// because the sentence has to name it: "denied on login x" and "denied on
+	// endpoint x" are different securables, and only the right that asked
+	// knows which was meant.
+	serverSecurable string
+	serverKind      gosmo.ServerSecurableKind
+
+	// availabilityGroup is the group the action is aimed at. Kept apart from
+	// serverSecurable because it is a different gosmo map with a different
+	// reading — see requiredRight.deniedOnAG.
+	availabilityGroup string
 }
 
 // objectDenial reports the right whose DENY withholds an action, the securable
@@ -464,7 +555,45 @@ type denialSite struct {
 // the catalog can say a DENY row exists — the same distinction
 // ExplicitSchemaPermissions exists for, one scope wider.
 func objectDenial(server *gosmo.Capabilities, dbCaps func(string) *gosmo.DatabaseCapabilities, dbName, schema, object string, rights ...requiredRight) (requiredRight, denialSite, bool) {
-	if dbName == "" || server.InServerRole("sysadmin") {
+	if server.InServerRole("sysadmin") {
+		return requiredRight{}, denialSite{}, false
+	}
+	// The server-scope arm comes before the dbName guard because it is the one
+	// securable family that lives outside a database entirely: a login, a
+	// server role and an endpoint all carry an empty DBName, and every arm
+	// below would answer nothing about them. It is asked only of a right that
+	// declares deniedOnServer, so a node of some other family sharing a denied
+	// login's name is not withheld — the way deniedOnPrincipal discriminates
+	// the class-4 arm.
+	if object != "" {
+		for _, r := range rights {
+			if r.deniedOnServer == "" {
+				continue
+			}
+			if server.DeniedOnServerSecurable(r.serverSecurable, object, r.deniedOnServer) {
+				return r, denialSite{serverSecurable: object, serverKind: r.serverSecurable}, true
+			}
+		}
+	}
+	// The availability-group arm sits beside the server one and above the
+	// dbName guard for the same reason: a group, a replica and a listener all
+	// carry an empty DBName.
+	//
+	// server.Has, not Allows: the group answer is a HAS_PERMS_BY_NAME 0, which
+	// means "denied on this group" only while the server-wide right is held.
+	// Without that guard every login lacking ALTER ANY AVAILABILITY GROUP
+	// would be told the group is denied instead of which right to ask for.
+	if object != "" {
+		for _, r := range rights {
+			if r.deniedOnAG == "" || !server.Has(r.name) {
+				continue
+			}
+			if !server.PermitsOnAvailabilityGroup(object, r.deniedOnAG) {
+				return r, denialSite{availabilityGroup: object}, true
+			}
+		}
+	}
+	if dbName == "" {
 		return requiredRight{}, denialSite{}, false
 	}
 	var caps *gosmo.DatabaseCapabilities
@@ -537,6 +666,14 @@ func deniedOnObject(sc *db.ServerConn, dbName, schema, object string, rights ...
 	return objectDenial(sc.Capabilities(), sc.CachedDatabaseCapabilities, dbName, schema, object, rights...)
 }
 
+// serverSecurableWord renders a server securable kind as the sentence says it.
+// gosmo spells the kinds the way SQL Server's DENY statement does — "LOGIN",
+// "SERVER ROLE", "ENDPOINT" — and shouting them mid-sentence reads as a
+// keyword rather than as the thing the user clicked.
+func serverSecurableWord(k gosmo.ServerSecurableKind) string {
+	return strings.ToLower(string(k))
+}
+
 // deniedText is the sentence for an action withheld by a DENY on the object
 // rather than by a missing right — requiresText's counterpart. It names no
 // role and asks for nothing, because there is nothing to ask for: the login
@@ -561,6 +698,18 @@ func deniedText(r requiredRight, at denialSite) string {
 		// name and cannot tell the two apart — only the catalog can — so it
 		// says the word that is true of both.
 		return r.deniedOnPrincipal + " is denied on principal " + at.principal + "."
+	case at.serverSecurable != "":
+		// r.deniedOnServer, not r.name, for at.principal's reason: the right
+		// is the server-wide ALTER ANY LOGIN and the DENY that beats it is
+		// plain ALTER on the securable.
+		//
+		// The kind *is* named here, where the class-4 sentence says the
+		// vaguer "principal": the right declared which securable it asked
+		// about, so the sentence can say it — and it has to, since "denied on
+		// x" would not tell a login from the endpoint beside it.
+		return r.deniedOnServer + " is denied on " + serverSecurableWord(at.serverKind) + " " + at.serverSecurable + "."
+	case at.availabilityGroup != "":
+		return r.deniedOnAG + " is denied on availability group " + at.availabilityGroup + "."
 	}
 	return r.name + " is denied on this object."
 }
@@ -597,6 +746,10 @@ func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object st
 				item.Note = r.name + " denied on database " + at.database
 			case at.principal != "":
 				item.Note = r.deniedOnPrincipal + " denied on principal " + at.principal
+			case at.serverSecurable != "":
+				item.Note = r.deniedOnServer + " denied on " + serverSecurableWord(at.serverKind) + " " + at.serverSecurable
+			case at.availabilityGroup != "":
+				item.Note = r.deniedOnAG + " denied on availability group " + at.availabilityGroup
 			default:
 				item.Note = r.name + " denied on this object"
 			}

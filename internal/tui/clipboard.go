@@ -15,10 +15,11 @@ import (
 type clipboardTarget = core.ClipboardTarget
 
 // activeClipboardTarget resolves which widget Copy/Cut/Paste acts on now:
-// whichever field is focused in the frontmost open dialog, the active query
-// panel's editor (or its results grid while that grid's "Show Value" viewer is
-// open), or a read-only panel's grid while its own viewer is open. nil when
-// nothing focused can participate.
+// whichever field is focused in the frontmost open dialog; the active query
+// panel's editor, or whichever of its results views has the keyboard (or its
+// results grid while that grid's "Show Value" viewer is open); the Detail
+// Browser's grid while its own viewer is open; or the Always On dashboard's
+// focused grid. nil when nothing focused can participate.
 func (a *App) activeClipboardTarget() clipboardTarget {
 	// An open dialog owns the clipboard outright: its focused field, or nothing.
 	// Never fall past it to a panel underneath — a fall-through lets Ctrl+X with

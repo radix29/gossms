@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // filegroupsPageResponses scripts three filegroups — PRIMARY (default, one
@@ -16,14 +18,14 @@ import (
 // by filegroup name, and folds them into groups.
 func filegroupsPageResponses() []fakeResponse {
 	fg := func(name string, isDefault, readOnly bool, file string, primary bool) []driver.Value {
-		return []driver.Value{name, isDefault, readOnly, file, `C:\data\` + file + ".ndf",
+		return []driver.Value{name, gosmo.RowsFileGroup, isDefault, readOnly, file, `C:\data\` + file + ".ndf",
 			int64(204800), int64(-1), int64(8192), false, primary}
 	}
 	return []fakeResponse{
 		{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{{
 			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(),
 		}}},
-		{match: "fg.name, fg.is_default, fg.is_read_only", cols: 10, rows: [][]driver.Value{
+		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 11, rows: [][]driver.Value{
 			fg("ARCHIVE", false, true, "appdb_archive", false),
 			fg("PRIMARY", true, false, "appdb", true),
 			fg("STAGING", false, false, "appdb_staging", false),

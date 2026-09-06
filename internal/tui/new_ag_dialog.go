@@ -14,7 +14,7 @@ import (
 // The pages are in new_ag_pages.go; this file holds the prefetch, the shared
 // state both pages edit, and the create pipeline.
 //
-// # Creating a group is four statements on three instances
+// # Creating a group is one statement here and two on every secondary
 //
 // CREATE AVAILABILITY GROUP is only the first. Each secondary then has to run
 // ALTER AVAILABILITY GROUP ... JOIN against itself — the primary cannot join

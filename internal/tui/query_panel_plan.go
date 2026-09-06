@@ -92,7 +92,7 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 // clears p.planView, so a previous run's plan can't stay browsable next to
 // an unrelated new failure's Messages.
 func (p *QueryPanel) setEstimatedPlan(res *query.Result, cancelled bool) {
-	p.result = nil // mutual exclusion — see setResult's p.planView = nil
+	p.result = nil // Estimated mode has no result; setResultPlan clears the other way
 
 	fetchFailed := res.HasErrors()
 	if !fetchFailed && len(res.PlanXML) == 0 {

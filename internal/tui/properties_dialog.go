@@ -55,9 +55,11 @@ func (d *PropertiesDialog) ShowGenericPropertiesSized(title string, rows []Prope
 }
 
 // ShowDependencies loads and displays what schema.name depends on and what
-// depends on it — SSMS's Object Dependencies dialog — asynchronously and
-// seq-guarded the same way ShowDatabaseProperties is, since both
-// Dependencies and Dependents are real network round trips.
+// depends on it — SSMS's Object Dependencies dialog. Both Dependencies and
+// Dependents are real network round trips, so the load is asynchronous and
+// guarded by d.seq: this dialog is a single shared instance, and a result
+// landing after it has been closed or repurposed must not overwrite what it is
+// showing now.
 func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName, schema, name string) {
 	if !app.isConnected(sc) {
 		d.ShowProperties("Object Dependencies", []PropertyRow{

@@ -461,10 +461,14 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			refresh,
 		}
 	case NodeEndpoint:
+		// gateOn, not gate: ALTER ENDPOINT ... STATE is what these three
+		// write, and DENY ALTER ON ENDPOINT::e refuses it with Msg 6004 over
+		// a server-wide ALTER ANY ENDPOINT. The arm is only reached by a call
+		// that names the endpoint — see rightAlterAnyEndpoint.
 		stateItem := func(label string, state gosmo.EndpointState) controls.MenuItem {
-			return gate(controls.MenuItem{Label: label,
+			return gateOn(controls.MenuItem{Label: label,
 				Action: func() { a.setEndpointState(sc, node, state) }},
-				sc, "", rightAlterAnyEndpoint)
+				sc, "", "", node.data.Name, rightAlterAnyEndpoint)
 		}
 		return []controls.MenuItem{
 			newQuery,

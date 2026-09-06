@@ -1,39 +1,30 @@
 # Open threads
 
-Work that was found, decided, or deferred but not finished. Pruned 2026-09-04:
-everything closed, and the history of how it was closed, was deleted.
-
-Keep this file current: close an item by deleting it, and add one whenever
-something is knowingly left undone. An open item recorded only in a session
-note is invisible by the next session.
-
-**This file holds only open work and settled decisions.** Fixed items do not
-accumulate here — delete an item once it is done, and delete the account of how
-it was verified with it. The "do not re-raise" sections are the deliberate
-exception: they are not history, they are what stops a settled question being
-reopened.
+Open work and settled decisions — nothing else. Close an item by deleting it;
+add one whenever something is knowingly left undone. The "do not re-raise"
+sections are the exception: they are not history, they are what stops a settled
+question being reopened.
 
 ## Version support: the policy, and how it is held
 
-The target is **SQL Server 2016 SP1 and later**. The floor is SP1 rather than
-RTM because `procedure.go`, `scripter.go` and gossms's
-`internal/activity/block.go` emit `CREATE OR ALTER`, which SP1 introduced.
+The target is **SQL Server 2016 SP1 and later**. SP1 rather than RTM because
+`procedure.go`, `scripter.go` and gossms's `internal/activity/block.go` emit
+`CREATE OR ALTER`.
 
 Three real instances exist — majors **13** (`win10cli\SQL2016`, SP3), **14**
-(`win10cli\SQL2017`) and **17** — so the floor itself can be exercised. There
-is no major **15 or 16** and no way to run one here (no Docker, 3 GB RAM), so
-those two stay argued from the catalog documentation and pinned by tests.
+(`win10cli\SQL2017`) and **17**. There is no major **15 or 16** and no way to
+run one here (no Docker, 3 GB RAM), so those two are argued from the catalog
+documentation and pinned by tests.
 
 **The standing check is `TestLiveVersionSweep`** (`~/go/gosmo/live_versionsweep_test.go`):
-it calls every read gosmo exposes against the connected instance and reports
-what the server rejects. Run it on the *oldest* instance available after any
-query change. A query naming a column the instance does not have fails the
-whole read, and nothing in `go test ./...` says so — which is how nine such
-defects reached a shipped state before the first 2016/2017 run found them.
+it calls every read gosmo exposes and reports what the server rejects. Run it
+on the *oldest* instance available after any query change. A query naming a
+column the instance lacks fails the whole read, and `go test ./...` says
+nothing — which is how nine such defects shipped before the first 2016/2017 run.
 
-The nine are **closed**, verified 2026-09-04 by a sweep on all three instances:
-219 calls / 0 failures on 13 and 14, 233 / 0 on 17. The gates that closed them,
-recorded because the next audit will otherwise re-derive them from scratch:
+The nine are **closed**, verified 2026-09-04 on all three instances: 219 calls
+/ 0 failures on 13 and 14, 233 / 0 on 17. The gates, recorded because the next
+audit will otherwise re-derive them:
 
 | Was | Held by |
 |---|---|
@@ -43,202 +34,121 @@ recorded because the next audit will otherwise re-derive them from scratch:
 | `Table.Detail`'s `ledger_type_desc` (2022), which killed **Table Properties > General** on every table | `table.go`, `colSince(…, SQLServer2022, …)` |
 | `Statistic.Header`: DBCC returns 10 columns before 2019, 11 after | `statistics.go` binds **by column name**, with the failure named in the comment |
 
-Two reads are refused outright on 13 rather than gated per column, which is the
-gate working and not a defect: `Database.QueryStoreWaitCategoriesContext` and
-`Database.QueryStoreWaitingQueriesContext` return `ErrUnsupportedVersion`
-("requires SQL Server 2017 or later"). The sweep counts those separately.
+Two reads are refused outright on 13 rather than gated per column — the gate
+working, not a defect: `Database.QueryStoreWaitCategoriesContext` and
+`Database.QueryStoreWaitingQueriesContext` return `ErrUnsupportedVersion`. The
+sweep counts those separately.
 
-A sweep run of 0 failures is not proof on its own — it passes just as happily
-if a read was never reached. When re-verifying, confirm the reads in question
-were actually *called*: the sweep's `call` helper takes a label, and logging it
-lists every method and object swept. That is how the five rows above were
-checked on 13.
-
-## Unbuilt features README already promises
-
-- **Reports** — server-level and database-level (top tables, disk usage). No
-  entry point exists yet.
+A sweep of 0 failures is not proof on its own — it passes just as happily if a
+read was never reached. When re-verifying, confirm the reads were actually
+*called*: the sweep's `call` helper takes a label, and logging it lists every
+method swept.
 
 ## Deferred scope (repeatedly, deliberately)
 
 - **Changing a login's authentication kind in Login Properties.** New Login
-  creates all five kinds as of `v0.0.9` (SQL, Windows, Entra, certificate- and
-  asymmetric-key-mapped), and the Connect dialog offers the Windows and Entra
-  connection methods, but Login Properties still shows the kind as a static
-  row: `ALTER LOGIN` cannot change it, so this would be a drop-and-recreate,
-  which loses the SID and orphans every database user mapped to it. Not a
-  gosmo gap — a deliberate refusal. This is the standing answer to "why isn't
-  this editable?".
+  creates all five kinds (SQL, Windows, Entra, certificate- and
+  asymmetric-key-mapped) and the Connect dialog offers the Windows and Entra
+  methods, but Login Properties shows the kind as a static row: `ALTER LOGIN`
+  cannot change it, so this would be a drop-and-recreate, losing the SID and
+  orphaning every database user mapped to it. A deliberate refusal, not a gosmo
+  gap. This is the standing answer to "why isn't this editable?".
 - **No principal-browse picker.** A Windows login is typed as `DOMAIN\name`;
-  there is no directory browse, and none is planned.
+  there is no directory browse.
 - **Entra logins stay unverifiable here.** `CREATE LOGIN ... FROM EXTERNAL
-  PROVIDER WITH OBJECT_ID` is emitted and its grammar is confirmed on a real
+  PROVIDER WITH OBJECT_ID` is emitted and its grammar confirmed on a real
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail
   with the *same* Msg 37525, so the parser accepted both. Whether a login is
   actually created needs an Entra-joined instance.
 
-## Comment drift: the semantic half is unfinished
+## Permission gating: what is settled — do not re-raise
 
-A mechanical comment-drift survey of all 605 `.go` files found and fixed the
-mechanical classes — stale doc-comment names, references to identifiers that no
-longer exist, doc-vs-signature mismatches, wrong numeric claims. Drift whose
-*prose* misdescribes the logic without naming anything stale surfaces to no
-mechanical detector; only reading each file against its code finds it.
+**Every securable class gossms can reach is gated, and the work is closed** —
+classes 0, 1, 3 and 4 on 2026-09-04; 101, 105 and 108 on 2026-09-05. What is
+kept is the live behaviour each gate rests on; every row is a *wrong* gate if
+assumed the other way round.
 
-**What is left is the per-file semantic read of 187 files of
-`internal/tui/**`.** Read so far: all of `internal/tuikit/**`, the six small
-packages (`internal/config`, `internal/fileutil`, `internal/db`,
-`internal/query`, `internal/showplan`, `internal/activity`), and in
-`internal/tui` only `app.go`, `app_events.go`, `app_explorer_data.go`,
-`app_panel_actions.go`, `activity_monitor.go`, `detail_browser.go`,
-`explorer_object_ops.go`, `log_viewer.go`, `new_endpoint_dialog.go`,
-`object_explorer.go`, `permission_gate.go`, `prop_grid_helpers.go`,
-`query_store_panel.go`, `tree_node.go` and the three subpackage `doc.go`s.
+### The behaviour table, probed live
 
-The recurring shapes, worth checking first in any later batch: a doc naming the
-wrong caller after a helper was extracted; a package `doc.go` whose file list or
-dependency claim predates a split; a count of anything (arguments, closures,
-dialogs, menu items — nearly every one found was wrong); a claim about *which*
-types implement an interface; and an inverted sentence that reads fluently
-either way.
+Majors 13 and 17 for the server classes, 13, 14 and 17 for the database ones,
+and the two-node Pacemaker cluster for class 108 — win10cli has no HADR.
+Identical on every major measured, so a later difference is a behaviour change,
+not a version gap.
 
-**Explicitly out of scope, and not to be re-proposed**: the long comment blocks
-`CLAUDE.md` § Coding conventions protects, and the failure-naming comments in
-`query_store_panel.go`, `prop_grid_helpers.go` and similar. Each stops a
-regression a plausible simplification would reintroduce.
+| DENY ALTER on | withholds | does **not** withhold |
+|---|---|---|
+| `USER::u` (4) | `ALTER USER ... WITH NAME`, `DROP USER`, `ALTER ROLE ... ADD MEMBER u` | — |
+| `ROLE::r` (4) | `ALTER ROLE r ADD/DROP MEMBER` | rename (`WITH NAME`), `DROP ROLE` |
+| `LOGIN::x` (101) | `ALTER LOGIN` (rename, password), `DROP LOGIN` | being *added* to a server role |
+| `SERVER ROLE::r` (101) | `ALTER SERVER ROLE ... ADD/DROP MEMBER` | rename (`WITH NAME`), `DROP SERVER ROLE` |
+| `ENDPOINT::e` (105) | `ALTER ENDPOINT` | — |
+| `AVAILABILITY GROUP::g` (108) | every `ALTER AVAILABILITY GROUP` — options `SET`, `ADD`/`REMOVE DATABASE`, `MODIFY REPLICA`, `FAILOVER` | `ALTER DATABASE ... SET HADR` (suspend, resume, join) |
 
-Not a comment fix, and left as is: `editor_search.go`'s `ensureColumnVisible`
-duplicates `ensureCursorVisible`'s horizontal half (`selectMatch` calls both);
-harmless, kept, its comment says what it does rather than claiming a reason that
-was never true.
+Every refusal is Msg 15151 except the endpoint's, which is **Msg 6004**.
+`HAS_PERMS_BY_NAME` reads 0 for the denied `ALTER` in every row, including the
+ones the server goes on to allow — so the arm is asked **per action, not per
+object**, which is what the paired rights (`rightAlterAnyDBRole` /
+`rightAlterAnyDBRoleMembers`, `rightAlterAnyServerRole` /
+`rightAlterAnyServerRoleMembers`) carry.
 
-## Known-wrong wording, unfixed
+**Membership checks the member too at database scope and *not* at server
+scope** — measured twice, reproduced outside the test, 2026-09-05. Adding a
+class-4-denied *user* to an undenied database role is refused; adding a
+class-101-denied *login* to an undenied server role goes through. So Database
+User Properties > Membership carries the arm and Login Properties > Server
+Roles deliberately does not (`TestLoginServerRolesDeclaresNoServerDenialArm`).
 
-- **SQL Server names the constraint blocking a DROP COLUMN, and gossms's
-  warning still says it will not.** Found by gosmo's
-  `TestLiveDropColumnAndTransferObject`, whose assertion claims the refusal does
-  not name the blocker. Majors 14 and 17 both answer `The object
-  'DF_Orders_flagged' is dependent on column 'flagged'. ALTER TABLE DROP COLUMN
-  flagged failed because one or more objects access this column.` (two server
-  messages, concatenated by the driver), so the assertion was wrong when
-  written. Nothing is broken — the drop is still refused and gosmo passes the
-  text through — but gossms's pre-drop confirmation describes the *classes* of
-  blocker on the premise that the server names none, and could name the blocker
-  instead. Two separate changes: re-aim the gosmo assertion rather than deleting
-  it (that the dependency refusal arrives is still worth pinning), and reword
-  the gossms confirmation.
+**There is no class 110.** Logins and server roles are both class **101
+SERVER_PRINCIPAL**, told apart by the *principal's* `type_desc`
+(`SQL_LOGIN`/`WINDOWS_LOGIN` vs `SERVER_ROLE`), as class 4 tells a user from a
+database role. A design probing a separate class 110 gates nothing.
 
-## Permission gating: what remains open
+**Class 108 cannot be read from the catalog at all.** `sys.server_permissions`
+records the DENY, but its `major_id` is an internal availability-group id that
+**no supported view maps back to a name**. So gosmo asks `HAS_PERMS_BY_NAME`
+once per group (`ProbedAvailabilityGroupPermissions`) — affordable at single
+digits of groups where there are hundreds of logins. The consequence in gossms:
+the answer is read as a *denial* only while the server-wide `ALTER ANY
+AVAILABILITY GROUP` is held. A 0 otherwise means "holds nothing here", and
+naming the group would replace a note the user can act on with one they cannot
+(`TestAGroupIsNotDeniedWhenTheWideRightIsMissing`).
 
-- **Classes 0, 1, 3 and 4 are done; the residue is the server classes.**
-  The database-scope (class 0) DENY beneath a narrower object- or schema-scope
-  grant was closed 2026-09-04 — `objectDenial` gained a fourth arm asking gosmo's
-  `DeniedOnDatabase`, which reads explicit DENY rows from the catalog because
-  `HAS_PERMS_BY_NAME`'s 0 cannot tell "denied" from "never granted". What is
-  still invisible, enumerated from `objectOps` and the `withRequires` calls
-  rather than guessed:
-  - ~~**Class 4, DATABASE_PRINCIPAL**~~ — **closed 2026-09-04.** gosmo's
-    `explicitPrincipalCapabilityQuery` reads class-4 DENY rows into
-    `ExplicitPrincipalPermissions`, and `objectDenial` gained a fifth arm
-    asking `DeniedOnPrincipal` for any right declaring `deniedOnPrincipal`.
-    Two live results shaped it, identical on majors 13, 14 and 17 and both
-    worth not rediscovering: a class-4 DENY on a **database role** withholds
-    nothing (`DROP ROLE` and `ALTER ROLE ... WITH NAME` check `ALTER ANY ROLE`
-    at database scope and go through with the DENY in place, while
-    `HAS_PERMS_BY_NAME` reports 0 for `ALTER` on the role), so the arm is asked
-    for users only; and `GRANT ALTER ON USER::x` permits *nothing*, so unlike
-    object and schema scope there is no grant direction at this class and the
-    block reads DENY rows alone.
-  - **Classes 101 SERVER_PRINCIPAL and 105 ENDPOINT (and 108 AVAILABILITY
-    GROUP)** — the only half still open, and here the gap is wider than a
-    missing arm: `gosmo.Capabilities` carries no explicit-permission map at
-    all, `sys.server_permissions` is never read, so *every* server-class DENY
-    is invisible. One new probe block covers them.
+`ALTER AUTHORIZATION` is not evidence either way: it was refused on an
+*undenied* role at both scopes, because changing an owner needs more than
+`ALTER ANY` (CONTROL on the role, plus IMPERSONATE on the new owner).
 
-    **There is no class 110.** Logins and server roles are both class **101
-    SERVER_PRINCIPAL** in `sys.server_permissions`; the two are told apart by
-    the *principal's* `type_desc` (`SQL_LOGIN`/`WINDOWS_LOGIN` vs
-    `SERVER_ROLE`), exactly as class 4 tells a user from a database role. A
-    design that probes a separate class 110 finds nothing and gates nothing.
+### Where the per-row answers are deliberately not stated
 
-    **Probed live 2026-09-04** on win10cli (major 17) and `win10cli\SQL2016`
-    (major 13, gosmo's floor), actor holding `ALTER ANY LOGIN` +
-    `ALTER ANY SERVER ROLE` + `ALTER ANY ENDPOINT` and one DENY per target.
-    Identical on both majors; every refusal is Msg 15151 except the endpoint's,
-    which is Msg 6004:
+Three pages list securables whose permissibility differs per row, and one
+page-level banner cannot say that; each declares nothing rather than a banner
+wrong for some rows: Login Properties > **User Mapping** (writes need `ALTER
+ANY USER` in each mapped database), Login Properties > **Server Roles** (a DENY
+on the role, not on this login), and Database User Properties > Membership's
+per-role half.
 
-    | DENY ALTER on | withholds | does **not** withhold |
-    |---|---|---|
-    | `LOGIN::x` (101) | `ALTER LOGIN` (rename, password), `DROP LOGIN` | — |
-    | `SERVER ROLE::r` (101) | `ALTER SERVER ROLE ... ADD/DROP MEMBER` | rename (`WITH NAME`), `DROP SERVER ROLE` |
-    | `ENDPOINT::e` (105) | `ALTER ENDPOINT` | — |
+`Server Role Properties > Owned Roles` also declares no arm: `ALTER
+AUTHORIZATION` is refused on an undenied role too, so the DENY is not what
+withholds it.
 
-    So a server role repeats the database role's split rather than the login's
-    all-or-nothing: **the gate must not withhold a server role's rename or
-    drop, and must withhold its membership edits.** `HAS_PERMS_BY_NAME` reads 0
-    for the denied `ALTER` in every one of these rows, including the two the
-    server goes on to allow — which is why the arm has to be asked per action,
-    not per object.
+### The rest, unchanged
 
-    **Membership checks ALTER on the *member* too**, at both scopes: adding a
-    login denied `ALTER` to a role that is not denied is refused (and the same
-    for a database user). A membership gate that asks only about the role is
-    half a gate.
-
-    `ALTER AUTHORIZATION` proved nothing here and is not evidence either way:
-    it was refused on an *undenied* role at both scopes, because changing an
-    owner needs more than `ALTER ANY` (CONTROL on the role, plus IMPERSONATE on
-    the new owner). Class 108 AVAILABILITY GROUP is still unprobed — win10cli
-    has no HADR, so it needs the AAG cluster.
-
-  - ~~**The class-4 note above is too broad, and this is a live gap in shipped
-    code.**~~ — **closed 2026-09-04.** "A class-4 DENY on a database role
-    withholds nothing" held for `DROP ROLE` and `ALTER ROLE ... WITH NAME`
-    only — the two writes that were probed. `ALTER ROLE r ADD MEMBER u` under `DENY ALTER ON ROLE::r` is
-    **refused** (Msg 15151, majors 13 and 17), and `deniedOnPrincipal` is asked
-    for users only, so Database Role Properties > Members and Database User
-    Properties > Membership are offered, and editable, to a principal the
-    server will refuse.
-
-    Fixed by splitting the right: `rightAlterAnyDBRoleMembers` is
-    `rightAlterAnyDBRole` plus `deniedOnPrincipal`, and the two membership pages
-    moved to `withRequiresOn` so the arm is asked about the principal the page
-    edits — the role for Database Role Properties > Members, the user for
-    Database User Properties > Membership, since membership checks ALTER on the
-    member too. The per-role half of that second page (which of the listed roles
-    the user may be added to) stays ungated for the reason Login Properties >
-    User Mapping declares nothing: it is a different answer per row, and one
-    page-level banner cannot state it. The denial sentence now reads "denied on
-    principal x" rather than "on user x", because the gate is handed a name and
-    only the catalog knows which kind it is.
-
-    Verified end to end against win10cli, not only in tests: a login holding
-    ALTER ANY ROLE with `DENY ALTER ON ROLE::gate_role` sees that role's Members
-    page read-only under "ALTER is denied on principal gate_role", its General
-    page editable, and an undenied role's Members page fully editable. The
-    matching user half (Database User Properties > Membership) is pinned by
-    `TestMembershipPagesAreGatedOnThePrincipalTheyEdit` and rides the same arm
-    that was already live-verified for a user's General page; it was not driven
-    in the UI.
-  No other class is reachable: gossms's `NodeType` list has no certificate,
-  assembly, symmetric/asymmetric key, fulltext catalog, XML schema collection or
-  Service Broker node, and column master/encryption keys, partition functions
-  and partition schemes have no securable class of their own.
-- **The column path is dormant in production, and that is settled — do not
-  re-raise.** `ProbedObjectPermissions` is `ALTER`, which is not
-  column-grantable, so `ColumnPermissions` is empty on every real connection
-  and `DeniedOnAnyColumn` never withholds anything. Adding `SELECT` would not
-  change that on its own: `objectDenial` asks the column question only for the
-  rights an action lists, and the only object-scoped right gossms declares is
-  `rightAlterOnObject`. Firing the path needs a gossms *consumer* — an action
-  gated on `SELECT` at object scope — and the only candidate is Select Top 1000
-  Rows, which hands the user generated text in a query panel rather than
-  performing the read. The machinery stays, live T-SQL-verified, for the first
-  action that genuinely reads an object's data. Two facts for whoever picks it
-  up: `SELECT` in the probe list brings public's catalog-view grants back into
-  `ObjectPermissions` (232 rows on HealthClinic) and they must **not** be
-  filtered out by `is_ms_shipped`, because those grants are real and a system
-  view would otherwise be withheld from a login that can read it; and
+- **No other class is reachable.** gossms's `NodeType` list has no certificate,
+  assembly, symmetric/asymmetric key, fulltext catalog, XML schema collection
+  or Service Broker node, and column master/encryption keys, partition
+  functions and schemes have no securable class of their own.
+- **The column path is dormant in production — do not re-raise.**
+  `ProbedObjectPermissions` is `ALTER`, which is not column-grantable, so
+  `ColumnPermissions` is empty on every real connection and `DeniedOnAnyColumn`
+  never withholds anything. Adding `SELECT` would not change that:
+  `objectDenial` asks the column question only for the rights an action lists,
+  and the only object-scoped right gossms declares is `rightAlterOnObject`.
+  Firing the path needs a gossms *consumer* — an action gated on `SELECT` at
+  object scope — and the only candidate, Select Top 1000 Rows, hands the user
+  generated text rather than performing the read. The machinery stays, live
+  T-SQL-verified. Two facts for whoever picks it up: `SELECT` in the probe list
+  brings public's catalog-view grants back into `ObjectPermissions` (232 rows
+  on HealthClinic) and they must **not** be filtered by `is_ms_shipped`, or a
+  system view is withheld from a login that can read it; and
   `permission_gate_names_test.go` checks an object-scoped right against
   `ProbedDatabasePermissions`, not `ProbedObjectPermissions`, so a new one
   would gate nothing silently.
@@ -251,122 +161,128 @@ Three facts the object-scope gate rests on, each a wrong gate if assumed the
 other way: **db_owner is not exempt** from an object DENY (it reads
 `HAS_PERMS_BY_NAME` 0 on the denied table) but **sysadmin is**, and the probe's
 principal set includes `public`, so a DENY to public is recorded for a sysadmin
-whose write the server still allows — hence the explicit sysadmin bypass. And
-**ownership needs no exception**: SQL Server refuses a DENY aimed at the owner
-of a securable, and `ALTER AUTHORIZATION` *deletes* an existing DENY row as it
-transfers ownership. Schema scope needs its own catalog read
+whose write the server still allows — hence the explicit sysadmin bypass.
+**Ownership needs no exception**: SQL Server refuses a DENY aimed at a
+securable's owner, and `ALTER AUTHORIZATION` *deletes* an existing DENY row as
+it transfers ownership. Schema scope needs its own catalog read
 (`explicitSchemaCapabilityQuery`, `E:` rows) because `HAS_PERMS_BY_NAME`
-returns 0 for a schema permission never granted exactly as it does for one
-explicitly denied, and withholding on that would empty the menus of every login
-working through a database-wide grant.
+returns 0 for a schema permission never granted exactly as for one explicitly
+denied, and withholding on that would empty the menus of every login working
+through a database-wide grant.
 
 ## gosmo: deliberate API decisions
 
-- **No `Drop*` write method carries `IF EXISTS`, and that is the decision, not
-  an omission.** A review found the family split down the middle: dropping a
-  view that was already gone reported "View deleted" and dropping a sequence
-  reported the server's refusal, from the same Object Explorer gesture. A bare
-  DROP everywhere was chosen over `IF EXISTS` everywhere so that "deleted"
-  means deleted; a caller that wants idempotence ignores the error, which is a
-  choice the library cannot make for it. `TestDropStatementsAreNotIdempotent`
-  pins it. The *scripts* Scripter generates keep `IF EXISTS` — DROP-and-CREATE
-  output exists to be re-run.
-- **`CertificateByName` answers `(nil, nil)` on absence and was deliberately
-  not changed** when `ErrNotFound` went in. Making it error is a breaking
-  change to a published contract, and its callers branch on absence as the
-  ordinary case. The three surviving conventions are documented on
-  `ErrNotFound` itself; `TestLiveCertificateNotFoundIsNilNil` pins both
-  directions so "nil" cannot quietly start meaning "always nil".
+- **No `Drop*` write method carries `IF EXISTS`.** A review found the family
+  split down the middle: dropping an already-gone view reported "View deleted"
+  and dropping a sequence reported the server's refusal, from the same gesture.
+  A bare DROP everywhere was chosen so that "deleted" means deleted; a caller
+  wanting idempotence ignores the error, which the library cannot decide for
+  it. `TestDropStatementsAreNotIdempotent` pins it. Scripter's *scripts* keep
+  `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
+- **`CertificateByName` answers `(nil, nil)` on absence**, deliberately
+  unchanged when `ErrNotFound` went in: making it error is a breaking change to
+  a published contract, and its callers branch on absence as the ordinary case.
+  The three surviving conventions are documented on `ErrNotFound` itself;
+  `TestLiveCertificateNotFoundIsNilNil` pins both directions.
 - **A missing principal and an invisible one are the same thing to
-  `ErrNotFound`, and that is SQL Server's doing — do not try to fix it in
-  gosmo.** Metadata visibility hides a principal the caller lacks
-  `VIEW ANY DEFINITION` on by returning **zero rows, not an error**, so an
-  existing login reads as absent and no lookup can tell the difference; pinned
-  by `TestLiveNotFoundCannotSeePastMetadataVisibility`. The answer is
+  `ErrNotFound` — SQL Server's doing, do not fix it in gosmo.** Metadata
+  visibility hides a principal the caller lacks `VIEW ANY DEFINITION` on by
+  returning **zero rows, not an error**, so an existing login reads as absent;
+  pinned by `TestLiveNotFoundCannotSeePastMetadataVisibility`. The answer is
   idempotence at the write, not a better sentinel. Note `isAlreadyExists`
-  matches by the "already exists" substring; its `15023` arm is the *user*
-  code, and logins raise 15025.
-- ~~**`JobStateCancelling` and `JobStateRunning` are deprecated constants**~~ —
-  **removed 2026-09-04** from gosmo's `HEAD` (`CHANGELOG.md` § Unreleased
-  § Removed), the author's call being that gossms is gosmo's only consumer, so
-  `v0.0.x` is a boundary that can carry the break. They named states Agent's
-  encoding does not have; nothing in either repo referenced them. `JobState`'s
-  real encoding, read from `xp_sqlagent_enum_jobs`, is 1 Executing,
+  matches by substring; its `15023` arm is the *user* code, and logins raise
+  15025.
+- **`JobStateCancelling` and `JobStateRunning` were removed** 2026-09-04 from
+  gosmo's `HEAD`, the author's call being that `v0.0.x` is a boundary that can
+  carry the break. They named states Agent's encoding does not have.
+  `JobState`'s real encoding, from `xp_sqlagent_enum_jobs`: 1 Executing,
   2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
-  6 WaitingForStepToFinish, 7 PerformingCompletionActions, with 0 meaning a job
+  6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself.
 
 Three things about the job-state read are load-bearing and easy to undo:
 
 - **The `INSERT ... EXECUTE` table shape must match the extended procedure's
-  thirteen columns exactly**, which is why `jobStateColumns` is copied from
+  thirteen columns exactly** — hence `jobStateColumns` copied from
   `sp_get_composite_job_info` rather than trimmed to the two columns gosmo
   reads.
-- **A failed state read is not a failed listing.** `applyJobStates` swallows the
-  error and leaves the `sysjobactivity` derivation in place. With Agent stopped,
-  `xp_sqlagent_enum_jobs` does *not* fail — it returns zero rows, so the
-  fallback is reached by covering no job, not by an error. The derivation emits
-  the same encoding (`THEN 1 ELSE 4`) so the two paths cannot disagree.
+- **A failed state read is not a failed listing.** `applyJobStates` swallows
+  the error and leaves the `sysjobactivity` derivation in place. With Agent
+  stopped, `xp_sqlagent_enum_jobs` returns zero rows rather than failing, so the
+  fallback is reached by covering no job. The derivation emits the same encoding
+  (`THEN 1 ELSE 4`) so the two paths cannot disagree.
 - **`jobIsRunning` answers "unknown" for `JobStateUnknown` and
   `JobStateSuspended`, and `jobStateRefusal` then refuses nothing.** Unknown
   means Agent had nothing to say; Suspended is genuinely ambiguous — sp_help_job
-  groups it with idle, while a suspended job still holds a session. Sending the
-  request and letting the server answer beats refusing an action that would have
-  worked.
+  groups it with idle, while a suspended job still holds a session. Letting the
+  server answer beats refusing an action that would have worked.
 
 ## Environment: what the instances can and cannot do
 
 - **win10cli can never be a third availability replica.**
-  `SERVERPROPERTY('IsHadrEnabled')` is 0, `IsClustered` is 0 and
+  `SERVERPROPERTY('IsHadrEnabled')` and `IsClustered` are 0 and
   `sys.dm_os_cluster_nodes` is empty; the host is **Windows 10 Pro**, which has
-  no Failover Clustering feature at all, and SQL Server on Windows will not
-  enable Always On for a machine that is not a WSFC node. Even with the feature
-  on, a Windows replica in a Linux availability group is unsupported — a
-  distributed AG is the only cross-platform shape. Do not try to add it to AAG1.
-- **It can do everything an availability group is built *on top of*.** Database
-  mirroring endpoints, certificates, the principals that own them and the
-  CONNECT grants between them are plain T-SQL with no HADR precondition, and
-  gossms checks HADR only on the instance the endpoint dialog is *opened from*.
-  That is what lets Add Replica's Connect read a real endpoint off a third
-  instance.
-- **It is configured as ubusql1's mirroring peer, deliberately left that way.**
-  win10cli holds a database master key, `win10cli_Cert`, ubusql1's imported
-  `ubusql1_Cert`, `ubusql1_login`/`ubusql1_user`, and endpoint `AGEP` STARTED on
-  5022; ubusql1 holds the matching `win10cli_*` principals and certificate. Left
-  in place because a third instance with a STARTED endpoint is exactly what Add
-  Replica's Connect needs, and rebuilding it costs a live run. It is inert.
+  no Failover Clustering feature, and SQL Server will not enable Always On for a
+  non-WSFC node. Even with it, a Windows replica in a Linux availability group
+  is unsupported — a distributed AG is the only cross-platform shape. Do not try
+  to add it to AAG1.
+- **It can do everything an availability group is built *on top of*.**
+  Mirroring endpoints, certificates, the principals owning them and the CONNECT
+  grants between them are plain T-SQL with no HADR precondition, and gossms
+  checks HADR only on the instance the endpoint dialog is *opened from*. That is
+  what lets Add Replica's Connect read a real endpoint off a third instance.
+- **It is ubusql1's mirroring peer, deliberately left that way.** win10cli holds
+  a database master key, `win10cli_Cert`, ubusql1's imported `ubusql1_Cert`,
+  `ubusql1_login`/`ubusql1_user`, and endpoint `AGEP` STARTED on 5022; ubusql1
+  holds the matching `win10cli_*` principals and certificate. A third instance
+  with a STARTED endpoint is exactly what Add Replica's Connect needs, and
+  rebuilding it costs a live run. It is inert.
 - **`xp_cmdshell` is on on win10cli and can never be on on ubusql1.**
-  `sp_configure 'xp_cmdshell', 1` on the Linux instance fails Msg 15392 — "not
-  supported by this edition" — because SQL Server on Linux has no xp_cmdshell at
-  all; file moves on ubusql1/ubusql2 go through ssh instead. Anything in gossms
-  that would depend on xp_cmdshell is therefore Windows-only by construction.
-  Linux still *lists* it in `sys.configurations` at 0, which is why
-  `xpCmdshellRow` has to test `ServerInfo.Platform` rather than rely on the
-  missing-option path.
+  `sp_configure 'xp_cmdshell', 1` on Linux fails Msg 15392 ("not supported by
+  this edition"); file moves on ubusql1/ubusql2 go through ssh. Anything
+  depending on xp_cmdshell is Windows-only by construction. Linux still *lists*
+  it in `sys.configurations` at 0, which is why `xpCmdshellRow` tests
+  `ServerInfo.Platform` rather than the missing-option path.
 - **A live AG test's teardown reaches `DROP AVAILABILITY GROUP` on a real
-  cluster.** `liveDropGroupEverywhere` runs *before* the create as well as after
-  it, so `-liveag-create-name` is a flag that drops groups. It refuses, fatally,
-  any group whose cluster type is not NONE. Know this before touching that test.
+  cluster.** `liveDropGroupEverywhere` runs *before* the create as well as
+  after, so `-liveag-create-name` is a flag that drops groups. It refuses,
+  fatally, any group whose cluster type is not NONE. Know this before touching
+  that test.
 - **`TestLiveAvailabilityGroupOperations` deliberately skips Drop and
-  RemoveReplica** against the standing group AAG1; only add/remove database,
-  suspend/resume, the listener round trip and the failover refusal run there.
+  RemoveReplica** against AAG1; only add/remove database, suspend/resume, the
+  listener round trip and the failover refusal run there.
 
-## Database Properties > Files: FILESTREAM, not live-confirmed
+## FILESTREAM: what the live run settled — do not re-raise
 
-The Files page shows a file whose type is neither ROWS nor LOG — FILESTREAM,
-and memory-optimized data — with a widened Type picker (`preservingItems`), and
-no longer rewrites such a file's recorded type when the row is merely selected;
-Add refuses a type outside `addableFileTypes`. Pinned by
-`TestFilesPageDoesNotRetypeAFilestreamFile` and
-`TestFilesPageWontAddAFileTypeItCannotBuild` against a scripted
-`sys.database_files`, both mutation-checked.
+Database Properties > Files was confirmed against a real FILESTREAM database on
+win10cli, 2026-09-05. `internal/tui/live_filestream_test.go` (build tag
+`livedb`) is the run, and re-runs it.
 
-**Not confirmed against a real FILESTREAM database.** win10cli can host one.
-Two things a live run should settle: what `FileGroupsContext` actually returns
-for a FILESTREAM filegroup (the widening of the Filegroup picker exists in case
-it returns nothing), and whether this page should offer to *add* a FILESTREAM
-file at all — SSMS does, which would mean a spec builder that omits SIZE and
-takes a directory path rather than a file path.
+- **`FileGroupsContext` returns a FILESTREAM filegroup like any other** — name,
+  files and all. The Filegroup picker has therefore always listed it, and
+  `preservingItems`' widening was never needed for this case.
+- **The filegroup is the whole of what makes a file FILESTREAM.** ALTER
+  DATABASE ADD FILE has no file-type keyword: the same clause aimed at a ROWS
+  filegroup produces an ordinary data file — measured, a file added to PRIMARY
+  with an extensionless path came back as ROWS. So the Type picker has nothing
+  to offer and `addableFileTypes` stays two items.
+- **SIZE and FILEGROWTH are refused on a FILESTREAM file** with Msg 5509.
+  **MAXSIZE is accepted**, which the message's shape does not suggest — both
+  measured, not reasoned about.
+- That combination was reachable, so the page *had* a live defect: a file added
+  into the FILESTREAM filegroup failed the whole Apply with 5509. The page now
+  omits both clauses for such a file, greys the two spinners, and records the
+  file's type as FILESTREAM so the grid does not claim ROWS.
+- `gosmo.FileGroup` gained `Type` (`sys.filegroups.type_desc`) and
+  `IsFileStream()`. Note `is_default` is per filegroup *type*: a database with a
+  FILESTREAM filegroup reports two defaults, both true.
+- The scripted fakes now report `max_size` -1 for a FILESTREAM file, not 0.
+
+**Enabling FILESTREAM on win10cli is not something a SQL connection can do** —
+the RsFx0800 filter driver and the share belong to SQL Server Configuration
+Manager and need an OS administrator. Setting the registry `EnableLevel` and
+`sp_configure` from `xp_cmdshell` succeeds and achieves nothing. The live test
+skips with that explanation when the effective level is 0.
 
 ## Always On: what is deliberately out of scope
 
@@ -375,46 +291,43 @@ All seven phases are built. These are decisions taken while building them.
 - **New Availability Group does not roll back a group whose CREATE succeeded**,
   and neither does Add Replica. Every ordinary reason a secondary's JOIN fails
   is checked *before* the CREATE — peer reachable, Always On enabled there,
-  endpoint present, STARTED and still at the address the dialog recorded, rights
-  to join — and any failure refuses with nothing created. What survives is the
-  peer that dies between the check and the JOIN, and there the group is left
-  alone: a rollback would destroy what the user asked for on the strength of one
-  unreachable instance, and it cannot even be complete — a group dropped from
-  the primary stays in the *secondary's* `sys.availability_groups` and needs a
-  local DROP there, which is exactly the residue a rollback exists to prevent.
+  endpoint present, STARTED and still at the recorded address, rights to join —
+  and any failure refuses with nothing created. What survives is the peer that
+  dies between check and JOIN, and there the group is left alone: a rollback
+  would destroy what the user asked for on the strength of one unreachable
+  instance, and could not even be complete — a group dropped from the primary
+  stays in the *secondary's* `sys.availability_groups` and needs a local DROP
+  there, which is the residue a rollback exists to prevent.
 - **The create dialog has no Read-Only Routing page**, unlike SSMS's. Routing is
-  a per-replica setting AG Properties already covers, two clicks after the group
-  exists.
+  a per-replica setting AG Properties already covers.
 - **The endpoint dialog assumes a full mesh and one shared master key
-  password.** Every instance gets every other instance's certificate, which is
-  what an availability group needs and more than a plain mirroring pair does;
-  the one password field is used for whichever instances turn out to have no
-  database master key yet.
+  password.** Every instance gets every other's certificate, which is what an
+  availability group needs; the one password field is used for whichever
+  instances have no database master key yet.
 - **Add Replica does not offer initial data synchronization.** AUTOMATIC seeding
-  covers the case SSMS's share-based route exists to work around; MANUAL seeding
-  means restoring each database by hand and then using Join to Availability
-  Group on the secondary's copy, which is in the tree.
-- **A listener address cannot be removed and a listener cannot be renamed.** Not
-  a gap: `ALTER AVAILABILITY GROUP ... MODIFY LISTENER` has no statement for
-  either, so both mean REMOVE LISTENER and ADD LISTENER. Listener Properties
-  says so rather than offering buttons that would only work on rows not yet
-  written. Under an EXTERNAL cluster type an added address is recorded OFFLINE,
-  since the external cluster manager owns it.
+  covers the case SSMS's share-based route works around; MANUAL seeding means
+  restoring each database by hand and then using Join to Availability Group on
+  the secondary's copy, which is in the tree.
+- **A listener address cannot be removed and a listener cannot be renamed.**
+  `ALTER AVAILABILITY GROUP ... MODIFY LISTENER` has no statement for either, so
+  both mean REMOVE LISTENER and ADD LISTENER. Listener Properties says so rather
+  than offering buttons that would only work on unwritten rows. Under an
+  EXTERNAL cluster type an added address is recorded OFFLINE, since the external
+  cluster manager owns it.
 - **Failover cannot be done in T-SQL under `cluster_type = EXTERNAL`** —
   handled, not open: `agFailoverRefusal` explains it and names Pacemaker instead
-  of sending the statement. EXTERNAL rejects both `ALTER AVAILABILITY GROUP ...
-  FAILOVER` and `... FORCE_FAILOVER_ALLOW_DATA_LOSS` with `Msg 47104`; `NONE`
-  rejects only the lossless form, with `Msg 47122`, and allows the forced one.
+  of sending the statement. EXTERNAL rejects both `... FAILOVER` and
+  `... FORCE_FAILOVER_ALLOW_DATA_LOSS` with `Msg 47104`; `NONE` rejects only the
+  lossless form, with `Msg 47122`, and allows the forced one.
 - **The New AG page offers no backup from inside the dialog.** Both
   `ALTER AVAILABILITY GROUP ... ADD DATABASE` and `CREATE AVAILABILITY GROUP ...
   FOR DATABASE` refuse an unbacked-up database with **Msg 1475**, so the page
-  applies the same rule and lists it under "Not offered"; the exclusion line
-  names the Backup dialog, two clicks away. Note the backup history is the wrong
-  signal in both directions — a database whose `msdb` history was deleted still
-  joins, and one round-tripped through SIMPLE does not though its history still
-  shows the full backup.
+  applies the same rule and its "Not offered" line names the Backup dialog. The
+  backup history is the wrong signal in both directions — a database whose
+  `msdb` history was deleted still joins, and one round-tripped through SIMPLE
+  does not though its history still shows the full backup.
 
-Two rules about peer credentials that are easy to undo:
+Rules about peer credentials that are easy to undo:
 
 - **Peer credentials are resolved from connections the user has already made.**
   `ServerConn.SetPeerCredentials` installs a resolver `peerOptions` consults
@@ -431,23 +344,21 @@ Two rules about peer credentials that are easy to undo:
   one existed.** `Peer` retries once with `parentPeerOptions` when the
   resolver's answer will not connect, and `loadPeerCredentials` does not seed an
   entry whose password this session cannot decrypt. A saved *low-privilege*
-  login still wins over the parent's on purpose — that is the feature. Both
-  halves are needed: deleting the retry and ignoring the resolver each break a
-  different one.
+  login still wins over the parent's on purpose — that is the feature. Deleting
+  the retry and ignoring the resolver each break a different half.
 - **`ServerConn.Peer` blanks `Opts.Database`, deliberately.** A database named
   in the connection string fails the *connect*, at ping time, and everything
   `Peer` reaches is server-scoped. The other three `sc.Opts` clones — the query
   panel's and the Activity Monitor's two — target the same instance and keep the
-  database on purpose; this rule is about the cross-instance clone only.
+  database on purpose.
 - **The peer failure cache is short on purpose.** `recordPeerFailure` holds the
   last connect failure per `InstanceKey` for `peerFailureTTL` (30s) so a
-  blackholed primary does not charge the driver's full 15s connect timeout to
-  every folder expansion. It is invalidated explicitly by a successful direct
-  `File > Connect` to that instance and by a Refresh anywhere in the Always On
-  subtree, both recursing into cached peers because a chained read records its
-  failure on the peer, not on the connection the user is acting on. A Refresh
-  elsewhere deliberately leaves the cache alone. The 15s connect timeout itself
-  is left alone: a peer across a WAN may legitimately need it.
+  blackholed primary does not charge the driver's 15s connect timeout to every
+  folder expansion. It is invalidated by a successful direct `File > Connect` to
+  that instance and by a Refresh anywhere in the Always On subtree, both
+  recursing into cached peers because a chained read records its failure on the
+  peer, not on the connection the user is acting on. A Refresh elsewhere leaves
+  the cache alone. The 15s timeout stays: a peer across a WAN may need it.
 
 ## Always Encrypted: what the two create dialogs leave out
 
@@ -467,23 +378,22 @@ Two rules about peer credentials that are easy to undo:
 
 ## Log File Viewer: what is deliberately out of it
 
-- **One log file at a time, no merged view.** SSMS's left pane checkboxes let
-  several logs (and the Windows event log) be merged into one date-sorted grid.
-  The two selectors were chosen instead; merging means a source column, a merge
-  sort, and N reads per refresh.
+- **One log file at a time, no merged view.** SSMS's left-pane checkboxes merge
+  several logs (and the Windows event log) into one date-sorted grid. The two
+  selectors were chosen instead; merging means a source column, a merge sort,
+  and N reads per refresh.
 - **The Windows event log is out** — needs WMI, out of scope for a no-CGO
   portable build.
 - **The toolbar's Filter box and "Search..." are different features — do not
   merge them.** Filter narrows what was read, instantly and with no round trip,
-  and reports "N of M match". Search edits `xp_readerrorlog`'s own arguments 3-6
+  reporting "N of M match". Search edits `xp_readerrorlog`'s own arguments 3-6
   and changes what the server returns, which is what a log too large to read in
   one go needs; the status line names it, because "no entries" on a searched
   read otherwise reads as an empty log. The client-side pass runs over whatever
-  came back, so the two compose. Two things about those arguments only a live
-  run says: the date bounds must be sent as **text**
-  (`YYYY-MM-DD HH:MM:SS`) — a typed datetime parameter is rejected with "The
-  format for the date filter is incorrect" — and the two search strings are
-  **AND**-ed, not alternatives.
+  came back, so the two compose. Two things only a live run says: the date
+  bounds must be sent as **text** (`YYYY-MM-DD HH:MM:SS`) — a typed datetime
+  parameter is rejected with "The format for the date filter is incorrect" — and
+  the two search strings are **AND**-ed, not alternatives.
 
 Two rules from that work: the toolbar's busy latch is taken **before** the
 confirmation is shown, not in the answer (the confirm dialog takes input but
@@ -503,23 +413,22 @@ numbering the moment they flipped the selector.
   saved `.sqlplan`, and comparing two plans of *different* queries — refused,
   since they have no operators in common to pair.
 - **No "Configure" button on the panel.** Query Store's settings are a Database
-  Properties page, which is where SSMS puts them too; the folder's context menu
-  opens it.
+  Properties page, as in SSMS; the folder's context menu opens it.
 - **No per-query time series.** gosmo's `QueryStoreTrackedQueryContext` returns
   one query's per-plan values interval by interval — SSMS plots it under Tracked
   Queries. Ours shows the tracked queries and their plans; the series is read by
-  nothing. Kept in gosmo deliberately (§ Changing gosmo).
+  nothing. Kept in gosmo deliberately.
 - **The panel reads on demand only** — no auto-refresh timer. Every read is
   one-shot and bounded, so nothing queues behind the shared host connection.
 - **One metric and one statistic across all seven views.** Each report carries
-  its own default (Total for the two that rank by accumulated cost, Avg for the
+  its own default (Total for the two ranking by accumulated cost, Avg for the
   rest) and the panel opens on it, but switching views afterwards keeps what the
   user chose. SSMS keeps them per view.
-- **The baseline of Regressed Queries stays inside the reported window**, and
-  this should not be re-raised. gosmo's default — the equally long window
-  immediately before `From` — is right for a caller that picked its own range
-  and wrong for both surfaces here, because it makes the report need twice its
-  window of history before it can show a row.
+- **The baseline of Regressed Queries stays inside the reported window.**
+  gosmo's default — the equally long window immediately before `From` — is right
+  for a caller that picked its own range and wrong for both surfaces here,
+  because it makes the report need twice its window of history before it can
+  show a row.
 
 ## Object Explorer folder filter: what is deliberately out of it
 
@@ -529,17 +438,17 @@ numbering the moment they flipped the selector.
   folders (sequences, synonyms, triggers, databases, logins, users, roles,
   schemas, partition functions/schemes, the Always Encrypted keys, security
   policies) stay client-side: they are small, and the clause builder is
-  family-agnostic if that ever stops being true. The push-down rules that a
-  plausible simplification removes are in `docs/db-rules.md`.
+  family-agnostic if that stops being true. The push-down rules a plausible
+  simplification removes are in `docs/db-rules.md`.
 - **Owner and Durability Type are not offered on Tables, deliberately.** SSMS
   offers both; each is one `TableDetail` query per table, so listing them means
-  a folder-wide detail fetch before the pane can draw a single row. This is the
-  intended trade — do not re-raise.
-- **Filters are per-session and stay that way.** `App.savedFilters`, keyed by
-  `filterKey` rather than by node pointer, brings a folder's filter back on a
-  reconnect within the session. Writing filters to `config.json` stays out: SSMS
-  keeps them for the session only, and restoring one at startup against a folder
-  whose objects have since changed is not wanted.
+  a folder-wide detail fetch before the pane can draw a row. The intended
+  trade — do not re-raise.
+- **Filters are per-session.** `App.savedFilters`, keyed by `filterKey` rather
+  than by node pointer, brings a folder's filter back on a reconnect within the
+  session. Writing filters to `config.json` stays out: SSMS keeps them for the
+  session only, and restoring one at startup against a folder whose objects have
+  changed is not wanted.
 
 ## Delete/Rename: what is deliberately out of it
 
@@ -552,8 +461,8 @@ numbering the moment they flipped the selector.
 - **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
   wording explains what blocks each one; only Rename comes from the shared
   table. Availability groups likewise. **A system Agent job still offers `Delete
-  Job...`** though Rename came off every system object: SSMS permits deleting a
-  system job and msdb raises no objection.
+  Job...`** though Rename came off every system object: SSMS permits it and msdb
+  raises no objection.
 - **Neither audit object offers Rename from the tree.** A server audit
   specification has no `MODIFY NAME` form at all — a parse error, not a
   permission failure. An audit has one, but only while disabled, so a tree
@@ -561,17 +470,16 @@ numbering the moment they flipped the selector.
   Properties page, where the disable is visible in Script Changes.
 - **Multi-select delete lives in the Object Explorer Details pane and nowhere
   else.** `controls.TreeView` has a single selection, so SSMS's "Delete Object"
-  dialog listing several objects will never come from the tree; do not propose
-  it there. Two limits are the design: **only schema-scoped objects are deleted
-  as a set**, while a database, a login, a server role, a user, a database role
-  or an Always Encrypted key is deleted on its own (`objectOp.solo`), because a
-  typed confirmation asks for one object's name and a principal's drop reaches
-  past the object further than one shared warning can describe; and **Rename and
-  Move to Schema stay in the tree**, neither meaning anything applied to a set.
-  The solo rule is the *selection's*: one login selected in the pane still
-  deletes. A view whose rows are not objects — Property/Value, a Query Store
-  report, System Databases, a log listing — offers nothing, which is the correct
-  answer rather than a gap.
+  dialog listing several objects will never come from the tree. Two limits are
+  the design: **only schema-scoped objects are deleted as a set**, while a
+  database, a login, a server role, a user, a database role or an Always
+  Encrypted key is deleted on its own (`objectOp.solo`), because a typed
+  confirmation asks for one object's name and a principal's drop reaches past the
+  object further than one shared warning can describe; and **Rename and Move to
+  Schema stay in the tree**, neither meaning anything applied to a set. The solo
+  rule is the *selection's*: one login selected in the pane still deletes. A
+  view whose rows are not objects — Property/Value, a Query Store report, System
+  Databases, a log listing — offers nothing, which is correct rather than a gap.
 
 ## Clipboard in a dialog: what is deliberately out of it
 
@@ -581,113 +489,117 @@ numbering the moment they flipped the selector.
   whatever the panel behind the dialog had selected, which was never the thing
   the user was looking at.
 - **Key Diagnostics' `syncIfDirty` must not rebuild the editor while it has a
-  selection.** The log lives in a read-only `controls.Editor` and the dialog is
-  a `core.ClipboardHost`. It records the very keys used to copy from it, so
-  `Ctrl+A` is itself logged and the next frame's `SetText` — which resets
-  cursor, scroll *and* selection — would drop the selection before the `Ctrl+C`
-  arrived. Status History does not need this, and a "simplification" would undo
-  it.
+  selection.** The log lives in a read-only `controls.Editor` and the dialog is a
+  `core.ClipboardHost`. It records the very keys used to copy from it, so
+  `Ctrl+A` is itself logged and the next frame's `SetText` — which resets cursor,
+  scroll *and* selection — would drop the selection before the `Ctrl+C` arrived.
+  Status History does not need this, and a "simplification" would undo it.
 
-## Server-level families (Phase 3 item 12): what is deliberately out of them
+## Server-level families: what is deliberately out of them
 
 - **Viewing audit records is absent.** `sys.fn_get_audit_file` is a feature the
-  size of the Log File Viewer — a reader, a grid, a filter, paging over files
-  the audit rolled over. SSMS's "View Audit Logs" command is therefore not
-  offered at all rather than offered and empty.
-- **Database Audit Specifications** are `todo.txt` item 15, not part of item 12.
-  gosmo covers the server-scope half only; `sys.database_audit_specifications`
-  has no reads.
-- **Database-scope DDL triggers** (`parent_class = 0`) are item 13.
+  size of the Log File Viewer — a reader, a grid, a filter, paging over rolled-
+  over files. SSMS's "View Audit Logs" command is therefore not offered at all
+  rather than offered and empty.
+- **Database Audit Specifications are not covered.** gosmo has the server-scope
+  half only; `sys.database_audit_specifications` has no reads.
+- **Database-scope DDL triggers** (`parent_class = 0`) are not covered.
   `Database.triggersWhere`'s `parent_class = 1` was deliberately left alone —
   widening it would change what the existing per-database Triggers folder lists.
-- **Cryptographic Providers** get no folder, and **database-scoped credentials**
-  (`sys.database_credentials`) get no reads. A credential's provider *binding*
-  is shown and scripted; registering a provider is not offered.
-- **Creating TSQL, Service Broker and SOAP endpoints** is out. Endpoints are a
-  read/state/drop family; the existing New Database Mirroring Endpoint dialog
-  stays the only creation path.
+- **Cryptographic Providers get no folder**, and **database-scoped credentials**
+  (`sys.database_credentials`) get no reads. A credential's provider *binding* is
+  shown and scripted; registering a provider is not offered.
+- **Creating TSQL, Service Broker and SOAP endpoints is out.** Endpoints are a
+  read/state/drop family; New Database Mirroring Endpoint stays the only
+  creation path.
 - **Tape and virtual backup devices** are listed, scripted and dropped but not
   creatable — the New Backup Device dialog offers disk only, as SSMS's does.
 - **Audit Properties is one page**, where SSMS has General and a separate Filter
-  tab. `ALTER SERVER AUDIT` replaces every setting at once, so a second page
-  with its own apply would either write a second ALTER reverting the first, or
-  need the filter's value before the page holding it had been opened.
+  tab. `ALTER SERVER AUDIT` replaces every setting at once, so a second page with
+  its own apply would either write a second ALTER reverting the first, or need
+  the filter's value before the page holding it had been opened.
 - **An audit's destination is editable from Properties**, where SSMS greys it.
   `ALTER SERVER AUDIT` accepts a new `TO` clause on a disabled audit and the
   page's apply already runs inside a disable window, so the only cost is the one
-  the page's note states: switching away from FILE discards the file block, and
-  a FILE audit resumed later starts a new audit file. The file rows are always
+  the page's note states: switching away from FILE discards the file block, and a
+  FILE audit resumed later starts a new audit file. The file rows are always
   present and gated on the dropdown rather than on the destination the audit
   loaded with; an empty path under FILE is refused before anything is disabled,
   because the server's own answer (Msg 33072) arrives only after the audit has
   been turned off.
-- **All six folders' filters are client-side only**: none of the six listings
-  takes a `gosmo.ObjectFilter`. Credentials, Audits, Server Audit Specifications
-  and Server DDL Triggers offer Name and Creation Date; Backup Devices and
-  Endpoints offer Name alone, because neither `sys.backup_devices` nor
-  `sys.endpoints` records a creation date and a criterion over a zero
-  `nodeData.CreateDate` rejects every row.
+- **All six folders' filters are client-side only.** Credentials, Audits, Server
+  Audit Specifications and Server DDL Triggers offer Name and Creation Date;
+  Backup Devices and Endpoints offer Name alone, because neither
+  `sys.backup_devices` nor `sys.endpoints` records a creation date and a
+  criterion over a zero `nodeData.CreateDate` rejects every row.
 
 ## By design — not issues, do not re-raise
 
-- **Which databases a dropdown offers is settled, and lives in
-  `internal/tui/database_list.go`.** The rule turns on when the name is
-  resolved: a name stored now and used later (job step, alert, login default
-  database, restore history) lists every database including system and
-  non-ONLINE ones, because it is opened when the job runs, not now; a name acted
-  on immediately lists only what the action will accept. Backup is the only
-  dialog in the second class, and both its exclusions are hard server
-  restrictions — `BACKUP DATABASE tempdb` and a backup of an OFFLINE database
-  each fail with "BACKUP DATABASE is terminating abnormally". Do not "unify" the
-  two lists; they are different on purpose.
-  The trap that comes with the filter, since it will be rediscovered: the Backup
-  dialog is opened *on* a database from the Object Explorer, and its dropdown is
-  swapped asynchronously afterwards. `setDatabaseItems` keeps a selection the
-  incoming list doesn't contain, at the front. Without that, right-clicking an
-  OFFLINE database and choosing Back Up silently retargets the dialog at
-  whichever database sorts first and backs *that* one up. Any future narrowing
-  of a dropdown that a dialog can be opened on needs the same treatment.
+- **Comment prose is not a cleanup target.** The per-file semantic read of every
+  `.go` file is done; what stands was checked against the code it describes. Two
+  classes are protected outright: the long comment blocks `CLAUDE.md` § Coding
+  conventions names (`app.go`, `datagrid.go`, `secret.go`,
+  `propsheet/common.go`), and the failure-naming comments in
+  `query_store_panel.go`, `prop_grid_helpers.go` and similar — each names a
+  shipped bug a plausible simplification would bring back. What drift does recur,
+  worth knowing when a comment is *edited*: a doc naming the wrong caller after a
+  helper moved, a count of anything (nearly every count found was wrong), a claim
+  about which types implement an interface, a cross-reference to the wrong
+  document, and an inverted sentence that reads fluently either way.
+
+- **Which databases a dropdown offers is settled** and lives in
+  `internal/tui/database_list.go`. The rule turns on when the name is resolved: a
+  name stored now and used later (job step, alert, login default database,
+  restore history) lists every database including system and non-ONLINE ones,
+  because it is opened when the job runs; a name acted on immediately lists only
+  what the action will accept. Backup is the only dialog in the second class, and
+  both its exclusions are hard server restrictions — `BACKUP DATABASE tempdb` and
+  a backup of an OFFLINE database each fail with "BACKUP DATABASE is terminating
+  abnormally". Do not "unify" the two lists.
+  The trap that comes with the filter: the Backup dialog is opened *on* a
+  database from the Object Explorer, and its dropdown is swapped asynchronously
+  afterwards. `setDatabaseItems` keeps a selection the incoming list doesn't
+  contain, at the front. Without that, right-clicking an OFFLINE database and
+  choosing Back Up silently retargets the dialog at whichever database sorts
+  first. Any future narrowing of a dropdown a dialog can be opened on needs the
+  same treatment.
 
 - **`indexOf` against a sentinel list is right for two classes and wrong for a
   third.** Right for the fixed vocabularies (recovery model, page verify, Query
   Store state and capture mode, compatibility level) — where the list is written
   out in the page, the write is `items[row.Selected()]`, and a value outside it
-  means gossms is behind SQL Server, not that an object vanished — and for the
-  New-X dialogs' own defaults, whose value is one of the list by construction.
-  Wrong for any name the *server* supplied against a list read separately, which
-  goes missing whenever the object is dropped between the two reads or the
-  caller cannot see it; those read the row back with `preservedValue`/`changedTo`
-  instead. `TestIndexOfSentinelListFallsBackToSentinel` pins the helper.
+  means gossms is behind SQL Server — and for the New-X dialogs' own defaults,
+  whose value is one of the list by construction. Wrong for any name the *server*
+  supplied against a list read separately, which goes missing whenever the object
+  is dropped between the two reads or the caller cannot see it; those read the row
+  back with `preservedValue`/`changedTo` instead.
+  `TestIndexOfSentinelListFallsBackToSentinel` pins the helper.
 
 - **"A job whose owner login was dropped" is not reachable by dropping a
-  login.** SQL Server *refuses* to drop a login that owns a job — `This login is
-  the owner of 1 job(s). You must delete or reassign these jobs before the login
-  can be dropped.` A **schedule** has no such protection: dropping its owner
-  login succeeds and `SUSER_SNAME(owner_sid)` goes NULL immediately. So an
-  orphaned *job* owner needs a different route — an msdb restored from another
-  instance, or a Windows principal removed from AD — and is rarer than the
-  schedule case. Worth knowing before anyone tries to reproduce it and concludes
-  the code is fine.
+  login.** SQL Server *refuses* to drop a login that owns a job. A **schedule**
+  has no such protection: dropping its owner login succeeds and
+  `SUSER_SNAME(owner_sid)` goes NULL immediately. So an orphaned *job* owner
+  needs a different route — an msdb restored from another instance, or a Windows
+  principal removed from AD — and is rarer than the schedule case.
 
 - **Start/Stop Job are deliberately not greyed out.** They read the job's state
   first and refuse in the app's own words ("Job X is already running" / "is not
   running"), refreshing the node either way. The read is free — both actions
   already fetched the job. Gating the menu item instead would hide a legitimate
-  Stop for a job that started running since the folder was loaded; the check
-  belongs where the data is one query old.
+  Stop for a job that started running since the folder was loaded.
 
 - **`sp_delete_jobstep` is not symmetrical with `sp_add_jobstep`.** It silently
-  resets a reference to a step at or after the deleted one to "quit with
-  success" rather than following it, which is what `ReorderSteps`' repair pass
-  exists for. That pass is invisible to a test that moves the *last* step,
-  because then no reference points past the delete — the live test moves a
-  middle step for exactly that reason.
+  resets a reference to a step at or after the deleted one to "quit with success"
+  rather than following it, which is what `ReorderSteps`' repair pass exists for.
+  That pass is invisible to a test that moves the *last* step, because then no
+  reference points past the delete — the live test moves a middle step for
+  exactly that reason.
 
 - **Merging the two user-mapping page builders is a deliberate non-goal.** Both
-  pages use `wireGridEditor`, which is where the duplication that actually
-  caused a bug lived; merging the two page *builders* was costed and rejected
-  (six injection points, two different row structs, two unrelated applies). Do
-  not re-propose without new evidence.
+  pages use `wireGridEditor`, which is where the duplication that actually caused
+  a bug lived; merging the two page *builders* was costed and rejected (six
+  injection points, two different row structs, two unrelated applies). Do not
+  re-propose without new evidence.
 
 - **`Form.Revert()` is exposed, not retired.** `Ctrl+Z` on a `PropertySheet`
   calls `RevertPage`, which reaches `Form.Revert`, every row's `Revert` and all
@@ -709,8 +621,8 @@ numbering the moment they flipped the selector.
     not in bytes. `maxUndoBytes` genuinely does not reach it — the inverse
     carries the lines being *replaced*, so on a growing document redo ends up
     above undo: 48.4 MB against 46.5 MB, measured. The undo stack's own byte cap
-    is what bounds it, to within one document. A `redoBytes` cap would buy that
-    one document back in exchange for silently dropping the deepest redo.
+    bounds it, to within one document. A `redoBytes` cap would buy that document
+    back in exchange for silently dropping the deepest redo.
   - `applyStep` slicing `[st.row : st.row+st.newLen]` without a bounds check is
     the intended failure mode. The invariant is `pushUndoSpan`'s caller promise,
     and a violated promise means the document is about to be corrupted; clamping
@@ -721,8 +633,7 @@ numbering the moment they flipped the selector.
   intended development state**, not a release blocker. Tagging gosmo, bumping
   `require`, and commenting out the `replace`/`ignore` pair are steps of the
   release process itself (ARCHITECTURE.md § Developing against a local gosmo
-  checkout). A CI release build not resolving gosmo mid-development is the
-  expected consequence.
+  checkout). A CI release build not resolving gosmo mid-development is expected.
 
 - **A Grid/Text query result can exhaust memory.** The Max Result Rows option
   and every `maxRows` parameter behind it were removed: a result set is retained
@@ -743,13 +654,13 @@ numbering the moment they flipped the selector.
   Value" on a cell whose trimmed text is bracketed by `<>`, `{}`, or a
   JSON-shaped `[]` opens its own query panel with `XMLHighlighter`/
   `JSONHighlighter` instead (`internal/tui/cell_value.go`); everything else gets
-  the plain 60-column popup, unhighlighted, on purpose. Highlighting inside the
-  popup is the thing not to do: wrap mode resolves each drawn column through
-  `styleAt` (`editor_draw.go`), a linear scan of the logical line's runs, chosen
-  so a `varchar(max)` cell costs work proportional to the ~15 visible rows
-  rather than to the value. That scan is fine against SQL's few coarse runs and
-  not against a highlighter emitting one run per token over a whole XML
-  document. Routing to a panel, which draws unwrapped, is what sidesteps it.
+  the plain 60-column popup. Highlighting inside the popup is the thing not to
+  do: wrap mode resolves each drawn column through `styleAt` (`editor_draw.go`),
+  a linear scan of the logical line's runs, chosen so a `varchar(max)` cell costs
+  work proportional to the ~15 visible rows rather than to the value. That scan
+  is fine against SQL's few coarse runs and not against a highlighter emitting
+  one run per token over a whole XML document. Routing to a panel, which draws
+  unwrapped, sidesteps it.
 
 - **The Databases folder's one round trip per database is intended.**
   `FILEPROPERTY` reports on the *current* database only, so
@@ -758,20 +669,18 @@ numbering the moment they flipped the selector.
   work and is faster (11-12ms vs 20-21ms over four databases), but one
   unreachable database fails the whole batch and every row loses its sizes,
   where the fan-out degrades to `N/A` in that one row alone. The fan-out is also
-  already concurrent 8-wide, so it costs `ceil(N/8) x RTT`. If a user ever
-  reports the folder being slow, the batch goes in as a *fast path* with the
-  fan-out as the fallback on any batch error — never as a replacement.
+  concurrent 8-wide, so it costs `ceil(N/8) x RTT`. If the folder is ever
+  reported slow, the batch goes in as a *fast path* with the fan-out as the
+  fallback on any batch error — never as a replacement.
 
 - **Restructuring `internal/tui` is closed. No file-split or package-split
   candidates are outstanding.** Costed and re-measured against a type-checked
-  cross-file reference graph (549 real symbol edges) and rejected on the
-  numbers. What shipped instead is `internal/tui/sqlparse`, the only part of the
-  package with *zero* outbound references. The earlier "P5" file-split list was
-  never a standing rule for the package and isn't one now: 31 non-test files
-  exceed 400 lines, fifteen of them directly in `internal/tui`. That is not a
-  reason to re-open the question this paragraph closes.
-  The negative results, each a proposal a future review will otherwise
-  re-invent:
+  cross-file reference graph (549 real symbol edges) and rejected on the numbers.
+  What shipped instead is `internal/tui/sqlparse`, the only part of the package
+  with *zero* outbound references. The earlier "P5" file-split list was never a
+  standing rule: 31 non-test files exceed 400 lines, fifteen directly in
+  `internal/tui`. That is not a reason to re-open this.
+  The negative results, each a proposal a future review will otherwise reinvent:
   - The `agent_*`/`database_props_*`/`new_*` name families are not a seam — they
     cut straight through the `App` dependency.
   - Neither is "the lines that never mention `App`". `grep -w App` misses
@@ -798,28 +707,27 @@ numbering the moment they flipped the selector.
   blocked subtree out of the tree and that a parallel plan is several
   `sys.sysprocesses` rows. Neither was reproducible — a sleeping blocker kept a
   resolvable handle, and `DBCC FREEPROCCACHE` does not evict a live
-  transaction's text — and the `cross apply` is what keeps system sessions out
-  today. **Author's call: as is.**
+  transaction's text — and the `cross apply` is what keeps system sessions out.
+  **Author's call: as is.**
 
 - **The Activity Monitor probes `VIEW SERVER STATE` once per collector, so twice
-  per panel open.** Hoisting it to a single shared check was proposed and
-  dropped: the Retry control starts a *new* collector after a transient failure,
-  and a cached permission answer would make that retry fail without asking the
-  server. One extra round trip on open is the cheaper mistake.
+  per panel open.** Hoisting it to a single shared check was dropped: the Retry
+  control starts a *new* collector after a transient failure, and a cached
+  permission answer would make that retry fail without asking the server. One
+  extra round trip on open is the cheaper mistake.
 
 - **`counterQueryFor`'s `RTRIM(instance_name) IN ('', '_Total')` filter drops no
   counter the panels read.** Raised twice on the grounds that `RTRIM(NULL)` is
   `NULL` and `NULL IN (...)` is false. win10cli (Windows) has no NULL
   `instance_name` rows at all; ubudock (Linux) has exactly five, all
   `SQLPAL:Host Memory` / `SQLPAL:Guest Memory` rows that are not in
-  `counterNames` and have no gossms consumer. Every one of the 33 names in
-  `counterNames` resolves through the filter on both builds. Do not add an
+  `counterNames` and have no gossms consumer. All 33 names in `counterNames`
+  resolve through the filter on both builds. Do not add an
   `OR instance_name IS NULL` arm.
 
 - **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb returns
   `float64` for both `REAL` and `FLOAT`. It is correct if the driver ever
-  narrows, and `formatFloat` already takes the bit size. Noted so it isn't
-  "discovered" as live code.
+  narrows, and `formatFloat` already takes the bit size.
 
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix does not strand the
   pooled connection in master.** A review read gosmo's `"USE master; " + stmt`
@@ -831,15 +739,14 @@ numbering the moment they flipped the selector.
   `driver.SessionResetter.ResetSession` before handing a pooled connection to
   its next user, and go-mssqldb implements it by flagging the next TDS batch as
   a connection reset, restoring the session's database to the connection
-  string's. The proposed fix was three extra round trips per grant to re-solve
-  what the driver already handles, and was reverted.
+  string's. The proposed fix was three extra round trips per grant and was
+  reverted.
 
 - **`charts.HistoryChart.Draw` and `StackedHistoryChart.Draw` stay, though
   nothing in the binary reaches them.** `doc.go` advertises `Draw` as the entry
-  point — "every chart draws into a `tcell.Screen` through a `core.Rect`" — and
-  all six chart types implement it. The dashboard uses `DrawFrame` only because
-  it also wants the time row. Removing two of six would break the package's one
-  uniform method for four lines.
+  point and all six chart types implement it. The dashboard uses `DrawFrame`
+  only because it also wants the time row. Removing two of six would break the
+  package's one uniform method for four lines.
 
 - **The five `staticcheck` U1000 findings in `clipboard_host_test.go` and
   `dialog_gesture_test.go` are suppressed, not deleted.** The fields are read by
@@ -861,9 +768,9 @@ numbering the moment they flipped the selector.
 
 - **`masterMappableNames` swallows its two reads' errors on purpose.**
   `sys.certificates` and `sys.asymmetric_keys` need permission on master, and a
-  login without it must still be able to create ordinary SQL and Windows logins
-  — an empty picker becomes a refusal naming what is missing, not a broken
-  dialog. Related and settled live: neither `DEFAULT_DATABASE` nor
+  login without it must still be able to create ordinary SQL and Windows
+  logins — an empty picker becomes a refusal naming what is missing, not a
+  broken dialog. Settled live alongside it: neither `DEFAULT_DATABASE` nor
   `DEFAULT_LANGUAGE` can be set for a certificate- or asymmetric-key-mapped
   login, in CREATE *or* ALTER, so the page refuses either rather than creating
   the login and then failing.
@@ -871,34 +778,29 @@ numbering the moment they flipped the selector.
 - **Per-file destinations in Restore (SSMS's editable "Restore As" column) were
   deliberately not built**; the folder-level choice covers what the dialog's
   width allows. Two rules from that work outlive it. **The backup set number
-  must not get re-scattered**: the restore itself, the MOVE clauses and the
-  Files Included panel all take it from `backupSetNumber` in
-  `restore_dialog_ops.go`, and two of the three deriving it separately is
-  exactly what produced the "Logical file 'x' is not part of database 'y'"
-  failure on every rename-restore from an appended `.bak`. And **the relocation
-  preview and the MOVE clauses must keep sharing `relocateFiles`**, or the paths
-  the Files view lists stop describing what the restore does.
+  must not get re-scattered**: the restore itself, the MOVE clauses and the Files
+  Included panel all take it from `backupSetNumber` in `restore_dialog_ops.go`,
+  and two of the three deriving it separately is what produced the "Logical file
+  'x' is not part of database 'y'" failure on every rename-restore from an
+  appended `.bak`. And **the relocation preview and the MOVE clauses must keep
+  sharing `relocateFiles`**, or the paths the Files view lists stop describing
+  what the restore does.
 
-- **A whole-repo review on 2026-09-04 swept both repos for these, and found
-  nothing.** Recorded so the next review spends its time elsewhere; every one
-  was run over gossms and gosmo together, and every item it *did* find is
-  fixed. `go build`, `go vet`, `gofmt -l`, `go test ./...` and `go test -race
-  ./...` were clean in both. `staticcheck ./...` reported only the two U1000s
-  this file records as deliberate in gossms, and one ST1005 in a gosmo *test*
-  error string. In gosmo: every `Query`/`query` pairs `defer rows.Close()` with
-  a `rows.Err()` check — the fifteen apparent misses all delegate to a shared
-  scanner that checks it; there is no `FooContext` without a plain `Foo`
-  wrapper; and no query runs inside a `rows.Next()` loop. In gossms: exactly one
-  goroutine is spawned outside `safego`/`safegoRepair`, the backfill worker,
-  which is deliberate and takes both the label and the recover by hand; no
+- **A whole-repo review on 2026-09-04 swept both repos for these and found
+  nothing.** Recorded so the next review spends its time elsewhere. `go build`,
+  `go vet`, `gofmt -l`, `go test ./...` and `go test -race ./...` were clean in
+  both. `staticcheck ./...` reported only the two U1000s above and one ST1005 in
+  a gosmo *test* error string. In gosmo: every `Query`/`query` pairs
+  `defer rows.Close()` with a `rows.Err()` check — the fifteen apparent misses
+  delegate to a shared scanner that checks it; there is no `FooContext` without
+  a plain `Foo` wrapper; no query runs inside a `rows.Next()` loop. In gossms:
+  exactly one goroutine is spawned outside `safego`/`safegoRepair`, the backfill
+  worker, deliberately taking both the label and the recover by hand; no
   `context.Background()` appears in a request path, every fetch deriving from
-  `sc.Context()` with a named timeout; and every keyword-valued interpolation
-  into SQL goes through an allowlist. Two things were checked against real
-  source rather than memory: `mssql.ServerError` really is fatal-only
+  `sc.Context()` with a named timeout; every keyword-valued interpolation into
+  SQL goes through an allowlist. Two things checked against real source rather
+  than memory: `mssql.ServerError` really is fatal-only
   (`go-mssqldb@v1.9.4/error.go:79`, and `mssql.go:1352` "Ignore non-fatal server
   errors"), so gosmo's `IsRetryable` treating it as retryable is correct; and
   the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
-  real and applied. No restructuring was proposed: the `internal/tui`
-  file/package splits are closed above on measured numbers, and gosmo's "one
-  file per subject area" makes `availability_group.go` at 1965 lines compliant
-  rather than a candidate.
+  real and applied.

@@ -12,21 +12,47 @@ import (
 
 // ---- Connection management ----
 
-func (a *App) connectServer(opts config.Connection) {
+// connectServer dials opts on a background goroutine and, once it resolves,
+// hands the outcome to done on the UI goroutine, ahead of acting on it. done
+// may be nil; it reports whether the caller still wants the attempt.
+//
+// db.Connect takes no context, so an attempt in flight cannot be aborted — the
+// Connect dialog's Cancel abandons one instead, and answers false here. An
+// abandoned attempt is wound back rather than half-applied: a connection that
+// arrived anyway is closed instead of appearing in Object Explorer under a
+// dialog the user dismissed, and a failure is left on the status bar without
+// an alert popping over whatever they moved on to.
+func (a *App) connectServer(opts config.Connection, done func(err error) bool) {
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 	a.draw()
 
 	a.safego("connecting to the server", func() {
 		sc, err := db.Connect(opts)
 		a.postAndWake(func() {
+			wanted := true
+			if done != nil {
+				wanted = done(err)
+			}
 			if err != nil {
 				if dbErr, ok := errors.AsType[*db.ConnectionError](err); ok {
 					a.setStatus(fmt.Sprintf("Connection error [%s]: %s", dbErr.Server, dbErr.Cause))
-					a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %s", dbErr.Server, dbErr.Cause))
+					if wanted {
+						a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %s", dbErr.Server, dbErr.Cause))
+					}
 				} else {
 					a.setStatus(fmt.Sprintf("Connection failed: %v", err))
-					a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %v", opts.Server, err))
+					if wanted {
+						a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %v", opts.Server, err))
+					}
 				}
+				return
+			}
+			if !wanted {
+				// Nothing else references sc — closing it here is what keeps
+				// a cancelled attempt from leaking a live session for the
+				// rest of the process's lifetime.
+				sc.Close()
+				a.setStatus(fmt.Sprintf("Cancelled connecting to %s", opts.Server))
 				return
 			}
 			// Before the tree can start loading off it: an Always On folder

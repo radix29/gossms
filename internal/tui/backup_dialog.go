@@ -56,7 +56,7 @@ type BackupDialog struct {
 	status    string
 	statusErr bool
 
-	// destLabelY/typeLabelY are rows computed by layoutForm, read by Draw.
+	// destLabelY/serverRowY are rows computed by layoutForm, read by Draw.
 	destLabelY int
 	serverRowY int
 

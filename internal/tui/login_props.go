@@ -12,9 +12,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// loginPropPages builds the page set for Login Properties. Securables
-// only models the single SERVER-scope securable for now (see its own
-// comment) — every page is editable.
+// loginPropPages builds the page set for Login Properties. Securables models
+// only the server itself as a securable — server-scoped permissions on one
+// principal, see pagePrincipalServerPermissions — and Effective Permissions is
+// a read-only listing by design (see effectivePermsNote); every other page is
+// editable.
 //
 // loginName is boxed in a *string shared by every page below: renaming a
 // login changes the identity every other page's lookup depends on. The
@@ -25,7 +27,19 @@ import (
 func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
-		withRequires(pageLoginGeneral(sc, namePtr), "", rightAlterAnyLogin),
+		// withRequiresOn, not withRequires: rightAlterAnyLogin carries the
+		// class-101 arm, and a page that names no securable asks it about
+		// nothing and withholds nothing. DENY ALTER ON LOGIN::x withholds the
+		// rename and the password alike, so this page and Status below are
+		// read-only under it.
+		withRequiresOn(pageLoginGeneral(sc, namePtr), "", "", loginName, rightAlterAnyLogin),
+		// Server Roles declares the plain right, and deliberately. Its write
+		// is ALTER SERVER ROLE r ADD/DROP MEMBER, which a DENY on *this login*
+		// does not withhold — verified live on majors 13 and 17, unlike the
+		// database scope, where the member is checked. What does withhold it
+		// is a DENY on the role, a different answer per row of the list, which
+		// one page-level banner cannot state. See
+		// rightAlterAnyServerRoleMembers.
 		withRequires(pageLoginServerRoles(sc, namePtr), "", rightAlterAnyServerRole),
 		// User Mapping deliberately declares nothing. Its writes create and
 		// drop *database* users, so what permits them is ALTER ANY USER in
@@ -36,7 +50,7 @@ func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPa
 		pageLoginUserMapping(sc, namePtr),
 		withRequires(pageLoginSecurables(sc, namePtr), "", rightControlServer),
 		pageLoginEffectivePermissions(d, sc, namePtr),
-		withRequires(pageLoginStatus(sc, namePtr), "", rightAlterAnyLogin),
+		withRequiresOn(pageLoginStatus(sc, namePtr), "", "", loginName, rightAlterAnyLogin),
 	}
 }
 

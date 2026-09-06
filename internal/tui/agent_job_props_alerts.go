@@ -173,8 +173,8 @@ func notifyConditionIndex(level gosmo.NotifyLevel) int {
 
 // pageJobNotifications is the Notifications page: e-mail operator/condition
 // and automatic-delete condition are real, editable msdb state; net send,
-// pager, and Windows event log are shown disabled — they're outside
-// SQL-only scope.
+// pager, and Windows event log each keep their section but carry an
+// "excluded" note in place of a control — they're outside SQL-only scope.
 func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Notifications",

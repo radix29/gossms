@@ -9,7 +9,7 @@ import (
 )
 
 // The rule for which databases a dropdown offers, in one place rather than
-// decided separately at each of thirteen call sites.
+// decided separately at each of its seven call sites.
 //
 // It turns on *when* the name is resolved, not on what looks tidy:
 //
@@ -53,7 +53,8 @@ func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, erro
 	return out, nil
 }
 
-// namesOf is the loop that five prefetches had a byte-identical copy of.
+// namesOf is the name-extraction loop each dropdown prefetch used to carry
+// its own byte-identical copy of.
 func namesOf(dbs []*gosmo.Database) []string {
 	out := make([]string, len(dbs))
 	for i, d := range dbs {

@@ -9,9 +9,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// rolePropPages builds the page set for Database Role Properties. Owned
-// Roles/Owned Schemas/Members/Extended Properties are editable; General is
-// editable except for a built-in role's name/owner. Application roles are
+// rolePropPages builds the page set for Database Role Properties. Members,
+// Owned Schemas, Owned Roles, Securables and Extended Properties are all
+// editable; General is editable except for a built-in role's name/owner. Application roles are
 // not covered — they're a separate principal type with no tree node of
 // their own.
 //

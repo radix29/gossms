@@ -170,10 +170,10 @@ func outputColumnMetaMenuLabel(on bool) string {
 }
 
 // editorAction runs fn against the active query panel's editor, if any —
-// used by Edit menu entries (Duplicate Line, Move Line, Comment/Uncomment,
-// Uppercase/Lowercase, Undo/Redo) that are meaningful only for the SQL
-// editor, unlike Cut/Copy/Paste/Select All which also work on dialog
-// input fields via activeClipboardTarget.
+// used by the menu entries that are meaningful only for the SQL editor
+// (Duplicate/Delete Line, Move Line, Comment/Uncomment, Uppercase/Lowercase,
+// and Query > Execute at Cursor), unlike Cut/Copy/Paste/Select All, which also
+// work on dialog input fields via activeClipboardTarget.
 func (a *App) editorAction(fn func(e *controls.Editor)) {
 	if qp := a.activeQueryPanel(); qp != nil {
 		fn(qp.editor)
@@ -182,8 +182,8 @@ func (a *App) editorAction(fn func(e *controls.Editor)) {
 
 // editorUndo and editorRedo act on whichever *controls.Editor Cut/Copy/
 // Paste would currently act on (the query editor, or a dialog's
-// connection-string Editor field) — unlike the other new Edit-menu
-// entries above, which are query-editor-only. InputField keeps no undo
+// connection-string Editor field) rather than going through editorAction,
+// which is query-editor-only. InputField keeps no undo
 // history, so a focused InputField simply has no effect here.
 func (a *App) editorUndo() {
 	if e, ok := a.activeClipboardTarget().(*controls.Editor); ok {

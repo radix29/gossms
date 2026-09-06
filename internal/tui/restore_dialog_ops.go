@@ -305,8 +305,9 @@ func (d *RestoreDialog) startRestore() {
 }
 
 // confirmOverwrite gates a restore that would overwrite an existing database
-// behind retyping its first 4 characters — the same friction as every other
-// "type to confirm" prompt here.
+// behind retyping its first 4 characters. Shorter than the Always On prompts,
+// which ask for the whole name: a target typed into this dialog is already in
+// front of the user, so the prompt is a pause rather than a transcription.
 func (d *RestoreDialog) confirmOverwrite(target string, proceed func()) {
 	runes := []rune(target)
 	prefix := target

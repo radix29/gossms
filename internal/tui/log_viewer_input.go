@@ -113,10 +113,11 @@ func (lv *LogViewer) scrollDetails(delta int) {
 }
 
 // HandleMouse routes a mouse event to whichever sub-region owns it. The
-// gesture rules it implements are the five in ARCHITECTURE.md § The
-// mouseDragging idiom: a press claims the gesture until its release
-// (dragZone), and a release is forwarded to every latch-bearing child
-// regardless of where the pointer ended up.
+// gesture rules it implements are the five invariants listed in
+// docs/ui-rules.md § Mouse, overlays, and async UI, whose reasoning is in
+// ARCHITECTURE.md § The mouseDragging idiom: a press claims the gesture
+// until its release (dragZone), and a release is forwarded to every
+// latch-bearing child regardless of where the pointer ended up.
 func (lv *LogViewer) HandleMouse(ev *tcell.EventMouse) bool {
 	// The grid's value popup can be drawn over any part of the panel, so it
 	// gets every event — including the release ending a drag inside it —

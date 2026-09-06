@@ -23,9 +23,9 @@ type ownerTransferItem[T any] struct {
 	newOwner  string
 }
 
-// ownerTransferSpec is what differs between the owner-transfer pages — Schema
-// Ownership in User and Database Role Properties, Owned Roles in Database
-// Role and Server Role Properties. Everything else about those pages is
+// ownerTransferSpec is what differs between the owner-transfer pages — Owned
+// Schemas in User and Database Role Properties, Owned Roles in Database Role
+// and Server Role Properties. Everything else about those pages is
 // identical and lives in newOwnerTransferPage.
 type ownerTransferSpec[T any] struct {
 	// Headers are the grid's column headers. Cells returns one cell per

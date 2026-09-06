@@ -10,8 +10,10 @@ import (
 )
 
 // detail_browser_storage.go is the Detail Browser's view of the five
-// families that have no editable Properties: partition functions and
-// schemes, row-level security policies, and the two Always Encrypted keys.
+// families whose Properties are read-only, bar one rotation: partition
+// functions and schemes, row-level security policies, and the two Always
+// Encrypted keys — of which only the column encryption key's page writes,
+// and only to move the key between master keys.
 // Each reuses the finder its Properties page uses, so the pane and the
 // dialog can't disagree about which object a node names.
 

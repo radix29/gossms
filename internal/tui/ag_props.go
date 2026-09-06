@@ -31,9 +31,13 @@ import (
 // live on the Object Explorer context menus.
 func agPropPages(sc *db.ServerConn, agName string) []propPage {
 	return []propPage{
-		withRequires(pageAGGeneral(sc, agName), "", rightAlterAnyAG),
-		withRequires(pageAGBackupPreferences(sc, agName), "", rightAlterAnyAG),
-		withRequires(pageAGReadOnlyRouting(sc, agName), "", rightAlterAnyAG),
+		// withRequiresOn, not withRequires: rightAlterAnyAG carries the
+		// class-108 arm, and a page that names no group asks it about nothing
+		// and withholds nothing. Every apply on these three is
+		// ALTER AVAILABILITY GROUP, which DENY ALTER on the group refuses.
+		withRequiresOn(pageAGGeneral(sc, agName), "", "", agName, rightAlterAnyAG),
+		withRequiresOn(pageAGBackupPreferences(sc, agName), "", "", agName, rightAlterAnyAG),
+		withRequiresOn(pageAGReadOnlyRouting(sc, agName), "", "", agName, rightAlterAnyAG),
 	}
 }
 
@@ -181,10 +185,12 @@ func agMissingReplicaErr(name string) error {
 }
 
 // wireGridEditor connects a per-row detail editor below a DataGrid to the grid's
-// selection, the shape the Backup Preferences and Read-Only Routing pages share:
-// moving off a row commits whatever was typed into the editor, loads the newly
-// selected row into it, then redraws the grid. Returns the redraw a page's
-// RevertFn needs after rewriting the edits behind the grid.
+// selection — the grid-plus-detail shape every page that edits a list of rows
+// uses, this file's replica grid and the Backup Preferences, Read-Only Routing,
+// User Mapping, Attach and New Index/Statistics/AG pages alike: moving off a row
+// commits whatever was typed into the editor, loads the newly selected row into
+// it, then redraws the grid. Returns the redraw a page's RevertFn needs after
+// rewriting the edits behind the grid.
 //
 // The selected cell is saved and restored around SetData because SetData resets
 // it to 0,0 and this redraw runs from inside OnSelectRow, after the grid has

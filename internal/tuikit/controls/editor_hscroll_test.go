@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// ensureColumnVisible is the horizontal half of ensureCursorVisible, called by
-// both it and selectMatch. Nothing else pinned the arithmetic, so a change to
-// either caller's copy used to go unnoticed.
+// ensureColumnVisible is the horizontal half of ensureCursorVisible. Nothing
+// else pins the arithmetic, so a change to it used to go unnoticed.
 
 // TestEditorScrollsSidewaysToFollowTheCaret drives the ensureCursorVisible
 // route: a caret walked past the right edge of an unwrapped editor.
@@ -49,7 +48,7 @@ func TestEditorDoesNotScrollSidewaysWhenWrapped(t *testing.T) {
 	e.SetWrapMode(true)
 	e.cursorCol = 150
 	e.ensureCursorVisible()
-	e.ensureColumnVisible() // selectMatch's route, which has no wrap check of its own
+	e.ensureColumnVisible() // and directly, since ensureCursorVisible skips it when wrapped
 	if e.scrollCol != 0 {
 		t.Errorf("scrollCol = %d in wrap mode, want 0", e.scrollCol)
 	}

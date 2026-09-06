@@ -80,9 +80,9 @@ func (p *QueryPanel) clearResults() {
 	p.layoutChildren() // the tab bar's row goes back to the results area
 }
 
-// runQuery is the shared execution path for Execute. The heavy lifting — GO
-// batch splitting, the USE switch, result sets, the message stream — lives in
-// internal/query.
+// runQuery is the shared execution path for Execute and Execute Selection. The
+// heavy lifting — GO batch splitting, the USE switch, result sets, the message
+// stream — lives in internal/query.
 //
 // In Results To File mode it asks for the destination first, then runs through
 // query.ExecuteToSink, streaming rows to the file as they are scanned.

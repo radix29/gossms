@@ -296,10 +296,9 @@ func (e *Editor) selectMatch(m searchMatch) {
 	e.cursorRow, e.cursorCol = m.row, m.endCol
 	e.clampCursor()
 	e.desiredCol = e.cursorDisplayCol()
+	// ensureCursorVisible scrolls sideways too, which is what a match far along
+	// a long line needs: inside the viewport vertically, off it horizontally.
 	e.ensureCursorVisible()
-	// A match far along a long line is inside the viewport vertically but off it
-	// horizontally, and ensureCursorVisible scrolls only the row into view.
-	e.ensureColumnVisible()
 }
 
 // ReplaceCurrent replaces the selected match with the active search's Replace
@@ -445,8 +444,8 @@ func (e *Editor) matchSpansForLine(row int) []searchMatch {
 
 // ensureColumnVisible scrolls horizontally so the cursor's display column is
 // inside the content area. It is the horizontal half of ensureCursorVisible,
-// which calls it for the unwrapped case; selectMatch calls it on its own so a
-// match far along a wide line is scrolled to sideways as well as vertically.
+// which is its only caller, and is separate only to keep that function's
+// vertical arithmetic readable.
 func (e *Editor) ensureColumnVisible() {
 	if e.wrapMode {
 		return

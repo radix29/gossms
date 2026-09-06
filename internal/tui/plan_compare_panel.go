@@ -15,7 +15,8 @@ import (
 
 // plan_compare_panel.go is SSMS's Compare Showplan: two plans of one query read
 // against each other. Two grids rather than two plan graphs side by side — an
-// operator tile is eighteen columns wide and a terminal that fits two of them
+// operator tile is twenty columns wide (planview.graphTileW) and a terminal that
+// fits two of them
 // side by side has no room left for either plan's properties, and the question
 // a comparison answers ("what changed") is a list, not a picture.
 //

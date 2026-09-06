@@ -82,10 +82,10 @@ func (inv *completionInventory) endLoad(seq int) bool {
 // straight past, leaving every later lookup seeing a load in flight that doesn't
 // exist.
 //
-// The entry is dropped rather than merely unlatched, as the
-// err-and-closed-connection branch above does, so the next lookup retries from
-// scratch instead of reading a catalog half-built by the fetch that died. seq
-// keeps a superseded panic off a live newer load.
+// The entry is dropped rather than merely unlatched — the same eviction
+// loadCompletionInventory's err-and-closed-connection branch makes — so the next
+// lookup retries from scratch instead of reading a catalog half-built by the
+// fetch that died. seq keeps a superseded panic off a live newer load.
 func loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
 	if !inv.endLoad(seq) {
 		return

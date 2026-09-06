@@ -20,12 +20,20 @@ var databaseFileColumns = []string{"Logical name", "Type", "Filegroup", "Size (M
 // the one file type that belongs to no filegroup.
 const logFileType = "LOG"
 
-// addableFileTypes are the file types this page can create — the two
-// sys.database_files reports that ALTER DATABASE ... ADD FILE can add from
-// here. It is not the set of types a file can *have*: FilesContext also
-// reports FILESTREAM, so the picker is widened for display when a selected
+// addableFileTypes are the file types the picker offers — the two
+// sys.database_files reports that ALTER DATABASE ... ADD FILE names in the
+// statement itself. It is not the set of types a file can *have*: FilesContext
+// also reports FILESTREAM, so the picker is widened for display when a selected
 // file's type is outside this list.
 var addableFileTypes = []string{"ROWS", logFileType}
+
+// filestreamFileType is sys.database_files' type_desc for a FILESTREAM data
+// file. It is deliberately not in addableFileTypes, because it is not something
+// to pick: ALTER DATABASE ADD FILE has no file-type keyword at all, and a file
+// becomes FILESTREAM purely by going into a FILESTREAM filegroup. The same
+// clause aimed at a ROWS filegroup produces an ordinary data file — measured on
+// win10cli against a real FILESTREAM database, 2026-09-05. See fileEdit.spec.
+const filestreamFileType = "FILESTREAM"
 
 // noFilegroupItem is what the Filegroup dropdown shows for a LOG file. The
 // list is filegroup names with no empty entry, so indexOf's not-found 0 left
@@ -137,16 +145,27 @@ func (e *fileEdit) modify() gosmo.FileModify {
 }
 
 // spec builds the CREATE-side description of a brand-new file. Unlike
-// modify, every field is sent: there is no previous value to leave alone.
+// modify, every field is sent: there is no previous value to leave alone —
+// except for a FILESTREAM file, which has no size and no autogrowth to send.
 func (e *fileEdit) spec() gosmo.DatabaseFileSpec {
 	spec := gosmo.DatabaseFileSpec{
-		Name: e.name, Type: e.fileType, Path: e.path, SizeKB: e.sizeKB, MaxSizeKB: e.maxSizeKB,
+		Name: e.name, Type: e.fileType, Path: e.path, MaxSizeKB: e.maxSizeKB,
 	}
 	// A LOG file belongs to no filegroup, and gosmo ignores the field for
 	// one; leaving it empty keeps the spec honest rather than relying on that.
 	if e.fileType != logFileType {
 		spec.FileGroup = e.fileGroup
 	}
+	// SIZE and FILEGROWTH on a FILESTREAM file are refused outright: "The
+	// properties SIZE or FILEGROWTH cannot be specified for the FILESTREAM data
+	// file" (Msg 5509). MAXSIZE is accepted — measured, both of them, rather
+	// than assumed, since the two clauses read as one family and are not. The
+	// omission lives here rather than in the Add button so that every route to a
+	// spec goes through it.
+	if e.fileType == filestreamFileType {
+		return spec
+	}
+	spec.SizeKB = e.sizeKB
 	switch {
 	case e.growthOff():
 		spec.DisableGrowth = true
@@ -213,8 +232,15 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				return nil, nil, err
 			}
 			fgNames := make([]string, len(fgs))
+			// fsGroup is which of them make a file put into them a FILESTREAM
+			// file. gosmo reports the filegroup's own type_desc; nothing about
+			// the file being added says it.
+			fsGroup := make(map[string]bool, len(fgs))
 			for i, fg := range fgs {
 				fgNames[i] = fg.Name
+				if fg.IsFileStream() {
+					fsGroup[fg.Name] = true
+				}
 			}
 
 			edits := make([]*fileEdit, len(files))
@@ -295,8 +321,36 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				}
 				return filegroupSelect.Value()
 			}
+			// effectiveType is what a file put in fileGroup actually becomes.
+			// The picker offers ROWS and LOG; the filegroup is what turns a ROWS
+			// pick into a FILESTREAM file, so the two have to be read together.
+			effectiveType := func(picked, fileGroup string) string {
+				if picked != logFileType && fsGroup[fileGroup] {
+					return filestreamFileType
+				}
+				return picked
+			}
+			// syncSizeRows gates the size and growth spinners on whether the
+			// file they describe can carry either. A FILESTREAM file cannot, and
+			// a live spinner whose value the statement drops is the silent
+			// wrong-thing this page's other pickers are gated against — here it
+			// would have been worse than silent, since sending them fails the
+			// whole Add with Msg 5509.
+			syncSizeRows := func(fileType string) {
+				fs := fileType == filestreamFileType
+				sizeField.SetEnabled(!fs)
+				growthField.SetEnabled(!fs)
+				if fs {
+					sizeField.SetValue("0")
+					growthField.SetValue("0")
+				}
+			}
 			typeSelect.SetOnChange(func(string) {
 				showFilegroupFor(typeSelect.Value(), "")
+				syncSizeRows(effectiveType(typeSelect.Value(), pickedFilegroup(typeSelect.Value())))
+			})
+			filegroupSelect.SetOnChange(func(string) {
+				syncSizeRows(effectiveType(typeSelect.Value(), pickedFilegroup(typeSelect.Value())))
 			})
 
 			var current *fileEdit
@@ -315,8 +369,8 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				// then reported as fact. Same defect as the noFilegroupItem
 				// comment above, one field over.
 				if current.isNew {
-					current.fileType = typeSelect.Value()
-					current.fileGroup = pickedFilegroup(current.fileType)
+					current.fileGroup = pickedFilegroup(typeSelect.Value())
+					current.fileType = effectiveType(typeSelect.Value(), current.fileGroup)
 					current.path = pathField.Value()
 				}
 				if n, err := sizeField.IntValue(); err == nil {
@@ -355,6 +409,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				typeSelect.SetItems(typeItems)
 				typeSelect.SetSelected(typeIdx)
 				showFilegroupFor(current.fileType, current.fileGroup)
+				syncSizeRows(current.fileType)
 				pathField.SetValue(current.path)
 				sizeField.SetValue(strconv.FormatInt(current.sizeKB/1024, 10))
 				if current.isPercentGrowth {
@@ -411,8 +466,10 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					}
 				}
 				hint.Clear()
+				fileGroup := pickedFilegroup(typeSelect.Value())
 				e := &fileEdit{
-					isNew: true, name: name, fileType: typeSelect.Value(), fileGroup: pickedFilegroup(typeSelect.Value()), path: pathField.Value(),
+					isNew: true, name: name, fileType: effectiveType(typeSelect.Value(), fileGroup),
+					fileGroup: fileGroup, path: pathField.Value(),
 					maxSizeKB: -1,
 				}
 				if n, err := sizeField.IntValue(); err == nil {
@@ -476,6 +533,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 				growthKind, growthField, maxKind, maxField, pathField,
 				propsheet.Buttons(addBtn, removeBtn),
 				hint,
+				propsheet.Note("A file added to a FILESTREAM filegroup is a FILESTREAM file: its path is a directory rather than a file, and it takes neither an initial size nor autogrowth, so those two are greyed. Choosing the filegroup is what makes it one — there is no file type to pick."),
 			)
 
 			apply := func(ctx context.Context) error {

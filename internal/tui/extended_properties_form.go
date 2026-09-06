@@ -26,7 +26,7 @@ type extPropEdit struct {
 
 // pageExtendedProperties is the Extended Properties page as every
 // Properties dialog for an object *inside* a database uses it — schema,
-// table, index, statistic, user, database role. Only the
+// table, index, primary/unique key, statistic, user, database role. Only the
 // ExtendedPropertyLevel naming that object differs between them, and it's
 // supplied as a closure rather than a value because a rename on the
 // General page changes it while the dialog is open (the level literals

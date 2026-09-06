@@ -238,9 +238,9 @@ func (d *OptionsDialog) doButton() {
 	}
 }
 
-// apply commits the selected icon style and max cell length to the config,
-// persists it, and rebuilds the Object Explorer so the icon change is
-// visible immediately.
+// apply commits all three settings — icon style, max cell length and whether
+// IntelliSense is enabled — to the config, persists it, and rebuilds the Object
+// Explorer so the icon change is visible immediately.
 func (d *OptionsDialog) apply() {
 	styles := config.AllIconStyles()
 	if i := d.rbIconStyle.Selected(); i >= 0 && i < len(styles) {

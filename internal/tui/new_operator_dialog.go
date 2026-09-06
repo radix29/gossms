@@ -16,8 +16,8 @@ import (
 // "General") rather than a bespoke shell, so OK/Cancel/Apply/Script Changes
 // behave identically to every other dialog in the app.
 
-// noperatorPrefetch holds the one fetch this dialog needs: existing
-// operator names (name-uniqueness preflight) and operator categories
+// noperatorPrefetch holds the one shared prefetch this dialog is built from:
+// existing operator names (name-uniqueness preflight) and operator categories
 // (Category dropdown).
 type noperatorPrefetch struct {
 	existingNames map[string]bool

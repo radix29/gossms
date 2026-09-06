@@ -33,8 +33,10 @@ import (
 
 // agDashboardRates are the refresh intervals the panel offers, and
 // agDashboardDefaultRate indexes the one it opens at. An availability group
-// moves over seconds to minutes and each tick is four round trips against the
-// primary, so these start where the Activity Monitor's list ends.
+// moves over seconds to minutes and each tick is three round trips against the
+// primary — four when the panel has to follow one from a secondary, and three
+// per group in the all-groups view — so these start where the Activity
+// Monitor's list ends.
 var agDashboardRates = []time.Duration{
 	5 * time.Second,
 	10 * time.Second,

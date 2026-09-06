@@ -277,15 +277,9 @@ all saved connections.
 
 ## Known Issues
 
-Environment and distribution:
-
 - Entra authentication untested — no infrastructure available
 - Not tested on macOS yet — no Mac available
 - Release binaries are unsigned; checksums are provided
-
-Functional gaps:
-
-- Reports (server- and database-level) aren't built yet
 
 ## Contributing
 

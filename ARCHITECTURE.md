@@ -43,7 +43,7 @@ Before adding to any of them:
 | `docs/testing.md` | What counts as verification: the tmux and live-server harnesses, and the `fakedb_test.go` rules |
 | `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
-| `PLAN.md` | What's next: release target, current priorities, feature backlog |
+| `PLAN.md` | Where the project stands: current state, version support, known issues |
 | `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
 
 `README.md` is user-facing and owns features and the keyboard reference. When
