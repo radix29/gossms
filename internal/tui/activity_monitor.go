@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -14,7 +15,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
-// amTab identifies one of the Activity Monitor's five tabs.
+// amTab identifies one of the Activity Monitor's tabs. Every tab the panel
+// knows how to draw has a constant here; which of them a given connection
+// actually offers is visibleTabs' question, not this one's.
 type amTab int
 
 const (
@@ -23,21 +26,34 @@ const (
 	amTabTempDB
 	amTabSessions
 	amTabBlock
-	amTabCount = 5
+	amTabInstance
+	amTabCount = 6
 )
 
 // amTabLabels are the tab-bar labels, indexed by amTab.
-var amTabLabels = [amTabCount]string{"History", "Sample", "TempDB", "Sessions", "Block"}
+var amTabLabels = [amTabCount]string{"History", "Sample", "TempDB", "Sessions", "Block", "Instance"}
+
+// amAllTabs is every tab in bar order. The per-tab arrays below stay indexed
+// by amTab and sized amTabCount — a tab that is not offered still has a scroll
+// position, it is simply never reachable — so only the *bar* is a slice.
+var amAllTabs = []amTab{amTabHistory, amTabSample, amTabTempDB, amTabSessions, amTabBlock, amTabInstance}
 
 // dashboardTab reports whether t is fed by the shared activity collector —
-// History and Sample, which share one rate and one Pause. TempDB draws a
-// dashboard but runs its own collector, so it is excluded.
+// History and Sample, which share one rate and one Pause. TempDB and Instance
+// draw a dashboard but run their own feed, so both are excluded.
 func (t amTab) dashboardTab() bool { return t == amTabHistory || t == amTabSample }
 
 // canvasTab reports whether t draws a scrolling dashboard canvas rather than a
 // result grid, gating every scrolling key and gesture and the toolbar's
 // rate/Pause arm.
-func (t amTab) canvasTab() bool { return t.dashboardTab() || t == amTabTempDB }
+func (t amTab) canvasTab() bool { return t.dashboardTab() || t == amTabTempDB || t == amTabInstance }
+
+// azureOnly reports whether t is only meaningful on an Azure engine edition.
+// The Instance tab reads sys.server_resource_stats,
+// sys.dm_instance_resource_governance and sys.dm_os_job_object, none of which
+// exists anywhere else, and gosmo refuses all three off Azure — so on an
+// on-premises server the tab would be a permanent error strip.
+func (t amTab) azureOnly() bool { return t == amTabInstance }
 
 // amRates are the refresh intervals the rate selector offers.
 var amRates = []time.Duration{
@@ -98,11 +114,13 @@ type ActivityMonitor struct {
 	scrollX [amTabCount]int
 	scrollY [amTabCount]int
 
-	// act and td are the collector-facing state of the two dashboards: the feed
-	// behind History and Sample, and the TempDB tab's own. Every tab-dependent
-	// read of rate, pause, status or sample time goes through feed().
-	act amFeed
-	td  amFeed
+	// act, td and inst are the collector-facing state of the three dashboard
+	// feeds: the one behind History and Sample, the TempDB tab's own, and the
+	// Instance tab's. Every tab-dependent read of rate, pause, status or sample
+	// time goes through feed().
+	act  amFeed
+	td   amFeed
+	inst amInstanceFeed
 
 	// store holds every sample collected, and collector is the goroutine
 	// filling it. History plots the store, Sample draws its newest entry.
@@ -118,6 +136,12 @@ type ActivityMonitor struct {
 	tdStore     activity.TempDBStore
 	tdCollector *activity.TempDBCollector
 	tempdb      dashboard.TempDBView
+
+	// The Instance tab's poller and view. There is no store beside them: the
+	// server keeps the history and one tick reads it whole — see
+	// activity_monitor_instance.go.
+	instPoller *activity.Poller[amInstanceSample]
+	instance   dashboard.InstanceView
 
 	// blk and sess are the procedure-backed tabs: a result grid over one run of
 	// sp_block and of sp_WhoIsActive. Each opens its own connection when first
@@ -251,6 +275,18 @@ func (f *amFeed) setPaused(v bool) {
 // in which Pause does nothing, every send being dropped.
 func (f *amFeed) stopped() bool { return f.started && !f.collecting }
 
+// amInstanceFeed is the Instance tab's feed: the shared amFeed plus the single
+// reading that tab draws.
+//
+// The reading lives here rather than in an activity.Store because there is
+// nothing to accumulate — sys.server_resource_stats *is* the history, and each
+// tick replaces it. A store would be a second, staler copy of what the server
+// already keeps for two weeks.
+type amInstanceFeed struct {
+	amFeed
+	sample amInstanceSample
+}
+
 // amCanvasKey is everything a rendered dashboard canvas depends on. Any
 // difference from the cached key means the canvas has to be redrawn.
 type amCanvasKey struct {
@@ -314,9 +350,17 @@ func NewActivityMonitor(app *App, sc *db.ServerConn) *ActivityMonitor {
 			rateIdx:    defaultTempDBRateIdx,
 			status:     noSamplesStatus,
 		},
+		inst: amInstanceFeed{amFeed: amFeed{
+			prefix:     "Instance rate:",
+			rates:      amInstanceRates,
+			rateLabels: amInstanceRateLabels,
+			rateIdx:    defaultInstanceRateIdx,
+			status:     noSamplesStatus,
+		}},
 	})
 	am.act.restart = am.startActivityCollector
 	am.td.restart = am.startTempDBCollector
+	am.inst.restart = am.startInstancePoller
 	am.blk = am.newProcTab(activity.BlockProc, "")
 	am.sess = am.newProcTab(activity.WhoIsActiveProc, whoIsActiveCredit())
 	am.buildTools()
@@ -340,8 +384,13 @@ func (am *ActivityMonitor) Close() {
 		am.tdCollector.Stop()
 		am.tdCollector = nil
 	}
+	if am.instPoller != nil {
+		am.instPoller.Stop()
+		am.instPoller = nil
+	}
 	am.act.collecting = false
 	am.td.collecting = false
+	am.inst.collecting = false
 	for _, sc := range am.owned {
 		sc.Close()
 	}
@@ -357,9 +406,11 @@ func (am *ActivityMonitor) Close() {
 	}
 	am.store.Reset()
 	am.tdStore.Reset()
+	am.inst.sample = amInstanceSample{}
 	am.history = dashboard.HistoryView{}
 	am.sample = dashboard.SampleView{}
 	am.tempdb = dashboard.TempDBView{}
+	am.instance = dashboard.InstanceView{}
 	am.invalidateView()
 	// Dropped outright rather than left for refreshTooltip: the views are empty
 	// now, so it would resolve to nothing on the next draw anyway.
@@ -375,6 +426,7 @@ func (am *ActivityMonitor) startCollector(conn *db.ServerConn) {
 	am.feedConn = conn
 	am.startActivityCollector()
 	am.startTempDBCollector()
+	am.startInstancePoller()
 }
 
 // startActivityCollector starts the History/Sample collector on the panel's
@@ -441,6 +493,89 @@ func (am *ActivityMonitor) startTempDBCollector() {
 	am.app.safegoRepair("collecting tempdb activity",
 		func() { am.tempDBCollectorStopped(collector) },
 		func() { am.runTempDBCollector(collector, ctx, rate) })
+}
+
+// startInstancePoller starts the Instance tab's poller on the same connection's
+// pool. It is an activity.Poller rather than a Collector because the reading it
+// takes is already a history — see activity_monitor_instance.go.
+//
+// It is a no-op off Azure: the three views the probe reads exist nowhere else,
+// visibleTabs withholds the tab there, and a poller running against a tab that
+// cannot be reached would fail every tick for no one to read.
+func (am *ActivityMonitor) startInstancePoller() {
+	conn := am.feedConn
+	if conn == nil || conn.Server == nil || !serverIsAzure(conn) {
+		return
+	}
+	// Captured, not read off the panel inside the probe: the probe runs on the
+	// poller's goroutine, where am's fields must not be touched.
+	srv := conn.Server
+	am.instPoller = activity.NewPoller(srv.DB(),
+		func(ctx context.Context) (*amInstanceSample, error) { return probeInstance(ctx, srv) },
+		func(s amInstanceSample) { am.app.postAndWake(func() { am.applyInstanceSample(s) }) },
+		func(err error) { am.app.postAndWake(func() { am.applyInstanceError(err) }) })
+	am.inst.applyRate = am.instPoller.SetRate
+	am.inst.applyPaused = am.instPoller.SetPaused
+	am.inst.started, am.inst.collecting, am.inst.status = true, true, ""
+	if am.inst.paused {
+		am.instPoller.SetPaused(true)
+	}
+	am.buildTools()
+
+	poller, ctx, rate := am.instPoller, conn.Context(), am.inst.rate()
+	// safegoRepair for the same reason as startActivityCollector's.
+	am.app.safegoRepair("reading Azure instance resources",
+		func() { am.instancePollerStopped(poller) },
+		func() { am.runInstancePoller(poller, ctx, rate) })
+}
+
+// runInstancePoller is runCollector for the Instance tab — same two halves,
+// same reason.
+func (am *ActivityMonitor) runInstancePoller(p *activity.Poller[amInstanceSample], ctx context.Context, rate time.Duration) {
+	p.Run(ctx, rate)
+	am.app.postAndWake(func() { am.instancePollerStopped(p) })
+}
+
+// instancePollerStopped is collectorStopped for the Instance tab.
+func (am *ActivityMonitor) instancePollerStopped(p *activity.Poller[amInstanceSample]) {
+	if !am.app.panelHosted(am) || am.instPoller != p {
+		return
+	}
+	am.inst.collecting = false
+	if am.inst.status == "" {
+		am.inst.status = collectionStoppedStatus
+	}
+	am.buildTools()
+}
+
+// applyInstanceSample stores an instance reading and rebuilds that tab. Runs on
+// the UI goroutine, via postAndWake.
+func (am *ActivityMonitor) applyInstanceSample(s amInstanceSample) {
+	if !am.app.panelHosted(am) {
+		return
+	}
+	am.inst.sample = s
+	// The tab's own clock, not the newest row's: the rows carry the server's
+	// window boundaries, and reporting one of those as the sample time would
+	// have the header claim a freshness the panel cannot vouch for. What the
+	// row covers is the time axis's job, and it says so per bucket.
+	am.inst.sampleTime = s.At.Format("15:04:05")
+	am.inst.status = ""
+	am.instance = am.buildInstanceView()
+	am.invalidateView()
+}
+
+// applyInstanceError reports a failed instance tick without clearing what has
+// already been read — see applyError.
+func (am *ActivityMonitor) applyInstanceError(err error) {
+	if !am.app.panelHosted(am) {
+		return
+	}
+	am.inst.status = err.Error()
+	if errors.Is(err, activity.ErrNoPermission) {
+		am.inst.collecting = false
+		am.buildTools()
+	}
 }
 
 // runTempDBCollector is runCollector for the TempDB tab — same two halves,
@@ -600,6 +735,8 @@ func (am *ActivityMonitor) canvasSize() (int, int) {
 		cw, ch = dashboard.SampleCanvasW, dashboard.SampleCanvasH
 	case amTabTempDB:
 		cw, ch = dashboard.TempDBCanvasW, dashboard.TempDBCanvasH
+	case amTabInstance:
+		cw, ch = dashboard.InstanceCanvasW, dashboard.InstanceCanvasH
 	default:
 		cw, ch = dashboard.HistoryCanvasW, dashboard.HistoryCanvasH
 	}
@@ -639,9 +776,36 @@ func (am *ActivityMonitor) scrollBy(dx, dy int) bool {
 	return am.scrollTo(am.scrollX[am.tab]+dx, am.scrollY[am.tab]+dy)
 }
 
-// setTab switches tabs, rebuilding the toolbar for the new tab's controls.
+// visibleTabs is the tab bar for this connection, in order. Everything the
+// panel can draw, minus what the connected engine edition has no data for.
+//
+// A slice rather than the fixed array the tab constants index: the Instance
+// tab exists only on Azure, and the alternative — drawing it everywhere and
+// letting it report that its three views do not exist — puts a permanent error
+// strip on every on-premises connection. The per-tab scroll arrays stay indexed
+// by amTab, so nothing here has to renumber.
+func (am *ActivityMonitor) visibleTabs() []amTab {
+	azure := serverIsAzure(am.conn)
+	out := make([]amTab, 0, len(amAllTabs))
+	for _, t := range amAllTabs {
+		if t.azureOnly() && !azure {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+// tabVisible reports whether t is offered on this connection.
+func (am *ActivityMonitor) tabVisible(t amTab) bool {
+	return slices.Contains(am.visibleTabs(), t)
+}
+
+// setTab switches tabs, rebuilding the toolbar for the new tab's controls. A
+// tab this connection does not offer is refused, so no key, click or test can
+// land the panel on one whose feed will never produce anything.
 func (am *ActivityMonitor) setTab(t amTab) {
-	if t < 0 || t >= amTabCount || t == am.tab {
+	if t == am.tab || !am.tabVisible(t) {
 		return
 	}
 	am.tab = t
@@ -652,13 +816,34 @@ func (am *ActivityMonitor) setTab(t amTab) {
 	}
 }
 
+// stepTab moves d places along the tab bar, wrapping. It walks visibleTabs
+// rather than the amTab constants: Tab must not stop on a tab the bar does not
+// draw, and the constants are not contiguous once one is withheld.
+func (am *ActivityMonitor) stepTab(d int) {
+	tabs := am.visibleTabs()
+	if len(tabs) == 0 {
+		return
+	}
+	i := slices.Index(tabs, am.tab)
+	if i < 0 {
+		// The active tab is no longer offered — nothing does this today, but
+		// landing on the first visible one beats refusing to move at all.
+		am.setTab(tabs[0])
+		return
+	}
+	am.setTab(tabs[((i+d)%len(tabs)+len(tabs))%len(tabs)])
+}
+
 // feed is the collector state the active tab reads and writes: the TempDB tab's
 // own, or the activity feed behind History and Sample. The procedure-backed
 // tabs have no feed and get the activity one, which their header and status
 // line already show.
 func (am *ActivityMonitor) feed() *amFeed {
-	if am.tab == amTabTempDB {
+	switch am.tab {
+	case amTabTempDB:
 		return &am.td
+	case amTabInstance:
+		return &am.inst.amFeed
 	}
 	return &am.act
 }
@@ -781,11 +966,13 @@ func (am *ActivityMonitor) showOverflowMenu() {
 		am.runTool))
 }
 
-// resolution names the active tab's sampling interval as the dashboards show
-// it, from that tab's own feed: reporting the activity rate on TempDB would
-// credit its columns with a resolution they don't have.
+// resolution names what one plotted column covers, as the dashboards show it.
+// It follows drawInterval rather than the feed's rate directly: reporting the
+// activity rate on TempDB would credit its columns with a resolution they don't
+// have, and on Instance the columns are the server's windows, not the panel's
+// polls. The poll rate is what the toolbar's own selector shows.
 func (am *ActivityMonitor) resolution() string {
-	return fmt.Sprintf("%d sec", int(am.feed().rate().Seconds()))
+	return fmt.Sprintf("%d sec", int(am.drawInterval().Seconds()))
 }
 
 // collectionState is the one-line summary the toolbar shows on the right:

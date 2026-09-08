@@ -141,7 +141,7 @@ gossms/
 │   ├── db/                  # gosmo connection wrapper + DSN builder
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
-│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines — no TUI imports
+│   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines, and Poller for a feed whose source is already aggregated — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
 │   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
@@ -162,7 +162,7 @@ gossms/
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
-│       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView with tuikit/charts; no App, no connection
+│       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
 │       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense (pure functions over runes; no App, no connection)
 │       │
@@ -225,6 +225,7 @@ gossms/
 │       ├── activity_monitor_history.go # activity.Store → HistoryView: one charts.Series per metric, colour roles
 │       ├── activity_monitor_sample.go  # activity.Store.Latest() → SampleView: bars, KPIs, memory composition
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
+│       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │

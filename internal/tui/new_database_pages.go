@@ -61,6 +61,27 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 	logSizeField := propsheet.Int("Initial size", 0, 0, 16777216, "MB")
 	logGrowthField := propsheet.Int("Growth", 0, 0, 2097151, "MB")
 
+	// An Azure edition rejects the file clauses outright — Msg 41918,
+	// "Specifying files and filegroups in CREATE DATABASE is not supported" —
+	// and answers a follow-on SET RECOVERY with Msg 5008, user databases
+	// being FULL only. CREATE DATABASE itself works there as long as those
+	// clauses are absent, which is exactly what a blank file section emits
+	// (buildFileSpec returns nil), so the rows are made read-only rather than
+	// the dialog withheld. Read-only also keeps Dirty() false on the recovery
+	// row, so apply below cannot emit the statement either.
+	fileNote := "Leave a file's fields blank to use the server default (logical name/path derived from the database name, server-default size and growth)."
+	if serverIsAzure(sc) {
+		for _, r := range []*propsheet.TextRow{
+			dataNameField, dataPathField, dataSizeField, dataGrowthField,
+			logNameField, logPathField, logSizeField, logGrowthField,
+		} {
+			r.SetReadOnly(true)
+		}
+		recoveryRow.SetReadOnly(true)
+		fileNote = engineEditionName(sc.Server.Info().EngineEdition) +
+			" places and sizes a database's files itself, and its user databases are FULL recovery only, so those fields cannot be set here."
+	}
+
 	f := propsheet.NewForm(
 		propsheet.Section("Database identity"),
 		nameField, ownerRow, collationField,
@@ -70,7 +91,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 		dataNameField, dataPathField, dataSizeField, dataGrowthField,
 		propsheet.Section("Log file"),
 		logNameField, logPathField, logSizeField, logGrowthField,
-		propsheet.Note("Leave a file's fields blank to use the server default (logical name/path derived from the database name, server-default size and growth)."),
+		propsheet.Note(fileNote),
 	)
 
 	apply := func(ctx context.Context) error {
@@ -143,6 +164,19 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		fileGrowthKB int64
 	}
 	var edits []*fgEdit
+
+	// Same Msg 41918 as the General page's file rows: an Azure edition takes
+	// no filegroup clause in CREATE DATABASE at all, and there is nothing on
+	// this page that is not one. The page stays in the list — dropping it
+	// would renumber the dialog's fixed pages/forms/applyFns triple — and
+	// says why instead.
+	if serverIsAzure(sc) {
+		f := propsheet.NewForm(
+			propsheet.Note(engineEditionName(sc.Server.Info().EngineEdition) +
+				" does not accept filegroups in CREATE DATABASE (Msg 41918). A database created here gets the server's own PRIMARY filegroup."),
+		)
+		return f, func(context.Context) error { return nil }
+	}
 
 	rowsFor := func() ([][]string, [][]bool) {
 		text := make([][]string, len(edits))

@@ -170,3 +170,31 @@ func TestButtonWidthCountsDisplayColumns(t *testing.T) {
 		t.Errorf(`NewButton("é").Width() = %d, want %d — one column, not two bytes`, got, want)
 	}
 }
+
+// See TestDisabledCheckBoxRefusesInput for the contract; here the observable
+// is that OnClick never fires.
+func TestDisabledButtonRefusesInput(t *testing.T) {
+	clicks := 0
+	b := NewButton("Browse", func() { clicks++ })
+	b.SetBounds(4, 2)
+	b.Focus(true)
+	b.SetEnabled(false)
+
+	if b.Enabled() {
+		t.Fatal("SetEnabled(false) did not take")
+	}
+	if b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+		t.Error("a disabled button consumed Enter")
+	}
+	if b.HandleMouse(mouse(5, 2, tcell.Button1)) {
+		t.Error("a disabled button consumed a click")
+	}
+	if clicks != 0 {
+		t.Errorf("OnClick fired %d times on a disabled button", clicks)
+	}
+
+	b.SetEnabled(true)
+	if !b.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) || clicks != 1 {
+		t.Errorf("re-enabling did not restore input: clicks = %d", clicks)
+	}
+}

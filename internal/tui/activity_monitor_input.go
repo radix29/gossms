@@ -60,13 +60,13 @@ func (am *ActivityMonitor) HandleKey(ev *tcell.EventKey) bool {
 		if ev.Modifiers() != 0 {
 			return false
 		}
-		am.setTab((am.tab + 1) % amTabCount)
+		am.stepTab(1)
 		return true
 	case tcell.KeyBacktab:
 		if ev.Modifiers()&tcell.ModCtrl != 0 {
 			return false
 		}
-		am.setTab((am.tab + amTabCount - 1) % amTabCount)
+		am.stepTab(-1)
 		return true
 	case tcell.KeyDown:
 		return am.scrollBy(0, 1)
@@ -207,9 +207,10 @@ func (am *ActivityMonitor) press(ev *tcell.EventMouse) bool {
 
 	if am.tabRect.Contains(mx, my) {
 		am.dragZone = amZoneTabs
+		tabs := am.visibleTabs()
 		for i, seg := range am.tabSegments() {
-			if mx >= seg[0].X && mx < seg[0].X+seg[0].W {
-				am.setTab(amTab(i))
+			if i < len(tabs) && mx >= seg[0].X && mx < seg[0].X+seg[0].W {
+				am.setTab(tabs[i])
 				return true
 			}
 		}

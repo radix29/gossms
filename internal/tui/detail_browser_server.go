@@ -69,13 +69,73 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 		// identically on Windows and Linux). Appended once it lands, rather
 		// than backfilled in place like the rows above, since the row count
 		// itself is only known now.
-		if vols, err := sc.Server.DiskVolumesContext(ctx); err == nil {
-			for i, v := range vols {
-				rows = append(rows, []string{diskVolumeLabel(i, v), diskVolumeValue(v)})
-			}
+		for _, r := range serverDiskSpaceRows(ctx, sc) {
+			rows = append(rows, []string{r[0], r[1]})
 		}
 		db.postFinal(app, node, seq, cols, rows, nil)
 	})
+}
+
+// serverDiskSpaceRows builds the label/value pairs behind the "Disk space"
+// readout, shared by Object Explorer Details and Server Properties > Database
+// Settings so the two can never disagree. An unreadable DMV returns no rows
+// rather than an error: disk space is a garnish on both pages.
+//
+// On an Azure engine edition sys.dm_os_volume_stats describes the container
+// the engine process runs inside, not the instance — a Managed Instance
+// reports the same C:\ mount twice, each time with a total of 192 MB against
+// 64 and 96 GB available. Those rows are worse than nothing, so Azure reads
+// the instance's own quota out of sys.server_resource_stats instead, which is
+// the pair that actually governs it.
+func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string {
+	if sc.Server.Info().IsAzure() {
+		st, err := sc.Server.LatestServerResourceStatsContext(ctx)
+		if err != nil {
+			return nil
+		}
+		free := float64(st.ReservedStorageMB) - st.StorageSpaceUsedMB
+		return [][2]string{{"Storage", formatMB(free) + " free of " + formatMB(float64(st.ReservedStorageMB))}}
+	}
+
+	vols, err := sc.Server.DiskVolumesContext(ctx)
+	if err != nil {
+		return nil
+	}
+	var out [][2]string
+	for i, v := range usableDiskVolumes(vols) {
+		out = append(out, [2]string{diskVolumeLabel(i, v), diskVolumeValue(v)})
+	}
+	return out
+}
+
+// usableDiskVolumes drops the volume rows that would render as nonsense and
+// collapses repeats of one volume.
+//
+// sys.dm_os_volume_stats is read once per database file and grouped by
+// mount point *and* byte counts, so a host that answers with a different
+// available_bytes per file — an Azure Managed Instance does, twice for C:\ —
+// yields several rows for one volume. A total of zero, or an available figure
+// larger than the total, is the same host reporting a volume it does not
+// really own; "65,344 MB free of 192 MB" is worse than saying nothing.
+func usableDiskVolumes(vols []gosmo.DiskVolumeInfo) []gosmo.DiskVolumeInfo {
+	seen := make(map[string]bool, len(vols))
+	out := make([]gosmo.DiskVolumeInfo, 0, len(vols))
+	for _, v := range vols {
+		if v.TotalMB <= 0 || v.AvailableMB > v.TotalMB {
+			continue
+		}
+		// A volume the host names neither way can't be deduped — the sample
+		// path is per-file, not per-volume — so it is kept as it comes.
+		key := v.MountPoint + "\x00" + v.VolumeName
+		if key != "\x00" {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // diskVolumeLabel names a disk volume row: the mount point/drive letter

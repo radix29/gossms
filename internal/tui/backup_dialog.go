@@ -123,6 +123,7 @@ func (d *BackupDialog) show(sc *db.ServerConn, dbName string) {
 	d.prevType = 0
 	d.lastAutoDest = d.autoDest()
 	d.fDest.SetValue(d.lastAutoDest)
+	d.applyDeviceRules()
 
 	d.rebuildFocusable()
 	d.ModalDialog.Show()
@@ -196,20 +197,82 @@ func (d *BackupDialog) autoDest() string {
 }
 
 // syncAutoDest regenerates the destination field after a database/type
-// change, unless the user has edited the path themselves.
+// change, unless the user has edited the path themselves, and then re-applies
+// applyDeviceRules — which depends on the destination, so it has to run on
+// every pass, not only the ones that regenerate it.
 func (d *BackupDialog) syncAutoDest() {
 	if d.mode != backupModeForm {
 		return
 	}
 	sel, typ := d.ddDatabase.Value(), d.rbType.Selected()
-	if sel == d.prevDB && typ == d.prevType {
+	if sel != d.prevDB || typ != d.prevType {
+		d.prevDB, d.prevType = sel, typ
+		if strings.TrimSpace(d.fDest.Value()) == "" || d.fDest.Value() == d.lastAutoDest {
+			d.lastAutoDest = d.autoDest()
+			d.fDest.SetValue(d.lastAutoDest)
+		}
+	}
+	d.applyDeviceRules()
+}
+
+// backupURLHint is the resting status line for a blob destination. BACKUP TO
+// URL authenticates through a SQL Server credential whose *name* is the
+// container URL; without one the statement fails at run time with an
+// authentication error that says nothing about credentials, so the dialog says
+// it up front. Kept to one line at backupDialogW.
+const backupURLHint = "To URL: the container needs a credential named for it."
+
+// restingStatus is the status line when nothing has gone wrong.
+func (d *BackupDialog) restingStatus() string {
+	if gosmo.IsBackupURL(d.fDest.Value()) {
+		return backupURLHint
+	}
+	return "Ready"
+}
+
+// refreshRestingStatus re-renders the resting status after the destination
+// changed. A real message — an error, or Validate's rendered statement — is
+// left alone: it is what the user asked for and outranks a standing hint.
+func (d *BackupDialog) refreshRestingStatus() {
+	switch {
+	case d.statusErr:
+		return
+	case d.status == "", d.status == "Ready", d.status == backupURLHint:
+	default:
 		return
 	}
-	d.prevDB, d.prevType = sel, typ
-	if strings.TrimSpace(d.fDest.Value()) == "" || d.fDest.Value() == d.lastAutoDest {
-		d.lastAutoDest = d.autoDest()
-		d.fDest.SetValue(d.lastAutoDest)
+	d.setStatusMsg(d.restingStatus(), false)
+}
+
+// applyDeviceRules switches off what the destination device cannot carry.
+//
+// gosmo picks the device keyword off the path itself (gosmo.IsBackupURL), so a
+// blob destination emits TO URL on any edition and nothing here is needed to
+// make that work. What is needed is the other half: an Azure engine refuses a
+// DISK device outright —
+//
+//	Msg 41902 ... SQL Database Managed Instance supports database restore
+//	from URI backup device only.
+//
+// — and, owning its own backup chain, accepts a backup to URL only as a
+// COPY_ONLY full. Offering a differential, a log backup, or a chain-breaking
+// non-copy-only full on such an instance offers something the engine will
+// refuse, so the radio group is pinned to Full and the Copy-only box to
+// checked, both greyed. Browse walks the *server's filesystem*, which a blob
+// container is not, so it goes with any URL destination on any edition.
+//
+// Every rule here is re-applied on each syncAutoDest pass rather than once at
+// show(): the destination is a text field the user can retype into a URL.
+func (d *BackupDialog) applyDeviceRules() {
+	azure := serverIsAzure(d.sc)
+	d.btnBrowse.SetEnabled(!azure && !gosmo.IsBackupURL(d.fDest.Value()))
+	if azure {
+		d.rbType.SetSelected(0)
+		d.rbType.SetEnabled(false)
+		d.cbCopyOnly.SetChecked(true)
+		d.cbCopyOnly.SetEnabled(false)
 	}
+	d.refreshRestingStatus()
 }
 
 // loadDatabases fetches the server's database list in the background and
@@ -286,6 +349,7 @@ func (d *BackupDialog) browseDest() {
 		// stop treating the field as still holding a generated default and
 		// overwriting it on the next database/type change.
 		d.lastAutoDest = ""
+		d.applyDeviceRules()
 	})
 }
 

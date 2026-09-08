@@ -50,6 +50,19 @@ shipped.
   `HAS_PERMS_BY_NAME` as **NULL, not 0** (`ALTER ANY CREDENTIAL` does), which a
   gate built on it reads as `CapabilityUnknown` forever rather than as "no".
 
+- **"The edition does not implement this" is a different question from "the
+  login may not do this", and it has its own file — `edition_gate.go`.** It
+  answers in the same shape (a disabled item with a short note) and composes
+  with the permission gate rather than replacing it: `gateAzure(gate(item, …),
+  sc)`, the edition's note winning, because no permission gets a user past an
+  engine with no `sp_detach_db` at all. Do not fold the two together and do not
+  start a third mechanism: a page-level refusal is a read-only row plus a
+  `propsheet.Note` saying which edition, not a blocked dialog — an Azure
+  `CREATE DATABASE` works as long as the file and filegroup clauses are absent,
+  so withholding New Database would withhold something that works. The note
+  names the engine edition, never "Azure", so it stays true on SQL Database and
+  SQL Edge as well as Managed Instance.
+
 ## T-SQL and filters
 
 - **Never give a procedure you install outside `master` an `sp_` prefix.** An

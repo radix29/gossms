@@ -705,6 +705,21 @@ func newFakeConnOnLinux(t *testing.T, responses ...fakeResponse) (*db.ServerConn
 	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
 }
 
+// newFakeConnOnAzureMI is newFakeConn for an Azure SQL Managed Instance: the
+// values a real one answers with (t-qmi-01, 2026-09-08) — EngineEdition 8, the
+// frozen 12.0.2000.8 ProductVersion, edition "SQL Azure", and a @@VERSION
+// naming no host OS. It is the only way to reach the edition gate, which reads
+// ServerInfo.EngineEdition and nothing else.
+func newFakeConnOnAzureMI(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+	t.Helper()
+	info := serverInfoResponse()
+	info.rows[0][1] = "SQL Azure"
+	info.rows[0][2] = "12.0.2000.8"
+	info.rows[0][8] = int64(8)
+	info.rows[0][9] = "Microsoft SQL Azure (RTM) - 12.0.2000.8 ..."
+	return newFakeConnFrom(t, append([]fakeResponse{info, sysInfoResponse()}, responses...))
+}
+
 // newFakeConnWithoutSysInfo is newFakeConn for a login that cannot read
 // sys.dm_os_sys_info — the fake answers the SERVERPROPERTY half and refuses
 // the DMV half, which is what SQL Server does for a login without VIEW SERVER

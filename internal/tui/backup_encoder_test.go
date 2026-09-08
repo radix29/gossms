@@ -18,6 +18,7 @@ func backupForm(dbName string) *BackupDialog {
 	d.ddDatabase = widgets.NewDropDown("Database: ", []string{dbName}, 40)
 	d.rbType = widgets.NewRadioBox("Backup Type:", []string{"Full", "Differential", "Transaction Log"})
 	d.fDest = widgets.NewInputField("", 40, false)
+	d.btnBrowse = widgets.NewButton("Browse", nil)
 	d.cbCompress = widgets.NewCheckBox("Compression")
 	d.cbVerify = widgets.NewCheckBox("Verify backup after completion")
 	d.cbChecksum = widgets.NewCheckBox("Use backup checksum")

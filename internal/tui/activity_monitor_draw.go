@@ -27,15 +27,20 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 // tabSegments computes each tab's on-screen extent. Drawing and hit-testing
 // both build their column math from this one call so a click always lands
 // on the tab it looks like it landed on.
+// The segments are indexed by position in visibleTabs, not by amTab — a
+// connection that does not offer the Instance tab has one fewer segment, and
+// every caller pairs the two lists by index.
 func (am *ActivityMonitor) tabSegments() [][]controls.TabSegment {
-	widths := make([][]int, len(amTabLabels))
-	for i, label := range amTabLabels {
-		widths[i] = []int{controls.TabLabelWidth(label)}
+	tabs := am.visibleTabs()
+	widths := make([][]int, len(tabs))
+	for i, t := range tabs {
+		widths[i] = []int{controls.TabLabelWidth(amTabLabels[t])}
 	}
 	return controls.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
 }
 
-// drawTabBar renders the five tabs, styled like QueryPanel's result tabs.
+// drawTabBar renders the tabs this connection offers, styled like QueryPanel's
+// result tabs.
 func (am *ActivityMonitor) drawTabBar(s tcell.Screen) {
 	if am.tabRect.H != 1 {
 		return
@@ -46,12 +51,16 @@ func (am *ActivityMonitor) drawTabBar(s tcell.Screen) {
 	// as one system only if they share a colour.
 	barStyle := tcell.StyleDefault.Background(pal.ChartSectionBg).Foreground(pal.Text)
 	core.FillRect(s, am.tabRect, ' ', barStyle)
+	tabs := am.visibleTabs()
 	for i, seg := range am.tabSegments() {
+		if i >= len(tabs) {
+			break
+		}
 		style := barStyle
-		if amTab(i) == am.tab {
+		if tabs[i] == am.tab {
 			style = tcell.StyleDefault.Background(pal.BorderActive).Foreground(color.White).Bold(true)
 		}
-		core.DrawText(s, seg[0].X, am.tabRect.Y, style, " "+amTabLabels[i]+" ")
+		core.DrawText(s, seg[0].X, am.tabRect.Y, style, " "+amTabLabels[tabs[i]]+" ")
 	}
 }
 
@@ -180,6 +189,11 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 		v.Header = key.header
 		v.Interval = key.interval
 		am.hits = dashboard.DrawTempDB(c, c.Rect(), v)
+	case amTabInstance:
+		v := am.instance
+		v.Header = key.header
+		v.Interval = key.interval
+		am.hits = dashboard.DrawInstance(c, c.Rect(), v)
 	default:
 		v := am.history
 		v.Header = key.header
@@ -190,8 +204,19 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 	return c
 }
 
-// drawInterval is the sampling interval the active tab's charts scale their
-// time axis by. Read at draw time rather than stored with the samples: a
-// rate change takes effect from the next tick, and the scale describes the
-// columns arriving now.
-func (am *ActivityMonitor) drawInterval() time.Duration { return am.feed().rate() }
+// drawInterval is how much time one plotted column covers on the active tab —
+// what its charts scale their time axis by. Read at draw time rather than
+// stored with the samples: a rate change takes effect from the next tick, and
+// the scale describes the columns arriving now.
+//
+// On every tab but Instance that is the panel's own collection rate, because
+// the panel is what produced the columns. The Instance tab plots a history the
+// *server* aggregated into fixed 15-second windows, so its columns keep that
+// resolution however often the panel re-reads them; scaling them by a 30-second
+// poll rate would label every column with twice the span it covers.
+func (am *ActivityMonitor) drawInterval() time.Duration {
+	if am.tab == amTabInstance {
+		return instanceWindow
+	}
+	return am.feed().rate()
+}

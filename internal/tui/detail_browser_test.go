@@ -7,6 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
+	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
 )
 
@@ -308,5 +309,39 @@ func TestDetailBrowserShowValueLeavesOtherGridsAlone(t *testing.T) {
 		if got := qp.editor.Text(); got != "SELECT 1" {
 			t.Errorf("the panel holds %q, want the cell", got)
 		}
+	}
+}
+
+func TestUsableDiskVolumesDropsNonsenseAndDuplicates(t *testing.T) {
+	// The first two rows are what an Azure Managed Instance actually reports
+	// (t-qmi-01, 2026-09-09): one mount point, twice, each claiming more free
+	// space than the volume holds.
+	vols := []gosmo.DiskVolumeInfo{
+		{MountPoint: `C:\`, TotalMB: 192, AvailableMB: 65344, SamplePath: `C:\ManagedDisks\a.mdf`},
+		{MountPoint: `C:\`, TotalMB: 192, AvailableMB: 98112, SamplePath: `C:\SFApplications\tempdb.mdf`},
+		{MountPoint: `D:\`, TotalMB: 0, AvailableMB: 0},
+		{MountPoint: `E:\`, TotalMB: 4096, AvailableMB: 1024},
+		{MountPoint: `E:\`, TotalMB: 4096, AvailableMB: 2048},
+		{MountPoint: "", VolumeName: "", TotalMB: 100, AvailableMB: 10, SamplePath: "/var/opt/mssql/a.mdf"},
+		{MountPoint: "", VolumeName: "", TotalMB: 100, AvailableMB: 10, SamplePath: "/var/opt/mssql/b.mdf"},
+	}
+	got := usableDiskVolumes(vols)
+
+	want := []string{`E:\`, "", ""}
+	if len(got) != len(want) {
+		t.Fatalf("usableDiskVolumes returned %d rows, want %d: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].MountPoint != w {
+			t.Errorf("row %d mount point = %q, want %q", i, got[i].MountPoint, w)
+		}
+	}
+	// The unnamed volume can't be deduped — the sample path is per file, not
+	// per volume — so both of its rows survive deliberately.
+	if got[1].SamplePath == got[2].SamplePath {
+		t.Errorf("unnamed volumes collapsed into one row: %+v", got)
+	}
+	if got[0].AvailableMB != 1024 {
+		t.Errorf("kept the wrong duplicate for E:\\: available = %v, want 1024", got[0].AvailableMB)
 	}
 }

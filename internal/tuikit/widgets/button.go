@@ -8,10 +8,11 @@ import (
 
 // Button is a clickable, focusable button.
 type Button struct {
-	rect    core.Rect
-	label   string
-	focused bool
-	OnClick func()
+	rect     core.Rect
+	label    string
+	focused  bool
+	disabled bool
+	OnClick  func()
 
 	// mouseDragging distinguishes a fresh Button1 press from a continued
 	// hold over the button — mirrors Toolbar's/TreeView's/MenuBar's field
@@ -31,6 +32,14 @@ func NewButton(label string, onClick func()) *Button {
 func (b *Button) SetBounds(x, y int) { b.rect.X, b.rect.Y = x, y }
 func (b *Button) Focus(v bool)       { b.focused = v }
 
+// SetEnabled toggles whether the button fires. A disabled button draws
+// greyed out *and* refuses keys and clicks — see CheckBox.SetEnabled for why
+// it keeps its place in the caller's focus ring rather than vanishing from it.
+func (b *Button) SetEnabled(v bool) { b.disabled = !v }
+
+// Enabled reports whether the button fires.
+func (b *Button) Enabled() bool { return !b.disabled }
+
 // Width returns the rendered width of this button.
 func (b *Button) Width() int { return core.DisplayWidth(b.label) + 4 } // "[ label ]"
 
@@ -40,7 +49,10 @@ func (b *Button) Label() string { return b.label }
 // Draw renders the button.
 func (b *Button) Draw(s tcell.Screen) {
 	st := theme.StyleButton()
-	if b.focused {
+	switch {
+	case b.disabled:
+		st = theme.StyleButtonDisabled()
+	case b.focused:
 		st = theme.StyleButtonActive()
 	}
 	core.DrawText(s, b.rect.X, b.rect.Y, st, "[ "+b.label+" ]")
@@ -48,7 +60,7 @@ func (b *Button) Draw(s tcell.Screen) {
 
 // HandleKey processes keyboard input.
 func (b *Button) HandleKey(ev *tcell.EventKey) bool {
-	if !b.focused {
+	if !b.focused || b.disabled {
 		return false
 	}
 	if ev.Key() == tcell.KeyEnter {
@@ -66,7 +78,7 @@ func (b *Button) HandleMouse(ev *tcell.EventMouse) bool {
 		b.mouseDragging = false
 		return false
 	}
-	if ev.Buttons() != tcell.Button1 {
+	if b.disabled || ev.Buttons() != tcell.Button1 {
 		return false
 	}
 	mx, my := ev.Position()

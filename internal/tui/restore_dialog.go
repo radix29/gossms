@@ -187,6 +187,9 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.histLoaded = false
 	d.loadSeq++
 	d.SetTitle("Restore Database")
+	// Literal, not restingStatus(): the widgets it reads through
+	// deviceForRestore are built below, and are nil on the first showing.
+	// applyDeviceRules refreshes it once they exist.
 	d.setStatusMsg("Ready", false)
 
 	d.rbSource = widgets.NewRadioBox("Restore From:", []string{"Backup File", "Backup History"})
@@ -223,6 +226,8 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.prevHistDB = d.ddHistDB.Value()
 	d.lastAutoTarget = dbName
 	d.fTarget.SetValue(dbName)
+
+	d.applyDeviceRules()
 
 	d.rebuildFocusable()
 	d.ModalDialog.Show()
@@ -296,6 +301,7 @@ func (d *RestoreDialog) syncSourceState() {
 			d.autoFillTarget(dbName)
 		}
 	}
+	d.applyDeviceRules()
 }
 
 // autoFillTarget sets the target-database field to name unless the user
@@ -304,6 +310,35 @@ func (d *RestoreDialog) autoFillTarget(name string) {
 	if strings.TrimSpace(d.fTarget.Value()) == "" || d.fTarget.Value() == d.lastAutoTarget {
 		d.lastAutoTarget = name
 		d.fTarget.SetValue(name)
+	}
+}
+
+// restoreURLHint is the resting status line for a blob source — the RESTORE
+// half of backupURLHint, and the same credential.
+const restoreURLHint = "From URL: the container needs a credential named for it."
+
+// restingStatus is the status line when nothing has gone wrong.
+func (d *RestoreDialog) restingStatus() string {
+	if gosmo.IsBackupURL(d.deviceForRestore()) {
+		return restoreURLHint
+	}
+	return "Ready"
+}
+
+// applyDeviceRules switches off what the source device cannot offer, the
+// RESTORE counterpart of BackupDialog.applyDeviceRules — see its comment for
+// why gosmo already emits FROM URL without any help from here.
+//
+// Only Browse is gated: it walks the *server's filesystem*, which a blob
+// container is not, and an Azure engine has no filesystem to browse for
+// backups at all. The recovery, replace and relocation options are left alone
+// deliberately — none of them was driven against a Managed Instance in the
+// audit, and withholding one that works is the worse error. See
+// docs/open-threads.md.
+func (d *RestoreDialog) applyDeviceRules() {
+	d.btnBrowse.SetEnabled(!serverIsAzure(d.sc) && !gosmo.IsBackupURL(d.deviceForRestore()))
+	if !d.statusErr && (d.status == "" || d.status == "Ready" || d.status == restoreURLHint) {
+		d.setStatusMsg(d.restingStatus(), false)
 	}
 }
 
@@ -322,6 +357,7 @@ func (d *RestoreDialog) browseFile() {
 	}
 	d.app.fileDialog.ShowOpenOn(fs, "Select Backup File", start, func(path string) {
 		d.fFile.SetValue(path)
+		d.applyDeviceRules()
 	})
 }
 

@@ -265,8 +265,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
 				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
-			gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
-				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
+			gateAzure(gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
+				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
 			{Divider: true},
 			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
 			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
@@ -286,17 +286,19 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			gate(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
 				sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase, rightCreateAnyDatabase),
 			{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
-			gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
-				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase),
+			// ALTER DATABASE ... SET OFFLINE is Msg 5008 on an Azure edition,
+			// so the toggle is withheld there in both directions.
+			gateAzure(gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
+				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase), sc),
 		}
 		// Detach is offered on user databases only: sp_detach_db refuses a
 		// system database outright, and a permanently grey item explains
 		// nothing the name doesn't already say.
 		if !node.data.IsSystem {
 			items = append(items,
-				gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
+				gateAzure(gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
 					a.showDetachDatabaseDialog(sc, node.data.DBName)
-				}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase))
+				}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase), sc))
 		}
 		return append(items,
 			controls.MenuItem{Divider: true},

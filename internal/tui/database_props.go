@@ -114,8 +114,19 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			ownerRow := selectPreserving("Owner", loginNames, opts.Owner, unknownOwnerItem)
 			recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
 			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel())))
+			// An Azure edition owns its own backup chain and answers any
+			// ALTER DATABASE ... SET RECOVERY with Msg 5008 — a user database
+			// there is FULL and stays FULL. Read-only rather than absent, so
+			// the model is still shown; Dirty() then never fires, and apply
+			// below cannot emit the statement.
+			var recoveryNote []propsheet.Row
+			if serverIsAzure(sc) {
+				recoveryRow.SetReadOnly(true)
+				recoveryNote = []propsheet.Row{propsheet.Note("Recovery model is fixed on " +
+					engineEditionName(sc.Server.Info().EngineEdition) + ".")}
+			}
 
-			f := propsheet.NewForm(
+			rows := []propsheet.Row{
 				propsheet.Section("Database information"),
 				propsheet.Static("Name", d.Name()),
 				propsheet.Static("Status", d.State()),
@@ -128,6 +139,9 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Collation", d.Collation()),
 				propsheet.Static("Compatibility level", strconv.Itoa(int(d.CompatibilityLevel()))),
 				recoveryRow,
+			}
+			rows = append(rows, recoveryNote...)
+			rows = append(rows,
 				propsheet.Static("Page verify", opts.PageVerify),
 				propsheet.Static("Auto close", boolStr(opts.AutoClose)),
 				propsheet.Static("Auto shrink", boolStr(opts.AutoShrink)),
@@ -140,6 +154,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Trustworthy", boolStr(opts.IsTrustworthy)),
 				propsheet.Static("Read only", boolStr(d.IsReadOnly())),
 			)
+			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
 				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)

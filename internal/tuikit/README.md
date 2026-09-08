@@ -231,7 +231,17 @@ scrolling, or expand/collapse logic — all of that lives once, in
    top of another `tuikit` package.
 3. Expose `SetBounds`, `Draw(tcell.Screen)`, `HandleKey`, `HandleMouse` for
    anything interactive; expose plain getters for any value state.
-4. Never import `internal/tui`.
+4. If it can be switched off, name the pair `SetEnabled(bool)`/`Enabled() bool`
+   and hold `InputField`'s contract, which `Button`, `CheckBox` and `RadioBox`
+   now share: a disabled control draws greyed (`theme.StyleControlDisabled`,
+   or `StyleButtonDisabled` for a button, which keeps its own ground) **and**
+   refuses keys and clicks — one that only stopped accepting input looks like
+   a live control ignoring the user. It keeps its place in the caller's focus
+   ring, so Tab order does not shift under the user when a page switches it
+   off, and the page's own setters (`SetChecked`, `SetSelected`, `SetValue`)
+   keep working: pinning a control to the one value the server accepts is the
+   usual reason to disable it.
+5. Never import `internal/tui`.
 
 ## Adding a new dialog in the application
 

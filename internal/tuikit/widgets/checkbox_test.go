@@ -175,3 +175,40 @@ func TestCheckBoxWidthCountsDisplayColumns(t *testing.T) {
 		t.Errorf(`NewCheckBox("é").Width() = %d, want %d — one column, not two bytes`, got, want)
 	}
 }
+
+// A disabled control refuses keys *and* clicks. One that only stopped
+// accepting input would look like a live control ignoring the user — the
+// contract InputField.SetEnabled already states, and the Back Up Database
+// dialog now relies on for the Copy-only box it pins on a Managed Instance.
+func TestDisabledCheckBoxRefusesInput(t *testing.T) {
+	c := NewCheckBox("Copy-only backup")
+	c.SetBounds(4, 2)
+	c.Focus(true)
+	c.SetChecked(true)
+	c.SetEnabled(false)
+
+	if c.Enabled() {
+		t.Fatal("SetEnabled(false) did not take")
+	}
+	if c.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) {
+		t.Error("a disabled checkbox consumed Enter")
+	}
+	if c.HandleMouse(mouse(5, 2, tcell.Button1)) {
+		t.Error("a disabled checkbox consumed a click")
+	}
+	if !c.Checked() {
+		t.Error("a disabled checkbox was toggled")
+	}
+
+	// SetChecked is the page's own channel and keeps working — pinning a box
+	// to the one value the server accepts is the whole reason to disable it.
+	c.SetChecked(false)
+	if c.Checked() {
+		t.Error("SetChecked was refused on a disabled box")
+	}
+
+	c.SetEnabled(true)
+	if !c.HandleKey(key(tcell.KeyEnter, tcell.ModNone)) || !c.Checked() {
+		t.Error("re-enabling did not restore input")
+	}
+}

@@ -50,12 +50,25 @@ func StyleInput() tcell.Style {
 	return tcell.StyleDefault.Background(active.InputBg).Foreground(active.InputFg)
 }
 
-// StyleInputDisabled is a field the page has switched off. It drops the
-// input background entirely rather than only dimming the text: a disabled
-// field still accepts no clicks and no keys, so it has to be obvious at a
-// glance which fields are live.
-func StyleInputDisabled() tcell.Style {
+// StyleControlDisabled is a dialog control the page has switched off — a text
+// field, check box or radio group that still draws but refuses keys and
+// clicks. It drops the control's own background entirely rather than only
+// dimming its text: a disabled control accepts nothing, so it has to be
+// obvious at a glance which ones are live.
+func StyleControlDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.TextDim)
+}
+
+// StyleInputDisabled is StyleControlDisabled applied to a text field, named
+// for the caller that reads best at the InputField.Draw site.
+func StyleInputDisabled() tcell.Style { return StyleControlDisabled() }
+
+// StyleButtonDisabled is a button the page has switched off. A button keeps
+// its own ground — unlike a field, it has no border to lose, so dropping the
+// background would leave nothing on screen to click at all — and dims only
+// its label.
+func StyleButtonDisabled() tcell.Style {
+	return tcell.StyleDefault.Background(active.ButtonBg).Foreground(active.TextDim)
 }
 func StyleGridHeader() tcell.Style {
 	return tcell.StyleDefault.Background(active.GridHeader).Foreground(active.Text).Bold(true)

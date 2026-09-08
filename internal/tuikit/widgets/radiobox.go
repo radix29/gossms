@@ -15,6 +15,7 @@ type RadioBox struct {
 	options  []string
 	selected int
 	focused  bool
+	disabled bool
 
 	// mouseDragging distinguishes a fresh Button1 press from a continued
 	// hold over the same option — mirrors Toolbar's/TreeView's/MenuBar's
@@ -39,7 +40,17 @@ func (r *RadioBox) Label() string { return r.label }
 
 func (r *RadioBox) SetBounds(x, y int) { r.rect.X, r.rect.Y = x, y }
 func (r *RadioBox) Focus(v bool)       { r.focused = v }
-func (r *RadioBox) Selected() int      { return r.selected }
+
+// SetEnabled toggles whether the selection can be moved. A disabled group
+// draws greyed out *and* refuses keys and clicks — see CheckBox.SetEnabled
+// for why it keeps its place in the caller's focus ring rather than vanishing
+// from it. SetSelected still works, so a page can pin the group to the one
+// option the server accepts and then switch it off.
+func (r *RadioBox) SetEnabled(v bool) { r.disabled = !v }
+
+// Enabled reports whether the selection can be moved.
+func (r *RadioBox) Enabled() bool { return !r.disabled }
+func (r *RadioBox) Selected() int { return r.selected }
 func (r *RadioBox) SetSelected(i int) {
 	if i >= 0 && i < len(r.options) {
 		r.selected = i
@@ -82,6 +93,9 @@ func (r *RadioBox) Draw(s tcell.Screen) {
 	}
 	base := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
 	activeStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.BorderActive)
+	if r.disabled {
+		base, activeStyle = theme.StyleControlDisabled(), theme.StyleControlDisabled()
+	}
 	for i, opt := range r.options {
 		st := base
 		if r.focused && i == r.selected {
@@ -99,7 +113,7 @@ func (r *RadioBox) Draw(s tcell.Screen) {
 // boundary instead of consuming the key as a no-op, so a caller like
 // propsheet.Form can move focus to the next/previous row instead.
 func (r *RadioBox) HandleKey(ev *tcell.EventKey) bool {
-	if !r.focused {
+	if !r.focused || r.disabled {
 		return false
 	}
 	switch ev.Key() {
@@ -125,7 +139,7 @@ func (r *RadioBox) HandleMouse(ev *tcell.EventMouse) bool {
 		r.mouseDragging = false
 		return false
 	}
-	if ev.Buttons() != tcell.Button1 {
+	if r.disabled || ev.Buttons() != tcell.Button1 {
 		return false
 	}
 	mx, my := ev.Position()

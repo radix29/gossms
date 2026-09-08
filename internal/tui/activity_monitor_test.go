@@ -936,9 +936,12 @@ func TestActivityMonitorLearnsARunReturned(t *testing.T) {
 // must now be drawn or be in the More menu.
 func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 	sawOverflow := false
-	for tab := amTab(0); tab < amTabCount; tab++ {
+	// Every tab an Azure connection offers, which is a superset of what an
+	// on-premises one does — the Instance tab has a rate selector of its own,
+	// so it is a row that can overflow like any other.
+	for _, tab := range newAzureActivityMonitor(t, 100, 30).visibleTabs() {
 		for w := 20; w <= 120; w++ {
-			am := newTestActivityMonitor(w, 30)
+			am := newAzureActivityMonitor(t, w, 30)
 			am.setTab(tab)
 
 			inMenu := map[int]bool{}

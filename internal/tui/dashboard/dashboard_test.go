@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/charts"
@@ -452,5 +453,114 @@ func TestDrawTempDBEmptyViewDrawsChrome(t *testing.T) {
 	}
 	if len(hits) != 0 {
 		t.Errorf("an empty view reported %d chart hits, want none", len(hits))
+	}
+}
+
+// -- the Instance dashboard ---------------------------------------------------
+
+func fullInstance() InstanceView {
+	return InstanceView{
+		Header:       Header{Instance: "t-qmi-01", SampleTime: "01:42:15", Resolution: "15 sec"},
+		Interval:     15 * time.Second,
+		Times:        []string{"01:42:00", "01:42:15"},
+		Shape:        []charts.KPI{{Label: "SKU", Value: "GeneralPurpose"}, {Label: "vCores", Value: "4"}},
+		CPU:          testSeries("CPU %", 1.5, 2.5),
+		CPUKPIs:      []charts.KPI{{Label: "CPU %", Value: "2.5"}},
+		Storage:      testSeries("Storage used MB", 190, 192),
+		StorageScale: charts.Scale{Min: 0, Max: 65536},
+		StorageKPIs:  []charts.KPI{{Label: "Reserved", Value: "65,536 MB"}},
+		IORequests:   testSeries("IO requests/sec", 2, 10),
+		IOBytes:      testSeries("Bytes read/sec", 0, 102400),
+		IOKPIs:       []charts.KPI{{Label: "Local IOPS limit", Value: "6,000"}},
+		Limits: []LimitRow{
+			{Label: "Instance CPU cap", Value: "100 %"},
+			{Label: "Max worker threads", Value: "1,220"},
+			{Label: "Working set limit", Value: "not set"},
+		},
+	}
+}
+
+func TestDrawInstanceDrawsEverySection(t *testing.T) {
+	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	DrawInstance(c, c.Rect(), fullInstance())
+	rows := c.Rows()
+
+	for _, want := range []string{
+		"INSTANCE", "CPU %", "INSTANCE STORAGE", "STORAGE USED",
+		"INSTANCE IO", "IO REQUESTS/SEC", "IO BYTES/SEC", "INSTANCE LIMITS",
+	} {
+		if !rowsContain(rows, want) {
+			t.Errorf("the Instance dashboard is missing %q", want)
+		}
+	}
+	// The instance's shape rides on the first section's bar rather than a
+	// strip of its own — three static facts do not earn a line.
+	if !rowsContain(rows, "GeneralPurpose") {
+		t.Error("the instance's SKU was not drawn")
+	}
+	for _, want := range []string{"Instance CPU cap", "100 %", "not set"} {
+		if !rowsContain(rows, want) {
+			t.Errorf("the limits grid is missing %q", want)
+		}
+	}
+}
+
+// The storage axis is the reserved quota, not the data's own high-water mark:
+// 192 MB used of 65,536 MB has to draw as a sliver, because that is what it is.
+func TestDrawInstanceStorageAxisIsTheQuota(t *testing.T) {
+	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	DrawInstance(c, c.Rect(), fullInstance())
+	if !rowsContain(c.Rows(), "65.5K") {
+		t.Error("the storage chart's axis does not reach the reserved quota")
+	}
+	// The CPU axis is fixed at 0-100 for the same reason in reverse: an
+	// auto-scaled percentage makes a 2% idle instance look busy.
+	if !rowsContain(c.Rows(), "100") {
+		t.Error("the CPU chart's axis is not fixed at 100 %")
+	}
+}
+
+// A grid with nothing in it says so, rather than leaving an empty box the
+// reader cannot tell from one that failed to load.
+func TestDrawInstanceEmptyViewDrawsChrome(t *testing.T) {
+	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	hits := DrawInstance(c, c.Rect(), InstanceView{})
+
+	if !rowsContain(c.Rows(), "INSTANCE LIMITS") {
+		t.Error("an empty Instance view drew no sections")
+	}
+	if !rowsContain(c.Rows(), "No limits reported yet.") {
+		t.Error("an empty limits grid drew no explanation")
+	}
+	if len(hits) != 0 {
+		t.Errorf("an empty view reported %d chart hits, want none", len(hits))
+	}
+}
+
+// Nothing may be drawn outside the rect it was given — the canvas is blitted
+// into a viewport, and a section bar that overran would stripe the panel
+// around it.
+func TestDrawInstanceStaysInsideItsRect(t *testing.T) {
+	c := charts.NewCanvas(InstanceCanvasW, InstanceCanvasH)
+	r := core.Rect{X: 2, Y: 1, W: InstanceCanvasW - 4, H: InstanceCanvasH - 3}
+	DrawInstance(c, r, fullInstance())
+	for y, row := range c.Rows() {
+		if y < r.Y || y >= r.Bottom() {
+			if strings.TrimSpace(row) != "" {
+				t.Fatalf("row %d is outside the rect but not blank: %q", y, row)
+			}
+			continue
+		}
+		if strings.TrimSpace(string([]rune(row)[:r.X])) != "" {
+			t.Fatalf("row %d has content left of the rect: %q", y, row)
+		}
+	}
+}
+
+// A rect too small for anything must draw nothing rather than panic.
+func TestDrawInstanceTinyRect(t *testing.T) {
+	c := charts.NewCanvas(20, 6)
+	for _, r := range []core.Rect{{}, {W: 1, H: 1}, {W: 20, H: 1}, {W: 3, H: 6}} {
+		DrawInstance(c, r, fullInstance())
 	}
 }

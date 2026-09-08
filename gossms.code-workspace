@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../homebrew-tap"
+		},
+		{
+			"path": "../apt"
 		}
 	],
 	"settings": {}

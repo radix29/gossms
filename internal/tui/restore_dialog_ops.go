@@ -89,7 +89,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			if len(hist) == 0 {
 				d.setStatusMsg("No backup history for "+dbName, true)
 			} else {
-				d.setStatusMsg("Ready", false)
+				d.setStatusMsg(d.restingStatus(), false)
 			}
 		})
 	})
@@ -244,7 +244,7 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 			d.headers, d.files, d.inspectDev = headers, files, dev
 			d.headerIdx = 0
 			d.autoFillTarget(headers[0].DatabaseName)
-			d.setStatusMsg("Ready", false)
+			d.setStatusMsg(d.restingStatus(), false)
 			if next == restoreModeFiles {
 				d.enterFilesMode()
 				return
@@ -287,7 +287,7 @@ func (d *RestoreDialog) startRestore() {
 				d.setStatusMsg(fmt.Sprintf("Check target database: %v", err), true)
 				return
 			}
-			d.setStatusMsg("Ready", false)
+			d.setStatusMsg(d.restingStatus(), false)
 			exists := false
 			for _, dbo := range dbs {
 				if strings.EqualFold(dbo.Name(), target) {
@@ -554,7 +554,7 @@ func (d *RestoreDialog) script() {
 				d.setStatusMsg(err.Error(), true)
 				return
 			}
-			d.setStatusMsg("Ready", false)
+			d.setStatusMsg(d.restingStatus(), false)
 			app.openQueryWithText(sc, "", stmt)
 		})
 	})

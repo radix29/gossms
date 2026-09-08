@@ -44,6 +44,72 @@ read was never reached. When re-verifying, confirm the reads were actually
 *called*: the sweep's `call` helper takes a label, and logging it lists every
 method swept.
 
+## Azure SQL Managed Instance: audited, not yet supported
+
+A live MI (`t-qmi-01…`, EngineEdition 8, General Purpose Gen5) was audited
+**2026-09-08**. Object Explorer, the query editor with both execution plans,
+all five Activity Monitor tabs, Server Properties and eight of nine Database
+Properties pages work unchanged. Seven defects and one missing feature are
+written up with reproductions in **`docs/plan-azure-managed-instance.md`** —
+read that before reporting anything MI-related as newly found.
+
+The one to know without opening it: **MI reports `ProductVersion`
+`12.0.2000.8`** while running engine build 18.0, so every `colSince` /
+`VersionMajor` gate in gosmo silently degrades or refuses a feature the
+instance actually has. Gate on `EngineEdition` first.
+
+**All seven steps of that plan's order of work are done** (engine-edition
+version gating, `BackupHistory` nullability, Agent status, Platform,
+disk-space rows, the UI gating of the operations MI rejects —
+`internal/tui/edition_gate.go`, the edition's counterpart to
+`permission_gate.go` — `TO URL`/`FROM URL` backup and restore, and the
+Activity Monitor "Instance" tab). What is left is the follow-up below and
+Entra authentication.
+
+Two things the Instance tab settled that are easy to reopen:
+
+- **The Activity Monitor's tab bar is a slice, not the constant array.**
+  `visibleTabs()` filters `amAllTabs`; `amTabLabels` and the per-tab scroll
+  arrays stay indexed by `amTab` and sized `amTabCount`. A withheld tab still
+  has a scroll position, it is simply unreachable. `setTab` is the one gate —
+  keys, clicks and callers all go through it — so a new conditional tab needs
+  nothing but an `azureOnly`-style predicate.
+- **The Instance tab's charts are scaled by the server's 15-second window, not
+  by the panel's refresh rate,** and `internal/activity.Poller` exists so a
+  pre-aggregated source does not go through `rates.go`. Both are in
+  `drawInterval`'s and `Poller`'s doc comments; the plan document explains why
+  the IO ceilings are section-bar KPIs rather than chart axes.
+
+**What the `TO URL` work did not reach.** It was driven live on both
+instances, but only as far as building and validating the statement:
+executing a backup needs a shared access signature credential on the
+container, and none exists on `t-qmi-01`. So these are open, and are the first
+things to check when one does:
+
+- **`WITH INIT` on a URL device.** The Back Up dialog hardcodes `Init: true`
+  (it has no "append to media set" option —
+  `TestBackupOptionsBuildTheExpectedStatement`'s "init is always set" subtest
+  pins it). Block-blob backup to URL overwrites through `WITH FORMAT`, not `INIT`,
+  so MI may refuse the statement the dialog builds. Not guessed at, because
+  changing it blind would change every on-premises backup too.
+- **`RESTORE ... WITH MOVE` on MI.** The Restore dialog emits MOVE clauses
+  whenever the target is renamed, and MI places database files itself — the
+  same fact that makes `CREATE DATABASE`'s file clauses fail with Msg 41918.
+  The relocation options are deliberately *not* gated: withholding one that
+  works is the worse error, and this was never driven.
+- **Restoring from MI's own automated backup history.** Those `backupset` rows
+  carry a NULL `physical_device_name`, which `BackupHistoryContext` now reads
+  as `""`, so the Backup History source of the Restore dialog offers an entry
+  with no device. Restoring MI's managed backups is a different mechanism
+  (point-in-time restore through the control plane), not a `RESTORE` statement.
+
+What *was* confirmed live, and settles the device-keyword question: MI answers
+`RESTORE VERIFYONLY FROM DISK = N'https://…'` with Msg 41902 ("Unsupported
+device type"), and the same statement spelled `FROM URL` with Msg 3078 about
+the blob itself — the device type is accepted.
+
+Entra authentication on MI is untested and out of scope of that plan.
+
 ## Deferred scope (repeatedly, deliberately)
 
 - **Changing a login's authentication kind in Login Properties.** New Login

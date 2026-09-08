@@ -1,9 +1,8 @@
-azure managed instance
-- setup sql authentication
-- test entra id authentication in ssms
-- test sql authentication with gossms
-- test entra authentication with gossms
-- add specifica monitoring for MI in the activity monitor based on specific views (new tab MI monitor)
+t-qmi-01.public.686f4bf5ea41.database.windows.net,3342
+
+test release
+
+- check Azure entra authentification that is porvided by the mssql library. what shall i do so i can test something difrerent that sql / windows auth?
 
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
@@ -62,13 +61,13 @@ go over the source files code comments and compact them. throw unnecessary wordi
 
 commit before both projects
 
-prepare gosmo for release v0.0.11 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gosmo for release v0.0.12 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 
 fix go.mod before, reference the new :
 
-prepare gossms for release v0.0.9 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
-do not commit or tag anything to git. 
+prepare gossms for release v0.0.10 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+do not commit or tag anything to git. highlight in the release file the homebre and ppa as the most important features 
 
 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md

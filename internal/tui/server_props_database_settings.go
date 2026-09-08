@@ -19,10 +19,6 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			vols, err := sc.Server.DiskVolumesContext(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
 
 			var intRows []configRow
 			var boolRows []configBoolRow
@@ -50,10 +46,10 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 				propsheet.Static("Log", info.DefaultLogPath),
 				propsheet.Static("Backup", info.DefaultBackupPath),
 			}
-			if len(vols) > 0 {
+			if disks := serverDiskSpaceRows(ctx, sc); len(disks) > 0 {
 				rows = append(rows, propsheet.Section("Disk space"))
-				for i, v := range vols {
-					rows = append(rows, propsheet.Static(diskVolumeLabel(i, v), diskVolumeValue(v)))
+				for _, d := range disks {
+					rows = append(rows, propsheet.Static(d[0], d[1]))
 				}
 			}
 			rows = append(rows,

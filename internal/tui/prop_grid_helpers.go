@@ -262,8 +262,13 @@ func compatItemsFor(level, major int) []string {
 
 // serverMajor is the connected instance's major version, or 0 when it is
 // unknown — which every version-gated helper here treats as newest.
+//
+// An Azure edition is 0 as well, for the reason gosmo's serverMajorVersion
+// documents: a Managed Instance reports 12 while running an 18.x engine, so
+// believing it caps the compatibility-level list at 120 on databases created
+// at 170 and hides the 2019 enclave options the instance has.
 func serverMajor(sc *db.ServerConn) int {
-	if sc == nil || sc.Server == nil || sc.Server.Info() == nil {
+	if sc == nil || sc.Server == nil || sc.Server.Info() == nil || sc.Server.Info().IsAzure() {
 		return 0
 	}
 	return sc.Server.Info().VersionMajor

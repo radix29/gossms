@@ -378,6 +378,7 @@ func restoreForm() *RestoreDialog {
 	d := &RestoreDialog{}
 	d.rbSource = widgets.NewRadioBox("Restore From:", []string{"Backup File", "Backup History"})
 	d.fFile = widgets.NewInputField("", 40, false)
+	d.btnBrowse = widgets.NewButton("Browse", nil)
 	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, 48)
 	d.fTarget = widgets.NewInputField("", 40, false)
 	d.rbReloc = widgets.NewRadioBox("File Locations:", []string{"Auto", "Original", "Folder"})
