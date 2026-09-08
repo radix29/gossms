@@ -6,11 +6,27 @@ import (
 	"os"
 	"runtime/debug"
 
+	gosmoversion "github.com/radix29/gosmo/version"
+
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tui"
+	"github.com/radix29/gossms/internal/version"
 )
 
 func main() {
+	// Handled before anything else, and deliberately not with the flag
+	// package: gossms takes no other arguments, and every path below this
+	// point either opens a file or a tcell screen. `brew test`, CI and a
+	// user pasting their version into a bug report all run without a TTY,
+	// where App.Run cannot start at all.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-version", "-v":
+			printVersion()
+			return
+		}
+	}
+
 	if path, err := config.LogFilePath(); err == nil {
 		// 0600, matching the config file and encryption key alongside it —
 		// the log records server names, login names, and error text.
@@ -25,6 +41,18 @@ func main() {
 	if err := run(app); err != nil {
 		log.Fatalf("gossms error: %v", err)
 	}
+}
+
+// printVersion writes the same build metadata Help > About shows, in the
+// order a bug report wants it. Kept in step with newAboutRows in
+// internal/tui/menu.go.
+func printVersion() {
+	fmt.Printf("%s %s\n", version.Name, version.Version)
+	fmt.Printf("Commit:   %s\n", version.Commit)
+	fmt.Printf("Built:    %s\n", version.Date)
+	fmt.Printf("Platform: %s\n", version.Runtime())
+	fmt.Printf("License:  %s\n", version.License)
+	fmt.Printf("gosmo:    %s\n", gosmoversion.Version)
 }
 
 // run wraps app.Run so a panic on the UI goroutine is reported usefully

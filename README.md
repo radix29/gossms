@@ -31,7 +31,7 @@ Release binaries are available for:
 
 - Windows (amd64)
 - Linux (amd64 and arm64)
-- macOS (Apple silicon/arm64)
+- macOS (Apple silicon/arm64 and Intel/amd64)
 
 Homebrew and PPA installation options are coming soon.
 
@@ -52,6 +52,9 @@ On Linux or macOS, open a terminal in the extracted folder and run:
 chmod +x ./gossms
 ./gossms
 ```
+
+`gossms --version` prints the version, commit, build date and licence and exits,
+without starting the interface — quote it when reporting a bug.
 
 You need a modern terminal with UTF-8 and 256-colour support, plus network access
 to a SQL Server instance.

@@ -881,3 +881,17 @@ numbering the moment they flipped the selector.
   errors"), so gosmo's `IsRetryable` treating it as retryable is correct; and
   the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
   real and applied.
+
+- **Homebrew distribution is built but unverified.** `docs/homebrew.md` is the
+  reference. Done: `darwin/amd64` in the release workflow's `TARGETS`,
+  `gossms --version`, and the `homebrew` job that renders `Formula/gossms.rb`
+  from the release's `checksums.txt` and pushes it to `radix29/homebrew-tap`,
+  which exists and is public. The credential is a write-enabled deploy key on
+  the tap, stored as `HOMEBREW_TAP_DEPLOY_KEY` on `radix29/gossms`, not a PAT —
+  read and write were proved against the live repo. Outstanding: run the job
+  for real on a tag; `brew install` / `brew test` / `brew audit --strict` **on an actual
+  Mac** — nothing here has touched macOS; add a `livecheck` block; then replace
+  the README's "coming soon" line. The formula is deliberately **binary**, not
+  build-from-source — `go.mod`'s active
+  `replace github.com/radix29/gosmo => ../gosmo` makes any source build from a
+  release tarball fail, and `go install …@<tag>` fail with it.

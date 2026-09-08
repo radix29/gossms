@@ -1,3 +1,4 @@
+
 azure managed instance
 - setup sql authentication
 - test entra id authentication in ssms
@@ -8,6 +9,7 @@ azure managed instance
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
     Database Snapshots, Tables sub-folders
+    
 14. Service Broker (whole subtree)
 15. Certificates / Symmetric / Asymmetric Keys, Database Audit Specs
 
