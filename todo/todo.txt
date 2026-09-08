@@ -1,4 +1,3 @@
-
 azure managed instance
 - setup sql authentication
 - test entra id authentication in ssms

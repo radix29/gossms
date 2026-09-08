@@ -21,7 +21,31 @@ separate database drivers.
 
 ## Installation
 
-### 1. Download goSSMS
+### 1. Install goSSMS
+
+#### Homebrew — macOS and Linux
+
+```bash
+brew install radix29/tap/gossms
+```
+
+Apple silicon and Intel; `brew upgrade gossms` tracks new releases.
+
+#### APT — Debian, Ubuntu and derivatives
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://radix29.github.io/apt/gossms.asc \
+  | sudo tee /etc/apt/keyrings/gossms.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/gossms.asc] https://radix29.github.io/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/gossms.list > /dev/null
+sudo apt-get update && sudo apt-get install gossms
+```
+
+`amd64` and `arm64`. Details at
+[radix29.github.io/apt](https://radix29.github.io/apt).
+
+#### Direct download
 
 Download the latest release for your platform:
 
@@ -33,14 +57,18 @@ Release binaries are available for:
 - Linux (amd64 and arm64)
 - macOS (Apple silicon/arm64 and Intel/amd64)
 
-Homebrew and PPA installation options are coming soon.
-
 Extract the downloaded archive before running the application. Release binaries
 are currently unsigned; SHA-256 checksums are published with each release.
 
 ### 2. Start goSSMS
 
-On Windows, open PowerShell in the extracted folder and run:
+Installed through Homebrew or APT, `gossms` is already on your `PATH`:
+
+```bash
+gossms
+```
+
+Otherwise, on Windows, open PowerShell in the extracted folder and run:
 
 ```powershell
 .\gossms.exe

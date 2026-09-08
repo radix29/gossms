@@ -79,19 +79,27 @@ really downloadable.
 **The workflow's own `GITHUB_TOKEN` cannot write to another repository.** The
 credential is a **write-enabled deploy key** rather than a PAT: an ed25519
 keypair whose public half is registered on `radix29/homebrew-tap` as "gossms
-release workflow" (key id 162686462) and whose private half is the
-`HOMEBREW_TAP_DEPLOY_KEY` secret on `radix29/gossms`. A deploy key is scoped to
-exactly one repository, carries none of an account's other access, and does not
-expire the way a fine-grained PAT does. `actions/checkout`'s `ssh-key:` input
-also points the remote at SSH, so the `git push` step needs no credential of
-its own.
+release workflow (rotated 2026-09-08)", **key id 162692240**, and whose private
+half is the `HOMEBREW_TAP_DEPLOY_KEY` secret on `radix29/gossms`. A deploy key
+is scoped to exactly one repository, carries none of an account's other access,
+and does not expire the way a fine-grained PAT does. `actions/checkout`'s
+`ssh-key:` input also points the remote at SSH, so the `git push` step needs no
+credential of its own.
 
-Read and write were both proved with the real key before it was destroyed
-locally — `git ls-remote`, then a push of a throwaway branch and its deletion.
-To rotate: generate a new keypair, `gh api -X POST
-repos/radix29/homebrew-tap/keys -F read_only=false`, `gh secret set
-HOMEBREW_TAP_DEPLOY_KEY --repo radix29/gossms < <private key>`, then delete the
-old key id.
+Write access was proved with the real key — a push of a throwaway branch and
+its deletion — both for the original key and again after the rotation.
+
+The private half is kept at `~/go/tap_id` (`~/go/tap_id.pub` alongside). It is
+outside any git repository; do not move it into one. The apt repository's
+equivalents live beside it — see `docs/ppa.md`.
+
+To rotate: generate a keypair with `ssh-keygen -t ed25519`, register it with
+`gh api -X POST repos/radix29/homebrew-tap/keys -f key=... -F read_only=false`,
+`gh secret set HOMEBREW_TAP_DEPLOY_KEY --repo radix29/gossms < <private key>`,
+**verify the new key pushes**, and only then
+`gh api -X DELETE repos/radix29/homebrew-tap/keys/<old id>`. That order matters:
+until the secret is replaced the workflow still authenticates with the old key,
+so deleting it first breaks the job.
 
 The generated formula, for a tag `v0.0.10` (Homebrew's `version` drops the
 leading `v`; the URLs keep it):

@@ -889,9 +889,35 @@ numbering the moment they flipped the selector.
   which exists and is public. The credential is a write-enabled deploy key on
   the tap, stored as `HOMEBREW_TAP_DEPLOY_KEY` on `radix29/gossms`, not a PAT —
   read and write were proved against the live repo. Outstanding: run the job
-  for real on a tag; `brew install` / `brew test` / `brew audit --strict` **on an actual
-  Mac** — nothing here has touched macOS; add a `livecheck` block; then replace
-  the README's "coming soon" line. The formula is deliberately **binary**, not
+  for real on a tag; `brew install` / `brew test` / `brew audit --strict` **on
+  an actual Mac** — nothing here has touched macOS; add a `livecheck` block.
+  The README documents `brew install radix29/tap/gossms` already, ahead of the
+  first formula existing — the README change ships with the same tag that
+  creates the formula, but until that tag the command 404s. The formula is deliberately **binary**, not
   build-from-source — `go.mod`'s active
   `replace github.com/radix29/gosmo => ../gosmo` makes any source build from a
   release tarball fail, and `go install …@<tag>` fail with it.
+
+- **Debian/Ubuntu packaging is built but unverified on a real distro.**
+  `docs/ppa.md` holds the detail. `radix29/apt` is published through GitHub
+  Pages at https://radix29.github.io/apt, and the `apt` job in
+  `.github/workflows/release.yml` builds `amd64`/`arm64` `.deb`s from each
+  tagged release, rebuilds the indices from the whole pool, signs `Release` and
+  pushes. Credentials: `APT_REPO_DEPLOY_KEY` (write deploy key on the apt repo)
+  and `APT_REPO_GPG_KEY` (dedicated RSA-4096 signing key, fingerprint
+  `468B0CE5FFDEE82439741EC393F25CAB61497D93`; the public half is `gossms.asc`
+  in the repo root). Verified locally by running the extracted job scripts
+  against the real v0.0.9 assets, `gpgv`-checking both signatures, and driving
+  a real `apt-get update` / `apt-cache policy` / `apt-get -d install` against a
+  sandboxed apt root. **Not** verified: `dpkg -i` on a clean container, arm64
+  execution, `lintian`. The README already carries the APT install
+  snippet, ahead of the first `.deb` — it ships with the tag that publishes
+  them, but until that tag `apt-get update` finds no `dists/`.
+
+  A **Launchpad PPA** was rejected, not forgotten: builders have no network and
+  Ubuntu's packaged Go is 1.22 on 24.04 LTS, 1.26 on 26.04 LTS, against
+  `go.mod`'s 1.27. Two measurements worth not repeating — `go mod vendor` fully
+  resolves the `replace ../gosmo` (builds with the sibling deleted and
+  `GOPROXY=off`, +23 MB), and **neither gossms nor gosmo actually needs Go
+  1.27**: a real offline `go1.26.0` builds both once the `go` directive is
+  lowered in *both* `go.mod` files. Go 1.25 untested.
