@@ -51,6 +51,9 @@ var childLoaders = map[NodeType]childLoader{
 	NodeDatabaseRoles:    loadDatabaseRolesChildren,
 	NodeSchemas:          loadSchemasChildren,
 
+	NodeDatabaseAuditSpecifications: loadDatabaseAuditSpecificationsChildren,
+	NodeDatabaseScopedCredentials:   loadDatabaseScopedCredentialsChildren,
+
 	NodeStorage:              loadStorageChildren,
 	NodePartitionFunctions:   loadPartitionFunctionsChildren,
 	NodePartitionSchemes:     loadPartitionSchemesChildren,
@@ -68,12 +71,15 @@ var childLoaders = map[NodeType]childLoader{
 	NodeIndexes:          loadIndexesChildren,
 	NodeStatistics:       loadStatisticsChildren,
 	NodeViews:            loadViewsChildren,
+	NodeView:             loadViewChildren,
 	NodeSystemViews:      loadSystemViewsChildren,
 	NodeStoredProcedures: loadStoredProceduresChildren,
 	NodeSystemProcedures: loadSystemProceduresChildren,
 	NodeFunctions:        loadFunctionsChildren,
 	NodeSystemFunctions:  loadSystemFunctionsChildren,
+	NodeProgrammability:  loadProgrammabilityChildren,
 	NodeTriggers:         loadTriggersChildren,
+	NodeDatabaseTriggers: loadDatabaseTriggersChildren,
 	NodeSequences:        loadSequencesChildren,
 	NodeSynonyms:         loadSynonymsChildren,
 
@@ -81,6 +87,7 @@ var childLoaders = map[NodeType]childLoader{
 	NodeLogins:                    loadLoginsChildren,
 	NodeServerRoles:               loadServerRolesChildren,
 	NodeCredentials:               loadCredentialsChildren,
+	NodeCryptographicProviders:    loadCryptographicProvidersChildren,
 	NodeAudits:                    loadAuditsChildren,
 	NodeServerAuditSpecifications: loadServerAuditSpecificationsChildren,
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
@@ -90,4 +91,55 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 
 		db.cacheOnlyObjects(app, node, seq, databasesFolderColumns, rows, objs, nil)
 	})
+}
+
+// databaseTriggersFolderDetail lists a database's DDL triggers. It reads
+// gosmo independently of the tree, so the folder's filter is applied here too
+// — over the gosmo objects, before the rows are built.
+func databaseTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	triggers, err := dbObj.DatabaseTriggersContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	triggers = filterObjects(node.data.Filter, triggers, func(t *gosmo.DatabaseTrigger) nodeData {
+		return nodeData{Name: t.Name, CreateDate: t.CreateDate}
+	})
+
+	rows := make([][]string, 0, len(triggers))
+	out := make([]nodeData, 0, len(triggers))
+	for _, t := range triggers {
+		rows = append(rows, []string{
+			t.Name, enabledText(t.IsEnabled), strings.Join(t.Events, ", "),
+			formatSQLDate(t.CreateDate), formatSQLDate(t.ModifyDate),
+		})
+		out = append(out, nodeData{Type: NodeDatabaseTrigger, DBName: node.data.DBName, Name: t.Name})
+	}
+	*objs = out
+	return []string{"Name", "Status", "Events", "Created", "Modified"}, rows, nil
+}
+
+// databaseTriggerDetail is one DDL trigger's Property/Value view. The
+// definition is not shown here — it is multi-line, which a grid row flattens;
+// the Properties dialog's Definition page is where it belongs.
+func databaseTriggerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	t, err := dbObj.DatabaseTriggerByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", t.Name,
+		"Status", enabledText(t.IsEnabled),
+		"Scope", "Database",
+		"Events", strings.Join(t.Events, ", "),
+		"Created", formatSQLDate(t.CreateDate),
+		"Modified", formatSQLDate(t.ModifyDate),
+	)
 }

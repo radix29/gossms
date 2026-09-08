@@ -378,12 +378,20 @@ Rules about peer credentials that are easy to undo:
 
 ## Log File Viewer: what is deliberately out of it
 
-- **One log file at a time, no merged view.** SSMS's left-pane checkboxes merge
-  several logs (and the Windows event log) into one date-sorted grid. The two
-  selectors were chosen instead; merging means a source column, a merge sort,
-  and N reads per refresh.
 - **The Windows event log is out** — needs WMI, out of scope for a no-CGO
-  portable build.
+  portable build. It is the half of SSMS's left-pane checkbox tree the merged
+  view (the file selector's **Select Files...**) does not cover, and this
+  exclusion is not reopened by it.
+- **A merged selection is one family.** Archive numbers are not comparable
+  across families and the family selector is what the file list, Recycle and
+  the enumeration all key off, so the checklist offers the current family's
+  files only. `logFileRef` carries the family anyway, so a cross-family merge
+  is a UI change rather than a data-model one.
+- **A cycle re-anchors a merged selection to the current log, not a single-file
+  one.** The cycle renumbers every archive and deletes the oldest, so a *set*
+  chosen by number would silently come back as a different set. A single-file
+  view keeps its number, which is what it has always done — the user asked for
+  "Archive #1" and gets whatever is now Archive #1.
 - **The toolbar's Filter box and "Search..." are different features — do not
   merge them.** Filter narrows what was read, instantly and with no round trip,
   reporting "N of M match". Search edits `xp_readerrorlog`'s own arguments 3-6
@@ -414,10 +422,15 @@ numbering the moment they flipped the selector.
   since they have no operators in common to pair.
 - **No "Configure" button on the panel.** Query Store's settings are a Database
   Properties page, as in SSMS; the folder's context menu opens it.
-- **No per-query time series.** gosmo's `QueryStoreTrackedQueryContext` returns
-  one query's per-plan values interval by interval — SSMS plots it under Tracked
-  Queries. Ours shows the tracked queries and their plans; the series is read by
-  nothing. Kept in gosmo deliberately.
+- **Plot History does not dim Top or the execution floor.** gosmo's
+  `QueryStoreTrackedQueryContext` ignores `Top`, `MinExecCount`,
+  `MinRegressionPct` and `QueryIDs` outright — it is one query over every
+  interval — so neither selector changes what the chart plots. They stay live
+  because the *report grid* below the chart is still on screen and still
+  honours them: dimming them for the chart's sake would make the rows
+  unfilterable while it is up. The chart's own title names the metric and the
+  statistic it was read with, which are the two that do reach it.
+
 - **The panel reads on demand only** — no auto-refresh timer. Every read is
   one-shot and bounded, so nothing queues behind the shared host connection.
 - **One metric and one statistic across all seven views.** Each report carries
@@ -435,7 +448,7 @@ numbering the moment they flipped the selector.
 - **Only seven families push the filter down** — Tables, Views, Stored
   Procedures, Functions and the three System * variants, through gosmo's
   `ObjectFilter` and the `…FilteredContext` listings. The other filterable
-  folders (sequences, synonyms, triggers, databases, logins, users, roles,
+  folders (sequences, synonyms, both trigger families, databases, logins, users, roles,
   schemas, partition functions/schemes, the Always Encrypted keys, security
   policies) stay client-side: they are small, and the clause builder is
   family-agnostic if that stops being true. The push-down rules a plausible
@@ -501,14 +514,12 @@ numbering the moment they flipped the selector.
   size of the Log File Viewer — a reader, a grid, a filter, paging over rolled-
   over files. SSMS's "View Audit Logs" command is therefore not offered at all
   rather than offered and empty.
-- **Database Audit Specifications are not covered.** gosmo has the server-scope
-  half only; `sys.database_audit_specifications` has no reads.
-- **Database-scope DDL triggers** (`parent_class = 0`) are not covered.
-  `Database.triggersWhere`'s `parent_class = 1` was deliberately left alone —
-  widening it would change what the existing per-database Triggers folder lists.
-- **Cryptographic Providers get no folder**, and **database-scoped credentials**
-  (`sys.database_credentials`) get no reads. A credential's provider *binding* is
-  shown and scripted; registering a provider is not offered.
+- **Registering a cryptographic provider is not offered.** The folder lists
+  what `sys.cryptographic_providers` records and stops there: CREATE
+  CRYPTOGRAPHIC PROVIDER takes a DLL path on the *server's* filesystem, and
+  SSMS answers that with a file browser this build has no way to offer. So the
+  folder has no New item, no Delete and no Script verbs — a read-only family
+  that declares no rights.
 - **Creating TSQL, Service Broker and SOAP endpoints is out.** Endpoints are a
   read/state/drop family; New Database Mirroring Endpoint stays the only
   creation path.
@@ -527,11 +538,76 @@ numbering the moment they flipped the selector.
   loaded with; an empty path under FILE is refused before anything is disabled,
   because the server's own answer (Msg 33072) arrives only after the audit has
   been turned off.
-- **All six folders' filters are client-side only.** Credentials, Audits, Server
-  Audit Specifications and Server DDL Triggers offer Name and Creation Date;
-  Backup Devices and Endpoints offer Name alone, because neither
+- **A database audit specification's actions cannot be edited in place.** The
+  Properties page unticks one to drop it and adds a replacement through its own
+  four fields, because `ALTER DATABASE AUDIT SPECIFICATION` has no form that
+  changes a clause — only ADD and DROP — and an "edit" would be a drop and an
+  add whose failure between the two leaves the action gone.
+- **One specification per audit per database is SQL Server's rule** (Msg 33230,
+  "An audit specification for audit 'x' already exists"), so both the New dialog
+  and Properties list only the audits still free in that database. The
+  Properties page keeps the specification's own audit in the list, or it would
+  open showing something other than what it is bound to.
+- **All six filterable folders' filters are client-side only.** Credentials,
+  Audits, Server Audit Specifications and Server DDL Triggers offer Name and
+  Creation Date; Backup Devices and Endpoints offer Name alone, because neither
   `sys.backup_devices` nor `sys.endpoints` records a creation date and a
-  criterion over a zero `nodeData.CreateDate` rejects every row.
+  criterion over a zero `nodeData.CreateDate` rejects every row. Cryptographic
+  Providers offers no filter at all — a handful of rows at most, and
+  `sys.cryptographic_providers` records no creation date either.
+
+## Database-scoped credentials: what the design settled
+
+- **CONTROL on the database is the whole right set, and `ALTER` is deliberately
+  not beside it.** Probed live on win10cli (major 17, 2026-09-08) with a
+  `WITHOUT LOGIN` user: CREATE/ALTER/DROP DATABASE SCOPED CREDENTIAL all went
+  through under `GRANT CONTROL ON DATABASE` and all three were refused under
+  `GRANT ALTER ON DATABASE`. Every other database-scoped set in
+  `permission_gate.go` pairs its narrow right with `rightAlterDatabase`; adding
+  it here "for symmetry" would offer New/Delete/Properties to a principal the
+  server then refuses. `ALTER ANY CREDENTIAL` is not the narrower twin either —
+  it is server-scope, and `HAS_PERMS_BY_NAME` asked of a *database* returns NULL
+  rather than 0, which a gate built on it would read as "unknown" forever. See
+  `dbScopedCredentialRights`.
+- **No ALTER script verb, and no rename.** The secret cannot be read from any
+  catalog view, so every generated script carries `<insert secret here>` in its
+  place — an ALTER verb would be a statement that silently rewrites the stored
+  secret to a placeholder. There is no `ALTER DATABASE SCOPED CREDENTIAL ... WITH
+  NAME` and no `sp_rename` class for one, so Rename is not on the menu.
+- **Changing the identity with the password blank is refused, not applied.**
+  `ALTER DATABASE SCOPED CREDENTIAL` resets both halves every time and an
+  omitted `SECRET` sets the stored secret to NULL, so a bare identity change
+  destroys a secret nothing can restore. Same rule, same wording, as the
+  server-level Credential Properties page.
+- **`IDENTITY = N'SHARED ACCESS SIGNATURE'` cannot have its identity altered**
+  once the credential is bound to an active database file — Msg 33253,
+  "Failed to modify the identity field of the credential ... because the
+  credential is used by an active database file", hit live on major 17. The
+  page surfaces the server's message; there is nothing to gate on beforehand,
+  since the binding is not visible from `sys.database_scoped_credentials`.
+
+## Database-scope DDL triggers: what the design settled
+
+- **A database has no flat Triggers folder any more, and that is the point.**
+  A DML trigger belongs to one table or one view and is listed under that
+  object's own Triggers folder, which is where SSMS puts it and where it was
+  already listed — the database-wide roll-up listed every one of them a second
+  time. Keeping it would have put a folder called "Triggers" (DML) beside one
+  called "Database Triggers" (DDL, `parent_class = 0`), which reads as a
+  distinction without a difference. `Database.TriggersContext` still exists in
+  gosmo and is still the database-wide read; gossms simply has no folder for it.
+- **A view is no longer a leaf.** It carries INSTEAD OF triggers, and the
+  roll-up was the only place they had been reachable, so `NodeView` gained the
+  same Triggers folder a table has. `Database.ObjectTriggers` is the by-name
+  read behind both, because gosmo's `View` is a plain row struct with no
+  back-pointer to its database and so can carry no method of its own.
+- **The DDL family is read/enable/disable/script/drop — there is no New
+  dialog**, the same shape as Server Triggers one scope up. A CREATE TRIGGER
+  body is T-SQL a form cannot usefully build, and SSMS offers no such dialog
+  either. Editing one is Script Database Trigger as > ALTER To.
+- **The Database Triggers folder's filter is client-side and offers Name and
+  Creation Date**, matching the Server DDL Triggers folder for the same reason
+  the six server-level folders give.
 
 ## By design — not issues, do not re-raise
 
@@ -742,11 +818,12 @@ numbering the moment they flipped the selector.
   string's. The proposed fix was three extra round trips per grant and was
   reverted.
 
-- **`charts.HistoryChart.Draw` and `StackedHistoryChart.Draw` stay, though
-  nothing in the binary reaches them.** `doc.go` advertises `Draw` as the entry
-  point and all six chart types implement it. The dashboard uses `DrawFrame`
-  only because it also wants the time row. Removing two of six would break the
-  package's one uniform method for four lines.
+- **`charts.StackedHistoryChart.Draw` stays, though nothing in the binary
+  reaches it.** `doc.go` advertises `Draw` as the entry point and all six chart
+  types implement it. The dashboard uses `DrawFrame` only because it also wants
+  the time row. Removing one of six would break the package's one uniform method
+  for four lines. `HistoryChart.Draw` was in the same position until the Query
+  Store panel's per-query history became its caller.
 
 - **The five `staticcheck` U1000 findings in `clipboard_host_test.go` and
   `dialog_gesture_test.go` are suppressed, not deleted.** The fields are read by

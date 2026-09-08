@@ -41,6 +41,16 @@ func loadTableChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 	}, nil
 }
 
+// loadViewChildren returns one view's object-family folders. A view has
+// exactly one: its INSTEAD OF triggers, which SSMS also files under the view
+// rather than under the database. They were previously reachable only through
+// the database-wide Triggers roll-up, and that folder is gone.
+func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return []*explorerNode{
+		l.node("Triggers", NodeTriggers, node.data.Schema, node.data.Name, node.data.DBName),
+	}, nil
+}
+
 // tableFor resolves node's owning table — node.data.Schema/Name are the
 // table's own, propagated onto it by loadTableChildren above.
 func tableFor(l loaderCtx, node *explorerNode) (*gosmo.Table, error) {
@@ -304,29 +314,31 @@ func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 		})
 }
 
-// loadTriggersChildren backs the NodeTriggers folder, which appears in two
-// places: directly under a Database (all DML triggers, schema-qualified
-// labels) and under a Table's own Triggers folder (that table's triggers
-// only — node.data.Name is set to the table's name by loadTableChildren in
-// that case, empty in the database-wide one).
+// loadTriggersChildren backs the NodeTriggers folder, which hangs under a
+// table or a view — node.data.Schema/Name are the owning object's, put there
+// by loadTableChildren or loadViewChildren.
+//
+// It reads by name through gosmo's Database.ObjectTriggers rather than
+// resolving the parent to a *Table first, because the parent is not always a
+// table: a view's INSTEAD OF triggers list here too, and gosmo's View is a
+// plain row struct with no Triggers method to call. OBJECT_ID does not care
+// which of the two it is, and it is one round trip instead of two.
+//
+// There is no database-wide arm any more. The flat Triggers folder that used
+// to sit under a database listed every DML trigger a second time and would
+// have read as the sibling of Programmability > Database Triggers, which is a
+// different family entirely — see loadProgrammabilityChildren.
 func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	if node.data.Name != "" {
-		table, err := dbObj.TableByNameContext(l.ctx, node.data.Schema, node.data.Name)
-		if err != nil {
-			return nil, err
-		}
-		return listChildren(func() ([]*gosmo.Trigger, error) { return table.TriggersContext(l.ctx) },
-			func(t *gosmo.Trigger) *explorerNode {
-				return l.node(t.Name, NodeTrigger, node.data.Schema, t.Name, node.data.DBName)
-			})
-	}
-	return listChildren(func() ([]*gosmo.Trigger, error) { return dbObj.TriggersContext(l.ctx) },
+	return listChildren(
+		func() ([]*gosmo.Trigger, error) {
+			return dbObj.ObjectTriggersContext(l.ctx, node.data.Schema, node.data.Name)
+		},
 		func(t *gosmo.Trigger) *explorerNode {
-			return l.node(t.Schema+"."+t.Name, NodeTrigger, t.Schema, t.Name, node.data.DBName)
+			return l.node(t.Name, NodeTrigger, node.data.Schema, t.Name, node.data.DBName)
 		})
 }
 

@@ -102,15 +102,55 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 	return []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),
-		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
-		l.node("Functions", NodeFunctions, "", "", dbName),
-		l.node("Triggers", NodeTriggers, "", "", dbName),
-		l.node("Sequences", NodeSequences, "", "", dbName),
-		l.node("Synonyms", NodeSynonyms, "", "", dbName),
+		l.node("Programmability", NodeProgrammability, "", "", dbName),
 		l.node("Query Store", NodeQueryStore, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
 		l.node("Storage", NodeStorage, "", "", dbName),
 	}, nil
+}
+
+// loadProgrammabilityChildren returns the module families SSMS files under
+// Programmability, in SSMS's order.
+//
+// The folder exists because Database Triggers needed a home. Database-scope
+// DDL triggers are a third trigger family (gosmo's database_trigger.go) and
+// the label "Database Triggers" beside a flat "Triggers" folder listing DML
+// triggers reads as a distinction without a difference — so the DML roll-up
+// that used to sit here is gone instead: a DML trigger belongs to a table or
+// a view, and is now reachable only under that object's own Triggers folder,
+// which is where SSMS puts it and where it was already listed.
+func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbName := node.data.DBName
+	return []*explorerNode{
+		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
+		l.node("Functions", NodeFunctions, "", "", dbName),
+		l.node("Database Triggers", NodeDatabaseTriggers, "", "", dbName),
+		l.node("Sequences", NodeSequences, "", "", dbName),
+		l.node("Synonyms", NodeSynonyms, "", "", dbName),
+	}, nil
+}
+
+// loadDatabaseTriggersChildren lists a database's DDL triggers, each labelled
+// with its state — the same "(Disabled)" suffix the server-scope folder uses,
+// and for the same reason: a disabled trigger enforces nothing and nothing
+// else in the row says so.
+func loadDatabaseTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(
+		func() ([]*gosmo.DatabaseTrigger, error) { return dbObj.DatabaseTriggersContext(l.ctx) },
+		func(t *gosmo.DatabaseTrigger) *explorerNode {
+			label := t.Name
+			if !t.IsEnabled {
+				label += " (Disabled)"
+			}
+			n := l.node(label, NodeDatabaseTrigger, "", t.Name, node.data.DBName)
+			n.data.CreateDate = t.CreateDate
+			n.data.IsEnabled = t.IsEnabled
+			return n
+		})
 }
 
 // loadQueryStoreChildren returns the Query Store folder's seven report
@@ -135,9 +175,55 @@ func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
 		l.node("Roles", NodeDatabaseRoles, "", "", node.data.DBName),
 		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
+		l.node("Database Audit Specifications", NodeDatabaseAuditSpecifications, "", "", node.data.DBName),
+		l.node("Database Scoped Credentials", NodeDatabaseScopedCredentials, "", "", node.data.DBName),
 		l.node("Security Policies", NodeSecurityPolicies, "", "", node.data.DBName),
 		l.node("Always Encrypted Keys", NodeAlwaysEncryptedKeys, "", "", node.data.DBName),
 	}, nil
+}
+
+// loadDatabaseAuditSpecificationsChildren lists a database's audit
+// specifications, each labelled with its state — the same "(Disabled)" suffix
+// the server-scope folder uses, and for the same reason: a disabled
+// specification records nothing and nothing else in the row says so.
+func loadDatabaseAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(
+		func() ([]*gosmo.DatabaseAuditSpecification, error) {
+			return dbObj.DatabaseAuditSpecificationsContext(l.ctx)
+		},
+		func(spec *gosmo.DatabaseAuditSpecification) *explorerNode {
+			label := spec.Name
+			if !spec.IsEnabled {
+				label += " (Disabled)"
+			}
+			n := l.node(label, NodeDatabaseAuditSpecification, "", spec.Name, node.data.DBName)
+			n.data.CreateDate = spec.CreateDate
+			n.data.IsEnabled = spec.IsEnabled
+			return n
+		})
+}
+
+// loadDatabaseScopedCredentialsChildren lists a database's own credentials —
+// sys.database_scoped_credentials, a separate securable from the server-level
+// family under Security > Credentials.
+func loadDatabaseScopedCredentialsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(
+		func() ([]*gosmo.DatabaseScopedCredential, error) {
+			return dbObj.DatabaseScopedCredentialsContext(l.ctx)
+		},
+		func(c *gosmo.DatabaseScopedCredential) *explorerNode {
+			n := l.node(c.Name, NodeDatabaseScopedCredential, "", c.Name, node.data.DBName)
+			n.data.CreateDate = c.CreateDate
+			return n
+		})
 }
 
 // loadSecurityPoliciesChildren lists a database's row-level security

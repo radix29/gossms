@@ -130,8 +130,8 @@ func TestAnAccessibleDatabaseStillExpands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadDatabaseChildren: %v", err)
 	}
-	if len(children) != 10 {
-		t.Fatalf("got %d children, want the ten object folders", len(children))
+	if len(children) != 6 {
+		t.Fatalf("got %d children, want the six object folders", len(children))
 	}
 }
 

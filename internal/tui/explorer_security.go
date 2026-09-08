@@ -3,13 +3,14 @@ package tui
 import gosmo "github.com/radix29/gosmo"
 
 // loadSecurityChildren returns the server-level Security folder's children:
-// Logins, Server Roles, Credentials, Audits and Server Audit Specifications,
-// in SSMS's order.
+// Logins, Server Roles, Credentials, Cryptographic Providers, Audits and
+// Server Audit Specifications, in SSMS's order.
 func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Logins", NodeLogins, "", "", ""),
 		l.node("Server Roles", NodeServerRoles, "", "", ""),
 		l.node("Credentials", NodeCredentials, "", "", ""),
+		l.node("Cryptographic Providers", NodeCryptographicProviders, "", "", ""),
 		l.node("Audits", NodeAudits, "", "", ""),
 		l.node("Server Audit Specifications", NodeServerAuditSpecifications, "", "", ""),
 	}, nil
@@ -39,6 +40,31 @@ func loadCredentialsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 		func(c *gosmo.Credential) *explorerNode {
 			n := l.node(c.Name, NodeCredential, "", c.Name, "")
 			n.data.CreateDate = c.CreateDate
+			return n
+		})
+}
+
+// loadCryptographicProvidersChildren lists the EKM providers registered with
+// CREATE CRYPTOGRAPHIC PROVIDER. A server with none — the ordinary case — has
+// an empty folder, not an error; see gosmo's credential.go.
+//
+// The folder is read-only. Registering a provider needs a DLL path on the
+// server's own filesystem, which SSMS answers with a file browser this build
+// has no way to offer, so there is no New item and no Drop entry for it.
+func loadCryptographicProvidersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return listChildren(
+		func() ([]*gosmo.CryptographicProvider, error) {
+			return l.sc.Server.CryptographicProvidersContext(l.ctx)
+		},
+		func(p *gosmo.CryptographicProvider) *explorerNode {
+			// A disabled provider decrypts nothing, and nothing else in the
+			// row says so — the same label the Audits folder uses.
+			label := p.Name
+			if !p.IsEnabled {
+				label += " (Disabled)"
+			}
+			n := l.node(label, NodeCryptographicProvider, "", p.Name, "")
+			n.data.IsEnabled = p.IsEnabled
 			return n
 		})
 }

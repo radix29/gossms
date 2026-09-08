@@ -25,9 +25,10 @@ func TestSecurityFolderOffersCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadSecurityChildren: %v", err)
 	}
-	// SSMS's order: Logins, Server Roles, Credentials, Audits, Server Audit
-	// Specifications.
-	want := []string{"Logins", "Server Roles", "Credentials", "Audits", "Server Audit Specifications"}
+	// SSMS's order: Logins, Server Roles, Credentials, Cryptographic
+	// Providers, Audits, Server Audit Specifications.
+	want := []string{"Logins", "Server Roles", "Credentials", "Cryptographic Providers",
+		"Audits", "Server Audit Specifications"}
 	got := make([]string, len(children))
 	for i, c := range children {
 		got[i] = c.label

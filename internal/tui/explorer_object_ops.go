@@ -275,6 +275,25 @@ var objectOps = map[NodeType]objectOp{
 			return sc.Server.Credential(n.Name).DropContext(ctx)
 		},
 	},
+	NodeDatabaseScopedCredential: {
+		noun: "Database Scoped Credential",
+		// Same as the server-level credential: nothing cascades, but an
+		// external data source or a backup URL bound to it stops being able to
+		// authenticate, and the secret is unrecoverable — so this is not a
+		// delete that can be undone from what is on screen.
+		warning: "External data sources and backup URLs bound to it lose their identity, and the stored secret cannot be recovered.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			dbObj, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+			if err != nil {
+				return err
+			}
+			return dbObj.DatabaseScopedCredential(n.Name).DropContext(ctx)
+		},
+		// No rename: there is no ALTER DATABASE SCOPED CREDENTIAL ... WITH NAME
+		// and no sp_rename class for one, the same as the server-level
+		// credential.
+	},
 	NodeAudit: {
 		noun: "Audit",
 		// Dropping the audit takes every specification bound to it with it —
@@ -300,6 +319,20 @@ var objectOps = map[NodeType]objectOp{
 		// No rename: ALTER SERVER AUDIT SPECIFICATION has no MODIFY NAME form
 		// at all — verified live, it is a parse error.
 	},
+	NodeDatabaseAuditSpecification: {
+		noun:    "Database Audit Specification",
+		warning: "The action groups and actions it names stop being recorded by its audit.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			dbObj, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+			if err != nil {
+				return err
+			}
+			return dbObj.DatabaseAuditSpecification(n.Name).DropContext(ctx)
+		},
+		// No rename: ALTER DATABASE AUDIT SPECIFICATION has no MODIFY NAME
+		// form, the same as the server-scope one.
+	},
 	NodeBackupDevice: {
 		noun: "Backup Device",
 		// The alias is all that is dropped by default; the .bak behind it stays
@@ -313,6 +346,21 @@ var objectOps = map[NodeType]objectOp{
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, deleteFile bool) error {
 			return sc.Server.BackupDevice(n.Name).DropContext(ctx, deleteFile)
 		},
+	},
+	NodeDatabaseTrigger: {
+		noun: "Database Trigger",
+		// A DDL trigger is what enforces or audits a policy across the whole
+		// database; dropping one removes that enforcement for every schema in
+		// it at once.
+		warning: "The DDL policy it enforces stops applying across the database.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			// Database, not DatabaseByName: the trigger is addressed by name
+			// and the lightweight handle needs no sys.databases read.
+			return sc.Server.Database(n.DBName).DatabaseTrigger(n.Name).DropContext(ctx)
+		},
+		// No rename: sp_rename has no class for a DDL trigger, and there is
+		// no ALTER ... MODIFY NAME form either.
 	},
 	NodeServerTrigger: {
 		noun: "Server Trigger",
@@ -585,8 +633,8 @@ func objectOpRights(t NodeType) []requiredRight {
 	return objectWriteRights()
 }
 
-// principalOpRights is Rename/Delete's right set for the two database-level
-// node types that are not schema objects. A user and a database role are
+// principalOpRights is Rename/Delete's right set for the database-level node
+// types that are not schema objects. A user and a database role are
 // class-4 securables, and not one member of objectWriteRights() speaks for
 // them: verified live 2026-09-04 on win10cli, a member of db_accessadmin drops
 // a user while reading HAS_PERMS_BY_NAME 0 for ALTER, CONTROL and
@@ -606,6 +654,16 @@ func objectOpRights(t NodeType) []requiredRight {
 var principalOpRights = map[NodeType][]requiredRight{
 	NodeUser:         {rightAlterAnyUser, rightAlterDatabase, rightControlDB},
 	NodeDatabaseRole: {rightAlterAnyDBRole, rightAlterDatabase, rightControlDB},
+	// A database audit specification is not a class-4 principal, but it lands
+	// here for the same reason: it has no schema and no object securable, so
+	// objectWriteRights() would ask about neither and the drop would be
+	// offered to a principal holding nothing.
+	NodeDatabaseAuditSpecification: {rightAlterAnyDBAudit, rightAlterDatabase, rightControlDB},
+	// The one entry with a single right, and the omission is deliberate: see
+	// dbScopedCredentialRights. ALTER on the database does not permit the
+	// drop, so listing it here would offer Delete to a principal the server
+	// then refuses.
+	NodeDatabaseScopedCredential: dbScopedCredentialRights(),
 }
 
 // serverScopedOpRights is Rename/Delete's right set for the node types that

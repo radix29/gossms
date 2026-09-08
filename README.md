@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="gossms_logo.png" alt="gossms" width="720">
+  <img src="gossms_logo.png" alt="goSSMS" width="720">
 </p>
 
 <p align="center">
-  <strong>Manage SQL Server without leaving macOS or Linux</strong>
+  <strong>SQL Server management for Linux, macOS, and Windows</strong>
 </p>
 
 <p align="center">
@@ -13,306 +13,132 @@
 
 # goSSMS
 
-A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
-One executable — no GUI, no installer, no SQL client tools or drivers
-required.
+goSSMS is a terminal-based SQL Server management application. It is distributed
+as a single executable and does not require an installer, SQL client tools, or
+separate database drivers.
 
 ![Demo](demo.gif)
 
-## Features
+## Installation
 
-- **Object Explorer** — the familiar SSMS tree: databases, tables, views,
-  procedures, functions, triggers, sequences, synonyms, server security
-  (logins, server roles, credentials), database security (users, roles,
-  schemas, row-level security policies, Always Encrypted keys),
-  storage (partition functions and schemes), server objects (backup devices,
-  endpoints, linked servers, server-scope DDL and logon triggers), auditing
-  (server audits and audit specifications), and Management. Right-click
-  anything to rename, delete, enable/disable, see dependencies, or
-  open Properties. **Script <object> as** covers every family the tree
-  shows — CREATE, ALTER, DROP, DROP And CREATE, and the SELECT/INSERT/
-  UPDATE/DELETE/EXECUTE templates — to a new query window, a file, or the
-  clipboard; an index adds REBUILD, REORGANIZE and UPDATE STATISTICS, and a
-  statistics object its own UPDATE STATISTICS. Delete a column, drop a table
-  with its foreign keys, move an object to another schema, or rename one. In
-  Object Explorer Details, Shift+click (or Alt+click, for terminals that keep
-  Shift for themselves) extends the selection and Ctrl+click picks rows out one
-  at a time, over several schema-scoped objects — tables, views, procedures,
-  indexes — which are then deleted in one confirmation; databases, logins and
-  roles are always deleted one at a time. Every delete confirmation has a
-  **Script** button that opens the DROP statements in a query window instead of
-  running them.
-  Filter any folder by name, schema, or creation date — the filter is pushed
-  into the server's own query where it can be expressed exactly. Drag a node
-  into the editor to insert its name.
-- **Query editor** — as many editor+results tabs as you like, `GO` batch
-  splitting, a tab per result set, and a Messages tab for `PRINT`, row
-  counts, and errors. Results are never row-capped. Syntax highlighting,
-  undo/redo, Find & Replace with regex, block (column) selection, and
-  IntelliSense for schemas, tables, views, and columns.
-- **Execution plans** — estimated or actual, as a cost-weighted operator
-  graph, a tree, or raw XML. A missing-index suggestion shows as a banner
-  above the plan; `m` (or a click on it) opens the `CREATE INDEX` script in
-  a query window. Plans open and save as `.sqlplan`, the same files SSMS
-  reads and writes. XML and JSON result cells open in their own
-  syntax-highlighted viewer.
-- **Properties dialogs** — editable, multi-page SSMS-style Properties for
-  Server, Database, Login, Table, Schema, roles, users, indexes, keys, and
-  more, plus New Database and New Login — which creates a login of any of SQL
-  Server's five kinds: SQL, Windows, Microsoft Entra, or mapped to a
-  certificate or an asymmetric key. Full permissions editing including
-  per-column grants and an Effective Permissions view.
-- **New Index and New Statistics** — a table's Indexes folder creates any
-  index type SQL Server has: clustered and nonclustered (unique, included
-  columns, filter, fill factor, online, partition scheme), clustered and
-  nonclustered columnstore, XML (primary and secondary), and spatial with
-  its tessellation, bounding box and grid. Its Statistics folder creates a
-  statistics object with an ordered column list, a filter, FULLSCAN or a
-  sample percentage, NORECOMPUTE and INCREMENTAL. Both offer Script Changes
-  instead of running the statement. A database's Security folder creates
-  Always Encrypted column master and column encryption keys from the `0x…`
-  blob SSMS or the PowerShell cmdlets print, and a column encryption key's
-  Properties rotates its master key — add the value encrypted under the new
-  key, then drop the old one once every client has it.
-- **Backup & Restore** — full option dialogs (destination, type, media,
-  compression, point-in-time, file relocation) run as cancellable
-  background tasks with live progress. Browse picks paths on the *server's*
-  filesystem, with that host's own path rules.
-- **Detach & Attach** — Detach on a database runs sp_detach_db with its three
-  options (drop connections, update statistics, drop the full-text index
-  files) and shows the file paths it leaves behind on disk. Attach on the
-  Databases folder browses the *server's* filesystem for a primary `.mdf`,
-  reads the database's whole file list back out of it, lets the path of any
-  file that has moved be corrected, and attaches it under whatever name and
-  owner you choose — or rebuilds a lost log.
-- **Activity Monitor** — live dashboards over DMV data: throughput, waits,
-  memory, I/O latency, and checkpoints, plus TempDB, blocking chains, and a
-  Sessions tab powered by sp_WhoIsActive.
-- **Log File Viewer** — SQL Server and SQL Agent error logs, current or
-  archived, with filtering, a search the server runs across every archive,
-  export, and Recycle.
-- **Query Store** — SSMS's seven views (Regressed Queries, Overall Resource
-  Consumption, Top Resource Consuming Queries, Queries With Forced Plans,
-  Queries With High Variation, Query Wait Statistics, Tracked Queries) under
-  each database. A leaf shows its report in Object Explorer Details; opening
-  one raises the Query Store panel, where the metric, statistic, time window
-  and row count are selectable, the rows are charted, and the selected
-  query's plans are listed. From there: **Force Plan** / **Unforce Plan**
-  (with a confirmation and a Script-to-editor alternative), **Show Plan**,
-  which opens the stored plan in the same graphical plan view an executed
-  query gets, **Track Query**, which pins a query to the Tracked Queries view,
-  and **Compare Plans**, which pairs two plans of one query over the operator
-  tree and names what differs about each row.
-- **SQL Server Agent** — Jobs, Schedules, Alerts, and Operators; multi-page
-  Job Properties with add/remove/reorder on the step list, a step's command
-  edited in the query editor itself — multi-line, SQL-highlighted, with line
-  numbers — run/stop a job, and view run history.
-- **Always On Availability Groups** — browse groups, replicas, databases,
-  and listeners; a live dashboard with estimated data loss and recovery
-  time; create groups, add replicas and databases, suspend/resume, fail
-  over, and set up database mirroring endpoints across all replicas at once.
-- **Authentication** — SQL Server, Windows Integrated, and Azure Entra ID
-  (Default, Password, MSI, Service Principal, Interactive, Device Code,
-  Azure CLI).
-- **Least privilege** — goSSMS works as a login that is not `sysadmin`. A
-  value it cannot read shows as `N/A` rather than `0`, a refusal names the
-  right it needs rather than showing a driver error, and an action you cannot
-  perform is greyed out rather than offered and then rejected. See
-  [Required rights](#required-rights).
+### 1. Download goSSMS
 
-## Install
+Download the latest release for your platform:
 
-Download the binary for your platform and run it:
+**https://github.com/radix29/gossms/releases/latest**
 
-https://github.com/radix29/gossms/releases
+Release binaries are available for:
 
-Or build from source (needs Go 1.27+):
+- Windows (amd64)
+- Linux (amd64 and arm64)
+- macOS (Apple silicon/arm64)
 
-```bash
-go install github.com/radix29/gossms/cmd/gossms@latest
+Homebrew and PPA installation options are coming soon.
+
+Extract the downloaded archive before running the application. Release binaries
+are currently unsigned; SHA-256 checksums are published with each release.
+
+### 2. Start goSSMS
+
+On Windows, open PowerShell in the extracted folder and run:
+
+```powershell
+.\gossms.exe
 ```
 
-You need a terminal with 256 colours and UTF-8 support (most modern ones)
-and access to a SQL Server instance.
-
-### Supported SQL Server versions
-
-**SQL Server 2016 SP1 (13.0.4001) and later**, on Windows and on Linux.
-
-SP1 rather than 2016 RTM because of `CREATE OR ALTER`, which arrived in
-13.0.4001. Three statements use it unconditionally: the stored-procedure create
-in [gosmo](https://github.com/radix29/gosmo), and the two procedures Activity
-Monitor installs — its blocking-chain helper and `sp_WhoIsActive`. Those three
-are what set the floor; every other statement that needs a later release is
-gated on the connected instance's version instead.
-
-Features the connected instance is too old for are *not* offered rather than
-offered-and-failing: Query Store's CUSTOM capture mode and wait-stats settings,
-compatibility levels the server rejects, and enclave-enabled column master keys
-all disappear below the version that introduced them. Later columns read back
-as zero values instead of failing the page they are on.
-
-Verified live on SQL Server 2017 and 2025. 2016, 2019 and 2022 are argued from
-the catalog documentation and pinned by tests rather than exercised — no
-instance of those majors is available.
-
-## Usage
+On Linux or macOS, open a terminal in the extracted folder and run:
 
 ```bash
+chmod +x ./gossms
 ./gossms
 ```
 
-goSSMS opens the Connect to Server dialog on startup. Fill it in to connect,
-or press `Escape` to work offline — `F9` reopens it any time.
+You need a modern terminal with UTF-8 and 256-colour support, plus network access
+to a SQL Server instance.
 
-## Keyboard Reference
+### 3. Connect to SQL Server
 
-| Key | Action |
-|-----|--------|
-| `F1` / `F10` / `Ctrl+Q` | Help / menu bar / quit |
-| `F9` | Connect to server |
-| `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+W` | New / open / save / close query |
-| `F5` | Execute query (selection if any); also refreshes a tree node, a Properties page, or a panel |
-| `Ctrl+Enter` | Select the statement at the cursor without executing |
-| `Tab` | Switch focus explorer ↔ panels, and between a panel's own grids |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle focus forward / back (explorer, editor, results) |
-| `Ctrl+Shift+Right` / `Left` | Next / previous panel |
-| `Ctrl+0`..`9` | Jump to panel N from the left (Object Explorer Details is 0) |
-| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next result tab |
-| `Ctrl+Left` / `Right` | Narrow / widen Object Explorer |
-| `Ctrl+Up` / `Down` | Grow / shrink the query editor |
-| `Ctrl+C` / `X` / `V` / `Z` / `Y` | Copy / cut / paste / undo / redo |
-| `Ctrl+Z` (Properties) | Revert the current page to the values it loaded with |
-| `Ctrl+F`, `F3` / `Shift+F3` | Find & Replace, find next / previous |
-| `Ctrl+F3` | Find next occurrence of the word at the cursor |
-| `Ctrl+D` / `Ctrl+L` | Duplicate / delete the current line |
-| `Ctrl+/` | Comment or uncomment the line |
-| `Ctrl+Space` / `Ctrl+R` | IntelliSense suggestions / refresh its cache |
-| `Ctrl+Space` (grid, tree) | Context menu — the keyboard's right-click |
-| `Shift+Arrow`, `Alt+Shift+Arrow` | Select text, block (column) select |
-| `Enter` / `+` / `-` / `Backspace` | Expand / collapse tree node |
-| `Shift+F10` / `Menu` key | Context menu for the selected tree node |
-| `1` / `2` / `3` (plan) | Plan graph / operator tree / raw XML |
-| `[` / `]` (plan) | Previous / next statement of the batch |
-| `m` (plan) | Missing-index details, when the banner is showing |
-| `/`, `n` / `N` (plan) | Search operators, next / previous match |
-| Right-click a grid cell | "Show Value" — full cell text, copyable |
-| `Ctrl+click` a grid row | Add or remove that row from the selection |
-| `Shift+click` / `Alt+click` a grid row | Extend the selection to that row |
-| Drag / double-click a header separator | Resize / reset a grid column |
+The Connect to Server dialog opens at startup. Enter the server name and choose
+SQL Server, Windows Integrated, or a supported Microsoft Entra ID authentication
+method.
 
-Replace is Edit > Replace... or the Replace fields in the Find dialog.
-`Ctrl+H` is deliberately unbound — many terminals send it as the same byte
-as Backspace. `Ctrl+Shift+O` also opens Connect, but only on terminals with a
-modern keyboard protocol; `F9` is the binding that works everywhere.
-`Alt+click` duplicates `Shift+click` because VTE terminals (xfce4-terminal,
-GNOME Terminal) keep `Shift`+mouse for their own text selection and forward
-nothing. A panel toolbar too narrow for its buttons collapses them into a
-**More ▾** menu rather than dropping them. Help > Key Diagnostics shows what
-your terminal actually sent for any key or mouse event.
+For a named instance such as `SERVER\INSTANCE`, leave **Port** blank so SQL
+Browser can resolve the instance. Use a port only when you want to connect to a
+specific port directly.
+
+## Supported SQL Server versions
+
+goSSMS supports **SQL Server 2016 SP1 (13.0.4001) and later** on Windows and
+Linux. Features that are unavailable on the connected SQL Server version are
+hidden or disabled.
+
+## Highlights
+
+- **Object Explorer** for databases, tables, views, programmable objects,
+  security, storage, SQL Server Agent, Always On, and other server objects.
+- **Query editor** with multiple tabs, IntelliSense, `GO` batches, unlimited
+  result rows, messages, and XML/JSON viewers.
+- **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
+  support, missing-index details, and plan comparison.
+- **Query Store** reports with plan viewing, comparison, tracking, forcing, and
+  unforcing.
+- **Administration tools** for properties, permissions, backup and restore,
+  attach and detach, indexes, statistics, and multi-object delete.
+- **Monitoring** through Activity Monitor, blocking chains, sessions, and SQL
+  Server and SQL Agent logs.
+- **Least-privilege operation**: unavailable actions are disabled and missing
+  permissions are identified where SQL Server exposes that information.
 
 ## Required rights
 
-goSSMS is a client — every button does what SQL Server lets your login do, and
-nothing more. The minimum right per area, so you can tell "goSSMS can't" from
-"this login can't":
+goSSMS does not add privileges to your login. Connecting requires `CONNECT SQL`;
+seeing and opening databases may also require `VIEW ANY DATABASE` and `CONNECT`
+on the database. Each query and administrative action requires the same SQL
+Server permission it would require in another client.
 
-| Feature | Minimum rights |
-|---|---|
-| Connect; browse the tree | `CONNECT SQL`; `VIEW ANY DATABASE` to see a database listed, `CONNECT` on it to expand it |
-| Definitions, dependencies, `Script <object> as`; Logins and Server Roles | `VIEW DEFINITION` on the object, or `VIEW ANY DEFINITION` |
-| Server Properties (read) | `public`, plus `VIEW SERVER STATE` for live figures |
-| Server Properties (apply) | `ALTER SETTINGS` (`serveradmin`/`sysadmin`) |
-| Database Properties (read) | `CONNECT` on the database; `VIEW DATABASE STATE` for space figures |
-| Database Properties (apply), New Index, New Statistics | `ALTER` on the database or object (`db_owner`, `db_ddladmin`) |
-| New Database | `CREATE ANY DATABASE` or `dbcreator` |
-| New Login, Login Properties (apply) | `ALTER ANY LOGIN` (`securityadmin`) |
-| Backup / Restore | `db_backupoperator` or `BACKUP DATABASE`/`BACKUP LOG` / `dbcreator` plus `db_owner` |
-| Detach | `CONTROL` on the database (`db_owner`) or `ALTER ANY DATABASE` (`dbcreator`); the session count also needs `VIEW SERVER STATE` |
-| Attach | `CREATE ANY DATABASE` or `dbcreator`; reading a detached file's file list also needs the rights `DBCC` needs (`sysadmin`) |
-| Server filesystem picker | `public` on SQL Server 2017+; `sysadmin` on older (`xp_dirtree`) |
-| Activity Monitor | `VIEW SERVER STATE`; Blocking tab also needs `CREATE PROCEDURE` in `master` |
-| Log File Viewer | `public` to list; `EXECUTE` on `xp_readerrorlog` to read; `sysadmin` to Recycle |
-| Query Store (read / force a plan) | `VIEW DATABASE STATE` on the database / `ALTER` on it (`db_owner`) |
-| SQL Server Agent | `msdb` access plus `SQLAgentUserRole`; `SQLAgentReaderRole` for others' jobs, `SQLAgentOperatorRole` to start/stop them |
-| Always On (browse / change) | `VIEW ANY DEFINITION` + `VIEW SERVER STATE` / `ALTER ANY AVAILABILITY GROUP` + `ALTER ANY ENDPOINT` |
-| Query editor | whatever the query itself needs — goSSMS adds nothing |
+When a permission is missing, goSSMS disables the affected action, opens an
+editable page as read-only, displays inaccessible values as `N/A`, or reports the
+required permission where possible.
 
-On SQL Server 2022+ `VIEW SERVER STATE` is split into `VIEW SERVER PERFORMANCE
-STATE` and `VIEW SERVER SECURITY STATE`; either narrower grant covers its half.
+### `VIEW SERVER STATE`
 
-How a missing right shows up:
+Live server information, including Activity Monitor data and some server
+properties, requires `VIEW SERVER STATE`.
 
-- An unreadable value is `N/A`, never `0` and never a number taken over only the
-  visible rows. A page opens if its main reads succeed; a grid built from a
-  filtered catalog view says so at the top.
-- A database you cannot open expands to a single *Access denied* line, and a
-  refused read names the right it needs — *Requires SELECT on
-  msdb.dbo.sysjobservers* — rather than the raw driver error.
-- Where SQL Server itself will not distinguish missing from invisible
-  (*"does not exist or you do not have permission"*), goSSMS doesn't either.
-- An action you lack rights for is withheld, not offered then refused: the menu
-  item is greyed and names the permission, and a Properties page that could not
-  save opens read-only with **Close / Script Changes** in place of OK/Apply.
-
-The check is one-sided — an action is withheld only when the server answered
-"no" to *every* right that would permit it, so anything unprobed stays offered.
-A grant made directly on one object counts alongside the wider rights, so a
-login granted ALTER on a single table keeps that table's write actions. For the
-limits that remain, see [docs/open-threads.md](docs/open-threads.md)
-§ Permission gating.
+On SQL Server 2022 and later, `VIEW SERVER STATE` is split into
+`VIEW SERVER PERFORMANCE STATE` and `VIEW SERVER SECURITY STATE`; either narrower
+grant covers its corresponding information.
 
 ## Configuration
 
-Successful connections are saved automatically (most recent first, up to
-15); type 4+ characters in the Server field to look one up. Tools > Options
-sets the tree icon style, the results grid's default cell width, and
-IntelliSense on/off.
+Connections are saved automatically, with the 15 most recent listed first.
+Tools > Options controls the tree icon style, default results-grid cell width,
+and IntelliSense.
 
-Settings live in `~/.config/gossms/config.json` (Linux/macOS) or
-`%APPDATA%\gossms\config.json` (Windows). Saved passwords are encrypted
-(AES-256-GCM) with a key in `gossms.key` alongside it, sealed against the
-server, login, and auth method they belong to. Delete either file to reset
-all saved connections.
+Configuration is stored at:
 
-## Known Issues
+- Linux/macOS: `~/.config/gossms/config.json`
+- Windows: `%APPDATA%\gossms\config.json`
 
-- Entra authentication untested — no infrastructure available
-- Not tested on macOS yet — no Mac available
-- Release binaries are unsigned; checksums are provided
+Saved passwords are encrypted with AES-256-GCM using `gossms.key`, stored next to
+the configuration file. Delete both files to reset saved connections.
 
-## Contributing
+## Known issues
 
-The codebase is still unstable and refactoring often, so I'm not accepting
-pull requests yet — please open an issue instead. For the internal package
-layout and design rationale, see [ARCHITECTURE.md](ARCHITECTURE.md).
+- Microsoft Entra authentication has not yet been tested against live
+  infrastructure.
+- macOS has not yet been tested on physical Mac hardware.
+- Release binaries are unsigned; checksums are provided.
 
-## Acknowledgements
+## Links
 
-The Activity Monitor's Sessions tab runs **sp_WhoIsActive**, Adam Machanic's
-activity-monitoring procedure — https://github.com/amachanic/sp_whoisactive —
-with thanks. goSSMS carries a copy in `internal/activity/whoisactive.sql` so
-it can install one on a server that hasn't got it.
+- [Releases and downloads](https://github.com/radix29/gossms/releases)
+- [Release notes](https://github.com/radix29/gossms/blob/main/RELEASE.md)
+- [Report an issue](https://github.com/radix29/gossms/issues)
 
 ## License
 
-goSSMS is © 2026 radix29 and licensed **GPL-3.0-or-later**; see `LICENSE`
-for the full text.
-
-    goSSMS is free software: you can redistribute it and/or modify it under
-    the terms of the GNU General Public License as published by the Free
-    Software Foundation, either version 3 of the License, or (at your
-    option) any later version.
-
-    goSSMS is distributed in the hope that it will be useful, but WITHOUT
-    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-    FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-    for more details.
-
-The bundled copy of sp_WhoIsActive is © 2007-2026 Adam Machanic and licensed
-**GPL-3.0** under its own copyright, whose text is carried alongside it as
-`internal/activity/LICENSE.sp_whoisactive`. It is used unmodified apart from
-the two changes its own header records — the release script's SET-options and
-stub-CREATE batches removed, and its declaration rewritten at install time so
-the tempdb copy can be named `usp_WhoIsActive`. It is aggregated with goSSMS,
-not derived from it; its copyright stays with its author.
+goSSMS is © 2026 radix29 and licensed under
+[GPL-3.0-or-later](LICENSE). The bundled
+[sp_WhoIsActive](https://github.com/amachanic/sp_whoisactive) is © 2007–2026
+Adam Machanic and retains its own GPL-3.0 copyright.

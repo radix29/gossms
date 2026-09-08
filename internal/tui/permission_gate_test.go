@@ -1136,6 +1136,8 @@ var databaseScopedOpTypes = []NodeType{
 	NodeStatistic, NodeKey, NodeForeignKey, NodeCheck, NodePartitionFunction,
 	NodePartitionScheme, NodeSecurityPolicy, NodeColumnMasterKey,
 	NodeColumnEncryptionKey, NodeUser, NodeDatabaseRole, NodeSchema,
+	NodeDatabaseAuditSpecification, NodeDatabaseTrigger,
+	NodeDatabaseScopedCredential,
 }
 
 // TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review

@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -17,9 +19,9 @@ import (
 )
 
 // log_viewer.go is SSMS's Log File Viewer: one panel per server showing one
-// error log file at a time, either family. The two selectors, the filter and
-// the grid live here; drawing is in log_viewer_draw.go and input in
-// log_viewer_input.go.
+// error log file, or several of one family merged into one date-sorted grid.
+// The two selectors, the filter and the grid live here; drawing is in
+// log_viewer_draw.go and input in log_viewer_input.go.
 
 // logReadTimeout bounds one enumeration or one read. The current log on a busy
 // instance runs to tens of thousands of lines and xp_readerrorlog parses it
@@ -35,9 +37,34 @@ const (
 	logFilterWidth = 24
 )
 
-// LogViewer is the Log File Viewer panel: a grid of one log file's entries over
-// a details pane showing the selected entry in full, with the log family and
-// archive number chosen from the toolbar.
+// logFileRef names one log file: the two arguments
+// gosmo.Server.ReadLogFilteredContext takes. A LogViewer holds an ordered set
+// of these rather than a single pair, so several files can be merged into one
+// date-sorted grid — the single-file view is the one-element case.
+type logFileRef struct {
+	Type gosmo.ErrorLogType
+	Num  int
+}
+
+// logRow is one entry together with the file it was read from. The file is not
+// recoverable from the entry — two archives' rows are the same type — and a
+// merged grid has to name it, both in the File column and in the details pane.
+type logRow struct {
+	entry *gosmo.ErrorLogEntry
+	ref   logFileRef
+}
+
+// logFileError is one selected file that could not be read. A merged read
+// reports these beside whatever did come back rather than failing the panel:
+// one unreadable archive must not empty a grid holding three good files.
+type logFileError struct {
+	ref logFileRef
+	err error
+}
+
+// LogViewer is the Log File Viewer panel: a grid of one or more log files'
+// entries over a details pane showing the selected entry in full, with the log
+// family and the file selection chosen from the toolbar.
 //
 // Reads run on the panel's host connection rather than one of its own — each is
 // a one-shot query bounded by logReadTimeout with nothing on a timer, so no
@@ -49,10 +76,26 @@ type LogViewer struct {
 	rect   core.Rect
 	active bool
 
-	// logType and logNum are the file currently shown — the two arguments
-	// gosmo.Server.ReadLogContext takes.
+	// logType is the family the two selectors address: the one whose files the
+	// file selector lists, the one Recycle acts on, and — since archive numbers
+	// are not comparable across families — the family every entry of sel
+	// belongs to. Switching it always lands on that family's current log.
 	logType gosmo.ErrorLogType
-	logNum  int
+
+	// sel is the ordered set of files on screen, never empty. Its order is the
+	// order the reads are merged in, which is what breaks a timestamp tie
+	// deterministically — see sortLogRowsDesc.
+	sel []logFileRef
+
+	// pending is the file checklist's working copy, edited by its toggles and
+	// applied as a set. A checklist that wrote straight into sel would leave
+	// the grid describing files it had not read the moment the menu was
+	// dismissed with Escape.
+	pending []logFileRef
+
+	// readErrs are the selected files the last read could not fetch, kept so
+	// the status line can say how much of the selection the grid is showing.
+	readErrs []logFileError
 
 	// files caches each family's enumeration, so opening the file selector
 	// doesn't re-run sp_enumerrorlogs on every click. Refresh drops it.
@@ -64,11 +107,12 @@ type LogViewer struct {
 	// already read. See log_search_dialog.go.
 	search gosmo.LogSearch
 
-	// entries is everything the last read returned, shown the filtered subset
-	// the grid is built from. entries is kept whole so clearing the filter needs
-	// no second read.
-	entries []*gosmo.ErrorLogEntry
-	shown   []*gosmo.ErrorLogEntry
+	// entries is everything the last read returned, merged across the selected
+	// files and sorted newest first; shown is the filtered subset the grid is
+	// built from. entries is kept whole so clearing the filter needs no second
+	// read.
+	entries []logRow
+	shown   []logRow
 
 	grid     *controls.DataGrid
 	filter   *widgets.InputField
@@ -152,7 +196,7 @@ func NewLogViewer(app *App, sc *db.ServerConn, logType gosmo.ErrorLogType, logNu
 		app:      app,
 		conn:     sc,
 		logType:  logType,
-		logNum:   logNum,
+		sel:      []logFileRef{{Type: logType, Num: logNum}},
 		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
 		grid:     grid,
 		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
@@ -340,29 +384,80 @@ func (lv *LogViewer) runTool(i int) bool {
 // selection.
 func (lv *LogViewer) refreshToolLabels() {
 	lv.tools[logToolLogType].label = "Log: " + lv.logType.String() + " ▾"
-	lv.tools[logToolFile].label = "File: " + lv.currentFileLabel() + " ▾"
+	lv.tools[logToolFile].label = "File: " + lv.selectionLabel() + " ▾"
 }
 
-// currentFileLabel names the file on screen: from the cached enumeration when
-// there is one, from the archive number alone when there isn't, since the
-// selector is drawn before the first enumeration lands.
-func (lv *LogViewer) currentFileLabel() string {
-	for _, f := range lv.files[lv.logType] {
-		if f.Number == lv.logNum {
+// fileLabel names one log file: from the cached enumeration when there is one,
+// from the archive number alone when there isn't, since the selector is drawn
+// before the first enumeration lands.
+func (lv *LogViewer) fileLabel(ref logFileRef) string {
+	for _, f := range lv.files[ref.Type] {
+		if f.Number == ref.Num {
 			return errorLogFileLabel(f)
 		}
 	}
-	if lv.logNum == 0 {
-		return "Current"
-	}
-	return fmt.Sprintf("Archive #%d", lv.logNum)
+	return logFileShortLabel(ref)
 }
 
-// ShowLog points the panel at a log file and reads it. Reopening from another
-// tree node comes through here, so an already-open viewer switches files
-// instead of a second one being created.
+// logFileShortLabel names a file without its date — what the grid's File
+// column and the status line say, where errorLogFileLabel's trailing timestamp
+// is noise repeated on every row.
+func logFileShortLabel(ref logFileRef) string {
+	if ref.Num == 0 {
+		return "Current"
+	}
+	return fmt.Sprintf("Archive #%d", ref.Num)
+}
+
+// currentFileLabel names the single file on screen, or the first of a
+// selection. The toolbar and the status line use selectionLabel instead; this
+// is for the callers that mean one specific file.
+func (lv *LogViewer) currentFileLabel() string { return lv.fileLabel(lv.currentRef()) }
+
+// currentRef is the first selected file — the one a caller that can only mean
+// one file (the export's suggested name, a degenerate selection) addresses.
+// sel is never empty, but a zero-valued LogViewer built by a test can be.
+func (lv *LogViewer) currentRef() logFileRef {
+	if len(lv.sel) == 0 {
+		return logFileRef{Type: lv.logType}
+	}
+	return lv.sel[0]
+}
+
+// multiFile reports whether more than one file is merged into the grid — what
+// the File column and the plural labels turn on. The single-file view is left
+// exactly as it was.
+func (lv *LogViewer) multiFile() bool { return len(lv.sel) > 1 }
+
+// selectionLabel names what is on screen for the file selector and the status
+// line: the file itself when there is one, the count when there are several.
+// Listing four archives' labels would overrun the toolbar cell and every
+// status line that names the selection.
+func (lv *LogViewer) selectionLabel() string {
+	if lv.multiFile() {
+		return fmt.Sprintf("%d files", len(lv.sel))
+	}
+	return lv.currentFileLabel()
+}
+
+// ShowLog points the panel at a single log file and reads it. Reopening from
+// another tree node comes through here, so an already-open viewer switches
+// files instead of a second one being created — and lands on the one-file view
+// however many files were merged before.
 func (lv *LogViewer) ShowLog(logType gosmo.ErrorLogType, logNum int) {
-	lv.logType, lv.logNum = logType, logNum
+	lv.ShowLogs(logType, []logFileRef{{Type: logType, Num: logNum}})
+}
+
+// ShowLogs points the panel at a set of files of one family and reads them.
+// An empty set is the current log: a selection the user emptied would
+// otherwise leave the grid with nothing to describe and no way back.
+func (lv *LogViewer) ShowLogs(logType gosmo.ErrorLogType, refs []logFileRef) {
+	if len(refs) == 0 {
+		refs = []logFileRef{{Type: logType, Num: 0}}
+	}
+	lv.logType = logType
+	lv.sel = slices.Clone(refs)
+	slices.SortFunc(lv.sel, func(a, b logFileRef) int { return a.Num - b.Num })
 	lv.detailScroll = 0
 	lv.Load()
 }
@@ -375,13 +470,13 @@ func (lv *LogViewer) Refresh() {
 	lv.Load()
 }
 
-// Load reads the current file in the background and applies the result on the
-// UI goroutine. The same family's enumeration rides along, so the file selector
-// has its list without a second round trip.
+// Load reads the selected files in the background and applies the merged
+// result on the UI goroutine. The family's enumeration rides along, so the file
+// selector has its list without a second round trip.
 func (lv *LogViewer) Load() {
 	if !lv.app.isConnected(lv.conn) {
-		lv.entries, lv.shown = nil, nil
-		lv.grid.SetData(logGridColumns, nil)
+		lv.entries, lv.shown, lv.readErrs = nil, nil, nil
+		lv.grid.SetData(lv.gridColumns(), nil)
 		lv.setStatus("Not connected")
 		return
 	}
@@ -389,10 +484,14 @@ func (lv *LogViewer) Load() {
 	lv.seq++
 	seq := lv.seq
 	lv.busy = true
-	lv.setStatus(fmt.Sprintf("Reading %s log %s%s...", lv.logType, lv.currentFileLabel(), lv.searchSuffix()))
+	lv.setStatus(fmt.Sprintf("Reading %s log %s%s...", lv.logType, lv.selectionLabel(), lv.searchSuffix()))
 	lv.refreshToolLabels()
 
-	logType, logNum, search := lv.logType, lv.logNum, lv.search
+	logType, search := lv.logType, lv.search
+	// Snapshotted, not read from lv on the goroutine: the selection can be
+	// changed again while this read is out, and the result has to describe the
+	// files it actually asked for.
+	refs := slices.Clone(lv.sel)
 	sc := lv.conn
 	// One cancel for the panel to pull, but a fresh deadline per call: sharing
 	// one logReadTimeout lets a slow sp_enumerrorlogs eat the read's half of it,
@@ -408,9 +507,7 @@ func (lv *LogViewer) Load() {
 		enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
 		files, filesErr := sc.Server.EnumErrorLogsContext(enumCtx, logType)
 		enumCancel()
-		readCtx, readCancel := context.WithTimeout(ctx, logReadTimeout)
-		defer readCancel()
-		entries, err := sc.Server.ReadLogFilteredContext(readCtx, logType, logNum, search)
+		rows, readErrs := readLogFiles(lv.app, ctx, sc, refs, search)
 		lv.app.postAndWake(func() {
 			if seq != lv.seq {
 				return
@@ -421,16 +518,100 @@ func (lv *LogViewer) Load() {
 				lv.files[logType] = files
 			}
 			lv.refreshToolLabels()
-			if err != nil {
-				lv.entries, lv.shown = nil, nil
-				lv.grid.SetError(displayError(err))
+			// Only a selection where *nothing* could be read is an error: with
+			// one archive unreadable out of four, the grid holds the other
+			// three and summary says how many landed.
+			if len(readErrs) == len(refs) && len(readErrs) > 0 {
+				lv.entries, lv.shown, lv.readErrs = nil, nil, nil
+				lv.grid.SetError(displayError(readErrs[0].err))
 				return
 			}
-			lv.entries = sortLogEntriesDesc(entries)
+			lv.readErrs = readErrs
+			lv.entries = sortLogRowsDesc(rows)
 			lv.applyFilter() // resets detailScroll itself
 		})
 	})
 }
+
+// readLogFiles reads every ref and returns the rows in ref order together with
+// whichever files failed. It runs on the read goroutine, off the UI one.
+//
+// Each read gets its own logReadTimeout deadline under the panel's one
+// cancellable ctx: sharing a single deadline across N files would let the first
+// slow archive eat the budget of the ones behind it. The pool is bounded for
+// the reason the Databases folder's is — an instance can be configured to keep
+// 99 archives, and xp_readerrorlog parses the file server-side.
+//
+// Results are collected into a slice indexed by ref rather than appended as
+// they finish, so the merge order is the selection's order however the reads
+// interleave — which is what makes a timestamp tie break the same way twice.
+func readLogFiles(app *App, ctx context.Context, sc *db.ServerConn, refs []logFileRef, search gosmo.LogSearch) ([]logRow, []logFileError) {
+	per := make([][]logRow, len(refs))
+	errs := make([]error, len(refs))
+	// Seeded failed and cleared on success, not the other way round: a worker
+	// whose read panicked never reaches either assignment, and a file that was
+	// never read must be reported as unread rather than passing for an empty
+	// one — an empty archive and an archive nobody read look identical here.
+	for i := range errs {
+		errs[i] = errLogFileNotRead
+	}
+
+	idx := make(chan int, len(refs))
+	for i := range refs {
+		idx <- i
+	}
+	close(idx)
+
+	var wg sync.WaitGroup
+	for range min(len(refs), maxRowFetchConcurrency) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Spawned directly rather than through App.safego, so it has to ask
+			// for both halves of what safego gives: the label on the traceback
+			// and the recover. A panic escaping here is on a background
+			// goroutine where nothing else can catch it — the process dies and
+			// Run's screen.Fini() never restores the terminal.
+			labelGoroutine("reading an error log")
+			defer app.recoverPanic("reading an error log")
+			for i := range idx {
+				readCtx, cancel := context.WithTimeout(ctx, logReadTimeout)
+				entries, err := sc.Server.ReadLogFilteredContext(readCtx, refs[i].Type, refs[i].Num, search)
+				cancel()
+				if err != nil {
+					errs[i] = err
+					continue
+				}
+				rows := make([]logRow, 0, len(entries))
+				for _, e := range entries {
+					rows = append(rows, logRow{entry: e, ref: refs[i]})
+				}
+				per[i], errs[i] = rows, nil
+			}
+		}()
+	}
+	wg.Wait()
+
+	total := 0
+	for _, rows := range per {
+		total += len(rows)
+	}
+	out := make([]logRow, 0, total)
+	var failed []logFileError
+	for i := range refs {
+		if errs[i] != nil {
+			failed = append(failed, logFileError{ref: refs[i], err: errs[i]})
+			continue
+		}
+		out = append(out, per[i]...)
+	}
+	return out, failed
+}
+
+// errLogFileNotRead is readLogFiles' seed for a file no worker got to — the
+// read panicked, or its worker died owing it. It is never the reason a read
+// *failed*, only the reason one is missing.
+var errLogFileNotRead = errors.New("the read did not finish")
 
 // readPanicked releases the busy latch after a panic on the read goroutine —
 // Load's safegoRepair step. Guarded by seq like the normal completion path: a
@@ -478,10 +659,26 @@ func (lv *LogViewer) recycle() {
 					lv.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
 					return
 				}
+				lv.reanchorAfterCycle(logType)
 				lv.Refresh()
 			})
 		})
 	})
+}
+
+// reanchorAfterCycle drops a multi-file selection back to the current log when
+// the family it belongs to has just been cycled.
+//
+// A cycle renumbers every archive one higher and deletes the oldest, so the
+// numbers a set was chosen by no longer name the files it was chosen from —
+// re-reading them would silently hand back a different set, one file of which
+// may not exist any more. A single-file view keeps its number, which is the
+// behaviour it has always had: the user asked for "Archive #1" and gets
+// whatever is now Archive #1.
+func (lv *LogViewer) reanchorAfterCycle(logType gosmo.ErrorLogType) {
+	if logType == lv.logType && lv.multiFile() {
+		lv.sel = []logFileRef{{Type: lv.logType, Num: 0}}
+	}
 }
 
 // recyclePanicked releases the busy latch after a panic on the cycle goroutine
@@ -509,9 +706,43 @@ func cycleLogMessage(logType gosmo.ErrorLogType, server string) string {
 // log family populates.
 var logGridColumns = []string{"Date ▼", "Source", "Message"}
 
+// logGridColumnsMulti is logGridColumns with the File column a merged view
+// needs. Source is the log's own ProcessInfo/severity and says nothing about
+// which *file* a row came from, so a merged grid without this column cannot be
+// read at all. It appears only while more than one file is selected — the
+// single-file view is untouched.
+var logGridColumnsMulti = []string{"Date ▼", "File", "Source", "Message"}
+
 // logExportColumns are the same columns without the sort marker: an exported
 // header row names the column rather than describing the grid.
 var logExportColumns = []string{"Date", "Source", "Message"}
+
+// logExportColumnsMulti is logExportColumns with the File column, on the same
+// condition the grid's is.
+var logExportColumnsMulti = []string{"Date", "File", "Source", "Message"}
+
+// gridColumns and exportColumns are the headers for the current selection.
+func (lv *LogViewer) gridColumns() []string {
+	if lv.multiFile() {
+		return logGridColumnsMulti
+	}
+	return logGridColumns
+}
+
+func (lv *LogViewer) exportColumns() []string {
+	if lv.multiFile() {
+		return logExportColumnsMulti
+	}
+	return logExportColumns
+}
+
+// cells renders one row for the grid and the export, which share a shape.
+func (lv *LogViewer) cells(r logRow) []string {
+	if lv.multiFile() {
+		return []string{formatSQLDate(r.entry.Date), logFileShortLabel(r.ref), r.entry.Source(), flattenLogText(r.entry.Text)}
+	}
+	return []string{formatSQLDate(r.entry.Date), r.entry.Source(), flattenLogText(r.entry.Text)}
+}
 
 // applyFilter rebuilds shown from entries and hands it to the grid, matching a
 // case-insensitive substring over the source and message. An empty filter
@@ -520,16 +751,16 @@ func (lv *LogViewer) applyFilter() {
 	lv.invalidateDetailCache()
 	needle := strings.ToLower(strings.TrimSpace(lv.filter.Value()))
 	lv.shown = lv.shown[:0]
-	for _, e := range lv.entries {
-		if needle == "" || logEntryMatches(e, needle) {
-			lv.shown = append(lv.shown, e)
+	for _, r := range lv.entries {
+		if needle == "" || logEntryMatches(r.entry, needle) {
+			lv.shown = append(lv.shown, r)
 		}
 	}
 	rows := make([][]string, 0, len(lv.shown))
-	for _, e := range lv.shown {
-		rows = append(rows, []string{formatSQLDate(e.Date), e.Source(), flattenLogText(e.Text)})
+	for _, r := range lv.shown {
+		rows = append(rows, lv.cells(r))
 	}
-	lv.grid.SetData(logGridColumns, rows)
+	lv.grid.SetData(lv.gridColumns(), rows)
 	lv.detailScroll = 0
 	lv.setStatus(lv.summary())
 }
@@ -547,14 +778,28 @@ func (lv *LogViewer) invalidateDetailCache() {
 // force. Naming the search matters — "no entries" on a searched read means the
 // search found nothing, not that the log is empty.
 func (lv *LogViewer) summary() string {
-	if len(lv.entries) == 0 {
-		return fmt.Sprintf("%s log %s%s — no entries", lv.logType, lv.currentFileLabel(), lv.searchSuffix())
+	switch {
+	case len(lv.entries) == 0:
+		return fmt.Sprintf("%s log %s%s — no entries%s", lv.logType, lv.selectionLabel(), lv.searchSuffix(), lv.readErrSuffix())
+	case len(lv.shown) == len(lv.entries):
+		return fmt.Sprintf("%s log %s%s — %d entries%s", lv.logType, lv.selectionLabel(), lv.searchSuffix(), len(lv.entries), lv.readErrSuffix())
+	default:
+		return fmt.Sprintf("%s log %s%s — %d of %d entries match the filter%s",
+			lv.logType, lv.selectionLabel(), lv.searchSuffix(), len(lv.shown), len(lv.entries), lv.readErrSuffix())
 	}
-	if len(lv.shown) == len(lv.entries) {
-		return fmt.Sprintf("%s log %s%s — %d entries", lv.logType, lv.currentFileLabel(), lv.searchSuffix(), len(lv.entries))
+}
+
+// readErrSuffix says how much of the selection the grid is actually showing,
+// or "" when every file was read. A merged read that dropped one archive shows
+// the rest, so without this the panel would silently be short a file — and the
+// entry count alone cannot say so.
+func (lv *LogViewer) readErrSuffix() string {
+	if len(lv.readErrs) == 0 {
+		return ""
 	}
-	return fmt.Sprintf("%s log %s%s — %d of %d entries match the filter",
-		lv.logType, lv.currentFileLabel(), lv.searchSuffix(), len(lv.shown), len(lv.entries))
+	first := lv.readErrs[0]
+	return fmt.Sprintf(" — %d of %d files read (%s: %v)",
+		len(lv.sel)-len(lv.readErrs), len(lv.sel), logFileShortLabel(first.ref), displayError(first.err))
 }
 
 // searchSuffix describes the server-side search for the status line, or "" if
@@ -625,6 +870,18 @@ func sortLogEntriesDesc(entries []*gosmo.ErrorLogEntry) []*gosmo.ErrorLogEntry {
 	return entries
 }
 
+// sortLogRowsDesc is sortLogEntriesDesc over merged rows. The sort is stable
+// and the input is in selection order, file by file, so a timestamp shared
+// across two files breaks by file and then by position within the file — the
+// same order every time. An unstable sort, or a merge in completion order,
+// would reorder same-second rows under the cursor on every refresh.
+func sortLogRowsDesc(rows []logRow) []logRow {
+	slices.SortStableFunc(rows, func(a, b logRow) int {
+		return b.entry.Date.Compare(a.entry.Date)
+	})
+	return rows
+}
+
 // splitLogLines breaks an entry's text into the lines the log wrote. One
 // xp_readerrorlog row can span several — the startup banner puts the build date
 // and the OS on their own indented lines — and the details pane wraps each
@@ -636,14 +893,14 @@ func splitLogLines(s string) []string {
 	return strings.Split(s, "\n")
 }
 
-// selectedEntry is the entry the grid's cursor is on, nil when the grid is
-// empty. Indexed against shown, which is what the grid was built from.
-func (lv *LogViewer) selectedEntry() *gosmo.ErrorLogEntry {
+// selectedLogRow is the row the grid's cursor is on, and whether there is one.
+// Indexed against shown, which is what the grid was built from.
+func (lv *LogViewer) selectedLogRow() (logRow, bool) {
 	row := lv.grid.SelectedRow()
 	if row < 0 || row >= len(lv.shown) {
-		return nil
+		return logRow{}, false
 	}
-	return lv.shown[row]
+	return lv.shown[row], true
 }
 
 // showLogTypeMenu pops the log-family selector under its toolbar cell, reusing
@@ -670,6 +927,10 @@ func (lv *LogViewer) showLogTypeMenu() {
 // showLogFileMenu pops the archive selector. With no enumeration cached it
 // offers the current log alone and asks for one, rather than an empty menu that
 // looks like the instance has no logs.
+//
+// Picking a file here always narrows to that one file, however many were
+// merged before — the one-click case stays what it was. Merging is the
+// checklist below, reached from the last entry.
 func (lv *LogViewer) showLogFileMenu() {
 	files := lv.files[lv.logType]
 	if len(files) == 0 {
@@ -678,18 +939,104 @@ func (lv *LogViewer) showLogFileMenu() {
 		})
 		return
 	}
-	items := make([]controls.MenuItem, 0, len(files))
+	items := make([]controls.MenuItem, 0, len(files)+2)
 	for _, f := range files {
 		num := f.Number
 		label := errorLogFileLabel(f)
-		if num == lv.logNum {
+		// Every selected file is bulleted, not just the first: with three
+		// merged, one bullet would name the grid's contents wrongly.
+		if lv.isSelected(logFileRef{Type: lv.logType, Num: num}) {
 			label = "• " + label
 		}
 		items = append(items, controls.MenuItem{Label: label, Action: func() {
 			lv.ShowLog(lv.logType, num)
 		}})
 	}
+	items = append(items,
+		controls.MenuItem{Divider: true},
+		controls.MenuItem{Label: "Select Files...", Action: func() {
+			// Seeded here rather than in showLogFileChecklist, which every
+			// toggle re-enters: seeding there would undo the tick that called
+			// it.
+			lv.pending = slices.Clone(lv.sel)
+			lv.showLogFileChecklist()
+		}})
 	lv.popMenu(logToolFile, items)
+}
+
+// isSelected reports whether ref is one of the files on screen.
+func (lv *LogViewer) isSelected(ref logFileRef) bool { return slices.Contains(lv.sel, ref) }
+
+// showLogFileChecklist pops the multi-file picker: one tickable row per file of
+// the family, then Select All / Clear, then the entry that reads the ticked
+// set. Nothing is read until that last entry is chosen — the toggles edit
+// pending, so dismissing the menu leaves the grid describing the files it
+// actually holds.
+//
+// The menu is rebuilt and re-shown by every toggle, since a ContextMenu row's
+// label is fixed once shown and the tick is the whole point of the row. Hide
+// runs before an item's Action (see ContextMenu.HandleKey), so re-showing from
+// inside one is the supported shape rather than a race with the dismissal.
+func (lv *LogViewer) showLogFileChecklist() {
+	files := lv.files[lv.logType]
+	if len(files) == 0 {
+		lv.popMenu(logToolFile, []controls.MenuItem{
+			{Label: "(log list not loaded — Refresh)", Action: lv.Refresh},
+		})
+		return
+	}
+	items := make([]controls.MenuItem, 0, len(files)+5)
+	for i, f := range files {
+		ref := logFileRef{Type: lv.logType, Num: f.Number}
+		mark := "☐ "
+		if slices.Contains(lv.pending, ref) {
+			mark = "☑ "
+		}
+		row := i
+		items = append(items, controls.MenuItem{Label: mark + errorLogFileLabel(f), Action: func() {
+			if j := slices.Index(lv.pending, ref); j >= 0 {
+				lv.pending = slices.Delete(lv.pending, j, j+1)
+			} else {
+				lv.pending = append(lv.pending, ref)
+			}
+			lv.showLogFileChecklist()
+			// Re-showing resets the hover to nothing, which for a keyboard
+			// user means every tick sends the cursor back to the top of the
+			// list. Put it back on the row they just ticked.
+			lv.app.contextMenu.SetHover(row)
+		}})
+	}
+	all := make([]logFileRef, 0, len(files))
+	for _, f := range files {
+		all = append(all, logFileRef{Type: lv.logType, Num: f.Number})
+	}
+	items = append(items,
+		controls.MenuItem{Divider: true},
+		controls.MenuItem{Label: "Select All", Action: func() {
+			lv.pending = all
+			lv.showLogFileChecklist()
+		}},
+		controls.MenuItem{Label: "Clear", Action: func() {
+			lv.pending = nil
+			lv.showLogFileChecklist()
+		}},
+		controls.MenuItem{Divider: true},
+		controls.MenuItem{
+			Label:   lv.checklistApplyLabel(),
+			Enabled: func() bool { return len(lv.pending) > 0 },
+			Note:    "tick at least one file",
+			Action:  func() { lv.ShowLogs(lv.logType, lv.pending) },
+		})
+	lv.popMenu(logToolFile, items)
+}
+
+// checklistApplyLabel names what the checklist's last entry will read, so the
+// count is visible before the menu closes.
+func (lv *LogViewer) checklistApplyLabel() string {
+	if len(lv.pending) == 1 {
+		return "Read " + logFileShortLabel(lv.pending[0])
+	}
+	return fmt.Sprintf("Read %d files", len(lv.pending))
 }
 
 // popMenu shows items under tool i, or at the panel's top-left if that cell
@@ -709,7 +1056,11 @@ func (lv *LogViewer) export() {
 		lv.app.setStatus("Nothing to export")
 		return
 	}
-	name := fmt.Sprintf("%s-log-%d.txt", strings.ToLower(strings.ReplaceAll(lv.logType.String(), " ", "-")), lv.logNum)
+	family := strings.ToLower(strings.ReplaceAll(lv.logType.String(), " ", "-"))
+	name := fmt.Sprintf("%s-log-%d.txt", family, lv.currentRef().Num)
+	if lv.multiFile() {
+		name = fmt.Sprintf("%s-log-%dfiles.txt", family, len(lv.sel))
+	}
 	lv.app.fileDialog.ShowSave("Export Log", name, func(path string) {
 		// Rendered here on the UI goroutine, with only the write running off it:
 		// applyFilter reuses shown's backing array, so a snapshot of the slice
@@ -736,9 +1087,9 @@ func (lv *LogViewer) export() {
 // exportText renders the shown entries as the tab-separated file's contents.
 func (lv *LogViewer) exportText() string {
 	var b strings.Builder
-	b.WriteString(strings.Join(logExportColumns, "\t") + "\n")
-	for _, e := range lv.shown {
-		fmt.Fprintf(&b, "%s\t%s\t%s\n", formatSQLDate(e.Date), e.Source(), flattenLogText(e.Text))
+	b.WriteString(strings.Join(lv.exportColumns(), "\t") + "\n")
+	for _, r := range lv.shown {
+		b.WriteString(strings.Join(lv.cells(r), "\t") + "\n")
 	}
 	return b.String()
 }
@@ -771,20 +1122,23 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 				}
 				a.setStatus(fmt.Sprintf("%s error log recycled", logType))
 				refreshExplorerNode(a, node)
-				a.refreshOpenLogViewer(sc)
+				a.refreshOpenLogViewer(sc, logType)
 			})
 		})
 	})
 }
 
-// refreshOpenLogViewer re-reads the LogViewer open on sc, if there is one.
-// There is at most one per connection — see showLogViewerFor.
-func (a *App) refreshOpenLogViewer(sc *db.ServerConn) {
+// refreshOpenLogViewer re-reads the LogViewer open on sc, if there is one,
+// after logType has been cycled. There is at most one per connection — see
+// showLogViewerFor.
+func (a *App) refreshOpenLogViewer(sc *db.ServerConn, logType gosmo.ErrorLogType) {
 	idx := a.panels.FindIndex(func(p layout.Panel) bool {
 		lv, ok := p.(*LogViewer)
 		return ok && lv.conn == sc
 	})
 	if idx >= 0 {
-		a.panels.PanelAt(idx).(*LogViewer).Refresh()
+		lv := a.panels.PanelAt(idx).(*LogViewer)
+		lv.reanchorAfterCycle(logType)
+		lv.Refresh()
 	}
 }

@@ -20,6 +20,7 @@ import (
 func newTestLogViewer() *LogViewer {
 	lv := &LogViewer{
 		logType:  gosmo.ErrorLogSQLServer,
+		sel:      []logFileRef{{Type: gosmo.ErrorLogSQLServer, Num: 0}},
 		files:    make(map[gosmo.ErrorLogType][]*gosmo.ErrorLogFile),
 		grid:     controls.NewDataGrid(),
 		filter:   widgets.NewInputField(logFilterLabel, logFilterWidth, false),
@@ -29,13 +30,21 @@ func newTestLogViewer() *LogViewer {
 	return lv
 }
 
-func testLogEntries() []*gosmo.ErrorLogEntry {
+// testLogEntries is the three entries the panel tests filter, export and wrap.
+// They come back as logRows of the current SQL Server log, which is the shape
+// LogViewer.entries holds — one file's read is the one-element case of a merge.
+func testLogEntries() []logRow {
 	at := func(h, m int) time.Time { return time.Date(2026, 8, 12, h, m, 0, 0, time.UTC) }
-	return []*gosmo.ErrorLogEntry{
+	ref := logFileRef{Type: gosmo.ErrorLogSQLServer, Num: 0}
+	rows := []logRow{}
+	for _, e := range []*gosmo.ErrorLogEntry{
 		{Date: at(10, 0), Process: "Server", Text: "Starting up database 'master'."},
 		{Date: at(10, 1), Process: "spid19s", Text: "Recovery is complete."},
 		{Date: at(10, 2), Process: "Server", Text: "Login failed for user 'sa'."},
+	} {
+		rows = append(rows, logRow{entry: e, ref: ref})
 	}
+	return rows
 }
 
 // TestLogViewerFilterMatchesSourceAndMessage pins the filter down to a
@@ -51,7 +60,7 @@ func TestLogViewerFilterMatchesSourceAndMessage(t *testing.T) {
 
 	lv.filter.SetValue("RECOVERY")
 	lv.applyFilter()
-	if len(lv.shown) != 1 || lv.shown[0].Text != "Recovery is complete." {
+	if len(lv.shown) != 1 || lv.shown[0].entry.Text != "Recovery is complete." {
 		t.Errorf("filter %q matched %d entries (%v), want the one Recovery row", "RECOVERY", len(lv.shown), lv.shown)
 	}
 
@@ -101,9 +110,9 @@ func TestLogViewerSelectedEntryTracksFilter(t *testing.T) {
 		t.Fatalf("filter matched %d entries, want 2", len(lv.shown))
 	}
 	lv.grid.SetSelectedRow(1)
-	got := lv.selectedEntry()
-	if got == nil || got.Text != "Login failed for user 'sa'." {
-		t.Errorf("selectedEntry() = %v, want the second filtered row", got)
+	got, ok := lv.selectedLogRow()
+	if !ok || got.entry.Text != "Login failed for user 'sa'." {
+		t.Errorf("selectedLogRow() = %v, want the second filtered row", got)
 	}
 }
 

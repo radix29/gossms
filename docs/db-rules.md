@@ -38,6 +38,18 @@ shipped.
   touches the whole object, so one denied column withholds it, but recording the
   row on the table would make it a denial of every column.
 
+- **A right set is what the server actually checks, not the family's usual
+  shape.** Every database-scoped set here pairs its narrow right with
+  `rightAlterDatabase`, and adding that to a new one "for symmetry" is how an
+  action gets offered to a principal the server then refuses. Database-scoped
+  credentials are the worked example: probed live, CREATE/ALTER/DROP DATABASE
+  SCOPED CREDENTIAL go through under `GRANT CONTROL ON DATABASE` and are all
+  three refused under `GRANT ALTER ON DATABASE`, so `dbScopedCredentialRights`
+  is `CONTROL` alone. Probe with a `WITHOUT LOGIN` user before writing the set —
+  and note that a *server*-scope permission asked of a database comes back from
+  `HAS_PERMS_BY_NAME` as **NULL, not 0** (`ALTER ANY CREDENTIAL` does), which a
+  gate built on it reads as `CapabilityUnknown` forever rather than as "no".
+
 ## T-SQL and filters
 
 - **Never give a procedure you install outside `master` an `sp_` prefix.** An
@@ -65,6 +77,13 @@ shipped.
   the database collation and drops rows on a case-sensitive one; and `likeEscape`
   plus `ESCAPE`, because `%`, `_` and `[` are legal in an identifier — unescaped, a
   filter for `pct_1` also matches `pct1100`.
+- **`sys.database_audit_specification_details.class_desc` is not the keyword the
+  ADD clause takes.** An object row records `OBJECT_OR_COLUMN`, which
+  `ADD (SELECT ON OBJECT_OR_COLUMN::x BY y)` rejects, and a `CASE class_desc WHEN
+  'OBJECT'` arm never fires — so the securable comes back empty *and* the
+  re-scripted specification does not parse. gosmo translates it on the way out
+  (`database_audit_specification.go`) and accepts it as a spelling of `OBJECT`
+  on the way in. Found live on major 17; the unit tests were green throughout.
 
 ## Query execution
 

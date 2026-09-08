@@ -55,6 +55,8 @@ const (
 	NodeServerRole
 	NodeCredentials
 	NodeCredential
+	NodeCryptographicProviders
+	NodeCryptographicProvider
 	NodeAudits
 	NodeAudit
 	NodeServerAuditSpecifications
@@ -109,6 +111,9 @@ const (
 	NodeSchema
 	NodeTriggers
 	NodeTrigger
+	NodeProgrammability
+	NodeDatabaseTriggers
+	NodeDatabaseTrigger
 	NodeSequences
 	NodeSequence
 	NodeSynonyms
@@ -121,6 +126,10 @@ const (
 	NodePartitionFunction
 	NodePartitionSchemes
 	NodePartitionScheme
+	NodeDatabaseAuditSpecifications
+	NodeDatabaseAuditSpecification
+	NodeDatabaseScopedCredentials
+	NodeDatabaseScopedCredential
 	NodeSecurityPolicies
 	NodeSecurityPolicy
 	NodeAlwaysEncryptedKeys
@@ -190,13 +199,16 @@ func isContainerNode(t NodeType) bool {
 		NodeStatistics, NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
 		NodeSecurity, NodeLogins,
-		NodeServerRoles, NodeCredentials, NodeAudits, NodeServerAuditSpecifications,
+		NodeServerRoles, NodeCredentials, NodeCryptographicProviders,
+		NodeAudits, NodeServerAuditSpecifications,
 		NodeServerObjects, NodeBackupDevices, NodeServerTriggers, NodeEndpoints,
 		NodeManagement, NodeSQLServerLogs,
 		NodeAgentErrorLogs, NodeAgentJobs, NodeLinkedServers,
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
-		NodeTriggers, NodeSequences, NodeSynonyms, NodeChecks,
+		NodeTriggers, NodeProgrammability, NodeDatabaseTriggers,
+		NodeSequences, NodeSynonyms, NodeChecks,
 		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
+		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
 		NodeSecurityPolicies, NodeAlwaysEncryptedKeys, NodeQueryStore,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
@@ -264,11 +276,13 @@ func objectIconEmoji(t NodeType) rune {
 		return '👤'
 	case NodeServerRole, NodeDatabaseRole:
 		return '🎭'
-	case NodeCredential:
+	case NodeCredential, NodeDatabaseScopedCredential:
 		return '🪪'
+	case NodeCryptographicProvider:
+		return '🔒'
 	case NodeAudit:
 		return '📋'
-	case NodeServerAuditSpecification:
+	case NodeServerAuditSpecification, NodeDatabaseAuditSpecification:
 		return '📑'
 	case NodeBackupDevice:
 		return '💾'
@@ -302,7 +316,7 @@ func objectIconEmoji(t NodeType) rune {
 		return '🛢'
 	case NodeAGListener:
 		return '📡'
-	case NodeTrigger, NodeServerTrigger:
+	case NodeTrigger, NodeServerTrigger, NodeDatabaseTrigger:
 		return '⚡'
 	case NodeSequence:
 		return '🔢'
@@ -359,11 +373,13 @@ func objectIconSymbols(t NodeType) rune {
 		return '◇'
 	case NodeServerRole, NodeDatabaseRole:
 		return '▣'
-	case NodeCredential:
+	case NodeCredential, NodeDatabaseScopedCredential:
 		return '⊞'
+	case NodeCryptographicProvider:
+		return '⊗'
 	case NodeAudit:
 		return '⊟'
-	case NodeServerAuditSpecification:
+	case NodeServerAuditSpecification, NodeDatabaseAuditSpecification:
 		return '⊡'
 	case NodeBackupDevice:
 		return '⛁'
@@ -397,7 +413,7 @@ func objectIconSymbols(t NodeType) rune {
 		return '⬢'
 	case NodeAGListener:
 		return '◎'
-	case NodeTrigger, NodeServerTrigger:
+	case NodeTrigger, NodeServerTrigger, NodeDatabaseTrigger:
 		return '⚡'
 	case NodeSequence:
 		return '↑'
@@ -456,14 +472,22 @@ func nodeTypeName(t NodeType) string {
 		return "User"
 	case NodeCredential:
 		return "Credential"
+	case NodeDatabaseScopedCredential:
+		return "Database Scoped Credential"
+	case NodeCryptographicProvider:
+		return "Cryptographic Provider"
 	case NodeAudit:
 		return "Audit"
 	case NodeServerAuditSpecification:
 		return "Server Audit Specification"
+	case NodeDatabaseAuditSpecification:
+		return "Database Audit Specification"
 	case NodeBackupDevice:
 		return "Backup Device"
 	case NodeServerTrigger:
 		return "Server Trigger"
+	case NodeDatabaseTrigger:
+		return "Database Trigger"
 	case NodeEndpoint:
 		return "Endpoint"
 	case NodeAvailabilityGroup:
@@ -499,11 +523,13 @@ func nodeTypeName(t NodeType) string {
 func hasChildren(t NodeType) bool {
 	switch t {
 	case NodeColumn, NodeLogin, NodeUser, NodeServerRole, NodeDatabaseRole,
-		NodeCredential, NodeAudit, NodeServerAuditSpecification,
-		NodeBackupDevice, NodeServerTrigger, NodeEndpoint,
+		NodeCredential, NodeDatabaseScopedCredential, NodeCryptographicProvider,
+		NodeAudit, NodeServerAuditSpecification,
+		NodeDatabaseAuditSpecification,
+		NodeBackupDevice, NodeServerTrigger, NodeDatabaseTrigger, NodeEndpoint,
 		NodeSchema, NodeForeignKey, NodeCheck, NodeSequence, NodeSynonym,
 		NodeIndex, NodeTrigger, NodeKey, NodeStatistic,
-		NodeView, NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,
+		NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,
 		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
 		NodeAgentSchedule, NodeAgentAlert, NodeAgentAlertCategories,
 		NodeAgentOperator, NodeAgentReport, NodeQueryStoreReport,

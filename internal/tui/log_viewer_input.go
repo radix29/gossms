@@ -104,11 +104,11 @@ func (lv *LogViewer) setFilterFocused(v bool) {
 // it actually has. The line count comes from the same detailLines call that
 // draws it, so the last line is always reachable and never overshot.
 func (lv *LogViewer) scrollDetails(delta int) {
-	e := lv.selectedEntry()
-	if e == nil || lv.detailRect.H <= 0 {
+	row, ok := lv.selectedLogRow()
+	if !ok || lv.detailRect.H <= 0 {
 		return
 	}
-	limit := max(0, len(lv.detailLines(e, lv.detailRect.W-2))-lv.detailRect.H)
+	limit := max(0, len(lv.detailLines(row, lv.detailRect.W-2))-lv.detailRect.H)
 	lv.detailScroll = min(limit, max(0, lv.detailScroll+delta))
 }
 

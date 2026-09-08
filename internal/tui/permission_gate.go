@@ -160,6 +160,9 @@ var (
 	// this right, and Login Properties > Server Roles declares the plain one.
 	rightAlterAnyServerRoleMembers = requiredRight{name: "ALTER ANY SERVER ROLE", role: "securityadmin",
 		deniedOnServer: "ALTER", serverSecurable: gosmo.ServerSecurableServerRole}
+	// ALTER ANY CREDENTIAL is server-scope only, and has no database-scoped
+	// twin: a database-scoped credential is permitted by CONTROL on the
+	// database alone — see dbScopedCredentialRights().
 	rightAlterAnyCredential = requiredRight{name: "ALTER ANY CREDENTIAL", role: "securityadmin"}
 	rightCreateAnyDatabase  = requiredRight{name: "CREATE ANY DATABASE", role: "dbcreator"}
 	rightAlterAnyDatabase   = requiredRight{name: "ALTER ANY DATABASE", role: "dbcreator"}
@@ -206,6 +209,18 @@ var (
 	// avoid; see docs/open-threads.md § Permission gating. gosmo records the
 	// role rows anyway and says so on DatabaseCapabilities.DeniedOnPrincipal.
 	rightAlterAnyDBRole = requiredRight{name: "ALTER ANY ROLE", role: "db_securityadmin", db: true}
+	// A database audit specification is gated at *database* scope, not by
+	// rightAlterAnyAudit: SQL Server checks ALTER ANY DATABASE AUDIT for
+	// CREATE/ALTER/DROP DATABASE AUDIT SPECIFICATION, and the server-scope
+	// ALTER ANY SERVER AUDIT beside it answers for the audit the
+	// specification writes to, not for the specification.
+	rightAlterAnyDBAudit = requiredRight{name: "ALTER ANY DATABASE AUDIT", role: "db_owner", db: true}
+	// The right SQL Server checks for ENABLE/DISABLE/DROP TRIGGER ... ON
+	// DATABASE. It stands alone: HAS_PERMS_BY_NAME folds in what implies it,
+	// so a member of db_ddladmin and a principal granted a database-wide
+	// ALTER both answer 1 without either being asked separately, and a
+	// principal with neither answers 0 — all three verified live 2026-09-08.
+	rightAlterAnyDatabaseDDLTrigger = requiredRight{name: "ALTER ANY DATABASE DDL TRIGGER", role: "db_ddladmin", db: true}
 	// rightAlterAnyDBRoleMembers is the same right for the pages that edit a
 	// role's *membership*, where the class-4 DENY the comment above says
 	// withholds nothing does withhold: ALTER ROLE r ADD MEMBER u is refused
@@ -788,6 +803,23 @@ func withRequiresOn(p propPage, in, schema, object string, rights ...requiredRig
 	p.requiresSchema = schema
 	p.requiresObject = object
 	return p
+}
+
+// dbScopedCredentialRights are what permits CREATE/ALTER/DROP DATABASE SCOPED
+// CREDENTIAL: CONTROL on the database, and nothing else.
+//
+// The single entry is the whole point, and is why this is a function rather
+// than an inline rightControlDB at each call site. Probed live on win10cli
+// (major 17, 2026-09-08) with a WITHOUT LOGIN user: all three statements went
+// through under GRANT CONTROL ON DATABASE and all three were refused under
+// GRANT ALTER ON DATABASE — so rightAlterDatabase is deliberately absent,
+// unlike every other database-scoped set here, and adding it "for symmetry"
+// would offer New/Delete/Properties to a principal the server then refuses.
+// ALTER ANY CREDENTIAL is not the narrower twin either: asked of a database,
+// HAS_PERMS_BY_NAME reads it as NULL rather than 0, which a gate built on it
+// would take for "unknown" forever.
+func dbScopedCredentialRights() []requiredRight {
+	return []requiredRight{rightControlDB}
 }
 
 // databaseWriteRights are what permits the ALTER DATABASE-shaped writes every

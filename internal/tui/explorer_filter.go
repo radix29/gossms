@@ -110,17 +110,23 @@ func filterProps(t NodeType) []filterProp {
 		NodeStoredProcedures, NodeSystemProcedures,
 		NodeFunctions, NodeSystemFunctions:
 		return []filterProp{name, schema, created}
-	case NodeSequences, NodeSynonyms, NodeTriggers:
+	case NodeSequences, NodeSynonyms:
 		return []filterProp{name, schema}
 	case NodeDatabases, NodeSystemDatabases, NodeLogins:
 		return []filterProp{name, created}
-	case NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
+	// A Triggers folder hangs under one table or view, so every row in it
+	// shares that object's schema — a Schema criterion there matches all of
+	// them or none.
+	case NodeTriggers,
+		NodeUsers, NodeDatabaseRoles, NodeSchemas, NodeServerRoles,
 		NodePartitionFunctions, NodePartitionSchemes,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys:
 		return []filterProp{name}
 	case NodeSecurityPolicies:
 		return []filterProp{name, schema}
-	case NodeCredentials, NodeAudits, NodeServerAuditSpecifications, NodeServerTriggers:
+	case NodeCredentials, NodeAudits, NodeServerAuditSpecifications,
+		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
+		NodeServerTriggers, NodeDatabaseTriggers:
 		return []filterProp{name, created}
 	case NodeBackupDevices, NodeEndpoints:
 		// No Creation Date: neither sys.backup_devices nor sys.endpoints

@@ -108,6 +108,15 @@ var (
 	scriptCEK scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptColumnEncryptionKeyContext(ctx, n.Name)
 	}
+	scriptDBAuditSpec scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDatabaseAuditSpecificationContext(ctx, n.Name)
+	}
+	scriptDBTrigger scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDatabaseTriggerContext(ctx, n.Name)
+	}
+	scriptDBScopedCredential scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDatabaseScopedCredentialContext(ctx, n.Name)
+	}
 
 	scriptLogin serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptLoginContext(ctx, n.Name)
@@ -171,6 +180,14 @@ var scriptables = map[NodeType]scriptable{
 	NodeSecurityPolicy:      {"Security Policy", ddlVerbs(scriptSecPolicy, false)},
 	NodeColumnMasterKey:     {"Column Master Key", ddlVerbs(scriptCMK, false)},
 	NodeColumnEncryptionKey: {"Column Encryption Key", ddlVerbs(scriptCEK, false)},
+	// No ALTER verb: ALTER DATABASE AUDIT SPECIFICATION replaces the whole
+	// action list rather than editing it, so a scripted ALTER would be a
+	// different statement from the CREATE beside it, not a variant of it.
+	NodeDatabaseAuditSpecification: {"Database Audit Specification", ddlVerbs(scriptDBAuditSpec, false)},
+	NodeDatabaseTrigger:            {"Database Trigger", ddlVerbs(scriptDBTrigger, false)},
+	// The secret is unreadable, so every verb here carries a placeholder in
+	// place of it — see gosmo's buildDatabaseScopedCredentialScript.
+	NodeDatabaseScopedCredential: {"Database Scoped Credential", ddlVerbs(scriptDBScopedCredential, false)},
 
 	NodeLogin:                    {"Login", serverDDLVerbs(scriptLogin)},
 	NodeServerRole:               {"Server Role", serverDDLVerbs(scriptServerRole)},

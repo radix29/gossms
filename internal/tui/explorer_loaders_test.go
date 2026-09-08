@@ -37,7 +37,7 @@ func TestStaticLoadersPropagateDBName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadDatabaseChildren: %v", err)
 	}
-	wantLabels := []string{"Tables", "Views", "Stored Procedures", "Functions", "Triggers", "Sequences", "Synonyms", "Query Store", "Security", "Storage"}
+	wantLabels := []string{"Tables", "Views", "Programmability", "Query Store", "Security", "Storage"}
 	if len(children) != len(wantLabels) {
 		t.Fatalf("got %d children, want %d", len(children), len(wantLabels))
 	}
@@ -148,16 +148,72 @@ func TestSQLServerAgentIsSiblingOfDatabases(t *testing.T) {
 	}
 }
 
-// TestViewsStoredProceduresFunctionsAreLeaves pins down that these node
-// types show no tree expand arrow: they have no childLoaders entry, so an
-// arrow would expand to nothing.
-func TestViewsStoredProceduresFunctionsAreLeaves(t *testing.T) {
-	for _, nt := range []NodeType{NodeView, NodeStoredProcedure, NodeFunction} {
+// TestStoredProceduresAndFunctionsAreLeaves pins down that these node types
+// show no tree expand arrow: they have no childLoaders entry, so an arrow
+// would expand to nothing.
+//
+// NodeView used to be here and is deliberately not any more: a view carries
+// INSTEAD OF triggers, and since the database-wide Triggers roll-up was
+// removed, its own Triggers folder is the only place they are listed.
+func TestStoredProceduresAndFunctionsAreLeaves(t *testing.T) {
+	for _, nt := range []NodeType{NodeStoredProcedure, NodeFunction} {
 		if hasChildren(nt) {
 			t.Errorf("hasChildren(%v) = true, want false (leaf, no childLoaders entry)", nt)
 		}
 		if _, ok := childLoaders[nt]; ok {
 			t.Errorf("childLoaders has an entry for %v, but hasChildren says it's a leaf — inconsistent", nt)
+		}
+	}
+}
+
+// A view expands to exactly one folder — its triggers — and that folder must
+// carry the view's own schema and name, or its loader reads the wrong object.
+func TestViewExpandsToItsTriggers(t *testing.T) {
+	if !hasChildren(NodeView) {
+		t.Fatal("hasChildren(NodeView) = false — the view's Triggers folder would have no expand arrow")
+	}
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	l := loaderCtx{ctx: context.Background(), sc: sc}
+
+	viewNode := &explorerNode{label: "dbo.vOrders",
+		data: nodeData{Type: NodeView, Schema: "dbo", Name: "vOrders", DBName: "AdventureWorks", conn: sc}}
+	children, err := childLoaders[NodeView](l, viewNode)
+	if err != nil {
+		t.Fatalf("loadViewChildren: %v", err)
+	}
+	if len(children) != 1 || children[0].label != "Triggers" {
+		t.Fatalf("view children = %v, want one Triggers folder", children)
+	}
+	got := children[0].data
+	if got.Type != NodeTriggers || got.Schema != "dbo" || got.Name != "vOrders" || got.DBName != "AdventureWorks" {
+		t.Errorf("Triggers folder data = %+v, want the view's own schema/name/database", got)
+	}
+}
+
+// The Programmability folder is where the DDL trigger family lives, and it
+// holds the module families the database node used to list flat.
+func TestProgrammabilityFolderChildren(t *testing.T) {
+	a := newTestApp()
+	sc := addTestConn(a, "server-one")
+	l := loaderCtx{ctx: context.Background(), sc: sc}
+
+	node := &explorerNode{label: "Programmability",
+		data: nodeData{Type: NodeProgrammability, DBName: "AdventureWorks", conn: sc}}
+	children, err := childLoaders[NodeProgrammability](l, node)
+	if err != nil {
+		t.Fatalf("loadProgrammabilityChildren: %v", err)
+	}
+	want := []string{"Stored Procedures", "Functions", "Database Triggers", "Sequences", "Synonyms"}
+	if len(children) != len(want) {
+		t.Fatalf("got %d children, want %d: %v", len(children), len(want), children)
+	}
+	for i, c := range children {
+		if c.label != want[i] {
+			t.Errorf("child[%d].label = %q, want %q", i, c.label, want[i])
+		}
+		if c.data.DBName != "AdventureWorks" {
+			t.Errorf("child[%d] lost the database name", i)
 		}
 	}
 }

@@ -236,3 +236,35 @@ func TestContextMenuOutsideMotionFallsThrough(t *testing.T) {
 		t.Error("motion outside the menu closed it, want it left open")
 	}
 }
+
+// TestContextMenuSetHoverRestoresTheCursor. A menu that rebuilds itself in
+// place — a checklist redrawing a row's ☑ — calls Show again, which resets the
+// hover to nothing; without putting it back, every tick sends a keyboard user
+// to the top of the list. An unselectable or out-of-range index is ignored
+// rather than parking the cursor somewhere Enter cannot act.
+func TestContextMenuSetHoverRestoresTheCursor(t *testing.T) {
+	cm := &ContextMenu{}
+	cm.Show(0, 0, []MenuItem{
+		{Label: "one"},
+		{Divider: true},
+		{Label: "three"},
+		{Label: "grey", Enabled: func() bool { return false }},
+	})
+
+	cm.SetHover(2)
+	if cm.hover != 2 {
+		t.Fatalf("hover = %d after SetHover(2), want 2", cm.hover)
+	}
+	cm.SetHover(1) // a divider
+	if cm.hover != 2 {
+		t.Errorf("SetHover(divider) moved the cursor to %d", cm.hover)
+	}
+	cm.SetHover(3) // disabled
+	if cm.hover != 2 {
+		t.Errorf("SetHover(disabled item) moved the cursor to %d", cm.hover)
+	}
+	cm.SetHover(99)
+	if cm.hover != 2 {
+		t.Errorf("SetHover(out of range) moved the cursor to %d", cm.hover)
+	}
+}

@@ -529,6 +529,11 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeCredential:
 		return credentialDetail(ctx, sc, node)
 
+	case NodeCryptographicProviders:
+		return cryptographicProvidersFolderDetail(ctx, sc, node, objs)
+	case NodeCryptographicProvider:
+		return cryptographicProviderDetail(ctx, sc, node)
+
 	case NodeAudits:
 		return auditsFolderDetail(ctx, sc, node, objs)
 	case NodeAudit:
@@ -539,6 +544,16 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeServerAuditSpecification:
 		return serverAuditSpecificationDetail(ctx, sc, node)
 
+	case NodeDatabaseAuditSpecifications:
+		return databaseAuditSpecificationsFolderDetail(ctx, sc, node, objs)
+	case NodeDatabaseAuditSpecification:
+		return databaseAuditSpecificationDetail(ctx, sc, node)
+
+	case NodeDatabaseScopedCredentials:
+		return databaseScopedCredentialsFolderDetail(ctx, sc, node, objs)
+	case NodeDatabaseScopedCredential:
+		return databaseScopedCredentialDetail(ctx, sc, node)
+
 	case NodeBackupDevices:
 		return backupDevicesFolderDetail(ctx, sc, node, objs)
 	case NodeBackupDevice:
@@ -548,6 +563,11 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return serverTriggersFolderDetail(ctx, sc, node, objs)
 	case NodeServerTrigger:
 		return serverTriggerDetail(ctx, sc, node)
+
+	case NodeDatabaseTriggers:
+		return databaseTriggersFolderDetail(ctx, sc, node, objs)
+	case NodeDatabaseTrigger:
+		return databaseTriggerDetail(ctx, sc, node)
 
 	case NodeEndpoints:
 		return endpointsFolderDetail(ctx, sc, node, objs)

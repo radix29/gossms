@@ -99,6 +99,8 @@ type App struct {
 	newBackupDeviceDialog       *NewBackupDeviceDialog
 	newAuditDialog              *NewAuditDialog
 	newAuditSpecificationDialog *NewAuditSpecificationDialog
+	newDBAuditSpecDialog        *NewDatabaseAuditSpecificationDialog
+	newDBScopedCredDialog       *NewDatabaseScopedCredentialDialog
 	newIndexDialog              *NewIndexDialog
 	newStatisticsDialog         *NewStatisticsDialog
 	newCMKDialog                *NewColumnMasterKeyDialog
@@ -411,6 +413,8 @@ func (a *App) buildUI() {
 	a.newBackupDeviceDialog = registerDialog(a, NewNewBackupDeviceDialog(a))
 	a.newAuditDialog = registerDialog(a, NewNewAuditDialog(a))
 	a.newAuditSpecificationDialog = registerDialog(a, NewNewAuditSpecificationDialog(a))
+	a.newDBAuditSpecDialog = registerDialog(a, NewNewDatabaseAuditSpecificationDialog(a))
+	a.newDBScopedCredDialog = registerDialog(a, NewNewDatabaseScopedCredentialDialog(a))
 	a.newIndexDialog = registerDialog(a, NewNewIndexDialog(a))
 	a.newStatisticsDialog = registerDialog(a, NewNewStatisticsDialog(a))
 	a.newCMKDialog = registerDialog(a, NewNewColumnMasterKeyDialog(a))

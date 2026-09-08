@@ -77,6 +77,10 @@ func (p *QueryStorePanel) drawChart(s tcell.Screen) {
 	}
 	pal := theme.Active()
 	core.FillRect(s, r, ' ', theme.StyleDefault())
+	if p.seriesMode {
+		p.drawSeriesChart(s, r)
+		return
+	}
 	p.barBuf = p.res.bars(p.barBuf, pal.ChartCyan)
 	bars := p.barBuf
 	if len(bars) == 0 {
@@ -101,4 +105,19 @@ func (p *QueryStorePanel) chartTitle() string {
 		return p.report().Title
 	}
 	return p.report().Title + " — " + p.res.chartLabel
+}
+
+// drawSeriesChart plots the selected query's per-plan history in place of the
+// report's bars — the chart's other mode, see query_store_series.go. A read
+// that is still out, one that failed, and a query with no intervals in the
+// window all draw their note here rather than an empty plot: an axis with no
+// lines on it reads as "this query did nothing", which is one of the three.
+func (p *QueryStorePanel) drawSeriesChart(s tcell.Screen, r core.Rect) {
+	pal := theme.Active()
+	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, theme.StyleChartAxis(), p.seriesTitle())
+	if p.series.empty() {
+		core.DrawTextClipped(s, r.X+1, r.Y+1, r.W-2, theme.StyleDefault().Foreground(pal.TextDim), p.seriesNote)
+		return
+	}
+	p.series.chart().Draw(s, core.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 1})
 }

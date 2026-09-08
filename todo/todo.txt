@@ -1,3 +1,9 @@
+azure managed instance
+- setup sql authentication
+- test entra id authentication in ssms
+- test sql authentication with gossms
+- test entra authentication with gossms
+- add specifica monitoring for MI in the activity monitor based on specific views (new tab MI monitor)
 
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
@@ -13,6 +19,8 @@
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
 
 -------------
+
+reports -> define what reports at database and server level
 
 new connect dialog design. keep both, configure in options which design to use.
 

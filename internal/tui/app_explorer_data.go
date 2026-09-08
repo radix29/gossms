@@ -377,6 +377,17 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			refresh,
 			{Label: "Properties...", Action: func() { a.showCredentialPropertiesFor(sc, node.data.Name) }},
 		}
+	// Cryptographic Providers is read-only: registering one takes a DLL path
+	// on the server's own filesystem, which SSMS answers with a file browser
+	// this build has no way to offer. No New item, and the node below has no
+	// Properties — everything sys.cryptographic_providers records is already
+	// in the Detail Browser's grid.
+	case NodeCryptographicProviders, NodeCryptographicProvider:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+		}
 	case NodeAudits:
 		return []controls.MenuItem{
 			newQuery,
@@ -418,6 +429,48 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			refresh,
 			{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},
 		}
+	case NodeDatabaseAuditSpecifications:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Database Audit Specification...",
+				Action: func() { a.showNewDatabaseAuditSpecificationDialog(sc, node) }},
+				sc, node.data.DBName, rightAlterAnyDBAudit),
+			{Divider: true},
+			refresh,
+		}
+	case NodeDatabaseAuditSpecification:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: auditToggleLabel(node),
+				Action: func() { a.toggleDatabaseAuditSpecification(sc, node) }},
+				sc, node.data.DBName, rightAlterAnyDBAudit),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showDatabaseAuditSpecificationPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeDatabaseScopedCredentials:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: "New Database Scoped Credential...",
+				Action: func() { a.showNewDatabaseScopedCredentialDialog(sc, node) }},
+				sc, node.data.DBName, dbScopedCredentialRights()...),
+			{Divider: true},
+			refresh,
+		}
+	case NodeDatabaseScopedCredential:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showDatabaseScopedCredentialPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
 	case NodeBackupDevices:
 		return []controls.MenuItem{
 			newQuery,
@@ -453,6 +506,28 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			refresh,
 			{Label: "Properties...", Action: func() { a.showServerTriggerPropertiesFor(sc, node.data.Name) }},
+		}
+	case NodeDatabaseTriggers:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			refresh,
+		}
+	case NodeDatabaseTrigger:
+		dbTrigToggle := "Disable"
+		if !node.data.IsEnabled {
+			dbTrigToggle = "Enable"
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: dbTrigToggle, Action: func() { a.toggleDatabaseTrigger(sc, node) }},
+				sc, node.data.DBName, rightAlterAnyDatabaseDDLTrigger),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showDatabaseTriggerPropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
 		}
 	case NodeEndpoints:
 		return []controls.MenuItem{
@@ -906,6 +981,64 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 	run()
 }
 
+// toggleDatabaseTrigger enables or disables node's database-scope DDL
+// trigger — SSMS's Enable/Disable on one. Disabling is what stops the policy
+// it enforces from applying anywhere in the database, so it is confirmed;
+// enabling is not. The node's label carries the state (see
+// loadDatabaseTriggersChildren), which is why the parent folder is refreshed
+// rather than the icon repainted.
+func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	enable := !node.data.IsEnabled
+	name, dbName := node.data.Name, node.data.DBName
+
+	run := func() {
+		a.safego("enabling/disabling a database trigger", func() {
+			ctx, cancel := serverWriteContext(sc)
+			defer cancel()
+			// Database, not DatabaseByName: the handle needs no read of
+			// sys.databases to address a trigger by name.
+			t := sc.Server.Database(dbName).DatabaseTrigger(name)
+			var err error
+			if enable {
+				err = t.EnableContext(ctx)
+			} else {
+				err = t.DisableContext(ctx)
+			}
+			a.postAndWake(func() {
+				word := "disable"
+				if enable {
+					word = "enable"
+				}
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
+					return
+				}
+				node.data.IsEnabled = enable
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
+				}
+				a.detailBrowser.Invalidate(a, node)
+				a.setStatus(fmt.Sprintf("Database trigger %q is now %sd", name, word))
+			})
+		})
+	}
+
+	if !enable {
+		a.confirmDialog.ShowConfirm("Disable Database Trigger",
+			fmt.Sprintf("Disable %s? The DDL policy it enforces stops applying in %s.", name, dbName),
+			func(confirmed bool) {
+				if confirmed {
+					run()
+				}
+			})
+		return
+	}
+	run()
+}
+
 // auditToggleLabel is the Enable/Disable item's wording for an audit or a
 // server audit specification, read from the node's cached state.
 func auditToggleLabel(node *explorerNode) string {
@@ -939,8 +1072,21 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		})
 }
 
-// toggleAuditState is the shared half of the two above: an audit and a
-// specification differ only in the wording and the gosmo call.
+// toggleDatabaseAuditSpecification enables or disables node's specification.
+// The database handle is the name-only one: the state toggle needs nothing off
+// sys.databases.
+func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorerNode) {
+	dbName := node.data.DBName
+	a.toggleAuditState(sc, node, "database audit specification",
+		"Disable Database Audit Specification",
+		"Disable %s? The action groups and actions it names stop being recorded.",
+		func(ctx context.Context, name string, on bool) error {
+			return sc.Server.Database(dbName).DatabaseAuditSpecification(name).SetStateContext(ctx, on)
+		})
+}
+
+// toggleAuditState is the shared half of the three above: an audit and the two
+// specifications differ only in the wording and the gosmo call.
 func (a *App) toggleAuditState(sc *db.ServerConn, node *explorerNode, noun, title, prompt string,
 	set func(ctx context.Context, name string, on bool) error) {
 	if !a.requireConn(sc) {

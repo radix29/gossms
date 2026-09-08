@@ -53,6 +53,18 @@ func (cm *ContextMenu) Show(x, y int, items []MenuItem) {
 	cm.mouseDragging = false
 }
 
+// SetHover puts the keyboard cursor on item i, for a caller that rebuilds and
+// re-shows its own menu in place — a checklist whose rows carry a ☑/☐ the
+// toggle has to redraw. Show resets the hover to nothing, so without this every
+// tick would send the cursor back above the first row and the next Down key
+// would start the list again. Out-of-range and unselectable indexes are
+// ignored, leaving the hover where Show left it.
+func (cm *ContextMenu) SetHover(i int) {
+	if i >= 0 && i < len(cm.items) && !menuItemSkippable(cm.items[i]) {
+		cm.hover = i
+	}
+}
+
 // Hide dismisses the menu and every submenu open under it.
 func (cm *ContextMenu) Hide() {
 	cm.visible = false

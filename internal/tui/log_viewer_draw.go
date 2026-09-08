@@ -2,7 +2,6 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
-	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
@@ -80,13 +79,13 @@ func (lv *LogViewer) drawDetails(s tcell.Screen) {
 	dimStyle := style.Foreground(pal.TextDim)
 	core.FillRect(s, r, ' ', style)
 
-	e := lv.selectedEntry()
-	if e == nil {
+	row, ok := lv.selectedLogRow()
+	if !ok {
 		core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, dimStyle, "No entry selected")
 		return
 	}
 
-	lines := lv.detailLines(e, r.W-2)
+	lines := lv.detailLines(row, r.W-2)
 	for i := lv.detailScroll; i < len(lines); i++ {
 		y := r.Y + i - lv.detailScroll
 		if y >= r.Y+r.H {
@@ -108,7 +107,7 @@ func (lv *LogViewer) drawDetails(s tcell.Screen) {
 //
 // The result is cached per (entry, width) — see detailCache. Callers must
 // treat the slice as read-only: the next call hands back the same one.
-func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
+func (lv *LogViewer) detailLines(row logRow, w int) []string {
 	// Three columns, not one: the message body is indented by two, so a
 	// narrower pane leaves WrapText a width of zero or less, and it answers
 	// that by handing back the paragraph unwrapped — one long line that
@@ -116,12 +115,17 @@ func (lv *LogViewer) detailLines(e *gosmo.ErrorLogEntry, w int) []string {
 	if w < 3 {
 		return nil
 	}
+	e := row.entry
 	if e == lv.detailCacheEntry && w == lv.detailCacheWidth {
 		return lv.detailCache
 	}
 	lines := []string{
 		"Date    " + formatSQLDate(e.Date),
-		"Log     " + lv.logType.String() + " (" + lv.currentFileLabel() + ")",
+		// The row's own file, not the selection's: with several merged, the
+		// pane is the only place a row says which file it came from at full
+		// width, and naming the selection here would name the wrong file on
+		// every row but one.
+		"Log     " + row.ref.Type.String() + " (" + lv.fileLabel(row.ref) + ")",
 		"Source  " + e.Source(),
 		"Message",
 	}

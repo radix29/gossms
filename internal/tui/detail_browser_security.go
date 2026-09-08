@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,10 +11,12 @@ import (
 )
 
 // detail_browser_security.go is the Detail Browser's view of the server-level
-// Security families that are not logins — Credentials, Audits and Server
-// Audit Specifications. The Logins
-// folder has its own progressive loader (detail_browser_logins.go); everything
-// here answers from a single round trip.
+// Security families that are not logins — Credentials, Cryptographic
+// Providers, Audits and Server Audit Specifications — plus a database's own
+// Audit Specifications and Scoped Credentials, which share their rendering.
+// The Logins folder has its own progressive loader
+// (detail_browser_logins.go); everything here answers from a single round
+// trip.
 
 // credentialsFolderDetail lists every server-level credential. It reads gosmo
 // independently of the tree, so the folder's filter is applied here too — over
@@ -70,6 +73,54 @@ func credentialKind(c *gosmo.Credential) string {
 		return "Credential"
 	}
 	return "Cryptographic Provider"
+}
+
+// -- Cryptographic providers -------------------------------------------------------
+
+// cryptographicProvidersFolderDetail lists every registered EKM provider. A
+// server with none is the ordinary case and yields an empty grid, not an
+// error.
+//
+// The folder declares no filter properties (explorer_filter.go), so there is
+// no filterObjects call here — adding one without adding the folder there
+// would filter the pane by a criterion the tree cannot express.
+func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	providers, err := sc.Server.CryptographicProvidersContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows := make([][]string, 0, len(providers))
+	out := make([]nodeData, 0, len(providers))
+	for _, p := range providers {
+		rows = append(rows, []string{p.Name, enabledText(p.IsEnabled), p.Version, p.DLLPath})
+		out = append(out, nodeData{Type: NodeCryptographicProvider, Name: p.Name, IsEnabled: p.IsEnabled})
+	}
+	*objs = out
+	return []string{"Name", "State", "Version", "DLL path"}, rows, nil
+}
+
+// cryptographicProviderDetail is one provider's Property/Value view. There is
+// no by-name read in gosmo for a provider — sys.cryptographic_providers is
+// listed whole — so the row is picked out of the list.
+func cryptographicProviderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	providers, err := sc.Server.CryptographicProvidersContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, p := range providers {
+		if !strings.EqualFold(p.Name, node.data.Name) {
+			continue
+		}
+		return propertyRows(
+			"Name", p.Name,
+			"State", enabledText(p.IsEnabled),
+			"Provider ID", strconv.Itoa(p.ProviderID),
+			"GUID", p.GUID,
+			"Version", p.Version,
+			"DLL path", p.DLLPath,
+		)
+	}
+	return nil, nil, fmt.Errorf("cryptographic provider %q no longer exists", node.data.Name)
 }
 
 // -- Audits ----------------------------------------------------------------------
@@ -209,6 +260,96 @@ func serverAuditSpecificationDetail(ctx context.Context, sc *dbconn.ServerConn, 
 	)...)
 }
 
+// -- Database audit specifications ------------------------------------------------
+
+func databaseAuditSpecificationsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	specs, err := dbObj.DatabaseAuditSpecificationsContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The folder's filter is applied to the collection, before rows are
+	// built — the pane queries gosmo independently of the tree.
+	specs = filterObjects(node.data.Filter, specs, func(s *gosmo.DatabaseAuditSpecification) nodeData {
+		return nodeData{Name: s.Name, CreateDate: s.CreateDate}
+	})
+
+	rows := make([][]string, 0, len(specs))
+	out := make([]nodeData, 0, len(specs))
+	for _, spec := range specs {
+		rows = append(rows, []string{
+			spec.Name, databaseAuditNameText(spec), enabledText(spec.IsEnabled),
+			strconv.Itoa(len(spec.ActionGroups)), strconv.Itoa(len(spec.Actions)),
+			formatSQLDate(spec.CreateDate), formatSQLDate(spec.ModifyDate),
+		})
+		out = append(out, nodeData{Type: NodeDatabaseAuditSpecification, DBName: node.data.DBName,
+			Name: spec.Name, IsEnabled: spec.IsEnabled})
+	}
+	*objs = out
+	return []string{"Name", "Audit", "State", "Action Groups", "Actions", "Created", "Modified"}, rows, nil
+}
+
+func databaseAuditSpecificationDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	spec, err := dbObj.DatabaseAuditSpecificationByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	pairs := []string{
+		"Name", spec.Name,
+		"Audit", databaseAuditNameText(spec),
+		"State", enabledText(spec.IsEnabled),
+	}
+	for i, g := range spec.ActionGroups {
+		label := "Action groups"
+		if i > 0 {
+			label = ""
+		}
+		pairs = append(pairs, label, g)
+	}
+	for i, a := range spec.Actions {
+		label := "Actions"
+		if i > 0 {
+			label = ""
+		}
+		pairs = append(pairs, label, auditActionText(a))
+	}
+	return propertyRows(append(pairs,
+		"Created", formatSQLDate(spec.CreateDate),
+		"Modified", formatSQLDate(spec.ModifyDate),
+	)...)
+}
+
+// auditActionText renders one audited action on a securable the way the ADD
+// clause reads it — the securable is what distinguishes two rows that share
+// an action name, so it is never left out.
+func auditActionText(a gosmo.DatabaseAuditAction) string {
+	principal := a.Principal
+	if principal == "" {
+		principal = "public"
+	}
+	class := a.ClassDesc
+	if class == "" {
+		class = "OBJECT"
+	}
+	return fmt.Sprintf("%s ON %s::%s BY %s", a.ActionName, class, a.FullName(), principal)
+}
+
+// databaseAuditNameText is auditNameText for a database specification: the
+// same orphaning is possible, and means the same thing.
+func databaseAuditNameText(spec *gosmo.DatabaseAuditSpecification) string {
+	if spec.AuditName == "" {
+		return "(audit no longer exists)"
+	}
+	return spec.AuditName
+}
+
 // auditNameText names the audit a specification writes to. Dropping an audit a
 // specification still references succeeds and orphans the specification, so an
 // empty name is a real state to render rather than a read that failed.
@@ -217,4 +358,57 @@ func auditNameText(spec *gosmo.ServerAuditSpecification) string {
 		return "(audit no longer exists)"
 	}
 	return spec.AuditName
+}
+
+// -- Database scoped credentials ---------------------------------------------------
+
+// databaseScopedCredentialsFolderDetail lists one database's own credentials.
+// As everywhere in this file, the read is independent of the tree's, so the
+// folder's filter is applied here too, over the gosmo objects before the rows
+// are built.
+func databaseScopedCredentialsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	creds, err := dbObj.DatabaseScopedCredentialsContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	creds = filterObjects(node.data.Filter, creds, func(c *gosmo.DatabaseScopedCredential) nodeData {
+		return nodeData{Name: c.Name, CreateDate: c.CreateDate}
+	})
+
+	rows := make([][]string, 0, len(creds))
+	out := make([]nodeData, 0, len(creds))
+	for _, c := range creds {
+		rows = append(rows, []string{
+			c.Name, c.Identity,
+			formatSQLDate(c.CreateDate), formatSQLDate(c.ModifyDate),
+		})
+		out = append(out, nodeData{Type: NodeDatabaseScopedCredential, DBName: node.data.DBName, Name: c.Name})
+	}
+	*objs = out
+	return []string{"Name", "Identity", "Created", "Modified"}, rows, nil
+}
+
+// databaseScopedCredentialDetail is one credential's Property/Value view. The
+// secret is not shown because it cannot be read — see gosmo's
+// database_credential.go.
+func databaseScopedCredentialDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	c, err := dbObj.DatabaseScopedCredentialByNameContext(ctx, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", c.Name,
+		"Database", node.data.DBName,
+		"Identity", c.Identity,
+		"Created", formatSQLDate(c.CreateDate),
+		"Modified", formatSQLDate(c.ModifyDate),
+	)
 }

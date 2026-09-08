@@ -857,6 +857,49 @@ func (a *App) showNewServerAuditSpecificationDialog(sc *db.ServerConn) {
 	a.newAuditSpecificationDialog.show(sc)
 }
 
+// showDatabaseAuditSpecificationPropertiesFor opens Database Audit
+// Specification Properties for a known connection, database and specification
+// name.
+func (a *App) showDatabaseAuditSpecificationPropertiesFor(sc *db.ServerConn, dbName, specName string) {
+	a.propDialog.show(sc, dbName, "Database Audit Specification Properties",
+		"Specification: "+specName, "Database: "+dbName,
+		func() []propPage { return databaseAuditSpecificationPropPages(sc, dbName, specName) })
+}
+
+// showDatabaseTriggerPropertiesFor opens Database Trigger Properties for a
+// known connection, database and trigger name.
+func (a *App) showDatabaseTriggerPropertiesFor(sc *db.ServerConn, dbName, trigName string) {
+	a.propDialog.show(sc, dbName, "Database Trigger Properties",
+		"Trigger: "+trigName, "Database: "+dbName,
+		func() []propPage { return databaseTriggerPropPages(sc, dbName, trigName) })
+}
+
+// showDatabaseScopedCredentialPropertiesFor opens Database Scoped Credential
+// Properties for a known connection, database and credential name.
+func (a *App) showDatabaseScopedCredentialPropertiesFor(sc *db.ServerConn, dbName, credName string) {
+	a.propDialog.show(sc, dbName, "Database Scoped Credential Properties",
+		"Credential: "+credName, "Database: "+dbName,
+		func() []propPage { return databaseScopedCredentialPropPages(sc, dbName, credName) })
+}
+
+// showNewDatabaseScopedCredentialDialog opens New Database Scoped Credential
+// for one database's folder node.
+func (a *App) showNewDatabaseScopedCredentialDialog(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newDBScopedCredDialog.show(sc, node)
+}
+
+// showNewDatabaseAuditSpecificationDialog opens New Database Audit
+// Specification for one database's folder node.
+func (a *App) showNewDatabaseAuditSpecificationDialog(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	a.newDBAuditSpecDialog.show(sc, node)
+}
+
 // showNewBackupDeviceDialog opens New Backup Device for a known connection.
 func (a *App) showNewBackupDeviceDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {

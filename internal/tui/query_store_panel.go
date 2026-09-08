@@ -192,6 +192,23 @@ type QueryStorePanel struct {
 	// lands on the same query does not blank the plans under the cursor.
 	queryID int64
 
+	// seriesMode swaps the report's bar chart for the selected query's
+	// per-plan history, series holds what was read for it, and seriesNote is
+	// what the chart says while there is nothing to plot — the read is in
+	// flight, failed, or came back with no intervals. seriesLabel names the
+	// quantity the lines carry, kept from the options the read went out with
+	// rather than taken from the toolbar, which can have moved on since.
+	// See query_store_series.go.
+	seriesMode  bool
+	series      qsSeriesData
+	seriesNote  string
+	seriesLabel string
+	// seriesSeq and seriesCancel are a third pair, not a share of the plan
+	// pane's: a series read and a plan read fire from the same cursor move and
+	// must not cancel or supersede one another.
+	seriesSeq    int
+	seriesCancel context.CancelFunc
+
 	dragZone qsDragZone
 }
 
@@ -306,6 +323,7 @@ func (p *QueryStorePanel) applyFocus() {
 func (p *QueryStorePanel) Close() {
 	p.cancelRead()
 	p.cancelPlans()
+	p.cancelSeries()
 }
 
 // cancelRead aborts the in-flight read, on close and when a new read
@@ -391,6 +409,7 @@ const (
 	qsActScript
 	qsActTrack
 	qsActCompare
+	qsActPlot
 )
 
 // buildTools defines the two toolbar rows in the order the qsTool*/qsAct*
@@ -414,6 +433,7 @@ func (p *QueryStorePanel) buildTools() {
 		{label: "Script", action: p.scriptPlanForce},
 		{label: "Track Query", action: p.toggleTracked},
 		{label: "Compare Plans", action: p.comparePlans},
+		{label: "Plot History", action: p.toggleSeriesMode},
 	}
 	p.refreshToolLabels()
 }
@@ -445,6 +465,13 @@ func (p *QueryStorePanel) refreshToolLabels() {
 		} else {
 			p.acts[qsActScript].label = "Script Force"
 		}
+	}
+	// The chart mode toggle says what the press does, not what is on screen:
+	// a button reading "Plot History" while the history is already plotted
+	// would put the ranking back.
+	p.acts[qsActPlot].label = "Plot History"
+	if p.seriesMode {
+		p.acts[qsActPlot].label = "Plot Report"
 	}
 	// Compare takes two presses, and the button says which one it is on.
 	p.acts[qsActCompare].label = "Compare Plans"
@@ -530,6 +557,12 @@ func (p *QueryStorePanel) actDisabled(i int) bool {
 	if i == qsActTrack {
 		return p.selectedQueryID() == 0
 	}
+	// Plot acts on the report grid's query too, and only on the way in: the
+	// mode must always be switchable off, including from a row that could not
+	// have turned it on — an arrow key can leave the cursor on one.
+	if i == qsActPlot {
+		return !p.seriesMode && p.selectedQueryID() == 0
+	}
 	plan := p.selectedPlan()
 	if plan == nil {
 		return true
@@ -573,6 +606,8 @@ func (p *QueryStorePanel) actReason(i int) string {
 		return "A regression threshold applies to Regressed Queries only"
 	case i == qsActTrack:
 		return "Select a query in the report above first"
+	case i == qsActPlot:
+		return "Select a query in the report above first — this row is not a query, so it has no history to plot"
 	case p.selectedPlan() == nil:
 		return "Select a plan in the plan pane first"
 	case p.forceDenied():
@@ -873,6 +908,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 				p.res = qsResult{}
 				p.grid.SetError(displayError(err))
 				p.loadPlans(0)
+				p.loadSeriesIfShown(0)
 				return
 			}
 			p.applyResult(res, keepView)
@@ -926,6 +962,10 @@ func (p *QueryStorePanel) applyResult(res qsResult, keepView bool) {
 	}
 	p.setStatus(p.summary())
 	p.loadPlans(p.selectedQueryID())
+	// The window, the metric and the statistic can all have changed with the
+	// report, so a plotted series is re-read rather than left describing the
+	// options it was read under.
+	p.loadSeriesIfShown(p.selectedQueryID())
 }
 
 // summary is the status line under the report grid.
@@ -990,6 +1030,7 @@ func (p *QueryStorePanel) selectedQueryID() int64 {
 func (p *QueryStorePanel) selectedQueryChanged() {
 	if id := p.selectedQueryID(); id != p.queryID {
 		p.loadPlans(id)
+		p.loadSeriesIfShown(id)
 	}
 }
 
