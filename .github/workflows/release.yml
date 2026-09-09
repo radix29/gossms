@@ -265,14 +265,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- Formula/gossms.rb; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage first, then compare against the index. `git diff` alone
+          # reports no change for a file git has never tracked, so on the very
+          # first release the guard below declared the formula "up to date"
+          # and pushed nothing — the tap shipped with no Formula/ at all and
+          # `brew install radix29/tap/gossms` 404'd for the whole v0.0.10
+          # cycle. --cached sees a newly added file as a change.
+          git add Formula/gossms.rb
+          if git diff --cached --quiet -- Formula/gossms.rb; then
             echo "Formula already up to date for ${TAG}; nothing to push."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/gossms.rb
           git commit -m "gossms ${TAG}"
           git push
 
