@@ -122,7 +122,7 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	bufDB := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer bufDB.Close()
 	bufRows := queryFakeRows(t, bufDB)
-	rs, err := scanResultSet(bufRows)
+	rs, err := scanResultSet(bufRows, nil)
 	bufRows.Close()
 	if err != nil {
 		t.Fatalf("scanResultSet: %v", err)
@@ -132,7 +132,7 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	defer streamDB.Close()
 	streamRows := queryFakeRows(t, streamDB)
 	sink := &recordingSink{}
-	n, _, err := streamResultSet(streamRows, sink)
+	n, _, err := streamResultSet(streamRows, sink, nil)
 	streamRows.Close()
 	if err != nil {
 		t.Fatalf("streamResultSet: %v", err)
@@ -175,7 +175,7 @@ func TestStreamResultSetWritesEveryRow(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &recordingSink{}
-	n, _, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink, nil)
 	r.Close()
 	if err != nil {
 		t.Fatalf("streamResultSet: %v", err)
@@ -198,7 +198,7 @@ func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &recordingSink{failOn: 2}
-	n, _, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink, nil)
 	r.Close()
 	if err == nil {
 		t.Fatal("streamResultSet returned nil error after the sink failed")
@@ -226,7 +226,7 @@ func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &beginFailSink{}
-	n, _, err := streamResultSet(r, sink)
+	n, _, err := streamResultSet(r, sink, nil)
 	r.Close()
 
 	if err == nil {
@@ -281,4 +281,42 @@ func TestShouldReportSuccessCountsSetsNotRows(t *testing.T) {
 			t.Errorf("%s: shouldReportSuccess = %v, want %v", tc.name, got, tc.want)
 		}
 	}
+}
+
+// A Progress passed in counts every scanned row, on both the retaining and
+// the streaming path — what the query panel's "Executing..." row counter
+// reads while the run is still in flight.
+func TestProgressCountsScannedRows(t *testing.T) {
+	var prog Progress
+
+	bufDB := openFakeRowsDB(streamTestCols, streamTestRows())
+	defer bufDB.Close()
+	bufRows := queryFakeRows(t, bufDB)
+	_, err := scanResultSet(bufRows, &prog)
+	bufRows.Close()
+	if err != nil {
+		t.Fatalf("scanResultSet: %v", err)
+	}
+	if got, want := prog.Rows(), len(streamTestRows()); got != want {
+		t.Errorf("Rows() after scanResultSet = %d, want %d", got, want)
+	}
+
+	// The same counter carries on across result sets rather than restarting.
+	streamDB := openFakeRowsDB(streamTestCols, streamTestRows())
+	defer streamDB.Close()
+	streamRows := queryFakeRows(t, streamDB)
+	_, _, err = streamResultSet(streamRows, &recordingSink{}, &prog)
+	streamRows.Close()
+	if err != nil {
+		t.Fatalf("streamResultSet: %v", err)
+	}
+	if got, want := prog.Rows(), 2*len(streamTestRows()); got != want {
+		t.Errorf("Rows() after both paths = %d, want %d", got, want)
+	}
+
+	// A nil *Progress is the no-count caller and must not panic.
+	if got := (*Progress)(nil).Rows(); got != 0 {
+		t.Errorf("nil Progress Rows() = %d, want 0", got)
+	}
+	(*Progress)(nil).AddRow()
 }

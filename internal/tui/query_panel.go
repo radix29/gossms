@@ -78,6 +78,13 @@ type QueryPanel struct {
 	// know when to stop waking the event loop.
 	execStart time.Time
 
+	// progress is the in-flight run's live row counter, non-nil only while a
+	// query (not an estimated plan, which scans no rows) is executing. The
+	// executor goroutine bumps it as rows are scanned and resultsStatusText
+	// reads it on the UI goroutine — see query.Progress — so the "Executing..."
+	// line shows how much has loaded, not just how long it has taken.
+	progress *query.Progress
+
 	// resultsNotice is a one-shot message ("No query to execute", "Not
 	// connected") outranking the computed elapsed/row/col status in
 	// updateResultsStatus until the next execution starts. Without it the very

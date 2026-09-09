@@ -2,10 +2,12 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
@@ -91,6 +93,83 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 
 		db.cacheOnlyObjects(app, node, seq, databasesFolderColumns, rows, objs, nil)
 	})
+}
+
+// loadDatabaseDetails is one database's Property/Value view plus the disk
+// usage strip under it. It has its own loader rather than an arm of
+// fetchNodeDetails because it is the only detail view with charts, and
+// gosmo's DiskUsage answers both halves in a single round trip — the file
+// sizes the properties show and the allocation breakdown the bars split
+// them by.
+func (db *DetailBrowser) loadDatabaseDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+	// data, not node: the fetch runs on a background goroutine while the UI
+	// goroutine may write node.data — see explorerNode.snapshot.
+	name := node.data.DBName
+	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
+		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		defer cancel()
+
+		d, err := sc.Server.DatabaseByNameContext(ctx, name)
+		if err != nil {
+			db.postFinal(app, node, seq, nil, nil, err)
+			return
+		}
+		// A database that is offline, restoring or otherwise unreadable
+		// answers its sys.databases metadata and nothing else, so the space
+		// figures are reported as N/A and the strip is left off rather than
+		// drawn empty — the properties are still worth showing.
+		usage, usageErr := d.DiskUsageContext(ctx)
+
+		sizeStr, dataStr, logStr, availDataStr, availLogStr := "N/A", "N/A", "N/A", "N/A", "N/A"
+		var cs []detailChart
+		if usageErr == nil {
+			sizeStr = formatMB(usage.DataFilesMB + usage.LogFilesMB)
+			dataStr, logStr = formatMB(usage.DataFilesMB), formatMB(usage.LogFilesMB)
+			availDataStr, availLogStr = formatMB(usage.UnallocatedMB), formatMB(usage.LogUnusedMB)
+			cs = diskUsageCharts(usage)
+		}
+		db.postFinalCharts(app, node, seq, []string{"Property", "Value"}, [][]string{
+			{"Name", d.Name()},
+			{"State", d.State()},
+			{"Recovery Model", string(d.RecoveryModel())},
+			{"Compatibility Level", fmt.Sprintf("%d", d.CompatibilityLevel())},
+			{"Collation", d.Collation()},
+			{"Create Date", formatSQLDate(d.CreateDate())},
+			{"Read Only", fmt.Sprintf("%v", d.IsReadOnly())},
+			{"Size (MB)", sizeStr},
+			{"Data (MB)", dataStr},
+			{"Log (MB)", logStr},
+			{"Avail. Data (MB)", availDataStr},
+			{"Avail. Log (MB)", availLogStr},
+		}, cs, nil)
+	})
+}
+
+// diskUsageCharts are the two composition bars of the Disk Usage strip, in
+// SSMS's Disk Usage report order and split the same way: the data files
+// against what their pages hold, the log files against how much of them is
+// live.
+//
+// The segments are read against each other, not against the file total —
+// StackedBar's zero Scale fills the width — which is why the data-file bar
+// carries the file size as its total and the parts, which sum to slightly
+// less (see gosmo.DiskUsage), still fill it. Format is what puts megabytes
+// on the tooltip a click pins: the legend under the bar has room for the
+// names only.
+func diskUsageCharts(u gosmo.DiskUsage) []detailChart {
+	cyan, green, _, blue, _, purple, _ := chartColors()
+	return []detailChart{
+		{Title: "DATA FILES SPACE USAGE", Format: formatMB, Series: []charts.Series{
+			{Label: "Data", Short: "Dat", Color: blue, Values: []float64{u.DataMB}},
+			{Label: "Index", Short: "Idx", Color: purple, Values: []float64{u.IndexMB}},
+			{Label: "Unused", Short: "Unu", Color: cyan, Values: []float64{u.UnusedMB}},
+			{Label: "Unallocated", Short: "Unall", Color: green, Values: []float64{u.UnallocatedMB}},
+		}},
+		{Title: "TRANSACTION LOG SPACE USAGE", Format: formatMB, Series: []charts.Series{
+			{Label: "Used", Short: "Use", Color: blue, Values: []float64{u.LogUsedMB}},
+			{Label: "Unused", Short: "Unu", Color: green, Values: []float64{u.LogUnusedMB}},
+		}},
+	}
 }
 
 // databaseTriggersFolderDetail lists a database's DDL triggers. It reads

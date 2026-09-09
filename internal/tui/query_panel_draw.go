@@ -107,7 +107,13 @@ func (p *QueryPanel) resultsStatusText() string {
 		return p.resultsNotice
 	}
 	if p.executing {
-		return formatHMS(time.Since(p.execStart)) + " | Executing..."
+		text := formatHMS(time.Since(p.execStart)) + " | Executing..."
+		// Only for a run that scans rows: an estimated plan leaves p.progress
+		// nil, where a "0 rows" that never moves would be noise.
+		if p.progress != nil {
+			text += fmt.Sprintf(" | %d rows", p.progress.Rows())
+		}
+		return text
 	}
 	if p.result == nil {
 		// Estimated plan: nothing ran, so there's no elapsed time or row

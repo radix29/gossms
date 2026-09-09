@@ -50,6 +50,9 @@ func (p *QueryPanel) runEstimatedPlan(queryText string) {
 	p.resultsNotice = ""
 	p.executing = true
 	p.execStart = time.Now()
+	// No rows are scanned by an estimated plan, so the status line's row
+	// counter stays off for this run.
+	p.progress = nil
 	p.app.setStatus("Fetching estimated execution plan...")
 
 	done := make(chan struct{})

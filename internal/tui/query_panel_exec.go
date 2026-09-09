@@ -148,6 +148,8 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 	p.resultsNotice = ""
 	p.executing = true
 	p.execStart = time.Now()
+	prog := &query.Progress{}
+	p.progress = prog
 	p.app.setStatus("Executing query...")
 
 	done := make(chan struct{})
@@ -171,16 +173,16 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 				res = &query.Result{Messages: query.ErrorMessages(exportErr)}
 				break
 			}
-			res = query.ExecuteToSink(ctx, sc.Server.DB(), database, queryText, sink)
+			res = query.ExecuteToSink(ctx, sc.Server.DB(), database, queryText, sink, query.WithProgress(prog))
 			// Close after the run either way: the file has partial content and
 			// the handle must not leak.
 			if cerr := sink.Close(); cerr != nil && exportErr == nil {
 				exportErr = cerr
 			}
 		case capturePlan:
-			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText)
+			res = query.ExecuteWithPlan(ctx, sc.Server.DB(), database, queryText, query.WithProgress(prog))
 		default:
-			res = query.Execute(ctx, sc.Server.DB(), database, queryText)
+			res = query.Execute(ctx, sc.Server.DB(), database, queryText, query.WithProgress(prog))
 		}
 		// cancelled must be read while ctx is still live: the deferred cancel()
 		// sets ctx.Err() itself, so reading it later is always true.
@@ -188,6 +190,7 @@ func (p *QueryPanel) startRun(queryText, exportPath string) {
 		p.app.postAndWake(func() {
 			p.executing = false
 			p.cancel = nil
+			p.progress = nil
 			if !p.app.panelHosted(p) {
 				// Panel was closed while the query was running, so there is
 				// nothing to update — but the status bar still has to be told:
@@ -223,6 +226,7 @@ func closedPanelResultStatus(title string, cancelled bool) string {
 func (p *QueryPanel) execPanicked() {
 	p.executing = false
 	p.cancel = nil
+	p.progress = nil
 	p.resultsNotice = "Execution stopped unexpectedly — see the log for details."
 }
 

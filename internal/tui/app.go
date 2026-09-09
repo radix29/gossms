@@ -200,6 +200,12 @@ type App struct {
 	// full drainPending + syncDialogStack + draw().
 	wakePending atomic.Bool
 
+	// reclaiming is true while releaseClosedPanelMemory's background
+	// FreeOSMemory is running, so closing several panels in a row queues one
+	// reclaim rather than one per panel — a second sweep over a heap the first
+	// is still walking buys nothing and costs another full GC.
+	reclaiming atomic.Bool
+
 	// quitMu serializes wakeEventLoop's channel send against quit's
 	// screen.Fini(), which closes EventQ(). A flag checked before sending still
 	// races — Fini() can close the channel between check and send. Holding

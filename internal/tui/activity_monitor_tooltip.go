@@ -10,9 +10,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// tooltipPad is the space between a tooltip's frame and its text.
-const tooltipPad = 1
-
 // pinTooltip builds the readout for a click at screen position (mx, my), or
 // returns nil when the click didn't land on a chart's plot area or landed on
 // a column with no sample behind it.
@@ -50,7 +47,7 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx
 	}
 	t.rows = t.rows[:0]
 	for _, ser := range hit.Series {
-		t.rows = append(t.rows, amTooltipRow{
+		t.rows = append(t.rows, tooltipRow{
 			label: ser.Label,
 			value: charts.FormatValue(ser.At(idx)),
 			color: ser.Color,
@@ -164,40 +161,13 @@ func (am *ActivityMonitor) bucketIndex(at string) int {
 	return -1
 }
 
-// size is the box the tooltip needs, frame included.
-func (t *amTooltip) size() (w, h int) {
-	w = core.DisplayWidth(t.time)
-	for _, row := range t.rows {
-		if lw := core.DisplayWidth(row.label) + core.DisplayWidth(row.value) + 3; lw > w {
-			w = lw
-		}
-	}
-	return w + 2 + tooltipPad*2, len(t.rows) + 3
-}
-
-// place positions the box next to the pinned point, flipped to whichever
-// side of it fits and clamped into view. A tooltip that hangs off the
-// viewport is worse than no tooltip: the numbers it exists to show are the
-// ones that get clipped.
-//
-// keepOut is the screen row of the time callout, or -1 for none. The box
-// flips above the pinned point rather than cover it: the callout names the
+// place positions the box next to the pinned point. The box flips above that
+// point rather than cover the time callout at keepOut: the callout names the
 // moment every number in the box belongs to, and half of it behind the box
 // reads as one of the axis's own age labels.
 func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
-	w, h := t.size()
-	x := ax + 2
-	if x+w > view.Right() {
-		x = ax - w - 1
-	}
-	covers := func(top int) bool { return keepOut >= top && keepOut < top+h }
-	y, above := ay+1, ay-h
-	if y+h > view.Bottom() || (covers(y) && above >= view.Y && !covers(above)) {
-		y = above
-	}
-	x = core.Clamp(x, view.X, max(view.Right()-w, view.X))
-	y = core.Clamp(y, view.Y, max(view.Bottom()-h, view.Y))
-	return core.Rect{X: x, Y: y, W: w, H: h}
+	w, h := tooltipBoxSize(t.time, t.rows)
+	return placeTooltipBox(w, h, ax, ay, view, keepOut)
 }
 
 // drawTooltip renders the pinned readout over the dashboard: the reported
@@ -218,21 +188,7 @@ func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *charts.Canvas) {
 	if r.W > am.viewRect.W || r.H > am.viewRect.H {
 		return // no room to show it honestly
 	}
-	body := theme.StyleTooltip()
-	core.FillRect(s, r, ' ', body)
-	core.DrawBox(s, r, theme.StyleTooltipBorder())
-
-	x := r.X + 1 + tooltipPad
-	textW := r.W - 2 - tooltipPad*2
-	core.DrawTextClipped(s, x, r.Y+1, textW, body, am.tooltip.time)
-	for i, row := range am.tooltip.rows {
-		y := r.Y + 2 + i
-		if y >= r.Bottom()-1 {
-			break
-		}
-		core.DrawTextClipped(s, x, y, textW, body.Foreground(row.color), row.label)
-		core.DrawTextRight(s, x, y, textW, body, row.value)
-	}
+	drawTooltipBox(s, r, am.tooltip.time, am.tooltip.rows)
 }
 
 // drawCallout names the pinned bucket's moment on its chart's time axis, so

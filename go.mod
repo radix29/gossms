@@ -44,4 +44,4 @@ require (
 // gosmo is a sibling repository; go fix and go vet should not descend into it.
 //ignore ../gosmo
 
-//replace github.com/radix29/gosmo => ../gosmo
+replace github.com/radix29/gosmo => ../gosmo

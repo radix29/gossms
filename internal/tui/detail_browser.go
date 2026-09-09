@@ -57,6 +57,16 @@ type DetailBrowser struct {
 	// describe the previous node's rows.
 	rowObjs []nodeData
 
+	// charts are the composition bars drawn under the grid for the node on
+	// screen — see detail_browser_charts.go. Reset by every applyResult and
+	// postPartial, like rowObjs, so they can never describe the previous
+	// node.
+	charts []detailChart
+
+	// tooltip is the chart readout pinned by the last click on the strip,
+	// nil when none shows — see detail_browser_charts.go.
+	tooltip *detailTooltip
+
 	// pending records, per node, the seq of the most recent fetch dispatched for
 	// it — set by fetch, checked by postFinal/cacheOnly before writing cache.
 	// Reselecting a node mid-fetch dispatches a second fetch for the same
@@ -75,7 +85,10 @@ type detailResult struct {
 	// could get subtly wrong). nil everywhere else, and Delete is then not
 	// offered at all.
 	objs []nodeData
-	err  error
+	// charts are the composition bars drawn under the grid, empty for every
+	// view that has none.
+	charts []detailChart
+	err    error
 }
 
 // NewDetailBrowser creates a detail browser.
@@ -101,7 +114,7 @@ const refreshButtonLabel = "[⟳]"
 // and its right-aligned refresh button.
 func (db *DetailBrowser) SetBounds(x, y, w, h int) {
 	db.rect = core.Rect{X: x, Y: y, W: w, H: h}
-	db.grid.SetBounds(x, y+1, w, h-1)
+	db.layout()
 
 	bw := core.DisplayWidth(refreshButtonLabel)
 	if w >= bw+4 {
@@ -165,18 +178,29 @@ func (db *DetailBrowser) showEmpty() {
 	db.grid.SetFillLastColumn(false)
 	db.grid.SetData([]string{"Name", "Type"}, nil)
 	db.rowObjs = nil
+	db.setCharts(nil)
 }
 
 // applyResult renders a completed (cached or freshly finished) result.
 func (db *DetailBrowser) applyResult(r *detailResult) {
 	if r.err != nil {
 		db.setRowObjects(nil, nil)
+		db.setCharts(nil)
 		db.grid.SetError(displayError(r.err))
 		return
 	}
 	db.grid.SetFillLastColumn(isPropertyValueColumns(r.cols))
+	db.setCharts(r.charts)
 	db.grid.SetData(r.cols, r.rows)
 	db.setRowObjects(r.rows, r.objs)
+}
+
+// setCharts installs the chart strip for what is now on screen and re-splits
+// the panel: whether there is a strip at all decides the grid's height, and
+// the two are set together so a repaint can never draw a grid over it.
+func (db *DetailBrowser) setCharts(c []detailChart) {
+	db.charts = c
+	db.layout()
 }
 
 // setRowObjects installs the row-to-object mapping for what is now on screen,
@@ -289,6 +313,8 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		db.loadDatabasesFolderDetails(app, sc, node, seq)
 	case NodeLogins:
 		db.loadLoginsDetails(app, sc, node, seq)
+	case NodeDatabase:
+		db.loadDatabaseDetails(app, sc, node, seq)
 	case NodeTables:
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
@@ -346,6 +372,7 @@ func (db *DetailBrowser) postPartialObjects(app *App, seq int, cols []string, ro
 			return
 		}
 		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
+		db.setCharts(nil)
 		db.grid.SetData(cols, rows)
 		db.setRowObjects(rows, objs)
 	})
@@ -360,6 +387,21 @@ func (db *DetailBrowser) postFinal(app *App, node *explorerNode, seq int, cols [
 // postFinalObjects is postFinal for a view whose rows are objects.
 func (db *DetailBrowser) postFinalObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
 	result := &detailResult{cols: cols, rows: rows, objs: objs, err: err}
+	app.postAndWake(func() {
+		if db.pending[node] == seq {
+			db.cache[node] = result
+		}
+		if seq != db.seq {
+			return
+		}
+		db.applyResult(result)
+	})
+}
+
+// postFinalCharts is postFinal for a view that draws a chart strip under its
+// grid.
+func (db *DetailBrowser) postFinalCharts(app *App, node *explorerNode, seq int, cols []string, rows [][]string, cs []detailChart, err error) {
+	result := &detailResult{cols: cols, rows: rows, charts: cs, err: err}
 	app.postAndWake(func() {
 		if db.pending[node] == seq {
 			db.cache[node] = result
@@ -457,30 +499,6 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 			}
 		}
 		return []string{"Name", "State", "Recovery"}, rows, nil
-
-	case NodeDatabase:
-		d, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
-		if err != nil {
-			return nil, nil, err
-		}
-		sizeStr, dataStr, logStr, availLogStr := "N/A", "N/A", "N/A", "N/A"
-		if space, err := d.SpaceUsedContext(ctx); err == nil {
-			sizeStr, dataStr, logStr = formatMB(space.TotalMB), formatMB(space.DataMB), formatMB(space.LogMB)
-			availLogStr = formatMB(space.AvailLogMB)
-		}
-		return []string{"Property", "Value"}, [][]string{
-			{"Name", d.Name()},
-			{"State", d.State()},
-			{"Recovery Model", string(d.RecoveryModel())},
-			{"Compatibility Level", fmt.Sprintf("%d", d.CompatibilityLevel())},
-			{"Collation", d.Collation()},
-			{"Create Date", formatSQLDate(d.CreateDate())},
-			{"Read Only", fmt.Sprintf("%v", d.IsReadOnly())},
-			{"Size (MB)", sizeStr},
-			{"Data (MB)", dataStr},
-			{"Log (MB)", logStr},
-			{"Avail. Log (MB)", availLogStr},
-		}, nil
 
 	case NodeViews:
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
@@ -630,11 +648,23 @@ func (db *DetailBrowser) Draw(s tcell.Screen) {
 	core.DrawTextClipped(s, db.rect.X+1, db.rect.Y, titleW, titleStyle, db.title)
 
 	db.grid.Draw(s)
+	db.drawCharts(s)
+	db.drawChartTooltip(s)
+	// After the strip: the grid's "Show Value" viewer and cell menu open over
+	// the whole panel, chart rows included.
 	db.grid.DrawOverlay(s)
 }
 
-// HandleKey delegates to the data grid.
-func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool { return db.grid.HandleKey(ev) }
+// HandleKey closes a pinned chart readout on Escape and otherwise delegates
+// to the data grid. Escape is claimed only while a box is showing: with none
+// it belongs to whatever the panel is inside.
+func (db *DetailBrowser) HandleKey(ev *tcell.EventKey) bool {
+	if ev.Key() == tcell.KeyEscape && db.tooltip != nil {
+		db.tooltip = nil
+		return true
+	}
+	return db.grid.HandleKey(ev)
+}
 
 // HandleMouse fires OnRefresh for a press on the title bar's refresh button and
 // delegates the rest to the grid. A release over the button still reaches the
@@ -644,6 +674,27 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 		db.mouseDragging = false
 	}
 	mx, my := ev.Position()
+	if strip := db.chartsRect(); strip.Contains(mx, my) {
+		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
+			db.mouseDragging = true
+			// A showing box is dismissed by the next click wherever it lands,
+			// so one click never both closes a box and opens another — the
+			// user would see only the second and think the first never closed.
+			if db.tooltip != nil {
+				db.tooltip = nil
+			} else {
+				db.tooltip = db.pinChartTooltip(mx, my)
+			}
+		}
+		// Claimed either way: the strip is not the grid, and a press on it
+		// must not scroll or select behind the charts.
+		return true
+	}
+	if db.tooltip != nil && ev.Buttons() == tcell.Button1 && !db.mouseDragging {
+		db.mouseDragging = true
+		db.tooltip = nil
+		return true
+	}
 	if db.refreshRect.Contains(mx, my) {
 		if ev.Buttons() == tcell.Button1 && !db.mouseDragging {
 			db.mouseDragging = true

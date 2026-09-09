@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -225,6 +226,29 @@ func (a *App) closePanelAt(i int) {
 		}
 	}
 	a.panels.RemovePanel(i)
+	a.releaseClosedPanelMemory()
+}
+
+// releaseClosedPanelMemory hands a closed panel's heap back to the OS. A
+// QueryPanel holds every row of its last result set for as long as it is open
+// — a large one runs to gigabytes (see query.scanResultSet's cellArena) — and
+// dropping the panel only makes that garbage: Go's pacer collects it whenever
+// it next decides to, and the scavenger returns the pages later still, so a
+// user who closed the tab precisely because the machine was struggling watches
+// RSS sit where it was. debug.FreeOSMemory does both now.
+//
+// On a background goroutine because it is not free: FreeOSMemory is a full
+// blocking GC plus a scavenge, and on a multi-gigabyte heap that is long
+// enough to stall a redraw if it ran on the UI goroutine. Nothing waits on the
+// result, so the close returns immediately either way.
+func (a *App) releaseClosedPanelMemory() {
+	if !a.reclaiming.CompareAndSwap(false, true) {
+		return // one is already running; it will sweep this panel's heap too
+	}
+	a.safego("reclaiming a closed panel's memory", func() {
+		defer a.reclaiming.Store(false)
+		debug.FreeOSMemory()
+	})
 }
 
 // closePanelByPointer closes p by locating its current index, for callbacks

@@ -673,6 +673,33 @@ func TestResultsStatusTextWhileExecuting(t *testing.T) {
 	}
 }
 
+// The executing status also carries the live row count, so a long query shows
+// progress rather than just a ticking clock. An estimated plan scans no rows
+// and leaves p.progress nil, where the counter must stay off.
+func TestResultsStatusTextExecutingRowCounter(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.executing = true
+	qp.execStart = time.Now()
+
+	if got := qp.resultsStatusText(); strings.Contains(got, "rows") {
+		t.Errorf("status with no progress counter = %q, want no row count", got)
+	}
+
+	prog := &query.Progress{}
+	qp.progress = prog
+	if got := qp.resultsStatusText(); !strings.Contains(got, "0 rows") {
+		t.Errorf("status at the start of a run = %q, want a 0 rows counter", got)
+	}
+	for i := 0; i < 7; i++ {
+		prog.AddRow()
+	}
+	if got := qp.resultsStatusText(); !strings.Contains(got, "7 rows") {
+		t.Errorf("status after 7 scanned rows = %q, want a 7 rows counter", got)
+	}
+}
+
 // setEstimatedPlan clears p.result; the previous run's row count must not
 // be left sitting there describing a plan it has nothing to do with.
 func TestResultsStatusTextNotStaleAfterEstimatedPlan(t *testing.T) {

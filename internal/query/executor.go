@@ -11,6 +11,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-sql/sqlexp"
@@ -55,6 +56,12 @@ type Result struct {
 	// neither len(Sets) nor RowsWritten can answer "did a result set happen".
 	// See shouldReportSuccess.
 	sinkSets int
+
+	// progress, when non-nil, is the caller's live row counter (see
+	// WithProgress). It rides on Result rather than being threaded through
+	// runBatch/scanNext as its own parameter because Result is already the
+	// run-scoped state those two carry.
+	progress *Progress
 
 	// PlanXML holds one <ShowPlanXML> document per captured statement/batch, in
 	// execution order: actual plans from ExecuteWithPlan, estimated ones from
@@ -132,6 +139,49 @@ const (
 // USE either, so there is nothing to report.
 func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
 
+// Progress is a live row counter for a script that is still running: the
+// executor bumps it as each row is scanned, so a caller — the query panel's
+// "Executing..." status line — can show how much has loaded while the run is
+// still in flight, where Result only arrives at the end. Pass one in with
+// WithProgress.
+//
+// Rows is read from a different goroutine than the one executing the script,
+// which is the whole point of the type, so the count is an atomic. The zero
+// value is ready to use, and every method is nil-safe: the executor holds a
+// nil *Progress whenever the caller asked for no count.
+type Progress struct {
+	rows atomic.Int64
+}
+
+// Rows reports how many result-set rows the run has scanned so far, across
+// every result set of every batch. Safe to call while the run is in flight.
+func (p *Progress) Rows() int {
+	if p == nil {
+		return 0
+	}
+	return int(p.rows.Load())
+}
+
+// AddRow counts one scanned row. The executor calls it as it scans; it is
+// exported so a caller holding its own Progress — a test driving the status
+// line that reads one, say — can advance it without a live server.
+func (p *Progress) AddRow() {
+	if p != nil {
+		p.rows.Add(1)
+	}
+}
+
+// Option adjusts how one Execute call runs. Variadic so the common call keeps
+// its four arguments.
+type Option func(*Result)
+
+// WithProgress makes the run report its scanned-row count into prog as it
+// goes. Rows streamed to a RowSink count too, so a Results To File export
+// reports progress the same way an in-memory run does.
+func WithProgress(prog *Progress) Option {
+	return func(res *Result) { res.progress = prog }
+}
+
 // Execute runs script against db, SSMS-style. If database is non-empty the
 // connection switches to it first ("USE [database]"). The script is split on GO
 // separators; a failing batch is reported in Messages and execution continues
@@ -139,15 +189,15 @@ func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstima
 // returning the partial Result.
 //
 // Every row is retained in Result.Sets — there is no cap; see cellArena.
-func Execute(ctx context.Context, db *sql.DB, database, script string) *Result {
-	return execute(ctx, db, database, script, planCaptureNone)
+func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
+	return execute(ctx, db, database, script, planCaptureNone, opts...)
 }
 
 // ExecuteWithPlan behaves like Execute but runs with SET STATISTICS XML ON, so
 // the script's actual (not merely compiled) execution plan comes back in
 // Result.PlanXML.
-func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
-	return execute(ctx, db, database, script, planCaptureActual)
+func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
+	return execute(ctx, db, database, script, planCaptureActual, opts...)
 }
 
 // ExecuteEstimatedPlan runs with SET SHOWPLAN_XML ON instead of running the
@@ -182,17 +232,20 @@ type RowSink interface {
 // accumulating it in Result.Sets, which comes back empty. Row counts are
 // reported per set in Result.Messages and totalled in Result.RowsWritten.
 // Nothing is retained, so an unbounded result set costs file, not memory.
-func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink) *Result {
-	return executeWithSink(ctx, db, database, script, planCaptureNone, sink)
+func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink, opts ...Option) *Result {
+	return executeWithSink(ctx, db, database, script, planCaptureNone, sink, opts...)
 }
 
-func execute(ctx context.Context, db *sql.DB, database, script string, capture planCapture) *Result {
-	return executeWithSink(ctx, db, database, script, capture, nil)
+func execute(ctx context.Context, db *sql.DB, database, script string, capture planCapture, opts ...Option) *Result {
+	return executeWithSink(ctx, db, database, script, capture, nil, opts...)
 }
 
-func executeWithSink(ctx context.Context, db *sql.DB, database, script string, capture planCapture, sink RowSink) *Result {
+func executeWithSink(ctx context.Context, db *sql.DB, database, script string, capture planCapture, sink RowSink, opts ...Option) *Result {
 	start := time.Now()
 	res := &Result{}
+	for _, opt := range opts {
+		opt(res)
+	}
 
 	conn, err := acquireConn(ctx, db, database)
 	if err != nil {
@@ -467,7 +520,7 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 // scanResultSet reads the whole of rows' current result set into string cells.
 // There is no row cap, so the cells and per-row slices are packed into a
 // cellArena, keeping a very large set close to the size of its text.
-func scanResultSet(rows *sql.Rows) (ResultSet, error) {
+func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
 		return ResultSet{}, err
@@ -480,6 +533,7 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 			return rs, err
 		}
 		rs.Rows = append(rs.Rows, row)
+		prog.AddRow()
 	}
 	return rs, nil
 }
@@ -493,7 +547,7 @@ func scanResultSet(rows *sql.Rows) (ResultSet, error) {
 // deliberately not derivable from err: the deferred EndSet can fail on a set
 // that was read right through, and draining that one costs the caller a
 // message (see scanNext).
-func streamResultSet(rows *sql.Rows, sink RowSink) (n int, exhausted bool, err error) {
+func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhausted bool, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
 		return 0, false, err
@@ -523,6 +577,7 @@ func streamResultSet(rows *sql.Rows, sink RowSink) (n int, exhausted bool, err e
 			return n, false, err
 		}
 		n++
+		prog.AddRow()
 	}
 	// Next() said the set was over, so it is exhausted however the deferred
 	// EndSet above then goes.
@@ -566,7 +621,7 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 		return false
 	}
 	if sink != nil {
-		n, exhausted, err := streamResultSet(rows, sink)
+		n, exhausted, err := streamResultSet(rows, sink, res.progress)
 		res.RowsWritten += n
 		res.sinkSets++
 		if err != nil {
@@ -576,7 +631,7 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 		res.addNotice(fmt.Sprintf("(%d row(s) written)", n))
 		return false
 	}
-	rs, err := scanResultSet(rows)
+	rs, err := scanResultSet(rows, res.progress)
 	if err != nil {
 		res.addError(err)
 		return true

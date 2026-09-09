@@ -39,7 +39,7 @@ func TestStreamResultSetIsExhaustedWhenOnlyEndSetFailed(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &endFailSink{}
-	n, exhausted, err := streamResultSet(r, sink)
+	n, exhausted, err := streamResultSet(r, sink, nil)
 	r.Close()
 
 	if err == nil {
@@ -62,7 +62,7 @@ func TestStreamResultSetIsNotExhaustedWhenASinkRowFailed(t *testing.T) {
 
 	r := queryFakeRows(t, db)
 	sink := &recordingSink{failOn: 2}
-	n, exhausted, err := streamResultSet(r, sink)
+	n, exhausted, err := streamResultSet(r, sink, nil)
 	r.Close()
 
 	if err == nil {

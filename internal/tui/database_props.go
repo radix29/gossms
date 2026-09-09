@@ -37,10 +37,11 @@ const unsetItem = "(not set)"
 // rename/resize/growth/max size and Add/Remove, Database Scoped
 // Configurations covers the well-known options with a read-only dump of
 // the rest, and Query Store exposes its full configuration plus
-// Flush/Clear actions.
+// Flush/Clear actions. On an Azure engine edition a read-only Resource
+// Governance page follows them.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 	w := databaseWriteRights()
-	return []propPage{
+	pages := []propPage{
 		withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseFiles(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseFilegroups(sc, dbName), dbName, w...),
@@ -51,6 +52,14 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 		withRequires(pageDatabaseExtendedProperties(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseScopedConfig(sc, dbName), dbName, w...),
 	}
+	// Resource Governance last, and only on an Azure edition: the two views
+	// it reads exist nowhere else. Appended rather than inserted so the page
+	// order every other edition sees is untouched — nothing indexes this
+	// slice, the dialog addresses pages by title.
+	if serverIsAzure(sc) {
+		pages = append(pages, pageDatabaseResourceGovernance(sc, dbName))
+	}
+	return pages
 }
 
 func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {

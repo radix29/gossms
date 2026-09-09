@@ -1,9 +1,3 @@
-t-qmi-01.public.686f4bf5ea41.database.windows.net,3342
-
-test release
-
-- check Azure entra authentification that is porvided by the mssql library. what shall i do so i can test something difrerent that sql / windows auth?
-
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 13. Types, Assemblies, Rules, Defaults, Plan Guides, External Resources,
     Database Snapshots, Tables sub-folders
@@ -19,6 +13,8 @@ test release
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
 
 -------------
+
+- check Azure entra authentification that is porvided by the mssql library. what shall i do so i can test something difrerent that sql / windows auth?
 
 reports -> define what reports at database and server level
 

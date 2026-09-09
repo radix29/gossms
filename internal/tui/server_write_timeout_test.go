@@ -80,9 +80,11 @@ var readTimeoutSites = map[string]int{
 	"backup_dialog.go":     1,
 	// 2: the node-detail fetch, and re-reading a Query Store query's text for
 	// "Show Value" — see DetailBrowser.showQueryStoreValue.
-	"detail_browser.go":           2,
-	"detail_browser_backfill.go":  1,
-	"detail_browser_databases.go": 1,
+	"detail_browser.go":          2,
+	"detail_browser_backfill.go": 1,
+	// 2: the Databases folder's list-and-backfill loader, and one database's
+	// own properties-plus-disk-usage fetch.
+	"detail_browser_databases.go": 2,
 	"detail_browser_logins.go":    1,
 	"detail_browser_server.go":    1,
 	"detail_browser_tables.go":    1,

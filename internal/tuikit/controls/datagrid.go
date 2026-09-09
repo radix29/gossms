@@ -223,6 +223,11 @@ func (g *DataGrid) SetBounds(x, y, w, h int) {
 	g.computeColWidths()
 }
 
+// Bounds is the rectangle SetBounds last placed the grid at — what a
+// container that splits its area between the grid and something else needs
+// to know where the split actually landed.
+func (g *DataGrid) Bounds() core.Rect { return g.rect }
+
 // SetData populates the grid from a fully materialized slice of rows — a thin
 // wrapper over SetSource for callers with no custom RowSource.
 func (g *DataGrid) SetData(columns []string, rows [][]string) {

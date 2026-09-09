@@ -47,10 +47,11 @@ method swept.
 ## Azure SQL Managed Instance: supported since v0.0.10
 
 A live MI (`t-qmi-01…`, EngineEdition 8, General Purpose Gen5) was audited
-**2026-09-08** and the work closed **2026-09-09**. Seven defects and one
-missing feature are written up with reproductions in
-**`docs/plan-azure-managed-instance.md`** — read that before reporting
-anything MI-related as newly found.
+**2026-09-08** and the work closed **2026-09-09**: seven defects and one
+missing feature, all fixed and verified live. Their write-ups have been
+deleted from **`docs/plan-azure-managed-instance.md`**, which now carries the
+instance's reported values, the instance-level DMV shapes, and what is still
+open — read it before reporting anything MI-related as newly found.
 
 The one to know without opening it: **MI reports `ProductVersion`
 `12.0.2000.8`** while running engine build 18.0, so every `colSince` /
@@ -108,6 +109,34 @@ device type"), and the same statement spelled `FROM URL` with Msg 3078 about
 the blob itself — the device type is accepted.
 
 Entra authentication on MI is untested and out of scope of that plan.
+
+## Homebrew tap: the push fix is unverified until the next release
+
+**v0.0.10 shipped with an empty tap.** The release workflow's `homebrew` job
+rendered `Formula/gossms.rb` correctly and then guarded the push with
+`git diff --quiet -- Formula/gossms.rb`. Git reports no diff for a path it has
+never tracked, so on the very first release the guard concluded "already up to
+date", `exit 0`'d, and the job went **green having pushed nothing** —
+`radix29/homebrew-tap` held only its `README.md` and
+`brew install radix29/tap/gossms` answered "No available formula or cask" for
+the whole v0.0.10 cycle.
+
+Fixed in `.github/workflows/release.yml` (commit `3b566d0`): stage first, then
+compare against the index, which does see a newly added file as a change. The
+`apt` job in the same workflow already did it that way — it is the reference
+shape, not the tap job.
+
+The v0.0.10 formula was pushed to the tap by hand (`radix29/homebrew-tap`
+commit `377fe7f`), rendered from the release's own `checksums.txt` and
+byte-identical to what the failed job produced; `brew install` was then driven
+end to end on Linux and `gossms --version` reported `v0.0.10`. **So the tap is
+correct today, but the workflow fix itself has never run.** Watch that job on
+the next tag and confirm the tap gained a `gossms <tag>` commit — a green job
+is exactly what the bug looked like.
+
+Related trap, same root cause: a job whose only failure mode is "did nothing"
+cannot be verified by its exit status. Neither the tap nor the apt job asserts
+afterwards that the artifact it publishes is reachable.
 
 ## Deferred scope (repeatedly, deliberately)
 

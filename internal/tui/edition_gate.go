@@ -36,14 +36,16 @@ func serverIsAzure(sc *db.ServerConn) bool {
 	return sc != nil && sc.Server != nil && sc.Server.Info().IsAzure()
 }
 
-// editionNote is the note an edition-gated item carries: "not on Managed
-// Instance", naming the edition rather than "Azure" so the sentence stays
-// true of whichever one the user is actually connected to.
+// editionNote is the note an edition-gated item carries. It is deliberately
+// just "N/A": a menu note sits at the right edge of the item, and naming the
+// edition ("not on Managed Instance") widened every menu it appeared in for a
+// fact the user already knows from the connection. The property sheets, which
+// have the room, still name the edition.
 func editionNote(sc *db.ServerConn) string {
 	if !serverIsAzure(sc) {
 		return ""
 	}
-	return "not on " + engineEditionName(sc.Server.Info().EngineEdition)
+	return "N/A"
 }
 
 // gateAzure disables item when the connected instance is an Azure engine

@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
@@ -40,10 +39,11 @@ func TestTheEditionGateOnlyFiresOnAzure(t *testing.T) {
 	}
 }
 
-// TestAnEditionWithheldItemNamesTheEdition. The note is the only chance to say
-// why, and "needs CONTROL" — what the permission gate would have said — sends
-// the user after a right that cannot help: MI has no sp_detach_db at all.
-func TestAnEditionWithheldItemNamesTheEdition(t *testing.T) {
+// TestAnEditionWithheldItemCarriesTheEditionNote. The note is the only chance
+// to say why, and "needs CONTROL" — what the permission gate would have said —
+// sends the user after a right that cannot help: MI has no sp_detach_db at all.
+// "N/A" says the same thing in the width a menu has.
+func TestAnEditionWithheldItemCarriesTheEditionNote(t *testing.T) {
 	sc := probedAzureConn(t, "")
 	item := gateAzure(gate(controls.MenuItem{Label: "Detach Database..."},
 		sc, "", rightControlDB, rightAlterAnyDatabase), sc)
@@ -51,8 +51,8 @@ func TestAnEditionWithheldItemNamesTheEdition(t *testing.T) {
 	if item.Enabled() {
 		t.Error("Detach Database is still offered on a Managed Instance")
 	}
-	if !strings.Contains(item.Note, "Managed Instance") {
-		t.Errorf("Note = %q, want the engine edition named", item.Note)
+	if item.Note != "N/A" {
+		t.Errorf("Note = %q, want the short edition note", item.Note)
 	}
 	if item.NoteWhen != nil && !item.NoteWhen() {
 		t.Error("the edition note is suppressed on the item it describes")

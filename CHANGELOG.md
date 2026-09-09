@@ -4,6 +4,31 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [Unreleased]
+
+### Added
+
+- **Live row counter while a query runs.** The results status line now reads
+  `00:00:07 | Executing... | 128413 rows` — the count ticks with the elapsed
+  timer that was already there, so a long-running script shows how much has
+  loaded rather than only how long it has taken. The executor bumps a
+  `query.Progress` (an atomic, since the count is read on the UI goroutine
+  while the run scans on another) as each row is scanned, on the retaining and
+  the Results To File streaming paths alike; a caller that wants no count
+  passes none, which is why an estimated plan — it scans no rows — shows the
+  elapsed timer alone.
+
+### Changed
+
+- **Closing a panel now returns its memory to the OS.** A query panel holds
+  every row of its last result set while it is open, which for a large one
+  runs to gigabytes, so `closePanelAt` follows the removal with
+  `debug.FreeOSMemory` — a collection *and* a scavenge, since Go's pacer would
+  otherwise sit on the freed pages and leave RSS where it was for a user who
+  closed the tab precisely because the machine was struggling. It runs on a
+  background goroutine (a full GC on a multi-gigabyte heap would stall the
+  redraw) and a flag coalesces a burst of closes into one sweep.
+
 ## [0.0.10] - 2026-09-09
 
 ### Added

@@ -7,7 +7,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/dashboard"
@@ -308,7 +307,7 @@ type amCanvasKey struct {
 type amTooltip struct {
 	chart string // ChartHit.Title of the chart the pin lives on
 	time  string // the pinned bucket's clock time — its identity and caption
-	rows  []amTooltipRow
+	rows  []tooltipRow
 
 	// snapshot marks a pin on a current-sample chart. Those have one bucket
 	// and no time axis, so nothing drifts and the column stays where clicked.
@@ -323,12 +322,6 @@ type amTooltip struct {
 	// re-read with the position each draw: the pin drops when it falls outside
 	// the first, and the time callout sits on the second.
 	plot, timeRow core.Rect
-}
-
-type amTooltipRow struct {
-	label string
-	value string
-	color tcell.Color
 }
 
 // NewActivityMonitor creates the panel for one server connection.

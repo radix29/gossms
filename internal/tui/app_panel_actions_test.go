@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // TestPanelHosted confirms panelHosted distinguishes a panel that's still
 // in a.panels from one that's been removed — the check connectForQueryPanel
@@ -48,6 +51,24 @@ func TestClosePanelAtNoQueryRunningDoesNotPanic(t *testing.T) {
 	i := a.panels.AddPanel(qp)
 
 	a.closePanelAt(i)
+}
+
+// Closing a panel kicks off the background memory reclaim, and the guard that
+// coalesces a burst of closes into one sweep must re-arm afterwards —
+// otherwise the very first close disables the reclaim for the rest of the
+// session.
+func TestClosePanelAtReclaimGuardRearms(t *testing.T) {
+	a := newTestApp()
+	i := a.panels.AddPanel(NewQueryPanel(a, "Query 1"))
+	a.closePanelAt(i)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for a.reclaiming.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("a.reclaiming still set 5s after closing a panel, want the guard re-armed")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // TestQueryActionsReportWhenThereIsNoQueryPanel drives every Query-menu action
