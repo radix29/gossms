@@ -19,12 +19,25 @@ A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
 One executable — no GUI, no installer, no SQL client tools or drivers
 required. More content here soon.
 
-Current release: **v0.0.9**. See
+Current release: **v0.0.10**. See
 [RELEASE.md](https://github.com/radix29/gossms/blob/main/RELEASE.md) for what
 changed and
 [CHANGELOG.md](https://github.com/radix29/gossms/blob/main/CHANGELOG.md) for
 the detail behind it. Supported servers: **SQL Server 2016 SP1 and later**, on
-Windows and Linux.
+Windows and Linux, and **Azure SQL Managed Instance**.
+
+## Install
+
+```bash
+brew install radix29/tap/gossms          # macOS and Linux
+```
+
+Debian, Ubuntu and derivatives install from the APT repository at
+[radix29.github.io/apt](https://radix29.github.io/apt); the full instructions
+are in
+[README.md](https://github.com/radix29/gossms/blob/main/README.md#installation).
+Single-file binaries for Windows, Linux and macOS are on the
+[releases page](https://github.com/radix29/gossms/releases/latest).
 
 # Gallery
 
@@ -104,6 +117,13 @@ table allocations and internal object churn in real time.
 
 ![act mon tempdb](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/11_act_mon_tempdb.png)
 
+**Instance resources (Azure editions)** — A sixth tab that appears only on an
+Azure engine edition: the instance's own 15-second resource history — CPU
+against its cap, storage against the quota, IO requests and bytes per second —
+beside the resource governor's fixed limits and the engine's OS job object.
+
+*(Screenshots for this section are not captured yet.)*
+
 ### Query Store
 
 **The seven SSMS views** — Regressed Queries, Overall Resource Consumption, Top
@@ -126,6 +146,15 @@ statement-level properties side by side.
 
 *(Screenshots for this section are not captured yet.)*
 
+### Log File Viewer
+
+**SQL Server and SQL Agent logs** — The current log or any archive, searched
+on the server or filtered in place, with the selected entry's full text in a
+details pane. **Select Files...** merges several archives of one family into a
+single date-sorted grid, each row naming the file it came from.
+
+*(Screenshots for this section are not captured yet.)*
+
 ### Always On
 
 **Availability Group configuration** — Create or manage Always On Availability
@@ -134,3 +163,15 @@ and failover policy.
 
 ![availability group](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/12_alway_on_AG.png)
 
+### Azure SQL Managed Instance
+
+**A supported target, not just a reachable one** — Object Explorer, the query
+editor and execution plans, Server and Database Properties, Activity Monitor
+and the error logs all work against a Managed Instance. Version gating follows
+the engine edition rather than the `12.0.2000.8` a Managed Instance reports,
+backup and restore emit `TO URL` / `FROM URL` for Azure Storage, and the
+operations the edition refuses — Detach, Attach, Take Offline, the recovery
+model, New Database's file rows — are disabled with a note rather than failing
+at the server.
+
+*(Screenshots for this section are not captured yet.)*

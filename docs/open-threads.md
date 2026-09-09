@@ -44,14 +44,13 @@ read was never reached. When re-verifying, confirm the reads were actually
 *called*: the sweep's `call` helper takes a label, and logging it lists every
 method swept.
 
-## Azure SQL Managed Instance: audited, not yet supported
+## Azure SQL Managed Instance: supported since v0.0.10
 
 A live MI (`t-qmi-01…`, EngineEdition 8, General Purpose Gen5) was audited
-**2026-09-08**. Object Explorer, the query editor with both execution plans,
-all five Activity Monitor tabs, Server Properties and eight of nine Database
-Properties pages work unchanged. Seven defects and one missing feature are
-written up with reproductions in **`docs/plan-azure-managed-instance.md`** —
-read that before reporting anything MI-related as newly found.
+**2026-09-08** and the work closed **2026-09-09**. Seven defects and one
+missing feature are written up with reproductions in
+**`docs/plan-azure-managed-instance.md`** — read that before reporting
+anything MI-related as newly found.
 
 The one to know without opening it: **MI reports `ProductVersion`
 `12.0.2000.8`** while running engine build 18.0, so every `colSince` /
@@ -948,8 +947,10 @@ numbering the moment they flipped the selector.
   the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
   real and applied.
 
-- **Homebrew distribution is built but unverified.** `docs/homebrew.md` is the
-  reference. Done: `darwin/amd64` in the release workflow's `TARGETS`,
+- **Homebrew distribution is built but unverified.** The `homebrew` job in
+  `.github/workflows/release.yml` is the reference — `docs/homebrew.md` was
+  folded into it and this entry. Done: `darwin/amd64` in the release
+  workflow's `TARGETS`,
   `gossms --version`, and the `homebrew` job that renders `Formula/gossms.rb`
   from the release's `checksums.txt` and pushes it to `radix29/homebrew-tap`,
   which exists and is public. The credential is a write-enabled deploy key on
@@ -964,8 +965,10 @@ numbering the moment they flipped the selector.
   `replace github.com/radix29/gosmo => ../gosmo` makes any source build from a
   release tarball fail, and `go install …@<tag>` fail with it.
 
-- **Debian/Ubuntu packaging is built but unverified on a real distro.**
-  `docs/ppa.md` holds the detail. `radix29/apt` is published through GitHub
+- **Debian/Ubuntu packaging is built but unverified on a real distro.** The
+  `apt` job in `.github/workflows/release.yml` holds the detail —
+  `docs/ppa.md` was folded into it and this entry. `radix29/apt` is published
+  through GitHub
   Pages at https://radix29.github.io/apt, and the `apt` job in
   `.github/workflows/release.yml` builds `amd64`/`arm64` `.deb`s from each
   tagged release, rebuilds the indices from the whole pool, signs `Release` and

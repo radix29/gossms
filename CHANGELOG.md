@@ -4,6 +4,283 @@ All notable changes to goSSMS are documented in this file. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); detailed
 entries start with v0.0.2 onward.
 
+## [0.0.10] - 2026-09-09
+
+### Added
+
+- **Homebrew and APT distribution.** `brew install radix29/tap/gossms` on
+  macOS and Linux, and an APT repository at
+  [radix29.github.io/apt](https://radix29.github.io/apt) for Debian, Ubuntu
+  and derivatives. Both are produced by the release workflow itself
+  (`.github/workflows/release.yml`), from the same archives the GitHub release
+  publishes, so a tag pushes one set of binaries and every channel serves it.
+  - The `homebrew` job renders `Formula/gossms.rb` into `radix29/homebrew-tap`
+    with four bottles (macOS arm64/Intel, Linux arm64/amd64). Every `sha256`
+    is read back out of the release's own `checksums.txt` rather than
+    re-hashed from a local `dist/`, which also proves each asset the formula
+    references is really downloadable. The hashes are resolved *before* the
+    heredoc that renders the formula: a command substitution inside it runs in
+    a subshell, so a missing checksum would have exited that subshell only and
+    pushed a formula with an empty `sha256` field.
+  - The `apt` job builds a `.deb` per architecture, verifies each downloaded
+    archive against `checksums.txt` before packaging it — a package built from
+    an unverified download would launder a corrupt file into a signed
+    repository — and regenerates `Packages`, `Packages.gz` and `Release` in
+    `radix29/apt`. The `Release` file is GPG clear-signed and detach-signed,
+    then verified in the job with `gpgv` against the *published* public key,
+    which is exactly what apt does on the client: a broken signature fails the
+    release instead of every user's next `apt-get update`.
+  - `Packages` is regenerated over the whole pool, not appended to. An index
+    carrying only the newest version makes every older one uninstallable and
+    breaks `apt-get install gossms=<old>`.
+- **`gossms --version`** (`-version`, `-v`) prints name, version, commit,
+  build date, platform, licence and the gosmo version, then exits. Handled
+  before anything else in `main` and deliberately not through the `flag`
+  package: gossms takes no other arguments, and every path past that point
+  opens either a log file or a tcell screen. `brew test`, CI and a user
+  pasting their version into a bug report all run without a TTY, where
+  `App.Run` cannot start at all. Kept in step with `newAboutRows` in
+  `internal/tui/menu.go`, so Help > About and the flag say the same thing.
+- **macOS Intel binaries are published again** — the release matrix is five
+  targets: `windows/amd64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`,
+  `darwin/arm64`. Homebrew needs an Intel bottle, and dropping it in `v0.0.9`
+  would have left `on_intel` unsatisfiable.
+- **Azure SQL Managed Instance is supported rather than merely reachable.**
+  Seven defects and one missing feature from the 2026-09-08 live audit of a
+  General Purpose Gen5 instance are closed; the audit, every reproduction and
+  the order of work are in `docs/plan-azure-managed-instance.md`.
+  - **`internal/tui/edition_gate.go`** — the edition's counterpart to
+    `permission_gate.go`. It withholds what the *engine edition* refuses, in
+    the same shape a permission gate uses (a disabled item carrying a short
+    note), and the two compose: `gateAzure` wraps `gate`'s result and the
+    edition's note wins, because no permission gets a user past an edition
+    that does not implement the statement at all. Every entry was driven live
+    against the instance and is named with the message it produced — Detach
+    Database and Attach Database (`sp_detach_db` does not exist), Take
+    Database Offline and the recovery model (Msg 5008), and New Database's
+    file and filegroup rows (Msg 41918). New Database is gated row by row
+    rather than wholesale, because `CREATE DATABASE` itself succeeds on a
+    Managed Instance as long as the file clauses are left off; blocking the
+    dialog would withhold something that works.
+  - **The Activity Monitor's "Instance" tab**, offered on Azure editions only.
+    It draws CPU against the instance's own cap, storage against the quota, IO
+    requests and bytes per second, and a limits grid — worker, IOPS,
+    outstanding-IO, job-memory and working-set ceilings — from
+    `sys.server_resource_stats`, `sys.dm_instance_resource_governance` and
+    `sys.dm_os_job_object`, all three added to gosmo as `azure_resources.go`.
+    - The tab bar became a slice: `visibleTabs()` filters `amAllTabs` by
+      `serverIsAzure`, `tabSegments` pairs with it by index, and `stepTab`
+      walks it, so Tab and Backtab cannot stop on a tab the bar does not draw.
+      `amTabLabels` and the per-tab scroll arrays stay indexed by `amTab` and
+      sized `amTabCount` — a withheld tab still has a scroll position, it is
+      simply unreachable — and `setTab` is the one gate every key, click and
+      caller goes through. A new conditional tab needs nothing but an
+      `azureOnly`-style predicate.
+    - `internal/activity` gained **`Poller[S]`** — the shared ticking half
+      (rate selector, Pause, Stop, the `VIEW SERVER STATE` prologue, failure
+      backoff) over a caller-supplied probe. It is what lets the reads live in
+      gosmo without `internal/activity` importing it, and it exists because
+      this is the one feed whose source is already aggregated:
+      `sys.server_resource_stats` is the server's own 15-second history kept
+      for two weeks, so one tick reads the whole thing and running it through
+      `rates.go` would average an average.
+    - `drawInterval()` returns the *server's* 15-second window on this tab,
+      not the panel's poll rate — scaling the axis by a 30-second poll would
+      label every column with twice the span it covers. The IO ceilings are
+      section-bar KPIs rather than chart axes: an axis pinned to a 6,000 IOPS
+      limit renders an ordinary workload as a flat line on the baseline. The
+      storage chart *does* take the quota as its maximum, because there the
+      proportion is the point.
+  - **Backup and Restore emit `TO URL` / `FROM URL`** for a blob destination.
+    gosmo picks the device keyword off the path itself (`gosmo.IsBackupURL`),
+    so a blob path emits `TO URL` on any edition; `applyDeviceRules` supplies
+    the other half, switching off what an Azure engine cannot carry — it
+    refuses a `DISK` device outright (Msg 41902, "supports database restore
+    from URI backup device only"). The Back Up dialog carries a standing
+    status line for a blob destination, because `BACKUP TO URL` authenticates
+    through a credential *named for the container* and without one the
+    statement fails at run time with an error that never mentions credentials.
+    Confirmed live: MI answers `RESTORE VERIFYONLY FROM DISK = N'https://…'`
+    with Msg 41902 and the same statement spelled `FROM URL` with Msg 3078
+    about the blob itself — the device type is accepted.
+- **Object Explorer gains four families.**
+  - **Database Triggers** (database-scope DDL, `parent_class = 0`) under every
+    database, with Properties, Enable/Disable, Script and Delete. There is no
+    New dialog — a `CREATE TRIGGER` body is T-SQL a form cannot usefully
+    build, and SSMS offers none either; editing one is Script Database Trigger
+    as > ALTER To. Disabling asks first, naming what stops applying.
+  - **Database Audit Specifications**, with Properties, Enable/Disable,
+    Script, Delete and a **New Database Audit Specification** dialog covering
+    action groups and per-securable actions.
+  - **Database Scoped Credentials**, with Properties, Script, Delete and a
+    **New Database Scoped Credential** dialog.
+  - **Cryptographic Providers** under server Security, with Properties and
+    Script.
+- **A view carries a Triggers folder.** `NodeView` is no longer a leaf: it
+  holds INSTEAD OF triggers, which until now were reachable only through the
+  database-wide roll-up that this release removes. Both the table's folder and
+  the view's read through gosmo's new `Database.ObjectTriggers`.
+- **Query Store: Plot History.** The panel's chart has a second mode — the
+  query the report grid's cursor is on, plotted per plan, interval by
+  interval, the way SSMS plots it under Tracked Queries
+  (`query_store_series.go`). It is a mode of the chart rather than an eighth
+  report, because it belongs to the row exactly as the plan pane and the two
+  plan actions do. The button says what the press does, not what is on screen.
+  The series read gets its own sequence and cancel pair, not a share of the
+  plan pane's: both fire from the same cursor move and must not supersede one
+  another.
+- **The Log File Viewer merges files.** **Select Files...** opens a checklist
+  and the grid becomes one date-sorted view across the selection, with a File
+  column naming each row's origin. One unreadable archive is reported beside
+  what did come back rather than emptying a grid holding three good files.
+  - A merged selection is one family: archive numbers are not comparable
+    across families, and the family selector is what the file list, Recycle
+    and the enumeration all key off. `logFileRef` carries the family anyway,
+    so a cross-family merge is a UI change rather than a data-model one.
+  - A cycle re-anchors a *merged* selection to the current log, and a
+    single-file view keeps its number. The cycle renumbers every archive and
+    deletes the oldest, so a set chosen by number would silently come back as
+    a different set; a user who asked for "Archive #1" still gets whatever is
+    now Archive #1.
+- **`widgets.Spinner`** — a busy-indicator catalogue (`SpinnerBraille`,
+  `SpinnerCodex`, `SpinnerDots3`, …), walkable via `widgets.Spinners` and
+  resolvable from a config string with `SpinnerByName`. It holds no start time
+  and starts no goroutine: `Frame(elapsed)` / `FrameSince(start)` answer which
+  frame shows and the host drives the redraw from a clock it already has.
+  Every frame of one Spinner is the same display width, so a repaint overwrites
+  the previous frame exactly — a narrower frame leaves the tail of the last one
+  on screen, which no static frame listing reveals and only animation does
+  (`TestSpinnerFramesAreUniformWidth`). `cmd/spindemo` renders the whole
+  catalogue side by side for picking one by eye.
+- **The Connect dialog stays open while it connects.** Every control but
+  Cancel goes inert, a spinner and "Connecting..." run on the button row, and
+  Cancel abandons the attempt. `db.Connect` takes no context, so an attempt in
+  flight cannot be aborted — an abandoned one is wound back instead of
+  half-applied: a connection that arrives anyway is closed rather than
+  appearing in Object Explorer under a dialog the user dismissed, and a
+  failure lands on the status bar instead of popping an alert over whatever
+  they moved on to.
+- **Explicit DENY is honoured at four more scopes.** A `right` can now declare
+  the permission whose DENY beats it at DATABASE_PRINCIPAL (class 4), server
+  (class 101 and friends) and AVAILABILITY GROUP (class 108) scope, against
+  gosmo's new `DeniedOn*` capability reads. The declared name is deliberately
+  not the right's own: the right is the database-wide `ALTER ANY USER` while
+  the DENY that beats it sits on the user itself as plain `ALTER`. Declaring
+  it is also what keeps `objectDenial` from firing on the wrong family — it is
+  asked about a table by the same name as a denied user just as readily, and a
+  login and an endpoint of the same name are two different securables.
+- **`SetEnabled(bool)` / `Enabled() bool` on `Button`, `CheckBox` and
+  `RadioBox`**, holding `InputField`'s contract: a disabled control draws
+  greyed out, refuses keys and clicks, and keeps its place in the caller's
+  focus ring rather than vanishing from it. `theme.StyleControlDisabled` is
+  the shared style; `StyleButtonDisabled` is separate because a button has no
+  border to lose, so dropping its background would leave nothing on screen to
+  click at all.
+- **FILESTREAM files in Database Properties > Files.** A file in a FILESTREAM
+  filegroup is recognised, and its size and growth rows are switched off:
+  `SIZE` and `FILEGROWTH` on one are refused outright (Msg 5509) while
+  `MAXSIZE` is accepted — both measured on a real FILESTREAM database rather
+  than assumed, since the two clauses read as one family and are not. The type
+  picker offers only what `ALTER DATABASE ... ADD FILE` names in the statement
+  (`ROWS`, `LOG`), because a file becomes FILESTREAM purely by going into a
+  FILESTREAM filegroup; the same clause aimed at a `ROWS` filegroup produces
+  an ordinary data file. Both the type and filegroup pickers widen themselves
+  when the selected file's own value is outside the offered set, rather than
+  showing a stand-in that would read as the server's answer.
+- **Query > Execute at Cursor** and **Edit > Delete Line** in the menus.
+- **`docs/ui-rules.md`, `docs/db-rules.md` and `docs/testing.md`** — the
+  enforceable rules that had been living in `CLAUDE.md`, now owned by the
+  document for the area: every `internal/tui` / `internal/tuikit` idiom,
+  permission gating and emitted T-SQL, and what counts as verification.
+- **`TestPermissionGateCoverage`** asserts every writable property page is
+  gated, so a new page cannot ship ungated.
+
+### Changed
+
+- `gosmo` v0.0.11 → v0.0.12.
+- **A database has no flat Triggers folder any more.** A DML trigger belongs
+  to one table or one view and is listed under that object's own Triggers
+  folder, which is where SSMS puts it and where it was already listed — the
+  database-wide roll-up listed every one of them a second time, and keeping it
+  would have put a folder called "Triggers" (DML) beside one called "Database
+  Triggers" (DDL), which reads as a distinction without a difference.
+  `Database.TriggersContext` still exists in gosmo and is still the
+  database-wide read; gossms simply has no folder for it.
+- **Server Properties > Advanced is editable.** It was read-only as a "100+
+  row raw config dump"; it is now a group of `sp_configure` rows over a
+  read-only grid of every remaining option. General stays read-only — it is an
+  info page with no apply at all.
+- **Database Role Properties > Members is gated on the role itself**, alone on
+  that dialog: a class-4 DENY on the role withholds `ADD`/`DROP MEMBER` while
+  leaving the rename and the drop the other pages make alone.
+- **Database Role and Server Role Properties share one General page.**
+  `role_general_page.go` holds the shape both scopes report identically plus
+  the four facts they answer differently, over a deliberately narrow
+  `roleWriter` interface — rename and change-owner and nothing else, so a
+  third write cannot creep into a function two dialogs depend on.
+- **Database-scoped credentials are gated on `CONTROL` on the database, with
+  no `ALTER` beside it.** Probed live: CREATE/ALTER/DROP DATABASE SCOPED
+  CREDENTIAL all went through under `GRANT CONTROL ON DATABASE` and all three
+  were refused under `GRANT ALTER ON DATABASE`. Every other database-scoped
+  set pairs its narrow right with `rightAlterDatabase`; adding it here "for
+  symmetry" would offer New/Delete/Properties to a principal the server then
+  refuses. `ALTER ANY CREDENTIAL` is not the narrower twin either — it is
+  server-scope, and `HAS_PERMS_BY_NAME` asked of a *database* returns NULL
+  rather than 0, which a gate built on it would read as "unknown" forever.
+  There is no ALTER script verb and no Rename: the secret cannot be read from
+  any catalog view, so every generated script carries a placeholder in its
+  place, and an ALTER verb would be a statement that silently rewrites the
+  stored secret to it. Changing the identity with the password blank is
+  refused rather than applied, for the same reason as at server scope.
+- **The Backup and Restore progress views share one keyboard**
+  (`progressModeKey`): Escape hides, Enter fires the focused button,
+  Tab/F1 and Backtab rotate. Focus is clamped on Enter rather than on every
+  rotation, because the button list shrinks under the view — Cancel
+  disappears the moment the task finishes — and an index recorded against the
+  longer list would otherwise index past the shorter one. It always reports
+  handled: a progress view is modal over its dialog, and a key falling through
+  would edit a page the user cannot see.
+- **Copy reaches two more surfaces** — the Detail Browser's grid and the
+  Always On dashboard's focused grid, alongside the query panel's results
+  views.
+- The Column Encryption Key page is no longer counted among the read-only
+  property families: it writes, and only to move the key between master keys.
+- `CLAUDE.md` is short and routing-only; `ARCHITECTURE.md`'s ownership table
+  names the four documents that now own the detail. `PLAN.md` describes where
+  the project stands rather than what is scheduled.
+- Dependencies: the `golang.org/x` chain; toolchain go1.27.1.
+
+### Fixed
+
+- **Database Properties > General was empty on a Managed Instance.** A NULL in
+  msdb's backup history killed the whole read (gosmo `BackupHistory`
+  nullability).
+- **Every version gate silently degraded on a Managed Instance.** It reports
+  `ProductVersion` 12.0.2000.8 while running an 18.x engine, which put it
+  below every `colSince` / `VersionMajor` gate — so columns and features the
+  instance actually has returned nothing. An Azure engine edition is now gated
+  as newest, on `EngineEdition` rather than on the version it reports.
+- SQL Server Agent status read "Unknown" on a Managed Instance, where
+  `sys.dm_server_services` is empty.
+- Server Properties showed Platform "Unknown" on a Managed Instance —
+  `@@VERSION` there carries no ` on Windows` / ` on Linux` suffix.
+- Disk-space rows were nonsense, and duplicated, on a Managed Instance.
+- The server filesystem reads took the pre-2017 path on Azure, losing size and
+  modification time for no reason.
+- A scripted column encryption key rotation mutated the handle, so the
+  pre-flight check read the wrong value count.
+- Adding a file to a FILESTREAM filegroup failed the whole Add with Msg 5509,
+  because the page sent `SIZE` and `FILEGROWTH` a FILESTREAM file cannot
+  carry.
+- The Back Up dialog's device rules were applied only on the passes that
+  regenerated the destination path, not on every pass — so a destination
+  typed by hand did not re-gate what the device can carry.
+- A connection attempt that failed after its dialog had been dismissed popped
+  an alert over whatever the user had moved on to; one that succeeded after
+  Cancel leaked a live session for the rest of the process's lifetime.
+- `EndpointSpec.EncryptionAlgorithm` accepted values the server rejects; they
+  now fail client-side (gosmo).
+
 ## [0.0.9] - 2026-09-04
 
 ### Added

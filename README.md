@@ -57,8 +57,25 @@ Release binaries are available for:
 - Linux (amd64 and arm64)
 - macOS (Apple silicon/arm64 and Intel/amd64)
 
-Extract the downloaded archive before running the application. Release binaries
-are currently unsigned; SHA-256 checksums are published with each release.
+Extract the downloaded archive before running the application.
+
+The binaries themselves are not signed for Windows SmartScreen or macOS
+Gatekeeper, so those will warn on first run. Integrity is covered instead by
+`checksums.txt`, published with every release and signed by the release
+workflow with [cosign](https://github.com/sigstore/cosign) in keyless mode:
+
+```bash
+sha256sum -c --ignore-missing checksums.txt
+cosign verify-blob \
+  --bundle checksums.txt.bundle \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/radix29/gossms/\.github/workflows/release\.yml@' \
+  checksums.txt
+```
+
+Packages installed through Homebrew or APT are covered without any of this:
+Homebrew checks the formula's `sha256`, and APT checks the repository's
+GPG-signed `Release` file.
 
 ### 2. Start goSSMS
 
@@ -100,8 +117,8 @@ specific port directly.
 ## Supported SQL Server versions
 
 goSSMS supports **SQL Server 2016 SP1 (13.0.4001) and later** on Windows and
-Linux. Features that are unavailable on the connected SQL Server version are
-hidden or disabled.
+Linux, and **Azure SQL Managed Instance**. Features that are unavailable on the
+connected SQL Server version or engine edition are hidden or disabled.
 
 ## Highlights
 
@@ -113,10 +130,14 @@ hidden or disabled.
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and
   unforcing.
-- **Administration tools** for properties, permissions, backup and restore,
-  attach and detach, indexes, statistics, and multi-object delete.
+- **Administration tools** for properties, permissions, backup and restore
+  (to disk or Azure Storage), attach and detach, indexes, statistics, and
+  multi-object delete.
 - **Monitoring** through Activity Monitor, blocking chains, sessions, and SQL
-  Server and SQL Agent logs.
+  Server and SQL Agent logs — several log files can be merged into one
+  date-sorted view.
+- **Azure SQL Managed Instance** support, including an Activity Monitor
+  Instance tab showing CPU, storage, I/O and the resource governor's limits.
 - **Least-privilege operation**: unavailable actions are disabled and missing
   permissions are identified where SQL Server exposes that information.
 
@@ -158,8 +179,13 @@ the configuration file. Delete both files to reset saved connections.
 
 - Microsoft Entra authentication has not yet been tested against live
   infrastructure.
+- Backup and restore to Azure Storage build and validate correctly but have
+  not been executed end to end; doing so requires a shared access signature
+  credential on the container.
 - macOS has not yet been tested on physical Mac hardware.
-- Release binaries are unsigned; checksums are provided.
+- Release binaries are not signed for SmartScreen or Gatekeeper, so both warn
+  on first run. The published checksums are cosign-signed; see
+  [Direct download](#direct-download).
 
 ## Links
 

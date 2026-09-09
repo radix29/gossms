@@ -135,7 +135,8 @@ gossms/
 ├── cmd/
 │   ├── gossms/               # main entry point
 │   ├── plandemo/             # dev harness: hosts planview.PlanView full-screen against a plan file (not part of the release build)
-│   └── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
+│   ├── amdemo/               # dev harness: hosts the Activity Monitor dashboards full-screen against deterministic mock data (not part of the release build)
+│   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json
 │   ├── db/                  # gosmo connection wrapper + DSN builder
@@ -154,7 +155,7 @@ gossms/
 │   ├── tuikit/               # embeddable TUI library (no SQL Server / app knowledge) — see internal/tuikit/README.md
 │   │   ├── theme/                # colour palette + derived tcell.Style helpers
 │   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers
-│   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox
+│   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
@@ -194,6 +195,7 @@ gossms/
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
 │       ├── permission_gate.go    # rightsAllow: the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function"
+│       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in permission_gate's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # classifies a SQL Server refusal and names the right it wants, instead of the wrapped driver error
 │       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor, the Log File Viewer and Query Store, incl. the "More ▾" overflow menu a too-narrow row collapses into (not App's own toolbar)
@@ -230,7 +232,7 @@ gossms/
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │
 │       │  ── Log File Viewer ──
-│       ├── log_viewer.go              # LogViewer state: log-family/archive selectors, filter, read + export; implements layout.Panel
+│       ├── log_viewer.go              # LogViewer state: log-family/archive selectors, the merged multi-file selection (logFileRef/logRow), filter, read + export; implements layout.Panel
 │       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
 │       ├── log_search_dialog.go       # Log File Viewer search: a query the server runs across the archives, not a filter over what was read
@@ -240,6 +242,7 @@ gossms/
 │       ├── query_store_panel.go       # QueryStorePanel state: the report/metric/statistic/window/top selectors, the report and plan reads, Force/Unforce/Show Plan/Script; implements layout.Panel
 │       ├── query_store_panel_draw.go  # the two toolbar rows, the bar chart, and the two grids either side of the splitters
 │       ├── query_store_panel_input.go # HandleKey/HandleMouse: grid focus, splitter keys, gesture zones
+│       ├── query_store_series.go      # the panel's second chart mode: the cursor's query plotted per plan, interval by interval — a mode of the chart, not an eighth report
 │       ├── plan_compare_panel.go     # Compare Showplan: two plans of one query as two grids (operators, statement properties); implements layout.Panel
 │       │
 │       │  ── Detail Browser ──
@@ -338,6 +341,7 @@ gossms/
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── user_props.go         # Database User Properties page definitions
 │       ├── server_role_props.go  # Server Role Properties: General/Members/Owned Roles/Securables
+│       ├── role_general_page.go  # the General page both role dialogs share, over a deliberately narrow roleWriter (rename + change owner, nothing else)
 │       ├── statistics_props.go   # Statistics Properties: General/Columns/Filter/Details/Histogram/Density Vector/Extended Properties
 │       ├── index_props.go        # Index Properties: General/Options/Storage/Included Columns/Filter/Fragmentation/Extended Properties
 │       ├── key_props.go          # Primary/Unique Key Properties, reusing most of Index Properties' pages
@@ -351,6 +355,9 @@ gossms/
 │       ├── backup_device_props.go # Backup Device Properties: General + Media Contents, the only place RESTORE HEADERONLY is run
 │       ├── endpoint_props.go     # Endpoint Properties: General + Type Properties (protocol and payload)
 │       ├── server_trigger_props.go # Server Trigger Properties: General + Definition, which a Detail Browser grid row cannot show
+│       ├── database_trigger_props.go # Database Trigger Properties (database-scope DDL): General + Definition
+│       ├── database_audit_specification_props.go # Database Audit Specification Properties: the audit it binds to, its action groups and its per-securable actions
+│       ├── database_credential_props.go # Database Scoped Credential Properties: identity and the secret (write-only, and never blank-alterable — an omitted SECRET sets the stored one to NULL)
 │       │
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
@@ -368,6 +375,8 @@ gossms/
 │       ├── new_audit_dialog.go                 # New Server Audit — file/application-log/security-log destination and the queue-delay rule
 │       ├── new_audit_specification_dialog.go   # New Server Audit Specification — the audit to bind to and its action groups
 │       ├── new_backup_device_dialog.go         # New Backup Device — the disk or tape alias a backup destination can name
+│       ├── new_database_audit_specification_dialog.go # New Database Audit Specification — the audit to bind to, its action groups and its per-securable actions
+│       ├── new_database_scoped_credential_dialog.go   # New Database Scoped Credential
 │       │
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs

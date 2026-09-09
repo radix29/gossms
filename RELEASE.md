@@ -3,77 +3,79 @@
 What changed in the current goSSMS release. The detail behind each line — and
 every earlier release — is in [CHANGELOG.md](CHANGELOG.md).
 
-## v0.0.9 — 2026-09-04
+## v0.0.10 — 2026-09-09
 
-The Query Store release. Also Compare Showplan, Detach/Attach Database, six
-more server-level families in the tree, and multi-object Delete. Updates
-`gosmo` to v0.0.11.
+**goSSMS installs from a package manager now.** Homebrew on macOS and Linux,
+APT on Debian, Ubuntu and derivatives — both published by the release workflow
+from the same binaries the GitHub release carries, so `brew upgrade` and
+`apt-get upgrade` track new versions.
+
+```bash
+brew install radix29/tap/gossms          # macOS and Linux
+```
+
+```bash
+# Debian / Ubuntu — full instructions in README.md
+sudo apt-get update && sudo apt-get install gossms
+```
+
+Also: Azure SQL Managed Instance is properly supported, four new Object
+Explorer families, and a merged Log File Viewer. Updates `gosmo` to v0.0.12.
 
 ### New
 
-- **Query Store** — SSMS's seven views per database, as tree leaves and as a
-  charted panel with selectable metric, statistic, window and row count.
-- **Force / Unforce Plan, Show Plan, Track Query, Compare Plans** from that
-  panel.
-- **Compare Showplan** — two plans of one query paired over the operator tree.
-- **Detach and Attach Database**, browsing the server's own filesystem.
-- **Credentials, Audits, Server Audit Specifications, Backup Devices, Server
-  Triggers and Endpoints** in Object Explorer, with Properties, Delete, Script
-  and Enable/Disable.
-- **New Credential, New Audit, New Server Audit Specification, New Backup
-  Device.**
-- **Delete several objects at once** from Object Explorer Details
-  (`Ctrl+click`, `Shift+click` / `Alt+click`).
-- **A Script button on every delete confirmation.**
-- **New Login creates all five login kinds** — SQL, Windows, Entra,
-  certificate- and asymmetric-key-mapped.
-- **Column encryption key rotation.**
-- **A job step's command is edited in the query editor** — multi-line,
-  highlighted, with its own undo.
-- **New Availability Group preflights every secondary** before writing.
-- **Key Diagnostics logs mouse events.**
-- **Supported floor stated: SQL Server 2016 SP1+.** Features an instance is
-  too old for are withheld, not offered and refused.
+- ⭐ **Homebrew tap** — `brew install radix29/tap/gossms`, macOS (Apple silicon
+  and Intel) and Linux.
+- ⭐ **APT repository** — GPG-signed, `amd64` and `arm64`, at
+  [radix29.github.io/apt](https://radix29.github.io/apt).
+- **Azure SQL Managed Instance support**: engine-edition version gating,
+  backup and restore to Azure Storage (`TO URL` / `FROM URL`), and operations
+  the edition refuses are withheld with a note instead of failing.
+- **Activity Monitor "Instance" tab** on Azure editions — CPU, storage against
+  the quota, IO, and the resource governor's limits.
+- **Database Triggers, Database Audit Specifications, Database Scoped
+  Credentials and Cryptographic Providers** in Object Explorer, with
+  Properties, Script and Delete; the first two also Enable/Disable.
+- **New Database Audit Specification** and **New Database Scoped Credential.**
+- **A view now has a Triggers folder** — its INSTEAD OF triggers.
+- **Log File Viewer merges files** — several archives in one date-sorted grid,
+  each row naming its file.
+- **Query Store: Plot History** — the selected query's per-plan history,
+  interval by interval.
+- **`gossms --version`** prints version, commit, build date and licence
+  without starting the interface.
+- **The Connect dialog stays open while connecting**, with a spinner and a
+  working Cancel.
+- **macOS Intel binaries** are published again — five release targets.
+- **FILESTREAM files** are handled in Database Properties > Files.
+- **Query > Execute at Cursor** and **Edit > Delete Line.**
 
 ### Fixes
 
-- A query could return an empty grid with no error and no Messages tab.
-- A named instance could not be reached by name — the Connect dialog's
-  pre-filled port suppressed the SQL Browser lookup.
-- Saving a mostly-LF script rewrote every line ending in it.
-- Saving a file re-widened its permissions.
-- Toolbar buttons that did not fit were deleted, not hidden — Export and
-  Recycle, Pause, Compare Plans, Track Query. They collapse into **More ▾** now.
-- Read-only Properties pages still drew editable-looking controls, and a
-  read-only label ran into its value.
-- `Ctrl+Z` in a job step's command box reverted the whole page.
-- A Properties page showed stale values after an apply that failed having
-  already changed the server, and stuck on "Loading..." after a panicking load.
-- A grid went blank on an error when scrolled right, and scrolled past its own
-  rows before being laid out.
-- An Add or Remove on a Properties grid dropped a dragged column width — 17
-  sites.
-- A menu-driven drop, rename, offline or failover was abandoned mid-flight on
-  the read timeout.
-- The permission banner and the menus disagreed; a DENY on an object, column or
-  schema is now honoured.
-- `xp_cmdshell` could be ticked on Linux, where it does not exist.
-- New Database Mirroring Endpoint could import an instance's own certificate.
-- The connection-string preview disagreed with the connection it previewed.
-- The server filesystem picker showed "0 B" and 0001-01-01 on pre-2017
-  instances.
+- Database Properties > General was empty on a Managed Instance.
+- Every version gate silently degraded on a Managed Instance, which reports
+  version 12 while running an 18.x engine.
+- Agent status, Platform and disk-space rows were wrong on a Managed Instance.
+- The server filesystem lost file size and modification time on Azure.
+- Adding a file to a FILESTREAM filegroup failed the whole Add.
+- The Back Up dialog did not re-gate the device for a hand-typed destination.
+- A cancelled connection could pop an alert over an unrelated screen, or leak
+  a live session.
+- A scripted column encryption key rotation read the wrong value count.
 
 ### Changes
 
-- `gosmo` v0.0.10 → v0.0.11.
-- The Connect dialog's Port field is blank by default; Connect is greyed until
-  a server is entered.
-- Object- and schema-scoped rights are asked with their securable, so a grant
-  made directly on one object counts.
-- Peer connection failures are cached briefly instead of redialled per folder.
-- Highlighting and editing a large script got substantially faster.
-- The server filesystem listing filters server-side — roughly 8x less waiting.
-- Release binaries cover four targets, not six: `windows/amd64`,
-  `linux/amd64`, `linux/arm64`, `darwin/arm64`.
-- `docs/journal.md` and `docs/permissions-plan.md` removed; `open-threads.md`
-  holds open work and settled decisions only.
+- `gosmo` v0.0.11 → v0.0.12.
+- **The flat Triggers folder under a database is gone** — a DML trigger is
+  listed under its own table or view, as in SSMS.
+- Explicit `DENY` is honoured at database-principal, server and availability
+  group scope.
+- Server Properties > Advanced is editable.
+- Database Role Properties > Members is gated on the role itself.
+- Database Role and Server Role Properties share one General page.
+- Database-scoped credentials require `CONTROL` on the database.
+- Copy works in the Detail Browser and the Always On dashboard grids.
+- `Button`, `CheckBox` and `RadioBox` can be disabled; a `Spinner` widget was
+  added.
+- Documentation split: `docs/ui-rules.md`, `docs/db-rules.md` and
+  `docs/testing.md` own what `CLAUDE.md` used to carry.

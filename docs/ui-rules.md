@@ -81,6 +81,20 @@ behind the mouse and async sections; this file has the rules themselves.
   a guard plus `setStatus(...)` in existing wording ("Not connected — use File >
   Connect", "No active query panel").
 
+- **A switched-off control keeps its place in the focus ring.** `Button`,
+  `CheckBox`, `RadioBox` and `InputField` all take `SetEnabled(bool)`/`Enabled()
+  bool` and hold one contract: a disabled control still draws — greyed, via
+  `theme.StyleControlDisabled` (`StyleButtonDisabled` for a button, which has no
+  border to lose, so dropping its ground would leave nothing to click) — and
+  refuses keys and clicks, but it does not vanish from the caller's focus order.
+  A control that disappears when it is switched off renumbers every focus index
+  recorded against it.
+
+- **A busy indicator is a function of elapsed time, not a timer.**
+  `widgets.Spinner` holds no start time and starts no goroutine:
+  `Frame(elapsed)`/`FrameSince(start)` answer which frame shows, and the host
+  redraws from a clock it already has. Do not add a goroutine to animate one.
+
 ## Dialogs and the clipboard
 
 - **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`, not
