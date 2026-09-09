@@ -981,6 +981,105 @@ func (a *App) showColumnEncryptionKeyPropertiesFor(sc *db.ServerConn, dbName, na
 		func() []propPage { return columnEncryptionKeyPropPages(sc, dbName, name) })
 }
 
+// The Phase 3 tree families' Properties, all read-only bar the plan guide's
+// General page — see type_props.go, assembly_props.go, rule_default_props.go,
+// plan_guide_props.go and external_resource_props.go for why each is.
+//
+// System Data Types has no entry here on purpose: SSMS offers no Properties on
+// a built-in type either, and there is nothing to say about `int` that its
+// name does not.
+
+// showUserDefinedDataTypePropertiesFor opens the read-only Properties for an
+// alias type.
+func (a *App) showUserDefinedDataTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "User-Defined Data Type Properties",
+		"Type: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return userDefinedDataTypePropPages(sc, dbName, schema, name) })
+}
+
+// showUserDefinedTableTypePropertiesFor opens the read-only Properties for a
+// table type.
+func (a *App) showUserDefinedTableTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "User-Defined Table Type Properties",
+		"Type: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return userDefinedTableTypePropPages(sc, dbName, schema, name) })
+}
+
+// showClrTypePropertiesFor opens the read-only Properties for a CLR type.
+func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "User-Defined Type Properties",
+		"Type: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return clrTypePropPages(sc, dbName, schema, name) })
+}
+
+// showXmlSchemaCollectionPropertiesFor opens the read-only Properties for an
+// XML schema collection.
+func (a *App) showXmlSchemaCollectionPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "XML Schema Collection Properties",
+		"Collection: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return xmlSchemaCollectionPropPages(sc, dbName, schema, name) })
+}
+
+// showAssemblyPropertiesFor opens the read-only Properties for a CLR assembly.
+func (a *App) showAssemblyPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Assembly Properties", "Assembly: "+name, "Database: "+dbName,
+		func() []propPage { return assemblyPropPages(sc, dbName, name) })
+}
+
+// showRulePropertiesFor opens the read-only Properties for a standalone rule.
+func (a *App) showRulePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "Rule Properties", "Rule: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return rulePropPages(sc, dbName, schema, name) })
+}
+
+// showDefaultPropertiesFor opens the read-only Properties for a standalone
+// default — never a table's DF_… constraint, which is a different family
+// under the same sys.objects type code.
+func (a *App) showDefaultPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "Default Properties", "Default: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return defaultPropPages(sc, dbName, schema, name) })
+}
+
+// showDatabaseSnapshotPropertiesFor opens the read-only Properties for a
+// database snapshot. Not the Database Properties dialog: a snapshot is
+// read-only by construction, with no recovery model, no files to add and no
+// options to set — see database_snapshot_props.go.
+func (a *App) showDatabaseSnapshotPropertiesFor(sc *db.ServerConn, name string) {
+	a.propDialog.show(sc, name, "Database Snapshot Properties", "Snapshot: "+name, "",
+		func() []propPage { return databaseSnapshotPropPages(sc, name) })
+}
+
+// showPlanGuidePropertiesFor opens Plan Guide Properties, whose General page
+// can enable and disable the guide.
+func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
+		func() []propPage { return planGuidePropPages(sc, dbName, name) })
+}
+
+// showExternalDataSourcePropertiesFor opens the read-only Properties for an
+// external data source.
+func (a *App) showExternalDataSourcePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "External Data Source Properties",
+		"Data source: "+name, "Database: "+dbName,
+		func() []propPage { return externalDataSourcePropPages(sc, dbName, name) })
+}
+
+// showExternalFileFormatPropertiesFor opens the read-only Properties for an
+// external file format.
+func (a *App) showExternalFileFormatPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "External File Format Properties",
+		"File format: "+name, "Database: "+dbName,
+		func() []propPage { return externalFileFormatPropPages(sc, dbName, name) })
+}
+
+// showExternalLibraryPropertiesFor opens the read-only Properties for an
+// external library.
+func (a *App) showExternalLibraryPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "External Library Properties",
+		"Library: "+name, "Database: "+dbName,
+		func() []propPage { return externalLibraryPropPages(sc, dbName, name) })
+}
+
 // canSaveActivePanel gates File > Save / Save As...: a query panel saves its
 // script, a plan panel its .sqlplan, and nothing else has anything to write.
 func (a *App) canSaveActivePanel() bool {

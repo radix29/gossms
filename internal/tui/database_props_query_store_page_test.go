@@ -30,8 +30,8 @@ import (
 // below is a real change.
 func queryStoreResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "FROM sys.databases", arg: "appdb", cols: 8, rows: [][]driver.Value{
-			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		{match: "FROM sys.databases", arg: "appdb", cols: 9, rows: [][]driver.Value{
+			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		{match: "FROM   sys.database_query_store_options", cols: 16, rows: [][]driver.Value{{
 			"READ_WRITE", "READ_WRITE", int64(0), int64(37), int64(100),

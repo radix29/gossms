@@ -18,9 +18,8 @@ import (
 // as sys.database_files reports it) so a test can switch it off.
 func filesPageResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{{
-			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(),
-		}}},
+		{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
+			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)}}},
 		{match: "page_verify_option_desc", cols: 25, rows: [][]driver.Value{
 			append([]driver.Value{"sa", "CHECKSUM", "MULTI_USER", "NONE", false, "OFF"}, falses(19)...),
 		}},

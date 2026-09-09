@@ -315,7 +315,7 @@ func (db *DetailBrowser) fetch(app *App, sc *dbconn.ServerConn, node *explorerNo
 		db.loadLoginsDetails(app, sc, node, seq)
 	case NodeDatabase:
 		db.loadDatabaseDetails(app, sc, node, seq)
-	case NodeTables:
+	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
 		db.loadTablesFolderDetails(app, sc, node, seq)
 	default:
 		// The fetch reads a snapshot, never the live node — see
@@ -541,6 +541,27 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodePartitionFunction, NodePartitionScheme, NodeSecurityPolicy,
 		NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return storageSecurityDetail(ctx, sc, node)
+
+	case NodeSystemDataTypes, NodeUserDefinedDataTypes, NodeUserDefinedTableTypes,
+		NodeUserDefinedTypes, NodeXmlSchemaCollections,
+		NodeAssemblies, NodeRules, NodeDefaults:
+		return programmabilityFolderDetail(ctx, sc, node, objs)
+	case NodePlanGuides:
+		return planGuidesFolderDetail(ctx, sc, node, objs)
+	case NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
+		NodeUserDefinedType, NodeXmlSchemaCollection,
+		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide:
+		return programmabilityDetail(ctx, sc, node)
+
+	case NodeExternalDataSources, NodeExternalFileFormats, NodeExternalLibraries:
+		return externalFolderDetail(ctx, sc, node, objs)
+	case NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary:
+		return externalDetail(ctx, sc, node)
+
+	case NodeDatabaseSnapshots:
+		return databaseSnapshotsFolderDetail(ctx, sc, node, objs)
+	case NodeDatabaseSnapshot:
+		return databaseSnapshotDetail(ctx, sc, node)
 
 	case NodeCredentials:
 		return credentialsFolderDetail(ctx, sc, node, objs)

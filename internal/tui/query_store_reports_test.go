@@ -14,8 +14,8 @@ import (
 // with. Scoped with arg: DatabaseByName's query also contains
 // "FROM sys.databases", so without it the list answer serves the by-name read.
 func qsDatabaseResponse() fakeResponse {
-	return fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 8, rows: [][]driver.Value{
-		{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+	return fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 9, rows: [][]driver.Value{
+		{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 	}}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 )
 
@@ -42,14 +43,16 @@ type childLoader func(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 // its children. A NodeType with no entry (a leaf, or NodeLoading/NodeError)
 // simply yields no children.
 var childLoaders = map[NodeType]childLoader{
-	NodeServer:           loadServerChildren,
-	NodeDatabases:        loadDatabasesChildren,
-	NodeSystemDatabases:  loadSystemDatabasesChildren,
-	NodeDatabase:         loadDatabaseChildren,
-	NodeDatabaseSecurity: loadDatabaseSecurityChildren,
-	NodeUsers:            loadUsersChildren,
-	NodeDatabaseRoles:    loadDatabaseRolesChildren,
-	NodeSchemas:          loadSchemasChildren,
+	NodeServer:            loadServerChildren,
+	NodeDatabases:         loadDatabasesChildren,
+	NodeSystemDatabases:   loadSystemDatabasesChildren,
+	NodeDatabaseSnapshots: loadDatabaseSnapshotsChildren,
+	NodeDatabaseSnapshot:  loadDatabaseSnapshotChildren,
+	NodeDatabase:          loadDatabaseChildren,
+	NodeDatabaseSecurity:  loadDatabaseSecurityChildren,
+	NodeUsers:             loadUsersChildren,
+	NodeDatabaseRoles:     loadDatabaseRolesChildren,
+	NodeSchemas:           loadSchemasChildren,
 
 	NodeDatabaseAuditSpecifications: loadDatabaseAuditSpecificationsChildren,
 	NodeDatabaseScopedCredentials:   loadDatabaseScopedCredentialsChildren,
@@ -64,6 +67,10 @@ var childLoaders = map[NodeType]childLoader{
 	NodeColumnEncryptionKeys: loadColumnEncryptionKeysChildren,
 
 	NodeTables:           loadTablesChildren,
+	NodeSystemTables:     tablesOfKindLoader(gosmo.TableKindSystem, true),
+	NodeFileTables:       tablesOfKindLoader(gosmo.TableKindFileTable, false),
+	NodeExternalTables:   tablesOfKindLoader(gosmo.TableKindExternal, false),
+	NodeGraphTables:      tablesOfKindLoader(gosmo.TableKindGraph, false),
 	NodeTable:            loadTableChildren,
 	NodeColumns:          loadColumnsChildren,
 	NodeKeys:             loadKeysChildren,
@@ -82,6 +89,22 @@ var childLoaders = map[NodeType]childLoader{
 	NodeDatabaseTriggers: loadDatabaseTriggersChildren,
 	NodeSequences:        loadSequencesChildren,
 	NodeSynonyms:         loadSynonymsChildren,
+
+	NodeTypes:                 loadTypesChildren,
+	NodeSystemDataTypes:       loadSystemDataTypesChildren,
+	NodeUserDefinedDataTypes:  loadUserDefinedDataTypesChildren,
+	NodeUserDefinedTableTypes: loadUserDefinedTableTypesChildren,
+	NodeUserDefinedTypes:      loadUserDefinedTypesChildren,
+	NodeXmlSchemaCollections:  loadXmlSchemaCollectionsChildren,
+	NodeAssemblies:            loadAssembliesChildren,
+	NodeRules:                 loadRulesChildren,
+	NodeDefaults:              loadDefaultsChildren,
+	NodePlanGuides:            loadPlanGuidesChildren,
+
+	NodeExternalResources:   loadExternalResourcesChildren,
+	NodeExternalDataSources: loadExternalDataSourcesChildren,
+	NodeExternalFileFormats: loadExternalFileFormatsChildren,
+	NodeExternalLibraries:   loadExternalLibrariesChildren,
 
 	NodeSecurity:                  loadSecurityChildren,
 	NodeLogins:                    loadLoginsChildren,

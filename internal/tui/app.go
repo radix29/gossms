@@ -112,6 +112,7 @@ type App struct {
 	newEndpointDialog           *NewEndpointDialog
 	detachDatabaseDialog        *DetachDatabaseDialog
 	attachDatabaseDialog        *AttachDatabaseDialog
+	newSnapshotDialog           *NewSnapshotDialog
 	fileDialog                  *dialogs.FileDialog
 	queryListDialog             *QueryListDialog
 	optionsDialog               *OptionsDialog
@@ -433,6 +434,7 @@ func (a *App) buildUI() {
 	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
 	a.detachDatabaseDialog = registerDialog(a, NewDetachDatabaseDialog(a))
 	a.attachDatabaseDialog = registerDialog(a, NewAttachDatabaseDialog(a))
+	a.newSnapshotDialog = registerDialog(a, NewNewSnapshotDialog(a))
 	a.fileDialog = registerDialog(a, dialogs.NewFileDialog(a.screen))
 	a.fileDialog.OnConfirmOverwrite = func(path string, proceed func()) {
 		// serverPathBase, not filepath.Base: the path uses the SQL Server

@@ -72,8 +72,8 @@ entries start with v0.0.2 onward.
   would have left `on_intel` unsatisfiable.
 - **Azure SQL Managed Instance is supported rather than merely reachable.**
   Seven defects and one missing feature from the 2026-09-08 live audit of a
-  General Purpose Gen5 instance are closed; the audit, every reproduction and
-  the order of work are in `docs/plan-azure-managed-instance.md`.
+  General Purpose Gen5 instance are closed; what outlived the audit is in
+  `docs/open-threads.md` § Azure SQL Managed Instance.
   - **`internal/tui/edition_gate.go`** — the edition's counterpart to
     `permission_gate.go`. It withholds what the *engine edition* refuses, in
     the same shape a permission gate uses (a disabled item carrying a short

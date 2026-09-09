@@ -51,6 +51,18 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Alert":                        alertPropPages(sc, "alert1"),
 		"Operator":                     operatorPropPages(sc, "oncall"),
 		"Schedule":                     schedulePropPages(sc, "nightly"),
+		"User-Defined Data Type":       userDefinedDataTypePropPages(sc, "HealthClinic", "dbo", "Phone"),
+		"User-Defined Table Type":      userDefinedTableTypePropPages(sc, "HealthClinic", "dbo", "IdList"),
+		"User-Defined Type":            clrTypePropPages(sc, "HealthClinic", "dbo", "Geo"),
+		"XML Schema Collection":        xmlSchemaCollectionPropPages(sc, "HealthClinic", "dbo", "Claims"),
+		"Assembly":                     assemblyPropPages(sc, "HealthClinic", "GeoUtils"),
+		"Rule":                         rulePropPages(sc, "HealthClinic", "dbo", "PhoneRule"),
+		"Default":                      defaultPropPages(sc, "HealthClinic", "dbo", "TodayDefault"),
+		"Plan Guide":                   planGuidePropPages(sc, "HealthClinic", "pg_reports"),
+		"External Data Source":         externalDataSourcePropPages(sc, "HealthClinic", "HadoopCluster"),
+		"External File Format":         externalFileFormatPropPages(sc, "HealthClinic", "CsvFormat"),
+		"External Library":             externalLibraryPropPages(sc, "HealthClinic", "ggplot2"),
+		"Database Snapshot":            databaseSnapshotPropPages(sc, "HealthClinic_snapshot"),
 	}
 }
 
@@ -85,6 +97,25 @@ var pagesThatOnlyRead = []string{
 	"Job/Targets", "Job/History",
 	"Operator/Notifications",
 	"Schedule/Jobs",
+	// The Phase 3 tree families. Every one of these is read-only because the
+	// object has no ALTER a form could build, or needs a binary payload no
+	// dialog can supply — argued in each family's props file, and recorded in
+	// docs/open-threads.md § Deferred scope. Plan Guide/General is the one
+	// exception and is deliberately absent from this list: it enables and
+	// disables the guide, and declares rightAlterDatabase for it.
+	"User-Defined Data Type/General",
+	"User-Defined Table Type/General", "User-Defined Table Type/Columns",
+	"User-Defined Type/General",
+	"XML Schema Collection/General", "XML Schema Collection/Schema",
+	"Assembly/General", "Assembly/Files", "Assembly/Routines",
+	"Rule/General", "Default/General",
+	"Plan Guide/Query",
+	"External Data Source/General", "External File Format/General",
+	"External Library/General",
+	// A snapshot is read-only by construction: it has no ALTER, no recovery
+	// model and no files to add. Its two operations, revert and drop, are
+	// Object Explorer commands — see database_snapshot_props.go.
+	"Database Snapshot/General", "Database Snapshot/Files",
 }
 
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".
@@ -181,6 +212,13 @@ var propPageConstructors = []string{
 	"schedulePropPages", "schemaPropPages", "securityPolicyPropPages",
 	"serverPropPages", "serverRolePropPages", "statisticPropPages",
 	"tablePropPages", "userPropPages",
+	"userDefinedDataTypePropPages", "userDefinedTableTypePropPages",
+	"clrTypePropPages", "xmlSchemaCollectionPropPages",
+	"assemblyPropPages", "rulePropPages", "defaultPropPages",
+	"planGuidePropPages",
+	"externalDataSourcePropPages", "externalFileFormatPropPages",
+	"externalLibraryPropPages",
+	"databaseSnapshotPropPages",
 }
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {

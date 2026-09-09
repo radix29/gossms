@@ -1131,13 +1131,17 @@ func msdbRoleNames() []string {
 // this list nor serverScopedOpRights fails the test below, which is what stops
 // the next server-level family arriving with Delete ungated.
 var databaseScopedOpTypes = []NodeType{
-	NodeDatabase, NodeTable, NodeView, NodeStoredProcedure, NodeFunction,
+	NodeDatabase, NodeDatabaseSnapshot, NodeTable, NodeView, NodeStoredProcedure, NodeFunction,
 	NodeTrigger, NodeSequence, NodeSynonym, NodeColumn, NodeIndex,
 	NodeStatistic, NodeKey, NodeForeignKey, NodeCheck, NodePartitionFunction,
 	NodePartitionScheme, NodeSecurityPolicy, NodeColumnMasterKey,
 	NodeColumnEncryptionKey, NodeUser, NodeDatabaseRole, NodeSchema,
 	NodeDatabaseAuditSpecification, NodeDatabaseTrigger,
 	NodeDatabaseScopedCredential,
+	NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,
+	NodeXmlSchemaCollection, NodeRule, NodeDefault, NodeAssembly,
+	NodePlanGuide, NodeExternalDataSource, NodeExternalFileFormat,
+	NodeExternalLibrary,
 }
 
 // TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review

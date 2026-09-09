@@ -40,13 +40,13 @@ const newDatabaseName = "AppDB"
 // switches one knows which direction it moved.
 func newDatabaseResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "compatibility_level, collation_name", arg: "model", cols: 8, rows: [][]driver.Value{
-			{"model", int64(3), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		{match: "compatibility_level, collation_name", arg: "model", cols: 9, rows: [][]driver.Value{
+			{"model", int64(3), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
-		{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{
-			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
-			{"model", int64(3), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
-			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{
+			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"model", int64(3), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		loginListResponse(),
 		{match: "page_verify_option_desc", cols: 25, rows: [][]driver.Value{

@@ -12,9 +12,11 @@ import (
 )
 
 // The Instance tab and the visible-tabs refactor it needed. The tab reads
-// three views that exist only on an Azure engine edition
-// (docs/plan-azure-managed-instance.md § The new Activity Monitor tab), so the
-// question every test here asks is which connection sees it.
+// three views that exist only on an Azure engine edition, so the question
+// every test here asks is which connection sees it. What the refactor settled
+// — the tab bar is a filtered slice while the scroll arrays stay sized
+// amTabCount, and setTab is the one gate — is in docs/open-threads.md
+// § Azure SQL Managed Instance.
 
 // newAzureActivityMonitor is newTestActivityMonitor against a Managed
 // Instance — the fake answers the real MI's connect-time row.

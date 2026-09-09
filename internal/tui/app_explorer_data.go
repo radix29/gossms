@@ -291,6 +291,15 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			gateAzure(gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
 				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase), sc),
 		}
+		// Snapshotting a system database is refused by the server, so the
+		// item follows Detach's rule below rather than being offered and
+		// failing.
+		if !node.data.IsSystem {
+			items = append(items,
+				gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+					a.showNewSnapshotDialog(sc, node.data.DBName)
+				}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc))
+		}
 		// Detach is offered on user databases only: sp_detach_db refuses a
 		// system database outright, and a permanently grey item explains
 		// nothing the name doesn't already say.
@@ -304,6 +313,38 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			controls.MenuItem{Divider: true},
 			refresh,
 			controls.MenuItem{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+		)
+	case NodeDatabaseSnapshots:
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			// CREATE DATABASE ... AS SNAPSHOT OF is a CREATE DATABASE, and
+			// takes the same rights New Database does.
+			gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+				a.showNewSnapshotDialog(sc, "")
+			}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
+			{Divider: true},
+			refresh,
+		}
+	case NodeDatabaseSnapshot:
+		items := []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			// RESTORE ... FROM DATABASE_SNAPSHOT is a restore of the *source*
+			// database, so it takes the source's rights, not the snapshot's.
+			gateAzure(gate(controls.MenuItem{Label: "Restore Database from Snapshot...", Action: func() {
+				a.restoreFromSnapshot(sc, node)
+			}}, sc, node.data.SourceDatabase, rightControlDB, rightAlterAnyDatabase), sc),
+		}
+		// Delete is not listed here: contextMenuItemsForNode splices it in
+		// above Refresh for every type objectOps covers, and a copy here is a
+		// second Delete on the menu.
+		return append(items,
+			controls.MenuItem{Divider: true},
+			refresh,
+			controls.MenuItem{Label: "Properties...", Action: func() {
+				a.showDatabaseSnapshotPropertiesFor(sc, node.data.Name)
+			}},
 		)
 	case NodeQueryStore:
 		// The folder's own settings are a Database Properties page, not a
@@ -854,8 +895,91 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 			{Divider: true},
 			refresh,
 		}
+	// The Phase 3 tree families. Each opens the read-only Properties its
+	// props file builds; the plan guide's is the one that can write, and it
+	// does so from the page rather than from a menu item.
+	//
+	// NodeSystemDataType has no arm: a built-in type has no Properties in
+	// SSMS either, and nothing about `int` to show.
+	case NodeUserDefinedDataType:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showUserDefinedDataTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodeUserDefinedTableType:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showUserDefinedTableTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodeUserDefinedType:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showClrTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodeXmlSchemaCollection:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showXmlSchemaCollectionPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodeAssembly:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showAssemblyPropertiesFor(sc, node.data.DBName, node.data.Name)
+		})
+	case NodeRule:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showRulePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodeDefault:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showDefaultPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		})
+	case NodePlanGuide:
+		// The one family here with a command beyond Properties: a disabled
+		// guide shapes no plan and is invisible except for the label suffix,
+		// so Enable/Disable is what makes the folder worth having. The right
+		// is sp_control_plan_guide's own — see planGuideWriteRights.
+		planGuideToggle := "Disable"
+		if !node.data.IsEnabled {
+			planGuideToggle = "Enable"
+		}
+		return []controls.MenuItem{
+			newQuery,
+			{Divider: true},
+			gate(controls.MenuItem{Label: planGuideToggle, Action: func() { a.togglePlanGuide(sc, node) }},
+				sc, node.data.DBName, planGuideWriteRights()...),
+			{Divider: true},
+			refresh,
+			{Label: "Properties...", Action: func() {
+				a.showPlanGuidePropertiesFor(sc, node.data.DBName, node.data.Name)
+			}},
+		}
+	case NodeExternalDataSource:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showExternalDataSourcePropertiesFor(sc, node.data.DBName, node.data.Name)
+		})
+	case NodeExternalFileFormat:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showExternalFileFormatPropertiesFor(sc, node.data.DBName, node.data.Name)
+		})
+	case NodeExternalLibrary:
+		return propertiesOnlyMenu(newQuery, refresh, func() {
+			a.showExternalLibraryPropertiesFor(sc, node.data.DBName, node.data.Name)
+		})
+
 	default:
 		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
+	}
+}
+
+// propertiesOnlyMenu is the menu shape shared by every leaf whose only
+// command is Properties — New Query, Refresh, Properties. Written once
+// because eleven families arrived with it at the same time and a hand-copied
+// twelfth would be where the divider goes missing.
+//
+// Delete, Script as and Rename are not here: explorer_object_ops.go and
+// scripting.go add them from their own tables, on the node types they list.
+func propertiesOnlyMenu(newQuery, refresh controls.MenuItem, show func()) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: show},
 	}
 }
 
@@ -1056,7 +1180,7 @@ func auditToggleLabel(node *explorerNode) string {
 // loadAuditsChildren), which is why the parent folder is refreshed rather than
 // the icon repainted.
 func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
-	a.toggleAuditState(sc, node, "audit",
+	a.toggleEnabledState(sc, node, "audit",
 		"Disable Audit",
 		"Disable %s? The instance stops recording anything through it.",
 		func(ctx context.Context, name string, on bool) error {
@@ -1066,7 +1190,7 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 
 // toggleServerAuditSpecification enables or disables node's specification.
 func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNode) {
-	a.toggleAuditState(sc, node, "server audit specification",
+	a.toggleEnabledState(sc, node, "server audit specification",
 		"Disable Server Audit Specification",
 		"Disable %s? The action groups it names stop being recorded.",
 		func(ctx context.Context, name string, on bool) error {
@@ -1079,7 +1203,7 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 // sys.databases.
 func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorerNode) {
 	dbName := node.data.DBName
-	a.toggleAuditState(sc, node, "database audit specification",
+	a.toggleEnabledState(sc, node, "database audit specification",
 		"Disable Database Audit Specification",
 		"Disable %s? The action groups and actions it names stop being recorded.",
 		func(ctx context.Context, name string, on bool) error {
@@ -1087,9 +1211,12 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		})
 }
 
-// toggleAuditState is the shared half of the three above: an audit and the two
-// specifications differ only in the wording and the gosmo call.
-func (a *App) toggleAuditState(sc *db.ServerConn, node *explorerNode, noun, title, prompt string,
+// toggleEnabledState is the shared half of the four toggles above: an audit,
+// the two audit specifications and a plan guide differ only in the wording and
+// the gosmo call. Disabling is confirmed, enabling is not; the parent folder
+// is refreshed afterwards because each family carries its state in the child
+// label rather than in the icon.
+func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, title, prompt string,
 	set func(ctx context.Context, name string, on bool) error) {
 	if !a.requireConn(sc) {
 		return
@@ -1130,6 +1257,32 @@ func (a *App) toggleAuditState(sc *db.ServerConn, node *explorerNode, noun, titl
 		return
 	}
 	run()
+}
+
+// togglePlanGuide enables or disables node's plan guide — SSMS's
+// Enable/Disable on one, and the same sp_control_plan_guide call Plan Guide
+// Properties' General page applies.
+//
+// Disabling is confirmed and enabling is not, the way the audit toggles are:
+// a disabled guide stops shaping plans, which shows up as a regressed query
+// rather than as anything on screen. The node's label carries the state (see
+// loadPlanGuidesChildren), so the parent folder is refreshed rather than the
+// icon repainted.
+//
+// Server.Database, not DatabaseByName: the guide is addressed by name and the
+// toggle reads nothing off sys.databases.
+func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
+	dbName := node.data.DBName
+	a.toggleEnabledState(sc, node, "plan guide",
+		"Disable Plan Guide",
+		"Disable %s? The queries it applies hints to go back to the plans the optimizer picks on its own.",
+		func(ctx context.Context, name string, on bool) error {
+			g := sc.Server.Database(dbName).PlanGuide(name)
+			if on {
+				return g.EnableContext(ctx)
+			}
+			return g.DisableContext(ctx)
+		})
 }
 
 // setEndpointState starts, stops or disables node's endpoint — SSMS's
@@ -1248,6 +1401,50 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 		return
 	}
 	run()
+}
+
+// restoreFromSnapshot reverts a snapshot's source database to it —
+// RESTORE DATABASE … FROM DATABASE_SNAPSHOT.
+//
+// The confirmation is typed, and the word asked for is the *source*
+// database's name, not the snapshot's: what this destroys is every change
+// made to the source since the snapshot was taken, and the source is the
+// object the user has to have in mind to answer.
+//
+// Two of the server's own preconditions are left to the server: the source
+// must have exactly one snapshot, and nobody may be connected to either
+// database. Both can change between a check here and the statement, and the
+// server names which one failed.
+func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
+	if !a.requireConn(sc) {
+		return
+	}
+	snapshot, source := node.data.Name, node.data.SourceDatabase
+	if source == "" {
+		a.setStatus(fmt.Sprintf("Snapshot %q cannot be restored from: its source database has been dropped", snapshot))
+		return
+	}
+	msg := fmt.Sprintf(
+		"Revert %q to snapshot %q? Every change made to %q since the snapshot was taken is lost, and connections to either database are closed. Type the database name to confirm.",
+		source, snapshot, source)
+	a.confirmTypedDialog.ShowTypedConfirm("Restore Database from Snapshot", msg, source, func(confirmed bool) {
+		if !confirmed {
+			return
+		}
+		a.safego("restoring a database from a snapshot", func() {
+			ctx, cancel := serverWriteContext(sc)
+			defer cancel()
+			err := sc.Server.RestoreFromSnapshotContext(ctx, source, snapshot)
+			a.postAndWake(func() {
+				if err != nil {
+					a.setStatus(fmt.Sprintf("Failed to restore %q from %q: %v", source, snapshot, displayError(err)))
+					return
+				}
+				a.setStatus(fmt.Sprintf("Database %q reverted to snapshot %q", source, snapshot))
+				a.explorer.RefreshDatabasesFolder(sc)
+			})
+		})
+	})
 }
 
 // forgetPeerFailuresForRefresh drops sc's cached peer connect failures when the

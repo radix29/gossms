@@ -33,8 +33,9 @@ const (
 
 // idxTableResp answers Database.TableByNameContext for sales.Orders.
 func idxTableResp() fakeResponse {
-	return fakeResponse{match: "FROM   sys.tables t", db: idxDatabase, cols: 7, rows: [][]driver.Value{
-		{idxTableObjectID, idxSchema, idxTable, time.Time{}, time.Time{}, false, false},
+	return fakeResponse{match: "FROM   sys.tables t", db: idxDatabase, cols: 12, rows: [][]driver.Value{
+		{idxTableObjectID, idxSchema, idxTable, time.Time{}, time.Time{}, false, false,
+			false, false, false, false, false},
 	}}
 }
 

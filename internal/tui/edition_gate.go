@@ -13,8 +13,7 @@ import (
 // an edition that does not implement the statement at all.
 //
 // Every entry here is a refusal driven live against a Managed Instance
-// (t-qmi-01, EngineEdition 8, 2026-09-08), written up in
-// docs/plan-azure-managed-instance.md § 7:
+// (t-qmi-01, EngineEdition 8, 2026-09-08):
 //
 //	Detach Database          Could not find stored procedure 'sp_detach_db'
 //	Attach Database          same class

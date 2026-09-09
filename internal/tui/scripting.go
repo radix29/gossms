@@ -118,6 +118,46 @@ var (
 		return s.ScriptDatabaseScopedCredentialContext(ctx, n.Name)
 	}
 
+	// The Programmability families that arrived with the tree's missing
+	// folders. None of them has an ALTER form — see gosmo's
+	// scripter_programmability.go — so every one is wired with alter false.
+	scriptUserDefinedDataType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptUserDefinedDataTypeContext(ctx, n.Schema, n.Name)
+	}
+	scriptUserDefinedTableType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptUserDefinedTableTypeContext(ctx, n.Schema, n.Name)
+	}
+	scriptClrType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptClrTypeContext(ctx, n.Schema, n.Name)
+	}
+	scriptXmlSchemaCollection scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptXmlSchemaCollectionContext(ctx, n.Schema, n.Name)
+	}
+	scriptRule scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptRuleContext(ctx, n.Schema, n.Name)
+	}
+	scriptDefault scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptDefaultContext(ctx, n.Schema, n.Name)
+	}
+	// Assemblies, plan guides and the external resources are
+	// database-scoped, not schema-scoped: each is addressed by a single
+	// name, and nodeData.Schema is empty on all of them.
+	scriptAssembly scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptAssemblyContext(ctx, n.Name)
+	}
+	scriptPlanGuide scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptPlanGuideContext(ctx, n.Name)
+	}
+	scriptExternalDataSource scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptExternalDataSourceContext(ctx, n.Name)
+	}
+	scriptExternalFileFormat scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptExternalFileFormatContext(ctx, n.Name)
+	}
+	scriptExternalLibrary scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptExternalLibraryContext(ctx, n.Name)
+	}
+
 	scriptLogin serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptLoginContext(ctx, n.Name)
 	}
@@ -188,6 +228,29 @@ var scriptables = map[NodeType]scriptable{
 	// The secret is unreadable, so every verb here carries a placeholder in
 	// place of it — see gosmo's buildDatabaseScopedCredentialScript.
 	NodeDatabaseScopedCredential: {"Database Scoped Credential", ddlVerbs(scriptDBScopedCredential, false)},
+
+	// Programmability ▸ Types, Assemblies, Rules, Defaults, Plan Guides, and
+	// the External Resources folder beside Views. No ALTER anywhere in this
+	// set — none of these objects has one.
+	//
+	// System Data Types is deliberately absent: a built-in type is not an
+	// object a script creates, and SSMS offers nothing for one either.
+	NodeUserDefinedDataType:  {"User-Defined Data Type", ddlVerbs(scriptUserDefinedDataType, false)},
+	NodeUserDefinedTableType: {"User-Defined Table Type", ddlVerbs(scriptUserDefinedTableType, false)},
+	NodeUserDefinedType:      {"User-Defined Type", ddlVerbs(scriptClrType, false)},
+	NodeXmlSchemaCollection:  {"XML Schema Collection", ddlVerbs(scriptXmlSchemaCollection, false)},
+	NodeRule:                 {"Rule", ddlVerbs(scriptRule, false)},
+	NodeDefault:              {"Default", ddlVerbs(scriptDefault, false)},
+	// The binary is elided the way the credential secret is — see gosmo's
+	// buildAssemblyScript.
+	NodeAssembly: {"Assembly", ddlVerbs(scriptAssembly, false)},
+	// A plan guide's CREATE is an sp_create_plan_guide call and its DROP an
+	// sp_control_plan_guide one; the verbs are named for what they do, not
+	// for the statement behind them.
+	NodePlanGuide:          {"Plan Guide", ddlVerbs(scriptPlanGuide, false)},
+	NodeExternalDataSource: {"External Data Source", ddlVerbs(scriptExternalDataSource, false)},
+	NodeExternalFileFormat: {"External File Format", ddlVerbs(scriptExternalFileFormat, false)},
+	NodeExternalLibrary:    {"External Library", ddlVerbs(scriptExternalLibrary, false)},
 
 	NodeLogin:                    {"Login", serverDDLVerbs(scriptLogin)},
 	NodeServerRole:               {"Server Role", serverDDLVerbs(scriptServerRole)},

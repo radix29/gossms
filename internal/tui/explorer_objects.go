@@ -7,22 +7,110 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
+// loadTablesChildren returns the Tables folder: SSMS's four table-family
+// sub-folders first, then the plain user tables — the same shape the System
+// Databases folder gives the Databases node.
+//
+// The user list is TableKindUser, which excludes the three families that have
+// a folder of their own. Without that a FileTable is listed twice, once here
+// and once under FileTables, and the two entries are the same object.
+//
+// Which folders appear follows SSMS: System Tables and FileTables always,
+// External Tables only where the database actually has one (the folder is
+// PolyBase-specific and empty everywhere else), Graph Tables only on an
+// instance whose sys.tables has is_node/is_edge at all — 2017 and later. An
+// absent folder and an empty one are different answers, and only the absent
+// one is honest about a server that cannot have the objects.
 func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
+	folders, err := tableSubFolders(l, node, dbObj)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := loadTablesOfKind(l, node, dbObj, gosmo.TableKindUser, false)
+	if err != nil {
+		return nil, err
+	}
+	return append(folders, tables...), nil
+}
+
+// tableSubFolders builds the folders listed above the user tables. The
+// presence read is one aggregate over sys.tables, not a listing per folder —
+// the folder's own loader is what lists it, once it is expanded.
+func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]*explorerNode, error) {
+	dbName := node.data.DBName
+	folders := []*explorerNode{
+		l.node("System Tables", NodeSystemTables, "", "", dbName),
+		l.node("FileTables", NodeFileTables, "", "", dbName),
+	}
+	present, err := dbObj.TableKindsPresentContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if present.External {
+		folders = append(folders, l.node("External Tables", NodeExternalTables, "", "", dbName))
+	}
+	// The same call External Libraries gets (see loadExternalResourcesChildren):
+	// gosmo refuses the graph listing below 2017, so a folder there could only
+	// ever show that refusal. An unread major (0, which includes Azure) is
+	// treated as newest.
+	if major := serverMajor(l.sc); major == 0 || major >= int(gosmo.SQLServer2017) {
+		folders = append(folders, l.node("Graph Tables", NodeGraphTables, "", "", dbName))
+	}
+	return folders, nil
+}
+
+// loadTablesOfKind lists one table family as NodeTable leaves. Every leaf is
+// a NodeTable whatever folder it came from: a FileTable, an external table
+// and a graph table are all tables, with the same Columns/Keys/Indexes
+// children, the same Properties dialog and the same scripts — the folder is
+// where they differ, not the object. system marks the System Tables folder's
+// leaves, which is what keeps Delete and Rename off their menu.
+func loadTablesOfKind(l loaderCtx, node *explorerNode, dbObj *gosmo.Database,
+	kind gosmo.TableKind, system bool,
+) ([]*explorerNode, error) {
 	// The folder's filter goes to the server where it can be expressed; what
 	// comes back is filtered again by fetchChildren, which stays the authority
-	// on what the filter means (see nodeFilter.pushdown).
+	// on what the filter means (see nodeFilter.pushdown). Each sub-folder has
+	// its own filter, the way System Views does — not the parent's.
 	filter := serverFilter(node.data.Filter)
-	return listChildren(func() ([]*gosmo.Table, error) { return dbObj.TablesFilteredContext(l.ctx, filter) },
+	return listChildren(
+		func() ([]*gosmo.Table, error) { return dbObj.TablesOfKindFilteredContext(l.ctx, kind, filter) },
 		func(t *gosmo.Table) *explorerNode {
-			n := l.node(t.Schema+"."+t.Name, NodeTable, t.Schema, t.Name, node.data.DBName)
+			n := l.node(tableLabel(t), NodeTable, t.Schema, t.Name, node.data.DBName)
 			n.data.CreateDate = t.CreateDate
 			n.data.IsMemoryOptimized = t.IsMemoryOptimized
+			n.data.IsSystem = system
 			return n
 		})
+}
+
+// tableLabel names a table in the tree. A graph table says which half of the
+// graph it is: node and edge tables sit in one folder, nothing else in the
+// row distinguishes them, and the two are not interchangeable in a MATCH.
+func tableLabel(t *gosmo.Table) string {
+	label := t.Schema + "." + t.Name
+	switch {
+	case t.IsNode:
+		label += " (node)"
+	case t.IsEdge:
+		label += " (edge)"
+	}
+	return label
+}
+
+// tablesOfKindLoader is the childLoader for one of the four sub-folders.
+func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
+	return func(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+		dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+		if err != nil {
+			return nil, err
+		}
+		return loadTablesOfKind(l, node, dbObj, kind, system)
+	}
 }
 
 // loadTableChildren returns one table's object-family folders, matching

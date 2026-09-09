@@ -11,10 +11,12 @@ The target is **SQL Server 2016 SP1 and later**. SP1 rather than RTM because
 `procedure.go`, `scripter.go` and gossms's `internal/activity/block.go` emit
 `CREATE OR ALTER`.
 
-Three real instances exist — majors **13** (`win10cli\SQL2016`, SP3), **14**
-(`win10cli\SQL2017`) and **17**. There is no major **15 or 16** and no way to
-run one here (no Docker, 3 GB RAM), so those two are argued from the catalog
-documentation and pinned by tests.
+Three real on-premises instances exist — majors **13** (`win10cli\SQL2016`,
+SP3), **14** (`win10cli\SQL2017`) and **17**. There is no major **15 or 16**
+and no way to run one here (no Docker, 3 GB RAM), so those two are argued from
+the catalog documentation and pinned by tests. A live Azure SQL Managed
+Instance is the fourth environment; it is not a major in this sense and is not
+swept — see § Azure SQL Managed Instance.
 
 **The standing check is `TestLiveVersionSweep`** (`~/go/gosmo/live_versionsweep_test.go`):
 it calls every read gosmo exposes and reports what the server rejects. Run it
@@ -23,8 +25,16 @@ column the instance lacks fails the whole read, and `go test ./...` says
 nothing — which is how nine such defects shipped before the first 2016/2017 run.
 
 The nine are **closed**, verified 2026-09-04 on all three instances: 219 calls
-/ 0 failures on 13 and 14, 233 / 0 on 17. The gates, recorded because the next
-audit will otherwise re-derive them:
+/ 0 failures on 13 and 14, 233 / 0 on 17.
+
+**Those counts are stale — the sweep has grown since and needs re-running on
+13 and 17.** gosmo's working tree carries ~340 uncommitted lines of new `call`
+entries (the Azure MI reads, database-scoped credentials and triggers, the
+Phase 3 families). The only run recorded after the extension is major 14 on
+2026-09-10, by port, 0 failures — see § Environment for why that one must be
+reached by port. Re-sweep **13** first: it is the floor.
+
+The gates, recorded because the next audit will otherwise re-derive them:
 
 | Was | Held by |
 |---|---|
@@ -48,25 +58,28 @@ method swept.
 
 A live MI (`t-qmi-01…`, EngineEdition 8, General Purpose Gen5) was audited
 **2026-09-08** and the work closed **2026-09-09**: seven defects and one
-missing feature, all fixed and verified live. Their write-ups have been
-deleted from **`docs/plan-azure-managed-instance.md`**, which now carries the
-instance's reported values, the instance-level DMV shapes, and what is still
-open — read it before reporting anything MI-related as newly found.
+missing feature, all fixed and verified live. The plan document that carried
+the write-ups has been deleted; what outlived it is here.
 
-The one to know without opening it: **MI reports `ProductVersion`
-`12.0.2000.8`** while running engine build 18.0, so every `colSince` /
-`VersionMajor` gate in gosmo silently degrades or refuses a feature the
-instance actually has. Gate on `EngineEdition` first.
+**MI reports `ProductVersion` `12.0.2000.8`** while running engine build 18.0,
+so every `colSince` / `VersionMajor` gate in gosmo silently degrades or refuses
+a feature the instance actually has. **Gate on `EngineEdition` first** —
+`internal/tui/edition_gate.go` is the edition's counterpart to
+`permission_gate.go`, and holds the UI gating of the operations MI rejects.
 
-**All seven steps of that plan's order of work are done** (engine-edition
-version gating, `BackupHistory` nullability, Agent status, Platform,
-disk-space rows, the UI gating of the operations MI rejects —
-`internal/tui/edition_gate.go`, the edition's counterpart to
-`permission_gate.go` — `TO URL`/`FROM URL` backup and restore, and the
-Activity Monitor "Instance" tab). What is left is the follow-up below and
-Entra authentication.
+What is left open is the `TO URL` follow-up below and Entra authentication.
 
-Two things the Instance tab settled that are easy to reopen:
+**Database Properties > Resource Governance is read-only and Azure-only, by
+design.** Every value on it changes by resizing the instance or the database,
+which is a control-plane operation no T-SQL statement from a dialog can
+perform. It pairs `sys.dm_db_resource_stats` (the reading) with
+`sys.dm_user_db_resource_governance` (the scale it is a percentage *of*),
+because a bare "CPU 0.6%" against an unnamed limit says nothing. The two fail
+*differently* for a login without the rights — Msg 262 from the first, zero
+rows from the second — and the page turns both into a note rather than an
+error; `pageDatabaseResourceGovernance`'s doc comment carries the reasoning.
+
+Two things the Activity Monitor's Instance tab settled that are easy to reopen:
 
 - **The Activity Monitor's tab bar is a slice, not the constant array.**
   `visibleTabs()` filters `amAllTabs`; `amTabLabels` and the per-tab scroll
@@ -77,8 +90,9 @@ Two things the Instance tab settled that are easy to reopen:
 - **The Instance tab's charts are scaled by the server's 15-second window, not
   by the panel's refresh rate,** and `internal/activity.Poller` exists so a
   pre-aggregated source does not go through `rates.go`. Both are in
-  `drawInterval`'s and `Poller`'s doc comments; the plan document explains why
-  the IO ceilings are section-bar KPIs rather than chart axes.
+  `drawInterval`'s and `Poller`'s doc comments. The IO ceilings are section-bar
+  KPIs rather than chart axes because MI reports a fixed per-instance limit,
+  not a series.
 
 **What the `TO URL` work did not reach.** It was driven live on both
 instances, but only as far as building and validating the statement:
@@ -108,35 +122,36 @@ What *was* confirmed live, and settles the device-keyword question: MI answers
 device type"), and the same statement spelled `FROM URL` with Msg 3078 about
 the blob itself — the device type is accepted.
 
-Entra authentication on MI is untested and out of scope of that plan.
+**Entra authentication on MI is untested**, and was out of scope of the MI
+work deliberately — it needs an Entra-joined tenant, the same wall the Entra
+*login* entry under Deferred scope describes.
 
-## Homebrew tap: the push fix is unverified until the next release
+## Release workflow: two jobs whose only failure mode is "did nothing"
 
-**v0.0.10 shipped with an empty tap.** The release workflow's `homebrew` job
-rendered `Formula/gossms.rb` correctly and then guarded the push with
-`git diff --quiet -- Formula/gossms.rb`. Git reports no diff for a path it has
-never tracked, so on the very first release the guard concluded "already up to
-date", `exit 0`'d, and the job went **green having pushed nothing** —
-`radix29/homebrew-tap` held only its `README.md` and
-`brew install radix29/tap/gossms` answered "No available formula or cask" for
-the whole v0.0.10 cycle.
+**The `homebrew` push fix has still never run.** v0.0.10 shipped with an empty
+tap: the job rendered `Formula/gossms.rb` and then guarded the push with
+`git diff --quiet -- Formula/gossms.rb`, which reports no diff for a path git
+has never tracked, so on the first release the job went **green having pushed
+nothing**. Fixed in `.github/workflows/release.yml` (commit `3b566d0`) by
+staging first and comparing against the index — the shape the `apt` job in the
+same workflow already used. The v0.0.10 formula was then pushed to the tap by
+hand (`radix29/homebrew-tap` commit `377fe7f`) and `brew install` driven end to
+end on Linux, so the tap is correct today; the fix itself is unverified.
+**Watch that job on the next tag and confirm the tap gained a `gossms <tag>`
+commit — a green job is exactly what the bug looked like.**
 
-Fixed in `.github/workflows/release.yml` (commit `3b566d0`): stage first, then
-compare against the index, which does see a newly added file as a change. The
-`apt` job in the same workflow already did it that way — it is the reference
-shape, not the tap job.
+Neither the tap nor the apt job asserts afterwards that what it publishes is
+reachable, which is why the failure was invisible. Both artifacts *are*
+reachable today (`https://radix29.github.io/apt/dists/stable/Release` and the
+tap's `Formula/gossms.rb`, checked 2026-09-10); the assertion is still not in
+the workflow.
 
-The v0.0.10 formula was pushed to the tap by hand (`radix29/homebrew-tap`
-commit `377fe7f`), rendered from the release's own `checksums.txt` and
-byte-identical to what the failed job produced; `brew install` was then driven
-end to end on Linux and `gossms --version` reported `v0.0.10`. **So the tap is
-correct today, but the workflow fix itself has never run.** Watch that job on
-the next tag and confirm the tap gained a `gossms <tag>` commit — a green job
-is exactly what the bug looked like.
-
-Related trap, same root cause: a job whose only failure mode is "did nothing"
-cannot be verified by its exit status. Neither the tap nor the apt job asserts
-afterwards that the artifact it publishes is reachable.
+Still untouched by any of this: `brew install` / `brew test` /
+`brew audit --strict` **on an actual Mac** — nothing here has ever run macOS —
+a `livecheck` block in the formula, and, on the Debian side, `dpkg -i` on a
+clean container, arm64 execution and `lintian`. The formula is deliberately
+**binary**, not build-from-source: `go.mod`'s active `replace` makes any source
+build from a release tarball fail, and `go install …@<tag>` fail with it.
 
 ## Deferred scope (repeatedly, deliberately)
 
@@ -154,6 +169,63 @@ afterwards that the artifact it publishes is reachable.
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail
   with the *same* Msg 37525, so the parser accepted both. Whether a login is
   actually created needs an Entra-joined instance.
+- **The Phase 3 tree families are read-only, and each for its own reason**
+  (Properties shipped 2026-09-09; the plan document has been deleted, so this
+  entry is the record). Read-only means *no create and no edit*: each family
+  does have Script as, Delete, and — where SQL Server has the statement —
+  Rename and Move to another schema. This is the standing answer to "why
+  can't I create a rule?" and its four siblings:
+  - **Rules and Defaults**: deprecated by Microsoft — `sp_bindrule` and
+    `sp_bindefault` since SQL Server 2008 — and neither `CREATE RULE` nor
+    `CREATE DEFAULT` has an ALTER. Offering a way to create one in a new tool
+    would steer users onto a feature the server documents as going away. Use a
+    CHECK or DEFAULT constraint.
+  - **Assemblies**: `CREATE`/`ALTER ASSEMBLY` need the compiled binary, which
+    no TUI dialog can supply. The two flags a form *could* set
+    (`PERMISSION_SET`, `VISIBILITY`) are scripted rather than filled in.
+  - **Alias, table and CLR types**: `CREATE TYPE` has no ALTER, so an editor
+    would be a drop-and-recreate, and dropping a type is refused while any
+    column, parameter or variable declares it.
+  - **External data sources and file formats**: no ALTER on any supported
+    major. **External libraries**: `ALTER EXTERNAL LIBRARY` replaces the R or
+    Python package content — a binary, same wall as assemblies.
+  - The exception is **Plan Guides**, whose General page enables and disables
+    the guide (`sp_control_plan_guide`, gated on ALTER DATABASE). A disabled
+    guide shapes no plan and is invisible in the tree but for its label suffix,
+    so this one write is worth having; `sp_create_plan_guide` still has no
+    ALTER, and its query text is matched character for character, so the page
+    edits nothing else.
+- **The CLR type, assembly and external-resource scripts are unit-tested
+  only.** Every other Phase 3 script was generated on one throwaway database
+  and executed against another on `win10cli` (major 17, 2026-09-10). These four
+  could not be: the instance has no user assembly and CLR is off, and it has neither
+  PolyBase nor Machine Learning Services, so there is no external data source,
+  file format or library to script. Not a known defect — an untested path, and
+  the one to exercise first if such an instance turns up.
+- **External Tables and FileTables are untested in the TUI against a real
+  one.** The Tables sub-folders shipped 2026-09-10. System Tables and
+  Graph Tables were driven live on 13/14/17 with real rows; the External Tables
+  *folder* needs PolyBase, which no instance here has, so its presence gate has
+  only ever been seen answering "absent". A FileTable exists only inside
+  gosmo's `TestLiveTableKinds` (major 17, FILESTREAM), never under the tree.
+  Not a known defect — untested paths, and the first to exercise if such an
+  instance turns up. Same class as the CLR/assembly/external scripts above.
+- **A database snapshot's subtree still offers writes that the server
+  refuses.** A snapshot gets Tables, Views and Programmability (Query Store,
+  Storage and Security are deliberately withheld — a snapshot has no Query
+  Store of its own, cannot be backed up, and shares its source's principals),
+  and Delete or Rename
+  on a table inside one is offered and then refused with "the database is
+  read-only". Deliberate: the permission gate answers what the *login* may do,
+  and a read-only database is not a permission — a third gate for it would have
+  to cover every READ_ONLY database, not just snapshots. SSMS behaves the same
+  way.
+- **gosmo's README documents none of the Phase 3 families**, `TableKind` and
+  the snapshot API included. One pass to make before the next gosmo tag.
+- **System Data Types has no Properties dialog.** SSMS offers none either, and
+  there is nothing to show about `int` that its name does not already say. The
+  folder and its Detail Browser listing exist; the context menu deliberately
+  omits the item.
 
 ## Permission gating: what is settled — do not re-raise
 
@@ -345,6 +417,17 @@ Three things about the job-state read are load-bearing and easy to undo:
 - **`TestLiveAvailabilityGroupOperations` deliberately skips Drop and
   RemoveReplica** against AAG1; only add/remove database, suspend/resume, the
   listener round trip and the failover refusal run there.
+- **A named-instance connection to `win10cli\sql2017` fails on the *second*
+  concurrent connection.** Connecting by name and then doing anything that
+  needs a second pooled connection while the first is pinned — a listing whose
+  rows are still open when a per-row read runs, `SecurityPoliciesContext` being
+  the one the sweep hits — fails with `acquire connection: no instance matching
+  'sql2017' returned from host 'win10cli.fritz.box'`. It is the SQL Browser
+  declining the second resolution, not a gosmo defect: the identical run
+  against `win10cli.fritz.box:55253` is 0 failures, and `sql2016`, whose
+  Browser answers reliably, is clean by name. Reproduced twice, 2026-09-10.
+  **Connect to 2017 by port for anything multi-connection**, and do not chase
+  it as a query-compatibility finding — it names no column and no version.
 
 ## FILESTREAM: what the live run settled — do not re-raise
 
@@ -976,43 +1059,18 @@ numbering the moment they flipped the selector.
   the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
   real and applied.
 
-- **Homebrew distribution is built but unverified.** The `homebrew` job in
-  `.github/workflows/release.yml` is the reference — `docs/homebrew.md` was
-  folded into it and this entry. Done: `darwin/amd64` in the release
-  workflow's `TARGETS`,
-  `gossms --version`, and the `homebrew` job that renders `Formula/gossms.rb`
-  from the release's `checksums.txt` and pushes it to `radix29/homebrew-tap`,
-  which exists and is public. The credential is a write-enabled deploy key on
-  the tap, stored as `HOMEBREW_TAP_DEPLOY_KEY` on `radix29/gossms`, not a PAT —
-  read and write were proved against the live repo. Outstanding: run the job
-  for real on a tag; `brew install` / `brew test` / `brew audit --strict` **on
-  an actual Mac** — nothing here has touched macOS; add a `livecheck` block.
-  The README documents `brew install radix29/tap/gossms` already, ahead of the
-  first formula existing — the README change ships with the same tag that
-  creates the formula, but until that tag the command 404s. The formula is deliberately **binary**, not
-  build-from-source — `go.mod`'s active
-  `replace github.com/radix29/gosmo => ../gosmo` makes any source build from a
-  release tarball fail, and `go install …@<tag>` fail with it.
+- **Distribution credentials, recorded once.** Homebrew:
+  `HOMEBREW_TAP_DEPLOY_KEY` on `radix29/gossms`, a write-enabled deploy key on
+  `radix29/homebrew-tap`, not a PAT. APT: `APT_REPO_DEPLOY_KEY` (write deploy
+  key on `radix29/apt`, published through GitHub Pages at
+  https://radix29.github.io/apt) and `APT_REPO_GPG_KEY` (dedicated RSA-4096
+  signing key, fingerprint `468B0CE5FFDEE82439741EC393F25CAB61497D93`; the
+  public half is `gossms.asc` in the repo root). `docs/homebrew.md` and
+  `docs/ppa.md` were folded into the two release jobs and this entry; the jobs
+  in `.github/workflows/release.yml` are the reference. What is still unrun is
+  in § Release workflow above.
 
-- **Debian/Ubuntu packaging is built but unverified on a real distro.** The
-  `apt` job in `.github/workflows/release.yml` holds the detail —
-  `docs/ppa.md` was folded into it and this entry. `radix29/apt` is published
-  through GitHub
-  Pages at https://radix29.github.io/apt, and the `apt` job in
-  `.github/workflows/release.yml` builds `amd64`/`arm64` `.deb`s from each
-  tagged release, rebuilds the indices from the whole pool, signs `Release` and
-  pushes. Credentials: `APT_REPO_DEPLOY_KEY` (write deploy key on the apt repo)
-  and `APT_REPO_GPG_KEY` (dedicated RSA-4096 signing key, fingerprint
-  `468B0CE5FFDEE82439741EC393F25CAB61497D93`; the public half is `gossms.asc`
-  in the repo root). Verified locally by running the extracted job scripts
-  against the real v0.0.9 assets, `gpgv`-checking both signatures, and driving
-  a real `apt-get update` / `apt-cache policy` / `apt-get -d install` against a
-  sandboxed apt root. **Not** verified: `dpkg -i` on a clean container, arm64
-  execution, `lintian`. The README already carries the APT install
-  snippet, ahead of the first `.deb` — it ships with the tag that publishes
-  them, but until that tag `apt-get update` finds no `dists/`.
-
-  A **Launchpad PPA** was rejected, not forgotten: builders have no network and
+- A **Launchpad PPA** was rejected, not forgotten: builders have no network and
   Ubuntu's packaged Go is 1.22 on 24.04 LTS, 1.26 on 26.04 LTS, against
   `go.mod`'s 1.27. Two measurements worth not repeating — `go mod vendor` fully
   resolves the `replace ../gosmo` (builds with the sibling deleted and

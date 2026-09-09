@@ -98,6 +98,19 @@ var objectOps = map[NodeType]objectOp{
 			return sc.Server.RenameDatabaseContext(ctx, n.Name, newName, true)
 		},
 	},
+	// A snapshot's drop deletes its sparse files and leaves the source
+	// database alone — so no typed confirmation, unlike a database's. solo
+	// all the same: it is still a DROP DATABASE, and reverting to a snapshot
+	// needs the source's *other* snapshots dropped first, which is exactly
+	// the moment a batch delete would take the wrong one with it.
+	NodeDatabaseSnapshot: {
+		noun:    "Database Snapshot",
+		warning: "Its sparse files are deleted. The source database is not affected.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return sc.Server.DatabaseSnapshot(n.Name).DropContext(ctx)
+		},
+	},
 	NodeTable: {
 		noun:    "Table",
 		warning: "All of its data is deleted with it.",
@@ -249,6 +262,117 @@ var objectOps = map[NodeType]objectOp{
 				return err
 			}
 			return k.DropContext(ctx)
+		},
+	},
+
+	// Programmability ▸ Types, Rules, Defaults, Assemblies and Plan Guides,
+	// plus the External Resources folder beside Views.
+	//
+	// The type families share one statement — DROP TYPE names an alias, table
+	// or CLR type and nothing in it says which — and one warning: the server
+	// refuses a type anything is typed on, and names the blocker in the
+	// error, so the warning says the drop is refused rather than listing
+	// classes (the same treatment as NodeColumn's).
+	NodeUserDefinedDataType: {
+		noun:    "User-Defined Data Type",
+		warning: typeInUseWarning,
+		drop:    dropIn((*gosmo.Database).DropTypeContext),
+		// sp_rename's USERDATATYPE class covers alias types and nothing else
+		// in sys.types — see gosmo's RenameUserDefinedDataType, which is why
+		// the table and CLR types below have no rename.
+		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
+			return dbOf(sc, n).RenameUserDefinedDataTypeContext(ctx, n.Schema, n.Name, newName)
+		},
+		transfer: transferTypeIn,
+	},
+	NodeUserDefinedTableType: {
+		noun:     "User-Defined Table Type",
+		warning:  typeInUseWarning,
+		drop:     dropIn((*gosmo.Database).DropTypeContext),
+		transfer: transferTypeIn,
+	},
+	NodeUserDefinedType: {
+		noun:     "User-Defined Type",
+		warning:  typeInUseWarning,
+		drop:     dropIn((*gosmo.Database).DropTypeContext),
+		transfer: transferTypeIn,
+	},
+	NodeXmlSchemaCollection: {
+		noun: "XML Schema Collection",
+		// Same shape as a type's: the server refuses the drop while a column,
+		// parameter or variable is bound to the collection, and names it.
+		warning: "The drop is refused while a column, parameter or variable is typed on it — the server's error names what blocks it.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropXmlSchemaCollectionContext(ctx, n.Schema, n.Name)
+		},
+		// ALTER SCHEMA TRANSFER needs the XML SCHEMA COLLECTION:: class here,
+		// not the default OBJECT one.
+		transfer: func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
+			return dbOf(sc, n).TransferXmlSchemaCollectionContext(ctx, targetSchema, n.Schema, n.Name)
+		},
+	},
+	// Rules and defaults are ordinary sys.objects rows, so sp_rename's OBJECT
+	// class and ALTER SCHEMA TRANSFER's default class both serve.
+	NodeRule: {
+		noun: "Rule",
+		// The column or type keeps its values but stops being checked, which
+		// is not something the object's absence from the tree makes visible.
+		warning:  "Columns and types still bound to it stop being validated, and the drop is refused until sp_unbindrule releases them.",
+		drop:     dropIn((*gosmo.Database).DropRuleContext),
+		rename:   renameObjectIn,
+		transfer: transferObjectIn,
+	},
+	NodeDefault: {
+		noun:     "Default",
+		warning:  "Columns and types still bound to it stop getting a default value, and the drop is refused until sp_unbindefault releases them.",
+		drop:     dropIn((*gosmo.Database).DropDefaultContext),
+		rename:   renameObjectIn,
+		transfer: transferObjectIn,
+	},
+	NodeAssembly: {
+		noun: "Assembly",
+		// The binary is not recoverable from anything on screen — gossms
+		// never reads it — so an assembly dropped by accident has to come
+		// back from the original .dll.
+		warning: "The drop is refused while a CLR routine or type is bound to it, and the assembly binary cannot be recovered from gossms.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropAssemblyContext(ctx, n.Name)
+		},
+		// No rename and no transfer: an assembly is database-scoped, has no
+		// schema to move between, and sp_rename has no class for one.
+	},
+	NodePlanGuide: {
+		noun: "Plan Guide",
+		// A guide is invisible from the query side either way — dropping one
+		// looks like nothing happening until a plan regresses.
+		warning: "The queries it applies hints to go back to the plans the optimizer picks on its own.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropPlanGuideContext(ctx, n.Name)
+		},
+		// No rename: sp_control_plan_guide has no rename operation, and
+		// sp_rename has no class for a plan guide.
+	},
+	NodeExternalDataSource: {
+		noun:    "External Data Source",
+		warning: "The drop is refused while an external table, file format reference or backup URL names it.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropExternalDataSourceContext(ctx, n.Name)
+		},
+	},
+	NodeExternalFileFormat: {
+		noun:    "External File Format",
+		warning: "The drop is refused while an external table uses it.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropExternalFileFormatContext(ctx, n.Name)
+		},
+	},
+	NodeExternalLibrary: {
+		noun: "External Library",
+		// The package bytes are not readable back out of the catalog, so a
+		// dropped library has to be uploaded again from its source.
+		warning: "R and Python scripts that load the package stop working, and the uploaded package cannot be recovered from gossms.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropExternalLibraryContext(ctx, n.Name)
 		},
 	},
 
@@ -508,6 +632,18 @@ func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName 
 	return dbOf(sc, n).RenameObjectContext(ctx, n.Schema, n.Name, newName)
 }
 
+// typeInUseWarning is the delete warning the three type families share. Like
+// NodeColumn's, it says the drop is refused and leaves the naming of the
+// blocker to the server, which names it in the error.
+const typeInUseWarning = "The drop is refused while a column, parameter, variable or routine is typed on it — the server's error names what blocks it."
+
+// transferTypeIn moves an alias, table or CLR type into another schema.
+// ALTER SCHEMA ... TRANSFER needs the TYPE:: class here: a type is not in
+// sys.objects, so the default class transferObjectIn uses finds nothing.
+func transferTypeIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
+	return dbOf(sc, n).TransferTypeContext(ctx, targetSchema, n.Schema, n.Name)
+}
+
 // transferObjectIn moves a schema-scoped object into another schema. Shared
 // by every family ALTER SCHEMA ... TRANSFER's default OBJECT class covers.
 func transferObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
@@ -621,7 +757,7 @@ func objectOpName(n *explorerNode) string {
 // enough. A database node has no schema and keeps the two server-side rights
 // that let a database be renamed or dropped.
 func objectOpRights(t NodeType) []requiredRight {
-	if t == NodeDatabase {
+	if t == NodeDatabase || t == NodeDatabaseSnapshot {
 		return []requiredRight{rightControlDB, rightAlterAnyDatabase}
 	}
 	if rights, ok := serverScopedOpRights[t]; ok {

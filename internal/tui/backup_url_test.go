@@ -9,8 +9,8 @@ import (
 )
 
 // The Back Up / Restore dialogs against an Azure engine edition. Every rule
-// checked here is Managed Instance's, driven live at t-qmi-01 and written up
-// in docs/plan-azure-managed-instance.md § 3: MI answers any TO DISK with
+// checked here is Managed Instance's, driven live at t-qmi-01 (EngineEdition
+// 8, 2026-09-08). MI answers any TO DISK with
 //
 //	Msg 41902 ... SQL Database Managed Instance supports database restore
 //	from URI backup device only.

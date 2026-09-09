@@ -36,7 +36,15 @@ func isDraggableNode(t NodeType) bool {
 // produce a misleading (and invalid) two-part name.
 func explorerDragText(n *explorerNode) string {
 	switch n.data.Type {
-	case NodeTable, NodeView, NodeStoredProcedure, NodeFunction, NodeSequence, NodeSynonym, NodeTrigger:
+	case NodeTable, NodeView, NodeStoredProcedure, NodeFunction, NodeSequence, NodeSynonym, NodeTrigger,
+		// The schema-scoped half of the Programmability families: a type, an
+		// XML schema collection, a rule and a default are all addressed as
+		// schema.name. Assemblies, plan guides and the external resources are
+		// database-scoped and fall through to the bare name below, as do the
+		// built-in system data types, which have no schema of their own worth
+		// quoting into a query.
+		NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,
+		NodeXmlSchemaCollection, NodeRule, NodeDefault:
 		return fqn(n.data.Schema, n.data.Name)
 	default:
 		return fqn("", n.data.Name)

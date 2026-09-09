@@ -272,6 +272,22 @@ func (f *fakeInstance) Statements() []string {
 	return out
 }
 
+// ExecArgs returns the parameters of the first statement executed whose text
+// contains want, and whether there was one. The write-side twin of ReadArgs,
+// and the only way to see a write whose meaning is entirely in its parameters
+// — sp_control_plan_guide's statement text is identical for ENABLE and
+// DISABLE, so Statements() cannot tell the two apart.
+func (f *fakeInstance) ExecArgs(want string) ([]driver.Value, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range f.execs {
+		if strings.Contains(e.sql, want) {
+			return e.args, true
+		}
+	}
+	return nil, false
+}
+
 // StatementsIn returns only the statements that ran while the connection was
 // pinned to db, so a test can say *where* a write landed rather than only that
 // it happened.

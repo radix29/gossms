@@ -28,8 +28,14 @@ const (
 	NodeServer NodeType = iota
 	NodeDatabases
 	NodeSystemDatabases
+	NodeDatabaseSnapshots
+	NodeDatabaseSnapshot
 	NodeDatabase
 	NodeTables
+	NodeSystemTables
+	NodeFileTables
+	NodeExternalTables
+	NodeGraphTables
 	NodeTable
 	NodeColumns
 	NodeColumn
@@ -118,6 +124,32 @@ const (
 	NodeSequence
 	NodeSynonyms
 	NodeSynonym
+	NodeTypes
+	NodeSystemDataTypes
+	NodeSystemDataType
+	NodeUserDefinedDataTypes
+	NodeUserDefinedDataType
+	NodeUserDefinedTableTypes
+	NodeUserDefinedTableType
+	NodeUserDefinedTypes
+	NodeUserDefinedType
+	NodeXmlSchemaCollections
+	NodeXmlSchemaCollection
+	NodeAssemblies
+	NodeAssembly
+	NodeRules
+	NodeRule
+	NodeDefaults
+	NodeDefault
+	NodePlanGuides
+	NodePlanGuide
+	NodeExternalResources
+	NodeExternalDataSources
+	NodeExternalDataSource
+	NodeExternalFileFormats
+	NodeExternalFileFormat
+	NodeExternalLibraries
+	NodeExternalLibrary
 	NodeForeignKey
 	NodeChecks
 	NodeCheck
@@ -195,7 +227,9 @@ func primaryKeyIcon(style config.IconStyle) rune {
 // "Tables", "Views" — rather than a concrete SQL Server object.
 func isContainerNode(t NodeType) bool {
 	switch t {
-	case NodeDatabases, NodeSystemDatabases, NodeTables, NodeColumns, NodeKeys, NodeIndexes,
+	case NodeDatabases, NodeSystemDatabases, NodeDatabaseSnapshots, NodeTables,
+		NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables,
+		NodeColumns, NodeKeys, NodeIndexes,
 		NodeStatistics, NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures, NodeFunctions, NodeSystemFunctions,
 		NodeSecurity, NodeLogins,
@@ -207,6 +241,11 @@ func isContainerNode(t NodeType) bool {
 		NodeDatabaseSecurity, NodeUsers, NodeDatabaseRoles, NodeSchemas,
 		NodeTriggers, NodeProgrammability, NodeDatabaseTriggers,
 		NodeSequences, NodeSynonyms, NodeChecks,
+		NodeTypes, NodeSystemDataTypes, NodeUserDefinedDataTypes,
+		NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXmlSchemaCollections,
+		NodeAssemblies, NodeRules, NodeDefaults, NodePlanGuides,
+		NodeExternalResources, NodeExternalDataSources, NodeExternalFileFormats,
+		NodeExternalLibraries,
 		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
 		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
 		NodeSecurityPolicies, NodeAlwaysEncryptedKeys, NodeQueryStore,
@@ -254,6 +293,8 @@ func objectIconEmoji(t NodeType) rune {
 		return '🖥'
 	case NodeDatabase:
 		return '🛢'
+	case NodeDatabaseSnapshot:
+		return '📸'
 	case NodeTable:
 		return '▤'
 	case NodeColumn:
@@ -322,6 +363,28 @@ func objectIconEmoji(t NodeType) rune {
 		return '🔢'
 	case NodeSynonym:
 		return '🔖'
+	case NodeSystemDataType, NodeUserDefinedDataType:
+		return '🔡'
+	case NodeUserDefinedTableType:
+		return '🧾'
+	case NodeUserDefinedType:
+		return '🧬'
+	case NodeXmlSchemaCollection:
+		return '📜'
+	case NodeAssembly:
+		return '📦'
+	case NodeRule:
+		return '📏'
+	case NodeDefault:
+		return '🧷'
+	case NodePlanGuide:
+		return '🧭'
+	case NodeExternalDataSource:
+		return '🌐'
+	case NodeExternalFileFormat:
+		return '📃'
+	case NodeExternalLibrary:
+		return '📚'
 	case NodeForeignKey:
 		return '🔗'
 	case NodeCheck:
@@ -351,6 +414,8 @@ func objectIconSymbols(t NodeType) rune {
 		return '◉'
 	case NodeDatabase:
 		return '⬢'
+	case NodeDatabaseSnapshot:
+		return '◍'
 	case NodeTable:
 		return '▦'
 	case NodeColumn:
@@ -419,6 +484,30 @@ func objectIconSymbols(t NodeType) rune {
 		return '↑'
 	case NodeSynonym:
 		return '≈'
+	case NodeSystemDataType:
+		return '◧'
+	case NodeUserDefinedDataType:
+		return '◨'
+	case NodeUserDefinedTableType:
+		return '◩'
+	case NodeUserDefinedType:
+		return '◪'
+	case NodeXmlSchemaCollection:
+		return '⊏'
+	case NodeAssembly:
+		return '⊛'
+	case NodeRule:
+		return '⊓'
+	case NodeDefault:
+		return '⊔'
+	case NodePlanGuide:
+		return '⊚'
+	case NodeExternalDataSource:
+		return '⊙'
+	case NodeExternalFileFormat:
+		return '⊘'
+	case NodeExternalLibrary:
+		return '❖'
 	case NodeForeignKey:
 		return '⛓'
 	case NodeCheck:
@@ -458,6 +547,8 @@ func nodeTypeName(t NodeType) string {
 		return "Server"
 	case NodeDatabase:
 		return "Database"
+	case NodeDatabaseSnapshot:
+		return "Database Snapshot"
 	case NodeTable:
 		return "Table"
 	case NodeView:
@@ -514,6 +605,30 @@ func nodeTypeName(t NodeType) string {
 		return "Column Master Key"
 	case NodeColumnEncryptionKey:
 		return "Column Encryption Key"
+	case NodeSystemDataType:
+		return "System Data Type"
+	case NodeUserDefinedDataType:
+		return "User-Defined Data Type"
+	case NodeUserDefinedTableType:
+		return "User-Defined Table Type"
+	case NodeUserDefinedType:
+		return "User-Defined Type"
+	case NodeXmlSchemaCollection:
+		return "XML Schema Collection"
+	case NodeAssembly:
+		return "Assembly"
+	case NodeRule:
+		return "Rule"
+	case NodeDefault:
+		return "Default"
+	case NodePlanGuide:
+		return "Plan Guide"
+	case NodeExternalDataSource:
+		return "External Data Source"
+	case NodeExternalFileFormat:
+		return "External File Format"
+	case NodeExternalLibrary:
+		return "External Library"
 	default:
 		return "Object"
 	}
@@ -528,6 +643,10 @@ func hasChildren(t NodeType) bool {
 		NodeDatabaseAuditSpecification,
 		NodeBackupDevice, NodeServerTrigger, NodeDatabaseTrigger, NodeEndpoint,
 		NodeSchema, NodeForeignKey, NodeCheck, NodeSequence, NodeSynonym,
+		NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
+		NodeUserDefinedType, NodeXmlSchemaCollection,
+		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide,
+		NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary,
 		NodeIndex, NodeTrigger, NodeKey, NodeStatistic,
 		NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,
 		NodeAgentJobActivity, NodeAgentJobHistory, NodeAgentJobCategories,
@@ -580,6 +699,13 @@ type nodeData struct {
 	// "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the same
 	// one-flag-drives-the-presentation idiom).
 	IsEnabled bool
+
+	// SourceDatabase is the database a NodeDatabaseSnapshot was taken of.
+	// Restore-from-snapshot acts on it, and the folder's detail pane shows
+	// it; the label is the snapshot's own name alone, so nothing downstream
+	// can recover it. Empty when the source has since been dropped, which
+	// leaves the snapshot in the catalog and unusable.
+	SourceDatabase string
 
 	// AGName is the owning availability group's name for any node under it
 	// (the Replicas/Databases/Listeners folders and their leaves). Same role

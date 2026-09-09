@@ -23,8 +23,8 @@ func aeKeyResponses() []fakeResponse {
 	return []fakeResponse{
 		// Before the list read, so the by-name read behind it resolves to
 		// appdb rather than to whichever row the list answer sorts first.
-		{match: "FROM sys.databases", arg: "appdb", cols: 8, rows: [][]driver.Value{
-			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		{match: "FROM sys.databases", arg: "appdb", cols: 9, rows: [][]driver.Value{
+			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		// The encryption-key answer goes first: its query joins
 		// sys.column_master_keys, so behind the master-key answer it is served
@@ -248,8 +248,8 @@ func TestNewColumnEncryptionKeyDialogRefusesWithoutAMasterKey(t *testing.T) {
 	a := newTestApp()
 	d := NewNewColumnEncryptionKeyDialog(a)
 	sc, _ := newFakeConn(t,
-		fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 8, rows: [][]driver.Value{
-			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		fakeResponse{match: "FROM sys.databases", arg: "appdb", cols: 9, rows: [][]driver.Value{
+			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		fakeResponse{match: "sys.column_encryption_keys", cols: 5},
 		fakeResponse{match: "sys.column_master_keys", cols: 6},

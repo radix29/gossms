@@ -422,6 +422,7 @@ func TestEveryObjectOpNounPluralises(t *testing.T) {
 		"Credential":                   "Credentials",
 		"Backup Device":                "Backup Devices",
 		"Database":                     "Databases",
+		"Database Snapshot":            "Database Snapshots",
 		"Database Role":                "Database Roles",
 		"Foreign Key":                  "Foreign Keys",
 		"Function":                     "Functions",
@@ -451,6 +452,17 @@ func TestEveryObjectOpNounPluralises(t *testing.T) {
 		"Trigger":                      "Triggers",
 		"User":                         "Users",
 		"View":                         "Views",
+		"User-Defined Data Type":       "User-Defined Data Types",
+		"User-Defined Table Type":      "User-Defined Table Types",
+		"User-Defined Type":            "User-Defined Types",
+		"XML Schema Collection":        "XML Schema Collections",
+		"Rule":                         "Rules",
+		"Default":                      "Defaults",
+		"Assembly":                     "Assemblies",
+		"Plan Guide":                   "Plan Guides",
+		"External Data Source":         "External Data Sources",
+		"External File Format":         "External File Formats",
+		"External Library":             "External Libraries",
 	}
 	for _, op := range objectOps {
 		w, ok := want[op.noun]

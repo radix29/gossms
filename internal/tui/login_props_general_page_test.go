@@ -42,10 +42,10 @@ func loginGeneralResponses(name, loginType string) []fakeResponse {
 			time.Now(), time.Now(), int64(0), time.Now(),
 			"us_english", "cred_old", "GRANT",
 		}}},
-		{match: "FROM sys.databases", cols: 8, rows: [][]driver.Value{
-			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
-			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
-			{"reporting", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
+			{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"appdb", int64(5), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
+			{"reporting", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		{match: "FROM sys.syslanguages", cols: 3, rows: [][]driver.Value{
 			{int64(0), "us_english", "English"},

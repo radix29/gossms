@@ -57,7 +57,10 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 		rows := make([][]string, 0, len(all))
 		objs := make([]nodeData, 0, len(all))
 		for _, d := range all {
-			if d.IsSystem() {
+			// Both exclusions are the tree's — see loadDatabasesChildren. A
+			// snapshot has a folder of its own, and listing it here as well
+			// would have the two panes disagree about the same folder.
+			if d.IsSystem() || d.IsSnapshot() {
 				continue
 			}
 			dbs = append(dbs, d)

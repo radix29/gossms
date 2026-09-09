@@ -81,9 +81,8 @@ func dbSpecEnabled(name string, on bool) fakeResponse {
 }
 
 func dbSpecDatabaseRow() fakeResponse {
-	return fakeResponse{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{{
-		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, dbSpecCreated,
-	}}}
+	return fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
+		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, dbSpecCreated, int64(0)}}}
 }
 
 func dbSpecPageConn(t *testing.T, name string, extra ...fakeResponse) (*db.ServerConn, *fakeInstance) {

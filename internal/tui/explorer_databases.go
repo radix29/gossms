@@ -31,11 +31,24 @@ func loadServerChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 const agentRootLabel = "SQL Server Agent"
 
 // loadDatabasesChildren lists user databases, with a "System Databases"
-// folder listed first if the server has any — matching SSMS. A database that
-// belongs to an availability group carries its synchronization state in the
-// label, the same way the Availability Databases folder writes it; see
-// agLocalDatabaseStates for why the state shown here is the local replica's
-// alone.
+// folder listed first if the server has any, then "Database Snapshots" —
+// matching SSMS. A database that belongs to an availability group carries its
+// synchronization state in the label, the same way the Availability Databases
+// folder writes it; see agLocalDatabaseStates for why the state shown here is
+// the local replica's alone.
+//
+// A snapshot is an ordinary row in sys.databases, so it comes back from
+// DatabasesContext with the user databases and has to be excluded here or it
+// appears twice — once as a user database and once under its own folder.
+// Database.IsSnapshot answers from the source_database_id the listing already
+// read, so the exclusion costs no second query. The Detail Browser's own
+// Databases list makes the same exclusion (see loadDatabasesFolderDetails):
+// the two panes describe the same folder.
+//
+// The Database Snapshots folder is listed whether or not the server has any,
+// unlike System Databases: it is where New Snapshot lives, so a server with
+// no snapshots is exactly the server that needs to reach it. An Azure engine
+// edition is the exception — see below.
 func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbs, err := l.sc.Server.DatabasesContext(l.ctx)
 	if err != nil {
@@ -49,15 +62,45 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 			hasSystem = true
 			continue
 		}
+		if d.IsSnapshot() {
+			continue
+		}
 		n := l.node(agLabelForDatabase(d.Name(), agStates), NodeDatabase, "", d.Name(), d.Name())
 		n.data.IsOffline = d.State() != "ONLINE"
 		n.data.CreateDate = d.CreateDate()
 		userDBs = append(userDBs, n)
 	}
-	if !hasSystem {
-		return userDBs, nil
+	folders := []*explorerNode{}
+	if hasSystem {
+		folders = append(folders, l.node("System Databases", NodeSystemDatabases, "", "", ""))
 	}
-	return append([]*explorerNode{l.node("System Databases", NodeSystemDatabases, "", "", "")}, userDBs...), nil
+	// Not on an Azure engine edition: CREATE DATABASE ... AS SNAPSHOT OF is
+	// not implemented there at all, so the folder could only ever be empty
+	// and the New Snapshot item inside it is already edition-gated.
+	if !serverIsAzure(l.sc) {
+		folders = append(folders, l.node("Database Snapshots", NodeDatabaseSnapshots, "", "", ""))
+	}
+	return append(folders, userDBs...), nil
+}
+
+// loadDatabaseSnapshotsChildren lists the server's database snapshots. The
+// label is the snapshot's own name, as SSMS writes it; which database it was
+// taken of is in the detail pane and on its Properties dialog, since two
+// snapshots of the same source differ only by name.
+//
+// A snapshot node is a database node in every other respect — DBName is the
+// snapshot's own name — so its contents are browsable the way any other
+// database's are; see loadDatabaseSnapshotChildren for the folders it gets.
+func loadDatabaseSnapshotsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	return listChildren(
+		func() ([]*gosmo.DatabaseSnapshot, error) { return l.sc.Server.DatabaseSnapshotsContext(l.ctx) },
+		func(s *gosmo.DatabaseSnapshot) *explorerNode {
+			n := l.node(s.Name, NodeDatabaseSnapshot, "", s.Name, s.Name)
+			n.data.CreateDate = s.CreateDate
+			n.data.IsOffline = s.State != "ONLINE"
+			n.data.SourceDatabase = s.SourceDatabase
+			return n
+		})
 }
 
 // loadSystemDatabasesChildren lists master/tempdb/model/msdb.
@@ -77,6 +120,34 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 		}
 	}
 	return out, nil
+}
+
+// loadDatabaseSnapshotChildren returns a snapshot's folders: the object
+// families, and only those.
+//
+// Query Store, Storage and Security are deliberately absent. A snapshot is
+// read-only by construction — it has no transaction log, no file to add and
+// no recovery model — and each of those three folders' menus leads to
+// Database Properties pages that write: the files page, the recovery model,
+// New User. Offering them on a database that refuses every one of them is
+// worse than not offering them, and the snapshot's own read-only Properties
+// dialog is on its context menu instead (see database_snapshot_props.go).
+//
+// What is left is what a snapshot is *for*: reading the data as it was.
+func loadDatabaseSnapshotChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	if node.data.IsOffline {
+		return []*explorerNode{l.node("(Snapshot is not online)", NodeError, "", "", node.data.DBName)}, nil
+	}
+	dbName := node.data.DBName
+	if !l.sc.DatabaseCapabilities(l.ctx, dbName).Accessible {
+		return []*explorerNode{l.node(accessDeniedLabel+"CONNECT permission on this snapshot is required.",
+			NodeError, "", "", dbName)}, nil
+	}
+	return []*explorerNode{
+		l.node("Tables", NodeTables, "", "", dbName),
+		l.node("Views", NodeViews, "", "", dbName),
+		l.node("Programmability", NodeProgrammability, "", "", dbName),
+	}, nil
 }
 
 // loadDatabaseChildren returns one database's object-family folders, or a
@@ -102,6 +173,7 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 	return []*explorerNode{
 		l.node("Tables", NodeTables, "", "", dbName),
 		l.node("Views", NodeViews, "", "", dbName),
+		l.node("External Resources", NodeExternalResources, "", "", dbName),
 		l.node("Programmability", NodeProgrammability, "", "", dbName),
 		l.node("Query Store", NodeQueryStore, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
@@ -125,6 +197,11 @@ func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 		l.node("Stored Procedures", NodeStoredProcedures, "", "", dbName),
 		l.node("Functions", NodeFunctions, "", "", dbName),
 		l.node("Database Triggers", NodeDatabaseTriggers, "", "", dbName),
+		l.node("Assemblies", NodeAssemblies, "", "", dbName),
+		l.node("Types", NodeTypes, "", "", dbName),
+		l.node("Rules", NodeRules, "", "", dbName),
+		l.node("Defaults", NodeDefaults, "", "", dbName),
+		l.node("Plan Guides", NodePlanGuides, "", "", dbName),
 		l.node("Sequences", NodeSequences, "", "", dbName),
 		l.node("Synonyms", NodeSynonyms, "", "", dbName),
 	}, nil

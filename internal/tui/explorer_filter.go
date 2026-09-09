@@ -104,7 +104,10 @@ func filterProps(t NodeType) []filterProp {
 	memOpt := filterProp{id: fpMemoryOptimized, name: "Is Memory Optimized", kind: filterBool}
 
 	switch t {
-	case NodeTables:
+	// The four sub-folders offer what Tables offers: every one of them is a
+	// listing of sys.tables narrowed by a flag, so the same four properties
+	// are populated on every node in them.
+	case NodeTables, NodeSystemTables, NodeFileTables, NodeExternalTables, NodeGraphTables:
 		return []filterProp{name, schema, created, memOpt}
 	case NodeViews, NodeSystemViews,
 		NodeStoredProcedures, NodeSystemProcedures,
@@ -112,7 +115,24 @@ func filterProps(t NodeType) []filterProp {
 		return []filterProp{name, schema, created}
 	case NodeSequences, NodeSynonyms:
 		return []filterProp{name, schema}
-	case NodeDatabases, NodeSystemDatabases, NodeLogins:
+	// sys.types records no creation date, so the three type folders backed by
+	// it offer none — a Creation Date criterion there would match on a zero
+	// time and reject every row (see nodeData.CreateDate).
+	case NodeUserDefinedDataTypes, NodeUserDefinedTableTypes, NodeUserDefinedTypes:
+		return []filterProp{name, schema}
+	case NodeXmlSchemaCollections, NodeRules, NodeDefaults:
+		return []filterProp{name, schema, created}
+	case NodeAssemblies:
+		return []filterProp{name, created}
+	// Plan guides and the external resource families are schema-less
+	// server-side objects; sys.plan_guides is the only one of the four that
+	// records a creation date.
+	case NodePlanGuides:
+		return []filterProp{name, created}
+	case NodeSystemDataTypes, NodeExternalDataSources, NodeExternalFileFormats,
+		NodeExternalLibraries:
+		return []filterProp{name}
+	case NodeDatabases, NodeSystemDatabases, NodeDatabaseSnapshots, NodeLogins:
 		return []filterProp{name, created}
 	// A Triggers folder hangs under one table or view, so every row in it
 	// shares that object's schema — a Schema criterion there matches all of

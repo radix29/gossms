@@ -170,8 +170,8 @@ func TestDetachFileGridStartsAtThePrimaryDataFile(t *testing.T) {
 // here, so the database-scoped read fails the way a real one does.
 func TestDetachOnAnOfflineDatabaseStillListsTheFiles(t *testing.T) {
 	sc, _ := newFakeConn(t,
-		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 8, rows: [][]driver.Value{
-			{"AppDB", int64(7), "OFFLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 9, rows: [][]driver.Value{
+			{"AppDB", int64(7), "OFFLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		fakeResponse{match: "sys.master_files", cols: 9, rows: [][]driver.Value{
 			{int64(1), "AppDB", `C:\Data\AppDB.mdf`, "ROWS", "ONLINE", int64(8192), int64(-1), int64(65536), false},
@@ -221,8 +221,8 @@ func TestDetachOnAnOfflineDatabaseStillListsTheFiles(t *testing.T) {
 // answers, and the server catalog is not asked at all.
 func TestDetachOnAnOnlineDatabaseDoesNotReadTheServerCatalog(t *testing.T) {
 	sc, _ := newFakeConn(t,
-		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 8, rows: [][]driver.Value{
-			{"AppDB", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now()},
+		fakeResponse{match: "FROM sys.databases", arg: "AppDB", cols: 9, rows: [][]driver.Value{
+			{"AppDB", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 		fakeResponse{match: "sys.database_files", cols: 10, rows: [][]driver.Value{
 			{int64(1), "AppDB", `C:\Data\AppDB.mdf`, "ROWS", "PRIMARY", "ONLINE", int64(8192), int64(-1), int64(65536), false},

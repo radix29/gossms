@@ -129,9 +129,8 @@ func dbTriggerRows() fakeResponse {
 // before any database-scoped listing.
 func dbTriggerDatabaseRow() fakeResponse {
 	when := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	return fakeResponse{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{{
-		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, when,
-	}}}
+	return fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
+		"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, when, int64(0)}}}
 }
 
 func dbTriggerConn(t *testing.T, extra ...fakeResponse) (*db.ServerConn, *fakeInstance) {

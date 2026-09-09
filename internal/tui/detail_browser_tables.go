@@ -15,6 +15,24 @@ var tablesFolderColumns = []string{
 	"Name", "Row Count", "Data (MB)", "Index (MB)", "Unused (MB)",
 }
 
+// tableKindForNode maps a table folder's node type to the gosmo listing it
+// shows. The four sub-folders and the Tables folder itself share this pane;
+// only the kind differs.
+func tableKindForNode(t NodeType) gosmo.TableKind {
+	switch t {
+	case NodeSystemTables:
+		return gosmo.TableKindSystem
+	case NodeFileTables:
+		return gosmo.TableKindFileTable
+	case NodeExternalTables:
+		return gosmo.TableKindExternal
+	case NodeGraphTables:
+		return gosmo.TableKindGraph
+	default:
+		return gosmo.TableKindUser
+	}
+}
+
 // loadTablesFolderDetails shows the Tables folder's Name column as soon as
 // the fast table-list query returns, then fills every row's row count and
 // space columns from two whole-database aggregate queries.
@@ -41,8 +59,10 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 			return
 		}
 		// Narrowed at the server where the filter can be expressed, and by
-		// filterObjects below either way — see nodeFilter.pushdown.
-		tables, err := dbObj.TablesFilteredContext(ctx, serverFilter(data.Filter))
+		// filterObjects below either way — see nodeFilter.pushdown. The kind
+		// is what makes the pane agree with the tree: the Tables folder lists
+		// the plain user tables only, and each sub-folder its own family.
+		tables, err := dbObj.TablesOfKindFilteredContext(ctx, tableKindForNode(data.Type), serverFilter(data.Filter))
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -57,7 +77,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn
 		rows := make([][]string, len(tables))
 		objs := make([]nodeData, len(tables))
 		for i, t := range tables {
-			rows[i] = []string{t.Schema + "." + t.Name, "…", "…", "…", "…"}
+			rows[i] = []string{tableLabel(t), "…", "…", "…", "…"}
 			objs[i] = nodeData{Type: NodeTable, DBName: data.DBName, Schema: t.Schema, Name: t.Name}
 		}
 		db.postPartialObjects(app, seq, tablesFolderColumns, rows, objs)

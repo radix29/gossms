@@ -22,9 +22,8 @@ func filegroupsPageResponses() []fakeResponse {
 			int64(204800), int64(-1), int64(8192), false, primary}
 	}
 	return []fakeResponse{
-		{match: "compatibility_level, collation_name", cols: 8, rows: [][]driver.Value{{
-			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(),
-		}}},
+		{match: "compatibility_level, collation_name", cols: 9, rows: [][]driver.Value{{
+			"appdb", int64(7), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)}}},
 		{match: "fg.name, fg.type_desc, fg.is_default, fg.is_read_only", cols: 11, rows: [][]driver.Value{
 			fg("ARCHIVE", false, true, "appdb_archive", false),
 			fg("PRIMARY", true, false, "appdb", true),
