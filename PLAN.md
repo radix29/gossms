@@ -11,7 +11,11 @@ Two companion documents carry the detail this one deliberately doesn't:
 
 ## Current state
 
-`v0.0.10` (2026-09-09) is the current tag. Nothing is unreleased as of it.
+`v0.0.10` (2026-09-09) is the current tag. Unreleased since it: the Resource
+Governance database page, query-execution progress, user-defined type and XML
+schema collection properties, the Homebrew first-release fix, and (uncommitted)
+Log File Viewer and release-workflow work. `CHANGELOG.md` records them when
+they ship.
 
 The core SSMS workflows — connect, browse objects, run queries, view and edit
 properties — work on Linux and Windows. goSSMS is installed from a package
@@ -43,8 +47,9 @@ here.
 
 The floor is SQL Server 2016 SP1, stated in `README.md`. The nine
 version-specific defects the first runs against majors 13 and 14 found are
-closed, verified 2026-09-04 by `TestLiveVersionSweep` on all three instances
-(219 calls / 0 failures on 13 and 14, 233 / 0 on 17). The gates holding them,
+closed; `TestLiveVersionSweep` reports 0 failures on all three instances
+(call counts vary by what each instance has, so compare failures, not
+totals). The gates holding them,
 and the rule that a query change must be swept on the oldest instance
 available, are in `docs/open-threads.md` § Version support.
 

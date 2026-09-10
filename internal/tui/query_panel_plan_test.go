@@ -251,6 +251,7 @@ func TestRunEstimatedPlanGuards(t *testing.T) {
 	}
 
 	qp.conn = &db.ServerConn{Opts: config.Connection{Server: "fake"}}
+	qp.session = new(query.Session)
 	qp.executing = true
 	qp.runEstimatedPlan("SELECT 1")
 	if a.statusText != "A query is already executing in this panel" {

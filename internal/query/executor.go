@@ -2,6 +2,10 @@
 // batches, all run on one dedicated connection (so temp tables and SET options
 // survive across batches), with the driver's message stream — PRINT output,
 // "(n rows affected)", SQL errors — captured into Result.Messages.
+//
+// A Session keeps that connection across scripts too, as an SSMS query window
+// does; the package-level Execute functions check one out of a pool per call,
+// and the pool resets it before anyone uses it again.
 package query
 
 import (
@@ -67,6 +71,19 @@ type Result struct {
 	// execution order: actual plans from ExecuteWithPlan, estimated ones from
 	// ExecuteEstimatedPlan. Execute never populates this.
 	PlanXML []string
+
+	// State is the session's state as the run left it, read after every run
+	// on a Session — cancelled ones included, since a cancelled batch can
+	// still leave a transaction open. Nil for the package-level functions,
+	// and when the read failed (a SET NOEXEC ON the script left in force, a
+	// session that has just died).
+	State *SessionState
+
+	// SessionLost reports that the Session this run used is gone — its
+	// connection broke, or plan capture could not be switched back off — so
+	// its temp tables, SET options and open transactions are gone too, and
+	// every later run on it fails at once. Always false outside a Session.
+	SessionLost bool
 }
 
 // TotalRows sums the row counts of all result sets.
@@ -242,10 +259,7 @@ func execute(ctx context.Context, db *sql.DB, database, script string, capture p
 
 func executeWithSink(ctx context.Context, db *sql.DB, database, script string, capture planCapture, sink RowSink, opts ...Option) *Result {
 	start := time.Now()
-	res := &Result{}
-	for _, opt := range opts {
-		opt(res)
-	}
+	res := newResult(opts)
 
 	conn, err := acquireConn(ctx, db, database)
 	if err != nil {
@@ -255,25 +269,66 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, c
 	}
 	defer conn.Close()
 
-	if capture != planCaptureNone {
-		setOpt, label := "STATISTICS XML", "actual"
-		if capture == planCaptureEstimated {
-			setOpt, label = "SHOWPLAN_XML", "estimated"
+	// The capture-off failure runScript reports is dropped here, as gosmo's
+	// capturePlan drops it: conn goes back to the pool, and the pool's reset
+	// on its next checkout clears the SET option anyway. A Session has no
+	// such reset, which is why it treats the same failure as fatal.
+	if ran, _ := runScript(ctx, conn, script, capture, sink, res); ran {
+		if ctx.Err() != nil {
+			res.Messages = append(res.Messages, cancelledMessage)
+		} else {
+			if capture.readsCurrentDatabase() {
+				if name, err := currentDatabase(ctx, conn); err == nil {
+					res.Database = name
+				}
+			}
+			if res.shouldReportSuccess(capture) {
+				res.addNotice("Commands completed successfully.")
+			}
 		}
+	}
+	res.Elapsed = time.Since(start)
+	return res
+}
+
+// cancelledMessage closes the Messages pane of a run ctx cancelled.
+var cancelledMessage = Message{Text: "Query was cancelled by user.", IsError: true}
+
+func newResult(opts []Option) *Result {
+	res := &Result{}
+	for _, opt := range opts {
+		opt(res)
+	}
+	return res
+}
+
+// planCleanupTimeout bounds the SET ... OFF that ends a plan capture, which
+// runs even after ctx is cancelled.
+const planCleanupTimeout = 5 * time.Second
+
+// runScript runs script's GO batches on conn in order, recording everything
+// they produce on res, with the plan capture capture asks for switched on
+// around them. It reports whether the batches ran at all — false when the
+// capture could not be switched on, which is already recorded on res.
+//
+// cleanupErr is the failure of the SET ... OFF that ends a capture, nil when
+// there was none or it succeeded. Deferred so it runs on every exit, and with
+// ctx's cancellation stripped: a cancelled run is exactly the one most likely
+// to have left it pending. The timeout bounds how long an unresponsive
+// connection can hold it up.
+func runScript(ctx context.Context, conn *sql.Conn, script string, capture planCapture, sink RowSink, res *Result) (ran bool, cleanupErr error) {
+	if capture != planCaptureNone {
+		setOpt, label := capture.setOption()
 		if _, err := conn.ExecContext(ctx, "SET "+setOpt+" ON"); err != nil {
 			res.addError(fmt.Errorf("enable %s execution plan capture: %w", label, err))
-			res.Elapsed = time.Since(start)
-			return res
+			return false, nil
 		}
-		// Cleanup must run even if ctx is already cancelled, to return conn to
-		// the pool in a known state. context.WithoutCancel keeps ctx's values
-		// without its cancellation; the timeout bounds how long an unresponsive
-		// connection can block it. Mirrors gosmo's capturePlan, discarding the
-		// cleanup error the same way.
 		defer func() {
-			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), planCleanupTimeout)
 			defer cancel()
-			conn.ExecContext(cctx, "SET "+setOpt+" OFF")
+			if _, err := conn.ExecContext(cctx, "SET "+setOpt+" OFF"); err != nil {
+				cleanupErr = fmt.Errorf("disable %s execution plan capture: %w", label, err)
+			}
 		}()
 	}
 
@@ -286,21 +341,17 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, c
 		}
 		runBatch(ctx, conn, b, res, sink)
 	}
+	return true, nil
+}
 
-	if ctx.Err() != nil {
-		res.Messages = append(res.Messages, Message{Text: "Query was cancelled by user.", IsError: true})
-	} else {
-		if capture.readsCurrentDatabase() {
-			if name, err := currentDatabase(ctx, conn); err == nil {
-				res.Database = name
-			}
-		}
-		if res.shouldReportSuccess(capture) {
-			res.addNotice("Commands completed successfully.")
-		}
+// setOption names the SET option that switches capture on, and the word the
+// error messages call it by. Only meaningful for a capture other than
+// planCaptureNone.
+func (c planCapture) setOption() (option, label string) {
+	if c == planCaptureEstimated {
+		return "SHOWPLAN_XML", "estimated"
 	}
-	res.Elapsed = time.Since(start)
-	return res
+	return "STATISTICS XML", "actual"
 }
 
 // acquireConnRetryAttempts is the total number of tries (initial + retries)

@@ -676,11 +676,14 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	if ep == nil {
+		// gosmo passes the AUTHENTICATION clause through verbatim — it is a
+		// small grammar, not one keyword — so the certificate name inside it
+		// is quoted here.
 		spec := gosmo.EndpointSpec{
 			Name:                d.endpointName,
 			Port:                d.port,
 			Role:                "ALL",
-			Authentication:      "CERTIFICATE " + quoteBracket(d.certificateName(p.inst.name)),
+			Authentication:      "CERTIFICATE " + gosmo.QuoteName(d.certificateName(p.inst.name)),
 			Encryption:          "REQUIRED",
 			EncryptionAlgorithm: d.algorithm,
 		}
@@ -795,20 +798,33 @@ func randomPassword() (string, error) {
 // isAlreadyExists reports whether err is the server complaining that the
 // principal is already there — the case this pipeline treats as success, every
 // step being skippable.
+//
+// Matched on the error number, not the text: the message follows the session's
+// language ("Der Serverprinzipal … ist bereits vorhanden" under Deutsch), and a
+// driver error's text carries no number, so a text match fails on every
+// non-English server. 15025 is CREATE LOGIN's and 15023 CREATE USER's, both
+// confirmed live under SET LANGUAGE Deutsch. The English text is the fallback
+// for an error that reaches here with no SQL Server error in its chain.
 func isAlreadyExists(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "already exists") || strings.Contains(msg, "15023")
+	if se, ok := gosmo.AsSQLError(err); ok {
+		if se.Number == errPrincipalExists || se.Number == errUserExists {
+			return true
+		}
+		return slices.ContainsFunc(se.All, func(e gosmo.SQLError) bool {
+			return e.Number == errPrincipalExists || e.Number == errUserExists
+		})
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "already exists")
 }
 
-// quoteBracket bracket-quotes an identifier for a clause gosmo passes through
-// verbatim: the AUTHENTICATION clause is a small grammar, not one keyword, so
-// the certificate name inside it is quoted here.
-func quoteBracket(name string) string {
-	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
-}
+// The "already exists" errors the endpoint pipeline tolerates.
+const (
+	errPrincipalExists = 15025 // CREATE LOGIN: the server principal already exists
+	errUserExists      = 15023 // CREATE USER: user, group or role already exists
+)
 
 // showNewEndpointDialog opens New Database Mirroring Endpoint — the Object
 // Explorer context menu's entry point on the Always On node.

@@ -10,28 +10,18 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// Connect only sets ConnectionOptions.Database for a non-empty value, so the
-// preview must omit the key entirely rather than show a bare "database=" that
-// doesn't match the DSN actually dialed.
-func TestBuildConnectionStringOmitsEmptyDatabase(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: "myserver", AuthMethod: config.AuthSQLServer})
+// mustPreview is BuildConnectionString, parsed, failing the test on an error.
+func mustPreview(t *testing.T, opts config.Connection) *url.URL {
+	t.Helper()
+	got, err := BuildConnectionString(opts)
+	if err != nil {
+		t.Fatalf("BuildConnectionString: %v", err)
+	}
 	u, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("url.Parse(%q): %v", got, err)
 	}
-	if u.Query().Has("database") {
-		t.Errorf("connection string has a database key with no database set: %q", got)
-	}
-
-	// The key is still present when there is a database to name.
-	got = BuildConnectionString(config.Connection{Server: "myserver", Database: "mydb", AuthMethod: config.AuthSQLServer})
-	u, err = url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.Query().Get("database") != "mydb" {
-		t.Errorf("database = %q, want mydb, in %q", u.Query().Get("database"), got)
-	}
+	return u
 }
 
 // ConnectionError must stay transparent to errors.Is/As: Connect wraps the
@@ -58,105 +48,77 @@ func TestConnectionErrorUnwrapsToCause(t *testing.T) {
 	}
 }
 
-func TestBuildConnectionStringSQLServerAuth(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:     "myserver",
-		Port:       1433,
-		Database:   "mydb",
-		AuthMethod: config.AuthSQLServer,
-		User:       "sa",
-		Password:   "s3cr3t123",
-	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
+// The preview is the DSN dialled, so it shows what gosmo fills in for an
+// empty field rather than leaving it out: the old hand-built preview omitted
+// "database" and "app name" and showed ":1433" on a host dialled without one.
+func TestBuildConnectionStringShowsTheDialledDefaults(t *testing.T) {
+	u := mustPreview(t, config.Connection{Server: "myserver"})
+	if got := u.Query().Get("database"); got != "master" {
+		t.Errorf("database = %q, want master (what an empty Database dials)", got)
 	}
-	if u.User.Username() != "sa" {
-		t.Errorf("user = %q, want sa", u.User.Username())
+	if got := u.Query().Get("app name"); got != "goSSMS" {
+		t.Errorf("app name = %q, want goSSMS", got)
 	}
-	if pw, _ := u.User.Password(); pw != "s3cr3t123" {
-		t.Errorf("password = %q, want s3cr3t123", pw)
+	if got := u.Query().Get("connection timeout"); got != "30" {
+		t.Errorf("connection timeout = %q, want 30", got)
 	}
-	if got := u.Query().Get("database"); got != "mydb" {
-		t.Errorf("database = %q, want mydb", got)
+	if u.Host != "myserver" {
+		t.Errorf("host = %q, want myserver — no port is dialled, so none is shown", u.Host)
+	}
+	if got := u.Query().Get("encrypt"); got != "optional" {
+		t.Errorf("encrypt = %q, want optional for an entry with no mode", got)
 	}
 }
 
-// TestBuildConnectionStringEscapesReservedCharacters pins down that User/
-// Password/Database go through net/url rather than being interpolated
-// straight into an "sqlserver://user:pass@host" string: a value containing
-// a URL-reserved character (here "@" and "&") would otherwise shift where
-// net/url splits userinfo from host, corrupting the result.
+// Every secret is masked — the preview is on screen and selectable — and
+// a masked one is still visibly present, so an empty password is told apart.
+func TestBuildConnectionStringMasksThePassword(t *testing.T) {
+	cases := []config.Connection{
+		{Server: "s", AuthMethod: config.AuthSQLServer, User: "sa", Password: "hunter2"},
+		{Server: "s", AuthMethod: config.AuthEntraPassword, User: "u@x", Password: "hunter2"},
+		{Server: "s", AuthMethod: config.AuthEntraServicePrincipal, ClientID: "app", Password: "hunter2"},
+	}
+	for _, c := range cases {
+		got, err := BuildConnectionString(c)
+		if err != nil {
+			t.Fatalf("method %d: %v", c.AuthMethod, err)
+		}
+		if strings.Contains(got, "hunter2") {
+			t.Errorf("method %d: preview %q shows the password", c.AuthMethod, got)
+		}
+		if !strings.Contains(got, "XXXXX") {
+			t.Errorf("method %d: preview %q hides that a password is set", c.AuthMethod, got)
+		}
+	}
+}
+
 func TestBuildConnectionStringEscapesReservedCharacters(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:     "myserver",
-		Database:   "my&db",
-		AuthMethod: config.AuthSQLServer,
-		User:       "sa",
-		Password:   "p@ss:word/1",
+	u := mustPreview(t, config.Connection{
+		Server: "myserver", Database: "my&db", AuthMethod: config.AuthSQLServer, User: "s@a",
 	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.Host != "myserver:1433" {
-		t.Errorf("host = %q, want myserver:1433 (unaffected by the reserved chars elsewhere)", u.Host)
-	}
-	if u.User.Username() != "sa" {
-		t.Errorf("user = %q, want sa", u.User.Username())
-	}
-	if pw, _ := u.User.Password(); pw != "p@ss:word/1" {
-		t.Errorf("password = %q, want p@ss:word/1", pw)
-	}
-	if got := u.Query().Get("database"); got != "my&db" {
-		t.Errorf("database = %q, want my&db", got)
-	}
-}
-
-func TestBuildConnectionStringDefaultsPortTo1433(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: "myserver"})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.Host != "myserver:1433" {
-		t.Errorf("host = %q, want myserver:1433", u.Host)
+	if u.Host != "myserver" || u.User.Username() != "s@a" || u.Query().Get("database") != "my&db" {
+		t.Errorf("host/user/database = %q/%q/%q, want myserver/s@a/my&db", u.Host, u.User.Username(), u.Query().Get("database"))
 	}
 }
 
 // TestBuildConnectionStringNamedInstance pins that a named instance with no
-// port is previewed without one. The preview must be the DSN Connect actually
-// dials: a named instance takes its port from SQL Browser (win10cli\SQL2017
-// answers on 55253), so a ":1433" written in here would name the *default*
-// instance — and copying the preview out would reach it.
+// port is shown without one. A named instance takes its port from SQL Browser
+// (win10cli\SQL2017 answers on 55253), so a ":1433" here would name the
+// *default* instance — and copying the preview out would reach it.
 func TestBuildConnectionStringNamedInstance(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: `myserver\SQLEXPRESS`})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
+	for _, port := range []int{0, 1433} {
+		u := mustPreview(t, config.Connection{Server: `myserver\SQLEXPRESS`, Port: port})
+		if u.Host != "myserver" || u.Path != "/SQLEXPRESS" {
+			t.Errorf("port %d: host/path = %q/%q, want myserver//SQLEXPRESS", port, u.Host, u.Path)
+		}
 	}
-	if u.Host != "myserver" {
-		t.Errorf("host = %q, want myserver (no port, no %%5C mangling)", u.Host)
+	u := mustPreview(t, config.Connection{Server: `myserver\SQLEXPRESS`, Port: 1434})
+	if u.Host != "myserver:1434" || u.Path != "/SQLEXPRESS" {
+		t.Errorf("dialog port: host/path = %q/%q, want myserver:1434//SQLEXPRESS", u.Host, u.Path)
 	}
-	if u.Path != "/SQLEXPRESS" {
-		t.Errorf("path = %q, want /SQLEXPRESS", u.Path)
-	}
-}
-
-// TestBuildConnectionStringNamedInstanceDefaultPortDropped is the same for a
-// Port field left at 1433 — the value the dialog used to pre-fill. Treating it
-// as "unspecified" is what keeps the browser lookup alive.
-func TestBuildConnectionStringNamedInstanceDefaultPortDropped(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: `myserver\SQLEXPRESS`, Port: 1433})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.Host != "myserver" {
-		t.Errorf("host = %q, want myserver", u.Host)
-	}
-	if u.Path != "/SQLEXPRESS" {
-		t.Errorf("path = %q, want /SQLEXPRESS", u.Path)
+	u = mustPreview(t, config.Connection{Server: "myserver,1434", Port: 1500})
+	if u.Host != "myserver:1434" {
+		t.Errorf("embedded port: host = %q, want myserver:1434", u.Host)
 	}
 }
 
@@ -180,33 +142,166 @@ func TestResolveServerLeavesNamedInstanceAlone(t *testing.T) {
 	}
 }
 
-func TestBuildConnectionStringNamedInstanceWithDialogPort(t *testing.T) {
-	// A non-default Port field alongside a "\instance" Server must combine
-	// as "host\instance,port" (comma), not get corrupted into part of the
-	// instance name.
-	got := BuildConnectionString(config.Connection{Server: `myserver\SQLEXPRESS`, Port: 1434})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
+func TestBuildConnectionStringTLSSettings(t *testing.T) {
+	for mode, want := range map[config.EncryptMode]string{
+		config.EncryptOptional: "optional", config.EncryptMandatory: "mandatory", config.EncryptStrict: "strict",
+	} {
+		u := mustPreview(t, config.Connection{Server: "s", Encrypt: mode, HostNameInCertificate: " sql.example.com "})
+		if got := u.Query().Get("encrypt"); got != want {
+			t.Errorf("mode %q: encrypt = %q, want %q", mode, got, want)
+		}
+		if got := u.Query().Get("hostNameInCertificate"); got != "sql.example.com" {
+			t.Errorf("mode %q: hostNameInCertificate = %q, want sql.example.com", mode, got)
+		}
+		if u.Query().Has("TrustServerCertificate") {
+			t.Errorf("mode %q: TrustServerCertificate present with the box unticked", mode)
+		}
 	}
-	if u.Host != "myserver:1434" {
-		t.Errorf("host = %q, want myserver:1434", u.Host)
-	}
-	if u.Path != "/SQLEXPRESS" {
-		t.Errorf("path = %q, want /SQLEXPRESS", u.Path)
+	u := mustPreview(t, config.Connection{Server: "s", TrustServerCertificate: true})
+	if got := u.Query().Get("TrustServerCertificate"); got != "true" {
+		t.Errorf("TrustServerCertificate = %q, want true", got)
 	}
 }
 
-func TestBuildConnectionStringCommaPort(t *testing.T) {
-	// A port embedded directly in the Server field (SSMS-native "host,port")
-	// takes precedence over the dialog's default Port field value.
-	got := BuildConnectionString(config.Connection{Server: "myserver,1434"})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
+// BUG-3: each auth method reads its client id from a different gosmo option,
+// and the credentials a method does not use are not passed at all.
+func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
+	full := config.Connection{
+		Server: "s", User: "user", Password: "pw", TenantID: "tenant", ClientID: "client",
 	}
-	if u.Host != "myserver:1434" {
-		t.Errorf("host = %q, want myserver:1434", u.Host)
+	type want struct{ user, password, tenant, clientID, appClientID string }
+	cases := map[config.AuthMethod]want{
+		config.AuthSQLServer:             {user: "user", password: "pw"},
+		config.AuthWindows:               {user: "user", password: "pw"},
+		config.AuthEntraPassword:         {user: "user", password: "pw", tenant: "tenant"},
+		config.AuthEntraMSI:              {tenant: "tenant", clientID: "client"},
+		config.AuthEntraServicePrincipal: {user: "client", password: "pw", tenant: "tenant"},
+		config.AuthEntraInteractive:      {tenant: "tenant", appClientID: "client"},
+		config.AuthEntraDeviceCode:       {tenant: "tenant", appClientID: "client"},
+		config.AuthEntraDefault:          {tenant: "tenant"},
+		config.AuthEntraAzCLI:            {tenant: "tenant"},
+	}
+	if len(cases) != len(config.AllAuthMethods()) {
+		t.Fatalf("%d cases for %d auth methods — a method is untested", len(cases), len(config.AllAuthMethods()))
+	}
+	for m, w := range cases {
+		opts := full
+		opts.AuthMethod = m
+		co, err := toGosmoOptions(opts, RoleExplorer)
+		if err != nil {
+			t.Fatalf("method %d: %v", m, err)
+		}
+		got := want{co.User, co.Password, co.TenantID, co.ClientID, co.ApplicationClientID}
+		if got != w {
+			t.Errorf("%s: user/password/tenant/clientID/appClientID = %+v, want %+v", config.AuthMethodName(m), got, w)
+		}
+	}
+
+	// A service principal saved with its application id in User still reaches
+	// gosmo's User — and so the DSN's "user id".
+	legacy := config.Connection{Server: "s", AuthMethod: config.AuthEntraServicePrincipal, User: "app-id", Password: "pw"}
+	u := mustPreview(t, legacy)
+	if got := u.Query().Get("user id"); got != "app-id" {
+		t.Errorf("legacy service principal: user id = %q, want app-id", got)
+	}
+	legacy.ClientID, legacy.TenantID = "new-app-id", "t1"
+	u = mustPreview(t, legacy)
+	if got := u.Query().Get("user id"); got != "new-app-id@t1" {
+		t.Errorf("service principal: user id = %q, want new-app-id@t1 (ClientID wins over User)", got)
+	}
+}
+
+func TestRoleSetsTheApplicationName(t *testing.T) {
+	for role, want := range map[Role]string{
+		RoleExplorer: "goSSMS", RoleQuery: "goSSMS - Query", RoleActivityMonitor: "goSSMS - Activity Monitor",
+	} {
+		co, err := toGosmoOptions(config.Connection{Server: "s"}, role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if co.ApplicationName != want {
+			t.Errorf("role %d: ApplicationName = %q, want %q", role, co.ApplicationName, want)
+		}
+	}
+}
+
+func TestParseExtraProperties(t *testing.T) {
+	cases := []struct {
+		in   string
+		want url.Values
+	}{
+		{"", nil},
+		{"  \n ", nil},
+		{"packet size=4096", url.Values{"packet size": {"4096"}}},
+		{"ApplicationIntent=ReadOnly;MultiSubnetFailover=true;", url.Values{
+			"ApplicationIntent": {"ReadOnly"}, "MultiSubnetFailover": {"true"}}},
+		{"a=1&b=2", url.Values{"a": {"1"}, "b": {"2"}}},
+		{" a = 1 \n b=2\r\n", url.Values{"a": {"1"}, "b": {"2"}}},
+		{"keepalive=", url.Values{"keepalive": {""}}},
+		{"a=x=y", url.Values{"a": {"x=y"}}},
+	}
+	for _, c := range cases {
+		got, err := ParseExtraProperties(c.in)
+		if err != nil {
+			t.Errorf("ParseExtraProperties(%q): %v", c.in, err)
+			continue
+		}
+		if fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("ParseExtraProperties(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+	for _, bad := range []string{"packetsize", "a=1;oops", "=1"} {
+		if _, err := ParseExtraProperties(bad); err == nil {
+			t.Errorf("ParseExtraProperties(%q): want an error", bad)
+		}
+	}
+}
+
+// BUG-2: extra properties reach the driver, and one naming a setting the
+// dialog owns is an error rather than a silent override either way.
+func TestExtraPropertiesReachTheDialledDSN(t *testing.T) {
+	u := mustPreview(t, config.Connection{Server: "s", Database: "db", ExtraProperties: "ApplicationIntent=ReadOnly; packet size=8192"})
+	if got := u.Query().Get("applicationintent"); got != "ReadOnly" {
+		t.Errorf("applicationintent = %q, want ReadOnly (%s)", got, u)
+	}
+	if got := u.Query().Get("packet size"); got != "8192" {
+		t.Errorf("packet size = %q, want 8192 (%s)", got, u)
+	}
+
+	for _, extra := range []string{"database=other", "Encrypt=disable", "TrustServerCertificate=true", "packetsize"} {
+		opts := config.Connection{Server: "s", ExtraProperties: extra}
+		_, err := BuildConnectionString(opts)
+		if err == nil {
+			t.Errorf("preview with %q: want an error", extra)
+		} else if strings.Contains(err.Error(), "ConnectionOptions") {
+			t.Errorf("preview with %q: %q speaks gosmo's API, not the dialog's", extra, err)
+		}
+		_, err = Connect(opts)
+		if _, ok := errors.AsType[*ConnectionError](err); !ok {
+			t.Errorf("Connect with %q: err = %v, want a *ConnectionError before anything is dialled", extra, err)
+		}
+	}
+}
+
+// The preview and Connect share toGosmoOptions; this pins that nothing but
+// the secrets differs between the preview and what gosmo renders unmasked.
+func TestBuildConnectionStringIsTheDialledDSNMasked(t *testing.T) {
+	opts := config.Connection{Server: `h\i`, Port: 1500, AuthMethod: config.AuthSQLServer, User: "sa", Password: "pw",
+		Encrypt: config.EncryptMandatory, ExtraProperties: "keepalive=10"}
+	preview, err := BuildConnectionString(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	co, err := toGosmoOptions(opts, RoleExplorer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialled, err := co.ConnectionString(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Replace(dialled, "sa:pw@", "sa:XXXXX@", 1) != preview {
+		t.Errorf("preview %q is not the dialled %q with the password masked", preview, dialled)
 	}
 }
 
@@ -282,6 +377,11 @@ func TestResolveServer(t *testing.T) {
 		{"embedded comma port wins over dialog port", "myserver,1434", 1500, "myserver,1434"},
 		{"instance, default port: unchanged", `myserver\SQLEXPRESS`, 1433, `myserver\SQLEXPRESS`},
 		{"instance, custom port: comma appended", `myserver\SQLEXPRESS`, 1434, `myserver\SQLEXPRESS,1434`},
+		// A colon after a bare IPv6 literal is one more group of it.
+		{"bare IPv6, custom port: comma appended", "fe80::1", 1434, "fe80::1,1434"},
+		{"bracketed IPv6, custom port: colon appended", "[fe80::1]", 1434, "[fe80::1]:1434"},
+		{"bare IPv6, default port: unchanged", "2001:db8::5", 1433, "2001:db8::5"},
+		{"bracketed IPv6 with port wins over dialog port", "[fe80::1]:1500", 1434, "[fe80::1]:1500"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -289,103 +389,5 @@ func TestResolveServer(t *testing.T) {
 				t.Errorf("resolveServer(%q, %d) = %q, want %q", c.server, c.dialogPort, got, c.want)
 			}
 		})
-	}
-}
-
-func TestBuildConnectionStringSQLServerAuthNoUser(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: "myserver", AuthMethod: config.AuthSQLServer})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.User != nil {
-		t.Errorf("User = %v, want nil when no User is set", u.User)
-	}
-}
-
-func TestBuildConnectionStringWindowsAuth(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:     "myserver",
-		AuthMethod: config.AuthWindows,
-	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	// "integrated security" round-trips through url.Values as
-	// "integrated+security" (space encoded); Query().Get decodes it back.
-	if got := u.Query().Get("integrated security"); got != "true" {
-		t.Errorf(`"integrated security" = %q, want true`, got)
-	}
-}
-
-func TestBuildConnectionStringEntraWithCredentials(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:     "myserver",
-		AuthMethod: config.AuthEntraPassword,
-		User:       "user@tenant.onmicrosoft.com",
-		Password:   "pw",
-	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.User.Username() != "user@tenant.onmicrosoft.com" {
-		t.Errorf("user = %q, want user@tenant.onmicrosoft.com", u.User.Username())
-	}
-	if got := u.Query().Get("fedauth"); got != "ActiveDirectoryPassword" {
-		t.Errorf("fedauth = %q, want ActiveDirectoryPassword", got)
-	}
-}
-
-func TestBuildConnectionStringEntraWithoutCredentials(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:     "myserver",
-		AuthMethod: config.AuthEntraDefault,
-	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if u.User != nil {
-		t.Errorf("User = %v, want nil when no credentials are set", u.User)
-	}
-	if got := u.Query().Get("fedauth"); got != "ActiveDirectoryDefault" {
-		t.Errorf("fedauth = %q, want ActiveDirectoryDefault", got)
-	}
-}
-
-func TestBuildConnectionStringEncryptAndTrustFlags(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:                 "myserver",
-		Encrypt:                true,
-		TrustServerCertificate: false,
-	})
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("url.Parse(%q): %v", got, err)
-	}
-	if got := u.Query().Get("encrypt"); got != "true" {
-		t.Errorf("encrypt = %q, want true", got)
-	}
-	if got := u.Query().Get("TrustServerCertificate"); got != "false" {
-		t.Errorf("TrustServerCertificate = %q, want false", got)
-	}
-}
-
-func TestBuildConnectionStringExtraPropertiesAppended(t *testing.T) {
-	got := BuildConnectionString(config.Connection{
-		Server:          "myserver",
-		ExtraProperties: "packetsize=4096",
-	})
-	if !strings.HasSuffix(got, "&packetsize=4096") {
-		t.Errorf("got %q, want it to end with &packetsize=4096", got)
-	}
-}
-
-func TestBuildConnectionStringNoExtraPropertiesNoTrailingSeparator(t *testing.T) {
-	got := BuildConnectionString(config.Connection{Server: "myserver"})
-	if strings.HasSuffix(got, "&") {
-		t.Errorf("got %q, want no trailing separator when ExtraProperties is empty", got)
 	}
 }

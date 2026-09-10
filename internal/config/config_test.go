@@ -231,7 +231,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		User:                   "sa",
 		Password:               "s3cr3t!",
 		TrustServerCertificate: true,
-		Encrypt:                true,
+		Encrypt:                EncryptStrict,
+		HostNameInCertificate:  "sql.example.com",
 		ExtraProperties:        "packetsize=4096",
 	})
 	if err := cfg.Save(); err != nil {
@@ -258,7 +259,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	got := loaded.Connections[0]
 	want := cfg.Connections[0]
 	if got.Server != want.Server || got.Port != want.Port || got.Database != want.Database ||
-		got.User != want.User || got.ExtraProperties != want.ExtraProperties {
+		got.User != want.User || got.ExtraProperties != want.ExtraProperties ||
+		got.Encrypt != want.Encrypt || got.HostNameInCertificate != want.HostNameInCertificate ||
+		got.TrustServerCertificate != want.TrustServerCertificate {
 		t.Errorf("loaded connection = %+v, want %+v", got, want)
 	}
 	if got.Password != "s3cr3t!" {
@@ -632,5 +635,120 @@ func TestLoadMarksAnUndecryptablePasswordUnreadable(t *testing.T) {
 	}
 	if cfg.Connections[1].PasswordUnreadable() {
 		t.Error("a connection that never had a password reports as unreadable")
+	}
+}
+
+// The boolean "encrypt" earlier releases wrote maps onto the two modes its
+// checkbox could express, and "encrypt_mode" wins once present.
+func TestLoadMapsTheLegacyEncryptBoolean(t *testing.T) {
+	cases := []struct {
+		json string
+		want EncryptMode
+	}{
+		{`{"server":"s","encrypt":true}`, EncryptMandatory},
+		{`{"server":"s","encrypt":false}`, EncryptOptional},
+		{`{"server":"s"}`, EncryptOptional},
+		{`{"server":"s","encrypt":false,"encrypt_mode":"strict"}`, EncryptStrict},
+		{`{"server":"s","encrypt":true,"encrypt_mode":"optional"}`, EncryptOptional},
+	}
+	for _, c := range cases {
+		var conn Connection
+		if err := json.Unmarshal([]byte(c.json), &conn); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", c.json, err)
+		}
+		if conn.Encrypt != c.want || conn.Server != "s" {
+			t.Errorf("Unmarshal(%s) → Encrypt %q, Server %q; want %q, s", c.json, conn.Encrypt, conn.Server, c.want)
+		}
+	}
+}
+
+// A release before encrypt_mode decodes "encrypt" as a bool; a string there
+// fails its whole config.json. So the boolean is still written, true for
+// anything but Optional, beside the mode.
+func TestSaveKeepsTheLegacyEncryptBooleanForADowngrade(t *testing.T) {
+	for mode, legacy := range map[EncryptMode]bool{
+		EncryptOptional: false, EncryptMandatory: true, EncryptStrict: true, "": false,
+	} {
+		data, err := json.Marshal(Connection{Server: "s", Encrypt: mode})
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		var old struct {
+			Server  string `json:"server"`
+			Encrypt bool   `json:"encrypt"`
+		}
+		if err := json.Unmarshal(data, &old); err != nil {
+			t.Fatalf("an old release could not read %s: %v", data, err)
+		}
+		if old.Encrypt != legacy || old.Server != "s" {
+			t.Errorf("mode %q wrote encrypt=%v (%s), want %v", mode, old.Encrypt, data, legacy)
+		}
+	}
+}
+
+// A log past the limit is moved to .1 and a fresh one started; a log under it
+// is left alone and appended to. Only one generation is kept, so a second
+// rotation replaces the first .1 rather than accumulating files.
+func TestOpenLogFileRotatesOnlyPastTheLimit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, err := LogFilePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeLog := func(content string) {
+		t.Helper()
+		f, err := OpenLogFile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+	}
+	read := func(p string) string {
+		t.Helper()
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	writeLog("small\n")
+	writeLog("more\n")
+	if got := read(path); got != "small\nmore\n" {
+		t.Fatalf("a log under the limit was not appended to: %q", got)
+	}
+	if _, err := os.Stat(path + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("a log under the limit was rotated (stat .1: %v)", err)
+	}
+
+	big := strings.Repeat("x", MaxLogSize+1)
+	if err := os.WriteFile(path, []byte(big), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeLog("fresh\n")
+	if got := read(path); got != "fresh\n" {
+		t.Errorf("after rotation the log holds %d bytes, want only the new line", len(got))
+	}
+	if got := read(path + ".1"); got != big {
+		t.Errorf(".1 holds %d bytes, want the %d-byte old log", len(got), len(big))
+	}
+
+	if err := os.WriteFile(path, []byte(big+"second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeLog("third\n")
+	if got := read(path + ".1"); got != big+"second" {
+		t.Errorf("the second rotation did not replace .1 (%d bytes)", len(got))
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("fresh log mode = %v, want 0600", fi.Mode().Perm())
 	}
 }

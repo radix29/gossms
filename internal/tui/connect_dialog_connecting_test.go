@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -45,9 +46,14 @@ func TestConnectingDisablesEveryControlButCancel(t *testing.T) {
 // TestEscapeCancelsAnAttemptInFlight covers the one control that stays live.
 // Cancel closes the dialog and drops the attempt — connectAttempt going nil is
 // what makes the dial's callback answer "not wanted" and wind itself back.
+//
+// The dial itself is aborted too: its context is cancelled, so the attempt does
+// not run on to the 30-second connect timeout behind a dialog the user closed.
 func TestEscapeCancelsAnAttemptInFlight(t *testing.T) {
 	d := connectingDialog(t)
 	d.connectAttempt = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	d.connectCancel = cancel
 
 	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 	if d.Visible() {
@@ -55,6 +61,9 @@ func TestEscapeCancelsAnAttemptInFlight(t *testing.T) {
 	}
 	if d.connecting || d.connectAttempt != nil {
 		t.Fatal("the attempt was not abandoned on Cancel — its callback would still act on the dialog")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the dial's context is still live after Cancel — the attempt runs on to its timeout")
 	}
 }
 
@@ -82,5 +91,19 @@ func TestFailedAttemptLeavesTheDialogOpen(t *testing.T) {
 	typeKey(d, "x")
 	if got := d.fServer.Value(); got != "srvx" {
 		t.Fatalf("server field = %q after typing once the attempt failed, want the field editable again", got)
+	}
+}
+
+// An attempt moves the button focus to Cancel for its duration; one that is
+// cancelled (or succeeds) closes the dialog with it still there. Reopened,
+// Enter must reach Connect again — it used to close the dialog instead.
+func TestReopenedDialogEnterConnectsAgain(t *testing.T) {
+	d := connectingDialog(t)
+	d.connectAttempt = make(chan struct{})
+	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+
+	d.Show()
+	if d.btnFocus != 0 {
+		t.Fatalf("button focus = %d on a reopened dialog, want 0 (Connect)", d.btnFocus)
 	}
 }

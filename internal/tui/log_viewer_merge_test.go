@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql/driver"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -289,5 +290,154 @@ func TestLogViewerReanchorsAMergedSelectionAfterACycle(t *testing.T) {
 	lv.reanchorAfterCycle(gosmo.ErrorLogSQLServer)
 	if len(lv.sel) != 1 || lv.sel[0].Num != 1 {
 		t.Errorf("a single-file view was re-anchored to %v; it keeps its archive number", lv.sel)
+	}
+}
+
+// -- across the two log families ----------------------------------------------
+
+// agentTestEntry is mergeTestEntry for the Agent log, whose middle column is an
+// int severity rather than a ProcessInfo string — gosmo scans each family into
+// its own destination, and a string there fails the read outright.
+func agentTestEntry(h, m int, text string) []driver.Value {
+	return []driver.Value{time.Date(2026, 8, 21, h, m, 0, 0, time.UTC), int64(1), text}
+}
+
+// mixedFiles is the cross-family selection the tests below read: each family's
+// current log.
+func mixedFiles() []logFileRef {
+	return []logFileRef{
+		{Type: gosmo.ErrorLogSQLServer, Num: 0},
+		{Type: gosmo.ErrorLogAgent, Num: 0},
+	}
+}
+
+// TestLogViewerMergesAcrossFamilies. Reading the SQL Server and Agent logs of
+// the same minute side by side is the reason to look at the Agent log at all,
+// so the merge has to span families — and the tie between two files then has
+// to break by family, deterministically, the way it breaks by archive number
+// within one.
+func TestLogViewerMergesAcrossFamilies(t *testing.T) {
+	a := newTestApp()
+	sc, _ := newFakeConn(t,
+		mergeTestFiles(),
+		fakeResponse{match: "xp_readerrorlog 0, 1", cols: 3, rows: [][]driver.Value{
+			mergeTestEntry(10, 0, "sql, tied"),
+			mergeTestEntry(10, 2, "sql, newest"),
+		}},
+		fakeResponse{match: "xp_readerrorlog 0, 2", cols: 3, rows: [][]driver.Value{
+			agentTestEntry(10, 0, "agent, tied"),
+			agentTestEntry(10, 1, "agent, middle"),
+		}},
+	)
+	a.connections = append(a.connections, sc)
+	lv := NewLogViewer(a, sc, gosmo.ErrorLogSQLServer, 0)
+
+	want := []string{"sql, newest", "agent, middle", "sql, tied", "agent, tied"}
+	for pass := range 2 {
+		lv.ShowLogs(gosmo.ErrorLogSQLServer, mixedFiles())
+		waitAndDrain(t, a)
+		if len(lv.entries) != 4 {
+			t.Fatalf("pass %d: the cross-family read returned %d entries, want all 4", pass, len(lv.entries))
+		}
+		for i, w := range want {
+			if got := lv.entries[i].entry.Text; got != w {
+				t.Fatalf("pass %d: entry %d = %q, want %q (order: %v)", pass, i, got, w, want)
+			}
+		}
+		if lv.entries[2].ref.Type != gosmo.ErrorLogSQLServer || lv.entries[3].ref.Type != gosmo.ErrorLogAgent {
+			t.Errorf("pass %d: the tied rows came from %v then %v, want the selection's family order",
+				pass, lv.entries[2].ref.Type, lv.entries[3].ref.Type)
+		}
+	}
+
+	// Archive numbers are not comparable across families, so a File column
+	// reading "Current" twice would name two different files identically.
+	if got := lv.cells(lv.entries[0]); got[1] != "SQL Server Current" {
+		t.Errorf("File cell = %q, want the family in it", got[1])
+	}
+	if got := lv.cells(lv.entries[1]); got[1] != "Agent Current" {
+		t.Errorf("File cell = %q, want the family in it", got[1])
+	}
+	if got := lv.grid.Status(); !strings.Contains(got, "SQL Server + Agent logs") {
+		t.Errorf("status = %q, want it to name both families it is drawing from", got)
+	}
+	// The two selectors still mean exactly one family — Recycle and the
+	// single-file picker have nothing else to act on.
+	if lv.logType != gosmo.ErrorLogSQLServer {
+		t.Errorf("logType = %v after a mixed selection, want the family the selectors were on", lv.logType)
+	}
+}
+
+// TestLogViewerSelectorsFollowASingleFamilySelection. A set that is entirely of
+// one family moves the selectors to it: picking only Agent files from the
+// checklist and then finding Recycle still pointed at the SQL Server log is the
+// bug this pins.
+func TestLogViewerSelectorsFollowASingleFamilySelection(t *testing.T) {
+	a, lv, _ := newRecycleTestViewer(t)
+
+	lv.ShowLogs(gosmo.ErrorLogSQLServer, []logFileRef{
+		{Type: gosmo.ErrorLogAgent, Num: 0},
+		{Type: gosmo.ErrorLogAgent, Num: 1},
+	})
+	waitAndDrain(t, a)
+	if lv.logType != gosmo.ErrorLogAgent {
+		t.Errorf("logType = %v, want the family the whole selection belongs to", lv.logType)
+	}
+	if lv.multiFamily() {
+		t.Errorf("sel = %v is one family; multiFamily said otherwise", lv.sel)
+	}
+	// One family, so the labels stay exactly what they were before the merge
+	// could span families.
+	if got := lv.rowFileLabel(lv.sel[1]); got != "Archive #1" {
+		t.Errorf("file label = %q, want the bare archive name a single-family view has always shown", got)
+	}
+}
+
+// TestLogViewerChecklistOffersBothFamilies. The checklist is the only way to
+// build a mixed set, so it has to list both enumerations — and name the family
+// on every row, since "Current" appears once per family.
+func TestLogViewerChecklistOffersBothFamilies(t *testing.T) {
+	a, lv, _ := newRecycleTestViewer(t)
+	lv.files[gosmo.ErrorLogSQLServer] = []*gosmo.ErrorLogFile{{Number: 0, Date: "08/21/2026  09:00"}}
+	lv.files[gosmo.ErrorLogAgent] = []*gosmo.ErrorLogFile{{Number: 0, Date: "08/21/2026  09:05"}}
+
+	lv.showLogFileMenu()
+	chooseMenuItem(t, a, "Select Files...")
+	labels := []string{}
+	for _, it := range a.contextMenu.Items() {
+		labels = append(labels, it.Label)
+	}
+	for _, want := range []string{"SQL Server — Current", "Agent — Current"} {
+		if !slices.ContainsFunc(labels, func(l string) bool { return strings.Contains(l, want) }) {
+			t.Fatalf("checklist rows %v, want one naming %q", labels, want)
+		}
+	}
+
+	chooseMenuItem(t, a, "Agent — Current")
+	if len(lv.pending) != 2 {
+		t.Fatalf("pending = %v, want the seeded SQL Server file plus the ticked Agent one", lv.pending)
+	}
+	chooseMenuItem(t, a, "Read 2 files")
+	waitAndDrain(t, a)
+	if !lv.multiFamily() || len(lv.sel) != 2 {
+		t.Fatalf("sel = %v, want one file of each family", lv.sel)
+	}
+}
+
+// TestLogViewerReanchorsAMixedSelectionAfterEitherFamilyIsCycled. Half a merged
+// set going stale is the same silent lie as all of it: the numbers of the
+// cycled family no longer name the files they were chosen from, so a mixed
+// selection is re-anchored whichever family was cycled.
+func TestLogViewerReanchorsAMixedSelectionAfterEitherFamilyIsCycled(t *testing.T) {
+	for _, cycled := range logFamilies {
+		lv := newTestLogViewer()
+		lv.sel = mixedFiles()
+		lv.reanchorAfterCycle(cycled)
+		if len(lv.sel) != 1 || lv.sel[0] != (logFileRef{Type: cycled, Num: 0}) {
+			t.Errorf("cycling %v left sel = %v, want the cycled family's current log alone", cycled, lv.sel)
+		}
+		if lv.logType != cycled {
+			t.Errorf("cycling %v left the selectors on %v", cycled, lv.logType)
+		}
 	}
 }

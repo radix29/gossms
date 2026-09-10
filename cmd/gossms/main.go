@@ -27,14 +27,9 @@ func main() {
 		}
 	}
 
-	if path, err := config.LogFilePath(); err == nil {
-		// 0600, matching the config file and encryption key alongside it —
-		// the log records server names, login names, and error text.
-		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-		if err == nil {
-			log.SetOutput(logFile)
-			defer logFile.Close()
-		}
+	if logFile, err := config.OpenLogFile(); err == nil {
+		log.SetOutput(logFile)
+		defer logFile.Close()
 	}
 
 	app := tui.NewApp()

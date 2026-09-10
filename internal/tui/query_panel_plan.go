@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"time"
 
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/showplan"
@@ -19,65 +18,25 @@ func (p *QueryPanel) ShowEstimatedPlan() {
 	p.runEstimatedPlan(p.editor.Text())
 }
 
-// runEstimatedPlan is runQuery's plan-fetching counterpart: same guards,
-// same p.executing/p.cancel single-flight fields (so Stop Execution and
-// Cancel Executing Query also cancel an in-flight plan fetch for free), same
-// postAndWake completion pattern. Uses query.ExecuteEstimatedPlan
-// rather than talking to gosmo directly, so a script containing GO batch
-// separators is split the same way Execute splits it — gosmo's own
-// EstimatedPlanContext takes one statement at a time and would otherwise
-// reject any multi-batch script with a syntax error on "GO" itself.
+// runEstimatedPlan is runQuery's plan-fetching counterpart, through the same
+// runRefused guards and launch — so Stop Execution and Cancel Executing Query
+// cancel an in-flight plan fetch for free, and a panel closed mid-fetch still
+// has its status line cleared. Uses query.Session.ExecuteEstimatedPlan rather
+// than talking to gosmo directly, so a script containing GO batch separators
+// is split the same way Execute splits it — gosmo's own EstimatedPlanContext
+// takes one statement at a time and would otherwise reject any multi-batch
+// script with a syntax error on "GO" itself.
 func (p *QueryPanel) runEstimatedPlan(queryText string) {
-	if queryText == "" {
-		p.resultsNotice = "No query to execute"
+	if p.runRefused(queryText) {
 		return
 	}
-	if !p.app.isConnected(p.conn) {
-		p.resultsNotice = p.notConnectedMessage()
-		p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
-		return
-	}
-	if p.executing {
-		p.app.setStatus("A query is already executing in this panel")
-		return
-	}
-	// Snapshot now — read from the background goroutine below, not p.conn/
-	// p.database, which could change while it's running.
-	sc := p.conn
-	database := p.database
-	ctx, cancel := context.WithCancel(sc.Context())
-	p.cancel = cancel
-	p.resultsNotice = ""
-	p.executing = true
-	p.execStart = time.Now()
 	// No rows are scanned by an estimated plan, so the status line's row
 	// counter stays off for this run.
-	p.progress = nil
-	p.app.setStatus("Fetching estimated execution plan...")
-
-	done := make(chan struct{})
-	p.execDone = done
-	go p.tickExecuting(done)
-
-	p.app.safegoRepair("the estimated execution plan", p.execPanicked, func() {
-		// Both on every exit, not just the normal one — see startRun.
-		defer cancel()
-		defer close(done)
-
-		res := query.ExecuteEstimatedPlan(ctx, sc.Server.DB(), database, queryText)
-		// cancelled must be read while ctx is still live — the deferred
-		// cancel() above sets ctx.Err() itself, which would make this always
-		// true if it were read after.
-		cancelled := ctx.Err() != nil
-		p.app.postAndWake(func() {
-			p.executing = false
-			p.cancel = nil
-			if !p.app.panelHosted(p) {
-				return
-			}
-			p.setEstimatedPlan(res, cancelled)
-		})
-	})
+	p.launch("the estimated execution plan", "Fetching estimated execution plan...", nil,
+		func(ctx context.Context, sess *query.Session) *query.Result {
+			return sess.ExecuteEstimatedPlan(ctx, queryText)
+		},
+		p.setEstimatedPlan)
 }
 
 // setEstimatedPlan installs a finished plan fetch. On success, the plan

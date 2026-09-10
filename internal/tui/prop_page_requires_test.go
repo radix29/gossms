@@ -58,7 +58,7 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Assembly":                     assemblyPropPages(sc, "HealthClinic", "GeoUtils"),
 		"Rule":                         rulePropPages(sc, "HealthClinic", "dbo", "PhoneRule"),
 		"Default":                      defaultPropPages(sc, "HealthClinic", "dbo", "TodayDefault"),
-		"Plan Guide":                   planGuidePropPages(sc, "HealthClinic", "pg_reports"),
+		"Plan Guide":                   planGuidePropPages(sc, "HealthClinic", "pg_reports", "dbo", "GetClaims"),
 		"External Data Source":         externalDataSourcePropPages(sc, "HealthClinic", "HadoopCluster"),
 		"External File Format":         externalFileFormatPropPages(sc, "HealthClinic", "CsvFormat"),
 		"External Library":             externalLibraryPropPages(sc, "HealthClinic", "ggplot2"),

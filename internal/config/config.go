@@ -59,6 +59,16 @@ func AuthMethodName(m AuthMethod) string {
 	}
 }
 
+// IsEntraMethod reports whether m is one of the Microsoft Entra ID methods.
+func IsEntraMethod(m AuthMethod) bool {
+	switch m {
+	case AuthEntraDefault, AuthEntraPassword, AuthEntraMSI, AuthEntraServicePrincipal,
+		AuthEntraInteractive, AuthEntraDeviceCode, AuthEntraAzCLI:
+		return true
+	}
+	return false
+}
+
 // AllAuthMethods returns all available auth methods for display.
 func AllAuthMethods() []AuthMethod {
 	return []AuthMethod{
@@ -123,8 +133,11 @@ type Connection struct {
 	TenantID               string     `json:"tenant_id"`
 	ClientID               string     `json:"client_id"`
 	TrustServerCertificate bool       `json:"trust_server_certificate"`
-	Encrypt                bool       `json:"encrypt"`
-	ExtraProperties        string     `json:"extra_properties"`
+	// Encrypt is stored under "encrypt_mode"; MarshalJSON also keeps writing
+	// the boolean "encrypt" it replaced — see there.
+	Encrypt               EncryptMode `json:"encrypt_mode"`
+	HostNameInCertificate string      `json:"host_name_in_certificate,omitempty"`
+	ExtraProperties       string      `json:"extra_properties"`
 
 	// sealed is the on-disk ciphertext Load could not open for this entry — a
 	// replaced key file, a hand-edited server/user (which the AAD binds to, see
@@ -137,6 +150,86 @@ type Connection struct {
 	// with goes through AddOrUpdate as a fresh Connection with sealed empty, so
 	// re-entering the password replaces the unreadable ciphertext for good.
 	sealed string
+}
+
+// EncryptMode is a connection's TLS encryption setting, spelled as SSMS's
+// Connect dialog and go-mssqldb's "encrypt" parameter both spell it.
+type EncryptMode string
+
+const (
+	// EncryptOptional encrypts the login packet only; everything after it —
+	// including the passwords in CREATE LOGIN, CREATE CREDENTIAL and the
+	// endpoint wizard's certificate statements — travels in clear text.
+	EncryptOptional EncryptMode = "optional"
+	// EncryptMandatory encrypts the whole session. The default for a new
+	// connection, as in SSMS 20.
+	EncryptMandatory EncryptMode = "mandatory"
+	// EncryptStrict is TDS 8.0 strict encryption: TLS before any TDS traffic,
+	// SQL Server 2022 and later.
+	EncryptStrict EncryptMode = "strict"
+)
+
+// AllEncryptModes returns the encryption modes in the order the Connect
+// dialog lists them.
+func AllEncryptModes() []EncryptMode {
+	return []EncryptMode{EncryptOptional, EncryptMandatory, EncryptStrict}
+}
+
+// EncryptModeName returns the Connect dialog's label for m.
+func EncryptModeName(m EncryptMode) string {
+	switch m {
+	case EncryptOptional:
+		return "Optional"
+	case EncryptMandatory:
+		return "Mandatory"
+	case EncryptStrict:
+		return "Strict (SQL Server 2022+)"
+	default:
+		return string(m)
+	}
+}
+
+// connectionFields is Connection without its methods, so MarshalJSON and
+// UnmarshalJSON can hand the ordinary fields to encoding/json without
+// recursing into themselves.
+type connectionFields Connection
+
+// connectionWire is a Connection as written to config.json: every field under
+// its own tag, plus the boolean "encrypt" that EncryptMode replaced.
+type connectionWire struct {
+	connectionFields
+	LegacyEncrypt *bool `json:"encrypt,omitempty"`
+}
+
+// MarshalJSON writes c with its Encrypt mode under "encrypt_mode" and, beside
+// it, the boolean "encrypt" earlier releases stored — true for anything but
+// Optional. The boolean is not for this release, which reads the mode: it is
+// for an older gossms reading this file after a downgrade. That version
+// decodes "encrypt" as a bool, and a string there would fail the whole file,
+// which Load treats as corrupt: every saved connection gone, and the next
+// Save writing the emptiness over it.
+func (c Connection) MarshalJSON() ([]byte, error) {
+	legacy := c.Encrypt != EncryptOptional && c.Encrypt != ""
+	return json.Marshal(connectionWire{connectionFields: connectionFields(c), LegacyEncrypt: &legacy})
+}
+
+// UnmarshalJSON reads a Connection, mapping an entry written before
+// "encrypt_mode" existed from its boolean "encrypt": true is Mandatory, false
+// or absent is Optional — the two settings the old checkbox could express.
+// Once present, "encrypt_mode" wins.
+func (c *Connection) UnmarshalJSON(data []byte) error {
+	var w connectionWire
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	*c = Connection(w.connectionFields)
+	if c.Encrypt == "" {
+		c.Encrypt = EncryptOptional
+		if w.LegacyEncrypt != nil && *w.LegacyEncrypt {
+			c.Encrypt = EncryptMandatory
+		}
+	}
+	return nil
 }
 
 // ConnectionName builds the identifier auto-generated for every saved
@@ -222,6 +315,41 @@ func LogFilePath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "gossms.log"), nil
+}
+
+// MaxLogSize is how large gossms.log may grow before OpenLogFile starts a
+// fresh one. The log is append-only — every logStatus line and every recovered
+// panic's stack — and was never trimmed, so a long-lived install grew it
+// without bound.
+const MaxLogSize = 5 << 20
+
+// OpenLogFile opens the log file at LogFilePath for appending, first moving a
+// file past MaxLogSize aside to gossms.log.1 — one generation, replacing any
+// older one. Rotation happens only here, at startup, so a session never loses
+// its own earlier lines mid-run.
+//
+// The file is 0600, matching the config file and encryption key alongside it —
+// the log records server names, login names, and error text. A rotated file
+// keeps the mode it was created with.
+func OpenLogFile() (*os.File, error) {
+	path, err := LogFilePath()
+	if err != nil {
+		return nil, err
+	}
+	rotateLog(path, MaxLogSize)
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+}
+
+// rotateLog renames path to path+".1" when it is larger than limit. Best
+// effort: a failed rename — another gossms holding the file open on Windows,
+// say — leaves the log to be appended to as before, which is no worse than
+// not rotating.
+func rotateLog(path string, limit int64) {
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() <= limit {
+		return
+	}
+	_ = os.Rename(path, path+".1")
 }
 
 // Load reads the config from disk, returning an empty config if there isn't one

@@ -6,6 +6,7 @@ import (
 	"log"
 	"runtime/debug"
 	"runtime/pprof"
+	"sync"
 )
 
 // safego runs fn on a new goroutine, turning a panic into a status-bar
@@ -87,9 +88,80 @@ func (a *App) recoverPanic(what string) {
 	}
 }
 
+// fanOut runs work(i) for every i in [0, n) across a bounded pool of
+// maxRowFetchConcurrency goroutines and returns once every call has finished.
+// It is the one worker pool in this package — the Detail Browser's per-row
+// backfill and the Log File Viewer's per-file reads both run on it — and the
+// only place that spawns a goroutine outside safego/safegoRepair, so it takes
+// both halves of what they give by hand: the label on the traceback and the
+// recover.
+//
+// Each call is recovered on its own. A panic in one item reports and moves on
+// to the next rather than taking its worker — and every item that worker still
+// owes — down with it. onPanic (optional) runs on the worker for the item that
+// panicked, *before* fanOut can return: a caller that acts on the results the
+// moment fanOut returns needs the repair for that item already queued. The
+// Detail Browser caches its rows then, and a row whose fetch died would
+// otherwise be cached still showing its "…" placeholder, permanently, since
+// reselecting the node is a cache hit that never refetches.
+//
+// The queue is filled and closed before a worker exists, so no send can ever
+// block on one. Handing the indices out from this goroutine instead would make
+// it depend on a worker still being alive to receive them: if a panic escaped
+// the per-item recovery and took every worker with it, the send would block
+// forever and hang the caller. n ints is a few KB at the largest sizes this
+// runs on.
+//
+// The pool is a fixed number of workers pulling indices off a channel, rather
+// than n goroutines each waiting on a token: both bound the work, but the token
+// form parks hundreds of idle goroutines on a folder with hundreds of entries.
+func (a *App) fanOut(n int, what string, work func(i int), onPanic func(i int)) {
+	if n <= 0 {
+		return
+	}
+	idx := make(chan int, n)
+	for i := range n {
+		idx <- i
+	}
+	close(idx)
+
+	one := func(i int) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				return
+			}
+			if onPanic != nil {
+				onPanic(i)
+			}
+			a.reportPanic(r, what)
+		}()
+		work(i)
+	}
+
+	var wg sync.WaitGroup
+	for range min(n, maxRowFetchConcurrency) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// The per-item recovery above is what keeps a worker alive; this
+			// is the belt under it, for a panic in onPanic or reportPanic
+			// itself. One that escapes both is on a background goroutine where
+			// nothing else can catch it — the process dies and Run's
+			// screen.Fini() never restores the terminal.
+			labelGoroutine(what)
+			defer a.recoverPanic(what)
+			for i := range idx {
+				one(i)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 // reportPanic logs r with a stack and puts it on the status bar. Split out
 // of recoverPanic for a deferred recovery that has repair work of its own to
-// do first — see backfillRows, whose recovery must fill the row it abandoned
+// do first — see fanOut, whose onPanic must fill the row a backfill abandoned
 // before reporting, or the row is cached blank forever.
 func (a *App) reportPanic(r any, what string) {
 	stack := string(debug.Stack())

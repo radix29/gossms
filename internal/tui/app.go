@@ -168,8 +168,8 @@ type App struct {
 	// connect time, not lazily.
 	sysCompletionInventories map[string]*completionInventory
 
-	// Focus: "explorer" | "panels"
-	focus string
+	// focus is which half of the window has the keyboard.
+	focus appFocus
 
 	// Bracketed paste: pasting is true between an *tcell.EventPaste start and
 	// its matching end, during which every EventKey is pasted content and
@@ -220,7 +220,7 @@ type App struct {
 // NewApp constructs the application.
 func NewApp() *App {
 	a := new(App{
-		focus:      "explorer",
+		focus:      focusOnExplorer,
 		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
@@ -250,6 +250,7 @@ func (a *App) Run() error {
 	// tcell v3 has no PollEvent/PostEvent; events come from the EventQ()
 	// channel, which Fini() closes, so the range exits on quit without a
 	// sentinel.
+	var lastButtons tcell.ButtonMask
 	for ev := range s.EventQ() {
 		// Cleared before draining, not after, so a postEvent+wakeEventLoop
 		// racing this instant still gets its own wake: if its append to
@@ -259,6 +260,7 @@ func (a *App) Run() error {
 		a.drainPending()
 		a.syncDialogStack()
 
+		motionOnly := false
 		switch e := ev.(type) {
 		case *tcell.EventResize:
 			s.Sync()
@@ -287,6 +289,11 @@ func (a *App) Run() error {
 			}
 		case *tcell.EventMouse:
 			a.handleMouse(e)
+			// A press, a release and every wheel notch change the button
+			// state; motion alone repeats it. Only motion is coalesced below.
+			btns := e.Buttons()
+			motionOnly = btns == lastButtons && btns&wheelButtons == 0
+			lastButtons = btns
 		case *tcell.EventClipboard:
 			// Response to the GetClipboard() request made from Ctrl+V, which
 			// recorded what it was aimed at. Clearing it first also makes an
@@ -302,10 +309,25 @@ func (a *App) Run() error {
 		// top-of-loop sync still runs so input routing sees drainPending's
 		// changes.
 		a.syncDialogStack()
+		// All-motion tracking sends an event per cell the pointer crosses, and
+		// a frame costs ~6 ms over a results grid: a 400-event drag drew 406
+		// frames and left the screen 2.2 s behind the pointer. A motion event
+		// with more already queued is not drawn — the queued one will be, and
+		// the last of a burst always is. Presses, releases and wheel notches
+		// still draw each, so a widget that lays itself out in Draw (a menu
+		// just opened by the press) is on screen before the next event is
+		// hit-tested against it.
+		if motionOnly && len(s.EventQ()) > 0 {
+			continue
+		}
 		a.draw()
 	}
 	return nil
 }
+
+// wheelButtons is every wheel direction in a tcell.ButtonMask — wheel notches
+// arrive as repeated identical masks, but each is a discrete scroll, not motion.
+const wheelButtons = tcell.WheelUp | tcell.WheelDown | tcell.WheelLeft | tcell.WheelRight
 
 // postAndWake queues fn to run on the UI goroutine and immediately wakes the
 // event loop, without waiting for an unrelated key or mouse event. Call it from
@@ -470,14 +492,30 @@ func registerDialog[T Dialog](a *App, d T) T {
 	return d
 }
 
+// appFocus names which half of the window has the keyboard: Object Explorer or
+// the panel area.
+type appFocus int
+
+const (
+	focusOnExplorer appFocus = iota
+	focusOnPanels
+)
+
+func (f appFocus) String() string {
+	if f == focusOnPanels {
+		return "panels"
+	}
+	return "explorer"
+}
+
 func (a *App) focusExplorer() {
-	a.focus = "explorer"
+	a.focus = focusOnExplorer
 	a.explorer.SetActive(true)
 	a.syncActivePanelFocus()
 }
 
 func (a *App) focusPanels() {
-	a.focus = "panels"
+	a.focus = focusOnPanels
 	a.explorer.SetActive(false)
 	a.syncActivePanelFocus()
 }
@@ -486,11 +524,11 @@ func (a *App) focusPanels() {
 // highlight, cursor visibility) in sync with a.focus. PanelManager knows
 // nothing about a.focus and calls SetActive only when its own active index
 // changes, so anything that changes the active panel while a.focus stays
-// "explorer" (nextPanel/prevPanel) must call this, or the new panel shows as
+// focusOnExplorer (nextPanel/prevPanel) must call this, or the new panel shows as
 // focused while Object Explorer holds real keyboard focus.
 func (a *App) syncActivePanelFocus() {
 	if p, ok := a.panels.ActivePanel().(layout.Activatable); ok {
-		p.SetActive(a.focus == "panels")
+		p.SetActive(a.focus == focusOnPanels)
 	}
 }
 
@@ -501,7 +539,7 @@ func (a *App) syncActivePanelFocus() {
 func (a *App) cycleFocus() {
 	qp := a.activeQueryPanel()
 	switch {
-	case a.focus == "explorer":
+	case a.focus == focusOnExplorer:
 		a.focusPanels()
 		if qp != nil {
 			qp.setResultsFocused(false)
@@ -518,7 +556,7 @@ func (a *App) cycleFocus() {
 func (a *App) cycleFocusReverse() {
 	qp := a.activeQueryPanel()
 	switch {
-	case a.focus == "explorer":
+	case a.focus == focusOnExplorer:
 		a.focusPanels()
 		if qp != nil {
 			qp.setResultsFocused(qp.result != nil)
@@ -533,7 +571,7 @@ func (a *App) cycleFocusReverse() {
 // nextPanel and prevPanel run the tab-bar's Next/Prev panel action
 // (Ctrl+Shift+Right/Left and the View menu), wrapping PanelManager.Next/Prev
 // and re-syncing focus visuals, since they can fire while a.focus ==
-// "explorer".
+// focusOnExplorer.
 func (a *App) nextPanel() {
 	a.panels.Next()
 	a.syncActivePanelFocus()

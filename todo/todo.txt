@@ -1,5 +1,4 @@
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
-    
 14. Service Broker (whole subtree)
 15. Certificates / Symmetric / Asymmetric Keys, Database Audit Specs
 
@@ -13,6 +12,7 @@
 -------------
 
 - check Azure entra authentification that is porvided by the mssql library. what shall i do so i can test something difrerent that sql / windows auth?
+    - check if there are any bugs related to the Entra Auth first
 
 reports -> define what reports at database and server level
 
@@ -22,6 +22,8 @@ new connect dialog design. keep both, configure in options which design to use.
     - word wrap (display only, line numbers)
     - auto indent ?
     - external editor nvim, nano , etc
+
+intellisesnse revamping... sub selects, complicated statements, column names
 
 new tab: waits
 at the top a section that show the grpahic from history: sql server aẃaits and from the sample the graphic the same one each occupy 50% the width
@@ -61,12 +63,12 @@ do not commit or tag anything to git.
 fix go.mod before, reference the new :
 
 prepare gossms for release v0.0.10 . Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
-do not commit or tag anything to git. highlight in the release file the homebre and ppa as the most important features 
-
+do not commit or tag anything to git. highlight in the release file the homebre and ppa as the most important features .
 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md
 
 
+update the fix lists at the bottom of open threads if something was already fixed.
 
 --------------
 

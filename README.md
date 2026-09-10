@@ -112,7 +112,30 @@ method.
 
 For a named instance such as `SERVER\INSTANCE`, leave **Port** blank so SQL
 Browser can resolve the instance. Use a port only when you want to connect to a
-specific port directly.
+specific port directly. An IPv6 address can be typed bare (`fe80::1`),
+bracketed, or with a port as `[fe80::1]:1433` or `fe80::1,1433`.
+
+Fields the chosen authentication method does not use are greyed out: a service
+principal's application ID goes in **ClientID** with its secret in
+**Password**, and **ClientID** is the app registration for Interactive and
+Device Code, or the identity's client ID for a user-assigned Managed Identity.
+
+New connections encrypt the whole session (**Encrypt: Mandatory**) with **Trust
+Server Certificate** ticked, so an instance using SQL Server's self-signed
+certificate still connects. Untick it to validate the certificate, and fill in
+**CertHost** when connecting by an IP address or alias the certificate does not
+name. **Strict** (TDS 8.0) needs SQL Server 2022 or later, or Azure SQL
+Managed Instance, with a real certificate. A saved connection keeps the setting
+it was saved with.
+
+**Extra Properties** passes further driver settings as `key=value` pairs
+separated by `;` or `&` — for example `ApplicationIntent=ReadOnly;
+MultiSubnetFailover=true` or `packet size=8192`. A setting the dialog has its
+own field for is refused. The **Connection String** preview is exactly what will
+be dialled, with passwords masked.
+
+On the server, goSSMS's sessions report `program_name` as `goSSMS` (Object
+Explorer), `goSSMS - Query` (query windows) or `goSSMS - Activity Monitor`.
 
 ## Supported SQL Server versions
 
@@ -134,8 +157,8 @@ connected SQL Server version or engine edition are hidden or disabled.
   (to disk or Azure Storage), attach and detach, indexes, statistics, and
   multi-object delete.
 - **Monitoring** through Activity Monitor, blocking chains, sessions, and SQL
-  Server and SQL Agent logs — several log files can be merged into one
-  date-sorted view.
+  Server and SQL Agent logs — several log files, from either or both, can be
+  merged into one date-sorted view.
 - **Azure SQL Managed Instance** support, including an Activity Monitor
   Instance tab showing CPU, storage, I/O and the resource governor's limits.
 - **Least-privilege operation**: unavailable actions are disabled and missing
@@ -163,7 +186,7 @@ grant covers its corresponding information.
 
 ## Configuration
 
-Connections are saved automatically, with the 15 most recent listed first.
+Connections are saved automatically, with the 30 most recent listed first.
 Tools > Options controls the tree icon style, default results-grid cell width,
 and IntelliSense.
 
@@ -173,7 +196,10 @@ Configuration is stored at:
 - Windows: `%APPDATA%\gossms\config.json`
 
 Saved passwords are encrypted with AES-256-GCM using `gossms.key`, stored next to
-the configuration file. Delete both files to reset saved connections.
+the configuration file. Delete both files to reset saved connections. Each
+password is bound to its connection's server, port, user, authentication method
+and encryption settings: editing any of those in `config.json` by hand makes the
+saved password unreadable, and it has to be typed again.
 
 ## Known issues
 

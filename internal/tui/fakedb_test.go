@@ -257,6 +257,12 @@ func (f *fakeInstance) recordExec(db, q string, args []driver.NamedValue) {
 // hide the whole statement rather than the plumbing in front of it.
 var bareUSE = regexp.MustCompile(`^USE \[([^\]]*)\]$`)
 
+// batchedUSE matches the USE gosmo sends as the head of a database-scoped read
+// itself (gosmo's Database.useBatch): one batch, the switch guarded so a
+// failed one stops it, then the query. The bare form above is what the read
+// falls back to when that batch fails.
+var batchedUSE = regexp.MustCompile(`^USE \[([^\]]*)\]; IF @@ERROR <> 0 RETURN; `)
+
 // Statements returns every statement the page executed, with that plumbing
 // dropped — it is not a write, and it would otherwise drown the one statement
 // a test cares about.
@@ -335,7 +341,8 @@ func (fakeDriver) Open(dsn string) (driver.Conn, error) {
 
 // fakeConn is one pooled connection. It tracks the database a USE has pinned
 // it to, because gosmo runs a database-scoped read as USE-then-query on a
-// connection it has pinned for exactly that reason.
+// connection it has pinned for exactly that reason — usually as one batch,
+// sometimes as two statements.
 type fakeConn struct {
 	inst  *fakeInstance
 	curDB string
@@ -371,6 +378,9 @@ func (c *fakeConn) ExecContext(_ context.Context, q string, args []driver.NamedV
 }
 
 func (c *fakeConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	if m := batchedUSE.FindStringSubmatch(q); m != nil {
+		c.curDB, q = m[1], q[len(m[0]):]
+	}
 	r, ok := c.inst.respond(ctx, q, c.curDB, args)
 	if !ok {
 		return nil, fmt.Errorf("fakedb: no scripted response for query:\n%s", q)

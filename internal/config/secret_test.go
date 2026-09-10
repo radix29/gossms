@@ -17,6 +17,7 @@ func testConn(pwd string) Connection {
 	return Connection{
 		Name: "prod", Server: "sql-prod", Port: 1433, Database: "app",
 		AuthMethod: AuthSQLServer, User: "sa", Password: pwd,
+		Encrypt: EncryptMandatory,
 	}
 }
 
@@ -116,6 +117,13 @@ func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 		{"retargeted server", func(c Connection) Connection { c.Server = "attacker-host"; return c }},
 		{"different user", func(c Connection) Connection { c.User = "other"; return c }},
 		{"different auth method", func(c Connection) Connection { c.AuthMethod = AuthWindows; return c }},
+		{"different port", func(c Connection) Connection { c.Port = 14330; return c }},
+		// The transport settings: flipping any of these downgrades or
+		// redirects the connection without touching where it points.
+		{"encryption turned down", func(c Connection) Connection { c.Encrypt = EncryptOptional; return c }},
+		{"certificate trusted", func(c Connection) Connection { c.TrustServerCertificate = true; return c }},
+		{"host name in certificate", func(c Connection) Connection { c.HostNameInCertificate = "attacker-host"; return c }},
+		{"extra properties", func(c Connection) Connection { c.ExtraProperties = "failoverpartner=attacker-host"; return c }},
 	} {
 		t.Run(c.label, func(t *testing.T) {
 			moved := c.mutate(orig)
@@ -131,7 +139,8 @@ func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 
 // Relabelling a connection or repointing it at another database on the same
 // server is an ordinary edit, so neither field is in the AAD and the stored
-// password must survive both.
+// password must survive both. (Port was once in this list; it is bound since
+// v3, as it picks which instance receives the password.)
 func TestPasswordSurvivesNameAndDatabaseEdits(t *testing.T) {
 	key := make([]byte, 32)
 	orig := testConn("s3cr3t!")
@@ -143,7 +152,6 @@ func TestPasswordSurvivesNameAndDatabaseEdits(t *testing.T) {
 	edited := orig
 	edited.Name = "production (renamed)"
 	edited.Database = "reporting"
-	edited.Port = 14330
 	edited.Password = enc
 	got, ok := decryptPassword(key, edited)
 	if !ok || got != "s3cr3t!" {
@@ -183,6 +191,78 @@ func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
 	if !strings.HasPrefix(reSealed, aadPrefix) {
 		t.Errorf("re-sealed password = %q, want the %q prefix", reSealed, aadPrefix)
 	}
+}
+
+// A v2 value — bound to server/user/auth method only — must still open, and
+// re-sealing it moves it to v3. v2 did not bind the transport settings, so a v2
+// value opens whatever they say; that window closes at the next Save.
+func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
+	key := make([]byte, 32)
+	c := testConn("")
+	sealed, err := sealV2ForTest(key, c, "v2-s3cr3t")
+	if err != nil {
+		t.Fatalf("sealV2ForTest: %v", err)
+	}
+	c.Password = sealed
+	if got, ok := decryptPassword(key, c); !ok || got != "v2-s3cr3t" {
+		t.Fatalf("decryptPassword(v2) = (%q, %v), want (v2-s3cr3t, true)", got, ok)
+	}
+
+	// Still bound to what v2 bound.
+	moved := c
+	moved.Server = "attacker-host"
+	if got, ok := decryptPassword(key, moved); ok || got != "" {
+		t.Errorf("v2 value opened under another server: (%q, %v)", got, ok)
+	}
+
+	// A v2 ciphertext relabelled "v3:" must not open: the prefix picks the AAD,
+	// and v3's includes fields the ciphertext was never sealed with.
+	relabelled := c
+	relabelled.Password = aadPrefix + strings.TrimPrefix(sealed, aadPrefixV2)
+	if got, ok := decryptPassword(key, relabelled); ok || got != "" {
+		t.Errorf("v2 ciphertext opened as v3: (%q, %v)", got, ok)
+	}
+
+	c.Password = "v2-s3cr3t"
+	resealed, err := encryptPassword(key, c)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+	if !strings.HasPrefix(resealed, aadPrefix) {
+		t.Errorf("re-sealed = %q, want the %q prefix", resealed, aadPrefix)
+	}
+}
+
+// An entry built in memory with no Encrypt set is read back from disk as
+// Optional; sealing and opening must agree on that, or its password is
+// unreadable after the first round trip.
+func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
+	key := make([]byte, 32)
+	c := testConn("s3cr3t!")
+	c.Encrypt = ""
+	enc, err := encryptPassword(key, c)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+	c.Password, c.Encrypt = enc, EncryptOptional
+	if got, ok := decryptPassword(key, c); !ok || got != "s3cr3t!" {
+		t.Errorf("decryptPassword with Encrypt read back as Optional = (%q, %v), want (s3cr3t!, true)", got, ok)
+	}
+}
+
+// sealV2ForTest reproduces the v2 on-disk format: "v2:" + base64 of
+// nonce||ciphertext sealed with the server/user/auth-method AAD.
+func sealV2ForTest(key []byte, c Connection, plaintext string) (string, error) {
+	gcm, err := newGCM(key)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), connectionAADv2(c))
+	return aadPrefixV2 + base64.StdEncoding.EncodeToString(sealed), nil
 }
 
 // sealLegacyForTest reproduces the pre-binding on-disk format: base64 of

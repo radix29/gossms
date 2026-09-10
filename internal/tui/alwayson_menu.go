@@ -200,7 +200,7 @@ func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 }
 
 // agListenerMenuItems builds the context menu for one listener.
-func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem) []controls.MenuItem {
+func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		refresh,
 		gateOn(controls.MenuItem{Label: "Remove Listener...",

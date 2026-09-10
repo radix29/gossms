@@ -75,3 +75,34 @@ func TestSafegoLabelsItsGoroutineWithTheOperation(t *testing.T) {
 	drainUntil(t, a, func() bool { return strings.Contains(a.statusText, "loading the thing") },
 		"the panic to reach the status bar")
 }
+
+// fanOut is shared by two callers that want different things from a panicking
+// item: the backfill repairs its row (covered in detail_browser_backfill_test),
+// the Log File Viewer passes no onPanic and relies on its seed. Either way one
+// panic must cost that item only — every other item still runs, with more items
+// than workers so a worker whose item panicked has to survive to take the next
+// — and the status bar must name the operation. The panicking items are the
+// first maxRowFetchConcurrency, which the queue hands out first, one to each
+// worker.
+func TestFanOutRecoversEachItemAndRunsTheRest(t *testing.T) {
+	a := newTestApp()
+	n := maxRowFetchConcurrency * 3
+	done := make([]bool, n)
+
+	a.fanOut(n, "reading an error log", func(i int) {
+		// The first item each worker takes: without a per-item recovery every
+		// worker dies on one, and nothing past them runs.
+		if i < maxRowFetchConcurrency {
+			panic("boom")
+		}
+		done[i] = true
+	}, nil)
+
+	for i, ok := range done {
+		if want := i >= maxRowFetchConcurrency; ok != want {
+			t.Errorf("item %d ran = %v, want %v", i, ok, want)
+		}
+	}
+	drainUntil(t, a, func() bool { return strings.Contains(a.statusText, "reading an error log") },
+		"the panic to reach the status bar")
+}

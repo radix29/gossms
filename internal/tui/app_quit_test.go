@@ -117,7 +117,7 @@ func TestRequestQuitAsksAboutEveryDirtyPanel(t *testing.T) {
 }
 
 // A clean panel between two dirty ones must not be asked about.
-func TestDirtyQueryPanelsSkipsSavedAndNonQueryPanels(t *testing.T) {
+func TestQuitPromptSkipsSavedAndNonQueryPanels(t *testing.T) {
 	a := newTestApp()
 	d1 := dirtyPanel(a, "Query 1", "SELECT 1")
 	clean := dirtyPanel(a, "Query 2", "SELECT 2")
@@ -125,9 +125,9 @@ func TestDirtyQueryPanelsSkipsSavedAndNonQueryPanels(t *testing.T) {
 	d2 := dirtyPanel(a, "Query 3", "SELECT 3")
 	a.panels.AddPanel(NewDetailBrowser("Object Explorer Details"))
 
-	got := a.dirtyQueryPanels()
+	got := a.queryPanelsToAskBeforeQuit()
 	if len(got) != 2 || got[0] != d1 || got[1] != d2 {
-		t.Fatalf("dirtyQueryPanels() = %v, want exactly the two dirty query panels", got)
+		t.Fatalf("queryPanelsToAskBeforeQuit() = %v, want exactly the two dirty query panels", got)
 	}
 }
 

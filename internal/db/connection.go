@@ -3,9 +3,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
@@ -23,6 +25,42 @@ const (
 	maxOpenConns = 20
 	maxIdleConns = 10
 )
+
+// connectTimeout bounds one connection attempt — the dial, the TLS and login
+// handshakes, and the server-info read gosmo does before returning. It is
+// also the "connection timeout" written into the DSN, so the driver's own
+// per-dial limit and this one agree.
+const connectTimeout = 30 * time.Second
+
+// Role says what a connection is for. It decides the application name the
+// connection reports — sys.dm_exec_sessions.program_name, what Activity
+// Monitor, sp_who2 and an Extended Events session show — the way SSMS names
+// its sessions per window type, so a DBA looking at the server can tell a
+// query window from the tool's own background reads and from the Activity
+// Monitor's polling.
+type Role int
+
+const (
+	// RoleExplorer is Object Explorer's connection and everything that reads
+	// through it: detail panes, property sheets, dashboards, AG peers.
+	RoleExplorer Role = iota
+	// RoleQuery is a query panel's own connection.
+	RoleQuery
+	// RoleActivityMonitor is the Activity Monitor's collectors.
+	RoleActivityMonitor
+)
+
+// ApplicationName returns the program_name a connection in role r reports.
+func (r Role) ApplicationName() string {
+	switch r {
+	case RoleQuery:
+		return "goSSMS - Query"
+	case RoleActivityMonitor:
+		return "goSSMS - Activity Monitor"
+	default:
+		return "goSSMS"
+	}
+}
 
 // ConnectionError is a typed error returned by Connect.
 //
@@ -65,6 +103,11 @@ type ServerConn struct {
 
 	closed bool
 
+	// role is what Connect was asked to open this connection for; peers
+	// inherit it, so an AG replica read on behalf of Object Explorer reports
+	// the same program_name as Object Explorer itself.
+	role Role
+
 	// peerFields caches connections to other instances in the same topology
 	// (Always On replicas) — see peer.go.
 	peerFields
@@ -74,33 +117,128 @@ type ServerConn struct {
 	capabilityFields
 }
 
-// Connect opens a connection using the given config.Connection.
+// Connect opens an Object Explorer connection using the given
+// config.Connection, with no way to abandon it short of connectTimeout —
+// ConnectContext with context.Background() and RoleExplorer.
 func Connect(opts config.Connection) (*ServerConn, error) {
-	co := gosmo.ConnectionOptions{
-		Server:                 resolveServer(opts.Server, opts.Port),
-		User:                   opts.User,
-		Password:               opts.Password,
-		TrustServerCertificate: opts.TrustServerCertificate,
-		Encrypt:                encryptString(opts.Encrypt),
-		Auth:                   toGosmoAuth(opts.AuthMethod),
-		TenantID:               opts.TenantID,
-		ClientID:               opts.ClientID,
-		MaxOpenConns:           maxOpenConns,
-		MaxIdleConns:           maxIdleConns,
-	}
-	if opts.Database != "" {
-		co.Database = opts.Database
-	}
+	return ConnectContext(context.Background(), opts, RoleExplorer)
+}
 
-	srv, err := gosmo.Connect(co)
+// ConnectContext opens a connection for role using opts. Cancelling ctx
+// aborts the attempt in flight — the dial, the TLS and login handshakes, or
+// the server-info read — rather than leaving it to run to connectTimeout,
+// which always applies on top of ctx. ctx governs the attempt only: the
+// connection returned lives until Close.
+//
+// A failure is a *ConnectionError, including one opts itself causes before
+// anything is dialled (an Extra Properties entry that is not key=value, or
+// that names a setting the dialog owns).
+func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*ServerConn, error) {
+	co, err := toGosmoOptions(opts, role)
 	if err != nil {
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
 	}
-	login, _ := srv.CurrentLogin()
-	ctx, cancel := context.WithCancel(context.Background())
-	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: ctx, cancel: cancel}
+	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+
+	srv, err := gosmo.ConnectContext(ctx, co)
+	if err != nil {
+		err = explainExtraProperty(err)
+		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
+	}
+	login, _ := srv.CurrentLoginContext(ctx)
+	connCtx, connCancel := context.WithCancel(context.Background())
+	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: connCtx, cancel: connCancel, role: role}
 	sc.ProbeCapabilities()
 	return sc, nil
+}
+
+// toGosmoOptions is the one place a config.Connection becomes the
+// gosmo.ConnectionOptions that is dialled — Connect uses it, and so does
+// BuildConnectionString, which is what makes the Connect dialog's preview the
+// connection string actually sent rather than a second rendering that drifts
+// from it.
+//
+// The dialog's fields do not map one-to-one onto gosmo's: each Entra method
+// reads its client id from a different option. A service principal's
+// application id is gosmo's User (with the secret as Password); an
+// interactive or device-code flow's app registration is ApplicationClientID;
+// only a user-assigned managed identity reads ClientID. Passing the dialog's
+// ClientID straight through, as this once did, connected a service principal
+// with an empty user id. A saved service principal that predates the mapping
+// may carry its application id in User instead, so that is the fallback.
+// Fields a method does not use are not passed at all.
+func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
+	co := gosmo.ConnectionOptions{
+		Server:                 resolveServer(opts.Server, opts.Port),
+		Database:               opts.Database,
+		Auth:                   toGosmoAuth(opts.AuthMethod),
+		TrustServerCertificate: opts.TrustServerCertificate,
+		Encrypt:                encryptString(opts.Encrypt),
+		HostNameInCertificate:  strings.TrimSpace(opts.HostNameInCertificate),
+		ApplicationName:        role.ApplicationName(),
+		ConnectTimeout:         connectTimeout,
+		MaxOpenConns:           maxOpenConns,
+		MaxIdleConns:           maxIdleConns,
+	}
+	switch opts.AuthMethod {
+	case config.AuthEntraMSI:
+		co.ClientID = opts.ClientID
+	case config.AuthEntraServicePrincipal:
+		co.User = opts.ClientID
+		if co.User == "" {
+			co.User = opts.User
+		}
+		co.Password = opts.Password
+	case config.AuthEntraInteractive, config.AuthEntraDeviceCode:
+		co.ApplicationClientID = opts.ClientID
+	case config.AuthEntraDefault, config.AuthEntraAzCLI:
+		// The credential chain / az login supplies the identity.
+	default: // SQL Server, Windows, Entra password
+		co.User, co.Password = opts.User, opts.Password
+	}
+	if config.IsEntraMethod(opts.AuthMethod) {
+		co.TenantID = opts.TenantID
+	}
+
+	extra, err := ParseExtraProperties(opts.ExtraProperties)
+	if err != nil {
+		return gosmo.ConnectionOptions{}, err
+	}
+	co.ExtraParams = extra
+	return co, nil
+}
+
+// ParseExtraProperties reads the Connect dialog's Extra Properties text into
+// driver parameters: "key=value" entries separated by ';' (the ADO.NET form),
+// '&' (the URL form) or line breaks, each trimmed of surrounding space. Empty
+// entries are skipped, so a trailing separator is harmless. Values are taken
+// literally — no URL decoding and no quoting — so a value cannot itself
+// contain a separator.
+//
+// An entry without '=' or with an empty key is an error naming it, not
+// something silently dropped. Keys the dialog's own fields control are
+// refused by gosmo when the options are built (ConnectionOptions.ExtraParams).
+func ParseExtraProperties(s string) (url.Values, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	out := url.Values{}
+	for entry := range strings.FieldsFuncSeq(s, func(r rune) bool {
+		return r == ';' || r == '&' || r == '\n' || r == '\r'
+	}) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(entry, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, fmt.Errorf("extra property %q is not key=value", entry)
+		}
+		out.Add(k, strings.TrimSpace(v))
+	}
+	return out, nil
 }
 
 // Close disconnects from SQL Server. Cancelling ctx before closing the pool is
@@ -187,31 +325,32 @@ func (sc *ServerConn) Label() string {
 // appended with a comma: gosmo recognises a trailing port after an instance name
 // only when comma-separated, and a colon becomes part of the instance name.
 func resolveServer(server string, dialogPort int) string {
-	if _, _, embeddedPort := gosmo.ParseServerAddress(server); embeddedPort != 0 {
+	host, _, embeddedPort := gosmo.ParseServerAddress(server)
+	if embeddedPort != 0 {
 		return server
 	}
 	port := dialogPort
 	if port == 0 || port == 1433 {
 		return server
 	}
+	// A comma for a bare IPv6 literal too: "fe80::1:1500" is read back as an
+	// address, the ":1500" one more group of it.
 	sep := ":"
-	if strings.ContainsRune(server, '\\') {
+	if strings.ContainsRune(server, '\\') ||
+		(strings.ContainsRune(host, ':') && !strings.HasPrefix(host, "[")) {
 		sep = ","
 	}
 	return fmt.Sprintf("%s%s%d", server, sep, port)
 }
 
-// encryptString renders one of config.Connection's booleans as the string
-// go-mssqldb's DSN parameters take, mirroring its "encrypt" and
-// "TrustServerCertificate" spelling — which is also what
-// gosmo.ConnectionOptions.Encrypt expects. Shared by Connect, which fills the
-// options struct, and BuildConnectionString, which writes the DSN the Connect
-// dialog previews: the two must agree, and they disagreed by being two copies.
-func encryptString(encrypt bool) string {
-	if encrypt {
-		return "true"
+// encryptString renders a connection's encryption mode as the driver's
+// "encrypt" parameter spells it. "" is an entry built in memory without one,
+// which config reads back from disk as Optional, so it dials as Optional too.
+func encryptString(m config.EncryptMode) string {
+	if m == "" {
+		return string(config.EncryptOptional)
 	}
-	return "false"
+	return string(m)
 }
 
 // toGosmoAuth translates config.AuthMethod to gosmo.AuthMethod. The two enums
@@ -242,81 +381,46 @@ func toGosmoAuth(m config.AuthMethod) gosmo.AuthMethod {
 	}
 }
 
-// BuildConnectionString produces a DSN string for the connection options. User,
-// Password and Database are URL-encoded via net/url, as gosmo's own buildDSN
-// does, so a value containing "@" or "&" can't corrupt the result.
-// opts.ExtraProperties is appended verbatim after a "&".
-//
-// A "\instance" in opts.Server is carried as a URL path segment
-// (sqlserver://host:port/instance) rather than embedded in Host, where a literal
-// backslash percent-escapes to a misleading "%5C".
-func BuildConnectionString(opts config.Connection) string {
-	host, instance, port := gosmo.ParseServerAddress(resolveServer(opts.Server, opts.Port))
-	q := url.Values{}
-	// Omitted when empty, matching Connect, which sets
-	// ConnectionOptions.Database only for a non-empty value: a preview carrying a
-	// bare "database=" would not be the DSN actually dialed.
-	if opts.Database != "" {
-		q.Set("database", opts.Database)
+// BuildConnectionString renders the connection string Connect dials for opts
+// as an Object Explorer connection — the same toGosmoOptions and the same
+// gosmo builder, with every password, secret and token masked, so it is safe
+// to show and is exactly what is sent apart from those. A setting Connect
+// would refuse comes back as the same error, which the Connect dialog's
+// preview shows in place of a string.
+func BuildConnectionString(opts config.Connection) (string, error) {
+	co, err := toGosmoOptions(opts, RoleExplorer)
+	if err != nil {
+		return "", err
 	}
-	q.Set("encrypt", encryptString(opts.Encrypt))
-	q.Set("TrustServerCertificate", encryptString(opts.TrustServerCertificate))
-
-	// A named instance with no port is dialed without one, so the browser
-	// lookup resolves the instance's real port; writing ":1433" in only the
-	// preview would show a DSN that reaches the *default* instance, and copying
-	// it out would do exactly that. A plain host gets the default spelled out.
-	u := &url.URL{Scheme: "sqlserver", Host: host}
-	if port == 0 && instance == "" {
-		port = 1433
-	}
-	if port != 0 {
-		u.Host = fmt.Sprintf("%s:%d", host, port)
-	}
-	if instance != "" {
-		u.Path = "/" + instance
-	}
-
-	switch opts.AuthMethod {
-	case config.AuthWindows:
-		q.Set("integrated security", "true")
-	case config.AuthEntraDefault, config.AuthEntraPassword, config.AuthEntraMSI,
-		config.AuthEntraServicePrincipal, config.AuthEntraInteractive,
-		config.AuthEntraDeviceCode, config.AuthEntraAzCLI:
-		q.Set("fedauth", fedauthForMethod(opts.AuthMethod))
-		if opts.User != "" && opts.Password != "" {
-			u.User = url.UserPassword(opts.User, opts.Password)
-		}
-	default:
-		if opts.User != "" {
-			u.User = url.UserPassword(opts.User, opts.Password)
-		}
-	}
-	u.RawQuery = q.Encode()
-
-	connStr := u.String()
-	if opts.ExtraProperties != "" {
-		connStr += "&" + opts.ExtraProperties
-	}
-	return connStr
+	s, err := co.ConnectionString(true)
+	return s, explainExtraProperty(err)
 }
 
-func fedauthForMethod(m config.AuthMethod) string {
-	switch m {
-	case config.AuthEntraDefault:
-		return "ActiveDirectoryDefault"
-	case config.AuthEntraPassword:
-		return "ActiveDirectoryPassword"
-	case config.AuthEntraMSI:
-		return "ActiveDirectoryManagedIdentity"
-	case config.AuthEntraServicePrincipal:
-		return "ActiveDirectoryServicePrincipal"
-	case config.AuthEntraInteractive:
-		return "ActiveDirectoryInteractive"
-	case config.AuthEntraDeviceCode:
-		return "ActiveDirectoryDeviceCode"
-	case config.AuthEntraAzCLI:
-		return "ActiveDirectoryAzCli"
+// extraPropertyError is gosmo's refusal of an Extra Properties entry, worded
+// for the Connect dialog rather than for gosmo's API. It unwraps to the
+// *gosmo.ExtraParamError.
+type extraPropertyError struct {
+	msg string
+	err error
+}
+
+func (e *extraPropertyError) Error() string { return e.msg }
+func (e *extraPropertyError) Unwrap() error { return e.err }
+
+// explainExtraProperty rewords a *gosmo.ExtraParamError in the Connect
+// dialog's terms — gosmo's own text names ConnectionOptions and ExtraParams,
+// which a user of the dialog has never seen — and passes anything else
+// through unchanged.
+func explainExtraProperty(err error) error {
+	pe, ok := errors.AsType[*gosmo.ExtraParamError](err)
+	if !ok {
+		return err
 	}
-	return ""
+	if pe.Reserved {
+		return &extraPropertyError{
+			msg: fmt.Sprintf("extra property %q is one of this dialog's own settings — set it in its field instead", pe.Key),
+			err: err,
+		}
+	}
+	return &extraPropertyError{msg: "extra properties: " + strings.TrimPrefix(err.Error(), "gosmo: "), err: err}
 }

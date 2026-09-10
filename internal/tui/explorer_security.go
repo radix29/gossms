@@ -1,6 +1,10 @@
 package tui
 
-import gosmo "github.com/radix29/gosmo"
+import (
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+)
 
 // loadSecurityChildren returns the server-level Security folder's children:
 // Logins, Server Roles, Credentials, Cryptographic Providers, Audits and
@@ -100,4 +104,96 @@ func loadServerAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*
 			n.data.IsEnabled = spec.IsEnabled
 			return n
 		})
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go).
+
+func loginsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
+			sc, "", rightAlterAnyLogin),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func loginMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showLoginProperties(sc, node.data.Name)
+	})
+}
+
+func serverRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showServerRolePropertiesFor(sc, node.data.Name)
+	})
+}
+
+func credentialsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
+			sc, "", rightAlterAnyCredential),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func credentialMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showCredentialPropertiesFor(sc, node.data.Name)
+	})
+}
+
+func auditsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
+			sc, "", rightAlterAnyAudit),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func auditMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: auditToggleLabel(node),
+			Action: func() { a.toggleAudit(sc, node) }},
+			sc, "", rightAlterAnyAudit),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showAuditPropertiesFor(sc, node.data.Name) }},
+	}
+}
+
+func serverAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Server Audit Specification...",
+			Action: func() { a.showNewServerAuditSpecificationDialog(sc) }},
+			sc, "", rightAlterAnyAudit),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func serverAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: auditToggleLabel(node),
+			Action: func() { a.toggleServerAuditSpecification(sc, node) }},
+			sc, "", rightAlterAnyAudit),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},
+	}
 }

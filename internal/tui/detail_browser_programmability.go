@@ -181,7 +181,7 @@ func planGuidesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *ex
 		rows = append(rows, []string{g.Name, enabledText(!g.IsDisabled), string(g.Scope),
 			g.ScopeObject, formatSQLDate(g.CreateDate)})
 		*objs = append(*objs, nodeData{Type: NodePlanGuide, DBName: n.DBName, Name: g.Name,
-			IsEnabled: !g.IsDisabled})
+			IsEnabled: !g.IsDisabled, ScopeSchema: g.ScopeSchema, ScopeName: g.ScopeName})
 	}
 	return []string{"Name", "Status", "Scope", "Scope Object", "Created"}, rows, nil
 }

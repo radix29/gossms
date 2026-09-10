@@ -135,7 +135,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		// On dashboard) has no other way to see the key, and QueryPanel's own F5
 		// matches executeActiveQuery anyway.
 		switch {
-		case a.focus == "explorer":
+		case a.focus == focusOnExplorer:
 			a.refreshSelected()
 		case !a.panels.HandleKey(ev):
 			a.executeActiveQuery()
@@ -158,7 +158,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 		case ev.Modifiers()&tcell.ModCtrl != 0:
 			a.cycleFocus()
 			return false
-		case a.focus == "explorer":
+		case a.focus == focusOnExplorer:
 			a.focusPanels()
 			return false
 		}
@@ -195,7 +195,7 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 	case tcell.KeyRune:
 		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
 		// always 0), only while a panel already holds focus.
-		if a.focus == "panels" && ev.Modifiers()&tcell.ModCtrl != 0 {
+		if a.focus == focusOnPanels && ev.Modifiers()&tcell.ModCtrl != 0 {
 			if r := core.EvRune(ev); r >= '0' && r <= '9' {
 				a.jumpToPanel(int(r - '0'))
 				return false
@@ -205,12 +205,12 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 
 	// Explorer splitter keyboard resize (Ctrl+Left/Right), gated to explorer
 	// focus so the same keys reach the editor's word-jump when a panel has it.
-	if a.focus == "explorer" && a.explorerSplit.HandleKey(ev) {
+	if a.focus == focusOnExplorer && a.explorerSplit.HandleKey(ev) {
 		a.layoutAll()
 		return false
 	}
 
-	if a.focus == "explorer" {
+	if a.focus == focusOnExplorer {
 		a.explorer.HandleKey(ev)
 	} else {
 		a.panels.HandleKey(ev)
@@ -335,7 +335,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 	left := a.explorerSplit.FirstRect()
 	if mx < left.Right() {
 		a.armGesture(ev, ownerExplorer)
-		if a.focus != "explorer" {
+		if a.focus != focusOnExplorer {
 			a.focusExplorer()
 		}
 		a.explorer.HandleMouse(ev)
@@ -354,7 +354,7 @@ func (a *App) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 	a.armGesture(ev, ownerPanels)
-	if a.focus != "panels" {
+	if a.focus != focusOnPanels {
 		a.focusPanels()
 	}
 	a.panels.HandleMouse(ev)

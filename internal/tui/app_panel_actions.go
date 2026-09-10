@@ -204,9 +204,11 @@ func (a *App) writePlanFile(path, xml string) bool {
 
 // closePanelAt removes the panel at index i, first releasing what it owns: an
 // Activity Monitor's collector and per-tab connections, or a QueryPanel's
-// dedicated connection. Also cancels any in-flight query or plan fetch, which
-// would otherwise run to completion server-side and fire its postEvent closure
-// against a panel that is no longer hosted.
+// dedicated connection and session. Also cancels any in-flight query or plan
+// fetch, which would otherwise run to completion server-side and fire its
+// postEvent closure against a panel that is no longer hosted. Ending the
+// session rolls back a transaction still open on it — requestClosePanel is
+// where the user is offered a commit first.
 func (a *App) closePanelAt(i int) {
 	if am, ok := a.panels.PanelAt(i).(*ActivityMonitor); ok {
 		am.Close()
@@ -221,9 +223,7 @@ func (a *App) closePanelAt(i int) {
 		if qp.executing && qp.cancel != nil {
 			qp.cancel()
 		}
-		if qp.conn != nil {
-			qp.conn.Close()
-		}
+		qp.closeConnection()
 	}
 	a.panels.RemovePanel(i)
 	a.releaseClosedPanelMemory()
@@ -268,71 +268,119 @@ func (a *App) panelHosted(p layout.Panel) bool {
 }
 
 // requestClosePanel implements Ctrl+W / File > Close and a tab's [x] button:
-// closes the panel at i outright, unless it is a QueryPanel with unsaved
-// changes, which prompts to save first. A panel whose layout.Closable reports
-// false (Object Explorer Details) can't be closed at all — the tab bar omits
-// its [x], and this is Ctrl+W's backstop.
+// closes the panel at i outright, unless it is a QueryPanel whose session has
+// an open transaction or whose editor has unsaved changes — each of which
+// prompts first, the transaction first, as SSMS asks. A panel whose
+// layout.Closable reports false (Object Explorer Details) can't be closed at
+// all — the tab bar omits its [x], and this is Ctrl+W's backstop.
 func (a *App) requestClosePanel(i int) {
 	if !layout.PanelClosable(a.panels.PanelAt(i)) {
 		return
 	}
 	qp, ok := a.panels.PanelAt(i).(*QueryPanel)
-	if !ok || !qp.Dirty() {
+	if !ok {
 		a.closePanelAt(i)
 		return
 	}
-	// Three-way, not Yes/No: "No" here discards the panel's unsaved SQL, so
-	// Escape must not silently mean it — see ShowConfirmCancel.
-	a.confirmDialog.ShowConfirmCancel("Close Query",
-		qp.Title()+" has unsaved changes. Save before closing?",
+	a.confirmOpenTransactions(qp, "closing the window", func() {
+		if !qp.Dirty() {
+			a.closePanelByPointer(qp)
+			return
+		}
+		// Three-way, not Yes/No: "No" here discards the panel's unsaved SQL, so
+		// Escape must not silently mean it — see ShowConfirmCancel.
+		a.confirmDialog.ShowConfirmCancel("Close Query",
+			qp.Title()+" has unsaved changes. Save before closing?",
+			func(answer dialogs.ConfirmAnswer) {
+				switch answer {
+				case dialogs.ConfirmYes:
+					a.saveQueryPanel(qp, false, func() { a.closePanelByPointer(qp) })
+				case dialogs.ConfirmNo:
+					a.closePanelByPointer(qp)
+				}
+				// ConfirmCancel: the panel stays open, unsaved.
+			})
+	})
+}
+
+// hasOpenTransaction reports whether qp's session is holding a transaction
+// that ending the session would roll back. A panel mid-run is left out: its
+// count is from before the run, and the run is cancelled on close anyway.
+func (qp *QueryPanel) hasOpenTransaction() bool {
+	return qp.tranCount > 0 && qp.connected() && !qp.executing
+}
+
+// confirmOpenTransactions asks SSMS's "There are uncommitted transactions"
+// question before something that ends qp's session — closing it, reconnecting
+// it, exiting — and runs then once the transactions are dealt with: Yes
+// commits, No rolls back, Cancel abandons the action. With no open transaction
+// then runs straight away.
+//
+// A commit that fails stops there with an alert (see endTransactions) rather
+// than going on to end the session, which would roll back what the user just
+// asked to keep.
+func (a *App) confirmOpenTransactions(qp *QueryPanel, action string, then func()) {
+	if !qp.hasOpenTransaction() {
+		then()
+		return
+	}
+	a.confirmDialog.ShowConfirmCancel("Uncommitted Transactions",
+		fmt.Sprintf("There are uncommitted transactions in %s. Do you wish to commit them before %s?", qp.Title(), action),
 		func(answer dialogs.ConfirmAnswer) {
 			switch answer {
 			case dialogs.ConfirmYes:
-				a.saveQueryPanel(qp, false, func() { a.closePanelByPointer(qp) })
+				qp.endTransactions(true, then)
 			case dialogs.ConfirmNo:
-				a.closePanelByPointer(qp)
+				qp.endTransactions(false, then)
 			}
-			// ConfirmCancel: the panel stays open, unsaved.
+			// ConfirmCancel: nothing happens; the transaction stays open.
 		})
 }
 
-// requestQuit implements Ctrl+Q / File > Exit: offers to save every query panel
-// with unsaved changes before tearing the screen down, and abandons the quit if
-// any prompt is cancelled. quit() itself is unconditional, so without this
-// Ctrl+Q discards every dirty panel with no prompt.
+// requestQuit implements Ctrl+Q / File > Exit: offers to commit every query
+// panel's open transaction and save every unsaved one before tearing the
+// screen down, and abandons the quit if any prompt is cancelled. quit() itself
+// is unconditional, so without this Ctrl+Q discards every dirty panel, and
+// rolls back every open transaction, with no prompt.
 func (a *App) requestQuit() (quitting bool) {
-	dirty := a.dirtyQueryPanels()
-	if len(dirty) == 0 {
+	pending := a.queryPanelsToAskBeforeQuit()
+	if len(pending) == 0 {
 		a.quit()
 		return true
 	}
-	a.askSaveBeforeQuit(dirty, 0)
+	a.askBeforeQuit(pending, 0)
 	return false
 }
 
-// dirtyQueryPanels lists every open query panel with unsaved changes, in
-// tab order.
-func (a *App) dirtyQueryPanels() []*QueryPanel {
-	var dirty []*QueryPanel
-	for i := 0; i < a.panels.Count(); i++ {
-		if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok && qp.Dirty() {
-			dirty = append(dirty, qp)
-		}
-	}
-	return dirty
+// needsQuitPrompt reports whether quitting would lose something of qp's.
+func (qp *QueryPanel) needsQuitPrompt() bool {
+	return qp.Dirty() || qp.hasOpenTransaction()
 }
 
-// askSaveBeforeQuit walks panels from index i, prompting for each still-dirty
-// one and quitting once it runs off the end. Recursion through the dialog's
-// callback rather than a loop, since each prompt must be answered — and a Yes
-// must finish writing — before the next is asked. Panels are re-checked as they
-// are reached: an earlier Save As may have targeted a file another panel also
-// shows, and a panel may have been closed from the prompt chain itself.
+// queryPanelsToAskBeforeQuit lists every open query panel with an open
+// transaction or unsaved changes, in tab order.
+func (a *App) queryPanelsToAskBeforeQuit() []*QueryPanel {
+	var pending []*QueryPanel
+	for i := 0; i < a.panels.Count(); i++ {
+		if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok && qp.needsQuitPrompt() {
+			pending = append(pending, qp)
+		}
+	}
+	return pending
+}
+
+// askBeforeQuit walks panels from index i, asking about each one's open
+// transaction and then its unsaved changes, and quitting once it runs off the
+// end. Recursion through the dialogs' callbacks rather than a loop, since each
+// prompt must be answered — and a Yes must finish committing or writing —
+// before the next is asked. Panels are re-checked as they are reached: an
+// earlier Save As may have targeted a file another panel also shows, and a
+// panel may have been closed from the prompt chain itself.
 //
-// A cancelled prompt, or a Save backed out of at the file dialog, stops the
-// walk and leaves the app open.
-func (a *App) askSaveBeforeQuit(panels []*QueryPanel, i int) {
-	for i < len(panels) && (!a.panelHosted(panels[i]) || !panels[i].Dirty()) {
+// A cancelled prompt, a failed commit, or a Save backed out of at the file
+// dialog stops the walk and leaves the app open.
+func (a *App) askBeforeQuit(panels []*QueryPanel, i int) {
+	for i < len(panels) && (!a.panelHosted(panels[i]) || !panels[i].needsQuitPrompt()) {
 		i++
 	}
 	if i >= len(panels) {
@@ -340,17 +388,24 @@ func (a *App) askSaveBeforeQuit(panels []*QueryPanel, i int) {
 		return
 	}
 	qp := panels[i]
-	a.confirmDialog.ShowConfirmCancel("Exit goSSMS",
-		qp.Title()+" has unsaved changes. Save before exiting?",
-		func(answer dialogs.ConfirmAnswer) {
-			switch answer {
-			case dialogs.ConfirmYes:
-				a.saveQueryPanel(qp, false, func() { a.askSaveBeforeQuit(panels, i+1) })
-			case dialogs.ConfirmNo:
-				a.askSaveBeforeQuit(panels, i+1)
-			}
-			// ConfirmCancel: abandon the quit; every panel stays as it is.
-		})
+	next := func() { a.askBeforeQuit(panels, i+1) }
+	a.confirmOpenTransactions(qp, "exiting", func() {
+		if !qp.Dirty() {
+			next()
+			return
+		}
+		a.confirmDialog.ShowConfirmCancel("Exit goSSMS",
+			qp.Title()+" has unsaved changes. Save before exiting?",
+			func(answer dialogs.ConfirmAnswer) {
+				switch answer {
+				case dialogs.ConfirmYes:
+					a.saveQueryPanel(qp, false, next)
+				case dialogs.ConfirmNo:
+					next()
+				}
+				// ConfirmCancel: abandon the quit; every panel stays as it is.
+			})
+	})
 }
 
 func (a *App) closeActivePanel() {
@@ -1051,9 +1106,9 @@ func (a *App) showDatabaseSnapshotPropertiesFor(sc *db.ServerConn, name string) 
 
 // showPlanGuidePropertiesFor opens Plan Guide Properties, whose General page
 // can enable and disable the guide.
-func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name string) {
+func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeSchema, scopeName string) {
 	a.propDialog.show(sc, dbName, "Plan Guide Properties", "Plan guide: "+name, "Database: "+dbName,
-		func() []propPage { return planGuidePropPages(sc, dbName, name) })
+		func() []propPage { return planGuidePropPages(sc, dbName, name, scopeSchema, scopeName) })
 }
 
 // showExternalDataSourcePropertiesFor opens the read-only Properties for an

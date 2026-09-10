@@ -1,8 +1,14 @@
 package tui
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	mssql "github.com/microsoft/go-mssqldb"
+	gosmo "github.com/radix29/gosmo"
 )
 
 func TestValidateNewEndpoint(t *testing.T) {
@@ -124,14 +130,24 @@ func TestRandomPasswordSatisfiesComplexity(t *testing.T) {
 	}
 }
 
-func TestQuoteBracketEscapesAClosingBracket(t *testing.T) {
-	// The certificate name goes into the AUTHENTICATION clause, which gosmo
-	// passes through verbatim — so the quoting has to happen here.
-	if got := quoteBracket("ubusql1_Cert"); got != "[ubusql1_Cert]" {
-		t.Errorf("quoteBracket = %q", got)
+// The certificate name goes into the AUTHENTICATION clause, which gosmo passes
+// through verbatim — so the quoting has to happen in the dialog, and a closing
+// bracket in the name has to come out doubled.
+func TestEndpointAuthenticationQuotesTheCertificateName(t *testing.T) {
+	d, _, _ := newEndpointDialogForTest(t)
+	d.certificateName = func(string) string { return "we]ird_Cert" }
+
+	scriptCtx, _ := gosmo.WithScript(context.Background())
+	if err := d.configure(scriptCtx); err != nil {
+		t.Fatalf("configure under WithScript: %v", err)
 	}
-	if got := quoteBracket("we]ird"); got != "[we]]ird]" {
-		t.Errorf("quoteBracket = %q, want the closing bracket doubled", got)
+	var all []string
+	for _, g := range d.scriptedGroups {
+		all = append(all, g.stmts...)
+	}
+	joined := strings.Join(all, "\n")
+	if want := "AUTHENTICATION = CERTIFICATE [we]]ird_Cert]"; !strings.Contains(joined, want) {
+		t.Errorf("no statement contains %q:\n%s", want, joined)
 	}
 }
 
@@ -140,6 +156,35 @@ func TestAlwaysOnRootOffersTheDashboardAndTheEndpointFlow(t *testing.T) {
 	for _, want := range []string{"Show Dashboard", "New Database Mirroring Endpoint..."} {
 		if !slicesContains(labels, want) {
 			t.Errorf("Always On root menu = %v, want a %q item", labels, want)
+		}
+	}
+}
+
+// The pipeline treats "already exists" as success, and a German or French
+// server words that differently — the messages below are the real ones, from
+// SET LANGUAGE Deutsch on 17. The number is what identifies the error; a
+// driver error's text does not contain it, so a text match skipped nothing on
+// a non-English server and the pipeline failed on a login it had just been
+// told was absent.
+func TestIsAlreadyExistsMatchesTheNumberInAnyLanguage(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"login, German", mssql.Error{Number: 15025, Message: `Der Serverprinzipal "x_login" ist bereits vorhanden.`}, true},
+		{"user, German", mssql.Error{Number: 15023, Message: `Der Benutzer, die Gruppe oder die Rolle "x_user" ist in der aktuellen Datenbank bereits vorhanden.`}, true},
+		{"wrapped by gosmo", fmt.Errorf("gosmo: create login: %w", mssql.Error{Number: 15025, Message: "déjà"}), true},
+		{"login, English", mssql.Error{Number: 15025, Message: `The server principal 'x_login' already exists.`}, true},
+		// A different error that merely mentions the phrase is not the
+		// collision: the number wins once there is one.
+		{"other number", mssql.Error{Number: 15247, Message: "User does not have permission; the object already exists elsewhere"}, false},
+		{"permission denied", mssql.Error{Number: 15247, Message: "User does not have permission to perform this action."}, false},
+		{"no SQL error, English text", errors.New("login already exists"), true},
+		{"nil", nil, false},
+	} {
+		if got := isAlreadyExists(c.err); got != c.want {
+			t.Errorf("%s: isAlreadyExists = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

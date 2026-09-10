@@ -332,11 +332,11 @@ func TestRulesAndDefaultsLoaders(t *testing.T) {
 // the same "(Disabled)" suffix the trigger and policy folders carry.
 func TestPlanGuidesLoaderLabelsTheDisabledOnes(t *testing.T) {
 	sc := newFamilyConn(t, fakeResponse{
-		match: "FROM   sys.plan_guides", cols: 11,
+		match: "FROM   sys.plan_guides", cols: 13,
 		rows: [][]driver.Value{
-			{int64(1), "Guide_Active", false, "SELECT 1", "SQL", "", "", "", "OPTION (MAXDOP 1)",
+			{int64(1), "Guide_Active", false, "SELECT 1", "SQL", "", "", "", "", "", "OPTION (MAXDOP 1)",
 				treeFamilyCreated, treeFamilyCreated},
-			{int64(2), "Guide_Off", true, "SELECT 2", "SQL", "", "", "", "OPTION (RECOMPILE)",
+			{int64(2), "Guide_Off", true, "SELECT 2", "SQL", "", "", "", "", "", "OPTION (RECOMPILE)",
 				treeFamilyCreated, treeFamilyCreated},
 		}})
 	children := loadFamily(t, sc, NodePlanGuides)

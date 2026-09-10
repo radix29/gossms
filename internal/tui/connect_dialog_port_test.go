@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/radix29/gossms/internal/config"
@@ -24,7 +25,11 @@ func TestConnectDialogPortFieldStartsEmpty(t *testing.T) {
 	if opts.Port != 0 {
 		t.Errorf("currentOptions().Port = %d for an empty field, want 0", opts.Port)
 	}
-	if got := db.BuildConnectionString(opts); got != `sqlserver://win10cli/sql2017?TrustServerCertificate=true&encrypt=false` {
+	got, err := db.BuildConnectionString(opts)
+	if err != nil {
+		t.Fatalf("BuildConnectionString: %v", err)
+	}
+	if !strings.HasPrefix(got, "sqlserver://win10cli/sql2017?") {
 		t.Errorf("preview DSN = %q, want no port so the browser resolves the instance", got)
 	}
 }

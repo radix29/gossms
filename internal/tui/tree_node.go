@@ -707,6 +707,13 @@ type nodeData struct {
 	// leaves the snapshot in the catalog and unusable.
 	SourceDatabase string
 
+	// ScopeSchema and ScopeName are the routine an OBJECT-scoped
+	// NodePlanGuide is bound to, empty for the SQL and TEMPLATE scopes. The
+	// guide's Delete is permitted by ALTER on that routine (objectDataRights),
+	// and nothing in the label names it.
+	ScopeSchema string
+	ScopeName   string
+
 	// AGName is the owning availability group's name for any node under it
 	// (the Replicas/Databases/Listeners folders and their leaves). Same role
 	// TableName plays for table-scoped nodes: Name on a leaf points at the

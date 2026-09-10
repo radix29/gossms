@@ -1,6 +1,10 @@
 package tui
 
-import gosmo "github.com/radix29/gosmo"
+import (
+	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+)
 
 // loadServerChildren returns a connected server's top-level folders:
 // Databases, Security, Server Objects (linked servers), Management (the SQL
@@ -391,4 +395,287 @@ func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 			n.data.IsSystem = isSystemSchema(s.Name)
 			return n
 		})
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go).
+
+func serverMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "Disconnect", Action: func() { a.disconnectActive() }},
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
+		{Divider: true},
+		gate(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+			sc, "", rightViewServerState),
+		{Label: "View SQL Server Log", Action: func() {
+			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
+		}},
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
+	}
+}
+
+func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
+		gateAzure(gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
+			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
+		{Divider: true},
+		{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
+		{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
+		{Divider: true},
+		refresh,
+	}
+}
+
+func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	offlineLabel := "Take Database Offline"
+	if node.data.IsOffline {
+		offlineLabel = "Bring Database Online"
+	}
+	items := []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, rightBackupDatabase, rightAlterAnyDatabase),
+		gate(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase, rightCreateAnyDatabase),
+		{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
+		// ALTER DATABASE ... SET OFFLINE is Msg 5008 on an Azure edition,
+		// so the toggle is withheld there in both directions.
+		gateAzure(gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
+			sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase), sc),
+	}
+	// Snapshotting a system database is refused by the server, so the
+	// item follows Detach's rule below rather than being offered and
+	// failing.
+	if !node.data.IsSystem {
+		items = append(items,
+			gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+				a.showNewSnapshotDialog(sc, node.data.DBName)
+			}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc))
+	}
+	// Detach is offered on user databases only: sp_detach_db refuses a
+	// system database outright, and a permanently grey item explains
+	// nothing the name doesn't already say.
+	if !node.data.IsSystem {
+		items = append(items,
+			gateAzure(gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
+				a.showDetachDatabaseDialog(sc, node.data.DBName)
+			}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase), sc))
+	}
+	return append(items,
+		controls.MenuItem{Divider: true},
+		refresh,
+		controls.MenuItem{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+	)
+}
+
+func databaseSnapshotsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		// CREATE DATABASE ... AS SNAPSHOT OF is a CREATE DATABASE, and
+		// takes the same rights New Database does.
+		gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+			a.showNewSnapshotDialog(sc, "")
+		}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func databaseSnapshotMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	items := []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		// RESTORE ... FROM DATABASE_SNAPSHOT is a restore of the *source*
+		// database, so it takes the source's rights, not the snapshot's.
+		gateAzure(gate(controls.MenuItem{Label: "Restore Database from Snapshot...", Action: func() {
+			a.restoreFromSnapshot(sc, node)
+		}}, sc, node.data.SourceDatabase, rightControlDB, rightAlterAnyDatabase), sc),
+	}
+	// Delete is not listed here: contextMenuItemsForNode splices it in
+	// above Refresh for every type objectOps covers, and a copy here is a
+	// second Delete on the menu.
+	return append(items,
+		controls.MenuItem{Divider: true},
+		refresh,
+		controls.MenuItem{Label: "Properties...", Action: func() {
+			a.showDatabaseSnapshotPropertiesFor(sc, node.data.Name)
+		}},
+	)
+}
+
+func queryStoreMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	// The folder's own settings are a Database Properties page, not a
+	// dialog of its own — the same page SSMS puts them on.
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "Open Query Store...", Action: func() {
+			a.showQueryStorePanelFor(sc, node.data.DBName, "")
+		}}, sc, node.data.DBName, rightViewDBState),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
+	}
+}
+
+func queryStoreReportMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	// The leaf's own Detail Browser grid is the report; this opens the
+	// same view in the panel, where the metric, the statistic and the
+	// window can be changed and a plan can be forced.
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
+			a.showQueryStorePanelFor(sc, node.data.DBName, node.data.Name)
+		}}, sc, node.data.DBName, rightViewDBState),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func userMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showUserPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func databaseAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Database Audit Specification...",
+			Action: func() { a.showNewDatabaseAuditSpecificationDialog(sc, node) }},
+			sc, node.data.DBName, rightAlterAnyDBAudit),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func databaseAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: auditToggleLabel(node),
+			Action: func() { a.toggleDatabaseAuditSpecification(sc, node) }},
+			sc, node.data.DBName, rightAlterAnyDBAudit),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showDatabaseAuditSpecificationPropertiesFor(sc, node.data.DBName, node.data.Name)
+		}},
+	}
+}
+
+func databaseScopedCredentialsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Database Scoped Credential...",
+			Action: func() { a.showNewDatabaseScopedCredentialDialog(sc, node) }},
+			sc, node.data.DBName, dbScopedCredentialRights()...),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func databaseScopedCredentialMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showDatabaseScopedCredentialPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func databaseTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	dbTrigToggle := "Disable"
+	if !node.data.IsEnabled {
+		dbTrigToggle = "Enable"
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: dbTrigToggle, Action: func() { a.toggleDatabaseTrigger(sc, node) }},
+			sc, node.data.DBName, rightAlterAnyDatabaseDDLTrigger),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showDatabaseTriggerPropertiesFor(sc, node.data.DBName, node.data.Name)
+		}},
+	}
+}
+
+func databaseRoleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showRolePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func schemaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showSchemaPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func securityPolicyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	toggleLabel := "Disable"
+	if !node.data.IsEnabled {
+		toggleLabel = "Enable"
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+			sc, node.data.DBName, rightAlterAnySecPolicy),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showSecurityPolicyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		}},
+	}
+}
+
+func columnMasterKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Column Master Key...",
+			Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
+			sc, node.data.DBName, rightAlterAnyCMK),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func columnEncryptionKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Column Encryption Key...",
+			Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
+			sc, node.data.DBName, rightAlterAnyCEK),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func columnMasterKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showColumnMasterKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func columnEncryptionKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showColumnEncryptionKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
 }

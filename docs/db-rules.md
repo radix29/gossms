@@ -49,6 +49,14 @@ shipped.
   and note that a *server*-scope permission asked of a database comes back from
   `HAS_PERMS_BY_NAME` as **NULL, not 0** (`ALTER ANY CREDENTIAL` does), which a
   gate built on it reads as `CapabilityUnknown` forever rather than as "no".
+  **A node with no schema must never fall to `objectWriteRights()`**: its schema
+  and object arms have nothing to ask, leaving ALTER ANY SCHEMA — which permits
+  no schemaless DROP at all — and never the narrow right that does. Ten families
+  shipped that way; `TestSchemalessDatabaseOpsAreGated` now refuses an eleventh.
+  And a fixed role's contents are **per version**: db_ddladmin carries ALTER ANY
+  EXTERNAL DATA SOURCE / FILE FORMAT on major 17 and is refused both on 13 and
+  14, so a right's `role` (the name shown to the user) must be one that confers
+  it on every supported major, and a probe on one version does not settle it.
 
 - **"The edition does not implement this" is a different question from "the
   login may not do this", and it has its own file — `edition_gate.go`.** It
@@ -106,4 +114,11 @@ shipped.
   grid comes up empty, with no error and no Messages tab. Gate any drain on having
   actually abandoned the set mid-scan (`scanNext` returns a bool for exactly this).
   Unit tests do not catch it; only a live query does.
-
+- **A query window's SQL runs on its `query.Session`, never on a pool.** A
+  `*sql.Conn` returned to a `database/sql` pool is reset on its next checkout —
+  temp tables dropped, SET options back to the login's defaults, an open
+  transaction rolled back — and the pool reuses the most recently returned
+  connection, so the reset lands on the very session the user was working in
+  (BUG-1: `#t` vanished between two F5s, `COMMIT` failed with Msg 3902). Anything
+  that ends a session must discard its connection (`Session.Close`), never pool
+  it, or an open transaction sits idle holding its locks.

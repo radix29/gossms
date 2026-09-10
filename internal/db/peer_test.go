@@ -125,7 +125,7 @@ func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 			return config.Connection{
 				Server: "ubusql2.fritz.box\\prod", Port: 14330,
 				User: "replica_login", Password: "replica-pw",
-				Database: "OtherDB", Encrypt: true,
+				Database: "OtherDB", Encrypt: config.EncryptStrict,
 			}, true
 		}
 		return config.Connection{}, false
@@ -140,7 +140,7 @@ func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 	if opts.Port != 14330 {
 		t.Errorf("peer options use port %d, want the instance's own 14330 — the port half of the same limitation", opts.Port)
 	}
-	if !opts.Encrypt {
+	if opts.Encrypt != config.EncryptStrict {
 		t.Error("peer options dropped the saved connection's Encrypt setting")
 	}
 	// Server is overridden with the name the catalog gave, not the spelling the

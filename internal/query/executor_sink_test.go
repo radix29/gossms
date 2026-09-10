@@ -31,6 +31,7 @@ const (
 	msgNotice
 	msgError
 	msgAffected
+	msgBreak // breaks the connection, as a killed session or a failover does
 )
 
 type fakeMsg struct {
@@ -50,11 +51,30 @@ type fakeMsgConn struct {
 	next    int
 	retmsg  *sqlexp.ReturnMessage
 	dbName  string
+
+	// Session bookkeeping — see session_test.go. spid and tranCount answer
+	// the Session's state read; resets counts database/sql's ResetSession
+	// calls, which is how a pool marks a connection it handed out before;
+	// invalid is what IsValid reports once a batch has broken the
+	// connection; failExec fails any ExecContext whose text contains it.
+	spid      int64
+	tranCount int64
+	resets    int
+	closed    bool
+	invalid   bool
+	failExec  string
+	execs     []string
 }
 
 func (c *fakeMsgConn) Prepare(string) (driver.Stmt, error) { return nil, errFakeMsgUnsupported }
-func (c *fakeMsgConn) Close() error                        { return nil }
+func (c *fakeMsgConn) Close() error                        { c.closed = true; return nil }
 func (c *fakeMsgConn) Begin() (driver.Tx, error)           { return nil, errFakeMsgUnsupported }
+func (c *fakeMsgConn) IsValid() bool                       { return !c.invalid }
+
+func (c *fakeMsgConn) ResetSession(context.Context) error {
+	c.resets++
+	return nil
+}
 
 var errFakeMsgUnsupported = errors.New("fakeMsgConn: unsupported")
 
@@ -70,12 +90,24 @@ func (c *fakeMsgConn) CheckNamedValue(nv *driver.NamedValue) error {
 	return driver.ErrSkip
 }
 
-func (c *fakeMsgConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+func (c *fakeMsgConn) ExecContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Result, error) {
+	c.execs = append(c.execs, q)
+	if c.failExec != "" && strings.Contains(q, c.failExec) {
+		return nil, errors.New("fakeMsgConn: scripted exec failure")
+	}
 	return driver.RowsAffected(0), nil
 }
 
 func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
 	if c.retmsg == nil {
+		// As the real driver does: a cancelled ctx gets no answer, which is
+		// what makes a state read that forgot to detach from it fail here.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if q == stateQuery {
+			return &fakeMsgRows{sets: []fakeMsg{{cols: []string{"", "", ""}, rows: [][]driver.Value{{c.spid, c.dbName, c.tranCount}}}}}, nil
+		}
 		if strings.Contains(q, "DB_NAME()") {
 			return &fakeMsgRows{sets: []fakeMsg{{cols: []string{"", ""}[:1], rows: [][]driver.Value{{c.dbName}}}}}, nil
 		}
@@ -122,6 +154,8 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			err = enqueue(sqlexp.MsgError{Error: m.err})
 		case msgAffected:
 			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+		case msgBreak:
+			c.invalid = true
 		}
 		if err != nil {
 			return nil, err
@@ -170,16 +204,24 @@ func (r *fakeMsgRows) NextResultSet() error {
 	return nil
 }
 
-type fakeMsgConnector struct{ conn *fakeMsgConn }
+type fakeMsgConnector struct {
+	conn     *fakeMsgConn
+	connects int
+}
 
-func (f *fakeMsgConnector) Connect(context.Context) (driver.Conn, error) { return f.conn, nil }
-func (f *fakeMsgConnector) Driver() driver.Driver                        { return nil }
+func (f *fakeMsgConnector) Connect(context.Context) (driver.Conn, error) {
+	f.connects++
+	return f.conn, nil
+}
+func (f *fakeMsgConnector) Driver() driver.Driver { return nil }
 
 var (
 	_ driver.Conn              = (*fakeMsgConn)(nil)
 	_ driver.QueryerContext    = (*fakeMsgConn)(nil)
 	_ driver.ExecerContext     = (*fakeMsgConn)(nil)
 	_ driver.NamedValueChecker = (*fakeMsgConn)(nil)
+	_ driver.SessionResetter   = (*fakeMsgConn)(nil)
+	_ driver.Validator         = (*fakeMsgConn)(nil)
 	_ driver.RowsNextResultSet = (*fakeMsgRows)(nil)
 )
 

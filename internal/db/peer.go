@@ -62,7 +62,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	// Connect outside the lock: it does network I/O, and holding the mutex across
 	// it would serialise every replica of a group behind the slowest one.
 	opts := sc.peerOptions(server)
-	peer, err := Connect(opts)
+	peer, err := ConnectContext(sc.Context(), opts, sc.role)
 	if err != nil {
 		// A resolver hit that cannot connect must never leave the instance less
 		// reachable than before one was installed: the saved connection may
@@ -78,7 +78,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 			return nil, sc.recordPeerFailure(key, err)
 		}
 		var ferr error
-		if peer, ferr = Connect(fallback); ferr != nil {
+		if peer, ferr = ConnectContext(sc.Context(), fallback, sc.role); ferr != nil {
 			return nil, sc.recordPeerFailure(key, err)
 		}
 	}

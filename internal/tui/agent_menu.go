@@ -55,7 +55,7 @@ func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
 }
 
 // agentJobMenuItems builds the context menu for a NodeAgentJob leaf.
-func agentJobMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem) []controls.MenuItem {
+func agentJobMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	enableLabel := "Disable Job"
 	if !node.data.IsEnabled {
 		enableLabel = "Enable Job"
@@ -76,7 +76,7 @@ func agentJobMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh co
 }
 
 // agentScheduleMenuItems builds the context menu for a NodeAgentSchedule leaf.
-func agentScheduleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem) []controls.MenuItem {
+func agentScheduleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	enableLabel := "Disable Schedule"
 	if !node.data.IsEnabled {
 		enableLabel = "Enable Schedule"
@@ -92,7 +92,7 @@ func agentScheduleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refre
 }
 
 // agentAlertMenuItems builds the context menu for a NodeAgentAlert leaf.
-func agentAlertMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem) []controls.MenuItem {
+func agentAlertMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	enableLabel := "Disable Alert"
 	if !node.data.IsEnabled {
 		enableLabel = "Enable Alert"
@@ -108,7 +108,7 @@ func agentAlertMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh 
 }
 
 // agentOperatorMenuItems builds the context menu for a NodeAgentOperator leaf.
-func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refresh controls.MenuItem) []controls.MenuItem {
+func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	enableLabel := "Disable Operator"
 	if !node.data.IsEnabled {
 		enableLabel = "Enable Operator"
@@ -120,6 +120,52 @@ func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, refre
 		{Label: "Delete Operator...", Action: func() { a.deleteAgentOperator(sc, node) }},
 		{Divider: true},
 		{Label: "Properties...", Action: func() { a.showOperatorProperties(sc, node.data.Name) }},
+	}
+}
+
+// agentUserJobsMenuItems builds the context menu for the User Jobs folder;
+// the Schedules, Event Alerts and Operators folders' follow.
+func agentUserJobsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }},
+			sc, "msdb", agentWriteRights()...),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func agentSchedulesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }},
+			sc, "msdb", agentWriteRights()...),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func agentEventAlertsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }},
+			sc, "msdb", agentWriteRights()...),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func agentOperatorsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
+			sc, "msdb", agentWriteRights()...),
+		{Divider: true},
+		refresh,
 	}
 }
 

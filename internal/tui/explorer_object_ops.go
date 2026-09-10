@@ -694,7 +694,7 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 		return nil
 	}
 	sc, dbName := resolveConn(node), node.data.DBName
-	rights := objectOpRights(node.data.Type)
+	rights := objectDataRights(node.data)
 	schema, object := objectOpSchema(node), objectOpName(node)
 
 	var items []controls.MenuItem
@@ -724,12 +724,7 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 // dropping or renaming the schema itself — that is CONTROL on it, or
 // ALTER ANY SCHEMA — so answering with the node's own name would offer three
 // items the server then refuses.
-func objectOpSchema(n *explorerNode) string {
-	if n.data.Type == NodeSchema {
-		return ""
-	}
-	return n.data.Schema
-}
+func objectOpSchema(n *explorerNode) string { return objectDataSchema(n.data) }
 
 // objectOpName is the object whose own ALTER permits these operations on
 // node, or "" for a node they are not scoped by.
@@ -739,12 +734,7 @@ func objectOpSchema(n *explorerNode) string {
 // happened to share it. A node type gosmo's object probe does not record —
 // an index, a statistic — simply has no row, and the wider rights answer as
 // they did before.
-func objectOpName(n *explorerNode) string {
-	if n.data.Type == NodeSchema {
-		return ""
-	}
-	return n.data.Name
-}
+func objectOpName(n *explorerNode) string { return objectDataObject(n.data) }
 
 // objectOpRights is what permits Rename/Move/Delete on a node type — any one
 // of them is enough, and the action is withheld only when the server has
@@ -766,7 +756,22 @@ func objectOpRights(t NodeType) []requiredRight {
 	if rights, ok := principalOpRights[t]; ok {
 		return rights
 	}
+	if rights, ok := dbScopedOpRights[t]; ok {
+		return rights
+	}
 	return objectWriteRights()
+}
+
+// objectDataRights is objectOpRights for one node rather than its type, and
+// differs from it for the one family whose right depends on the object: an
+// OBJECT-scoped plan guide is controlled under ALTER on the routine it is
+// bound to, where a SQL or TEMPLATE guide needs the database's own ALTER —
+// see planGuideRights, which the guide's Enable/Disable and Properties share.
+func objectDataRights(n nodeData) []requiredRight {
+	if n.Type == NodePlanGuide {
+		return planGuideRights(n.ScopeName)
+	}
+	return objectOpRights(n.Type)
 }
 
 // principalOpRights is Rename/Delete's right set for the database-level node
@@ -800,6 +805,58 @@ var principalOpRights = map[NodeType][]requiredRight{
 	// drop, so listing it here would offer Delete to a principal the server
 	// then refuses.
 	NodeDatabaseScopedCredential: dbScopedCredentialRights(),
+}
+
+// dbScopedOpRights is Delete's right set for the remaining database-level
+// families that have no schema: principalOpRights' reason without the
+// principals. Their nodes carry no schema and no object securable gosmo
+// probes, so objectWriteRights() collapses to ALTER and CONTROL on the
+// database plus ALTER ANY SCHEMA — and ALTER ANY SCHEMA permits none of these
+// drops, while the narrow right that does was never asked.
+//
+// Each set was probed live 2026-09-10 on majors 13 and 17 (and 14 where the
+// family exists there) with a WITHOUT LOGIN user per right, running the DROP:
+// the narrow right, ALTER on the database and CONTROL on it each permit the
+// drop, and ALTER ANY SCHEMA is refused every one. sys.fn_builtin_permissions
+// gives ALTER on DATABASE as each narrow right's covering permission, which is
+// why the wider pair stays in the set. Two families differ:
+//
+//   - A plan guide has no narrow right at all. sp_control_plan_guide checks
+//     ALTER on the database for a SQL or TEMPLATE guide — db_ddladmin is
+//     refused it — and ALTER on the routine for an OBJECT guide, which
+//     objectDataRights answers instead.
+//   - A security policy has a schema, and its drop needs ALTER ANY SECURITY
+//     POLICY *and* ALTER on that schema: each alone is refused (Msg 3701).
+//     The gate asks any-of, so it asks the half without which nothing drops
+//     the policy — never withholding from a principal the server allows,
+//     while one holding the policy right and denied the schema is still
+//     offered a drop the server refuses. See docs/open-threads.md.
+//
+// Not every drop could be run everywhere. Without PolyBase, 13 has no external
+// data sources and 13/14 no file formats, so those drops ran on 14 and 17 and
+// on 17 alone; and no test instance has Machine Learning Services, so no
+// external library could be created and its set rests on HAS_PERMS_BY_NAME
+// (narrow right, ALTER, CONTROL and db_ddladmin read 1, ALTER ANY SCHEMA 0, on
+// 14 and 17) and the documented DROP EXTERNAL LIBRARY permission. The library
+// right is 2017-only and reads unknown on 2016, which fails open — correct,
+// since there is nothing there to delete.
+//
+// Narrowest first, for gateOn's note — see principalOpRights.
+var dbScopedOpRights = map[NodeType][]requiredRight{
+	NodePartitionFunction:   {rightAlterAnyDataspace, rightAlterDatabase, rightControlDB},
+	NodePartitionScheme:     {rightAlterAnyDataspace, rightAlterDatabase, rightControlDB},
+	NodeColumnMasterKey:     {rightAlterAnyCMK, rightAlterDatabase, rightControlDB},
+	NodeColumnEncryptionKey: {rightAlterAnyCEK, rightAlterDatabase, rightControlDB},
+	NodeDatabaseTrigger:     {rightAlterAnyDatabaseDDLTrigger, rightAlterDatabase, rightControlDB},
+	NodeAssembly:            {rightAlterAnyAssembly, rightAlterDatabase, rightControlDB},
+	NodeExternalDataSource:  {rightAlterAnyExtDataSource, rightAlterDatabase, rightControlDB},
+	NodeExternalFileFormat:  {rightAlterAnyExtFileFormat, rightAlterDatabase, rightControlDB},
+	NodeExternalLibrary:     {rightAlterAnyExtLibrary, rightAlterDatabase, rightControlDB},
+	NodePlanGuide:           planGuideWriteRights(),
+	// No wider pair: a database-wide ALTER reads 0 for ALTER ANY SECURITY
+	// POLICY and is refused the drop (see rightAlterAnySecPolicy), and CONTROL
+	// already answers 1 for the narrow right.
+	NodeSecurityPolicy: {rightAlterAnySecPolicy},
 }
 
 // serverScopedOpRights is Rename/Delete's right set for the node types that

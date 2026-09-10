@@ -16,17 +16,17 @@ func TestCycleFocusThreeWay(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocus() // explorer -> editor
-	if a.focus != "panels" || qp.resultsFocused {
+	if a.focus != focusOnPanels || qp.resultsFocused {
 		t.Fatalf("after 1st cycleFocus: focus=%q resultsFocused=%v, want panels/false (editor)", a.focus, qp.resultsFocused)
 	}
 
 	a.cycleFocus() // editor -> results
-	if a.focus != "panels" || !qp.resultsFocused {
+	if a.focus != focusOnPanels || !qp.resultsFocused {
 		t.Fatalf("after 2nd cycleFocus: focus=%q resultsFocused=%v, want panels/true (results)", a.focus, qp.resultsFocused)
 	}
 
 	a.cycleFocus() // results -> explorer
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("after 3rd cycleFocus: focus=%q, want explorer", a.focus)
 	}
 }
@@ -43,11 +43,11 @@ func TestCycleFocusTwoWayWithoutResults(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocus() // explorer -> editor
-	if a.focus != "panels" {
+	if a.focus != focusOnPanels {
 		t.Fatalf("focus = %q, want panels", a.focus)
 	}
 	a.cycleFocus() // editor -> explorer directly: no results pane to stop at
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("focus = %q, want explorer (no results pane to cycle through)", a.focus)
 	}
 }
@@ -62,11 +62,11 @@ func TestCycleFocusTwoWayForNonQueryPanel(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocus()
-	if a.focus != "panels" {
+	if a.focus != focusOnPanels {
 		t.Fatalf("focus = %q, want panels", a.focus)
 	}
 	a.cycleFocus()
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("focus = %q, want explorer", a.focus)
 	}
 }
@@ -83,17 +83,17 @@ func TestCycleFocusReverseThreeWay(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocusReverse() // explorer -> results
-	if a.focus != "panels" || !qp.resultsFocused {
+	if a.focus != focusOnPanels || !qp.resultsFocused {
 		t.Fatalf("after 1st cycleFocusReverse: focus=%q resultsFocused=%v, want panels/true (results)", a.focus, qp.resultsFocused)
 	}
 
 	a.cycleFocusReverse() // results -> editor
-	if a.focus != "panels" || qp.resultsFocused {
+	if a.focus != focusOnPanels || qp.resultsFocused {
 		t.Fatalf("after 2nd cycleFocusReverse: focus=%q resultsFocused=%v, want panels/false (editor)", a.focus, qp.resultsFocused)
 	}
 
 	a.cycleFocusReverse() // editor -> explorer
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("after 3rd cycleFocusReverse: focus=%q, want explorer", a.focus)
 	}
 }
@@ -109,11 +109,11 @@ func TestCycleFocusReverseTwoWayWithoutResults(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocusReverse() // explorer -> editor directly: no results to stop at
-	if a.focus != "panels" || qp.resultsFocused {
+	if a.focus != focusOnPanels || qp.resultsFocused {
 		t.Fatalf("focus=%q resultsFocused=%v, want panels/false (editor)", a.focus, qp.resultsFocused)
 	}
 	a.cycleFocusReverse() // editor -> explorer
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("focus = %q, want explorer", a.focus)
 	}
 }
@@ -131,11 +131,11 @@ func TestCycleFocusThenReverseReturnsToStart(t *testing.T) {
 	a.focusExplorer()
 
 	a.cycleFocus() // explorer -> editor
-	if a.focus != "panels" || qp.resultsFocused {
+	if a.focus != focusOnPanels || qp.resultsFocused {
 		t.Fatalf("after cycleFocus: focus=%q resultsFocused=%v, want panels/false", a.focus, qp.resultsFocused)
 	}
 	a.cycleFocusReverse() // editor -> explorer
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("after cycleFocusReverse: focus=%q, want explorer", a.focus)
 	}
 }
@@ -164,7 +164,7 @@ func TestNextPrevPanelSyncActiveFocusFromExplorer(t *testing.T) {
 	if qp2.active {
 		t.Fatalf("qp2.active = true after nextPanel while explorer has focus, want false")
 	}
-	if a.focus != "explorer" {
+	if a.focus != focusOnExplorer {
 		t.Fatalf("focus = %q after nextPanel, want explorer (unchanged)", a.focus)
 	}
 
@@ -192,7 +192,7 @@ func TestNextPanelKeepsActiveFocusFromPanels(t *testing.T) {
 	if !qp2.active {
 		t.Fatalf("qp2.active = false after nextPanel while panels have focus, want true")
 	}
-	if a.focus != "panels" {
+	if a.focus != focusOnPanels {
 		t.Fatalf("focus = %q after nextPanel, want panels", a.focus)
 	}
 }

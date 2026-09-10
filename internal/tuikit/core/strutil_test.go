@@ -284,3 +284,25 @@ func TestPadIsExactlyNColumnsForAnyInput(t *testing.T) {
 		}
 	}
 }
+
+// DisplayWidthAtMost must agree with the full measure wherever the full
+// measure is within the limit, and report exactly the limit otherwise — a
+// grid sizing columns with it would otherwise size them differently from the
+// width it then draws. Combining marks, zero-width joiners and emoji are where
+// a byte-length shortcut or an early exit could go wrong.
+func TestDisplayWidthAtMostMatchesDisplayWidth(t *testing.T) {
+	texts := []string{
+		"", "a", "abc", "你好吗", "ééé", "👩‍👩‍👧‍👦 family",
+		"x​y​z", "mixed 你好 ascii", strings.Repeat("ab你", 50),
+		strings.Repeat("́", 30) + "abc",
+	}
+	for _, s := range texts {
+		full := DisplayWidth(s)
+		for n := -1; n <= full+3; n++ {
+			want := max(min(full, n), 0)
+			if got := DisplayWidthAtMost(s, n); got != want {
+				t.Errorf("DisplayWidthAtMost(%q, %d) = %d, want %d (full width %d)", s, n, got, want, full)
+			}
+		}
+	}
+}

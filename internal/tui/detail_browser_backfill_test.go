@@ -46,9 +46,9 @@ func TestBackfillRowsFillsEveryRow(t *testing.T) {
 }
 
 // TestBackfillRowsMarksAPanickingRowFailed is the bug this helper exists to
-// hold shut. A panic in one row's fetch is recovered inside backfillRow, so
-// the pool drains and wg.Wait returns and the caller caches rows. Without the
-// recovery queueing markFailed before that, the row is cached still showing
+// hold shut. A panic in one row's fetch is recovered per item inside fanOut, so
+// the pool drains and fanOut returns and the caller caches rows. Without the
+// recovery queueing markFailed (fanOut's onPanic) before that, the row is cached still showing
 // its "…" placeholder, permanently: reselecting the node is a cache hit that
 // never refetches. The other rows must be unaffected.
 func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
@@ -138,7 +138,8 @@ func TestBackfillRowsGoroutinesAreBoundedNotJustFetches(t *testing.T) {
 
 // A panicking row must not take its worker — and the rows that worker still
 // owes — down with it. With one goroutine per row that was free; with a pool
-// it is the recovery's placement inside backfillRow that guarantees it.
+// it is the recovery's placement around each item inside fanOut that
+// guarantees it.
 func TestBackfillRowsPanicDoesNotKillTheWorker(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")

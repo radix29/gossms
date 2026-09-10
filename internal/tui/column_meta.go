@@ -2,8 +2,8 @@ package tui
 
 import (
 	"strconv"
-	"strings"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/query"
 )
 
@@ -40,7 +40,7 @@ func columnMetaMessages(sets []query.ResultSet) []query.Message {
 		}
 		msgs = append(msgs, query.Message{Text: "Result " + strconv.Itoa(i+1)})
 		for c, name := range rs.Columns {
-			line := "[" + strings.ReplaceAll(name, "]", "]]") + "]"
+			line := gosmo.QuoteName(name)
 			if name == "" {
 				line = strconv.Itoa(c + 1)
 			}

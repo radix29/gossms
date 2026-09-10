@@ -20,6 +20,31 @@ func DisplayWidth(s string) int {
 	return displaywidth.String(s)
 }
 
+// DisplayWidthAtMost is min(DisplayWidth(s), n), stopping as soon as the
+// width reaches n — for a caller that only needs to know whether s fits, and
+// may be handed a multi-megabyte cell (a varchar(max) or XML value) it would
+// otherwise measure in full. n <= 0 returns 0.
+func DisplayWidthAtMost(s string, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	// No grapheme is wider than its byte length (printable ASCII is one byte
+	// per column; anything wider than one column takes at least two bytes), so
+	// a string this short is under the limit whatever it holds, and the
+	// full measure's printable-ASCII fast path is the cheaper walk.
+	if len(s) <= n {
+		return DisplayWidth(s)
+	}
+	width := 0
+	g := displaywidth.StringGraphemes(s)
+	for g.Next() {
+		if width += g.Width(); width >= n {
+			return n
+		}
+	}
+	return width
+}
+
 // Truncate clips s to at most n display columns, appending "…" if clipped.
 // Operates on display width (via displaywidth), not rune count, so wide
 // CJK characters and multi-rune grapheme clusters are handled correctly.
@@ -106,25 +131,34 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 		return []string{""}, []bool{false}
 	}
 	lines, hardBreak = make([]string, 0, 4), make([]bool, 0, 4)
-	cur := ""
+	// Widths are carried, never re-measured: re-measuring the remainder on
+	// every hard break made one unbroken token of n bytes O(n²/w) — a 64 KB
+	// base64 blob took 33 ms to wrap, a 48 KB CJK run 210 ms, on the UI
+	// goroutine. A width splits exactly at a grapheme boundary, which is the
+	// only place splitGraphemeWidth cuts.
+	cur, curW := "", 0
 	for _, word := range words {
+		wordW := DisplayWidth(word)
 		if cur != "" {
-			if DisplayWidth(cur)+1+DisplayWidth(word) <= w {
+			if curW+1+wordW <= w {
 				cur += " " + word
+				curW += 1 + wordW
 				continue
 			}
 			lines, hardBreak = append(lines, cur), append(hardBreak, false)
 		}
 		// word now starts a fresh line. One that doesn't fit on an empty
-		// line is split until what's left does; splitGrapheme always takes
-		// at least one grapheme, which is what makes this terminate for a
-		// grapheme wider than w itself.
-		for DisplayWidth(word) > w {
+		// line is split until what's left does; splitGraphemeWidth always
+		// takes at least one grapheme, which is what makes this terminate for
+		// a grapheme wider than w itself.
+		for wordW > w {
 			var head string
-			head, word = splitGrapheme(word, w)
+			var headW int
+			head, word, headW = splitGraphemeWidth(word, w)
+			wordW -= headW
 			lines, hardBreak = append(lines, head), append(hardBreak, true)
 		}
-		cur = word
+		cur, curW = word, wordW
 	}
 	// cur is empty when the last word divided exactly into full lines, and
 	// appending it then would hand the caller a blank line to draw. The
@@ -143,6 +177,14 @@ func wrapLines(text string, w int) (lines []string, hardBreak []bool) {
 // its own — the head would otherwise come back empty with the remainder
 // unchanged, and WrapText's loop over it would never end.
 func splitGrapheme(s string, n int) (head, rest string) {
+	head, rest, _ = splitGraphemeWidth(s, n)
+	return head, rest
+}
+
+// splitGraphemeWidth is splitGrapheme also returning the head's display width,
+// so a caller splitting repeatedly can keep the remainder's width without
+// measuring it again.
+func splitGraphemeWidth(s string, n int) (head, rest string, headWidth int) {
 	end, width := 0, 0
 	g := displaywidth.StringGraphemes(s)
 	for g.Next() {
@@ -153,7 +195,7 @@ func splitGrapheme(s string, n int) (head, rest string) {
 		end += len(g.Value())
 		width += gw
 	}
-	return s[:end], s[end:]
+	return s[:end], s[end:], width
 }
 
 // CenterOffset returns the left padding needed to center content of width

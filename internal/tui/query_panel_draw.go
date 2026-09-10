@@ -46,10 +46,11 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 	p.editor.DrawOverlay(s)
 }
 
-// connInfoText builds the bar above the editor: "server | user | db",
+// connInfoText builds the bar above the editor: "server | user (spid) | db",
 // matching SSMS's connection status bar — the one place in the panel that
 // says what this query is actually running against, distinct from the
-// PanelManager tab bar's title just above it.
+// PanelManager tab bar's title just above it. An open transaction is called
+// out at the end: it holds locks, and closing the window rolls it back.
 func (p *QueryPanel) connInfoText() string {
 	if p.conn == nil {
 		return "(not connected)"
@@ -58,15 +59,21 @@ func (p *QueryPanel) connInfoText() string {
 	if user == "" {
 		user = config.AuthMethodName(p.conn.Opts.AuthMethod)
 	}
+	if p.session != nil {
+		user += fmt.Sprintf(" (%d)", p.session.SPID())
+	}
 	text := fmt.Sprintf("%s | %s | %s", p.conn.Opts.Server, user, p.database)
-	if !p.app.isConnected(p.conn) {
-		text += " (disconnected)"
+	if !p.connected() {
+		return text + " (disconnected)"
+	}
+	if p.tranCount > 0 {
+		text += fmt.Sprintf(" | %d open transaction%s", p.tranCount, pluralSuffix(p.tranCount))
 	}
 	return text
 }
 
 // notConnectedMessage is runQuery/runEstimatedPlan's resultsNotice when
-// isConnected(p.conn) is false — distinguishing a panel that was connected
+// connected() is false — distinguishing a panel that was connected
 // and then had its connection silently dropped (p.conn is still this
 // panel's own *db.ServerConn, just no longer open — see Reconnect) from one
 // that was never connected in the first place, since Query > Reconnect only

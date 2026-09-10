@@ -248,6 +248,20 @@ var (
 	rightAlterAnyCEK       = requiredRight{name: "ALTER ANY COLUMN ENCRYPTION KEY", role: "db_owner", db: true}
 	rightAlterAnySecPolicy = requiredRight{name: "ALTER ANY SECURITY POLICY", role: "db_owner", db: true}
 
+	// What DROP PARTITION FUNCTION/SCHEME, DROP ASSEMBLY and DROP EXTERNAL
+	// DATA SOURCE/FILE FORMAT/LIBRARY check — see dbScopedOpRights for the
+	// live evidence. The role is the one that confers the right on *every*
+	// supported version, which is why the external data source and file
+	// format name db_owner: db_ddladmin carries both on major 17 but reads 0,
+	// and is refused the drop, on 13 and 14.
+	rightAlterAnyDataspace     = requiredRight{name: "ALTER ANY DATASPACE", role: "db_ddladmin", db: true}
+	rightAlterAnyAssembly      = requiredRight{name: "ALTER ANY ASSEMBLY", role: "db_ddladmin", db: true}
+	rightAlterAnyExtDataSource = requiredRight{name: "ALTER ANY EXTERNAL DATA SOURCE", role: "db_owner", db: true}
+	rightAlterAnyExtFileFormat = requiredRight{name: "ALTER ANY EXTERNAL FILE FORMAT", role: "db_owner", db: true}
+	// 2017 and later. On 2016 it reads CapabilityUnknown and fails open, which
+	// gates nothing that exists: that version has no external libraries.
+	rightAlterAnyExtLibrary = requiredRight{name: "ALTER ANY EXTERNAL LIBRARY", role: "db_ddladmin", db: true}
+
 	// The two SQL Agent rights are memberships, not permissions: what permits
 	// New Job and its three siblings is membership of an msdb role, which
 	// grants EXECUTE on individual procedures rather than the database-scope

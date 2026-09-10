@@ -56,12 +56,6 @@ func (sp Spinner) Frame(elapsed time.Duration) string {
 	return sp.Frames[int(elapsed/period)%len(sp.Frames)]
 }
 
-// FrameSince is Frame relative to the moment the operation started, the form
-// a caller holding a start time wants.
-func (sp Spinner) FrameSince(start time.Time) string {
-	return sp.Frame(time.Since(start))
-}
-
 // Draw paints the frame for elapsed at x, y, padded to Width so a caller that
 // hands a Spinner its own frames of unequal width still overwrites the whole
 // slot instead of leaving the wider frame's tail on screen.

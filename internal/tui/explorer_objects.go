@@ -5,6 +5,8 @@ import (
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // loadTablesChildren returns the Tables folder: SSMS's four table-family
@@ -450,4 +452,121 @@ func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		func(syn *gosmo.Synonym) *explorerNode {
 			return l.node(syn.Schema+"."+syn.Name, NodeSynonym, syn.Schema, syn.Name, node.data.DBName)
 		})
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go).
+
+func tableMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	tableFQN := fqn(node.data.Schema, node.data.Name)
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "Select Top 1000 Rows", Action: func() {
+			a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+tableFQN)
+		}},
+		{Divider: true},
+		{Label: "Rebuild All Indexes", Action: func() {
+			a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")
+		}},
+		{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showTablePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		}},
+	}
+}
+
+func viewMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	viewFQN := fqn(node.data.Schema, node.data.Name)
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "Select Top 1000 Rows", Action: func() {
+			a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+viewFQN)
+		}},
+		{Divider: true},
+		{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
+		{Divider: true},
+		refresh,
+	}
+}
+
+func keyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name, node.data.IsPrimaryKey)
+	})
+}
+
+func foreignKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showForeignKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+	})
+}
+
+func indexMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+	})
+}
+
+func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gateOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
+		{Divider: true},
+		{Label: "Rebuild All Indexes", Action: func() {
+			a.openQueryWithText(sc, node.data.DBName,
+				"ALTER INDEX ALL ON "+fqn(node.data.Schema, node.data.Name)+" REBUILD")
+		}},
+		{Divider: true},
+		refresh,
+	}
+}
+
+func statisticsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gateOn(controls.MenuItem{Label: "New Statistics...",
+			Action: func() { a.showNewStatisticsDialog(sc, node) }},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func statisticMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "Update Statistics", Action: func() {
+			a.generateScript(sc, node.data, statisticUpdateVerb, func(text string) {
+				a.openQueryWithText(sc, node.data.DBName, text)
+			})
+		}},
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showStatisticPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
+		}},
+	}
+}
+
+func storedProcedureMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	procFQN := fqn(node.data.Schema, node.data.Name)
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "Execute Stored Procedure", Action: func() {
+			a.openQueryWithText(sc, node.data.DBName, "EXEC "+procFQN)
+		}},
+		{Divider: true},
+		{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
+		{Divider: true},
+		refresh,
+	}
 }

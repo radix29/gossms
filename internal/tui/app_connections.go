@@ -8,6 +8,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/query"
 )
 
 // ---- Connection management ----
@@ -16,22 +17,27 @@ import (
 // hands the outcome to done on the UI goroutine, ahead of acting on it. done
 // may be nil; it reports whether the caller still wants the attempt.
 //
-// db.Connect takes no context, so an attempt in flight cannot be aborted — the
-// Connect dialog's Cancel abandons one instead, and answers false here. An
-// abandoned attempt is wound back rather than half-applied: a connection that
-// arrived anyway is closed instead of appearing in Object Explorer under a
-// dialog the user dismissed, and a failure is left on the status bar without
-// an alert popping over whatever they moved on to.
-func (a *App) connectServer(opts config.Connection, done func(err error) bool) {
+// Cancelling ctx aborts the dial in flight — the Connect dialog's Cancel does,
+// and then answers false here. A cancelled attempt can still have finished
+// connecting in the moment before the cancel landed, so an unwanted one is
+// wound back rather than half-applied: a connection that arrived anyway is
+// closed instead of appearing in Object Explorer under a dialog the user
+// dismissed, and a failure is left on the status bar without an alert popping
+// over whatever they moved on to.
+func (a *App) connectServer(ctx context.Context, opts config.Connection, done func(err error) bool) {
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 	a.draw()
 
 	a.safego("connecting to the server", func() {
-		sc, err := db.Connect(opts)
+		sc, err := db.ConnectContext(ctx, opts, db.RoleExplorer)
 		a.postAndWake(func() {
 			wanted := true
 			if done != nil {
 				wanted = done(err)
+			}
+			if err != nil && !wanted && errors.Is(err, context.Canceled) {
+				a.setStatus(fmt.Sprintf("Cancelled connecting to %s", opts.Server))
+				return
 			}
 			if err != nil {
 				if dbErr, ok := errors.AsType[*db.ConnectionError](err); ok {
@@ -95,6 +101,14 @@ func (a *App) connectServer(opts config.Connection, done func(err error) bool) {
 // panel shows as disconnected) until it resolves. onConnected, if non-nil,
 // runs once qp.conn is set — openQueryWithTextAndExecute uses it to run the
 // panel's query as soon as the connection is usable.
+//
+// The connection is two things: a pool, for IntelliSense and catalog reads,
+// and one query.Session taken out of it for the panel's lifetime, which every
+// Execute runs on — see query.Session for why a pool alone loses temp tables,
+// SET options and transactions between runs. Catalog reads stay on the pool
+// so they never queue behind a running query. The session's own DB_NAME() is
+// where the panel starts, which is the login's default database when none was
+// asked for.
 func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database string, onConnected func()) {
 	opts := sc.Opts
 	if database != "" {
@@ -104,10 +118,17 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
 	a.safego("connecting the query panel", func() {
-		newConn, err := db.Connect(opts)
-		resolvedDB := opts.Database
-		if err == nil && resolvedDB == "" {
-			resolvedDB = defaultDatabaseName(newConn)
+		newConn, err := db.ConnectContext(context.Background(), opts, db.RoleQuery)
+		var sess *query.Session
+		var state query.SessionState
+		if err == nil {
+			ctx, cancel := context.WithTimeout(newConn.Context(), childFetchTimeout)
+			sess, state, err = query.Open(ctx, newConn.Server.DB(), opts.Database)
+			cancel()
+			if err != nil {
+				newConn.Close()
+				err = fmt.Errorf("open a session: %w", err)
+			}
 		}
 		a.postAndWake(func() {
 			if err != nil {
@@ -118,13 +139,16 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 				// qp was closed while this connection was still resolving —
 				// nothing else references newConn, so close it here or it
 				// leaks for the rest of the process's lifetime.
+				sess.Close()
 				newConn.Close()
 				return
 			}
 			newConn.SetPeerCredentials(a.peerCredentialsFor)
 			qp.conn = newConn
-			qp.database = resolvedDB
-			a.setStatus(fmt.Sprintf("Connected to %s", opts.Server))
+			qp.session = sess
+			qp.tranCount = state.TranCount
+			qp.database = state.Database
+			a.setStatus(fmt.Sprintf("Connected to %s (SPID %d)", opts.Server, sess.SPID()))
 			a.ensureSysCompletionInventory(newConn)
 			if onConnected != nil {
 				onConnected()
@@ -142,7 +166,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) {
 	opts := sc.Opts
 	a.safego("connecting Activity Monitor", func() {
-		newConn, err := db.Connect(opts)
+		newConn, err := db.ConnectContext(context.Background(), opts, db.RoleActivityMonitor)
 		a.postAndWake(func() {
 			if err != nil {
 				// Both feeds, not just the activity one: neither collector
@@ -163,22 +187,6 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 			am.startCollector(newConn)
 		})
 	})
-}
-
-// defaultDatabaseName resolves the database a connection actually landed
-// in when config.Connection.Database was left empty — the login's real
-// default database — so the query panel's connection bar and Execute both
-// use it. Falls back to "master" if the server can't be asked. Bounded by
-// childFetchTimeout so a hung server can't block this background goroutine
-// forever.
-func defaultDatabaseName(sc *db.ServerConn) string {
-	ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-	defer cancel()
-	name, err := sc.Server.CurrentDatabaseContext(ctx)
-	if err != nil || name == "" {
-		return "master"
-	}
-	return name
 }
 
 func (a *App) disconnectActive() {
@@ -202,8 +210,9 @@ func (a *App) selectedServerConn() *db.ServerConn {
 }
 
 // disconnect closes sc and removes it from the connection list and the
-// explorer tree. Query panels bound to sc keep their reference; they show
-// "(disconnected)" in their title and refuse to execute (see runQuery).
+// explorer tree. Query panels are unaffected: each owns a connection of its
+// own (connectForQueryPanel), never sc, so they stay connected — as SSMS's
+// query windows do when Object Explorer disconnects.
 //
 // Both caches keyed off sc are purged too: the Detail Browser's, before
 // the tree nodes it's keyed by are dropped, and the autocomplete

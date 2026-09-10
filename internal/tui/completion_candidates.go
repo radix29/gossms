@@ -306,5 +306,5 @@ func bracketIfNeeded(name string) string {
 	if regularIdentPattern.MatchString(name) && !sqlparse.IsKeyword(strings.ToUpper(name)) {
 		return name
 	}
-	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
+	return gosmo.QuoteName(name)
 }

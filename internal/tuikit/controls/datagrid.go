@@ -525,24 +525,30 @@ func (g *DataGrid) ColumnIndex(name string) int {
 // computeColWidths sizes columns from their header plus up to
 // colWidthSampleRows data rows, so a huge result set doesn't make SetSource
 // slow.
+//
+// A cell is measured only as far as the clamp below can see: past
+// max(maxW, 6) columns every width clamps to the same result. Measuring whole
+// cells cost 0.3-0.7 s per call for one column of 256 KB XML values, on the UI
+// goroutine, and this runs on every SetSource, SetBounds and column drag.
 func (g *DataGrid) computeColWidths() {
 	g.widthsDirty = false
 	g.colWidths = make([]int, len(g.columns))
 	for i, col := range g.columns {
 		g.colWidths[i] = core.DisplayWidth(col) + 2
 	}
+	maxW := g.maxCellWidthOrDefault()
+	cellLimit := max(maxW, 6) - 2
 	n := min(g.rows.Len(), colWidthSampleRows)
 	for r := 0; r < n; r++ {
 		row := g.rows.Row(r)
 		for i, cell := range row {
 			if i < len(g.colWidths) {
-				if w := core.DisplayWidth(cell) + 2; w > g.colWidths[i] {
+				if w := core.DisplayWidthAtMost(cell, cellLimit) + 2; w > g.colWidths[i] {
 					g.colWidths[i] = w
 				}
 			}
 		}
 	}
-	maxW := g.maxCellWidthOrDefault()
 	for i := range g.colWidths {
 		g.colWidths[i] = core.Clamp(g.colWidths[i], 6, maxW)
 		if w := g.overrideWidth(i); w > 0 {

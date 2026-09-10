@@ -5,17 +5,19 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/query"
 )
 
-// panickingPanel builds a query panel whose connection has a nil gosmo.Server,
-// so the sc.Server.DB() inside the execute goroutine dereferences nil — a real
-// panic on the execute path, raised where the driver's own
+// panickingPanel builds a query panel whose session has no connection behind
+// it, so the first statement the execute goroutine sends dereferences a nil
+// *sql.Conn — a real panic on the execute path, raised where the driver's own
 // makeGoLangTypeName panic would be, rather than an injected one.
 func panickingPanel(t *testing.T) (*App, *QueryPanel) {
 	t.Helper()
 	a := newTestApp()
 	p := NewQueryPanel(a, "Query 1")
 	p.conn = &db.ServerConn{}
+	p.session = new(query.Session)
 	return a, p
 }
 

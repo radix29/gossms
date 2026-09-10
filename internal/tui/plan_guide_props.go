@@ -33,20 +33,41 @@ func findPlanGuide(ctx context.Context, sc *db.ServerConn, dbName, name string) 
 	return d.PlanGuideByNameContext(ctx, name)
 }
 
-func planGuidePropPages(sc *db.ServerConn, dbName, name string) []propPage {
+// scopeSchema and scopeName are the routine an OBJECT-scoped guide is bound
+// to, empty for the other scopes — see planGuideRights.
+func planGuidePropPages(sc *db.ServerConn, dbName, name, scopeSchema, scopeName string) []propPage {
 	return []propPage{
-		withRequires(pagePlanGuideGeneral(sc, dbName, name), dbName, planGuideWriteRights()...),
+		withRequiresOn(pagePlanGuideGeneral(sc, dbName, name), dbName, scopeSchema, scopeName,
+			planGuideRights(scopeName)...),
 		pagePlanGuideQuery(sc, dbName, name),
 	}
 }
 
-// planGuideWriteRights are what permits sp_control_plan_guide: ALTER on the
-// database, and the two rights that subsume it. There is no plan-guide-scoped
-// right — the procedure's own documentation names ALTER DATABASE — so
-// inventing one here would gate the page on a permission
-// HAS_PERMS_BY_NAME answers NULL for, which reads as "unknown" forever.
+// planGuideWriteRights are what permits sp_control_plan_guide on a SQL or
+// TEMPLATE guide: ALTER on the database, and the two rights that subsume it.
+// There is no plan-guide-scoped right — the procedure's own documentation
+// names ALTER DATABASE — so inventing one here would gate the page on a
+// permission HAS_PERMS_BY_NAME answers NULL for, which reads as "unknown"
+// forever.
 func planGuideWriteRights() []requiredRight {
 	return []requiredRight{rightAlterDatabase, rightControlDB, rightAlterAnyDatabase}
+}
+
+// planGuideRights is what permits sp_control_plan_guide — DROP, ENABLE and
+// DISABLE alike — on one guide. An OBJECT-scoped guide is also controlled
+// under ALTER on the routine it is bound to, which the schema-object rights
+// ask about when handed that routine as the securable; the server's own
+// refusal (Msg 10518) names both: "Alter permission on object referenced by
+// plan guide, or alter database permission required." Verified live
+// 2026-09-10 on majors 13, 14 and 17: db_ddladmin, ALTER ANY SCHEMA and ALTER
+// on the routine each drop and disable an OBJECT guide and are refused a SQL
+// one, and a DENY of ALTER on the routine or its schema refuses the OBJECT
+// guide even to a principal holding ALTER on the database.
+func planGuideRights(scopeName string) []requiredRight {
+	if scopeName != "" {
+		return objectWriteRights()
+	}
+	return planGuideWriteRights()
 }
 
 func pagePlanGuideGeneral(sc *db.ServerConn, dbName, name string) propPage {

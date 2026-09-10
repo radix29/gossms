@@ -16,10 +16,13 @@ import (
 const propPlanGuide = "pg_reports"
 
 func planGuideResponse(disabled bool, scope, scopeObject, batch, hints string) fakeResponse {
-	return fakeResponse{match: "FROM   sys.plan_guides g", cols: 11, rows: [][]driver.Value{{
+	// The unquoted halves, as OBJECT_SCHEMA_NAME/OBJECT_NAME return them; the
+	// fixtures' routine names hold no bracket or dot to split on wrongly.
+	scopeSchema, scopeName, _ := strings.Cut(strings.NewReplacer("[", "", "]", "").Replace(scopeObject), ".")
+	return fakeResponse{match: "FROM   sys.plan_guides g", cols: 13, rows: [][]driver.Value{{
 		int64(65536), propPlanGuide, disabled,
 		"SELECT * FROM Claims WHERE PatientId = @p",
-		scope, scopeObject, batch, "@p int", hints,
+		scope, scopeObject, scopeSchema, scopeName, batch, "@p int", hints,
 		propTypeDate, propTypeDate,
 	}}}
 }

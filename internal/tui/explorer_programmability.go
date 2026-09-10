@@ -2,6 +2,8 @@ package tui
 
 import (
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // The Programmability families added in Phase 3: Types (five sub-folders),
@@ -170,6 +172,82 @@ func loadPlanGuidesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 			n := l.node(label, NodePlanGuide, "", g.Name, node.data.DBName)
 			n.data.CreateDate = g.CreateDate
 			n.data.IsEnabled = !g.IsDisabled
+			n.data.ScopeSchema, n.data.ScopeName = g.ScopeSchema, g.ScopeName
 			return n
 		})
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go). Each opens the read-only Properties its props file
+// builds; the plan guide's is the one that can write, and it does so from the
+// page rather than from a menu item.
+//
+// NodeSystemDataType has no entry: a built-in type has no Properties in SSMS
+// either, and nothing about `int` to show.
+
+func userDefinedDataTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showUserDefinedDataTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func userDefinedTableTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showUserDefinedTableTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func userDefinedTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showClrTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func xmlSchemaCollectionMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showXmlSchemaCollectionPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func assemblyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showAssemblyPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func ruleMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showRulePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func defaultObjectMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showDefaultPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func planGuideMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	// The one family here with a command beyond Properties: a disabled
+	// guide shapes no plan and is invisible except for the label suffix,
+	// so Enable/Disable is what makes the folder worth having. The right
+	// is sp_control_plan_guide's own, and depends on the guide's scope —
+	// see planGuideRights.
+	planGuideToggle := "Disable"
+	if !node.data.IsEnabled {
+		planGuideToggle = "Enable"
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gateOn(controls.MenuItem{Label: planGuideToggle, Action: func() { a.togglePlanGuide(sc, node) }},
+			sc, node.data.DBName, node.data.ScopeSchema, node.data.ScopeName,
+			planGuideRights(node.data.ScopeName)...),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showPlanGuidePropertiesFor(sc, node.data.DBName, node.data.Name,
+				node.data.ScopeSchema, node.data.ScopeName)
+		}},
+	}
 }

@@ -140,7 +140,7 @@ func (pt *amProcTab) activate() {
 
 	opts := pt.am.conn.Opts
 	pt.am.app.safegoRepair("connecting Activity Monitor "+pt.proc.MasterName+" tab", pt.panicRepair, func() {
-		conn, err := db.Connect(opts)
+		conn, err := db.ConnectContext(context.Background(), opts, db.RoleActivityMonitor)
 		pt.am.app.postAndWake(func() { pt.connected(conn, err) })
 	})
 }

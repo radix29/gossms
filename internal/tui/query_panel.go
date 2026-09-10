@@ -44,8 +44,20 @@ type QueryPanel struct {
 	splitter    *layout.Splitter
 	active      bool
 	conn        *db.ServerConn // nil = none; may outlive a disconnect
-	database    string         // "" = connection default database
+	database    string         // the session's DB_NAME() as of its last run
 	app         *App
+
+	// session is the one SQL Server session every run of this panel executes
+	// on, taken out of conn's pool by connectForQueryPanel; nil exactly when
+	// conn is nil or closed. conn itself still serves IntelliSense. See
+	// query.Session.
+	session *query.Session
+
+	// tranCount is the session's @@TRANCOUNT as its last run left it — what
+	// decides whether closing, reconnecting or quitting must first ask to
+	// commit. Nothing else runs on the session between runs, so it cannot
+	// go stale except by the session dying, which rolls the transaction back.
+	tranCount int
 
 	filePath    string      // last path used by Save; "" if never saved
 	savedText   string      // editor text as of the last save/load; compared by Dirty

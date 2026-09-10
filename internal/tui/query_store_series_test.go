@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/gdamore/tcell/v3/color"
 	gosmo "github.com/radix29/gosmo"
 )
 
@@ -44,7 +45,7 @@ func TestQueryStoreSeriesPutsEveryPlanOnOneTimeAxis(t *testing.T) {
 		{PlanID: 2, StartTime: qsHour(10), EndTime: qsHour(11), ExecCount: 5, Value: 20},
 		{PlanID: 2, StartTime: qsHour(11), EndTime: qsHour(12), ExecCount: 6, Value: 40},
 	}
-	d := buildQSSeries(77, stats, []tcell.Color{tcell.ColorRed, tcell.ColorBlue})
+	d := buildQSSeries(77, stats, []tcell.Color{color.Red, color.Blue})
 
 	if d.queryID != 77 {
 		t.Errorf("queryID = %d, want 77", d.queryID)

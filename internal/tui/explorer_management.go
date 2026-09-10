@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // loadServerObjectsChildren returns the Server Objects folder's children:
@@ -140,4 +142,102 @@ func endpointStateLabel(state string) string {
 		return ""
 	}
 	return strings.ToUpper(state[:1]) + strings.ToLower(state[1:])
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go).
+
+func backupDevicesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
+			sc, "", rightDiskAdmin),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func backupDeviceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showBackupDevicePropertiesFor(sc, node.data.Name)
+	})
+}
+
+func serverTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	toggleLabel := "Disable"
+	if !node.data.IsEnabled {
+		toggleLabel = "Enable"
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleServerTrigger(sc, node) }},
+			sc, "", rightControlServer),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showServerTriggerPropertiesFor(sc, node.data.Name) }},
+	}
+}
+
+func endpointMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	// gateOn, not gate: ALTER ENDPOINT ... STATE is what these three
+	// write, and DENY ALTER ON ENDPOINT::e refuses it with Msg 6004 over
+	// a server-wide ALTER ANY ENDPOINT. The arm is only reached by a call
+	// that names the endpoint — see rightAlterAnyEndpoint.
+	stateItem := func(label string, state gosmo.EndpointState) controls.MenuItem {
+		return gateOn(controls.MenuItem{Label: label,
+			Action: func() { a.setEndpointState(sc, node, state) }},
+			sc, "", "", node.data.Name, rightAlterAnyEndpoint)
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		stateItem("Start", gosmo.EndpointStarted),
+		stateItem("Stop", gosmo.EndpointStopped),
+		stateItem("Disable", gosmo.EndpointDisabled),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showEndpointPropertiesFor(sc, node.data.Name) }},
+	}
+}
+
+func managementMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "View SQL Server Log", Action: func() {
+			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
+		}},
+		{Divider: true},
+		refresh,
+	}
+}
+
+func errorLogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	logType := gosmo.ErrorLogSQLServer
+	if node.data.Type == NodeAgentErrorLogs {
+		logType = gosmo.ErrorLogAgent
+	}
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
+		gate(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
+			sc, "", rightControlServer),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func errorLogMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		{Label: "View Log", Action: func() {
+			a.showLogViewerFor(sc, node.data.LogType, node.data.LogNumber)
+		}},
+		{Divider: true},
+		newQuery,
+		{Divider: true},
+		refresh,
+	}
 }

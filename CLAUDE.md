@@ -30,7 +30,8 @@ entry names a section, not a whole document; read the section.
 
 | If touching… | Read first |
 |---|---|
-| User-facing behavior, features, or keys | `README.md` |
+| User-facing behavior or features | `README.md` |
+| Key bindings | `internal/tui/help_dialog.go` (the F1 help — the keyboard reference) |
 | Anything spanning packages | `ARCHITECTURE.md` § Package map, § Which document owns what |
 | Any widget, grid, dialog, menu, toolbar, clipboard, mouse or async UI code | `docs/ui-rules.md` |
 | `HandleMouse`, overlays, focus, drag — the reasoning | `ARCHITECTURE.md` § The mouseDragging idiom |

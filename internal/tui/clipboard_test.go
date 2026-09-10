@@ -31,7 +31,7 @@ func focusedQueryPanel(t *testing.T, a *App) *QueryPanel {
 	if !qp.onMessagesTab() {
 		t.Fatal("setup: expected the results pane to land on the Messages tab")
 	}
-	a.focus = "panels"
+	a.focus = focusOnPanels
 	a.syncActivePanelFocus()
 	qp.setResultsFocused(false)
 	return qp

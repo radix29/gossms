@@ -46,30 +46,47 @@ Before adding to any of them:
 | `PLAN.md` | Where the project stands: current state, version support, known issues |
 | `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
 
-`README.md` is user-facing and owns features and the keyboard reference. When
-a rule needs to appear in two places, the second one summarizes in a sentence
-and links here — it does not restate the reasoning.
+`README.md` is user-facing and owns features. The keyboard reference is the
+F1 help dialog (`internal/tui/help_dialog.go`) — a key binding change updates
+it. When a rule needs to appear in two places, the second one summarizes in a
+sentence and links here — it does not restate the reasoning.
 
 ## How a query runs
 
 The path from keystroke to result grid, which touches four packages:
 
 1. **`internal/db`** (`connection.go`) owns a connection's *lifetime*.
-   `Connect` builds the DSN from a `config.Connection` and returns a
-   `ServerConn` wrapping a `gosmo.Server`. Its `ctx`, exposed by
+   `ConnectContext(ctx, opts, role)` maps a `config.Connection` onto
+   `gosmo.ConnectionOptions` in one place, `toGosmoOptions` — which the
+   Connect dialog's preview (`BuildConnectionString`, a masked
+   `ConnectionOptions.ConnectionString`) goes through too, so the preview is
+   the DSN dialled — and returns a `ServerConn` wrapping a `gosmo.Server`.
+   The `Role` names the session in `program_name` (`goSSMS`, `goSSMS -
+   Query`, `goSSMS - Activity Monitor`); cancelling `ctx` aborts the dial. Its `ctx`, exposed by
    `Context()` and cancelled by `Close()`, is the parent every background
    load scoped to that connection must derive from — closing the underlying
    `*sql.DB` alone does not cancel a query already in flight, so a load
    rooted at `context.Background()` keeps a real SQL Server session alive
    after disconnect.
-2. **`internal/query`** (`executor.go`) owns *execution*. `Execute` /
-   `ExecuteWithPlan` / `ExecuteEstimatedPlan` take a `*sql.DB`, check out a
-   single `*sql.Conn` via `acquireConn` (which retries a transient liveness
-   failure 3 times with linear backoff, mirroring gosmo's own `retry.go`),
-   optionally wrap the run in `SET STATISTICS XML ON` / `SET SHOWPLAN_XML
-   ON`, then split the script on `GO` with `go-mssqldb/batch` and run each
-   batch through `runBatch`. One `Result` accumulates every result set,
-   every message, and the captured plan XML across all batches.
+2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A
+   query window runs on a **`Session`**: one `*sql.Conn` taken out of the
+   panel's pool by `Open` (via `acquireConn`, which retries a transient
+   liveness failure 3 times with linear backoff, mirroring gosmo's own
+   `retry.go`) and held for the panel's lifetime, so temp tables, SET options,
+   `USE` and open transactions survive from one Execute to the next, as in
+   SSMS. The package-level `Execute` / `ExecuteWithPlan` / … take a `*sql.DB`
+   and check a connection out per call instead — database/sql resets a
+   returned connection (the TDS reset-connection bit) on its next checkout, so
+   they suit one-shot callers only (the Activity Monitor's procedure tab). Both
+   share `runScript`: optionally wrap the run in `SET STATISTICS XML ON` /
+   `SET SHOWPLAN_XML ON`, then split the script on `GO` with
+   `go-mssqldb/batch` and run each batch through `runBatch`. One `Result`
+   accumulates every result set, every message, and the captured plan XML
+   across all batches; a Session run adds the state it left
+   (`DB_NAME()`, `@@TRANCOUNT`, read even after a cancel) and whether the
+   session was lost. `Session.Close` *discards* the connection rather than
+   pooling it: pooled, a session with an open transaction sits idle holding
+   its locks.
 3. **The message stream** is where `sqlexp` matters: result sets and
    informational messages interleave on one connection, and `runBatch`
    walks them together. A speculative extra `rows.Next()` here consumes the
@@ -80,8 +97,14 @@ The path from keystroke to result grid, which touches four packages:
    captured ShowPlanXML documents into one navigable `Plan` of operator
    nodes, which `internal/tui/planview` renders as the Plan/Tree/XML tabs.
 
-`query_panel_exec.go` is the only caller: it runs the executor on a
-background goroutine and reports the `Result` back with `postAndWake`.
+`query_panel_exec.go` is the Session's only caller: `QueryPanel.launch` is
+the one run-start path (Execute, Results To File, estimated plan) — it runs
+the executor on a background goroutine and reports the `Result` back with
+`postAndWake`. IntelliSense and catalog reads use the panel's `ServerConn`
+pool, never the session, so they never queue behind a running query. A lost
+session closes the panel's connection (Query > Reconnect opens a new one);
+closing, reconnecting or quitting with `@@TRANCOUNT > 0` asks to commit first
+(`confirmOpenTransactions`).
 
 ## Threading model
 
@@ -139,7 +162,7 @@ gossms/
 │   └── spindemo/             # dev harness: renders every widgets.Spinner side by side, for picking one by eye (not part of the release build)
 ├── internal/
 │   ├── config/              # connection profiles (JSON, in $XDG_CONFIG_HOME/gossms/); tracked.go is the Query Store panel's pinned-query sets, its own file beside config.json
-│   ├── db/                  # gosmo connection wrapper + DSN builder
+│   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines, and Poller for a feed whose source is already aggregated — no TUI imports
@@ -172,20 +195,22 @@ gossms/
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
 │       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
-│       ├── app_explorer_data.go  # background fetch orchestration, context menus, Script object, View Dependencies, Back Up Database/Take-Bring Offline-Online/Rebuild All Indexes task consumers
+│       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Back Up Database/Take-Bring Offline-Online/Rebuild All Indexes task consumers
 │       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Properties/New Database/New Login dialogs
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
 │       ├── tree_node.go          # NodeType enum + style-aware icon lookup (Emoji/Symbols/Portable/None) + name lookup
 │       ├── object_explorer.go    # owns the SQL Server tree model; drives controls.TreeView
-│       ├── explorer_loaders.go   # childLoader registry (NodeType → fetch func) + shared loader helpers
+│       ├── explorer_loaders.go   # childLoader and nodeMenus registries (NodeType → fetch func, NodeType → menu builder) + shared loader helpers
 │       ├── explorer_databases.go # loaders: server root, Databases/System Databases, one database's folders
 │       ├── explorer_objects.go   # loaders: Tables/Views/Procs/Functions/Triggers/Sequences/Synonyms + System Views/Procedures/Functions folders + table columns
 │       ├── explorer_security.go  # loaders: server Security folder — Logins, Server Roles, Credentials, Audits, Server Audit Specifications
 │       ├── explorer_storage.go   # loaders: a database's Storage folder — Partition Functions, Partition Schemes
 │       ├── explorer_management.go # loaders: Server Objects folder (Backup Devices, Endpoints, Linked Servers, Server Triggers), Management folder, SQL Server Logs / Agent Error Logs file lists
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
+│       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
+│       ├── explorer_external.go  # loaders: External Resources — External Data Sources, File Formats, Libraries (Libraries omitted before 2017)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
 │       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: per-NodeType drop/rename table, confirmation (incl. the cascade checkbox), prompt, parent-folder refresh
@@ -193,7 +218,7 @@ gossms/
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
-│       ├── safego.go             # App.safego/recoverPanic — every background goroutine in this package runs under one
+│       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one
 │       ├── permission_gate.go    # rightsAllow: the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function"
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in permission_gate's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
@@ -229,6 +254,7 @@ gossms/
 │       ├── activity_monitor_tempdb.go # TempDB tab: space stack, per-file bars, top-session usage grid, configuration advisory
 │       ├── activity_monitor_instance.go # Instance tab (Azure editions only): the server's own pre-aggregated resource history, governor limits, job object
 │       ├── activity_monitor_tooltip.go # click-pinned chart readout: hit-test against the canvas, frame + text drawn over the viewport
+│       ├── chart_tooltip.go      # the pinned chart readout box itself, shared by Activity Monitor and the Detail Browser's disk-usage strip
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │
 │       │  ── Log File Viewer ──
@@ -254,6 +280,10 @@ gossms/
 │       ├── detail_browser_tables.go     # Tables folder: name, then per-table row count/space backfill
 │       ├── detail_browser_storage.go    # Storage folders: partition functions and schemes
 │       ├── detail_browser_security.go   # server Security families that are not logins: Credentials, Audits, Server Audit Specifications
+│       ├── detail_browser_programmability.go # Programmability families: the Types folders and members, Assemblies, Rules, Defaults, Plan Guides
+│       ├── detail_browser_external.go   # External Resources: external data sources, file formats, libraries
+│       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
+│       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       │
 │       │  ── SQL Server Agent ──
@@ -294,7 +324,7 @@ gossms/
 │       │
 │       │  ── Properties dialogs (propsheet-based) ──
 │       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply)
-│       ├── new_object_dialog.go  # newObjectDialog — the shell behind all six New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
+│       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
@@ -335,6 +365,7 @@ gossms/
 │       ├── database_props_query_store.go    # Database Properties > Query Store page
 │       ├── database_props_scoped_config.go  # Database Properties > Scoped Configuration page
 │       ├── database_props_change_tracking.go # Database Properties > Change Tracking page
+│       ├── database_props_resource_governance.go # Database Properties > Resource Governance page (Azure editions only): governor limits and current usage
 │       ├── login_props.go        # Login Properties page definitions
 │       ├── table_props.go        # Table Properties page definitions
 │       ├── schema_props.go       # Schema Properties page definitions
@@ -358,6 +389,12 @@ gossms/
 │       ├── database_trigger_props.go # Database Trigger Properties (database-scope DDL): General + Definition
 │       ├── database_audit_specification_props.go # Database Audit Specification Properties: the audit it binds to, its action groups and its per-securable actions
 │       ├── database_credential_props.go # Database Scoped Credential Properties: identity and the secret (write-only, and never blank-alterable — an omitted SECRET sets the stored one to NULL)
+│       ├── database_snapshot_props.go # read-only Properties for a database snapshot: General + Files
+│       ├── assembly_props.go     # read-only Properties for a CLR assembly: General, Files, Routines
+│       ├── type_props.go         # read-only Properties for the four user-type families, system data types and XML schema collections
+│       ├── rule_default_props.go # read-only Properties for a standalone rule and a standalone default
+│       ├── plan_guide_props.go   # Plan Guide Properties: General (enable/disable) + read-only Query
+│       ├── external_resource_props.go # read-only Properties for external data sources, file formats and libraries
 │       │
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
@@ -377,6 +414,7 @@ gossms/
 │       ├── new_backup_device_dialog.go         # New Backup Device — the disk or tape alias a backup destination can name
 │       ├── new_database_audit_specification_dialog.go # New Database Audit Specification — the audit to bind to, its action groups and its per-securable actions
 │       ├── new_database_scoped_credential_dialog.go   # New Database Scoped Credential
+│       ├── new_snapshot_dialog.go              # New Snapshot — CREATE DATABASE … AS SNAPSHOT OF, data files only
 │       │
 │       │  ── Backup & Restore ──
 │       ├── backup_common.go      # helpers shared by the Backup and Restore dialogs
@@ -411,7 +449,7 @@ plus a `load` func that builds the page's rows and closes over pointers to
 them, so Apply can diff what changed. Pages load lazily on first visit. Add
 a builder alongside the object's existing `*_props*.go` files and register
 it in that object's page slice — `server_props.go`'s page registration is
-the clearest example, and the 35 `*_props*.go` files all follow it. A page
+the clearest example, and every `*_props*.go` file follows it. A page
 that renames its object marks `propPage.renames` so its apply runs last, and
 must thread the name as a `*string` shared across pages, or every later page
 uses the stale one.
@@ -424,6 +462,11 @@ loader receives a `loaderCtx` and the node, and returns child nodes; it runs
 off the UI goroutine, so it obeys the threading model above. Group the
 loader itself with its peers (`explorer_databases.go`, `explorer_objects.go`,
 `explorer_security.go`, `explorer_management.go`, `explorer_alwayson.go`).
+Its context menu is a `menuBuilder` registered in the same file's `nodeMenus`
+map and written beside the loader; a type with no entry gets New Query and
+Refresh, and a leaf whose only command is Properties uses
+`propertiesOnlyMenu`. Script as, Rename/Delete and Filter are not part of the
+builder — `contextMenuItemsForNode` adds them from their own tables.
 
 ### Adding a menu or toolbar item
 
@@ -568,10 +611,13 @@ that keeps a background panic from taking the process down; `what` names it
 in the report. Writing the halves by hand works right up until one is
 written without the `defer` — a panic nothing catches.
 
-The one exception is `DetailBrowser.backfillRows`
-(`detail_browser_backfill.go`), which carries its own `recover` so it can
-queue `markFailed` *before* `wg.Done` releases the caller. It documents that
-on the spot.
+The one exception is the bounded worker pool, **`App.fanOut(n, what, work,
+onPanic)`** (`safego.go`), which the Detail Browser's per-row backfill and the
+Log File Viewer's per-file reads both run on. It spawns with a bare `go` and
+takes the label and the recover by hand, recovering each item on its own so a
+panic costs that item and not the rest of its worker's queue; `onPanic` runs
+*before* `fanOut` returns, which is how the backfill gets `markFailed` queued
+ahead of the caller caching its rows.
 
 ### When the goroutine latched UI state first: safegoRepair
 
@@ -627,10 +673,9 @@ pre-fix binary for anything subtle.
 `gosmo` is a separate repository
 ([github.com/radix29/gosmo](https://github.com/radix29/gosmo)) that goSSMS
 depends on as a tagged module, but the two are developed together, so
-`go.mod` normally has the pair
+`go.mod` normally has
 
 ```
-ignore ../gosmo
 replace github.com/radix29/gosmo => ../gosmo
 ```
 
@@ -647,7 +692,7 @@ yet, so a clone without the sibling checkout may not build.
 
 Only at release time does the pair get commented back out: tag and push
 gosmo, bump `go.mod`'s `require` to the new tag, comment out
-`replace`/`ignore`, and confirm gossms builds and tests clean against the
+`replace`, and confirm gossms builds and tests clean against the
 tagged module before tagging gossms itself.
 
 ## Dependencies

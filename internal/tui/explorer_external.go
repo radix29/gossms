@@ -2,6 +2,8 @@ package tui
 
 import (
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // The External Resources folder — SSMS's home for the PolyBase and Machine
@@ -69,4 +71,25 @@ func loadExternalLibrariesChildren(l loaderCtx, node *explorerNode) ([]*explorer
 			}
 			return l.node(label, NodeExternalLibrary, "", lib.Name, node.data.DBName)
 		})
+}
+
+// The context menus for this family's nodes, looked up through nodeMenus
+// (explorer_loaders.go).
+
+func externalDataSourceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showExternalDataSourcePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func externalFileFormatMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showExternalFileFormatPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func externalLibraryMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showExternalLibraryPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
 }

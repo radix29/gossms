@@ -1173,6 +1173,175 @@ func TestServerScopedOpsAreGated(t *testing.T) {
 	}
 }
 
+// schemaScopedOpTypes is the part of databaseScopedOpTypes whose nodes carry a
+// schema, so that objectWriteRights()' schema and object arms have a securable
+// to ask about. Everything else in databaseScopedOpTypes is schemaless and is
+// what TestSchemalessDatabaseOpsAreGated holds to an explicit entry.
+var schemaScopedOpTypes = []NodeType{
+	NodeTable, NodeView, NodeStoredProcedure, NodeFunction, NodeTrigger,
+	NodeSequence, NodeSynonym, NodeColumn, NodeIndex, NodeStatistic, NodeKey,
+	NodeForeignKey, NodeCheck, NodeSecurityPolicy, NodeUserDefinedDataType,
+	NodeUserDefinedTableType, NodeUserDefinedType, NodeXmlSchemaCollection,
+	NodeRule, NodeDefault,
+}
+
+// TestSchemalessDatabaseOpsAreGated is TestServerScopedOpsAreGated one scope
+// in. A database-level node with no schema falls to objectWriteRights(), whose
+// schema and object arms then have nothing to ask about, leaving ALTER and
+// CONTROL on the database and ALTER ANY SCHEMA — and ALTER ANY SCHEMA permits
+// none of these drops. Probed live 2026-09-10: it was refused DROP ASSEMBLY,
+// every external family, both partition objects, both Always Encrypted keys,
+// the database DDL trigger and a SQL plan guide, while the narrow right that
+// does permit each was never asked. A new schemaless family arriving without
+// an entry fails here.
+func TestSchemalessDatabaseOpsAreGated(t *testing.T) {
+	// A database, a snapshot and a schema carry no schema for their own
+	// reasons, and each has a deliberate set: the two server-side database
+	// rights, and ALTER ANY SCHEMA — which does permit DROP SCHEMA.
+	exempt := []NodeType{NodeDatabase, NodeDatabaseSnapshot, NodeSchema}
+	for _, nodeType := range databaseScopedOpTypes {
+		if slices.Contains(schemaScopedOpTypes, nodeType) || slices.Contains(exempt, nodeType) {
+			continue
+		}
+		_, principal := principalOpRights[nodeType]
+		_, dbScoped := dbScopedOpRights[nodeType]
+		if !principal && !dbScoped {
+			t.Errorf("%v has no schema and no entry in principalOpRights or dbScopedOpRights; "+
+				"it falls to objectWriteRights(), which asks ALTER ANY SCHEMA and not the right that permits it",
+				nodeType)
+			continue
+		}
+		rights := objectOpRights(nodeType)
+		if slices.ContainsFunc(rights, func(r requiredRight) bool { return r.name == rightAlterAnySchema.name }) {
+			t.Errorf("%v's rights name ALTER ANY SCHEMA, which permits no schemaless drop", nodeType)
+		}
+		// A principal holding ALTER ANY SCHEMA and answering 0 for every right
+		// in the set, at the right's own scope — the live shape of the
+		// refusal. A name left unanswered would read unknown and fail open.
+		var zero, serverZero []string
+		for _, r := range rights {
+			if r.db {
+				zero = append(zero, r.name)
+			} else {
+				serverZero = append(serverZero, r.name)
+			}
+		}
+		sc := probedConn(t, "appdb", nil, serverZero, []string{"ALTER ANY SCHEMA"}, zero)
+		if allowsActionOn(sc, "appdb", "", "obj", rights...) {
+			t.Errorf("%v offers Delete to a principal holding only ALTER ANY SCHEMA", nodeType)
+		}
+	}
+}
+
+// TestTheNarrowRightPermitsASchemalessDrop is the other half: the narrow right
+// alone, with the database-wide ALTER and CONTROL both answering 0, keeps
+// Delete — the shape a WITHOUT LOGIN user granted only that right had when it
+// ran each drop live on majors 13 and 17.
+func TestTheNarrowRightPermitsASchemalessDrop(t *testing.T) {
+	for _, tc := range []struct {
+		node  NodeType
+		right string
+	}{
+		{NodeAssembly, "ALTER ANY ASSEMBLY"},
+		{NodeExternalDataSource, "ALTER ANY EXTERNAL DATA SOURCE"},
+		{NodeExternalFileFormat, "ALTER ANY EXTERNAL FILE FORMAT"},
+		{NodeExternalLibrary, "ALTER ANY EXTERNAL LIBRARY"},
+		{NodePartitionFunction, "ALTER ANY DATASPACE"},
+		{NodePartitionScheme, "ALTER ANY DATASPACE"},
+		{NodeColumnMasterKey, "ALTER ANY COLUMN MASTER KEY"},
+		{NodeColumnEncryptionKey, "ALTER ANY COLUMN ENCRYPTION KEY"},
+		{NodeDatabaseTrigger, "ALTER ANY DATABASE DDL TRIGGER"},
+		{NodeSecurityPolicy, "ALTER ANY SECURITY POLICY"},
+	} {
+		sc := probedConn(t, "appdb", nil, nil, []string{tc.right}, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
+		if !allowsActionOn(sc, "appdb", "", "obj", objectOpRights(tc.node)...) {
+			t.Errorf("%v: Delete withheld from a principal holding %s", tc.node, tc.right)
+		}
+		if got := objectOpRights(tc.node)[0].name; got != tc.right {
+			t.Errorf("%v: the withheld item's note names %q, want the narrow %q", tc.node, got, tc.right)
+		}
+	}
+}
+
+// TestAPlanGuidesDeleteFollowsItsScope. sp_control_plan_guide checks ALTER on
+// the routine for an OBJECT-scoped guide and ALTER on the database for the
+// other two, verified live 2026-09-10 on majors 13, 14 and 17 — so one right
+// set for the type would be wrong for one scope or the other.
+func TestAPlanGuidesDeleteFollowsItsScope(t *testing.T) {
+	objectGuide := nodeData{Type: NodePlanGuide, DBName: "appdb", Name: "pg_obj",
+		ScopeSchema: "dbo", ScopeName: "GetClaims"}
+	sqlGuide := nodeData{Type: NodePlanGuide, DBName: "appdb", Name: "pg_sql"}
+	allows := func(sc *db.ServerConn, n nodeData) bool {
+		return allowsActionOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRights(n)...)
+	}
+	conn := func(dbDenied, schemaDenied, objGranted, objDenied []string) *db.ServerConn {
+		responses := capabilityResponsesWithObjects(true, dbDenied, schemaDenied, objGranted, objDenied)
+		// planGuideWriteRights' server-scope member, answered as a login
+		// without it reads — unanswered, it would fail open.
+		for i, r := range responses {
+			if r.match == "IS_SRVROLEMEMBER" {
+				responses[i].rows = append(r.rows, []driver.Value{"P", "ALTER ANY DATABASE", int64(0)})
+			}
+		}
+		sc, _ := newFakeConn(t, responses...)
+		sc.ProbeCapabilities()
+		sc.DatabaseCapabilities(context.Background(), "appdb")
+		return sc
+	}
+	wide := []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}
+
+	// ALTER on the routine and nothing else: the OBJECT guide drops, the SQL
+	// guide is refused (Msg 10518).
+	onRoutine := conn(wide, []string{"dbo"}, []string{"dbo.GetClaims"}, nil)
+	if !allows(onRoutine, objectGuide) {
+		t.Error("an OBJECT guide's Delete withheld from a principal holding ALTER on its routine")
+	}
+	if allows(onRoutine, sqlGuide) {
+		t.Error("a SQL guide's Delete offered to a principal holding ALTER on one routine")
+	}
+	// The guide's own name is no securable: a grant on an object that happens
+	// to share it answers for nothing.
+	if objectDataObject(objectGuide) != "GetClaims" || objectDataSchema(sqlGuide) != "" {
+		t.Error("a plan guide's securable is not its routine")
+	}
+
+	// A DENY of ALTER on the routine refuses the OBJECT guide's drop to a
+	// principal holding ALTER on the database.
+	denied := conn(nil, nil, nil, []string{"dbo.GetClaims"})
+	if allows(denied, objectGuide) {
+		t.Error("an OBJECT guide's Delete offered though ALTER is denied on its routine")
+	}
+	if !allows(denied, sqlGuide) {
+		t.Error("a DENY on one routine withheld a SQL guide's Delete")
+	}
+
+	// The tree's menu asks the same rule for Disable as for Delete: the
+	// server's DISABLE is sp_control_plan_guide too, and was run live under
+	// ALTER on the routine alone.
+	a := newTestApp()
+	for _, tc := range []struct {
+		scopeSchema, scopeName string
+		want                   bool
+	}{{"dbo", "GetClaims", true}, {"", "", false}} {
+		node := opTestNode(onRoutine, NodePlanGuide, "", "pg", "")
+		node.data.IsEnabled = true
+		node.data.ScopeSchema, node.data.ScopeName = tc.scopeSchema, tc.scopeName
+		seen := 0
+		for _, it := range a.contextMenuItemsForNode(node) {
+			if it.Label != "Disable" && it.Label != "Delete..." {
+				continue
+			}
+			seen++
+			if got := it.Enabled == nil || it.Enabled(); got != tc.want {
+				t.Errorf("scope %q: %s enabled = %v, want %v", tc.scopeName, it.Label, got, tc.want)
+			}
+		}
+		if seen != 2 {
+			t.Errorf("scope %q: found %d of Disable/Delete... in the menu, want 2", tc.scopeName, seen)
+		}
+	}
+}
+
 // The rights must also be the ones the matching New-X item names, or a login
 // permitted to create an object of the type is refused the item that deletes
 // it (and the reverse — the pair reads as arbitrary).

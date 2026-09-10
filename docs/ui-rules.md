@@ -202,6 +202,13 @@ a drag from the field to the button row pressed the button under the pointer,
 which on Prompt *accepted* the rename and on TypedConfirm answered the
 confirmation the retyping exists to slow down.
 
+**Not every mouse event is followed by a draw.** `App.Run` skips the frame after a
+motion-only event (button state unchanged, no wheel) while more events are queued:
+a drag over a results grid drew a 6 ms frame per cell crossed and fell 2.2 s
+behind the pointer. Presses, releases and wheel notches still draw each. So state
+that a *motion* handler depends on must be set in the handler, never in `Draw` —
+geometry laid out in `Draw` is current as of the last press, not the last motion.
+
 An overlay drawn last gets **first refusal** of every key/mouse event while open —
 `DataGrid.OverlayActive()` at the top of `QueryPanel.HandleKey`/`HandleMouse`; the
 focused row before positional routing in `propsheet.Form.HandleMouse`.

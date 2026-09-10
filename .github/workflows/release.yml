@@ -283,6 +283,43 @@ jobs:
           git commit -m "gossms ${TAG}"
           git push
 
+      - name: Verify the tap really carries this version
+        shell: bash
+        working-directory: tap
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${TAG#v}"
+
+          # Read the formula back off the remote rather than trusting the step
+          # above. Its guard exits 0 whenever it believes there is nothing to
+          # push, which is exactly how v0.0.10 shipped an empty tap on a green
+          # job; asking the remote is the only check that makes a no-op push
+          # and a real one look different.
+          #
+          # git, not raw.githubusercontent.com: the raw CDN serves a cached
+          # copy for minutes after a push and would fail this step for a tap
+          # that is in fact correct.
+          git fetch --quiet origin
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+
+          if ! published="$(git show "origin/${branch}:Formula/gossms.rb" 2>&1)"; then
+            echo "Error: origin/${branch} has no Formula/gossms.rb." >&2
+            printf '%s\n' "${published}" >&2
+            exit 1
+          fi
+
+          if ! grep -q "version \"${VERSION}\"" <<<"${published}"; then
+            echo "Error: origin/${branch} Formula/gossms.rb does not declare version ${VERSION}." >&2
+            echo "--- what the tap actually holds ---" >&2
+            printf '%s\n' "${published}" >&2
+            exit 1
+          fi
+
+          echo "Tap verified: origin/${branch} Formula/gossms.rb declares version ${VERSION}."
+
   apt:
     name: Publish the apt repository
     runs-on: ubuntu-latest
@@ -470,3 +507,50 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "gossms ${TAG}"
           git push
+
+      - name: Verify the apt repository really carries this version
+        shell: bash
+        working-directory: apt
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${TAG#v}"
+
+          # Same reason as the tap's verify step: the push guard above exits 0
+          # when it decides there is nothing to do, so only reading the remote
+          # back distinguishes "published" from "did nothing". Read it with
+          # git rather than over https://radix29.github.io/apt — Pages takes
+          # minutes to redeploy and would fail this step for a repository that
+          # is in fact already correct.
+          git fetch --quiet origin
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+
+          fail=0
+          for arch in amd64 arm64; do
+            deb="pool/main/g/gossms/gossms_${VERSION}_${arch}.deb"
+            if ! git cat-file -e "origin/${branch}:${deb}" 2>/dev/null; then
+              echo "Error: ${deb} is not in origin/${branch}." >&2
+              fail=1
+            fi
+
+            index="dists/stable/main/binary-${arch}/Packages"
+            if ! git show "origin/${branch}:${index}" 2>/dev/null \
+                 | grep -q "^Version: ${VERSION}$"; then
+              echo "Error: origin/${branch} ${index} does not list version ${VERSION}." >&2
+              fail=1
+            fi
+          done
+
+          # An absent or unsigned Release is an `apt-get update` failure on
+          # every client, so the signed trio has to be in the push as well.
+          for f in dists/stable/Release dists/stable/InRelease dists/stable/Release.gpg; do
+            if ! git cat-file -e "origin/${branch}:${f}" 2>/dev/null; then
+              echo "Error: ${f} is not in origin/${branch}." >&2
+              fail=1
+            fi
+          done
+
+          [ "${fail}" -eq 0 ] || exit 1
+          echo "apt repository verified: origin/${branch} carries gossms ${VERSION} for amd64 and arm64."

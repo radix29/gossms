@@ -171,9 +171,9 @@ func (a *App) showContextMenu(node *explorerNode, x, y int) {
 // node type gets for free: Script <Noun> as (scripting.go), Rename/Delete
 // (explorer_object_ops.go) and, on a filterable folder, Filter
 // Settings/Remove Filter (explorer_filter.go). All three are spliced in above
-// Refresh, where SSMS puts them, rather than repeated in each branch of
-// nodeMenuItems — which node types offer them is scriptables', objectOpFor's
-// and filterProps's answer, not something those branches know.
+// Refresh, where SSMS puts them, rather than repeated in each nodeMenus
+// builder — which node types offer them is scriptables', objectOpFor's and
+// filterProps's answer, not something those builders know.
 func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 	items := a.nodeMenuItems(node)
 	items = insertBeforeRefresh(items, a.scriptMenuItems(node))
@@ -227,6 +227,7 @@ func insertBeforeRefresh(items, extra []controls.MenuItem) []controls.MenuItem {
 	return append(items, append([]controls.MenuItem{{Divider: true}}, extra...)...)
 }
 
+// nodeMenuItems is node's own context menu, from its nodeMenus builder.
 func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	newQuery := controls.MenuItem{Label: "New Query", Action: func() { a.newQueryPanelForConn(sc, node.data.DBName) }}
@@ -240,747 +241,10 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 		a.detailBrowser.Invalidate(a, node)
 	}}
 
-	switch node.data.Type {
-	case NodeServer:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "Disconnect", Action: func() { a.disconnectActive() }},
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
-				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
-			{Divider: true},
-			gate(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
-				sc, "", rightViewServerState),
-			{Label: "View SQL Server Log", Action: func() {
-				a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
-			}},
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showServerPropertiesFor(sc) }},
-		}
-	case NodeDatabases:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
-				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
-			gateAzure(gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
-				sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
-			{Divider: true},
-			{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
-			{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
-			{Divider: true},
-			refresh,
-		}
-	case NodeDatabase:
-		offlineLabel := "Take Database Offline"
-		if node.data.IsOffline {
-			offlineLabel = "Bring Database Online"
-		}
-		items := []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
-				sc, node.data.DBName, rightBackupDatabase, rightAlterAnyDatabase),
-			gate(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
-				sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase, rightCreateAnyDatabase),
-			{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
-			// ALTER DATABASE ... SET OFFLINE is Msg 5008 on an Azure edition,
-			// so the toggle is withheld there in both directions.
-			gateAzure(gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
-				sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase), sc),
-		}
-		// Snapshotting a system database is refused by the server, so the
-		// item follows Detach's rule below rather than being offered and
-		// failing.
-		if !node.data.IsSystem {
-			items = append(items,
-				gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
-					a.showNewSnapshotDialog(sc, node.data.DBName)
-				}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc))
-		}
-		// Detach is offered on user databases only: sp_detach_db refuses a
-		// system database outright, and a permanently grey item explains
-		// nothing the name doesn't already say.
-		if !node.data.IsSystem {
-			items = append(items,
-				gateAzure(gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
-					a.showDetachDatabaseDialog(sc, node.data.DBName)
-				}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase), sc))
-		}
-		return append(items,
-			controls.MenuItem{Divider: true},
-			refresh,
-			controls.MenuItem{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
-		)
-	case NodeDatabaseSnapshots:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			// CREATE DATABASE ... AS SNAPSHOT OF is a CREATE DATABASE, and
-			// takes the same rights New Database does.
-			gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
-				a.showNewSnapshotDialog(sc, "")
-			}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
-			{Divider: true},
-			refresh,
-		}
-	case NodeDatabaseSnapshot:
-		items := []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			// RESTORE ... FROM DATABASE_SNAPSHOT is a restore of the *source*
-			// database, so it takes the source's rights, not the snapshot's.
-			gateAzure(gate(controls.MenuItem{Label: "Restore Database from Snapshot...", Action: func() {
-				a.restoreFromSnapshot(sc, node)
-			}}, sc, node.data.SourceDatabase, rightControlDB, rightAlterAnyDatabase), sc),
-		}
-		// Delete is not listed here: contextMenuItemsForNode splices it in
-		// above Refresh for every type objectOps covers, and a copy here is a
-		// second Delete on the menu.
-		return append(items,
-			controls.MenuItem{Divider: true},
-			refresh,
-			controls.MenuItem{Label: "Properties...", Action: func() {
-				a.showDatabaseSnapshotPropertiesFor(sc, node.data.Name)
-			}},
-		)
-	case NodeQueryStore:
-		// The folder's own settings are a Database Properties page, not a
-		// dialog of its own — the same page SSMS puts them on.
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "Open Query Store...", Action: func() {
-				a.showQueryStorePanelFor(sc, node.data.DBName, "")
-			}}, sc, node.data.DBName, rightViewDBState),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
-		}
-	case NodeQueryStoreReport:
-		// The leaf's own Detail Browser grid is the report; this opens the
-		// same view in the panel, where the metric, the statistic and the
-		// window can be changed and a plan can be forced.
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
-				a.showQueryStorePanelFor(sc, node.data.DBName, node.data.Name)
-			}}, sc, node.data.DBName, rightViewDBState),
-			{Divider: true},
-			refresh,
-		}
-	case NodeLogins:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
-				sc, "", rightAlterAnyLogin),
-			{Divider: true},
-			refresh,
-		}
-	case NodeLogin:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showLoginProperties(sc, node.data.Name) }},
-		}
-	case NodeUser:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showUserPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeServerRole:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showServerRolePropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeCredentials:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
-				sc, "", rightAlterAnyCredential),
-			{Divider: true},
-			refresh,
-		}
-	case NodeCredential:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showCredentialPropertiesFor(sc, node.data.Name) }},
-		}
-	// Cryptographic Providers is read-only: registering one takes a DLL path
-	// on the server's own filesystem, which SSMS answers with a file browser
-	// this build has no way to offer. No New item, and the node below has no
-	// Properties — everything sys.cryptographic_providers records is already
-	// in the Detail Browser's grid.
-	case NodeCryptographicProviders, NodeCryptographicProvider:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-		}
-	case NodeAudits:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
-				sc, "", rightAlterAnyAudit),
-			{Divider: true},
-			refresh,
-		}
-	case NodeAudit:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: auditToggleLabel(node),
-				Action: func() { a.toggleAudit(sc, node) }},
-				sc, "", rightAlterAnyAudit),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showAuditPropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeServerAuditSpecifications:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Server Audit Specification...",
-				Action: func() { a.showNewServerAuditSpecificationDialog(sc) }},
-				sc, "", rightAlterAnyAudit),
-			{Divider: true},
-			refresh,
-		}
-	case NodeServerAuditSpecification:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: auditToggleLabel(node),
-				Action: func() { a.toggleServerAuditSpecification(sc, node) }},
-				sc, "", rightAlterAnyAudit),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeDatabaseAuditSpecifications:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Database Audit Specification...",
-				Action: func() { a.showNewDatabaseAuditSpecificationDialog(sc, node) }},
-				sc, node.data.DBName, rightAlterAnyDBAudit),
-			{Divider: true},
-			refresh,
-		}
-	case NodeDatabaseAuditSpecification:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: auditToggleLabel(node),
-				Action: func() { a.toggleDatabaseAuditSpecification(sc, node) }},
-				sc, node.data.DBName, rightAlterAnyDBAudit),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showDatabaseAuditSpecificationPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeDatabaseScopedCredentials:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Database Scoped Credential...",
-				Action: func() { a.showNewDatabaseScopedCredentialDialog(sc, node) }},
-				sc, node.data.DBName, dbScopedCredentialRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeDatabaseScopedCredential:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showDatabaseScopedCredentialPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeBackupDevices:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
-				sc, "", rightDiskAdmin),
-			{Divider: true},
-			refresh,
-		}
-	case NodeBackupDevice:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showBackupDevicePropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeServerTriggers:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-		}
-	case NodeServerTrigger:
-		toggleLabel := "Disable"
-		if !node.data.IsEnabled {
-			toggleLabel = "Enable"
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleServerTrigger(sc, node) }},
-				sc, "", rightControlServer),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showServerTriggerPropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeDatabaseTriggers:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-		}
-	case NodeDatabaseTrigger:
-		dbTrigToggle := "Disable"
-		if !node.data.IsEnabled {
-			dbTrigToggle = "Enable"
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: dbTrigToggle, Action: func() { a.toggleDatabaseTrigger(sc, node) }},
-				sc, node.data.DBName, rightAlterAnyDatabaseDDLTrigger),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showDatabaseTriggerPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeEndpoints:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-		}
-	case NodeEndpoint:
-		// gateOn, not gate: ALTER ENDPOINT ... STATE is what these three
-		// write, and DENY ALTER ON ENDPOINT::e refuses it with Msg 6004 over
-		// a server-wide ALTER ANY ENDPOINT. The arm is only reached by a call
-		// that names the endpoint — see rightAlterAnyEndpoint.
-		stateItem := func(label string, state gosmo.EndpointState) controls.MenuItem {
-			return gateOn(controls.MenuItem{Label: label,
-				Action: func() { a.setEndpointState(sc, node, state) }},
-				sc, "", "", node.data.Name, rightAlterAnyEndpoint)
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			stateItem("Start", gosmo.EndpointStarted),
-			stateItem("Stop", gosmo.EndpointStopped),
-			stateItem("Disable", gosmo.EndpointDisabled),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() { a.showEndpointPropertiesFor(sc, node.data.Name) }},
-		}
-	case NodeDatabaseRole:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showRolePropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeSchema:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showSchemaPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeTable:
-		tableFQN := fqn(node.data.Schema, node.data.Name)
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "Select Top 1000 Rows", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+tableFQN)
-			}},
-			{Divider: true},
-			{Label: "Rebuild All Indexes", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName, "ALTER INDEX ALL ON "+tableFQN+" REBUILD")
-			}},
-			{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showTablePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-			}},
-		}
-	case NodeView:
-		viewFQN := fqn(node.data.Schema, node.data.Name)
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "Select Top 1000 Rows", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName, "SELECT TOP 1000 *\nFROM "+viewFQN)
-			}},
-			{Divider: true},
-			{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
-			{Divider: true},
-			refresh,
-		}
-	case NodeKey:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name, node.data.IsPrimaryKey)
-			}},
-		}
-	case NodeForeignKey:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showForeignKeyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
-			}},
-		}
-	case NodeIndex:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showIndexPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
-			}},
-		}
-	case NodePartitionFunction:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showPartitionFunctionPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodePartitionScheme:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showPartitionSchemePropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeSecurityPolicy:
-		toggleLabel := "Disable"
-		if !node.data.IsEnabled {
-			toggleLabel = "Enable"
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
-				sc, node.data.DBName, rightAlterAnySecPolicy),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showSecurityPolicyPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-			}},
-		}
-	case NodeColumnMasterKeys:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Column Master Key...",
-				Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
-				sc, node.data.DBName, rightAlterAnyCMK),
-			{Divider: true},
-			refresh,
-		}
-	case NodeColumnEncryptionKeys:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Column Encryption Key...",
-				Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
-				sc, node.data.DBName, rightAlterAnyCEK),
-			{Divider: true},
-			refresh,
-		}
-	case NodeColumnMasterKey:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showColumnMasterKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeColumnEncryptionKey:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showColumnEncryptionKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeIndexes:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gateOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
-				sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
-			{Divider: true},
-			{Label: "Rebuild All Indexes", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName,
-					"ALTER INDEX ALL ON "+fqn(node.data.Schema, node.data.Name)+" REBUILD")
-			}},
-			{Divider: true},
-			refresh,
-		}
-	case NodeStatistics:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gateOn(controls.MenuItem{Label: "New Statistics...",
-				Action: func() { a.showNewStatisticsDialog(sc, node) }},
-				sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeStatistic:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "Update Statistics", Action: func() {
-				a.generateScript(sc, node.data, statisticUpdateVerb, func(text string) {
-					a.openQueryWithText(sc, node.data.DBName, text)
-				})
-			}},
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showStatisticPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.TableName, node.data.Name)
-			}},
-		}
-	case NodeAlwaysOn:
-		return alwaysOnRootMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityGroups:
-		return agGroupsFolderMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityGroup:
-		return agGroupMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityReplicas:
-		return agReplicasFolderMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityDatabases:
-		return agDatabasesFolderMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityDatabase:
-		return agDatabaseMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAvailabilityReplica:
-		return agReplicaMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAGListeners:
-		return agListenersFolderMenuItems(a, sc, node, newQuery, refresh)
-	case NodeAGListener:
-		return agListenerMenuItems(a, sc, node, refresh)
-	case NodeAgentUserJobs:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Job...", Action: func() { a.showNewJobDialog(sc) }},
-				sc, "msdb", agentWriteRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeAgentSchedules:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Schedule...", Action: func() { a.showNewScheduleDialog(sc) }},
-				sc, "msdb", agentWriteRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeAgentEventAlerts:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Alert...", Action: func() { a.showNewAlertDialog(sc) }},
-				sc, "msdb", agentWriteRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeAgentOperators:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: "New Operator...", Action: func() { a.showNewOperatorDialog(sc) }},
-				sc, "msdb", agentWriteRights()...),
-			{Divider: true},
-			refresh,
-		}
-	case NodeManagement:
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "View SQL Server Log", Action: func() {
-				a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
-			}},
-			{Divider: true},
-			refresh,
-		}
-	case NodeSQLServerLogs, NodeAgentErrorLogs:
-		logType := gosmo.ErrorLogSQLServer
-		if node.data.Type == NodeAgentErrorLogs {
-			logType = gosmo.ErrorLogAgent
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
-			gate(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
-				sc, "", rightControlServer),
-			{Divider: true},
-			refresh,
-		}
-	case NodeSQLServerLog, NodeAgentErrorLog:
-		return []controls.MenuItem{
-			{Label: "View Log", Action: func() {
-				a.showLogViewerFor(sc, node.data.LogType, node.data.LogNumber)
-			}},
-			{Divider: true},
-			newQuery,
-			{Divider: true},
-			refresh,
-		}
-	case NodeAgentJob:
-		return agentJobMenuItems(a, sc, node, refresh)
-	case NodeAgentSchedule:
-		return agentScheduleMenuItems(a, sc, node, refresh)
-	case NodeAgentAlert:
-		return agentAlertMenuItems(a, sc, node, refresh)
-	case NodeAgentOperator:
-		return agentOperatorMenuItems(a, sc, node, refresh)
-	case NodeStoredProcedure:
-		procFQN := fqn(node.data.Schema, node.data.Name)
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			{Label: "Execute Stored Procedure", Action: func() {
-				a.openQueryWithText(sc, node.data.DBName, "EXEC "+procFQN)
-			}},
-			{Divider: true},
-			{Label: "View Dependencies", Action: func() { a.showDependencies(node) }},
-			{Divider: true},
-			refresh,
-		}
-	// The Phase 3 tree families. Each opens the read-only Properties its
-	// props file builds; the plan guide's is the one that can write, and it
-	// does so from the page rather than from a menu item.
-	//
-	// NodeSystemDataType has no arm: a built-in type has no Properties in
-	// SSMS either, and nothing about `int` to show.
-	case NodeUserDefinedDataType:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showUserDefinedDataTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodeUserDefinedTableType:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showUserDefinedTableTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodeUserDefinedType:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showClrTypePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodeXmlSchemaCollection:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showXmlSchemaCollectionPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodeAssembly:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showAssemblyPropertiesFor(sc, node.data.DBName, node.data.Name)
-		})
-	case NodeRule:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showRulePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodeDefault:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showDefaultPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
-		})
-	case NodePlanGuide:
-		// The one family here with a command beyond Properties: a disabled
-		// guide shapes no plan and is invisible except for the label suffix,
-		// so Enable/Disable is what makes the folder worth having. The right
-		// is sp_control_plan_guide's own — see planGuideWriteRights.
-		planGuideToggle := "Disable"
-		if !node.data.IsEnabled {
-			planGuideToggle = "Enable"
-		}
-		return []controls.MenuItem{
-			newQuery,
-			{Divider: true},
-			gate(controls.MenuItem{Label: planGuideToggle, Action: func() { a.togglePlanGuide(sc, node) }},
-				sc, node.data.DBName, planGuideWriteRights()...),
-			{Divider: true},
-			refresh,
-			{Label: "Properties...", Action: func() {
-				a.showPlanGuidePropertiesFor(sc, node.data.DBName, node.data.Name)
-			}},
-		}
-	case NodeExternalDataSource:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showExternalDataSourcePropertiesFor(sc, node.data.DBName, node.data.Name)
-		})
-	case NodeExternalFileFormat:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showExternalFileFormatPropertiesFor(sc, node.data.DBName, node.data.Name)
-		})
-	case NodeExternalLibrary:
-		return propertiesOnlyMenu(newQuery, refresh, func() {
-			a.showExternalLibraryPropertiesFor(sc, node.data.DBName, node.data.Name)
-		})
-
-	default:
-		return []controls.MenuItem{newQuery, {Divider: true}, refresh}
+	if build, ok := nodeMenus[node.data.Type]; ok {
+		return build(a, sc, node, newQuery, refresh)
 	}
-}
-
-// propertiesOnlyMenu is the menu shape shared by every leaf whose only
-// command is Properties — New Query, Refresh, Properties. Written once
-// because eleven families arrived with it at the same time and a hand-copied
-// twelfth would be where the divider goes missing.
-//
-// Delete, Script as and Rename are not here: explorer_object_ops.go and
-// scripting.go add them from their own tables, on the node types they list.
-func propertiesOnlyMenu(newQuery, refresh controls.MenuItem, show func()) []controls.MenuItem {
-	return []controls.MenuItem{
-		newQuery,
-		{Divider: true},
-		refresh,
-		{Label: "Properties...", Action: show},
-	}
+	return []controls.MenuItem{newQuery, {Divider: true}, refresh}
 }
 
 // showDependencies displays what node's object depends on and what depends
@@ -1001,54 +265,21 @@ func (a *App) showDependencies(node *explorerNode) {
 // carries it (see loadSecurityPoliciesChildren), which is why the parent
 // folder is refreshed rather than just the icon repainted.
 func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
-	if !a.requireConn(sc) {
-		return
-	}
-	enable := !node.data.IsEnabled
-	dbName, schema, name := node.data.DBName, node.data.Schema, node.data.Name
-
-	run := func() {
-		a.safego("enabling/disabling a security policy", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
+	dbName, schema := node.data.DBName, node.data.Schema
+	display := fqn(schema, node.data.Name)
+	a.toggleEnabledState(sc, node, "security policy", display,
+		"Disable Security Policy",
+		fmt.Sprintf("Disable %s? Its filter and block predicates stop applying, and every row of the tables it protects becomes visible.", display),
+		func(ctx context.Context, name string, on bool) error {
 			p, err := findSecurityPolicy(ctx, sc, dbName, schema, name)
-			if err == nil {
-				if enable {
-					err = p.EnableContext(ctx)
-				} else {
-					err = p.DisableContext(ctx)
-				}
+			if err != nil {
+				return err
 			}
-			a.postAndWake(func() {
-				word := "disable"
-				if enable {
-					word = "enable"
-				}
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, fqn(schema, name), err))
-					return
-				}
-				node.data.IsEnabled = enable
-				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
-				}
-				a.detailBrowser.Invalidate(a, node)
-				a.setStatus(fmt.Sprintf("Security policy %q is now %sd", fqn(schema, name), word))
-			})
+			if on {
+				return p.EnableContext(ctx)
+			}
+			return p.DisableContext(ctx)
 		})
-	}
-
-	if !enable {
-		a.confirmDialog.ShowConfirm("Disable Security Policy",
-			fmt.Sprintf("Disable %s? Its filter and block predicates stop applying, and every row of the tables it protects becomes visible.", fqn(schema, name)),
-			func(confirmed bool) {
-				if confirmed {
-					run()
-				}
-			})
-		return
-	}
-	run()
 }
 
 // toggleServerTrigger enables or disables node's server-scope DDL or logon
@@ -1058,53 +289,17 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 // loadServerTriggersChildren), which is why the parent folder is refreshed
 // rather than the icon repainted.
 func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
-	if !a.requireConn(sc) {
-		return
-	}
-	enable := !node.data.IsEnabled
 	name := node.data.Name
-
-	run := func() {
-		a.safego("enabling/disabling a server trigger", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
+	a.toggleEnabledState(sc, node, "server trigger", name,
+		"Disable Server Trigger",
+		fmt.Sprintf("Disable %s? The DDL or logon policy it enforces stops applying server-wide.", name),
+		func(ctx context.Context, name string, on bool) error {
 			t := sc.Server.ServerTrigger(name)
-			var err error
-			if enable {
-				err = t.EnableContext(ctx)
-			} else {
-				err = t.DisableContext(ctx)
+			if on {
+				return t.EnableContext(ctx)
 			}
-			a.postAndWake(func() {
-				word := "disable"
-				if enable {
-					word = "enable"
-				}
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
-					return
-				}
-				node.data.IsEnabled = enable
-				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
-				}
-				a.detailBrowser.Invalidate(a, node)
-				a.setStatus(fmt.Sprintf("Server trigger %q is now %sd", name, word))
-			})
+			return t.DisableContext(ctx)
 		})
-	}
-
-	if !enable {
-		a.confirmDialog.ShowConfirm("Disable Server Trigger",
-			fmt.Sprintf("Disable %s? The DDL or logon policy it enforces stops applying server-wide.", name),
-			func(confirmed bool) {
-				if confirmed {
-					run()
-				}
-			})
-		return
-	}
-	run()
 }
 
 // toggleDatabaseTrigger enables or disables node's database-scope DDL
@@ -1114,55 +309,19 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 // loadDatabaseTriggersChildren), which is why the parent folder is refreshed
 // rather than the icon repainted.
 func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
-	if !a.requireConn(sc) {
-		return
-	}
-	enable := !node.data.IsEnabled
 	name, dbName := node.data.Name, node.data.DBName
-
-	run := func() {
-		a.safego("enabling/disabling a database trigger", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
+	a.toggleEnabledState(sc, node, "database trigger", name,
+		"Disable Database Trigger",
+		fmt.Sprintf("Disable %s? The DDL policy it enforces stops applying in %s.", name, dbName),
+		func(ctx context.Context, name string, on bool) error {
 			// Database, not DatabaseByName: the handle needs no read of
 			// sys.databases to address a trigger by name.
 			t := sc.Server.Database(dbName).DatabaseTrigger(name)
-			var err error
-			if enable {
-				err = t.EnableContext(ctx)
-			} else {
-				err = t.DisableContext(ctx)
+			if on {
+				return t.EnableContext(ctx)
 			}
-			a.postAndWake(func() {
-				word := "disable"
-				if enable {
-					word = "enable"
-				}
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
-					return
-				}
-				node.data.IsEnabled = enable
-				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
-				}
-				a.detailBrowser.Invalidate(a, node)
-				a.setStatus(fmt.Sprintf("Database trigger %q is now %sd", name, word))
-			})
+			return t.DisableContext(ctx)
 		})
-	}
-
-	if !enable {
-		a.confirmDialog.ShowConfirm("Disable Database Trigger",
-			fmt.Sprintf("Disable %s? The DDL policy it enforces stops applying in %s.", name, dbName),
-			func(confirmed bool) {
-				if confirmed {
-					run()
-				}
-			})
-		return
-	}
-	run()
 }
 
 // auditToggleLabel is the Enable/Disable item's wording for an audit or a
@@ -1180,9 +339,10 @@ func auditToggleLabel(node *explorerNode) string {
 // loadAuditsChildren), which is why the parent folder is refreshed rather than
 // the icon repainted.
 func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
-	a.toggleEnabledState(sc, node, "audit",
+	name := node.data.Name
+	a.toggleEnabledState(sc, node, "audit", name,
 		"Disable Audit",
-		"Disable %s? The instance stops recording anything through it.",
+		fmt.Sprintf("Disable %s? The instance stops recording anything through it.", name),
 		func(ctx context.Context, name string, on bool) error {
 			return sc.Server.ServerAudit(name).SetStateContext(ctx, on)
 		})
@@ -1190,9 +350,10 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 
 // toggleServerAuditSpecification enables or disables node's specification.
 func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNode) {
-	a.toggleEnabledState(sc, node, "server audit specification",
+	name := node.data.Name
+	a.toggleEnabledState(sc, node, "server audit specification", name,
 		"Disable Server Audit Specification",
-		"Disable %s? The action groups it names stop being recorded.",
+		fmt.Sprintf("Disable %s? The action groups it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
 			return sc.Server.ServerAuditSpecification(name).SetStateContext(ctx, on)
 		})
@@ -1202,21 +363,24 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 // The database handle is the name-only one: the state toggle needs nothing off
 // sys.databases.
 func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorerNode) {
-	dbName := node.data.DBName
-	a.toggleEnabledState(sc, node, "database audit specification",
+	name, dbName := node.data.Name, node.data.DBName
+	a.toggleEnabledState(sc, node, "database audit specification", name,
 		"Disable Database Audit Specification",
-		"Disable %s? The action groups and actions it names stop being recorded.",
+		fmt.Sprintf("Disable %s? The action groups and actions it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
 			return sc.Server.Database(dbName).DatabaseAuditSpecification(name).SetStateContext(ctx, on)
 		})
 }
 
-// toggleEnabledState is the shared half of the four toggles above: an audit,
-// the two audit specifications and a plan guide differ only in the wording and
-// the gosmo call. Disabling is confirmed, enabling is not; the parent folder
-// is refreshed afterwards because each family carries its state in the child
+// toggleEnabledState is the shared half of every Enable/Disable toggle in
+// Object Explorer: a security policy, the two trigger scopes, an audit, the two
+// audit specifications and a plan guide differ only in the wording and the
+// gosmo call. display is the name as the status line and prompt show it (a
+// policy's is schema-qualified); prompt is the confirmation text, already
+// formatted. Disabling is confirmed, enabling is not; the parent folder is
+// refreshed afterwards because each family carries its state in the child
 // label rather than in the icon.
-func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, title, prompt string,
+func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, display, title, prompt string,
 	set func(ctx context.Context, name string, on bool) error) {
 	if !a.requireConn(sc) {
 		return
@@ -1225,7 +389,11 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, ti
 	name := node.data.Name
 
 	run := func() {
-		a.safego("enabling/disabling a "+noun, func() {
+		article := "a "
+		if strings.ContainsRune("aeiou", rune(noun[0])) {
+			article = "an "
+		}
+		a.safego("enabling/disabling "+article+noun, func() {
 			ctx, cancel := serverWriteContext(sc)
 			defer cancel()
 			err := set(ctx, name, enable)
@@ -1235,7 +403,7 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, ti
 					word = "enable"
 				}
 				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, name, err))
+					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
 					return
 				}
 				node.data.IsEnabled = enable
@@ -1243,13 +411,13 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, ti
 					refreshExplorerNode(a, parent)
 				}
 				a.detailBrowser.Invalidate(a, node)
-				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], name, word))
+				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], display, word))
 			})
 		})
 	}
 
 	if !enable {
-		a.confirmDialog.ShowConfirm(title, fmt.Sprintf(prompt, name), func(confirmed bool) {
+		a.confirmDialog.ShowConfirm(title, prompt, func(confirmed bool) {
 			if confirmed {
 				run()
 			}
@@ -1272,10 +440,10 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, ti
 // Server.Database, not DatabaseByName: the guide is addressed by name and the
 // toggle reads nothing off sys.databases.
 func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
-	dbName := node.data.DBName
-	a.toggleEnabledState(sc, node, "plan guide",
+	name, dbName := node.data.Name, node.data.DBName
+	a.toggleEnabledState(sc, node, "plan guide", name,
 		"Disable Plan Guide",
-		"Disable %s? The queries it applies hints to go back to the plans the optimizer picks on its own.",
+		fmt.Sprintf("Disable %s? The queries it applies hints to go back to the plans the optimizer picks on its own.", name),
 		func(ctx context.Context, name string, on bool) error {
 			g := sc.Server.Database(dbName).PlanGuide(name)
 			if on {

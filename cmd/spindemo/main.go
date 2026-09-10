@@ -119,7 +119,7 @@ func (d *demo) draw(s tcell.Screen) {
 	y := 2
 	y = d.drawGroup(s, y, w, "Single cell (width 1)", singles(), label, dim, spin)
 	y++
-	y = d.drawGroup(s, y, w, "Multi cell (width 3-5)", multis(), label, dim, spin)
+	d.drawGroup(s, y, w, "Multi cell (width 3-5)", multis(), label, dim, spin)
 
 	help := "q quit   space pause   . step   +/- speed   r reset"
 	if h > 1 {

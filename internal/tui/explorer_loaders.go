@@ -3,10 +3,10 @@ package tui
 import (
 	"context"
 	"errors"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // errNotConnected is returned by fetchChildren when a node's connection
@@ -142,6 +142,125 @@ var childLoaders = map[NodeType]childLoader{
 	NodeAgentErrorLogs:   loadAgentErrorLogsChildren,
 }
 
+// menuBuilder builds one node type's own context menu. newQuery and refresh
+// are built once by nodeMenuItems, since nearly every menu carries both and
+// Refresh is what insertBeforeRefresh anchors on. Implementations sit beside
+// their family's loaders in the explorer_*.go files, and in alwayson_menu.go
+// and agent_menu.go.
+type menuBuilder func(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem
+
+// nodeMenus maps a NodeType to its menu builder. A NodeType with no entry
+// gets New Query and Refresh only — the folders with nothing to create
+// (Server Triggers, Database Triggers, Endpoints) and Cryptographic
+// Providers. That one is read-only on purpose: registering a provider takes a
+// DLL path on the server's own filesystem, which SSMS answers with a file
+// browser this build has no way to offer, and everything
+// sys.cryptographic_providers records is already in the Detail Browser's grid.
+var nodeMenus = map[NodeType]menuBuilder{
+	NodeServer:            serverMenuItems,
+	NodeDatabases:         databasesMenuItems,
+	NodeDatabase:          databaseMenuItems,
+	NodeDatabaseSnapshots: databaseSnapshotsMenuItems,
+	NodeDatabaseSnapshot:  databaseSnapshotMenuItems,
+	NodeQueryStore:        queryStoreMenuItems,
+	NodeQueryStoreReport:  queryStoreReportMenuItems,
+	NodeUser:              userMenuItems,
+	NodeDatabaseRole:      databaseRoleMenuItems,
+	NodeSchema:            schemaMenuItems,
+	NodeDatabaseTrigger:   databaseTriggerMenuItems,
+	NodeSecurityPolicy:    securityPolicyMenuItems,
+
+	NodeDatabaseAuditSpecifications: databaseAuditSpecificationsMenuItems,
+	NodeDatabaseAuditSpecification:  databaseAuditSpecificationMenuItems,
+	NodeDatabaseScopedCredentials:   databaseScopedCredentialsMenuItems,
+	NodeDatabaseScopedCredential:    databaseScopedCredentialMenuItems,
+	NodeColumnMasterKeys:            columnMasterKeysMenuItems,
+	NodeColumnMasterKey:             columnMasterKeyMenuItems,
+	NodeColumnEncryptionKeys:        columnEncryptionKeysMenuItems,
+	NodeColumnEncryptionKey:         columnEncryptionKeyMenuItems,
+
+	NodePartitionFunction: partitionFunctionMenuItems,
+	NodePartitionScheme:   partitionSchemeMenuItems,
+
+	NodeTable:           tableMenuItems,
+	NodeKey:             keyMenuItems,
+	NodeForeignKey:      foreignKeyMenuItems,
+	NodeIndexes:         indexesMenuItems,
+	NodeIndex:           indexMenuItems,
+	NodeStatistics:      statisticsMenuItems,
+	NodeStatistic:       statisticMenuItems,
+	NodeView:            viewMenuItems,
+	NodeStoredProcedure: storedProcedureMenuItems,
+
+	NodeUserDefinedDataType:  userDefinedDataTypeMenuItems,
+	NodeUserDefinedTableType: userDefinedTableTypeMenuItems,
+	NodeUserDefinedType:      userDefinedTypeMenuItems,
+	NodeXmlSchemaCollection:  xmlSchemaCollectionMenuItems,
+	NodeAssembly:             assemblyMenuItems,
+	NodeRule:                 ruleMenuItems,
+	NodeDefault:              defaultObjectMenuItems,
+	NodePlanGuide:            planGuideMenuItems,
+
+	NodeExternalDataSource: externalDataSourceMenuItems,
+	NodeExternalFileFormat: externalFileFormatMenuItems,
+	NodeExternalLibrary:    externalLibraryMenuItems,
+
+	NodeLogins:                    loginsMenuItems,
+	NodeLogin:                     loginMenuItems,
+	NodeServerRole:                serverRoleMenuItems,
+	NodeCredentials:               credentialsMenuItems,
+	NodeCredential:                credentialMenuItems,
+	NodeAudits:                    auditsMenuItems,
+	NodeAudit:                     auditMenuItems,
+	NodeServerAuditSpecifications: serverAuditSpecificationsMenuItems,
+	NodeServerAuditSpecification:  serverAuditSpecificationMenuItems,
+
+	NodeBackupDevices: backupDevicesMenuItems,
+	NodeBackupDevice:  backupDeviceMenuItems,
+	NodeServerTrigger: serverTriggerMenuItems,
+	NodeEndpoint:      endpointMenuItems,
+
+	NodeManagement:     managementMenuItems,
+	NodeSQLServerLogs:  errorLogsMenuItems,
+	NodeSQLServerLog:   errorLogMenuItems,
+	NodeAgentErrorLogs: errorLogsMenuItems,
+	NodeAgentErrorLog:  errorLogMenuItems,
+
+	NodeAlwaysOn:              alwaysOnRootMenuItems,
+	NodeAvailabilityGroups:    agGroupsFolderMenuItems,
+	NodeAvailabilityGroup:     agGroupMenuItems,
+	NodeAvailabilityReplicas:  agReplicasFolderMenuItems,
+	NodeAvailabilityReplica:   agReplicaMenuItems,
+	NodeAvailabilityDatabases: agDatabasesFolderMenuItems,
+	NodeAvailabilityDatabase:  agDatabaseMenuItems,
+	NodeAGListeners:           agListenersFolderMenuItems,
+	NodeAGListener:            agListenerMenuItems,
+
+	NodeAgentUserJobs:    agentUserJobsMenuItems,
+	NodeAgentJob:         agentJobMenuItems,
+	NodeAgentSchedules:   agentSchedulesMenuItems,
+	NodeAgentSchedule:    agentScheduleMenuItems,
+	NodeAgentEventAlerts: agentEventAlertsMenuItems,
+	NodeAgentAlert:       agentAlertMenuItems,
+	NodeAgentOperators:   agentOperatorsMenuItems,
+	NodeAgentOperator:    agentOperatorMenuItems,
+}
+
+// propertiesOnlyMenu is the menu shape shared by every leaf whose only
+// command is Properties — New Query, Refresh, Properties. Written once so a
+// hand-copied one is not where the divider goes missing.
+//
+// Delete, Script as and Rename are not here: explorer_object_ops.go and
+// scripting.go add them from their own tables, on the node types they list.
+func propertiesOnlyMenu(newQuery, refresh controls.MenuItem, show func()) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: show},
+	}
+}
+
 // fetchChildren looks up and runs the loader for node.data.Type. Runs on a
 // background goroutine (see App.loadChildren) — must not touch
 // ObjectExplorer's id-allocation or map state; node.id is left zero and
@@ -202,9 +321,7 @@ func errExplorerNode(err error) *explorerNode {
 // same escaping rule SQL Server itself uses for bracketed identifiers.
 func fqn(schema, name string) string {
 	if schema == "" {
-		return "[" + bracketEscape(name) + "]"
+		return gosmo.QuoteName(name)
 	}
-	return "[" + bracketEscape(schema) + "].[" + bracketEscape(name) + "]"
+	return gosmo.QuoteName(schema) + "." + gosmo.QuoteName(name)
 }
-
-func bracketEscape(s string) string { return strings.ReplaceAll(s, "]", "]]") }

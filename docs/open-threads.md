@@ -22,52 +22,42 @@ swept — see § Azure SQL Managed Instance.
 it calls every read gosmo exposes and reports what the server rejects. Run it
 on the *oldest* instance available after any query change. A query naming a
 column the instance lacks fails the whole read, and `go test ./...` says
-nothing — which is how nine such defects shipped before the first 2016/2017 run.
+nothing.
 
-The nine are **closed**, verified 2026-09-04 on all three instances: 219 calls
-/ 0 failures on 13 and 14, 233 / 0 on 17.
-
-**Those counts are stale — the sweep has grown since and needs re-running on
-13 and 17.** gosmo's working tree carries ~340 uncommitted lines of new `call`
-entries (the Azure MI reads, database-scoped credentials and triggers, the
-Phase 3 families). The only run recorded after the extension is major 14 on
-2026-09-10, by port, 0 failures — see § Environment for why that one must be
-reached by port. Re-sweep **13** first: it is the floor.
+Current state: 0 failures on all three majors (gosmo `c517d78`), with the
+`sweepMustCall` coverage check passing on each. Refusals are gates working, not
+defects: every on-premises major refuses the six Azure-only DMV reads, and 13
+additionally refuses six 2017+ reads outright with `ErrUnsupportedVersion` —
+the two Query Store wait reads, the three external-library reads and graph
+tables. Call counts differ between instances for reasons other than version
+(the logins and jobs swept are whatever each instance has), so compare
+failures, not totals.
 
 The gates, recorded because the next audit will otherwise re-derive them:
 
-| Was | Held by |
+| Column or construct | Held by |
 |---|---|
-| `STRING_AGG` (2017) in seven queries — partition functions and schemes, server and database triggers, foreign keys, audit specifications | `sql_agg.go` `commaList` renders the `FOR XML PATH`/`STUFF` form, valid from 2008. No raw `STRING_AGG` remains in non-test source. |
+| `STRING_AGG` (2017) — partition functions and schemes, server and database triggers, foreign keys, audit specifications | `sql_agg.go` `commaList` renders the `FOR XML PATH`/`STUFF` form, valid from 2008. No raw `STRING_AGG` in non-test source. |
 | Column Master Keys: `allow_enclave_computations`, `signature` (2019) | `security.go`, `colSince(major, SQLServer2019, …)` |
 | Query Store options: the 2017 and 2019 columns | `query_store.go`, `colSince` per column |
-| `Table.Detail`'s `ledger_type_desc` (2022), which killed **Table Properties > General** on every table | `table.go`, `colSince(…, SQLServer2022, …)` |
+| `Table.Detail`'s `ledger_type_desc` (2022) | `table.go`, `colSince(…, SQLServer2022, …)` |
 | `Statistic.Header`: DBCC returns 10 columns before 2019, 11 after | `statistics.go` binds **by column name**, with the failure named in the comment |
-
-Two reads are refused outright on 13 rather than gated per column — the gate
-working, not a defect: `Database.QueryStoreWaitCategoriesContext` and
-`Database.QueryStoreWaitingQueriesContext` return `ErrUnsupportedVersion`. The
-sweep counts those separately.
 
 A sweep of 0 failures is not proof on its own — it passes just as happily if a
 read was never reached. When re-verifying, confirm the reads were actually
 *called*: the sweep's `call` helper takes a label, and logging it lists every
 method swept.
 
-## Azure SQL Managed Instance: supported since v0.0.10
+## Azure SQL Managed Instance
 
-A live MI (`t-qmi-01…`, EngineEdition 8, General Purpose Gen5) was audited
-**2026-09-08** and the work closed **2026-09-09**: seven defects and one
-missing feature, all fixed and verified live. The plan document that carried
-the write-ups has been deleted; what outlived it is here.
+Supported since v0.0.10. What is open is the `TO URL` follow-up and Entra
+authentication, below.
 
 **MI reports `ProductVersion` `12.0.2000.8`** while running engine build 18.0,
 so every `colSince` / `VersionMajor` gate in gosmo silently degrades or refuses
 a feature the instance actually has. **Gate on `EngineEdition` first** —
 `internal/tui/edition_gate.go` is the edition's counterpart to
 `permission_gate.go`, and holds the UI gating of the operations MI rejects.
-
-What is left open is the `TO URL` follow-up below and Entra authentication.
 
 **Database Properties > Resource Governance is read-only and Azure-only, by
 design.** Every value on it changes by resizing the instance or the database,
@@ -79,7 +69,7 @@ because a bare "CPU 0.6%" against an unnamed limit says nothing. The two fail
 rows from the second — and the page turns both into a note rather than an
 error; `pageDatabaseResourceGovernance`'s doc comment carries the reasoning.
 
-Two things the Activity Monitor's Instance tab settled that are easy to reopen:
+Two things about the Activity Monitor's Instance tab that are easy to reopen:
 
 - **The Activity Monitor's tab bar is a slice, not the constant array.**
   `visibleTabs()` filters `amAllTabs`; `amTabLabels` and the per-tab scroll
@@ -94,11 +84,10 @@ Two things the Activity Monitor's Instance tab settled that are easy to reopen:
   KPIs rather than chart axes because MI reports a fixed per-instance limit,
   not a series.
 
-**What the `TO URL` work did not reach.** It was driven live on both
-instances, but only as far as building and validating the statement:
-executing a backup needs a shared access signature credential on the
-container, and none exists on `t-qmi-01`. So these are open, and are the first
-things to check when one does:
+**Open: backup and restore `TO URL` have never executed.** The statements are
+built and validated, but executing one needs a shared access signature
+credential on the container, and none exists on `t-qmi-01`. The first things to
+check when one does:
 
 - **`WITH INIT` on a URL device.** The Back Up dialog hardcodes `Init: true`
   (it has no "append to media set" option —
@@ -110,48 +99,55 @@ things to check when one does:
   whenever the target is renamed, and MI places database files itself — the
   same fact that makes `CREATE DATABASE`'s file clauses fail with Msg 41918.
   The relocation options are deliberately *not* gated: withholding one that
-  works is the worse error, and this was never driven.
+  works is the worse error.
 - **Restoring from MI's own automated backup history.** Those `backupset` rows
-  carry a NULL `physical_device_name`, which `BackupHistoryContext` now reads
-  as `""`, so the Backup History source of the Restore dialog offers an entry
-  with no device. Restoring MI's managed backups is a different mechanism
+  carry a NULL `physical_device_name`, which `BackupHistoryContext` reads as
+  `""`, so the Backup History source of the Restore dialog offers an entry with
+  no device. Restoring MI's managed backups is a different mechanism
   (point-in-time restore through the control plane), not a `RESTORE` statement.
 
-What *was* confirmed live, and settles the device-keyword question: MI answers
-`RESTORE VERIFYONLY FROM DISK = N'https://…'` with Msg 41902 ("Unsupported
-device type"), and the same statement spelled `FROM URL` with Msg 3078 about
-the blob itself — the device type is accepted.
+Settled: MI answers `RESTORE VERIFYONLY FROM DISK = N'https://…'` with Msg
+41902 ("Unsupported device type"), and the same statement spelled `FROM URL`
+with Msg 3078 about the blob itself — so `URL` is the right device keyword.
 
-**Entra authentication on MI is untested**, and was out of scope of the MI
-work deliberately — it needs an Entra-joined tenant, the same wall the Entra
-*login* entry under Deferred scope describes.
+**Open: Entra authentication on MI is untested** — it needs an Entra-joined
+tenant, the same wall the Entra *login* entry under Deferred scope describes.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
-**The `homebrew` push fix has still never run.** v0.0.10 shipped with an empty
-tap: the job rendered `Formula/gossms.rb` and then guarded the push with
-`git diff --quiet -- Formula/gossms.rb`, which reports no diff for a path git
-has never tracked, so on the first release the job went **green having pushed
-nothing**. Fixed in `.github/workflows/release.yml` (commit `3b566d0`) by
-staging first and comparing against the index — the shape the `apt` job in the
-same workflow already used. The v0.0.10 formula was then pushed to the tap by
-hand (`radix29/homebrew-tap` commit `377fe7f`) and `brew install` driven end to
-end on Linux, so the tap is correct today; the fix itself is unverified.
-**Watch that job on the next tag and confirm the tap gained a `gossms <tag>`
-commit — a green job is exactly what the bug looked like.**
+**Open: neither release job has run in its current form.** The `homebrew` job
+once went green having pushed nothing (`git diff --quiet` reports no diff for a
+path git has never tracked); it now stages first and compares against the
+index, the shape the `apt` job uses. The tap is correct today, but the fix has
+not run on a real tag. **Watch both jobs on the next tag and confirm the tap
+gained a `gossms <tag>` commit.**
 
-Neither the tap nor the apt job asserts afterwards that what it publishes is
-reachable, which is why the failure was invisible. Both artifacts *are*
-reachable today (`https://radix29.github.io/apt/dists/stable/Release` and the
-tap's `Formula/gossms.rb`, checked 2026-09-10); the assertion is still not in
-the workflow.
+Each job ends in a **Verify** step that fetches the *remote* back and fails
+unless it carries this tag: the tap's requires
+`origin/<branch>:Formula/gossms.rb` to declare `version "<tag without v>"`, and
+the apt job's requires both `.deb`s in `pool/`, a `Version:` line in each
+architecture's `Packages`, and all three of `Release`, `InRelease` and
+`Release.gpg`. The scripts have been driven by hand against the live repos in
+both directions; the jobs themselves have not. Two things about those steps that
+a plausible simplification undoes:
 
-Still untouched by any of this: `brew install` / `brew test` /
-`brew audit --strict` **on an actual Mac** — nothing here has ever run macOS —
-a `livecheck` block in the formula, and, on the Debian side, `dpkg -i` on a
-clean container, arm64 execution and `lintian`. The formula is deliberately
-**binary**, not build-from-source: `go.mod`'s active `replace` makes any source
-build from a release tarball fail, and `go install …@<tag>` fail with it.
+- **They read the remote with `git`, never over HTTP.** `raw.githubusercontent.com`
+  and `https://radix29.github.io/apt` both serve a cached copy for minutes after
+  a push, so an HTTP check would fail the step for a repository that is in fact
+  correct. `git fetch` + `git show`/`git cat-file -e` sees the pushed commit.
+- **They are separate steps, after the push, not extra lines inside it.** The
+  push step's guard legitimately `exit 0`s when there is nothing to do; that
+  ends the *step*, so a verify folded into it would be skipped by the very case
+  it exists to catch.
+
+**Open, never run:** `brew install` / `brew test` / `brew audit --strict` **on
+an actual Mac** — nothing here has ever run macOS — a `livecheck` block in the
+formula, and, on the Debian side, `dpkg -i` on a clean container, arm64
+execution and `lintian`.
+
+The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
+`replace` makes any source build from a release tarball fail, and
+`go install …@<tag>` fail with it.
 
 ## Deferred scope (repeatedly, deliberately)
 
@@ -169,12 +165,11 @@ build from a release tarball fail, and `go install …@<tag>` fail with it.
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail
   with the *same* Msg 37525, so the parser accepted both. Whether a login is
   actually created needs an Entra-joined instance.
-- **The Phase 3 tree families are read-only, and each for its own reason**
-  (Properties shipped 2026-09-09; the plan document has been deleted, so this
-  entry is the record). Read-only means *no create and no edit*: each family
-  does have Script as, Delete, and — where SQL Server has the statement —
-  Rename and Move to another schema. This is the standing answer to "why
-  can't I create a rule?" and its four siblings:
+- **The Phase 3 tree families are read-only, and each for its own reason.**
+  Read-only means *no create and no edit*: each family does have Script as,
+  Delete, and — where SQL Server has the statement — Rename and Move to another
+  schema. This is the standing answer to "why can't I create a rule?" and its
+  four siblings:
   - **Rules and Defaults**: deprecated by Microsoft — `sp_bindrule` and
     `sp_bindefault` since SQL Server 2008 — and neither `CREATE RULE` nor
     `CREATE DEFAULT` has an ALTER. Offering a way to create one in a new tool
@@ -195,33 +190,29 @@ build from a release tarball fail, and `go install …@<tag>` fail with it.
     so this one write is worth having; `sp_create_plan_guide` still has no
     ALTER, and its query text is matched character for character, so the page
     edits nothing else.
-- **The CLR type, assembly and external-resource scripts are unit-tested
-  only.** Every other Phase 3 script was generated on one throwaway database
-  and executed against another on `win10cli` (major 17, 2026-09-10). These four
-  could not be: the instance has no user assembly and CLR is off, and it has neither
-  PolyBase nor Machine Learning Services, so there is no external data source,
-  file format or library to script. Not a known defect — an untested path, and
-  the one to exercise first if such an instance turns up.
-- **External Tables and FileTables are untested in the TUI against a real
-  one.** The Tables sub-folders shipped 2026-09-10. System Tables and
-  Graph Tables were driven live on 13/14/17 with real rows; the External Tables
-  *folder* needs PolyBase, which no instance here has, so its presence gate has
-  only ever been seen answering "absent". A FileTable exists only inside
-  gosmo's `TestLiveTableKinds` (major 17, FILESTREAM), never under the tree.
-  Not a known defect — untested paths, and the first to exercise if such an
-  instance turns up. Same class as the CLR/assembly/external scripts above.
+- **Open: the CLR type, assembly and external-resource scripts are unit-tested
+  only.** Every other Phase 3 script has been generated on one database and
+  executed against another. These four cannot be here: no instance has a user
+  assembly with CLR on, PolyBase, or Machine Learning Services, so there is no
+  external data source, file format or library to script. Not a known defect —
+  an untested path, and the one to exercise first if such an instance turns up.
+- **Open: External Tables and FileTables are untested in the TUI against a real
+  one.** System Tables and Graph Tables have been driven live on 13/14/17; the
+  External Tables *folder* needs PolyBase, which no instance here has, so its
+  presence gate has only ever been seen answering "absent". A FileTable exists
+  only inside gosmo's `TestLiveTableKinds` (major 17, FILESTREAM), never under
+  the tree. Same class as the CLR/assembly/external scripts above.
 - **A database snapshot's subtree still offers writes that the server
   refuses.** A snapshot gets Tables, Views and Programmability (Query Store,
   Storage and Security are deliberately withheld — a snapshot has no Query
   Store of its own, cannot be backed up, and shares its source's principals),
-  and Delete or Rename
-  on a table inside one is offered and then refused with "the database is
-  read-only". Deliberate: the permission gate answers what the *login* may do,
-  and a read-only database is not a permission — a third gate for it would have
-  to cover every READ_ONLY database, not just snapshots. SSMS behaves the same
-  way.
-- **gosmo's README documents none of the Phase 3 families**, `TableKind` and
-  the snapshot API included. One pass to make before the next gosmo tag.
+  and Delete or Rename on a table inside one is offered and then refused with
+  "the database is read-only". Deliberate: the permission gate answers what the
+  *login* may do, and a read-only database is not a permission — a third gate
+  for it would have to cover every READ_ONLY database, not just snapshots. SSMS
+  behaves the same way.
+- **Open: gosmo's README documents none of the Phase 3 families**, `TableKind`
+  and the snapshot API included. One pass to make before the next gosmo tag.
 - **System Data Types has no Properties dialog.** SSMS offers none either, and
   there is nothing to show about `int` that its name does not already say. The
   folder and its Detail Browser listing exist; the context menu deliberately
@@ -229,10 +220,39 @@ build from a release tarball fail, and `go install …@<tag>` fail with it.
 
 ## Permission gating: what is settled — do not re-raise
 
-**Every securable class gossms can reach is gated, and the work is closed** —
-classes 0, 1, 3 and 4 on 2026-09-04; 101, 105 and 108 on 2026-09-05. What is
-kept is the live behaviour each gate rests on; every row is a *wrong* gate if
-assumed the other way round.
+**Classes 0, 1, 3, 4, 101, 105 and 108 are gated.** What is kept is the live
+behaviour each gate rests on; every row is a *wrong* gate if assumed the other
+way round.
+
+**Open: classes 5, 6 and 10 are reachable and not gated.** Since `f343300` the
+tree reaches assemblies (class 5), types (6) and XML schema collections (10),
+with Delete and — for types and collections — Transfer. The object arm of
+`rightsAllow` reads gosmo's `ObjectPermissions`, which is class 1 only, so a
+DENY (or GRANT) on `ASSEMBLY::`, `TYPE::` or `XML SCHEMA COLLECTION::` is never
+seen: the action is offered and the server refuses it. The reverse holds as
+well, fail-closed: `GRANT CONTROL ON ASSEMBLY::a` (or owning it) permits
+`DROP ASSEMBLY` — verified live on 13, 14 and 17 — while every database-scope
+right reads 0, so Delete is withheld from that principal.
+
+**Closed 2026-09-10: the rights half.** Every schemaless database-level family
+now has an explicit set (`dbScopedOpRights`, probed live on 13/14/17 with a
+`WITHOUT LOGIN` user per right — see its comment), and
+`TestSchemalessDatabaseOpsAreGated` fails on a new one without. The OBJECT-scope
+plan guide is answered by the routine (`planGuideRights`), for Delete,
+Enable/Disable and Properties alike.
+
+**Open: a security policy's drop is a conjunction the gate cannot ask.** `DROP
+SECURITY POLICY` needs ALTER ANY SECURITY POLICY **and** ALTER on the policy's
+schema — each alone is refused, Msg 3701, on 13 and 17. `rightsAllow` is any-of,
+so Delete asks the half nothing drops without; a principal holding the policy
+right while lacking (or denied) ALTER on the schema is still offered a drop the
+server refuses. Closing it needs an all-of composition that keeps `gateOn`'s
+note — nesting two `gateOn`s loses the inner note.
+
+**Open (V5-adjacent): the external library set was not run live.** No instance
+has Machine Learning Services, so `CREATE EXTERNAL LIBRARY` fails (Msg 39020)
+and the drop could not be executed; the set rests on `HAS_PERMS_BY_NAME` on 14
+and 17 and the documented permission.
 
 ### The behaviour table, probed live
 
@@ -258,11 +278,11 @@ object**, which is what the paired rights (`rightAlterAnyDBRole` /
 `rightAlterAnyServerRoleMembers`) carry.
 
 **Membership checks the member too at database scope and *not* at server
-scope** — measured twice, reproduced outside the test, 2026-09-05. Adding a
-class-4-denied *user* to an undenied database role is refused; adding a
-class-101-denied *login* to an undenied server role goes through. So Database
-User Properties > Membership carries the arm and Login Properties > Server
-Roles deliberately does not (`TestLoginServerRolesDeclaresNoServerDenialArm`).
+scope.** Adding a class-4-denied *user* to an undenied database role is
+refused; adding a class-101-denied *login* to an undenied server role goes
+through. So Database User Properties > Membership carries the arm and Login
+Properties > Server Roles deliberately does not
+(`TestLoginServerRolesDeclaresNoServerDenialArm`).
 
 **There is no class 110.** Logins and server roles are both class **101
 SERVER_PRINCIPAL**, told apart by the *principal's* `type_desc`
@@ -279,7 +299,7 @@ AVAILABILITY GROUP` is held. A 0 otherwise means "holds nothing here", and
 naming the group would replace a note the user can act on with one they cannot
 (`TestAGroupIsNotDeniedWhenTheWideRightIsMissing`).
 
-`ALTER AUTHORIZATION` is not evidence either way: it was refused on an
+`ALTER AUTHORIZATION` is not evidence either way: it is refused on an
 *undenied* role at both scopes, because changing an owner needs more than
 `ALTER ANY` (CONTROL on the role, plus IMPERSONATE on the new owner).
 
@@ -298,10 +318,11 @@ withholds it.
 
 ### The rest, unchanged
 
-- **No other class is reachable.** gossms's `NodeType` list has no certificate,
-  assembly, symmetric/asymmetric key, fulltext catalog, XML schema collection
-  or Service Broker node, and column master/encryption keys, partition
-  functions and schemes have no securable class of their own.
+- **No other class is reachable.** Beyond the gated classes and the open
+  5/6/10 above, gossms's `NodeType` list has no certificate,
+  symmetric/asymmetric key, fulltext catalog or Service Broker node, and
+  column master/encryption keys, partition functions and schemes have no
+  securable class of their own.
 - **The column path is dormant in production — do not re-raise.**
   `ProbedObjectPermissions` is `ALTER`, which is not column-grantable, so
   `ColumnPermissions` is empty on every real connection and `DeniedOnAnyColumn`
@@ -338,17 +359,14 @@ through a database-wide grant.
 
 ## gosmo: deliberate API decisions
 
-- **No `Drop*` write method carries `IF EXISTS`.** A review found the family
-  split down the middle: dropping an already-gone view reported "View deleted"
-  and dropping a sequence reported the server's refusal, from the same gesture.
-  A bare DROP everywhere was chosen so that "deleted" means deleted; a caller
-  wanting idempotence ignores the error, which the library cannot decide for
-  it. `TestDropStatementsAreNotIdempotent` pins it. Scripter's *scripts* keep
-  `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
-- **`CertificateByName` answers `(nil, nil)` on absence**, deliberately
-  unchanged when `ErrNotFound` went in: making it error is a breaking change to
-  a published contract, and its callers branch on absence as the ordinary case.
-  The three surviving conventions are documented on `ErrNotFound` itself;
+- **No `Drop*` write method carries `IF EXISTS`,** so that "deleted" means
+  deleted; a caller wanting idempotence ignores the error, which the library
+  cannot decide for it. `TestDropStatementsAreNotIdempotent` pins it. Scripter's
+  *scripts* keep `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
+- **`CertificateByName` answers `(nil, nil)` on absence**, unlike the
+  `ErrNotFound` readers: making it error is a breaking change to a published
+  contract, and its callers branch on absence as the ordinary case. The three
+  conventions are documented on `ErrNotFound` itself;
   `TestLiveCertificateNotFoundIsNilNil` pins both directions.
 - **A missing principal and an invisible one are the same thing to
   `ErrNotFound` — SQL Server's doing, do not fix it in gosmo.** Metadata
@@ -358,13 +376,10 @@ through a database-wide grant.
   idempotence at the write, not a better sentinel. Note `isAlreadyExists`
   matches by substring; its `15023` arm is the *user* code, and logins raise
   15025.
-- **`JobStateCancelling` and `JobStateRunning` were removed** 2026-09-04 from
-  gosmo's `HEAD`, the author's call being that `v0.0.x` is a boundary that can
-  carry the break. They named states Agent's encoding does not have.
-  `JobState`'s real encoding, from `xp_sqlagent_enum_jobs`: 1 Executing,
-  2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
+- **`JobState` follows Agent's real encoding**, from `xp_sqlagent_enum_jobs`:
+  1 Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
-  Agent does not run itself.
+  Agent does not run itself. There is no Cancelling or Running state.
 
 Three things about the job-state read are load-bearing and easy to undo:
 
@@ -424,20 +439,19 @@ Three things about the job-state read are load-bearing and easy to undo:
   the one the sweep hits — fails with `acquire connection: no instance matching
   'sql2017' returned from host 'win10cli.fritz.box'`. It is the SQL Browser
   declining the second resolution, not a gosmo defect: the identical run
-  against `win10cli.fritz.box:55253` is 0 failures, and `sql2016`, whose
-  Browser answers reliably, is clean by name. Reproduced twice, 2026-09-10.
-  **Connect to 2017 by port for anything multi-connection**, and do not chase
-  it as a query-compatibility finding — it names no column and no version.
+  against `win10cli.fritz.box:55253` is clean, and `sql2016`, whose Browser
+  answers reliably, is clean by name. **Connect to 2017 by port for anything
+  multi-connection**, and do not chase it as a query-compatibility finding — it
+  names no column and no version.
 
 ## FILESTREAM: what the live run settled — do not re-raise
 
-Database Properties > Files was confirmed against a real FILESTREAM database on
-win10cli, 2026-09-05. `internal/tui/live_filestream_test.go` (build tag
-`livedb`) is the run, and re-runs it.
+`internal/tui/live_filestream_test.go` (build tag `livedb`) runs Database
+Properties > Files against a real FILESTREAM database on win10cli.
 
 - **`FileGroupsContext` returns a FILESTREAM filegroup like any other** — name,
-  files and all. The Filegroup picker has therefore always listed it, and
-  `preservingItems`' widening was never needed for this case.
+  files and all — so the Filegroup picker lists it, and `preservingItems`'
+  widening is not needed for this case.
 - **The filegroup is the whole of what makes a file FILESTREAM.** ALTER
   DATABASE ADD FILE has no file-type keyword: the same clause aimed at a ROWS
   filegroup produces an ordinary data file — measured, a file added to PRIMARY
@@ -445,15 +459,13 @@ win10cli, 2026-09-05. `internal/tui/live_filestream_test.go` (build tag
   to offer and `addableFileTypes` stays two items.
 - **SIZE and FILEGROWTH are refused on a FILESTREAM file** with Msg 5509.
   **MAXSIZE is accepted**, which the message's shape does not suggest — both
-  measured, not reasoned about.
-- That combination was reachable, so the page *had* a live defect: a file added
-  into the FILESTREAM filegroup failed the whole Apply with 5509. The page now
-  omits both clauses for such a file, greys the two spinners, and records the
-  file's type as FILESTREAM so the grid does not claim ROWS.
-- `gosmo.FileGroup` gained `Type` (`sys.filegroups.type_desc`) and
-  `IsFileStream()`. Note `is_default` is per filegroup *type*: a database with a
-  FILESTREAM filegroup reports two defaults, both true.
-- The scripted fakes now report `max_size` -1 for a FILESTREAM file, not 0.
+  measured, not reasoned about. So the page omits both clauses for a file added
+  into a FILESTREAM filegroup, greys the two spinners, and records the file's
+  type as FILESTREAM so the grid does not claim ROWS.
+- `gosmo.FileGroup.Type` (`sys.filegroups.type_desc`) and `IsFileStream()`
+  carry the distinction. `is_default` is per filegroup *type*: a database with a
+  FILESTREAM filegroup reports two defaults, both true. The scripted fakes
+  report `max_size` -1 for a FILESTREAM file, not 0.
 
 **Enabling FILESTREAM on win10cli is not something a SQL connection can do** —
 the RsFx0800 filter driver and the share belong to SQL Server Configuration
@@ -462,8 +474,6 @@ Manager and need an OS administrator. Setting the registry `EnableLevel` and
 skips with that explanation when the effective level is 0.
 
 ## Always On: what is deliberately out of scope
-
-All seven phases are built. These are decisions taken while building them.
 
 - **New Availability Group does not roll back a group whose CREATE succeeded**,
   and neither does Add Replica. Every ordinary reason a secondary's JOIN fails
@@ -559,16 +569,20 @@ Rules about peer credentials that are easy to undo:
   portable build. It is the half of SSMS's left-pane checkbox tree the merged
   view (the file selector's **Select Files...**) does not cover, and this
   exclusion is not reopened by it.
-- **A merged selection is one family.** Archive numbers are not comparable
-  across families and the family selector is what the file list, Recycle and
-  the enumeration all key off, so the checklist offers the current family's
-  files only. `logFileRef` carries the family anyway, so a cross-family merge
-  is a UI change rather than a data-model one.
+- **A merged selection can span both families; the selectors cannot.**
+  **Select Files...** lists the SQL Server and Agent logs together, and a mixed
+  set puts the family into every file label ("Agent Current"), since archive
+  numbers are not comparable across families. The family selector, the plain
+  file list and Recycle still address exactly one family — a mixed selection
+  leaves them where they were, a single-family one moves them to its family. A
+  cycle of *either* family re-anchors a mixed selection. Every read enumerates
+  both families so the checklist has both lists without a round trip behind a
+  keypress; a family that cannot be enumerated is left out.
 - **A cycle re-anchors a merged selection to the current log, not a single-file
   one.** The cycle renumbers every archive and deletes the oldest, so a *set*
   chosen by number would silently come back as a different set. A single-file
-  view keeps its number, which is what it has always done — the user asked for
-  "Archive #1" and gets whatever is now Archive #1.
+  view keeps its number — the user asked for "Archive #1" and gets whatever is
+  now Archive #1.
 - **The toolbar's Filter box and "Search..." are different features — do not
   merge them.** Filter narrows what was read, instantly and with no round trip,
   reporting "N of M match". Search edits `xp_readerrorlog`'s own arguments 3-6
@@ -580,14 +594,14 @@ Rules about peer credentials that are easy to undo:
   parameter is rejected with "The format for the date filter is incorrect" — and
   the two search strings are **AND**-ed, not alternatives.
 
-Two rules from that work: the toolbar's busy latch is taken **before** the
-confirmation is shown, not in the answer (the confirm dialog takes input but
-does not stop F5 reaching the panel, so a read begun while the question was up
-would clear `busy` from under the cycle); and an open viewer is put through
-`Refresh`, never `Load`, after a cycle started from the tree — `Load`
-re-enumerates only the family on screen, so cycling the Agent log while the
-viewer sits on the SQL Server family would hand the user the Agent's pre-cycle
-numbering the moment they flipped the selector.
+Two rules: the toolbar's busy latch is taken **before** the confirmation is
+shown, not in the answer (the confirm dialog takes input but does not stop F5
+reaching the panel, so a read begun while the question was up would clear
+`busy` from under the cycle); and an open viewer is put through `Refresh`,
+never `Load`, after a cycle started from the tree — `Load` re-enumerates only
+the family on screen, so cycling the Agent log while the viewer sits on the SQL
+Server family would hand the user the Agent's pre-cycle numbering the moment
+they flipped the selector.
 
 ## Query Store: what is deliberately out of it
 
@@ -607,7 +621,6 @@ numbering the moment they flipped the selector.
   honours them: dimming them for the chart's sake would make the rows
   unfilterable while it is up. The chart's own title names the metric and the
   statistic it was read with, which are the two that do reach it.
-
 - **The panel reads on demand only** — no auto-refresh timer. Every read is
   one-shot and bounded, so nothing queues behind the shared host connection.
 - **One metric and one statistic across all seven views.** Each report carries
@@ -651,7 +664,7 @@ numbering the moment they flipped the selector.
 - **Agent objects keep their own Delete** (`agent_menu.go`), whose per-type
   wording explains what blocks each one; only Rename comes from the shared
   table. Availability groups likewise. **A system Agent job still offers `Delete
-  Job...`** though Rename came off every system object: SSMS permits it and msdb
+  Job...`** though Rename is off every system object: SSMS permits it and msdb
   raises no objection.
 - **Neither audit object offers Rename from the tree.** A server audit
   specification has no `MODIFY NAME` form at all — a parse error, not a
@@ -675,9 +688,9 @@ numbering the moment they flipped the selector.
 
 - **A dialog with no text entry has an inert clipboard.** Help, About / Object
   Dependencies, Confirm, Query List and Background Tasks do not implement
-  `core.ClipboardHost`, so Ctrl+C there does nothing. It previously copied
-  whatever the panel behind the dialog had selected, which was never the thing
-  the user was looking at.
+  `core.ClipboardHost`, so Ctrl+C there does nothing rather than copying
+  whatever the panel behind the dialog has selected, which is never the thing
+  the user is looking at.
 - **Key Diagnostics' `syncIfDirty` must not rebuild the editor while it has a
   selection.** The log lives in a read-only `controls.Editor` and the dialog is a
   `core.ClipboardHost`. It records the very keys used to copy from it, so
@@ -736,15 +749,15 @@ numbering the moment they flipped the selector.
 ## Database-scoped credentials: what the design settled
 
 - **CONTROL on the database is the whole right set, and `ALTER` is deliberately
-  not beside it.** Probed live on win10cli (major 17, 2026-09-08) with a
-  `WITHOUT LOGIN` user: CREATE/ALTER/DROP DATABASE SCOPED CREDENTIAL all went
-  through under `GRANT CONTROL ON DATABASE` and all three were refused under
-  `GRANT ALTER ON DATABASE`. Every other database-scoped set in
-  `permission_gate.go` pairs its narrow right with `rightAlterDatabase`; adding
-  it here "for symmetry" would offer New/Delete/Properties to a principal the
-  server then refuses. `ALTER ANY CREDENTIAL` is not the narrower twin either —
-  it is server-scope, and `HAS_PERMS_BY_NAME` asked of a *database* returns NULL
-  rather than 0, which a gate built on it would read as "unknown" forever. See
+  not beside it.** Probed live with a `WITHOUT LOGIN` user: CREATE/ALTER/DROP
+  DATABASE SCOPED CREDENTIAL all go through under `GRANT CONTROL ON DATABASE`
+  and all three are refused under `GRANT ALTER ON DATABASE`. Every other
+  database-scoped set in `permission_gate.go` pairs its narrow right with
+  `rightAlterDatabase`; adding it here "for symmetry" would offer
+  New/Delete/Properties to a principal the server then refuses. `ALTER ANY
+  CREDENTIAL` is not the narrower twin either — it is server-scope, and
+  `HAS_PERMS_BY_NAME` asked of a *database* returns NULL rather than 0, which a
+  gate built on it would read as "unknown" forever. See
   `dbScopedCredentialRights`.
 - **No ALTER script verb, and no rename.** The secret cannot be read from any
   catalog view, so every generated script carries `<insert secret here>` in its
@@ -759,23 +772,21 @@ numbering the moment they flipped the selector.
 - **`IDENTITY = N'SHARED ACCESS SIGNATURE'` cannot have its identity altered**
   once the credential is bound to an active database file — Msg 33253,
   "Failed to modify the identity field of the credential ... because the
-  credential is used by an active database file", hit live on major 17. The
-  page surfaces the server's message; there is nothing to gate on beforehand,
-  since the binding is not visible from `sys.database_scoped_credentials`.
+  credential is used by an active database file". The page surfaces the
+  server's message; there is nothing to gate on beforehand, since the binding
+  is not visible from `sys.database_scoped_credentials`.
 
 ## Database-scope DDL triggers: what the design settled
 
-- **A database has no flat Triggers folder any more, and that is the point.**
-  A DML trigger belongs to one table or one view and is listed under that
-  object's own Triggers folder, which is where SSMS puts it and where it was
-  already listed — the database-wide roll-up listed every one of them a second
-  time. Keeping it would have put a folder called "Triggers" (DML) beside one
-  called "Database Triggers" (DDL, `parent_class = 0`), which reads as a
-  distinction without a difference. `Database.TriggersContext` still exists in
-  gosmo and is still the database-wide read; gossms simply has no folder for it.
-- **A view is no longer a leaf.** It carries INSTEAD OF triggers, and the
-  roll-up was the only place they had been reachable, so `NodeView` gained the
-  same Triggers folder a table has. `Database.ObjectTriggers` is the by-name
+- **A database has no flat Triggers folder, and that is the point.** A DML
+  trigger belongs to one table or one view and is listed under that object's
+  own Triggers folder, which is where SSMS puts it; a database-wide roll-up
+  would list every one of them a second time, beside a "Database Triggers"
+  folder (DDL, `parent_class = 0`) — a distinction without a difference.
+  `Database.TriggersContext` is gosmo's database-wide read; gossms simply has
+  no folder for it.
+- **A view is not a leaf.** It carries INSTEAD OF triggers, so `NodeView` has
+  the same Triggers folder a table has. `Database.ObjectTriggers` is the by-name
   read behind both, because gosmo's `View` is a plain row struct with no
   back-pointer to its database and so can carry no method of its own.
 - **The DDL family is read/enable/disable/script/drop — there is no New
@@ -786,17 +797,81 @@ numbering the moment they flipped the selector.
   Creation Date**, matching the Server DDL Triggers folder for the same reason
   the six server-level folders give.
 
+## Connection settings: what the live run settled
+
+From the 2026-09-10 connection-layer work (Encrypt modes, Extra Properties,
+per-role application name, the Entra field mapping, IPv6 addresses).
+`internal/db/live_connect_test.go` is the repeatable part; it passes on 13,
+17.0 and MI.
+
+- **Strict (TDS 8.0) was verified on Azure SQL MI only**, with the certificate
+  validated and with Trust Server Certificate on. On win10cli (17.0) every
+  Strict attempt fails `TLS Handshake failed: EOF`: the instance has only SQL
+  Server's self-signed fallback certificate, which TDS 8.0 will not use. Server
+  configuration, not a gossms defect — do not chase it without a provisioned
+  certificate.
+- **Mandatory with Trust Server Certificate off fails on every on-prem
+  instance here** (`x509: certificate is not valid for any names`), for the
+  same reason. That is why Trust stays ticked by default beside Mandatory.
+- **CertHost was verified on MI by IP address**: the TLS validation that fails
+  without it (`doesn't contain any IP SANs`) passes with it. The login that
+  follows is then refused by Azure's gateway (40532: it routes on the server
+  name), which is Azure's, not TLS's.
+- **`net_packet_size` reads 58 bytes high on an encrypted session** (4154 for
+  the driver's default 4096, on 17.0 and MI alike), and the server caps 8192 to
+  8000. The live Extra Properties test asks for 16000 and allows for the 58.
+- **Azure encrypts every session**: Optional still reads `encrypt_option` TRUE
+  on MI. The live test checks Optional only off Azure.
+- **On MI, a `packet size` below 4096 cannot connect at all** — `TLS Handshake
+  failed: cannot read handshake packet: invalid packet size, it is longer than
+  buffer size`, for both Optional and Mandatory. go-mssqldb sizes its handshake
+  buffer from the requested packet size and MI's handshake does not fit. A
+  driver limitation reached only through Extra Properties; 17.0 takes 2048
+  fine.
+- **`ApplicationIntent=ReadOnly` was verified on AAG1** with read-only routing
+  set up for the run and reverted after: straight to the secondary, no intent is
+  refused (Msg 978) and ReadOnly connects; through the listener `ubuaag`,
+  ReadOnly is routed to ubusql2 (`Updateability` READ_ONLY) and the default
+  stays on ubusql1 — from the Connect dialog too. AAG1 normally has no routing
+  list and `ALLOW_CONNECTIONS = ALL`, so intent is unobservable there without
+  that setup.
+- **Entra's per-method field mapping is unit-tested only** (V6): which client
+  id reaches gosmo for each method, and which dialog fields are greyed.
+- **An IPv6 literal with a named instance needs an explicit port**
+  (`fe80::1\INST,1500`). gosmo refuses it without one: the driver keeps the
+  brackets of a port-less literal in the Browser probe's address, so there is
+  no URL form that works.
+- **Extra Properties separators are `;`, `&` and line breaks, not spaces** —
+  `packet size=8192 database=foo` is one entry whose value is
+  `8192 database=foo`, which the driver rejects. The dialog's Enter is its
+  Connect key, so in practice the separator is `;` or `&`.
+- **A downgrade loses saved passwords until the next upgrade.** A release
+  before v3 sealing reads a `v3:` value as unprefixed, fails to open it and
+  keeps it sealed; it also drops `encrypt_mode` on its next save, so a Strict
+  entry comes back Mandatory — a different AAD, so that password stays
+  unreadable and is re-entered. The `encrypt` boolean is still written so the
+  older release can read the file at all.
+
 ## By design — not issues, do not re-raise
 
-- **Comment prose is not a cleanup target.** The per-file semantic read of every
-  `.go` file is done; what stands was checked against the code it describes. Two
-  classes are protected outright: the long comment blocks `CLAUDE.md` § Coding
-  conventions names (`app.go`, `datagrid.go`, `secret.go`,
-  `propsheet/common.go`), and the failure-naming comments in
-  `query_store_panel.go`, `prop_grid_helpers.go` and similar — each names a
-  shipped bug a plausible simplification would bring back. What drift does recur,
-  worth knowing when a comment is *edited*: a doc naming the wrong caller after a
-  helper moved, a count of anything (nearly every count found was wrong), a claim
+- **A query window's session (BUG-1, fixed 2026-09-10) behaves like SSMS's, with
+  three deliberate differences.** A panel closed *while a query is running* is
+  not asked about its transaction: the run is cancelled and the session ended,
+  which rolls back — its `@@TRANCOUNT` is from before the run, so a prompt
+  would guess. A lost session (killed SPID, network drop, failover, or a plan
+  capture whose `SET … OFF` failed) disconnects the panel instead of silently
+  reconnecting on the next F5, as SSMS does, because the new session would not
+  have the temp tables or the transaction the script assumes. And the
+  commit-on-close loop is bounded by the starting `@@TRANCOUNT`, so a doomed
+  transaction reports its error and leaves the window open rather than spinning.
+
+- **Comment prose is not a cleanup target.** Two classes are protected
+  outright: the long comment blocks `CLAUDE.md` § Coding conventions names
+  (`app.go`, `datagrid.go`, `secret.go`, `propsheet/common.go`), and the
+  failure-naming comments in `query_store_panel.go`, `prop_grid_helpers.go` and
+  similar — each names a shipped bug a plausible simplification would bring
+  back. What drift does recur, worth knowing when a comment is *edited*: a doc
+  naming the wrong caller after a helper moved, a count of anything, a claim
   about which types implement an interface, a cross-reference to the wrong
   document, and an inverted sentence that reads fluently either way.
 
@@ -850,13 +925,13 @@ numbering the moment they flipped the selector.
 
 - **Merging the two user-mapping page builders is a deliberate non-goal.** Both
   pages use `wireGridEditor`, which is where the duplication that actually caused
-  a bug lived; merging the two page *builders* was costed and rejected (six
-  injection points, two different row structs, two unrelated applies). Do not
-  re-propose without new evidence.
+  a bug lived; merging the two page *builders* costs six injection points, two
+  different row structs and two unrelated applies. Do not re-propose without new
+  evidence.
 
 - **`Form.Revert()` is exposed, not retired.** `Ctrl+Z` on a `PropertySheet`
   calls `RevertPage`, which reaches `Form.Revert`, every row's `Revert` and all
-  21 `RevertFn` closures. Two rules came with it, both easy to undo by accident:
+  21 `RevertFn` closures. Two rules come with it, both easy to undo by accident:
   **`Ctrl+Z` is handled ahead of the zone switch, beside `F5`** — a sheet-level
   command, so it works from the page list and the button row — but
   `PropertySheet.HandleKey` gives the focused row first refusal through
@@ -884,18 +959,17 @@ numbering the moment they flipped the selector.
 
 - **gosmo untagged past its current tag with `go.mod`'s `replace` active is the
   intended development state**, not a release blocker. Tagging gosmo, bumping
-  `require`, and commenting out the `replace`/`ignore` pair are steps of the
+  `require`, and commenting out the `replace` are steps of the
   release process itself (ARCHITECTURE.md § Developing against a local gosmo
   checkout). A CI release build not resolving gosmo mid-development is expected.
 
-- **A Grid/Text query result can exhaust memory.** The Max Result Rows option
-  and every `maxRows` parameter behind it were removed: a result set is retained
-  in full, so `SELECT * FROM` a billion-row table will OOM the process. SSMS
-  parity of "you get what you asked for" was preferred to a silent cap. The
-  retained form is already as small as it reasonably goes
-  (`internal/query/arena.go`); the floor is the 16-byte string header per cell
-  that `ResultSet.Rows [][]string` implies. Results To File never retained rows
-  and is unaffected. Do not add a cap back.
+- **A Grid/Text query result can exhaust memory.** There is no Max Result Rows
+  option and no `maxRows` cap: a result set is retained in full, so `SELECT *
+  FROM` a billion-row table will OOM the process. SSMS parity of "you get what
+  you asked for" is preferred to a silent cap. The retained form is already as
+  small as it reasonably goes (`internal/query/arena.go`); the floor is the
+  16-byte string header per cell that `ResultSet.Rows [][]string` implies.
+  Results To File never retains rows and is unaffected. Do not add a cap back.
 
 - **The `Meta` (Output Column Metadata) block is a grid-only display aid.** It
   reads `Result.Sets`, which `ExecuteToSink` leaves empty by design — an export
@@ -927,13 +1001,12 @@ numbering the moment they flipped the selector.
   fallback on any batch error — never as a replacement.
 
 - **Restructuring `internal/tui` is closed. No file-split or package-split
-  candidates are outstanding.** Costed and re-measured against a type-checked
-  cross-file reference graph (549 real symbol edges) and rejected on the numbers.
-  What shipped instead is `internal/tui/sqlparse`, the only part of the package
-  with *zero* outbound references. The earlier "P5" file-split list was never a
-  standing rule: 31 non-test files exceed 400 lines, fifteen directly in
-  `internal/tui`. That is not a reason to re-open this.
-  The negative results, each a proposal a future review will otherwise reinvent:
+  candidates are outstanding.** Measured against a type-checked cross-file
+  reference graph and rejected on the numbers; `internal/tui/sqlparse`, the
+  only part of the package with *zero* outbound references, is the one split
+  that pays. File length alone (31 non-test files exceed 400 lines) is not a
+  reason to re-open this. The negative results, each a proposal a future review
+  will otherwise reinvent:
   - The `agent_*`/`database_props_*`/`new_*` name families are not a seam — they
     cut straight through the `App` dependency.
   - Neither is "the lines that never mention `App`". `grep -w App` misses
@@ -951,56 +1024,62 @@ numbering the moment they flipped the selector.
 - **The Block tab listing the monitoring session itself is intended.**
   `sp_block`'s final `WHERE` drops only sessions that are idle *and* blocking
   nobody, and the session running the procedure is neither, so an unblocked
-  server shows exactly one row: its own. `and spr.spid <> @@spid` was proposed
-  and **rejected — author's call**. Do not "fix" it.
+  server shows exactly one row: its own. `and spr.spid <> @@spid` is
+  **rejected — author's call**. Do not "fix" it.
 
 - **`sp_block`'s `cross apply sys.dm_exec_sql_text` and its lack of an
   `ecid = 0` filter are intended.** `outer apply` plus `spid > 50 and ecid = 0`
   was proposed on the grounds that a blocker with no cached text takes its whole
   blocked subtree out of the tree and that a parallel plan is several
-  `sys.sysprocesses` rows. Neither was reproducible — a sleeping blocker kept a
+  `sys.sysprocesses` rows. Neither is reproducible — a sleeping blocker keeps a
   resolvable handle, and `DBCC FREEPROCCACHE` does not evict a live
   transaction's text — and the `cross apply` is what keeps system sessions out.
   **Author's call: as is.**
 
 - **The Activity Monitor probes `VIEW SERVER STATE` once per collector, so twice
-  per panel open.** Hoisting it to a single shared check was dropped: the Retry
-  control starts a *new* collector after a transient failure, and a cached
-  permission answer would make that retry fail without asking the server. One
-  extra round trip on open is the cheaper mistake.
+  per panel open.** Not hoisted to a single shared check: the Retry control
+  starts a *new* collector after a transient failure, and a cached permission
+  answer would make that retry fail without asking the server. One extra round
+  trip on open is the cheaper mistake.
 
 - **`counterQueryFor`'s `RTRIM(instance_name) IN ('', '_Total')` filter drops no
-  counter the panels read.** Raised twice on the grounds that `RTRIM(NULL)` is
-  `NULL` and `NULL IN (...)` is false. win10cli (Windows) has no NULL
-  `instance_name` rows at all; ubudock (Linux) has exactly five, all
-  `SQLPAL:Host Memory` / `SQLPAL:Guest Memory` rows that are not in
+  counter the panels read**, though `RTRIM(NULL)` is `NULL` and `NULL IN (...)`
+  is false. Windows has no NULL `instance_name` rows at all; Linux has exactly
+  five, all `SQLPAL:Host Memory` / `SQLPAL:Guest Memory` rows that are not in
   `counterNames` and have no gossms consumer. All 33 names in `counterNames`
-  resolve through the filter on both builds. Do not add an
-  `OR instance_name IS NULL` arm.
+  resolve through the filter on both. Do not add an `OR instance_name IS NULL`
+  arm.
 
 - **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb returns
   `float64` for both `REAL` and `FLOAT`. It is correct if the driver ever
   narrows, and `formatFloat` already takes the bit size.
 
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix does not strand the
-  pooled connection in master.** A review read gosmo's `"USE master; " + stmt`
+  pooled connection in master.** gosmo's `"USE master; " + stmt`
   (`permission_options.go`, which `server_security.go`'s grant/deny/revoke
-  methods route through) as pool contamination and proposed a pinned connection
-  that reads `DB_NAME()`, switches, and switches back. **Live A/B disproved
-  it**: eight pooled connections all still reported the right database after a
-  GRANT, with the original code. `database/sql` calls
-  `driver.SessionResetter.ResetSession` before handing a pooled connection to
-  its next user, and go-mssqldb implements it by flagging the next TDS batch as
-  a connection reset, restoring the session's database to the connection
-  string's. The proposed fix was three extra round trips per grant and was
-  reverted.
+  methods route through) looks like pool contamination and is not — a live A/B
+  showed eight pooled connections all still reporting the right database after
+  a GRANT. `database/sql` calls `driver.SessionResetter.ResetSession` before
+  handing a pooled connection to its next user, and go-mssqldb implements it by
+  flagging the next TDS batch as a connection reset, restoring the session's
+  database to the connection string's. A pinned connection that reads
+  `DB_NAME()`, switches and switches back costs three extra round trips per
+  grant for nothing.
+
+- **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
+  retryable is correct** (`go-mssqldb@v1.9.4/error.go:79`, and `mssql.go:1352`
+  "Ignore non-fatal server errors").
+
+- **One worker pool is spawned outside `safego`/`safegoRepair`** —
+  `App.fanOut` (`safego.go`), which the Detail Browser backfill and the Log File
+  Viewer's `readLogFiles` share — deliberately taking both the label and the
+  recover by hand.
 
 - **`charts.StackedHistoryChart.Draw` stays, though nothing in the binary
   reaches it.** `doc.go` advertises `Draw` as the entry point and all six chart
   types implement it. The dashboard uses `DrawFrame` only because it also wants
   the time row. Removing one of six would break the package's one uniform method
-  for four lines. `HistoryChart.Draw` was in the same position until the Query
-  Store panel's per-query history became its caller.
+  for four lines.
 
 - **The five `staticcheck` U1000 findings in `clipboard_host_test.go` and
   `dialog_gesture_test.go` are suppressed, not deleted.** The fields are read by
@@ -1029,51 +1108,72 @@ numbering the moment they flipped the selector.
   login, in CREATE *or* ALTER, so the page refuses either rather than creating
   the login and then failing.
 
-- **Per-file destinations in Restore (SSMS's editable "Restore As" column) were
+- **Per-file destinations in Restore (SSMS's editable "Restore As" column) are
   deliberately not built**; the folder-level choice covers what the dialog's
-  width allows. Two rules from that work outlive it. **The backup set number
-  must not get re-scattered**: the restore itself, the MOVE clauses and the Files
-  Included panel all take it from `backupSetNumber` in `restore_dialog_ops.go`,
-  and two of the three deriving it separately is what produced the "Logical file
-  'x' is not part of database 'y'" failure on every rename-restore from an
-  appended `.bak`. And **the relocation preview and the MOVE clauses must keep
-  sharing `relocateFiles`**, or the paths the Files view lists stop describing
-  what the restore does.
+  width allows. Two rules come with it. **The backup set number must not get
+  re-scattered**: the restore itself, the MOVE clauses and the Files Included
+  panel all take it from `backupSetNumber` in `restore_dialog_ops.go`, and two of
+  the three deriving it separately produces "Logical file 'x' is not part of
+  database 'y'" on every rename-restore from an appended `.bak`. And **the
+  relocation preview and the MOVE clauses must keep sharing `relocateFiles`**,
+  or the paths the Files view lists stop describing what the restore does.
 
-- **A whole-repo review on 2026-09-04 swept both repos for these and found
-  nothing.** Recorded so the next review spends its time elsewhere. `go build`,
-  `go vet`, `gofmt -l`, `go test ./...` and `go test -race ./...` were clean in
-  both. `staticcheck ./...` reported only the two U1000s above and one ST1005 in
-  a gosmo *test* error string. In gosmo: every `Query`/`query` pairs
-  `defer rows.Close()` with a `rows.Err()` check — the fifteen apparent misses
-  delegate to a shared scanner that checks it; there is no `FooContext` without
-  a plain `Foo` wrapper; no query runs inside a `rows.Next()` loop. In gossms:
-  exactly one goroutine is spawned outside `safego`/`safegoRepair`, the backfill
-  worker, deliberately taking both the label and the recover by hand; no
-  `context.Background()` appears in a request path, every fetch deriving from
-  `sc.Context()` with a named timeout; every keyword-valued interpolation into
-  SQL goes through an allowlist. Two things checked against real source rather
-  than memory: `mssql.ServerError` really is fatal-only
-  (`go-mssqldb@v1.9.4/error.go:79`, and `mssql.go:1352` "Ignore non-fatal server
-  errors"), so gosmo's `IsRetryable` treating it as retryable is correct; and
-  the `endpointRoles`/`endpointEncryption`/`endpointAlgorithms` allowlists are
-  real and applied.
+- **Distribution credentials.** Homebrew: `HOMEBREW_TAP_DEPLOY_KEY` on
+  `radix29/gossms`, a write-enabled deploy key on `radix29/homebrew-tap`, not a
+  PAT. APT: `APT_REPO_DEPLOY_KEY` (write deploy key on `radix29/apt`, published
+  through GitHub Pages at https://radix29.github.io/apt) and `APT_REPO_GPG_KEY`
+  (dedicated RSA-4096 signing key, fingerprint
+  `468B0CE5FFDEE82439741EC393F25CAB61497D93`; the public half is `gossms.asc` in
+  the repo root). The jobs in `.github/workflows/release.yml` are the reference.
 
-- **Distribution credentials, recorded once.** Homebrew:
-  `HOMEBREW_TAP_DEPLOY_KEY` on `radix29/gossms`, a write-enabled deploy key on
-  `radix29/homebrew-tap`, not a PAT. APT: `APT_REPO_DEPLOY_KEY` (write deploy
-  key on `radix29/apt`, published through GitHub Pages at
-  https://radix29.github.io/apt) and `APT_REPO_GPG_KEY` (dedicated RSA-4096
-  signing key, fingerprint `468B0CE5FFDEE82439741EC393F25CAB61497D93`; the
-  public half is `gossms.asc` in the repo root). `docs/homebrew.md` and
-  `docs/ppa.md` were folded into the two release jobs and this entry; the jobs
-  in `.github/workflows/release.yml` are the reference. What is still unrun is
-  in § Release workflow above.
-
-- A **Launchpad PPA** was rejected, not forgotten: builders have no network and
+- **A Launchpad PPA is rejected, not forgotten:** builders have no network and
   Ubuntu's packaged Go is 1.22 on 24.04 LTS, 1.26 on 26.04 LTS, against
   `go.mod`'s 1.27. Two measurements worth not repeating — `go mod vendor` fully
   resolves the `replace ../gosmo` (builds with the sibling deleted and
   `GOPROXY=off`, +23 MB), and **neither gossms nor gosmo actually needs Go
   1.27**: a real offline `go1.26.0` builds both once the `go` directive is
   lowered in *both* `go.mod` files. Go 1.25 untested.
+
+## Fix order
+
+The work still outstanding, ordered by priority within each subsection: bugs
+and suspected defects first, then verification gaps, then nice-to-have. Each
+item is a pointer — the reasoning lives in the section it names.
+
+**Maintained on request only.** Do not regenerate this list as part of ordinary
+work; the author asks for a refresh. An item is closed by *deleting* it here
+when the underlying issue is fixed.
+
+### Bugs and suspected defects
+
+- **B1** — Neither release job has run with the push fix or the Verify steps.
+  The next tag closes this: a green `homebrew`/`apt` job is now proof.
+  § Release workflow
+- **B2** — `WITH INIT` is hardcoded on a URL backup device; block-blob backup
+  overwrites through `WITH FORMAT`, so MI may refuse the statement the Back Up
+  dialog builds. § Azure SQL Managed Instance
+- **B3** — `RESTORE ... WITH MOVE` on MI: relocation options are deliberately
+  ungated and were never driven; MI places its own files. § Azure SQL Managed
+  Instance
+- **B4** — Restore from MI's automated backup history offers an entry with no
+  device (NULL `physical_device_name`); the mechanism is control-plane, not
+  `RESTORE`. § Azure SQL Managed Instance
+
+### Verification gaps
+
+- **V2** — `brew install` / `brew test` / `brew audit --strict` on a real Mac;
+  a `livecheck` block in the formula. § Release workflow
+- **V3** — Debian side: `dpkg -i` on a clean container, arm64 execution,
+  `lintian`. § Release workflow
+- **V4** — External Tables folder and FileTables under the tree, against a real
+  PolyBase / FILESTREAM instance. § Deferred scope
+- **V5** — CLR type, assembly and external-resource scripts have never been
+  executed against a server. § Deferred scope
+- **V6** — Entra: `CREATE LOGIN ... FROM EXTERNAL PROVIDER` and Entra auth on
+  MI both need an Entra-joined tenant. § Deferred scope, § Azure SQL Managed
+  Instance
+
+### Functionality and nice-to-have
+
+- **F1** — Document the Phase 3 families, `TableKind` and the snapshot API in
+  gosmo's README; one pass before the next gosmo tag. § Deferred scope

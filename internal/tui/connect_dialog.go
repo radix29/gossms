@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -36,11 +37,13 @@ type ConnectDialog struct {
 	fClientID *widgets.InputField
 	ddAuth    *widgets.DropDown
 	cbTrust   *widgets.CheckBox
-	cbEncrypt *widgets.CheckBox
+	ddEncrypt *widgets.DropDown
+	fHostCert *widgets.InputField
 
 	// fExtraProps is a free-form, word-wrapped text box of extra "key=value"
-	// connection-string properties appended verbatim with a leading "&" (see
-	// refreshConnStrPreview and db.BuildConnectionString).
+	// driver parameters, separated by ';', '&' or line breaks — see
+	// db.ParseExtraProperties. A key one of the dialog's own fields controls
+	// is refused, and the preview says so.
 	fExtraProps *controls.Editor
 
 	// fConnStrPreview previews the connection string the current fields would
@@ -64,12 +67,12 @@ type ConnectDialog struct {
 	// reads its frame off, and connectAttempt closing both stops the ticker
 	// goroutine and marks the attempt abandoned — a callback whose channel is
 	// no longer d.connectAttempt belongs to a superseded or cancelled attempt
-	// and must not touch the dialog. db.Connect takes no context, so Cancel
-	// abandons an attempt in flight rather than aborting it; a connection that
-	// then succeeds still lands in Object Explorer.
+	// and must not touch the dialog. connectCancel aborts the dial itself, so
+	// Cancel stops the attempt rather than leaving it to run to its timeout.
 	connecting     bool
 	connectStarted time.Time
 	connectAttempt chan struct{}
+	connectCancel  context.CancelFunc
 
 	// Server-field autocomplete: saved connections whose Server matches what is
 	// typed in fServer, listed beneath it once four characters are in — or
@@ -89,7 +92,7 @@ type ConnectDialog struct {
 // NewConnectDialog creates the connection dialog.
 func NewConnectDialog(app *App) *ConnectDialog {
 	d := &ConnectDialog{app: app}
-	d.InitModal(app.screen, "Connect to Server", 62, 31)
+	d.InitModal(app.screen, "Connect to Server", 62, 32)
 
 	methods := config.AllAuthMethods()
 	authItems := make([]string, len(methods))
@@ -107,7 +110,15 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.ddAuth = widgets.NewDropDown("Auth:    ", authItems, 38)
 	d.cbTrust = widgets.NewCheckBox("Trust Server Certificate")
 	d.cbTrust.SetChecked(true)
-	d.cbEncrypt = widgets.NewCheckBox("Encrypt Connection")
+
+	modes := config.AllEncryptModes()
+	encryptItems := make([]string, len(modes))
+	for i, m := range modes {
+		encryptItems[i] = config.EncryptModeName(m)
+	}
+	d.ddEncrypt = widgets.NewDropDown("Encrypt: ", encryptItems, 38)
+	d.setEncryptMode(config.EncryptMandatory)
+	d.fHostCert = widgets.NewInputField("CertHost:", 38, false)
 
 	d.fExtraProps = controls.NewEditor(nil)
 	d.fExtraProps.SetGutterVisible(false)
@@ -118,6 +129,7 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.fConnStrPreview.SetWrapMode(true)
 
 	d.rebuildFocusable()
+	d.applyAuthFields()
 	return d
 }
 
@@ -125,8 +137,81 @@ func (d *ConnectDialog) rebuildFocusable() {
 	d.focusable = []focusable{
 		d.fServer, d.fPort, d.ddAuth, d.fDatabase,
 		d.fUser, d.fPassword, d.fTenantID, d.fClientID,
-		d.cbTrust, d.cbEncrypt, d.fExtraProps, d.fConnStrPreview,
+		d.cbTrust, d.ddEncrypt, d.fHostCert, d.fExtraProps, d.fConnStrPreview,
 	}
+}
+
+// authFields says which of the dialog's credential fields an auth method
+// reads — see db.toGosmoOptions for where each one goes. The rest are greyed
+// out, as SSMS greys User and Password for Windows Authentication: a field
+// that looks live but is never sent is how a service principal's client id
+// once went into ClientID and connected with an empty user id.
+type authFields struct{ user, password, tenant, client bool }
+
+func authFieldsFor(m config.AuthMethod) authFields {
+	switch m {
+	case config.AuthSQLServer, config.AuthWindows:
+		return authFields{user: true, password: true}
+	case config.AuthEntraPassword:
+		return authFields{user: true, password: true, tenant: true}
+	case config.AuthEntraMSI:
+		return authFields{client: true}
+	case config.AuthEntraServicePrincipal:
+		return authFields{password: true, tenant: true, client: true}
+	case config.AuthEntraInteractive, config.AuthEntraDeviceCode:
+		return authFields{tenant: true, client: true}
+	default: // Entra Default, Azure CLI
+		return authFields{tenant: true}
+	}
+}
+
+// authMethod is the method selected in ddAuth.
+func (d *ConnectDialog) authMethod() config.AuthMethod {
+	return config.AllAuthMethods()[d.ddAuth.Selected()]
+}
+
+// applyAuthFields enables the credential fields the selected method reads
+// and disables the rest. A disabled field keeps its place in the focus ring
+// (docs/ui-rules.md); Tab steps over it (stepFocus), and if the field that
+// has focus is the one just switched off, focus moves back to the method
+// dropdown that switched it.
+func (d *ConnectDialog) applyAuthFields() {
+	f := authFieldsFor(d.authMethod())
+	d.fUser.SetEnabled(f.user)
+	d.fPassword.SetEnabled(f.password)
+	d.fTenantID.SetEnabled(f.tenant)
+	d.fClientID.SetEnabled(f.client)
+	if in, ok := d.focusable[d.focusIdx].(*widgets.InputField); ok && !in.Enabled() {
+		d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	}
+}
+
+// stepFocus moves focus dir (+1 or -1) around the ring, past any disabled
+// field.
+func (d *ConnectDialog) stepFocus(dir int) {
+	n := len(d.focusable)
+	i := d.focusIdx
+	for range n {
+		i = (i + dir + n) % n
+		if in, ok := d.focusable[i].(*widgets.InputField); ok && !in.Enabled() {
+			continue
+		}
+		break
+	}
+	d.setFocus(i)
+}
+
+// setEncryptMode selects m in ddEncrypt. A value not in the list — only a
+// hand-edited config.json has one — selects Mandatory rather than leaving
+// the dropdown on whatever it last showed.
+func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
+	for i, mode := range config.AllEncryptModes() {
+		if mode == m {
+			d.ddEncrypt.SetSelected(i)
+			return
+		}
+	}
+	d.setEncryptMode(config.EncryptMandatory)
 }
 
 // PreFill pre-fills the dialog from an existing connection — applyMatch's path
@@ -140,7 +225,8 @@ func (d *ConnectDialog) PreFill(c *config.Connection) {
 	d.fTenantID.SetValue(c.TenantID)
 	d.fClientID.SetValue(c.ClientID)
 	d.cbTrust.SetChecked(c.TrustServerCertificate)
-	d.cbEncrypt.SetChecked(c.Encrypt)
+	d.setEncryptMode(c.Encrypt)
+	d.fHostCert.SetValue(c.HostNameInCertificate)
 	d.fExtraProps.SetText(c.ExtraProperties)
 	for i, m := range config.AllAuthMethods() {
 		if m == c.AuthMethod {
@@ -148,7 +234,14 @@ func (d *ConnectDialog) PreFill(c *config.Connection) {
 			break
 		}
 	}
+	// A service principal saved before the dialog greyed User for it carries
+	// its application id there; db.toGosmoOptions falls back to it, and the
+	// field it now belongs in shows it.
+	if c.AuthMethod == config.AuthEntraServicePrincipal && c.ClientID == "" {
+		d.fClientID.SetValue(c.User)
+	}
 	d.setFocus(0)
+	d.applyAuthFields()
 }
 
 // Show opens the dialog, focuses the first field, and refreshes the server-match
@@ -159,6 +252,11 @@ func (d *ConnectDialog) Show() {
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
 	d.drag.Clear()
+	// Back onto Connect: an attempt moves the button focus to Cancel for its
+	// duration, and one that succeeded or was cancelled closed the dialog with
+	// it still there — so Enter on the next showing closed the dialog instead
+	// of connecting.
+	d.btnFocus = 0
 	d.setFocus(0)
 	d.updateMatches()
 }
@@ -174,20 +272,25 @@ func (d *ConnectDialog) setFocus(i int) {
 	d.refreshConnStrPreview()
 }
 
-// connStrPasswordMask replaces a non-empty password in the connection-string
-// preview. A fixed placeholder rather than a run of '*', so the preview can't
-// leak the password's length.
-const connStrPasswordMask = "XXXXX"
-
 // refreshConnStrPreview rebuilds the connection-string preview from the
-// current field values. The real password is never written into the
-// preview — see connStrPasswordMask.
+// current field values. The real password is never written into it:
+// db.BuildConnectionString masks every secret.
+//
+// A setting Connect would refuse — an Extra Properties entry that is not
+// key=value, or one naming a setting a field here controls — shows as that
+// error instead, so it is found before Connect is pressed.
 func (d *ConnectDialog) refreshConnStrPreview() {
-	opts := d.currentOptions()
-	if opts.Password != "" {
-		opts.Password = connStrPasswordMask
+	// Nothing to preview yet — and gosmo's "Server is required" would be the
+	// first thing a user sees on the dialog gossms opens at startup.
+	if !d.canConnect() {
+		d.fConnStrPreview.SetText("")
+		return
 	}
-	d.fConnStrPreview.SetText(db.BuildConnectionString(opts))
+	s, err := db.BuildConnectionString(d.currentOptions())
+	if err != nil {
+		s = "Cannot build a connection string: " + err.Error()
+	}
+	d.fConnStrPreview.SetText(s)
 }
 
 // updateMatches re-runs the server-field autocomplete lookup against what is
@@ -263,15 +366,12 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	d.fDatabase.Draw(s)
 	d.fUser.Draw(s)
 	d.fPassword.Draw(s)
-
-	authMethod := config.AllAuthMethods()[d.ddAuth.Selected()]
-	if authMethod >= config.AuthEntraDefault {
-		d.fTenantID.Draw(s)
-		d.fClientID.Draw(s)
-	}
+	d.fTenantID.Draw(s)
+	d.fClientID.Draw(s)
 
 	d.cbTrust.Draw(s)
-	d.cbEncrypt.Draw(s)
+	d.ddEncrypt.Draw(s)
+	d.fHostCert.Draw(s)
 
 	core.DrawText(s, inner.X+1, d.extraPropsLabelY, labelStyle, "Extra Properties:")
 	d.fExtraProps.Draw(s)
@@ -286,9 +386,10 @@ func (d *ConnectDialog) Draw(s tcell.Screen) {
 	// clears the whole button row, which would wipe the spinner.
 	d.drawConnecting(s, labelStyle)
 
-	// Drawn last, so neither the auth-method list nor the server-match list is
+	// Drawn last, so neither dropdown's list nor the server-match list is
 	// painted over by the fields and buttons below them.
 	d.ddAuth.DrawOverlay(s)
+	d.ddEncrypt.DrawOverlay(s)
 	d.drawMatches(s)
 }
 
@@ -333,22 +434,18 @@ func (d *ConnectDialog) layoutFields() {
 	row++
 	d.fPassword.SetBounds(lx, row)
 	row++
-
-	authMethod := config.AllAuthMethods()[d.ddAuth.Selected()]
-	if authMethod >= config.AuthEntraDefault {
-		d.fTenantID.SetBounds(lx, row)
-		row++
-		d.fClientID.SetBounds(lx, row)
-		row++
-	} else {
-		row += 2
-	}
+	d.fTenantID.SetBounds(lx, row)
+	row++
+	d.fClientID.SetBounds(lx, row)
+	row++
 	row++ // blank row above Trust Server Certificate
 	d.cbTrust.SetBounds(lx, row)
 	row++
-	d.cbEncrypt.SetBounds(lx, row)
+	d.ddEncrypt.SetBounds(lx, row)
 	row++
-	row++ // blank row below Encrypt Connection
+	d.fHostCert.SetBounds(lx, row)
+	row++
+	row++ // blank row below the TLS settings
 
 	// Same on-screen width as the Password field's whole visible box (label +
 	// brackets + content), from real widget geometry.
@@ -399,23 +496,36 @@ func (d *ConnectDialog) port() (int, bool) {
 // currentOptions assembles a config.Connection from the dialog fields. Name is
 // left zero; config.Config.AddOrUpdate fills in the generated name once a
 // connection succeeds.
+//
+// A field the selected method does not read (authFieldsFor) is left empty
+// whatever it holds: a password typed before switching to Managed Identity
+// would otherwise be saved, sealed, with a connection that never sends it.
+// The widget keeps its text, so switching back restores it.
 func (d *ConnectDialog) currentOptions() config.Connection {
 	port, ok := d.port()
 	if !ok {
 		port = 0
 	}
-	authMethod := config.AllAuthMethods()[d.ddAuth.Selected()]
+	authMethod := d.authMethod()
+	f := authFieldsFor(authMethod)
+	only := func(on bool, v string) string {
+		if on {
+			return v
+		}
+		return ""
+	}
 	return config.Connection{
 		Server:                 d.fServer.Value(),
 		Port:                   port,
 		Database:               d.fDatabase.Value(),
 		AuthMethod:             authMethod,
-		User:                   d.fUser.Value(),
-		Password:               d.fPassword.Value(),
-		TenantID:               d.fTenantID.Value(),
-		ClientID:               d.fClientID.Value(),
+		User:                   only(f.user, d.fUser.Value()),
+		Password:               only(f.password, d.fPassword.Value()),
+		TenantID:               only(f.tenant, d.fTenantID.Value()),
+		ClientID:               only(f.client, d.fClientID.Value()),
 		TrustServerCertificate: d.cbTrust.Checked(),
-		Encrypt:                d.cbEncrypt.Checked(),
+		Encrypt:                config.AllEncryptModes()[d.ddEncrypt.Selected()],
+		HostNameInCertificate:  d.fHostCert.Value(),
 		ExtraProperties:        d.fExtraProps.Text(),
 	}
 }
@@ -443,9 +553,11 @@ func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
 func (d *ConnectDialog) startConnect(opts config.Connection) {
 	d.stopConnecting()
 	attempt := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	d.connecting = true
 	d.connectStarted = time.Now()
 	d.connectAttempt = attempt
+	d.connectCancel = cancel
 	// Cancel is the only live control from here, so focus is moved onto it.
 	d.btnFocus = 1
 	d.matchOpen = false
@@ -465,7 +577,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 		}
 	})
 
-	d.app.connectServer(opts, func(err error) bool {
+	d.app.connectServer(ctx, opts, func(err error) bool {
 		if d.connectAttempt != attempt {
 			// Cancelled, or superseded by a later attempt — this one no
 			// longer owns the dialog, and connectServer winds it back.
@@ -486,11 +598,16 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 }
 
 // stopConnecting leaves the connecting state, stopping the spinner goroutine
-// and abandoning whatever attempt was in flight. Idempotent.
+// and aborting whatever attempt was in flight. Idempotent. After a successful
+// or failed attempt the cancel is a no-op: ConnectContext has returned.
 func (d *ConnectDialog) stopConnecting() {
 	if d.connectAttempt != nil {
 		close(d.connectAttempt)
 		d.connectAttempt = nil
+	}
+	if d.connectCancel != nil {
+		d.connectCancel()
+		d.connectCancel = nil
 	}
 	d.connecting = false
 }
@@ -548,10 +665,10 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 
 	switch ev.Key() {
 	case tcell.KeyTab:
-		d.setFocus(nextFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(+1)
 		return true
 	case tcell.KeyBacktab:
-		d.setFocus(prevFocus(d.focusIdx, len(d.focusable)))
+		d.stepFocus(-1)
 		return true
 	case tcell.KeyEscape:
 		d.Hide()
@@ -559,6 +676,13 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 	case tcell.KeyEnter:
 		if d.ddAuth.IsOpen() {
 			d.ddAuth.HandleKey(ev)
+			d.applyAuthFields()
+			d.refreshConnStrPreview()
+			return true
+		}
+		if d.ddEncrypt.IsOpen() {
+			d.ddEncrypt.HandleKey(ev)
+			d.refreshConnStrPreview()
 			return true
 		}
 		d.doButton()
@@ -578,6 +702,9 @@ func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
 			return consumed
 		case *widgets.DropDown:
 			consumed := w.HandleKey(ev)
+			if w == d.ddAuth {
+				d.applyAuthFields()
+			}
 			d.refreshConnStrPreview()
 			return consumed
 		case *widgets.CheckBox:
@@ -632,8 +759,8 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// ButtonNone, so this does nothing beyond resetting the latch.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.cbTrust.HandleMouse(ev)
-		d.cbEncrypt.HandleMouse(ev)
 		d.ddAuth.HandleMouse(ev)
+		d.ddEncrypt.HandleMouse(ev)
 		// End a text-selection drag in the field that claimed the press,
 		// wherever the release landed. Before ConsumeOutsideClick, which returns
 		// early on a release outside the dialog and would strand the latch.
@@ -690,12 +817,22 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.matchOpen = false
 	}
 
-	// The auth dropdown's open list is an overlay drawn last, so it gets first
+	// A dropdown's open list is an overlay drawn last, so it gets first
 	// refusal of every click — ahead of ButtonClicked, which would otherwise
-	// steal a click on a list row overlapping the button row.
-	if d.ddAuth.HandleMouse(ev) {
-		d.refreshConnStrPreview()
-		return true
+	// steal a click on a list row overlapping the button row. The open one
+	// first: its list may cover the other dropdown's own row.
+	dropdowns := []*widgets.DropDown{d.ddAuth, d.ddEncrypt}
+	if d.ddEncrypt.IsOpen() {
+		dropdowns = []*widgets.DropDown{d.ddEncrypt, d.ddAuth}
+	}
+	for _, dd := range dropdowns {
+		if dd.HandleMouse(ev) {
+			if dd == d.ddAuth {
+				d.applyAuthFields()
+			}
+			d.refreshConnStrPreview()
+			return true
+		}
 	}
 
 	if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i >= 0 {
@@ -705,10 +842,6 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	if d.cbTrust.HandleMouse(ev) {
-		d.refreshConnStrPreview()
-		return true
-	}
-	if d.cbEncrypt.HandleMouse(ev) {
 		d.refreshConnStrPreview()
 		return true
 	}
@@ -730,10 +863,15 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	mx, my := ev.Position()
 	fields := []*widgets.InputField{
 		d.fServer, d.fPort, d.fDatabase, d.fUser, d.fPassword,
-		d.fTenantID, d.fClientID,
+		d.fTenantID, d.fClientID, d.fHostCert,
 	}
 	for _, f := range fields {
 		if f.HitTest(mx, my) {
+			if !f.Enabled() {
+				// Greyed out for this auth method: a click neither focuses
+				// it nor starts a selection in it.
+				return true
+			}
 			for fi, foc := range d.focusable {
 				if foc == f {
 					d.setFocus(fi)

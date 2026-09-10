@@ -144,7 +144,7 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 			if n.IsSystem {
 				return n, true
 			}
-			if !allowsActionOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectOpRights(n.Type)...) {
+			if !allowsActionOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRights(n)...) {
 				return n, true
 			}
 		}
@@ -155,7 +155,7 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 		if n.IsSystem {
 			item.Note = objectDataName(n) + " is a system object"
 		} else {
-			item.Note = objectDataName(n) + " needs " + objectOpRights(n.Type)[0].name
+			item.Note = objectDataName(n) + " needs " + objectDataRights(n)[0].name
 		}
 	}
 	return item
@@ -163,16 +163,26 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 
 // objectDataSchema and objectDataObject are objectOpSchema/objectOpName for a
 // nodeData on its own — see those two for why a schema node answers "" to both.
+//
+// A plan guide answers with the routine an OBJECT-scoped guide is bound to,
+// and "" for the other scopes: the guide itself is no securable gosmo probes,
+// and the routine's ALTER is what permits the drop — see objectDataRights.
 func objectDataSchema(n nodeData) string {
-	if n.Type == NodeSchema {
+	switch n.Type {
+	case NodeSchema:
 		return ""
+	case NodePlanGuide:
+		return n.ScopeSchema
 	}
 	return n.Schema
 }
 
 func objectDataObject(n nodeData) string {
-	if n.Type == NodeSchema {
+	switch n.Type {
+	case NodeSchema:
 		return ""
+	case NodePlanGuide:
+		return n.ScopeName
 	}
 	return n.Name
 }
