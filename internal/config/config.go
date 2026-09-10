@@ -2,6 +2,7 @@
 package config
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,55 +34,82 @@ const (
 	AuthEntraAzCLI            AuthMethod = 11
 )
 
-// AuthMethodName returns a human-readable label for the auth method.
-func AuthMethodName(m AuthMethod) string {
-	switch m {
-	case AuthSQLServer:
-		return "SQL Server Authentication"
-	case AuthWindows:
-		return "Windows Authentication"
-	case AuthEntraDefault:
-		return "Azure Entra - Default"
-	case AuthEntraPassword:
-		return "Azure Entra - Password"
-	case AuthEntraMSI:
-		return "Azure Entra - Managed Identity"
-	case AuthEntraServicePrincipal:
-		return "Azure Entra - Service Principal"
-	case AuthEntraInteractive:
-		return "Azure Entra - Interactive"
-	case AuthEntraDeviceCode:
-		return "Azure Entra - Device Code"
-	case AuthEntraAzCLI:
-		return "Azure Entra - Azure CLI"
-	default:
-		return "Unknown"
-	}
+// AuthFields says which of the Connect dialog's credential fields an auth
+// method reads — see db.toGosmoOptions for where each one goes. The dialog
+// greys out the rest, as SSMS greys User and Password for Windows
+// Authentication: a field that looks live but is never sent is how a service
+// principal's client id once went into ClientID and connected with an empty
+// user id.
+type AuthFields struct{ User, Password, Tenant, Client bool }
+
+// authMethodInfo is everything gossms knows about one auth method apart from
+// how it maps onto gosmo, which db.toGosmoAuth keeps as an explicit switch.
+type authMethodInfo struct {
+	method AuthMethod
+	// label is the Connect dialog's name for it, as SSMS spells it.
+	label string
+	// tag marks a saved connection's name (see Connection.GeneratedName);
+	// empty for SQL Server Authentication, whose names predate the tag.
+	tag    string
+	entra  bool
+	fields AuthFields
 }
 
-// IsEntraMethod reports whether m is one of the Microsoft Entra ID methods.
-func IsEntraMethod(m AuthMethod) bool {
-	switch m {
-	case AuthEntraDefault, AuthEntraPassword, AuthEntraMSI, AuthEntraServicePrincipal,
-		AuthEntraInteractive, AuthEntraDeviceCode, AuthEntraAzCLI:
-		return true
-	}
-	return false
+// authMethods is the one table of auth methods, in the Connect dialog's
+// order. AllAuthMethods, AuthMethodName, IsEntraMethod and FieldsFor all read
+// it; before it they were four switches that had to agree.
+//
+// TenantID is live for every Entra method but Managed Identity: gosmo hands
+// it to each credential that takes a tenant, and a managed identity's tenant
+// is the resource's own. ClientID is the application (client) id of the app
+// registration a user signs in through for Password, MFA and Device Code
+// (gosmo's ApplicationClientID; empty uses Microsoft's public client), the
+// service principal itself, or a user-assigned managed identity. User is
+// MFA's optional login hint.
+var authMethods = []authMethodInfo{
+	{AuthSQLServer, "SQL Server Authentication", "", false, AuthFields{User: true, Password: true}},
+	{AuthWindows, "Windows Authentication", "Windows", false, AuthFields{User: true, Password: true}},
+	{AuthEntraDefault, "Microsoft Entra Default", "Entra Default", true, AuthFields{Tenant: true}},
+	{AuthEntraPassword, "Microsoft Entra Password", "Entra Password", true,
+		AuthFields{User: true, Password: true, Tenant: true, Client: true}},
+	{AuthEntraMSI, "Microsoft Entra Managed Identity", "Entra Managed Identity", true, AuthFields{Client: true}},
+	{AuthEntraServicePrincipal, "Microsoft Entra Service Principal", "Entra Service Principal", true,
+		AuthFields{Password: true, Tenant: true, Client: true}},
+	{AuthEntraInteractive, "Microsoft Entra MFA", "Entra MFA", true, AuthFields{User: true, Tenant: true, Client: true}},
+	{AuthEntraDeviceCode, "Microsoft Entra Device Code", "Entra Device Code", true, AuthFields{Tenant: true, Client: true}},
+	{AuthEntraAzCLI, "Microsoft Entra Azure CLI", "Entra Azure CLI", true, AuthFields{Tenant: true}},
 }
+
+// authInfo looks m up in authMethods. A method it does not name — only a
+// hand-edited config.json has one — reads as SQL Server Authentication,
+// which is what db.toGosmoAuth dials it as, labelled "Unknown".
+func authInfo(m AuthMethod) authMethodInfo {
+	for _, info := range authMethods {
+		if info.method == m {
+			return info
+		}
+	}
+	info := authMethods[0]
+	info.method, info.label = m, "Unknown"
+	return info
+}
+
+// AuthMethodName returns a human-readable label for the auth method.
+func AuthMethodName(m AuthMethod) string { return authInfo(m).label }
+
+// IsEntraMethod reports whether m is one of the Microsoft Entra ID methods.
+func IsEntraMethod(m AuthMethod) bool { return authInfo(m).entra }
+
+// FieldsFor reports which credential fields m reads.
+func FieldsFor(m AuthMethod) AuthFields { return authInfo(m).fields }
 
 // AllAuthMethods returns all available auth methods for display.
 func AllAuthMethods() []AuthMethod {
-	return []AuthMethod{
-		AuthSQLServer,
-		AuthWindows,
-		AuthEntraDefault,
-		AuthEntraPassword,
-		AuthEntraMSI,
-		AuthEntraServicePrincipal,
-		AuthEntraInteractive,
-		AuthEntraDeviceCode,
-		AuthEntraAzCLI,
+	out := make([]AuthMethod, len(authMethods))
+	for i, info := range authMethods {
+		out[i] = info.method
 	}
+	return out
 }
 
 // IconStyle selects the glyph set the Object Explorer tree uses for its node
@@ -232,13 +260,9 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ConnectionName builds the identifier auto-generated for every saved
-// connection: "server,port,database,user". It is both the label in the Connect
-// dialog's autocomplete list and the dedup key in AddOrUpdate.
-//
-// It doesn't fold in AuthMethod, so Windows Auth and Entra Default to the same
-// server/port/database — both with an empty User — generate the same name and
-// overwrite each other in the saved list.
+// ConnectionName builds "server,port,database,user", the tuple a saved
+// connection's generated name starts with (see Connection.GeneratedName) and
+// the key the query editor's completion inventories share.
 //
 // An unspecified port (0) is spelled as the default 1433 it dials, so an entry
 // saved before the Connect dialog stopped pre-filling "1433" still dedups
@@ -248,6 +272,40 @@ func ConnectionName(server string, port int, database, user string) string {
 		port = 1433
 	}
 	return server + "," + strconv.Itoa(port) + "," + database + "," + user
+}
+
+// GeneratedName is the name AddOrUpdate gives c: ConnectionName with the
+// identity c signs in as in the user slot, then the auth method's tag —
+// "srv,1433,db,app-id (Entra Service Principal)". It is both the label in the
+// Connect dialog's autocomplete list and AddOrUpdate's dedup key, so it must
+// tell apart every pair of connections that are not the same one.
+//
+// Built from the server tuple alone, it did not: two service principals on
+// one server (User is greyed for the method, so empty for both) overwrote
+// each other, and so did Windows Authentication and Entra Default, and every
+// Entra method without a User against each other. The identity is User for a
+// method that reads one and has it, else the ClientID for one that reads
+// that; a service principal saved before ClientID was its field carries its
+// application id in User instead.
+//
+// SQL Server Authentication has no tag, so its names — most of every saved
+// list — are what they always were. An entry saved under another method
+// before the tag existed keeps its old name and dedups once more, against the
+// first save of the same connection under the new one.
+func (c Connection) GeneratedName() string {
+	info := authInfo(c.AuthMethod)
+	identity := ""
+	switch {
+	case info.fields.User && c.User != "":
+		identity = c.User
+	case info.fields.Client:
+		identity = cmp.Or(c.ClientID, c.User)
+	}
+	name := ConnectionName(c.Server, c.Port, c.Database, identity)
+	if info.tag != "" {
+		name += " (" + info.tag + ")"
+	}
+	return name
 }
 
 // PasswordUnreadable reports whether this entry had a stored password Load could
@@ -480,17 +538,16 @@ func (c *Config) Save() error {
 // Connect dialog persists a successful connection here automatically.
 const MaxSavedConnections = 30
 
-// AddOrUpdate saves a successful connection. Its Name is overwritten with the
-// auto-generated ConnectionName(Server, Port, Database, User), which doubles as
-// the dedup key: an entry with the same generated name is replaced in place,
-// otherwise a new one is added. Either way the entry moves to the end of
-// Connections as most recently used, and the list is trimmed to
-// MaxSavedConnections from the front.
+// AddOrUpdate saves a successful connection. Its Name is overwritten with
+// conn.GeneratedName(), which doubles as the dedup key: an entry with the same
+// generated name is replaced in place, otherwise a new one is added. Either
+// way the entry moves to the end of Connections as most recently used, and
+// the list is trimmed to MaxSavedConnections from the front.
 //
 // conn is taken by value, so the caller's copy is never mutated — only the
 // stored copy gets the generated Name.
 func (c *Config) AddOrUpdate(conn Connection) {
-	conn.Name = ConnectionName(conn.Server, conn.Port, conn.Database, conn.User)
+	conn.Name = conn.GeneratedName()
 	for i, existing := range c.Connections {
 		if existing.Name == conn.Name {
 			c.Connections = slices.Delete(c.Connections, i, i+1)

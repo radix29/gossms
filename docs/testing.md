@@ -34,6 +34,15 @@ agree. Pin such a pair by *naming* it (`"Monday"` -> `gosmo.WeekdayMonday`) and 
 asserting both slices are the same length; add a page test that pins the value
 reaching the server (`agent_schedule_props_page_test.go` pins `@freq_interval`).
 
+**A DSN test asserts what the driver parses, not only what gosmo writes.** A
+connection string that looks right can still be refused: four gosmo Entra methods
+shipped unable to connect because every test checked the query string gosmo built
+and none handed it to go-mssqldb (`docs/entra-auth-plan.md`, G1–G4). Build the
+connector — for an Entra method that runs the driver's own parser and validator
+without dialling — and assert on `msdsn.Parse(dsn).Parameters`. gossms's
+auth-mapping tests (`toGosmoOptions`) are held to the same rule through
+`ConnectionString` → `azuread.NewConnector`.
+
 **A Properties page can be driven end to end from a test — use
 `internal/tui/fakedb_test.go`.** `gosmo.NewServer` takes a caller-supplied
 `*sql.DB`; the harness gives `newFakeConn` (a `*db.ServerConn` over a scripted

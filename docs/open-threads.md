@@ -110,8 +110,66 @@ Settled: MI answers `RESTORE VERIFYONLY FROM DISK = N'https://…'` with Msg
 41902 ("Unsupported device type"), and the same statement spelled `FROM URL`
 with Msg 3078 about the blob itself — so `URL` is the right device keyword.
 
-**Open: Entra authentication on MI is untested** — it needs an Entra-joined
-tenant, the same wall the Entra *login* entry under Deferred scope describes.
+**Every Entra method but Managed Identity is verified end to end** (Phase 5
+of `docs/entra-auth-plan.md`, 2026-09-10, built binary against `t-qmi-01`,
+TenantID blank throughout):
+
+- **Device Code**: the code entered ~1.5 min after it was shown — well past
+  the 30 s `connectTimeout`, so the sign-in runs under `SignInTimeout` — and
+  one prompt then covered two Object Explorer expands, two query windows and
+  Activity Monitor's Instance and Sessions tabs; one 33155 in MI's log.
+- **Azure CLI** and **Default** (which reached the CLI after ~2 s of chain
+  probing): an `az` wrapper on `PATH` logged **one** `az account
+  get-access-token --resource https://database.windows.net/` for a connect,
+  two expands and two query windows — S5's subprocess-per-connection storm is
+  gone.
+- **Service Principal**: signs in as `<appId>@<server tenant>`. A wrong
+  secret gives AADSTS7000215 (first line on the status bar, whole in the
+  alert); correcting it in the same dialog then connects — a failed secret is
+  not served from the `EntraCache`.
+- **Password**: a cloud-only tenant user with no MFA, two query windows on one
+  sign-in. An Entra login whose account was deleted and recreated fails with
+  18456 "Could not find a user matching the name provided" *after* a
+  successful token — the login's SID is the old object id; recreate the login.
+- **Each method saves under its own name** (`…,3342,,<appId> (Entra Service
+  Principal)`, `…,3342,, (Entra Azure CLI)`, …).
+
+Still open:
+
+- **Managed Identity** — needs gossms running on an Azure-hosted machine.
+- **A token past its ~1 h lifetime** on a new pooled connection — it should
+  renew silently through the cached credential.
+
+MFA, the first one driven: on 2026-09-10 the
+built binary signed in to `t-qmi-01` with Microsoft Entra MFA, TenantID blank,
+as a personal Microsoft account that is a member of the server's tenant
+(`SUSER_SNAME()` = `live.com#…@hotmail.com`, `auth_scheme` FEDERATED): the
+"Signing in..." → "Connecting..." hand-off, then a query window, Activity
+Monitor and an Object Explorer expand, none of which prompted or probed
+again — MI's error log shows one 33155 for the whole session. Before that,
+on 2026-09-10 against `t-qmi-01`: field greying per method,
+Device Code showing a real code in its dialog and Escape cancelling it, a
+bogus tenant's AADSTS90002 error (first line on the status bar, whole in the
+alert), MFA opening Microsoft's authorize page through `xdg-open` in both a
+fresh and an already-running Chrome with nothing stray on the TUI screen, the
+Connect dialog's Cancel ending that sign-in, and the File menu item's gating.
+
+Settled: **with TenantID blank, MFA and Device Code sign in to the server's
+tenant.** azidentity's default is `organizations`, where a personal Microsoft
+account that is a member of the server's tenant is refused ("Selected user
+account does not exist in tenant 'Microsoft Services'" — the first real MFA
+attempt, 2026-09-10; SSMS signed the same account in). The tenant is only in
+the STS URL the server announces part-way through a login, so gosmo's `Warm`
+opens a login, abandons it once the server has named its SPN and STS URL, and
+signs in to that tenant; the answer is kept per server in the `EntraCache`.
+On `t-qmi-01` the probe takes ~0.25 s and announces SPN
+`https://database.windows.net/` — the scope Warm used to guess from the DNS
+suffix, so that guess was right — and the driven binary's authorize URL now
+names the tenant instead of `organizations`. Each probe costs one
+**Error 33155, severity 20** in MI's error log; on-prem without Entra it is
+an immediate 18456. Do not "optimise" the probe back into a DNS-suffix guess:
+the guess cannot know the tenant. `TestLiveEntraProbe` (gosmo, `-tags
+livedb`) is the repeatable part.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
@@ -163,8 +221,10 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 - **Entra logins stay unverifiable here.** `CREATE LOGIN ... FROM EXTERNAL
   PROVIDER WITH OBJECT_ID` is emitted and its grammar confirmed on a real
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail
-  with the *same* Msg 37525, so the parser accepted both. Whether a login is
-  actually created needs an Entra-joined instance.
+  with the *same* Msg 37525, so the parser accepted both. On `t-qmi-01` the
+  bare form, run by hand from `sqlcmd` as a SQL-auth sysadmin, created
+  working logins for a user and a service principal (Entra Phase 5); the
+  New Login dialog's `WITH OBJECT_ID` form has still not been executed.
 - **The Phase 3 tree families are read-only, and each for its own reason.**
   Read-only means *no create and no edit*: each family does have Script as,
   Delete, and — where SQL Server has the statement — Rename and Move to another
@@ -835,8 +895,11 @@ per-role application name, the Entra field mapping, IPv6 addresses).
   stays on ubusql1 — from the Connect dialog too. AAG1 normally has no routing
   list and `ALLOW_CONNECTIONS = ALL`, so intent is unobservable there without
   that setup.
-- **Entra's per-method field mapping is unit-tested only** (V6): which client
-  id reaches gosmo for each method, and which dialog fields are greyed.
+- **Entra's per-method field mapping is verified up to the driver for every
+  method, and end to end for every method but Managed Identity** (V6):
+  `TestEveryEntraMethodBuildsADriverConnector` runs each method's real DSN
+  through `azuread.NewConnector` — § Azure SQL Managed Instance lists what
+  that leaves.
 - **An IPv6 literal with a named instance needs an explicit port**
   (`fe80::1\INST,1500`). gosmo refuses it without one: the driver keeps the
   brackets of a port-less literal in the Browser probe's address, so there is
@@ -1169,9 +1232,10 @@ when the underlying issue is fixed.
   PolyBase / FILESTREAM instance. § Deferred scope
 - **V5** — CLR type, assembly and external-resource scripts have never been
   executed against a server. § Deferred scope
-- **V6** — Entra: `CREATE LOGIN ... FROM EXTERNAL PROVIDER` and Entra auth on
-  MI both need an Entra-joined tenant. § Deferred scope, § Azure SQL Managed
-  Instance
+- **V6** — Entra: Managed Identity (needs an Azure-hosted machine) and a
+  token renewed past its lifetime; the other methods and `CREATE LOGIN ...
+  FROM EXTERNAL PROVIDER` are driven on MI. § Deferred scope, § Azure SQL
+  Managed Instance
 
 ### Functionality and nice-to-have
 

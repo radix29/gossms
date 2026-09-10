@@ -73,6 +73,10 @@ type ConnectDialog struct {
 	connectStarted time.Time
 	connectAttempt chan struct{}
 	connectCancel  context.CancelFunc
+	// connectLabel is what the spinner says the attempt is doing:
+	// "Signing in..." while a person signs in (App.signInPhase), else
+	// "Connecting...".
+	connectLabel string
 
 	// Server-field autocomplete: saved connections whose Server matches what is
 	// typed in fServer, listed beneath it once four characters are in — or
@@ -141,46 +145,22 @@ func (d *ConnectDialog) rebuildFocusable() {
 	}
 }
 
-// authFields says which of the dialog's credential fields an auth method
-// reads — see db.toGosmoOptions for where each one goes. The rest are greyed
-// out, as SSMS greys User and Password for Windows Authentication: a field
-// that looks live but is never sent is how a service principal's client id
-// once went into ClientID and connected with an empty user id.
-type authFields struct{ user, password, tenant, client bool }
-
-func authFieldsFor(m config.AuthMethod) authFields {
-	switch m {
-	case config.AuthSQLServer, config.AuthWindows:
-		return authFields{user: true, password: true}
-	case config.AuthEntraPassword:
-		return authFields{user: true, password: true, tenant: true}
-	case config.AuthEntraMSI:
-		return authFields{client: true}
-	case config.AuthEntraServicePrincipal:
-		return authFields{password: true, tenant: true, client: true}
-	case config.AuthEntraInteractive, config.AuthEntraDeviceCode:
-		return authFields{tenant: true, client: true}
-	default: // Entra Default, Azure CLI
-		return authFields{tenant: true}
-	}
-}
-
 // authMethod is the method selected in ddAuth.
 func (d *ConnectDialog) authMethod() config.AuthMethod {
 	return config.AllAuthMethods()[d.ddAuth.Selected()]
 }
 
 // applyAuthFields enables the credential fields the selected method reads
-// and disables the rest. A disabled field keeps its place in the focus ring
-// (docs/ui-rules.md); Tab steps over it (stepFocus), and if the field that
-// has focus is the one just switched off, focus moves back to the method
-// dropdown that switched it.
+// (config.FieldsFor) and disables the rest. A disabled field keeps its place
+// in the focus ring (docs/ui-rules.md); Tab steps over it (stepFocus), and if
+// the field that has focus is the one just switched off, focus moves back to
+// the method dropdown that switched it.
 func (d *ConnectDialog) applyAuthFields() {
-	f := authFieldsFor(d.authMethod())
-	d.fUser.SetEnabled(f.user)
-	d.fPassword.SetEnabled(f.password)
-	d.fTenantID.SetEnabled(f.tenant)
-	d.fClientID.SetEnabled(f.client)
+	f := config.FieldsFor(d.authMethod())
+	d.fUser.SetEnabled(f.User)
+	d.fPassword.SetEnabled(f.Password)
+	d.fTenantID.SetEnabled(f.Tenant)
+	d.fClientID.SetEnabled(f.Client)
 	if in, ok := d.focusable[d.focusIdx].(*widgets.InputField); ok && !in.Enabled() {
 		d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
 	}
@@ -497,7 +477,7 @@ func (d *ConnectDialog) port() (int, bool) {
 // left zero; config.Config.AddOrUpdate fills in the generated name once a
 // connection succeeds.
 //
-// A field the selected method does not read (authFieldsFor) is left empty
+// A field the selected method does not read (config.FieldsFor) is left empty
 // whatever it holds: a password typed before switching to Managed Identity
 // would otherwise be saved, sealed, with a connection that never sends it.
 // The widget keeps its text, so switching back restores it.
@@ -507,7 +487,7 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 		port = 0
 	}
 	authMethod := d.authMethod()
-	f := authFieldsFor(authMethod)
+	f := config.FieldsFor(authMethod)
 	only := func(on bool, v string) string {
 		if on {
 			return v
@@ -519,10 +499,10 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 		Port:                   port,
 		Database:               d.fDatabase.Value(),
 		AuthMethod:             authMethod,
-		User:                   only(f.user, d.fUser.Value()),
-		Password:               only(f.password, d.fPassword.Value()),
-		TenantID:               only(f.tenant, d.fTenantID.Value()),
-		ClientID:               only(f.client, d.fClientID.Value()),
+		User:                   only(f.User, d.fUser.Value()),
+		Password:               only(f.Password, d.fPassword.Value()),
+		TenantID:               only(f.Tenant, d.fTenantID.Value()),
+		ClientID:               only(f.Client, d.fClientID.Value()),
 		TrustServerCertificate: d.cbTrust.Checked(),
 		Encrypt:                config.AllEncryptModes()[d.ddEncrypt.Selected()],
 		HostNameInCertificate:  d.fHostCert.Value(),
@@ -543,7 +523,7 @@ func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
 	x := d.InnerRect().X + 1
 	y := d.ButtonRowY()
 	connectSpinner.DrawSince(s, x, y, style, d.connectStarted)
-	core.DrawText(s, x+connectSpinner.Width()+1, y, style, "Connecting...")
+	core.DrawText(s, x+connectSpinner.Width()+1, y, style, d.connectLabel)
 }
 
 // startConnect puts the dialog into its connecting state and dials. The dialog
@@ -558,6 +538,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 	d.connectStarted = time.Now()
 	d.connectAttempt = attempt
 	d.connectCancel = cancel
+	d.connectLabel = "Connecting..."
 	// Cancel is the only live control from here, so focus is moved onto it.
 	d.btnFocus = 1
 	d.matchOpen = false
@@ -577,7 +558,12 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 		}
 	})
 
-	d.app.connectServer(ctx, opts, func(err error) bool {
+	phase := func(label string) {
+		if d.connectAttempt == attempt {
+			d.connectLabel = label
+		}
+	}
+	d.app.connectServer(ctx, opts, phase, func(err error) bool {
 		if d.connectAttempt != attempt {
 			// Cancelled, or superseded by a later attempt — this one no
 			// longer owns the dialog, and connectServer winds it back.

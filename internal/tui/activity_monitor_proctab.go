@@ -172,7 +172,7 @@ func (pt *amProcTab) connected(conn *db.ServerConn, err error) {
 	}
 	if err != nil {
 		pt.busy = false
-		pt.setStatus(fmt.Sprintf("Connection failed: %v", err))
+		pt.setStatus("Connection failed: " + firstErrorLine(err.Error()))
 		pt.am.buildTools()
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
@@ -24,12 +25,20 @@ import (
 // closed instead of appearing in Object Explorer under a dialog the user
 // dismissed, and a failure is left on the status bar without an alert popping
 // over whatever they moved on to.
-func (a *App) connectServer(ctx context.Context, opts config.Connection, done func(err error) bool) {
+//
+// A method that signs a person in does that first, as its own phase (see
+// signInPhase); phase, which may be nil, hears the label for each phase as it
+// starts, on the UI goroutine.
+func (a *App) connectServer(ctx context.Context, opts config.Connection, phase func(label string), done func(err error) bool) {
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 	a.draw()
 
 	a.safego("connecting to the server", func() {
-		sc, err := db.ConnectContext(ctx, opts, db.RoleExplorer)
+		var sc *db.ServerConn
+		err := a.signInPhase(ctx, opts, phase)
+		if err == nil {
+			sc, err = db.ConnectContext(ctx, opts, db.RoleExplorer)
+		}
 		a.postAndWake(func() {
 			wanted := true
 			if done != nil {
@@ -40,16 +49,19 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, done fu
 				return
 			}
 			if err != nil {
+				server, cause := opts.Server, err.Error()
 				if dbErr, ok := errors.AsType[*db.ConnectionError](err); ok {
-					a.setStatus(fmt.Sprintf("Connection error [%s]: %s", dbErr.Server, dbErr.Cause))
-					if wanted {
-						a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %s", dbErr.Server, dbErr.Cause))
-					}
-				} else {
-					a.setStatus(fmt.Sprintf("Connection failed: %v", err))
-					if wanted {
-						a.alertDialog.ShowAlert("Connection Error", fmt.Sprintf("Could not connect to %s: %v", opts.Server, err))
-					}
+					server, cause = dbErr.Server, dbErr.Cause
+				}
+				a.setStatus(fmt.Sprintf("Connection error [%s]: %s", server, firstErrorLine(cause)))
+				if strings.Contains(cause, "\n") {
+					// The status bar has room for one line; the log and the
+					// status history keep the rest.
+					a.logStatus("connect to %s: %s", server, cause)
+				}
+				if wanted {
+					a.alertDialog.ShowAlert("Connection Error",
+						fmt.Sprintf("Could not connect to %s: %s", server, tidyErrorText(cause)))
 				}
 				return
 			}
@@ -93,6 +105,62 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, done fu
 	})
 }
 
+// signInPhase runs db.SignIn ahead of the dial for a method that signs a
+// person in, saying so on the status bar and through phase (nil-able) while
+// it waits, and back to "Connecting" once it is done. Anything else returns
+// nil at once. Runs on the connecting goroutine.
+func (a *App) signInPhase(ctx context.Context, opts config.Connection, phase func(label string)) error {
+	if !db.NeedsSignIn(opts.AuthMethod) {
+		return nil
+	}
+	report := func(status, label string) {
+		a.postAndWake(func() {
+			a.setStatus(status)
+			if phase != nil {
+				phase(label)
+			}
+		})
+	}
+	where := "complete the sign-in in your browser"
+	if opts.AuthMethod == config.AuthEntraDeviceCode {
+		where = "enter the code shown at the sign-in page"
+	}
+	report(fmt.Sprintf("Signing in to Microsoft Entra for %s — %s...", opts.Server, where), "Signing in...")
+	if err := db.SignIn(ctx, opts); err != nil {
+		return err
+	}
+	report(fmt.Sprintf("Connecting to %s...", opts.Server), "Connecting...")
+	return nil
+}
+
+// firstErrorLine is the first non-blank line of an error message, for the
+// status bar: its one row draws a newline as nothing, so a multi-line
+// azidentity error — an HTTP response dump under a one-line summary — ran
+// its lines together into one clipped string.
+func firstErrorLine(msg string) string {
+	for line := range strings.Lines(msg) {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return strings.TrimSpace(msg)
+}
+
+// tidyErrorText drops the rows of dashes an azcore HTTP error draws between
+// its sections. An alert word-wraps its message as one paragraph, where each
+// row became an 80-column word hard-broken across two lines.
+func tidyErrorText(msg string) string {
+	var kept []string
+	for line := range strings.Lines(msg) {
+		line = strings.TrimRight(line, "\r\n")
+		if t := strings.TrimSpace(line); len(t) >= 3 && strings.Trim(t, "-") == "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
 // connectForQueryPanel opens a dedicated connection for qp, cloning sc's own
 // connection options — every query window gets its own connection, distinct
 // from (and outliving) whichever one Object Explorer used to resolve it.
@@ -132,7 +200,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 		}
 		a.postAndWake(func() {
 			if err != nil {
-				a.setStatus(fmt.Sprintf("Connection failed: %v", err))
+				a.setStatus("Connection failed: " + firstErrorLine(err.Error()))
 				return
 			}
 			if !a.panelHosted(qp) {
@@ -172,7 +240,7 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 				// Both feeds, not just the activity one: neither collector
 				// will ever start, and the TempDB tab would otherwise keep
 				// saying it was waiting for its first sample.
-				am.act.status = fmt.Sprintf("Connection failed: %v", err)
+				am.act.status = "Connection failed: " + firstErrorLine(err.Error())
 				am.td.status = am.act.status
 				return
 			}
@@ -187,6 +255,14 @@ func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) 
 			am.startCollector(newConn)
 		})
 	})
+}
+
+// clearEntraSignIns runs File > Clear Microsoft Entra Sign-ins: every
+// sign-in the process holds is forgotten, so the next Entra connection signs
+// in again — the way to switch accounts without restarting.
+func (a *App) clearEntraSignIns() {
+	db.ClearEntraSignIns()
+	a.setStatus("Cleared Microsoft Entra sign-ins — the next Entra connection signs in again")
 }
 
 func (a *App) disconnectActive() {

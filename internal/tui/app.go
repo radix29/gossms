@@ -6,12 +6,14 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/pkg/browser"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -123,6 +125,7 @@ type App struct {
 	confirmDialog               *dialogs.ConfirmDialog
 	confirmTypedDialog          *dialogs.TypedConfirmDialog
 	alertDialog                 *dialogs.AlertDialog
+	deviceCodeDialog            *DeviceCodeDialog
 	backupDialog                *BackupDialog
 	restoreDialog               *RestoreDialog
 
@@ -239,6 +242,7 @@ func (a *App) Run() error {
 
 	a.buildUI()
 	a.layoutAll()
+	installEntraSignIn(a)
 	// Open Connect on startup — nothing works without a server. syncDialogStack
 	// must run before the first draw: draw() renders from dialogStack, which is
 	// otherwise synced only inside the event loop, so the dialog wouldn't
@@ -478,8 +482,23 @@ func (a *App) buildUI() {
 	a.confirmDialog = registerDialog(a, dialogs.NewConfirmDialog(a.screen))
 	a.confirmTypedDialog = registerDialog(a, dialogs.NewTypedConfirmDialog(a.screen))
 	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
+	// After the Connect dialog, which a device code opens over.
+	a.deviceCodeDialog = registerDialog(a, NewDeviceCodeDialog(a))
 	a.backupDialog = registerDialog(a, NewBackupDialog(a))
 	a.restoreDialog = registerDialog(a, NewRestoreDialog(a))
+}
+
+// installEntraSignIn points the two things a Microsoft Entra sign-in shows
+// the user at the TUI rather than at the process's standard output and
+// error, which under tcell are the terminal it is drawing on: the device
+// code, which goes to a's DeviceCodeDialog, and the output of the program
+// MFA's sign-in opens a browser with (xdg-open, open, rundll32), which is
+// dropped — a browser launched through xdg-open may print a line of its own,
+// which would land on the screen at the cursor and stay there until the next
+// full redraw.
+func installEntraSignIn(a *App) {
+	db.SetDeviceCodePrompt(a.promptDeviceCode)
+	browser.Stdout, browser.Stderr = io.Discard, io.Discard
 }
 
 // registerDialog appends d to a.allDialogs and hands it back, so a dialog is

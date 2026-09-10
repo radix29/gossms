@@ -6,6 +6,7 @@ import (
 
 	gosmoversion "github.com/radix29/gosmo/version"
 	"github.com/radix29/gossms/internal/activity"
+	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/version"
@@ -22,6 +23,8 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Connect...", Shortcut: "F9", Action: func() { a.connectDialog.Show() }},
 			{Label: "Disconnect", Action: func() { a.disconnectActive() },
 				Enabled: func() bool { return a.selectedServerConn() != nil }},
+			{Label: "Clear Microsoft Entra Sign-ins", Action: func() { a.clearEntraSignIns() },
+				Enabled: db.HasEntraSignIns},
 			{Divider: true},
 			{Label: "Open", Shortcut: "Ctrl+O", Action: func() { a.openQueryFile() }},
 			{Label: "Close", Shortcut: "Ctrl+W", Action: func() { a.closeActivePanel() },

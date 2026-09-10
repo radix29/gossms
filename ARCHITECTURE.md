@@ -165,6 +165,7 @@ gossms/
 │   ├── db/                  # gosmo connection wrapper: config.Connection → gosmo.ConnectionOptions (toGosmoOptions), per-role application name, masked preview
 │   │                        #   peer.go: cached connections to other instances (Always On: read the group from its primary), reached with that instance's own saved credentials
 │   │                        #   capabilities.go: the connect-time capability probe (what this login may do) + the lazy per-database one, cached on ServerConn
+│   │                        #   entra.go: the process-wide gosmo.EntraCache every Entra connection shares, the device-code prompt hook, and the sign-in phase (SignIn) run before the dial
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines, and Poller for a feed whose source is already aggregated — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
@@ -310,6 +311,7 @@ gossms/
 │       │
 │       │  ── Standalone dialogs ──
 │       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
+│       ├── device_code_dialog.go # Microsoft Entra Device Code sign-in: the code + URL, open for exactly as long as the sign-in
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
 │       ├── options_dialog.go     # Tools > Options — icon style, max cell length, IntelliSense on/off, saved to config.json

@@ -2,6 +2,7 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -130,6 +131,10 @@ func Connect(opts config.Connection) (*ServerConn, error) {
 // which always applies on top of ctx. ctx governs the attempt only: the
 // connection returned lives until Close.
 //
+// A method that signs a person in (NeedsSignIn) does so first, as a phase of
+// its own under SignInTimeout — see SignIn — so the connect timeout never has
+// to cover someone finding their phone. A sign-in already held costs nothing.
+//
 // A failure is a *ConnectionError, including one opts itself causes before
 // anything is dialled (an Extra Properties entry that is not key=value, or
 // that names a setting the dialog owns).
@@ -138,8 +143,19 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	if err != nil {
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
 	}
+	if NeedsSignIn(opts.AuthMethod) {
+		if err := signIn(ctx, opts, co); err != nil {
+			return nil, err
+		}
+	}
+	if config.IsEntraMethod(opts.AuthMethod) {
+		entraUsed.Store(true)
+	}
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
+	// A sign-in SignIn could not do ahead happens in the dial, and a device
+	// code shown then is cancelled the same way.
+	ctx = withSignInCanceller(ctx, cancel)
 
 	srv, err := gosmo.ConnectContext(ctx, co)
 	if err != nil {
@@ -161,13 +177,17 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 //
 // The dialog's fields do not map one-to-one onto gosmo's: each Entra method
 // reads its client id from a different option. A service principal's
-// application id is gosmo's User (with the secret as Password); an
-// interactive or device-code flow's app registration is ApplicationClientID;
-// only a user-assigned managed identity reads ClientID. Passing the dialog's
-// ClientID straight through, as this once did, connected a service principal
-// with an empty user id. A saved service principal that predates the mapping
-// may carry its application id in User instead, so that is the fallback.
-// Fields a method does not use are not passed at all.
+// application id is gosmo's User (with the secret as Password); the app
+// registration a person signs in through (Password, MFA, Device Code) is
+// ApplicationClientID; only a user-assigned managed identity reads ClientID.
+// Passing the dialog's ClientID straight through, as this once did, connected
+// a service principal with an empty user id. A saved service principal that
+// predates the mapping may carry its application id in User instead, so that
+// is the fallback. MFA's User is a login hint. Fields a method does not use
+// (config.FieldsFor) are not passed at all.
+//
+// Every Entra method gets the process's shared entraCache and device-code
+// prompt (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
 		Server:                 resolveServer(opts.Server, opts.Port),
@@ -185,20 +205,30 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 	case config.AuthEntraMSI:
 		co.ClientID = opts.ClientID
 	case config.AuthEntraServicePrincipal:
-		co.User = opts.ClientID
-		if co.User == "" {
-			co.User = opts.User
-		}
+		co.User = cmp.Or(opts.ClientID, opts.User)
 		co.Password = opts.Password
-	case config.AuthEntraInteractive, config.AuthEntraDeviceCode:
+	case config.AuthEntraPassword:
+		co.User, co.Password = opts.User, opts.Password
+		co.ApplicationClientID = opts.ClientID
+	case config.AuthEntraInteractive:
+		co.User = opts.User // the login hint
+		co.ApplicationClientID = opts.ClientID
+	case config.AuthEntraDeviceCode:
 		co.ApplicationClientID = opts.ClientID
 	case config.AuthEntraDefault, config.AuthEntraAzCLI:
 		// The credential chain / az login supplies the identity.
-	default: // SQL Server, Windows, Entra password
+	default: // SQL Server, Windows
 		co.User, co.Password = opts.User, opts.Password
 	}
-	if config.IsEntraMethod(opts.AuthMethod) {
+	if config.FieldsFor(opts.AuthMethod).Tenant {
 		co.TenantID = opts.TenantID
+	}
+	if config.IsEntraMethod(opts.AuthMethod) {
+		co.EntraCache = entraCache
+		co.DeviceCodePrompt = promptDeviceCode
+	}
+	if err := missingCredential(opts.AuthMethod, co); err != nil {
+		return gosmo.ConnectionOptions{}, err
 	}
 
 	extra, err := ParseExtraProperties(opts.ExtraProperties)
@@ -207,6 +237,36 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 	}
 	co.ExtraParams = extra
 	return co, nil
+}
+
+// missingCredential refuses, in the Connect dialog's field names, a
+// credential gosmo would refuse in its own: left to gosmo, a service
+// principal without an application id is reported as needing "User (the
+// application's client ID)", naming a field the dialog greys out for the
+// method. Only the dialog's methods with required fields are here — the
+// rest sign in with whatever they are given.
+func missingCredential(m config.AuthMethod, co gosmo.ConnectionOptions) error {
+	var field string
+	switch m {
+	case config.AuthEntraPassword:
+		switch {
+		case co.User == "":
+			field = "a User (the account's user principal name)"
+		case co.Password == "":
+			field = "a Password"
+		}
+	case config.AuthEntraServicePrincipal:
+		switch {
+		case co.User == "":
+			field = "a ClientID (the application's client ID)"
+		case co.Password == "":
+			field = "a Password (the client secret)"
+		}
+	}
+	if field == "" {
+		return nil
+	}
+	return fmt.Errorf("%s needs %s", config.AuthMethodName(m), field)
 }
 
 // ParseExtraProperties reads the Connect dialog's Extra Properties text into

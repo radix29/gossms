@@ -1,3 +1,5 @@
+connect dialog. for the name of the connection, use only up to 15 chars for the server name and up to 10 chars for the database name so that the user name is still visible in the combo box
+
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 14. Service Broker (whole subtree)
 15. Certificates / Symmetric / Asymmetric Keys, Database Audit Specs
@@ -10,9 +12,6 @@
 27. Full-Text; Maintenance-as-Agent-jobs; Data Collection (read-only)
 
 -------------
-
-- check Azure entra authentification that is porvided by the mssql library. what shall i do so i can test something difrerent that sql / windows auth?
-    - check if there are any bugs related to the Entra Auth first
 
 reports -> define what reports at database and server level
 
@@ -80,3 +79,5 @@ https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-genera
  
 based on this, fix my claude.md files on both projects and also the memory file
 show me the changes before you write any change.
+
+

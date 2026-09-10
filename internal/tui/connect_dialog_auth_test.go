@@ -73,28 +73,33 @@ func TestConnectDialogSendsOnlyTheFieldsTheMethodReads(t *testing.T) {
 	d.fTenantID.SetValue("tenant")
 	d.fClientID.SetValue("client")
 
-	cases := map[config.AuthMethod]authFields{
-		config.AuthSQLServer:             {user: true, password: true},
-		config.AuthWindows:               {user: true, password: true},
-		config.AuthEntraDefault:          {tenant: true},
-		config.AuthEntraPassword:         {user: true, password: true, tenant: true},
-		config.AuthEntraMSI:              {client: true},
-		config.AuthEntraServicePrincipal: {password: true, tenant: true, client: true},
-		config.AuthEntraInteractive:      {tenant: true, client: true},
-		config.AuthEntraDeviceCode:       {tenant: true, client: true},
-		config.AuthEntraAzCLI:            {tenant: true},
+	// Spelled out rather than read from config.FieldsFor, which is what the
+	// dialog reads: a test built from the same table agrees with any mistake
+	// in it. TenantID is live for every Entra method but Managed Identity, and
+	// ClientID for every one that signs in through an app registration.
+	type f = config.AuthFields
+	cases := map[config.AuthMethod]f{
+		config.AuthSQLServer:             {User: true, Password: true},
+		config.AuthWindows:               {User: true, Password: true},
+		config.AuthEntraDefault:          {Tenant: true},
+		config.AuthEntraPassword:         {User: true, Password: true, Tenant: true, Client: true},
+		config.AuthEntraMSI:              {Client: true},
+		config.AuthEntraServicePrincipal: {Password: true, Tenant: true, Client: true},
+		config.AuthEntraInteractive:      {User: true, Tenant: true, Client: true},
+		config.AuthEntraDeviceCode:       {Tenant: true, Client: true},
+		config.AuthEntraAzCLI:            {Tenant: true},
 	}
 	if len(cases) != len(config.AllAuthMethods()) {
 		t.Fatalf("%d cases for %d auth methods", len(cases), len(config.AllAuthMethods()))
 	}
 	for m, want := range cases {
 		selectAuth(t, d, m)
-		enabled := authFields{d.fUser.Enabled(), d.fPassword.Enabled(), d.fTenantID.Enabled(), d.fClientID.Enabled()}
+		enabled := f{User: d.fUser.Enabled(), Password: d.fPassword.Enabled(), Tenant: d.fTenantID.Enabled(), Client: d.fClientID.Enabled()}
 		if enabled != want {
 			t.Errorf("%s: enabled user/password/tenant/client = %+v, want %+v", config.AuthMethodName(m), enabled, want)
 		}
 		o := d.currentOptions()
-		sent := authFields{o.User != "", o.Password != "", o.TenantID != "", o.ClientID != ""}
+		sent := f{User: o.User != "", Password: o.Password != "", Tenant: o.TenantID != "", Client: o.ClientID != ""}
 		if sent != want {
 			t.Errorf("%s: options carry user/password/tenant/client = %+v, want %+v", config.AuthMethodName(m), sent, want)
 		}

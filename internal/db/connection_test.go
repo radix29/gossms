@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/microsoft/go-mssqldb/azuread"
+	"github.com/microsoft/go-mssqldb/msdsn"
 	"github.com/radix29/gossms/internal/config"
 )
 
@@ -171,15 +173,17 @@ func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
 	}
 	type want struct{ user, password, tenant, clientID, appClientID string }
 	cases := map[config.AuthMethod]want{
-		config.AuthSQLServer:             {user: "user", password: "pw"},
-		config.AuthWindows:               {user: "user", password: "pw"},
-		config.AuthEntraPassword:         {user: "user", password: "pw", tenant: "tenant"},
-		config.AuthEntraMSI:              {tenant: "tenant", clientID: "client"},
+		config.AuthSQLServer: {user: "user", password: "pw"},
+		config.AuthWindows:   {user: "user", password: "pw"},
+		// ClientID is the app registration the user signs in through.
+		config.AuthEntraPassword:         {user: "user", password: "pw", tenant: "tenant", appClientID: "client"},
+		config.AuthEntraMSI:              {clientID: "client"},
 		config.AuthEntraServicePrincipal: {user: "client", password: "pw", tenant: "tenant"},
-		config.AuthEntraInteractive:      {tenant: "tenant", appClientID: "client"},
-		config.AuthEntraDeviceCode:       {tenant: "tenant", appClientID: "client"},
-		config.AuthEntraDefault:          {tenant: "tenant"},
-		config.AuthEntraAzCLI:            {tenant: "tenant"},
+		// User is the login hint.
+		config.AuthEntraInteractive: {user: "user", tenant: "tenant", appClientID: "client"},
+		config.AuthEntraDeviceCode:  {tenant: "tenant", appClientID: "client"},
+		config.AuthEntraDefault:     {tenant: "tenant"},
+		config.AuthEntraAzCLI:       {tenant: "tenant"},
 	}
 	if len(cases) != len(config.AllAuthMethods()) {
 		t.Fatalf("%d cases for %d auth methods — a method is untested", len(cases), len(config.AllAuthMethods()))
@@ -208,6 +212,123 @@ func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
 	u = mustPreview(t, legacy)
 	if got := u.Query().Get("user id"); got != "new-app-id@t1" {
 		t.Errorf("service principal: user id = %q, want new-app-id@t1 (ClientID wins over User)", got)
+	}
+}
+
+// What the driver makes of each Entra method's DSN (docs/testing.md: a DSN
+// test asserts what the driver parses). The mapping above once pinned a
+// Password connection with no app id and an MFA connection with no login
+// hint, both of which gosmo wrote faithfully and the driver refused or
+// dropped. Every method must get past azuread's own validator, with the
+// dialog's fields where the credential reads them — including Password and
+// MFA with ClientID left empty, which gosmo fills with the public client.
+func TestEveryEntraMethodBuildsADriverConnector(t *testing.T) {
+	full := config.Connection{
+		Server: "s", User: "user", Password: "pw", TenantID: "tenant", ClientID: "client",
+	}
+	type params struct{ fedauth, userID, appClientID, tenantID string }
+	cases := map[config.AuthMethod]params{
+		config.AuthEntraDefault:          {"ActiveDirectoryDefault", "", "", "tenant"},
+		config.AuthEntraPassword:         {"ActiveDirectoryPassword", "user", "client", "tenant"},
+		config.AuthEntraMSI:              {"ActiveDirectoryManagedIdentity", "client", "", ""},
+		config.AuthEntraServicePrincipal: {"ActiveDirectoryServicePrincipal", "client@tenant", "", "tenant"},
+		config.AuthEntraInteractive:      {"ActiveDirectoryInteractive", "user", "client", "tenant"},
+		config.AuthEntraDeviceCode:       {"ActiveDirectoryDeviceCode", "", "client", "tenant"},
+		config.AuthEntraAzCLI:            {"ActiveDirectoryAzCli", "", "", "tenant"},
+	}
+	for _, m := range config.AllAuthMethods() {
+		if !config.IsEntraMethod(m) {
+			continue
+		}
+		w, ok := cases[m]
+		if !ok {
+			t.Errorf("%s: no case — every Entra method must be checked against the driver", config.AuthMethodName(m))
+			continue
+		}
+		opts := full
+		opts.AuthMethod = m
+		p := driverParams(t, opts)
+		if got := (params{p["fedauth"], p["user id"], p["applicationclientid"], p["tenantid"]}); got != w {
+			t.Errorf("%s: driver reads fedauth/user id/applicationclientid/tenantid = %+v, want %+v",
+				config.AuthMethodName(m), got, w)
+		}
+	}
+	for _, m := range []config.AuthMethod{config.AuthEntraPassword, config.AuthEntraInteractive} {
+		opts := full
+		opts.AuthMethod, opts.ClientID = m, ""
+		if p := driverParams(t, opts); p["applicationclientid"] == "" {
+			t.Errorf("%s with no ClientID: driver got no applicationclientid, which it requires", config.AuthMethodName(m))
+		}
+	}
+}
+
+// driverParams builds opts' real (unmasked) DSN, hands it to the azuread
+// connector — which parses and validates it without dialling — and returns
+// the parameters the driver parsed.
+func driverParams(t *testing.T, opts config.Connection) map[string]string {
+	t.Helper()
+	co, err := toGosmoOptions(opts, RoleExplorer)
+	if err != nil {
+		t.Fatalf("%s: toGosmoOptions: %v", config.AuthMethodName(opts.AuthMethod), err)
+	}
+	dsn, err := co.ConnectionString(false)
+	if err != nil {
+		t.Fatalf("%s: ConnectionString: %v", config.AuthMethodName(opts.AuthMethod), err)
+	}
+	if _, err := azuread.NewConnector(dsn); err != nil {
+		t.Fatalf("%s: the driver refuses the DSN: %v", config.AuthMethodName(opts.AuthMethod), err)
+	}
+	cfg, err := msdsn.Parse(dsn)
+	if err != nil {
+		t.Fatalf("%s: msdsn.Parse: %v", config.AuthMethodName(opts.AuthMethod), err)
+	}
+	return cfg.Parameters
+}
+
+// A credential a method cannot sign in without is refused in the dialog's own
+// field names — the preview shows this until it is filled — rather than in
+// gosmo's, which call a service principal's ClientID "User".
+func TestMissingCredentialNamesTheDialogsField(t *testing.T) {
+	cases := []struct {
+		opts config.Connection
+		want string
+	}{
+		{config.Connection{AuthMethod: config.AuthEntraServicePrincipal, Password: "pw"}, "needs a ClientID"},
+		{config.Connection{AuthMethod: config.AuthEntraServicePrincipal, ClientID: "app"}, "needs a Password (the client secret)"},
+		{config.Connection{AuthMethod: config.AuthEntraPassword, Password: "pw"}, "needs a User"},
+		{config.Connection{AuthMethod: config.AuthEntraPassword, User: "u@contoso.com"}, "needs a Password"},
+	}
+	for _, c := range cases {
+		c.opts.Server = "s"
+		_, err := BuildConnectionString(c.opts)
+		if err == nil || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), "gosmo") {
+			t.Errorf("%s %+v: err = %v, want one saying %q in the dialog's terms",
+				config.AuthMethodName(c.opts.AuthMethod), c.opts, err, c.want)
+		}
+	}
+	// The legacy service principal, application id in User, still passes.
+	legacy := config.Connection{Server: "s", AuthMethod: config.AuthEntraServicePrincipal, User: "app", Password: "pw"}
+	if _, err := BuildConnectionString(legacy); err != nil {
+		t.Errorf("legacy service principal: %v", err)
+	}
+}
+
+// Every Entra connection shares one sign-in cache, whatever its role — a
+// cache per pool is a browser sign-in per query window — and gets the
+// process's device-code prompt rather than gosmo's print to standard output.
+func TestEntraConnectionsShareOneSignIn(t *testing.T) {
+	for _, m := range config.AllAuthMethods() {
+		for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor} {
+			co, err := toGosmoOptions(config.Connection{Server: "s", AuthMethod: m, User: "u", Password: "p", ClientID: "c"}, role)
+			if err != nil {
+				t.Fatalf("%s: %v", config.AuthMethodName(m), err)
+			}
+			entra := config.IsEntraMethod(m)
+			if (co.EntraCache == entraCache && entraCache != nil) != entra || (co.DeviceCodePrompt != nil) != entra {
+				t.Errorf("%s, role %d: cache shared %v, prompt set %v; want both %v",
+					config.AuthMethodName(m), role, co.EntraCache == entraCache, co.DeviceCodePrompt != nil, entra)
+			}
+		}
 	}
 }
 

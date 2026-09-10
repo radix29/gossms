@@ -137,8 +137,9 @@ func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {
 
 // completionInventoryKey identifies the shared cache entry for a
 // server+login+database, reusing config.ConnectionName's
-// server/port/database/user tuple. Its AuthMethod caveat applies and is harmless
-// here, since colliding entries see the same catalog.
+// server/port/database/user tuple. It leaves out the auth method, so two
+// logins with an empty User (Windows, most Entra methods) share an entry —
+// harmless here, since colliding entries see the same catalog.
 func completionInventoryKey(opts config.Connection, database string) string {
 	return config.ConnectionName(opts.Server, opts.Port, database, opts.User)
 }

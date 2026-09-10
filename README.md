@@ -115,10 +115,35 @@ Browser can resolve the instance. Use a port only when you want to connect to a
 specific port directly. An IPv6 address can be typed bare (`fe80::1`),
 bracketed, or with a port as `[fe80::1]:1433` or `fe80::1,1433`.
 
-Fields the chosen authentication method does not use are greyed out: a service
-principal's application ID goes in **ClientID** with its secret in
-**Password**, and **ClientID** is the app registration for Interactive and
-Device Code, or the identity's client ID for a user-assigned Managed Identity.
+Fields the chosen authentication method does not use are greyed out. The
+Microsoft Entra methods are:
+
+| Method | Fields |
+|---|---|
+| **Microsoft Entra MFA** | Signs in through your browser. **User** is an optional login hint. |
+| **Microsoft Entra Device Code** | Shows a code to enter at Microsoft's sign-in page, on any device — for a machine with no browser, or over SSH. |
+| **Microsoft Entra Password** | **User** and **Password**. No MFA, and deprecated by Microsoft; prefer MFA. |
+| **Microsoft Entra Service Principal** | The application's ID in **ClientID**, its client secret in **Password**. |
+| **Microsoft Entra Managed Identity** | **ClientID** only for a user-assigned identity; blank for system-assigned. |
+| **Microsoft Entra Default** | Tries environment variables, managed identity and the Azure CLI in turn. |
+| **Microsoft Entra Azure CLI** | Uses the account `az login` signed in. |
+
+**TenantID** is optional for every Entra method except Managed Identity, which
+has no tenant field. Left blank, MFA, Device Code, Password and Service
+Principal sign in to the tenant the server belongs to, as SSMS does — which
+is what lets a personal Microsoft account added to that tenant sign in —
+and Default and Azure CLI use their own. For MFA, Device Code and Password,
+**ClientID** names your organisation's own app registration when it requires
+one; blank uses Microsoft's public client.
+
+MFA and Device Code sign in as a step of their own before connecting, with up
+to five minutes to finish; the status bar says where to go. Device Code's code
+appears in a dialog — **Copy Code** (or Ctrl+C) copies it to the clipboard —
+and Escape or **Cancel Sign-in** cancels the attempt. One sign-in covers the
+whole session: Object Explorer, every query window, Activity Monitor and
+reconnects, on every server in the same tenant. Sign-ins are held in memory
+only, so goSSMS signs in again after a restart; **File > Clear Microsoft Entra
+Sign-ins** forgets them sooner, to switch accounts.
 
 New connections encrypt the whole session (**Encrypt: Mandatory**) with **Trust
 Server Certificate** ticked, so an instance using SQL Server's self-signed
@@ -203,8 +228,13 @@ saved password unreadable, and it has to be typed again.
 
 ## Known issues
 
-- Microsoft Entra authentication has not yet been tested against live
-  infrastructure.
+- Every Microsoft Entra method except Managed Identity has been verified end
+  to end on Azure SQL Managed Instance. Managed Identity needs goSSMS running
+  on an Azure-hosted machine and has not been tested.
+- To learn which tenant to sign in to, goSSMS starts a login to the server
+  and abandons it before signing in, once per server per session. Azure SQL
+  records each as Error 33155 ("A disconnect event was raised when server is
+  waiting for Federated Authentication token") in its error log.
 - Backup and restore to Azure Storage build and validate correctly but have
   not been executed end to end; doing so requires a shared access signature
   credential on the container.

@@ -48,6 +48,102 @@ func TestAddOrUpdateGeneratesName(t *testing.T) {
 	}
 }
 
+// S7: the generated name — AddOrUpdate's dedup key — tells apart every pair
+// of connections that are not the same one. Built from server, port,
+// database and User alone, two service principals on one server (User greyed
+// for the method, so empty for both) replaced each other, as did Windows and
+// every Entra method without a User.
+func TestGeneratedNameSeparatesIdentitiesAndMethods(t *testing.T) {
+	base := Connection{Server: "srv", Port: 1433, Database: "db"}
+	with := func(m AuthMethod, user, client string) Connection {
+		c := base
+		c.AuthMethod, c.User, c.ClientID = m, user, client
+		return c
+	}
+	cases := []struct {
+		c    Connection
+		want string
+	}{
+		// SQL Server Authentication keeps the name every saved list already has.
+		{with(AuthSQLServer, "sa", ""), "srv,1433,db,sa"},
+		{with(AuthWindows, "", ""), "srv,1433,db, (Windows)"},
+		{with(AuthEntraDefault, "", ""), "srv,1433,db, (Entra Default)"},
+		{with(AuthEntraAzCLI, "", ""), "srv,1433,db, (Entra Azure CLI)"},
+		{with(AuthEntraServicePrincipal, "", "app-1"), "srv,1433,db,app-1 (Entra Service Principal)"},
+		{with(AuthEntraServicePrincipal, "", "app-2"), "srv,1433,db,app-2 (Entra Service Principal)"},
+		// Saved before ClientID was the method's field.
+		{with(AuthEntraServicePrincipal, "app-3", ""), "srv,1433,db,app-3 (Entra Service Principal)"},
+		{with(AuthEntraMSI, "", "mi-1"), "srv,1433,db,mi-1 (Entra Managed Identity)"},
+		{with(AuthEntraMSI, "", ""), "srv,1433,db, (Entra Managed Identity)"},
+		{with(AuthEntraInteractive, "ann@contoso.com", "app"), "srv,1433,db,ann@contoso.com (Entra MFA)"},
+		{with(AuthEntraInteractive, "bob@contoso.com", "app"), "srv,1433,db,bob@contoso.com (Entra MFA)"},
+		{with(AuthEntraPassword, "ann@contoso.com", "app"), "srv,1433,db,ann@contoso.com (Entra Password)"},
+		{with(AuthEntraDeviceCode, "", ""), "srv,1433,db, (Entra Device Code)"},
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		got := c.c.GeneratedName()
+		if got != c.want {
+			t.Errorf("%s user %q client %q: GeneratedName = %q, want %q",
+				AuthMethodName(c.c.AuthMethod), c.c.User, c.c.ClientID, got, c.want)
+		}
+		if seen[got] {
+			t.Errorf("GeneratedName %q generated twice", got)
+		}
+		seen[got] = true
+	}
+
+	cfg := &Config{}
+	for _, c := range cases {
+		cfg.AddOrUpdate(c.c)
+	}
+	if len(cfg.Connections) != len(cases) {
+		t.Errorf("%d distinct connections saved as %d entries", len(cases), len(cfg.Connections))
+	}
+}
+
+// The auth table's labels are the Connect dialog's dropdown items, SSMS's
+// names for the methods; a relabel is free (the method is stored as its
+// number) but the order and the numbers are not.
+func TestAuthMethodTable(t *testing.T) {
+	want := []struct {
+		m     AuthMethod
+		n     int
+		label string
+		entra bool
+	}{
+		{AuthSQLServer, 0, "SQL Server Authentication", false},
+		{AuthWindows, 1, "Windows Authentication", false},
+		{AuthEntraDefault, 2, "Microsoft Entra Default", true},
+		{AuthEntraPassword, 3, "Microsoft Entra Password", true},
+		{AuthEntraMSI, 4, "Microsoft Entra Managed Identity", true},
+		{AuthEntraServicePrincipal, 5, "Microsoft Entra Service Principal", true},
+		{AuthEntraInteractive, 9, "Microsoft Entra MFA", true},
+		{AuthEntraDeviceCode, 10, "Microsoft Entra Device Code", true},
+		{AuthEntraAzCLI, 11, "Microsoft Entra Azure CLI", true},
+	}
+	all := AllAuthMethods()
+	if len(all) != len(want) {
+		t.Fatalf("AllAuthMethods has %d methods, want %d", len(all), len(want))
+	}
+	for i, w := range want {
+		if all[i] != w.m || int(w.m) != w.n {
+			t.Errorf("AllAuthMethods()[%d] = %d, want %d", i, all[i], w.n)
+		}
+		if got := AuthMethodName(w.m); got != w.label {
+			t.Errorf("AuthMethodName(%d) = %q, want %q", w.n, got, w.label)
+		}
+		if got := IsEntraMethod(w.m); got != w.entra {
+			t.Errorf("IsEntraMethod(%d) = %v, want %v", w.n, got, w.entra)
+		}
+	}
+	// A method only a hand-edited config.json has dials as SQL Server
+	// Authentication (db.toGosmoAuth), so it reads that one's fields.
+	if AuthMethodName(7) != "Unknown" || IsEntraMethod(7) || FieldsFor(7) != FieldsFor(AuthSQLServer) {
+		t.Errorf("unknown method 7: %q, entra %v, fields %+v", AuthMethodName(7), IsEntraMethod(7), FieldsFor(7))
+	}
+}
+
 func TestAddOrUpdateReplacesExistingAndMovesToEnd(t *testing.T) {
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u"})
