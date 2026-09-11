@@ -2,8 +2,7 @@ package showplan
 
 import "strings"
 
-// KV is one ordered key/value pair, preserving document order for
-// property listings.
+// KV is an ordered key/value pair, preserving document order.
 type KV struct {
 	Key, Value string
 }
@@ -16,8 +15,7 @@ type Plan struct {
 	XML        string // the source document, decoded to UTF-8
 }
 
-// HasActual reports whether any node carries runtime counters — i.e.
-// whether this is an actual plan rather than an estimated one.
+// HasActual reports whether any node has runtime counters, i.e. an actual plan.
 func (p *Plan) HasActual() bool {
 	for _, st := range p.Statements {
 		for _, n := range st.Nodes() {
@@ -29,8 +27,8 @@ func (p *Plan) HasActual() bool {
 	return false
 }
 
-// Statement is one statement of the batch with its operator tree. Root is
-// nil for statements that carry no query plan (SET, USE, ...).
+// Statement is one batch statement with its operator tree. Root is nil for
+// statements without a plan (SET, USE, ...).
 type Statement struct {
 	Text        string  // StatementText
 	Type        string  // StatementType: SELECT, UPDATE, ...
@@ -83,16 +81,14 @@ type MissingIndex struct {
 	Schema   string
 	Table    string
 	Equality []string // columns with EQUALITY usage
-	// Inequality holds the INEQUALITY columns, kept apart from Equality
-	// because the generated index has to list every equality column first —
-	// a key ordered the other way around can't seek on the equality
-	// predicates, which is the whole point of the suggestion.
+	// Inequality holds INEQUALITY columns separately, because the index must
+	// list every equality column first to seek on them.
 	Inequality []string
 	Include    []string // columns with INCLUDE usage
 }
 
-// Object identifies the database object an operator touches. All names
-// are stored without the surrounding [brackets].
+// Object identifies the database object an operator touches. Names are stored
+// without [brackets].
 type Object struct {
 	Database  string
 	Schema    string
@@ -145,9 +141,8 @@ type Node struct {
 	Children      []*Node
 }
 
-// Cost returns the node's own cost as a fraction of stmtTotal — the SSMS
-// per-operator cost: subtree cost minus the children's subtree costs,
-// clamped at zero.
+// Cost returns the node's own cost as a fraction of stmtTotal (SSMS's
+// per-operator cost): subtree cost minus children's, clamped at zero.
 func (n *Node) Cost(stmtTotal float64) float64 {
 	own := n.EstSubtreeCost
 	for _, c := range n.Children {
@@ -162,8 +157,8 @@ func (n *Node) Cost(stmtTotal float64) float64 {
 	return own / stmtTotal
 }
 
-// Runtime aggregates a node's RunTimeCountersPerThread entries: row and
-// read counters are summed across threads, times take the slowest thread.
+// Runtime aggregates RunTimeCountersPerThread: rows and reads summed, times
+// from the slowest thread.
 type Runtime struct {
 	Rows          int64
 	RowsRead      int64

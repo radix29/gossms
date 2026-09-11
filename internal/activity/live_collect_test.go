@@ -1,20 +1,17 @@
 //go:build livedb
 
-// Live coverage of every query this package sends (ARCH-4). internal/activity
-// issues its own DMV reads rather than going through gosmo, so gosmo's
-// TestLiveVersionSweep never sees them, and the scripted driver in
-// fakedb_test.go answers whatever it is asked — it proves the scans, never
-// that a column, counter name or view exists on a given version.
+// Live coverage of every query this package sends (ARCH-4). These DMV reads
+// bypass gosmo's TestLiveVersionSweep, and the scripted driver only proves the
+// scans, not that a column, counter or view exists on a version.
 //
-// The failure this exists to catch is quiet: a counter renamed or missing on
-// one version reads as 0, not as an error, so each test asserts the reading
-// is *there*, not merely that nothing failed. Run it on 13, 14, 17 and MI:
+// A counter missing on a version reads 0, not an error, so each test asserts
+// the reading is present. Run on 13, 14, 17 and MI:
 //
 //	go test -tags livedb ./internal/activity/ -run TestLive -v \
 //	  -livedb 'sqlserver://sa:PASS@host?TrustServerCertificate=true'
 //
-// Writes are throwaway: a login, and helper procedures under test-only names,
-// all dropped on the way out.
+// Creates a throwaway login and test-named helper procedures, all dropped
+// afterwards.
 package activity
 
 import (
@@ -48,9 +45,8 @@ func liveDB(t *testing.T) (*sql.DB, context.Context) {
 	return db, ctx
 }
 
-// requireCounters fails for every name in want that set does not carry. A
-// counter is looked up the way value() looks it up — instance-prefix stripped
-// — so a named instance's "MSSQL$INST:" object names are exercised too.
+// requireCounters fails for each name in want missing from set, looked up as
+// value() does (instance prefix stripped).
 func requireCounters(t *testing.T, set counterSet, want []string) {
 	t.Helper()
 	have := map[string]counterValue{}
@@ -111,8 +107,8 @@ func TestLiveCollectReadsEverything(t *testing.T) {
 	}
 
 	s := Derive(first, cur)
-	// Collect itself sends eight batches, so the rate cannot be zero if the
-	// counter is being read and decoded.
+	// Collect sends eight batches itself, so the rate can't be zero if the
+	// counter is read.
 	if s.BatchesSec <= 0 {
 		t.Errorf("Batch Requests/sec = %v, want > 0 across two Collects", s.BatchesSec)
 	}
@@ -136,9 +132,8 @@ func TestLiveCollectReadsEverything(t *testing.T) {
 func TestLiveCollectTempDB(t *testing.T) {
 	db, ctx := liveDB(t)
 
-	// A session holding a temp table, so the object and session reads have
-	// something of this test's own to find. A pinned connection: a pooled one
-	// would be reset, dropping the table, before the reads ran.
+	// A session holding a temp table gives the reads something of ours to find.
+	// Pinned connection: a pooled one would be reset, dropping the table.
 	holder, err := db.Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -163,9 +158,7 @@ func TestLiveCollectTempDB(t *testing.T) {
 	requireCounters(t, cur.counters, tempdbCounterNames)
 
 	s := deriveTempDB(first, cur)
-	// The counter half of the tab, read through value() as the tab reads it:
-	// requireCounters matches names only, so a broken object-prefix strip on a
-	// named instance would still pass it.
+	// Read through value() as the tab does; requireCounters only matches names.
 	if s.ActiveTempTables < 1 {
 		t.Errorf("Active Temp Tables = %v, want at least this test's #live_activity", s.ActiveTempTables)
 	}
@@ -188,8 +181,8 @@ func TestLiveCollectTempDB(t *testing.T) {
 		s.Space.TotalMB, s.Space.FreeMB, len(s.Files), s.Cores, len(s.Sessions))
 }
 
-// withLogin creates a throwaway SQL login and returns a pool connected as it.
-// The login is dropped at cleanup, after the pool is closed.
+// withLogin creates a throwaway SQL login and returns a pool connected as it;
+// dropped at cleanup after the pool closes.
 func withLogin(t *testing.T, ctx context.Context, admin *sql.DB) (*sql.DB, string) {
 	t.Helper()
 	name := fmt.Sprintf("gossms_live_am_%d", time.Now().UnixNano()%1_000_000_000)
@@ -208,8 +201,7 @@ func withLogin(t *testing.T, ctx context.Context, admin *sql.DB) (*sql.DB, strin
 	}
 	t.Cleanup(func() {
 		db.Close()
-		// A pooled session of the login's may still be open server-side, and
-		// DROP LOGIN refuses a logged-in login; kill any first.
+		// DROP LOGIN refuses a logged-in login; kill its sessions first.
 		kill := `DECLARE @s nvarchar(max) = N'';
 SELECT @s += N'KILL ' + CAST(session_id AS nvarchar(10)) + N';' FROM sys.dm_exec_sessions WHERE login_name = @p1;
 EXEC (@s);`
@@ -223,10 +215,8 @@ EXEC (@s);`
 	return db, name
 }
 
-// The collectors' prologue asks for VIEW SERVER STATE and nothing else, so
-// that one grant must be enough for every read the Sample, History and TempDB
-// tabs make — and without it the collector must stop with ErrNoPermission, not
-// draw an idle server.
+// VIEW SERVER STATE alone must suffice for every Sample, History and TempDB
+// read, and without it the collector must stop with ErrNoPermission.
 func TestLiveViewServerStateIsTheWholeGate(t *testing.T) {
 	admin, ctx := liveDB(t)
 	db, name := withLogin(t, ctx, admin)
@@ -272,8 +262,8 @@ func TestLiveViewServerStateIsTheWholeGate(t *testing.T) {
 	}
 }
 
-// drainAll reads every result set a batch returns, failing on the first error
-// — a procedure's runtime error can arrive after its first set.
+// drainAll reads every result set of a batch, failing on the first error (a
+// procedure's error can follow its first set).
 func drainAll(ctx context.Context, db *sql.DB, batch string) (sets int, err error) {
 	rows, err := db.QueryContext(ctx, batch)
 	if err != nil {
@@ -291,9 +281,8 @@ func drainAll(ctx context.Context, db *sql.DB, batch string) (sets int, err erro
 	return sets, rows.Err()
 }
 
-// The Block and Sessions tabs install their procedure, look it up, and run
-// it. Both scripts are exercised under test-only names so a copy the author
-// installed by hand is neither found nor replaced.
+// The Block and Sessions procedures are installed, found and run under
+// test-only names, so a hand-installed copy is untouched.
 func TestLiveProcsInstallFindAndRun(t *testing.T) {
 	db, ctx := liveDB(t)
 
@@ -331,7 +320,7 @@ func TestLiveProcsInstallFindAndRun(t *testing.T) {
 					t.Errorf("%s returned no result set", p.Exec(l))
 				}
 			}
-			// Install leaves the pooled connection's database as it found it.
+			// Install must leave the pooled connection's database unchanged.
 			var dbName string
 			if err := db.QueryRowContext(ctx, "SELECT DB_NAME()").Scan(&dbName); err != nil {
 				t.Fatal(err)

@@ -11,24 +11,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// ag_props_routing.go is Availability Group Properties' Read-Only Routing
-// page: where a replica sends read-intent connections while it is the primary,
-// and the address it answers on while it is a readable secondary.
+// ag_props_routing.go is Availability Group Properties' Read-Only Routing page.
 //
-// The two halves belong to different roles and are easy to confuse. The
-// routing *URL* is a secondary-role property — "reach me here when I am a
-// readable secondary" — while the routing *list* is a primary-role property —
-// "when I am the primary, send read-intent connections to these, in this
-// order". Read-only routing does nothing until both are set.
+// The routing URL is a secondary-role property ("reach me here when I'm a
+// readable secondary"); the routing list is a primary-role property ("when I'm
+// primary, send read-intent connections to these, in order"). Routing does
+// nothing until both are set.
 //
-// SSMS builds the list with an available/selected pair of list boxes plus
-// Up/Down buttons. There is no equivalent control here, so the list is edited
-// as text in the same order-and-parentheses form ALTER AVAILABILITY GROUP
-// itself uses — see parseRoutingListText.
+// SSMS uses list boxes with Up/Down; here the list is text in ALTER
+// AVAILABILITY GROUP's order-and-parentheses form (see parseRoutingListText).
 
-// agRoutingEdit is one replica's pending read-only routing state. The list is
-// held as its display text and parsed at apply, so a half-typed list is a
-// validation error on the row rather than a parse failure buried in Apply.
+// agRoutingEdit is one replica's pending routing state. The list is kept as
+// text and parsed at apply, so a half-typed list is a row validation error.
 type agRoutingEdit struct {
 	name string
 
@@ -154,15 +148,10 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 	}
 }
 
-// applyAGRouting writes every changed URL and routing list, in three phases.
-//
-// The order is load-bearing, and getting it wrong is a server error rather
-// than a silent one: SQL Server refuses a routing list naming a replica that
-// has no routing URL ("An availability replica ... specified in the read-only
-// routing list ..."), so a URL being *set* has to land before any list that
-// points at it. Clearing runs the other way round — a URL still referenced by
-// a list cannot be removed — so cleared URLs go last, after the lists that
-// referenced them have dropped the reference.
+// applyAGRouting writes changed URLs and lists in three phases. SQL Server
+// refuses a list naming a replica without a URL, so URLs being set go first; a
+// URL still listed can't be cleared, so cleared URLs go last, after the lists
+// drop them.
 func applyAGRouting(ctx context.Context, ag *gosmo.AvailabilityGroup, edits []*agRoutingEdit, names []string) error {
 	changed := false
 	for _, e := range edits {
@@ -209,17 +198,14 @@ func applyAGRouting(ctx context.Context, ag *gosmo.AvailabilityGroup, edits []*a
 	return nil
 }
 
-// agRoutingOp is one write in applyAGRouting's plan: either the edit's URL or
-// its routing list.
+// agRoutingOp is one planned write: an edit's URL or its list.
 type agRoutingOp struct {
 	edit   *agRoutingEdit
 	isList bool
 }
 
-// planAGRoutingOps orders the pending routing writes as applyAGRouting's
-// doc comment describes: URLs being set, then every list, then URLs being
-// cleared. Split out from the writing so the ordering — the part a server
-// error is the only other way to discover — can be tested directly.
+// planAGRoutingOps orders writes as applyAGRouting describes (set URLs, lists,
+// cleared URLs), separated so the ordering can be tested without a server.
 func planAGRoutingOps(edits []*agRoutingEdit) []agRoutingOp {
 	var ops []agRoutingOp
 	for _, e := range edits {
@@ -240,8 +226,8 @@ func planAGRoutingOps(edits []*agRoutingEdit) []agRoutingOp {
 	return ops
 }
 
-// formatRoutingListText renders a routing list as the text the page edits:
-// priority order, comma separated, with load-balanced sets parenthesised.
+// formatRoutingListText renders a routing list as edited text: priority order,
+// comma separated, load-balanced sets in parentheses.
 func formatRoutingListText(list [][]string) string {
 	parts := make([]string, 0, len(list))
 	for _, set := range list {
@@ -256,13 +242,11 @@ func formatRoutingListText(list [][]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// parseRoutingListText is formatRoutingListText's inverse, resolving each name
-// against the group's replicas so a typo is reported here rather than as a
-// server error at Apply — and so the names written back are the replicas' own
-// spelling rather than whatever case the user typed.
+// parseRoutingListText inverts formatRoutingListText, resolving names against
+// the group's replicas so typos are reported here and names are written in the
+// replicas' own spelling.
 //
-// A repeated replica is rejected: SQL Server takes the routing list as a set
-// of priorities, and a name in two places has no meaning to give it.
+// A repeated replica is rejected; the list is a set of priorities.
 func parseRoutingListText(s string, replicas []string) ([][]string, error) {
 	canonical := make(map[string]string, len(replicas))
 	for _, r := range replicas {
@@ -351,8 +335,7 @@ func parseRoutingListText(s string, replicas []string) ([][]string, error) {
 	return list, nil
 }
 
-// firstOr returns the first element of ss, or def when ss is empty — for
-// building an example string out of whatever replica names are to hand.
+// firstOr returns ss[0], or def when empty.
 func firstOr(ss []string, def string) string {
 	if len(ss) == 0 {
 		return def

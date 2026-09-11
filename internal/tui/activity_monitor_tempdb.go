@@ -11,18 +11,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/charts"
 )
 
-// maxSessionRows is how many sessions the usage grid lists. The grid is
-// sorted by total space held, so the ones that fall off the end are the ones
-// holding least.
+// maxSessionRows is how many sessions the usage grid lists, sorted by space
+// held.
 const maxSessionRows = 10
 
-// maxFileBars is how many tempdb files the file panel draws. A server with
-// more files than this has a configuration problem the advisory line names,
-// and drawing sixty one-row bars would not help diagnose it.
+// maxFileBars caps drawn tempdb files; more than this is a configuration
+// problem the advisory line names.
 const maxFileBars = 12
 
 // tempdbObjectColors give each object kind a fixed colour, indexed by
-// activity.TempDBObjectKind, so a kind keeps its place in the stack.
+// activity.TempDBObjectKind.
 func tempdbObjectColors() []tcell.Color {
 	cyan, green, yellow, blue, _, purple, _ := chartColors()
 	return []tcell.Color{
@@ -35,7 +33,7 @@ func tempdbObjectColors() []tcell.Color {
 }
 
 // buildTempDBView turns the tempdb store into the TempDB dashboard's series,
-// oldest sample first.
+// oldest first.
 func (am *ActivityMonitor) buildTempDBView() dashboard.TempDBView {
 	cyan, green, yellow, blue, red, purple, neutral := chartColors()
 	st := &am.tdStore
@@ -46,8 +44,8 @@ func (am *ActivityMonitor) buildTempDBView() dashboard.TempDBView {
 
 	v := dashboard.TempDBView{
 		Times: am.tempdbTimes(),
-		// Free last so it stacks on top: the allocated bands sit at the
-		// baseline where they can be compared against each other.
+		// Free last so it stacks on top, leaving allocated bands comparable at
+		// the baseline.
 		Space: []charts.Series{
 			series("Version store MB", "Version", red, func(s activity.TempDBSample) float64 { return s.Space.VersionStoreMB }),
 			series("User objects MB", "User", cyan, func(s activity.TempDBSample) float64 { return s.Space.UserObjectMB }),
@@ -98,8 +96,8 @@ func (am *ActivityMonitor) buildTempDBView() dashboard.TempDBView {
 	return v
 }
 
-// tempdbTimes are the clock times of the stored tempdb samples, oldest
-// first — what a tooltip names the clicked column with.
+// tempdbTimes are the stored tempdb samples' clock times, oldest first, for
+// tooltips.
 func (am *ActivityMonitor) tempdbTimes() []string {
 	samples := am.tdStore.Samples()
 	out := make([]string, len(samples))
@@ -109,8 +107,8 @@ func (am *ActivityMonitor) tempdbTimes() []string {
 	return out
 }
 
-// tempdbObjectSeries is one stacked series per object kind, in the order the
-// kinds are declared so the stack doesn't reshuffle between ticks.
+// tempdbObjectSeries is one stacked series per object kind, in declaration
+// order.
 func (am *ActivityMonitor) tempdbObjectSeries() []charts.Series {
 	colors := tempdbObjectColors()
 	out := make([]charts.Series, 0, len(activity.TempDBObjectKindNames))
@@ -124,8 +122,7 @@ func (am *ActivityMonitor) tempdbObjectSeries() []charts.Series {
 	return out
 }
 
-// usedPercent is how much of tempdb's grown size is allocated. A zero-sized
-// tempdb reads as 0% rather than dividing by zero.
+// usedPercent is the allocated share of tempdb's grown size; 0 for zero size.
 func usedPercent(sp activity.TempDBSpace) float64 {
 	if sp.TotalMB <= 0 {
 		return 0
@@ -151,9 +148,8 @@ func tempdbObjectCountBars(s activity.TempDBSample) []charts.Bar {
 	return bars
 }
 
-// tempdbFileBars is one bar per file, split used and free, so a file that is
-// nearly full and a file that is nearly empty are told apart at a glance
-// even when both are the same size.
+// tempdbFileBars is one bar per file split used/free, so full and empty files
+// of equal size look different.
 func tempdbFileBars(s activity.TempDBSample) []charts.Bar {
 	cyan, _, _, _, _, _, neutral := chartColors()
 	files := s.Files
@@ -178,17 +174,13 @@ func tempdbFileBars(s activity.TempDBSample) []charts.Bar {
 	return bars
 }
 
-// maxRecommendedFiles is where the one-data-file-per-core rule stops: past
-// eight files the allocation contention it addresses is already spread thin,
-// and more files buy nothing.
+// maxRecommendedFiles caps the one-file-per-core rule; beyond eight files the
+// contention is already spread.
 const maxRecommendedFiles = 8
 
-// tempdbFileAdvice states the one configuration problem this tab can see, or
-// returns empty when there is nothing to say. Two checks, both from the
-// standard tempdb guidance: one data file per core up to eight, and all data
-// files the same size — an oversized file takes a disproportionate share of
-// the allocations and reintroduces the contention the extra files exist to
-// avoid.
+// tempdbFileAdvice states the configuration problem this tab can see, or "".
+// Standard guidance: one data file per core up to eight, all the same size (an
+// oversized file takes more allocations, reintroducing the contention).
 func tempdbFileAdvice(s activity.TempDBSample) string {
 	data := s.DataFiles()
 	if len(data) == 0 {

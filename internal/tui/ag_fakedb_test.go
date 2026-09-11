@@ -12,16 +12,13 @@ import (
 
 // Shared fixtures for the three Availability Group Properties pages.
 //
-// Every page reads and writes through the group's *primary* replica, and
-// agOnPrimary treats an unreachable primary as a hard error rather than
-// degrading. IsLocalPrimary compares the group's primary_replica against the
-// connected server's own name, so the fixture's primary replica has to be
-// called what serverInfoResponse says this instance is called — hence a
-// replica named FAKE\SQL alongside two ordinary ones. Without that the pages
-// would try to open a peer connection, which the fake has no way to serve.
+// Pages go through the primary, and agOnPrimary treats an unreachable one as an
+// error. IsLocalPrimary compares primary_replica with the server name from
+// serverInfoResponse, so the fixture's primary is FAKE\SQL (plus two others);
+// otherwise pages would open a peer connection the fake can't serve.
 //
-// Every AG write is a bare ALTER AVAILABILITY GROUP on the connection, with no
-// USE in front of it, so they are read back with Statements().
+// AG writes are bare ALTER AVAILABILITY GROUP with no USE, so read them with
+// Statements().
 
 const (
 	agFixtureName = "AAG1"
@@ -32,9 +29,9 @@ const (
 
 var agEpoch = time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
 
-// agGroupResponse is the 18-column sys.availability_groups read. The column
-// count is fixed across server versions — gosmo substitutes typed literals for
-// columns an older instance lacks — so one shape serves every test.
+// agGroupResponse is the 18-column sys.availability_groups read; gosmo keeps
+// the column count fixed across versions with typed literals, so one shape fits
+// all tests.
 func agGroupResponse() fakeResponse {
 	return fakeResponse{match: "FROM sys.availability_groups ag", cols: 18, rows: [][]driver.Value{{
 		"ag-0001", agFixtureName, "res-1", "resg-1",
@@ -59,9 +56,8 @@ func agReplicaRow(id, name, availability, failover, secondaryRole, seeding, rout
 	}
 }
 
-// agReplicasResponse scripts three replicas whose settings all differ, so no
-// one replica's value can stand in for another's and the one a test acts on is
-// never the first.
+// agReplicasResponse scripts three replicas with all-different settings; tests
+// never act on the first.
 func agReplicasResponse() fakeResponse {
 	return fakeResponse{match: "FROM sys.availability_replicas ar", cols: 23, rows: [][]driver.Value{
 		agReplicaRow("rep-1", agPrimary, "SYNCHRONOUS_COMMIT", "AUTOMATIC", "NO", "AUTOMATIC", "", 10, 50, "PRIMARY"),
@@ -70,8 +66,8 @@ func agReplicasResponse() fakeResponse {
 	}}
 }
 
-// agDatabasesResponse feeds the General page's read-only database grid — one
-// database, one row per replica, the shape the cross join produces.
+// agDatabasesResponse feeds General's read-only grid: one database, one row per
+// replica (the cross join's shape).
 func agDatabasesResponse() fakeResponse {
 	row := func(replicaID, replica, state string, primary bool) []driver.Value {
 		return []driver.Value{
@@ -90,10 +86,8 @@ func agDatabasesResponse() fakeResponse {
 	}}
 }
 
-// agRoutingListResponses answer the per-replica routing-list read. Scoped by
-// the replica id the query is parameterised with: without that every replica
-// would report the primary's list, and the page would come up claiming all
-// three route somewhere.
+// agRoutingListResponses answer the per-replica routing-list read, scoped by
+// replica id; unscoped, every replica would report the primary's list.
 func agRoutingListResponses() []fakeResponse {
 	return []fakeResponse{
 		{match: "availability_read_only_routing_lists", arg: "rep-1", cols: 2, rows: [][]driver.Value{
@@ -109,9 +103,8 @@ func agResponses() []fakeResponse {
 	return append(responses, agRoutingListResponses()...)
 }
 
-// loadAGPage opens one of the three pages over the shared fixture and insists
-// the replica grid actually filled — a page whose reads were half-scripted
-// would otherwise present an empty grid and a passing "nothing was written".
+// loadAGPage opens a page over the fixture and requires the replica grid to
+// fill, so half-scripted reads can't pass as "nothing written".
 func loadAGPage(t *testing.T, page func(sc *db.ServerConn) propPage) (*fakeInstance, propApply, *propsheet.Form, *controls.DataGrid) {
 	t.Helper()
 	sc, inst := newFakeConn(t, agResponses()...)
@@ -123,9 +116,8 @@ func loadAGPage(t *testing.T, page func(sc *db.ServerConn) propPage) (*fakeInsta
 	return inst, apply, form, grid
 }
 
-// agReplicaGrid returns the replica grid. The General page has two grids — the
-// read-only database list comes first — so plainGrid cannot be used there, and
-// the replica grid is the one with the cell cursor.
+// agReplicaGrid returns the replica grid (the one with a cell cursor);
+// General's first grid is the database list, so plainGrid won't do.
 func agReplicaGrid(t *testing.T, f *propsheet.Form) *controls.DataGrid {
 	t.Helper()
 	var found *controls.DataGrid

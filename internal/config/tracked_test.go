@@ -12,9 +12,7 @@ func trackedPath(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "tracked_queries.json")
 }
 
-// TestTrackedQueriesRoundTripThroughTheFile: the whole point of the file is
-// that the list is there at the next start, so the second read is a fresh one
-// off disk rather than the same object.
+// The list must survive a restart, so the second read is fresh from disk.
 func TestTrackedQueriesRoundTripThroughTheFile(t *testing.T) {
 	path := trackedPath(t)
 	tq := LoadTrackedQueriesFrom(path)
@@ -38,16 +36,13 @@ func TestTrackedQueriesRoundTripThroughTheFile(t *testing.T) {
 	if got := back.IDs("HOST\\SQL2022", "nosuchdb"); got != nil {
 		t.Errorf("an untracked database answered %v, want nothing", got)
 	}
-	// The address is case-insensitive: the same instance reached by another
-	// spelling must not come back with an empty list.
+	// Server address is case-insensitive.
 	if got := back.IDs("host\\sql2022", "appdb"); len(got) != 2 {
 		t.Errorf("a differently-cased server answered %v, want the same two ids", got)
 	}
 }
 
-// TestTrackedQueriesToggleRemovesAndForgetsTheDatabase. An emptied set is
-// deleted rather than written as [], which would grow the file by one entry per
-// database ever visited.
+// An emptied set is deleted, not written as [].
 func TestTrackedQueriesToggleRemovesAndForgetsTheDatabase(t *testing.T) {
 	path := trackedPath(t)
 	tq := LoadTrackedQueriesFrom(path)
@@ -75,11 +70,8 @@ func TestTrackedQueriesToggleRemovesAndForgetsTheDatabase(t *testing.T) {
 	}
 }
 
-// TestTrackedQueriesKeepsAFileItCannotRead. Same rule Config follows: a file
-// that exists and could not be read is not the same as no file, and saving over
-// it would replace a list that is very likely still intact with an empty one.
-// The file here is deliberately one a save *could* write — a read failure alone
-// has to stop it.
+// An existing but unreadable file must not be saved over, even when a write
+// would succeed.
 func TestTrackedQueriesKeepsAFileItCannotRead(t *testing.T) {
 	path := trackedPath(t)
 	const held = `{"tracked":{"srv":{"appdb":[1,2,3]}}}`
@@ -100,7 +92,7 @@ func TestTrackedQueriesKeepsAFileItCannotRead(t *testing.T) {
 	if _, err := tq.Toggle("srv", "appdb", 7); err == nil {
 		t.Error("Toggle saved over a file that could not be read")
 	}
-	// And the toggle still applied in memory, so the session is usable.
+	// The toggle still applied in memory.
 	if !tq.IsTracked("srv", "appdb", 7) {
 		t.Error("the refused save also lost the toggle")
 	}
@@ -112,8 +104,7 @@ func TestTrackedQueriesKeepsAFileItCannotRead(t *testing.T) {
 	}
 }
 
-// TestTrackedQueriesKeepsACorruptFileAside, so a hand-edit that breaks the JSON
-// does not silently vanish.
+// A corrupt file is kept aside as .corrupt.
 func TestTrackedQueriesKeepsACorruptFileAside(t *testing.T) {
 	path := trackedPath(t)
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
@@ -126,18 +117,15 @@ func TestTrackedQueriesKeepsACorruptFileAside(t *testing.T) {
 	if data, err := os.ReadFile(path + ".corrupt"); err != nil || string(data) != "{not json" {
 		t.Errorf("the corrupt file was not kept aside: %v / %q", err, data)
 	}
-	// It is not write-protected: the bytes are safe, so the next toggle saves.
+	// Not write-protected: the bytes are safe, so the next toggle saves.
 	if _, err := tq.Toggle("srv", "appdb", 7); err != nil {
 		t.Errorf("Toggle after a corrupt load: %v", err)
 	}
 }
 
-// The two halves of a set's key are treated differently on purpose: the server
-// address is folded, the database name is compared exactly. Both directions
-// matter, so both are asserted here — folding the database would merge Sales
-// and sales, which are two databases on a case-sensitive server collation, and
-// not folding the server would split a set the moment the user typed the
-// instance in a different case in Connect.
+// Server is folded, database is not: folding the database would merge Sales and
+// sales on a case-sensitive collation; not folding the server would split a set
+// by typed case.
 func TestServerIsFoldedAndDatabaseIsNot(t *testing.T) {
 	tq := LoadTrackedQueriesFrom(filepath.Join(t.TempDir(), trackedFileName))
 	if _, err := tq.Toggle(`HOST\SQL2022`, "Sales", 7); err != nil {
@@ -152,8 +140,7 @@ func TestServerIsFoldedAndDatabaseIsNot(t *testing.T) {
 	}
 }
 
-// A nil set answers the readers rather than panicking, and must refuse the
-// writers rather than reporting a pin it never recorded.
+// A nil set answers readers and refuses writers.
 func TestNilTrackedQueriesRefusesToWrite(t *testing.T) {
 	var tq *TrackedQueries
 	if tq.IsTracked("s", "d", 1) || tq.IDs("s", "d") != nil {

@@ -8,10 +8,8 @@ import (
 	"time"
 )
 
-// tempdbAnswers scripts every query collectTempDB makes. Page counts are
-// chosen so each converts to a distinct number of megabytes — 128 pages to
-// the MB — and no two fields share a value, so a column scanned into the
-// wrong field is a wrong number rather than a plausible one.
+// tempdbAnswers scripts every collectTempDB query. Page counts convert to
+// distinct MB values (128 pages/MB), so a mis-scanned column is a wrong number.
 func tempdbAnswers() map[string]reply {
 	return map[string]reply{
 		tempdbCounterQuery: {
@@ -39,8 +37,7 @@ func tempdbAnswers() map[string]reply {
 			rows: [][]driver.Value{
 				{int64(0), int64(3), int64(128 * 5), int64(128 * 4), int64(700)},
 				{int64(2), int64(1), int64(128 * 9), int64(128 * 6), int64(900)},
-				// A kind the query could grow but this build doesn't know:
-				// skipped, not written past the end of the array.
+				// An unknown kind is skipped, not written past the array.
 				{int64(99), int64(1), int64(128), int64(128), int64(1)},
 			},
 		},
@@ -48,10 +45,7 @@ func tempdbAnswers() map[string]reply {
 			cols: []string{"session_id", "host", "program", "login", "user_pages", "internal_pages"},
 			rows: [][]driver.Value{
 				{int64(57), "wkstn", "SSMS", "sa", int64(128 * 3), int64(128 * 2)},
-				// Task and session usage are summed, and a task releasing
-				// pages its session already accounted for can drive one part
-				// negative. "Holding -0.4 MB" is not actionable: it reads as
-				// holding none.
+				// Session+task usage can go negative; it reads as none.
 				{int64(58), "", "", "", int64(-256), int64(128 * 1)},
 			},
 		},
@@ -87,8 +81,8 @@ func TestCollectTempDBReadsEveryPart(t *testing.T) {
 	if f := byName["tempdev"]; f.SizeMB != 64 || f.UsedMB != 16 || f.GrowthMB != 8 || f.PercentGrowth {
 		t.Errorf("tempdev = %+v, want 64MB size, 16MB used, 8MB growth", f)
 	}
-	// A percentage growth is a percentage, not a page count: dividing it by
-	// 128 would report "10% growth" as 0.08 MB.
+	// Percentage growth isn't a page count; dividing by 128 would turn 10% into
+	// 0.08 MB.
 	if f := byName["temp2"]; !f.PercentGrowth || f.GrowthMB != 10 {
 		t.Errorf("temp2 = %+v, want a 10 percent growth kept as 10", f)
 	}
@@ -103,8 +97,8 @@ func TestCollectTempDBReadsEveryPart(t *testing.T) {
 	if user := s.Objects[TempDBUserTable]; user.Count != 1 || user.ReservedMB != 9 {
 		t.Errorf("user tables = %+v, want 1 object and 9MB reserved", user)
 	}
-	// Every slot must name its own kind even where the server sent no row,
-	// or a chart's series and its legend drift apart.
+	// Every slot names its kind even with no row, so series and legend stay
+	// aligned.
 	for i := range s.Objects {
 		if s.Objects[i].Kind != TempDBObjectKind(i) {
 			t.Errorf("Objects[%d].Kind = %v, want %v", i, s.Objects[i].Kind, TempDBObjectKind(i))
@@ -151,9 +145,8 @@ func TestCollectTempDBStopsAtAFailedRead(t *testing.T) {
 	}
 }
 
-// deriveTempDB decodes the counters against the previous reading. The first
-// sample has no previous one, and a rate needs two: it must read zero rather
-// than treating the cumulative total as one interval's worth.
+// The first sample has no previous one, so rates are zero rather than the
+// cumulative total.
 func TestDeriveTempDBNeedsTwoSamplesForARate(t *testing.T) {
 	db, _ := scriptedDB(t, tempdbAnswers())
 	ctx := context.Background()
@@ -166,8 +159,8 @@ func TestDeriveTempDBNeedsTwoSamplesForARate(t *testing.T) {
 	if one.Interval != 0 {
 		t.Errorf("first sample Interval = %v, want 0", one.Interval)
 	}
-	// A per-second counter with nothing to compare against reads 0; a
-	// point-in-time one is its own value either way.
+	// A per-second counter with no baseline reads 0; a point-in-time one is its
+	// own value.
 	if one.ActiveTempTables != 9 {
 		t.Errorf("ActiveTempTables = %v, want 9 on the first sample", one.ActiveTempTables)
 	}

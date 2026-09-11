@@ -12,17 +12,13 @@ import (
 	"testing"
 )
 
-// A scripted *sql.DB for the DMV readers. Every collect* function in this
-// package is a query and a scan, and the scan is where a column read in the
-// wrong order or into the wrong field goes unnoticed: the numbers stay
-// plausible and nothing errors. This answers each query with rows the test
-// wrote, so an assertion can name the value it expects to come back.
+// A scripted *sql.DB for the DMV readers. Each collect* function is a query and
+// a scan, and a mis-scanned column stays plausible without error, so tests
+// script the rows and assert exact values.
 //
-// Replies are keyed by the query *constant* — cpuUsageQuery, schedQuery,
-// the rest — so a test says which read it is answering rather than counting
-// queries in order. An unscripted query is an error naming itself, not an
-// empty result: a silently empty read is exactly the failure these tests
-// exist to catch, so the fake must never produce one by accident.
+// Replies are keyed by query constant (cpuUsageQuery, schedQuery, ...). An
+// unscripted query errors, naming itself — a silently empty read is exactly
+// what these tests catch.
 
 // reply is one scripted answer. err, if set, is returned instead of rows.
 type reply struct {
@@ -31,10 +27,8 @@ type reply struct {
 	err  error
 }
 
-// scriptedDB builds an *sql.DB answering from answers, and returns it with
-// the log of statements it was asked for. The permission prologue is
-// answered automatically — every collector run needs it and no test is
-// about it.
+// scriptedDB returns an *sql.DB answering from answers, plus a log of
+// statements received. The permission prologue is answered automatically.
 func scriptedDB(t *testing.T, answers map[string]reply) (*sql.DB, *stmtLog) {
 	t.Helper()
 	log := &stmtLog{}
@@ -47,8 +41,7 @@ func scriptedDB(t *testing.T, answers map[string]reply) (*sql.DB, *stmtLog) {
 	return db, log
 }
 
-// stmtLog records every statement the fake was asked for, so a test can
-// assert what was read as well as what came back.
+// stmtLog records every statement received.
 type stmtLog struct {
 	mu sync.Mutex
 	qs []string

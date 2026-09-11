@@ -10,7 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/query"
 )
 
-// procResult is one procedure run, shaped like sp_block's.
+// procResult is one run shaped like sp_block's.
 func procResult() *query.Result {
 	return &query.Result{Sets: []query.ResultSet{{
 		Columns:     []string{"blktree", "type", "sql text"},
@@ -22,8 +22,8 @@ func procResult() *query.Result {
 	}}}
 }
 
-// hostedProcMonitor is a panel App.panelHosted accepts, showing tab, so the
-// postAndWake callbacks that check it actually run.
+// hostedProcMonitor is a panel App.panelHosted accepts, showing tab, so
+// postAndWake callbacks run.
 func hostedProcMonitor(t *testing.T, tab amTab) *ActivityMonitor {
 	t.Helper()
 	am := newTestActivityMonitor(100, 30)
@@ -40,8 +40,7 @@ func hostedProcMonitor(t *testing.T, tab amTab) *ActivityMonitor {
 	return am
 }
 
-// procTabs are the two procedure-backed tabs. Every rule below holds for
-// both — they are the same code over a different procedure.
+// procTabs are both procedure tabs; the rules below hold for both.
 var procTabs = []struct {
 	name string
 	tab  amTab
@@ -50,8 +49,7 @@ var procTabs = []struct {
 	{"Sessions", amTabSessions},
 }
 
-// These tabs are result grids, not placeholders: a run's rows and its row
-// count have to reach the screen.
+// A run's rows and row count reach the screen.
 func TestActivityMonitorProcTabRendersResult(t *testing.T) {
 	for _, tc := range procTabs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,8 +71,7 @@ func TestActivityMonitorProcTabRendersResult(t *testing.T) {
 	}
 }
 
-// A failed run must not blank what is already on screen — that reading is the
-// last true picture of the server.
+// A failed run keeps what's on screen.
 func TestActivityMonitorProcTabKeepsRowsOnError(t *testing.T) {
 	for _, tc := range procTabs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,11 +92,8 @@ func TestActivityMonitorProcTabKeepsRowsOnError(t *testing.T) {
 	}
 }
 
-// A refresh reruns the same procedure, so the column the user dragged wider to
-// read a wrapped sql_text has to survive it — SetData would recompute every
-// width from the new rows and snap it back, on the one action the user takes
-// deliberately. The cursor is not kept: the rows are a different set of
-// sessions, so it would land on an unrelated one.
+// Refresh keeps a dragged column width (SetData would recompute and snap it
+// back) but not the cursor, since the sessions differ.
 func TestActivityMonitorProcTabRefreshKeepsADraggedColumnWidth(t *testing.T) {
 	for _, tc := range procTabs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,7 +117,7 @@ func TestActivityMonitorProcTabRefreshKeepsADraggedColumnWidth(t *testing.T) {
 	}
 }
 
-// "Install in master" is offered only while master hasn't got the procedure.
+// "Install in master" is offered only when master lacks the procedure.
 func TestActivityMonitorProcTabInstallButtonGating(t *testing.T) {
 	for _, tc := range procTabs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -149,9 +143,7 @@ func TestActivityMonitorProcTabInstallButtonGating(t *testing.T) {
 	}
 }
 
-// The grid gets the arrow keys, but Tab still belongs to the panel — a tab
-// the keyboard can enter and not leave is the trap the application rules
-// forbid.
+// The grid gets arrows, but Tab stays the panel's so the keyboard can leave.
 func TestActivityMonitorProcTabKeyRouting(t *testing.T) {
 	am := hostedProcMonitor(t, amTabBlock)
 	am.procTab().loc = activity.ProcTempDB
@@ -171,7 +163,7 @@ func TestActivityMonitorProcTabKeyRouting(t *testing.T) {
 	}
 }
 
-// Without a real connection the tab says so rather than dialling nowhere.
+// Without a connection the tab says so.
 func TestActivityMonitorProcTabWithoutConnection(t *testing.T) {
 	for _, tc := range procTabs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,9 +179,8 @@ func TestActivityMonitorProcTabWithoutConnection(t *testing.T) {
 	}
 }
 
-// sp_WhoIsActive is somebody else's GPL-3.0 work. The tab that runs it has to
-// carry the attribution where it is being used, and the grid must not be
-// drawn over the row that carries it.
+// sp_WhoIsActive is someone else's GPL-3.0 work; the credit row must be drawn
+// and not covered by the grid.
 func TestActivityMonitorSessionsCreditsWhoIsActive(t *testing.T) {
 	am := hostedProcMonitor(t, amTabSessions)
 	am.sess.loc = activity.ProcTempDB
@@ -210,8 +201,7 @@ func TestActivityMonitorSessionsCreditsWhoIsActive(t *testing.T) {
 	}
 }
 
-// The Sessions tab runs sp_WhoIsActive, under the tempdb name that must not
-// carry the sp_ prefix.
+// Sessions runs sp_WhoIsActive under its non-sp_ tempdb name.
 func TestActivityMonitorSessionsUsesWhoIsActive(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	if am.sess.proc != activity.WhoIsActiveProc {

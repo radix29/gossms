@@ -1,18 +1,14 @@
 //go:build livedb
 
-// Live verification of runBatch's drain gate against a real SQL Server.
-//
-// The gate is the `for rows.Next() {}` loop runBatch runs when scanNext
-// abandons a set part-way through, plus the rule that it must NOT run when
-// the set was read to exhaustion. Neither half is reproducible with a fake
-// driver: `executor_sink_test.go`'s fake implements the sqlexp contract but
-// not TDS, so deleting the drain loop still passes it. Both are properties
-// of go-mssqldb's protocol handling and only a live run can settle them.
+// Live verification of runBatch's drain gate: the `for rows.Next() {}` loop
+// after scanNext abandons a set, and the rule that it must not run on an
+// exhausted set. Both are go-mssqldb TDS behaviour; the fake in
+// executor_sink_test.go passes without the drain loop.
 //
 //	go test -tags livedb ./internal/query/ -run TestLive -v \
 //	  -livedb 'sqlserver://sa:PASS@host?TrustServerCertificate=true'
 //
-// Skipped entirely without -livedb, so `go test ./...` is unaffected.
+// Skipped without -livedb.
 package query
 
 import (
@@ -57,9 +53,8 @@ type trace struct {
 
 func (tr *trace) add(s string) { tr.events = append(tr.events, s) }
 
-// runLoop is runBatch reduced to what the gate affects: it reads readRows
-// rows of each result set (-1 meaning all), then either drains the rest or
-// doesn't, per drain. Everything else mirrors runBatch exactly.
+// runLoop is runBatch reduced to the gate: it reads readRows rows per set (-1 =
+// all), then drains the rest or not per drain. Otherwise identical to runBatch.
 func runLoop(ctx context.Context, t *testing.T, conn *sql.Conn, sqlText string, readRows int, drain bool, extraNext bool) *trace {
 	t.Helper()
 	tr := &trace{}
@@ -102,8 +97,8 @@ func runLoop(ctx context.Context, t *testing.T, conn *sql.Conn, sqlText string, 
 				}
 			}
 			if exhausted && extraNext {
-				// The shipped bug this guards against: one Next() past an
-				// exhausted set.
+				// The bug this guards against: one Next() past an exhausted
+				// set.
 				rows.Next()
 			}
 		case sqlexp.MsgNextResultSet:
@@ -117,17 +112,16 @@ func runLoop(ctx context.Context, t *testing.T, conn *sql.Conn, sqlText string, 
 	return tr
 }
 
-// liveBatch produces, in order: a 5-row set, a PRINT, and a second 2-row
-// set. Everything after the first set is what an undrained abandon could
-// lose.
+// liveBatch yields a 5-row set, a PRINT, and a 2-row set; everything after the
+// first set is what an undrained abandon could lose.
 const liveBatch = `
 SELECT CAST(v AS varchar(10)) FROM (VALUES ('a'),('b'),('c'),('d'),('e')) t(v);
 PRINT 'between the sets';
 SELECT CAST(v AS varchar(10)) FROM (VALUES ('x'),('y')) t(v);
 `
 
-// Does an abandoned set have to be read out before the message loop can
-// advance? Runs the same batch with the drain loop and without it.
+// Must an abandoned set be read out before the message loop advances? Same
+// batch with and without the drain.
 func TestLiveDrainGateAfterAnAbandonedSet(t *testing.T) {
 	conn, ctx, done := liveConn(t)
 	defer done()
@@ -138,8 +132,8 @@ func TestLiveDrainGateAfterAnAbandonedSet(t *testing.T) {
 	noDrain := runLoop(ctx, t, conn, liveBatch, 2, false, false)
 	t.Logf("without drain: %v", noDrain.events)
 
-	// Whatever the driver turns out to do, the drained run is the shipped
-	// behaviour and must deliver everything after the abandoned set.
+	// The drained run is shipped behaviour and must deliver everything after
+	// the abandoned set.
 	if len(withDrain.sets) != 2 {
 		t.Errorf("with drain: got %d result sets, want 2 — output after the abandoned set was lost", len(withDrain.sets))
 	}
@@ -149,8 +143,7 @@ func TestLiveDrainGateAfterAnAbandonedSet(t *testing.T) {
 	if len(withDrain.sets) > 0 && len(withDrain.sets[0]) != 2 {
 		t.Errorf("with drain: read %d rows of the first set, want 2 — test premise is wrong", len(withDrain.sets[0]))
 	}
-	// The interesting half: report what dropping the drain actually costs,
-	// as an assertion so the answer is recorded rather than eyeballed.
+	// Record what dropping the drain costs, as an assertion.
 	if len(noDrain.sets) == 2 && hasNotice(noDrain, "between the sets") {
 		t.Log("RESULT: the drain loop is NOT load-bearing on this server/driver — " +
 			"go-mssqldb advanced past the abandoned set on its own. Keep it anyway " +
@@ -162,10 +155,9 @@ func TestLiveDrainGateAfterAnAbandonedSet(t *testing.T) {
 	}
 }
 
-// The other half of the gate: an extra Next() past an exhausted set makes
-// the driver swallow the message retmsg is waiting for. This is the shipped
-// bug (empty grid, no error, no Messages tab) that docs/testing.md forbids
-// reintroducing — pinned here against the real driver.
+// An extra Next() past an exhausted set swallows the message retmsg awaits
+// (empty grid, no error, no Messages) — forbidden by docs/testing.md, pinned
+// against the real driver.
 func TestLiveExtraNextPastAnExhaustedSetSwallowsTheMessage(t *testing.T) {
 	conn, ctx, done := liveConn(t)
 	defer done()
@@ -198,9 +190,8 @@ func hasNotice(tr *trace, want string) bool {
 	return false
 }
 
-// liveEndFailSink accepts every row of every set and then fails to close the
-// set out — what csvSink does when the flush at the end of a set hits a full
-// disk or a network share that has gone away.
+// liveEndFailSink accepts every row and fails at EndSet, as csvSink does when
+// the final flush hits a full disk or a vanished share.
 type liveEndFailSink struct {
 	sets int
 	rows int
@@ -210,17 +201,12 @@ func (s *liveEndFailSink) BeginSet([]string) error { s.sets++; return nil }
 func (s *liveEndFailSink) Row([]string) error      { s.rows++; return nil }
 func (s *liveEndFailSink) EndSet(int) error        { return errors.New("end failed") }
 
-// The export bug the drain gate hides: a sink that fails only at EndSet has
-// nonetheless read its set to the end, so there is nothing to drain — and
-// draining it anyway spends the extra Next() that eats the rest of the batch.
-// scanNext used to infer "rows still pending" from "returned an error", so
-// every set after the first vanished on the one run the user most needs the
-// output of.
+// A sink failing only at EndSet has read its set to the end, so nothing may be
+// drained; draining eats the rest of the batch, losing every later set of an
+// export.
 //
-// Runs the real runBatch over the real driver, which is the only place the
-// swallowing happens: the fake driver in stream_test.go implements the sqlexp
-// contract but not TDS, so the unit tests in executor_drain_test.go pin what
-// scanNext decides and this pins what that decision costs.
+// Runs the real runBatch over the real driver, the only place the swallowing
+// happens; executor_drain_test.go pins scanNext's decision, this pins its cost.
 func TestLiveExportThatFailsAtEndSetKeepsTheRestOfTheBatch(t *testing.T) {
 	conn, ctx, done := liveConn(t)
 	defer done()
@@ -235,9 +221,7 @@ func TestLiveExportThatFailsAtEndSetKeepsTheRestOfTheBatch(t *testing.T) {
 		t.Logf("  message: %s", m.Text)
 	}
 
-	// Both sets must have been offered to the sink. Before the fix the second
-	// never was: the drain after the first set's EndSet failure swallowed
-	// everything that followed it.
+	// Both sets must reach the sink.
 	if sink.sets != 2 {
 		t.Errorf("the sink was offered %d result sets, want 2 — the batch's later "+
 			"output was lost to the drain after the first EndSet failure", sink.sets)
@@ -245,8 +229,7 @@ func TestLiveExportThatFailsAtEndSetKeepsTheRestOfTheBatch(t *testing.T) {
 	if sink.rows != 7 {
 		t.Errorf("the sink was handed %d rows, want 7 (5 + 2)", sink.rows)
 	}
-	// The PRINT between the sets is the other casualty, and the one a user
-	// would notice as "no messages at all".
+	// The PRINT between the sets must survive too.
 	found := false
 	for _, m := range res.Messages {
 		if strings.Contains(m.Text, "between the sets") {

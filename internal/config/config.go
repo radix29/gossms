@@ -1,4 +1,5 @@
-// Package config holds persistent application state (saved connections, settings).
+// Package config holds persistent application state (saved connections,
+// settings).
 package config
 
 import (
@@ -17,9 +18,8 @@ import (
 	"github.com/radix29/gossms/internal/fileutil"
 )
 
-// AuthMethod is gossms's own authentication-method enum, for the UI dropdown
-// and JSON serialisation. Its numeric values are independent of
-// gosmo.AuthMethod; internal/db/connection.go maps between the two.
+// AuthMethod is gossms's auth-method enum for the UI and JSON. Its values are
+// independent of gosmo.AuthMethod; internal/db/connection.go maps between them.
 type AuthMethod int
 
 const (
@@ -34,38 +34,32 @@ const (
 	AuthEntraAzCLI            AuthMethod = 11
 )
 
-// AuthFields says which of the Connect dialog's credential fields an auth
-// method reads — see db.toGosmoOptions for where each one goes. The dialog
-// greys out the rest, as SSMS greys User and Password for Windows
-// Authentication: a field that looks live but is never sent is how a service
-// principal's client id once went into ClientID and connected with an empty
-// user id.
+// AuthFields says which Connect-dialog credential fields an auth method reads
+// (see db.toGosmoOptions). The dialog greys out the rest, as SSMS does, so no
+// field looks live but is never sent.
 type AuthFields struct{ User, Password, Tenant, Client bool }
 
-// authMethodInfo is everything gossms knows about one auth method apart from
-// how it maps onto gosmo, which db.toGosmoAuth keeps as an explicit switch.
+// authMethodInfo is everything about an auth method except its gosmo mapping,
+// which db.toGosmoAuth keeps as a switch.
 type authMethodInfo struct {
 	method AuthMethod
 	// label is the Connect dialog's name for it, as SSMS spells it.
 	label string
-	// tag marks a saved connection's name (see Connection.GeneratedName);
-	// empty for SQL Server Authentication, whose names predate the tag.
+	// tag marks a saved connection's name (see Connection.GeneratedName); empty
+	// for SQL Server Authentication.
 	tag    string
 	entra  bool
 	fields AuthFields
 }
 
-// authMethods is the one table of auth methods, in the Connect dialog's
-// order. AllAuthMethods, AuthMethodName, IsEntraMethod and FieldsFor all read
-// it; before it they were four switches that had to agree.
+// authMethods is the single table of auth methods, in Connect-dialog order,
+// read by AllAuthMethods, AuthMethodName, IsEntraMethod and FieldsFor.
 //
-// TenantID is live for every Entra method but Managed Identity: gosmo hands
-// it to each credential that takes a tenant, and a managed identity's tenant
-// is the resource's own. ClientID is the application (client) id of the app
-// registration a user signs in through for Password, MFA and Device Code
-// (gosmo's ApplicationClientID; empty uses Microsoft's public client), the
-// service principal itself, or a user-assigned managed identity. User is
-// MFA's optional login hint.
+// TenantID is live for every Entra method but Managed Identity, whose tenant is
+// the resource's own. ClientID is the app registration's client id for
+// Password, MFA and Device Code (empty uses Microsoft's public client), the
+// service principal itself, or a user-assigned managed identity. User is MFA's
+// optional login hint.
 var authMethods = []authMethodInfo{
 	{AuthSQLServer, "SQL Server Authentication", "", false, AuthFields{User: true, Password: true}},
 	{AuthWindows, "Windows Authentication", "Windows", false, AuthFields{User: true, Password: true}},
@@ -80,9 +74,9 @@ var authMethods = []authMethodInfo{
 	{AuthEntraAzCLI, "Microsoft Entra Azure CLI", "Entra Azure CLI", true, AuthFields{Tenant: true}},
 }
 
-// authInfo looks m up in authMethods. A method it does not name — only a
-// hand-edited config.json has one — reads as SQL Server Authentication,
-// which is what db.toGosmoAuth dials it as, labelled "Unknown".
+// authInfo looks m up in authMethods. An unknown method (only from a
+// hand-edited config.json) reads as SQL Server Authentication, as
+// db.toGosmoAuth dials it, labelled "Unknown".
 func authInfo(m AuthMethod) authMethodInfo {
 	for _, info := range authMethods {
 		if info.method == m {
@@ -94,7 +88,7 @@ func authInfo(m AuthMethod) authMethodInfo {
 	return info
 }
 
-// AuthMethodName returns a human-readable label for the auth method.
+// AuthMethodName returns the auth method's display label.
 func AuthMethodName(m AuthMethod) string { return authInfo(m).label }
 
 // IsEntraMethod reports whether m is one of the Microsoft Entra ID methods.
@@ -103,7 +97,7 @@ func IsEntraMethod(m AuthMethod) bool { return authInfo(m).entra }
 // FieldsFor reports which credential fields m reads.
 func FieldsFor(m AuthMethod) AuthFields { return authInfo(m).fields }
 
-// AllAuthMethods returns all available auth methods for display.
+// AllAuthMethods returns all auth methods in display order.
 func AllAuthMethods() []AuthMethod {
 	out := make([]AuthMethod, len(authMethods))
 	for i, info := range authMethods {
@@ -112,9 +106,8 @@ func AllAuthMethods() []AuthMethod {
 	return out
 }
 
-// IconStyle selects the glyph set the Object Explorer tree uses for its node
-// icons. Its zero value, IconStyleEmoji, is the default, so a config.json
-// missing the field still loads as Emoji.
+// IconStyle selects the Object Explorer icon glyph set. The zero value,
+// IconStyleEmoji, is the default for a config.json missing the field.
 type IconStyle int
 
 const (
@@ -124,8 +117,7 @@ const (
 	IconStyleNone
 )
 
-// IconStyleName returns a human-readable label for the icon style, used by
-// the Options dialog's radio box.
+// IconStyleName returns the Options dialog label for s.
 func IconStyleName(s IconStyle) string {
 	switch s {
 	case IconStyleSymbols:
@@ -139,17 +131,13 @@ func IconStyleName(s IconStyle) string {
 	}
 }
 
-// AllIconStyles returns all available icon styles, in the order the Options
-// dialog lists them.
+// AllIconStyles returns the icon styles in Options-dialog order.
 func AllIconStyles() []IconStyle {
 	return []IconStyle{IconStyleEmoji, IconStyleSymbols, IconStylePortable, IconStyleNone}
 }
 
-// Connection stores one saved server connection.
-//
-// Password is always plaintext in memory: Load and Save handle AES-256-GCM
-// encryption at the JSON boundary (see secret.go), so nothing else in the app
-// needs to know encryption is involved.
+// Connection stores one saved server connection. Password is always plaintext
+// in memory; Load and Save encrypt at the JSON boundary (see secret.go).
 type Connection struct {
 	Name                   string     `json:"name"`
 	Server                 string     `json:"server"`
@@ -161,44 +149,39 @@ type Connection struct {
 	TenantID               string     `json:"tenant_id"`
 	ClientID               string     `json:"client_id"`
 	TrustServerCertificate bool       `json:"trust_server_certificate"`
-	// Encrypt is stored under "encrypt_mode"; MarshalJSON also keeps writing
-	// the boolean "encrypt" it replaced — see there.
+	// Encrypt is stored as "encrypt_mode"; MarshalJSON also writes the legacy
+	// boolean "encrypt".
 	Encrypt               EncryptMode `json:"encrypt_mode"`
 	HostNameInCertificate string      `json:"host_name_in_certificate,omitempty"`
 	ExtraProperties       string      `json:"extra_properties"`
 
-	// sealed is the on-disk ciphertext Load could not open for this entry — a
-	// replaced key file, a hand-edited server/user (which the AAD binds to, see
-	// secret.go), a truncated write. Save writes it back verbatim instead of
-	// re-encrypting the "" Password came back as, so a failed decrypt stays
-	// recoverable rather than being overwritten by the next unrelated write.
+	// sealed is the on-disk ciphertext Load could not open (replaced key file,
+	// hand-edited server/user bound into the AAD, truncated write). Save writes
+	// it back verbatim instead of encrypting the "" Password holds, so the
+	// password stays recoverable.
 	//
-	// Unexported, so encoding/json neither reads nor writes it: it lives only
-	// between one Load and the Saves that follow. An entry the user reconnects
-	// with goes through AddOrUpdate as a fresh Connection with sealed empty, so
-	// re-entering the password replaces the unreadable ciphertext for good.
+	// Unexported, so JSON ignores it. Reconnecting goes through AddOrUpdate
+	// with sealed empty, so re-entering the password replaces the ciphertext.
 	sealed string
 }
 
-// EncryptMode is a connection's TLS encryption setting, spelled as SSMS's
-// Connect dialog and go-mssqldb's "encrypt" parameter both spell it.
+// EncryptMode is a connection's TLS setting, spelled as SSMS and go-mssqldb's
+// "encrypt" parameter spell it.
 type EncryptMode string
 
 const (
-	// EncryptOptional encrypts the login packet only; everything after it —
-	// including the passwords in CREATE LOGIN, CREATE CREDENTIAL and the
-	// endpoint wizard's certificate statements — travels in clear text.
+	// EncryptOptional encrypts only the login packet; everything after —
+	// including passwords in CREATE LOGIN, CREATE CREDENTIAL and certificate
+	// statements — is clear text.
 	EncryptOptional EncryptMode = "optional"
-	// EncryptMandatory encrypts the whole session. The default for a new
-	// connection, as in SSMS 20.
+	// EncryptMandatory encrypts the whole session. The default, as in SSMS 20.
 	EncryptMandatory EncryptMode = "mandatory"
-	// EncryptStrict is TDS 8.0 strict encryption: TLS before any TDS traffic,
-	// SQL Server 2022 and later.
+	// EncryptStrict is TDS 8.0 strict encryption (TLS before any TDS traffic),
+	// SQL Server 2022+.
 	EncryptStrict EncryptMode = "strict"
 )
 
-// AllEncryptModes returns the encryption modes in the order the Connect
-// dialog lists them.
+// AllEncryptModes returns the modes in Connect-dialog order.
 func AllEncryptModes() []EncryptMode {
 	return []EncryptMode{EncryptOptional, EncryptMandatory, EncryptStrict}
 }
@@ -217,34 +200,29 @@ func EncryptModeName(m EncryptMode) string {
 	}
 }
 
-// connectionFields is Connection without its methods, so MarshalJSON and
-// UnmarshalJSON can hand the ordinary fields to encoding/json without
-// recursing into themselves.
+// connectionFields is Connection without methods, so (Un)MarshalJSON don't
+// recurse.
 type connectionFields Connection
 
-// connectionWire is a Connection as written to config.json: every field under
-// its own tag, plus the boolean "encrypt" that EncryptMode replaced.
+// connectionWire is a Connection as written to config.json, plus the legacy
+// boolean "encrypt".
 type connectionWire struct {
 	connectionFields
 	LegacyEncrypt *bool `json:"encrypt,omitempty"`
 }
 
-// MarshalJSON writes c with its Encrypt mode under "encrypt_mode" and, beside
-// it, the boolean "encrypt" earlier releases stored — true for anything but
-// Optional. The boolean is not for this release, which reads the mode: it is
-// for an older gossms reading this file after a downgrade. That version
-// decodes "encrypt" as a bool, and a string there would fail the whole file,
-// which Load treats as corrupt: every saved connection gone, and the next
-// Save writing the emptiness over it.
+// MarshalJSON writes Encrypt as "encrypt_mode" and also the legacy boolean
+// "encrypt" (true unless Optional), for an older gossms reading this file after
+// a downgrade: it decodes "encrypt" as a bool, and a string there would make
+// Load treat the whole file as corrupt.
 func (c Connection) MarshalJSON() ([]byte, error) {
 	legacy := c.Encrypt != EncryptOptional && c.Encrypt != ""
 	return json.Marshal(connectionWire{connectionFields: connectionFields(c), LegacyEncrypt: &legacy})
 }
 
-// UnmarshalJSON reads a Connection, mapping an entry written before
-// "encrypt_mode" existed from its boolean "encrypt": true is Mandatory, false
-// or absent is Optional — the two settings the old checkbox could express.
-// Once present, "encrypt_mode" wins.
+// UnmarshalJSON maps an entry without "encrypt_mode" from its boolean
+// "encrypt": true is Mandatory, false or absent is Optional. "encrypt_mode"
+// wins when present.
 func (c *Connection) UnmarshalJSON(data []byte) error {
 	var w connectionWire
 	if err := json.Unmarshal(data, &w); err != nil {
@@ -260,13 +238,9 @@ func (c *Connection) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ConnectionName builds "server,port,database,user", the tuple a saved
-// connection's generated name starts with (see Connection.GeneratedName) and
-// the key the query editor's completion inventories share.
-//
-// An unspecified port (0) is spelled as the default 1433 it dials, so an entry
-// saved before the Connect dialog stopped pre-filling "1433" still dedups
-// against the same server connected to today rather than doubling in the list.
+// ConnectionName builds "server,port,database,user", the prefix of a saved
+// connection's generated name and the key completion inventories share. Port 0
+// is spelled 1433, as dialled, so older entries dedup against today's.
 func ConnectionName(server string, port int, database, user string) string {
 	if port == 0 {
 		port = 1433
@@ -274,24 +248,20 @@ func ConnectionName(server string, port int, database, user string) string {
 	return server + "," + strconv.Itoa(port) + "," + database + "," + user
 }
 
-// GeneratedName is the name AddOrUpdate gives c: ConnectionName with the
-// identity c signs in as in the user slot, then the auth method's tag —
-// "srv,1433,db,app-id (Entra Service Principal)". It is both the label in the
-// Connect dialog's autocomplete list and AddOrUpdate's dedup key, so it must
-// tell apart every pair of connections that are not the same one.
+// GeneratedName is the name AddOrUpdate gives c — ConnectionName with c's
+// signing-in identity in the user slot, plus the auth method's tag:
+// "srv,1433,db,app-id (Entra Service Principal)". It is both the Connect
+// autocomplete label and the dedup key, so it must distinguish any two
+// different connections (e.g. two service principals on one server, or Windows
+// vs Entra Default).
 //
-// Built from the server tuple alone, it did not: two service principals on
-// one server (User is greyed for the method, so empty for both) overwrote
-// each other, and so did Windows Authentication and Entra Default, and every
-// Entra method without a User against each other. The identity is User for a
-// method that reads one and has it, else the ClientID for one that reads
-// that; a service principal saved before ClientID was its field carries its
-// application id in User instead.
+// The identity is User when the method reads one and it's set, else ClientID
+// when the method reads that; a service principal saved before ClientID existed
+// carries its application id in User.
 //
-// SQL Server Authentication has no tag, so its names — most of every saved
-// list — are what they always were. An entry saved under another method
-// before the tag existed keeps its old name and dedups once more, against the
-// first save of the same connection under the new one.
+// SQL Server Authentication has no tag, so its names are unchanged. An older
+// entry under another method dedups once more, against its first save under the
+// new name.
 func (c Connection) GeneratedName() string {
 	info := authInfo(c.AuthMethod)
 	identity := ""
@@ -308,13 +278,10 @@ func (c Connection) GeneratedName() string {
 	return name
 }
 
-// PasswordUnreadable reports whether this entry had a stored password Load could
-// not decrypt: the sealed ciphertext is still held and written back untouched,
-// but the password is unavailable this session.
-//
-// It separates "no password saved" from "a password is saved and unusable",
-// which Password alone cannot express since Load blanks both — connecting with
-// the "" is a login failure, not an attempt worth making.
+// PasswordUnreadable reports whether Load could not decrypt a stored password
+// (the ciphertext is kept and written back). It separates "no password saved"
+// from "saved but unusable", which Password alone can't — Load blanks both, and
+// connecting with "" is a guaranteed login failure.
 func (c *Connection) PasswordUnreadable() bool {
 	return c.Password == "" && c.sealed != ""
 }
@@ -335,23 +302,20 @@ type Config struct {
 	Connections   []Connection `json:"connections"`
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
-	// IntelliSenseDisabled turns off the SQL editor's autocomplete. Stored
-	// inverted so Go's bool zero value keeps the feature on by default, for a
-	// fresh install and for a config.json missing the field.
+	// IntelliSenseDisabled turns off editor autocomplete. Inverted so the zero
+	// value keeps it on.
 	IntelliSenseDisabled bool `json:"intellisense_disabled"`
 
-	// unreadable is the error Load hit reading an existing config.json, if any.
-	// It makes this Config write-protected (see Save): everything the file held
-	// is missing from it, so writing it back would destroy a file that is very
-	// likely still intact. Unexported, so it neither serialises nor survives a
-	// copy into a new Config.
+	// unreadable is the error Load hit reading an existing config.json. It
+	// write-protects this Config (see Save): the file's contents are missing,
+	// so writing back would destroy a likely-intact file. Unexported, so it
+	// neither serialises nor survives a copy.
 	unreadable error
 }
 
-// DefaultMaxCellLength is how many characters a result-grid cell displays before
-// truncating, absent an Options dialog override; a column dragged wider by its
-// separator shows more. Load applies it to a zero MaxCellLength, so every reader
-// of *Config sees a usable value.
+// DefaultMaxCellLength is how many characters a result-grid cell shows before
+// truncating, absent an Options override; a column dragged wider shows more.
+// Load applies it to a zero MaxCellLength.
 const DefaultMaxCellLength = 24
 
 // configPath returns the path to the config file.
@@ -363,10 +327,8 @@ func configPath() string {
 	return filepath.Join(dir, "gossms", "config.json")
 }
 
-// LogFilePath returns the path cmd/gossms's main should open its log file at —
-// next to the config file, not the working directory, so where gossms is
-// launched from doesn't decide where its log ends up. The directory is created
-// if missing, matching Config.Save's MkdirAll.
+// LogFilePath returns the log file path, beside the config file so the launch
+// directory doesn't matter. Creates the directory if missing.
 func LogFilePath() (string, error) {
 	dir := filepath.Dir(configPath())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -375,20 +337,16 @@ func LogFilePath() (string, error) {
 	return filepath.Join(dir, "gossms.log"), nil
 }
 
-// MaxLogSize is how large gossms.log may grow before OpenLogFile starts a
-// fresh one. The log is append-only — every logStatus line and every recovered
-// panic's stack — and was never trimmed, so a long-lived install grew it
-// without bound.
+// MaxLogSize is how large gossms.log may grow before OpenLogFile starts a fresh
+// one.
 const MaxLogSize = 5 << 20
 
-// OpenLogFile opens the log file at LogFilePath for appending, first moving a
-// file past MaxLogSize aside to gossms.log.1 — one generation, replacing any
-// older one. Rotation happens only here, at startup, so a session never loses
-// its own earlier lines mid-run.
+// OpenLogFile opens the log at LogFilePath for appending, first moving a file
+// past MaxLogSize to gossms.log.1 (one generation). Rotation happens only at
+// startup, so a session never loses its own lines.
 //
-// The file is 0600, matching the config file and encryption key alongside it —
-// the log records server names, login names, and error text. A rotated file
-// keeps the mode it was created with.
+// The file is 0600 like the config and key: the log records server names,
+// logins and error text.
 func OpenLogFile() (*os.File, error) {
 	path, err := LogFilePath()
 	if err != nil {
@@ -398,10 +356,8 @@ func OpenLogFile() (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
-// rotateLog renames path to path+".1" when it is larger than limit. Best
-// effort: a failed rename — another gossms holding the file open on Windows,
-// say — leaves the log to be appended to as before, which is no worse than
-// not rotating.
+// rotateLog renames path to path+".1" when larger than limit. Best effort: a
+// failed rename (e.g. file held open on Windows) just keeps appending.
 func rotateLog(path string, limit int64) {
 	fi, err := os.Stat(path)
 	if err != nil || fi.Size() <= limit {
@@ -410,16 +366,13 @@ func rotateLog(path string, limit int64) {
 	_ = os.Rename(path, path+".1")
 }
 
-// Load reads the config from disk, returning an empty config if there isn't one
-// yet. Saved passwords are decrypted back to plaintext (see secret.go); if the
-// key can't be read or created, or one password doesn't decrypt, that
-// connection's Password comes back "" and every other field still loads.
+// Load reads the config, returning an empty one if there is no file. Passwords
+// are decrypted (see secret.go); if the key is unavailable or one password
+// won't decrypt, that Password is "" and everything else loads.
 //
-// A config file that exists but can't be read (a permission change, EIO, too
-// many open files) is not the same as not having one: returning an empty config
-// for both brings the app up with no saved connections, and the next Save of
-// some unrelated setting writes that emptiness over a file that was still good.
-// Such a config comes back unreadable instead, and Save refuses to touch it.
+// A file that exists but can't be read (permissions, EIO, EMFILE) comes back
+// unreadable, and Save refuses to write it — otherwise the next unrelated Save
+// would overwrite a good file with an empty config.
 func Load() *Config {
 	path := configPath()
 	data, err := os.ReadFile(path)
@@ -435,13 +388,10 @@ func Load() *Config {
 	}
 	cfg := new(Config)
 	if err := json.Unmarshal(data, cfg); err != nil {
-		// The file exists but doesn't parse — a hand-edit, or an interrupted
-		// write. Falling back to an empty config discards every saved
-		// connection, so keep the bytes under a .corrupt name first: a password
-		// can't be recovered by hand, but the server/user/database fields are
-		// readable. Best-effort, and written atomically — the sidecar is the
-		// only remaining copy, so a partial one is the loss it exists to
-		// prevent.
+		// Unparseable (hand-edit or interrupted write). Keep the bytes as
+		// .corrupt before starting empty: passwords are lost but
+		// server/user/database are readable by hand. Written atomically, since
+		// it's the only remaining copy.
 		_ = fileutil.WriteAtomic(path+".corrupt", data, 0o600)
 		cfg = new(Config)
 	}
@@ -451,9 +401,8 @@ func Load() *Config {
 
 	key, err := loadOrCreateKey(filepath.Dir(path))
 	if err != nil {
-		// No key means nothing can be opened. Every ciphertext is stashed in
-		// sealed so a later Save writes it back rather than replacing it with an
-		// encryption of "".
+		// No key: stash every ciphertext in sealed so Save writes it back
+		// instead of encrypting "".
 		log.Printf("config: saved passwords unavailable: %v", err)
 		for i := range cfg.Connections {
 			cfg.Connections[i].sealed = cfg.Connections[i].Password
@@ -477,27 +426,23 @@ func Load() *Config {
 	return cfg
 }
 
-// Save writes the config to disk. Passwords are AES-256-GCM encrypted and
-// base64-encoded (see secret.go) in the on-disk copy only; c itself keeps its
-// plaintext passwords.
+// Save writes the config. Passwords are AES-256-GCM encrypted and
+// base64-encoded (see secret.go) on disk only; c keeps plaintext.
 //
-// An entry whose stored password Load could not open keeps its original
-// ciphertext (Connection.sealed) rather than being re-encrypted from the "" Load
-// handed back — otherwise saving any unrelated setting destroys the only
-// recoverable copy of passwords a restored key file could still open.
+// An entry whose password Load couldn't open keeps its original ciphertext
+// (Connection.sealed), so an unrelated save doesn't destroy passwords a
+// restored key file could still open.
 func (c *Config) Save() error {
 	path := configPath()
 	if c.unreadable != nil {
-		// Load never saw this file's contents, so c is missing everything it
-		// held. Writing c out would replace a readable-again config with that
-		// emptiness.
+		// Load never saw this file's contents; writing c would replace them
+		// with emptiness.
 		return fmt.Errorf("config: not saving over %s — it could not be read at startup: %w", path, c.unreadable)
 	}
 	dir := filepath.Dir(path)
-	// 0700, matching loadOrCreateKey's MkdirAll (secret.go). Save runs before
-	// that call and MkdirAll never chmods an existing directory, so whichever
-	// runs first decides the real permissions — both must ask for the owner-only
-	// posture the key's directory is documented to have.
+	// 0700, matching loadOrCreateKey's MkdirAll (secret.go). MkdirAll doesn't
+	// chmod an existing directory, so whichever runs first decides; both must
+	// ask for owner-only.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -506,15 +451,13 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	// Copy c wholesale, then replace Connections with an encrypted copy: listing
-	// the carried-over fields one by one would silently drop any field added to
-	// Config later.
+	// Copy c wholesale, then replace Connections, so fields added to Config
+	// later are never dropped.
 	onDisk := *c
 	onDisk.Connections = make([]Connection, len(c.Connections))
 	for i, conn := range c.Connections {
 		if conn.Password == "" && conn.sealed != "" {
-			// Load couldn't open this one. Write the bytes back as found rather
-			// than sealing the "" standing in for them in memory.
+			// Load couldn't open this one; write the original bytes back.
 			conn.Password = conn.sealed
 			onDisk.Connections[i] = conn
 			continue
@@ -534,18 +477,15 @@ func (c *Config) Save() error {
 	return fileutil.WriteAtomic(path, data, 0o600)
 }
 
-// MaxSavedConnections caps how many recent connections Config keeps. The
-// Connect dialog persists a successful connection here automatically.
+// MaxSavedConnections caps saved recent connections. Connect saves each
+// successful connection automatically.
 const MaxSavedConnections = 30
 
-// AddOrUpdate saves a successful connection. Its Name is overwritten with
-// conn.GeneratedName(), which doubles as the dedup key: an entry with the same
-// generated name is replaced in place, otherwise a new one is added. Either
-// way the entry moves to the end of Connections as most recently used, and
-// the list is trimmed to MaxSavedConnections from the front.
-//
-// conn is taken by value, so the caller's copy is never mutated — only the
-// stored copy gets the generated Name.
+// AddOrUpdate saves a successful connection. Name is set to
+// conn.GeneratedName(), the dedup key: a match is replaced, otherwise added.
+// The entry moves to the end (most recent) and the list is trimmed from the
+// front to MaxSavedConnections. conn is taken by value; the caller's copy is
+// untouched.
 func (c *Config) AddOrUpdate(conn Connection) {
 	conn.Name = conn.GeneratedName()
 	for i, existing := range c.Connections {
@@ -560,9 +500,9 @@ func (c *Config) AddOrUpdate(conn Connection) {
 	}
 }
 
-// MatchByServer returns saved connections whose Server starts with the given
-// (case-insensitive) prefix, most-recently-used first — the data source for the
-// Connect dialog's autocomplete list.
+// MatchByServer returns saved connections whose Server has the given
+// case-insensitive prefix, most recent first — the Connect dialog's
+// autocomplete source.
 func (c *Config) MatchByServer(prefix string) []Connection {
 	prefix = strings.ToLower(prefix)
 	var out []Connection

@@ -7,12 +7,10 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// Every Agent write the context menu offers unconfirmed — Enable and Disable on
-// the four entity types, Start Job and Stop Job — runs behind the progress
-// dialog, as every other write does: while the statement is in flight the
-// dialog is up, Cancel stops it, and the status line says it was cancelled.
-// They once ran on a bare safego, so a sp_update_job waiting on a lock left
-// the tree live and gave the user no way to stop it.
+// Every unconfirmed Agent write (Enable/Disable on four entity types,
+// Start/Stop Job) runs behind the progress dialog: up while in flight, Cancel
+// stops it, status says cancelled — so an sp_update_job blocked on a lock can
+// be stopped.
 func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -64,9 +62,8 @@ func TestAgentWritesRunBehindTheProgressDialog(t *testing.T) {
 	}
 }
 
-// An Agent toggle that succeeds says so. It once left the status line alone,
-// so whatever it said before — a cancelled attempt at the same toggle — stayed
-// there beside a tree showing the change done.
+// A successful toggle reports it, replacing any stale status such as an earlier
+// cancelled attempt.
 func TestAgentToggleReportsItsSuccess(t *testing.T) {
 	a := newTestApp()
 	sc, inst := newFakeConn(t, agentJobResponses(jobRowInState(4))...)

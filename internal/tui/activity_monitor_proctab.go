@@ -14,38 +14,33 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// procRunTimeout bounds one run of a tab's procedure. Both of them read
-// sys.sysprocesses or the request DMVs and cross-apply dm_exec_sql_text per
-// row; on a server bad enough to be worth looking at, that can be slow, and a
-// tab that never comes back is worse than one that says it gave up. The same
-// bound covers the install, which for sp_WhoIsActive is a 5,500-line CREATE.
+// procRunTimeout bounds one procedure run. Both read sysprocesses or request
+// DMVs and cross-apply dm_exec_sql_text per row, which can be slow on a
+// troubled server; giving up beats never returning. Also bounds the install
+// (sp_WhoIsActive is a 5,500-line CREATE).
 const procRunTimeout = 60 * time.Second
 
 // whoIsActiveCredit is the Sessions tab's header line. sp_WhoIsActive is
-// somebody else's GPL-3.0 work, so the attribution is ordered author first
-// and drawn on the tab that runs it, not only in Help > About — a narrow
-// terminal clips the URL off the end rather than the name.
+// someone else's GPL-3.0 work, so it's credited author first on the tab that
+// runs it; a narrow terminal clips the URL, not the name.
 func whoIsActiveCredit() string {
 	return "sp_WhoIsActive " + activity.WhoIsActiveVersion() +
 		" — © " + activity.WhoIsActiveAuthor + ", " + activity.WhoIsActiveLicense +
 		" — " + activity.WhoIsActiveRepo
 }
 
-// amProcTab is an Activity Monitor tab backed by a helper stored procedure:
-// Block over sp_block, Sessions over sp_WhoIsActive. Nothing here runs on a
-// timer — the procedure runs once when the tab is first shown, and again on
-// Refresh.
+// amProcTab is an Activity Monitor tab backed by a helper procedure: Block
+// (sp_block), Sessions (sp_WhoIsActive). Runs once when first shown and on
+// Refresh; no timer.
 //
-// Each tab gets a connection of its own rather than sharing the collector's:
-// the procedures can take seconds on a busy server, and a two-second sample
-// tick must not queue behind one.
+// Each tab has its own connection so a slow procedure doesn't delay the
+// 2-second sample tick.
 type amProcTab struct {
 	am   *ActivityMonitor
 	proc *activity.Proc
 
-	// credit is drawn on its own row above the grid, empty when the procedure
-	// is goSSMS's own. sp_WhoIsActive is somebody else's GPL-3.0 work, and the
-	// attribution belongs where it is being used, not only in Help > About.
+	// credit is drawn on its own row above the grid; empty for goSSMS's own
+	// procedure.
 	credit string
 
 	conn   *db.ServerConn
@@ -55,19 +50,19 @@ type amProcTab struct {
 	status string
 	busy   bool
 
-	// rect is the whole content area, gridRect the part of it the grid got.
-	// They differ by the credit row, which is not the grid's to hit-test.
+	// rect is the content area, gridRect the grid's part; they differ by the
+	// credit row.
 	rect     core.Rect
 	gridRect core.Rect
 }
 
-// newProcTab creates a tab over proc. No connection is opened and no query
-// runs until the tab is first shown.
+// newProcTab creates a tab over proc; nothing connects or runs until first
+// shown.
 func (am *ActivityMonitor) newProcTab(proc *activity.Proc, credit string) *amProcTab {
 	return &amProcTab{am: am, proc: proc, credit: credit}
 }
 
-// procTab is the procedure-backed tab currently showing, nil on the others.
+// procTab is the showing procedure tab, nil otherwise.
 func (am *ActivityMonitor) procTab() *amProcTab {
 	switch am.tab {
 	case amTabBlock:
@@ -78,9 +73,9 @@ func (am *ActivityMonitor) procTab() *amProcTab {
 	return nil
 }
 
-// newGrid builds the tab's result grid with the same behaviour as a query
-// panel's: cell cursor, row numbers, clipboard, and the XML/JSON cell handoff
-// that opens a query-plan or sql-text column in its own highlighted panel.
+// newGrid builds the result grid with query-panel behaviour: cell cursor, row
+// numbers, clipboard, and XML/JSON cells opening in their own highlighted
+// panel.
 func (pt *amProcTab) newGrid() *controls.DataGrid {
 	g := controls.NewDataGrid()
 	g.SetCellCursor(true)
@@ -94,8 +89,8 @@ func (pt *amProcTab) newGrid() *controls.DataGrid {
 	return g
 }
 
-// columnType is the declared SQL Server type of the result's col'th column —
-// what tells an XML column's value from an ordinary string so it opens as XML.
+// columnType is column col's declared SQL Server type, which identifies XML
+// columns.
 func (pt *amProcTab) columnType(col int) string {
 	if pt.result == nil || len(pt.result.Sets) == 0 {
 		return ""
@@ -107,8 +102,7 @@ func (pt *amProcTab) columnType(col int) string {
 	return types[col]
 }
 
-// setStatus is the tab's one-line state, shown in the grid's own status bar
-// so it sits with the rows it describes.
+// setStatus shows the tab's state in the grid's status bar.
 func (pt *amProcTab) setStatus(s string) {
 	pt.status = s
 	if pt.grid != nil {
@@ -116,9 +110,8 @@ func (pt *amProcTab) setStatus(s string) {
 	}
 }
 
-// activate is the tab's first-showing work: open its own connection, find or
-// install the procedure, and run it once. Called from setTab, and cheap on
-// every showing after the first.
+// activate is first-show work: open a connection, find or install the
+// procedure, run it once. Called from setTab; cheap afterwards.
 func (pt *amProcTab) activate() {
 	if pt.grid == nil {
 		pt.grid = pt.newGrid()
@@ -127,9 +120,7 @@ func (pt *amProcTab) activate() {
 	if pt.conn != nil || pt.busy {
 		return
 	}
-	// The panel is only ever opened for a connected server, but its own
-	// connection is what this tab clones — without one there is nothing to
-	// dial, and saying so beats a button that silently does nothing.
+	// The tab clones the panel's connection; without one, say so.
 	if pt.am.conn == nil || pt.am.conn.Server == nil {
 		pt.setStatus("Not connected")
 		return
@@ -145,12 +136,9 @@ func (pt *amProcTab) activate() {
 	})
 }
 
-// panicRepair releases the busy latch after a panic on one of this tab's
-// background steps — see App.safegoRepair. Every step below clears busy in
-// the callback it posts on completion, which a panic never reaches: buildTools
-// dims Refresh and both install actions while busy is set, so the tab would
-// be left frozen at "Connecting..." or "Running..." with no way back short of
-// closing the panel.
+// panicRepair releases the busy latch after a panic in a background step (see
+// App.safegoRepair). Each step clears busy in its completion callback, which a
+// panic skips, leaving the tab frozen with Refresh and install dimmed.
 func (pt *amProcTab) panicRepair() {
 	if !pt.am.app.panelHosted(pt.am) {
 		return
@@ -163,8 +151,8 @@ func (pt *amProcTab) panicRepair() {
 // connected adopts the tab's connection and moves on to the procedure.
 func (pt *amProcTab) connected(conn *db.ServerConn, err error) {
 	if !pt.am.app.panelHosted(pt.am) {
-		// Closed while the dial was resolving — nothing else references conn,
-		// so it leaks for the process's lifetime unless closed here.
+		// Closed while dialling; nothing else references conn, so close it
+		// here.
 		if conn != nil {
 			conn.Close()
 		}
@@ -182,10 +170,9 @@ func (pt *amProcTab) connected(conn *db.ServerConn, err error) {
 	pt.resolveProc()
 }
 
-// resolveProc finds the procedure, installing it in tempdb when neither
-// database has it. master wins when it is there — someone installed it
-// deliberately, and a master copy survives a restart. The tempdb copy is left
-// behind on teardown on purpose: a restart is what removes it.
+// resolveProc finds the procedure, installing into tempdb when neither database
+// has it. master wins when present (deliberately installed, survives restarts).
+// The tempdb copy is left on teardown; a restart removes it.
 func (pt *amProcTab) resolveProc() {
 	conn := pt.conn
 	pt.busy = true
@@ -202,7 +189,7 @@ func (pt *amProcTab) resolveProc() {
 	})
 }
 
-// procResolved records where the procedure is and runs it once.
+// procResolved records where the procedure is and runs it.
 func (pt *amProcTab) procResolved(loc activity.ProcLocation, err error) {
 	if !pt.am.app.panelHosted(pt.am) {
 		return
@@ -219,7 +206,7 @@ func (pt *amProcTab) procResolved(loc activity.ProcLocation, err error) {
 	pt.refresh()
 }
 
-// refresh runs the procedure and puts its result in the grid.
+// refresh runs the procedure into the grid.
 func (pt *amProcTab) refresh() {
 	if pt.conn == nil {
 		pt.activate()
@@ -246,10 +233,8 @@ func (pt *amProcTab) refresh() {
 	})
 }
 
-// applyResult loads a run's first result set into the grid. Errors go to the
-// status line rather than clearing the grid: the previous rows are still the
-// last true picture of the server, and blanking them on a failed refresh
-// loses it.
+// applyResult loads the first result set into the grid. Errors go to the status
+// line, keeping the previous rows as the last true picture.
 func (pt *amProcTab) applyResult(res *query.Result) {
 	if !pt.am.app.panelHosted(pt.am) {
 		return
@@ -274,21 +259,18 @@ func (pt *amProcTab) applyResult(res *query.Result) {
 		return
 	}
 	set := res.Sets[0]
-	// Re-applied per result, like QueryPanel.renderActiveTab, so a change to
-	// the Options dialog's max cell length reaches this grid too.
+	// Re-applied per result, like QueryPanel.renderActiveTab, so Options' max
+	// cell length reaches this grid.
 	pt.grid.SetMaxCellWidth(pt.am.app.cfg.MaxCellLength + 2)
-	// resetGrid, not SetData: a refresh runs the same procedure again, so the
-	// columns are the ones the user just dragged to fit a wide sql_text, while
-	// the rows are a different set of sessions — widths are worth keeping, the
-	// old cursor row is not.
+	// resetGrid, not SetData: same columns, so keep dragged widths; different
+	// sessions, so don't keep the cursor row.
 	resetGrid(pt.grid, set.Columns, set.Rows, 0)
 	pt.setStatus(fmt.Sprintf("%d row(s)  %s  (%s)",
 		len(set.Rows), time.Now().Format("15:04:05"), qualified))
 }
 
-// confirmInstallInMaster asks before writing to master, which is the one
-// thing these tabs do that outlives the session and touches a system
-// database.
+// confirmInstallInMaster asks before writing to master, the one thing these
+// tabs do that outlives the session and touches a system database.
 func (pt *amProcTab) confirmInstallInMaster() {
 	pt.am.app.confirmDialog.ShowConfirm("Install "+pt.proc.MasterName+" in master",
 		"Create "+pt.proc.Qualified(activity.ProcMaster)+"? This writes a stored procedure into a system database.",
@@ -299,8 +281,7 @@ func (pt *amProcTab) confirmInstallInMaster() {
 		})
 }
 
-// installInMaster creates the procedure in master and switches the tab over
-// to it.
+// installInMaster creates the procedure in master and switches the tab to it.
 func (pt *amProcTab) installInMaster() {
 	if pt.conn == nil || pt.busy {
 		return
@@ -345,9 +326,8 @@ func (pt *amProcTab) masterInstalled(err error) {
 	pt.refresh()
 }
 
-// layout gives the grid the content area, less the credit row when there is
-// one. The grid draws its own status bar on its last row, so nothing is
-// reserved for one.
+// layout gives the grid the content area, minus the credit row. The grid draws
+// its own status bar.
 func (pt *amProcTab) layout() {
 	pt.rect = pt.am.contentRect
 	r := pt.rect
@@ -361,10 +341,8 @@ func (pt *amProcTab) layout() {
 	}
 }
 
-// draw renders the credit row and the grid. The grid's context menu and value
-// popup live outside its own rect and have to paint over everything else, so
-// they are a separate call — without it the menu opens, swallows every event,
-// and is never drawn.
+// draw renders the credit row and grid. The grid's menu and value popup extend
+// outside its rect and must paint over everything, hence a separate call.
 func (pt *amProcTab) draw(s tcell.Screen) {
 	if pt.grid == nil {
 		return

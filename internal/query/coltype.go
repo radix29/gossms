@@ -6,26 +6,21 @@ import (
 	"strings"
 )
 
-// varcharMaxLength / nvarcharMaxLength are the lengths go-mssqldb reports for
-// a varchar(max)/varbinary(max) and an nvarchar(max) column — 2^31-3 bytes,
-// halved for the two-byte characters of nvarchar (types.go,
-// makeGoLangTypeLength). They are sentinels, not real declared lengths:
-// printing them literally would render "nvarchar(1073741822)" where SSMS
-// shows "nvarchar(max)".
+// varcharMaxLength / nvarcharMaxLength are go-mssqldb's reported lengths for
+// (max) columns (2^31-3 bytes, halved for nvarchar; types.go
+// makeGoLangTypeLength). Sentinels, rendered as "(max)" as SSMS does.
 const (
 	varcharMaxLength  = 2147483645
 	nvarcharMaxLength = 2147483645 / 2
 )
 
-// columnTypeName renders one column's declared SQL Server type the way SSMS
-// writes it — "nvarchar(50)", "decimal(18,2)", "datetime2(3)", "int" — from
-// what the driver reports about it. dbType is the uppercase
-// DatabaseTypeName; length/lengthOK come from Length; precision/scale/
-// decimalOK from DecimalSize.
+// columnTypeName renders a column's declared type as SSMS writes it
+// ("nvarchar(50)", "decimal(18,2)", "datetime2(3)", "int"). dbType is the
+// uppercase DatabaseTypeName; length/lengthOK from Length;
+// precision/scale/decimalOK from DecimalSize.
 //
-// Only the character and binary types take a length suffix. The driver also
-// reports a length for text/ntext/image/xml (their maximum, e.g. 2147483647),
-// which is a capacity rather than a declaration — SSMS writes those bare.
+// Only character and binary types take a length. The driver also reports
+// capacities for text/ntext/image/xml, which SSMS writes bare.
 func columnTypeName(dbType string, length int64, lengthOK bool, precision, scale int64, decimalOK bool) string {
 	name := strings.ToLower(dbType)
 	switch dbType {
@@ -51,8 +46,8 @@ func columnTypeName(dbType string, length int64, lengthOK bool, precision, scale
 	return name
 }
 
-// isMaxLength reports whether length is the driver's sentinel for a (max)
-// column of this type rather than a declared length.
+// isMaxLength reports whether length is the driver's (max) sentinel for this
+// type.
 func isMaxLength(dbType string, length int64) bool {
 	if dbType == "NVARCHAR" {
 		return length == nvarcharMaxLength
@@ -60,8 +55,8 @@ func isMaxLength(dbType string, length int64) bool {
 	return length == varcharMaxLength
 }
 
-// columnTypeNames renders every column's declared type for the current
-// result set, in column order — Result.Sets' ColumnTypes.
+// columnTypeNames renders each column's declared type in order (Result.Sets'
+// ColumnTypes).
 func columnTypeNames(types []*sql.ColumnType) []string {
 	names := make([]string, len(types))
 	for i, ct := range types {

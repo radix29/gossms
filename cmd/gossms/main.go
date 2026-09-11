@@ -14,11 +14,9 @@ import (
 )
 
 func main() {
-	// Handled before anything else, and deliberately not with the flag
-	// package: gossms takes no other arguments, and every path below this
-	// point either opens a file or a tcell screen. `brew test`, CI and a
-	// user pasting their version into a bug report all run without a TTY,
-	// where App.Run cannot start at all.
+	// Handled first, without the flag package: gossms takes no other arguments,
+	// and everything below opens a file or a tcell screen. `brew test`, CI and
+	// bug reports run without a TTY, where App.Run cannot start.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--version", "-version", "-v":
@@ -38,9 +36,8 @@ func main() {
 	}
 }
 
-// printVersion writes the same build metadata Help > About shows, in the
-// order a bug report wants it. Kept in step with newAboutRows in
-// internal/tui/menu.go.
+// printVersion writes the build metadata Help > About shows. Keep in step with
+// newAboutRows in internal/tui/menu.go.
 func printVersion() {
 	fmt.Printf("%s %s\n", version.Name, version.Version)
 	fmt.Printf("Commit:   %s\n", version.Commit)
@@ -50,16 +47,12 @@ func printVersion() {
 	fmt.Printf("gosmo:    %s\n", gosmoversion.Version)
 }
 
-// run wraps app.Run so a panic on the UI goroutine is reported usefully
-// instead of vanishing.
-//
-// App.Run's own `defer screen.Fini()` restores the terminal during a panic
-// unwind, but the trace itself is written to stderr — which is still the
-// alternate screen at that point, so it scrolls away with it and the user
-// sees a silently exited program. Recovering here, after Fini has already
-// run, puts the trace in the log file and a short line on the restored
-// screen. Background goroutines can't be covered from here at all; they go
-// through App.safego/recoverPanic instead.
+// run reports a panic on the UI goroutine instead of letting it vanish:
+// App.Run's deferred screen.Fini restores the terminal, but the trace goes to
+// stderr while still on the alternate screen and scrolls away with it.
+// Recovering here, after Fini, puts the trace in the log and a short line on
+// the restored screen. Background goroutines use App.safego/recoverPanic
+// instead.
 func run(app *tui.App) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

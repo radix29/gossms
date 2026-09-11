@@ -9,14 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// agent_alert_props.go builds the Alert Properties dialog — General
-// (identity, trigger, response scope, notification) and Response
-// (operators to e-mail, response job). Every page closes over a shared
-// *string name cell, so a rename on General is visible to later pages in
-// the same Apply run.
+// agent_alert_props.go builds Alert Properties: General (identity, trigger,
+// scope, notification) and Response (operators, response job). Pages share a
+// *string name cell so a General rename is seen by later pages in the same
+// Apply.
 
-// findAgentAlert is a thin wrapper over gosmo.Server.AlertByNameContext,
-// mirroring findAgentJob/findAgentSchedule.
+// findAgentAlert wraps gosmo.Server.AlertByNameContext, like
+// findAgentJob/findAgentSchedule.
 func findAgentAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Alert, error) {
 	return sc.Server.AlertByNameContext(ctx, name)
 }
@@ -31,8 +30,8 @@ func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 	}
 }
 
-// showAlertProperties opens Alert Properties for a known connection and
-// alert name — the Object Explorer context menu's entry point.
+// showAlertProperties opens Alert Properties from Object Explorer's context
+// menu.
 func (a *App) showAlertProperties(sc *db.ServerConn, alertName string) {
 	a.propDialog.show(sc, "msdb", "Alert Properties", "Alert: "+alertName, "Server: "+sc.Opts.Server,
 		func() []propPage { return alertPropPages(sc, alertName) })
@@ -135,8 +134,8 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 						return err
 					}
 				}
-				// Renaming last keeps every write above addressed by the
-				// name the server still has — see propPage.renames.
+				// Rename last so earlier writes use the server's current name
+				// (see propPage.renames).
 				if nameField.Dirty() {
 					if err := al.RenameContext(ctx, nameField.Value()); err != nil {
 						return err
@@ -150,9 +149,8 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 	}
 }
 
-// pageAlertResponse manages which operators this alert e-mails and which
-// job (if any) it runs in response, mirroring new_alert_dialog.go's
-// Response page and agent_job_props_alerts.go's pageJobAlerts toggle-diff.
+// pageAlertResponse manages which operators the alert e-mails and its response
+// job, like new_alert_dialog.go's Response page and pageJobAlerts' toggle-diff.
 func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 	return propPage{
 		title: "Response",

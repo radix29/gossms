@@ -6,13 +6,9 @@ import (
 	"testing"
 )
 
-// TestCellArenaStrSurvivesChunkReuse is the whole safety claim of the arena
-// in one test: a string handed out earlier must still read back correctly
-// after enough later cells to fill the chunk it lives in and start several
-// more. A packing scheme that grew one buffer with append (instead of
-// starting a fresh fixed-size chunk) would corrupt every earlier string the
-// moment the buffer reallocated, and the scratch buffer str copies from is
-// reused for every cell, so a missing copy shows up here too.
+// Earlier strings must survive after later cells fill their chunk and start
+// more. A single growing buffer would corrupt them on reallocation, and a
+// missing copy would show because the scratch buffer is reused.
 func TestCellArenaStrSurvivesChunkReuse(t *testing.T) {
 	a := &cellArena{}
 	const n = 20000
@@ -30,15 +26,14 @@ func TestCellArenaStrSurvivesChunkReuse(t *testing.T) {
 	}
 }
 
-// TestCellArenaStrOversizeValue confirms a cell too large to pack still
-// round-trips — it takes its own allocation rather than stranding a chunk.
+// An oversize cell round-trips via its own allocation.
 func TestCellArenaStrOversizeValue(t *testing.T) {
 	a := &cellArena{}
 	big := strings.Repeat("x", arenaTextChunk*2)
 	if got := a.str([]byte(big)); got != big {
 		t.Errorf("oversize cell round-tripped to %d bytes, want %d", len(got), len(big))
 	}
-	// The oversize value must not have disturbed ordinary packing.
+	// The oversize value mustn't disturb packing.
 	if got := a.str([]byte("after")); got != "after" {
 		t.Errorf("after oversize cell, str = %q, want %q", got, "after")
 	}
@@ -54,10 +49,8 @@ func TestCellArenaStrEmpty(t *testing.T) {
 	}
 }
 
-// TestCellArenaRowsAreIndependent confirms rows carved from one chunk don't
-// alias: each has capacity exactly its own length, so appending to one can't
-// overwrite the next row's cells, and writing a cell in one row is invisible
-// in every other.
+// Rows from one chunk don't alias: capacity equals length, so appends and
+// writes stay in their row.
 func TestCellArenaRowsAreIndependent(t *testing.T) {
 	a := &cellArena{}
 	const cols = 3
@@ -71,8 +64,7 @@ func TestCellArenaRowsAreIndependent(t *testing.T) {
 			rows[i][c] = fmt.Sprintf("%d.%d", i, c)
 		}
 	}
-	// An append past a row's length must reallocate rather than reach into
-	// the row after it.
+	// Appending past a row's length must reallocate.
 	spill := append(rows[0], "spilled") //nolint:gocritic // deliberate: appendAssign is the point
 	_ = spill
 	for i := range rows {
@@ -84,8 +76,7 @@ func TestCellArenaRowsAreIndependent(t *testing.T) {
 	}
 }
 
-// TestCellArenaNilBehavesUnpacked pins the streaming path's use of a nil
-// arena: same values out, just not packed.
+// A nil arena (streaming path) returns the same values, unpacked.
 func TestCellArenaNilBehavesUnpacked(t *testing.T) {
 	var a *cellArena
 	if got := a.str([]byte("hello")); got != "hello" {

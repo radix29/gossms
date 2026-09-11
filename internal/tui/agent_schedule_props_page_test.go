@@ -7,14 +7,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Schedule Properties > General, driven end to end.
-//
-// agent_schedule_form_test.go pins the frequency form's own round trip, and a
-// round trip cannot see a fault in a table both halves read — swapping two
-// entries in weekdayBits leaves the checkbox labelled Monday setting Tuesday's
-// bit and populate/readFrequency still agree. What only a page test can show
-// is the statement that reaches the server: the day the user ticked, by name,
-// against the bit msdb stores.
+// Schedule Properties > General end to end. agent_schedule_form_test.go pins
+// the form's round trip, which can't see a swapped table entry (Monday's box
+// setting Tuesday's bit); only the statement sent shows the ticked day's bit.
 
 func loadSchedulePage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
 	t.Helper()
@@ -25,10 +20,8 @@ func loadSchedulePage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, 
 	return inst, apply, form, &name
 }
 
-// TestScheduleGeneralWeeklyWritesTheBitsOfTheDaysThatWereTicked. The scripted
-// schedule is Daily, so the weekday grid starts on the Mon-Fri default:
-// unticking three of them leaves Monday and Wednesday, which msdb stores as
-// 2|8. Any rotation of the weekday table changes this number.
+// The schedule is Daily, so weekdays start Mon-Fri; unticking three leaves
+// Monday and Wednesday, 2|8. Any rotation of the table changes this.
 func TestScheduleGeneralWeeklyWritesTheBitsOfTheDaysThatWereTicked(t *testing.T) {
 	inst, apply, form, _ := loadSchedulePage(t)
 
@@ -47,10 +40,8 @@ func TestScheduleGeneralWeeklyWritesTheBitsOfTheDaysThatWereTicked(t *testing.T)
 			"@freq_relative_interval = 0, @freq_recurrence_factor = 1")
 }
 
-// TestScheduleGeneralAddressesTheScheduleItLoaded. sp_update_schedule takes an
-// id, not a name, so a page that lost the schedule it loaded would still emit
-// a statement that looks entirely well-formed — pointed at schedule 0, or at
-// whichever schedule sorts first.
+// sp_update_schedule takes an id, so a page that lost its schedule would still
+// emit a well-formed statement for schedule 0 or the first one.
 func TestScheduleGeneralAddressesTheScheduleItLoaded(t *testing.T) {
 	inst, apply, form, _ := loadSchedulePage(t)
 
@@ -63,9 +54,8 @@ func TestScheduleGeneralAddressesTheScheduleItLoaded(t *testing.T) {
 		"@active_end_date = 99991231, @active_start_time = 23000, @active_end_time = 235959")
 }
 
-// TestScheduleGeneralGivingAnEndDateReplacesTheNoEndDateSentinel. 99991231 is
-// msdb's own "runs forever"; a schedule that keeps it after the user set an
-// end date never stops.
+// 99991231 is msdb's "runs forever"; keeping it after the user set an end date
+// never stops the schedule.
 func TestScheduleGeneralGivingAnEndDateReplacesTheNoEndDateSentinel(t *testing.T) {
 	inst, apply, form, _ := loadSchedulePage(t)
 
@@ -78,9 +68,8 @@ func TestScheduleGeneralGivingAnEndDateReplacesTheNoEndDateSentinel(t *testing.T
 	assertOneStatement(t, inst, "@active_start_date = 20260101, @active_end_date = 20261231")
 }
 
-// TestScheduleGeneralRenamesLastAndUnderTheLoadedID. The rename is the last
-// write of the run and the shared name cell has to follow it, or the reload
-// after Apply looks for a schedule that no longer answers to that name.
+// Rename is last and the shared name cell follows it, or the reload looks for a
+// vanished name.
 func TestScheduleGeneralRenamesLastAndUnderTheLoadedID(t *testing.T) {
 	inst, apply, form, name := loadSchedulePage(t)
 
@@ -105,9 +94,8 @@ func TestScheduleGeneralRenamesLastAndUnderTheLoadedID(t *testing.T) {
 	}
 }
 
-// TestScheduleGeneralUntouchedPageWritesNothing. This page is the worst place
-// for a row that loads dirty: a shared schedule is attached to every job that
-// uses it, so one phantom write moves them all.
+// A shared schedule serves every attached job, so one phantom write moves them
+// all.
 func TestScheduleGeneralUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadSchedulePage(t)
 

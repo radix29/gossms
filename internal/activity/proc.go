@@ -12,8 +12,8 @@ type ProcLocation int
 const (
 	// ProcNone means neither master nor tempdb has it.
 	ProcNone ProcLocation = iota
-	// ProcMaster means the master copy exists and is preferred: a procedure
-	// in master survives a restart, a tempdb one does not.
+	// ProcMaster means the master copy exists and is preferred: it survives
+	// restarts, tempdb doesn't.
 	ProcMaster
 	// ProcTempDB means only the tempdb copy exists.
 	ProcTempDB
@@ -30,30 +30,23 @@ func (l ProcLocation) Database() string {
 	return ""
 }
 
-// Proc is a helper stored procedure goSSMS installs to back one Activity
-// Monitor tab, under a different name in each of the two databases it can
-// live in.
+// Proc is a helper stored procedure backing an Activity Monitor tab, named
+// differently in each database it can live in.
 //
-// In master the procedure keeps its sp_ name: that is the name a copy already
-// installed by hand has, so it is the name that has to be recognised. In
-// tempdb the name is deliberately without the sp_ prefix — an sp_-prefixed
-// name falls back to master when the current database has no such procedure,
-// which turns ordinary DDL into something else entirely on exactly the path
-// that installs one. Both verified live: CREATE OR ALTER dbo.sp_block in
-// tempdb finds master's copy, decides it is altering that, and fails with
-// "Invalid object name"; DROP PROCEDURE IF EXISTS dbo.sp_block in tempdb
-// deletes *master's* copy. A name without the prefix is resolved in the
-// database it was issued against, like any other object, so the tempdb copy
-// is reachable by plain DDL and can be replaced in place.
+// In master it keeps its sp_ name, the name a hand-installed copy has. In
+// tempdb it has no sp_ prefix: an sp_ name falls back to master when the
+// current database lacks it, so in tempdb CREATE OR ALTER dbo.sp_block alters
+// master's copy and fails with "Invalid object name", and DROP PROCEDURE IF
+// EXISTS deletes master's copy (both verified live). Without the prefix, the
+// name resolves in tempdb like any object.
 type Proc struct {
 	// MasterName is the unqualified name in master, sp_-prefixed.
 	MasterName string
 	// TempDBName is the unqualified name in tempdb, never sp_-prefixed.
 	TempDBName string
 
-	// script builds the CREATE OR ALTER for one unqualified name: one batch,
-	// no USE and no GO, so it can be sent to sp_executesql in the target
-	// database's context.
+	// script builds the CREATE OR ALTER for an unqualified name as one batch
+	// (no USE, no GO) for sp_executesql in the target database.
 	script func(name string) string
 }
 
@@ -76,9 +69,9 @@ func (p *Proc) Qualified(l ProcLocation) string {
 	return ""
 }
 
-// Exec is the batch that runs the procedure, empty for ProcNone. The name is
-// always qualified with its database, since neither name is reachable
-// unqualified from an arbitrary database context.
+// Exec is the batch that runs the procedure, empty for ProcNone. Always
+// database-qualified, as neither name resolves unqualified from an arbitrary
+// database.
 func (p *Proc) Exec(l ProcLocation) string {
 	if q := p.Qualified(l); q != "" {
 		return "exec " + q
@@ -96,8 +89,8 @@ func (p *Proc) Script(l ProcLocation) string {
 	return p.script(name)
 }
 
-// Find reports where the procedure already exists, preferring master. One
-// round trip, since the answer gates a whole tab.
+// Find reports where the procedure exists, preferring master, in one round
+// trip.
 func (p *Proc) Find(ctx context.Context, db *sql.DB) (ProcLocation, error) {
 	q := `select
 	case when object_id('master.dbo.` + p.MasterName + `', 'P') is not null then 1 else 0 end,
@@ -115,14 +108,10 @@ func (p *Proc) Find(ctx context.Context, db *sql.DB) (ProcLocation, error) {
 	return ProcNone, nil
 }
 
-// Install creates or replaces the procedure at l, which must not be ProcNone.
-//
-// The script goes to sp_executesql as a parameter rather than being
-// concatenated into a batch: the bodies are full of single quotes, and the
-// three-part sp_executesql name is what puts the CREATE in the target
-// database's context without a USE — this runs on a pooled connection whose
-// database must be left as it was found (verified live with DB_NAME()
-// afterward).
+// Install creates or replaces the procedure at l (not ProcNone). The script is
+// a parameter to the three-part db..sp_executesql, which runs it in the target
+// database without USE — the pooled connection's database must be left
+// unchanged (verified live) — and avoids quoting the body.
 func (p *Proc) Install(ctx context.Context, db *sql.DB, l ProcLocation) error {
 	database := l.Database()
 	if database == "" {

@@ -16,7 +16,7 @@ var scheduleOccursItems = []string{
 	"When SQL Server Agent starts", "When CPU becomes idle",
 }
 
-// scheduleOccursFreqTypes is scheduleOccursItems' index-to-FreqType mapping.
+// scheduleOccursFreqTypes maps scheduleOccursItems indexes to FreqType.
 var scheduleOccursFreqTypes = []gosmo.ScheduleFreqType{
 	gosmo.FreqOnce, gosmo.FreqDaily, gosmo.FreqWeekly, gosmo.FreqMonthly,
 	gosmo.FreqMonthlyRelative, gosmo.FreqAutoStart, gosmo.FreqOnIdle,
@@ -46,10 +46,8 @@ func scheduleSubdayIndex(st gosmo.ScheduleSubdayType) int {
 var weekdayNames = []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
 var weekdayBits = []int{gosmo.WeekdaySunday, gosmo.WeekdayMonday, gosmo.WeekdayTuesday, gosmo.WeekdayWednesday, gosmo.WeekdayThursday, gosmo.WeekdayFriday, gosmo.WeekdaySaturday}
 
-// defaultWeekdayMask is the Mon-Fri default used whenever a Weekly
-// schedule's weekday selection isn't otherwise known — a brand-new row,
-// or a row being synced/defaulted for a FreqType where weekdays don't
-// apply.
+// defaultWeekdayMask (Mon-Fri) is used when a Weekly schedule's weekdays aren't
+// known: a new row, or a FreqType where weekdays don't apply.
 var defaultWeekdayMask = gosmo.WeekdayMonday | gosmo.WeekdayTuesday | gosmo.WeekdayWednesday | gosmo.WeekdayThursday | gosmo.WeekdayFriday
 
 var scheduleRelativeItems = []string{"First", "Second", "Third", "Fourth", "Last"}
@@ -112,20 +110,18 @@ func formatAgentDate(t time.Time) string {
 	return t.Format("2006-01-02")
 }
 
-// jobScheduleAttach tracks one shared schedule's "is it attached to this
-// job" state — a toggle against the full list of schedules that exist, not
-// an editor of the schedule's own definition (that's Schedule Properties,
-// agent_schedule_props.go).
+// jobScheduleAttach tracks whether one shared schedule is attached to this job;
+// the schedule's definition is edited in Schedule Properties
+// (agent_schedule_props.go).
 type jobScheduleAttach struct {
 	sch          *gosmo.Schedule
 	origAttached bool
 	attached     bool
 }
 
-// pageJobSchedules is the Schedules page: every shared schedule on the
-// server, toggled attached or not to this job, plus a read-only "selected
-// schedule" detail panel. A schedule's own definition is edited only in
-// Schedule Properties, whose read-only Jobs page points back here.
+// pageJobSchedules is the Schedules page: every shared schedule toggled
+// attached or not, plus a read-only detail panel. Definitions are edited only
+// in Schedule Properties, whose Jobs page points back here.
 func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Schedules",
@@ -254,9 +250,9 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 	}
 }
 
-// atLeast1 clamps n to at least 1, the minimum every "recurs every" spinner
-// (agent_schedule_form.go) accepts — a stored 0, unused for its FreqType,
-// would otherwise fall below the row's declared minimum.
+// atLeast1 clamps n to 1, the "recurs every" spinners' minimum
+// (agent_schedule_form.go); a stored 0 unused by its FreqType would fall below
+// it.
 func atLeast1(n int) int {
 	if n < 1 {
 		return 1

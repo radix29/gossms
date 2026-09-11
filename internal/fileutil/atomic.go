@@ -1,4 +1,4 @@
-// Package fileutil holds the file-writing helpers shared across gossms.
+// Package fileutil holds shared file-writing helpers.
 package fileutil
 
 import (
@@ -7,24 +7,18 @@ import (
 	"path/filepath"
 )
 
-// WriteAtomic writes data to path by way of a temp file in the same
-// directory plus a rename, so path is only ever replaced whole. A plain
-// os.WriteFile truncates in place: a crash, a full disk, or a power loss
-// partway through leaves a half-written file behind, and the original is
-// already gone. config.Save is the worked example — a truncated config.json
-// is invalid JSON, which Load discards entirely, silently taking every saved
-// connection with it — but a half-written .sql script the user spent an hour
-// on is the same loss. The temp file has to share path's directory for the
-// rename to be atomic, since a rename across filesystems isn't.
+// WriteAtomic writes data to a temp file in path's directory and renames it
+// over path, so path is only ever replaced whole. os.WriteFile truncates in
+// place: a crash, full disk or power loss mid-write leaves a half file and the
+// original is gone (a truncated config.json loses every saved connection). The
+// temp file must share path's directory; a cross-filesystem rename isn't
+// atomic.
 //
-// perm is the mode a *new* file gets, and the widest an existing one is left
-// with — an existing file otherwise keeps the mode it already has. See modeFor.
+// perm is the mode a new file gets and the widest an existing one keeps; see
+// modeFor.
 //
-// Both halves need flushing, not just the file: the rename is a change to
-// the *directory*, so syncing only the temp file leaves durable bytes under
-// a name that a post-crash directory may not carry yet, and the old contents
-// come back. That is the same outcome the temp-file dance exists to prevent,
-// just through a narrower window.
+// Both the file and the directory are synced: the rename changes the directory,
+// and without syncing it a crash can bring the old contents back.
 func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	path = resolveSymlink(path)
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
@@ -34,8 +28,8 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := f.Name()
 	defer os.Remove(tmp) // no-op once the rename below has succeeded
 
-	// CreateTemp makes the file 0600; the mode below is what the file ends up
-	// with, so a mode of its own never depends on that staying true.
+	// CreateTemp makes the file 0600; set the final mode explicitly rather than
+	// rely on that.
 	if err := f.Chmod(modeFor(path, perm)); err != nil {
 		f.Close()
 		return err
@@ -44,8 +38,8 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 		f.Close()
 		return err
 	}
-	// Flush to disk before the rename, so a crash right after it can't
-	// leave the new name pointing at an empty or partial file.
+	// Sync before the rename so a crash can't leave the new name pointing at a
+	// partial file.
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
@@ -60,24 +54,16 @@ func WriteAtomic(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// resolveSymlink returns the file path actually names, following symlinks, so
-// WriteAtomic writes *through* a link instead of replacing it.
+// resolveSymlink returns the file path names, following symlinks, so
+// WriteAtomic writes through a link instead of replacing it. A rename replaces
+// the directory entry, so without this saving a symlinked script would turn the
+// link into a regular file and leave the target untouched. Resolving also puts
+// the temp file in the target's directory, where the rename stays atomic.
 //
-// The rename is the reason this is needed at all. A write-in-place follows a
-// symlink for free; a rename does not — it replaces the directory entry, so
-// saving a script that was symlinked into a repo would silently turn the link
-// into a regular file and leave the real file untouched. Resolving first moves
-// both the temp file and the rename to the link's target directory, which is
-// also where they have to be for the rename to stay atomic.
-//
-// EvalSymlinks does the whole job when every component exists. It fails on a
-// path whose target doesn't — an ordinary new file, but also a *dangling* link,
-// which is the case that has to keep working: a script symlinked to a name not
-// written yet must be created at the target, not on top of the link. So the
-// fallback walks the last component by hand, and only a path that isn't a link
-// at all is used as given. A relative link resolves against the link's own
-// directory, matching EvalSymlinks; the hop limit is what stops a link cycle
-// spinning here rather than failing the save.
+// EvalSymlinks fails when the target doesn't exist — including a dangling link,
+// which must still create the target, not overwrite the link. So the fallback
+// walks the last component by hand; a relative link resolves against its own
+// directory, and a hop limit stops link cycles.
 func resolveSymlink(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved
@@ -99,35 +85,22 @@ func resolveSymlink(path string) string {
 	return path
 }
 
-// modeFor decides what mode WriteAtomic's replacement file gets: the mode path
-// already has, with perm as a ceiling. A path that doesn't exist yet (or can't
-// be read) simply gets perm.
+// modeFor returns the mode path already has, capped at perm; a missing or
+// unreadable path gets perm.
 //
-// Both halves are load-bearing, in opposite directions.
+// Preserving the mode keeps rename-based writes behaving like os.WriteFile:
+// callers pass a constant (0600 for config.json, gossms.key,
+// tracked_queries.json; 0644 for scripts), and applying it blindly would
+// re-widen a script the user chmodded 0600 on every save.
 //
-// Preserving the existing mode is what stops a rename-based write behaving
-// differently from a write-in-place one. Every caller passes a constant — 0600
-// for config.json, gossms.key and tracked_queries.json, 0644 for a saved
-// script — and applying it blindly re-widens a file on every save: a .sql the
-// user chmodded 0600 comes back 0644 on the next Ctrl+S. os.WriteFile does not
-// do that, because it doesn't create a new inode; this must not either.
+// Capping at perm tightens a config.json or gossms.key that somehow reached
+// 0644 back to 0600 instead of keeping it wide forever.
 //
-// Capping at perm is what stops that preservation becoming a security bug. The
-// caller's perm is the widest the file is ever allowed to be, so a config.json
-// or gossms.key that somehow reached 0644 — a legacy write, a stray chmod, a
-// restore from a backup taken elsewhere — is tightened back to 0600 on the next
-// save rather than kept wide forever. Preserving the mode *exactly* would make
-// that permanent, which is the one outcome worse than the bug this fixes.
+// The mode read is the symlink target's; WriteAtomic resolved it already.
 //
-// WriteAtomic has already resolved any symlink by the time this runs, so the
-// mode read here is the target's — the file actually being replaced.
-//
-// Mode is all this preserves: the replacement file is owned by whoever is
-// running, where a write-in-place would have kept the original's uid/gid. That
-// is a property of the rename and is left alone deliberately. It can only bite
-// when gossms runs as root over a file owned by someone else, which is not a
-// case it supports, and the fix — a Stat plus a root-only Chown with a Windows
-// no-op — would add the OS branching this codebase keeps down to two files.
+// Ownership is not preserved (the new file belongs to the running user). That
+// only matters when running as root over another user's file, which isn't
+// supported, and fixing it would need OS branching.
 func modeFor(path string, perm os.FileMode) os.FileMode {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -136,17 +109,12 @@ func modeFor(path string, perm os.FileMode) os.FileMode {
 	return fi.Mode().Perm() & perm
 }
 
-// syncDir flushes a directory's own contents — the entry WriteAtomic's
-// rename just created — so the rename survives a crash rather than only the
-// bytes it points at.
+// syncDir flushes the directory entry WriteAtomic's rename created, so the
+// rename survives a crash.
 //
-// Best-effort, and deliberately returning nothing: this must not be able to
-// fail a save that has already succeeded. Syncing a directory is a POSIX
-// notion, and on Windows FlushFileBuffers rejects a handle opened for
-// reading — so reporting the error would turn a durability nicety into "the
-// config never saves" on one of the three platforms this single binary
-// targets. Where the call works it closes the crash window; where it doesn't
-// the file's own Sync above is still what it always was.
+// Best-effort and silent: it must not fail a save that already succeeded.
+// Directory sync is POSIX-only — Windows FlushFileBuffers rejects a read handle
+// — so reporting errors would break saving on Windows.
 func syncDir(dir string) {
 	d, err := os.Open(dir)
 	if err != nil {

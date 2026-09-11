@@ -9,16 +9,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// agent_schedule_props.go builds the Schedule Properties dialog — General
-// (identity, owner, and the shared frequency form from
-// agent_schedule_form.go) plus a read-only Jobs page listing which jobs
-// use this schedule. Mirrors agent_job_props.go's shape, including its
-// shared *string name cell: every page closes over &scheduleName, so a
-// rename on General — the last write of the run, see propPage.renames — is
-// visible to PropDialog.InvalidateAll's post-Apply reload.
+// agent_schedule_props.go builds Schedule Properties: General (identity, owner,
+// and the shared frequency form from agent_schedule_form.go) and a read-only
+// Jobs page. Like agent_job_props.go, pages share &scheduleName, so General's
+// rename (the run's last write, see propPage.renames) is seen by
+// PropDialog.InvalidateAll's reload.
 
-// findAgentSchedule is a thin wrapper over gosmo.Server.ScheduleByNameContext,
-// mirroring findAgentJob.
+// findAgentSchedule wraps gosmo.Server.ScheduleByNameContext, like
+// findAgentJob.
 func findAgentSchedule(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Schedule, error) {
 	return sc.Server.ScheduleByNameContext(ctx, name)
 }
@@ -32,9 +30,8 @@ func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 	}
 }
 
-// showScheduleProperties opens Schedule Properties for a known connection
-// and schedule name — the Object Explorer context menu's entry point.
-// database is "msdb" so Script Changes' generated query window opens there.
+// showScheduleProperties opens Schedule Properties from Object Explorer's
+// context menu. database is "msdb" so Script Changes' window opens there.
 func (a *App) showScheduleProperties(sc *db.ServerConn, scheduleName string) {
 	a.propDialog.show(sc, "msdb", "Schedule Properties", "Schedule: "+scheduleName, "Server: "+sc.Opts.Server,
 		func() []propPage { return schedulePropPages(sc, scheduleName) })
@@ -99,11 +96,9 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 						return err
 					}
 				}
-				// Renaming last keeps every write above addressed by the
-				// name the server still has — see propPage.renames.
-				// commitRename then updates the shared cell so the Jobs
-				// page's load, and any reload after a successful Apply/OK,
-				// re-fetch under the new name.
+				// Rename last so earlier writes use the server's current name
+				// (see propPage.renames); commitRename then updates the shared
+				// cell for the Jobs page and reloads.
 				if freqForm.nameField.Dirty() {
 					if err := sch.RenameContext(ctx, freqForm.name()); err != nil {
 						return err
@@ -117,9 +112,8 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 	}
 }
 
-// pageScheduleJobs is a read-only page listing every job this shared
-// schedule is attached to — editing a schedule here affects every job
-// listed, so there's nothing page-local to apply.
+// pageScheduleJobs lists the jobs using this shared schedule, read-only;
+// editing the schedule affects them all.
 func pageScheduleJobs(sc *db.ServerConn, scheduleName *string) propPage {
 	return propPage{
 		title: "Jobs",

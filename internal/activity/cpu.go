@@ -6,33 +6,27 @@ import (
 	"errors"
 )
 
-// CPUUsage is the host's busy CPU at the newest scheduler-monitor record,
-// split between SQL Server and everything else on the machine. Idle is what
-// the two leave under 100 and is deliberately not carried: a chart band for
-// "nothing happened" fills the panel on a quiet server and pushes the two
-// bands that matter into a few rows.
+// CPUUsage is host busy CPU at the newest scheduler-monitor record, split into
+// SQL Server and other processes. Idle is omitted: its band would fill the
+// chart on a quiet server and squeeze the two that matter.
 //
-// This is host-wide CPU, not the scheduler pressure SchedStats reports —
-// the two answer different questions, and a server pinned by another
-// process shows up only here.
+// This is host-wide CPU, unlike SchedStats' scheduler pressure; a server pinned
+// by another process shows only here.
 type CPUUsage struct {
 	SQLPct   float64
 	OtherPct float64
 }
 
-// SchedulerLoad is one visible online scheduler's load factor — SQL
-// Server's own measure of how loaded that CPU is, used by the engine to
-// place new tasks.
+// SchedulerLoad is one visible online scheduler's load factor, the engine's
+// measure used to place new tasks.
 type SchedulerLoad struct {
 	CPUID      int
 	LoadFactor float64
 }
 
-// RING_BUFFER_SCHEDULER_MONITOR carries one record per minute, so a faster
-// collection rate simply reads the same record again until the next one is
-// written. The record is XML in a varchar column; the LIKE narrows the scan
-// to the health records before the cast, which is what keeps this cheap
-// enough to run every tick.
+// RING_BUFFER_SCHEDULER_MONITOR writes one record per minute, so faster ticks
+// reread it. The LIKE narrows to health records before the XML cast, keeping
+// this cheap enough per tick.
 const cpuUsageQuery = `
 WITH CpuUsage AS
 (
@@ -52,9 +46,8 @@ SELECT TOP (1)
 FROM CpuUsage
 ORDER BY EventTime DESC`
 
-// collectCPUUsage reads the newest scheduler-monitor record. An instance
-// that has just started has no record yet, which is a zero reading rather
-// than an error — one empty chart must not stop the whole tick.
+// collectCPUUsage reads the newest scheduler-monitor record. A freshly started
+// instance has none: a zero reading, not an error.
 func collectCPUUsage(ctx context.Context, db *sql.DB) (CPUUsage, error) {
 	var c CPUUsage
 	err := db.QueryRowContext(ctx, cpuUsageQuery).Scan(&c.SQLPct, &c.OtherPct)
@@ -67,8 +60,7 @@ func collectCPUUsage(ctx context.Context, db *sql.DB) (CPUUsage, error) {
 	return c, nil
 }
 
-// Only VISIBLE ONLINE schedulers run user work, so only they have a load
-// factor worth showing — the same filter SchedStats uses.
+// Only VISIBLE ONLINE schedulers run user work (same filter as SchedStats).
 const loadFactorQuery = `
 SELECT cpu_id, load_factor
 FROM sys.dm_os_schedulers

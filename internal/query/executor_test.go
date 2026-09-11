@@ -26,8 +26,7 @@ func TestFormatValue(t *testing.T) {
 		{"plain", false, "", "plain"},
 		{int64(42), false, "", "42"},
 		{3.14, false, "", "3.14"},
-		// A time.Time from a column whose type named no layout still gets
-		// the datetime one, not a zero-length format string.
+		// No layout still renders as datetime, not an empty format.
 		{ts, false, "", "2024-01-05 13:45:30.123"},
 		{ts, false, timeLayout("DATETIME", 3, true), "2024-01-05 13:45:30.123"},
 		{ts, false, timeLayout("DATE", 0, true), "2024-01-05"},
@@ -35,12 +34,12 @@ func TestFormatValue(t *testing.T) {
 		{ts, false, timeLayout("SMALLDATETIME", 0, true), "2024-01-05 13:45:30"},
 		{ts, false, timeLayout("DATETIME2", 7, true), "2024-01-05 13:45:30.1234567"},
 		{ts, false, timeLayout("DATETIMEOFFSET", 7, true), "2024-01-05 13:45:30.1234567 +00:00"},
-		// The declared scale, not the type's maximum, sets the number of
-		// fractional digits — a time(0) shows no decimal point at all.
+		// The declared scale sets fractional digits; time(0) shows no decimal
+		// point.
 		{ts, false, timeLayout("TIME", 0, true), "13:45:30"},
 		{ts, false, timeLayout("DATETIME2", 3, true), "2024-01-05 13:45:30.123"},
 		{ts, false, timeLayout("DATETIMEOFFSET", 1, true), "2024-01-05 13:45:30.1 +00:00"},
-		// A driver that doesn't report the scale falls back to the maximum.
+		// Unknown scale falls back to the maximum.
 		{ts, false, timeLayout("DATETIME2", 0, false), "2024-01-05 13:45:30.1234567"},
 	}
 	for _, tt := range tests {
@@ -50,8 +49,7 @@ func TestFormatValue(t *testing.T) {
 	}
 }
 
-// TestTimeLayoutNonDateType pins the "" that scanResultSet relies on to
-// tell a date/time column from every other kind.
+// scanResultSet relies on "" to tell date/time columns from others.
 func TestTimeLayoutNonDateType(t *testing.T) {
 	for _, name := range []string{"INT", "NVARCHAR", "DECIMAL", "UNIQUEIDENTIFIER", ""} {
 		if got := timeLayout(name, 0, false); got != "" {
@@ -93,11 +91,11 @@ func TestResultHelpers(t *testing.T) {
 	}
 }
 
-// TestAddErrorSQLServer verifies a driver SQL error is split into the SSMS
-// "Msg …" status line and the message text, as two separate error messages.
+// A driver SQL error splits into SSMS's "Msg …" line and the text, as two error
+// messages.
 func TestAddErrorSQLServer(t *testing.T) {
 	r := &Result{}
-	// Wrapped, to prove the unwrap path works end to end.
+	// Wrapped, to prove unwrapping works.
 	r.addError(fmt.Errorf("run batch: %w", mssql.Error{
 		Number:  208,
 		State:   1,
@@ -131,9 +129,8 @@ func TestAddErrorNonSQL(t *testing.T) {
 	}
 }
 
-// TestErrorMessagesSQLServer mirrors TestAddErrorSQLServer but calls
-// ErrorMessages directly — the entry point QueryPanel's execution-plan
-// paths use, since they capture errors from gosmo calls outside Execute.
+// ErrorMessages directly — the entry point QueryPanel's plan paths use for
+// gosmo errors.
 func TestErrorMessagesSQLServer(t *testing.T) {
 	msgs := ErrorMessages(fmt.Errorf("capture execution plan: %w", mssql.Error{
 		Number:  208,
@@ -167,9 +164,8 @@ func TestErrorMessagesNonSQL(t *testing.T) {
 	}
 }
 
-// TestIsShowplanResultSet checks the column-name match ExecuteWithPlan
-// relies on to separate a captured execution plan (SET STATISTICS XML ON's
-// extra result set) from a query's own real result sets.
+// The column-name match that separates a captured plan (STATISTICS XML's extra
+// set) from real result sets.
 func TestIsShowplanResultSet(t *testing.T) {
 	tests := []struct {
 		name string
@@ -188,8 +184,7 @@ func TestIsShowplanResultSet(t *testing.T) {
 	}
 }
 
-// TestAddNotice confirms a notice lands as a non-error Message, unlike
-// addError — HasErrors must stay false after only notices are added.
+// A notice is a non-error Message; HasErrors stays false.
 func TestAddNotice(t *testing.T) {
 	r := &Result{}
 	r.addNotice("(1 row affected)")
@@ -208,10 +203,8 @@ type errFake string
 
 func (e errFake) Error() string { return string(e) }
 
-// TestFormatValueFloat pins the float/real rendering. Go's default %g rule
-// switches to an exponent as soon as the exponent reaches the number of
-// significant digits, so a float column holding 1000000 used to display as
-// "1e+06" where SSMS shows the digits.
+// Go's %g switches to an exponent once it reaches the significant-digit count;
+// SSMS shows 1000000 as digits.
 func TestFormatValueFloat(t *testing.T) {
 	cases := []struct {
 		in   any
@@ -223,7 +216,7 @@ func TestFormatValueFloat(t *testing.T) {
 		{float64(0), "0"},
 		{float64(0.0001), "0.0001"},
 		{float32(2.5), "2.5"},
-		// Outside the readable range, an exponent is what SSMS shows too.
+		// Outside the readable range SSMS shows an exponent too.
 		{float64(1e-7), "1e-07"},
 		{float64(1e21), "1e+21"},
 	}
@@ -234,9 +227,7 @@ func TestFormatValueFloat(t *testing.T) {
 	}
 }
 
-// TestFormatFloatRoundTrips is the property the shortest-round-trip precision
-// buys: a value copied out of the grid and pasted back into a query has to
-// reparse to the same float64.
+// Copied grid text must reparse to the same float64.
 func TestFormatFloatRoundTrips(t *testing.T) {
 	for _, f := range []float64{0.1, 1.0 / 3.0, 1e15 - 1, 12345.6789, -2.2250738585072014e-308} {
 		s := formatFloat(f, 64)
@@ -251,8 +242,7 @@ func TestFormatFloatRoundTrips(t *testing.T) {
 	}
 }
 
-// TestFormatFloatSpecials checks the non-finite values reach the grid as text
-// rather than tripping the range check into an exponent form.
+// Non-finite values render as text, not an exponent form.
 func TestFormatFloatSpecials(t *testing.T) {
 	cases := map[float64]string{
 		math.NaN():   "NaN",
@@ -266,19 +256,15 @@ func TestFormatFloatSpecials(t *testing.T) {
 	}
 }
 
-// TestReadsCurrentDatabase pins that the DB_NAME() read-back is skipped in
-// estimated-plan mode. Under SET SHOWPLAN_XML ON nothing executes, so
-// "SELECT DB_NAME()" returns a showplan result set instead of a name — and
-// the read ran before the deferred SET ... OFF, so Result.Database ended up
-// holding the whole plan XML document.
+// Estimated mode skips the DB_NAME() read: under SHOWPLAN_XML it returns a
+// showplan set, and Result.Database would hold the plan XML.
 func TestReadsCurrentDatabase(t *testing.T) {
 	cases := []struct {
 		capture planCapture
 		want    bool
 	}{
 		{planCaptureNone, true},
-		// STATISTICS XML does really run the batches, and returns the plan
-		// after each statement's own results — so DB_NAME() still answers.
+		// STATISTICS XML really runs the batches, so DB_NAME() answers.
 		{planCaptureActual, true},
 		{planCaptureEstimated, false},
 	}

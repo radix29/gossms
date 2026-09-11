@@ -13,43 +13,36 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// peer.go lets one connection reach a *different* instance, which Always On
-// needs: sys.availability_groups and sys.availability_replicas are cluster-wide,
-// but the sys.dm_hadr_* DMVs describe only what the connected instance can see,
-// so a secondary reports empty roles, empty health and no per-database queue
-// detail for every replica but itself. Only the primary has the whole picture,
-// and it is usually not the instance the user registered.
+// peer.go lets a connection reach a different instance, which Always On needs:
+// sys.availability_groups/replicas are cluster-wide, but sys.dm_hadr_* only
+// describe what the connected instance sees, so a secondary reports empty
+// roles, health and queue detail for other replicas. Only the primary has the
+// whole picture, and it's usually not the registered instance.
 //
-// Peers are cached for the parent connection's lifetime and closed with it.
+// Peers are cached for the parent's lifetime and closed with it.
 
 // Peer returns a connection to another instance in the same topology,
-// authenticated as sc is and cached on sc, so repeated Object Explorer
-// expansions of one availability group reuse a connection instead of paying a
-// TCP+TLS+login round trip each time.
+// authenticated as sc is and cached on sc so repeated expansions reuse it.
 //
-// server is a SQL Server instance name as the catalog reports it — typically
-// sys.availability_replicas.replica_server_name, which may carry a
-// "HOST\INSTANCE" suffix. peerOptions decides which credentials, port and
-// transport settings reach it.
+// server is an instance name as the catalog reports it
+// (sys.availability_replicas.replica_server_name, possibly "HOST\INSTANCE");
+// peerOptions picks credentials, port and transport.
 //
-// Returns sc itself when server names sc's own instance, so callers can route
-// through Peer unconditionally.
+// Returns sc itself when server is sc's own instance, so callers can always
+// route through Peer.
 func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, error) {
 	if sc.isSelf(server) {
 		return sc, nil
 	}
 
-	// InstanceKey, not a plain lowercase: "UBUSQL2", "ubusql2,1433" and
-	// "ubusql2" are one instance ("ubusql2,1500" is another), and the catalog
-	// and the user rarely spell it the same way. The credential resolver is
-	// keyed by the same normalizer, so a hit there and here agree on what
-	// "that instance" means.
+	// InstanceKey, not lowercase: "UBUSQL2", "ubusql2,1433" and "ubusql2" are
+	// one instance ("ubusql2,1500" another). The credential resolver uses the
+	// same key.
 	key := InstanceKey(server)
 
-	// peerLive, not IsOpen: Peer runs on background loader goroutines while
-	// closePeers writes the closed flag on the UI goroutine outside peerMu, so
-	// reading it here would race. The context Close cancels first answers the
-	// same question race-free.
+	// peerLive, not IsOpen: closePeers writes closed on the UI goroutine
+	// outside peerMu while Peer runs on loader goroutines. The context Close
+	// cancels first is race-free.
 	sc.peerMu.Lock()
 	if p, ok := sc.peers[key]; ok && peerLive(p) {
 		sc.peerMu.Unlock()
@@ -61,20 +54,18 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	}
 	sc.peerMu.Unlock()
 
-	// Connect outside the lock: it does network I/O, and holding the mutex across
-	// it would serialise every replica of a group behind the slowest one.
+	// Connect outside the lock; holding it across network I/O serialises every
+	// replica behind the slowest.
 	opts := sc.peerOptions(server)
 	peer, err := ConnectContext(sc.Context(), opts, sc.role)
 	if err != nil {
-		// A resolver hit that cannot connect must never leave the instance less
-		// reachable than before one was installed: the saved connection may
-		// carry a password the config key can no longer decrypt, or a login
-		// since dropped, where the parent connection's credentials would have
-		// worked. So the pre-resolver derivation is tried once more. The cost is
-		// one extra connect attempt against an instance that is simply down.
+		// A resolver hit that can't connect (undecryptable password, dropped
+		// login) must not make the instance less reachable than the parent's
+		// credentials would, so retry with the pre-resolver derivation. Costs
+		// one extra attempt against an instance that's really down.
 		//
-		// The first error is reported when both fail: it names the credentials
-		// the user deliberately registered for that instance.
+		// When both fail, report the first error: it names the credentials the
+		// user registered.
 		fallback := sc.parentPeerOptions(server)
 		if fallback == opts {
 			return nil, sc.recordPeerFailure(key, err)
@@ -84,17 +75,15 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 			return nil, sc.recordPeerFailure(key, err)
 		}
 	}
-	// A peer's own peers resolve through the same table: Object Explorer follows
-	// a group to its primary and reads on from there, and a resolver stopping at
-	// the first hop would leave the second reaching a third instance with the
-	// primary's login.
+	// A peer's peers resolve through the same table: Object Explorer follows a
+	// group to its primary and reads on, and stopping at the first hop would
+	// reach a third instance with the primary's login.
 	peer.SetPeerCredentials(sc.peerCredentials())
 
 	sc.peerMu.Lock()
 	defer sc.peerMu.Unlock()
-	// sc was closed, or another goroutine won the race, while we connected.
-	// Checked via Context rather than the closed flag, which Close writes on the
-	// UI goroutine while Peer runs on background loader ones.
+	// sc closed, or another goroutine won the race, while connecting. Checked
+	// via Context, not the closed flag (written on the UI goroutine).
 	if err := sc.Context().Err(); err != nil {
 		peer.Close()
 		return nil, err
@@ -111,35 +100,31 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	return peer, nil
 }
 
-// peerFailureTTL is how long a failed connect answers for the instance that
-// failed. It is short because the entry is only there to collapse a burst: the
-// user expands three folders of one group and each one asks for the same
-// primary. Long enough and a primary that came back stays unreachable in the UI
-// for no reason, which is what ForgetPeerFailure exists to cut short.
+// peerFailureTTL is how long a failed connect answers for its instance. Short:
+// it only collapses bursts (three folders of one group asking for the same
+// primary); longer would keep a recovered primary unreachable (see
+// ForgetPeerFailure).
 const peerFailureTTL = 30 * time.Second
 
-// ForgetPeerFailure drops the cached connect failure for server, so the next
-// Peer for it dials again instead of replaying the error for the rest of
-// peerFailureTTL. Called when something proves the cached answer stale — a
-// successful direct connect to that instance.
+// ForgetPeerFailure drops server's cached connect failure so the next Peer
+// dials again. Called when the entry is proven stale, e.g. by a successful
+// direct connect.
 func (sc *ServerConn) ForgetPeerFailure(server string) {
 	sc.forgetPeerFailures(InstanceKey(server), map[*ServerConn]bool{})
 }
 
-// ForgetPeerFailures drops every cached connect failure — the answer to an
-// explicit Refresh, where the user is asking for the reads to be retried and
-// has no way to say which instance came back.
+// ForgetPeerFailures drops every cached connect failure, for an explicit
+// Refresh.
 func (sc *ServerConn) ForgetPeerFailures() {
 	sc.forgetPeerFailures("", map[*ServerConn]bool{})
 }
 
-// forgetPeerFailures clears one instance's cached failure, or every one when
-// key is "".
+// forgetPeerFailures clears one instance's cached failure, or all when key is
+// "".
 //
-// It recurses into the cached peers because a peer read chains: Object Explorer
-// follows a group to its primary and reads on from there, so the failure to
-// reach a third instance is recorded on the primary's connection, not on sc.
-// seen guards the cycle two instances that have each opened the other make.
+// Recurses into cached peers because reads chain (a group → its primary → on),
+// so a third instance's failure is recorded on the primary's connection. seen
+// guards against two instances that opened each other.
 func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) {
 	if sc == nil || seen[sc] {
 		return
@@ -160,14 +145,12 @@ func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) 
 	}
 }
 
-// recordPeerFailure caches err as the answer for key and returns it unchanged,
-// so a caller reads `return nil, sc.recordPeerFailure(...)`.
+// recordPeerFailure caches err for key and returns it, for `return nil,
+// sc.recordPeerFailure(...)`.
 //
-// Without it a primary whose packets are dropped rather than refused costs the
-// driver's full connect timeout — 15s measured, 30s when a saved replica
-// credential makes the fallback try a second time — on *every* call, and
-// nothing caches a peer that was never opened: expanding an availability
-// group's three folders stalled 45s, then Properties another 15s.
+// Without it, a primary that drops packets costs the full connect timeout (15s,
+// 30s with a fallback) on every call: expanding an AG's three folders stalled
+// 45s, then Properties another 15s.
 func (sc *ServerConn) recordPeerFailure(key string, err error) error {
 	sc.peerMu.Lock()
 	defer sc.peerMu.Unlock()
@@ -178,30 +161,21 @@ func (sc *ServerConn) recordPeerFailure(key string, err error) error {
 	return err
 }
 
-// peerOptions is the connection options for reaching server: the ones a resolver
-// installed with SetPeerCredentials holds for that instance, or sc's own
-// retargeted at it — and either way deliberately **no database**.
+// peerOptions returns the options for reaching server: the resolver's saved
+// connection for that instance, or sc's own retargeted — either way with no
+// database.
 //
-// A database named in the connection string must be openable or the connect
-// fails at ping time ("Cannot open database %q that was requested by the
-// login"), and the database the user connected through is exactly the one a peer
-// may not be able to open: a secondary that is not readable, or has not joined
-// that database yet. Carrying it over turns an ordinary Always On read into a
-// connect error.
+// A named database must be openable or connect fails at ping ("Cannot open
+// database %q that was requested by the login"), and the user's database is
+// exactly what a secondary may not open (not readable, or not joined). Nothing
+// is lost: Peer's reads are server-scoped, and database-scoped work uses gosmo
+// Database handles that set context per query.
 //
-// Nothing is lost by dropping it: everything Peer reaches is server-scoped — the
-// availability catalog, the sys.dm_hadr_* DMVs, an endpoint, a certificate — and
-// anything database-scoped goes through gosmo's Database handles, which set
-// their context per query.
+// A saved connection is taken whole (port, auth, Entra tenant/client, TLS,
+// extra properties); only Server and Database are overridden, so future fields
+// aren't dropped.
 //
-// A saved connection is taken whole rather than field by field: port, auth
-// method, Entra tenant and client, TLS and extra properties are all part of how
-// the user reaches that instance, and a hand-copied subset silently stops
-// carrying whatever field config.Connection gains next. Only Server and Database
-// are overridden.
-//
-// This is the preferred derivation, not the only one Peer tries — a hit here
-// that fails to connect falls back to parentPeerOptions.
+// If a resolver hit fails to connect, Peer falls back to parentPeerOptions.
 func (sc *ServerConn) peerOptions(server string) config.Connection {
 	if creds := sc.peerCredentials(); creds != nil {
 		if saved, ok := creds(server); ok {
@@ -211,40 +185,35 @@ func (sc *ServerConn) peerOptions(server string) config.Connection {
 	return sc.parentPeerOptions(server)
 }
 
-// parentPeerOptions is sc's own connection options retargeted at server — what
-// Peer falls back to when a resolver's answer will not connect.
+// parentPeerOptions is sc's own options retargeted at server — Peer's fallback
+// when a resolver answer won't connect.
 func (sc *ServerConn) parentPeerOptions(server string) config.Connection {
 	return retargetAt(sc.Opts, server)
 }
 
-// retargetAt points one saved connection at server, with no database — see
-// peerOptions for why both.
+// retargetAt points a saved connection at server with no database; see
+// peerOptions.
 func retargetAt(opts config.Connection, server string) config.Connection {
 	opts.Server = server
 	opts.Database = ""
 	return opts
 }
 
-// InstanceKey normalizes a SQL Server instance name to the one spelling used to
-// key peers and their credentials: lowercased host, then "\instance" for a
-// named instance, or ",port" for an address that names none and carries a port
-// other than the default 1433.
+// InstanceKey normalizes an instance name for keying peers and credentials:
+// lowercased host, then "\instance" for a named instance, or ",port" when
+// there's no instance name and the port isn't 1433.
 //
-// A named instance is identified by its name, so any port on it is dropped —
-// "host\inst,1500" and "host\inst" are one instance. Without a name the port
-// is the only thing that tells two instances on one host apart: win10cli is
-// reached as "win10cli" and its SQL2017 instance as "win10cli,55253", and one
-// key for both meant the later save answered for both — a peer read tried the
-// other instance's login first, a failed login that counts toward a
-// CHECK_POLICY lockout. 1433 is spelled the same as no port because it is the
-// port the driver dials when given none.
+// A named instance is identified by name, so its port is dropped
+// ("host\inst,1500" = "host\inst"). Without a name the port distinguishes
+// instances on one host (win10cli vs "win10cli,55253" for SQL2017); a shared
+// key would try the other instance's login, counting toward a CHECK_POLICY
+// lockout. 1433 equals no port, as the driver dials it by default.
 //
-// The catalog reports instance names without a port, so a default instance
-// saved as "host,1500" does not answer a peer read for "HOST" — the price of
-// never handing it to another instance on the same host. Peer then falls back
-// to the parent connection's settings, port included.
+// The catalog reports names without ports, so a default instance saved as
+// "host,1500" doesn't answer a peer read for "HOST"; Peer then falls back to
+// the parent's settings.
 //
-// It lives here rather than in config because it needs gosmo's address parser.
+// Lives here, not in config, because it needs gosmo's address parser.
 func InstanceKey(server string) string {
 	host, instance, port := gosmo.ParseServerAddress(server)
 	key := strings.ToLower(strings.TrimSpace(host))
@@ -257,42 +226,38 @@ func InstanceKey(server string) string {
 	return key
 }
 
-// ConnectionAddress is the single address a saved connection dials: its
-// Server with the Connect dialog's separate Port folded in, the way Connect
-// does it. Key a config.Connection by InstanceKey(ConnectionAddress(c)), never
-// by c.Server alone — that drops a port given only in the Port field, which is
-// how the dialog saves one.
+// ConnectionAddress is the address a saved connection dials: Server with the
+// dialog's Port folded in, as Connect does. Key a config.Connection by
+// InstanceKey(ConnectionAddress(c)), never c.Server alone, which drops a
+// Port-field port.
 func ConnectionAddress(c config.Connection) string {
 	return resolveServer(c.Server, c.Port)
 }
 
-// PeerCredentials answers, for one instance name, the saved connection to reach
-// it with. False means nothing is saved for that instance, and peerOptions falls
-// back to the parent connection's settings.
+// PeerCredentials returns the saved connection for an instance name; false
+// means none, and peerOptions falls back to the parent's settings.
 type PeerCredentials func(server string) (config.Connection, bool)
 
-// SetPeerCredentials installs the resolver peerOptions consults before falling
-// back to sc's own settings — what lets a replica needing a different login or
-// port be reached at all. Peer installs it on each peer it opens, so one call on
-// the user's connection reaches the whole topology.
+// SetPeerCredentials installs the resolver peerOptions consults first, so
+// replicas needing a different login or port are reachable. Peer installs it on
+// each peer it opens, so one call covers the topology.
 func (sc *ServerConn) SetPeerCredentials(fn PeerCredentials) {
 	sc.peerMu.Lock()
 	defer sc.peerMu.Unlock()
 	sc.creds = fn
 }
 
-// peerCredentials reads the resolver under peerMu: Peer runs on background
-// loader goroutines while SetPeerCredentials is called from the UI one.
+// peerCredentials reads the resolver under peerMu (Peer runs on loader
+// goroutines, SetPeerCredentials on the UI one).
 func (sc *ServerConn) peerCredentials() PeerCredentials {
 	sc.peerMu.Lock()
 	defer sc.peerMu.Unlock()
 	return sc.creds
 }
 
-// isSelf reports whether server names the instance sc is already connected to,
-// compared against @@SERVERNAME rather than the address the user typed: the
-// catalog reports instance names, and a host, its FQDN and its IP are one
-// instance but only one matches Opts.Server.
+// isSelf reports whether server is sc's instance, compared against
+// @@SERVERNAME: host, FQDN and IP are one instance but only one matches
+// Opts.Server.
 func (sc *ServerConn) isSelf(server string) bool {
 	if server == "" {
 		return true
@@ -305,10 +270,8 @@ func (sc *ServerConn) isSelf(server string) bool {
 	return strings.EqualFold(sc.Opts.Server, server)
 }
 
-// peerLive reports whether a cached peer is still usable without reading the
-// closed flag, which is racy between Peer's background loader goroutines and
-// Close on the UI one; the context Close cancels first is not. Not a method on
-// ServerConn — IsOpen is the exported answer for UI-goroutine callers.
+// peerLive reports whether a cached peer is usable via its context, not the
+// racy closed flag. Not a method; IsOpen is the UI-goroutine answer.
 func peerLive(p *ServerConn) bool { return p != nil && p.Context().Err() == nil }
 
 // closePeers closes and drops every cached peer. Called by Close.
@@ -323,21 +286,19 @@ func (sc *ServerConn) closePeers() {
 	}
 }
 
-// peerFields is embedded in ServerConn; kept here so the peer cache's state
-// lives with the code that owns it.
+// peerFields is embedded in ServerConn; kept here with the code that owns it.
 type peerFields struct {
 	peerMu sync.Mutex
 	peers  map[string]*ServerConn
-	// peerFails holds the last connect failure per instance, so a peer that
-	// cannot be opened is not re-dialled on every read for peerFailureTTL.
-	// Guarded by peerMu.
+	// peerFails holds each instance's last connect failure so it isn't
+	// re-dialled for peerFailureTTL. Guarded by peerMu.
 	peerFails map[string]peerFailure
-	// creds resolves an instance to its own saved connection; nil means every
-	// peer is reached with this connection's settings. Guarded by peerMu.
+	// creds resolves an instance to its saved connection; nil means every peer
+	// uses this connection's settings. Guarded by peerMu.
 	creds PeerCredentials
 }
 
-// peerFailure is one instance's last failed connect, and when it happened.
+// peerFailure is an instance's last failed connect and its time.
 type peerFailure struct {
 	err error
 	at  time.Time

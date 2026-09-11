@@ -1,9 +1,9 @@
 //go:build livedb
 
-// Live verification of what a Session exists for (BUG-1): state left by one
-// Execute is still there for the next, where the pooled Execute resets it.
-// The reset is the server's — the TDS reset-connection bit — so the scripted
-// driver can only show that no reset was asked for, never what one does.
+// Live check of BUG-1: state from one Session Execute survives to the next,
+// where pooled Execute resets it. The reset is server-side (TDS
+// reset-connection bit), so the scripted driver can only show none was
+// requested.
 //
 //	go test -tags livedb ./internal/query/ -run TestLiveSession -v \
 //	  -livedb 'sqlserver://sa:PASS@host?TrustServerCertificate=true'
@@ -59,8 +59,7 @@ func TestLiveSessionKeepsStateAcrossExecutes(t *testing.T) {
 	}
 }
 
-// The control: two package-level Executes on the same pool lose the temp
-// table, because the pool resets the connection in between.
+// Control: two pooled Executes lose the temp table to the reset between them.
 func TestLiveSessionPooledExecuteLosesState(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
@@ -75,8 +74,8 @@ func TestLiveSessionPooledExecuteLosesState(t *testing.T) {
 	}
 }
 
-// A Session dropped with a transaction open does not linger holding it:
-// Close discards the connection, and the server ends the session.
+// A Session closed with an open transaction doesn't linger: Close discards the
+// connection and the server ends the session.
 func TestLiveSessionCloseEndsTheServerSession(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
@@ -91,10 +90,9 @@ func TestLiveSessionCloseEndsTheServerSession(t *testing.T) {
 	}
 	s.Close()
 
-	// Asked through a pool of its own: on db the check would be handed the
-	// very connection a pooling Close had returned, and its reset would roll
-	// the transaction back — passing the test it exists to fail. The server
-	// notices the closed socket on its own schedule; a second is ample.
+	// A separate pool: on db the check could get the very connection a pooling
+	// Close returned, whose reset rolls the transaction back and passes the
+	// test wrongly. The server notices the closed socket within a second.
 	check, err := sql.Open("sqlserver", *liveDSN)
 	if err != nil {
 		t.Fatal(err)

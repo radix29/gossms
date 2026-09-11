@@ -9,16 +9,14 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// agent_schedule_form.go is the schedule-frequency editing UI shared by New
-// Schedule (new_schedule_dialog.go) and Schedule Properties
-// (agent_schedule_props.go): the Occurs/Recurs-every/Day-of-month/Weekdays/
-// Relative/Daily-frequency/Duration fields. The package-level vars and
-// helpers it builds on (scheduleOccursItems, weekdayNames,
-// defaultWeekdayMask, parseAgentClock, atLeast1, ...) live in
-// agent_job_props_schedules.go.
+// agent_schedule_form.go is the schedule-frequency UI shared by New Schedule
+// and Schedule Properties (Occurs, Recurs every, Day of month, Weekdays,
+// Relative, Daily frequency, Duration). Its tables and helpers
+// (scheduleOccursItems, weekdayNames, defaultWeekdayMask, parseAgentClock,
+// atLeast1, ...) are in agent_job_props_schedules.go.
 
-// scheduleFreqForm bundles every row of a schedule's own definition plus
-// the read/write helpers both callers need.
+// scheduleFreqForm bundles a schedule definition's rows and the read/write
+// helpers.
 type scheduleFreqForm struct {
 	nameField           *propsheet.TextRow
 	enabledCheck        *propsheet.CheckRow
@@ -37,10 +35,9 @@ type scheduleFreqForm struct {
 	endDateField        *propsheet.TextRow
 }
 
-// newScheduleFreqForm builds a fresh set of rows defaulted the way New
-// Schedule wants a blank schedule to start (Daily, Mon-Fri, 01:00:00-
-// 23:59:59, no end date) — Schedule Properties overwrites every field via
-// populate right after construction.
+// newScheduleFreqForm builds rows defaulted for a new schedule (Daily, Mon-Fri,
+// 01:00:00-23:59:59, no end date); Schedule Properties overwrites them via
+// populate.
 func newScheduleFreqForm() *scheduleFreqForm {
 	f := &scheduleFreqForm{
 		nameField:           propsheet.Text("Name", "", 30),
@@ -63,8 +60,8 @@ func newScheduleFreqForm() *scheduleFreqForm {
 	f.startTimeField.SetValidate(validateAgentClock)
 	f.endTimeField.SetValidate(validateAgentClock)
 	f.startDateField.SetValidate(validateAgentDate)
-	// endDateField's text is ignored by readActiveRange whenever "No end
-	// date" is checked, so its validator defers to the checkbox too.
+	// The end date is ignored when "No end date" is checked, so its validator
+	// defers too.
 	f.endDateField.SetValidate(func(s string) error {
 		if f.noEndDateCheck.Checked() {
 			return nil
@@ -74,11 +71,9 @@ func newScheduleFreqForm() *scheduleFreqForm {
 	return f
 }
 
-// validateAgentClock and validateAgentDate adapt parseAgentClock/
-// parseAgentDate's (value, error) shape to TextRow.SetValidate's plain
-// func(string) error, so Form.Validate rejects an invalid time/date field
-// instead of readActiveRange silently falling back to 00:00:00 or "no end
-// date".
+// validateAgentClock and validateAgentDate adapt the parsers for
+// TextRow.SetValidate, so Form.Validate rejects bad input instead of
+// readActiveRange silently using 00:00:00 or "no end date".
 func validateAgentClock(s string) error {
 	_, err := parseAgentClock(s)
 	return err
@@ -89,9 +84,9 @@ func validateAgentDate(s string) error {
 	return err
 }
 
-// rows returns the Frequency/Daily frequency/Duration section rows, ready
-// to splice into a Form. Callers place nameField/enabledCheck in their own
-// identity section first — Schedule Properties' also carries an Owner row.
+// rows returns the Frequency, Daily frequency and Duration rows. Callers place
+// nameField/enabledCheck (and Schedule Properties' Owner) in their own identity
+// section.
 func (f *scheduleFreqForm) rows() []propsheet.Row {
 	return []propsheet.Row{
 		propsheet.Section("Frequency"),
@@ -128,11 +123,10 @@ func (f *scheduleFreqForm) weekdayMask() int {
 func (f *scheduleFreqForm) name() string  { return strings.TrimSpace(f.nameField.Value()) }
 func (f *scheduleFreqForm) enabled() bool { return f.enabledCheck.Checked() }
 
-// populate fills every row from an existing schedule — used by Schedule
-// Properties. Fields not relevant to sch.FreqType are defaulted to a safe,
-// in-range value rather than showing sch.FreqInterval raw: its meaning is
-// FreqType-dependent (a Weekly bitmask, a Monthly day-of-month, a
-// MonthlyRelative day code, or unused).
+// populate fills the rows from an existing schedule. Fields irrelevant to
+// sch.FreqType get safe in-range defaults rather than raw FreqInterval, whose
+// meaning depends on FreqType (weekly bitmask, day of month, relative day code,
+// or unused).
 func (f *scheduleFreqForm) populate(sch *gosmo.Schedule) {
 	f.nameField.SetValue(sch.Name)
 	f.enabledCheck.SetChecked(sch.Enabled)
@@ -178,8 +172,8 @@ func (f *scheduleFreqForm) populate(sch *gosmo.Schedule) {
 	f.endDateField.SetValue(formatAgentDate(sch.ActiveEndDate))
 }
 
-// readFrequency builds a gosmo.ScheduleFrequency from the current field
-// values, gated by the selected Occurs (FreqType).
+// readFrequency builds a gosmo.ScheduleFrequency from the fields relevant to
+// the selected Occurs.
 func (f *scheduleFreqForm) readFrequency() gosmo.ScheduleFrequency {
 	freq := gosmo.ScheduleFrequency{}
 	idx := f.occursSelect.Selected()
@@ -214,7 +208,7 @@ func (f *scheduleFreqForm) readFrequency() gosmo.ScheduleFrequency {
 	return freq
 }
 
-// readActiveRange parses the Duration section's fields into
+// readActiveRange parses the Duration fields into
 // SetActiveRangeContext's/CreateScheduleRequest's shape.
 func (f *scheduleFreqForm) readActiveRange() (startDate, endDate time.Time, startTime, endTime int) {
 	if t, err := parseAgentClock(f.startTimeField.Value()); err == nil {
@@ -234,17 +228,15 @@ func (f *scheduleFreqForm) readActiveRange() (startDate, endDate time.Time, star
 	return startDate, endDate, startTime, endTime
 }
 
-// frequencyDirty reports whether any field feeding readFrequency changed —
-// used by Schedule Properties to gate SetFrequencyContext on real per-row
-// dirtiness rather than page-level dirtiness, which would write a phantom
-// value when an unrelated row on the page was the one edited.
+// frequencyDirty reports whether any readFrequency field changed, so Schedule
+// Properties writes the frequency only when its own rows changed.
 func (f *scheduleFreqForm) frequencyDirty() bool {
 	return f.occursSelect.Dirty() || f.recurEveryField.Dirty() || f.dayOfMonthField.Dirty() ||
 		f.weekdaysGrid.Dirty() || f.relativeSelect.Dirty() || f.relativeDaySelect.Dirty() ||
 		f.subdaySelect.Dirty() || f.subdayIntervalField.Dirty()
 }
 
-// rangeDirty reports whether any field feeding readActiveRange changed.
+// rangeDirty reports whether any readActiveRange field changed.
 func (f *scheduleFreqForm) rangeDirty() bool {
 	return f.startTimeField.Dirty() || f.endTimeField.Dirty() || f.startDateField.Dirty() ||
 		f.noEndDateCheck.Dirty() || f.endDateField.Dirty()

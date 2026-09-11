@@ -11,13 +11,11 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// ag_props_backup.go is Availability Group Properties' Backup Preferences
-// page: where automated backups of the group's databases should run, and each
-// replica's priority within that.
+// ag_props_backup.go is Availability Group Properties' Backup Preferences page:
+// where automated backups run, and each replica's priority.
 
-// agBackupPreferenceItems are the radio options in SSMS's order, paired with
-// the AUTOMATED_BACKUP_PREFERENCE keyword each one means. The wording is
-// SSMS's; the keyword is what gosmo writes.
+// agBackupPreferenceItems are the radio options in SSMS order and wording,
+// paired with the AUTOMATED_BACKUP_PREFERENCE keyword gosmo writes.
 var agBackupPreferenceItems = []struct {
 	label   string
 	keyword string
@@ -36,10 +34,8 @@ func agBackupPreferenceLabels() []string {
 	return out
 }
 
-// agBackupPreferenceIndex maps a group's AUTOMATED_BACKUP_PREFERENCE onto its
-// radio index, defaulting to "Prefer Secondary" — which is also SQL Server's
-// own default, so an unrecognized or empty value shows the same thing a
-// freshly created group would.
+// agBackupPreferenceIndex maps a preference to its radio index, defaulting to
+// "Prefer Secondary" (SQL Server's default) for empty or unknown values.
 func agBackupPreferenceIndex(pref string) int {
 	for i, p := range agBackupPreferenceItems {
 		if strings.EqualFold(pref, p.keyword) {
@@ -49,9 +45,8 @@ func agBackupPreferenceIndex(pref string) int {
 	return 0
 }
 
-// agBackupPriorityEdit is one replica's pending backup priority. Priority and
-// "excluded" are the same server value — see the page's note — so there is
-// only one number here.
+// agBackupPriorityEdit is one replica's pending backup priority; "excluded" is
+// priority 0, the same server value.
 type agBackupPriorityEdit struct {
 	name     string
 	priority int

@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// A showplan result set carrying several rows must yield several plans:
-// scanNext used to keep only the last. No live server has been seen to send
-// that shape (live_plan_test.go probes for it), so this pins the tolerance
-// scanPlanXML deliberately keeps, not an observed server behaviour.
+// A multi-row showplan set yields every plan. No server has been seen to send
+// that shape (live_plan_test.go probes); this pins scanPlanXML's tolerance.
 func TestScanNextKeepsEveryShowplanRow(t *testing.T) {
 	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
 		{"<plan1/>"}, {"<plan2/>"}, {"<plan3/>"},
@@ -35,8 +33,7 @@ func TestScanNextKeepsEveryShowplanRow(t *testing.T) {
 	}
 }
 
-// A single-column set that is not the showplan column is a real result set
-// and must reach Sets, not PlanXML.
+// A single-column set that isn't the showplan column is a grid.
 func TestScanNextTreatsANonShowplanColumnAsAGrid(t *testing.T) {
 	db := openFakeRowsDB([]string{"name"}, [][]driver.Value{{"not a plan"}})
 	defer db.Close()

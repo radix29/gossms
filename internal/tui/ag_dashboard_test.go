@@ -9,9 +9,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// Estimated data loss and estimated recovery time are the two numbers on this
-// panel that SQL Server does not report — they are derived here, and a wrong
-// derivation is a number a DBA would act on. Everything below pins one.
+// Estimated data loss and recovery time are derived here, not reported by SQL
+// Server, and a wrong value is one a DBA would act on.
 
 func TestComputeDatabaseMetricsDataLossIsMeasuredAgainstThePrimary(t *testing.T) {
 	base := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
@@ -21,8 +20,7 @@ func TestComputeDatabaseMetricsDataLossIsMeasuredAgainstThePrimary(t *testing.T)
 	}
 	got := agComputeDatabaseMetrics(dbs)
 
-	// The primary is never behind itself; leaving it blank is what stops the
-	// column reading as "the primary is losing data".
+	// The primary's data loss stays blank, not "the primary is losing data".
 	if got[0].HasDataLoss {
 		t.Errorf("primary row reports data loss %v", got[0].DataLoss)
 	}
@@ -34,8 +32,7 @@ func TestComputeDatabaseMetricsDataLossIsMeasuredAgainstThePrimary(t *testing.T)
 func TestComputeDatabaseMetricsDataLossEdgeCases(t *testing.T) {
 	base := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 
-	// A secondary reporting a commit *after* the primary's is clock skew
-	// between two rows, not negative data loss.
+	// A secondary commit after the primary's is clock skew, not negative loss.
 	ahead := agComputeDatabaseMetrics([]*gosmo.AvailabilityDatabase{
 		{DatabaseName: "db1", ReplicaServerName: "p", IsPrimaryReplica: true, LastCommitTime: base},
 		{DatabaseName: "db1", ReplicaServerName: "s", LastCommitTime: base.Add(2 * time.Second)},
@@ -44,8 +41,7 @@ func TestComputeDatabaseMetricsDataLossEdgeCases(t *testing.T) {
 		t.Errorf("secondary ahead of primary = %v, want a clamped 0", ahead[1].DataLoss)
 	}
 
-	// No commit time on either side means unknown, not zero — "no data loss"
-	// and "we cannot tell" are opposite answers here.
+	// No commit time on either side is unknown, not zero.
 	for _, tt := range []struct {
 		name string
 		dbs  []*gosmo.AvailabilityDatabase
@@ -71,8 +67,8 @@ func TestComputeDatabaseMetricsDataLossEdgeCases(t *testing.T) {
 		})
 	}
 
-	// Data loss is per database: another database's primary must not supply
-	// the reference commit time.
+	// Data loss is per database; another database's primary mustn't supply the
+	// reference.
 	cross := agComputeDatabaseMetrics([]*gosmo.AvailabilityDatabase{
 		{DatabaseName: "db1", ReplicaServerName: "p", IsPrimaryReplica: true, LastCommitTime: base},
 		{DatabaseName: "db2", ReplicaServerName: "s", LastCommitTime: base.Add(-90 * time.Second)},
@@ -91,11 +87,11 @@ func TestComputeDatabaseMetricsRecoveryTime(t *testing.T) {
 		known     bool
 	}{
 		{"draining", 1000, 250, 4 * time.Second, true},
-		// A caught-up secondary reports rate 0 as well as queue 0; that is a
-		// known zero, and blanking it would look identical to a stall.
+		// Caught up (rate 0, queue 0) is a known zero; blank would look like a
+		// stall.
 		{"nothing queued", 0, 0, 0, true},
-		// A queue that is not moving cannot be divided into a time. Unknown is
-		// the honest answer, not "instant".
+		// A queue with no rate can't be turned into a time: unknown, not
+		// instant.
 		{"queued but no rate", 5000, 0, 0, false},
 	}
 	for _, tt := range tests {
@@ -112,7 +108,7 @@ func TestComputeDatabaseMetricsRecoveryTime(t *testing.T) {
 		})
 	}
 
-	// The primary has no redo queue of its own to drain.
+	// The primary has no redo queue.
 	primary := agComputeDatabaseMetrics([]*gosmo.AvailabilityDatabase{
 		{DatabaseName: "db1", ReplicaServerName: "p", IsPrimaryReplica: true, RedoQueueKB: 900, RedoRateKBps: 300},
 	})[0]
@@ -150,8 +146,8 @@ func TestReplicaIssuesNamesWhatIsWrong(t *testing.T) {
 		t.Errorf("healthy replica reports issues %q", got)
 	}
 
-	// A replica with no state row at all (what a secondary sees for its
-	// peers) has empty fields, and empty is not an issue.
+	// A replica with no state row (a secondary's view of peers) has empty
+	// fields, not an issue.
 	if got := agReplicaIssues(&gosmo.AvailabilityReplica{ReplicaServerName: "ubusql1"}, nil); got != "" {
 		t.Errorf("replica with no DMV state reports issues %q", got)
 	}
@@ -171,15 +167,14 @@ func TestReplicaIssuesNamesWhatIsWrong(t *testing.T) {
 	suspended := agReplicaIssues(healthy, []agDatabaseMetrics{
 		{DB: &gosmo.AvailabilityDatabase{ReplicaServerName: "ubusql2", IsSuspended: true}},
 		{DB: &gosmo.AvailabilityDatabase{ReplicaServerName: "ubusql2"}},
-		// Another replica's suspended database must not be counted here.
+		// Another replica's suspended database doesn't count.
 		{DB: &gosmo.AvailabilityDatabase{ReplicaServerName: "ubusql1", IsSuspended: true}},
 	})
 	if suspended != "1 database(s) suspended" {
 		t.Errorf("issues = %q, want exactly one suspended database counted", suspended)
 	}
 
-	// A connect error from before the replica reconnected is history. It is
-	// reported only when there is nothing current to say.
+	// An old connect error is reported only when nothing current is.
 	stale := &gosmo.AvailabilityReplica{
 		ReplicaServerName: "ubusql2", ConnectedState: "DISCONNECTED", LastConnectErrorNumber: 35206,
 	}
@@ -207,9 +202,7 @@ func TestReplicaSyncSummaryListsEveryDistinctState(t *testing.T) {
 	}
 }
 
-// setRows must not call SetData when only the values changed: SetData resets
-// scroll and selection, and on a 10-second poll that throws the reader back to
-// the top of the grid every tick.
+// Same-shape updates must not call SetData, which resets scroll every poll.
 func TestSetRowsPreservesScrollWhenTheShapeIsUnchanged(t *testing.T) {
 	d := &AGDashboard{topGrid: controls.NewDataGrid()}
 	d.topGrid.SetBounds(0, 0, 80, 8)
@@ -241,16 +234,14 @@ func TestSetRowsPreservesScrollWhenTheShapeIsUnchanged(t *testing.T) {
 		t.Errorf("row 15 still reads %q — the refresh did not reach the grid", got)
 	}
 
-	// A replica joining or leaving does change the shape, and there SetData
-	// (and its reset) is correct.
+	// A shape change (replica joins/leaves) does use SetData.
 	d.setRows(d.topGrid, &d.topRows, []string{"Replica", "State"}, second[:5])
 	if got := d.topGrid.ScrollRow(); got != 0 {
 		t.Errorf("scroll = %d after the row count changed, want a reset to 0", got)
 	}
 }
 
-// The dashboard is reachable only from the availability group node's context
-// menu, so a missing item there makes the panel unreachable.
+// The dashboard is reachable only from the AG node's context menu.
 func TestAvailabilityGroupNodeOffersDashboard(t *testing.T) {
 	a := &App{}
 	node := &explorerNode{}
@@ -274,16 +265,15 @@ func TestAGLabelForDatabase(t *testing.T) {
 	if got, want := agLabelForDatabase("testdb_1", states), "testdb_1 (Synchronized)"; got != want {
 		t.Errorf("agLabelForDatabase = %q, want %q", got, want)
 	}
-	// Matched case-insensitively: sys.databases and the availability views can
-	// disagree on case, and a mismatch would silently drop the annotation.
+	// Case-insensitive: sys.databases and the AG views can disagree on case.
 	if got, want := agLabelForDatabase("TESTDB_1", states), "TESTDB_1 (Synchronized)"; got != want {
 		t.Errorf("agLabelForDatabase with different case = %q, want %q", got, want)
 	}
 	if got := agLabelForDatabase("testdb_2", states); !strings.Contains(got, "Suspended") {
 		t.Errorf("suspended database label = %q, want it to say so", got)
 	}
-	// A database in no availability group keeps its plain name, and so does
-	// every database when the server has no groups at all (states is nil).
+	// A database in no group keeps its plain name, as do all when there are no
+	// groups (nil states).
 	if got, want := agLabelForDatabase("other", states), "other"; got != want {
 		t.Errorf("non-AG database = %q, want %q", got, want)
 	}
@@ -292,13 +282,11 @@ func TestAGLabelForDatabase(t *testing.T) {
 	}
 }
 
-// The replica grid is sized from its own row count, and the only layout it
-// sees before the first reading lands is the one with no rows at all. Without
-// a re-split on apply, a two-replica group came up showing one replica — the
-// row that says which instance is the primary was the one cut off.
+// The replica grid is sized from its rows, but first laid out with none;
+// without a re-split on apply, a two-replica group showed one — cutting the
+// primary's row.
 func TestApplyResizesTheReplicaGridToFitEveryReplica(t *testing.T) {
-	// agName must be set: an empty one is the all-groups view, whose top grid
-	// holds groups rather than replicas.
+	// agName must be set; empty means the all-groups view.
 	d := &AGDashboard{agName: "AAG1", topGrid: controls.NewDataGrid(), bottomGrid: controls.NewDataGrid()}
 	d.SetBounds(0, 0, 120, 40)
 	before := d.topRect.H
@@ -323,9 +311,8 @@ func TestApplyResizesTheReplicaGridToFitEveryReplica(t *testing.T) {
 // -- all-groups view -------------------------------------------------------
 
 func TestAllGroupsViewSwapsBothGridsContents(t *testing.T) {
-	// The two grids are named for their position because what they hold
-	// depends on the mode. Getting the pairing wrong would put replica rows
-	// under group headers, which the DataGrid renders without complaint.
+	// Grids are named by position because their contents depend on mode; a
+	// wrong pairing puts replica rows under group headers silently.
 	one := &AGDashboard{agName: "AAG1"}
 	all := &AGDashboard{}
 
@@ -342,8 +329,7 @@ func TestAllGroupsViewSwapsBothGridsContents(t *testing.T) {
 		t.Errorf("all-groups bottom grid has %d columns, want the replica columns plus the group name",
 			len(all.bottomColumns()))
 	}
-	// Every row must be as wide as its header, or the grid silently drops the
-	// trailing cells.
+	// Every row must match its header's width, or trailing cells are dropped.
 	snap := agSnapshot{allGroup: true, groups: []agGroupRollup{{
 		group:    &gosmo.AvailabilityGroup{Name: "AAG1", SynchronizationHealth: "HEALTHY"},
 		replicas: []*gosmo.AvailabilityReplica{{ReplicaServerName: "a", ConnectedState: "CONNECTED"}},
@@ -364,8 +350,8 @@ func TestAllGroupsViewSwapsBothGridsContents(t *testing.T) {
 }
 
 func TestGroupRollupIssuesLeadsWithAnUnreachablePrimary(t *testing.T) {
-	// An unreachable primary explains every other column in the row, so it
-	// replaces them rather than being appended to a list of consequences.
+	// An unreachable primary replaces the other issues rather than joining
+	// them.
 	g := agGroupRollup{
 		group:       &gosmo.AvailabilityGroup{Name: "AAG1", SynchronizationHealth: "NOT_HEALTHY"},
 		unreachable: "ubusql2",
@@ -379,8 +365,7 @@ func TestGroupRollupIssuesLeadsWithAnUnreachablePrimary(t *testing.T) {
 		t.Errorf("issues = %q, want the consequences of not reaching the primary left out", got)
 	}
 
-	// A healthy group says nothing at all — this column is what makes the row
-	// worth skipping.
+	// A healthy group shows nothing.
 	healthy := agGroupRollup{
 		group:    &gosmo.AvailabilityGroup{Name: "AAG1", SynchronizationHealth: "HEALTHY"},
 		replicas: []*gosmo.AvailabilityReplica{{ReplicaServerName: "a", ConnectedState: "CONNECTED"}},
@@ -389,8 +374,8 @@ func TestGroupRollupIssuesLeadsWithAnUnreachablePrimary(t *testing.T) {
 		t.Errorf("healthy group reports issues %q, want none", got)
 	}
 
-	// A suspended database copy is an issue even when the group calls itself
-	// healthy, which it does: suspension is a user action, not a fault.
+	// A suspended copy is an issue even though the group reports healthy
+	// (suspension is a user action).
 	suspended := agGroupRollup{
 		group: &gosmo.AvailabilityGroup{Name: "AAG1", SynchronizationHealth: "HEALTHY"},
 		dbs: []agDatabaseMetrics{
@@ -403,8 +388,7 @@ func TestGroupRollupIssuesLeadsWithAnUnreachablePrimary(t *testing.T) {
 }
 
 func TestDashboardRateSelectorStopsAtBothEnds(t *testing.T) {
-	// setRate reports whether it moved, and HandleKey returns that — a true at
-	// the end of the list would swallow +/- instead of letting the app see it.
+	// setRate's result is HandleKey's; true at the list end would swallow +/-.
 	d := &AGDashboard{agName: "AAG1", rateCh: make(chan struct{}, 1)}
 	d.rateIdx.Store(agDashboardDefaultRate)
 

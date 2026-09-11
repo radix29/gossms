@@ -20,10 +20,8 @@ type counterRow struct {
 	typ                       int
 }
 
-// Both reading queries drop every counter row belonging to a named instance
-// — a database in the Databases object, a cache type in Plan Cache — because
-// nothing reads one. Without this a 200-database server carried around a
-// thousand rows per tick to use about forty.
+// Both queries drop rows for named instances (per-database, per-cache-type),
+// which nothing reads.
 func TestCounterQueriesFilterToTheInstancesRead(t *testing.T) {
 	for name, q := range map[string]string{
 		"activity": counterQuery,
@@ -35,12 +33,8 @@ func TestCounterQueriesFilterToTheInstancesRead(t *testing.T) {
 	}
 }
 
-// The premise of that filter: every counter Derive reads lives either at the
-// unnamed instance of a single-instance object or at the _Total aggregate,
-// so a per-database row is never the one consulted. A wild per-database
-// value is planted here to prove it is ignored rather than summed or
-// preferred — if it ever were, the filter would be silently dropping the row
-// the panel actually wanted.
+// Premise of the filter: Derive reads only unnamed-instance or _Total rows. A
+// wild per-database value proves it's neither summed nor preferred.
 func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
 	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
 	rows := func(batches, transactions, logFlushes int64) []counterRow {
@@ -48,8 +42,8 @@ func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
 			{objSQLStats, "Batch Requests/sec", "", batches, cntrPerSecond},
 			{objDatabases, "Transactions/sec", totalInstance, transactions, cntrPerSecond},
 			{objDatabases, "Log Flushes/sec", totalInstance, logFlushes, cntrPerSecond},
-			// The per-database row the filter now drops. Present in both
-			// snapshots so it would produce a rate if it were ever read.
+			// A per-database row, present in both snapshots so it would yield a
+			// rate if read.
 			{objDatabases, "Transactions/sec", "AdventureWorks", transactions * 999, cntrPerSecond},
 			// A ratio counter and its base, both at _Total.
 			{objPlanCache, "Cache Hit Ratio", totalInstance, 90, cntrFraction},
@@ -77,10 +71,8 @@ func TestDeriveReadsOnlyUnnamedAndTotalInstances(t *testing.T) {
 	}
 }
 
-// A named instance publishes "MSSQL$INST:Buffer Manager" where a default
-// instance publishes "SQLServer:Buffer Manager". Matching the whole string
-// finds nothing on a named instance, and finds it silently — an empty
-// dashboard rather than an error.
+// Named instances publish "MSSQL$INST:..." instead of "SQLServer:..."; a
+// full-string match silently finds nothing.
 func TestObjectNameStripsTheInstancePrefix(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"SQLServer:Buffer Manager", "Buffer Manager"},
@@ -94,9 +86,8 @@ func TestObjectNameStripsTheInstancePrefix(t *testing.T) {
 	}
 }
 
-// Each cntr_type is read by its own rule. Read with the wrong rule these
-// all produce plausible-looking numbers rather than errors, which is why
-// the decode is driven by the type on the row.
+// Each cntr_type has its own rule; the wrong rule yields plausible numbers, not
+// errors.
 func TestCounterValueDecodesByType(t *testing.T) {
 	prev := set(
 		counterRow{objSQLStats, "Batch Requests/sec", "", 1000, cntrPerSecond},
@@ -131,9 +122,8 @@ func TestCounterValueDecodesByType(t *testing.T) {
 	}
 }
 
-// SQL Server spells the two base counters differently ("Buffer cache hit
-// ratio base" but "Cache Hit Ratio Base"), so a case-sensitive match finds
-// one of them and silently reports the other as zero.
+// The two base counters differ in case ("Buffer cache hit ratio base", "Cache
+// Hit Ratio Base"); a case-sensitive match silently zeroes one.
 func TestBaseCounterMatchIsCaseInsensitive(t *testing.T) {
 	c := set(
 		counterRow{objPlanCache, "Cache Hit Ratio", totalInstance, 88, cntrFraction},
@@ -144,10 +134,8 @@ func TestBaseCounterMatchIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// Every counter resets to zero when the service restarts. Reading the
-// difference straight through turns that into an enormous negative rate,
-// or — worse, once the counter climbs again — a single enormous spike that
-// rescales every chart it appears on.
+// A service restart resets counters to zero; reading the difference straight
+// through gives a huge negative rate or a spike that rescales every chart.
 func TestCounterValueIgnoresCountersThatWentBackwards(t *testing.T) {
 	prev := set(counterRow{objSQLStats, "Batch Requests/sec", "", 5_000_000, cntrPerSecond})
 	cur := set(counterRow{objSQLStats, "Batch Requests/sec", "", 40, cntrPerSecond})
@@ -173,8 +161,7 @@ func TestCounterValueHandlesMissingAndDegenerateInput(t *testing.T) {
 	}
 }
 
-// The query is built from a fixed list; a name that failed to quote would
-// be a runtime syntax error rather than a compile failure.
+// The query is built from a list; a mis-quoted name is a runtime syntax error.
 func TestCounterQueryQuotesEveryName(t *testing.T) {
 	if got := quotedList([]string{"a", "b's"}); got != "'a', 'b''s'" {
 		t.Errorf("quotedList = %q, want the apostrophe doubled", got)

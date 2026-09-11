@@ -2,10 +2,8 @@ package tui
 
 import "testing"
 
-// TestCycleFocusThreeWay confirms Ctrl+Tab (see App.cycleFocus) steps
-// through Object Explorer -> the active query panel's editor -> its
-// results pane -> Object Explorer again, once the panel actually has a
-// results pane to stop at.
+// Ctrl+Tab (App.cycleFocus) steps Explorer → editor → results → Explorer when
+// the panel has results.
 func TestCycleFocusThreeWay(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -31,9 +29,7 @@ func TestCycleFocusThreeWay(t *testing.T) {
 	}
 }
 
-// TestCycleFocusTwoWayWithoutResults confirms a query panel with no
-// results yet has nothing to cycle into and degrades to the plain
-// explorer/editor toggle.
+// Without results, it degrades to the Explorer/editor toggle.
 func TestCycleFocusTwoWayWithoutResults(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -52,9 +48,8 @@ func TestCycleFocusTwoWayWithoutResults(t *testing.T) {
 	}
 }
 
-// TestCycleFocusTwoWayForNonQueryPanel confirms a non-query panel (e.g.
-// Object Explorer Details) has no editor/results split at all and also
-// degrades to the plain explorer/panel toggle.
+// A non-query panel (e.g. Object Explorer Details) degrades to the
+// Explorer/panel toggle.
 func TestCycleFocusTwoWayForNonQueryPanel(t *testing.T) {
 	a := newTestApp()
 	a.panels.AddPanel(NewDetailBrowser("Object Explorer Details"))
@@ -71,8 +66,7 @@ func TestCycleFocusTwoWayForNonQueryPanel(t *testing.T) {
 	}
 }
 
-// TestCycleFocusReverseThreeWay is cycleFocus's three-way test run
-// backwards (Ctrl+Shift+Tab): Explorer -> Results -> Editor -> Explorer.
+// Ctrl+Shift+Tab: Explorer → Results → Editor → Explorer.
 func TestCycleFocusReverseThreeWay(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -98,8 +92,7 @@ func TestCycleFocusReverseThreeWay(t *testing.T) {
 	}
 }
 
-// TestCycleFocusReverseTwoWayWithoutResults mirrors
-// TestCycleFocusTwoWayWithoutResults for the reverse direction.
+// The reverse of TestCycleFocusTwoWayWithoutResults.
 func TestCycleFocusReverseTwoWayWithoutResults(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -118,10 +111,8 @@ func TestCycleFocusReverseTwoWayWithoutResults(t *testing.T) {
 	}
 }
 
-// TestCycleFocusThenReverseReturnsToStart runs cycleFocus forward and then
-// cycleFocusReverse the same number of times, confirming the two are true
-// inverses of each other rather than merely two independent two/three-way
-// toggles that happen to both end up at explorer eventually.
+// Forward then reverse the same number of times returns to the start, so the
+// two are true inverses.
 func TestCycleFocusThenReverseReturnsToStart(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")
@@ -140,11 +131,9 @@ func TestCycleFocusThenReverseReturnsToStart(t *testing.T) {
 	}
 }
 
-// TestNextPrevPanelSyncActiveFocusFromExplorer confirms Ctrl+Shift+Right/
-// Left (App.nextPanel/prevPanel) re-sync the newly active panel's
-// Activatable state to a.focus — switching panels while Object Explorer
-// has real keyboard focus must not make the newly-selected panel appear
-// focused (see App.syncActivePanelFocus).
+// Ctrl+Shift+Right/Left (nextPanel/prevPanel) re-sync the new panel's
+// Activatable state to a.focus: switching while Explorer has focus must not
+// make the new panel look focused (see syncActivePanelFocus).
 func TestNextPrevPanelSyncActiveFocusFromExplorer(t *testing.T) {
 	a := newTestApp()
 	qp1 := NewQueryPanel(a, "Query 1")
@@ -177,9 +166,7 @@ func TestNextPrevPanelSyncActiveFocusFromExplorer(t *testing.T) {
 	}
 }
 
-// TestNextPanelKeepsActiveFocusFromPanels is the mirror case: switching
-// panels while a panel already has real focus should leave the newly
-// active panel focused too.
+// Switching while a panel has focus keeps the new one focused.
 func TestNextPanelKeepsActiveFocusFromPanels(t *testing.T) {
 	a := newTestApp()
 	qp1 := NewQueryPanel(a, "Query 1")
@@ -197,9 +184,8 @@ func TestNextPanelKeepsActiveFocusFromPanels(t *testing.T) {
 	}
 }
 
-// TestJumpToPanelByDigit confirms Ctrl+0..9 (App.jumpToPanel) switches
-// directly to the panel at that index, counted from the left, and that an
-// out-of-range digit is a harmless no-op.
+// Ctrl+0..9 (jumpToPanel) switches to that index from the left; out-of-range is
+// a no-op.
 func TestJumpToPanelByDigit(t *testing.T) {
 	a := newTestApp()
 	a.panels.AddPanel(NewDetailBrowser("Object Explorer Details")) // index 0
@@ -226,10 +212,9 @@ func TestJumpToPanelByDigit(t *testing.T) {
 	}
 }
 
-// TestQueryPanelFocusHelpers covers editorHasFocus/resultsHasFocus across
-// every active/resultsFocused combination — the source of truth for which
-// of the two sub-regions' title/header bar gets the focused-highlight
-// style in Draw (see syncFocusVisuals).
+// editorHasFocus/resultsHasFocus across every active/resultsFocused
+// combination; they decide which sub-region's bar is highlighted (see
+// syncFocusVisuals).
 func TestQueryPanelFocusHelpers(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")

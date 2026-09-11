@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// node builds one operator for a comparison fixture. Object is what pairing
-// keys on beside the physical operator, so it is always set.
+// node builds one fixture operator. Object is always set, since pairing keys on
+// it.
 func node(id int, op, table, index string, estRows, cost float64, children ...*Node) *Node {
 	return &Node{
 		ID: id, PhysicalOp: op, LogicalOp: op,
@@ -21,9 +21,8 @@ func stmt(root *Node) *Statement {
 	return &Statement{Type: "SELECT", Root: root, SubTreeCost: root.EstSubtreeCost}
 }
 
-// lines renders a comparison compactly, so a test can assert the whole shape
-// rather than one row of it — the ordering between matched and one-sided lines
-// is the part most easily got wrong.
+// lines renders a comparison compactly so tests assert the whole shape,
+// including line ordering.
 func lines(diffs []NodeDiff) []string {
 	out := make([]string, 0, len(diffs))
 	for _, d := range diffs {
@@ -47,8 +46,7 @@ func wantLines(t *testing.T, got []NodeDiff, want ...string) {
 	}
 }
 
-// TestCompareMatchesTheSameOperatorAcrossPlans: identical trees pair up whole,
-// and nothing reads as changed.
+// Identical trees pair wholly and nothing is changed.
 func TestCompareMatchesTheSameOperatorAcrossPlans(t *testing.T) {
 	build := func() *Statement {
 		return stmt(node(0, "Nested Loops", "", "", 10, 0.5,
@@ -68,13 +66,10 @@ func TestCompareMatchesTheSameOperatorAcrossPlans(t *testing.T) {
 	}
 }
 
-// TestCompareReportsTheIndexAndTheEstimateThatMoved. The index is deliberately
-// not part of what pairs two operators: a seek that changed index is the
-// comparison this pane exists for, and keying on the index would split it into
-// two one-sided rows with nothing to read against each other.
+// The index isn't part of pairing: a seek that changed index is the comparison
+// users want, and keying on it would split into two one-sided rows.
 func TestCompareReportsTheIndexAndTheEstimateThatMoved(t *testing.T) {
-	// Under a parent, not at the root: two roots pair unconditionally — every
-	// plan has exactly one — so the root is the one place this cannot be seen.
+	// Below the root, since roots always pair.
 	a := stmt(node(9, "Nested Loops", "", "", 10, 1,
 		node(0, "Index Seek", "orders", "IX_date", 10, 0.2)))
 	b := stmt(node(9, "Nested Loops", "", "", 10, 1,
@@ -92,9 +87,8 @@ func TestCompareReportsTheIndexAndTheEstimateThatMoved(t *testing.T) {
 	}
 }
 
-// TestCompareLeavesASmallReEstimateAlone. A plan re-costed against refreshed
-// statistics moves every number in the tree by a hair; a comparison that
-// called all of them changed would say nothing at all.
+// A plan re-costed against refreshed statistics nudges every number; calling
+// them all changed says nothing.
 func TestCompareLeavesASmallReEstimateAlone(t *testing.T) {
 	a := stmt(node(0, "Index Seek", "orders", "IX_date", 1000, 1.0))
 	b := stmt(node(0, "Index Seek", "orders", "IX_date", 1005, 1.005))
@@ -102,7 +96,7 @@ func TestCompareLeavesASmallReEstimateAlone(t *testing.T) {
 		t.Errorf("a 0.5%% re-estimate reads as %v with changes %v", got[0].Kind, got[0].Changes)
 	}
 
-	// And a real move still counts, in both directions.
+	// A real move still counts, both directions.
 	c := stmt(node(0, "Index Seek", "orders", "IX_date", 1200, 1.0))
 	if got := CompareStatements(a, c); got[0].Kind != ChangeDifferent {
 		t.Errorf("a 20%% move reads as %v", got[0].Kind)
@@ -110,16 +104,14 @@ func TestCompareLeavesASmallReEstimateAlone(t *testing.T) {
 	if got := CompareStatements(c, a); got[0].Kind != ChangeDifferent {
 		t.Errorf("the same move the other way reads as %v", got[0].Kind)
 	}
-	// A number that appears from nothing is a change, not a division by zero.
+	// A number appearing from zero is a change, not a division by zero.
 	z := stmt(node(0, "Index Seek", "orders", "IX_date", 0, 1.0))
 	if got := CompareStatements(z, a); got[0].Kind != ChangeDifferent {
 		t.Errorf("0 → 1000 reads as %v", got[0].Kind)
 	}
 }
 
-// TestCompareShowsAOneSidedSubtreeWhereItSits, rather than after everything
-// that matched: a sort added on one side belongs beside the operators it was
-// added between.
+// A one-sided subtree shows where it sits, not after all matches.
 func TestCompareShowsAOneSidedSubtreeWhereItSits(t *testing.T) {
 	a := stmt(node(0, "Nested Loops", "", "", 10, 1,
 		node(1, "Index Seek", "orders", "IX_date", 10, 0.2),
@@ -139,15 +131,13 @@ func TestCompareShowsAOneSidedSubtreeWhereItSits(t *testing.T) {
 	)
 }
 
-// TestCompareDoesNotPairAcrossADifferentPhysicalOperator. A seek that became a
-// scan is what happened, and pairing the two would hide it behind a row of
-// property changes.
+// A seek that became a scan must not pair; that would hide the change behind
+// property diffs.
 func TestCompareDoesNotPairAcrossADifferentPhysicalOperator(t *testing.T) {
 	a := stmt(node(0, "Index Seek", "orders", "IX_date", 10, 0.2))
 	b := stmt(node(0, "Table Scan", "orders", "", 900000, 42))
 
-	// The roots pair regardless — every plan has exactly one — so this is
-	// checked one level down, where the choice is real.
+	// Roots always pair, so check one level down.
 	ra := stmt(node(9, "Nested Loops", "", "", 10, 1, a.Root))
 	rb := stmt(node(9, "Nested Loops", "", "", 10, 1, b.Root))
 	wantLines(t, CompareStatements(ra, rb),
@@ -157,9 +147,7 @@ func TestCompareDoesNotPairAcrossADifferentPhysicalOperator(t *testing.T) {
 	)
 }
 
-// TestCompareRunsAgainstARealPlan, so the fixture the parser is pinned by also
-// pins the comparison: a plan compared with itself has no differences and one
-// line per operator.
+// A real plan compared with itself: no differences, one line per operator.
 func TestCompareRunsAgainstARealPlan(t *testing.T) {
 	plan := mustParseFile(t, "testdata/actual_plan.sqlplan")
 	st := plan.Statements[0]
@@ -188,9 +176,7 @@ func TestCompareRunsAgainstARealPlan(t *testing.T) {
 	}
 }
 
-// TestComparePropertiesNamesTheDifferenceAndKeepsTheRest: every property is
-// listed whether it moved or not, so the pane reads as a fixed table rather
-// than a list whose length depends on the two plans.
+// Every property is listed, moved or not.
 func TestComparePropertiesNamesTheDifferenceAndKeepsTheRest(t *testing.T) {
 	a := stmt(node(0, "Index Seek", "orders", "IX_date", 10, 0.2))
 	b := stmt(node(0, "Index Seek", "orders", "IX_date", 10, 4.5))
@@ -215,9 +201,7 @@ func TestComparePropertiesNamesTheDifferenceAndKeepsTheRest(t *testing.T) {
 	}
 }
 
-// TestCompareSurvivesAStatementWithNoPlan. A SET or USE statement carries no
-// operator tree, and a comparison that dereferenced its root would take the
-// panel down with it.
+// A statement with no plan (SET, USE) has no root and must not panic.
 func TestCompareSurvivesAStatementWithNoPlan(t *testing.T) {
 	empty := &Statement{Type: "SET ON/OFF"}
 	full := stmt(node(0, "Index Seek", "orders", "IX_date", 10, 0.2))
@@ -235,12 +219,8 @@ func TestCompareSurvivesAStatementWithNoPlan(t *testing.T) {
 	}
 }
 
-// TestCompareCountsEveryActualRowAndRead. The two runtime numbers are
-// measurements of the runs being compared, not predictions, so they are
-// compared exactly while the estimates beside them keep their tolerance. A
-// tolerance here hides the reads delta on the number a user opens the pane to
-// tune against: 100,000 reads → 100,500 is 500 pages of work that appeared,
-// and the operator would have read "Same".
+// Runtime numbers compare exactly while estimates keep their tolerance: 100,000
+// → 100,500 reads is 500 pages of new work, not "Same".
 func TestCompareCountsEveryActualRowAndRead(t *testing.T) {
 	withRuntime := func(n *Node, rows, reads int64) *Statement {
 		n.Runtime = &Runtime{Rows: rows, LogicalReads: reads, Executions: 1}
@@ -258,7 +238,7 @@ func TestCompareCountsEveryActualRowAndRead(t *testing.T) {
 		t.Errorf("a 0.5%% move in logical reads reads as %v with changes %v", got[0].Kind, got[0].Changes)
 	}
 
-	// The estimates on the same node keep the tolerance they were given.
+	// The node's estimates keep their tolerance.
 	d := withRuntime(node(0, "Index Seek", "orders", "IX_date", 1005, 1.005), 100000, 100000)
 	if got := CompareStatements(a, d); got[0].Kind != ChangeSame {
 		t.Errorf("a 0.5%% re-estimate reads as %v with changes %v", got[0].Kind, got[0].Changes)

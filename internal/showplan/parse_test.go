@@ -125,15 +125,15 @@ func TestParseActualPlan_UTF16Fixture(t *testing.T) {
 		t.Errorf("node8.SeekPredicate = %q, want it to mention DoctorID", n8.SeekPredicate)
 	}
 
-	// Cost%: leaf node7's own cost is its whole subtree cost (no children),
-	// as a fraction of the statement total.
+	// Leaf node7's own cost is its whole subtree cost, as a fraction of the
+	// statement total.
 	wantCost := n7.EstSubtreeCost / st.SubTreeCost
 	approx(t, "node7.Cost", n7.Cost(st.SubTreeCost), wantCost, 1e-9)
 	if n7.Cost(st.SubTreeCost) <= 0 || n7.Cost(st.SubTreeCost) >= 1 {
 		t.Errorf("node7.Cost = %v, want in (0,1)", n7.Cost(st.SubTreeCost))
 	}
 
-	// Every node's own attributes should have made it into Props.
+	// Every node attribute reaches Props.
 	found := false
 	for _, kv := range st.Root.Props {
 		if kv.Key == "PhysicalOp" && kv.Value == "Top" {
@@ -182,12 +182,9 @@ func TestParseEstimatedPlan(t *testing.T) {
 	}
 }
 
-// TestParse_BooleanAttrsAcceptXSDOneZeroForm checks Warnings' boolean
-// attributes and Parallel accept the "1"/"0" XSD boolean lexical form, not
-// just "true"/"false" — SQL Server 17.0.4055.5 emits NoJoinPredicate="1"
-// and Parallel="0" for the same plan other builds represent as
-// "true"/"false", and dropping the "1" form loses a CROSS JOIN's warning
-// from the UI with no error.
+// Boolean attributes accept "1"/"0": SQL Server 17.0.4055.5 emits
+// NoJoinPredicate="1" and Parallel="0", and rejecting "1" loses a CROSS JOIN's
+// warning silently.
 func TestParse_BooleanAttrsAcceptXSDOneZeroForm(t *testing.T) {
 	const xmlDoc = `<ShowPlanXML Version="1.599" Build="17.0.4055.5">
 <BatchSequence><Batch><Statements>
@@ -240,13 +237,8 @@ func TestIndent(t *testing.T) {
 func TestIndent_RealPlanRoundTrips(t *testing.T) {
 	plan := mustParseFile(t, "testdata/estimated_plan.xml")
 	out := Indent(plan.XML)
-	// The fixture is single-line apart from one ordinary trailing newline
-	// at EOF. If the "already multi-line" heuristic matched on that
-	// trailing newline alone and returned the input unindented, out would
-	// still look deceptively "multi-line" — strings.Contains(out, "\n") is
-	// trivially true either way. The real signal is a newline appearing
-	// before the input's own trailing one, i.e. one actually inserted
-	// between two tags.
+	// The fixture ends with a newline, so check for a newline before it — one
+	// actually inserted between tags.
 	if !strings.Contains(strings.TrimRight(out, "\r\n"), "\n") {
 		t.Fatal("Indent did not insert any newlines between tags — looks like a no-op")
 	}
@@ -260,11 +252,7 @@ func TestIndent_RealPlanRoundTrips(t *testing.T) {
 }
 
 func TestIndent_TrailingNewlineAloneIsNotMultiLine(t *testing.T) {
-	// A single-line document with just a plain EOF newline — the common
-	// case for any file written by a normal editor or tool — must still
-	// be indented, not mistaken for an already-formatted multi-line
-	// document. A naive "contains \">\\n\"" check matches that trailing
-	// newline and returns the input as-is.
+	// A single-line document ending in a newline must still be indented.
 	single := "<a x=\"1\"><b>text</b></a>\n"
 	got := Indent(single)
 	want := "<a x=\"1\">\n  <b>\n    text\n  </b>\n</a>"

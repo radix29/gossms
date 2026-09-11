@@ -10,15 +10,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// pinTooltip builds the readout for a click at screen position (mx, my), or
-// returns nil when the click didn't land on a chart's plot area or landed on
-// a column with no sample behind it.
+// pinTooltip builds the readout for a click at (mx, my), or nil if it missed a
+// plot area or hit a column without a sample.
 func (am *ActivityMonitor) pinTooltip(mx, my int) *amTooltip {
 	if !am.chartTab() || !am.viewRect.Contains(mx, my) {
 		return nil
 	}
-	// The hits were recorded against the canvas; the viewport scrolls over
-	// it, so the click has to be translated before it can be matched.
+	// Hits are in canvas coordinates; translate the click through the viewport.
 	cx, cy := am.canvasPos(mx, my)
 
 	for _, hit := range am.hits {
@@ -36,9 +34,8 @@ func (am *ActivityMonitor) pinTooltip(mx, my int) *amTooltip {
 	return nil
 }
 
-// readTooltip fills a pin from one bucket of one chart: the bucket's time,
-// where that bucket is drawn now, the chart's geometry, and one row per
-// series.
+// readTooltip fills a pin from one bucket of one chart: its time, current
+// column, chart geometry, and one row per series.
 func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx int) {
 	t.time = am.bucketTime(idx)
 	t.plot, t.timeRow = hit.Plot, hit.TimeRow
@@ -55,18 +52,14 @@ func (am *ActivityMonitor) readTooltip(t *amTooltip, hit dashboard.ChartHit, idx
 	}
 }
 
-// refreshTooltip re-resolves the pinned readout from the sample it names, so
-// the box tracks its own column as new samples push it left instead of
-// staying put and reporting whatever has slid underneath.
+// refreshTooltip re-resolves the pin from its sample so the box tracks its
+// column as new samples push it left.
 //
-// It must run after the canvas render and before drawTooltip, which is
-// exactly where drawDashboard calls it: am.hits is rebuilt by that render, so
-// re-resolving any earlier reads the previous frame's geometry and puts the
-// box a column off.
+// Must run after the canvas render (which rebuilds am.hits) and before
+// drawTooltip, as drawDashboard does; earlier would use last frame's geometry.
 //
-// Three things drop the pin, and all three mean the sample it points at has
-// nothing on screen left to point at: its chart is gone, the sample has been
-// pruned out of the window, or it has aged past the left edge of the plot.
+// The pin drops when its chart is gone, its sample is pruned, or it has aged
+// past the plot's left edge.
 func (am *ActivityMonitor) refreshTooltip() {
 	t := am.tooltip
 	if t == nil {
@@ -103,8 +96,8 @@ func (am *ActivityMonitor) chartHit(title string) (dashboard.ChartHit, bool) {
 	return dashboard.ChartHit{}, false
 }
 
-// canvasPos translates a screen position to the scrolling canvas underneath,
-// and screenPos translates back.
+// canvasPos translates a screen position to canvas coordinates; screenPos
+// translates back.
 func (am *ActivityMonitor) canvasPos(x, y int) (int, int) {
 	return x - am.viewRect.X + am.scrollX[am.tab], y - am.viewRect.Y + am.scrollY[am.tab]
 }
@@ -113,14 +106,12 @@ func (am *ActivityMonitor) screenPos(cx, cy int) (int, int) {
 	return cx - am.scrollX[am.tab] + am.viewRect.X, cy - am.scrollY[am.tab] + am.viewRect.Y
 }
 
-// chartTab reports whether the active tab draws charts a click can be
-// resolved against. Sample's bar panels carry their own value labels, but
-// its memory composition bar names its segments in a legend with no room
-// for their megabytes, so that tab reports hits too.
+// chartTab reports whether the active tab's charts resolve clicks. Includes
+// Sample, whose memory composition legend lacks megabytes.
 func (am *ActivityMonitor) chartTab() bool { return am.tab.canvasTab() }
 
-// bucketTimes are the clock times of the active tab's plotted buckets,
-// oldest first and index-aligned with every series it draws.
+// bucketTimes are the active tab's plotted bucket times, oldest first, aligned
+// with its series.
 func (am *ActivityMonitor) bucketTimes() []string {
 	if am.tab == amTabTempDB {
 		return am.tempdb.Times
@@ -128,16 +119,15 @@ func (am *ActivityMonitor) bucketTimes() []string {
 	return am.history.Times
 }
 
-// bucketTime is the clock time of one plotted bucket, falling back to the
-// newest sample's time when the view carries no per-bucket times.
+// bucketTime is one bucket's clock time, or the newest sample's when the view
+// has no per-bucket times.
 func (am *ActivityMonitor) bucketTime(idx int) string {
 	newest := am.act.sampleTime
 	switch am.tab {
 	case amTabTempDB:
 		newest = am.td.sampleTime
 	case amTabSample:
-		// Sample plots one instant, not a series of buckets: index 0 is the
-		// newest sample, not the oldest column of History's window.
+		// Sample plots one instant: index 0 is the newest sample.
 		return am.act.sampleTime
 	}
 	if times := am.bucketTimes(); idx >= 0 && idx < len(times) {
@@ -146,11 +136,9 @@ func (am *ActivityMonitor) bucketTime(idx int) string {
 	return newest
 }
 
-// bucketIndex is the bucket a pinned time sits at now, or -1 once that
-// sample has been pruned out of the window. The clock time is the pin's
-// identity because the index isn't: every sample that lands renumbers the
-// buckets under it. Searched newest first, so two samples sharing a second
-// resolve to the same one on every refresh.
+// bucketIndex is the bucket a pinned time sits at now, or -1 once pruned. The
+// time is the pin's identity because indexes shift with each sample. Searched
+// newest first, so samples sharing a second resolve consistently.
 func (am *ActivityMonitor) bucketIndex(at string) int {
 	times := am.bucketTimes()
 	for i, ts := range slices.Backward(times) {
@@ -161,22 +149,20 @@ func (am *ActivityMonitor) bucketIndex(at string) int {
 	return -1
 }
 
-// place positions the box next to the pinned point. The box flips above that
-// point rather than cover the time callout at keepOut: the callout names the
-// moment every number in the box belongs to, and half of it behind the box
-// reads as one of the axis's own age labels.
+// place positions the box beside the pinned point, flipping above it rather
+// than covering the time callout at keepOut (half-hidden, it would read as an
+// age label).
 func (t *amTooltip) place(ax, ay int, view core.Rect, keepOut int) core.Rect {
 	w, h := tooltipBoxSize(t.time, t.rows)
 	return placeTooltipBox(w, h, ax, ay, view, keepOut)
 }
 
-// drawTooltip renders the pinned readout over the dashboard: the reported
-// column's time on the chart's own time axis, then the box — the sample's
-// time and one line per series in that series' own colour, so a line in the
-// box and a band in the chart are matched by eye.
+// drawTooltip renders the pinned readout: the column's time on the chart's time
+// axis, then the box with the sample time and one line per series in its
+// colour.
 //
-// c is the canvas the viewport was just blitted from, which the callout reads
-// to find the axis labels it has to clear; see drawTimeCallout.
+// c is the canvas just blitted, which the callout reads to clear axis labels;
+// see drawTimeCallout.
 func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *charts.Canvas) {
 	if am.tooltip == nil || am.viewRect.W <= 0 || am.viewRect.H <= 0 {
 		return
@@ -191,10 +177,8 @@ func (am *ActivityMonitor) drawTooltip(s tcell.Screen, c *charts.Canvas) {
 	drawTooltipBox(s, r, am.tooltip.time, am.tooltip.rows)
 }
 
-// drawCallout names the pinned bucket's moment on its chart's time axis, so
-// the box and the column it reports are read as one thing. It returns the
-// screen row the callout went on, or -1 for none, so the box can be placed
-// clear of it.
+// drawCallout names the pinned bucket's moment on its chart's time axis and
+// returns the screen row used, or -1, so the box can avoid it.
 func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *charts.Canvas) int {
 	t := am.tooltip
 	if c == nil || t.plot.W <= 0 {
@@ -207,18 +191,15 @@ func (am *ActivityMonitor) drawCallout(s tcell.Screen, c *charts.Canvas) int {
 	return am.drawTimeCallout(s, c, x)
 }
 
-// drawTimeCallout writes the pinned bucket's time on the chart's time-axis
-// row, centred under the pinned column at x and kept inside both the axis
-// row and the viewport — the row's own labels are ages counted back from
-// now, and a callout half off the end of it would read as one of them.
+// drawTimeCallout writes the pinned bucket's time on the time-axis row, centred
+// under column x and kept within the row and viewport (the row's labels are
+// ages; a clipped callout would read as one).
 //
-// Whatever the callout lands on is cleared whole: the row's labels are laid
-// out so they never touch, and overwriting the middle of one leaves its tail
-// standing as a number of its own ("-0:20" plus a callout read back as
-// "-0:211:34:44"). c is the canvas the row was rendered on, which is where
-// the run of characters to clear is measured.
+// Any label it overlaps is cleared whole, or a tail survives as a bogus number
+// ("-0:20" + callout → "-0:211:34:44"). c is the canvas the row was rendered
+// on.
 //
-// Returns the row it drew on, or -1 when there was no room for it.
+// Returns the row, or -1 when there's no room.
 func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x int) int {
 	t := am.tooltip
 	if t.timeRow.W <= 0 || t.timeRow.H <= 0 || t.time == "" {
@@ -242,9 +223,8 @@ func (am *ActivityMonitor) drawTimeCallout(s tcell.Screen, c *charts.Canvas, x i
 	return y
 }
 
-// labelRun widens the screen span [from, to) to cover every label it touches
-// on row, stopping at the first blank column on either side and never leaving
-// the row or the viewport.
+// labelRun widens [from, to) on row to cover every label it touches, stopping
+// at blank columns and staying within the row and viewport.
 func (am *ActivityMonitor) labelRun(c *charts.Canvas, row core.Rect, from, to int) (int, int) {
 	rowX, _ := am.screenPos(row.X, row.Y)
 	lo := max(max(rowX, am.viewRect.X), 0)

@@ -9,15 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// agent_operator_props.go builds the Operator Properties dialog — General
-// (identity, e-mail, category) and a read-only Notifications page listing
-// which alerts/jobs notify this operator. Pager/Net Send are excluded:
-// SQL-only scope, no gosmo setters. Every page closes over a shared
-// *string name cell, so a rename on General is visible to later pages in
-// the same Apply run.
+// agent_operator_props.go builds Operator Properties: General (identity,
+// e-mail, category) and a read-only Notifications page of alerts/jobs notifying
+// the operator. Pager/Net Send excluded (SQL-only scope). Pages share a *string
+// name cell so a General rename is seen later in the same Apply.
 
-// findAgentOperator is a thin wrapper over gosmo.Server.OperatorByNameContext,
-// mirroring findAgentJob/findAgentSchedule/findAgentAlert.
+// findAgentOperator wraps gosmo.Server.OperatorByNameContext, like
+// findAgentJob.
 func findAgentOperator(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Operator, error) {
 	return sc.Server.OperatorByNameContext(ctx, name)
 }
@@ -31,8 +29,8 @@ func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 	}
 }
 
-// showOperatorProperties opens Operator Properties for a known connection
-// and operator name — the Object Explorer context menu's entry point.
+// showOperatorProperties opens Operator Properties from Object Explorer's
+// context menu.
 func (a *App) showOperatorProperties(sc *db.ServerConn, operatorName string) {
 	a.propDialog.show(sc, "msdb", "Operator Properties", "Operator: "+operatorName, "Server: "+sc.Opts.Server,
 		func() []propPage { return operatorPropPages(sc, operatorName) })
@@ -98,8 +96,8 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 						return err
 					}
 				}
-				// Renaming last keeps every write above addressed by the
-				// name the server still has — see propPage.renames.
+				// Rename last so earlier writes use the server's current name
+				// (see propPage.renames).
 				if nameField.Dirty() {
 					if err := o.RenameContext(ctx, nameField.Value()); err != nil {
 						return err
@@ -113,9 +111,8 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 	}
 }
 
-// pageOperatorNotifications is a read-only page listing every alert and job
-// configured to notify this operator — there's nothing page-local to
-// apply; editing a link is done from the alert's or job's own Properties.
+// pageOperatorNotifications lists alerts and jobs that notify this operator,
+// read-only; links are edited in the alert's or job's Properties.
 func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage {
 	return propPage{
 		title: "Notifications",

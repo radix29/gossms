@@ -10,28 +10,26 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
-// newTestApp builds an App with just enough wired up for connection
-// lifecycle tests — no screen, no event loop.
+// newTestApp builds an App for connection lifecycle tests, with no screen or
+// event loop.
 func newTestApp() *App {
 	a := &App{cfg: &config.Config{}}
 	a.explorer = NewObjectExplorer(a)
 	a.panels = layout.NewPanelManager()
 	a.confirmDialog = dialogs.NewConfirmDialog(nil)
 	a.confirmTypedDialog = dialogs.NewTypedConfirmDialog(nil)
-	// handleKey and handleMouse both ask it whether it is open, as App.buildUI
-	// guarantees it exists.
+	// handleKey and handleMouse query it, as App.buildUI guarantees it exists.
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
 	a.promptDialog = dialogs.NewPromptDialog(nil)
-	// Every confirmed write runs behind it (runWithProgress).
+	// Every confirmed write uses it (runWithProgress).
 	a.progressDialog = dialogs.NewProgressDialog(nil)
-	// As App.buildUI does: a panel that pops a selector menu reaches this, and
-	// a nil one crashes rather than failing the assertion the test came for.
+	// As App.buildUI does; a nil one crashes instead of failing the assertion.
 	a.contextMenu = new(controls.ContextMenu{})
 	return a
 }
 
-// addTestConn registers a fake connection (nil gosmo.Server — Close is
-// nil-safe) exactly the way connectServer does: append + AddRoot.
+// addTestConn registers a fake connection (nil gosmo.Server; Close is nil-safe)
+// as connectServer does: append + AddRoot.
 func addTestConn(a *App, server string) *db.ServerConn {
 	sc := &db.ServerConn{Opts: config.Connection{Server: server}}
 	a.connections = append(a.connections, sc)
@@ -39,10 +37,8 @@ func addTestConn(a *App, server string) *db.ServerConn {
 	return sc
 }
 
-// AddRoot must select the node it just added, not leave the tree's previous
-// selection in place: Object Explorer Details is driven entirely by
-// TreeView's OnSelect callback (see onNodeSelected), so a server added
-// without selecting it never populates its own detail view.
+// AddRoot must select the new node: Object Explorer Details is driven by
+// TreeView's OnSelect (see onNodeSelected).
 func TestAddRootSelectsNewNode(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -56,9 +52,8 @@ func TestAddRootSelectsNewNode(t *testing.T) {
 	}
 }
 
-// Disconnecting one connection must not re-bind query panels that point at
-// another. Panels hold a pointer, not an index into a.connections, so
-// removing one connection can't shift another panel's target.
+// Panels hold a pointer, not an index, so disconnecting one connection can't
+// rebind another's panels.
 func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -93,10 +88,8 @@ func TestDisconnectKeepsOtherPanelsBound(t *testing.T) {
 	}
 }
 
-// disconnectActive resolves the connection from the selected tree node.
-// AddRoot selects the newly connected server's own root, so after
-// connecting sc1 then sc2, sc2's root is what's selected and
-// disconnectActive acts on it.
+// AddRoot selects the new root, so after sc1 then sc2, disconnectActive acts on
+// sc2.
 func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 	a := newTestApp()
 	sc1 := addTestConn(a, "server-one")
@@ -112,8 +105,8 @@ func TestDisconnectActiveUsesSelectedRoot(t *testing.T) {
 	}
 }
 
-// resolveConn returns the owning connection for any node, walking up to the
-// nearest ancestor that carries one (error placeholders carry none).
+// resolveConn walks up to the nearest ancestor with a connection (error
+// placeholders carry none).
 func TestResolveConn(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")

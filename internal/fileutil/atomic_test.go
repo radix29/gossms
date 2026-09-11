@@ -25,9 +25,8 @@ func TestWriteAtomicCreatesTheFileWithItsContentsAndMode(t *testing.T) {
 		t.Errorf("contents = %q, want the bytes written", got)
 	}
 
-	// CreateTemp makes the temp file 0600, so a caller asking for anything
-	// wider only gets it because WriteAtomic chmods before the rename.
-	// Skipped on Windows, which has no POSIX mode bits to assert.
+	// CreateTemp makes the temp file 0600, so a wider mode proves WriteAtomic
+	// chmods before the rename. No POSIX mode bits on Windows.
 	if runtime.GOOS == "windows" {
 		return
 	}
@@ -58,10 +57,8 @@ func TestWriteAtomicAppliesAWiderModeThanCreateTempsOwn(t *testing.T) {
 	}
 }
 
-// The bug this pins: every caller passes a constant perm, so applying it
-// blindly re-widened a script the user had chmodded 0600 back to 0644 on every
-// save. os.WriteFile never did that — it doesn't create a new inode — and a
-// rename-based write must not either.
+// Callers pass a constant perm; applying it blindly would re-widen a script the
+// user chmodded 0600 on every save.
 func TestWriteAtomicKeepsAnExistingFilesNarrowerMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no POSIX mode bits on Windows")
@@ -88,9 +85,8 @@ func TestWriteAtomicKeepsAnExistingFilesNarrowerMode(t *testing.T) {
 	}
 }
 
-// The other direction, and the reason the existing mode is capped at perm
-// rather than preserved outright: a secrets-adjacent file that somehow reached
-// 0644 must be tightened back, not kept wide forever.
+// The existing mode is capped at perm, not preserved outright: a secrets file
+// that reached 0644 must be tightened.
 func TestWriteAtomicTightensAnExistingFileWiderThanPerm(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no POSIX mode bits on Windows")
@@ -143,14 +139,10 @@ func TestWriteAtomicLeavesNoTempFileBehind(t *testing.T) {
 	assertOnlyFile(t, dir, "config.json")
 }
 
-// A failed write must leave the original intact and clean up after itself.
-//
-// An unwritable directory is what makes this discriminating rather than
-// merely reassuring: creating the temp file needs write permission on the
-// *directory*, where overwriting an existing file does not. So os.WriteFile
-// would succeed here and destroy the original, and only a write that goes
-// through a new directory entry fails — which is exactly the property the
-// temp-file-plus-rename exists to provide. Proven by A/B on 2026-08-14.
+// A failed write must leave the original intact and no temp file. An unwritable
+// directory discriminates: creating the temp file needs directory write
+// permission, overwriting in place doesn't, so os.WriteFile would succeed here
+// and destroy the original.
 func TestWriteAtomicFailureKeepsTheOriginalAndLeavesNoTempFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("directory mode bits do not deny writes on Windows")
@@ -187,9 +179,8 @@ func TestWriteAtomicFailureKeepsTheOriginalAndLeavesNoTempFile(t *testing.T) {
 	assertOnlyFile(t, dir, "config.json")
 }
 
-// The temp file must be a sibling of path: a rename across filesystems is not
-// atomic, and os.Rename refuses one outright. Nothing else in the package
-// exposes where it lands, so this reads it off a directory that starts empty.
+// The temp file must be a sibling of path: os.Rename refuses cross-filesystem
+// renames. Observed via a directory that starts empty.
 func TestWriteAtomicWritesItsTempFileBesidePath(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
@@ -218,8 +209,8 @@ func TestWriteAtomicWritesAnEmptyFile(t *testing.T) {
 	}
 }
 
-// assertOnlyFile fails unless dir contains exactly the named entry — the way
-// a stray ".tmp" left by a failed or interrupted write shows up.
+// assertOnlyFile fails unless dir holds exactly the named entry, catching a
+// stray ".tmp".
 func assertOnlyFile(t *testing.T, dir, name string) {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -241,10 +232,8 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 	}
 }
 
-// A rename replaces a directory entry, so without resolving first, saving a
-// symlinked script would turn the link into a regular file and leave the real
-// file with its old contents. A plain os.WriteFile follows the link for free;
-// this has to be made to.
+// Without resolving first, saving a symlinked script would replace the link
+// with a regular file and leave the target stale.
 func TestWriteAtomicWritesThroughASymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need elevation on Windows")
@@ -281,10 +270,9 @@ func TestWriteAtomicWritesThroughASymlink(t *testing.T) {
 	assertOnlyFile2(t, dir, "link.sql", "real.sql")
 }
 
-// A link pointing at a file that doesn't exist yet must be *created through*,
-// not written over. EvalSymlinks fails on a dangling link, and reading the
-// contents back through the link passes either way — so this asserts the link
-// is still a link and the target now exists, which is what separates the two.
+// A dangling link must be created through, not overwritten. Reading back
+// through the link passes either way, so assert the link is still a link and
+// the target exists.
 func TestWriteAtomicCreatesThroughADanglingSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need elevation on Windows")
@@ -316,8 +304,7 @@ func TestWriteAtomicCreatesThroughADanglingSymlink(t *testing.T) {
 	assertOnlyFile2(t, dir, "link.sql", "not-there-yet.sql")
 }
 
-// A link whose target is itself a dangling link: the by-hand fallback has to
-// follow the chain, not just one hop.
+// The fallback must follow a chain of dangling links, not just one hop.
 func TestWriteAtomicFollowsAChainOfDanglingSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need elevation on Windows")
@@ -354,9 +341,7 @@ func TestWriteAtomicFollowsAChainOfDanglingSymlinks(t *testing.T) {
 	}
 }
 
-// A link cycle must not hang the save. The hop limit gives up and writes at
-// whatever the walk last reached, which is a link — so the save fails or
-// replaces a link, but it returns.
+// A link cycle must not hang the save; the hop limit makes it return.
 func TestWriteAtomicSurvivesASymlinkCycle(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks need elevation on Windows")
@@ -380,8 +365,7 @@ func TestWriteAtomicSurvivesASymlinkCycle(t *testing.T) {
 	}
 }
 
-// assertOnlyFile2 is assertOnlyFile for a directory expected to hold exactly
-// two named entries.
+// assertOnlyFile2 is assertOnlyFile for exactly two entries.
 func assertOnlyFile2(t *testing.T, dir, a, b string) {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

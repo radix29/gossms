@@ -10,20 +10,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// jobAlertLink tracks one SQL Server event alert's "does it respond to
-// this job" state, toggled through a grid cell: an alert's job response
-// (sysalerts.job_id) is a single relationship to one job, not a list
-// needing its own Add/Remove rows.
+// jobAlertLink tracks whether one SQL Server event alert responds to this job,
+// toggled in a grid cell; sysalerts.job_id is a single relationship, not a
+// list.
 type jobAlertLink struct {
 	alert      *gosmo.Alert
 	origLinked bool
 	linked     bool
 }
 
-// pageJobAlerts is the Alerts page: every SQL Server event alert (SQL-only
-// scope, same as the Alerts folder — WMI alerts excluded), toggled linked
-// or not to this job's response. It only manages that link; alert
-// authoring lives in Alert Properties (agent_alert_props.go).
+// pageJobAlerts is the Alerts page: every SQL Server event alert (WMI excluded,
+// as in the Alerts folder), toggled linked or not to this job. Alert authoring
+// is Alert Properties' job (agent_alert_props.go).
 func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Alerts",
@@ -171,10 +169,9 @@ func notifyConditionIndex(level gosmo.NotifyLevel) int {
 	return 1 // "When the job fails"
 }
 
-// pageJobNotifications is the Notifications page: e-mail operator/condition
-// and automatic-delete condition are real, editable msdb state; net send,
-// pager, and Windows event log each keep their section but carry an
-// "excluded" note in place of a control — they're outside SQL-only scope.
+// pageJobNotifications is the Notifications page: e-mail operator/condition and
+// auto-delete are editable msdb state; net send, pager and event log keep their
+// sections with an "excluded" note (outside SQL-only scope).
 func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Notifications",
@@ -193,10 +190,9 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 			}
 
 			emailCheck := propsheet.Check("E-mail", j.NotifyLevelEmail != gosmo.NotifyNever)
-			// noneItem is offered unconditionally, not only when the job has
-			// no operator: it is a choice the user makes, not just a stand-in
-			// for a blank. selectPreserving then keeps an operator that has
-			// since been dropped visible instead of collapsing it to opNames[0].
+			// noneItem is always offered as a real choice. selectPreserving
+			// keeps a since-dropped operator visible instead of collapsing to
+			// opNames[0].
 			opItems := append([]string{noneItem}, opNames...)
 			operatorSelect := selectPreserving("Operator", opItems, j.NotifyEmailOperatorName, noneItem)
 			conditionSelect := propsheet.Select("When to e-mail", notifyConditionItems, notifyConditionIndex(j.NotifyLevelEmail))
@@ -222,21 +218,18 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				// Each write is gated on whether ITS OWN rows are dirty,
-				// not just on the page (PropertySheet.DirtyPages is only
-				// page-level) — otherwise editing the Delete Job section
-				// alone would rewrite the e-mail operator.
+				// Each write is gated on its own rows being dirty (DirtyPages
+				// is page-level only), so editing Delete Job alone doesn't
+				// rewrite the e-mail operator.
 				if emailCheck.Dirty() || operatorSelect.Dirty() || conditionSelect.Dirty() {
 					emailLevel := gosmo.NotifyNever
 					if emailCheck.Checked() {
 						emailLevel = notifyConditionLevels[conditionSelect.Selected()]
 					}
-					// preservedValue turns noneItem back into "", which
-					// SetEmailNotify documents as "leave the operator
-					// unchanged" — the only thing it can mean, since
-					// sp_update_job has no value that clears one. Without it,
-					// ticking E-mail on a job with no operator configured
-					// sends to whichever operator sorts first.
+					// preservedValue maps noneItem to "", which SetEmailNotify
+					// treats as "leave the operator unchanged" (sp_update_job
+					// can't clear one). Otherwise ticking E-mail with no
+					// operator would send to the first operator.
 					if err := j.SetEmailNotifyContext(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
 						return err
 					}

@@ -11,9 +11,8 @@ import (
 	"time"
 )
 
-// deadConnector fails every dial, so a collector's HasViewServerState
-// prologue errors and Run returns before it ever reaches its select loop —
-// the shape of a real permission failure or a dropped connection.
+// deadConnector fails every dial, so the permission prologue errors and Run
+// returns before its select loop.
 type deadConnector struct{}
 
 func (deadConnector) Connect(context.Context) (driver.Conn, error) {
@@ -22,10 +21,8 @@ func (deadConnector) Connect(context.Context) (driver.Conn, error) {
 
 func (deadConnector) Driver() driver.Driver { return nil }
 
-// probeOnceConnector answers the VIEW SERVER STATE prologue and fails every
-// other query, so a collector gets past Run's permission check and then has
-// every probe fail — the shape of a server that has become unreachable
-// without the collector's context being cancelled.
+// probeOnceConnector answers the permission prologue and fails every other
+// query: an unreachable server with a live context.
 type probeOnceConnector struct{}
 
 func (probeOnceConnector) Connect(context.Context) (driver.Conn, error) {
@@ -53,7 +50,7 @@ func (probeOnceConn) QueryContext(_ context.Context, q string, _ []driver.NamedV
 	return nil, errors.New("activity_test: server unreachable")
 }
 
-// oneIntRows is a single row holding a single integer column.
+// oneIntRows is a single row with a single integer column.
 type oneIntRows struct {
 	v    int64
 	done bool
@@ -72,8 +69,7 @@ func (r *oneIntRows) Next(dest []driver.Value) error {
 	return nil
 }
 
-// backoff's schedule is the whole of the retry policy, so it is pinned
-// directly rather than inferred from timings.
+// backoff's schedule is the retry policy, so it's pinned directly.
 func TestBackoffDoublesUntilCapped(t *testing.T) {
 	const rate = time.Second
 	for _, tc := range []struct {
@@ -93,8 +89,7 @@ func TestBackoffDoublesUntilCapped(t *testing.T) {
 			t.Errorf("backoff(%v, %d) = %v, want %v", rate, tc.fails, got, tc.want)
 		}
 	}
-	// A non-positive rate must come back unchanged: doubling it would never
-	// reach the cap, so the loop that does the doubling would never end.
+	// A non-positive rate comes back unchanged; doubling it would loop forever.
 	if got := backoff(0, 5); got != 0 {
 		t.Errorf("backoff(0, 5) = %v, want 0", got)
 	}
@@ -103,12 +98,8 @@ func TestBackoffDoublesUntilCapped(t *testing.T) {
 	}
 }
 
-// A collector whose probes all fail must back off rather than retry at the
-// configured rate forever. A dropped connection does not cancel the
-// collector's context and only ErrNoPermission stops the panel, so before
-// the backoff this fired a failing round trip every rate interval for as
-// long as the panel stayed open — at rate = 1ms, ~150 of them in the window
-// below rather than the ~8 a doubling schedule allows.
+// A collector whose probes all fail must back off, not retry at the configured
+// rate forever (at 1ms, ~150 round trips in this window instead of ~8).
 func TestCollectorBacksOffWhenEveryProbeFails(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()
@@ -132,18 +123,15 @@ func TestCollectorBacksOffWhenEveryProbeFails(t *testing.T) {
 	if got == 0 {
 		t.Fatal("no probe ran: the permission prologue did not pass")
 	}
-	// 1ms doubling reaches 128ms by the eighth failure, so the window holds
-	// eight retries. The bound is loose enough to absorb scheduler jitter and
-	// still an order of magnitude below the un-backed-off ~150.
+	// 1ms doubling reaches 128ms by the eighth failure; the bound allows for
+	// jitter and is still far below ~150.
 	if got > 20 {
 		t.Errorf("%d failing probes in 150ms at a 1ms rate; the retries are not backing off", got)
 	}
 }
 
-// A Run that has returned must not leave SetRate/SetPaused blocking. Both
-// are called from the UI goroutine, and control's buffer is small, so a
-// Run that returned without closing stop froze the whole application on the
-// ninth toolbar click.
+// After Run returns, SetRate/SetPaused must not block: they run on the UI
+// goroutine and control's buffer is small.
 func TestCollectorSendAfterRunReturns(t *testing.T) {
 	db := sql.OpenDB(deadConnector{})
 	defer db.Close()
@@ -158,7 +146,7 @@ func TestCollectorSendAfterRunReturns(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		// Well past control's buffer, so an unclosed stop blocks here.
+		// Well past control's buffer.
 		for i := 0; i < 64; i++ {
 			c.SetPaused(i%2 == 0)
 			c.SetRate(time.Duration(i+1) * time.Second)
@@ -216,9 +204,8 @@ func TestNormalizeRate(t *testing.T) {
 	}
 }
 
-// A zero rate must not take the process down. time.NewTicker panics on a
-// non-positive duration, and Run is called on its own goroutine from
-// App.safego, so the panic is the application's, not the panel's.
+// A zero rate must not panic: time.NewTicker panics on it, and Run's goroutine
+// panicking takes down the app.
 func TestCollectorRunSurvivesANonPositiveRate(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()
@@ -239,18 +226,15 @@ func TestCollectorRunSurvivesANonPositiveRate(t *testing.T) {
 		mu.Lock()
 		got := probes
 		mu.Unlock()
-		// The immediate first reading still happens; only the ticker interval
-		// changed, so a collector asked for a bad rate still collects.
+		// The immediate first reading still happens.
 		if got == 0 {
 			t.Errorf("rate %v: Run took no reading at all", rate)
 		}
 	}
 }
 
-// SetRate(0) reaches the same ticker through Ticker.Reset, which panics on
-// the same input. retune resets unguarded, so the normalization on the
-// control path is the only thing standing between a caller's bad rate and a
-// crashed collector goroutine.
+// SetRate(0) reaches Ticker.Reset, which also panics; normalization on the
+// control path is the only guard.
 func TestCollectorSetRateSurvivesANonPositiveRate(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()
@@ -276,11 +260,8 @@ func TestCollectorSetRateSurvivesANonPositiveRate(t *testing.T) {
 	}
 }
 
-// A rate the user picks has to reach the ticker. retune is the only place
-// that reset happens and it is shared with the backoff, so this pins the
-// control path by timing rather than by inspecting state: a SetRate that
-// updates collectorState but never resets the ticker is invisible to any
-// other kind of assertion.
+// A SetRate must reach the ticker. Checked by timing, since a SetRate that
+// updates state but never resets the ticker is otherwise invisible.
 func TestCollectorSetRateReachesTheTicker(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()
@@ -302,8 +283,7 @@ func TestCollectorSetRateReachesTheTicker(t *testing.T) {
 		c.Run(ctx, time.Second) // far slower than the window below
 	}()
 
-	// Let the immediate first reading land, then count only what the ticker
-	// produces after the rate change.
+	// Let the first reading land, then count only ticks after the rate change.
 	time.Sleep(20 * time.Millisecond)
 	mu.Lock()
 	before := probes
@@ -318,17 +298,14 @@ func TestCollectorSetRateReachesTheTicker(t *testing.T) {
 	c.Stop()
 	<-done
 
-	// At a 1s rate the window holds no tick at all, so anything here is the
-	// reset having taken effect. The probes fail, so the backoff stretches
-	// the interval as they go — the bound is "more than none", not a count.
+	// At 1s the window holds no tick, so any is the reset taking effect.
+	// Failing probes back off, so the bound is "more than none".
 	if after <= before {
 		t.Errorf("%d probes before the rate change, %d after; SetRate did not reset the ticker", before, after)
 	}
 }
 
-// Run must also stop the collector when ctx is cancelled rather than Stop
-// being called — the connection-dropped path, which is the other way stop
-// was left open.
+// Cancelling ctx (the dropped-connection path) must also close stop.
 func TestCollectorSendAfterContextCancel(t *testing.T) {
 	db := sql.OpenDB(deadConnector{})
 	defer db.Close()
@@ -353,10 +330,7 @@ func TestCollectorSendAfterContextCancel(t *testing.T) {
 	}
 }
 
-// A paused collector must stop reading and resume where it left off. The
-// toolbar's Pause is the only thing between a user reading a stalled server's
-// numbers and the panel replacing them a second later, so a SetPaused that
-// updates the state but never reaches the tick is the whole feature missing.
+// Pause must stop reading and resume must restart it.
 func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()
@@ -382,8 +356,7 @@ func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
 		c.Run(ctx, time.Millisecond)
 	}()
 
-	// The probes fail, so the interval backs off as they go; the pause has to
-	// land while the collector is still ticking fast.
+	// Probes fail and back off, so pause while still ticking fast.
 	c.SetPaused(true)
 	time.Sleep(20 * time.Millisecond)
 	paused := count()
@@ -407,10 +380,8 @@ func TestCollectorPauseStopsCollectionAndResumeRestartsIt(t *testing.T) {
 	<-done
 }
 
-// Stop has to end a *paused* collector too. Pausing takes the tick out of
-// the loop, so a Stop that were handled only inside the tick would leave the
-// goroutine running for the process's lifetime and the panel's
-// stopped-callback never posted.
+// Stop must end a paused collector too; pausing removes the tick, so Stop can't
+// be handled only there.
 func TestCollectorStopEndsAPausedRun(t *testing.T) {
 	db := sql.OpenDB(probeOnceConnector{})
 	defer db.Close()

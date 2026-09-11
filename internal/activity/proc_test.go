@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// procs are every helper procedure goSSMS installs. Each rule below holds for
-// all of them, so a new one is covered by adding it here.
+// procs are every helper procedure goSSMS installs; add new ones here to cover
+// them.
 var procs = []*Proc{BlockProc, WhoIsActiveProc}
 
-// The tempdb copy is not found by the sp_ prefix lookup that resolves a
-// master one from any database, so its EXEC has to name the database.
+// The tempdb copy isn't found by sp_ lookup, so its EXEC must name the
+// database.
 func TestProcExecNamesItsDatabase(t *testing.T) {
 	for _, p := range procs {
 		for _, tc := range []struct {
@@ -32,9 +32,8 @@ func TestProcExecNamesItsDatabase(t *testing.T) {
 	}
 }
 
-// The tempdb copy must not carry the sp_ prefix: SQL Server would resolve
-// that name against master first, which makes CREATE OR ALTER fail there and
-// makes DROP delete master's copy instead.
+// The tempdb copy must not be sp_-prefixed: the name would resolve to master,
+// failing CREATE OR ALTER and making DROP delete master's copy.
 func TestProcTempDBNameHasNoSpPrefix(t *testing.T) {
 	for _, p := range procs {
 		if !strings.HasPrefix(p.MasterName, "sp_") {
@@ -50,17 +49,15 @@ func TestProcTempDBNameHasNoSpPrefix(t *testing.T) {
 					loc.Database(), p.MasterName, p.Name(loc))
 			}
 		}
-		// The name the script must *not* still carry: the master script is
-		// allowed to name the master copy, the tempdb one is not.
+		// Only the master script may name the master copy.
 		if strings.Contains(p.Script(ProcTempDB), "create or alter procedure dbo."+p.MasterName) {
 			t.Errorf("the tempdb script for %s still creates the master name", p.MasterName)
 		}
 	}
 }
 
-// The script goes to sp_executesql as one batch: a GO in it would be a syntax
-// error there, and an unqualified USE would leave the pooled connection in a
-// database it was not found in.
+// The script must be one batch for sp_executesql: GO is a syntax error there,
+// and USE would move the pooled connection.
 func TestProcScriptIsOneUnqualifiedBatch(t *testing.T) {
 	for _, p := range procs {
 		for _, loc := range []ProcLocation{ProcMaster, ProcTempDB} {

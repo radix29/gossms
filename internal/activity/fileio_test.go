@@ -10,9 +10,8 @@ func files(rows ...fileRow) fileSet {
 	return set
 }
 
-// Latency is the stall delta divided by the operation-count delta, not the
-// stall delta on its own: an interval with two slow reads and one with two
-// hundred fast ones can carry the same total stall.
+// Latency divides by the operation-count delta: two slow reads and two hundred
+// fast ones can have the same total stall.
 func TestFileDeltasComputeThroughputAndLatency(t *testing.T) {
 	prev := files(fileRow{database: "HealthClinic", reads: 100, bytesRead: 0, stallRead: 1000,
 		writes: 10, bytesWrit: 0, stallWrit: 100})
@@ -38,9 +37,8 @@ func TestFileDeltasComputeThroughputAndLatency(t *testing.T) {
 	}
 }
 
-// A database's log and data files are separate rows: log writes are small
-// and sequential and data writes are not, and one combined row hides which
-// of the two a latency spike came from.
+// Log and data files are separate rows; combined, a latency spike's source is
+// hidden.
 func TestFileDeltasSeparateLogFromDataFiles(t *testing.T) {
 	prev := files(
 		fileRow{database: "Shop", writes: 0, stallWrit: 0},
@@ -72,15 +70,13 @@ func TestFileDeltasSeparateLogFromDataFiles(t *testing.T) {
 	if log.Label() != "Shop (log)" || data.Label() != "Shop" {
 		t.Errorf("labels = %q / %q, want %q / %q", data.Label(), log.Label(), "Shop", "Shop (log)")
 	}
-	// The total still covers every file, log and data alike.
+	// The total covers log and data files.
 	if total.WriteMBSec != 11 {
 		t.Errorf("total write throughput = %v MB/sec, want 22MB over 2s", total.WriteMBSec)
 	}
 }
 
-// An interval with no reads has no read latency to report — dividing by the
-// zero operation count would produce an infinity that rescales the whole
-// latency chart.
+// No reads means no read latency, not an infinity that rescales the chart.
 func TestFileDeltasWithNoOperations(t *testing.T) {
 	prev := files(fileRow{database: "Idle", reads: 5, stallRead: 50})
 	cur := files(fileRow{database: "Idle", reads: 5, stallRead: 50})
@@ -91,8 +87,8 @@ func TestFileDeltasWithNoOperations(t *testing.T) {
 	}
 }
 
-// A file detached and reattached, or a restarted server, resets the
-// cumulative totals; the difference is negative and is not throughput.
+// Detach/reattach or restart resets totals; a negative difference isn't
+// throughput.
 func TestFileDeltasIgnoreCountersThatWentBackwards(t *testing.T) {
 	prev := files(fileRow{database: "Restarted", reads: 1_000_000, bytesRead: 9 << 30})
 	cur := files(fileRow{database: "Restarted", reads: 3, bytesRead: 4096})
@@ -103,8 +99,7 @@ func TestFileDeltasIgnoreCountersThatWentBackwards(t *testing.T) {
 	}
 }
 
-// The total sums every file, including files belonging to databases the
-// connection can't name.
+// The total includes databases the connection can't name.
 func TestFileDeltasTotalCoversEveryDatabase(t *testing.T) {
 	prev := files(
 		fileRow{database: "A", reads: 0, bytesRead: 0},

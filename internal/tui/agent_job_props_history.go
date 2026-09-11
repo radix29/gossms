@@ -9,12 +9,10 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// pageJobHistory is the read-only History page: the job's run-level
-// history (step_id = 0 rows — one per execution, not per step) plus the
-// selected run's detail. There's no separate "invoked by" field; Agent
-// writes that into the step_id=0 row's own Message text. Ctrl+C on the
-// Message row copies it (StaticRow's CopyText). Nothing to Apply, so this
-// page's apply is nil.
+// pageJobHistory is the read-only History page: run-level history (step_id = 0
+// rows, one per execution) and the selected run's detail. "Invoked by" is
+// inside the Message text Agent writes. Ctrl+C on Message copies it. apply is
+// nil.
 func pageJobHistory(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "History",
@@ -85,8 +83,7 @@ func pageJobHistory(d *PropDialog, sc *db.ServerConn, jobName *string) propPage 
 	}
 }
 
-// jobHistoryRun is one already-formatted row for the History page's grid
-// and detail panel.
+// jobHistoryRun is one formatted row for the History grid and detail panel.
 type jobHistoryRun struct {
 	date, outcome, duration, message string
 }

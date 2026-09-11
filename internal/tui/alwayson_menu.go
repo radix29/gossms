@@ -10,35 +10,28 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// alwayson_menu.go builds the Object Explorer context menus for the Always On
-// branch and runs the operations behind them: adding and removing databases,
-// suspending and resuming data movement, adding and removing the listener,
-// removing a replica, deleting a group, and failing one over.
+// alwayson_menu.go builds the Always On branch's context menus and runs their
+// operations: add/remove databases, suspend/resume data movement, add/remove
+// listener, remove replica, delete group, fail over.
 //
 // # Where an operation runs is part of what it means
 //
-// Three connections are in play, and picking the wrong one either fails on the
-// server or quietly does something else:
-//
 //   - Membership changes (ADD/REMOVE DATABASE, REMOVE REPLICA, ADD/REMOVE
-//     LISTENER, DROP) must go to the *primary*. agOnPrimary resolves it, opening
-//     a peer connection when the tree sits on a secondary.
-//   - Suspend and resume act on the copy held by the instance they run on: from
-//     a secondary that one replica, from the primary every secondary. These run
-//     on the tree's *own* connection, and the confirmation says which.
-//   - Failover runs on the replica being promoted, never on the current primary,
-//     so it is offered on the replica leaf and executed through a connection to
-//     that replica.
+//     LISTENER, DROP) go to the primary, via agOnPrimary (opening a peer from a
+//     secondary).
+//   - Suspend and resume act on the copy of the instance they run on: from a
+//     secondary that replica, from the primary every secondary. They use the
+//     tree's own connection, and the confirmation says which.
+//   - Failover runs on the replica being promoted, so it's on the replica leaf,
+//     through a connection to it.
 //
-// Nothing here shells out to a cluster manager. Under an EXTERNAL cluster type
-// SQL Server owns none of failover, so the answer is to say so and name the tool
-// that does; see agFailoverRefusal.
+// No cluster manager is invoked. Under EXTERNAL, SQL Server owns no failover,
+// so the app says so and names the tool; see agFailoverRefusal.
 
 // -- Context menus ---------------------------------------------------------
 
-// alwaysOnRootMenuItems builds the context menu for the Always On High
-// Availability node. SSMS hangs "Show Dashboard" here as well as on each group,
-// and the two are different views: this one lists every group.
+// alwaysOnRootMenuItems builds the Always On root's menu. Its "Show Dashboard"
+// lists every group, unlike a group's.
 func alwaysOnRootMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		newQuery,
@@ -114,16 +107,12 @@ func agDatabasesFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 	}
 }
 
-// agDatabaseMenuItems builds the context menu for one availability database.
+// agDatabaseMenuItems builds one availability database's menu.
 //
-// Suspend and Resume are shown one or the other rather than both greyed against
-// each other: the node knows which state it is in, and offering "Resume" on a
-// running database invites a click that can only error. Join and Unjoin follow
-// the same rule against AGLocalSecondary/AGLocalJoined — they act on the local
-// copy, so on the primary neither appears.
-//
-// A copy that has not joined has no data movement to suspend either, so the
-// movement item goes with it.
+// Only one of Suspend/Resume is shown, since the node knows its state and the
+// other can only fail. Join/Unjoin follow AGLocalSecondary/AGLocalJoined; they
+// act on the local copy, so neither appears on the primary. An unjoined copy
+// has no movement to suspend either.
 func agDatabaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	items := []controls.MenuItem{newQuery, {Divider: true}}
 
@@ -153,23 +142,21 @@ func agDatabaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 			Action: func() { a.unjoinAGDatabase(sc, node) },
 		}, sc, "", rightAlterAnyAG))
 	}
-	// The only item on this menu that writes ALTER AVAILABILITY GROUP, and so
-	// the only one the group's class-108 DENY withholds. The four above it are
-	// ALTER DATABASE ... SET HADR, which that DENY leaves alone — measured on
-	// the cluster for Resume and Join, 2026-09-05.
+	// The only item here writing ALTER AVAILABILITY GROUP, so the only one the
+	// group's class-108 DENY withholds; the others are ALTER DATABASE ... SET
+	// HADR, which it doesn't affect (measured for Resume and Join).
 	return append(items, gateOn(controls.MenuItem{
 		Label:  "Remove Database from Group...",
 		Action: func() { a.removeAGDatabase(sc, node) },
 	}, sc, "", "", node.data.AGName, rightAlterAnyAG))
 }
 
-// agReplicaMenuItems builds the context menu for one availability replica.
+// agReplicaMenuItems builds one replica's menu.
 //
-// All three write items are gated on the replica not already being the primary:
-// a replica cannot fail over to itself, and REMOVE REPLICA against the primary
-// is refused by the server (41190). Whether failover is possible *at all* depends
-// on the group's cluster type, which the tree doesn't know, so that check
-// happens when the item is chosen (see agFailoverRefusal).
+// All three writes are gated on the replica not being primary: it can't fail
+// over to itself, and REMOVE REPLICA on the primary fails (41190). Whether
+// failover is possible depends on the cluster type, which the tree doesn't
+// know, so that's checked on selection (see agFailoverRefusal).
 func agReplicaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	secondary := func() bool { return !node.data.AGIsPrimary }
 	return []controls.MenuItem{
@@ -214,33 +201,32 @@ func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refre
 
 // -- Running an operation --------------------------------------------------
 
-// agOperation is one Always On operation: what to run, where to run it, and
-// what to say and reload afterwards.
+// agOperation is one Always On operation: what to run, where, and what to
+// report and reload.
 type agOperation struct {
-	// title is the progress dialog's title while the operation runs —
-	// normally its confirmation's.
+	// title is the progress dialog's title, normally the confirmation's.
 	title string
 	// what names the operation in the failure status, e.g. "add database".
 	what string
 	// done is the status line on success.
 	done string
-	// refresh is the tree node reloaded once the operation succeeds — usually the
-	// folder above whatever changed; nil skips the reload.
+	// refresh is the node reloaded on success, usually the folder above; nil
+	// skips it.
 	refresh *explorerNode
 
-	// onPrimary runs against the group resolved through its primary replica,
-	// following it from a secondary if need be. Every membership change is one.
+	// onPrimary runs against the group resolved through its primary. Every
+	// membership change is one.
 	onPrimary func(context.Context, *gosmo.AvailabilityGroup) error
 
-	// onLocal runs against the group as the tree's own connection sees it, with
-	// no following — only for operations scoped to the instance they run on.
+	// onLocal runs against the group as the tree's connection sees it, for
+	// instance-scoped operations.
 	onLocal func(context.Context, *gosmo.AvailabilityGroup) error
 }
 
 // runAGOperation resolves the group and runs op behind the progress dialog.
-// Cancel is live: every operation here is one ALTER AVAILABILITY GROUP (or
-// ALTER DATABASE ... SET HADR), which the server rolls back whole. Failover
-// is the exception and does not come through here — see confirmFailover.
+// Cancel works: each operation is one ALTER AVAILABILITY GROUP or ALTER
+// DATABASE ... SET HADR, rolled back whole. Failover goes through
+// confirmFailover instead.
 func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 	if !a.requireConn(sc) {
 		return
@@ -267,8 +253,7 @@ func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 	}, func(err error, cancelled bool) {
 		switch {
 		case cancelled:
-			// Reloaded anyway: the cancel may have reached the server after
-			// the statement had already committed.
+			// Reloaded anyway: the cancel may have arrived after the commit.
 			a.setStatus(fmt.Sprintf("Cancelled: %s", op.what))
 			a.explorer.Reload(op.refresh)
 		case err != nil:
@@ -304,14 +289,12 @@ func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// joinAGDatabase joins this instance's restored copy of a database to the group
-// — the manual-seeding counterpart of Add Database, which only puts the database
-// in the group on the primary.
+// joinAGDatabase joins this instance's restored copy to the group — manual
+// seeding's counterpart to Add Database, which only adds it on the primary.
 //
-// Runs against the tree's own connection, never the primary: ALTER DATABASE …
-// SET HADR AVAILABILITY GROUP acts on the copy the instance it runs on holds.
-// The prerequisite it can't check is the restore — a copy not in RESTORING is
-// rejected by the server (35250 or 1408), which the failure status carries.
+// Runs on the tree's own connection: SET HADR AVAILABILITY GROUP acts on this
+// instance's copy. A copy not in RESTORING is refused (35250 or 1408), reported
+// in the status.
 func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	dbName, agName := node.data.Name, node.data.AGName
 	a.runAGOperation(sc, agName, agOperation{
@@ -325,12 +308,9 @@ func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	})
 }
 
-// unjoinAGDatabase takes this instance's copy of a database back out of the
-// group, leaving it RESTORING.
-//
-// The confirmation spells out that this is the one-replica form: Remove Database
-// from Group, one item below, removes it on every replica, and the two are easy
-// to mistake.
+// unjoinAGDatabase removes this instance's copy from the group, leaving it
+// RESTORING. The confirmation distinguishes it from Remove Database from Group
+// (every replica), one item below.
 func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	dbName, agName := node.data.Name, node.data.AGName
 	a.confirmDialog.ShowConfirm("Remove Secondary Database from Group",
@@ -353,19 +333,16 @@ func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// suspendAGDatabase suspends data movement for one database.
-//
-// The confirmation spells out the scope rather than the action, because the
-// scope is what changes: the same item suspends one secondary or all of them,
-// depending which instance the tree is connected to.
+// suspendAGDatabase suspends data movement for one database. The confirmation
+// states the scope, which depends on the connected instance: one secondary or
+// all.
 func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
 	}
 	dbName, agName := node.data.Name, node.data.AGName
 
-	// The role has to be read before the question is asked, since it is what
-	// changes the answer.
+	// The role must be read first; it changes the question.
 	a.safego("reading an availability group's local role", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
@@ -397,8 +374,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	})
 }
 
-// agSuspendScope is the sentence telling the user what suspending from this
-// instance actually reaches.
+// agSuspendScope says what suspending from this instance reaches.
 func agSuspendScope(server string, isPrimary bool) string {
 	if isPrimary {
 		return fmt.Sprintf("%s is the primary, so this suspends the database on EVERY secondary.", server)
@@ -444,13 +420,11 @@ func (a *App) removeAGReplica(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// failoverToReplica promotes the replica the menu was opened on, connecting to
-// it to do so — FAILOVER is issued by the replica being promoted, not by the
-// current primary.
+// failoverToReplica promotes the menu's replica via a connection to it;
+// FAILOVER is issued by the replica being promoted.
 //
-// Whether the statement is allowed at all is the group's cluster type's call,
-// checked here rather than at menu-build time: the tree doesn't carry the
-// cluster type, and a menu item that silently disappears explains nothing.
+// The cluster type check happens here, not at menu build: the tree doesn't know
+// it, and a vanishing item explains nothing.
 func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force bool) {
 	if !a.requireConn(sc) {
 		return
@@ -475,13 +449,9 @@ func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force boo
 	})
 }
 
-// agFailoverRefusal explains why the group's cluster type forbids this failover,
-// or returns "" when it allows it.
-//
-// Both refusals are the server's own: EXTERNAL rejects both forms with error
-// 47104, NONE rejects the lossless form with 47122 and allows only the forced
-// one. Catching them here turns an error message into an explanation, and the
-// server still gates the statement if this gets it wrong.
+// agFailoverRefusal explains why the cluster type forbids this failover, or "".
+// Mirrors the server: EXTERNAL rejects both forms (47104), NONE rejects the
+// lossless form (47122). The server still gates it if this is wrong.
 func agFailoverRefusal(clusterType string, force bool) string {
 	switch strings.ToUpper(clusterType) {
 	case "EXTERNAL":
@@ -497,11 +467,10 @@ func agFailoverRefusal(clusterType string, force bool) string {
 	return ""
 }
 
-// confirmFailover asks for confirmation and runs the failover through a
-// connection to the replica being promoted.
+// confirmFailover confirms and runs the failover via the promoted replica.
 func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, replica string, force bool) {
-	// Uninterruptible: a failover abandoned partway can leave the group
-	// RESOLVING with no primary, which is worse than waiting it out.
+	// Uninterruptible: an abandoned failover can leave the group RESOLVING with
+	// no primary.
 	title := "Fail Over"
 	if force {
 		title = "Force Failover"
@@ -549,8 +518,8 @@ func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, 
 		})
 }
 
-// agFailover issues the failover from replica itself, opening a peer connection
-// unless the tree is already there.
+// agFailover issues the failover from replica, opening a peer unless the tree
+// is there.
 func agFailover(ctx context.Context, sc *db.ServerConn, agName, replica string, force bool) error {
 	target := sc
 	if !strings.EqualFold(sc.Server.Name(), replica) {

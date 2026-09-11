@@ -1,11 +1,9 @@
 //go:build livedb
 
-// Live verification that a multi-statement batch's plans all reach
-// Result.PlanXML. The shape they arrive in is the server's, not the fake
-// driver's: SET STATISTICS XML appends one plan result set per statement,
-// while SET SHOWPLAN_XML returns a single combined document for the whole
-// batch — which is exactly the difference a test with a scripted driver
-// cannot establish.
+// Live check that a multi-statement batch's plans all reach Result.PlanXML. The
+// shape is the server's: STATISTICS XML sends one plan set per statement,
+// SHOWPLAN_XML one combined document per batch — which a scripted driver can't
+// establish.
 //
 //	go test -tags livedb ./internal/query/ -run TestLivePlan -v \
 //	  -livedb 'sqlserver://sa:PASS@host?TrustServerCertificate=true'
@@ -67,9 +65,7 @@ func TestLivePlanEstimatedIsOneCombinedDocument(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatalf("batch failed: %+v", res.Messages)
 	}
-	// SET SHOWPLAN_XML returns one row for the whole batch, holding every
-	// statement's plan in a single document — so one document here is the
-	// correct answer, and the per-statement plans are inside it.
+	// SHOWPLAN_XML returns one document holding every statement's plan.
 	if len(res.PlanXML) != 1 {
 		t.Fatalf("PlanXML = %d documents, want the batch's single combined one", len(res.PlanXML))
 	}
@@ -81,10 +77,9 @@ func TestLivePlanEstimatedIsOneCombinedDocument(t *testing.T) {
 	}
 }
 
-// planProbeSetup creates the two procedures the shape probe EXECs, and
-// returns the cleanup. Named without an sp_ prefix: an sp_-prefixed procedure
-// outside master resolves to master's copy, so CREATE fails and DROP would
-// delete master's.
+// planProbeSetup creates the two procedures the probe EXECs and returns the
+// cleanup. No sp_ prefix: outside master that resolves to master's copy,
+// failing CREATE and making DROP delete master's.
 func planProbeSetup(t *testing.T, ctx context.Context, db *sql.DB) func() {
 	t.Helper()
 	drop := func() {
@@ -107,9 +102,9 @@ func planProbeSetup(t *testing.T, ctx context.Context, db *sql.DB) func() {
 	return drop
 }
 
-// planShapes are the batch shapes the probe runs under both SET options. Each
-// is a candidate for a server splitting one showplan set across rows — the
-// shape scanPlanXML tolerates but nothing has been seen to send.
+// planShapes are batch shapes run under both SET options, each a candidate for
+// a server splitting one showplan set across rows (tolerated by scanPlanXML,
+// never observed).
 var planShapes = []struct {
 	name  string
 	batch string
@@ -123,11 +118,9 @@ var planShapes = []struct {
 	{"cursor", "DECLARE c CURSOR FOR SELECT TOP (2) name FROM sys.objects; OPEN c; DECLARE @n sysname; FETCH NEXT FROM c INTO @n; CLOSE c; DEALLOCATE c;"},
 }
 
-// showplanSetRowCounts runs one batch with setOpt on and returns the number of
-// rows in each showplan result set the server sent, in order. It reads the
-// driver directly rather than through execute, since Result flattens every set
-// into one PlanXML slice and the row-per-set shape is exactly what is under
-// test.
+// showplanSetRowCounts runs one batch with setOpt on and returns each showplan
+// set's row count. Reads the driver directly, since Result flattens sets into
+// PlanXML.
 func showplanSetRowCounts(t *testing.T, ctx context.Context, db *sql.DB, setOpt, sqlText string) []int {
 	t.Helper()
 	conn, err := db.Conn(ctx)
@@ -178,13 +171,10 @@ func showplanSetRowCounts(t *testing.T, ctx context.Context, db *sql.DB, setOpt,
 	return counts
 }
 
-// The assumption behind scanPlanXML's append loop, checked against a real
-// server rather than reasoned about: no batch shape makes SQL Server put more
-// than one row in a single showplan result set. A failure here is new
-// information, not a defect — the loop already handles the split shape
-// correctly. What it would mean is that scanPlanXML's comment, gosmo's
-// capturePlan comment and docs/open-threads.md all name a shape that has now
-// been observed, and should say so.
+// Checks scanPlanXML's assumption that no batch puts more than one row in a
+// showplan set. A failure is new information, not a defect (the loop handles
+// it), and means scanPlanXML's comment, gosmo's capturePlan and
+// docs/open-threads.md need updating.
 func TestLivePlanEveryShowplanSetHoldsOneRow(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
@@ -207,11 +197,9 @@ func TestLivePlanEveryShowplanSetHoldsOneRow(t *testing.T) {
 	}
 }
 
-// The other half of the same shape: SHOWPLAN_XML answers a batch with one
-// combined document holding every statement, while STATISTICS XML answers
-// each executed statement with its own. Both counts reach Result.PlanXML
-// through scanPlanXML, so this pins what the plan tab actually shows for a
-// batch that calls a procedure.
+// SHOWPLAN_XML answers a batch with one combined document; STATISTICS XML
+// answers each executed statement separately. Pins what the plan tab shows for
+// a batch calling a procedure.
 func TestLivePlanProcedureCallPlansAllReachResult(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
@@ -226,8 +214,8 @@ func TestLivePlanProcedureCallPlansAllReachResult(t *testing.T) {
 	if len(est.PlanXML) != 1 {
 		t.Fatalf("estimated PlanXML = %d documents, want the batch's single combined one", len(est.PlanXML))
 	}
-	// The outer SELECT plus the procedure's two statements, the procedure's
-	// own EXEC of the inner one included.
+	// The outer SELECT plus the procedure's two statements, including its EXEC
+	// of the inner one.
 	if n := strings.Count(est.PlanXML[0], "<StmtSimple"); n < 3 {
 		t.Errorf("combined document holds %d statements, want the batch's and the procedure's", n)
 	}

@@ -6,12 +6,11 @@ import (
 	"time"
 )
 
-// pagesPerMB converts SQL Server's 8KB page counts to megabytes.
+// pagesPerMB converts 8KB page counts to MB.
 const pagesPerMB = 128
 
-// TempDBSpace is how tempdb's data files are being used, in megabytes. The
-// four allocated parts plus Free add up to Total, which is what lets them be
-// drawn as one stacked column.
+// TempDBSpace is tempdb data-file usage in MB. The four allocated parts plus
+// Free sum to Total, so they stack as one column.
 type TempDBSpace struct {
 	VersionStoreMB   float64
 	UserObjectMB     float64
@@ -21,9 +20,8 @@ type TempDBSpace struct {
 	TotalMB          float64
 }
 
-// TempDBFile is one of tempdb's files. Log files are collected alongside the
-// data files but carry no allocation breakdown — dm_db_file_space_usage
-// reports data files only.
+// TempDBFile is one tempdb file. Log files have no allocation breakdown
+// (dm_db_file_space_usage covers data files only).
 type TempDBFile struct {
 	FileID int
 	Name   string
@@ -31,13 +29,13 @@ type TempDBFile struct {
 	SizeMB float64
 	UsedMB float64
 	// GrowthMB is the autogrowth increment, or the percentage when
-	// PercentGrowth is set. Zero means growth is disabled.
+	// PercentGrowth is set; zero means growth is disabled.
 	GrowthMB      float64
 	PercentGrowth bool
 }
 
-// TempDBObjectKind groups what lives in tempdb by who made it, which is the
-// distinction that decides who to go and talk to about it.
+// TempDBObjectKind groups tempdb contents by creator, which decides whom to
+// talk to about it.
 type TempDBObjectKind int
 
 const (
@@ -49,8 +47,8 @@ const (
 	tempDBObjectKindCount
 )
 
-// TempDBObjectKindNames name the kinds in declaration order, so a chart's
-// series and its legend can't drift apart.
+// TempDBObjectKindNames are in declaration order, so chart series and legend
+// stay aligned.
 var TempDBObjectKindNames = [tempDBObjectKindCount]string{
 	"Local temp tables",
 	"Global temp tables",
@@ -68,9 +66,7 @@ type TempDBObjects struct {
 	Rows       int64
 }
 
-// TempDBSession is one session's tempdb footprint, allocations net of
-// deallocations. A session that has given its space back reads as zero
-// rather than as the total it once held.
+// TempDBSession is one session's tempdb footprint, net of deallocations.
 type TempDBSession struct {
 	SessionID  int
 	Host       string
@@ -81,9 +77,8 @@ type TempDBSession struct {
 	TotalMB    float64
 }
 
-// TempDBSample is one tick of the TempDB tab. Unlike Sample it holds no
-// derived rates beyond the counters that are rates by nature: tempdb space
-// is a level, and the question it answers is what is holding it.
+// TempDBSample is one TempDB tab tick. Only naturally-rate counters are rates;
+// tempdb space is a level.
 type TempDBSample struct {
 	At       time.Time
 	Interval time.Duration
@@ -103,14 +98,13 @@ type TempDBSample struct {
 	VersionCleanupKBSec float64
 	LongestTxSec        float64
 
-	// Cores is the host's logical CPU count, kept beside the file list
-	// because the one configuration rule this tab can check — one data file
-	// per core up to eight — needs both.
+	// Cores is the host's logical CPU count, for the one-data-file-per-core (up
+	// to eight) rule.
 	Cores int
 }
 
-// DataFiles are the tempdb files that hold data, which is what the file
-// count rule and the space breakdown are about.
+// DataFiles returns the data files, which the file-count rule and space
+// breakdown cover.
 func (s TempDBSample) DataFiles() []TempDBFile {
 	out := make([]TempDBFile, 0, len(s.Files))
 	for _, f := range s.Files {
@@ -121,9 +115,8 @@ func (s TempDBSample) DataFiles() []TempDBFile {
 	return out
 }
 
-// tempdbCounterNames are the counters this tab reads. They live in two
-// objects that the main dashboard doesn't collect, so they get their own
-// query rather than widening every 2-second tick.
+// tempdbCounterNames are this tab's counters. They're in objects the main
+// dashboard doesn't collect, so they get their own query.
 var tempdbCounterNames = []string{
 	// General Statistics
 	"Active Temp Tables", "Temp Tables Creation Rate",
@@ -135,9 +128,8 @@ var tempdbCounterNames = []string{
 
 var tempdbCounterQuery = counterQueryFor(tempdbCounterNames)
 
-// Three-part naming rather than a USE: dm_db_file_space_usage is
-// database-scoped and would otherwise report whatever database the pooled
-// connection happens to be sitting in.
+// Three-part name, not USE: dm_db_file_space_usage is database-scoped and would
+// report the pooled connection's current database.
 const tempdbSpaceQuery = `
 SELECT
     SUM(CAST(total_page_count AS bigint)),
@@ -148,14 +140,12 @@ SELECT
     SUM(CAST(mixed_extent_page_count AS bigint))
 FROM tempdb.sys.dm_db_file_space_usage`
 
-// tempdb.sys.database_files, never sys.master_files: master_files reports
-// tempdb's *configured* size, the one it will be recreated at on the next
-// restart, while database_files reports what it has actually grown to. On a
-// server whose tempdb has grown — the case this tab exists for — the two
-// disagree by the entire amount that matters.
+// tempdb.sys.database_files, not sys.master_files: master_files has the
+// configured (restart) size, database_files the actual grown size — which is
+// what this tab is for.
 //
-// The allocation view is joined on so a file's used space sits beside the
-// size it is used out of. Log files have no row there, hence the outer join.
+// Outer join to the allocation view puts used space beside size; log files have
+// no row there.
 const tempdbFileQuery = `
 SELECT df.file_id, df.name, df.type_desc,
        CAST(df.size AS bigint),
@@ -165,9 +155,8 @@ FROM tempdb.sys.database_files df
 LEFT JOIN tempdb.sys.dm_db_file_space_usage fsu ON fsu.file_id = df.file_id
 ORDER BY df.type_desc DESC, df.file_id`
 
-// Objects are classified by who created them: a name beginning with ## is a
-// global temp table, one # a session's own, an IT row an internal table the
-// engine made for a query, and is_ms_shipped the catalog itself.
+// Objects are classified by creator: ## is a global temp table, # a session's
+// own, IT an engine internal table, is_ms_shipped the catalog.
 const tempdbObjectQuery = `
 SELECT kind, COUNT(DISTINCT object_id),
        SUM(reserved_page_count), SUM(used_page_count), SUM(row_count)
@@ -184,16 +173,12 @@ FROM (
 ) x
 GROUP BY kind`
 
-// Sessions are reported net of deallocation: a session that has released its
-// work tables is not still holding the space. Idle sessions holding nothing
-// are dropped here rather than in the UI so the grid never has to page
-// through hundreds of zero rows.
+// Sessions are net of deallocation. Idle sessions holding nothing are dropped
+// here so the grid doesn't page through zero rows.
 //
-// Task usage is added to session usage, and that is not optional: a batch's
-// allocations live in dm_db_task_space_usage until the batch *finishes* and
-// only then roll into dm_db_session_space_usage. Reading sessions alone
-// shows an empty grid for exactly the case this panel exists for — a
-// long-running query filling tempdb right now.
+// Task usage must be added: a batch's allocations stay in
+// dm_db_task_space_usage until it finishes, so sessions alone show nothing for
+// a long-running query filling tempdb right now.
 const tempdbSessionQuery = `
 SELECT su.session_id,
        ISNULL(s.host_name, ''), ISNULL(s.program_name, ''), ISNULL(s.login_name, ''),
@@ -223,17 +208,15 @@ ORDER BY su.user_objects_alloc_page_count - su.user_objects_dealloc_page_count
 
 const tempdbCoreQuery = `SELECT cpu_count FROM sys.dm_os_sys_info`
 
-// tempdbSnapshot is one raw reading, before the counter rates are derived.
+// tempdbSnapshot is one raw reading, before counter rates are derived.
 type tempdbSnapshot struct {
 	at       time.Time
 	counters counterSet
 	sample   TempDBSample
 }
 
-// collectTempDB reads one full tempdb picture. The queries run in sequence
-// on one connection for the same reason Collect's do: they describe one
-// instant, and running them concurrently would make them disagree about
-// which.
+// collectTempDB reads the full tempdb picture sequentially on one connection,
+// like Collect, so readings describe one instant.
 func collectTempDB(ctx context.Context, db *sql.DB) (*tempdbSnapshot, error) {
 	snap := &tempdbSnapshot{at: time.Now()}
 	var err error
@@ -349,10 +332,8 @@ func collectTempDBSessions(ctx context.Context, db *sql.DB) ([]TempDBSession, er
 		if err := rows.Scan(&s.SessionID, &s.Host, &s.Program, &s.Login, &userPages, &internalPages); err != nil {
 			return nil, err
 		}
-		// Clamped at zero: session and task usage are summed, and a task that
-		// releases pages its session already accounted for can drive one part
-		// briefly negative. "Holding -0.4 MB" is not a thing a reader can act
-		// on, so it reads as holding none.
+		// Clamped at zero: summing session and task usage can briefly go
+		// negative when a task releases pages its session already counted.
 		s.UserMB = nonNegativeMB(userPages)
 		s.InternalMB = nonNegativeMB(internalPages)
 		s.TotalMB = s.UserMB + s.InternalMB
@@ -369,10 +350,8 @@ func nonNegativeMB(pages int64) float64 {
 	return float64(pages) / pagesPerMB
 }
 
-// deriveTempDB finishes a snapshot into a sample by decoding the counters
-// against the previous reading. prev may be nil, in which case the rate
-// counters read zero — the same rule Derive follows, and for the same
-// reason.
+// deriveTempDB turns a snapshot into a sample, decoding counters against the
+// previous reading. With nil prev, rate counters are zero (as in Derive).
 func deriveTempDB(prev, cur *tempdbSnapshot) TempDBSample {
 	s := cur.sample
 	s.At = cur.at

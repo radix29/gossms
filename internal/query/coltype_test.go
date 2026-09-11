@@ -2,10 +2,9 @@ package query
 
 import "testing"
 
-// TestColumnTypeName pins the SSMS spelling of each shape of declared type
-// the driver can report — length only where it was declared, (max) for the
-// driver's sentinel lengths, precision+scale for decimal, scale alone for
-// the sub-second date/time types, and a bare name for everything else.
+// SSMS spelling per type shape: length only where declared, (max) for
+// sentinels, precision+scale for decimal, scale for sub-second date/time, bare
+// otherwise.
 func TestColumnTypeName(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -40,8 +39,7 @@ func TestColumnTypeName(t *testing.T) {
 		{"datetimeoffset(7)", "DATETIMEOFFSET", 0, false, 34, 7, true, "datetimeoffset(7)"},
 		{"datetime", "DATETIME", 0, false, 0, 0, false, "datetime"},
 		{"date", "DATE", 0, false, 0, 0, false, "date"},
-		// The driver reports a capacity for these, not a declaration —
-		// "text(2147483647)" is not a type anyone wrote.
+		// A capacity, not a declaration.
 		{"text", "TEXT", 2147483647, true, 0, 0, false, "text"},
 		{"ntext", "NTEXT", 1073741823, true, 0, 0, false, "ntext"},
 		{"image", "IMAGE", 2147483647, true, 0, 0, false, "image"},
@@ -58,9 +56,8 @@ func TestColumnTypeName(t *testing.T) {
 	}
 }
 
-// TestColumnTypeNameMissingMetadata covers a driver that declines to report
-// length or precision for a type that would otherwise take a suffix: the
-// bare name is right, "nvarchar(0)" is not.
+// Without length or precision metadata, the bare name is right, not
+// "nvarchar(0)".
 func TestColumnTypeNameMissingMetadata(t *testing.T) {
 	if got := columnTypeName("NVARCHAR", 0, false, 0, 0, false); got != "nvarchar" {
 		t.Errorf("length not reported: got %q, want %q", got, "nvarchar")

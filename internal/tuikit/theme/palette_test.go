@@ -6,11 +6,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-// SetPalette is the extension point doc.go advertises to a host application:
-// swap the palette at start-up and every Style* helper follows. Active returns
-// a pointer into the package's own variable, so what this pins is that the
-// pointer keeps reading the palette that was set — an implementation that
-// handed back a copy would leave a caller reading the old colours.
+// SetPalette must be seen through Active's pointer; returning a copy would
+// leave callers reading the old colours.
 func TestSetPaletteReplacesWhatActiveReads(t *testing.T) {
 	saved := *Active()
 	defer SetPalette(saved)

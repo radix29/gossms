@@ -11,12 +11,10 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// agent_reports.go builds the "SQL-only administration" folder's report
-// leaves (see agentReportTitles in agent_explorer.go) and the canned SQL
-// behind Object Explorer's "View History" action on a job.
+// agent_reports.go builds the SQL-only administration folder's reports (see
+// agentReportTitles) and the SQL behind a job's "View History".
 
-// agentReportDetail dispatches a NodeAgentReport leaf's title to its
-// report builder.
+// agentReportDetail dispatches a NodeAgentReport title to its builder.
 func agentReportDetail(ctx context.Context, sc *db.ServerConn, title string) ([]string, [][]string, error) {
 	switch title {
 	case "Agent Metadata Summary":
@@ -124,15 +122,12 @@ func disabledJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]s
 	return []string{"Job Name", "Category", "Owner", "Last Modified"}, rows, nil
 }
 
-// jobsWithoutSchedulesReport fetches each job's attached schedules to
-// determine whether it has any — one round trip per job, acceptable for
-// the modest job counts a single SQL Server Agent instance typically has.
+// jobsWithoutSchedulesReport fetches each job's schedules (one round trip per
+// job; fine for typical job counts).
 //
-// A job whose round trip fails is listed with its Schedules cell reading
-// "Unknown", not dropped. Dropping it hid the one case this report exists to
-// surface: the answer "this job may be missing a schedule and I could not
-// check" is the report's subject, and silence reads as "all fine". Same
-// choice countOrDash makes for the summary's census.
+// A job whose read fails is listed with Schedules "Unknown", not dropped:
+// "couldn't check" is exactly what this report surfaces, and silence reads as
+// fine (as countOrDash does).
 func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	jobs, err := sc.Server.JobsContext(ctx)
 	if err != nil {
@@ -141,9 +136,8 @@ func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]strin
 	rows := make([][]string, 0)
 	for _, j := range jobs {
 		scheds, err := j.SchedulesContext(ctx)
-		// A cancelled or timed-out context fails every remaining job, which
-		// would render as a report claiming every job is unverifiable. Report
-		// the cancellation itself instead.
+		// A cancelled context fails every remaining job; report the
+		// cancellation instead.
 		if err != nil && ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
@@ -199,9 +193,8 @@ func dashIfZero(t time.Time) string {
 	return formatSQLDate(t)
 }
 
-// agentJobHistoryQuery builds the read-only T-SQL behind Object Explorer's
-// "View History" action on a job — opened and run immediately in a new
-// query window, mirroring backupHistoryQuery's pattern.
+// agentJobHistoryQuery builds the read-only T-SQL for a job's "View History",
+// run in a new query window (like backupHistoryQuery).
 func agentJobHistoryQuery(jobName string) string {
 	return fmt.Sprintf(`SELECT h.run_date                 AS [Run Date],
        h.run_time                 AS [Run Time],

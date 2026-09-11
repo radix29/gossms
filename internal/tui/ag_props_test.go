@@ -10,10 +10,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// The routing-list text field is the only place in this dialog where the user
-// types something that has to become T-SQL structure rather than a value, so
-// the parser carries the risk: a name it silently accepts becomes a routing
-// list pointing at a replica that doesn't exist.
+// The routing-list parser turns typed text into T-SQL structure; a name it
+// silently accepts becomes a list pointing at a nonexistent replica.
 
 func TestParseRoutingListText(t *testing.T) {
 	replicas := []string{"ubusql1", "ubusql2", "ubusql3"}
@@ -29,8 +27,7 @@ func TestParseRoutingListText(t *testing.T) {
 		{"load balanced set", "(ubusql2, ubusql3)", [][]string{{"ubusql2", "ubusql3"}}},
 		{"mixed", "ubusql1, (ubusql2, ubusql3)", [][]string{{"ubusql1"}, {"ubusql2", "ubusql3"}}},
 		{"tolerates missing spaces", "ubusql1,(ubusql2,ubusql3)", [][]string{{"ubusql1"}, {"ubusql2", "ubusql3"}}},
-		// The names written back are the replica's own spelling, not the
-		// user's: a routing list is matched by name on the server.
+		// Written back in the replica's spelling; the server matches by name.
 		{"normalizes case", "UBUSQL2", [][]string{{"ubusql2"}}},
 	}
 	for _, tt := range tests {
@@ -75,9 +72,8 @@ func TestParseRoutingListTextRejects(t *testing.T) {
 }
 
 func TestRoutingListTextRoundTrips(t *testing.T) {
-	// The page compares the edited text against the text it rendered to decide
-	// whether anything changed, so format(parse(x)) has to be stable or every
-	// replica reads as dirty the moment the page loads.
+	// The page detects changes by comparing text, so format(parse(x)) must be
+	// stable or every replica is dirty on load.
 	replicas := []string{"a", "b", "c"}
 	for _, in := range []string{"", "a", "a, b", "(a, b)", "a, (b, c)"} {
 		list, err := parseRoutingListText(in, replicas)
@@ -97,8 +93,7 @@ func TestBackupPreferenceRadioMatchesKeywords(t *testing.T) {
 			t.Errorf("agBackupPreferenceIndex(%q) selected %q", pref, got)
 		}
 	}
-	// An empty or unrecognized preference must land on SQL Server's own
-	// default rather than on whatever happens to be first for another reason.
+	// Empty or unknown preferences land on SQL Server's default.
 	for _, pref := range []string{"", "SOMETHING_NEW"} {
 		if got := agBackupPreferenceItems[agBackupPreferenceIndex(pref)].keyword; got != "SECONDARY" {
 			t.Errorf("agBackupPreferenceIndex(%q) selected %q, want the SECONDARY default", pref, got)
@@ -115,8 +110,7 @@ func TestFailureConditionIndexClamps(t *testing.T) {
 			t.Errorf("agFailureConditionIndex(%d) = %d, want %d", level, got, level-1)
 		}
 	}
-	// A level outside the documented range must not reach the widget as a
-	// negative or past-the-end index.
+	// Out-of-range levels must not become bad indexes.
 	for _, level := range []int{-1, 0, 6, 99} {
 		if got := agFailureConditionIndex(level); got < 0 || got >= len(agFailureConditionItems) {
 			t.Errorf("agFailureConditionIndex(%d) = %d, out of range", level, got)
@@ -125,9 +119,8 @@ func TestFailureConditionIndexClamps(t *testing.T) {
 }
 
 func TestAGSelectKeepsUnknownServerValues(t *testing.T) {
-	// SeedingMode is empty before SQL Server 2016. indexOf's not-found 0 would
-	// show "AUTOMATIC" as though the server had said so, and applying it would
-	// write a setting the user never chose.
+	// SeedingMode is empty before 2016; showing and applying "AUTOMATIC" would
+	// write an unchosen setting.
 	row := propsheet.Select("Seeding mode", agSeedingModeItems, 0)
 	agSetSelect(row, agSeedingModeItems, "")
 	if row.Value() != agUnknownItem {
@@ -140,8 +133,7 @@ func TestAGSelectKeepsUnknownServerValues(t *testing.T) {
 		t.Error("a row showing the unknown stand-in reports dirty, so Apply would write it")
 	}
 
-	// A value this build doesn't know about is still shown verbatim rather
-	// than replaced by the first known keyword.
+	// An unknown value is shown verbatim.
 	agSetSelect(row, agSeedingModeItems, "SOMETHING_NEW")
 	if row.Value() != "SOMETHING_NEW" {
 		t.Errorf("unknown keyword shows as %q, want it verbatim", row.Value())
@@ -150,7 +142,7 @@ func TestAGSelectKeepsUnknownServerValues(t *testing.T) {
 		t.Errorf("agSelectValue = %q, want it round-tripped", got)
 	}
 
-	// A known value selects normally and leaves the list alone.
+	// A known value selects normally.
 	agSetSelect(row, agSeedingModeItems, "MANUAL")
 	if row.Value() != "MANUAL" {
 		t.Errorf("known value shows as %q, want MANUAL", row.Value())
@@ -158,10 +150,8 @@ func TestAGSelectKeepsUnknownServerValues(t *testing.T) {
 }
 
 func TestFailoverModeDropdownIsGatedByClusterType(t *testing.T) {
-	// The General page narrows the failover-mode list to what the cluster type
-	// accepts, so an illegal value cannot be picked. What must survive the
-	// narrowing is a replica that *already* holds an illegal value: it has to
-	// stay visible and correctable, not be reported as one of the legal ones.
+	// The failover list is narrowed to what the cluster type accepts, but a
+	// replica already holding an illegal value must stay visible and fixable.
 	for _, tc := range []struct {
 		clusterType string
 		want        []string
@@ -191,7 +181,7 @@ func TestFailoverModeDropdownIsGatedByClusterType(t *testing.T) {
 		t.Error("merely displaying the stored value reports dirty, so Apply would rewrite an untouched replica")
 	}
 
-	// A replica already legal sees only the one legal choice.
+	// An already-legal replica sees only the legal choice.
 	agSetSelect(row, external, "EXTERNAL")
 	if got := row.Items(); !slices.Equal(got, []string{"EXTERNAL"}) {
 		t.Errorf("items %v, want only EXTERNAL — Msg 47101 rejects the rest", got)
@@ -229,8 +219,8 @@ func TestAGDatabaseRowsKeepDivergentStates(t *testing.T) {
 	dbs := []*gosmo.AvailabilityDatabase{
 		{DatabaseName: "testdb_1", ReplicaServerName: "ubusql1", SynchronizationState: "SYNCHRONIZED", SynchronizationHealth: "HEALTHY"},
 		{DatabaseName: "testdb_1", ReplicaServerName: "ubusql2", SynchronizationState: "SYNCHRONIZING", SynchronizationHealth: "PARTIALLY_HEALTHY"},
-		// A database in the group's cluster metadata but not yet seeded
-		// anywhere has no state at all, and must still be listed.
+		// A database in the group but seeded nowhere has no state and must
+		// still be listed.
 		{DatabaseName: "testdb_2", ReplicaServerName: "ubusql1"},
 	}
 	rows := agDatabaseRows(dbs)
@@ -263,8 +253,7 @@ func TestSummarizeAGDatabasesPreservesQueryOrder(t *testing.T) {
 	}
 }
 
-// The Properties dialog is reachable only from the availability group node's
-// context menu, so a missing case there makes the whole dialog unreachable.
+// Properties is reachable only from the AG node's context menu.
 func TestAvailabilityGroupNodeOffersProperties(t *testing.T) {
 	a := &App{}
 	node := &explorerNode{}
@@ -281,17 +270,13 @@ func TestAvailabilityGroupNodeOffersProperties(t *testing.T) {
 }
 
 func TestAGRoutingOpsAreOrderedAroundTheServersValidation(t *testing.T) {
-	// SQL Server refuses a routing list naming a replica with no routing URL,
-	// and refuses to clear a URL a list still names. Both directions have to
-	// work in one Apply, which is only possible in this order — the first
-	// version of this code wrote each replica's URL and list together and
-	// failed against the live cluster on the very first Apply.
+	// URL set before lists, cleared after: writing each replica's URL and list
+	// together failed against the live cluster.
 	setURL := &agRoutingEdit{name: "b", url: "TCP://b:1433"}
 	clearURL := &agRoutingEdit{name: "c", origURL: "TCP://c:1433"}
 	changeList := &agRoutingEdit{name: "a", list: "b"}
 
-	// Deliberately ordered worst-case: the list edit comes first, and the
-	// cleared URL before the set one.
+	// Worst-case input order: list first, cleared URL before set.
 	ops := planAGRoutingOps([]*agRoutingEdit{changeList, clearURL, setURL})
 	if len(ops) != 3 {
 		t.Fatalf("planned %d ops, want 3: %+v", len(ops), ops)

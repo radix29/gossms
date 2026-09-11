@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// snapshotAnswers scripts one reply for every query Collect makes, each with
-// values distinctive enough that a column read into the wrong field shows up
-// as the wrong number rather than as a plausible one.
+// snapshotAnswers scripts a reply per Collect query, with values distinctive
+// enough that a column scanned into the wrong field shows as a wrong number.
 func snapshotAnswers() map[string]reply {
 	return map[string]reply{
 		counterQuery: {
@@ -63,11 +62,9 @@ func snapshotAnswers() map[string]reply {
 	}
 }
 
-// TestCollectReadsEveryPartOfASnapshot drives the whole of Collect against
-// scripted DMVs. Every one of these readers is a query plus a scan, and a
-// scan that reads a column into the wrong field produces a plausible number
-// and no error at all — so each field is asserted against a value only that
-// column carries.
+// Drives all of Collect against scripted DMVs. A mis-scanned column gives a
+// plausible number and no error, so each field is checked against a value only
+// its column carries.
 func TestCollectReadsEveryPartOfASnapshot(t *testing.T) {
 	db, _ := scriptedDB(t, snapshotAnswers())
 
@@ -79,8 +76,8 @@ func TestCollectReadsEveryPartOfASnapshot(t *testing.T) {
 		t.Error("snapshot has no time: nothing can be a rate against it")
 	}
 
-	// Counters are keyed with the instance prefix stripped, or a named
-	// instance's counters go missing silently.
+	// Counters are keyed without the instance prefix, or a named instance's go
+	// missing.
 	got := snap.Counters[counterKey{object: "SQL Statistics", counter: "Batch Requests/sec", instance: ""}]
 	if got.value != 4200 {
 		t.Errorf("Batch Requests/sec = %d, want 4200 (is the object name prefix being stripped?)", got.value)
@@ -103,8 +100,8 @@ func TestCollectReadsEveryPartOfASnapshot(t *testing.T) {
 		data.writes != 14 || data.bytesWrit != 15 || data.stallWrit != 16 {
 		t.Errorf("data file counters = %+v, want reads 11, bytesRead 12, stallRead 13, writes 14, bytesWrit 15, stallWrit 16", data)
 	}
-	// DB_NAME() is NULL for a database the connection cannot see; the row
-	// still has to contribute its I/O, under a name a reader can live with.
+	// DB_NAME() is NULL for a database the connection can't see; its I/O still
+	// counts, under a usable name.
 	logFile, ok := snap.Files[fileKey{dbID: 5, fileID: 2}]
 	if !ok {
 		t.Fatal("the log file is missing from the file set")
@@ -113,7 +110,7 @@ func TestCollectReadsEveryPartOfASnapshot(t *testing.T) {
 		t.Errorf("log file = %q isLog=%v, want (unknown), true", logFile.database, logFile.isLog)
 	}
 
-	// An unrecognized clerk must land in Other rather than vanishing.
+	// An unknown clerk lands in Other.
 	mem := map[string]float64{}
 	for _, c := range snap.Memory {
 		mem[c.Name] = c.MB
@@ -140,9 +137,8 @@ func TestCollectReadsEveryPartOfASnapshot(t *testing.T) {
 	}
 }
 
-// An instance that has just started has no scheduler-monitor record yet.
-// That is a zero reading, not an error: one empty chart must not fail the
-// whole tick and leave the panel with nothing.
+// A freshly started instance has no scheduler-monitor record: a zero reading,
+// not an error that fails the tick.
 func TestCollectCPUUsageWithNoRecordYet(t *testing.T) {
 	answers := snapshotAnswers()
 	answers[cpuUsageQuery] = reply{cols: []string{"sql_pct", "other_pct"}}
@@ -157,9 +153,8 @@ func TestCollectCPUUsageWithNoRecordYet(t *testing.T) {
 	}
 }
 
-// A failing DMV read fails the tick. The alternative — carrying on with a
-// zero-valued part — draws a server that looks idle in exactly the place the
-// reading failed, which is indistinguishable from a real answer.
+// A failed DMV read fails the tick; a zero-valued part would look like a
+// genuinely idle server.
 func TestCollectStopsAtAFailedRead(t *testing.T) {
 	boom := errors.New("activity_test: DMV unavailable")
 	for _, q := range []struct {
@@ -191,11 +186,8 @@ func TestCollectStopsAtAFailedRead(t *testing.T) {
 	}
 }
 
-// The wait query must exclude the benign idle waits by name and by family.
-// Left in, they are hours of accumulated sleep time and the chart shows
-// nothing but their bar — and the ESCAPE clause is what stops a family
-// pattern's underscores from being read as single-character wildcards,
-// which would make "QDS\_%" match far more than the QDS family.
+// The wait query must exclude benign idle waits by name and family, or their
+// hours of sleep dominate the chart. ESCAPE keeps "QDS\_%" underscores literal.
 func TestWaitQueryExcludesTheBenignWaits(t *testing.T) {
 	for _, name := range benignWaits {
 		if !strings.Contains(waitQuery, "'"+name+"'") {
@@ -209,8 +201,7 @@ func TestWaitQueryExcludesTheBenignWaits(t *testing.T) {
 	}
 }
 
-// WaitCategoryNames labels the chart's series, indexed by WaitCategory, so a
-// blank entry would leave the legend empty.
+// WaitCategoryNames labels the chart series; a blank entry empties the legend.
 func TestWaitCategoryNames(t *testing.T) {
 	for i := range waitCategoryCount {
 		if WaitCategoryNames[i] == "" {

@@ -12,7 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// Draw renders the panel: tab row, toolbar row, then the active tab.
+// Draw renders the tab row, toolbar row, then the active tab.
 func (am *ActivityMonitor) Draw(s tcell.Screen) {
 	core.FillRect(s, am.rect, ' ', theme.StylePanel())
 	am.drawTabBar(s)
@@ -24,12 +24,9 @@ func (am *ActivityMonitor) Draw(s tcell.Screen) {
 	am.procTab().draw(s)
 }
 
-// tabSegments computes each tab's on-screen extent. Drawing and hit-testing
-// both build their column math from this one call so a click always lands
-// on the tab it looks like it landed on.
-// The segments are indexed by position in visibleTabs, not by amTab — a
-// connection that does not offer the Instance tab has one fewer segment, and
-// every caller pairs the two lists by index.
+// tabSegments computes each tab's extent; drawing and hit-testing share it so
+// clicks land where they look. Indexed by position in visibleTabs, not by
+// amTab.
 func (am *ActivityMonitor) tabSegments() [][]controls.TabSegment {
 	tabs := am.visibleTabs()
 	widths := make([][]int, len(tabs))
@@ -39,16 +36,14 @@ func (am *ActivityMonitor) tabSegments() [][]controls.TabSegment {
 	return controls.TabStripSegments(am.tabRect.X+1, widths, am.tabRect.Right())
 }
 
-// drawTabBar renders the tabs this connection offers, styled like QueryPanel's
-// result tabs.
+// drawTabBar renders the offered tabs, styled like QueryPanel's result tabs.
 func (am *ActivityMonitor) drawTabBar(s tcell.Screen) {
 	if am.tabRect.H != 1 {
 		return
 	}
 	pal := theme.Active()
-	// The same background as a dashboard's section bars: the tab row and the
-	// section bars are the two strips that divide this panel, and they read
-	// as one system only if they share a colour.
+	// Same background as the dashboard section bars, so the dividing strips
+	// read as one system.
 	barStyle := tcell.StyleDefault.Background(pal.ChartSectionBg).Foreground(pal.Text)
 	core.FillRect(s, am.tabRect, ' ', barStyle)
 	tabs := am.visibleTabs()
@@ -76,20 +71,13 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		core.DrawTextClipped(s, am.toolRect.X+1, am.toolRect.Y, am.toolRect.W-2,
 			barStyle.Foreground(pal.TextDim), am.toolPrefix)
 	}
-	// The dashboard header carries the same facts, but it lives on a canvas
-	// that scrolls: on a terminal narrower than the canvas its right-hand
-	// end — the sample time and the PAUSED marker — is off screen. A frozen
-	// dashboard whose paused marker has scrolled away is the one way this
-	// display can actively mislead, so the toolbar repeats it on a row that
-	// never scrolls.
-	// Every tab with a feed, TempDB included: its dashboard scrolls the same
-	// way, and collectionState() has always reported that feed's own state —
-	// it was just never drawn there.
+	// The dashboard header has the same facts but scrolls: on a narrow terminal
+	// its sample time and PAUSED marker can be off screen, and a frozen
+	// dashboard with a hidden paused marker misleads. So the non-scrolling
+	// toolbar repeats it, for every tab with a feed.
 	if am.tab.canvasTab() {
-		// Fitted into what the controls leave rather than right-aligned over
-		// the whole row: a longer message than the gap would otherwise be
-		// drawn first and then partly overpainted by the buttons, leaving
-		// stray letters between them.
+		// Fit into the space the controls leave, rather than right-aligned over
+		// the row and partly overpainted by buttons.
 		avail := am.toolRect.Right() - am.toolsEnd - 1
 		for _, text := range am.collectionState() {
 			if core.DisplayWidth(text) <= avail {
@@ -100,8 +88,7 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		}
 	}
 
-	// The buttons wear the tooltip's scheme: they are the panel's raised
-	// surfaces, and so is the box a chart click produces.
+	// Buttons wear the tooltip scheme: both are the panel's raised surfaces.
 	for _, t := range am.tools {
 		if t.rect.IsZero() {
 			continue
@@ -115,9 +102,7 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 		core.FillRect(s, t.rect, ' ', style)
 		core.DrawText(s, t.rect.X+1, t.rect.Y, style, t.label)
 	}
-	// The stand-in for whatever did not fit. Never dimmed: what it holds is
-	// gated control by control once the menu is open, and this panel disables
-	// per button rather than by the row.
+	// Never dimmed: its contents are gated per control once opened.
 	if !am.more.rect.IsZero() {
 		style := theme.StyleTooltip()
 		core.FillRect(s, am.more.rect, ' ', style)
@@ -125,11 +110,9 @@ func (am *ActivityMonitor) drawToolbar(s tcell.Screen) {
 	}
 }
 
-// drawDashboard blits the visible window of the active dashboard's
-// off-screen canvas, then draws the two scrollbars. The canvas is always
-// its full fixed size, which is what keeps the layout stable: panel
-// proportions never depend on the viewport, only on what's visible through
-// it.
+// drawDashboard blits the visible window of the active dashboard's fixed-size
+// off-screen canvas, then the scrollbars. Panel proportions never depend on the
+// viewport.
 func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 	if am.viewRect.W <= 0 || am.viewRect.H <= 0 {
 		return
@@ -137,9 +120,8 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 	cw, ch := am.canvasSize()
 	c := am.dashboardCanvas(cw, ch)
 
-	// Clamped here as well as in scrollTo: a resize can shrink the canvas
-	// (its width follows the viewport) under a scroll offset set when the
-	// panel was wider.
+	// Clamped here too: a resize can shrink the canvas under an older scroll
+	// offset.
 	am.scrollTo(am.scrollX[am.tab], am.scrollY[am.tab])
 	sx, sy := am.scrollX[am.tab], am.scrollY[am.tab]
 	c.Blit(s, core.Rect{X: sx, Y: sy, W: am.viewRect.W, H: am.viewRect.H}, am.viewRect)
@@ -150,21 +132,18 @@ func (am *ActivityMonitor) drawDashboard(s tcell.Screen) {
 	core.DrawScrollbar(s, am.viewRect.Right(), am.viewRect.Y, am.viewRect.H, ch, am.viewRect.H, sy, track, thumb)
 	core.DrawScrollbarH(s, am.viewRect.X, am.viewRect.Bottom(), am.viewRect.W, cw, am.viewRect.W, sx, track, thumb)
 
-	// Last, over everything: the tooltip has to sit on top of the data it
-	// reports on. Re-resolved first, against the hit map the render above
-	// just rebuilt, which is what moves it onto its sample's current column.
+	// Last, so the tooltip sits on top. Re-resolved against the freshly rebuilt
+	// hit map, moving it onto its sample's current column.
 	am.refreshTooltip()
 	am.drawTooltip(s, c)
 }
 
-// dashboardCanvas returns the active tab's rendered canvas, re-rendering it
-// only when something it is drawn from has changed. Draw runs on every event
-// the application handles — every keystroke, every mouse motion during a
-// drag — and a full render is all eleven charts over a 150x61 canvas, so
-// re-rendering per frame is milliseconds of work for an identical picture.
+// dashboardCanvas returns the active tab's canvas, re-rendering only when an
+// input changed. Draw runs on every event and a full render (eleven charts on
+// 150x61) costs milliseconds.
 //
-// The cache holds a whole frame's output, so anything the render reads has
-// to be in the key or the panel silently shows a stale dashboard.
+// Everything the render reads must be in the key, or the panel shows a stale
+// dashboard.
 func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 	key := amCanvasKey{
 		tab:      am.tab,
@@ -204,16 +183,12 @@ func (am *ActivityMonitor) dashboardCanvas(cw, ch int) *charts.Canvas {
 	return c
 }
 
-// drawInterval is how much time one plotted column covers on the active tab —
-// what its charts scale their time axis by. Read at draw time rather than
-// stored with the samples: a rate change takes effect from the next tick, and
-// the scale describes the columns arriving now.
+// drawInterval is the time one plotted column covers on the active tab, read at
+// draw time since a rate change applies from the next tick.
 //
-// On every tab but Instance that is the panel's own collection rate, because
-// the panel is what produced the columns. The Instance tab plots a history the
-// *server* aggregated into fixed 15-second windows, so its columns keep that
-// resolution however often the panel re-reads them; scaling them by a 30-second
-// poll rate would label every column with twice the span it covers.
+// For every tab but Instance it's the panel's collection rate. Instance plots
+// server-aggregated 15-second windows, so its columns keep that resolution
+// regardless of poll rate.
 func (am *ActivityMonitor) drawInterval() time.Duration {
 	if am.tab == amTabInstance {
 		return instanceWindow

@@ -5,32 +5,28 @@ import (
 	"strings"
 )
 
-// whoIsActiveScript is Adam Machanic's sp_WhoIsActive, GPL-3.0, carried
-// verbatim except for the two changes its own header records. The licence
-// text sits beside it as LICENSE.sp_whoisactive.
+// whoIsActiveScript is Adam Machanic's sp_WhoIsActive (GPL-3.0), verbatim
+// except the two changes its header records. Licence: LICENSE.sp_whoisactive.
 //
 //go:embed whoisactive.sql
 var whoIsActiveScript string
 
 // whoIsActiveProcHeader is the upstream ALTER PROC line, the one place the
-// script names itself. Rewriting it is what lets the tempdb copy carry a name
-// without the sp_ prefix — see Proc for why that matters.
+// script names itself; rewriting it gives the tempdb copy its non-sp_ name (see
+// Proc).
 const whoIsActiveProcHeader = "ALTER PROC dbo.sp_WhoIsActive"
 
 // WhoIsActiveAuthor, WhoIsActiveRepo and WhoIsActiveLicense credit the
-// procedure wherever goSSMS shows it: the Sessions tab's own header line and
-// Help > About.
+// procedure in the Sessions tab header and Help > About.
 const (
 	WhoIsActiveAuthor  = "Adam Machanic"
 	WhoIsActiveRepo    = "https://github.com/amachanic/sp_whoisactive"
 	WhoIsActiveLicense = "GPL-3.0"
 )
 
-// WhoIsActiveProc is sp_WhoIsActive, the procedure behind the Sessions tab.
-//
-// Unlike BlockProc's body, the script is not written here: it is the upstream
-// release script with its own copyright header intact, so the installed
-// procedure carries the attribution too.
+// WhoIsActiveProc is sp_WhoIsActive, behind the Sessions tab. The script is the
+// upstream release with its copyright header, so the installed procedure
+// carries attribution.
 var WhoIsActiveProc = &Proc{
 	MasterName: "sp_WhoIsActive",
 	TempDBName: "usp_WhoIsActive",
@@ -40,9 +36,8 @@ var WhoIsActiveProc = &Proc{
 	},
 }
 
-// WhoIsActiveVersion is the upstream version string, read out of the embedded
-// script's header so it can never disagree with what is actually installed.
-// Empty if the header ever stops carrying one.
+// WhoIsActiveVersion is the upstream version from the embedded script's header,
+// so it matches what's installed. Empty if the header lacks one.
 func WhoIsActiveVersion() string {
 	const marker = "Who Is Active? "
 	i := strings.Index(whoIsActiveScript, marker)

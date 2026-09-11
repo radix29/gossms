@@ -8,9 +8,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Page-level tests for Job Properties — General, Notifications, Schedules and
-// Alerts. Steps has its own file: agent_job_props_steps_test.go covers the
-// write *plan* in isolation, agent_job_steps_page_test.go the page end to end.
+// Page tests for Job Properties General, Notifications, Schedules and Alerts.
+// Steps: agent_job_props_steps_test.go (write plan) and
+// agent_job_steps_page_test.go (page end to end).
 
 func loadJobPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*fakeInstance, propApply, *propsheet.Form, *string) {
 	t.Helper()
@@ -30,11 +30,8 @@ func jobGeneralResponses() []fakeResponse {
 
 func pageJobGeneralFor(sc *db.ServerConn, n *string) propPage { return pageJobGeneral(sc, n) }
 
-// TestJobGeneralRenamesLastAndUnderTheOldName. Every other write on the page
-// addresses the job by name, so a rename that ran first would leave them
-// pointing at a job that no longer exists — and the shared name cell has to
-// end up on the new name, or the reload after Apply re-fetches a job that is
-// gone.
+// Other writes address the job by name, so rename runs last, and the shared
+// name cell must end on the new name for the post-Apply reload.
 func TestJobGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadJobPage(t, jobGeneralResponses(), pageJobGeneralFor)
 
@@ -59,8 +56,8 @@ func TestJobGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	}
 }
 
-// TestJobGeneralWritesTheOwnerAndCategoryThatWerePicked names both, because
-// each is a dropdown read back by index into a list the page built.
+// Owner and category are dropdowns read back by index into lists the page
+// built.
 func TestJobGeneralWritesTheOwnerAndCategoryThatWerePicked(t *testing.T) {
 	inst, apply, form, _ := loadJobPage(t, jobGeneralResponses(), pageJobGeneralFor)
 
@@ -82,9 +79,8 @@ func TestJobGeneralWritesTheOwnerAndCategoryThatWerePicked(t *testing.T) {
 	}
 }
 
-// TestJobGeneralDisablingSendsEnabledZero — the checkbox picks between two
-// different gosmo calls rather than passing a value, so an inverted reading
-// here is a job left running that the user switched off.
+// The checkbox picks between two gosmo calls; inverted, a switched-off job
+// keeps running.
 func TestJobGeneralDisablingSendsEnabledZero(t *testing.T) {
 	inst, apply, form, _ := loadJobPage(t, jobGeneralResponses(), pageJobGeneralFor)
 
@@ -96,9 +92,7 @@ func TestJobGeneralDisablingSendsEnabledZero(t *testing.T) {
 	assertOneStatement(t, inst, "@job_name = N'Nightly reindex', @enabled = 0")
 }
 
-// TestJobGeneralUntouchedPageWritesNothing. Every row here is seeded from the
-// job, and a row that reported itself dirty on load would rewrite the job on
-// every OK — including its owner, a security-relevant change nobody asked for.
+// A row dirty on load would rewrite the job (including its owner) on every OK.
 func TestJobGeneralUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadJobPage(t, jobGeneralResponses(), pageJobGeneralFor)
 
@@ -116,9 +110,8 @@ func pageJobNotificationsFor(sc *db.ServerConn, n *string) propPage {
 	return pageJobNotifications(sc, n)
 }
 
-// TestJobNotificationsDeleteConditionDoesNotRewriteTheEmailOperator is the
-// page's own stated invariant: the two sections are gated on their own rows'
-// dirtiness, because PropertySheet.DirtyPages only knows about pages.
+// The two sections are gated on their own rows, since DirtyPages is page-level
+// only.
 func TestJobNotificationsDeleteConditionDoesNotRewriteTheEmailOperator(t *testing.T) {
 	inst, apply, form, _ := loadJobPage(t, agentOperatorResponses(), pageJobNotificationsFor)
 
@@ -131,10 +124,8 @@ func TestJobNotificationsDeleteConditionDoesNotRewriteTheEmailOperator(t *testin
 	assertOneStatement(t, inst, "@delete_level = 1")
 }
 
-// TestJobNotificationsEmailWithNoOperatorSendsNoOperatorName. sp_update_job
-// has no value that clears an operator, so "" means "leave it alone" — and
-// before the noneItem sentinel, ticking E-mail on a job with no operator sent
-// whichever operator sorted first.
+// sp_update_job can't clear an operator, so "" means leave it; ticking E-mail
+// with no operator must not send the first operator.
 func TestJobNotificationsEmailWithNoOperatorSendsNoOperatorName(t *testing.T) {
 	inst, apply, form, _ := loadJobPage(t, agentOperatorResponses(), pageJobNotificationsFor)
 
@@ -150,8 +141,8 @@ func TestJobNotificationsEmailWithNoOperatorSendsNoOperatorName(t *testing.T) {
 	}
 }
 
-// TestJobNotificationsEmailsTheOperatorThatWasPicked picks the second of three
-// operators: a page that ignored the selection would still name an operator.
+// Picks the second of three operators; ignoring the selection would still name
+// one.
 func TestJobNotificationsEmailsTheOperatorThatWasPicked(t *testing.T) {
 	inst, apply, form, _ := loadJobPage(t, agentOperatorResponses(), pageJobNotificationsFor)
 
@@ -181,9 +172,8 @@ func loadJobSchedulesPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Fo
 	return inst, apply, form
 }
 
-// TestJobSchedulesAttachesTheScheduleTheRowIsOn toggles the *second* schedule.
-// A page that read the grid back against the wrong slice attaches a schedule
-// the user never picked, and the job then runs on somebody else's cadence.
+// Toggles the second schedule; reading the grid against the wrong slice
+// attaches one the user never picked.
 func TestJobSchedulesAttachesTheScheduleTheRowIsOn(t *testing.T) {
 	inst, apply, form := loadJobSchedulesPage(t)
 
@@ -195,8 +185,7 @@ func TestJobSchedulesAttachesTheScheduleTheRowIsOn(t *testing.T) {
 	assertOneStatement(t, inst, "sp_attach_schedule @job_name = N'Nightly reindex', @schedule_name = N'Hourly'")
 }
 
-// TestJobSchedulesDetachesTheOneItWasAttachedTo. Detaching is the destructive
-// direction: the job silently stops running.
+// Detaching silently stops the job running.
 func TestJobSchedulesDetachesTheOneItWasAttachedTo(t *testing.T) {
 	inst, apply, form := loadJobSchedulesPage(t)
 
@@ -208,9 +197,8 @@ func TestJobSchedulesDetachesTheOneItWasAttachedTo(t *testing.T) {
 	assertOneStatement(t, inst, "sp_detach_schedule @job_name = N'Nightly reindex', @schedule_name = N'Daily 01:00'")
 }
 
-// TestJobSchedulesShowsWhichAreAlreadyAttached. The Attached column is what
-// tells the user which way a toggle will go, and it comes from a different
-// query than the list itself.
+// The Attached column comes from a different query and shows which way a toggle
+// goes.
 func TestJobSchedulesShowsWhichAreAlreadyAttached(t *testing.T) {
 	_, _, form := loadJobSchedulesPage(t)
 	grid := plainGrid(t, form)
@@ -241,9 +229,8 @@ func loadJobAlertsPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form)
 	return inst, apply, form
 }
 
-// TestJobAlertsExcludesWMIAlerts. The page's edit slice is index-parallel with
-// the *filtered* list, so if the filter and the grid ever disagreed every
-// toggle past the WMI alert would write to its neighbour.
+// The edit slice parallels the filtered list; a mismatch writes every toggle
+// past the WMI alert to its neighbour.
 func TestJobAlertsExcludesWMIAlerts(t *testing.T) {
 	_, _, form := loadJobAlertsPage(t)
 	grid := plainGrid(t, form)
@@ -262,9 +249,8 @@ func TestJobAlertsExcludesWMIAlerts(t *testing.T) {
 	}
 }
 
-// TestJobAlertsLinkingReassignsTheAlertToThisJob links the alert that
-// currently responds to a *different* job — the reassignment the page's own
-// note warns about, and the one worth landing on the right alert.
+// Links an alert currently responding to another job — the reassignment the
+// page warns about.
 func TestJobAlertsLinkingReassignsTheAlertToThisJob(t *testing.T) {
 	inst, apply, form := loadJobAlertsPage(t)
 
@@ -276,8 +262,8 @@ func TestJobAlertsLinkingReassignsTheAlertToThisJob(t *testing.T) {
 	assertOneStatement(t, inst, "sp_update_alert @name = N'Sev 17 errors', @job_name = N'Nightly reindex'")
 }
 
-// TestJobAlertsUnlinkingClearsTheJob. An empty @job_name is sp_update_alert's
-// own "no job response" sentinel; anything else fails as a missing job.
+// An empty @job_name is sp_update_alert's "no job response"; anything else
+// fails as a missing job.
 func TestJobAlertsUnlinkingClearsTheJob(t *testing.T) {
 	inst, apply, form := loadJobAlertsPage(t)
 

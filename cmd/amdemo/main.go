@@ -1,8 +1,6 @@
-// Command amdemo hosts the Activity Monitor's History and Sample
-// dashboards full-screen against deterministic mock data, for visually
-// checking the dashboard layout and the tuikit/charts primitives without a
-// SQL Server connection. Not part of the release build (see
-// .github/workflows/release.yml, which only builds cmd/gossms).
+// Command amdemo shows the Activity Monitor's History and Sample dashboards
+// full-screen over deterministic mock data, for checking dashboard layout and
+// tuikit/charts without a SQL Server. Not in the release build.
 //
 // Keys: Tab switches dashboards, arrows/PgUp/PgDn/Home/End scroll, q quits.
 package main
@@ -45,10 +43,9 @@ func main() {
 	}
 }
 
-// demo holds the two dashboards and the viewport position over whichever is
-// showing. The canvases are rendered fresh each draw rather than cached:
-// the real panel redraws on every collection tick anyway, so this is the
-// same cost the shipped code pays.
+// demo holds the two dashboards and the viewport over the visible one. Canvases
+// are rendered every draw, not cached — the real panel redraws every collection
+// tick too.
 type demo struct {
 	history dashboard.HistoryView
 	sample  dashboard.SampleView
@@ -91,17 +88,16 @@ func (d *demo) handleKey(e *tcell.EventKey) {
 	}
 }
 
-// draw renders the active dashboard into a canvas of its fixed size, then
-// blits the visible window — the same two-step the Activity Monitor panel
-// uses, so what the harness shows is what the panel will show.
+// draw renders the active dashboard into a fixed-size canvas, then blits the
+// visible window — the same two steps the Activity Monitor panel uses.
 func (d *demo) draw(s tcell.Screen) {
 	w, h := s.Size()
 	view := core.Rect{X: 0, Y: 0, W: w, H: h - 1} // last row is the status line
 	core.FillRect(s, core.Rect{X: 0, Y: 0, W: w, H: h}, ' ', theme.StylePanel())
 
 	cw, ch := d.canvasSize()
-	// A terminal wider than the canvas gets a wider canvas rather than a
-	// stretched one: the extra columns become more time buckets.
+	// A wider terminal gets a wider canvas, not a stretched one: extra columns
+	// become more time buckets.
 	if w > cw {
 		cw = w
 	}

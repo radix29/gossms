@@ -36,17 +36,15 @@ func waits(rows map[string][3]int64) waitSet {
 	return set
 }
 
-// Signal time is the part of a wait spent runnable once the resource was
-// ready. It stays against the category that waited — the bar splits into a
-// resource and a signal part — and is not moved into the CPU category,
-// where it would be indistinguishable from real CPU waits.
+// Signal time stays against the waiting category (the bar splits
+// resource/signal), not moved into CPU where it'd look like real CPU waits.
 func TestWaitDeltasKeepSignalTimeAgainstItsCategory(t *testing.T) {
 	prev := waits(map[string][3]int64{"PAGEIOLATCH_SH": {1000, 100, 5}})
 	cur := waits(map[string][3]int64{"PAGEIOLATCH_SH": {3000, 500, 9}})
 
 	byCat, signal, signalPct := waitDeltas(prev, cur, 2)
 
-	// 2000ms of wait over 2s, of which 400ms was signal.
+	// 2000ms of wait over 2s, 400ms of it signal.
 	if got := byCat[WaitDiskIO]; got != 1000 {
 		t.Errorf("disk I/O waits = %v ms/sec, want the whole wait (2000ms/2s)", got)
 	}
@@ -61,10 +59,8 @@ func TestWaitDeltasKeepSignalTimeAgainstItsCategory(t *testing.T) {
 	}
 }
 
-// wait_time_ms includes signal_wait_time_ms, so the resource half a caller
-// computes by subtraction must never go negative — a wait type whose signal
-// delta somehow exceeds its wait delta is clamped, not reported as a
-// negative bar segment.
+// The resource half (total minus signal) must never go negative; excess signal
+// is clamped.
 func TestWaitDeltasClampSignalToTotalWait(t *testing.T) {
 	prev := waits(map[string][3]int64{"LCK_M_X": {1000, 100, 1}})
 	cur := waits(map[string][3]int64{"LCK_M_X": {1100, 900, 2}})
@@ -76,8 +72,7 @@ func TestWaitDeltasClampSignalToTotalWait(t *testing.T) {
 	}
 }
 
-// A wait type absent from the previous sample has no delta: its whole
-// cumulative total is not two seconds' worth of waiting.
+// A wait type absent from the previous sample has no delta.
 func TestWaitDeltasIgnoreUnpairedAndResetWaits(t *testing.T) {
 	prev := waits(map[string][3]int64{"LCK_M_X": {9_000_000, 0, 1}})
 	cur := waits(map[string][3]int64{
@@ -101,16 +96,9 @@ func TestWaitDeltasWithNoElapsedTime(t *testing.T) {
 	}
 }
 
-// The exclusions are what keep the chart readable: these waits accumulate
-// constantly on a completely idle server, and one of them dwarfs every real
-// wait on the panel.
-//
-// PWAIT_EXTENSIBILITY_CLEANUP_TASK is the one that proved it: on SQL Server
-// 2025 it sleeps for five minutes and reports all 300,000 ms of it against
-// a single two-second sample — 150,000 ms of wait per second, against real
-// waits of a few hundred. It flattened the whole waits panel to a single
-// column, live, and it is why families are excluded by pattern rather than
-// one name at a time.
+// These waits accumulate on an idle server and one dwarfs the panel.
+// PWAIT_EXTENSIBILITY_CLEANUP_TASK on SQL Server 2025 reports 300,000 ms in one
+// 2s sample — hence family patterns.
 func TestBackgroundWaitsAreExcludedFromTheQuery(t *testing.T) {
 	for _, w := range []string{
 		"PWAIT_EXTENSIBILITY_CLEANUP_TASK", "LAZYWRITER_SLEEP", "XE_TIMER_EVENT",
@@ -124,8 +112,7 @@ func TestBackgroundWaitsAreExcludedFromTheQuery(t *testing.T) {
 	}
 }
 
-// Real waits must survive the exclusions — an over-broad family pattern
-// would empty the panel just as effectively as a missing one floods it.
+// Real waits must survive; an over-broad pattern empties the panel.
 func TestRealWaitsSurviveTheExclusions(t *testing.T) {
 	for _, w := range []string{
 		"LCK_M_X", "PAGEIOLATCH_SH", "WRITELOG", "SOS_SCHEDULER_YIELD",
@@ -137,8 +124,8 @@ func TestRealWaitsSurviveTheExclusions(t *testing.T) {
 	}
 }
 
-// excludedByQuery mirrors what the collection query's NOT IN and NOT LIKE
-// clauses do to one wait type.
+// excludedByQuery mirrors the query's NOT IN / NOT LIKE clauses for one wait
+// type.
 func excludedByQuery(name string) bool {
 	for _, b := range benignWaits {
 		if b == name {

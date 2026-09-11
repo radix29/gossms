@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// The embedded script is GPL-3.0 and must keep carrying its author's
-// copyright and the notice that goSSMS modified it — dropping either is a
-// licence violation, not a formatting change.
+// The GPL-3.0 script must keep its author's copyright and the modification
+// notice.
 func TestWhoIsActiveScriptKeepsItsAttribution(t *testing.T) {
 	for _, want := range []string{
 		"Adam Machanic",
@@ -20,8 +19,8 @@ func TestWhoIsActiveScriptKeepsItsAttribution(t *testing.T) {
 	}
 }
 
-// The rename has exactly one place to land. A second copy of the declaration
-// line would leave the script creating one name and the tab running another.
+// The declaration line must appear once, or the script creates one name while
+// the tab runs another.
 func TestWhoIsActiveHeaderAppearsOnce(t *testing.T) {
 	if n := strings.Count(whoIsActiveScript, whoIsActiveProcHeader); n != 1 {
 		t.Fatalf("the declaration goSSMS rewrites appears %d times, want 1", n)
@@ -35,8 +34,7 @@ func TestWhoIsActiveHeaderAppearsOnce(t *testing.T) {
 	}
 }
 
-// The version shown in Help > About is read out of the script, so it cannot
-// disagree with the copy actually installed.
+// The About version comes from the script, so it matches the installed copy.
 func TestWhoIsActiveVersion(t *testing.T) {
 	got := WhoIsActiveVersion()
 	if got == "" {

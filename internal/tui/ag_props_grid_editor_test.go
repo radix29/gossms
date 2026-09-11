@@ -7,15 +7,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// wireGridEditor redraws the grid from inside OnSelectRow, and DataGrid.SetData
-// resets the selection to 0,0. Before the helper existed, the Backup
-// Preferences and Read-Only Routing pages did that redraw without restoring
-// the cell, so the cursor snapped back to the first replica on every arrow key
-// and no row past the second could be reached. These pin the restore and the
-// commit/load ordering it has to keep.
+// wireGridEditor redraws from inside OnSelectRow, and SetData resets the
+// selection to 0,0; without restoring the cell, the cursor snapped back every
+// arrow key. These pin the restore and the commit/load order.
 
-// gridEditorHarness is three replica rows with a one-field editor below them,
-// wired the way both AG pages wire theirs.
+// gridEditorHarness is three replica rows with a one-field editor, wired as the
+// AG pages do.
 type gridEditorHarness struct {
 	grid   *controls.DataGrid
 	values []string // the "edits" behind the grid

@@ -8,8 +8,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// menuLabels renders a node's context menu as the labels a user would see,
-// with disabled items marked, so a test can assert both presence and gating.
+// menuLabels renders a node's menu as labels, marking disabled items.
 func menuLabels(t *testing.T, node *explorerNode) []string {
 	t.Helper()
 	a := &App{}
@@ -35,9 +34,7 @@ func agNode(t NodeType, name, agName string) *explorerNode {
 	return n
 }
 
-// Every operation added in this phase is reachable only from a context menu, so
-// a missing case makes the whole operation unreachable — the same failure the
-// dashboard and Properties tests guard against.
+// Every operation is reachable only from a context menu.
 func TestAlwaysOnMenusOfferEveryOperation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -69,9 +66,7 @@ func TestAlwaysOnMenusOfferEveryOperation(t *testing.T) {
 	}
 }
 
-// A database's menu offers one of Suspend/Resume, never both: the other one can
-// only fail, and a menu item that can only fail is the thing context-gating
-// exists to prevent.
+// Only one of Suspend/Resume is offered; the other can only fail.
 func TestAGDatabaseMenuOffersOneMovementItem(t *testing.T) {
 	running := agNode(NodeAvailabilityDatabase, "testdb_1", "AAG1")
 	suspended := agNode(NodeAvailabilityDatabase, "testdb_1", "AAG1")
@@ -85,9 +80,8 @@ func TestAGDatabaseMenuOffersOneMovementItem(t *testing.T) {
 	}
 }
 
-// A primary cannot be failed over to, and REMOVE REPLICA against the primary is
-// refused by the server with 41190. Both have to be gated off in the tree,
-// where the role is already known.
+// A primary can't be failed over to, and REMOVE REPLICA on it fails (41190);
+// both are gated in the tree.
 func TestAGPrimaryReplicaMenuGatesFailoverAndRemoval(t *testing.T) {
 	primary := agNode(NodeAvailabilityReplica, "ubusql1", "AAG1")
 	primary.data.AGIsPrimary = true
@@ -103,9 +97,8 @@ func TestAGPrimaryReplicaMenuGatesFailoverAndRemoval(t *testing.T) {
 	}
 }
 
-// The cluster type decides which failover statements exist at all, and getting
-// this table wrong either hides a working operation or offers one the server
-// answers with a raw error code.
+// The cluster type decides which failover statements exist; a wrong table hides
+// a working operation or offers a raw error.
 func TestAGFailoverRefusal(t *testing.T) {
 	tests := []struct {
 		clusterType string
@@ -114,16 +107,14 @@ func TestAGFailoverRefusal(t *testing.T) {
 	}{
 		{"EXTERNAL", false, "Pacemaker"},
 		{"EXTERNAL", true, "Pacemaker"},
-		// Reported in lower case by sys.availability_groups on some paths;
-		// the gate must not depend on which one it came through.
+		// Sometimes reported lowercase; the gate must not care.
 		{"external", false, "47104"},
 		{"NONE", false, "Force Failover"},
-		// The forced form is the only failover a read-scale group has, so it
-		// must not be refused.
+		// Forced failover is a read-scale group's only kind.
 		{"NONE", true, ""},
 		{"WSFC", false, ""},
 		{"WSFC", true, ""},
-		// Empty before SQL Server 2017, which only ever meant WSFC.
+		// Empty before SQL Server 2017, meaning WSFC.
 		{"", false, ""},
 	}
 	for _, tt := range tests {
@@ -140,9 +131,8 @@ func TestAGFailoverRefusal(t *testing.T) {
 	}
 }
 
-// Suspending from the primary reaches every secondary and from a secondary only
-// itself. The confirmation is the only place the user finds that out, so the
-// two wordings must actually differ.
+// From the primary suspend reaches every secondary, from a secondary only
+// itself; the wordings must differ.
 func TestAGSuspendScopeSaysWhichInstance(t *testing.T) {
 	onPrimary := agSuspendScope("ubusql1", true)
 	onSecondary := agSuspendScope("ubusql2", false)
@@ -156,9 +146,8 @@ func TestAGSuspendScopeSaysWhichInstance(t *testing.T) {
 
 // -- Add Database ----------------------------------------------------------
 
-// agEligibleDatabases is what decides whether a database appears in the
-// dropdown at all, so every exclusion has to carry a reason the user can act
-// on — an empty list with no explanation is indistinguishable from a bug.
+// Every exclusion needs an actionable reason; an unexplained empty list looks
+// like a bug.
 func TestAGEligibleDatabases(t *testing.T) {
 	dbs := []agDBCandidate{
 		{Name: "payroll", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true},
@@ -179,20 +168,16 @@ func TestAGEligibleDatabases(t *testing.T) {
 			t.Errorf("excluded = %v, want an entry %q", excluded, want)
 		}
 	}
-	// A system database is not "excluded" — nobody was expecting it, and
-	// listing four of them would bury the reasons that matter.
+	// System databases aren't listed as excluded.
 	if strings.Contains(joined, "master") {
 		t.Errorf("excluded = %v, want system databases left out silently", excluded)
 	}
 }
 
-// The log backup chain is the prerequisite SQL Server checks that nothing
-// about the database's own metadata reveals: a database can be FULL, ONLINE
-// and in no group, and still be refused with Msg 1475 because it has had no
-// full backup since it entered the FULL recovery model. Verified live on the
-// AG cluster 2026-08-23 for both ADD DATABASE and CREATE AVAILABILITY GROUP
-// ... FOR DATABASE. Every other field here says the database is addable, so a
-// rule that dropped this check would offer it and the apply would fail.
+// The log backup chain is the one prerequisite the database's metadata doesn't
+// reveal: FULL, ONLINE and ungrouped can still fail with Msg 1475 without a
+// full backup since entering FULL (verified live for ADD DATABASE and CREATE
+// AVAILABILITY GROUP ... FOR DATABASE).
 func TestAGEligibleDatabasesExcludesAnUnbackedUpDatabase(t *testing.T) {
 	dbs := []agDBCandidate{
 		{Name: "backed_up", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true},
@@ -207,8 +192,7 @@ func TestAGEligibleDatabasesExcludesAnUnbackedUpDatabase(t *testing.T) {
 	if !strings.Contains(joined, "never_backed_up — no full backup") {
 		t.Errorf("excluded = %v, want the unbacked-up database with a reason", excluded)
 	}
-	// The reason has to say what to do about it: this is the one exclusion
-	// the user can clear in a minute.
+	// The reason must say what to do.
 	if !strings.Contains(joined, "back it up first") {
 		t.Errorf("excluded = %v, want the reason to name the fix", excluded)
 	}
@@ -228,8 +212,7 @@ func TestAGListenerSpecFrom(t *testing.T) {
 		t.Errorf("addresses = %+v, want one with its mask", spec.IPAddresses)
 	}
 
-	// An IPv6 address takes no mask at all, and gosmo emits the one-element
-	// form for exactly that case.
+	// IPv6 takes no mask; gosmo emits the one-element form.
 	v6, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, nil, "2001:db8::1", "")
 	if err != nil {
 		t.Fatalf("static IPv6: %v", err)
@@ -245,8 +228,7 @@ func TestAGListenerSpecFrom(t *testing.T) {
 	if !dhcp.DHCP || len(dhcp.IPAddresses) != 0 || dhcp.Port != 5022 {
 		t.Errorf("spec = %+v, want a DHCP listener on port 5022", dhcp)
 	}
-	// DHCP ignores the address fields rather than failing on them, so leftover
-	// text from a mode switch cannot block the dialog.
+	// DHCP ignores address fields, so leftover text doesn't block.
 	if _, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeDHCP, nil, "not an address", "junk"); err != nil {
 		t.Errorf("DHCP with leftover address text: %v", err)
 	}
@@ -264,8 +246,8 @@ func TestAGListenerSpecFromRejects(t *testing.T) {
 		{name: "bad port", dns: "l", port: "0", mode: agListenerModeStatic, ip: "10.0.0.9", mask: "255.255.255.0", wantErr: "1 to 65535"},
 		{name: "non-numeric port", dns: "l", port: "http", mode: agListenerModeStatic, ip: "10.0.0.9", mask: "255.255.255.0", wantErr: "1 to 65535"},
 		{name: "bad address", dns: "l", port: "1433", mode: agListenerModeStatic, ip: "192.168.1", mask: "255.255.255.0", wantErr: "not a valid IP address"},
-		// The one that matters: without this, a mistyped IPv4 address with no
-		// mask is emitted as the IPv6 form and fails on the server instead.
+		// Without this, a mask-less IPv4 would be emitted as IPv6 and fail on
+		// the server.
 		{name: "IPv4 without a mask", dns: "l", port: "1433", mode: agListenerModeStatic, ip: "10.0.0.9", wantErr: "needs a subnet mask"},
 		{name: "IPv6 with a mask", dns: "l", port: "1433", mode: agListenerModeStatic, ip: "2001:db8::1", mask: "255.255.255.0", wantErr: "takes no subnet mask"},
 		{name: "bad mask", dns: "l", port: "1433", mode: agListenerModeStatic, ip: "10.0.0.9", mask: "255.255", wantErr: "not a valid IPv4 subnet mask"},
@@ -286,8 +268,7 @@ func TestAGListenerSpecFromRejects(t *testing.T) {
 func TestAGListenerSpecFromCombinesAddedAndTypedAddresses(t *testing.T) {
 	added := []gosmo.AvailabilityListenerIPSpec{{IPAddress: "10.0.0.9", SubnetMask: "255.255.255.0"}}
 
-	// The typed fields count without a button press — the single-subnet case
-	// must not need one, or it fails as "no static address".
+	// Typed fields count without a button press.
 	spec, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, nil, "10.0.0.9", "255.255.255.0")
 	if err != nil {
 		t.Fatalf("typed only: %v", err)
@@ -296,7 +277,7 @@ func TestAGListenerSpecFromCombinesAddedAndTypedAddresses(t *testing.T) {
 		t.Errorf("typed only gave %d addresses, want 1", len(spec.IPAddresses))
 	}
 
-	// Added plus still-typed is a two-subnet listener, in that order.
+	// Added plus typed is a two-subnet listener, in that order.
 	both, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, added, "10.1.0.9", "255.255.255.0")
 	if err != nil {
 		t.Fatalf("added plus typed: %v", err)
@@ -305,7 +286,7 @@ func TestAGListenerSpecFromCombinesAddedAndTypedAddresses(t *testing.T) {
 		t.Errorf("addresses = %+v, want the added one then the typed one", both.IPAddresses)
 	}
 
-	// Added alone, with the fields cleared by Add Address, is not "no address".
+	// Added alone with cleared fields isn't "no address".
 	only, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, added, "", "")
 	if err != nil {
 		t.Fatalf("added only: %v", err)
@@ -314,19 +295,17 @@ func TestAGListenerSpecFromCombinesAddedAndTypedAddresses(t *testing.T) {
 		t.Errorf("added only gave %d addresses, want 1", len(only.IPAddresses))
 	}
 
-	// The same address twice would be rejected by the server; saying so here
-	// names which address, which the server's error does not.
+	// A duplicate address is named here, unlike the server's error.
 	if _, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, added, "10.0.0.9", "255.255.255.0"); err == nil {
 		t.Error("a duplicate address was accepted")
 	}
 
-	// Static mode with nothing at all is the case gosmo would reject with a
-	// less specific message.
+	// Static with nothing, which gosmo would reject vaguely.
 	if _, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeStatic, nil, "", ""); err == nil {
 		t.Error("a static listener with no address was accepted")
 	}
 
-	// DHCP takes no address list, and leftover text must not block it.
+	// DHCP ignores leftover text.
 	dhcp, err := agListenerSpecFrom("ubuaag", "1433", agListenerModeDHCP, added, "junk", "junk")
 	if err != nil {
 		t.Fatalf("dhcp: %v", err)
@@ -336,10 +315,8 @@ func TestAGListenerSpecFromCombinesAddedAndTypedAddresses(t *testing.T) {
 	}
 }
 
-// Join and Unjoin act on the local copy, so both are gated on what the tree's
-// own instance holds. On the primary neither can work at all — the primary's
-// copy is the group's source, not a member to be joined — and a copy that has
-// not joined has no data movement to suspend either.
+// Join/Unjoin act on the local copy: neither works on the primary (its copy is
+// the source), and an unjoined copy has no movement to suspend.
 func TestAGDatabaseMenuGatesJoinOnTheLocalCopy(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -382,9 +359,8 @@ func TestAGDatabaseMenuGatesJoinOnTheLocalCopy(t *testing.T) {
 	}
 }
 
-// The two removals are one item apart and one word different, and they do very
-// different things — the group-wide one must never be the only wording offered
-// for the per-replica case.
+// The two removals are one item apart and one word different; the group-wide
+// wording must never be the only one for the per-replica case.
 func TestAGDatabaseMenuKeepsBothRemovalsDistinct(t *testing.T) {
 	n := agNode(NodeAvailabilityDatabase, "testdb_1", "AAG1")
 	n.data.AGLocalSecondary, n.data.AGLocalJoined = true, true

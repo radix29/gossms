@@ -9,9 +9,8 @@ import (
 	"testing"
 )
 
-// openFakeSession opens a Session over a one-connection fake pool serving
-// batches in order, and returns the pool's connector so a test can see what
-// the pool did with the connection.
+// openFakeSession opens a Session over a one-connection fake pool, returning
+// the connector so a test can see what the pool did.
 func openFakeSession(t *testing.T, batches ...[]fakeMsg) (*Session, *fakeMsgConnector, *sql.DB) {
 	t.Helper()
 	fc := &fakeMsgConnector{conn: &fakeMsgConn{batches: batches, dbName: "testdb", spid: 57}}
@@ -31,9 +30,8 @@ func oneRow(v string) []fakeMsg {
 	return []fakeMsg{set([]string{"v"}, []driver.Value{v})}
 }
 
-// BUG-1: the whole reason Session exists. Two Executes on it reach the same
-// physical connection and database/sql never resets it in between — the
-// reset is what dropped temp tables, SET options and open transactions.
+// BUG-1: every Execute on a Session reaches the same connection with no reset
+// in between (the reset drops temp tables, SET options and transactions).
 func TestSessionRunsEveryExecuteOnOneUnresetConnection(t *testing.T) {
 	s, fc, _ := openFakeSession(t, oneRow("first"), oneRow("second"))
 	defer s.Close()
@@ -52,15 +50,15 @@ func TestSessionRunsEveryExecuteOnOneUnresetConnection(t *testing.T) {
 	}
 }
 
-// The control for the test above: the package-level Execute, on the same
-// fake, does get its connection reset — so a zero count there means something.
+// Control: pooled Execute on the same fake does reset, so a zero count above
+// means something.
 func TestPooledExecuteResetsTheConnectionBetweenCalls(t *testing.T) {
 	db := openFakeMsgDB(oneRow("first"), oneRow("second"))
 	defer db.Close()
 	Execute(context.Background(), db, "", "SELECT 1")
 	Execute(context.Background(), db, "", "SELECT 1")
-	// openFakeMsgDB keeps its connector to itself; the one connection is
-	// reached through the pool instead.
+	// openFakeMsgDB keeps its connector private; reach the connection through
+	// the pool.
 	conn, err := db.Conn(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -73,8 +71,8 @@ func TestPooledExecuteResetsTheConnectionBetweenCalls(t *testing.T) {
 	}
 }
 
-// A Session's database is wherever its last run left it, with no USE of its
-// own, and its transaction count comes back after every run.
+// The database is wherever the last run left it (no USE), and the transaction
+// count comes back after each run.
 func TestSessionReportsStateAfterEachRun(t *testing.T) {
 	s, fc, _ := openFakeSession(t, oneRow("x"))
 	defer s.Close()
@@ -91,9 +89,8 @@ func TestSessionReportsStateAfterEachRun(t *testing.T) {
 	}
 }
 
-// A cancelled run still reports the state it left: cancelling the batch
-// after its BEGIN TRAN leaves the transaction open, and the close prompt
-// depends on knowing that.
+// A cancelled run still reports state: a BEGIN TRAN before the cancel leaves a
+// transaction the close prompt needs to know about.
 func TestSessionReadsStateAfterACancelledRun(t *testing.T) {
 	s, fc, _ := openFakeSession(t, oneRow("x"))
 	defer s.Close()
@@ -110,9 +107,9 @@ func TestSessionReadsStateAfterACancelledRun(t *testing.T) {
 	}
 }
 
-// A connection that breaks during a run takes the session with it: the run
-// says so, the connection is discarded rather than pooled, and the next run
-// fails at once instead of landing on some other session.
+// A connection breaking mid-run loses the session: the run says so, the
+// connection is discarded, and the next run fails at once rather than landing
+// on another session.
 func TestSessionLostWhenItsConnectionBreaks(t *testing.T) {
 	s, fc, _ := openFakeSession(t, []fakeMsg{{kind: msgBreak}}, oneRow("never"))
 	defer s.Close()
@@ -133,9 +130,8 @@ func TestSessionLostWhenItsConnectionBreaks(t *testing.T) {
 	}
 }
 
-// A SHOWPLAN_XML that cannot be switched off would turn every later run into
-// a plan fetch that runs nothing, and nothing resets a Session's connection
-// the way the pool resets a returned one — so the session is given up.
+// A SHOWPLAN_XML that can't be switched off would make every later run a plan
+// fetch, and nothing resets a Session's connection, so the session is given up.
 func TestSessionLostWhenPlanCaptureCannotBeSwitchedOff(t *testing.T) {
 	s, fc, _ := openFakeSession(t, []fakeMsg{})
 	defer s.Close()
@@ -150,9 +146,8 @@ func TestSessionLostWhenPlanCaptureCannotBeSwitchedOff(t *testing.T) {
 	}
 }
 
-// Close hands the connection back as broken, so database/sql closes it and
-// the server ends the session — rolling back its open transaction. Returned
-// to the pool instead it would sit idle holding that transaction's locks.
+// Close hands the connection back as broken so database/sql closes it and the
+// server rolls back the open transaction, instead of pooling it with its locks.
 func TestSessionCloseDiscardsTheConnection(t *testing.T) {
 	s, fc, db := openFakeSession(t)
 	s.Close()

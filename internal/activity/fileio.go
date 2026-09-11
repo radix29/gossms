@@ -5,7 +5,7 @@ import (
 	"database/sql"
 )
 
-// fileKey identifies one database file across samples.
+// fileKey identifies a database file across samples.
 type fileKey struct {
 	dbID   int
 	fileID int
@@ -26,10 +26,8 @@ type fileRow struct {
 // fileSet is one sample of sys.dm_io_virtual_file_stats.
 type fileSet map[fileKey]fileRow
 
-// FileIO is one database's data-file or log-file I/O over the interval
-// between two samples. A database with both contributes one of each: log
-// writes and data writes have different shapes and a combined row hides
-// which of the two a latency spike came from.
+// FileIO is one database's data-file or log-file I/O between two samples. Log
+// and data are separate rows so a latency spike's source is visible.
 type FileIO struct {
 	Database   string
 	IsLog      bool
@@ -39,8 +37,7 @@ type FileIO struct {
 	MsPerWrite float64
 }
 
-// Label names the row the way a panel shows it: the database, plus the file
-// kind when the row is the log half.
+// Label is the database name, plus the file kind for the log row.
 func (f FileIO) Label() string {
 	if f.IsLog {
 		return f.Database + " (log)"
@@ -48,10 +45,8 @@ func (f FileIO) Label() string {
 	return f.Database
 }
 
-// The DMV reports by file; sys.master_files supplies the database name and
-// whether the file is a log file, which fileDeltas keeps separated from
-// data-file I/O. DB_NAME() is used rather than a join to sys.databases so a
-// database the connection can't see still contributes its I/O to the total.
+// sys.master_files supplies whether a file is a log file. DB_NAME() rather than
+// a join to sys.databases, so databases the connection can't see still count.
 const fileIOQuery = `
 SELECT vfs.database_id, vfs.file_id, DB_NAME(vfs.database_id),
        CASE WHEN mf.type = 1 THEN 1 ELSE 0 END,
@@ -91,10 +86,8 @@ func collectFileIO(ctx context.Context, db *sql.DB) (fileSet, error) {
 }
 
 // fileDeltas turns two cumulative samples into throughput and latency per
-// database and file kind, plus the totals across every file. Latency is the
-// stall delta divided by the operation-count delta — an interval with no
-// reads has no read latency to report, and reads as 0 rather than as a
-// division by zero.
+// database and file kind, plus totals. Latency is stall delta / operation-count
+// delta; no operations reads 0.
 func fileDeltas(prev, cur fileSet, elapsed float64) (perDB []FileIO, total FileIO) {
 	total.Database = "Total"
 	if elapsed <= 0 {

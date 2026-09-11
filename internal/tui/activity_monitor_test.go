@@ -16,9 +16,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/charts"
 )
 
-// newTestActivityMonitor builds a bound panel over a connection that was
-// never opened — nothing in the shell queries, so a bare ServerConn is
-// enough to exercise every control.
+// newTestActivityMonitor builds a bound panel over a never-opened connection; a
+// bare ServerConn is enough for every control.
 func newTestActivityMonitor(w, h int) *ActivityMonitor {
 	sc := &db.ServerConn{Opts: config.Connection{Server: "SQLDEMO01"}}
 	am := NewActivityMonitor(newTestApp(), sc)
@@ -66,9 +65,7 @@ func TestActivityMonitorDrawsTabsAndDashboard(t *testing.T) {
 	}
 }
 
-// The toolbar carries the active tab's controls and only those: a rate
-// selector the placeholder tabs have no timer for would be a control that
-// does nothing.
+// The toolbar carries only the active tab's controls.
 func TestActivityMonitorToolbarFollowsTheActiveTab(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	rows := amRender(am, 100, 30)
@@ -102,8 +99,7 @@ func TestActivityMonitorPauseAndRate(t *testing.T) {
 		t.Error("a paused collector isn't marked in the dashboard header")
 	}
 
-	// Pause is shared: one collector feeds both dashboards, so the Sample
-	// tab must not come up looking live while History is frozen.
+	// Pause is shared by History and Sample.
 	am.setTab(amTabSample)
 	if !amRowsContain(amRender(am, 100, 30), "PAUSED") {
 		t.Error("the Sample tab doesn't show the collector as paused")
@@ -120,10 +116,8 @@ func TestActivityMonitorPauseAndRate(t *testing.T) {
 	}
 }
 
-// The dashboard header lives on a canvas that scrolls out from under a
-// narrow terminal, so the toolbar has to carry the collector's state on a
-// row that never moves — and it must report what is actually happening, not
-// what the panel would like to be happening.
+// The dashboard header scrolls away on a narrow terminal, so the toolbar
+// reports the collector's real state on a fixed row.
 func TestActivityMonitorToolbarReportsCollectorState(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 
@@ -140,8 +134,7 @@ func TestActivityMonitorToolbarReportsCollectorState(t *testing.T) {
 		t.Errorf("state = %q, want it to say collection is running", got)
 	}
 
-	// Every fallback the toolbar can fall back to still says whether
-	// collection is stopped; that is the fact a narrow panel must not lose.
+	// Every fallback still says whether collection stopped.
 	am.setPaused(true)
 	for _, got := range am.collectionState() {
 		if !strings.Contains(got, "PAUSED") {
@@ -153,9 +146,7 @@ func TestActivityMonitorToolbarReportsCollectorState(t *testing.T) {
 	}
 }
 
-// A control's label must never be broken up by the state text beside it:
-// they share one row, and the state is drawn into whatever the controls
-// leave rather than over the top of them.
+// State text is drawn into the space controls leave, never over their labels.
 func TestActivityMonitorToolbarStateDoesNotOverlapControls(t *testing.T) {
 	for _, w := range []int{60, 80, 100, 150} {
 		am := newTestActivityMonitor(w, 30)
@@ -171,7 +162,7 @@ func TestActivityMonitorToolbarStateDoesNotOverlapControls(t *testing.T) {
 	}
 }
 
-// Every control is gated on the tab it belongs to.
+// Every control is gated on its tab.
 func TestActivityMonitorControlsAreTabGated(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	am.setTab(amTabSessions)
@@ -189,8 +180,7 @@ func TestActivityMonitorControlsAreTabGated(t *testing.T) {
 	}
 }
 
-// A scroll key that can't move must come back false, or the panel becomes
-// somewhere the keyboard can't leave.
+// A scroll key that can't move returns false, so the keyboard can leave.
 func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 
@@ -210,8 +200,7 @@ func TestActivityMonitorScrollingReportsWhatItDid(t *testing.T) {
 		t.Error("Home didn't return the viewport to the top-left")
 	}
 
-	// A procedure-backed tab has no canvas to scroll: the panel's own
-	// scrolling must stay out of it and leave the keys to the grid.
+	// Procedure tabs have no canvas; scrolling keys go to the grid.
 	am.setTab(amTabSessions)
 	if maxX, maxY := am.scrollLimits(); maxX != 0 || maxY != 0 {
 		t.Errorf("the Sessions tab reported scroll limits %d,%d, want 0,0", maxX, maxY)
@@ -239,7 +228,7 @@ func TestActivityMonitorScrollIsPerTab(t *testing.T) {
 	}
 }
 
-// Scrolling changes what's visible, not how the dashboard is laid out.
+// Scrolling moves the viewport, not the layout.
 func TestActivityMonitorScrollMovesTheViewport(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	before := amRender(am, 100, 30)
@@ -272,10 +261,8 @@ func TestActivityMonitorTabClickAndKeyboardSwitching(t *testing.T) {
 	}
 }
 
-// tcell resends Button1 on every motion event while the button is held, so
-// a click that twitches must not re-run the control it landed on — and a
-// gesture that started on the toolbar must not switch tabs when it wanders
-// onto the tab row.
+// tcell resends Button1 on motion while held: a twitching click must not re-run
+// its control, and a toolbar gesture must not switch tabs.
 func TestActivityMonitorHeldClickFiresOnce(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	pause := am.tools[len(am.tools)-1].rect
@@ -314,8 +301,7 @@ func TestActivityMonitorWheelScrolls(t *testing.T) {
 	}
 }
 
-// The panel owns whatever connections it opened for itself, and closing it
-// has to release them — a leaked connection is a live SQL Server session.
+// Closing releases every connection the panel opened; a leak is a live session.
 func TestActivityMonitorCloseReleasesOwnedConnections(t *testing.T) {
 	am := newTestActivityMonitor(100, 30)
 	owned := &db.ServerConn{Opts: config.Connection{Server: "SQLDEMO01"}}
@@ -330,8 +316,7 @@ func TestActivityMonitorCloseReleasesOwnedConnections(t *testing.T) {
 	}
 }
 
-// Opening Activity Monitor twice for the same server raises the existing
-// panel rather than starting a second collector against that instance.
+// Opening Activity Monitor twice for one server raises the existing panel.
 func TestShowActivityMonitorReusesThePanel(t *testing.T) {
 	a := newTestApp()
 	sc := &db.ServerConn{Opts: config.Connection{Server: "SQLDEMO01"}}
@@ -345,7 +330,7 @@ func TestShowActivityMonitorReusesThePanel(t *testing.T) {
 	}
 }
 
-// A panel too small for its chrome must still draw what fits.
+// A panel too small for its chrome still draws what fits.
 func TestActivityMonitorTinyBounds(t *testing.T) {
 	am := newTestActivityMonitor(20, 3)
 	rows := amRender(am, 20, 3)
@@ -354,17 +339,15 @@ func TestActivityMonitorTinyBounds(t *testing.T) {
 	}
 }
 
-// amClick sends a press and its release at one spot, which is what the
-// panel's gesture owner expects — a press with no release leaves dragZone
-// armed and the next click routed to the old zone.
+// amClick sends a press and release at one spot; a press without release leaves
+// dragZone armed.
 func amClick(am *ActivityMonitor, x, y int) bool {
 	claimed := am.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 	am.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
 	return claimed
 }
 
-// amWithSamples fills the store so the History charts have something to
-// plot and the tooltip has a sample to name.
+// amWithSamples fills the store so charts and tooltips have samples.
 func amWithSamples(am *ActivityMonitor, n int) {
 	base := time.Date(2026, 8, 6, 15, 32, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
@@ -378,8 +361,8 @@ func amWithSamples(am *ActivityMonitor, n int) {
 	am.rebuild()
 }
 
-// A click on a chart pins a readout of that chart's series at the clicked
-// column, and the next click anywhere dismisses it.
+// A chart click pins that chart's readout at the clicked column; the next click
+// dismisses it.
 func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 30)
@@ -411,8 +394,7 @@ func TestActivityMonitorChartClickPinsATooltip(t *testing.T) {
 	}
 }
 
-// The tooltip is anchored to a spot in the viewport, so it cannot outlive a
-// scroll that moves the canvas under it.
+// A scroll dismisses the tooltip.
 func TestActivityMonitorScrollDismissesTheTooltip(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 30)
@@ -431,10 +413,8 @@ func TestActivityMonitorScrollDismissesTheTooltip(t *testing.T) {
 	}
 }
 
-// Dragging a scrollbar moves the canvas under the tooltip exactly as a
-// scrolling key does, so it has to drop the tooltip too. The two bars are
-// the one scrolling path that doesn't go through scrollBy, which is where
-// the tooltip is cleared.
+// Scrollbar drags dismiss the tooltip too; they're the one scroll path not
+// through scrollBy.
 func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 30)
@@ -446,8 +426,7 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 		t.Fatal("no tooltip to test with")
 	}
 
-	// Press on the vertical bar's own column, at the bottom of its track, so
-	// the drag lands on an offset well away from the current one.
+	// Press at the bottom of the vertical bar so the offset changes noticeably.
 	bar := am.viewRect.Right()
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.Button1, tcell.ModNone))
 	am.HandleMouse(tcell.NewEventMouse(bar, am.viewRect.Bottom()-1, tcell.ButtonNone, tcell.ModNone))
@@ -460,10 +439,8 @@ func TestActivityMonitorScrollbarDragDismissesTheTooltip(t *testing.T) {
 	}
 }
 
-// A new sample pushes every plotted bucket one column left. The pin is the
-// sample, not the spot: the box has to keep its own numbers and move with its
-// column. Anchored to the screen instead, it sat still and reported whichever
-// sample slid under it — every two seconds at the default rate.
+// A new sample pushes buckets left; the pin must keep its numbers and move with
+// its column.
 func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.app.panels.AddPanel(am) // applySample ignores an unhosted panel
@@ -471,8 +448,8 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	amWithSamples(am, 30)
 	amRender(am, 150, 40)
 
-	// The rightmost column is the newest bucket, so the sample about to land
-	// takes this exact column and the box must vacate it.
+	// The rightmost column is newest; the next sample takes it and the box must
+	// move.
 	hit := am.hits[0]
 	x := am.viewRect.X + hit.Plot.Right() - 1 - am.scrollX[am.tab]
 	amClick(am, x, am.viewRect.Y+hit.Plot.Y)
@@ -505,8 +482,7 @@ func TestActivityMonitorTooltipTracksItsSampleAcrossASample(t *testing.T) {
 	}
 }
 
-// Once the pinned sample has been pushed off the left edge of the plot there
-// is nothing on screen for the box to point at, so it closes.
+// Once the pinned sample leaves the plot's left edge, the box closes.
 func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.app.panels.AddPanel(am)
@@ -514,8 +490,8 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	amWithSamples(am, 30)
 	amRender(am, 150, 40)
 
-	// Pinned on the oldest bucket drawn, which the next sample pushes past
-	// the left edge only once the plot is full — so fill it first.
+	// Pinned on the oldest drawn bucket, which only leaves once the plot is
+	// full.
 	base := time.Date(2026, 8, 6, 16, 0, 0, 0, time.UTC)
 	n := am.hits[0].Plot.W
 	for i := 0; i < n; i++ {
@@ -533,8 +509,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 		t.Fatal("no tooltip to test with")
 	}
 
-	// One more sample, well inside retention: the pinned one is still in the
-	// store, just no longer drawn — which is the case under test.
+	// One more sample: the pinned one is still stored but no longer drawn.
 	am.applySample(activity.Sample{
 		At:         base.Add(time.Duration(n) * 2 * time.Second),
 		BatchesSec: 1,
@@ -546,9 +521,7 @@ func TestActivityMonitorTooltipClosesWhenItsSampleLeavesThePlot(t *testing.T) {
 	}
 }
 
-// The two collectors both land in invalidateView, so clearing the tooltip
-// there let the tempdb collector's tick dismiss a box pinned on History —
-// a tab that tick redraws nothing on. Neither feed may touch the other's.
+// A tempdb tick must not dismiss a box pinned on History.
 func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.app.panels.AddPanel(am)
@@ -574,8 +547,7 @@ func TestActivityMonitorATempDBTickLeavesAHistoryTooltipAlone(t *testing.T) {
 	}
 }
 
-// And the mirror image: the activity collector ticks twice a tempdb one, so
-// a box pinned on the TempDB tab is the one most exposed to the other feed.
+// Nor an activity tick one pinned on TempDB.
 func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.app.panels.AddPanel(am)
@@ -609,7 +581,7 @@ func TestActivityMonitorAnActivityTickLeavesATempDBTooltipAlone(t *testing.T) {
 	}
 }
 
-// A tooltip reports the sample under the pointer, not the newest one.
+// A tooltip reports the sample under the pointer, not the newest.
 func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 30)
@@ -626,9 +598,8 @@ func TestActivityMonitorTooltipNamesTheClickedSample(t *testing.T) {
 	}
 }
 
-// The pin marks the column it reports and names its moment on the chart's own
-// time axis, whose other labels are ages counted back from now — without the
-// callout the box quotes a clock time the chart under it never shows.
+// The pin names its moment on the chart's time axis, whose other labels are
+// ages.
 func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	amWithSamples(am, 200) // enough to fill the plot out to its left edge
@@ -638,8 +609,7 @@ func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 	if hit.TimeRow.H == 0 {
 		t.Fatal("the chart recorded no time-axis row to call out on")
 	}
-	// Pinned near the left of the plot, where the box is placed clear of the
-	// callout's own columns.
+	// Near the plot's left, where the box sits clear of the callout.
 	amClick(am, am.viewRect.X+hit.Plot.X+5-am.scrollX[am.tab], am.viewRect.Y+hit.Plot.Y)
 	if am.tooltip == nil {
 		t.Fatal("no tooltip to test with")
@@ -655,10 +625,8 @@ func TestActivityMonitorTooltipCallsOutItsTimeOnTheAxis(t *testing.T) {
 	}
 }
 
-// The Sample tab's memory composition bar answers a click too: its legend
-// names the segments but not their megabytes. Unlike a history chart the bar
-// plots one instant, so every column of it — not only the rightmost — has to
-// report the same components.
+// The memory composition bar answers clicks too (its legend lacks megabytes).
+// It plots one instant, so every column reports the same components.
 func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 	am := newTestActivityMonitor(150, 40)
 	am.store.Append(activity.Sample{
@@ -694,8 +662,7 @@ func TestActivityMonitorMemoryCompositionClickPinsATooltip(t *testing.T) {
 	}
 }
 
-// amWithTempDBSamples fills the tempdb store so the TempDB tab has something
-// to draw and to resolve a click against.
+// amWithTempDBSamples fills the tempdb store.
 func amWithTempDBSamples(am *ActivityMonitor, n int) {
 	start := time.Date(2026, 8, 6, 20, 0, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
@@ -738,8 +705,7 @@ func TestActivityMonitorTempDBTabDrawsItsSections(t *testing.T) {
 	}
 }
 
-// The TempDB tab runs its own collector, so its rate selector and its Pause
-// must move its own state and leave the activity collector's alone.
+// The TempDB tab's rate and Pause move only its own collector.
 func TestActivityMonitorTempDBHasItsOwnRateAndPause(t *testing.T) {
 	am := newTestActivityMonitor(160, 45)
 	am.setTab(amTabTempDB)
@@ -759,15 +725,13 @@ func TestActivityMonitorTempDBHasItsOwnRateAndPause(t *testing.T) {
 	if am.act.paused {
 		t.Error("pausing TempDB also paused the activity collector")
 	}
-	// Past the end of the list is a no-op, not a wrap: the toolbar shows the
-	// slowest rate selected and the key has to agree with it.
+	// Past the end of the list is a no-op, not a wrap.
 	if amRune(am, '-') {
 		t.Error("'-' at the slowest rate was accepted")
 	}
 }
 
-// The tab is a real dashboard, not a placeholder: it scrolls, and its charts
-// answer a click with the sample under it.
+// The TempDB tab scrolls and pins tooltips.
 func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	am := newTestActivityMonitor(160, 45)
 	amWithTempDBSamples(am, 6)
@@ -795,8 +759,8 @@ func TestActivityMonitorTempDBScrollsAndPinsATooltip(t *testing.T) {
 	}
 }
 
-// hostedActivityMonitor is a panel the App actually hosts, which is what
-// panelHosted gates every collector callback on.
+// hostedActivityMonitor is a hosted panel, as panelHosted requires for
+// collector callbacks.
 func hostedActivityMonitor(t *testing.T) *ActivityMonitor {
 	t.Helper()
 	a := newTestApp()
@@ -806,10 +770,8 @@ func hostedActivityMonitor(t *testing.T) *ActivityMonitor {
 	return am
 }
 
-// A collector's Run returns on three paths and reports only one of them
-// (ErrNoPermission) through onError. Until the panel learned about the other
-// two it went on drawing "collecting" with a live Pause whose every send the
-// stopped collector dropped.
+// Run returns three ways but reports only ErrNoPermission via onError; the
+// panel must still stop claiming to collect.
 func TestActivityMonitorCollectorStoppedClearsCollecting(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
@@ -828,8 +790,7 @@ func TestActivityMonitorCollectorStoppedClearsCollecting(t *testing.T) {
 	}
 }
 
-// An error the collector did report is the better message, so the silent
-// exit's status must not overwrite it.
+// A reported error is the better message; the silent exit mustn't overwrite it.
 func TestActivityMonitorCollectorStoppedKeepsAReportedError(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
@@ -843,9 +804,8 @@ func TestActivityMonitorCollectorStoppedKeepsAReportedError(t *testing.T) {
 	}
 }
 
-// A Retry starts a new collector while the old goroutine is still unwinding.
-// Its stopped-callback arrives afterwards and must not report the new
-// collector as stopped.
+// After Retry, the old goroutine's stopped-callback must not mark the new
+// collector stopped.
 func TestActivityMonitorStaleStoppedCallbackIgnored(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	old := activity.NewCollector(nil, nil, nil)
@@ -858,9 +818,7 @@ func TestActivityMonitorStaleStoppedCallbackIgnored(t *testing.T) {
 	}
 }
 
-// A stopped collector's Pause can do nothing — every send is dropped — so
-// the toolbar offers the one control that can: Retry, which starts a new
-// collector on the connection the panel still owns.
+// A stopped collector's Pause does nothing, so the toolbar offers Retry.
 func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	c := activity.NewCollector(nil, nil, nil)
@@ -879,8 +837,8 @@ func TestActivityMonitorOffersRetryWhenStopped(t *testing.T) {
 	if amToolLabelled(am, "Pause") != nil {
 		t.Error("a stopped collector still offers Pause, whose sends it drops")
 	}
-	// feedConn is nil on a panel that never dialled, so the restart is a
-	// no-op — what is pinned here is that the control is live and reaches it.
+	// feedConn is nil here, so restart is a no-op; this pins that the control
+	// is live.
 	retry.action()
 }
 
@@ -893,9 +851,8 @@ func amToolLabelled(am *ActivityMonitor, label string) *toolButton {
 	return nil
 }
 
-// deadConnector fails every dial, so a collector's HasViewServerState
-// prologue errors and Run returns before its first tick — the shape of a
-// connection that dropped between the panel opening and the first read.
+// deadConnector fails every dial, so the permission prologue errors and Run
+// returns before its first tick.
 type deadConnector struct{}
 
 func (deadConnector) Connect(context.Context) (driver.Conn, error) {
@@ -904,9 +861,8 @@ func (deadConnector) Connect(context.Context) (driver.Conn, error) {
 
 func (deadConnector) Driver() driver.Driver { return nil }
 
-// The wiring, not just collectorStopped's arithmetic: a Run that returns
-// must reach the panel. Drives the real collector against a dead pool and
-// drains the queue postAndWake posted to.
+// A returning Run must reach the panel: drives the real collector against a
+// dead pool and drains postAndWake's queue.
 func TestActivityMonitorLearnsARunReturned(t *testing.T) {
 	am := hostedActivityMonitor(t)
 	pool := sql.OpenDB(deadConnector{})
@@ -927,18 +883,12 @@ func TestActivityMonitorLearnsARunReturned(t *testing.T) {
 	}
 }
 
-// -- the toolbar's overflow ---------------------------------------------------
-
-// TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth. A control that
-// does not fit the row got a zero rect, which is neither painted nor
-// hit-tested — and none of these has a key binding of its own, so on a pane
-// narrower than 47 columns Pause could not be reached at all. Every control
-// must now be drawn or be in the More menu.
+// Every control is drawn or in the More menu at every width; none has a key
+// binding, so a zero-rect control would be unreachable.
 func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 	sawOverflow := false
-	// Every tab an Azure connection offers, which is a superset of what an
-	// on-premises one does — the Instance tab has a rate selector of its own,
-	// so it is a row that can overflow like any other.
+	// Every tab an Azure connection offers (a superset of on-premises);
+	// Instance has its own rate selector.
 	for _, tab := range newAzureActivityMonitor(t, 100, 30).visibleTabs() {
 		for w := 20; w <= 120; w++ {
 			am := newAzureActivityMonitor(t, w, 30)
@@ -965,8 +915,7 @@ func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 			if !am.more.rect.IsZero() && am.more.rect.Right() > am.rect.Right() {
 				t.Fatalf("tab %d width %d: the More cell runs past the pane", tab, w)
 			}
-			// The hidden set has to be the row's tail, or the menu holds the
-			// middle of the toolbar and the row itself has a gap in it.
+			// The hidden set must be the row's tail.
 			want := len(am.tools) - len(am.hidden)
 			for n, i := range am.hidden {
 				if i != want+n {
@@ -981,9 +930,8 @@ func TestNoActivityMonitorToolbarControlIsUnreachableAtAnyWidth(t *testing.T) {
 	}
 }
 
-// TestTheActivityMonitorOverflowMenuRunsTheHiddenControl end to end: Pause is
-// off the row, the More cell is on it, and choosing the entry pauses the feed
-// the button would have.
+// End to end: Pause off the row, More on it, and the menu entry pauses the
+// feed.
 func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
 	am := newTestActivityMonitor(40, 30)
 	pause := len(am.tools) - 1
@@ -994,7 +942,7 @@ func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
 		t.Fatal("no More cell to reach it through")
 	}
 
-	// Press the More cell where the mouse would.
+	// Press the More cell.
 	press := tcell.NewEventMouse(am.more.rect.X+1, am.more.rect.Y, tcell.Button1, 0)
 	if !am.HandleMouse(press) {
 		t.Fatal("the More cell did not take the press")
@@ -1006,9 +954,8 @@ func TestTheActivityMonitorOverflowMenuRunsTheHiddenControl(t *testing.T) {
 	}
 }
 
-// TestTheActivityMonitorOverflowMenuMarksTheRateInForce. A rate button is drawn
-// selected because that is the only thing saying which of four is in force;
-// collapsed into the menu it has to keep saying so.
+// The selected rate must stay marked inside the menu; it's the only indication
+// of which rate is in force.
 func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	am := newTestActivityMonitor(30, 30)
 	am.setRate(2) // "5 s"

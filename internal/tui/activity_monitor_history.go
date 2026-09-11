@@ -10,18 +10,17 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// The work order's colour semantics, resolved once here so a metric keeps
-// the same colour across refreshes and across the two tabs: cyan is primary
-// activity, green transactions and CPU, yellow disk/log/compile work, blue
-// memory and cache, red pressure and failures, purple the slower-moving
-// memory indicators.
+// Colour semantics, resolved once so metrics keep colours across refreshes and
+// tabs: cyan primary activity, green transactions and CPU, yellow
+// disk/log/compile, blue memory and cache, red pressure and failures, purple
+// slow memory indicators.
 func chartColors() (cyan, green, yellow, blue, red, purple, neutral tcell.Color) {
 	p := theme.Active()
 	return p.ChartCyan, p.ChartGreen, p.ChartYellow, p.ChartBlue, p.ChartRed, p.ChartPurple, p.ChartNeutral
 }
 
-// waitColors give each wait category a fixed colour, indexed by
-// activity.WaitCategory, so a category keeps its place in the stack.
+// waitColors gives each wait category a fixed colour, indexed by
+// activity.WaitCategory.
 func waitColors() []tcell.Color {
 	cyan, green, yellow, blue, red, purple, neutral := chartColors()
 	return []tcell.Color{
@@ -36,8 +35,8 @@ func waitColors() []tcell.Color {
 	}
 }
 
-// buildHistoryView turns the whole store into the History dashboard's
-// series, oldest sample first.
+// buildHistoryView turns the store into the History dashboard's series, oldest
+// first.
 func (am *ActivityMonitor) buildHistoryView() dashboard.HistoryView {
 	cyan, green, yellow, blue, red, purple, neutral := chartColors()
 	st := &am.store
@@ -61,9 +60,8 @@ func (am *ActivityMonitor) buildHistoryView() dashboard.HistoryView {
 		Backup: []charts.Series{
 			series("Backup MB/sec", "MB/s", green, func(s activity.Sample) float64 { return s.BackupMBSec }),
 		},
-		// Stacked SQL Server first: the column's height is how busy the host
-		// is, and the split says whose work it was. What the column leaves
-		// under the 0-100 axis is idle.
+		// SQL Server stacked first: column height is host busyness, the split
+		// says whose. The rest under 100 is idle.
 		CPU: []charts.Series{
 			series("SQL Server %", "SQL", green, func(s activity.Sample) float64 { return s.CPU.SQLPct }),
 			series("Other processes %", "Other", yellow, func(s activity.Sample) float64 { return s.CPU.OtherPct }),
@@ -113,9 +111,8 @@ func (am *ActivityMonitor) buildHistoryView() dashboard.HistoryView {
 	return v
 }
 
-// sampleTimes are the clock times of the stored samples, oldest first and
-// aligned with every plotted series, so a tooltip can name the moment the
-// clicked column covers rather than just the newest one.
+// sampleTimes are the stored samples' clock times, aligned with every series,
+// so a tooltip names the clicked column's moment.
 func (am *ActivityMonitor) sampleTimes() []string {
 	samples := am.store.Samples()
 	out := make([]string, len(samples))
@@ -125,8 +122,8 @@ func (am *ActivityMonitor) sampleTimes() []string {
 	return out
 }
 
-// waitSeries builds one stacked series per wait category, in the order the
-// categories are declared so the stack doesn't reshuffle between ticks.
+// waitSeries builds one stacked series per wait category in declaration order,
+// so the stack is stable.
 func (am *ActivityMonitor) waitSeries() []charts.Series {
 	colors := waitColors()
 	out := make([]charts.Series, 0, len(activity.WaitCategoryNames))
@@ -140,6 +137,5 @@ func (am *ActivityMonitor) waitSeries() []charts.Series {
 	return out
 }
 
-// number formats a count for a KPI readout: whole numbers, since these are
-// connections, tasks, and seconds rather than rates.
+// number formats a whole-number KPI (counts and seconds).
 func number(v float64) string { return fmt.Sprintf("%.0f", v) }

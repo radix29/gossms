@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// testConn is a saved connection with pwd as its password, used as the AAD
-// identity for the seal/open round trips below.
+// testConn is a saved connection with pwd as its password; its identity is the
+// AAD.
 func testConn(pwd string) Connection {
 	return Connection{
 		Name: "prod", Server: "sql-prod", Port: 1433, Database: "app",
@@ -59,8 +59,8 @@ func TestEncryptEmptyPassword(t *testing.T) {
 
 func TestDecryptEmptyString(t *testing.T) {
 	key := make([]byte, 32)
-	// A password stored empty is not a failed open: ok stays true, so Save
-	// re-seals it normally instead of treating it as a value to preserve.
+	// An empty stored password is not a failed open: ok is true, so Save
+	// re-seals normally.
 	got, ok := decryptPassword(key, testConn(""))
 	if !ok || got != "" {
 		t.Errorf("decryptPassword(key, \"\") = (%q, %v), want (\"\", true)", got, ok)
@@ -98,10 +98,9 @@ func TestDecryptWithWrongKeyReturnsEmpty(t *testing.T) {
 	}
 }
 
-// The point of the AAD: a sealed password must not open under a different
-// connection identity. Without binding, an attacker with write access to
-// config.json could move the blob onto an entry aimed at a host they control
-// and have gossms send the real password there.
+// A sealed password must not open under a different connection identity;
+// otherwise someone with write access to config.json could move it onto an
+// entry aimed at their own host.
 func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 	key := make([]byte, 32)
 	orig := testConn("s3cr3t!")
@@ -118,8 +117,8 @@ func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 		{"different user", func(c Connection) Connection { c.User = "other"; return c }},
 		{"different auth method", func(c Connection) Connection { c.AuthMethod = AuthWindows; return c }},
 		{"different port", func(c Connection) Connection { c.Port = 14330; return c }},
-		// The transport settings: flipping any of these downgrades or
-		// redirects the connection without touching where it points.
+		// Transport settings: changing any downgrades or redirects the
+		// connection.
 		{"encryption turned down", func(c Connection) Connection { c.Encrypt = EncryptOptional; return c }},
 		{"certificate trusted", func(c Connection) Connection { c.TrustServerCertificate = true; return c }},
 		{"host name in certificate", func(c Connection) Connection { c.HostNameInCertificate = "attacker-host"; return c }},
@@ -137,10 +136,9 @@ func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 	}
 }
 
-// Relabelling a connection or repointing it at another database on the same
-// server is an ordinary edit, so neither field is in the AAD and the stored
-// password must survive both. (Port was once in this list; it is bound since
-// v3, as it picks which instance receives the password.)
+// Renaming a connection or pointing it at another database on the same server
+// is an ordinary edit; neither is in the AAD, so the password survives both.
+// (Port is bound since v3: it picks the instance.)
 func TestPasswordSurvivesNameAndDatabaseEdits(t *testing.T) {
 	key := make([]byte, 32)
 	orig := testConn("s3cr3t!")
@@ -159,8 +157,8 @@ func TestPasswordSurvivesNameAndDatabaseEdits(t *testing.T) {
 	}
 }
 
-// A config written before connection binding has no aadPrefix and must still
-// decrypt, or upgrading would silently empty every saved password.
+// A pre-binding value (no aadPrefix) must still decrypt, or upgrading empties
+// every saved password.
 func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
@@ -182,7 +180,7 @@ func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
 		t.Errorf("decryptPassword(legacy) = (%q, %v), want (%q, true)", got, ok, plaintext)
 	}
 
-	// Re-sealing it moves it to the bound format.
+	// Re-sealing moves it to the bound format.
 	c.Password = plaintext
 	reSealed, err := encryptPassword(key, c)
 	if err != nil {
@@ -193,9 +191,8 @@ func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
 	}
 }
 
-// A v2 value — bound to server/user/auth method only — must still open, and
-// re-sealing it moves it to v3. v2 did not bind the transport settings, so a v2
-// value opens whatever they say; that window closes at the next Save.
+// A v2 value (bound to server/user/auth method) must open and re-seal as v3. v2
+// didn't bind transport settings; that closes at the next Save.
 func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
 	key := make([]byte, 32)
 	c := testConn("")
@@ -215,8 +212,7 @@ func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
 		t.Errorf("v2 value opened under another server: (%q, %v)", got, ok)
 	}
 
-	// A v2 ciphertext relabelled "v3:" must not open: the prefix picks the AAD,
-	// and v3's includes fields the ciphertext was never sealed with.
+	// A v2 ciphertext relabelled "v3:" must not open: the prefix picks the AAD.
 	relabelled := c
 	relabelled.Password = aadPrefix + strings.TrimPrefix(sealed, aadPrefixV2)
 	if got, ok := decryptPassword(key, relabelled); ok || got != "" {
@@ -233,9 +229,8 @@ func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
 	}
 }
 
-// An entry built in memory with no Encrypt set is read back from disk as
-// Optional; sealing and opening must agree on that, or its password is
-// unreadable after the first round trip.
+// An entry with no Encrypt reads back from disk as Optional; seal and open must
+// agree, or the password is unreadable after one round trip.
 func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
 	key := make([]byte, 32)
 	c := testConn("s3cr3t!")
@@ -250,8 +245,8 @@ func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
 	}
 }
 
-// sealV2ForTest reproduces the v2 on-disk format: "v2:" + base64 of
-// nonce||ciphertext sealed with the server/user/auth-method AAD.
+// sealV2ForTest produces the v2 format: "v2:" + base64(nonce||ciphertext) with
+// the server/user/auth-method AAD.
 func sealV2ForTest(key []byte, c Connection, plaintext string) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
@@ -265,8 +260,8 @@ func sealV2ForTest(key []byte, c Connection, plaintext string) (string, error) {
 	return aadPrefixV2 + base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// sealLegacyForTest reproduces the pre-binding on-disk format: base64 of
-// nonce||ciphertext with no AAD and no version prefix.
+// sealLegacyForTest produces the pre-binding format: base64(nonce||ciphertext),
+// no AAD or prefix.
 func sealLegacyForTest(key []byte, plaintext string) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
@@ -317,13 +312,10 @@ func TestLoadOrCreateKeyDifferentDirsGetDifferentKeys(t *testing.T) {
 	}
 }
 
-// The key is written the same way config.json is — temp file, fsync,
-// rename — so a crash can't leave a short one behind for
-// TestLoadOrCreateKeyRejectsWrongSizedKeyFile's refusal to reject on the
-// next run, with every saved password already encrypted under it. The
-// atomicity itself isn't observable from here; what is, and what a plain
-// os.WriteFile would break, is that the rename leaves no temp file behind
-// and the result still carries owner-only permissions.
+// The key is written atomically so a crash can't leave a short key that the
+// next run rejects with passwords already encrypted under it. Atomicity isn't
+// observable here; what is: no temp file left behind and owner-only
+// permissions.
 func TestLoadOrCreateKeyLeavesOnlyTheKeyFileBehind(t *testing.T) {
 	dir := t.TempDir()
 
@@ -355,10 +347,8 @@ func TestLoadOrCreateKeyLeavesOnlyTheKeyFileBehind(t *testing.T) {
 	}
 }
 
-// TestLoadOrCreateKeyRejectsWrongSizedKeyFile confirms an existing but
-// malformed key file is an error rather than a reason to generate a fresh
-// one — overwriting it would permanently destroy the only thing that can
-// decrypt the passwords already saved alongside it.
+// A malformed existing key file is an error, not a reason to generate a new one
+// — overwriting it would destroy the only way to decrypt saved passwords.
 func TestLoadOrCreateKeyRejectsWrongSizedKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, keyFileName)

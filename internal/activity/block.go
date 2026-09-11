@@ -1,11 +1,8 @@
 package activity
 
-// BlockProc is the Activity Monitor's blocking-chain procedure, the one
-// behind the Block tab.
-//
-// The chain is built from sys.sysprocesses because that is the one view
-// carrying both the spid and the spid blocking it in the same row — the
-// recursive CTE walks that pairing to produce the indented tree.
+// BlockProc is the blocking-chain procedure behind the Block tab. It reads
+// sys.sysprocesses, the one view with both spid and blocking spid in a row; a
+// recursive CTE walks that pairing into the indented tree.
 var BlockProc = &Proc{
 	MasterName: "sp_block",
 	TempDBName: "usp_block",

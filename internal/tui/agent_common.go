@@ -9,17 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// agent_common.go holds small helpers shared across the SQL Server Agent
-// tree/detail/menu files: string formatters for gosmo's Agent enums, and
-// the generic async enable/disable/delete plumbing every Agent entity type
-// (Job, Schedule, Alert, Operator) shares.
+// agent_common.go holds helpers shared by the SQL Server Agent files:
+// formatters for gosmo's Agent enums, and async enable/disable/delete plumbing
+// for Jobs, Schedules, Alerts and Operators.
 
-// formatJobState renders a gosmo.JobState for display.
-//
-// The states come from SQL Server Agent itself (gosmo.JobState); when that
-// read is unavailable — Agent stopped, or a login with neither sysadmin nor
-// SQLAgentReaderRole — gosmo falls back to a derivation that can only say
-// Executing or Idle, so those two are what a restricted login sees.
+// formatJobState renders a gosmo.JobState. When Agent's own state is
+// unavailable (Agent stopped, or neither sysadmin nor SQLAgentReaderRole),
+// gosmo can only derive Executing or Idle.
 func formatJobState(s gosmo.JobState) string {
 	switch s {
 	case gosmo.JobStateIdle:
@@ -73,15 +69,12 @@ func formatNotifyLevel(n gosmo.NotifyLevel) string {
 	}
 }
 
-// setAgentEnabled runs run (a gosmo Enable/Disable call) behind the progress
-// dialog, then updates node's cached IsEnabled flag and redraws the tree and
-// detail view on success — the shared body behind every Agent entity's
-// Enable/Disable toggle. noun is the entity's lower-case name ("job",
-// "schedule", …) for the dialog and the status line.
+// setAgentEnabled runs run (a gosmo Enable/Disable) behind the progress dialog,
+// then updates node's IsEnabled and redraws on success — shared by every Agent
+// entity. noun is the lowercase entity name for dialog and status.
 //
-// Neither direction is confirmed, as in SSMS; the progress dialog's reveal
-// delay keeps a fast toggle invisible, and one waiting on a lock gets a
-// spinner and Cancel instead of leaving the tree live under it.
+// Unconfirmed in both directions, as in SSMS. The progress dialog's reveal
+// delay hides fast toggles; slow ones get a spinner and Cancel.
 func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string, enable bool, run func(ctx context.Context) error) {
 	if !a.requireConn(sc) {
 		return
@@ -101,8 +94,8 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string
 	}, func(err error, cancelled bool) {
 		switch {
 		case cancelled:
-			// The state is re-read rather than assumed: the cancel may have
-			// reached the server after the change had committed.
+			// Re-read rather than assumed: the cancel may have arrived after
+			// the change committed.
 			a.setStatus(fmt.Sprintf("%s %q cancelled", doing, node.label))
 			if parent := node.parent; parent != nil {
 				a.explorer.Reload(parent)
@@ -118,10 +111,9 @@ func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string
 	})
 }
 
-// deleteAgentEntity confirms with the user, then runs run (a gosmo Drop/
-// Delete call) on a background goroutine — the shared body behind every
-// Agent entity's Delete action. On success the parent folder is refreshed
-// so the tree drops the node.
+// deleteAgentEntity confirms, then runs run (a gosmo Drop/Delete) in the
+// background and refreshes the parent folder on success. Shared by every Agent
+// entity.
 func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, message string, run func(ctx context.Context) error) {
 	if !a.requireConn(sc) {
 		return
@@ -140,8 +132,8 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
-				// Refreshed anyway: the cancel may have reached the server
-				// after the delete had already committed.
+				// Refresh anyway: the cancel may have arrived after the delete
+				// committed.
 				a.setStatus(fmt.Sprintf("Delete of %q cancelled", node.label))
 				a.explorer.Reload(node.parent)
 			case err != nil:

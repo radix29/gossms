@@ -35,8 +35,8 @@ func parseMissingIndex(t *testing.T) MissingIndex {
 	return mi[0]
 }
 
-// An INEQUALITY column is a key column, but not an equality one: it has to
-// come after every equality column or the index can't seek on them.
+// INEQUALITY columns are keys but must follow every equality column, or the
+// index can't seek on them.
 func TestParseMissingIndexSeparatesInequalityColumns(t *testing.T) {
 	m := parseMissingIndex(t)
 	if got := strings.Join(m.Equality, ","); got != "DoctorID" {
@@ -62,8 +62,7 @@ func TestMissingIndexCreateStatement(t *testing.T) {
 	}
 }
 
-// An index with no INCLUDE columns must not emit an empty INCLUDE (), which
-// doesn't parse.
+// No INCLUDE columns means no empty INCLUDE (), which doesn't parse.
 func TestMissingIndexCreateStatementWithoutIncludes(t *testing.T) {
 	m := MissingIndex{Schema: "dbo", Table: "T", Equality: []string{"a"}}
 	if got := m.CreateStatement(); strings.Contains(got, "INCLUDE") {
@@ -71,9 +70,8 @@ func TestMissingIndexCreateStatementWithoutIncludes(t *testing.T) {
 	}
 }
 
-// The script names the database in a USE, never in the CREATE — a
-// three-part name is not valid there — and leaves the DDL commented out,
-// as SSMS does, since the index name is still a placeholder.
+// The database goes in a USE (three-part names are invalid in CREATE INDEX),
+// and the DDL stays commented out as SSMS leaves it.
 func TestMissingIndexScript(t *testing.T) {
 	got := MissingIndexScript([]MissingIndex{parseMissingIndex(t)})
 	for _, want := range []string{

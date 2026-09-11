@@ -1,13 +1,12 @@
 //go:build livedb
 
-// Live verification of what ConnectContext sends: the settings the Connect
-// dialog offers are only real if the server sees them, and nothing a unit test
-// can do shows that — the DSN tests prove the string, not the session.
+// Live checks that the server actually sees the Connect dialog's settings; DSN
+// tests prove only the string.
 //
 //	go test -tags livedb ./internal/db/ -run TestLiveConnect -v \
 //	  -live-server win10cli.fritz.box -live-user sa -live-password PASS
 //
-// Skipped entirely without the flags, so `go test ./...` is unaffected.
+// Skipped without the flags.
 package db
 
 import (
@@ -67,9 +66,9 @@ func TestLiveConnectReportsTheRoleAsProgramName(t *testing.T) {
 	}
 }
 
-// Optional encrypts the login only; Mandatory the session. encrypt_option is
-// the server's own record of which one it got. Azure encrypts every session
-// whatever the client asks, so there Optional is only checked to connect.
+// Optional encrypts the login only, Mandatory the session; encrypt_option is
+// the server's record. Azure encrypts every session, so there Optional is only
+// checked to connect.
 func TestLiveConnectEncryptModeReachesTheServer(t *testing.T) {
 	opts := liveConnectOpts(t)
 	for mode, want := range map[config.EncryptMode]bool{
@@ -92,13 +91,12 @@ func TestLiveConnectEncryptModeReachesTheServer(t *testing.T) {
 	}
 }
 
-// BUG-2: an Extra Properties entry reaches the session. The driver asks for
-// 4096 by default, so any other size the server reports came from here.
+// BUG-2: an Extra Properties entry reaches the session. The driver defaults to
+// 4096, so any other size came from here.
 //
-// The size is above 8192 on purpose, and read allowing for TLS: an encrypted
-// session reports the size plus 58 bytes of record overhead (4154 for the
-// default 4096, on 17.0 and MI alike), the server caps 8192 to 8000, and on MI
-// go-mssqldb cannot finish the TLS handshake with a size below 4096 at all.
+// Above 8192 and read allowing for TLS: an encrypted session reports size + 58
+// bytes (4154 for 4096, on 17.0 and MI), the server caps 8192 to 8000, and on
+// MI go-mssqldb can't finish TLS below 4096.
 func TestLiveConnectExtraPropertiesReachTheServer(t *testing.T) {
 	opts := liveConnectOpts(t)
 	opts.Encrypt = config.EncryptOptional
@@ -118,9 +116,8 @@ func TestLiveConnectExtraPropertiesReachTheServer(t *testing.T) {
 	}
 }
 
-// ARCH-3: cancelling the context aborts a dial in flight instead of leaving it
-// to run to connectTimeout. 10.255.255.1 is unroutable, so a dial there hangs
-// until something stops it.
+// ARCH-3: cancelling ctx aborts a dial in flight. 10.255.255.1 is unroutable,
+// so the dial hangs until stopped.
 func TestLiveConnectCancelAbortsTheDial(t *testing.T) {
 	opts := liveConnectOpts(t)
 	opts.Server = "10.255.255.1"

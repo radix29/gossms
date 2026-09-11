@@ -1,8 +1,6 @@
-// Command plandemo hosts a single planview.PlanView full-screen, for
-// visually checking the execution-plan viewer control against real plan
-// files without needing the full gossms application. Not part of the
-// release build (see .github/workflows/release.yml, which only builds
-// cmd/gossms).
+// Command plandemo shows a single planview.PlanView full-screen, for checking
+// the execution-plan viewer against real plan files without the full app. Not
+// in the release build.
 package main
 
 import (
@@ -53,8 +51,8 @@ func main() {
 			w, h := s.Size()
 			view.SetBounds(0, 0, w, h)
 		case *tcell.EventKey:
-			// 'q' quits the demo harness itself — not a PlanView concern,
-			// since a reusable control shouldn't own an app-lifecycle key.
+			// 'q' quits the harness; a reusable control shouldn't own an
+			// app-lifecycle key.
 			if e.Key() == tcell.KeyCtrlQ || (core.EvRune(e) == 'q' && e.Modifiers() == 0) {
 				return
 			}

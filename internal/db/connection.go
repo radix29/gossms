@@ -1,4 +1,4 @@
-// Package db wraps gosmo to provide connection management for gossms.
+// Package db wraps gosmo for gossms connection management.
 package db
 
 import (
@@ -14,36 +14,27 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// maxOpenConns and maxIdleConns bound the pool gosmo opens per connection.
-// Several Object Explorer detail panels fan out one connection per row so a slow
-// row doesn't hold up the rest; uncapped, a server with hundreds of tables opens
-// hundreds of raw connections at once, and gosmo's default MaxIdleConns (2)
-// tears nearly all of them down again, paying full TCP+TLS+login setup on every
-// refresh. These caps bound the fan-out without changing that behaviour —
-// sql.DB queues acquisitions past MaxOpenConns rather than erroring — and let
-// connections survive between refreshes.
+// maxOpenConns and maxIdleConns bound gosmo's pool per connection. Some detail
+// panels fan out one connection per row; uncapped, hundreds of tables open
+// hundreds of connections, and gosmo's default MaxIdleConns (2) closes them
+// again, paying full setup every refresh. sql.DB queues past MaxOpenConns
+// rather than erroring.
 const (
 	maxOpenConns = 20
 	maxIdleConns = 10
 )
 
-// connectTimeout bounds one connection attempt — the dial, the TLS and login
-// handshakes, and the server-info read gosmo does before returning. It is
-// also the "connection timeout" written into the DSN, so the driver's own
-// per-dial limit and this one agree.
+// connectTimeout bounds one connection attempt (dial, TLS, login, gosmo's
+// server-info read). Also written into the DSN, so the driver's limit agrees.
 const connectTimeout = 30 * time.Second
 
-// Role says what a connection is for. It decides the application name the
-// connection reports — sys.dm_exec_sessions.program_name, what Activity
-// Monitor, sp_who2 and an Extended Events session show — the way SSMS names
-// its sessions per window type, so a DBA looking at the server can tell a
-// query window from the tool's own background reads and from the Activity
-// Monitor's polling.
+// Role says what a connection is for, which decides the program_name it reports
+// (Activity Monitor, sp_who2, XEvents), as SSMS names sessions per window type.
 type Role int
 
 const (
-	// RoleExplorer is Object Explorer's connection and everything that reads
-	// through it: detail panes, property sheets, dashboards, AG peers.
+	// RoleExplorer is Object Explorer and everything reading through it: detail
+	// panes, property sheets, dashboards, AG peers.
 	RoleExplorer Role = iota
 	// RoleQuery is a query panel's own connection.
 	RoleQuery
@@ -63,12 +54,9 @@ func (r Role) ApplicationName() string {
 	}
 }
 
-// ConnectionError is a typed error returned by Connect.
-//
-// Err holds the underlying failure and is reachable through Unwrap, so a caller
-// can inspect what went wrong — errors.Is against a driver sentinel,
-// errors.AsType for an mssql.Error to read its number, or gosmo.IsRetryable.
-// Cause is the pre-formatted message for display.
+// ConnectionError is Connect's error type. Err is the underlying failure (via
+// Unwrap, for errors.Is/AsType or gosmo.IsRetryable); Cause is the display
+// message.
 type ConnectionError struct {
 	Server string
 	Cause  string
@@ -87,57 +75,47 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// Login is the server login the connection is authenticated as
-	// (SUSER_NAME()), fetched once at Connect time: for Windows/Entra auth
-	// Opts.User is often empty or a UPN, not the login SQL Server resolves to.
-	// Empty if the best-effort fetch failed, so callers fall back to
-	// Opts.User.
+	// Login is SUSER_NAME(), fetched at Connect: for Windows/Entra auth
+	// Opts.User is often empty or a UPN. Empty if the fetch failed; callers
+	// fall back to Opts.User.
 	Login string
 
-	// ctx is cancelled by Close, so every background load scoped to this
-	// connection (see Context) is torn down on disconnect rather than idling out
-	// on its own timeout. Closing the underlying *sql.DB doesn't cancel a query
-	// already in flight on a checked-out connection, which would keep that
-	// connection and its SQL Server session open until the query finishes.
+	// ctx is cancelled by Close so background loads scoped to this connection
+	// stop on disconnect. Closing the *sql.DB alone doesn't cancel an in-flight
+	// query, which would hold its session open.
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	closed bool
 
-	// role is what Connect was asked to open this connection for; peers
-	// inherit it, so an AG replica read on behalf of Object Explorer reports
-	// the same program_name as Object Explorer itself.
+	// role is what Connect opened this connection for; peers inherit it, so AG
+	// replica reads report Object Explorer's program_name.
 	role Role
 
-	// peerFields caches connections to other instances in the same topology
-	// (Always On replicas) — see peer.go.
+	// peerFields caches connections to other instances in the topology (Always
+	// On replicas); see peer.go.
 	peerFields
 
-	// capabilityFields caches what the connected login may do — see
-	// capabilities.go.
+	// capabilityFields caches what the login may do; see capabilities.go.
 	capabilityFields
 }
 
-// Connect opens an Object Explorer connection using the given
-// config.Connection, with no way to abandon it short of connectTimeout —
-// ConnectContext with context.Background() and RoleExplorer.
+// Connect opens an Object Explorer connection: ConnectContext with
+// context.Background() and RoleExplorer.
 func Connect(opts config.Connection) (*ServerConn, error) {
 	return ConnectContext(context.Background(), opts, RoleExplorer)
 }
 
-// ConnectContext opens a connection for role using opts. Cancelling ctx
-// aborts the attempt in flight — the dial, the TLS and login handshakes, or
-// the server-info read — rather than leaving it to run to connectTimeout,
-// which always applies on top of ctx. ctx governs the attempt only: the
-// connection returned lives until Close.
+// ConnectContext opens a connection for role. Cancelling ctx aborts the attempt
+// in flight; connectTimeout always applies too. ctx covers only the attempt;
+// the connection lives until Close.
 //
-// A method that signs a person in (NeedsSignIn) does so first, as a phase of
-// its own under SignInTimeout — see SignIn — so the connect timeout never has
-// to cover someone finding their phone. A sign-in already held costs nothing.
+// A NeedsSignIn method signs in first under SignInTimeout (see SignIn), so the
+// connect timeout never has to cover finding a phone. An existing sign-in costs
+// nothing.
 //
-// A failure is a *ConnectionError, including one opts itself causes before
-// anything is dialled (an Extra Properties entry that is not key=value, or
-// that names a setting the dialog owns).
+// Failures are *ConnectionError, including option errors before dialling (a
+// malformed Extra Properties entry, or one naming a dialog-owned setting).
 func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*ServerConn, error) {
 	co, err := toGosmoOptions(opts, role)
 	if err != nil {
@@ -153,8 +131,8 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	}
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	// A sign-in SignIn could not do ahead happens in the dial, and a device
-	// code shown then is cancelled the same way.
+	// A sign-in SignIn couldn't do ahead happens in the dial; a device code
+	// shown then cancels the same way.
 	ctx = withSignInCanceller(ctx, cancel)
 
 	srv, err := gosmo.ConnectContext(ctx, co)
@@ -169,25 +147,19 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	return sc, nil
 }
 
-// toGosmoOptions is the one place a config.Connection becomes the
-// gosmo.ConnectionOptions that is dialled — Connect uses it, and so does
-// BuildConnectionString, which is what makes the Connect dialog's preview the
-// connection string actually sent rather than a second rendering that drifts
-// from it.
+// toGosmoOptions is the single conversion from config.Connection to dialled
+// gosmo.ConnectionOptions, used by Connect and BuildConnectionString so the
+// dialog preview is exactly what's sent.
 //
-// The dialog's fields do not map one-to-one onto gosmo's: each Entra method
-// reads its client id from a different option. A service principal's
-// application id is gosmo's User (with the secret as Password); the app
-// registration a person signs in through (Password, MFA, Device Code) is
-// ApplicationClientID; only a user-assigned managed identity reads ClientID.
-// Passing the dialog's ClientID straight through, as this once did, connected
-// a service principal with an empty user id. A saved service principal that
-// predates the mapping may carry its application id in User instead, so that
-// is the fallback. MFA's User is a login hint. Fields a method does not use
-// (config.FieldsFor) are not passed at all.
+// Dialog fields don't map one-to-one: a service principal's application id is
+// gosmo's User (secret as Password); the app registration for Password, MFA and
+// Device Code is ApplicationClientID; only a user-assigned managed identity
+// uses ClientID. A service principal saved with its id in User is the fallback.
+// MFA's User is a login hint. Fields a method doesn't use (config.FieldsFor)
+// aren't passed.
 //
-// Every Entra method gets the process's shared entraCache and device-code
-// prompt (entra.go).
+// Every Entra method gets the shared entraCache and device-code prompt
+// (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
 		Server:                 resolveServer(opts.Server, opts.Port),
@@ -239,12 +211,9 @@ func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions,
 	return co, nil
 }
 
-// missingCredential refuses, in the Connect dialog's field names, a
-// credential gosmo would refuse in its own: left to gosmo, a service
-// principal without an application id is reported as needing "User (the
-// application's client ID)", naming a field the dialog greys out for the
-// method. Only the dialog's methods with required fields are here — the
-// rest sign in with whatever they are given.
+// missingCredential refuses a missing required credential using the Connect
+// dialog's field names; gosmo's own error would name "User", a field the dialog
+// greys out for a service principal.
 func missingCredential(m config.AuthMethod, co gosmo.ConnectionOptions) error {
 	var field string
 	switch m {
@@ -269,16 +238,13 @@ func missingCredential(m config.AuthMethod, co gosmo.ConnectionOptions) error {
 	return fmt.Errorf("%s needs %s", config.AuthMethodName(m), field)
 }
 
-// ParseExtraProperties reads the Connect dialog's Extra Properties text into
-// driver parameters: "key=value" entries separated by ';' (the ADO.NET form),
-// '&' (the URL form) or line breaks, each trimmed of surrounding space. Empty
-// entries are skipped, so a trailing separator is harmless. Values are taken
-// literally — no URL decoding and no quoting — so a value cannot itself
-// contain a separator.
+// ParseExtraProperties parses the Extra Properties text into driver parameters:
+// "key=value" entries separated by ';', '&' or newlines, trimmed. Empty entries
+// are skipped. Values are literal (no decoding or quoting), so can't contain a
+// separator.
 //
-// An entry without '=' or with an empty key is an error naming it, not
-// something silently dropped. Keys the dialog's own fields control are
-// refused by gosmo when the options are built (ConnectionOptions.ExtraParams).
+// An entry without '=' or with an empty key is an error. gosmo refuses keys
+// owned by the dialog's fields (ConnectionOptions.ExtraParams).
 func ParseExtraProperties(s string) (url.Values, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil
@@ -301,9 +267,8 @@ func ParseExtraProperties(s string) (url.Values, error) {
 	return out, nil
 }
 
-// Close disconnects from SQL Server. Cancelling ctx before closing the pool is
-// what lets a background load in flight notice promptly and let go of its
-// checked-out connection, rather than lingering to its own timeout.
+// Close disconnects. ctx is cancelled before closing the pool so in-flight
+// background loads release their connections promptly.
 func (sc *ServerConn) Close() {
 	if sc.cancel != nil {
 		sc.cancel()
@@ -315,11 +280,9 @@ func (sc *ServerConn) Close() {
 	sc.closed = true
 }
 
-// Context returns the context governing sc's lifetime, cancelled once Close
-// runs. Background loads scoped to this connection derive their per-call timeout
-// from it rather than from context.Background(), so disconnecting cancels them.
-// Never nil — not for a nil sc nor a zero-value ServerConn — falling back to
-// context.Background().
+// Context returns the context cancelled by Close. Background loads derive their
+// timeouts from it so disconnecting cancels them. Never nil (falls back to
+// context.Background() for nil or zero sc).
 func (sc *ServerConn) Context() context.Context {
 	if sc == nil || sc.ctx == nil {
 		return context.Background()
@@ -327,17 +290,14 @@ func (sc *ServerConn) Context() context.Context {
 	return sc.ctx
 }
 
-// IsOpen reports whether sc is a non-nil connection that hasn't been closed —
-// true between Connect and Close, whether or not sc is tracked in any list.
+// IsOpen reports whether sc is non-nil and not yet closed.
 func (sc *ServerConn) IsOpen() bool {
 	return sc != nil && !sc.closed
 }
 
-// Label builds the Object Explorer root-node label for a connected server:
-// "host[\instance or ,port] (user, SQL Server version)". An instance name takes
-// precedence over a port, and the default port (1433) is never shown. Meant for
-// after Connect succeeds; a nil sc.Server leaves the version blank rather than
-// panicking.
+// Label builds the Object Explorer root label: "host[\instance or ,port] (user,
+// SQL Server version)". An instance beats a port; 1433 is never shown. A nil
+// sc.Server leaves the version blank.
 func (sc *ServerConn) Label() string {
 	host, instance, port := gosmo.ParseServerAddress(sc.Opts.Server)
 	if port == 0 {
@@ -351,8 +311,8 @@ func (sc *ServerConn) Label() string {
 		name += fmt.Sprintf(",%d", port)
 	}
 
-	// Prefer the server's own SUSER_NAME() over Opts.User: for Windows/Entra auth
-	// the latter is often empty or not the resolved login name.
+	// Prefer SUSER_NAME() over Opts.User, which for Windows/Entra is often
+	// empty or unresolved.
 	user := sc.Login
 	if user == "" {
 		user = sc.Opts.User
@@ -369,21 +329,17 @@ func (sc *ServerConn) Label() string {
 	return fmt.Sprintf("%s (%s, SQL Server %s)", name, user, version)
 }
 
-// resolveServer folds the Connect dialog's separate Server and Port fields into
-// the single address gosmo.ConnectionOptions.Server expects. Server alone may
-// already be any form gosmo.ParseServerAddress understands, and a port it
-// already carries wins rather than having the dialog's default appended on top.
+// resolveServer folds the dialog's Server and Port into gosmo's single address.
+// Server may already be any gosmo.ParseServerAddress form; a port it carries
+// wins.
 //
-// An unset (0) or default (1433) dialogPort is left out of the address rather
-// than written into it: the driver already dials 1433 when none is given, and a
-// port pinned onto a "host\instance" address suppresses the SQL Browser lookup
-// that resolves the instance's real, dynamically assigned port — win10cli\sql2017
-// listens on 55253, so an appended 1433 silently reaches the default instance
-// instead.
+// Port 0 or 1433 is omitted: the driver defaults to 1433, and a port on
+// "host\instance" suppresses the SQL Browser lookup for the instance's dynamic
+// port (win10cli\sql2017 listens on 55253; an appended 1433 reaches the default
+// instance).
 //
-// When Server carries a "\instance" but no port, a non-default dialogPort is
-// appended with a comma: gosmo recognises a trailing port after an instance name
-// only when comma-separated, and a colon becomes part of the instance name.
+// With "\instance" and no port, a non-default port is appended with a comma;
+// gosmo reads a colon there as part of the instance name.
 func resolveServer(server string, dialogPort int) string {
 	host, _, embeddedPort := gosmo.ParseServerAddress(server)
 	if embeddedPort != 0 {
@@ -393,8 +349,8 @@ func resolveServer(server string, dialogPort int) string {
 	if port == 0 || port == 1433 {
 		return server
 	}
-	// A comma for a bare IPv6 literal too: "fe80::1:1500" is read back as an
-	// address, the ":1500" one more group of it.
+	// Comma for a bare IPv6 literal too: in "fe80::1:1500" the ":1500" is
+	// another address group.
 	sep := ":"
 	if strings.ContainsRune(server, '\\') ||
 		(strings.ContainsRune(host, ':') && !strings.HasPrefix(host, "[")) {
@@ -403,9 +359,8 @@ func resolveServer(server string, dialogPort int) string {
 	return fmt.Sprintf("%s%s%d", server, sep, port)
 }
 
-// encryptString renders a connection's encryption mode as the driver's
-// "encrypt" parameter spells it. "" is an entry built in memory without one,
-// which config reads back from disk as Optional, so it dials as Optional too.
+// encryptString renders the mode as the driver's "encrypt" parameter. ""
+// (in-memory entry) dials as Optional, matching how config reads it from disk.
 func encryptString(m config.EncryptMode) string {
 	if m == "" {
 		return string(config.EncryptOptional)
@@ -413,9 +368,8 @@ func encryptString(m config.EncryptMode) string {
 	return string(m)
 }
 
-// toGosmoAuth translates config.AuthMethod to gosmo.AuthMethod. The two enums
-// are declared independently with no guarantee their values stay aligned, so
-// this is an explicit switch, not a numeric cast.
+// toGosmoAuth maps config.AuthMethod to gosmo.AuthMethod with an explicit
+// switch; the enums aren't guaranteed to align.
 func toGosmoAuth(m config.AuthMethod) gosmo.AuthMethod {
 	switch m {
 	case config.AuthSQLServer:
@@ -441,12 +395,10 @@ func toGosmoAuth(m config.AuthMethod) gosmo.AuthMethod {
 	}
 }
 
-// BuildConnectionString renders the connection string Connect dials for opts
-// as an Object Explorer connection — the same toGosmoOptions and the same
-// gosmo builder, with every password, secret and token masked, so it is safe
-// to show and is exactly what is sent apart from those. A setting Connect
-// would refuse comes back as the same error, which the Connect dialog's
-// preview shows in place of a string.
+// BuildConnectionString renders the DSN Connect would dial for opts (Object
+// Explorer role), via the same toGosmoOptions and gosmo builder, with
+// passwords, secrets and tokens masked. Settings Connect would refuse return
+// the same error, which the dialog preview shows.
 func BuildConnectionString(opts config.Connection) (string, error) {
 	co, err := toGosmoOptions(opts, RoleExplorer)
 	if err != nil {
@@ -457,8 +409,7 @@ func BuildConnectionString(opts config.Connection) (string, error) {
 }
 
 // extraPropertyError is gosmo's refusal of an Extra Properties entry, worded
-// for the Connect dialog rather than for gosmo's API. It unwraps to the
-// *gosmo.ExtraParamError.
+// for the Connect dialog; unwraps to *gosmo.ExtraParamError.
 type extraPropertyError struct {
 	msg string
 	err error
@@ -467,10 +418,9 @@ type extraPropertyError struct {
 func (e *extraPropertyError) Error() string { return e.msg }
 func (e *extraPropertyError) Unwrap() error { return e.err }
 
-// explainExtraProperty rewords a *gosmo.ExtraParamError in the Connect
-// dialog's terms — gosmo's own text names ConnectionOptions and ExtraParams,
-// which a user of the dialog has never seen — and passes anything else
-// through unchanged.
+// explainExtraProperty rewords a *gosmo.ExtraParamError in dialog terms
+// (gosmo's text names ConnectionOptions and ExtraParams); other errors pass
+// through.
 func explainExtraProperty(err error) error {
 	pe, ok := errors.AsType[*gosmo.ExtraParamError](err)
 	if !ok {

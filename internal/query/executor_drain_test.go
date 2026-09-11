@@ -6,22 +6,18 @@ import (
 	"testing"
 )
 
-// runBatch drains a result set that scanNext gave up on part-way through, and
-// must not drain one that was read to its end — an extra Next() past an
-// exhausted set makes the driver swallow the message retmsg is waiting for, and
-// the set never reaches Result at all (empty grid, no error, no Messages tab).
+// runBatch drains a result set scanNext abandoned part-way, and must not drain
+// one read to its end: an extra Next() past an exhausted set makes the driver
+// swallow the message retmsg awaits, and the set never reaches Result (empty
+// grid, no error, no Messages).
 //
-// The trap is that "failed" and "still has rows pending" are different
-// questions, and scanNext used to answer the second with the first. Two of its
-// callees can report a failure on a set that ran right through:
-// streamResultSet's deferred EndSet — a Results To File export whose last write
-// or Close fails — and scanPlanXML's trailing rows.Err(). Both took the drain
-// branch, which is the prohibited extra Next().
+// "Failed" and "rows pending" are different questions. Two callees can fail on
+// a fully read set: streamResultSet's deferred EndSet (a Results To File export
+// whose last write or Close fails) and scanPlanXML's trailing rows.Err().
+// Neither may drain.
 //
-// These pin the distinction at the level a fake driver can reach: what
-// exhausted says, and what scanNext does with it. Whether the drain itself is
-// load-bearing on the wire is a property of go-mssqldb's protocol handling and
-// belongs to live_drain_test.go, which no fake can stand in for.
+// These pin exhausted and scanNext's use of it. Whether the drain matters on
+// the wire is go-mssqldb's protocol behaviour, covered by live_drain_test.go.
 
 // endFailSink accepts every row and then fails to close the set out.
 type endFailSink struct {
@@ -54,8 +50,7 @@ func TestStreamResultSetIsExhaustedWhenOnlyEndSetFailed(t *testing.T) {
 	}
 }
 
-// The other half: a genuine mid-set abandon must still report rows pending, so
-// the pairing above cannot be satisfied by always answering "exhausted".
+// A genuine mid-set abandon must still report rows pending.
 func TestStreamResultSetIsNotExhaustedWhenASinkRowFailed(t *testing.T) {
 	db := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer db.Close()
@@ -77,8 +72,7 @@ func TestStreamResultSetIsNotExhaustedWhenASinkRowFailed(t *testing.T) {
 	}
 }
 
-// scanNext is where the two are conflated or kept apart, so assert it directly:
-// an export that fails only at EndSet has no rows left to drain.
+// An export failing only at EndSet has nothing left to drain.
 func TestScanNextDoesNotAbandonASetOnlyEndSetFailed(t *testing.T) {
 	db := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer db.Close()
@@ -123,8 +117,8 @@ func TestScanPlanXMLIsExhaustedAfterTheLastRow(t *testing.T) {
 	}
 }
 
-// A NULL plan row cannot be scanned into a string, and leaves the rest of the set pending, so this
-// one really is abandoned — the case the drain loop exists for.
+// A NULL plan row can't scan into a string and leaves rows pending: a real
+// abandon, which the drain is for.
 func TestScanNextAbandonsAPlanSetThatFailsMidScan(t *testing.T) {
 	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
 		{"<plan1/>"}, {nil}, {"<plan3/>"},

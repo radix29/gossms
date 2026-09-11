@@ -10,29 +10,25 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// ag_dashboard_draw.go holds the Always On dashboard's layout and drawing:
-// a fixed header block, two labelled grids, and a key hint row.
+// ag_dashboard_draw.go holds the Always On dashboard's layout: header block,
+// two labelled grids, key hint row.
 
-// agDashHeaderRows is the header block's height: two fact lines plus one line
-// that carries provenance or the last refresh error.
+// agDashHeaderRows is two fact lines plus a provenance/error line.
 const agDashHeaderRows = 3
 
-// agGridChrome is what a DataGrid spends on anything but data rows — column
-// header, separator, status bar — so a grid asked to show n rows needs
-// n+agGridChrome lines.
+// agGridChrome is a DataGrid's non-data lines (header, separator, status bar).
 const agGridChrome = 3
 
-// SetBounds splits the panel: header, replica section, database section, hint.
-// The replica grid is sized to its own contents where there is room, since the
-// replica count is small and fixed while the database rows are the ones that
-// grow; whatever it does not need goes to the databases below it.
+// SetBounds splits header, replica section, database section, hint. The replica
+// grid is sized to its contents when possible (few, fixed rows); the databases
+// get the rest.
 func (d *AGDashboard) SetBounds(x, y, w, h int) {
 	d.rect = core.Rect{X: x, Y: y, W: w, H: h}
 
 	body := h - agDashHeaderRows - 1 // less the hint row
 	if body < 4 {
-		// Too short to split. The replica grid alone is the more useful half
-		// of the two — it is the one that says which instance is the primary.
+		// Too short to split; the replica grid is the more useful half (it
+		// names the primary).
 		d.topRect = core.Rect{X: x, Y: y + agDashHeaderRows, W: w, H: max(0, body)}
 		d.bottomRect = core.Rect{X: x, Y: y + h, W: w, H: 0}
 		d.topGrid.SetBounds(d.topRect.X, d.topRect.Y, d.topRect.W, d.topRect.H)
@@ -40,7 +36,7 @@ func (d *AGDashboard) SetBounds(x, y, w, h int) {
 		return
 	}
 
-	// Each section spends one line on its own bar.
+	// Each section spends a line on its bar.
 	want := len(d.topRows) + agGridChrome
 	if want < agGridChrome+1 {
 		want = agGridChrome + 1
@@ -76,14 +72,13 @@ func (d *AGDashboard) Draw(s tcell.Screen) {
 		d.bottomGrid.Draw(s)
 	}
 	d.drawHint(s)
-	// Both overlays after every grid: a grid's "Show Value" popup is drawn
-	// last so it is not painted over by the section bar below it.
+	// Overlays after every grid so a "Show Value" popup isn't painted over by
+	// the next section bar.
 	d.topGrid.DrawOverlay(s)
 	d.bottomGrid.DrawOverlay(s)
 }
 
-// drawSectionBar draws one section's title strip, matching the Activity
-// Monitor's dashboards so the two panels read as one system.
+// drawSectionBar draws a section title strip, matching the Activity Monitor.
 func (d *AGDashboard) drawSectionBar(s tcell.Screen, y int, title string) {
 	if y < d.rect.Y || y >= d.rect.Bottom() {
 		return
@@ -129,10 +124,7 @@ func (d *AGDashboard) drawHeader(s tcell.Screen) {
 	core.DrawTextClipped(s, left, top+2, w, d.noteStyle(base, pal), d.note())
 }
 
-// drawAllGroupsHeader is the header for the all-groups view, which has no one
-// group to describe. It counts what is on screen and, most usefully, how many
-// groups are not healthy — the number that says whether the rest is worth
-// reading.
+// drawAllGroupsHeader counts what's shown and how many groups are unhealthy.
 func (d *AGDashboard) drawAllGroupsHeader(s tcell.Screen, left, top, w int, base tcell.Style, pal *theme.Palette) {
 	title := "Always On — " + d.conn.Opts.Server
 	core.DrawTextClipped(s, left, top, w, base.Bold(true), title)
@@ -173,9 +165,8 @@ func (d *AGDashboard) drawAllGroupsHeader(s tcell.Screen, left, top, w int, base
 	core.DrawTextClipped(s, left, top+2, w, d.noteStyle(base, pal), note)
 }
 
-// refreshState is the right-hand end of the header: when the numbers on
-// screen were read, and whether polling is still running. A paused dashboard
-// that does not say so is the one way this panel can actively mislead.
+// refreshState is the header's right end: when the numbers were read and
+// whether polling runs. A silently paused dashboard would mislead.
 func (d *AGDashboard) refreshState() string {
 	if !d.snap.ok() {
 		if d.paused.Load() {
@@ -189,16 +180,15 @@ func (d *AGDashboard) refreshState() string {
 		return text + "   PAUSED"
 	}
 	text += "   every " + agDashboardRateLabels[d.rateIdx.Load()]
-	// Only once it is old enough to matter: at the cadence being polled at
-	// every reading is a few seconds stale, and saying so every frame is noise.
+	// Only once stale enough to matter; within the poll cadence it's noise.
 	if age > 2*d.rate() {
 		text += fmt.Sprintf("   (%ds old)", int(age.Seconds()))
 	}
 	return text
 }
 
-// note is the header's third line: the last refresh error if there was one,
-// otherwise where the reading came from.
+// note is the header's third line: the last refresh error, else the reading's
+// source.
 func (d *AGDashboard) note() string {
 	if d.err != nil {
 		if d.snap.ok() {
@@ -240,8 +230,7 @@ func (d *AGDashboard) drawHint(s tcell.Screen) {
 	core.DrawTextClipped(s, d.rect.X+1, y, d.rect.W-2, style.Foreground(pal.TextDim), hint)
 }
 
-// agDistinctDatabases counts databases, not (database, replica) rows, for the
-// header's summary line.
+// agDistinctDatabases counts databases, not (database, replica) rows.
 func agDistinctDatabases(dbs []agDatabaseMetrics) int {
 	seen := map[string]bool{}
 	for _, m := range dbs {

@@ -11,8 +11,7 @@ import (
 	"unicode/utf16"
 )
 
-// Parse decodes a ShowPlanXML document. data may be UTF-8 or UTF-16
-// (with BOM, as SSMS saves .sqlplan files).
+// Parse decodes a ShowPlanXML document, UTF-8 or UTF-16 with BOM.
 func Parse(data []byte) (*Plan, error) {
 	text := decodeText(data)
 	dec := xml.NewDecoder(strings.NewReader(text))
@@ -64,14 +63,10 @@ func Parse(data []byte) (*Plan, error) {
 	return plan, nil
 }
 
-// ParseAll parses multiple ShowPlanXML documents — one per statement, the
-// shape SET STATISTICS XML ON produces for a multi-statement actual-plan
-// capture (an extra result set after each statement's own, unlike SET
-// SHOWPLAN_XML ON's single document covering the whole batch) — into one
-// combined Plan whose Statements holds every document's statements, in
-// order. Version/Build are taken from the first document; XML is every
-// document's own decoded text joined for display purposes only — it is not
-// reparsed as a single document.
+// ParseAll combines several ShowPlanXML documents into one Plan, statements in
+// order. SET STATISTICS XML ON produces one document per statement
+// (SHOWPLAN_XML one per batch). Version/Build come from the first document; XML
+// is the documents joined for display, never reparsed.
 func ParseAll(docs []string) (*Plan, error) {
 	if len(docs) == 0 {
 		return nil, errors.New("showplan: no documents to parse")
@@ -112,9 +107,8 @@ func newStatement(el xml.StartElement) *Statement {
 	return st
 }
 
-// parseStatementChild handles one element inside an open statement.
-// Elements it doesn't consume (QueryPlan and unknown containers) are left
-// open for the main loop to walk into.
+// parseStatementChild handles one element inside an open statement. Unconsumed
+// elements (QueryPlan, unknown containers) stay open for the main loop.
 func parseStatementChild(dec *xml.Decoder, el xml.StartElement, st *Statement) error {
 	switch el.Name.Local {
 	case "QueryPlan":
@@ -139,8 +133,8 @@ func parseStatementChild(dec *xml.Decoder, el xml.StartElement, st *Statement) e
 		}
 		st.MissingIndexes = mi
 	case "Warnings":
-		// Node-level Warnings are consumed inside decodeRelOp, so any
-		// Warnings seen here is statement-level.
+		// Node-level Warnings are consumed in decodeRelOp, so these are
+		// statement-level.
 		ws, err := decodeWarnings(dec, el)
 		if err != nil {
 			return err
@@ -156,8 +150,7 @@ func parseStatementChild(dec *xml.Decoder, el xml.StartElement, st *Statement) e
 	return nil
 }
 
-// decodeRelOp consumes one <RelOp> element (start already read) and its
-// whole subtree, returning the operator node.
+// decodeRelOp consumes one <RelOp> (start already read) and its subtree.
 func decodeRelOp(dec *xml.Decoder, start xml.StartElement) (*Node, error) {
 	n := new(Node{
 		ID:             int(attrI(start, "NodeId")),
@@ -200,23 +193,23 @@ func decodeRelOp(dec *xml.Decoder, start xml.StartElement) (*Node, error) {
 				}
 				n.Runtime = rt
 			default:
-				// The operator-specific element (NestedLoops, IndexScan,
-				// Top, ...) — or any other container; walked generically.
+				// The operator-specific element (NestedLoops, IndexScan, Top,
+				// ...) or any container, walked generically.
 				if err := walkOpElement(dec, t, n); err != nil {
 					return nil, err
 				}
 			}
 		case xml.EndElement:
-			// All child elements are consumed above, so this is </RelOp>.
+			// Children are consumed above, so this is </RelOp>.
 			return n, nil
 		}
 	}
 }
 
-// walkOpElement walks an operator-specific element generically: its own
-// attributes go to Props, nested <RelOp>s become children, the first
-// <Object> fills n.Object, and the first ScalarString of each direct
-// sub-section (Predicate, SeekPredicates, ...) is captured.
+// walkOpElement walks an operator element generically: its attributes go to
+// Props, nested <RelOp>s become children, the first <Object> fills n.Object,
+// and the first ScalarString of each direct sub-section (Predicate,
+// SeekPredicates, ...) is captured.
 func walkOpElement(dec *xml.Decoder, start xml.StartElement, n *Node) error {
 	n.Props = appendAttrs(n.Props, start)
 	section := ""       // name of the open direct child of the wrapper
@@ -268,8 +261,8 @@ func walkOpElement(dec *xml.Decoder, start xml.StartElement, n *Node) error {
 	}
 }
 
-// setScalar files a captured ScalarString under the section it was found
-// in: the two everywhere-shown ones get fields, the rest go to Props.
+// setScalar files a ScalarString by section: the two always-shown ones get
+// fields, the rest go to Props.
 func (n *Node) setScalar(section, s string) {
 	switch section {
 	case "Predicate":
@@ -281,8 +274,7 @@ func (n *Node) setScalar(section, s string) {
 	}
 }
 
-// objectFrom builds an Object from an <Object> element, stripping the
-// [brackets] SQL Server puts around every name.
+// objectFrom builds an Object from <Object>, stripping [brackets].
 func objectFrom(el xml.StartElement) Object {
 	unb := func(name string) string { return strings.Trim(attrOf(el, name), "[]") }
 	return Object{
@@ -295,8 +287,8 @@ func objectFrom(el xml.StartElement) Object {
 	}
 }
 
-// decodeColumnList consumes the open element and formats each
-// ColumnReference inside it as "alias.Column" / "Table.Column" / "Column".
+// decodeColumnList consumes the open element, formatting each ColumnReference
+// as "alias.Column" / "Table.Column" / "Column".
 func decodeColumnList(dec *xml.Decoder) ([]string, error) {
 	var cols []string
 	depth := 0
@@ -328,8 +320,8 @@ func decodeColumnList(dec *xml.Decoder) ([]string, error) {
 	}
 }
 
-// decodeWarnings consumes the open <Warnings> element: boolean attributes
-// on the element itself and each child element become one warning string.
+// decodeWarnings consumes <Warnings>: each boolean attribute and child element
+// becomes a warning string.
 func decodeWarnings(dec *xml.Decoder, start xml.StartElement) ([]string, error) {
 	var ws []string
 	for _, a := range start.Attr {
@@ -373,8 +365,7 @@ func warnString(el xml.StartElement) string {
 	return el.Name.Local + " (" + strings.Join(attrs, ", ") + ")"
 }
 
-// decodeRuntime consumes the open <RunTimeInformation> element,
-// aggregating its per-thread counters.
+// decodeRuntime consumes <RunTimeInformation>, aggregating per-thread counters.
 func decodeRuntime(dec *xml.Decoder) (*Runtime, error) {
 	rt := &Runtime{}
 	depth := 0
@@ -453,8 +444,7 @@ func decodeMissingIndexes(dec *xml.Decoder) ([]MissingIndex, error) {
 	}
 }
 
-// skip consumes tokens up to and including the end of the element whose
-// start tag was just read.
+// skip consumes through the end of the element whose start was just read.
 func skip(dec *xml.Decoder) error {
 	if err := dec.Skip(); err != nil {
 		return fmt.Errorf("showplan: parse XML: %w", err)
@@ -483,24 +473,21 @@ func attrOf(el xml.StartElement, name string) string {
 	return ""
 }
 
-// attrF returns the named attribute as a float64, 0 when absent/invalid.
+// attrF returns the attribute as float64, 0 when absent or invalid.
 func attrF(el xml.StartElement, name string) float64 {
 	v, _ := strconv.ParseFloat(attrOf(el, name), 64)
 	return v
 }
 
-// attrI returns the named attribute as an int64, 0 when absent/invalid.
+// attrI returns the attribute as int64, 0 when absent or invalid.
 func attrI(el xml.StartElement, name string) int64 {
 	v, _ := strconv.ParseInt(attrOf(el, name), 10, 64)
 	return v
 }
 
-// attrBool returns the named attribute as a bool. XSD's boolean lexical
-// space allows both {true, false} and {1, 0} — different ShowPlan XML
-// producers use either for the same attribute (e.g. NoJoinPredicate="1"
-// vs. Parallel="true" have both been observed from real SQL Server
-// builds), so both forms must be accepted or a real warning/flag reads
-// back as silently absent.
+// attrBool accepts both XSD boolean forms, true/false and 1/0: SQL Server
+// builds emit either (NoJoinPredicate="1", Parallel="true"), and rejecting one
+// silently loses warnings.
 func attrBool(el xml.StartElement, name string) bool {
 	switch attrOf(el, name) {
 	case "true", "1":
@@ -510,8 +497,7 @@ func attrBool(el xml.StartElement, name string) bool {
 	}
 }
 
-// decodeText converts raw plan bytes to a UTF-8 string, honouring a
-// UTF-16 or UTF-8 byte-order mark.
+// decodeText converts plan bytes to UTF-8, honouring a UTF-16 or UTF-8 BOM.
 func decodeText(data []byte) string {
 	switch {
 	case len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE:

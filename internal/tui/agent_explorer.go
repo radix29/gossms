@@ -6,14 +6,13 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// agent_explorer.go loads the SQL Server Agent subtree — Jobs (User/System),
-// Schedules, Alerts (SQL Server Event Alerts only — see
-// gosmo.Server.EventAlerts), Operators, Error Logs, and a small set of
-// SQL-only administration reports.
+// agent_explorer.go loads the SQL Server Agent subtree: Jobs (User/System),
+// Schedules, Alerts (SQL Server event alerts only; see
+// gosmo.Server.EventAlerts), Operators, Error Logs, and SQL-only administration
+// reports.
 
-// agentReportTitles lists the "SQL-only administration" folder's report
-// leaves, in display order. Each title doubles as the lookup key
-// agentReportDetail dispatches on — see agent_reports.go.
+// agentReportTitles lists the administration folder's reports in display order;
+// each title is agentReportDetail's dispatch key (agent_reports.go).
 var agentReportTitles = []string{
 	"Agent Metadata Summary",
 	"Job Execution Summary",
@@ -24,8 +23,7 @@ var agentReportTitles = []string{
 	"Recently Modified Jobs",
 }
 
-// loadAgentRootChildren returns the "SQL Server Agent" root's top-level
-// folders.
+// loadAgentRootChildren returns the Agent root's folders.
 func loadAgentRootChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("Jobs", NodeAgentJobsFolder, "", "", ""),
@@ -37,9 +35,8 @@ func loadAgentRootChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 	}, nil
 }
 
-// loadAgentJobsFolderChildren returns the "Jobs" folder's children: the
-// User Jobs / System Jobs split, plus the Job Activity, Job History, and
-// Job Categories report leaves.
+// loadAgentJobsFolderChildren returns User Jobs, System Jobs, and the Job
+// Activity, Job History and Job Categories leaves.
 func loadAgentJobsFolderChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return []*explorerNode{
 		l.node("User Jobs", NodeAgentUserJobs, "", "", ""),
@@ -50,30 +47,24 @@ func loadAgentJobsFolderChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	}, nil
 }
 
-// isSystemAgentJob reports whether j is a SQL-Server-created job rather
-// than a user job — e.g. syspolicy_purge_history. msdb has no "is system
-// job" flag, so this is a name-based heuristic: every built-in Agent job
-// uses the "syspolicy_" prefix.
+// isSystemAgentJob reports whether j is SQL Server-created (e.g.
+// syspolicy_purge_history). msdb has no flag, so it's the "syspolicy_" name
+// prefix.
 //
-// This is not only a placement heuristic. agentJobNode feeds the answer to
-// data.IsSystem, which is what suppresses Delete/Rename in
-// objectOpsMenuItems, and msdb permits sp_delete_job on any job at all —
-// so widening the prefix silently takes away an operation the server
-// allows, and narrowing it hands back a delete this gate is the only thing
-// preventing. Change it with the same care as isSystemLogin in
-// system_principals.go.
+// It also gates Delete/Rename (via data.IsSystem in objectOpsMenuItems), and
+// msdb lets sp_delete_job drop any job: widening the prefix removes a permitted
+// operation, narrowing it exposes one this gate alone prevents. Treat like
+// isSystemLogin (system_principals.go).
 //
-// Deliberately narrow: sysutility_*, mdw_purge_data*, and "SSIS Server
-// Maintenance Job" land in User Jobs. Those arrive with an optional feature
-// an administrator chose to install (Utility Control Point, the Management
-// Data Warehouse, SSIS), and removing one along with its feature is
-// ordinary administration, not a mistake to guard against.
+// Deliberately narrow: sysutility_*, mdw_purge_data* and "SSIS Server
+// Maintenance Job" come with optionally installed features, and removing them
+// is ordinary administration.
 func isSystemAgentJob(j *gosmo.Job) bool {
 	return strings.HasPrefix(j.Name, "syspolicy_")
 }
 
-// loadAgentUserJobsChildren returns every job that isn't a SQL-Server-
-// created system job (see isSystemAgentJob).
+// loadAgentUserJobsChildren returns every non-system job (see
+// isSystemAgentJob).
 func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	jobs, err := l.sc.Server.JobsContext(l.ctx)
 	if err != nil {
@@ -89,8 +80,7 @@ func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	return out, nil
 }
 
-// loadAgentSystemJobsChildren returns the SQL-Server-created system jobs
-// (see isSystemAgentJob).
+// loadAgentSystemJobsChildren returns the system jobs (see isSystemAgentJob).
 func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	jobs, err := l.sc.Server.JobsContext(l.ctx)
 	if err != nil {
@@ -132,8 +122,8 @@ func loadAgentAlertsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 	}, nil
 }
 
-// loadAgentEventAlertsChildren returns the SQL-only-implementable subset of
-// alerts — see gosmo.Server.EventAlerts.
+// loadAgentEventAlertsChildren returns the SQL-only alert subset (see
+// gosmo.Server.EventAlerts).
 func loadAgentEventAlertsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(func() ([]*gosmo.Alert, error) { return l.sc.Server.EventAlertsContext(l.ctx) },
 		func(a *gosmo.Alert) *explorerNode {
@@ -153,8 +143,8 @@ func loadAgentOperatorsChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 		})
 }
 
-// loadAgentAdminChildren returns the "SQL-only administration" folder's
-// static report leaves — see agentReportTitles and agent_reports.go.
+// loadAgentAdminChildren returns the administration folder's report leaves (see
+// agentReportTitles, agent_reports.go).
 func loadAgentAdminChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	out := make([]*explorerNode, 0, len(agentReportTitles))
 	for _, title := range agentReportTitles {
@@ -163,13 +153,10 @@ func loadAgentAdminChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 	return out, nil
 }
 
-// isAgentNode reports whether t is one of the SQL Server Agent node types.
-//
-// The Agent tree hangs off the server and its nodes carry no DBName, but what
-// permits its actions lives in msdb — so this is what tells
-// primeDatabaseCapabilities which database an Agent node's menu will ask
-// about. The range is the contiguous NodeAgent* block in tree_node.go; a new
-// Agent node type belongs inside it.
+// isAgentNode reports whether t is an Agent node type. Agent nodes carry no
+// DBName but their permissions live in msdb, so this tells
+// primeDatabaseCapabilities which database to probe. The types are the
+// contiguous NodeAgent* block in tree_node.go; add new ones inside it.
 func isAgentNode(t NodeType) bool {
 	return t >= NodeAgentJobs && t <= NodeAgentErrorLog
 }

@@ -9,14 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// agent_menu.go builds the Object Explorer context menu for SQL Server
-// Agent nodes and the actions those items run — Start/Stop/Enable/Disable/
-// Delete/View History, plus the New Job/Schedule/Alert/Operator entry
-// points (the dialogs live in new_{job,schedule,alert,operator}_dialog.go).
+// agent_menu.go builds Object Explorer context menus for SQL Server Agent nodes
+// and their actions (Start/Stop/Enable/Disable/Delete/View History), plus New
+// Job/Schedule/Alert/Operator entry points (dialogs in
+// new_{job,schedule,alert,operator}_dialog.go).
 
-// showNewJobDialog opens New Job for a known connection — the Object
-// Explorer context menu's entry point for SQL Server Agent > Jobs > User
-// Jobs (mirrors showNewLoginDialog).
+// showNewJobDialog opens New Job, from Agent > Jobs > User Jobs (mirrors
+// showNewLoginDialog).
 func (a *App) showNewJobDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -24,9 +23,7 @@ func (a *App) showNewJobDialog(sc *db.ServerConn) {
 	a.newJobDialog.show(sc)
 }
 
-// showNewScheduleDialog opens New Schedule for a known connection — the
-// Object Explorer context menu's entry point for SQL Server Agent >
-// Schedules.
+// showNewScheduleDialog opens New Schedule, from Agent > Schedules.
 func (a *App) showNewScheduleDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -34,9 +31,8 @@ func (a *App) showNewScheduleDialog(sc *db.ServerConn) {
 	a.newScheduleDialog.show(sc)
 }
 
-// showNewAlertDialog opens New Alert for a known connection — the Object
-// Explorer context menu's entry point for SQL Server Agent > Alerts > SQL
-// Server Event Alerts.
+// showNewAlertDialog opens New Alert, from Agent > Alerts > SQL Server Event
+// Alerts.
 func (a *App) showNewAlertDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -44,9 +40,7 @@ func (a *App) showNewAlertDialog(sc *db.ServerConn) {
 	a.newAlertDialog.show(sc)
 }
 
-// showNewOperatorDialog opens New Operator for a known connection — the
-// Object Explorer context menu's entry point for SQL Server Agent >
-// Operators.
+// showNewOperatorDialog opens New Operator, from Agent > Operators.
 func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
 	if !a.requireConn(sc) {
 		return
@@ -54,10 +48,10 @@ func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
 	a.newOperatorDialog.show(sc)
 }
 
-// agentGate gates an Agent write — the folders' New … items and the leaves'
-// Start/Stop, Enable/Disable and Delete — on the msdb rights the leaves'
-// Rename also gets, through serverScopedOpRights. Every one of them is an sp_*_job/schedule/
-// alert/operator call in msdb, refused to a login in no SQLAgent* role.
+// agentGate gates an Agent write (folders' New items; leaves' Start/Stop,
+// Enable/Disable, Delete) on the msdb rights Rename gets via
+// serverScopedOpRights. Each is an msdb sp_* call refused to logins in no
+// SQLAgent* role.
 func agentGate(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 	return gate(item, sc, "msdb", agentWriteRights()...)
 }
@@ -131,8 +125,8 @@ func agentOperatorMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, re
 	}
 }
 
-// agentUserJobsMenuItems builds the context menu for the User Jobs folder;
-// the Schedules, Event Alerts and Operators folders' follow.
+// agentUserJobsMenuItems builds the User Jobs folder menu; Schedules, Event
+// Alerts and Operators follow.
 func agentUserJobsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		newQuery,
@@ -175,17 +169,13 @@ func agentOperatorsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 
 // ---- Jobs: Start / Stop / View History ----
 
-// jobIsRunning reports whether a job's state means sp_start_job would be
-// refused and sp_stop_job accepted, and whether the state answers the
-// question at all.
+// jobIsRunning reports whether sp_start_job would be refused and sp_stop_job
+// accepted, and whether the state knows.
 //
-// Only the states that certainly have a live session answer it. Agent reports
-// JobStateUnknown for a job it does not run itself, and gosmo falls back to it
-// whenever xp_sqlagent_enum_jobs is unreachable; JobStateSuspended is
-// genuinely ambiguous — sp_help_job's own "not idle or suspended" filter
-// groups it with idle, while a suspended job still holds a session. Both
-// return known=false, which sends the request and lets the server answer
-// rather than refusing an action that would have worked.
+// Only states with a certain live session answer. JobStateUnknown (a job Agent
+// doesn't run, or gosmo's fallback when xp_sqlagent_enum_jobs is unreachable)
+// and JobStateSuspended (sp_help_job groups it with idle, yet it holds a
+// session) return known=false, so the server decides.
 func jobIsRunning(state gosmo.JobState) (running, known bool) {
 	switch state {
 	case gosmo.JobStateExecuting, gosmo.JobStateWaitingForWorker,
@@ -198,15 +188,12 @@ func jobIsRunning(state gosmo.JobState) (running, known bool) {
 	return false, false
 }
 
-// jobStateRefusal is the message for a Start/Stop asked of a job already in
-// the state it would produce, or "" when the action can go ahead.
+// jobStateRefusal is the message for a Start/Stop on a job already in the
+// target state, or "".
 //
-// The state is read at action time rather than gating the menu item, and that
-// is deliberate: a job node's cached state is as old as the last folder load,
-// so greying the item out would hide a legitimate Stop for a job that started
-// running after the tree was populated. Here the check is on data one query
-// old, the request that cannot succeed is never sent, and the node is
-// refreshed either way so the tree stops disagreeing with the server.
+// Checked at action time rather than gating the menu: the node's cached state
+// is as old as the folder load, and greying would hide a valid Stop. The node
+// is refreshed either way.
 func jobStateRefusal(name string, state gosmo.JobState, wantRunning bool) string {
 	running, known := jobIsRunning(state)
 	switch {
@@ -220,10 +207,9 @@ func jobStateRefusal(name string, state gosmo.JobState, wantRunning bool) string
 	return ""
 }
 
-// runAgentJobStateAction is Start Job and Stop Job, which differ only in the
-// state they require and the verb they report. Both run behind the progress
-// dialog, unconfirmed as in SSMS: the state read and the sp_start_job /
-// sp_stop_job it guards are one job, so Cancel stops whichever is in flight.
+// runAgentJobStateAction is Start and Stop Job. Both run behind the progress
+// dialog, unconfirmed as in SSMS; the state read and sp_start_job/sp_stop_job
+// are one job, so Cancel stops whichever is running.
 func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, start bool) {
 	if !a.requireConn(sc) {
 		return
@@ -233,8 +219,8 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 	if start {
 		verb, doneVerb, doing, title, what = "start", "started", "Starting", "Start Job", "starting an Agent job"
 	}
-	// Written by the work goroutine before it returns; read only in done,
-	// which runWithProgress posts after that return.
+	// Written by the work goroutine before returning; read only in done, posted
+	// after.
 	var refusal string
 	a.runWithProgress(progressJob{
 		title:   title,
@@ -256,8 +242,8 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 	}, func(err error, cancelled bool) {
 		switch {
 		case cancelled:
-			// Invalidated anyway: the cancel may have reached the server
-			// after Agent had accepted the request.
+			// Invalidated anyway: Agent may have accepted before the cancel
+			// arrived.
 			a.setStatus(fmt.Sprintf("%s job %q cancelled", doing, name))
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Failed to %s job %q: %v", verb, name, err))
@@ -279,9 +265,8 @@ func (a *App) stopAgentJob(sc *db.ServerConn, node *explorerNode) {
 	a.runAgentJobStateAction(sc, node, false)
 }
 
-// showAgentJobHistory opens a new query window against msdb, pre-filled
-// with agentJobHistoryQuery(jobName) and running it immediately — mirrors
-// showBackupHistoryFor's identical pattern for a database's backup history.
+// showAgentJobHistory opens a query window on msdb with
+// agentJobHistoryQuery(jobName) and runs it (like showBackupHistoryFor).
 func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 	if !a.requireConn(sc) {
 		return

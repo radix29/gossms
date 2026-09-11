@@ -8,18 +8,16 @@ import (
 	"testing"
 )
 
-// findQueryFor is the lookup Proc.Find issues, spelled out here so the fake
-// answers the query the code actually sends rather than one this test made
-// up.
+// findQueryFor is the lookup Proc.Find issues, so the fake answers the real
+// query.
 func findQueryFor(p *Proc) string {
 	return `select
 	case when object_id('master.dbo.` + p.MasterName + `', 'P') is not null then 1 else 0 end,
 	case when object_id('tempdb.dbo.` + p.TempDBName + `', 'P') is not null then 1 else 0 end`
 }
 
-// Find prefers master, and that preference is the point: a procedure in
-// master survives a restart where a tempdb one does not, so a server with
-// both must be reported as having master's.
+// Find prefers master: a master procedure survives restarts, a tempdb one
+// doesn't.
 func TestProcFindPrefersMaster(t *testing.T) {
 	p := BlockProc
 	for _, tc := range []struct {
@@ -67,10 +65,9 @@ func TestProcFindReportsAFailedLookup(t *testing.T) {
 	}
 }
 
-// Install must reach the target database without a USE — it runs on a pooled
-// connection whose database has to be left as it was found — and must send
-// the body as a parameter rather than concatenating it into the batch, since
-// the bodies are full of single quotes.
+// Install must reach the target database without USE (the pooled connection's
+// database must be left alone) and pass the body as a parameter, since it's
+// full of quotes.
 func TestProcInstallGoesThroughTheTargetDatabasesSpExecutesql(t *testing.T) {
 	p := BlockProc
 	for _, tc := range []struct {
@@ -95,9 +92,8 @@ func TestProcInstallGoesThroughTheTargetDatabasesSpExecutesql(t *testing.T) {
 	}
 }
 
-// ProcNone names no database, so there is nowhere to install: that has to be
-// an error rather than a statement sent at whatever database the pooled
-// connection happens to be sitting in.
+// ProcNone names no database; installing must error rather than hit whatever
+// database the pooled connection is in.
 func TestProcInstallRefusesProcNone(t *testing.T) {
 	p := BlockProc
 	db, log := scriptedDB(t, nil)
@@ -110,10 +106,9 @@ func TestProcInstallRefusesProcNone(t *testing.T) {
 	}
 }
 
-// The tempdb copy must never carry the sp_ prefix. An sp_-prefixed name
-// falls back to master when the current database has no such procedure, so
-// installing into tempdb finds master's copy instead — verified live, where
-// DROP PROCEDURE IF EXISTS dbo.sp_block in tempdb deleted master's.
+// The tempdb copy must not be sp_-prefixed: sp_ names fall back to master, so
+// DROP PROCEDURE IF EXISTS dbo.sp_block in tempdb deleted master's copy
+// (verified live).
 func TestProcTempDBNameIsNotSpPrefixed(t *testing.T) {
 	p := BlockProc
 	if !strings.HasPrefix(p.MasterName, "sp_") {
@@ -122,8 +117,8 @@ func TestProcTempDBNameIsNotSpPrefixed(t *testing.T) {
 	if strings.HasPrefix(p.TempDBName, "sp_") {
 		t.Errorf("TempDBName = %q; an sp_ name in tempdb resolves to master's copy", p.TempDBName)
 	}
-	// "dbo." spelled out: MasterName is a substring of TempDBName (sp_block
-	// inside usp_block), so a bare Contains would pass on either name.
+	// "dbo." spelled out because MasterName is a substring of TempDBName
+	// (sp_block in usp_block).
 	if got := p.Script(ProcTempDB); !strings.Contains(got, "dbo."+p.TempDBName) || strings.Contains(got, "dbo."+p.MasterName) {
 		t.Errorf("the tempdb script does not create dbo.%s:\n%s", p.TempDBName, got)
 	}

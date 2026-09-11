@@ -12,24 +12,20 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// ag_listener_props.go is Availability Group Listener Properties — SSMS's
-// listener properties dialog, and the only place a listener can be changed
-// after it exists.
+// ag_listener_props.go is Availability Group Listener Properties, the only
+// place to change a listener after creation.
 //
 // # What ALTER ... MODIFY LISTENER can and cannot do
 //
-// Two things, one per statement: change the port, or bind another address.
-// There is no form that removes an address and no form that renames the
-// listener, so an address added here is permanent for the life of the listener
-// — correcting a typo'd one means removing the listener and adding it back.
-// The page says so rather than offering a Remove button that would only work
-// on rows not yet written.
+// Change the port or add an address, one per statement. No form removes an
+// address or renames the listener, so added addresses are permanent (fixing a
+// typo means recreating the listener). The page says so rather than offering a
+// Remove that works only on unwritten rows.
 
 // agListenerPropPages builds the property pages for one listener.
 func agListenerPropPages(sc *db.ServerConn, agName, dnsName string) []propPage {
-	// Named on the group, not the listener: its apply is
-	// ALTER AVAILABILITY GROUP ... MODIFY LISTENER, so the class-108 DENY that
-	// withholds it sits on the group.
+	// Gated on the group, not the listener: the apply is ALTER AVAILABILITY
+	// GROUP ... MODIFY LISTENER, so the class-108 DENY sits on the group.
 	return []propPage{withRequiresOn(pageAGListenerGeneral(sc, agName, dnsName), "", "", agName, rightAlterAnyAG)}
 }
 
@@ -62,10 +58,8 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 
 			portRow := propsheet.Int("Port", int64(listener.Port), 1, 65535, "")
 
-			// pending are addresses typed on this page and not yet written.
-			// They are shown in the same grid as the existing ones, marked, so
-			// the list reads as what the listener will have rather than as two
-			// separate things.
+			// pending are unwritten addresses, shown marked in the same grid so
+			// it reads as the listener's future state.
 			var pending []gosmo.AvailabilityListenerIPSpec
 
 			headers := []string{"IP address", "Subnet mask", "State"}
@@ -151,9 +145,9 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 				if err != nil {
 					return err
 				}
-				// Addresses first, port last: a client that reconnects between
-				// the two statements is better off finding the old port than
-				// finding the new port on a listener still missing a subnet.
+				// Addresses first, port last: a client reconnecting between
+				// statements is better off with the old port than a new port on
+				// a listener missing a subnet.
 				for _, ip := range pending {
 					if err := ag.AddListenerIPContext(ctx, dnsName, ip); err != nil {
 						return err
@@ -176,8 +170,8 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 	}
 }
 
-// showAGListenerPropertiesFor opens Listener Properties — the Object Explorer
-// context menu's "Properties..." on a listener.
+// showAGListenerPropertiesFor opens Listener Properties from a listener's
+// context menu.
 func (a *App) showAGListenerPropertiesFor(sc *db.ServerConn, agName, dnsName string) {
 	a.propDialog.show(sc, "", "Availability Group Listener Properties",
 		"Listener: "+dnsName, "Availability group: "+agName,

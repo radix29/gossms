@@ -1,11 +1,11 @@
-// Package query executes T-SQL scripts the way SSMS does: split into GO
-// batches, all run on one dedicated connection (so temp tables and SET options
-// survive across batches), with the driver's message stream — PRINT output,
-// "(n rows affected)", SQL errors — captured into Result.Messages.
+// Package query executes T-SQL scripts as SSMS does: split into GO batches, all
+// run on one dedicated connection (so temp tables and SET options survive
+// across batches), with PRINT output, "(n rows affected)" and errors captured
+// into Result.Messages.
 //
-// A Session keeps that connection across scripts too, as an SSMS query window
-// does; the package-level Execute functions check one out of a pool per call,
-// and the pool resets it before anyone uses it again.
+// A Session keeps its connection across scripts, as an SSMS query window does;
+// the package-level Execute functions check one out of the pool per call, and
+// the pool resets it before reuse.
 package query
 
 import (
@@ -29,8 +29,8 @@ type ResultSet struct {
 	Columns []string
 	Rows    [][]string
 
-	// ColumnTypes holds each column's declared SQL Server type as SSMS writes
-	// it ("nvarchar(50)", "decimal(18,2)"), parallel to Columns.
+	// ColumnTypes holds each column's declared type as SSMS writes it
+	// ("nvarchar(50)", "decimal(18,2)"), parallel to Columns.
 	ColumnTypes []string
 }
 
@@ -47,42 +47,37 @@ type Result struct {
 	Elapsed  time.Duration
 
 	// Database is the database in effect when execution finished, read off the
-	// connection the script ran on so a mid-script "USE otherdb" shows. Empty
-	// if it couldn't be read (a cancelled query, say).
+	// script's connection so a mid-script USE shows. Empty if unreadable (e.g.
+	// cancelled).
 	Database string
 
-	// RowsWritten totals the rows handed to a RowSink across every result set.
-	// Zero for Execute, which retains rows in Sets.
+	// RowsWritten totals rows handed to a RowSink. Zero for Execute.
 	RowsWritten int
 
-	// sinkSets counts the result sets streamed to a RowSink, empty ones
-	// included: on that path Sets is empty and an empty set writes no rows, so
-	// neither len(Sets) nor RowsWritten can answer "did a result set happen".
-	// See shouldReportSuccess.
+	// sinkSets counts result sets streamed to a RowSink, empty ones included;
+	// neither len(Sets) nor RowsWritten can say whether a set happened on that
+	// path. See shouldReportSuccess.
 	sinkSets int
 
-	// progress, when non-nil, is the caller's live row counter (see
-	// WithProgress). It rides on Result rather than being threaded through
-	// runBatch/scanNext as its own parameter because Result is already the
-	// run-scoped state those two carry.
+	// progress is the caller's live row counter (see WithProgress), carried on
+	// Result because it's already the run-scoped state runBatch/scanNext share.
 	progress *Progress
 
 	// PlanXML holds one <ShowPlanXML> document per captured statement/batch, in
-	// execution order: actual plans from ExecuteWithPlan, estimated ones from
-	// ExecuteEstimatedPlan. Execute never populates this.
+	// execution order: actual plans from ExecuteWithPlan, estimated from
+	// ExecuteEstimatedPlan. Execute never fills it.
 	PlanXML []string
 
-	// State is the session's state as the run left it, read after every run
-	// on a Session — cancelled ones included, since a cancelled batch can
-	// still leave a transaction open. Nil for the package-level functions,
-	// and when the read failed (a SET NOEXEC ON the script left in force, a
-	// session that has just died).
+	// State is the session's state after a run on a Session, cancelled runs
+	// included (they can leave a transaction open). Nil for package-level
+	// functions, or when the read failed (SET NOEXEC ON left in force, a dead
+	// session).
 	State *SessionState
 
-	// SessionLost reports that the Session this run used is gone — its
-	// connection broke, or plan capture could not be switched back off — so
-	// its temp tables, SET options and open transactions are gone too, and
-	// every later run on it fails at once. Always false outside a Session.
+	// SessionLost reports that this run's Session is gone (connection broke, or
+	// plan capture couldn't be switched off), taking its temp tables, SET
+	// options and transactions; later runs fail at once. Always false outside a
+	// Session.
 	SessionLost bool
 }
 
@@ -109,10 +104,10 @@ func (r *Result) addError(err error) {
 	r.Messages = append(r.Messages, ErrorMessages(err)...)
 }
 
-// ErrorMessages formats err the way SSMS's Messages pane shows a failed batch:
-// a SQL Server error becomes two messages, the "Msg 208, Level 16, State 1,
-// Line 4" status line and the text; anything else becomes one from err.Error().
-// Exported so callers talking to gosmo directly report identically.
+// ErrorMessages formats err as SSMS's Messages pane shows a failed batch: a SQL
+// Server error becomes a "Msg 208, Level 16, State 1, Line 4" line plus the
+// text; anything else one message. Exported so callers using gosmo directly
+// report identically.
 func ErrorMessages(err error) []Message {
 	if se, ok := gosmo.AsSQLError(err); ok {
 		msgs := []Message{{Text: se.Header(), IsError: true}}
@@ -125,20 +120,18 @@ func ErrorMessages(err error) []Message {
 }
 func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{Text: s}) }
 
-// shouldReportSuccess reports whether the run ended with nothing else to say,
-// so the Messages pane gets SSMS's bare "Commands completed successfully."
+// shouldReportSuccess reports whether the run produced nothing else to say, so
+// Messages gets SSMS's "Commands completed successfully."
 //
-// The test is "did any result set happen", not "did any row" — Sets answers it
-// for Execute, sinkSets for ExecuteToSink. RowsWritten in their place makes a
-// query returning an *empty* set look like one returning none, and the export
-// then prints both "(0 row(s) written)" and the success notice.
-// planCaptureEstimated never executes, so the notice would mislead.
+// The test is whether any result set happened, not any row: Sets for Execute,
+// sinkSets for ExecuteToSink. Using RowsWritten would make an empty set print
+// both "(0 row(s) written)" and the success notice. planCaptureEstimated
+// executes nothing, so never reports success.
 func (r *Result) shouldReportSuccess(capture planCapture) bool {
 	return len(r.Sets) == 0 && r.sinkSets == 0 && !r.HasErrors() && capture != planCaptureEstimated
 }
 
-// planCapture selects whether execute captures an execution plan alongside a
-// script's ordinary batches, and if so in which SQL Server mode.
+// planCapture selects whether and how execute captures an execution plan.
 type planCapture int
 
 const (
@@ -147,31 +140,23 @@ const (
 	planCaptureEstimated             // SET SHOWPLAN_XML ON — nothing really runs
 )
 
-// readsCurrentDatabase reports whether execute should read DB_NAME() back off
-// the script's connection to populate Result.Database.
-//
-// Never under SHOWPLAN_XML: the SET ... OFF is deferred and hasn't run, so
-// SELECT DB_NAME() comes back as a one-column showplan set and Scan puts the
-// XML document into Result.Database. Estimated mode never runs a mid-script
-// USE either, so there is nothing to report.
+// readsCurrentDatabase reports whether execute reads DB_NAME() back for
+// Result.Database. Never under SHOWPLAN_XML: the SET ... OFF hasn't run yet, so
+// the SELECT returns a showplan set and Database would get the plan XML.
+// Estimated mode runs no USE anyway.
 func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
 
-// Progress is a live row counter for a script that is still running: the
-// executor bumps it as each row is scanned, so a caller — the query panel's
-// "Executing..." status line — can show how much has loaded while the run is
-// still in flight, where Result only arrives at the end. Pass one in with
-// WithProgress.
+// Progress is a live row counter for a running script: the executor bumps it
+// per scanned row so a caller (the query panel's "Executing..." status) can
+// show progress before Result arrives. Pass it with WithProgress.
 //
-// Rows is read from a different goroutine than the one executing the script,
-// which is the whole point of the type, so the count is an atomic. The zero
-// value is ready to use, and every method is nil-safe: the executor holds a
-// nil *Progress whenever the caller asked for no count.
+// Read from another goroutine, hence atomic. The zero value is ready and every
+// method is nil-safe (nil means no count was requested).
 type Progress struct {
 	rows atomic.Int64
 }
 
-// Rows reports how many result-set rows the run has scanned so far, across
-// every result set of every batch. Safe to call while the run is in flight.
+// Rows reports rows scanned so far across every result set. Safe while running.
 func (p *Progress) Rows() int {
 	if p == nil {
 		return 0
@@ -179,76 +164,66 @@ func (p *Progress) Rows() int {
 	return int(p.rows.Load())
 }
 
-// AddRow counts one scanned row. The executor calls it as it scans; it is
-// exported so a caller holding its own Progress — a test driving the status
-// line that reads one, say — can advance it without a live server.
+// AddRow counts one scanned row. Exported so tests can advance a Progress
+// without a server.
 func (p *Progress) AddRow() {
 	if p != nil {
 		p.rows.Add(1)
 	}
 }
 
-// Option adjusts how one Execute call runs. Variadic so the common call keeps
-// its four arguments.
+// Option adjusts one Execute call.
 type Option func(*Result)
 
-// WithProgress makes the run report its scanned-row count into prog as it
-// goes. Rows streamed to a RowSink count too, so a Results To File export
-// reports progress the same way an in-memory run does.
+// WithProgress reports the scanned-row count into prog. Rows streamed to a
+// RowSink count too.
 func WithProgress(prog *Progress) Option {
 	return func(res *Result) { res.progress = prog }
 }
 
-// Execute runs script against db, SSMS-style. If database is non-empty the
-// connection switches to it first ("USE [database]"). The script is split on GO
-// separators; a failing batch is reported in Messages and execution continues
-// with the next. Cancelling ctx stops between and inside batches, still
-// returning the partial Result.
+// Execute runs script against db, SSMS-style. A non-empty database is switched
+// to first (USE). The script is split on GO; a failing batch is reported in
+// Messages and execution continues. Cancelling ctx stops between and inside
+// batches, returning the partial Result.
 //
-// Every row is retained in Result.Sets — there is no cap; see cellArena.
+// Every row is retained in Result.Sets, uncapped; see cellArena.
 func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
 	return execute(ctx, db, database, script, planCaptureNone, opts...)
 }
 
-// ExecuteWithPlan behaves like Execute but runs with SET STATISTICS XML ON, so
-// the script's actual (not merely compiled) execution plan comes back in
-// Result.PlanXML.
+// ExecuteWithPlan is Execute under SET STATISTICS XML ON, returning actual
+// plans in Result.PlanXML.
 func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
 	return execute(ctx, db, database, script, planCaptureActual, opts...)
 }
 
-// ExecuteEstimatedPlan runs with SET SHOWPLAN_XML ON instead of running the
-// script: SQL Server compiles every GO batch and returns its estimated plan in
-// Result.PlanXML without executing it, as SSMS's "Display Estimated Execution
-// Plan" does.
+// ExecuteEstimatedPlan runs under SET SHOWPLAN_XML ON: SQL Server compiles each
+// GO batch and returns its estimated plan in Result.PlanXML without executing,
+// as SSMS's "Display Estimated Execution Plan".
 func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
 	return execute(ctx, db, database, script, planCaptureEstimated)
 }
 
-// RowSink receives a script's result rows as they are scanned instead of
-// retaining them in Result.Sets. Results To File is the caller: it writes each
-// row to a CSV file and keeps none, so an export is bounded by the file rather
-// than by memory.
+// RowSink receives result rows as scanned instead of retaining them in
+// Result.Sets. Results To File writes each to CSV, so exports are bounded by
+// the file, not memory.
 //
-// BeginSet is called once per result set before its first row, EndSet once
-// after its last with the number of rows written. A returned error aborts that
-// result set and is reported in Result.Messages; the rest of the script runs
-// on, as it does after a failed batch.
+// BeginSet is called before a set's first row, EndSet after its last with the
+// row count. A returned error aborts that set and is reported in Messages; the
+// script continues.
 //
-// EndSet is called for every set BeginSet was called for, including one
-// abandoned part-way by a Row error and one whose own BeginSet failed, so it is
-// the only place a sink can finalise per-set state. Its count is how many rows
-// reached Row, not how many the set held, and 0 for a set that never opened.
+// EndSet is called for every set BeginSet was called for, including sets
+// abandoned by a Row error or whose BeginSet failed, so it's the one place to
+// finalise per-set state. Its count is rows that reached Row (0 if the set
+// never opened).
 type RowSink interface {
 	BeginSet(columns []string) error
 	Row(cells []string) error
 	EndSet(rows int) error
 }
 
-// ExecuteToSink behaves like Execute but streams every row to sink instead of
-// accumulating it in Result.Sets, which comes back empty. Row counts are
-// reported per set in Result.Messages and totalled in Result.RowsWritten.
-// Nothing is retained, so an unbounded result set costs file, not memory.
+// ExecuteToSink is Execute streaming every row to sink; Result.Sets comes back
+// empty. Per-set row counts go to Messages and the total to RowsWritten.
 func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink, opts ...Option) *Result {
 	return executeWithSink(ctx, db, database, script, planCaptureNone, sink, opts...)
 }
@@ -269,10 +244,9 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, c
 	}
 	defer conn.Close()
 
-	// The capture-off failure runScript reports is dropped here, as gosmo's
-	// capturePlan drops it: conn goes back to the pool, and the pool's reset
-	// on its next checkout clears the SET option anyway. A Session has no
-	// such reset, which is why it treats the same failure as fatal.
+	// The capture-off failure is dropped, as gosmo's capturePlan does: the
+	// pool's reset on next checkout clears the SET option. A Session has no
+	// reset, so treats it as fatal.
 	if ran, _ := runScript(ctx, conn, script, capture, sink, res); ran {
 		if ctx.Err() != nil {
 			res.Messages = append(res.Messages, cancelledMessage)
@@ -291,7 +265,7 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, c
 	return res
 }
 
-// cancelledMessage closes the Messages pane of a run ctx cancelled.
+// cancelledMessage ends the Messages of a cancelled run.
 var cancelledMessage = Message{Text: "Query was cancelled by user.", IsError: true}
 
 func newResult(opts []Option) *Result {
@@ -302,20 +276,17 @@ func newResult(opts []Option) *Result {
 	return res
 }
 
-// planCleanupTimeout bounds the SET ... OFF that ends a plan capture, which
-// runs even after ctx is cancelled.
+// planCleanupTimeout bounds the SET ... OFF ending a plan capture, which runs
+// even after ctx is cancelled.
 const planCleanupTimeout = 5 * time.Second
 
-// runScript runs script's GO batches on conn in order, recording everything
-// they produce on res, with the plan capture capture asks for switched on
-// around them. It reports whether the batches ran at all — false when the
-// capture could not be switched on, which is already recorded on res.
+// runScript runs script's GO batches on conn in order, recording output on res,
+// with the requested plan capture switched on around them. Returns false if the
+// capture couldn't be switched on (already recorded on res).
 //
-// cleanupErr is the failure of the SET ... OFF that ends a capture, nil when
-// there was none or it succeeded. Deferred so it runs on every exit, and with
-// ctx's cancellation stripped: a cancelled run is exactly the one most likely
-// to have left it pending. The timeout bounds how long an unresponsive
-// connection can hold it up.
+// cleanupErr is the failure of the capture's SET ... OFF, if any. Deferred to
+// run on every exit, detached from ctx's cancellation (a cancelled run most
+// likely left it pending), bounded by the timeout.
 func runScript(ctx context.Context, conn *sql.Conn, script string, capture planCapture, sink RowSink, res *Result) (ran bool, cleanupErr error) {
 	if capture != planCaptureNone {
 		setOpt, label := capture.setOption()
@@ -344,9 +315,8 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 	return true, nil
 }
 
-// setOption names the SET option that switches capture on, and the word the
-// error messages call it by. Only meaningful for a capture other than
-// planCaptureNone.
+// setOption names the SET option that enables capture and its label for error
+// messages. Only meaningful for capture != planCaptureNone.
 func (c planCapture) setOption() (option, label string) {
 	if c == planCaptureEstimated {
 		return "SHOWPLAN_XML", "estimated"
@@ -354,31 +324,26 @@ func (c planCapture) setOption() (option, label string) {
 	return "STATISTICS XML", "actual"
 }
 
-// acquireConnRetryAttempts is the total number of tries (initial + retries)
-// acquireConn makes when its connection-liveness prologue fails transiently.
-// Mirrors gosmo's readRetryAttempts (gosmo/retry.go).
+// acquireConnRetryAttempts is acquireConn's total tries (initial + retries)
+// when its liveness prologue fails transiently. Mirrors gosmo's
+// readRetryAttempts (gosmo/retry.go).
 const acquireConnRetryAttempts = 3
 
-// acquireConnRetryDelay is the backoff before the nth retry (1-based).
-// Mirrors gosmo's readRetryDelay.
+// acquireConnRetryDelay is the backoff before the nth retry (1-based). Mirrors
+// gosmo's readRetryDelay.
 func acquireConnRetryDelay(attempt int) time.Duration {
 	return time.Duration(attempt) * 50 * time.Millisecond
 }
 
-// acquireConn returns a live pinned *sql.Conn for execute to run a script's GO
-// batches on, already switched to database (via "USE") if non-empty, retrying
-// against a fresh connection when the pool hands back a dead one. A batch
-// script needs one dedicated connection for its whole run — temp tables and SET
-// options must survive across batches — and database/sql's automatic
-// bad-connection retry covers only *sql.DB-level calls, never a pinned
-// *sql.Conn. Without this, a connection dropped while idle (firewall/NAT
-// timeout, the server killing an idle session, a failover) fails the next
-// Execute outright. gosmo's Database.query/queryRow close the same gap for
-// reads.
+// acquireConn returns a live pinned *sql.Conn, switched to database (USE) if
+// non-empty, retrying on a fresh connection when the pool hands back a dead
+// one. A script needs one connection for its whole run, and database/sql's
+// bad-connection retry covers only *sql.DB calls, not a pinned *sql.Conn — so a
+// connection dropped while idle (NAT timeout, killed session, failover) would
+// fail the next Execute. gosmo's Database.query/queryRow do the same for reads.
 //
-// Only the USE/SELECT-1 prologue is retried, never a caller's batch: silently
-// re-running arbitrary user SQL on a fresh connection could re-apply side
-// effects that already partially ran.
+// Only the USE/SELECT-1 prologue is retried, never a user batch, which might
+// re-apply partial side effects.
 func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, error) {
 	prologue := "SELECT 1"
 	if database != "" {
@@ -391,9 +356,7 @@ func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, e
 		return err
 	}
 
-	// Bounded by the attempt >= check below; an `attempt <= N` loop needs an
-	// unreachable return after it just to compile. >= not ==, so the bound holds
-	// for any acquireConnRetryAttempts; == would spin forever at 0.
+	// Bounded by the >= check below (== would spin forever at 0).
 	for attempt := 1; ; attempt++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -415,18 +378,17 @@ func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, e
 	}
 }
 
-// currentDatabase reads DB_NAME() off conn — the connection the batches just
-// ran on, not a fresh pooled one — so a mid-script "USE otherdb" is visible
-// despite being session state.
+// currentDatabase reads DB_NAME() off the connection the batches ran on, so a
+// mid-script USE is visible.
 func currentDatabase(ctx context.Context, conn *sql.Conn) (string, error) {
 	var name string
 	err := conn.QueryRowContext(ctx, "SELECT DB_NAME()").Scan(&name)
 	return name, err
 }
 
-// runBatch executes one GO batch and drains the sqlexp message stream,
-// appending result sets and messages to res. SQL errors are messages, not early
-// returns: later statements in the batch may still have produced output.
+// runBatch executes one GO batch and drains the sqlexp message stream into res.
+// SQL errors are messages, not early returns: later statements may still
+// produce output.
 func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, sink RowSink) {
 	retmsg := &sqlexp.ReturnMessage{}
 	rows, err := conn.QueryContext(ctx, sqlText, retmsg)
@@ -450,20 +412,18 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 			}
 		case sqlexp.MsgNext:
 			if scanNext(rows, res, sink) {
-				// scanNext gave up part-way through the set, and the message
-				// loop can't advance past one with rows still pending. Drain it
-				// here and only here: an extra Next() on an exhausted set makes
-				// the driver swallow the message retmsg is waiting for, and the
-				// result set never reaches res at all.
+				// scanNext abandoned the set with rows pending, and the message
+				// loop can't advance past it. Drain here only: an extra Next()
+				// on an exhausted set makes the driver swallow the message
+				// retmsg awaits, losing the set.
 				for rows.Next() {
 				}
 			}
 		case sqlexp.MsgNextResultSet:
 			active = rows.NextResultSet()
 		default:
-			// Unreachable against sqlexp's current closed message set. Without
-			// it, a type added by a future sqlexp spins this loop at 100% CPU
-			// with no way out; reporting and stopping names it in Messages.
+			// Unreachable with sqlexp's current message set; a future type
+			// would otherwise spin this loop at 100% CPU.
 			res.addError(fmt.Errorf("unexpected message type %T from the driver", m))
 			active = false
 		}
@@ -474,9 +434,8 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 }
 
 // rowScanner holds one result set's per-column scan targets and formatting
-// decisions, so a row is read and rendered without redoing the column-type
-// analysis. Shared by scanResultSet, which retains rows, and streamResultSet,
-// which writes them straight out.
+// decisions, shared by scanResultSet (retains) and streamResultSet (writes
+// out).
 type rowScanner struct {
 	cols        []string
 	types       []string
@@ -486,26 +445,23 @@ type rowScanner struct {
 	decimalLike []bool
 	layouts     []string
 
-	// buf renders one cell at a time, reused for every cell of every row: the
-	// bytes are copied out by cellArena.str, or into a fresh string, before the
+	// buf renders one cell at a time, reused; bytes are copied out before the
 	// next cell overwrites them.
 	buf []byte
 }
 
-// newRowScanner analyses the current result set's columns once.
+// newRowScanner analyses the result set's columns once.
 //
-// uniqueidentifier scans as a raw 16-byte []byte, which renders as hex in the
-// wrong byte order; NullUniqueIdentifier gives the canonical dashed GUID and
-// preserves NULL.
+// uniqueidentifier scans as 16 raw bytes in the wrong order for hex;
+// NullUniqueIdentifier gives the canonical GUID and preserves NULL.
 //
-// decimal/numeric/money/smallmoney also scan as []byte, but the driver has
-// already decoded them to an ASCII digit string ("0.070312"), so formatValue
-// must render that []byte as text, not hex. (numeric reports as DECIMAL.)
+// decimal/numeric/money/smallmoney also scan as []byte, but already decoded to
+// ASCII digits ("0.070312"), so render as text, not hex. (numeric reports as
+// DECIMAL.)
 //
-// Every date/time type scans as a time.Time, so only the column type and
-// declared scale say how much SSMS shows — a date has no time part, a time no
-// date, a datetime2(3) three fractional digits. layouts carries that per
-// column.
+// Every date/time type scans as time.Time, so the column type and scale decide
+// what SSMS shows (date without time, datetime2(3) with three digits); layouts
+// holds that per column.
 func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -541,12 +497,8 @@ func newRowScanner(rows *sql.Rows) (*rowScanner, error) {
 	return sc, nil
 }
 
-// scan reads the current row and renders it as display strings into row, which
-// must have one slot per column.
-//
-// A nil arena makes every cell its own string — right for the streaming path,
-// which keeps nothing. A non-nil one packs the cells, so a retained result set
-// costs a handful of large allocations rather than one per cell.
+// scan renders the current row into row (one slot per column). A nil arena
+// gives each cell its own string (streaming path); non-nil packs them.
 func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 	if err := rows.Scan(sc.ptrs...); err != nil {
 		return err
@@ -559,18 +511,16 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 			sc.buf = appendValue(sc.buf, sc.vals[i], sc.decimalLike[i], sc.layouts[i])
 		}
 		row[i] = a.str(sc.buf)
-		// Drop the driver's copy now the cell is rendered: otherwise a []byte
-		// or string column keeps its per-row allocation alive until the next
-		// row overwrites vals[i] — for the last row of a huge set, until the
-		// whole Result is dropped.
+		// Drop the driver's copy now the cell is rendered, or it lives until
+		// the next row overwrites it — for the last row, until the Result is
+		// dropped.
 		sc.vals[i] = nil
 	}
 	return nil
 }
 
-// scanResultSet reads the whole of rows' current result set into string cells.
-// There is no row cap, so the cells and per-row slices are packed into a
-// cellArena, keeping a very large set close to the size of its text.
+// scanResultSet reads the whole current result set into string cells, packed
+// into a cellArena since there's no row cap.
 func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -589,26 +539,21 @@ func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 	return rs, nil
 }
 
-// streamResultSet writes the current result set straight to sink, retaining
-// nothing, and returns how many rows it wrote — what makes Results To File
-// independent of result size, where scanResultSet holds every row for the
-// lifetime of the panel.
+// streamResultSet writes the current result set to sink, retaining nothing, and
+// returns rows written.
 //
-// exhausted reports whether the row loop reached the end of the set, and is
-// deliberately not derivable from err: the deferred EndSet can fail on a set
-// that was read right through, and draining that one costs the caller a
-// message (see scanNext).
+// exhausted reports whether the loop reached the set's end; not derivable from
+// err, since the deferred EndSet can fail on a fully read set, and draining
+// that costs a message (see scanNext).
 func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhausted bool, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
 		return 0, false, err
 	}
-	// Paired with BeginSet on every exit, so a scan or Row failure part-way
-	// through still closes the set out. Registered *before* BeginSet: a sink
-	// that took a lock or allocated per-set state before the failure that
-	// aborted its BeginSet has EndSet as its only place to undo it. Named
-	// returns because the BeginSet/scan/Row error is the one worth reporting,
-	// and EndSet's must surface only when nothing else failed.
+	// Paired with BeginSet on every exit, so a mid-set failure still closes the
+	// set. Registered before BeginSet: a sink that acquired state before its
+	// BeginSet failed can only undo it in EndSet. Named returns so EndSet's
+	// error surfaces only when nothing else failed.
 	defer func() {
 		if endErr := sink.EndSet(n); endErr != nil && err == nil {
 			err = endErr
@@ -617,8 +562,7 @@ func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhau
 	if err = sink.BeginSet(sc.cols); err != nil {
 		return 0, false, err
 	}
-	// One row buffer for the whole set: sink.Row must consume what it is given
-	// before returning, so it can be overwritten.
+	// One row buffer for the set: sink.Row must consume it before returning.
 	row := make([]string, len(sc.cols))
 	for rows.Next() {
 		if err = sc.scan(rows, row, nil); err != nil {
@@ -630,32 +574,27 @@ func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhau
 		n++
 		prog.AddRow()
 	}
-	// Next() said the set was over, so it is exhausted however the deferred
-	// EndSet above then goes.
+	// Next() ended the set, so it's exhausted however EndSet goes.
 	return n, true, nil
 }
 
-// showplanColumnName is the column name SQL Server uses for SET STATISTICS XML
-// / SHOWPLAN_XML output. Mirrors gosmo's unexported showplanColumn.
+// showplanColumnName is SQL Server's column name for STATISTICS XML /
+// SHOWPLAN_XML output. Mirrors gosmo's unexported showplanColumn.
 const showplanColumnName = "Microsoft SQL Server 2005 XML Showplan"
 
-// isShowplanResultSet reports whether cols is the single-column shape SQL
-// Server uses for execution-plan output, rather than a real result set.
+// isShowplanResultSet reports whether cols is the single-column execution-plan
+// shape.
 func isShowplanResultSet(cols []string) bool {
 	return len(cols) == 1 && cols[0] == showplanColumnName
 }
 
-// scanNext consumes the result set sqlexp's MsgNext just announced, appending
-// it to res as either a showplan XML document or a grid of rows. Errors are
-// recorded on res rather than returned, since a batch keeps running after one.
+// scanNext consumes the result set MsgNext just announced, appending it to res
+// as showplan XML or a grid. Errors go to res, since the batch continues.
 //
-// It returns whether the set was abandoned with rows still pending — the one
-// case in which the caller may drain it. That is not the same question as
-// whether the set failed, and deriving one from the other is how the drain
-// prohibition gets broken from the inside: streamResultSet's deferred EndSet
-// and scanPlanXML's trailing rows.Err() both report a failure on a set already
-// read to its end, and draining one of those spends the extra Next() that
-// makes the driver swallow the message retmsg is waiting for.
+// It returns whether the set was abandoned with rows pending — the only case
+// the caller may drain. That's not "did it fail": streamResultSet's deferred
+// EndSet and scanPlanXML's trailing rows.Err() can fail on a fully read set,
+// and draining that swallows the message retmsg awaits.
 func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 	cols, err := rows.Columns()
 	if err != nil {
@@ -691,16 +630,14 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 	return false
 }
 
-// scanPlanXML reads the current single-column showplan result set into one XML
-// document per row. Every row is kept as a tolerance, not a shape observed: on
-// every server probed each showplan set holds exactly one row (SHOWPLAN_XML one
-// combined document per batch, STATISTICS XML one per executed statement, each
-// in its own set). A server that split a set across rows would lose all but one
-// plan to an overwrite, so the loop stays. Mirrors gosmo's capturePlan.
+// scanPlanXML reads the current showplan set into one XML document per row.
+// Every probed server sends one row per set (SHOWPLAN_XML one document per
+// batch, STATISTICS XML one per statement, each in its own set); keeping every
+// row is a tolerance, so a split set wouldn't lose plans. Mirrors gosmo's
+// capturePlan.
 //
-// exhausted reports whether the loop reached the end of the set, which the
-// trailing rows.Err() does not: Err() reports a set that ended in failure just
-// as readily as one that ended, and both have no rows left to drain.
+// exhausted reports whether the loop reached the set's end; rows.Err() can't
+// tell a failed end from a clean one, and neither needs draining.
 func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	for rows.Next() {
 		var xml string
@@ -714,8 +651,8 @@ func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	return plans, true, rows.Err()
 }
 
-// appendGUID appends a uniqueidentifier as SSMS renders it: NULL, or the
-// canonical uppercase dashed form.
+// appendGUID appends a uniqueidentifier as SSMS renders it: NULL or uppercase
+// dashed.
 func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	if !g.Valid {
 		return append(dst, "NULL"...)
@@ -723,26 +660,21 @@ func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	return append(dst, g.UUID.String()...)
 }
 
-// formatGUID is appendGUID's standalone form, kept for the tests that assert
-// on rendered text rather than on an append buffer.
+// formatGUID is appendGUID's string form, for tests.
 func formatGUID(g mssql.NullUniqueIdentifier) string {
 	return string(appendGUID(nil, g))
 }
 
-// defaultTimeLayout renders a time.Time from a column whose type named no
-// layout — a sql_variant holding a datetime, say. Matches plain "datetime".
+// defaultTimeLayout is for a time.Time from a column with no known layout (e.g.
+// sql_variant); matches plain "datetime".
 const defaultTimeLayout = "2006-01-02 15:04:05.000"
 
-// timeLayout returns the layout SSMS's grid uses for a date/time column of the
-// given SQL Server type, or "" for a type that isn't one. Each type shows
-// exactly the parts it stores: one fixed "datetime" layout for all of them
-// invents a "00:00:00.000" for every date column and truncates a datetime2's
-// last four digits.
+// timeLayout returns SSMS's grid layout for a date/time column type, or "" for
+// other types. Each type shows exactly the parts it stores — a single datetime
+// layout would invent "00:00:00.000" for dates and truncate datetime2.
 //
-// datetime2, time and datetimeoffset carry a declared scale of 0-7 setting
-// their fractional-second digits, so scale comes from DecimalSize, reported for
-// exactly those three; scaleKnown false falls back to 7. Every other type's
-// precision is fixed.
+// datetime2, time and datetimeoffset have a scale (0-7) for fractional digits,
+// from DecimalSize; unknown scale uses 7. Other types have fixed precision.
 func timeLayout(databaseTypeName string, scale int, scaleKnown bool) string {
 	if !scaleKnown {
 		scale = 7
@@ -764,9 +696,8 @@ func timeLayout(databaseTypeName string, scale int, scaleKnown bool) string {
 	return ""
 }
 
-// fracLayout returns the fractional-second fragment of a Go time layout for the
-// given scale — "" at scale 0, printing no decimal point, as SSMS shows a
-// time(0).
+// fracLayout returns the fractional-second layout fragment for scale; "" at 0
+// (no decimal point, as SSMS shows time(0)).
 func fracLayout(scale int) string {
 	if scale <= 0 {
 		return ""
@@ -774,18 +705,16 @@ func fracLayout(scale int) string {
 	return "." + strings.Repeat("0", min(scale, 7))
 }
 
-// formatValue renders one cell the way SSMS displays it: NULL for nil, 1/0 for
-// bit, 0x… for binary, a date/time in its column type's layout. isDecimalLike
-// marks a []byte cell holding a decoded decimal/money ASCII digit string rather
-// than binary, so it renders as text instead of hex. layout is the column's
-// time layout, empty for a non-date/time column.
+// formatValue renders a cell as SSMS does: NULL for nil, 1/0 for bit, 0x… for
+// binary, date/time in its column's layout. isDecimalLike marks a []byte
+// holding decoded decimal/money digits (render as text, not hex). layout is
+// empty for non-date/time columns.
 func formatValue(v any, isDecimalLike bool, layout string) string {
 	return string(appendValue(nil, v, isDecimalLike, layout))
 }
 
-// appendValue is formatValue in append form, so a caller scanning many rows
-// renders every cell through one reused buffer instead of allocating a string
-// per cell on the way to a packed copy.
+// appendValue is formatValue in append form, so cells render through one reused
+// buffer.
 func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 	switch x := v.(type) {
 	case nil:
@@ -816,9 +745,7 @@ func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 	}
 }
 
-// appendHexUpper appends b as SSMS's "0x…" uppercase hex literal in one pass;
-// hex.EncodeToString plus strings.ToUpper would build two throwaway copies of
-// every binary cell.
+// appendHexUpper appends b as SSMS's "0x…" uppercase hex in one pass.
 func appendHexUpper(dst []byte, b []byte) []byte {
 	dst = append(dst, '0', 'x')
 	for _, c := range b {
@@ -829,13 +756,10 @@ func appendHexUpper(dst []byte, b []byte) []byte {
 
 const hexUpperDigits = "0123456789ABCDEF"
 
-// appendFloat renders a float/real column the way SSMS's grid does: plain
-// decimal across the range a person actually reads, scientific notation only
-// outside it. Go's "%v"/%g rule switches to an exponent as soon as the exponent
-// reaches the number of significant digits, so a float holding 1000000 shows as
-// "1e+06". Shortest-round-trip precision (-1) is kept either way, so the text
-// reparses to the same float64 when copied out of the grid and pasted back into
-// a query.
+// appendFloat renders float/real as SSMS's grid does: plain decimal in the
+// readable range, scientific outside it (Go's %g would show 1000000 as
+// "1e+06"). Shortest round-trip precision, so pasted-back text reparses to the
+// same float64.
 func appendFloat(dst []byte, f float64, bits int) []byte {
 	abs := math.Abs(f)
 	if f != 0 && !math.IsInf(f, 0) && !math.IsNaN(f) && (abs < 1e-4 || abs >= 1e15) {
@@ -844,8 +768,7 @@ func appendFloat(dst []byte, f float64, bits int) []byte {
 	return strconv.AppendFloat(dst, f, 'f', -1, bits)
 }
 
-// formatFloat is appendFloat's standalone form, kept for the tests that assert
-// on rendered text rather than on an append buffer.
+// formatFloat is appendFloat's string form, for tests.
 func formatFloat(f float64, bits int) string {
 	return string(appendFloat(nil, f, bits))
 }

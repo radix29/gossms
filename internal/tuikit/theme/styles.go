@@ -5,10 +5,7 @@ import (
 	"github.com/gdamore/tcell/v3/color"
 )
 
-// ---------------------------------------------------------------------------
-// Pre-built styles derived from the active palette
-// ---------------------------------------------------------------------------
-// These are functions (not vars) so they always reflect the live palette.
+// Functions, not vars, so they always reflect the live palette.
 
 func StyleDefault() tcell.Style {
 	return tcell.StyleDefault.Background(active.Background).Foreground(active.Text)
@@ -50,23 +47,18 @@ func StyleInput() tcell.Style {
 	return tcell.StyleDefault.Background(active.InputBg).Foreground(active.InputFg)
 }
 
-// StyleControlDisabled is a dialog control the page has switched off — a text
-// field, check box or radio group that still draws but refuses keys and
-// clicks. It drops the control's own background entirely rather than only
-// dimming its text: a disabled control accepts nothing, so it has to be
-// obvious at a glance which ones are live.
+// StyleControlDisabled is a switched-off dialog control (text field, check box,
+// radio group). It drops the background entirely, not just dims text, so live
+// controls are obvious at a glance.
 func StyleControlDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.DialogBg).Foreground(active.TextDim)
 }
 
-// StyleInputDisabled is StyleControlDisabled applied to a text field, named
-// for the caller that reads best at the InputField.Draw site.
+// StyleInputDisabled is StyleControlDisabled for text fields.
 func StyleInputDisabled() tcell.Style { return StyleControlDisabled() }
 
-// StyleButtonDisabled is a button the page has switched off. A button keeps
-// its own ground — unlike a field, it has no border to lose, so dropping the
-// background would leave nothing on screen to click at all — and dims only
-// its label.
+// StyleButtonDisabled keeps the button's ground — with no border, dropping it
+// would leave nothing visible — and dims only the label.
 func StyleButtonDisabled() tcell.Style {
 	return tcell.StyleDefault.Background(active.ButtonBg).Foreground(active.TextDim)
 }
@@ -86,26 +78,23 @@ func StyleGridStatus() tcell.Style {
 	return tcell.StyleDefault.Background(color.LightYellow).Foreground(color.Black)
 }
 
-// StyleChartPlot is the background of a chart's plot area — every chart
-// clears its plot to this before drawing, and a stacked column's topmost
-// partial cell blends against it.
+// StyleChartPlot is a chart's plot-area background; stacked columns' partial
+// top cells blend against it.
 func StyleChartPlot() tcell.Style {
 	return tcell.StyleDefault.Background(active.ChartPlotBg).Foreground(active.ChartAxis)
 }
 
-// StyleChartGrid is the muted `·` dot grid and `┆` time divisions drawn
-// inside the plot area.
+// StyleChartGrid is the muted `·` dot grid and `┆` time divisions.
 func StyleChartGrid() tcell.Style {
 	return tcell.StyleDefault.Background(active.ChartPlotBg).Foreground(active.ChartGrid)
 }
 
-// StyleChartAxis is the Y-axis value labels and time labels around the plot.
+// StyleChartAxis is the Y-axis value and time labels.
 func StyleChartAxis() tcell.Style {
 	return tcell.StyleDefault.Background(active.PanelBg).Foreground(active.ChartAxis)
 }
 
-// StyleTooltip is the body of a popup readout, and of the toolbar buttons
-// that share its scheme.
+// StyleTooltip is a popup readout's body, shared by toolbar buttons.
 func StyleTooltip() tcell.Style {
 	return tcell.StyleDefault.Background(active.TooltipBg).Foreground(active.TooltipFg)
 }

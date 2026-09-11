@@ -12,16 +12,12 @@ import (
 	"github.com/golang-sql/sqlexp"
 )
 
-// ExecuteToSink's wiring — Result.Sets staying empty, RowsWritten totalling,
-// the per-set "(N row(s) written)" notice, and the suppressed "Commands
-// completed successfully." — runs through sqlexp's ReturnMessage protocol
-// rather than through plain database/sql calls, which is why it went
-// untested for a long time. A fake that merely ignores the retmsg out-param
-// ends runBatch's message loop immediately and passes without exercising
-// anything; these tests instead implement the protocol the way the sqlexp
-// docs specify a driver must (driver.NamedValueChecker intercepts the
-// *ReturnMessage, ReturnMessageInit sets it up, ReturnMessageEnqueue feeds
-// it), so the loop runs for real.
+// ExecuteToSink's wiring — empty Result.Sets, RowsWritten totals, per-set "(N
+// row(s) written)", suppressed success notice — runs through sqlexp's
+// ReturnMessage protocol. A fake that ignores the retmsg out-param ends
+// runBatch's loop immediately and tests nothing, so this fake implements the
+// protocol as sqlexp specifies (driver.NamedValueChecker intercepts
+// *ReturnMessage, ReturnMessageInit sets it up, ReturnMessageEnqueue feeds it).
 
 // fakeMsgKind is one scripted message in a batch's stream.
 type fakeMsgKind int
@@ -44,19 +40,18 @@ type fakeMsg struct {
 }
 
 // fakeMsgConn replays one scripted batch per QueryContext call carrying a
-// *sqlexp.ReturnMessage. Any other query (acquireConn's prologue,
-// currentDatabase's SELECT DB_NAME()) is answered directly.
+// *sqlexp.ReturnMessage; other queries (acquireConn's prologue, SELECT
+// DB_NAME()) are answered directly.
 type fakeMsgConn struct {
 	batches [][]fakeMsg
 	next    int
 	retmsg  *sqlexp.ReturnMessage
 	dbName  string
 
-	// Session bookkeeping — see session_test.go. spid and tranCount answer
-	// the Session's state read; resets counts database/sql's ResetSession
-	// calls, which is how a pool marks a connection it handed out before;
-	// invalid is what IsValid reports once a batch has broken the
-	// connection; failExec fails any ExecContext whose text contains it.
+	// Session bookkeeping (see session_test.go): spid and tranCount answer the
+	// state read; resets counts ResetSession calls (how a pool marks a reused
+	// connection); invalid is IsValid's answer after a batch broke the
+	// connection; failExec fails any ExecContext containing it.
 	spid      int64
 	tranCount int64
 	resets    int
@@ -78,9 +73,9 @@ func (c *fakeMsgConn) ResetSession(context.Context) error {
 
 var errFakeMsgUnsupported = errors.New("fakeMsgConn: unsupported")
 
-// CheckNamedValue implements the driver half of the sqlexp contract: take
-// the *ReturnMessage out of the argument list, initialise it, and omit it
-// from the arguments the query actually sees.
+// CheckNamedValue is the driver half of the sqlexp contract: take the
+// *ReturnMessage out of the arguments, initialise it, and hide it from the
+// query.
 func (c *fakeMsgConn) CheckNamedValue(nv *driver.NamedValue) error {
 	if rm, ok := nv.Value.(*sqlexp.ReturnMessage); ok {
 		sqlexp.ReturnMessageInit(rm)
@@ -100,8 +95,8 @@ func (c *fakeMsgConn) ExecContext(_ context.Context, q string, _ []driver.NamedV
 
 func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
 	if c.retmsg == nil {
-		// As the real driver does: a cancelled ctx gets no answer, which is
-		// what makes a state read that forgot to detach from it fail here.
+		// As the real driver: a cancelled ctx gets no answer, so a state read
+		// that forgot to detach fails here.
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -129,21 +124,21 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			rows.sets = append(rows.sets, m)
 		}
 	}
-	// A batch that returned no result set is still a rows with one empty,
-	// zero-column set — the same shape TDS reports for an INSERT.
+	// A batch with no result set still yields one empty zero-column set, as TDS
+	// does for an INSERT.
 	if len(rows.sets) == 0 {
 		rows.sets = append(rows.sets, fakeMsg{})
 	}
 
-	// The buffer is 15, and enqueueing before returning from Query is what
-	// keeps these tests single-goroutine; keep scripts short.
+	// The buffer is 15; enqueueing before Query returns keeps tests
+	// single-goroutine, so keep scripts short.
 	enqueue := func(raw sqlexp.RawMessage) error { return sqlexp.ReturnMessageEnqueue(ctx, rm, raw) }
 	for _, m := range script {
 		var err error
 		switch m.kind {
 		case msgSet:
-			// MsgNext announces a set; the MsgNextResultSet that closes it
-			// out is what makes the client call rows.NextResultSet.
+			// MsgNext announces a set; the closing MsgNextResultSet makes the
+			// client call rows.NextResultSet.
 			err = enqueue(sqlexp.MsgNext{})
 			if err == nil {
 				err = enqueue(sqlexp.MsgNextResultSet{})
@@ -161,8 +156,7 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			return nil, err
 		}
 	}
-	// The final one ends the loop: NextResultSet has nothing left to
-	// advance to and returns false.
+	// The final one ends the loop.
 	if err := enqueue(sqlexp.MsgNextResultSet{}); err != nil {
 		return nil, err
 	}
@@ -225,11 +219,10 @@ var (
 	_ driver.RowsNextResultSet = (*fakeMsgRows)(nil)
 )
 
-// openFakeMsgDB serves one scripted batch per GO batch of the script.
+// openFakeMsgDB serves one scripted batch per GO batch.
 func openFakeMsgDB(batches ...[]fakeMsg) *sql.DB {
 	db := sql.OpenDB(&fakeMsgConnector{conn: &fakeMsgConn{batches: batches, dbName: "testdb"}})
-	// One physical connection, so the scripted batches are consumed in
-	// order by whichever conn executeWithSink acquires.
+	// One physical connection, so batches are consumed in order.
 	db.SetMaxOpenConns(1)
 	return db
 }
@@ -238,9 +231,8 @@ func set(cols []string, rows ...[]driver.Value) fakeMsg {
 	return fakeMsg{kind: msgSet, cols: cols, rows: rows}
 }
 
-// firstSetFailSink fails on one row of the *first* set only, then accepts
-// everything after — recordingSink.failOn counts rows across the whole run,
-// which would fail the recovery set too and hide what the test is checking.
+// firstSetFailSink fails one row of the first set only; recordingSink.failOn
+// counts across the run and would fail the recovery set too.
 type firstSetFailSink struct {
 	recordingSink
 	failOn int // 1-based row index within the first set
@@ -276,8 +268,7 @@ func messageTexts(res *Result) []string {
 	return out
 }
 
-// The whole point of the sink path: rows reach the sink, Result.Sets stays
-// empty, and RowsWritten totals across every set.
+// Rows reach the sink, Result.Sets stays empty, RowsWritten totals every set.
 func TestExecuteToSinkStreamsSetsAndRetainsNothing(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{
 		set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)}),
@@ -314,9 +305,8 @@ func TestExecuteToSinkStreamsSetsAndRetainsNothing(t *testing.T) {
 	}
 }
 
-// An empty result set is still a result set: it must report "(0 row(s)
-// written)" and must NOT also claim "Commands completed successfully.",
-// which is what reading RowsWritten instead of sinkSets used to do.
+// An empty set is still a set: "(0 row(s) written)" and no "Commands completed
+// successfully.".
 func TestExecuteToSinkEmptySetIsStillASet(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{set([]string{"n"})})
 	defer db.Close()
@@ -338,8 +328,7 @@ func TestExecuteToSinkEmptySetIsStillASet(t *testing.T) {
 	}
 }
 
-// A script that returns no result set at all is the case the success notice
-// exists for.
+// No result set at all is what the success notice is for.
 func TestExecuteToSinkNoResultSetReportsSuccess(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{{kind: msgAffected, count: 4}})
 	defer db.Close()
@@ -358,9 +347,8 @@ func TestExecuteToSinkNoResultSetReportsSuccess(t *testing.T) {
 	}
 }
 
-// Notices and server errors raised mid-batch reach Messages on the sink
-// path exactly as they do on the buffering one, and an error suppresses the
-// success notice.
+// Notices and errors reach Messages on the sink path as on the buffering one;
+// an error suppresses the success notice.
 func TestExecuteToSinkForwardsNoticesAndErrors(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{
 		{kind: msgNotice, text: "Warning: null value eliminated."},
@@ -381,16 +369,13 @@ func TestExecuteToSinkForwardsNoticesAndErrors(t *testing.T) {
 	}
 }
 
-// A sink that fails part-way abandons that set — and the batch's *next* set
-// must still arrive, with the abandoned set closed out at the rows that did
-// make it.
+// A sink failing mid-set abandons that set, closed out at the rows written, and
+// the batch's next set still arrives.
 //
-// What this does NOT pin is runBatch's drain loop. Whether an abandoned set
-// has to be drained before the message loop can advance, and whether an
-// extra Next() past an exhausted one makes the driver swallow the pending
-// message, are both properties of go-mssqldb's TDS handling; a fake whose
-// NextResultSet just moves an index behaves identically either way. Removing
-// the drain still passes here. That gate stays a live-server check.
+// This does not pin runBatch's drain loop: whether an abandoned set must be
+// drained, and whether an extra Next() swallows a message, are go-mssqldb TDS
+// behaviour a fake can't reproduce. Removing the drain still passes here;
+// that's a live-server check.
 func TestExecuteToSinkRecoversAfterASinkFailure(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{
 		set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)}, []driver.Value{int64(3)}),
@@ -416,8 +401,8 @@ func TestExecuteToSinkRecoversAfterASinkFailure(t *testing.T) {
 	}
 }
 
-// Execute over the identical scripted stream is the control: it retains the
-// rows in Sets and writes nothing to a sink.
+// Control: Execute over the same stream retains rows in Sets and writes nothing
+// to a sink.
 func TestExecuteRetainsWhatExecuteToSinkStreams(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)})})
 	defer db.Close()

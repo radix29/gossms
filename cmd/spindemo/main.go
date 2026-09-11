@@ -1,10 +1,8 @@
-// Command spindemo animates a catalogue of candidate busy spinners side by
-// side so one can be picked by eye rather than from a static frame listing.
-// Not part of the release build (see .github/workflows/release.yml, which
-// only builds cmd/gossms).
+// Command spindemo animates the candidate busy spinners side by side, to pick
+// one by eye. Not in the release build.
 //
-// Keys: q / Ctrl+Q quits, space pauses, . single-steps while paused,
-// + / - change the global speed multiplier, r resets the clock.
+// Keys: q / Ctrl+Q quits, space pauses, . single-steps while paused, + / -
+// change speed, r resets the clock.
 package main
 
 import (
@@ -19,15 +17,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// tickMS is the redraw cadence. It is deliberately finer than the fastest
-// spinner's PeriodMS so every spinner advances on its own schedule rather
-// than being quantised to a shared frame rate.
+// tickMS is finer than the fastest spinner's PeriodMS so each spinner advances
+// on its own schedule, not a shared frame rate.
 const tickMS = 25
 
-// speeds are the selectable percentages of each spinner's own PeriodMS
-// cadence, and defaultSpeed indexes the 100% entry. The scale runs below
-// 100% as well as above it: the point of the demo is to judge a cadence, and
-// half speed shows up a frame that reads badly far better than double does.
+// speeds are percentages of each spinner's PeriodMS; defaultSpeed indexes 100%.
+// Slow speeds are included because half speed exposes a bad frame better than
+// double does.
 var speeds = []int{25, 50, 75, 100, 150, 200, 300, 400}
 
 const defaultSpeed = 3
@@ -72,9 +68,8 @@ func main() {
 	}
 }
 
-// demo owns the animation clock. Time is accumulated in milliseconds rather
-// than read from time.Now, so pausing and single-stepping are the same
-// operation as running: nothing but elapsed decides which frame shows.
+// demo owns the animation clock. Elapsed time is accumulated, not read from
+// time.Now, so pausing and single-stepping work like running.
 type demo struct {
 	elapsed int64 // scaled animation milliseconds
 	speed   int   // index into speeds, scaling how fast elapsed accumulates
@@ -99,8 +94,7 @@ func (d *demo) handleKey(e *tcell.EventKey) {
 	}
 }
 
-// nameCol is the width reserved for the spinner name, wide enough for the
-// longest in the table plus breathing room.
+// nameCol fits the longest spinner name plus padding.
 const nameCol = 12
 
 func (d *demo) draw(s tcell.Screen) {
@@ -127,17 +121,15 @@ func (d *demo) draw(s tcell.Screen) {
 	}
 }
 
-// drawGroup lays out one group of spinners and returns the next free row.
-// Each row shows the live animation, then the spinner's whole frame set at
-// rest, so a frame that looks wrong in motion can be found in the listing.
+// drawGroup lays out one group of spinners and returns the next free row. Each
+// row shows the live animation, then the whole frame set at rest.
 func (d *demo) drawGroup(s tcell.Screen, y, w int, heading string, group []widgets.Spinner, label, dim, spin tcell.Style) int {
 	if y >= 0 {
 		core.DrawTextClipped(s, 1, y, w-2, theme.StyleChartSection(), heading)
 	}
 	y += 2
 
-	// widest is the animation column width, so the notes line up whether a
-	// group holds width-1 or width-5 spinners.
+	// widest is the animation column width, so notes align across widths 1–5.
 	widest := 0
 	for _, sp := range group {
 		widest = max(widest, sp.Width())
@@ -148,8 +140,7 @@ func (d *demo) drawGroup(s tcell.Screen, y, w int, heading string, group []widge
 		core.DrawText(s, x, y, label, core.PadRight(sp.Name, nameCol))
 		x += nameCol
 
-		// Draw into a fixed-width slot: the frame is padded to the group's
-		// widest so nothing after it shifts as the animation runs.
+		// Pad to the group's widest frame so nothing after it shifts.
 		sp.Draw(s, x, y, spin, time.Duration(d.elapsed)*time.Millisecond)
 		core.DrawText(s, x+sp.Width(), y, spin, strings.Repeat(" ", widest-sp.Width()))
 		x += widest + 2
@@ -167,9 +158,8 @@ func (d *demo) drawGroup(s tcell.Screen, y, w int, heading string, group []widge
 	return y
 }
 
-// singles and multis split the tuikit catalogue by width, which is the split
-// the choice actually turns on: a one-cell spinner can sit inline in a status
-// bar without moving the text after it, a wider one wants a line of its own.
+// singles and multis split the catalogue by width: a one-cell spinner fits
+// inline in a status bar, a wider one wants its own line.
 func singles() []widgets.Spinner { return byWidth(func(w int) bool { return w == 1 }) }
 func multis() []widgets.Spinner  { return byWidth(func(w int) bool { return w > 1 }) }
 
@@ -183,9 +173,7 @@ func byWidth(keep func(int) bool) []widgets.Spinner {
 	return out
 }
 
-// notes describe each catalogue spinner in the demo. They live here rather
-// than on widgets.Spinner: the library needs a name and frames, and prose
-// about how a spinner reads is a thing only this picker shows.
+// notes describe each spinner. Demo-only prose, so not on widgets.Spinner.
 var notes = map[string]string{
 	"braille":    "braille dots - smooth, quiet, needs a braille-capable font",
 	"halfcircle": "half-filled circle rotating - reads as a loading pie",

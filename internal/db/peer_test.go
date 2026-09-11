@@ -10,23 +10,19 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// newTestConn builds a ServerConn with the lifetime plumbing Connect sets up
-// but no gosmo.Server behind it — Close is nil-safe, so the close path can be
-// exercised without a live instance.
+// newTestConn builds a ServerConn with Connect's lifetime plumbing but no
+// gosmo.Server; Close is nil-safe.
 func newTestConn(server string) *ServerConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ServerConn{Opts: config.Connection{Server: server}, ctx: ctx, cancel: cancel}
 }
 
-// Peer runs on background loader goroutines while Close runs on the UI one,
-// and closePeers closes each cached peer — writing ServerConn.closed — after
-// releasing peerMu, which looks like a race against the cache lookup's
-// IsOpen. It is not, and this pins why: every IsOpen on a cached peer happens
-// under peerMu, and closePeers takes that same mutex before any peer is
-// closed, so the write is always ordered after the read. Once closePeers has
-// run, sc.peers is nil and there is no cached peer left to test.
+// closePeers writes ServerConn.closed after releasing peerMu, which looks racy
+// against the lookup's IsOpen. It isn't: every IsOpen on a cached peer is under
+// peerMu, and closePeers takes it before closing any peer; afterwards sc.peers
+// is nil.
 //
-// Run under -race; without it this proves nothing.
+// Meaningful only under -race.
 func TestPeerLookupRacesDisconnect(t *testing.T) {
 	for range 50 {
 		sc := newTestConn("primary")
@@ -47,15 +43,10 @@ func TestPeerLookupRacesDisconnect(t *testing.T) {
 	}
 }
 
-// A database named in the connection string has to be openable or the connect
-// itself fails, at ping time — "Cannot open database %q that was requested by
-// the login", verified live against win10cli 2026-08-14. The database the user
-// connected through is exactly the one a peer may not be able to open (an
-// unreadable secondary, or one that has not joined that database), so Peer
-// must not carry it over.
-//
-// Peer's own connect can't run without a real second instance, so this pins
-// the decision at the only seam a unit test has: the options it builds from.
+// A named database must be openable or connect fails at ping ("Cannot open
+// database %q that was requested by the login", verified live), and a secondary
+// may not open the user's database, so Peer must not carry it. Peer's connect
+// needs a real instance, so this tests the options it builds.
 func TestPeerOptionsDropTheDatabase(t *testing.T) {
 	sc := &ServerConn{Opts: config.Connection{
 		Server: "primary", Port: 1433, User: "sa", Password: "pw",
@@ -71,18 +62,16 @@ func TestPeerOptionsDropTheDatabase(t *testing.T) {
 	if opts.Server != "secondary" {
 		t.Errorf("peer options name server %q, want %q", opts.Server, "secondary")
 	}
-	// Everything else has to survive, or the peer authenticates differently
-	// from the connection it was derived from.
+	// Everything else must survive, or the peer authenticates differently from
+	// its parent.
 	if opts.User != "sa" || opts.Password != "pw" || opts.Port != 1433 || !opts.TrustServerCertificate {
 		t.Errorf("peer options lost credentials or transport settings: %+v", opts)
 	}
 }
 
-// TestInstanceKeyNormalizesSpellings pins the one normalizer both the peer
-// cache and the credential lookup are keyed by. The catalog reports
-// "HOST\INSTANCE", the user types "host,1433", and a credential saved under
-// one spelling has to be found under the other — a key that kept the case, or
-// the default port, would miss on exactly the connection the user just made.
+// Peer cache and credential lookup share this normalizer. The catalog reports
+// "HOST\INSTANCE", the user types "host,1433"; keeping case or the default port
+// would miss.
 func TestInstanceKeyNormalizesSpellings(t *testing.T) {
 	groups := [][]string{
 		{"UBUSQL2", "ubusql2", "ubusql2,1433", "  ubusql2  ", "UbuSQL2:1433"},
@@ -100,10 +89,9 @@ func TestInstanceKeyNormalizesSpellings(t *testing.T) {
 			}
 		}
 	}
-	// Different instances must not collapse together — sharing a key hands one
-	// the other's login. A named instance is not its host's default instance,
-	// and without an instance name the port is what tells two apart: win10cli's
-	// SQL2017 is reached as "win10cli,55253", beside the default on 1433.
+	// Distinct instances must not share a key (that hands over a login). A
+	// named instance isn't its host's default; without a name, the port
+	// distinguishes them (win10cli's SQL2017 at "win10cli,55253").
 	for _, pair := range [][2]string{
 		{"host", "host\\inst"},
 		{"host", "host,55253"},
@@ -115,9 +103,8 @@ func TestInstanceKeyNormalizesSpellings(t *testing.T) {
 	}
 }
 
-// TestConnectionAddressFoldsInTheDialogPort pins the saved-connection side of
-// the key. The Connect dialog stores a port in the separate Port field, so a
-// key built from Server alone put win10cli's two instances on one entry again.
+// The dialog stores the port in Port, so keys must fold it in, or win10cli's
+// two instances share an entry.
 func TestConnectionAddressFoldsInTheDialogPort(t *testing.T) {
 	for _, tc := range []struct {
 		conn config.Connection
@@ -126,7 +113,7 @@ func TestConnectionAddressFoldsInTheDialogPort(t *testing.T) {
 		{config.Connection{Server: "win10cli", Port: 55253}, InstanceKey("win10cli,55253")},
 		{config.Connection{Server: "win10cli", Port: 1433}, InstanceKey("win10cli")},
 		{config.Connection{Server: "win10cli"}, InstanceKey("win10cli")},
-		// A port the address carries wins over the dialog's, as Connect has it.
+		// A port in the address wins over the dialog's, as in Connect.
 		{config.Connection{Server: "win10cli,55253", Port: 1433}, InstanceKey("win10cli,55253")},
 		{config.Connection{Server: "win10cli\\sql2017", Port: 55253}, InstanceKey("win10cli\\sql2017")},
 	} {
@@ -137,14 +124,9 @@ func TestConnectionAddressFoldsInTheDialogPort(t *testing.T) {
 	}
 }
 
-// TestPeerOptionsUseTheInstancesOwnCredentials is the point of the resolver: a
-// replica needing a different login was unreachable, because peerOptions
-// copied the parent connection's wholesale.
-//
-// The instance asked for is deliberately not the parent's and is spelled
-// differently from the saved entry — the catalog reports "UBUSQL2\PROD" while
-// the user connected as "ubusql2\prod,1433" — so a lookup that skipped
-// InstanceKey would miss and fall back without failing anything else here.
+// A replica needing a different login must use its own saved credentials. The
+// requested name differs in spelling from the saved entry ("UBUSQL2\PROD" vs
+// "ubusql2\prod,1433"), so skipping InstanceKey would miss.
 func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{
 		Server: "ubusql1", Port: 1433, User: "sa", Password: "parent-pw",
@@ -173,20 +155,18 @@ func TestPeerOptionsUseTheInstancesOwnCredentials(t *testing.T) {
 	if opts.Encrypt != config.EncryptStrict {
 		t.Error("peer options dropped the saved connection's Encrypt setting")
 	}
-	// Server is overridden with the name the catalog gave, not the spelling the
-	// saved connection happens to carry.
+	// Server is the catalog's name, not the saved spelling.
 	if opts.Server != "UBUSQL2\\PROD" {
 		t.Errorf("peer options name server %q, want the catalog's %q", opts.Server, "UBUSQL2\\PROD")
 	}
-	// The database is blanked on this path too — the saved connection names one
-	// of its own, and it is exactly as unopenable on a secondary.
+	// The database is blanked here too; the saved one is just as unopenable on
+	// a secondary.
 	if opts.Database != "" {
 		t.Errorf("peer options carry Database %q from the saved connection", opts.Database)
 	}
 }
 
-// TestPeerOptionsFallBackToTheParent pins the miss: an instance nobody has
-// saved a connection for is still reached the way it always was.
+// An instance with no saved connection uses the parent's settings.
 func TestPeerOptionsFallBackToTheParent(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{
 		Server: "ubusql1", Port: 1433, User: "sa", Password: "parent-pw",
@@ -206,9 +186,8 @@ func TestPeerOptionsFallBackToTheParent(t *testing.T) {
 	}
 }
 
-// TestPeerCredentialsSurviveANilResolver keeps the pre-resolver behaviour
-// available: a connection nobody installed a resolver on reaches every peer
-// with its own settings rather than panicking on a nil call.
+// With no resolver installed, peers use sc's own settings rather than
+// panicking.
 func TestPeerCredentialsSurviveANilResolver(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "pw"}}
 	if opts := parent.peerOptions("ubusql2"); opts.User != "sa" || opts.Password != "pw" {
@@ -216,17 +195,10 @@ func TestPeerCredentialsSurviveANilResolver(t *testing.T) {
 	}
 }
 
-// TestPeerCredentialsAreInheritedByAPeer pins the two halves Peer composes to
-// hand a peer the parent's resolver — peerCredentials() reading it back, and
-// SetPeerCredentials installing it — so a peer's own peers resolve through the
-// same table.
-//
-// It matters on the follow-the-primary path: the Object Explorer reaches a
-// group's primary through Peer and reads on from there, and a resolver that
-// stopped at the first hop would leave the second reaching a third instance
-// with the primary's login rather than its own. Peer's own call cannot be
-// driven from a unit test — it is behind Connect, which needs a real
-// instance — so the wiring itself is live-verified.
+// Peer hands the parent's resolver to each peer (peerCredentials, then
+// SetPeerCredentials) so the next hop resolves through the same table rather
+// than using the primary's login. Peer's own call needs a real instance, so the
+// wiring is verified live.
 func TestPeerCredentialsAreInheritedByAPeer(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{Server: "ubusql1", User: "sa", Password: "parent-pw"}}
 	parent.SetPeerCredentials(func(server string) (config.Connection, bool) {
@@ -246,12 +218,8 @@ func TestPeerCredentialsAreInheritedByAPeer(t *testing.T) {
 	}
 }
 
-// TestParentPeerOptionsIgnoreTheResolver pins the fallback Peer reaches for
-// when a resolver's answer will not connect: the pre-resolver derivation,
-// unchanged. A saved connection can carry a password the config key can no
-// longer decrypt or a login that has since been dropped, and the parent
-// connection's own credentials are live and working — so a resolver must
-// never leave an instance less reachable than it was before one existed.
+// The fallback is the pre-resolver derivation, unchanged: a resolver must never
+// leave an instance less reachable than the parent's working credentials.
 func TestParentPeerOptionsIgnoreTheResolver(t *testing.T) {
 	parent := &ServerConn{Opts: config.Connection{
 		Server: "ubusql1", Port: 1433, User: "sa", Password: "parent-pw",
@@ -273,16 +241,14 @@ func TestParentPeerOptionsIgnoreTheResolver(t *testing.T) {
 	if fallback.Server != "ubusql2" || fallback.Database != "" {
 		t.Errorf("fallback = server %q database %q, want %q and no database", fallback.Server, fallback.Database, "ubusql2")
 	}
-	// Peer decides whether a second attempt is worth making by comparing the
-	// two, so they have to differ here — and config.Connection has to stay
-	// comparable for that test to compile at all.
+	// Peer compares the two to decide on a second attempt, so they must differ
+	// here — and config.Connection must stay comparable.
 	if fallback == opts {
 		t.Error("the fallback is identical to the resolver's answer; the retry would be skipped")
 	}
 }
 
-// The other side of that comparison: a resolver that answers with what the
-// parent would have produced anyway costs no second connect attempt.
+// A resolver answer equal to the parent derivation costs no second attempt.
 func TestParentPeerOptionsEqualTheResolverWhenItAgrees(t *testing.T) {
 	opts := config.Connection{Server: "ubusql1", Port: 1433, User: "sa", Password: "pw"}
 	parent := &ServerConn{Opts: opts}
@@ -295,10 +261,8 @@ func TestParentPeerOptionsEqualTheResolverWhenItAgrees(t *testing.T) {
 	}
 }
 
-// TestPeerReturnsACachedFailureWithoutDialling pins the negative half of the
-// peer cache. A blackholed instance costs the driver's whole connect timeout,
-// so re-dialling it on every read is what made expanding an availability
-// group's folders stall for a multiple of it.
+// A blackholed instance costs the whole connect timeout, so a cached failure
+// must be returned without dialling.
 func TestPeerReturnsACachedFailureWithoutDialling(t *testing.T) {
 	sc := newTestConn("ubusql1")
 	defer sc.Close()
@@ -306,9 +270,7 @@ func TestPeerReturnsACachedFailureWithoutDialling(t *testing.T) {
 	want := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
 	sc.recordPeerFailure(InstanceKey("ubusql2"), want)
 
-	// Called with a different spelling than the one recorded, on purpose: the
-	// two have to agree through InstanceKey or the cache misses for the caller
-	// that has the catalog's spelling.
+	// A different spelling than recorded: both must agree through InstanceKey.
 	start := time.Now()
 	peer, err := sc.Peer(context.Background(), "UBUSQL2,1433")
 	if !errors.Is(err, want) {
@@ -319,12 +281,10 @@ func TestPeerReturnsACachedFailureWithoutDialling(t *testing.T) {
 	}
 }
 
-// The entry has to expire, or a primary that came back stays unreachable in the
-// UI until the connection is closed. Asserted through Peer: an aged entry means
-// a real connect attempt, whose failure is the dial's, not the cached one.
+// Entries expire, or a recovered primary stays unreachable. An aged entry means
+// a real dial, whose failure is the dial's own.
 func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
-	// Port 1 on loopback refuses immediately, so the retry this test forces
-	// costs no timeout and reaches no other host.
+	// Loopback port 1 refuses immediately.
 	sc := newTestConn("ubusql1")
 	defer sc.Close()
 
@@ -344,7 +304,7 @@ func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
 	if errors.Is(err, cached) {
 		t.Errorf("Peer answered with the expired failure %v; the entry outlived peerFailureTTL", cached)
 	}
-	// And the fresh failure replaces it, so the next burst is collapsed too.
+	// The fresh failure replaces it.
 	sc.peerMu.Lock()
 	fresh, ok := sc.peerFails[key]
 	sc.peerMu.Unlock()
@@ -353,22 +313,18 @@ func TestPeerRetriesOnceACachedFailureHasExpired(t *testing.T) {
 	}
 }
 
-// A cached failure that outlives the outage is what ForgetPeerFailure exists
-// to cut short: the user fixes the network, hits Refresh, and is told the peer
-// is down for the rest of peerFailureTTL. Asserted through Peer, since the
-// point is that the next call dials rather than replaying the entry.
+// ForgetPeerFailure makes the next call dial rather than replay the entry until
+// the TTL.
 func TestForgetPeerFailureDropsTheEntry(t *testing.T) {
-	// Port 1 on loopback refuses immediately, so the dial this forces costs no
-	// timeout and reaches no other host.
+	// Loopback port 1 refuses immediately.
 	sc := newTestConn("ubusql1")
 	defer sc.Close()
 
 	cached := errors.New("dial tcp 192.168.178.98:1433: i/o timeout")
 	sc.recordPeerFailure(InstanceKey("127.0.0.1:1"), cached)
 
-	// Forgotten under a different spelling than the one recorded, on purpose:
-	// File > Connect holds what the user typed, the cache what the catalog
-	// reported, and only InstanceKey makes the two agree.
+	// A different spelling on purpose: Connect holds the typed name, the cache
+	// the catalog's; InstanceKey reconciles them.
 	sc.ForgetPeerFailure("127.0.0.1,1")
 
 	_, err := sc.Peer(context.Background(), "127.0.0.1:1")
@@ -380,9 +336,8 @@ func TestForgetPeerFailureDropsTheEntry(t *testing.T) {
 	}
 }
 
-// Forgetting one instance must not clear the others: the burst the cache exists
-// to collapse is several folders asking for the same unreachable primary, and a
-// connect to a different replica is no evidence about that one.
+// Forgetting one instance must not clear others; a connect to one replica says
+// nothing about another.
 func TestForgetPeerFailureLeavesOtherInstances(t *testing.T) {
 	sc := newTestConn("ubusql1")
 	defer sc.Close()
@@ -398,11 +353,9 @@ func TestForgetPeerFailureLeavesOtherInstances(t *testing.T) {
 	}
 }
 
-// A peer read chains — Object Explorer follows a group to its primary and reads
-// on from there — so the failure to reach a third instance is recorded on the
-// primary's connection, not on the one the user is refreshing. Two instances
-// that have each opened the other are a cycle; without the seen set this test
-// does not fail, it hangs.
+// Reads chain, so a third instance's failure is recorded on the primary's
+// connection. Two instances that opened each other form a cycle; without seen
+// this hangs.
 func TestForgetPeerFailuresReachCachedPeers(t *testing.T) {
 	sc := newTestConn("ubusql1")
 	defer sc.Close()

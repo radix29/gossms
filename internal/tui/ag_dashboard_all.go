@@ -10,36 +10,33 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// ag_dashboard_all.go is the Always On dashboard's all-groups view — SSMS's
-// "Show Dashboard" on the Always On High Availability root, which lists every
-// group on the instance rather than drilling into one. AGDashboard hosts it;
-// this file supplies the reading, the columns and the rows.
+// ag_dashboard_all.go is the Always On dashboard's all-groups view (SSMS "Show
+// Dashboard" on the Always On root). AGDashboard hosts it; this file supplies
+// reading, columns and rows.
 //
 // # One unreachable primary must not empty the page
 //
-// Each group is resolved independently through resolveAGView, the Object
-// Explorer's degrade-to-partial rule rather than AG Properties' treat-it-as-an-
-// error rule. The two differ on purpose: a Properties page that loaded from a
-// secondary would offer edits the server rejects, while this page only reads,
-// and a root dashboard that fails outright because one group of five has an
-// unreachable primary would be useless exactly when it is needed. A group read
-// locally says so in its Issues column.
+// Each group resolves independently through resolveAGView, degrading to a
+// partial local read (Object Explorer's rule) rather than failing (AG
+// Properties' rule, where a secondary-loaded page would offer rejected edits).
+// This page only reads, and failing because one of five primaries is
+// unreachable would be useless when needed most. A locally read group says so
+// in Issues.
 
-// agGroupRollup is one group's row of the all-groups view, with the replicas
-// and databases it was summarized from — the replica grid below is built from
-// these rather than re-read.
+// agGroupRollup is one group's row, with the replicas and databases it
+// summarizes; the replica grid is built from these.
 type agGroupRollup struct {
 	group    *gosmo.AvailabilityGroup
 	replicas []*gosmo.AvailabilityReplica
 	dbs      []agDatabaseMetrics
 
-	// unreachable names the primary this group could not be read through, if
-	// following it was attempted and failed.
+	// unreachable names the primary that couldn't be read through, if following
+	// it failed.
 	unreachable string
 	followed    bool
 }
 
-// readAllGroups takes one reading of every availability group on the instance.
+// readAllGroups reads every availability group on the instance.
 func (d *AGDashboard) readAllGroups(ctx context.Context) (agSnapshot, error) {
 	groups, err := d.conn.Server.AvailabilityGroupsContext(ctx)
 	if err != nil {
@@ -51,9 +48,8 @@ func (d *AGDashboard) readAllGroups(ctx context.Context) (agSnapshot, error) {
 	for _, g := range groups {
 		view, err := resolveAGView(l, g.Name)
 		if err != nil {
-			// The group was listed a moment ago and cannot be read now — it was
-			// dropped between the two round trips, or the instance went away.
-			// Either way the remaining groups are still worth showing.
+			// Listed a moment ago but unreadable now (dropped, or instance
+			// gone); show the rest anyway.
 			rollups = append(rollups, agGroupRollup{group: g, unreachable: g.PrimaryReplicaServerName})
 			continue
 		}
@@ -120,9 +116,8 @@ func agGroupRows(groups []agGroupRollup) [][]string {
 	return rows
 }
 
-// issues is the group's one-line verdict, in the order a reader wants it: a
-// reading that could not reach the primary explains every other column, so it
-// comes first. Empty means the group is healthy.
+// issues is the group's one-line verdict. An unreachable primary explains
+// everything else, so it comes first. Empty means healthy.
 func (g agGroupRollup) issues() string {
 	if g.unreachable != "" {
 		return "Partial — primary " + g.unreachable + " unreachable"
@@ -152,9 +147,8 @@ func (g agGroupRollup) issues() string {
 	return strings.Join(out, "; ")
 }
 
-// agAllReplicaColumns is agReplicaColumns with the group each replica belongs
-// to in front — without it the lower grid is a list of instance names appearing
-// once per group they are in, with no way to tell which row is which.
+// agAllReplicaColumns prefixes agReplicaColumns with the group, so a replica
+// listed once per group is distinguishable.
 var agAllReplicaColumns = append([]string{"Availability group"}, agReplicaColumns...)
 
 func agAllReplicaRows(groups []agGroupRollup) [][]string {
@@ -167,8 +161,8 @@ func agAllReplicaRows(groups []agGroupRollup) [][]string {
 	return rows
 }
 
-// selectedGroup is the group the top grid's cursor is on in the all-groups
-// view, for drilling in with Enter. Empty when there is no such row.
+// selectedGroup is the top grid's cursor group, for Enter to drill in; empty if
+// none.
 func (d *AGDashboard) selectedGroup() string {
 	if !d.allGroups() {
 		return ""

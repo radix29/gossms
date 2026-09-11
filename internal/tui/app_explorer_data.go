@@ -13,60 +13,48 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// childFetchTimeout bounds a single Object Explorer expand/refresh — long
-// enough for a slow or remote server, short enough that a dead connection
-// doesn't leave a node stuck showing "Loading..." forever.
+// childFetchTimeout bounds one Object Explorer expand/refresh: enough for a
+// slow server, short enough that a dead connection doesn't leave "Loading..."
+// forever.
 const childFetchTimeout = 30 * time.Second
 
-// serverWriteTimeout bounds one write statement issued from a menu action.
-// Deliberately far longer than childFetchTimeout: that budget is sized for a
-// folder listing, and a write is not a read.
+// serverWriteTimeout bounds a menu-action write, far longer than
+// childFetchTimeout, which is sized for folder listings.
 //
-// A drop, a rename, an offline, a failover waits — for a lock another session
-// holds, and, on a database, for WITH ROLLBACK IMMEDIATE to roll back every
-// transaction it just killed. Minutes is a normal duration for that; on a 30s
-// budget the statement is abandoned mid-flight, leaving gosmo's repair pass to
-// put the database back to MULTI_USER on an expired context.
+// A drop, rename, offline or failover can wait minutes on another session's
+// lock, or for WITH ROLLBACK IMMEDIATE to roll back killed transactions. At 30s
+// the statement would be abandoned mid-flight, leaving gosmo's repair pass
+// (e.g. back to MULTI_USER) on an expired context.
 //
-// Bounded, not unlimited: nothing on screen is blocked while this runs, so a
-// generous bound costs only a late message, but a dead connection still has to
-// report rather than leaving the status line pending forever. A write the user
-// waits *in* a dialog for is a different case and takes no deadline at all —
-// see PropDialog.runPipeline, which runs against the dialog's own context so
-// Escape is what stops it.
+// Bounded because a dead connection must still report; nothing on screen is
+// blocked meanwhile. Writes the user waits for in a dialog take no deadline
+// (PropDialog.runPipeline uses the dialog's context; Escape stops it).
 const serverWriteTimeout = 5 * time.Minute
 
-// serverWriteContext bounds one such write. Every menu-driven write shares it
-// so there is no per-site timeout to reach for the wrong one of — the mistake
-// being that childFetchTimeout is what every *read* here uses, and the writes
-// sit among them.
+// serverWriteContext bounds a menu-driven write. Shared so no site reaches for
+// childFetchTimeout, which every read here uses.
 func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(sc.Context(), serverWriteTimeout)
 }
 
-// loadChildren loads child nodes for an explorer node in the background.
-// If node already has a fetch in flight (a fast double-expand, or a
-// Refresh while the initial load hasn't returned yet), beginLoad cancels
-// it and its result — even if it arrives late — is discarded by endLoad,
-// so it can never clobber the newer one.
+// loadChildren loads an explorer node's children in the background. A load
+// already in flight (double expand, Refresh during load) is cancelled by
+// beginLoad, and endLoad discards its late result.
 //
-// A retired node — one a Reload replaced, expanded from its stale row before
-// the reload landed — is not loaded: SetChildren would refuse the result.
+// A retired node (replaced by a Reload, expanded from its stale row) isn't
+// loaded; SetChildren would refuse it.
 func (a *App) loadChildren(node *explorerNode) {
 	if node.retired {
 		return
 	}
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
-	// The fetch reads a snapshot, never the live node: applyNodeFilter writes
-	// node.data.Filter on the UI goroutine while this is in flight. node itself
-	// stays behind for the posted callback, which runs on the UI goroutine.
+	// The fetch reads a snapshot: applyNodeFilter writes node.data.Filter on
+	// the UI goroutine meanwhile. node itself is used only by the posted
+	// callback on the UI goroutine.
 	snap := node.snapshot()
-	// safegoRepair, not safego: handleExpand latched the node at "Loading..."
-	// before calling this (data.Loaded is still false), and the SetChildren
-	// below is the only thing that clears it. A panic unwinds past the posted
-	// callback entirely, so without the repair the node keeps spinning until
-	// the user happens to collapse and re-expand it — with nothing on screen
-	// saying why.
+	// safegoRepair, not safego: the node is latched at "Loading..." and only
+	// SetChildren below clears it. A panic skips the posted callback, so
+	// without repair the node spins silently until re-expanded.
 	a.safegoRepair("loading Object Explorer children", func() { a.childFetchPanicked(node, seq) }, func() {
 		children := a.fetchChildren(ctx, snap)
 		a.postAndWake(func() {
@@ -81,24 +69,19 @@ func (a *App) loadChildren(node *explorerNode) {
 	})
 }
 
-// errChildFetchPanicked is what an expand shows when its loader panicked. The
-// stack is already in the log by the time this is displayed (see reportPanic);
-// the tree has room for one line.
+// errChildFetchPanicked is shown when a loader panicked; the stack is already
+// logged (see reportPanic).
 var errChildFetchPanicked = errors.New("loading failed unexpectedly — see the log for details")
 
-// childFetchPanicked ends the load a panic abandoned, replacing the
-// "Loading..." placeholder with the same kind of error node fetchChildren
-// produces for an ordinary loader failure.
+// childFetchPanicked ends a panicked load, replacing "Loading..." with an error
+// node like an ordinary loader failure.
 //
-// Note what that costs, deliberately: SetChildren marks the node Loaded, so
-// Refresh is what retries — collapsing and re-expanding redisplays the error
-// instead of refetching. That is the same bargain an ordinary loader error
-// makes, and being told the expand failed is worth more than a silent retry on
-// a gesture most users won't think to make.
+// SetChildren marks the node Loaded, so Refresh retries (re-expanding
+// redisplays the error) — the same trade as ordinary errors; a visible failure
+// beats a silent retry.
 //
-// Guarded by seq exactly as the success path is: a newer expand has already
-// latched the node for itself, and overwriting its children with this one's
-// error is the bug endLoad exists to prevent.
+// Guarded by seq like the success path, so a newer expand's children aren't
+// overwritten.
 func (a *App) childFetchPanicked(node *explorerNode, seq int) {
 	if !node.endLoad(seq) {
 		return
@@ -106,12 +89,10 @@ func (a *App) childFetchPanicked(node *explorerNode, seq int) {
 	a.explorer.SetChildren(node, []*explorerNode{errExplorerNode(errChildFetchPanicked)})
 }
 
-// refreshAgentRootLabel appends " (Stopped)" to the just-shown "SQL Server
-// Agent" child's label once a background AgentInfoContext check confirms
-// the service isn't running. Split out of loadServerChildren, which stays a
-// static no-query loader, so this round trip never blocks the rest of the
-// server's top-level folders from appearing. A failed or inconclusive
-// check leaves the label alone.
+// refreshAgentRootLabel appends " (Stopped)" to the "SQL Server Agent" child
+// once a background AgentInfoContext check says it isn't running. Separate from
+// loadServerChildren so that static loader never waits on the round trip. A
+// failed check leaves the label alone.
 func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	var agentNode *explorerNode
 	for _, c := range serverNode.children {
@@ -144,12 +125,11 @@ func (a *App) onNodeSelected(node *explorerNode) {
 	a.detailBrowser.ShowNodeDetails(a, node)
 }
 
-// onNodeReselected is onNodeSelected for a selection Object Explorer moved by
-// itself, off from — a node a rebuild no longer shows (ObjectExplorer.reselect).
-// The Details pane follows as always; the status bar only while it still shows
-// from's path. That rebuild is usually the reload after a write, landing just
-// after the write's own message — "deleted", "renamed" — which the new path
-// would otherwise replace before anyone had read it.
+// onNodeReselected is onNodeSelected for a selection Object Explorer moved
+// itself (off a node a rebuild no longer shows; ObjectExplorer.reselect).
+// Details follows; the status bar only while it still shows from's path, so a
+// write's "deleted"/"renamed" message isn't replaced by the reload that
+// follows.
 func (a *App) onNodeReselected(from, node *explorerNode) {
 	if a.statusText == FormatNodePath(from) {
 		a.setStatus(FormatNodePath(node))
@@ -158,25 +138,20 @@ func (a *App) onNodeReselected(from, node *explorerNode) {
 	a.detailBrowser.ShowNodeDetails(a, node)
 }
 
-// primeDatabaseCapabilities warms the per-database capability cache for the
-// node the user has just moved to, off the UI goroutine.
-//
-// A menu item's Enabled predicate runs while the menu is being drawn and can
-// only read the cache (CachedDatabaseCapabilities), so without this every
-// database-scope gate would fail open until something else happened to probe.
-// Selecting a node is the move that precedes opening its menu, and the probe
-// is two round trips on the first touch of a database and nothing afterwards.
+// primeDatabaseCapabilities warms the capability cache for the newly selected
+// node, off the UI goroutine. Enabled predicates only read the cache
+// (CachedDatabaseCapabilities), so without this database gates fail open.
+// Selection precedes opening a menu; the probe is two round trips on a
+// database's first touch.
 func (a *App) primeDatabaseCapabilities(node *explorerNode) {
 	sc, dbName := resolveConn(node), node.data.DBName
-	// A SQL Agent node carries no DBName — it hangs off the server, not a
-	// database — but what permits its New-X actions is membership of an msdb
-	// role, so msdb is the database its menu asks about. Without this the
-	// Agent gates read an unprobed msdb and fail open for the whole session.
+	// Agent nodes have no DBName, but their New-X actions need msdb roles, so
+	// their menu asks about msdb; otherwise the Agent gates read an unprobed
+	// msdb and fail open.
 	if isAgentNode(node.data.Type) {
 		dbName = "msdb"
 	}
-	// Cached is the common case once a database has been touched: every
-	// keystroke through its nodes lands here, and needs no goroutine.
+	// Already cached (the common case): no goroutine.
 	if sc == nil || dbName == "" || sc.HasDatabaseCapabilities(dbName) {
 		return
 	}
@@ -189,13 +164,11 @@ func (a *App) showContextMenu(node *explorerNode, x, y int) {
 	a.contextMenu.Show(x, y, a.contextMenuItemsForNode(node))
 }
 
-// contextMenuItemsForNode is the node's own menu plus the three groups every
-// node type gets for free: Script <Noun> as (scripting.go), Rename/Delete
-// (explorer_object_ops.go) and, on a filterable folder, Filter
-// Settings/Remove Filter (explorer_filter.go). All three are spliced in above
-// Refresh, where SSMS puts them, rather than repeated in each nodeMenus
-// builder — which node types offer them is scriptables', objectOpFor's and
-// filterProps's answer, not something those builders know.
+// contextMenuItemsForNode is the node's menu plus three shared groups: Script
+// <Noun> as (scripting.go), Rename/Delete (explorer_object_ops.go) and, on
+// filterable folders, Filter Settings/Remove Filter (explorer_filter.go).
+// Spliced above Refresh as SSMS does; which types get them is decided by
+// scriptables, objectOpFor and filterProps, not the nodeMenus builders.
 func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 	items := a.nodeMenuItems(node)
 	items = insertBeforeRefresh(items, a.scriptMenuItems(node))
@@ -203,7 +176,7 @@ func (a *App) contextMenuItemsForNode(node *explorerNode) []controls.MenuItem {
 	return insertBeforeRefresh(items, a.filterMenuItems(node))
 }
 
-// filterMenuItems is the Filter pair a filterable folder offers, or nil.
+// filterMenuItems is a filterable folder's Filter pair, or nil.
 func (a *App) filterMenuItems(node *explorerNode) []controls.MenuItem {
 	if len(filterProps(node.data.Type)) == 0 {
 		return nil
@@ -218,16 +191,13 @@ func (a *App) filterMenuItems(node *explorerNode) []controls.MenuItem {
 	}
 }
 
-// refreshMenuLabel is the label the Refresh item carries in every node's
-// menu, and the anchor insertBeforeRefresh finds it by.
+// refreshMenuLabel is every menu's Refresh label, which insertBeforeRefresh
+// anchors on.
 const refreshMenuLabel = "Refresh"
 
-// insertBeforeRefresh splices extra in above the Refresh item as its own
-// divided group, leaving Refresh and Properties... last the way SSMS does.
-// The dividers are added only where one isn't already there — every node
-// menu already has one above Refresh, and two in a row draw as two lines.
-// A menu with no Refresh — no node type today, but a leaf that can't be
-// reloaded would be one — gets extra appended instead.
+// insertBeforeRefresh splices extra above Refresh as its own divided group,
+// leaving Refresh and Properties... last as SSMS does. Dividers are added only
+// where missing. A menu without Refresh gets extra appended.
 func insertBeforeRefresh(items, extra []controls.MenuItem) []controls.MenuItem {
 	if len(extra) == 0 {
 		return items
@@ -249,7 +219,7 @@ func insertBeforeRefresh(items, extra []controls.MenuItem) []controls.MenuItem {
 	return append(items, append([]controls.MenuItem{{Divider: true}}, extra...)...)
 }
 
-// nodeMenuItems is node's own context menu, from its nodeMenus builder.
+// nodeMenuItems is node's own menu from its nodeMenus builder.
 func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	newQuery := controls.MenuItem{Label: "New Query", Action: func() { a.newQueryPanelForConn(sc, node.data.DBName) }}
@@ -261,9 +231,8 @@ func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	return []controls.MenuItem{newQuery, {Divider: true}, refresh}
 }
 
-// showDependencies displays what node's object depends on and what depends
-// on it (Object Explorer > View Dependencies), backed by gosmo's
-// Dependencies/Dependents.
+// showDependencies shows what node's object depends on and what depends on it
+// (View Dependencies), via gosmo's Dependencies/Dependents.
 func (a *App) showDependencies(node *explorerNode) {
 	sc := resolveConn(node)
 	if sc == nil {
@@ -272,12 +241,10 @@ func (a *App) showDependencies(node *explorerNode) {
 	a.propsDialog.ShowDependencies(a, sc, node.data.DBName, node.data.Schema, node.data.Name)
 }
 
-// toggleSecurityPolicy enables or disables node's row-level security policy
-// — SSMS's Enable/Disable on the policy. Disabling one stops it filtering
-// and blocking anything, so the whole table becomes visible to every user;
-// that is the state change, not a cosmetic flag, and the node's label
-// carries it (see loadSecurityPoliciesChildren), which is why the parent
-// folder is refreshed rather than just the icon repainted.
+// toggleSecurityPolicy enables or disables node's row-level security policy.
+// Disabling makes the whole table visible to every user. The state is in the
+// node's label (see loadSecurityPoliciesChildren), so the parent folder is
+// refreshed.
 func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 	dbName, schema := node.data.DBName, node.data.Schema
 	display := fqn(schema, node.data.Name)
@@ -296,12 +263,9 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// toggleServerTrigger enables or disables node's server-scope DDL or logon
-// trigger — SSMS's Enable/Disable on one. Disabling is what stops the policy
-// it enforces from applying anywhere on the instance, so it is confirmed;
-// enabling is not. The node's label carries the state (see
-// loadServerTriggersChildren), which is why the parent folder is refreshed
-// rather than the icon repainted.
+// toggleServerTrigger enables or disables a server-scope DDL or logon trigger.
+// Disabling (confirmed) stops its policy instance-wide. State is in the label
+// (loadServerTriggersChildren), so the parent is refreshed.
 func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.toggleEnabledState(sc, node, "server trigger", name,
@@ -316,20 +280,17 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// toggleDatabaseTrigger enables or disables node's database-scope DDL
-// trigger — SSMS's Enable/Disable on one. Disabling is what stops the policy
-// it enforces from applying anywhere in the database, so it is confirmed;
-// enabling is not. The node's label carries the state (see
-// loadDatabaseTriggersChildren), which is why the parent folder is refreshed
-// rather than the icon repainted.
+// toggleDatabaseTrigger enables or disables a database DDL trigger. Disabling
+// (confirmed) stops its policy database-wide. State is in the label
+// (loadDatabaseTriggersChildren), so the parent is refreshed.
 func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 	name, dbName := node.data.Name, node.data.DBName
 	a.toggleEnabledState(sc, node, "database trigger", name,
 		"Disable Database Trigger",
 		fmt.Sprintf("Disable %s? The DDL policy it enforces stops applying in %s.", name, dbName),
 		func(ctx context.Context, name string, on bool) error {
-			// Database, not DatabaseByName: the handle needs no read of
-			// sys.databases to address a trigger by name.
+			// Database, not DatabaseByName: addressing a trigger needs no
+			// sys.databases read.
 			t := sc.Server.Database(dbName).DatabaseTrigger(name)
 			if on {
 				return t.EnableContext(ctx)
@@ -338,8 +299,8 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// auditToggleLabel is the Enable/Disable item's wording for an audit or a
-// server audit specification, read from the node's cached state.
+// auditToggleLabel is the Enable/Disable wording for an audit or server audit
+// specification, from cached state.
 func auditToggleLabel(node *explorerNode) string {
 	if node.data.IsEnabled {
 		return "Disable"
@@ -347,11 +308,9 @@ func auditToggleLabel(node *explorerNode) string {
 	return "Enable"
 }
 
-// toggleAudit enables or disables node's server audit — SSMS's Enable/Disable
-// Audit. Disabling stops the instance recording anything through it, so it is
-// confirmed; enabling is not. The node's label carries the state (see
-// loadAuditsChildren), which is why the parent folder is refreshed rather than
-// the icon repainted.
+// toggleAudit enables or disables a server audit. Disabling (confirmed) stops
+// recording. State is in the label (loadAuditsChildren), so the parent is
+// refreshed.
 func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 	name := node.data.Name
 	a.toggleEnabledState(sc, node, "audit", name,
@@ -373,9 +332,8 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		})
 }
 
-// toggleDatabaseAuditSpecification enables or disables node's specification.
-// The database handle is the name-only one: the state toggle needs nothing off
-// sys.databases.
+// toggleDatabaseAuditSpecification enables or disables node's specification,
+// via the name-only database handle.
 func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorerNode) {
 	name, dbName := node.data.Name, node.data.DBName
 	a.toggleEnabledState(sc, node, "database audit specification", name,
@@ -386,14 +344,12 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		})
 }
 
-// toggleEnabledState is the shared half of every Enable/Disable toggle in
-// Object Explorer: a security policy, the two trigger scopes, an audit, the two
-// audit specifications and a plan guide differ only in the wording and the
-// gosmo call. display is the name as the status line and prompt show it (a
-// policy's is schema-qualified); prompt is the confirmation text, already
-// formatted. Disabling is confirmed, enabling is not; the parent folder is
-// refreshed afterwards because each family carries its state in the child
-// label rather than in the icon.
+// toggleEnabledState is the shared Enable/Disable toggle for security policies,
+// triggers (both scopes), audits, audit specifications and plan guides, which
+// differ only in wording and gosmo call. display is the name as shown
+// (schema-qualified for policies); prompt is the formatted confirmation.
+// Disabling is confirmed, enabling isn't; the parent folder is refreshed
+// because state lives in child labels.
 func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, display, title, prompt string,
 	set func(ctx context.Context, name string, on bool) error) {
 	if !a.requireConn(sc) {
@@ -421,8 +377,8 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
-				// The state is re-read rather than assumed: the cancel may
-				// have reached the server after the change had committed.
+				// Re-read rather than assumed: the cancel may have arrived
+				// after the commit.
 				a.setStatus(fmt.Sprintf("%s %q cancelled", doing, display))
 				if parent := node.parent; parent != nil {
 					a.explorer.Reload(parent)
@@ -451,18 +407,12 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 	run()
 }
 
-// togglePlanGuide enables or disables node's plan guide — SSMS's
-// Enable/Disable on one, and the same sp_control_plan_guide call Plan Guide
-// Properties' General page applies.
+// togglePlanGuide enables or disables a plan guide (sp_control_plan_guide, as
+// Plan Guide Properties' General page).
 //
-// Disabling is confirmed and enabling is not, the way the audit toggles are:
-// a disabled guide stops shaping plans, which shows up as a regressed query
-// rather than as anything on screen. The node's label carries the state (see
-// loadPlanGuidesChildren), so the parent folder is refreshed rather than the
-// icon repainted.
-//
-// Server.Database, not DatabaseByName: the guide is addressed by name and the
-// toggle reads nothing off sys.databases.
+// Disabling is confirmed: a disabled guide shows up only as a regressed query.
+// State is in the label (loadPlanGuidesChildren), so the parent is refreshed.
+// Server.Database, not DatabaseByName: nothing is read off sys.databases.
 func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 	name, dbName := node.data.Name, node.data.DBName
 	a.toggleEnabledState(sc, node, "plan guide", name,
@@ -477,15 +427,12 @@ func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 		})
 }
 
-// setEndpointState starts, stops or disables node's endpoint — SSMS's
-// Start/Stop/Disable on one. Stopping or disabling takes the listener away
-// from everything connecting through it, so both are confirmed; starting is
-// not.
+// setEndpointState starts, stops or disables an endpoint. Stopping or disabling
+// (confirmed) cuts off everything using it.
 //
-// A built-in endpoint is refused here with a message rather than by leaving
-// the item greyed: greyed-out says the login may not do this, and the reason
-// is the endpoint, not the login. gosmo refuses it a second time — this is the
-// explanation, not the guard.
+// Built-in endpoints are refused with a message rather than a greyed item
+// (greyed implies the login lacks permission). gosmo refuses too; this is the
+// explanation.
 func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosmo.EndpointState) {
 	if !a.requireConn(sc) {
 		return
@@ -542,16 +489,12 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 	run()
 }
 
-// toggleDatabaseOffline takes node's database offline, or brings it back
-// online if it's already offline — Object Explorer's "Take Database
-// Offline"/"Bring Database Online" action. This runs for real immediately,
-// so going offline (which rolls back every existing connection to the
-// database) is confirmed first; coming back online is not. On success
-// node's icon/state updates and its subtree is refreshed via
-// explorer.Reload: an offline database's expanded children are the
-// single "(Database is offline)" placeholder leaf (see
-// explorer_databases.go), and an online one's real Tables/Views subtree
-// must not linger stale and get re-queried against a now-offline database.
+// toggleDatabaseOffline takes node's database offline, or back online (Take
+// Offline / Bring Online). Offline rolls back every connection, so it's
+// confirmed. On success the node's state updates and its subtree reloads: an
+// offline database shows a single "(Database is offline)" placeholder
+// (explorer_databases.go), and a stale online subtree mustn't be re-queried
+// against it.
 func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
@@ -578,9 +521,8 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
-				// The databases folder, not the node: the node's IsOffline is
-				// what the state would be, and a cancel leaves that unknown
-				// until the folder is re-read.
+				// Refresh the databases folder: after a cancel the node's state
+				// is unknown until re-read.
 				a.setStatus(fmt.Sprintf("Taking %q %s cancelled", dbName, word))
 				a.explorer.RefreshDatabasesFolder(sc)
 			case err != nil:
@@ -607,18 +549,15 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	run()
 }
 
-// restoreFromSnapshot reverts a snapshot's source database to it —
-// RESTORE DATABASE … FROM DATABASE_SNAPSHOT.
+// restoreFromSnapshot reverts the snapshot's source database to it (RESTORE
+// DATABASE … FROM DATABASE_SNAPSHOT).
 //
-// The confirmation is typed, and the word asked for is the *source*
-// database's name, not the snapshot's: what this destroys is every change
-// made to the source since the snapshot was taken, and the source is the
-// object the user has to have in mind to answer.
+// The typed confirmation is the source's name, since what's destroyed is every
+// change to the source since the snapshot.
 //
-// Two of the server's own preconditions are left to the server: the source
-// must have exactly one snapshot, and nobody may be connected to either
-// database. Both can change between a check here and the statement, and the
-// server names which one failed.
+// The server checks its own preconditions (the source has exactly one snapshot;
+// no connections to either database); both can change between a check here and
+// the statement, and the server names the failure.
 func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return
@@ -635,9 +574,8 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 		if !confirmed {
 			return
 		}
-		// Uninterruptible: a revert stopped halfway leaves the source in
-		// RESTORING, unusable until it is restored again — worse than the
-		// wait for the revert to finish.
+		// Uninterruptible: a half-done revert leaves the source RESTORING and
+		// unusable.
 		a.runWithProgress(progressJob{
 			title:           "Restore Database from Snapshot",
 			message:         fmt.Sprintf("Reverting %q to snapshot %q...", source, snapshot),
@@ -657,10 +595,9 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 	})
 }
 
-// forgetPeerFailuresForRefresh drops sc's cached peer connect failures when the
-// node being refreshed is part of the Always On subtree — the only tree the
-// peer cache answers for, and the one place a user who has just fixed the
-// network has to be able to say "try again" rather than wait out
+// forgetPeerFailuresForRefresh drops sc's cached peer connect failures when
+// refreshing an Always On node — the only tree the peer cache serves, and where
+// a user who fixed the network needs "try again" rather than waiting out
 // peerFailureTTL.
 func forgetPeerFailuresForRefresh(sc *db.ServerConn, node *explorerNode) {
 	if sc == nil || node == nil {
@@ -671,8 +608,7 @@ func forgetPeerFailuresForRefresh(sc *db.ServerConn, node *explorerNode) {
 	}
 }
 
-// isAlwaysOnNode reports whether t is in the Always On subtree — the only tree
-// a peer read serves, so the only Refresh the peer cache should answer to.
+// isAlwaysOnNode reports whether t is in the Always On subtree.
 func isAlwaysOnNode(t NodeType) bool {
 	switch t {
 	case NodeAlwaysOn, NodeAvailabilityGroups, NodeAvailabilityGroup,

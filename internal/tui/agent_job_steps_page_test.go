@@ -12,18 +12,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// The Steps page driven end to end. agent_job_props_steps_test.go pins
-// planJobStepWrites in isolation; what only a page test can show is that the
-// grid, the edit panel and the commit-on-selection wiring in between feed that
-// plan the steps the user actually touched — and that the three passes reach
-// the server in the order the plan puts them in.
+// The Steps page end to end. agent_job_props_steps_test.go pins
+// planJobStepWrites; this checks the grid, panel and commit-on-selection wiring
+// feed it the right steps, and the passes reach the server in order.
 
 const stepNameCol = 1
 
-// jobStepRow is one row of the 23-column sysjobsteps SELECT. The last six —
-// proxy, additional parameters, CmdExec success code, server, run-as user and
-// OS run priority — are what a reorder has to carry back through
-// sp_add_jobstep, which is why they are read at all.
+// jobStepRow is one row of the 23-column sysjobsteps SELECT. The last six
+// (proxy, additional parameters, CmdExec success code, server, run-as user, OS
+// priority) are read because a reorder carries them back through
+// sp_add_jobstep.
 func jobStepRow(id int64, name, subsystem, command, database string) []driver.Value {
 	return []driver.Value{
 		id, name, subsystem, command, database,
@@ -34,9 +32,9 @@ func jobStepRow(id int64, name, subsystem, command, database string) []driver.Va
 	}
 }
 
-// jobStepsResponse scripts four steps: two ordinary T-SQL ones, a PowerShell
-// step the page may list but never write, and a T-SQL step whose database is
-// not in the server's list — the case the "(unchanged)" sentinel exists for.
+// jobStepsResponse scripts four steps: two T-SQL, a PowerShell step (listed,
+// never written), and a T-SQL step whose database isn't listed (the
+// "(unchanged)" case).
 func jobStepsResponse() fakeResponse {
 	return fakeResponse{match: "FROM   msdb.dbo.sysjobsteps", cols: 23, rows: [][]driver.Value{
 		jobStepRow(1, "Check integrity", tsqlSubsystem, "DBCC CHECKDB", "appdb"),
@@ -61,15 +59,12 @@ func loadJobStepsPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, 
 	return inst, apply, form, grid
 }
 
-// TestJobStepsRunsUpdatesThenDescendingDeletesThenAdds. sp_delete_jobstep
-// renumbers every later step down by one, so a delete that ran before an
-// update addresses a step_id that has moved — and ascending deletes make the
-// second one delete the wrong step outright. The order is only observable from
-// the statements themselves.
+// sp_delete_jobstep renumbers later steps, so updates precede deletes, which
+// run descending. Only the statements show the order.
 func TestJobStepsRunsUpdatesThenDescendingDeletesThenAdds(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
-	// Edit step 1, delete steps 2 and 4, then add one.
+	// Edit step 1, delete 2 and 4, add one.
 	editEditor(t, form, "Command", "DBCC CHECKDB WITH NO_INFOMSGS")
 	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
 	clickButton(t, form, "Delete")
@@ -102,10 +97,8 @@ func TestJobStepsRunsUpdatesThenDescendingDeletesThenAdds(t *testing.T) {
 	}
 }
 
-// TestJobStepsCommitsTheStepTheGridMovedOffOf. The edit panel belongs to
-// whichever row was selected when the typing happened, and moving the cursor
-// is what files it — a commit that ran against the newly selected row would
-// copy one step's command onto another.
+// Moving the cursor files the panel to the row being left; committing to the
+// new row would copy one step's command onto another.
 func TestJobStepsCommitsTheStepTheGridMovedOffOf(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -122,14 +115,9 @@ func TestJobStepsCommitsTheStepTheGridMovedOffOf(t *testing.T) {
 	}
 }
 
-// TestJobStepsNeverWritesANonTSQLStep. JobStepRequest carries a subsystem, so
-// writing a PowerShell step back through this page's T-SQL-only form would
-// hand its script to the query processor.
-//
-// Two guards stop it — commitCurrent refuses to copy the form onto the step,
-// and planJobStepWrites tests editable() again — and either one alone is
-// enough, so removing just one leaves this test passing. That is the point of
-// stating the guard twice (see planJobStepWrites); the test kills the pair.
+// A PowerShell step written back through the T-SQL form would run its script as
+// T-SQL. Two guards (commitCurrent and planJobStepWrites' editable check) each
+// suffice; this test fails only if both go.
 func TestJobStepsNeverWritesANonTSQLStep(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -145,10 +133,8 @@ func TestJobStepsNeverWritesANonTSQLStep(t *testing.T) {
 	}
 }
 
-// TestJobStepsUnchangedDatabaseIsNotSent. sp_update_jobstep leaves a parameter
-// it was not passed exactly as it was, so omitting @database_name is the only
-// way to say "leave it alone". Before the sentinel, a step whose database the
-// dropdown could not show was rewritten to whichever database sorted first.
+// Omitting @database_name is the only way to leave it unchanged; an unlisted
+// database must not be rewritten to the first one.
 func TestJobStepsUnchangedDatabaseIsNotSent(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -167,9 +153,8 @@ func TestJobStepsUnchangedDatabaseIsNotSent(t *testing.T) {
 	}
 }
 
-// TestJobStepsAddCarriesTheDatabaseThatWasPicked — the New button reads the
-// same panel the edit path does, and a new step created against the wrong
-// database runs its T-SQL somewhere the user never chose.
+// New reads the same panel; a new step on the wrong database runs its T-SQL
+// somewhere unchosen.
 func TestJobStepsAddCarriesTheDatabaseThatWasPicked(t *testing.T) {
 	inst, apply, form, _ := loadJobStepsPage(t)
 
@@ -187,9 +172,8 @@ func TestJobStepsAddCarriesTheDatabaseThatWasPicked(t *testing.T) {
 	}
 }
 
-// TestJobStepsUntouchedPageWritesNothing. Every row of the edit panel is
-// seeded from the selected step, so a field that came back subtly different
-// from what it was loaded with would rewrite every step on every OK.
+// A panel field that differs subtly from its load would rewrite every step on
+// every OK.
 func TestJobStepsUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadJobStepsPage(t)
 
@@ -201,20 +185,16 @@ func TestJobStepsUntouchedPageWritesNothing(t *testing.T) {
 	}
 }
 
-// TestJobStepsMoveUpReordersOnTheServer. Move Up/Move Down only rearrange the
-// page's own list; the write is a fourth pass, and it addresses steps by the
-// numbers msdb will have — a delete and an insert, since msdb has no procedure
-// that renumbers a step in place.
+// Move Up/Down reorder the page; the write is a fourth pass addressing msdb's
+// future numbers, as a delete plus insert (msdb can't renumber in place).
 //
-// Both arrive in one statement: gosmo sends a reorder as a single transactional
-// batch, because between the delete and the insert the step's definition exists
-// nowhere but in memory. See gosmo's atomicBatch. The order *within* the batch
-// is what this asserts — the delete of the old position before the insert at
-// the new one — since the two are not interchangeable.
+// gosmo sends a reorder as one transactional batch (the definition exists only
+// in memory in between; see gosmo's atomicBatch). This asserts
+// delete-before-insert order within it.
 func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
-	// Rebuild indexes is step 2; moving it up makes it step 1.
+	// Rebuild indexes is step 2; up makes it 1.
 	selectGridRow(t, grid, stepNameCol, "Rebuild indexes")
 	clickButton(t, form, "Move Up")
 
@@ -238,8 +218,7 @@ func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 	if add < 0 || add < del {
 		t.Errorf("the re-insert is missing or comes before the delete:\n%s", batch)
 	}
-	// The re-add has to carry the step's own definition: it is a new row, so
-	// anything left out is defaulted away rather than kept.
+	// The re-add must carry the full definition; omissions get defaulted.
 	for _, want := range []string{"@step_id = 1", "@step_name = N'Rebuild indexes'", "@command = N'EXEC dbo.usp_reindex'", "@database_name = N'appdb'"} {
 		if !strings.Contains(batch[add:], want) {
 			t.Errorf("the re-inserted step lost %s:\n%s", want, batch)
@@ -247,8 +226,7 @@ func TestJobStepsMoveUpReordersOnTheServer(t *testing.T) {
 	}
 }
 
-// Moving a step and moving it back is not a change, and must write nothing —
-// the page compares orders, not clicks.
+// Moving a step and back writes nothing; orders are compared, not clicks.
 func TestJobStepsMoveThereAndBackWritesNothing(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -264,10 +242,8 @@ func TestJobStepsMoveThereAndBackWritesNothing(t *testing.T) {
 	}
 }
 
-// reorderedStepIDs is the part a server cannot check: the ids it names are the
-// ones the other three passes leave behind, not the ones the page loaded. A
-// removed step closes its gap and a new step lands at the end, so the page's
-// display numbers say nothing about what the reorder has to send.
+// reorderedStepIDs uses post-pass numbering: removed steps close gaps and new
+// steps go last.
 func TestReorderedStepIDsUsesThePostApplyNumbering(t *testing.T) {
 	step := func(id int) *jobStepEdit {
 		return &jobStepEdit{orig: &gosmo.JobStep{StepID: id}, stepID: id}
@@ -276,24 +252,22 @@ func TestReorderedStepIDsUsesThePostApplyNumbering(t *testing.T) {
 	b.pendingRemove = true
 	d := &jobStepEdit{isNew: true, name: "added"}
 
-	// Page order: c, a, d — with b removed, a and c become steps 1 and 2 and
-	// the new step is 3.
+	// Page order c, a, d with b removed: a and c become 1 and 2, the new step
+	// 3.
 	got := reorderedStepIDs([]*jobStepEdit{c, a, b, d})
 	want := []int{2, 1, 3}
 	if !slices.Equal(got, want) {
 		t.Errorf("reorderedStepIDs = %v, want %v", got, want)
 	}
 
-	// The same set left in its own order is not a reorder at all.
+	// The same set in its own order isn't a reorder.
 	if got := reorderedStepIDs([]*jobStepEdit{a, c, b, d}); got != nil {
 		t.Errorf("reorderedStepIDs = %v for an unchanged order, want nil", got)
 	}
 }
 
-// TestANonTSQLStepsCommandRefusesTyping. The page can write back a T-SQL step
-// only, and it says so in the hint — but a box that takes typing it will throw
-// away is the "a keypress that does nothing" case, and the command is the field
-// whose text a write-back would hand to the query processor.
+// A non-T-SQL step's command refuses typing that would be discarded (and whose
+// text a write-back would run).
 func TestANonTSQLStepsCommandRefusesTyping(t *testing.T) {
 	_, _, form, grid := loadJobStepsPage(t)
 	row := editorRow(t, form, "Command")
@@ -306,8 +280,7 @@ func TestANonTSQLStepsCommandRefusesTyping(t *testing.T) {
 		t.Errorf("a PowerShell step's command took typing: %q", row.Value())
 	}
 
-	// And the gate lifts again — a page that never re-enabled it would pass the
-	// half above and make every T-SQL step read-only.
+	// The gate lifts on a T-SQL step.
 	selectGridRow(t, grid, stepNameCol, "Check integrity")
 	before = row.Value()
 	typeX()
@@ -316,12 +289,8 @@ func TestANonTSQLStepsCommandRefusesTyping(t *testing.T) {
 	}
 }
 
-// TestANonTSQLStepsWholeEditPanelRefusesTyping. The command was gated first
-// because its text is what a write-back hands to the query processor, but every
-// other row on the panel is written by commitCurrent too — so a row still
-// taking typing is typing the page throws away. This pins the whole panel, and
-// the second half pins the gate lifting again: a page that never re-enabled the
-// rows would pass the first half and make every T-SQL step read-only.
+// The whole panel refuses typing for a non-T-SQL step (commitCurrent reads
+// every row), and the gate lifts again on a T-SQL step.
 func TestANonTSQLStepsWholeEditPanelRefusesTyping(t *testing.T) {
 	inst, apply, form, grid := loadJobStepsPage(t)
 
@@ -363,8 +332,8 @@ func TestANonTSQLStepsWholeEditPanelRefusesTyping(t *testing.T) {
 		}
 	}
 
-	// Move off the row so commitCurrent runs against it, then apply: a refused
-	// edit must reach neither the step nor the server.
+	// Move off the row so commitCurrent runs, then apply: nothing may reach the
+	// step or server.
 	selectGridRow(t, grid, stepNameCol, "Check integrity")
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -373,7 +342,7 @@ func TestANonTSQLStepsWholeEditPanelRefusesTyping(t *testing.T) {
 		t.Errorf("a read-only step's panel reached the server:\n%s", strings.Join(stmts, "\n"))
 	}
 
-	// The gate lifts on a T-SQL step — "Check integrity" is selected above.
+	// The gate lifts on "Check integrity", selected above.
 	for _, tc := range texts {
 		editText(t, form, tc[0], tc[1])
 	}

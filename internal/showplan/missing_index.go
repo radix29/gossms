@@ -5,23 +5,20 @@ import (
 	"strings"
 )
 
-// missingIndexNamePlaceholder is the token SSMS leaves in place of a name
-// the operator has to choose, in the same <name, type,> shape as its other
-// script templates.
+// missingIndexNamePlaceholder is SSMS's template token for a name to choose.
 const missingIndexNamePlaceholder = "<Name of Missing Index, sysname,>"
 
-// Keys returns the index's key columns in the order they have to be
-// declared: every EQUALITY column first, then the INEQUALITY ones.
+// Keys returns the key columns in declaration order: EQUALITY first, then
+// INEQUALITY.
 func (m MissingIndex) Keys() []string {
 	keys := make([]string, 0, len(m.Equality)+len(m.Inequality))
 	keys = append(keys, m.Equality...)
 	return append(keys, m.Inequality...)
 }
 
-// CreateStatement returns the CREATE NONCLUSTERED INDEX statement that
-// implements the suggestion, as one line — the form the missing-index
-// banner shows. The index name is left as a placeholder: SQL Server
-// suggests the columns, never a name.
+// CreateStatement returns the one-line CREATE NONCLUSTERED INDEX for the
+// suggestion, as the banner shows it. The name is a placeholder; SQL Server
+// suggests only columns.
 func (m MissingIndex) CreateStatement() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "CREATE NONCLUSTERED INDEX [%s] ON %s (%s)",
@@ -32,10 +29,8 @@ func (m MissingIndex) CreateStatement() string {
 	return sb.String()
 }
 
-// Script returns the suggestion as SSMS's "Missing Index Details" block:
-// the impact as a comment, then the USE/CREATE pair. The DDL is commented
-// out exactly as SSMS leaves it — the index name is still a placeholder, so
-// the script cannot run as it stands and must be reviewed first.
+// Script returns SSMS's "Missing Index Details" block: impact comment, then
+// USE/CREATE, commented out as SSMS does since the name is still a placeholder.
 func (m MissingIndex) Script() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "/*\nThe Query Processor estimates that implementing the following index could improve the query cost by %.4f%%.\n*/\n\n/*\n", m.Impact)
@@ -51,9 +46,8 @@ func (m MissingIndex) Script() string {
 	return sb.String()
 }
 
-// qualifiedTable is the index's target as "[schema].[table]" — the form
-// CREATE INDEX takes, which is why the database is not part of it (it goes
-// in the USE above; a three-part name is not valid here).
+// qualifiedTable is "[schema].[table]"; CREATE INDEX doesn't accept a
+// three-part name, so the database goes in the USE.
 func (m MissingIndex) qualifiedTable() string {
 	if m.Schema == "" {
 		return bracket(m.Table)
@@ -61,8 +55,8 @@ func (m MissingIndex) qualifiedTable() string {
 	return bracket(m.Schema) + "." + bracket(m.Table)
 }
 
-// MissingIndexScript joins every suggestion of one statement into a single
-// script, in the order SQL Server reported them.
+// MissingIndexScript joins one statement's suggestions into one script, in
+// reported order.
 func MissingIndexScript(indexes []MissingIndex) string {
 	parts := make([]string, 0, len(indexes))
 	for _, m := range indexes {
@@ -79,14 +73,9 @@ func bracketList(cols []string) string {
 	return strings.Join(out, ",")
 }
 
-// bracket wraps one identifier the way QUOTENAME does, doubling any embedded
-// closing bracket. Without the doubling a name containing ']' — legal in SQL
-// Server, and reproduced verbatim from the plan XML — closes the bracket early
-// and the generated CREATE INDEX no longer parses.
-//
-// Deliberately not gosmo.QuoteName: this package parses XML and has no other
-// dependency, and reaching for QuoteName would pull the mssql driver in behind
-// it just for this.
+// bracket quotes an identifier like QUOTENAME, doubling ']' so names containing
+// it (legal, copied from the XML) still parse. Not gosmo.QuoteName, to keep
+// this package free of the mssql driver.
 func bracket(name string) string {
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 }

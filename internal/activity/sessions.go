@@ -5,10 +5,9 @@ import (
 	"database/sql"
 )
 
-// SessionStats is the current session and request picture. Only
-// ActiveRequests is drawn today; the other four are collected for the
-// Sessions tab in increment 2 and cost nothing extra, since all five come
-// from one query.
+// SessionStats is the current session and request picture. Only ActiveRequests
+// is drawn now; the rest are for the increment-2 Sessions tab and come from the
+// same query.
 type SessionStats struct {
 	UserSessions     float64
 	ActiveRequests   float64
@@ -17,13 +16,10 @@ type SessionStats struct {
 	BlockedRequests  float64
 }
 
-// "User session" means is_user_process = 1 throughout, for the request
-// counts as much as for the session count — a session_id > 50 cut-off is
-// the conventional shorthand for the same thing but disagrees with it at
-// the edges, and two definitions under one heading make the request counts
-// look wrong against the session count. The request counts additionally
-// exclude the connection asking, which is always running and would
-// otherwise make an idle server look permanently busy.
+// "User session" is is_user_process = 1 for all counts; a session_id > 50
+// cut-off disagrees at the edges and would make request counts inconsistent
+// with the session count. Request counts exclude this connection, which would
+// otherwise always look busy.
 const sessionQuery = `
 SELECT
   COUNT(DISTINCT s.session_id),

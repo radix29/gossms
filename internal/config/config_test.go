@@ -48,11 +48,9 @@ func TestAddOrUpdateGeneratesName(t *testing.T) {
 	}
 }
 
-// S7: the generated name — AddOrUpdate's dedup key — tells apart every pair
-// of connections that are not the same one. Built from server, port,
-// database and User alone, two service principals on one server (User greyed
-// for the method, so empty for both) replaced each other, as did Windows and
-// every Entra method without a User.
+// The generated name (AddOrUpdate's dedup key) must separate distinct
+// connections: two service principals on one server (User empty for both), and
+// Windows vs every Entra method without a User.
 func TestGeneratedNameSeparatesIdentitiesAndMethods(t *testing.T) {
 	base := Connection{Server: "srv", Port: 1433, Database: "db"}
 	with := func(m AuthMethod, user, client string) Connection {
@@ -64,7 +62,7 @@ func TestGeneratedNameSeparatesIdentitiesAndMethods(t *testing.T) {
 		c    Connection
 		want string
 	}{
-		// SQL Server Authentication keeps the name every saved list already has.
+		// SQL Server Authentication names are unchanged.
 		{with(AuthSQLServer, "sa", ""), "srv,1433,db,sa"},
 		{with(AuthWindows, "", ""), "srv,1433,db, (Windows)"},
 		{with(AuthEntraDefault, "", ""), "srv,1433,db, (Entra Default)"},
@@ -102,9 +100,8 @@ func TestGeneratedNameSeparatesIdentitiesAndMethods(t *testing.T) {
 	}
 }
 
-// The auth table's labels are the Connect dialog's dropdown items, SSMS's
-// names for the methods; a relabel is free (the method is stored as its
-// number) but the order and the numbers are not.
+// Labels are the Connect dropdown items (SSMS names). Relabelling is free — the
+// method is stored as its number — but order and numbers are not.
 func TestAuthMethodTable(t *testing.T) {
 	want := []struct {
 		m     AuthMethod
@@ -137,7 +134,7 @@ func TestAuthMethodTable(t *testing.T) {
 			t.Errorf("IsEntraMethod(%d) = %v, want %v", w.n, got, w.entra)
 		}
 	}
-	// A method only a hand-edited config.json has dials as SQL Server
+	// An unknown method (hand-edited config.json) dials as SQL Server
 	// Authentication (db.toGosmoAuth), so it reads that one's fields.
 	if AuthMethodName(7) != "Unknown" || IsEntraMethod(7) || FieldsFor(7) != FieldsFor(AuthSQLServer) {
 		t.Errorf("unknown method 7: %q, entra %v, fields %+v", AuthMethodName(7), IsEntraMethod(7), FieldsFor(7))
@@ -148,8 +145,8 @@ func TestAddOrUpdateReplacesExistingAndMovesToEnd(t *testing.T) {
 	cfg := &Config{}
 	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u"})
 	cfg.AddOrUpdate(Connection{Server: "b", Port: 1433, Database: "db", User: "u"})
-	// Re-add "a" with a different password; should replace in place, not duplicate,
-	// and become the most-recently-used (last) entry.
+	// Re-adding "a" with a new password replaces it in place and makes it the
+	// last (most recent) entry.
 	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u", Password: "new"})
 
 	if len(cfg.Connections) != 2 {
@@ -172,8 +169,8 @@ func TestAddOrUpdateEvictsOldestBeyondCap(t *testing.T) {
 	if len(cfg.Connections) != MaxSavedConnections {
 		t.Fatalf("len(Connections) = %d, want %d", len(cfg.Connections), MaxSavedConnections)
 	}
-	// The oldest 3 (Port 0,1,2) should have been evicted; the most recent
-	// (Port == MaxSavedConnections+2) should be last.
+	// The oldest 3 (Port 0,1,2) are evicted; Port == MaxSavedConnections+2 is
+	// last.
 	first := cfg.Connections[0]
 	if first.Port != 3 {
 		t.Errorf("Connections[0].Port = %d, want 3 (oldest 3 evicted)", first.Port)
@@ -222,10 +219,7 @@ func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
 	}
 }
 
-// TestLoadIgnoresRemovedMaxResultRows confirms a config.json written by a
-// version that still had the Max Result Rows option loads cleanly — the
-// field is gone, results are never capped, and the stale key must not stop
-// the rest of the file from parsing.
+// A config.json with the removed Max Result Rows key must still load.
 func TestLoadIgnoresRemovedMaxResultRows(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -258,10 +252,8 @@ func TestLoadCorruptFileReturnsEmptyConfig(t *testing.T) {
 	}
 }
 
-// A config file that exists but can't be read is not the same as not having
-// one. Load used to return the same empty Config for both, so a transient
-// read failure came up with no saved connections and the next Save — of some
-// unrelated setting — wrote that emptiness over a file that was still fine.
+// An existing but unreadable config must not be saved over: an empty Config
+// written back would destroy a file that's still fine.
 func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: a 0000 file is still readable")
@@ -287,7 +279,7 @@ func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
 		t.Error("Save() = nil error over an unreadable config, want a refusal")
 	}
 
-	// The refusal is only worth anything if the file is still intact.
+	// The refusal only matters if the file is still intact.
 	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -300,8 +292,7 @@ func TestLoadRefusesToSaveOverAnUnreadableConfig(t *testing.T) {
 	}
 }
 
-// The other half of the same branch: no file at all is an ordinary first run,
-// and must stay saveable.
+// No file at all is an ordinary first run and must stay saveable.
 func TestLoadMissingConfigStillSaves(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -335,11 +326,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("Save(): %v", err)
 	}
 
-	// The config directory (holding both config.json and the encryption
-	// key) must end up owner-only, matching loadOrCreateKey's own MkdirAll.
-	// Save runs (and calls MkdirAll) first on a fresh install, and MkdirAll
-	// never chmods an already-existing directory, so Save's own mode is
-	// what sticks.
+	// The config directory (config.json plus the key) must be owner-only. On a
+	// fresh install Save's MkdirAll runs first and MkdirAll never chmods an
+	// existing directory, so Save's mode is what sticks.
 	info, err := os.Stat(filepath.Join(xdgDir, "gossms"))
 	if err != nil {
 		t.Fatalf("stat config dir: %v", err)
@@ -405,11 +394,8 @@ func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
 	}
 }
 
-// TestSaveIsAtomic confirms Save never leaves a partially written
-// config.json behind: the write goes to a temp file in the same directory
-// and is renamed into place. A plain in-place truncate+write would let a
-// crash mid-write produce invalid JSON, which Load discards wholesale —
-// silently losing every saved connection.
+// Save must never leave a partial config.json: a truncated file is invalid JSON
+// and Load discards it, losing every connection.
 func TestSaveIsAtomic(t *testing.T) {
 	xdgDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
@@ -431,8 +417,7 @@ func TestSaveIsAtomic(t *testing.T) {
 		}
 	}
 
-	// The renamed-into-place file must still be owner-only, not whatever
-	// permissions CreateTemp happened to give the temp file.
+	// The renamed file must be owner-only, not CreateTemp's mode.
 	info, err := os.Stat(configPath())
 	if err != nil {
 		t.Fatal(err)
@@ -446,9 +431,7 @@ func TestSaveIsAtomic(t *testing.T) {
 	}
 }
 
-// TestSaveCarriesUnnamedFields confirms Save copies the
-// whole Config rather than re-listing its fields — the hand-written literal
-// it replaced silently dropped any field added to Config later.
+// Save must copy the whole Config so fields added later aren't dropped.
 func TestSaveCarriesUnnamedFields(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -467,10 +450,8 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 	}
 }
 
-// TestLoadCorruptFileKeepsACopy confirms a config.json that exists but
-// doesn't parse is preserved under .corrupt before being discarded — the
-// passwords are unrecoverable either way, but the server/user/database
-// fields are readable by hand.
+// An unparseable config.json is kept as .corrupt before being discarded, so
+// server/user/database stay readable by hand.
 func TestLoadCorruptFileKeepsACopy(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -494,9 +475,8 @@ func TestLoadCorruptFileKeepsACopy(t *testing.T) {
 	}
 }
 
-// A config.json written before password binding must survive the upgrade:
-// Load still returns the plaintext, and the next Save rewrites the entry in
-// the bound format. Getting this wrong silently empties every saved password.
+// A pre-binding config.json must still load its plaintext, and the next Save
+// rewrites it bound. Otherwise every saved password empties on upgrade.
 func TestLoadMigratesLegacyUnboundPasswordOnNextSave(t *testing.T) {
 	xdgDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
@@ -560,11 +540,8 @@ func TestLoadMigratesLegacyUnboundPasswordOnNextSave(t *testing.T) {
 	}
 }
 
-// TestUndecryptablePasswordSurvivesAnUnrelatedSave is the regression test for
-// the data-loss path the sealed field closes. A password whose ciphertext no
-// longer opens — here because the key file was replaced — used to be
-// re-encrypted from the "" Load handed back, so saving any unrelated setting
-// overwrote the one copy a restored key could still have read.
+// A password whose ciphertext no longer opens (key file replaced) must survive
+// an unrelated save, so a restored key can still read it.
 func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -580,9 +557,8 @@ func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 		t.Fatal("nothing was stored for the password")
 	}
 
-	// Replace the key so the stored ciphertext can no longer be opened,
-	// standing in for a regenerated or wrongly-restored key file. The real
-	// one is kept so the recovery assertion at the end can put it back.
+	// Replace the key so the ciphertext can't be opened; keep the real one to
+	// restore at the end.
 	keyPath := filepath.Join(filepath.Dir(cfgPath), keyFileName)
 	origKey, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -611,8 +587,7 @@ func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 			"it was overwritten and is now unrecoverable", got, sealedBefore)
 	}
 
-	// Restoring the original key brings the password back — the whole point
-	// of not overwriting the ciphertext.
+	// Restoring the original key brings the password back.
 	if err := os.WriteFile(keyPath, origKey, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -622,10 +597,8 @@ func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 	}
 }
 
-// TestReenteredPasswordReplacesAnUnopenableOne confirms the preserved
-// ciphertext isn't sticky: reconnecting with a real password goes through
-// AddOrUpdate as a fresh Connection, whose sealed field is empty, so the
-// unopenable blob is replaced for good.
+// The preserved ciphertext isn't sticky: reconnecting goes through AddOrUpdate
+// with empty sealed, replacing it.
 func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -657,8 +630,8 @@ func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 	}
 }
 
-// readStoredPassword reads the raw (encrypted) password field of the single
-// saved connection straight out of config.json.
+// readStoredPassword reads the single saved connection's raw encrypted password
+// from config.json.
 func readStoredPassword(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -679,11 +652,9 @@ func readStoredPassword(t *testing.T, path string) string {
 	return onDisk.Connections[0].Password
 }
 
-// PasswordUnreadable separates "no password saved" from "a password is saved
-// and this session cannot open it" — two states Password alone cannot tell
-// apart, since Load blanks it for both. A caller that would sign in with the
-// entry needs the difference: the second is a guaranteed login failure, and
-// the sealed ciphertext behind it is still on its way back to disk untouched.
+// PasswordUnreadable separates "no password saved" from "saved but unopenable"
+// — Load blanks Password for both, but the second is a guaranteed login
+// failure.
 func TestPasswordUnreadableDistinguishesNoPasswordFromASealedOne(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -693,8 +664,8 @@ func TestPasswordUnreadableDistinguishesNoPasswordFromASealedOne(t *testing.T) {
 		{"no password at all", Connection{Server: "a"}, false},
 		{"password available", Connection{Server: "a", Password: "pw"}, false},
 		{"sealed and not opened", Connection{Server: "a", sealed: "gAAA-nope"}, true},
-		// Both set cannot happen out of Load, but the password is what a
-		// caller would use, so it wins.
+		// Can't come out of Load, but the password is what a caller uses, so it
+		// wins.
 		{"opened, ciphertext retained", Connection{Server: "a", Password: "pw", sealed: "gAAA"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -705,8 +676,8 @@ func TestPasswordUnreadableDistinguishesNoPasswordFromASealedOne(t *testing.T) {
 	}
 }
 
-// The state above is one Load actually produces: a ciphertext the key cannot
-// open comes back with an empty Password and the ciphertext stashed.
+// Load produces this state: an unopenable ciphertext yields an empty Password
+// with the ciphertext stashed.
 func TestLoadMarksAnUndecryptablePasswordUnreadable(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -734,8 +705,8 @@ func TestLoadMarksAnUndecryptablePasswordUnreadable(t *testing.T) {
 	}
 }
 
-// The boolean "encrypt" earlier releases wrote maps onto the two modes its
-// checkbox could express, and "encrypt_mode" wins once present.
+// The legacy boolean "encrypt" maps onto the two modes it could express;
+// "encrypt_mode" wins when present.
 func TestLoadMapsTheLegacyEncryptBoolean(t *testing.T) {
 	cases := []struct {
 		json string
@@ -758,9 +729,8 @@ func TestLoadMapsTheLegacyEncryptBoolean(t *testing.T) {
 	}
 }
 
-// A release before encrypt_mode decodes "encrypt" as a bool; a string there
-// fails its whole config.json. So the boolean is still written, true for
-// anything but Optional, beside the mode.
+// Older releases decode "encrypt" as a bool and a string fails the whole file,
+// so the boolean is still written (true unless Optional).
 func TestSaveKeepsTheLegacyEncryptBooleanForADowngrade(t *testing.T) {
 	for mode, legacy := range map[EncryptMode]bool{
 		EncryptOptional: false, EncryptMandatory: true, EncryptStrict: true, "": false,
@@ -782,9 +752,8 @@ func TestSaveKeepsTheLegacyEncryptBooleanForADowngrade(t *testing.T) {
 	}
 }
 
-// A log past the limit is moved to .1 and a fresh one started; a log under it
-// is left alone and appended to. Only one generation is kept, so a second
-// rotation replaces the first .1 rather than accumulating files.
+// A log past the limit moves to .1 and a fresh one starts; one under it is
+// appended to. Only one generation is kept.
 func TestOpenLogFileRotatesOnlyPastTheLimit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	path, err := LogFilePath()

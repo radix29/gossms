@@ -7,9 +7,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Operator Properties > General. The operator scripted here is the second of
-// three and carries a category, so a page that lost its selection or its
-// loaded values cannot pass by writing a blank.
+// Operator Properties > General. The operator is second of three with a
+// category, so a lost selection or load can't pass by writing blanks.
 
 func loadOperatorGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, *string) {
 	t.Helper()
@@ -20,9 +19,8 @@ func loadOperatorGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet
 	return inst, apply, form, &name
 }
 
-// TestOperatorGeneralRenamesLastAndUnderTheOldName. sp_update_operator
-// addresses the operator by name, so the e-mail write has to reach the server
-// before the rename does.
+// sp_update_operator addresses by name, so the e-mail write precedes the
+// rename.
 func TestOperatorGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadOperatorGeneralPage(t)
 
@@ -47,9 +45,8 @@ func TestOperatorGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	}
 }
 
-// TestOperatorGeneralClearingTheCategorySendsUncategorized. noneItem at index
-// 0 means "no category", which gosmo sends as the real [Uncategorized] row —
-// sp_update_operator rejects an empty category name outright.
+// noneItem means no category, sent as [Uncategorized]; sp_update_operator
+// rejects an empty name.
 func TestOperatorGeneralClearingTheCategorySendsUncategorized(t *testing.T) {
 	inst, apply, form, _ := loadOperatorGeneralPage(t)
 
@@ -61,9 +58,7 @@ func TestOperatorGeneralClearingTheCategorySendsUncategorized(t *testing.T) {
 	assertOneStatement(t, inst, "@name = N'reporting', @category_name = N'[Uncategorized]'")
 }
 
-// TestOperatorGeneralWritesTheCategoryThatWasPicked — the same dropdown in the
-// other direction, on an entry that is neither the sentinel nor the first real
-// one.
+// Picks an entry that's neither the sentinel nor the first.
 func TestOperatorGeneralWritesTheCategoryThatWasPicked(t *testing.T) {
 	inst, apply, form, _ := loadOperatorGeneralPage(t)
 
@@ -75,8 +70,7 @@ func TestOperatorGeneralWritesTheCategoryThatWasPicked(t *testing.T) {
 	assertOneStatement(t, inst, "@category_name = N'[Uncategorized (Local)]'")
 }
 
-// TestOperatorGeneralDisablingSendsEnabledZero. Disabling an operator stops
-// every alert page from reaching them, so the checkbox has to mean what it
+// A disabled operator gets no alert pages, so the checkbox must mean what it
 // shows.
 func TestOperatorGeneralDisablingSendsEnabledZero(t *testing.T) {
 	inst, apply, form, _ := loadOperatorGeneralPage(t)

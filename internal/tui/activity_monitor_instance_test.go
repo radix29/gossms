@@ -11,15 +11,12 @@ import (
 	"github.com/radix29/gossms/internal/tui/dashboard"
 )
 
-// The Instance tab and the visible-tabs refactor it needed. The tab reads
-// three views that exist only on an Azure engine edition, so the question
-// every test here asks is which connection sees it. What the refactor settled
-// — the tab bar is a filtered slice while the scroll arrays stay sized
-// amTabCount, and setTab is the one gate — is in docs/open-threads.md
-// § Azure SQL Managed Instance.
+// The Instance tab reads Azure-only views, so these tests ask which connections
+// see it. The tab bar is a filtered slice, scroll arrays stay amTabCount-sized,
+// and setTab is the gate (docs/open-threads.md § Azure SQL Managed Instance).
 
-// newAzureActivityMonitor is newTestActivityMonitor against a Managed
-// Instance — the fake answers the real MI's connect-time row.
+// newAzureActivityMonitor is newTestActivityMonitor against a Managed Instance;
+// the fake answers a real MI's connect-time row.
 func newAzureActivityMonitor(t *testing.T, w, h int) *ActivityMonitor {
 	t.Helper()
 	sc, _ := newFakeConnOnAzureMI(t)
@@ -37,9 +34,8 @@ func tabLabels(am *ActivityMonitor) []string {
 	return out
 }
 
-// The tab exists on Azure and nowhere else. Drawing it on an on-premises
-// server would put a permanent error strip on the panel: gosmo refuses all
-// three of its reads off Azure, so it can never have anything to show.
+// The tab exists only on Azure; elsewhere gosmo refuses all its reads, so it
+// could only show an error.
 func TestInstanceTabIsOfferedOnlyOnAzure(t *testing.T) {
 	onPrem := newTestActivityMonitor(100, 40)
 	want := []string{"History", "Sample", "TempDB", "Sessions", "Block"}
@@ -56,8 +52,7 @@ func TestInstanceTabIsOfferedOnlyOnAzure(t *testing.T) {
 	}
 }
 
-// setTab is the one gate: no key, click or caller may land the panel on a tab
-// the bar does not draw, because its feed never runs there.
+// setTab is the gate: nothing may land the panel on an undrawn tab.
 func TestSetTabRefusesAWithheldTab(t *testing.T) {
 	am := newTestActivityMonitor(100, 40)
 	am.setTab(amTabInstance)
@@ -70,9 +65,8 @@ func TestSetTabRefusesAWithheldTab(t *testing.T) {
 	}
 }
 
-// Tab and Backtab walk the *visible* list. The amTab constants are not
-// contiguous once one is withheld, so stepping by arithmetic over amTabCount
-// would stop on a tab the bar does not draw.
+// Tab/Backtab walk the visible list; amTab constants aren't contiguous once one
+// is withheld.
 func TestTabCyclingVisitsEveryVisibleTabAndNoOther(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -98,8 +92,7 @@ func TestTabCyclingVisitsEveryVisibleTabAndNoOther(t *testing.T) {
 					t.Fatalf("step %d landed on %q, want %q", i, amTabLabels[seen[i]], amTabLabels[tab])
 				}
 			}
-			// And backwards, which is the direction an off-by-one in the
-			// modulo shows up in first.
+			// And backwards, where a modulo off-by-one shows first.
 			am.stepTab(-1)
 			if am.tab != want[len(want)-1] {
 				t.Errorf("Backtab from the first tab landed on %q, want the last (%q)",
@@ -109,9 +102,8 @@ func TestTabCyclingVisitsEveryVisibleTabAndNoOther(t *testing.T) {
 	}
 }
 
-// A click lands on the tab it looks like it landed on. The segments are
-// indexed by position in visibleTabs, not by amTab, so a connection missing a
-// tab must not shift every click one place.
+// Segments are indexed by position in visibleTabs, so a withheld tab mustn't
+// shift clicks.
 func TestTabSegmentsPairWithTheVisibleTabs(t *testing.T) {
 	for _, am := range []*ActivityMonitor{
 		newTestActivityMonitor(120, 40),
@@ -134,7 +126,7 @@ func TestTabSegmentsPairWithTheVisibleTabs(t *testing.T) {
 	}
 }
 
-// The Instance tab is a canvas tab with its own feed, at its own rates.
+// The Instance tab is a canvas tab with its own feed and rates.
 func TestInstanceTabHasItsOwnFeed(t *testing.T) {
 	am := newAzureActivityMonitor(t, 120, 40)
 	if !amTabInstance.canvasTab() {
@@ -150,16 +142,15 @@ func TestInstanceTabHasItsOwnFeed(t *testing.T) {
 	if got := am.feed().rate(); got != amInstanceRates[defaultInstanceRateIdx] {
 		t.Errorf("default rate = %v, want %v", got, amInstanceRates[defaultInstanceRateIdx])
 	}
-	// Polling faster than the source's own window cannot produce a new row.
+	// Polling faster than the source window can't produce a new row.
 	if amInstanceRates[0] < instanceWindow {
 		t.Errorf("the fastest rate is %v, shorter than the server's own %v window",
 			amInstanceRates[0], instanceWindow)
 	}
 }
 
-// The plotted column is the server's window, not the panel's poll rate.
-// Scaling by the poll rate would label every column with twice the span it
-// covers at the default rate.
+// A plotted column is the server's window, not the poll rate (which would
+// double every label at the default).
 func TestInstanceColumnsKeepTheServersResolution(t *testing.T) {
 	am := newAzureActivityMonitor(t, 120, 40)
 	am.setTab(amTabInstance)
@@ -177,7 +168,7 @@ func TestInstanceColumnsKeepTheServersResolution(t *testing.T) {
 	}
 }
 
-// stat builds one 15-second window.
+// instStat builds one 15-second window.
 func instStat(end time.Time, cpu float64, usedMB float64, reserved int64, reqs, read, written int64) *gosmo.ServerResourceStat {
 	return &gosmo.ServerResourceStat{
 		StartTime: end.Add(-15 * time.Second), EndTime: end,
@@ -187,8 +178,8 @@ func instStat(end time.Time, cpu float64, usedMB float64, reserved int64, reqs, 
 	}
 }
 
-// The view is built from the reading, not accumulated: every series is as long
-// as the history the server returned, and the storage axis is the quota.
+// The view is built from the reading, not accumulated: each series is as long
+// as the returned history, and the storage axis is the quota.
 func TestBuildInstanceViewPlotsTheServersHistory(t *testing.T) {
 	am := newAzureActivityMonitor(t, 120, 40)
 	base := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -221,8 +212,7 @@ func TestBuildInstanceViewPlotsTheServersHistory(t *testing.T) {
 	if v.StorageScale.Max != 65536 {
 		t.Errorf("storage axis maximum = %v, want the 65536 MB reserved quota", v.StorageScale.Max)
 	}
-	// A total per 15-second window becomes a per-second rate: 150 requests
-	// over 15 seconds is 10/sec, not 150.
+	// 150 requests per 15-second window is 10/sec.
 	if got := v.IORequests[0].Values[1]; got != 10 {
 		t.Errorf("IO requests/sec = %v, want 10 — the column is a total over its window", got)
 	}
@@ -258,14 +248,13 @@ func TestInstanceLimitRowsNameBothLayers(t *testing.T) {
 		}
 	}
 
-	// Neither view is fatal to the tab: the history alone still draws.
+	// Neither limit view is fatal; the history alone draws.
 	if got := instanceLimitRows(nil, nil); len(got) != 0 {
 		t.Errorf("both limit views missing produced %d rows, want none", len(got))
 	}
 }
 
-// The poller never starts off Azure. Its three reads are refused there, so a
-// running one would fail every tick for a tab no one can reach.
+// The poller never starts off Azure, where every read is refused.
 func TestInstancePollerDoesNotStartOffAzure(t *testing.T) {
 	am := newTestActivityMonitor(100, 40)
 	am.feedConn = &db.ServerConn{}
@@ -278,8 +267,8 @@ func TestInstancePollerDoesNotStartOffAzure(t *testing.T) {
 	}
 }
 
-// The dashboard renders from an empty view rather than panicking: the tab is
-// drawn from the moment it is selected, which is before the first tick lands.
+// The dashboard renders from an empty view, since the tab draws before the
+// first tick.
 func TestInstanceDashboardDrawsBeforeItsFirstTick(t *testing.T) {
 	am := newAzureActivityMonitor(t, 120, 40)
 	am.setTab(amTabInstance)
@@ -293,9 +282,8 @@ func TestInstanceDashboardDrawsBeforeItsFirstTick(t *testing.T) {
 		}
 	}
 
-	// The limits grid is the last section of a 59-row canvas, so a 40-row
-	// viewport only reaches it after a scroll — which is also what proves the
-	// canvas is taller than the view and the tab scrolls at all.
+	// The limits grid ends a 59-row canvas, so a 40-row viewport needs a scroll
+	// — proving the tab scrolls.
 	if !am.scrollTo(0, dashboard.InstanceCanvasH) {
 		t.Fatal("the Instance canvas does not scroll, so its last section is unreachable")
 	}

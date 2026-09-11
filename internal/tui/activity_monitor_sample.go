@@ -13,18 +13,16 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/charts"
 )
 
-// Fixed scales for the Sample panels holding a single bar or a percentage.
-// A lone auto-scaled bar fills its panel at every value it can ever have,
-// so it needs a range to be read against.
+// Fixed scales for single-bar and percentage panels; a lone auto-scaled bar is
+// always full.
 var (
 	backupScale  = charts.Scale{Min: 0, Max: 100} // MB/sec
 	latencyScale = charts.Scale{Min: 0, Max: 50}  // milliseconds
 	percentScale = charts.Scale{Min: 0, Max: 100}
 )
 
-// buildSampleView draws the newest sample in the store. Sample is History's
-// most recent sample rather than a second collection of its own, so the two
-// tabs always describe the same instant.
+// buildSampleView draws the store's newest sample, so Sample and History
+// describe the same instant.
 func (am *ActivityMonitor) buildSampleView() dashboard.SampleView {
 	latest, ok := am.store.Latest()
 	if !ok {
@@ -80,10 +78,9 @@ func (am *ActivityMonitor) buildSampleView() dashboard.SampleView {
 	return v
 }
 
-// waitBars is one bar per wait category, milliseconds of wait per second,
-// each split into the resource half and the signal half. The two parts share
-// one colour pair across every bar because the legend names the split, not
-// the categories — those are labelled under their own bars.
+// waitBars is one bar per wait category (ms of wait per second), split into
+// resource and signal parts. The parts share one colour pair across bars; the
+// legend names the split, categories are labelled under their bars.
 func waitBars(s activity.Sample) []charts.Bar {
 	_, green, _, _, red, _, _ := chartColors()
 	bars := make([]charts.Bar, 0, len(activity.WaitCategoryNames))
@@ -101,7 +98,7 @@ func waitBars(s activity.Sample) []charts.Bar {
 	return bars
 }
 
-// waitLegend names the two parts every wait bar is split into.
+// waitLegend names the two parts of every wait bar.
 func waitLegend() []charts.LegendItem {
 	_, green, _, _, red, _, _ := chartColors()
 	return []charts.LegendItem{
@@ -110,9 +107,8 @@ func waitLegend() []charts.LegendItem {
 	}
 }
 
-// loadFactorBars is one bar per visible online scheduler, in cpu_id order.
-// Like the memory composition it comes from the sample's Detail, which only
-// the newest samples keep — which is the sample this tab draws.
+// loadFactorBars is one bar per visible online scheduler, by cpu_id, from the
+// sample's Detail (kept on the newest samples, which this tab draws).
 func loadFactorBars(s activity.Sample) []charts.Bar {
 	if s.Detail == nil {
 		return nil
@@ -126,9 +122,8 @@ func loadFactorBars(s activity.Sample) []charts.Bar {
 	return bars
 }
 
-// memoryComposition is the stacked composition bar. It comes from the
-// sample's Detail, which only the newest samples keep — which is exactly
-// the sample this tab draws.
+// memoryComposition is the stacked composition bar, from the newest sample's
+// Detail.
 func memoryComposition(s activity.Sample) []charts.Series {
 	if s.Detail == nil {
 		return nil
@@ -145,17 +140,15 @@ func memoryComposition(s activity.Sample) []charts.Series {
 	return out
 }
 
-// compositionColors cycle through the chart roles for the memory
-// composition bar, whose slices are named by SQL Server rather than by this
-// application and so have no fixed semantic colour.
+// compositionColors cycle chart roles for memory composition, whose slices SQL
+// Server names and so have no fixed colour.
 func compositionColors() []tcell.Color {
 	cyan, green, yellow, blue, red, purple, neutral := chartColors()
 	return []tcell.Color{blue, cyan, green, purple, yellow, red, neutral}
 }
 
-// databaseIOBars shows total read and write latency, then the busiest
-// databases behind it — the totals are what the panel is read for, and the
-// per-database rows explain them.
+// databaseIOBars shows total read and write latency, then the busiest databases
+// that explain it.
 func databaseIOBars(s activity.Sample) []charts.Bar {
 	cyan, _, yellow, _, _, _, _ := chartColors()
 	bars := []charts.Bar{
@@ -174,8 +167,8 @@ func databaseIOBars(s activity.Sample) []charts.Bar {
 	return bars
 }
 
-// maxIOBars is how many database files the I/O panel names before the bars
-// stop being individually readable.
+// maxIOBars is how many database files the I/O panel names while bars stay
+// readable.
 const maxIOBars = 3
 
 // topDatabases picks the n busiest rows by throughput.

@@ -15,21 +15,18 @@ import (
 )
 
 // ag_add_listener_dialog.go is "Add Listener..." on an availability group (and
-// on its Availability Group Listeners folder) — SSMS's New Availability Group
-// Listener dialog.
+// its listeners folder): SSMS's New Availability Group Listener dialog.
 //
-// A group can have exactly one listener; a second is rejected with error 19477.
-// That is checked in the prefetch rather than left to the server, because the
-// answer ("you already have one, called X") is more useful than the error.
+// A group allows one listener (error 19477 otherwise); the prefetch checks
+// first so the dialog can name the existing one.
 
-// aglistenerPrefetch records what the group already has, so the dialog can
-// refuse before anything is typed.
+// aglistenerPrefetch records what the group has, so the dialog can refuse up
+// front.
 type aglistenerPrefetch struct {
 	existing string
 }
 
-// agListenerModes are the two ways a listener gets its address, in the order
-// they appear on the radio row.
+// agListenerModes are the two address modes, in radio-row order.
 var agListenerModes = []string{"Static IP address", "DHCP"}
 
 const (
@@ -44,10 +41,8 @@ type AGAddListenerDialog struct {
 	agName string
 	node   *explorerNode
 
-	// addrs are the static addresses to bind, one per subnet. A multi-subnet
-	// listener needs every subnet's address at creation or added afterwards
-	// through Listener Properties; only one of them can be reached from any
-	// given subnet, which is the point.
+	// addrs are static addresses, one per subnet. A multi-subnet listener needs
+	// each subnet's address, at creation or later via Listener Properties.
 	addrs []gosmo.AvailabilityListenerIPSpec
 }
 
@@ -120,10 +115,9 @@ func (d *AGAddListenerDialog) buildPages(pf *aglistenerPrefetch) {
 	d.forms[0] = propsheet.NewForm(rows...)
 
 	d.objectName = func() string { return strings.TrimSpace(nameRow.Value()) }
-	// The typed address counts even when Add Address was never pressed: a
-	// single-subnet listener is the common case, and making the user press a
-	// button to commit the one address they typed is a trap that surfaces as
-	// "listener has neither DHCP nor a static address".
+	// The typed address counts without pressing Add Address: single-subnet is
+	// the common case, and requiring the press would fail with "listener has
+	// neither DHCP nor a static address".
 	spec := func() (gosmo.AvailabilityListenerSpec, error) {
 		return agListenerSpecFrom(d.objectName(), portRow.Value(), modeRow.Selected(),
 			d.addrs, ipRow.Value(), maskRow.Value())
@@ -148,10 +142,9 @@ func (d *AGAddListenerDialog) buildPages(pf *aglistenerPrefetch) {
 	}
 }
 
-// addressRows builds the list of addresses already added and the two buttons
-// that edit it, the same grid-plus-detail-rows idiom the other Always On pages
-// use. The typed IP/mask rows are shared with the spec builder, so a
-// single-address listener needs no button press at all.
+// addressRows builds the added-addresses list and its two buttons
+// (grid-plus-detail rows, as other Always On pages). The typed IP/mask rows are
+// shared with the spec builder.
 func (d *AGAddListenerDialog) addressRows(ipRow, maskRow *propsheet.TextRow) (propsheet.Row, propsheet.Row) {
 	headers := []string{"IP address", "Subnet mask"}
 	rowsFor := func() [][]string {
@@ -189,10 +182,9 @@ func (d *AGAddListenerDialog) addressRows(ipRow, maskRow *propsheet.TextRow) (pr
 			return
 		}
 		d.addrs = append(d.addrs[:i], d.addrs[i+1:]...)
-		// The row that took the removed one's place, so a run of removals
-		// works from one key rather than throwing the cursor back to the top
-		// each time. SetData did the latter, and also dropped any column the
-		// user had dragged wider.
+		// Keep the cursor on the row that took the removed one's place, so
+		// repeated removals work from one key; SetData would reset it and drop
+		// dragged widths.
 		rows := rowsFor()
 		resetGrid(grid, headers, rows, min(i, len(rows)-1))
 	})
@@ -201,11 +193,9 @@ func (d *AGAddListenerDialog) addressRows(ipRow, maskRow *propsheet.TextRow) (pr
 	return gridRow, propsheet.Buttons(addBtn, removeBtn)
 }
 
-// agListenerIPFrom validates one typed address.
-//
-// The mask is what distinguishes the two address families in the statement — an
-// IPv6 address takes no mask at all — so a typo'd IPv4 address left without one
-// would otherwise be emitted as valid IPv6 syntax and fail on the server.
+// agListenerIPFrom validates one address. The mask distinguishes the families
+// (IPv6 takes none), so a mistyped IPv4 without one would pass as IPv6 syntax
+// and fail on the server.
 func agListenerIPFrom(ipAddress, subnetMask string) (gosmo.AvailabilityListenerIPSpec, error) {
 	var ip gosmo.AvailabilityListenerIPSpec
 
@@ -230,14 +220,12 @@ func agListenerIPFrom(ipAddress, subnetMask string) (gosmo.AvailabilityListenerI
 	return gosmo.AvailabilityListenerIPSpec{IPAddress: ipAddress, SubnetMask: subnetMask}, nil
 }
 
-// agListenerSpecFrom turns the form's fields into a gosmo listener spec,
-// rejecting what gosmo would only find out about from the server.
+// agListenerSpecFrom turns the form into a gosmo listener spec, rejecting what
+// gosmo would only learn from the server.
 //
-// added is the list built with Add Address; ipAddress/subnetMask are whatever
-// is still typed in the two fields. The typed one is folded in so that the
-// single-subnet case — by far the common one — needs no button press, and
-// pressing Add Address for it does not then duplicate the entry, because Add
-// Address clears the fields.
+// added is the Add Address list; ipAddress/subnetMask are still-typed fields,
+// folded in so single-subnet needs no button. Add Address clears the fields, so
+// nothing duplicates.
 func agListenerSpecFrom(dnsName, portText string, mode int, added []gosmo.AvailabilityListenerIPSpec, ipAddress, subnetMask string) (gosmo.AvailabilityListenerSpec, error) {
 	var spec gosmo.AvailabilityListenerSpec
 
@@ -276,9 +264,8 @@ func agListenerSpecFrom(dnsName, portText string, mode int, added []gosmo.Availa
 	return spec, nil
 }
 
-// showAGAddListenerDialog opens Add Listener for a group — the Object Explorer
-// context menu's entry point on an availability group and on its Availability
-// Group Listeners folder.
+// showAGAddListenerDialog opens Add Listener for a group, from Object
+// Explorer's menu on the group or its listeners folder.
 func (a *App) showAGAddListenerDialog(sc *db.ServerConn, agName string, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return

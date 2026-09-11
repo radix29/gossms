@@ -12,7 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/config"
 )
 
-// mustPreview is BuildConnectionString, parsed, failing the test on an error.
+// mustPreview is BuildConnectionString parsed, failing on error.
 func mustPreview(t *testing.T, opts config.Connection) *url.URL {
 	t.Helper()
 	got, err := BuildConnectionString(opts)
@@ -26,10 +26,8 @@ func mustPreview(t *testing.T, opts config.Connection) *url.URL {
 	return u
 }
 
-// ConnectionError must stay transparent to errors.Is/As: Connect wraps the
-// driver's failure, and callers need the original to tell a login rejection
-// from an unreachable host, or to ask gosmo.IsRetryable about it. Flattening
-// the cause to a string severs that.
+// ConnectionError must unwrap so callers can tell a login rejection from an
+// unreachable host, or ask gosmo.IsRetryable.
 func TestConnectionErrorUnwrapsToCause(t *testing.T) {
 	sentinel := errors.New("login failed for user 'sa'")
 	err := error(&ConnectionError{Server: "myserver", Cause: sentinel.Error(), Err: sentinel})
@@ -44,15 +42,14 @@ func TestConnectionErrorUnwrapsToCause(t *testing.T) {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
 
-	// Still usable when wrapped further up the stack.
+	// Still matches when wrapped further.
 	if !errors.Is(fmt.Errorf("connecting: %w", err), sentinel) {
 		t.Error("sentinel unreachable once ConnectionError is itself wrapped")
 	}
 }
 
-// The preview is the DSN dialled, so it shows what gosmo fills in for an
-// empty field rather than leaving it out: the old hand-built preview omitted
-// "database" and "app name" and showed ":1433" on a host dialled without one.
+// The preview is the dialled DSN, so it shows gosmo's defaults for empty fields
+// ("database", "app name") and no ":1433" on a host dialled without one.
 func TestBuildConnectionStringShowsTheDialledDefaults(t *testing.T) {
 	u := mustPreview(t, config.Connection{Server: "myserver"})
 	if got := u.Query().Get("database"); got != "master" {
@@ -72,8 +69,8 @@ func TestBuildConnectionStringShowsTheDialledDefaults(t *testing.T) {
 	}
 }
 
-// Every secret is masked — the preview is on screen and selectable — and
-// a masked one is still visibly present, so an empty password is told apart.
+// Every secret is masked but visibly present, so an empty password is
+// distinguishable.
 func TestBuildConnectionStringMasksThePassword(t *testing.T) {
 	cases := []config.Connection{
 		{Server: "s", AuthMethod: config.AuthSQLServer, User: "sa", Password: "hunter2"},
@@ -103,10 +100,8 @@ func TestBuildConnectionStringEscapesReservedCharacters(t *testing.T) {
 	}
 }
 
-// TestBuildConnectionStringNamedInstance pins that a named instance with no
-// port is shown without one. A named instance takes its port from SQL Browser
-// (win10cli\SQL2017 answers on 55253), so a ":1433" here would name the
-// *default* instance — and copying the preview out would reach it.
+// A named instance without a port is shown without one: it gets its port from
+// SQL Browser, and ":1433" would reach the default instance.
 func TestBuildConnectionStringNamedInstance(t *testing.T) {
 	for _, port := range []int{0, 1433} {
 		u := mustPreview(t, config.Connection{Server: `myserver\SQLEXPRESS`, Port: port})
@@ -124,10 +119,8 @@ func TestBuildConnectionStringNamedInstance(t *testing.T) {
 	}
 }
 
-// TestResolveServerLeavesNamedInstanceAlone pins the address handed to gosmo,
-// which is what Connect dials — the preview above only renders it. A port
-// appended here (":1433" or ",1433") suppresses the SQL Browser lookup and
-// lands on the default instance instead.
+// The address handed to gosmo (what Connect dials) must not append a port to a
+// named instance; that suppresses SQL Browser.
 func TestResolveServerLeavesNamedInstanceAlone(t *testing.T) {
 	for _, port := range []int{0, 1433} {
 		if got := resolveServer(`myserver\SQLEXPRESS`, port); got != `myserver\SQLEXPRESS` {
@@ -165,8 +158,8 @@ func TestBuildConnectionStringTLSSettings(t *testing.T) {
 	}
 }
 
-// BUG-3: each auth method reads its client id from a different gosmo option,
-// and the credentials a method does not use are not passed at all.
+// BUG-3: each auth method reads its client id from a different gosmo option;
+// unused credentials aren't passed.
 func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
 	full := config.Connection{
 		Server: "s", User: "user", Password: "pw", TenantID: "tenant", ClientID: "client",
@@ -201,8 +194,8 @@ func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
 		}
 	}
 
-	// A service principal saved with its application id in User still reaches
-	// gosmo's User — and so the DSN's "user id".
+	// A legacy service principal with its application id in User reaches
+	// gosmo's User ("user id").
 	legacy := config.Connection{Server: "s", AuthMethod: config.AuthEntraServicePrincipal, User: "app-id", Password: "pw"}
 	u := mustPreview(t, legacy)
 	if got := u.Query().Get("user id"); got != "app-id" {
@@ -215,13 +208,10 @@ func TestToGosmoOptionsMapsEachAuthMethod(t *testing.T) {
 	}
 }
 
-// What the driver makes of each Entra method's DSN (docs/testing.md: a DSN
-// test asserts what the driver parses). The mapping above once pinned a
-// Password connection with no app id and an MFA connection with no login
-// hint, both of which gosmo wrote faithfully and the driver refused or
-// dropped. Every method must get past azuread's own validator, with the
-// dialog's fields where the credential reads them — including Password and
-// MFA with ClientID left empty, which gosmo fills with the public client.
+// What the driver parses from each Entra method's DSN (docs/testing.md). Every
+// method must pass azuread's validator with the fields where the credential
+// reads them, including Password and MFA with empty ClientID (gosmo fills the
+// public client).
 func TestEveryEntraMethodBuildsADriverConnector(t *testing.T) {
 	full := config.Connection{
 		Server: "s", User: "user", Password: "pw", TenantID: "tenant", ClientID: "client",
@@ -262,9 +252,8 @@ func TestEveryEntraMethodBuildsADriverConnector(t *testing.T) {
 	}
 }
 
-// driverParams builds opts' real (unmasked) DSN, hands it to the azuread
-// connector — which parses and validates it without dialling — and returns
-// the parameters the driver parsed.
+// driverParams builds opts' unmasked DSN, has the azuread connector parse and
+// validate it without dialling, and returns the parsed parameters.
 func driverParams(t *testing.T, opts config.Connection) map[string]string {
 	t.Helper()
 	co, err := toGosmoOptions(opts, RoleExplorer)
@@ -285,9 +274,8 @@ func driverParams(t *testing.T, opts config.Connection) map[string]string {
 	return cfg.Parameters
 }
 
-// A credential a method cannot sign in without is refused in the dialog's own
-// field names — the preview shows this until it is filled — rather than in
-// gosmo's, which call a service principal's ClientID "User".
+// A missing required credential is refused in the dialog's field names, not
+// gosmo's ("User" for a service principal's ClientID).
 func TestMissingCredentialNamesTheDialogsField(t *testing.T) {
 	cases := []struct {
 		opts config.Connection
@@ -306,16 +294,16 @@ func TestMissingCredentialNamesTheDialogsField(t *testing.T) {
 				config.AuthMethodName(c.opts.AuthMethod), c.opts, err, c.want)
 		}
 	}
-	// The legacy service principal, application id in User, still passes.
+	// The legacy service principal (application id in User) still passes.
 	legacy := config.Connection{Server: "s", AuthMethod: config.AuthEntraServicePrincipal, User: "app", Password: "pw"}
 	if _, err := BuildConnectionString(legacy); err != nil {
 		t.Errorf("legacy service principal: %v", err)
 	}
 }
 
-// Every Entra connection shares one sign-in cache, whatever its role — a
-// cache per pool is a browser sign-in per query window — and gets the
-// process's device-code prompt rather than gosmo's print to standard output.
+// Every Entra connection shares one sign-in cache — per pool would mean a
+// browser sign-in per window — and the process's device-code prompt instead of
+// gosmo's stdout print.
 func TestEntraConnectionsShareOneSignIn(t *testing.T) {
 	for _, m := range config.AllAuthMethods() {
 		for _, role := range []Role{RoleExplorer, RoleQuery, RoleActivityMonitor} {
@@ -378,8 +366,8 @@ func TestParseExtraProperties(t *testing.T) {
 	}
 }
 
-// BUG-2: extra properties reach the driver, and one naming a setting the
-// dialog owns is an error rather than a silent override either way.
+// BUG-2: extra properties reach the driver; one naming a dialog-owned setting
+// is an error, not a silent override.
 func TestExtraPropertiesReachTheDialledDSN(t *testing.T) {
 	u := mustPreview(t, config.Connection{Server: "s", Database: "db", ExtraProperties: "ApplicationIntent=ReadOnly; packet size=8192"})
 	if got := u.Query().Get("applicationintent"); got != "ReadOnly" {
@@ -404,8 +392,8 @@ func TestExtraPropertiesReachTheDialledDSN(t *testing.T) {
 	}
 }
 
-// The preview and Connect share toGosmoOptions; this pins that nothing but
-// the secrets differs between the preview and what gosmo renders unmasked.
+// Preview and Connect share toGosmoOptions; only secrets differ from gosmo's
+// unmasked rendering.
 func TestBuildConnectionStringIsTheDialledDSNMasked(t *testing.T) {
 	opts := config.Connection{Server: `h\i`, Port: 1500, AuthMethod: config.AuthSQLServer, User: "sa", Password: "pw",
 		Encrypt: config.EncryptMandatory, ExtraProperties: "keepalive=10"}
@@ -498,7 +486,7 @@ func TestResolveServer(t *testing.T) {
 		{"embedded comma port wins over dialog port", "myserver,1434", 1500, "myserver,1434"},
 		{"instance, default port: unchanged", `myserver\SQLEXPRESS`, 1433, `myserver\SQLEXPRESS`},
 		{"instance, custom port: comma appended", `myserver\SQLEXPRESS`, 1434, `myserver\SQLEXPRESS,1434`},
-		// A colon after a bare IPv6 literal is one more group of it.
+		// A colon after a bare IPv6 literal is another group.
 		{"bare IPv6, custom port: comma appended", "fe80::1", 1434, "fe80::1,1434"},
 		{"bracketed IPv6, custom port: colon appended", "[fe80::1]", 1434, "[fe80::1]:1434"},
 		{"bare IPv6, default port: unchanged", "2001:db8::5", 1433, "2001:db8::5"},

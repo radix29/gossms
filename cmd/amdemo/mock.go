@@ -12,30 +12,26 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
-// buckets is how many samples the generated history carries — 30 minutes at
-// a 2-second resolution, the Activity Monitor's own retention.
+// buckets is 30 minutes at 2-second resolution, the Activity Monitor's
+// retention.
 const buckets = 900
 
-// mockStart is the timestamp the generated samples end at. It is fixed, not
-// time.Now(), so two runs of the harness produce byte-identical screens and
-// a screenshot can be compared against an earlier one.
+// mockStart is when the generated samples end. Fixed, not time.Now(), so runs
+// produce byte-identical screens.
 var mockStart = time.Date(2026, 8, 5, 11, 56, 23, 0, time.UTC)
 
-// The generated workload is two periodic waves plus five one-off events.
-//
-// The waves are periodic because the dashboard's panels show different
-// spans of the same history — a 48-column panel shows the last ~40 samples,
-// the full-width waits panel ~140 — and a workload shaped as a single bump
-// would leave the narrow panels showing nothing but noise. The one-off
-// events sit inside the last 140 samples so every panel that can show them
-// does.
+// The workload is two periodic waves plus five one-off events. Waves, because
+// panels show different spans of the same history (a 48-column panel ~40
+// samples, the full-width waits panel ~140) and a single bump would leave
+// narrow panels showing noise. Events sit inside the last 140 samples so every
+// panel that can show them does.
 const (
 	workloadPeriod  = 55.0 // samples per workload wave
 	reportingPeriod = 130.0
 )
 
-// event is a one-off operational episode: a smooth bump centred a fixed
-// number of samples back from the newest one.
+// event is a one-off episode: a smooth bump centred a fixed number of samples
+// before the newest.
 type event struct {
 	ago    float64 // samples back from the newest, at the peak
 	width  float64 // samples, one standard deviation
@@ -56,24 +52,21 @@ func (e event) at(i int) float64 {
 	return e.height * math.Exp(-(x*x)/(2*e.width*e.width))
 }
 
-// wave is the periodic component: a general workload rise and fall every
-// panel sees regardless of how many samples it shows.
+// wave is the periodic workload rise and fall every panel sees.
 func wave(i int, period float64) float64 {
 	return 0.5 + 0.5*math.Sin(2*math.Pi*float64(i)/period)
 }
 
 func workload(i int) float64 { return wave(i, workloadPeriod) }
 
-// wobble is the deterministic small-scale variation laid over everything.
-// It is a fixed function of the bucket index rather than a random number,
-// so the same bucket always gets the same value.
+// wobble is deterministic small-scale variation: a fixed function of the bucket
+// index, not random.
 func wobble(i int, scale float64) float64 {
 	return scale * (math.Sin(float64(i)*0.7) + 0.6*math.Sin(float64(i)*0.23+1.1))
 }
 
-// series builds one named series from a per-bucket function, clamping
-// negatives away — every metric on these dashboards is a rate or a gauge
-// that cannot go below zero.
+// series builds a named series from a per-bucket function, clamping negatives —
+// every metric here is a rate or gauge.
 func series(label, short string, color tcell.Color, f func(i int) float64) charts.Series {
 	vals := make([]float64, buckets)
 	for i := range vals {
@@ -82,8 +75,8 @@ func series(label, short string, color tcell.Color, f func(i int) float64) chart
 	return charts.Series{Label: label, Short: short, Color: color, Values: vals}
 }
 
-// MockHistory builds a deterministic HistoryView covering the five
-// operational patterns.
+// MockHistory builds a deterministic HistoryView covering five operational
+// patterns.
 func MockHistory() dashboard.HistoryView {
 	pal := theme.Active()
 	return dashboard.HistoryView{
@@ -111,8 +104,7 @@ func MockHistory() dashboard.HistoryView {
 			}),
 		},
 		Backup: []charts.Series{
-			// Mostly flat with one isolated window, the shape a backup
-			// actually has — a chart that never shows zero would hide it.
+			// Mostly flat with one isolated window, as a backup is.
 			series("Backup MB/sec", "Backup", pal.ChartBlue, func(i int) float64 {
 				return 1.05 * backupRun.at(i)
 			}),
@@ -202,9 +194,8 @@ func MockHistory() dashboard.HistoryView {
 	}
 }
 
-// MockSample builds the Sample view from the newest bucket of the same
-// generated history, which is exactly the relationship the real Activity
-// Monitor has: the Sample tab shows the latest sample the collector stored.
+// MockSample builds the Sample view from the newest history bucket, as the real
+// Sample tab shows the latest stored sample.
 func MockSample(h dashboard.HistoryView) dashboard.SampleView {
 	pal := theme.Active()
 	last := func(s []charts.Series, i int) float64 {
@@ -221,10 +212,8 @@ func MockSample(h dashboard.HistoryView) dashboard.SampleView {
 		Header:           h.Header,
 		UserConnections:  "1519",
 		BlockedProcesses: "92",
-		// Scales come from the work order's table rather than from the
-		// bars: several of these panels hold one bar or one dominant bar,
-		// and auto-scaling those would show a full-width bar at every
-		// value the metric can take.
+		// Fixed scales from the work order, not auto-scaling: panels holding
+		// one dominant bar would always show it full-width.
 		Activity: dashboard.BarPanel{
 			Scale: charts.Scale{Min: 0, Max: 30000},
 			Bars: []charts.Bar{
@@ -285,8 +274,8 @@ func MockSample(h dashboard.HistoryView) dashboard.SampleView {
 	}
 }
 
-// mockWaitBars splits each wait category's newest value into a resource and
-// a signal part, the way the snapshot mockup shows them.
+// mockWaitBars splits each wait category's newest value into resource and
+// signal parts.
 func mockWaitBars(pal *theme.Palette) []charts.Bar {
 	names := []string{"Disk IO", "Extended Events", "Latches: Buffer", "Latches: Buffer IO", "Latches: Non-Buffer", "Locking", "Memory"}
 	shorts := []string{"Disk", "XEvents", "Latch: Buf", "Latch: BufIO", "Latch: Other", "Lock", "Mem"}
@@ -306,8 +295,7 @@ func mockWaitBars(pal *theme.Palette) []charts.Bar {
 	return out
 }
 
-// mockLoadFactorBars is one bar per core on an eight-core demo host, uneven
-// the way a real scheduler distribution is.
+// mockLoadFactorBars is one uneven bar per core on an eight-core host.
 func mockLoadFactorBars(pal *theme.Palette) []charts.Bar {
 	values := []float64{14, 9, 21, 6, 11, 17, 4, 12}
 	out := make([]charts.Bar, 0, len(values))
@@ -318,8 +306,7 @@ func mockLoadFactorBars(pal *theme.Palette) []charts.Bar {
 	return out
 }
 
-// msReadWrite splits one file's I/O latency into its read and write parts,
-// the pair the DATABASE IO panel is read for.
+// msReadWrite splits one file's I/O latency into read and write parts.
 func msReadWrite(read, write float64, pal *theme.Palette) []charts.BarPart {
 	return []charts.BarPart{
 		{Value: read, Color: pal.ChartGreen},
@@ -327,8 +314,8 @@ func msReadWrite(read, write float64, pal *theme.Palette) []charts.BarPart {
 	}
 }
 
-// mockMemoryComposition takes the newest value of every memory series, so
-// the composition bar and the memory history agree.
+// mockMemoryComposition takes the newest value of every memory series, so the
+// composition bar agrees with the memory history.
 func mockMemoryComposition(h dashboard.HistoryView) []charts.Series {
 	out := make([]charts.Series, 0, len(h.Memory))
 	for _, s := range h.Memory {

@@ -14,10 +14,8 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// TestCapabilitiesFailOpenWithoutAProbe pins the rule the whole layer rests
-// on: a connection that was never probed — or whose probe failed — must answer
-// "not denied" to everything. Gating on Allows would otherwise hide the
-// application from a login that may well be a sysadmin.
+// An unprobed or failed-probe connection must answer "not denied" to
+// everything, or Allows gating would hide the app from a possible sysadmin.
 func TestCapabilitiesFailOpenWithoutAProbe(t *testing.T) {
 	for name, sc := range map[string]*ServerConn{
 		"nil":        nil,
@@ -48,8 +46,6 @@ func TestCapabilitiesFailOpenWithoutAProbe(t *testing.T) {
 	}
 }
 
-// -- a scripted server, to exercise the cache --------------------------------
-
 type capTestScript struct {
 	mu       sync.Mutex
 	dbProbes int   // how many HAS_DBACCESS reads happened
@@ -57,8 +53,8 @@ type capTestScript struct {
 	access   int64 // what HAS_DBACCESS answers
 	srvFail  bool  // make the server-scope probe fail
 
-	// started, if set, is sent to as a HAS_DBACCESS read begins, which then
-	// waits for release — so a test can act while a probe is in flight.
+	// started, if set, is signalled when a HAS_DBACCESS read begins, which then
+	// waits for release.
 	started chan struct{}
 	release chan struct{}
 }
@@ -118,7 +114,7 @@ func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	case strings.Contains(q, "dm_os_sys_info"):
 		return &capTestRows{cols: 2, rows: [][]driver.Value{{int64(1), int64(1)}}}, nil
 	}
-	// gosmo.NewServer's SERVERPROPERTY half; only the version is read back here.
+	// gosmo.NewServer's SERVERPROPERTY read; only the version is used.
 	return &capTestRows{cols: 13, rows: [][]driver.Value{{
 		"FAKE", "Developer Edition", "16.0.4085.2", "RTM", "SQL_Latin1_General_CP1_CI_AS",
 		int64(0), int64(0), int64(0), int64(3), "Microsoft SQL Server 2022 ... on Linux",
@@ -178,7 +174,7 @@ func TestDatabaseCapabilitiesAreProbedOnceAndCached(t *testing.T) {
 		t.Errorf("HAS_DBACCESS read %d times, want 1 — the answer is cached", script.dbProbes)
 	}
 
-	// A second database is its own answer, not the first one's.
+	// A second database gets its own answer.
 	sc.DatabaseCapabilities(ctx, "msdb")
 	if script.dbProbes != 2 {
 		t.Errorf("HAS_DBACCESS read %d times after a second database, want 2", script.dbProbes)
@@ -191,10 +187,8 @@ func TestDatabaseCapabilitiesAreProbedOnceAndCached(t *testing.T) {
 	}
 }
 
-// TestAFailedDatabaseProbeIsNotCached is the other half. Caching a failure
-// would leave a database answering "nothing known" for the rest of the
-// session over one dropped connection — and because unknown fails open, that
-// silently disables every gate the answer was meant to drive.
+// A failed probe isn't cached: unknown fails open, so caching would silently
+// disable every gate for the session.
 func TestAFailedDatabaseProbeIsNotCached(t *testing.T) {
 	script := &capTestScript{access: 1, fail: true}
 	sc := capTestConnection(t, script)
@@ -217,9 +211,7 @@ func TestAFailedDatabaseProbeIsNotCached(t *testing.T) {
 	}
 }
 
-// TestServerCapabilitiesAreProbedAtConnect pins that the connect-time probe
-// actually populates the cache, rather than every caller silently getting the
-// fail-open empty value.
+// The connect-time probe must populate the cache.
 func TestServerCapabilitiesAreProbedAtConnect(t *testing.T) {
 	sc := capTestConnection(t, &capTestScript{access: 1})
 
@@ -233,8 +225,7 @@ func TestServerCapabilitiesAreProbedAtConnect(t *testing.T) {
 	}
 }
 
-// TestAnInaccessibleDatabaseIsReportedAsSuch is the predicate the tree needs:
-// it must be able to tell "cannot be opened" from "not asked".
+// The tree must tell "cannot be opened" from "not asked".
 func TestAnInaccessibleDatabaseIsReportedAsSuch(t *testing.T) {
 	sc := capTestConnection(t, &capTestScript{access: 0})
 
@@ -244,10 +235,8 @@ func TestAnInaccessibleDatabaseIsReportedAsSuch(t *testing.T) {
 	}
 }
 
-// A probe that started before ClearCapabilityCache must not store its answer
-// after it: the clear is a Refresh asking for rights to be re-read, and the
-// in-flight answer may predate the GRANT it was for — cached, it would be
-// served for the rest of the session.
+// A probe from before ClearCapabilityCache must not cache after it; its answer
+// may predate the GRANT.
 func TestProbeInFlightAcrossAClearIsNotCached(t *testing.T) {
 	script := &capTestScript{access: 1, started: make(chan struct{}), release: make(chan struct{})}
 	sc := capTestConnection(t, script)
@@ -274,9 +263,8 @@ func TestProbeInFlightAcrossAClearIsNotCached(t *testing.T) {
 	}
 }
 
-// A Refresh re-probes the server scope on a live connection. A re-probe that
-// fails must keep the answer it had: falling back to "unknown" fails every
-// gate open over one dropped round trip.
+// A failed server re-probe keeps the previous answer instead of failing every
+// gate open.
 func TestFailedReprobeKeepsPreviousServerCapabilities(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
@@ -291,12 +279,9 @@ func TestFailedReprobeKeepsPreviousServerCapabilities(t *testing.T) {
 	}
 }
 
-// -- single-flight ------------------------------------------------------------
-
-// holdProbes makes every HAS_DBACCESS read in s wait until the returned
-// release is called, and returns the channel each read announces itself on.
-// Cleanup releases whatever is still held and drains late announcements, so a
-// test that fails mid-way does not leave probes blocked into the next one.
+// holdProbes makes every HAS_DBACCESS read in s wait for release, and returns
+// the channel each read announces on. Cleanup releases and drains, so a failed
+// test doesn't leave probes blocked.
 func holdProbes(t *testing.T, s *capTestScript) (started <-chan struct{}, release func()) {
 	t.Helper()
 	st, rel := make(chan struct{}), make(chan struct{})
@@ -335,8 +320,7 @@ func noProbe(t *testing.T, started <-chan struct{}, why string) {
 	}
 }
 
-// waitForWaiters blocks until n callers have joined the probe in flight for
-// name — the only way to know a goroutine has got as far as waiting.
+// waitForWaiters blocks until n callers have joined name's in-flight probe.
 func waitForWaiters(t *testing.T, sc *ServerConn, name string, n int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -357,9 +341,8 @@ func waitForWaiters(t *testing.T, sc *ServerConn, name string, n int) {
 	}
 }
 
-// R14: arrowing through an unprobed database's nodes primes it once per
-// keystroke. Every caller after the first must wait for the first probe, not
-// run the same two round trips alongside it on the shared pool.
+// R14: callers after the first must wait for its probe, not duplicate the round
+// trips.
 func TestConcurrentDatabaseProbesShareOneRoundTrip(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
@@ -388,9 +371,8 @@ func TestConcurrentDatabaseProbesShareOneRoundTrip(t *testing.T) {
 	}
 }
 
-// A probe whose own caller gave up learned nothing about the server. A caller
-// that joined it and still wants an answer must ask again — inheriting the
-// failure would fail its gates open over someone else's closed dialog.
+// A waiter on an abandoned probe must ask again rather than inherit the
+// failure.
 func TestAWaiterOutlivesAnAbandonedProbe(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
@@ -419,8 +401,7 @@ func TestAWaiterOutlivesAnAbandonedProbe(t *testing.T) {
 	}
 }
 
-// A waiter stops at its own context, not the probe's timeout: a Properties
-// dialog closed while its database is being probed must not stay blocked.
+// A waiter stops at its own context, not the probe's timeout.
 func TestAWaiterStopsAtItsOwnContext(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
@@ -451,8 +432,7 @@ func TestAWaiterStopsAtItsOwnContext(t *testing.T) {
 	<-leader
 }
 
-// A caller from after ClearCapabilityCache must not join a probe from before
-// it: that answer may predate the GRANT the Refresh was for.
+// A post-clear caller must not join a pre-clear probe.
 func TestACallerAfterAClearDoesNotJoinAPreClearProbe(t *testing.T) {
 	script := &capTestScript{access: 1}
 	sc := capTestConnection(t, script)
@@ -481,8 +461,7 @@ func TestACallerAfterAClearDoesNotJoinAPreClearProbe(t *testing.T) {
 	}
 }
 
-// HasDatabaseCapabilities is what lets a selection skip starting a goroutine;
-// it must say "cached" only for an answer the server actually gave.
+// HasDatabaseCapabilities is true only for a real server answer.
 func TestHasDatabaseCapabilities(t *testing.T) {
 	script := &capTestScript{access: 1, fail: true}
 	sc := capTestConnection(t, script)

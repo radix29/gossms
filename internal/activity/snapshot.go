@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// Snapshot is one tick's raw reading of the server: cumulative counters as
-// SQL Server reports them, before any rate conversion. Snapshots are only
-// meaningful in pairs — see Derive.
+// Snapshot is one tick's raw cumulative readings, before rate conversion;
+// meaningful only in pairs (see Derive).
 type Snapshot struct {
 	At       time.Time
 	Counters counterSet
@@ -21,10 +20,9 @@ type Snapshot struct {
 	Load     []SchedulerLoad
 }
 
-// Collect reads one full snapshot. The queries run in sequence on one
-// connection: they are all metadata reads against DMVs, and running them
-// concurrently would need a connection each while making the readings
-// disagree about which instant they describe.
+// Collect reads a full snapshot, sequentially on one connection: concurrency
+// would need a connection per query and the readings would describe different
+// instants.
 func Collect(ctx context.Context, db *sql.DB) (*Snapshot, error) {
 	s := &Snapshot{At: time.Now()}
 
@@ -56,13 +54,12 @@ func Collect(ctx context.Context, db *sql.DB) (*Snapshot, error) {
 	return s, nil
 }
 
-// permissionQuery checks the one permission everything here needs. Without
-// it the DMV queries return an empty result set rather than an error, so a
-// dashboard with no permission is indistinguishable from an idle server.
+// permissionQuery checks VIEW SERVER STATE. Without it the DMVs return empty
+// sets, not errors, which looks like an idle server.
 const permissionQuery = `SELECT CASE WHEN HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') = 1 THEN 1 ELSE 0 END`
 
-// HasViewServerState reports whether the connection may read the DMVs this
-// package queries.
+// HasViewServerState reports whether the connection may read this package's
+// DMVs.
 func HasViewServerState(ctx context.Context, db *sql.DB) (bool, error) {
 	var ok int
 	if err := db.QueryRowContext(ctx, permissionQuery).Scan(&ok); err != nil {

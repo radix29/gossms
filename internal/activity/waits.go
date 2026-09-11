@@ -6,9 +6,8 @@ import (
 	"strings"
 )
 
-// WaitCategory groups wait types into the handful of buckets the dashboard
-// plots. The full list of wait types runs to several hundred, most of which
-// never move; grouping is what makes a wait chart readable.
+// WaitCategory groups the hundreds of wait types into the few buckets the
+// dashboard plots.
 type WaitCategory int
 
 const (
@@ -38,12 +37,8 @@ type waitRow struct {
 // waitSet is one sample of sys.dm_os_wait_stats, keyed by wait type.
 type waitSet map[string]waitRow
 
-// benignWaits are the idle and background waits every server accumulates by
-// the hour whether or not it is doing anything. Left in, they dwarf every
-// real wait on the chart and the panel shows nothing but their bar.
-//
-// These are the ones that don't belong to a family; benignFamilies below
-// covers the families.
+// benignWaits are idle/background waits that accumulate constantly; left in
+// they dwarf every real wait. benignFamilies covers whole families.
 var benignWaits = []string{
 	"CHECKPOINT_QUEUE", "CHKPT", "DIRTY_PAGE_POLL", "DISPATCHER_QUEUE_SEMAPHORE",
 	"EXECSYNC", "FSAGENT", "KSOURCE_WAKEUP", "LAZYWRITER_SLEEP", "LOGMGR_QUEUE",
@@ -55,16 +50,11 @@ var benignWaits = []string{
 	"PREEMPTIVE_OS_DMV_PDH_QUERY",
 }
 
-// benignFamilies are whole prefixes of background waits, excluded by
-// pattern rather than by name.
-//
-// Naming them individually is what let PWAIT_EXTENSIBILITY_CLEANUP_TASK
-// through on SQL Server 2025: it sleeps for five minutes and then reports
-// all 300,000 ms of it against one two-second sample, which is 150,000 ms
-// of "CPU wait" per second — two orders of magnitude above every real wait
-// on the chart, flattening the whole waits panel to nothing. Every future
-// release adds background waits, and a list of names can only ever be out
-// of date; a family pattern is not.
+// benignFamilies are background-wait prefixes, excluded by pattern. Names alone
+// let PWAIT_EXTENSIBILITY_CLEANUP_TASK through on SQL Server 2025: it reports
+// 300,000 ms after a five-minute sleep in one 2s sample, flattening the waits
+// panel. New releases keep adding background waits; a family pattern stays
+// current.
 var benignFamilies = []string{
 	"SLEEP%", "QDS\\_%", "XE\\_%", "BROKER\\_%", "HADR\\_%", "PWAIT\\_%",
 	"FT\\_%", "PARALLEL\\_REDO\\_%", "DBMIRROR%", "SQLTRACE\\_%", "CLR\\_%",
@@ -73,10 +63,9 @@ var benignFamilies = []string{
 
 var waitQuery = buildWaitQuery()
 
-// buildWaitQuery excludes the benign waits by name and the benign families
-// by pattern. ESCAPE is needed because the family patterns contain
-// underscores, which LIKE would otherwise treat as single-character
-// wildcards — an unescaped "QDS_%" would also match QDSXANYTHING.
+// buildWaitQuery excludes benign waits by name and families by pattern. ESCAPE
+// keeps pattern underscores literal; unescaped "QDS_%" would match
+// QDSXANYTHING.
 func buildWaitQuery() string {
 	var b strings.Builder
 	b.WriteString("SELECT wait_type, wait_time_ms, signal_wait_time_ms, waiting_tasks_count ")
@@ -91,7 +80,7 @@ func buildWaitQuery() string {
 	return b.String()
 }
 
-// collectWaits reads the cumulative wait totals, minus the benign ones.
+// collectWaits reads cumulative wait totals, minus benign ones.
 func collectWaits(ctx context.Context, db *sql.DB) (waitSet, error) {
 	rows, err := db.QueryContext(ctx, waitQuery)
 	if err != nil {
@@ -111,10 +100,9 @@ func collectWaits(ctx context.Context, db *sql.DB) (waitSet, error) {
 	return set, rows.Err()
 }
 
-// categorize maps a wait type to the bucket it is plotted in. The rules are
-// prefix-based because SQL Server names waits by family — every page latch
-// is a PAGELATCH_*, every lock an LCK_M_* — and new members of a family
-// appear with every release.
+// categorize maps a wait type to its plot bucket. Prefix-based because waits
+// are named by family (PAGELATCH_*, LCK_M_*) and families gain members every
+// release.
 func categorize(waitType string) WaitCategory {
 	w := strings.ToUpper(waitType)
 	switch {
@@ -144,21 +132,18 @@ func categorize(waitType string) WaitCategory {
 	}
 }
 
-// waitDeltas converts two cumulative wait samples into per-second wait time
-// by category, the signal half of that time by category, and the share of
-// all wait time spent as signal wait — the time a task spent runnable after
-// its resource was ready, which is the DMV's own view of CPU pressure.
+// waitDeltas turns two cumulative samples into per-second wait time by
+// category, the signal part of it by category, and the overall signal share
+// (time runnable after the resource was ready — the DMV's view of CPU
+// pressure).
 //
-// wait_time_ms already includes signal_wait_time_ms, so byCategory is the
-// whole wait and signalByCategory is the part of it inside: subtract to get
-// the resource half. Keeping the signal time against the category that
-// waited, rather than folding all of it into WaitCPU, is what lets one bar
-// show both halves — a category whose waits are mostly signal is queueing
-// for CPU, and that is invisible once the two are summed elsewhere.
+// wait_time_ms includes signal_wait_time_ms, so resource time = byCategory -
+// signalByCategory. Keeping signal time per category, rather than folding it
+// into WaitCPU, lets one bar show both halves; a mostly-signal category is
+// queueing for CPU.
 //
-// A wait type present now but not in prev contributes nothing: the server
-// has been restarted, or the wait type has just appeared, and either way
-// its whole cumulative total is not a delta.
+// A wait type absent from prev contributes nothing (restart or new type): its
+// cumulative total isn't a delta.
 func waitDeltas(prev, cur waitSet, elapsed float64) (byCategory, signalByCategory [waitCategoryCount]float64, signalPct float64) {
 	if elapsed <= 0 {
 		return byCategory, signalByCategory, 0

@@ -9,8 +9,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/layout"
 )
 
-// newLatchTestApp builds an App with the widgets handleMouse touches on the
-// menu/toolbar row, plus one alert dialog to open from a button action.
+// newLatchTestApp builds an App with the menu/toolbar row widgets and one alert
+// dialog to open from a button.
 func newLatchTestApp() *App {
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 100, h: 30}
@@ -24,10 +24,9 @@ func newLatchTestApp() *App {
 	return a
 }
 
-// press/release drive handleMouse the way Run's loop does — syncDialogStack
-// runs between events, so a dialog opened on the press is already on the
-// stack when the release arrives. That is exactly what used to make the
-// release miss every latch owner.
+// testClickAt drives handleMouse as Run's loop does, with syncDialogStack
+// between events, so a dialog opened on the press is on the stack when the
+// release arrives.
 func (a *App) testClickAt(x, y int) {
 	a.handleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
 	a.syncDialogStack()
@@ -35,11 +34,8 @@ func (a *App) testClickAt(x, y int) {
 	a.syncDialogStack()
 }
 
-// A toolbar button whose action opens a dialog must not leave Toolbar's
-// mouseDragging latched. It used to: the release landed while the dialog was
-// on the stack, handleMouse returned early there, and Toolbar never saw it —
-// so the next fresh click read as a resend of the old gesture and the
-// button's action never fired.
+// A dialog-opening toolbar button must not leave Toolbar latched, or the next
+// click reads as a resend and does nothing.
 func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 	a := newLatchTestApp()
 
@@ -53,8 +49,8 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 	a.menuBar.SetBounds(0, 0, 100)
 	a.toolbar.SetBounds(0, 0, 100)
 
-	// One button — icon width 1 plus a pad column either side — right-aligned
-	// in a 100-column row, so it occupies columns 97..99.
+	// One button (icon width 1 plus a pad column each side), right-aligned in
+	// 100 columns: columns 97..99.
 	const buttonX = 98
 
 	a.testClickAt(buttonX, 0)
@@ -71,8 +67,8 @@ func TestToolbarClickWorksAfterDialogOpeningClick(t *testing.T) {
 	}
 }
 
-// Same latch, on the menu bar: a menu item whose action opens a dialog must
-// not stop the next click on a menu header from opening its dropdown.
+// Same latch on the menu bar: a dialog-opening item must not stop the next
+// header click opening its dropdown.
 func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 	a := newLatchTestApp()
 	a.menuBar.SetMenus([]controls.Menu{{

@@ -8,22 +8,18 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// agent_job_props.go builds the Job Properties dialog — General and
-// Targets pages here; Steps, Schedules, Alerts/Notifications, and History
-// each get their own file (agent_job_props_*.go), each being a grid-backed
-// page with its own pending-edit state.
+// agent_job_props.go builds Job Properties: General and Targets here; Steps,
+// Schedules, Alerts/Notifications and History each in their own
+// agent_job_props_*.go with their own pending-edit state.
 //
-// There is no Extended Properties page: SQL Server Agent jobs have no
-// native extended-properties mechanism.
+// No Extended Properties page: Agent jobs have none.
 
-// jobPropPages builds the page set for Job Properties. d is threaded
-// through for pages with immediate (non-Apply) actions — Steps' "Start at
-// Step" and History's "View Full History".
+// jobPropPages builds Job Properties' pages. d is passed to pages with
+// immediate actions (Steps' "Start at Step", History's "View Full History").
 func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
-	// name is a shared cell every page closes over. pageJobGeneral's
-	// rename is the last write of an Apply/OK run (see propPage.renames),
-	// and commitRename then updates the cell so PropDialog.InvalidateAll's
-	// reload re-fetches under the new name.
+	// name is shared by every page. pageJobGeneral's rename is the Apply's last
+	// write (see propPage.renames); commitRename then updates the cell so
+	// PropDialog.InvalidateAll's reload uses the new name.
 	name := &jobName
 	w := agentWriteRights()
 	return []propPage{
@@ -37,16 +33,14 @@ func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
 	}
 }
 
-// showJobPropertiesFor opens Job Properties for a known connection and job
-// name — the Object Explorer context menu's entry point. database is
-// "msdb" so Script Changes' generated query window opens there.
+// showJobPropertiesFor opens Job Properties from Object Explorer's context
+// menu. database is "msdb" so Script Changes' window opens there.
 func (a *App) showJobPropertiesFor(sc *db.ServerConn, jobName string) {
 	a.propDialog.show(sc, "msdb", "Job Properties", "Job: "+jobName, "Server: "+sc.Opts.Server,
 		func() []propPage { return jobPropPages(a.propDialog, sc, jobName) })
 }
 
-// findAgentJob wraps gosmo.Server.JobByNameContext so every page's
-// load/apply closure has one short name to call.
+// findAgentJob wraps gosmo.Server.JobByNameContext for page closures.
 func findAgentJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
 	return sc.Server.JobByNameContext(ctx, name)
 }
@@ -126,11 +120,9 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 						return err
 					}
 				}
-				// Renaming last keeps every write above addressed by the
-				// name the server still has — see propPage.renames.
-				// commitRename then updates the shared cell so the other
-				// pages, and any reload after this, re-fetch the job under
-				// its new name.
+				// Rename last so earlier writes use the server's current name
+				// (see propPage.renames); commitRename then updates the shared
+				// cell for other pages and reloads.
 				if nameRow.Dirty() {
 					if err := j.RenameContext(ctx, nameRow.Value()); err != nil {
 						return err
@@ -144,10 +136,8 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 	}
 }
 
-// pageJobTargets is a read-only page: this is a single-server (local)
-// implementation, so there's no target-server enlistment state to show
-// beyond the connection itself. Multi-server administration (MSX/TSX) is
-// out of scope.
+// pageJobTargets is read-only: single-server only; MSX/TSX multi-server
+// administration is out of scope.
 func pageJobTargets(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Targets",

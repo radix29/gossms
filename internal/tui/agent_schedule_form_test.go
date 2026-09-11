@@ -8,8 +8,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// schedule builds a *gosmo.Schedule carrying just the frequency fields, so
-// each round-trip case below reads as the msdb row it stands for.
+// schedule builds a *gosmo.Schedule with just the frequency fields.
 func schedule(ft gosmo.ScheduleFreqType, interval, relative, factor int,
 	sub gosmo.ScheduleSubdayType, subInterval int) *gosmo.Schedule {
 	return &gosmo.Schedule{
@@ -27,16 +26,10 @@ func schedule(ft gosmo.ScheduleFreqType, interval, relative, factor int,
 	}
 }
 
-// Schedule Properties loads a schedule into the form and writes it back
-// through readFrequency. The two halves are separate switches over FreqType
-// — populate decides which rows a stored value lands in, readFrequency
-// decides which rows a written value is read from — and only agree because
-// the index/value tables they share are inverses. A schedule opened and
-// OK'd without an edit must therefore come back byte-identical, or the page
-// silently rewrites the frequency: the classic form is FreqInterval, whose
-// meaning is FreqType-dependent (a weekday bitmask, a day of month, a
-// relative day code), so a mismatched pair turns "last weekday of the
-// month" into "the 16th" with no error anywhere.
+// populate and readFrequency are separate switches over FreqType sharing
+// inverse tables. A schedule opened and OK'd unedited must come back identical,
+// or FreqInterval (weekday bitmask, day of month, or relative day code) could
+// silently turn "last weekday of the month" into "the 16th".
 func TestScheduleFormPopulateReadFrequencyRoundTrips(t *testing.T) {
 	weekdays := gosmo.WeekdayMonday | gosmo.WeekdayWednesday | gosmo.WeekdayFriday
 
@@ -52,9 +45,7 @@ func TestScheduleFormPopulateReadFrequencyRoundTrips(t *testing.T) {
 			FreqSubdayType: gosmo.SubdayMinutes, FreqSubdayInterval: 30,
 		},
 	}, {
-		// FreqInterval is a weekday bitmask here and nothing else — the one
-		// case where losing it produces a schedule that still runs, just on
-		// the wrong days.
+		// Weekly bitmask: losing it still runs, on the wrong days.
 		name: "weekly Mon/Wed/Fri, every 2 weeks",
 		sch:  schedule(gosmo.FreqWeekly, weekdays, 0, 2, gosmo.SubdayOnce, 1),
 		want: gosmo.ScheduleFrequency{
@@ -71,8 +62,8 @@ func TestScheduleFormPopulateReadFrequencyRoundTrips(t *testing.T) {
 			FreqSubdayType:       gosmo.SubdayHours, FreqSubdayInterval: 4,
 		},
 	}, {
-		// Two coupled codes, read from two different Select rows: the
-		// relative occurrence and the relative day both have to survive.
+		// Relative occurrence and relative day come from two Selects; both must
+		// survive.
 		name: "last weekday of every month",
 		sch: schedule(gosmo.FreqMonthlyRelative, gosmo.RelativeDayWeekday,
 			gosmo.RelativeLast, 1, gosmo.SubdaySeconds, 45),
@@ -82,17 +73,14 @@ func TestScheduleFormPopulateReadFrequencyRoundTrips(t *testing.T) {
 			FreqSubdayType: gosmo.SubdaySeconds, FreqSubdayInterval: 45,
 		},
 	}, {
-		// The three FreqTypes with no recurrence of their own. populate
-		// still fills the recurs-every and day-of-month rows with in-range
-		// defaults, and readFrequency must ignore both rather than write
-		// those defaults out as a real interval.
+		// FreqTypes without recurrence: populate fills recurs-every and
+		// day-of-month with defaults, which readFrequency must ignore.
 		name: "once",
 		sch:  schedule(gosmo.FreqOnce, 0, 0, 0, gosmo.SubdayOnce, 0),
 		want: gosmo.ScheduleFrequency{
 			FreqType: gosmo.FreqOnce,
-			// atLeast1: a stored 0 is below the spinner's declared minimum,
-			// so populate shows 1 and 1 is what comes back. Deliberate, and
-			// harmless — SubdayOnce ignores the interval.
+			// atLeast1 shows a stored 0 as 1, so 1 comes back; harmless,
+			// SubdayOnce ignores it.
 			FreqSubdayType: gosmo.SubdayOnce, FreqSubdayInterval: 1,
 		},
 	}, {
@@ -122,19 +110,12 @@ func TestScheduleFormPopulateReadFrequencyRoundTrips(t *testing.T) {
 	}
 }
 
-// populate is the post-load setter, so every row it touches must come back
-// clean. Schedule Properties gates its two writes on frequencyDirty() and
-// rangeDirty() precisely so that opening a schedule and pressing OK writes
-// nothing; a row whose setter left it dirty would make every OK issue an
-// sp_update_schedule, rewriting the frequency from the form's own
-// re-encoding of it. That is not a no-op even when the encoding round-trips:
-// it restamps date_modified, and on the FreqTypes where populate
-// substitutes an in-range default for an irrelevant stored field, it writes
-// the default back as fact.
+// Every row populate touches must be clean, or every OK issues an
+// sp_update_schedule (restamping date_modified, and writing substituted
+// defaults as fact).
 //
-// weekdaysGrid is the one to watch — it is filled through SetRows rather
-// than a SetValue, so it needs its own baseline reset, and it is the only
-// row here that carries a matrix rather than a scalar.
+// weekdaysGrid is filled via SetRows, not SetValue, so it needs its own
+// baseline reset.
 func TestScheduleFormPopulateLeavesEveryRowClean(t *testing.T) {
 	cases := []*gosmo.Schedule{
 		schedule(gosmo.FreqDaily, 3, 0, 0, gosmo.SubdayMinutes, 30),
@@ -155,11 +136,8 @@ func TestScheduleFormPopulateLeavesEveryRowClean(t *testing.T) {
 	}
 }
 
-// The two dirty predicates gate two independent writes, so each must answer
-// only for its own rows. Were either to widen to the whole form, editing a
-// start time would also write the frequency — and on a FreqType whose
-// stored FreqInterval populate deliberately replaced with a default, that
-// write is a real change to the schedule.
+// Each dirty predicate covers only its own rows; overlap would make a
+// start-time edit rewrite the frequency (including substituted defaults).
 func TestScheduleFormDirtyPredicatesDoNotOverlap(t *testing.T) {
 	freqRows := func(f *scheduleFreqForm) { f.recurEveryField.Paste("7") }
 	rangeRows := func(f *scheduleFreqForm) { f.startTimeField.Paste("06:30:00") }
@@ -186,12 +164,8 @@ func TestScheduleFormDirtyPredicatesDoNotOverlap(t *testing.T) {
 	}
 }
 
-// readActiveRange is the other half of the load/write pair, over msdb's two
-// encodings: HHMMSS-as-an-integer for the times, and a zero Time meaning
-// "no end date" for the dates. The end date is the one with a second
-// source of truth — the "No end date" checkbox — and the checkbox wins, so
-// a schedule that had an end date, then had the box ticked, must write the
-// zero Time rather than the date still sitting in the field.
+// readActiveRange handles HHMMSS integers and zero-Time-for-no-end-date. The
+// "No end date" checkbox wins over a date still in the field.
 func TestScheduleFormActiveRangeRoundTrips(t *testing.T) {
 	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -240,17 +214,12 @@ func TestScheduleFormActiveRangeRoundTrips(t *testing.T) {
 	})
 }
 
-// The Occurs/weekday/relative/subday dropdowns are each a pair of parallel
-// slices: the labels the user picks from, and the msdb codes at the same
-// indices. A round-trip through the form cannot see a fault here, because
-// both halves read the same pair — swap two entries in weekdayBits and
-// populate/readFrequency still agree, while the checkbox labelled Monday
-// now sets Tuesday's bit. Only naming the pairs pins them.
+// Each dropdown is parallel label/code slices. Round trips can't see a swap
+// (populate and readFrequency agree), yet Monday's box would set Tuesday's bit;
+// only naming the pairs pins them.
 //
-// The length checks are the other half: a label added to one slice and not
-// the other is silently absorbed. A short value slice makes the bounds
-// guards in readFrequency drop the selection and write a zero code, and a
-// short label slice hides a real option from the dropdown entirely.
+// Lengths must match: a short value slice drops the selection to a zero code, a
+// short label slice hides an option.
 func TestScheduleDropdownLabelsMatchTheirCodes(t *testing.T) {
 	t.Run("occurs", func(t *testing.T) {
 		want := map[string]gosmo.ScheduleFreqType{
@@ -333,11 +302,8 @@ func checkLen(t *testing.T, name string, labels, values int) {
 	}
 }
 
-// defaultWeekdayMask stands in for a weekday selection that isn't known, on
-// every FreqType where weekdays don't apply. It is written out verbatim
-// whenever the user switches a schedule to Weekly, so it has to be the
-// Mon-Fri its name and comment claim — a mask that quietly included Sunday
-// would put a "weekdays only" job on the weekend.
+// defaultWeekdayMask is written verbatim when switching to Weekly, so it must
+// be exactly Mon-Fri.
 func TestDefaultWeekdayMaskIsMondayToFriday(t *testing.T) {
 	f := newScheduleFreqForm()
 	f.setWeekdayGrid(defaultWeekdayMask)
@@ -352,11 +318,8 @@ func TestDefaultWeekdayMaskIsMondayToFriday(t *testing.T) {
 	}
 }
 
-// readActiveRange parses its four fields with the error ignored, falling
-// back to 00:00:00 for a time and "no end date" for a date. That is only
-// safe because Form.Validate has already rejected a malformed field, so
-// these validators are the thing standing between a typo and a schedule
-// silently rewritten to run at midnight forever.
+// readActiveRange ignores parse errors (00:00:00, no end date), safe only
+// because Form.Validate rejects bad fields first.
 func TestScheduleFormClockAndDateValidators(t *testing.T) {
 	for _, tc := range []struct {
 		in string
@@ -379,8 +342,8 @@ func TestScheduleFormClockAndDateValidators(t *testing.T) {
 		ok bool
 	}{
 		{"2026-03-01", true},
-		// Empty is valid on purpose: parseAgentDate maps it to the zero
-		// Time, which is how "no end date" is spelled.
+		// Empty is valid: parseAgentDate maps it to the zero Time ("no end
+		// date").
 		{"", true},
 		{"2026-13-01", false}, {"01-03-2026", false}, {"tomorrow", false},
 	} {
@@ -390,24 +353,17 @@ func TestScheduleFormClockAndDateValidators(t *testing.T) {
 	}
 }
 
-// Every row scheduleFreqForm holds is either spliced into the form by
-// rows() or placed by the caller in its own identity section — there is no
-// third option. A field added to the struct and wired into readFrequency
-// but forgotten in rows() is invisible and uneditable, yet still written on
-// every Apply, so it pins the schedule to whatever the constructor
-// defaulted it to. Walking the struct by reflection is the point: a test
-// listing the rows by hand would be updated in the same edit that forgot
-// the row.
+// Every row is either in rows() or placed by the caller. A row in readFrequency
+// but not rows() is invisible yet written on every Apply. Reflection, because a
+// hand list would be updated in the same edit that forgot the row.
 func TestEveryScheduleFormRowIsReachable(t *testing.T) {
-	// nameField and enabledCheck are deliberately not in rows() — Schedule
-	// Properties and New Schedule each place them in their own identity
-	// section, alongside an Owner row that only one of them has.
+	// nameField and enabledCheck are placed by each caller in its identity
+	// section.
 	placedByCaller := map[string]bool{"nameField": true, "enabledCheck": true}
 
 	f := newScheduleFreqForm()
-	// Identity is compared by address, not by interface value: every field
-	// of scheduleFreqForm is unexported, and reflect refuses Interface() on
-	// those. Pointer() is allowed, and each row is a distinct pointer.
+	// Compared by address: fields are unexported, so reflect refuses
+	// Interface() but allows Pointer().
 	inRows := make(map[uintptr]bool)
 	for _, r := range f.rows() {
 		if rv := reflect.ValueOf(r); rv.Kind() == reflect.Ptr {

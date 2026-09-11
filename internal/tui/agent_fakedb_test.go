@@ -5,35 +5,30 @@ import (
 	"time"
 )
 
-// Shared fixtures for the SQL Server Agent Properties pages — Job, Alert,
-// Operator and Schedule.
+// Shared fixtures for the Agent Properties pages (Job, Alert, Operator,
+// Schedule).
 //
-// Everything msdb is addressed three-part (EXEC msdb.dbo.sp_update_job), never
-// through a USE, so every write here lands on a connection pinned to no
-// database and is read back with Statements(), not StatementsIn("msdb"). A
-// test that reached for the latter would assert on an empty slice.
+// msdb is always addressed three-part (EXEC msdb.dbo.sp_update_job), never via
+// USE, so writes are read back with Statements(), not StatementsIn("msdb")
+// (which would be empty).
 //
-// Every list is scripted with more than one entry and every test acts on an
-// entry that is neither first nor last, because the failure these pages
-// actually produce is a write addressed to the neighbouring object: an alert
-// pointed at the wrong job, a notification added for the wrong operator, a
-// step deleted at the wrong step_id.
+// Every list has several entries and tests act on a middle one, because these
+// pages' real failure is writing to the neighbouring object.
 
 const (
 	agentJobName      = "Nightly reindex"
 	agentAlertName    = "Sev 20 errors"
 	agentOperatorName = "reporting"
 	agentScheduleName = "Hourly"
-	// agentScheduleID is deliberately not 1: sp_update_schedule addresses a
-	// schedule by id, so a page that lost the one it loaded and fell back to a
-	// zero value would still produce a statement that looks right.
+	// agentScheduleID is not 1: sp_update_schedule addresses by id, so a page
+	// falling back to a zero value would still look right.
 	agentScheduleID = 7
 )
 
 var agentEpoch = time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC)
 
-// jobRow is one row of the 17-column job SELECT that both JobsContext and
-// JobByNameContext scan.
+// jobRow is one row of the 17-column job SELECT used by JobsContext and
+// JobByNameContext.
 func jobRow(name, category, owner string, enabled bool, deleteLevel, notifyLevel int64, operator string) []driver.Value {
 	return []driver.Value{
 		"job-" + name, name, "Rebuilds every index",
@@ -44,10 +39,9 @@ func jobRow(name, category, owner string, enabled bool, deleteLevel, notifyLevel
 	}
 }
 
-// agentJobResponses answers the job reads. The by-name read is scripted ahead
-// of the list read on purpose: the two queries differ only by a WHERE clause,
-// so behind the list answer every by-name lookup would resolve to whichever
-// job sorts first — the same trap DatabaseByName has (see fakeResponse.arg).
+// agentJobResponses answers job reads. The by-name read is scripted before the
+// list read: they differ only by WHERE, so otherwise every by-name lookup would
+// resolve to the first job (see fakeResponse.arg).
 func agentJobResponses(job []driver.Value) []fakeResponse {
 	return []fakeResponse{
 		{match: "WHERE  j.name = @p1", cols: 17, rows: [][]driver.Value{job}},
@@ -58,9 +52,9 @@ func agentJobResponses(job []driver.Value) []fakeResponse {
 	}
 }
 
-// agentCategoryResponse answers CategoriesContext for every class — the class
-// is an int parameter, and fakeResponse.arg only discriminates strings, so one
-// answer serves all three. No page loads two classes at once.
+// agentCategoryResponse answers CategoriesContext for every class (an int
+// parameter, which fakeResponse.arg can't discriminate). No page loads two
+// classes.
 func agentCategoryResponse() fakeResponse {
 	return fakeResponse{match: "FROM   msdb.dbo.syscategories", cols: 2, rows: [][]driver.Value{
 		{int64(1), "Database Maintenance"},
@@ -102,10 +96,9 @@ func alertRow(id int64, name string, severity int64, jobName, source string) []d
 	}
 }
 
-// agentAlertResponses scripts three alerts, one of which is a WMI alert that
-// EventAlerts must filter out — the Job Alerts page indexes its edit slice
-// against the filtered list, so a page reading back against the unfiltered one
-// writes to the alert one row over.
+// agentAlertResponses scripts three alerts, one WMI that EventAlerts filters
+// out; the Job Alerts page indexes against the filtered list, so using the
+// unfiltered one hits the wrong alert.
 func agentAlertResponses() []fakeResponse {
 	rows := [][]driver.Value{
 		alertRow(11, "Sev 17 errors", 17, "Backup log", "MSSQLSERVER"),
@@ -132,8 +125,8 @@ func scheduleRow(id int64, name string, freqType, freqInterval, recurrence int64
 	}
 }
 
-// agentScheduleResponses scripts three shared schedules, of which the job is
-// attached to the first only.
+// agentScheduleResponses scripts three shared schedules; the job uses only the
+// first.
 func agentScheduleResponses() []fakeResponse {
 	all := [][]driver.Value{
 		scheduleRow(3, "Daily 01:00", 4, 1, 0, "appuser"),
@@ -147,8 +140,8 @@ func agentScheduleResponses() []fakeResponse {
 	}
 }
 
-// agentDatabaseListResponse is the database dropdown behind a job step and an
-// alert's scope.
+// agentDatabaseListResponse is the database dropdown for job steps and alert
+// scope.
 func agentDatabaseListResponse() fakeResponse {
 	return fakeResponse{match: "FROM sys.databases", cols: 9, rows: [][]driver.Value{
 		{"master", int64(1), "ONLINE", "SIMPLE", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, agentEpoch, int64(0)},

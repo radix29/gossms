@@ -7,14 +7,12 @@ import (
 	"testing"
 )
 
-// The "Jobs Without Schedules" report fetches each job's schedules
-// individually, so one job's read can fail while the rest succeed — the arm
-// that lists it as "Unknown" rather than dropping it. A live server has no way
-// to produce that: it answers every job or none. fakeResponse.err scoped by
-// arg is the seam.
+// Jobs Without Schedules reads each job separately, so one can fail while
+// others succeed; a live server can't produce that, so fakeResponse.err scoped
+// by arg does.
 
-// jobSchedulesResponses answers Job.SchedulesContext. failFor, if non-empty,
-// is the job_id whose read fails; every other job is answered with schedules.
+// jobSchedulesResponses answers Job.SchedulesContext; failFor, if set, is the
+// job_id whose read fails.
 func jobSchedulesResponses(failFor string, withSchedule ...string) []fakeResponse {
 	const match = "WHERE  js.job_id = @p1"
 	var out []fakeResponse
@@ -25,7 +23,7 @@ func jobSchedulesResponses(failFor string, withSchedule ...string) []fakeRespons
 		out = append(out, fakeResponse{match: match, arg: id, cols: 16,
 			rows: [][]driver.Value{scheduleRow(3, "Daily 01:00", 4, 1, 0, "appuser")}})
 	}
-	// Everything left over has no schedule at all.
+	// Remaining jobs have no schedule.
 	out = append(out, fakeResponse{match: match, cols: 16})
 	return out
 }
@@ -41,11 +39,9 @@ func reportRow(t *testing.T, rows [][]string, name string) []string {
 	return nil
 }
 
-// TestJobsWithoutSchedulesListsAFailedJobAsUnknown drives the three outcomes
-// the report distinguishes in one run: a job with a schedule is omitted, a job
-// with none reads "None", and the job whose read failed reads "Unknown"
-// instead of being dropped — dropping it is the failure the arm exists to
-// prevent, and it is indistinguishable from "all fine".
+// One run covers all three outcomes: a scheduled job is omitted, an unscheduled
+// one reads "None", a failed read reads "Unknown" (dropping it would look like
+// all fine).
 func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 	responses := append([]fakeResponse{
 		{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{
@@ -85,10 +81,8 @@ func TestJobsWithoutSchedulesListsAFailedJobAsUnknown(t *testing.T) {
 	}
 }
 
-// TestJobsWithoutSchedulesReportsCancellation is the other half of the same
-// arm: when the context is gone, every remaining job's read fails, and a
-// report claiming every job is unverifiable is worse than the cancellation
-// itself.
+// With the context gone, report the cancellation rather than every job as
+// unverifiable.
 func TestJobsWithoutSchedulesReportsCancellation(t *testing.T) {
 	sc, _ := newFakeConn(t,
 		fakeResponse{match: "FROM   msdb.dbo.sysjobs j", cols: 17, rows: [][]driver.Value{

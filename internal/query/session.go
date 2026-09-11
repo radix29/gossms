@@ -9,38 +9,33 @@ import (
 	"time"
 )
 
-// Session is one SQL Server session held for as long as its owner wants it —
-// what an SSMS query window runs on. Every Execute on it lands on the same
-// session, so a temp table, a SET option, an open transaction or a USE left by
-// one run is still there for the next.
+// Session is one SQL Server session held as long as its owner wants — what an
+// SSMS query window runs on. Temp tables, SET options, open transactions and
+// USE persist between runs.
 //
-// The package-level Execute functions cannot give that: each checks a
-// connection out of the pool and returns it, and database/sql marks a returned
-// connection for reset, which go-mssqldb carries out on the next checkout by
-// setting the TDS reset-connection bit on the first batch — every SET option
-// back to the login default, temp tables dropped, an open transaction rolled
-// back. The pool reuses the most recently returned connection first, so the
-// next Execute usually lands on the very session it just reset; when it lands
-// on another, the first sits idle holding the transaction's locks.
+// Package-level Execute can't do that: database/sql marks a returned connection
+// for reset, and go-mssqldb sets the TDS reset-connection bit on its next use —
+// SET options to login defaults, temp tables dropped, open transactions rolled
+// back. If the next Execute lands on another connection, the first sits idle
+// holding the transaction's locks.
 //
-// A Session runs one call at a time; its owner must not start a run while
-// another is in flight. Close may be called from any goroutine.
+// One run at a time; the owner must not overlap runs. Close is safe from any
+// goroutine.
 type Session struct {
 	conn *sql.Conn
 	spid int
 
-	// lost is set once the session is known to be unusable. Atomic because
-	// Close can come from a goroutine other than the one running.
+	// lost is set once the session is known unusable. Atomic because Close can
+	// run on another goroutine.
 	lost atomic.Bool
 }
 
 // SessionState is what a query window shows of its session between runs.
 type SessionState struct {
-	// Database is DB_NAME() — where the next run starts, a mid-script USE
-	// included.
+	// Database is DB_NAME(): where the next run starts.
 	Database string
 
-	// TranCount is @@TRANCOUNT: non-zero means a transaction is open, which
+	// TranCount is @@TRANCOUNT; non-zero means an open transaction, which
 	// closing the session rolls back.
 	TranCount int
 }
@@ -48,20 +43,17 @@ type SessionState struct {
 // ErrSessionLost is what a run on a lost Session reports instead of running.
 var ErrSessionLost = errors.New("the session's connection to the server was lost")
 
-// stateReadTimeout bounds the read of DB_NAME()/@@TRANCOUNT after each run.
-// It runs even when the run was cancelled, so it cannot use the run's ctx.
+// stateReadTimeout bounds the post-run DB_NAME()/@@TRANCOUNT read, which also
+// runs after a cancelled run, so can't use the run's ctx.
 const stateReadTimeout = 5 * time.Second
 
-// stateQuery reads a session's state. @@SPID is fixed for its lifetime, and
-// read here only because Open needs it from the same round trip.
+// stateQuery reads a session's state; @@SPID is only needed by Open.
 const stateQuery = "SELECT @@SPID, DB_NAME(), @@TRANCOUNT"
 
 // Open checks a connection out of db for the Session's exclusive use, in
-// database if non-empty (else wherever the login lands), and reads its SPID
-// and starting state. The connection never goes back to db: Close discards it.
-//
-// A dead pooled connection is retried against a fresh one, as for Execute —
-// see acquireConn.
+// database if non-empty, and reads its SPID and state. The connection is never
+// returned to db; Close discards it. A dead pooled connection is retried (see
+// acquireConn).
 func Open(ctx context.Context, db *sql.DB, database string) (*Session, SessionState, error) {
 	conn, err := acquireConn(ctx, db, database)
 	if err != nil {
@@ -76,34 +68,33 @@ func Open(ctx context.Context, db *sql.DB, database string) (*Session, SessionSt
 	return s, st, nil
 }
 
-// SPID is the session's server process id, @@SPID — what SSMS shows in
-// brackets after the login.
+// SPID is @@SPID, which SSMS shows in brackets after the login.
 func (s *Session) SPID() int { return s.spid }
 
-// Lost reports whether the session is known to be unusable. Only a run, or
-// Close, finds that out.
+// Lost reports whether the session is known unusable; only a run or Close finds
+// out.
 func (s *Session) Lost() bool { return s.lost.Load() }
 
-// Execute is the package-level Execute on this session: no USE is issued, the
-// script runs wherever the session currently is.
+// Execute is the package-level Execute on this session, without USE: the script
+// runs wherever the session is.
 func (s *Session) Execute(ctx context.Context, script string, opts ...Option) *Result {
 	return s.execute(ctx, script, planCaptureNone, nil, opts...)
 }
 
-// ExecuteWithPlan is Execute with the actual plan captured — see the
+// ExecuteWithPlan is Execute with the actual plan captured; see the
 // package-level ExecuteWithPlan.
 func (s *Session) ExecuteWithPlan(ctx context.Context, script string, opts ...Option) *Result {
 	return s.execute(ctx, script, planCaptureActual, nil, opts...)
 }
 
-// ExecuteEstimatedPlan compiles script without running it — see the
-// package-level ExecuteEstimatedPlan.
+// ExecuteEstimatedPlan compiles script without running it; see the
+// package-level version.
 func (s *Session) ExecuteEstimatedPlan(ctx context.Context, script string) *Result {
 	return s.execute(ctx, script, planCaptureEstimated, nil)
 }
 
-// ExecuteToSink is Execute streaming its rows to sink — see the package-level
-// ExecuteToSink.
+// ExecuteToSink is Execute streaming rows to sink; see the package-level
+// version.
 func (s *Session) ExecuteToSink(ctx context.Context, script string, sink RowSink, opts ...Option) *Result {
 	return s.execute(ctx, script, planCaptureNone, sink, opts...)
 }
@@ -121,9 +112,8 @@ func (s *Session) execute(ctx context.Context, script string, capture planCaptur
 
 	ran, cleanupErr := runScript(ctx, s.conn, script, capture, sink, res)
 	if cleanupErr != nil {
-		// Unlike a pooled connection, nothing resets this one: a
-		// SHOWPLAN_XML left on would turn every later Execute into a plan
-		// fetch that runs nothing. The session has to go.
+		// Nothing resets this connection, so a SHOWPLAN_XML left on would make
+		// every later run a plan fetch. The session has to go.
 		res.addError(cleanupErr)
 		s.markLost()
 	}
@@ -131,8 +121,8 @@ func (s *Session) execute(ctx context.Context, script string, capture planCaptur
 		res.Messages = append(res.Messages, cancelledMessage)
 	}
 
-	// After runScript's deferred SET ... OFF, never before: under
-	// SHOWPLAN_XML the read would come back as a showplan document.
+	// After runScript's deferred SET ... OFF: under SHOWPLAN_XML the read would
+	// return a showplan document.
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stateReadTimeout)
 	defer cancel()
 	if st, err := s.readState(sctx); err == nil {
@@ -161,11 +151,10 @@ func (s *Session) readState(ctx context.Context) (SessionState, error) {
 	return st, err
 }
 
-// EndTransactions commits or rolls back every transaction open on the session
-// — what a query window does when it is closed with one open and the user
-// answers the "commit these transactions?" prompt. Nested BEGIN TRANs need one
-// COMMIT each; the loop is bounded by the count at the start, so a COMMIT that
-// fails ends it with the error rather than spinning.
+// EndTransactions commits or rolls back every open transaction — what closing a
+// query window does after the "commit these transactions?" prompt. Nested BEGIN
+// TRANs need one COMMIT each; the loop is bounded by the starting count, so a
+// failing COMMIT ends it with the error.
 func (s *Session) EndTransactions(ctx context.Context, commit bool) error {
 	if s.lost.Load() {
 		return ErrSessionLost
@@ -186,10 +175,9 @@ func (s *Session) EndTransactions(ctx context.Context, commit bool) error {
 	return err
 }
 
-// alive reports whether the driver still considers the connection usable —
-// go-mssqldb clears its connectionGood flag on any I/O or protocol failure,
-// a killed session or a failover included. A connection database/sql has
-// already closed (it does on driver.ErrBadConn) reports sql.ErrConnDone here.
+// alive reports whether the driver considers the connection usable (go-mssqldb
+// clears connectionGood on I/O or protocol failure, killed session, failover).
+// A connection database/sql already closed reports sql.ErrConnDone.
 func (s *Session) alive() bool {
 	return s.conn.Raw(func(dc any) error {
 		if v, ok := dc.(driver.Validator); ok && !v.IsValid() {
@@ -201,18 +189,16 @@ func (s *Session) alive() bool {
 
 func (s *Session) markLost() { s.lost.Store(true) }
 
-// Close ends the session. The connection is discarded rather than returned to
-// the pool — returned, it would sit idle with the session's open transaction
-// and its locks until the pool happened to reuse or expire it; discarded, the
-// server rolls the transaction back as the session ends.
+// Close ends the session. The connection is discarded, not pooled: pooled, it
+// would sit idle holding the open transaction's locks; discarded, the server
+// rolls it back.
 //
-// Close waits for a run still in flight to return, so cancel that run first,
-// and call Close off the UI goroutine if it may be one. Safe to call more than
-// once.
+// Close waits for an in-flight run, so cancel it first and call Close off the
+// UI goroutine if needed. Idempotent.
 func (s *Session) Close() {
 	s.markLost()
-	// A driver.ErrBadConn out of Raw is database/sql's one way to have a
-	// connection closed instead of pooled. Raw on a Conn already closed
-	// returns sql.ErrConnDone and does nothing, which is the idempotence.
+	// driver.ErrBadConn from Raw is database/sql's way to close rather than
+	// pool a connection. Raw on a closed Conn returns sql.ErrConnDone, giving
+	// idempotence.
 	_ = s.conn.Raw(func(any) error { return driver.ErrBadConn })
 }

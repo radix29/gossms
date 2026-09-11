@@ -2,10 +2,9 @@ package activity
 
 import "time"
 
-// Sample is one interval's worth of activity: the gauges as read, and every
-// cumulative counter converted into a per-second rate against the previous
-// snapshot. This is what both dashboards draw — History plots a series of
-// Samples, Sample draws the newest one.
+// Sample is one interval's activity: gauges as read, cumulative counters as
+// per-second rates against the previous snapshot. History plots a series of
+// Samples; Sample draws the newest.
 type Sample struct {
 	At       time.Time
 	Interval time.Duration
@@ -24,9 +23,9 @@ type Sample struct {
 
 	// SQL SERVER WAITS: milliseconds of wait per second, by category.
 	Waits [waitCategoryCount]float64
-	// WaitsSignal is the signal-wait part of Waits, category by category —
-	// time already counted in Waits, not extra time. Waits[i]-WaitsSignal[i]
-	// is the resource half, which is how the Sample tab splits each bar.
+	// WaitsSignal is the signal-wait part of Waits (included in it, not extra).
+	// Waits[i]-WaitsSignal[i] is the resource part, as the Sample tab splits
+	// each bar.
 	WaitsSignal   [waitCategoryCount]float64
 	CPUPctOfWaits float64
 
@@ -51,32 +50,27 @@ type Sample struct {
 	// CPU pressure, from the schedulers.
 	Sched SchedStats
 
-	// Host CPU split, from the scheduler-monitor ring buffer. Gauges, not
-	// rates: the ring buffer already reports percentages.
+	// Host CPU split from the scheduler-monitor ring buffer; gauges, already
+	// percentages.
 	CPU CPUUsage
 
-	// Detail carries the parts of a sample too large to keep for the whole
-	// retention window: the per-database I/O breakdown and the memory
-	// composition. Store drops it from all but the most recent samples, so
-	// anything drawn from the whole window must come from the fields above.
+	// Detail holds data too large to keep for the whole retention window:
+	// per-database I/O and memory composition. Store drops it from all but the
+	// newest samples, so whole-window charts must use the fields above.
 	Detail *SampleDetail
 }
 
-// SampleDetail is the full-fidelity part of a Sample. See Sample.Detail.
+// SampleDetail is the full-fidelity part of a Sample; see Sample.Detail.
 type SampleDetail struct {
 	PerDatabaseIO []FileIO
 	Memory        []MemoryComponent
-	// Load is the per-scheduler load factor, one entry per visible online
-	// CPU. Kept here rather than on the Sample because its width is the
-	// server's core count, which on a large box is more per sample than the
-	// retention window can afford.
+	// Load is per-scheduler load factor, one entry per visible online CPU. Kept
+	// in Detail because its width is the core count.
 	Load []SchedulerLoad
 }
 
-// Derive turns two consecutive snapshots into one Sample. prev may be nil —
-// the first tick after the panel opens has nothing to compare against — in
-// which case only the gauges are populated and every rate reads zero, which
-// is what the first column of a fresh history chart should show.
+// Derive turns two consecutive snapshots into a Sample. prev may be nil (first
+// tick): only gauges are set and every rate is zero.
 func Derive(prev, cur *Snapshot) Sample {
 	var prevCounters counterSet
 	var prevWaits waitSet
@@ -96,8 +90,7 @@ func Derive(prev, cur *Snapshot) Sample {
 	s.TransactionsSec = c.value(prevCounters, objDatabases, "Transactions/sec", totalInstance, elapsed)
 	s.IndexSearchSec = c.value(prevCounters, objAccessMeth, "Index Searches/sec", "", elapsed)
 	s.ForwardedRecSec = c.value(prevCounters, objAccessMeth, "Forwarded Records/sec", "", elapsed)
-	// The backup counter is bytes per second, like every other throughput
-	// counter in the Databases object.
+	// The backup counter is bytes per second.
 	s.BackupMBSec = c.value(prevCounters, objDatabases, "Backup/Restore Throughput/sec", totalInstance, elapsed) / bytesPerMB
 	s.UserConnections = c.value(prevCounters, objGeneralStats, "User Connections", "", elapsed)
 	s.BlockedProcs = c.value(prevCounters, objGeneralStats, "Processes blocked", "", elapsed)

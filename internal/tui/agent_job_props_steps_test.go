@@ -9,9 +9,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// sampleJobStep is a fully-populated T-SQL step, so a field dropped
-// anywhere in the edit/request path shows up as a zero rather than
-// coinciding with the sample's value.
+// sampleJobStep has every field set, so a dropped field shows as zero.
 func sampleJobStep() *gosmo.JobStep {
 	return &gosmo.JobStep{
 		StepID: 2, Name: "Rebuild indexes", Subsystem: tsqlSubsystem,
@@ -23,10 +21,7 @@ func sampleJobStep() *gosmo.JobStep {
 	}
 }
 
-// jobStepEditFromStep seeds both the live fields and their orig mirrors, so
-// a step loaded and not touched must report itself unchanged — the Steps
-// page's apply skips on !changed(), and a step that reported itself dirty
-// on load would be rewritten through sp_update_jobstep on every OK.
+// A loaded, untouched step must be unchanged, or apply rewrites it on every OK.
 func TestJobStepEditFromStepIsUnchangedAndCarriesEveryField(t *testing.T) {
 	s := sampleJobStep()
 	e := jobStepEditFromStep(s)
@@ -53,13 +48,9 @@ func TestJobStepEditFromStepIsUnchangedAndCarriesEveryField(t *testing.T) {
 	}
 }
 
-// changed() gates the whole update pass, so a field that request() sends
-// but changed() doesn't watch is one the user can edit and never save —
-// silently, with the page showing the new value and the server keeping the
-// old. The pairing is checked by reflection as well as by the table: every
-// field of jobStepEdit that has an orig<Name> mirror is one changed() is
-// meant to compare, so adding a field and its mirror without extending
-// changed() fails here rather than in production.
+// A field request() sends but changed() ignores can be edited but never saved.
+// Also checked by reflection: every field with an orig<Name> mirror must be
+// compared.
 func TestJobStepChangedWatchesEveryMirroredField(t *testing.T) {
 	edits := map[string]func(*jobStepEdit){
 		"name":            func(e *jobStepEdit) { e.name = "other" },
@@ -74,7 +65,7 @@ func TestJobStepChangedWatchesEveryMirroredField(t *testing.T) {
 		"outputFileName":  func(e *jobStepEdit) { e.outputFileName = "" },
 	}
 
-	// Every mirrored field must be in the table above.
+	// Every mirrored field must be in the table.
 	v := reflect.ValueOf(jobStepEdit{})
 	mirrored := map[string]bool{}
 	for i := range v.NumField() {
@@ -106,12 +97,9 @@ func TestJobStepChangedWatchesEveryMirroredField(t *testing.T) {
 	}
 }
 
-// Blanking the output file is a real edit, not a no-op: gosmo sends
-// @output_file_name on every update precisely so an empty value clears the
-// column. Database is the opposite — empty means "leave the step's own
-// alone" — which is why the dropdown's sentinel maps to "" rather than to a
-// database name. The two empty strings mean opposite things, so the one
-// that must still register as a change is pinned on its own.
+// Blanking the output file is a change (gosmo sends @output_file_name so empty
+// clears it); an empty Database means "leave it". The two empties mean opposite
+// things.
 func TestJobStepBlankingTheOutputFileIsAChange(t *testing.T) {
 	e := jobStepEditFromStep(sampleJobStep())
 	e.outputFileName = ""
@@ -123,10 +111,8 @@ func TestJobStepBlankingTheOutputFileIsAChange(t *testing.T) {
 	}
 }
 
-// editable is what keeps a non-T-SQL step out of the update pass entirely.
-// JobStepRequest carries a subsystem, so writing a CmdExec or PowerShell
-// step back through this page's T-SQL-only form would hand its old command
-// text to the query processor as T-SQL.
+// editable keeps non-T-SQL steps out of updates; writing them back would run
+// their command as T-SQL.
 func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 	for _, tc := range []struct {
 		subsystem string
@@ -137,8 +123,7 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 		{"CmdExec", false, false},
 		{"PowerShell", false, false},
 		{"SSIS", false, false},
-		// New steps this page creates are always T-SQL, and are editable
-		// before their subsystem field is consulted at all.
+		// New steps are T-SQL and editable.
 		{"", true, true},
 		{"CmdExec", true, true},
 	} {
@@ -149,10 +134,8 @@ func TestJobStepEditableIsTSQLOrNew(t *testing.T) {
 	}
 }
 
-// A step created by the New button carries no subsystem of its own, and
-// sp_add_jobstep would reject an empty @subsystem. request() supplies the
-// default; a loaded step's own subsystem must survive untouched, or an
-// update would rewrite it.
+// A New step has no subsystem and sp_add_jobstep rejects an empty one, so
+// request() defaults it; a loaded step's subsystem must survive.
 func TestJobStepRequestSubsystemDefaultsToTSQLOnly(t *testing.T) {
 	if got := (&jobStepEdit{isNew: true}).request().Subsystem; got != tsqlSubsystem {
 		t.Errorf("a new step's request Subsystem = %q, want %q", got, tsqlSubsystem)
@@ -171,14 +154,9 @@ func TestStepNumberText(t *testing.T) {
 	}
 }
 
-// jobStepOnActionItems is a label list whose *index* is the msdb action
-// code minus one — commitCurrent writes Selected()+1 and
-// syncFieldsFromSelection reads back SetSelected(action-1). Nothing else
-// records the mapping, and the two halves cancel each other out, so a
-// reordered list round-trips cleanly while every dropdown reads wrong: the
-// user picks "Quit the job reporting success" and the step is stored as
-// "quit reporting failure". Naming the pairs is the only thing that catches
-// it. Codes are sp_update_jobstep's, documented on
+// jobStepOnActionItems' index is the action code minus one. The two halves
+// cancel in a round trip, so a reordered list would store the wrong action
+// silently; naming the pairs catches it. Codes per
 // gosmo.JobStepRequest.OnSuccessAction.
 func TestJobStepOnActionLabelsMatchTheirCodes(t *testing.T) {
 	want := []struct {
@@ -197,23 +175,22 @@ func TestJobStepOnActionLabelsMatchTheirCodes(t *testing.T) {
 		if jobStepOnActionItems[i] != w.label {
 			t.Errorf("index %d is %q, want %q", i, jobStepOnActionItems[i], w.label)
 		}
-		// The page's own arithmetic, stated once here.
+		// The page's arithmetic.
 		if code := i + 1; code != w.code {
 			t.Errorf("%q sits at index %d, so it writes action code %d, want %d", w.label, i, code, w.code)
 		}
 	}
 }
 
-// The two sentinels are load-bearing text, matched by value in
-// pickedDatabase (Steps) and its New Job counterpart. They are also what
-// the user sees, and they mean different things, so they must not collide.
+// The sentinels are matched by value and mean different things, so they must
+// differ.
 func TestDatabaseSentinelsAreDistinct(t *testing.T) {
 	if unchangedDatabaseItem == defaultDatabaseItem {
 		t.Fatal("the two database sentinels are identical — a Steps page edit and a New Job step would take the same branch")
 	}
 }
 
-// loadedStep is an existing, unmodified step at stepID.
+// loadedStep is an existing, unmodified step.
 func loadedStep(stepID int, name string) *jobStepEdit {
 	return jobStepEditFromStep(&gosmo.JobStep{
 		StepID: stepID, Name: name, Subsystem: tsqlSubsystem, Command: "SELECT 1",
@@ -228,17 +205,12 @@ func stepNames(edits []*jobStepEdit) []string {
 	return out
 }
 
-// The delete pass runs in descending step_id order because sp_delete_jobstep
-// renumbers every later step down by one. Ascending order is the bug: delete
-// step 2 of {1,2,3,4} and the old step 4 becomes 3, so the next delete aimed
-// at 4 either fails with "not found" or — once a later step has slid into
-// that number — succeeds against a step the user never selected. apply
-// re-fetches the step list by ID, so the wrong-step case is real rather than
-// hypothetical.
+// Deletes run in descending step_id order: sp_delete_jobstep renumbers later
+// steps, so ascending would fail or delete the wrong step (apply re-fetches by
+// ID, so the wrong-step case is real).
 func TestJobStepDeletesRunHighestStepIDFirst(t *testing.T) {
 	one, two, three, four := loadedStep(1, "one"), loadedStep(2, "two"), loadedStep(3, "three"), loadedStep(4, "four")
-	// Marked for removal out of order, the way clicking Delete on rows the
-	// user happened to pick leaves them.
+	// Marked out of order, as arbitrary clicks leave them.
 	two.pendingRemove = true
 	four.pendingRemove = true
 	one.pendingRemove = true
@@ -250,8 +222,7 @@ func TestJobStepDeletesRunHighestStepIDFirst(t *testing.T) {
 	}
 }
 
-// The three passes are disjoint and each edit lands in exactly one, so the
-// classification is worth stating whole rather than one predicate at a time.
+// The three passes are disjoint and each edit lands in exactly one.
 func TestPlanJobStepWritesSortsEveryEditIntoOnePass(t *testing.T) {
 	unchanged := loadedStep(1, "unchanged")
 
@@ -261,17 +232,13 @@ func TestPlanJobStepWritesSortsEveryEditIntoOnePass(t *testing.T) {
 	removed := loadedStep(3, "removed")
 	removed.pendingRemove = true
 
-	// A non-T-SQL step cannot be written back through this page at all —
-	// commitCurrent never copies the form onto it, so it should not be
-	// changed() either; the plan refuses it regardless, which is the point
-	// of restating !editable here.
+	// A non-T-SQL step isn't changed() anyway; the plan refuses it regardless.
 	readOnly := jobStepEditFromStep(&gosmo.JobStep{StepID: 4, Name: "ps", Subsystem: "PowerShell", Command: "Get-Date"})
 	readOnly.command = "rm -rf /"
 
 	added := &jobStepEdit{isNew: true, subsystem: tsqlSubsystem, name: "added"}
 
-	// Added and then deleted in the same sitting: never reached the server,
-	// so there is nothing to add and nothing to delete.
+	// Added then deleted: nothing to add or delete.
 	addedThenRemoved := &jobStepEdit{isNew: true, pendingRemove: true, subsystem: tsqlSubsystem, name: "transient"}
 
 	plan := planJobStepWrites([]*jobStepEdit{unchanged, edited, removed, readOnly, added, addedThenRemoved})
@@ -287,10 +254,8 @@ func TestPlanJobStepWritesSortsEveryEditIntoOnePass(t *testing.T) {
 	}
 }
 
-// A read-only step that somehow reports changed() must still be refused.
-// This is the case the !editable guard exists for: it is implied today by
-// commitCurrent never writing to such a step, and stops being implied the
-// moment anything else does.
+// A changed() read-only step must still be refused; the guard covers the day
+// commitCurrent stops preventing it.
 func TestPlanJobStepWritesRefusesAChangedNonTSQLStep(t *testing.T) {
 	e := jobStepEditFromStep(&gosmo.JobStep{StepID: 1, Name: "ssis", Subsystem: "SSIS", Command: "pkg.dtsx"})
 	e.command = "DROP TABLE dbo.orders"
@@ -302,8 +267,7 @@ func TestPlanJobStepWritesRefusesAChangedNonTSQLStep(t *testing.T) {
 	}
 }
 
-// Nothing pending means no statements at all, so opening the Steps page and
-// pressing OK is a no-op rather than a rewrite of every step.
+// Nothing pending means no statements.
 func TestPlanJobStepWritesIsEmptyWhenNothingChanged(t *testing.T) {
 	plan := planJobStepWrites([]*jobStepEdit{loadedStep(1, "one"), loadedStep(2, "two")})
 	if n := len(plan.updates) + len(plan.deletes) + len(plan.adds); n != 0 {

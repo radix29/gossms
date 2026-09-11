@@ -8,13 +8,12 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// agent_detail.go builds Object Explorer Details grids for every SQL
-// Server Agent node type — dispatched from detail_browser.go's
-// fetchNodeDetails, whose (cols, rows, err) shape each function matches.
+// agent_detail.go builds Object Explorer Details grids for SQL Server Agent
+// nodes, dispatched from detail_browser.go's fetchNodeDetails (same (cols,
+// rows, err) shape).
 
-// countOrDash renders a count, or an em dash if the fetch that would have
-// produced it failed — used by summary rows that shouldn't fail their
-// whole detail view over one secondary count.
+// countOrDash renders a count, or an em dash if its fetch failed, so one
+// secondary count doesn't fail a summary.
 func countOrDash(n int, err error) string {
 	if err != nil {
 		return "—"
@@ -22,8 +21,8 @@ func countOrDash(n int, err error) string {
 	return strconv.Itoa(n)
 }
 
-// agentServerDetail builds the "SQL Server Agent" root's detail view: its
-// run status plus a quick census of every child collection.
+// agentServerDetail builds the Agent root's detail: run status and a census of
+// its collections.
 func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	statusText := "Unknown"
 	lastStartup := ""
@@ -90,8 +89,7 @@ func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) 
 	return propertyValueColumns, rows, nil
 }
 
-// agentScheduleDetail builds a schedule's detail view, matching the
-// mockup's "SELECTED NODE MOCKUP — SCHEDULE".
+// agentScheduleDetail builds a schedule's detail view.
 func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	sch, err := sc.Server.ScheduleByNameContext(ctx, node.data.Name)
 	if err != nil {
@@ -161,8 +159,7 @@ func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode
 	return propertyValueColumns, rows, nil
 }
 
-// agentOperatorDetail builds an operator's detail view, matching the
-// mockup's "SELECTED NODE MOCKUP — OPERATOR".
+// agentOperatorDetail builds an operator's detail view.
 func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
 	o, err := sc.Server.OperatorByNameContext(ctx, node.data.Name)
 	if err != nil {
@@ -227,8 +224,8 @@ func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [
 	return []string{"Job Name", "Status", "Last Outcome", "Last Run", "Next Run"}, rows, nil
 }
 
-// agentJobHistoryDetail builds the "Job History" leaf's detail view: the
-// most recent job-level outcome across every job.
+// agentJobHistoryDetail builds the Job History leaf: the latest job-level
+// outcome of every job.
 func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	history, err := sc.Server.JobHistoryContext(ctx, 100)
 	if err != nil {
@@ -243,8 +240,8 @@ func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, []
 	return []string{"Job Name", "Run Date", "Outcome", "Duration", "Message"}, rows, nil
 }
 
-// agentCategoriesDetail lists every category of the given class — shared
-// by the "Job Categories" and "Alert Categories" leaves.
+// agentCategoriesDetail lists every category of a class, for Job and Alert
+// Categories.
 func agentCategoriesDetail(ctx context.Context, sc *db.ServerConn, class gosmo.CategoryClass) ([]string, [][]string, error) {
 	cats, err := sc.Server.CategoriesContext(ctx, class)
 	if err != nil {
@@ -257,9 +254,8 @@ func agentCategoriesDetail(ctx context.Context, sc *db.ServerConn, class gosmo.C
 	return []string{"Name"}, rows, nil
 }
 
-// agentJobCategoriesDetail is agentCategoriesDetail for job categories —
-// a thin wrapper so detail_browser.go's dispatch doesn't need to import
-// gosmo just to name gosmo.CategoryClassJob.
+// agentJobCategoriesDetail is agentCategoriesDetail for job categories, so
+// detail_browser.go needn't import gosmo.
 func agentJobCategoriesDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	return agentCategoriesDetail(ctx, sc, gosmo.CategoryClassJob)
 }

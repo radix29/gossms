@@ -2,10 +2,6 @@ package theme
 
 import "github.com/gdamore/tcell/v3"
 
-// ---------------------------------------------------------------------------
-// Colour palette
-// ---------------------------------------------------------------------------
-
 // Palette holds every named colour used by tuikit.
 type Palette struct {
 	// Backgrounds
@@ -46,9 +42,8 @@ type Palette struct {
 	EditorComment tcell.Color
 	EditorNumber  tcell.Color
 	EditorLineNum tcell.Color
-	// EditorMatch backs every find/replace hit *except* the current one,
-	// which is the editor's selection and so wears the selection colour —
-	// the two have to stay distinguishable at a glance.
+	// EditorMatch backs every find/replace hit except the current one, which
+	// wears the selection colour; the two must stay distinguishable.
 	EditorMatch tcell.Color
 
 	// Dialog
@@ -69,9 +64,8 @@ type Palette struct {
 	InputBorder  tcell.Color
 	InputFocused tcell.Color
 
-	// Tooltip — the popup a chart shows for the sample under the pointer,
-	// and the toolbar buttons, which wear the same scheme so a clickable
-	// control and the box it produces read as the same surface.
+	// Tooltip — chart pointer popups and toolbar buttons share this scheme, so
+	// a control and the box it produces read as one surface.
 	TooltipBg     tcell.Color
 	TooltipFg     tcell.Color
 	TooltipBorder tcell.Color
@@ -82,20 +76,16 @@ type Palette struct {
 	Warning tcell.Color
 	Info    tcell.Color
 
-	// Chart — the series palette used by tuikit/charts. These are roles,
-	// not metric names: the application layer maps each metric to a role
-	// once and keeps that mapping fixed, so a series wears the same colour
-	// across refreshes and across dashboards.
+	// Chart — the tuikit/charts series palette. These are roles, not metrics:
+	// the app maps each metric to a role once, so a series keeps its colour
+	// across refreshes and dashboards.
 	//
-	// ChartPlotBg is deliberately darker than PanelBg: a chart's plot area
-	// reads as a recessed well against the panel it sits in, and a stacked
-	// column's topmost partial cell blends its series colour against this,
-	// so it has to differ from the series colours themselves.
+	// ChartPlotBg is darker than PanelBg so the plot reads as a recessed well;
+	// a stacked column's partial top cell blends against it, so it must differ
+	// from the series colours.
 	//
-	// ChartSectionBg backs a dashboard section's title strip. It is lighter
-	// than the panel and grid-header backgrounds so the strips read as the
-	// dividers between sections on a screen that is otherwise wall-to-wall
-	// charts.
+	// ChartSectionBg backs section title strips; lighter than panel and
+	// grid-header backgrounds so strips divide the chart wall.
 	ChartCyan      tcell.Color
 	ChartGreen     tcell.Color
 	ChartYellow    tcell.Color
@@ -182,7 +172,7 @@ var Default = Palette{
 	ChartSectionBg: tcell.NewRGBColor(66, 66, 72),
 }
 
-// active is the currently active palette (starts as Default).
+// active is the current palette.
 var active = Default
 
 // SetPalette replaces the active palette. Call before rendering.

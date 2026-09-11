@@ -47,7 +47,7 @@ show me the top 15 know bugs,issues etc if thre are any. show only issues that c
 
 optimize and compact calude.md , architecture.md, plan.md etc in both projects
 
-go over the source files code comments and compact them. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
+go over the source files code comments and compact them. make them concise. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
 
 
 --- prepare for release -------------------------------------------------

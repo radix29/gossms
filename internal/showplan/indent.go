@@ -2,15 +2,12 @@ package showplan
 
 import "strings"
 
-// Indent pretty-prints a single-line XML document with two-space
-// indentation, for display. Documents that already span multiple lines
-// (e.g. SSMS-saved .sqlplan files) are returned unchanged. Purely
-// textual — no namespace rewriting, attributes untouched.
+// Indent pretty-prints a single-line XML document with two-space indentation.
+// Multi-line documents (e.g. SSMS .sqlplan files) are returned unchanged.
+// Purely textual.
 func Indent(x string) string {
-	// A trailing newline at end-of-file is near-universal and must not by
-	// itself count as "already multi-line" — trim it before checking, or
-	// every single-line document with a plain EOF newline would falsely
-	// match and be returned completely unindented.
+	// Trim the trailing EOF newline first, or every single-line document would
+	// count as multi-line.
 	trimmed := strings.TrimRight(x, "\r\n \t")
 	if strings.Contains(trimmed, ">\n") || strings.Contains(trimmed, ">\r") {
 		return x
@@ -62,9 +59,8 @@ func Indent(x string) string {
 	return sb.String()
 }
 
-// tagEnd returns the index of the '>' closing the tag that starts at
-// x[start] (which must be '<'), skipping any '>' inside quoted attribute
-// values. Returns -1 if the tag never closes.
+// tagEnd returns the index of the '>' closing the tag at x[start] ('<'),
+// skipping '>' in quoted attributes; -1 if unclosed.
 func tagEnd(x string, start int) int {
 	quote := byte(0)
 	for i := start; i < len(x); i++ {

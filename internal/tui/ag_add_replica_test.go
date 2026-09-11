@@ -27,8 +27,7 @@ func resolvedReplica() newAGReplica {
 	}
 }
 
-// The three things the server would reject, each with an explanation the
-// server's own error does not give.
+// The three server rejections, each explained better than the server does.
 func TestValidateAddReplica(t *testing.T) {
 	tests := []struct {
 		name string
@@ -67,9 +66,8 @@ func TestValidateAddReplica(t *testing.T) {
 	}
 }
 
-// The comparison is case-insensitive on both halves: the catalog reports
-// instance names in whatever case they were registered with, and a replica
-// added twice under two spellings is refused by the server with a raw error.
+// Case-insensitive on both sides: the catalog keeps registration case, and a
+// duplicate under another spelling gets a raw server error.
 func TestValidateAddReplicaMatchesExistingCaseInsensitively(t *testing.T) {
 	pf := addReplicaPrefetch()
 	pf.existing["ubusql2"] = true
@@ -80,9 +78,8 @@ func TestValidateAddReplicaMatchesExistingCaseInsensitively(t *testing.T) {
 	}
 }
 
-// A replica's failover mode defaults to the only one its cluster type allows,
-// so the common case needs no choice at all. WSFC allows two, and offering the
-// automatic one by default would silently change a group's failover behavior.
+// The default is the only mode the cluster type allows. WSFC allows two, and
+// defaulting to automatic would silently change failover behaviour.
 func TestAGDefaultFailoverMode(t *testing.T) {
 	tests := map[string]string{
 		"EXTERNAL": "EXTERNAL",
@@ -97,9 +94,8 @@ func TestAGDefaultFailoverMode(t *testing.T) {
 	}
 }
 
-// The three statements run on two different instances, and a script that does
-// not say so is a trap: run whole against the primary, the JOIN either errors
-// or joins the primary to its own group.
+// The script must name each statement's instance; run whole on the primary,
+// JOIN errors or joins the primary to its own group.
 func TestAddReplicaScriptNamesEachInstance(t *testing.T) {
 	d := &AGAddReplicaDialog{agName: "AAG1", resolved: resolvedReplica()}
 	d.prefetch = addReplicaPrefetch()
@@ -121,8 +117,7 @@ func TestAddReplicaScriptNamesEachInstance(t *testing.T) {
 	}
 }
 
-// A MANUAL-seeding replica issues no GRANT, so the script is two statements —
-// and the annotation must not label a statement that is not there.
+// MANUAL seeding has no GRANT; no label for a missing statement.
 func TestAddReplicaScriptWithoutTheGrant(t *testing.T) {
 	d := &AGAddReplicaDialog{agName: "AAG1", resolved: resolvedReplica()}
 	d.resolved.seedingMode = "MANUAL"
@@ -140,8 +135,8 @@ func TestAddReplicaScriptWithoutTheGrant(t *testing.T) {
 	}
 }
 
-// The spec handed to ADD REPLICA has to carry every value the page collects;
-// a field dropped here is silently defaulted by the server.
+// The ADD REPLICA spec carries every collected value; a dropped one is silently
+// defaulted.
 func TestAddReplicaSpecCarriesEveryValue(t *testing.T) {
 	r := resolvedReplica()
 	spec := r.spec()

@@ -9,53 +9,46 @@ import (
 	gosmo "github.com/radix29/gosmo"
 )
 
-// capabilityProbeTimeout bounds one capability probe — the server's single
-// round trip, or the database's two. Both ask catalog functions with no I/O
-// behind them, so this is a liveness bound rather than a work budget: the
-// server probe runs inside Connect, where a hang would look like a hung login
-// dialog.
+// capabilityProbeTimeout bounds one capability probe (one round trip for the
+// server, two for a database). It's a liveness bound: the server probe runs
+// inside Connect.
 const capabilityProbeTimeout = 10 * time.Second
 
 // capabilityFields is the ServerConn state behind Capabilities and
-// DatabaseCapabilities, kept in its own struct so connection.go's ServerConn
-// stays about the connection.
+// DatabaseCapabilities.
 type capabilityFields struct {
-	// caps is probed inside Connect, and again by every Refresh of the server
-	// node — after the connection is shared, which is why it is atomic. Nil
-	// until a probe succeeds; Capabilities answers "unknown" for that.
+	// caps is probed in Connect and on every server-node Refresh, after the
+	// connection is shared — hence atomic. Nil until a probe succeeds, which
+	// reads as "unknown".
 	caps atomic.Pointer[gosmo.Capabilities]
 
 	mu     sync.Mutex
 	dbCaps map[string]*gosmo.DatabaseCapabilities
-	// dbProbes is the probe in flight per database. Selecting a node primes
-	// its database, so arrowing through an unprobed database's nodes asks
-	// once per keystroke; everyone after the first waits for its answer.
+	// dbProbes is the in-flight probe per database. Selecting a node primes its
+	// database, so arrowing through nodes asks per keystroke; later callers
+	// wait for the first.
 	dbProbes map[string]*dbProbe
-	// dbGen is bumped by ClearCapabilityCache, so a probe that started before
-	// a clear cannot store its pre-clear answer after it.
+	// dbGen is bumped by ClearCapabilityCache so a pre-clear probe can't cache
+	// its answer afterwards.
 	dbGen uint64
 }
 
-// dbProbe is one per-database probe in flight. Fields other than done are
-// written before done is closed and read only after it.
+// dbProbe is one in-flight per-database probe. Fields other than done are
+// written before done closes and read after.
 type dbProbe struct {
 	done chan struct{}
 	caps *gosmo.DatabaseCapabilities // nil if the probe failed
-	// abandoned is a failure caused by the caller that ran the probe giving up
-	// — its context ended — which says nothing about the server. A waiter that
-	// still wants an answer runs a probe of its own rather than inherit it.
+	// abandoned means the probing caller's context ended, which says nothing
+	// about the server; a waiter still wanting an answer probes again.
 	abandoned bool
-	// waiters counts the callers that joined; tests read it to know one has.
+	// waiters counts joined callers; tests read it.
 	waiters int
 }
 
-// Capabilities reports what the connected login may do at the server scope.
-//
-// Never nil, and never an error: the probe runs inside Connect (and again on a
-// Refresh of the server node — see ProbeCapabilities), and a failure leaves
-// every answer CapabilityUnknown rather than failing the connection. That is the fail-open rule this whole layer follows — see
-// gosmo.Capabilities.Allows, and gate on Allows rather than Has anywhere the
-// answer decides whether to *withhold* something.
+// Capabilities reports what the login may do at server scope. Never nil or an
+// error: a failed probe (in Connect or a server Refresh, see ProbeCapabilities)
+// leaves every answer CapabilityUnknown. Fail-open — gate on
+// gosmo.Capabilities.Allows, not Has, wherever the answer withholds something.
 func (sc *ServerConn) Capabilities() *gosmo.Capabilities {
 	if sc == nil {
 		return &gosmo.Capabilities{}
@@ -66,20 +59,16 @@ func (sc *ServerConn) Capabilities() *gosmo.Capabilities {
 	return &gosmo.Capabilities{}
 }
 
-// DatabaseCapabilities reports what the connected login may do inside one
-// database, probing on first use and caching the answer for the life of the
-// connection.
+// DatabaseCapabilities reports what the login may do in one database, probing
+// on first use and caching for the connection's life.
 //
-// Never nil, and never an error. A probe that failed comes back as
-// Accessible with no rights known — "we could not ask", which reads the same
-// as an unrestricted login through Allows and so changes nothing. Only an
-// answer the server actually gave reports Accessible false, which is the
-// signal for "this database cannot be opened at all"; deriving that from a
-// failed probe instead would hide databases over a dropped connection.
+// Never nil or an error. A failed probe returns Accessible with no rights
+// known, which reads like an unrestricted login through Allows. Only a real
+// server answer reports Accessible false ("cannot be opened"); deriving that
+// from a failure would hide databases over a dropped connection.
 //
-// Two round trips on the first call for a database, none afterwards. Callers
-// that ask while that first probe is running wait for it rather than start
-// their own, each for no longer than its own ctx allows.
+// Two round trips on first call, none after. Concurrent callers wait for the
+// first probe, each bounded by its own ctx.
 func (sc *ServerConn) DatabaseCapabilities(ctx context.Context, name string) *gosmo.DatabaseCapabilities {
 	if sc == nil || sc.Server == nil {
 		return unknownDatabaseCapabilities()
@@ -113,10 +102,8 @@ func (sc *ServerConn) DatabaseCapabilities(ctx context.Context, name string) *go
 		if p.caps != nil {
 			return p.caps
 		}
-		// The probe's own caller gave up before the server answered — a
-		// selection primes under the connection's context, but a Properties
-		// dialog closed mid-load cancels its own. Nothing was learned, so ask
-		// again, as the first caller in line.
+		// The probing caller gave up (e.g. a Properties dialog closed
+		// mid-load); nothing was learned, so probe again as first in line.
 		if p.abandoned && ctx.Err() == nil {
 			continue
 		}
@@ -124,9 +111,8 @@ func (sc *ServerConn) DatabaseCapabilities(ctx context.Context, name string) *go
 	}
 }
 
-// probeDatabase runs the probe p stands for, caches its answer, and releases
-// p's waiters — deferred, so a panicking probe still releases them rather than
-// leaving every later caller for this database blocked on done.
+// probeDatabase runs p's probe, caches the answer, and releases p's waiters —
+// deferred, so a panic still releases them.
 func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64, p *dbProbe) *gosmo.DatabaseCapabilities {
 	var c *gosmo.DatabaseCapabilities
 	var err error
@@ -137,10 +123,9 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 		}
 		if err == nil && c != nil {
 			p.caps = c
-			// A ClearCapabilityCache since the probe started means this answer
-			// may predate the change the clear was for; it is still the best
-			// one to return, but caching it would outlive the Refresh that
-			// asked for a re-read.
+			// A clear since the probe started means this answer may be stale;
+			// return it, but don't cache it past the Refresh that asked for a
+			// re-read.
 			if sc.dbGen == gen {
 				if sc.dbCaps == nil {
 					sc.dbCaps = map[string]*gosmo.DatabaseCapabilities{}
@@ -148,9 +133,8 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 				sc.dbCaps[name] = c
 			}
 		} else {
-			// Deliberately not cached: a probe that failed for a transient
-			// reason would otherwise keep answering "unknown" for the whole
-			// session.
+			// Failures aren't cached, or a transient error would answer
+			// "unknown" all session.
 			p.abandoned = ctx.Err() != nil
 		}
 		sc.mu.Unlock()
@@ -166,8 +150,8 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 	return c
 }
 
-// HasDatabaseCapabilities reports whether name's answer is already cached, so
-// a caller that only wants the cache warm can skip starting a probe.
+// HasDatabaseCapabilities reports whether name's answer is cached, so a
+// cache-warming caller can skip the probe.
 func (sc *ServerConn) HasDatabaseCapabilities(name string) bool {
 	if sc == nil {
 		return false
@@ -178,17 +162,10 @@ func (sc *ServerConn) HasDatabaseCapabilities(name string) bool {
 	return ok
 }
 
-// CachedDatabaseCapabilities is DatabaseCapabilities without the round trip:
-// it answers from the cache and never touches the network.
-//
-// This is the accessor for anything that runs on the UI goroutine — a menu
-// item's Enabled predicate is evaluated while the menu is being drawn, and a
-// probe there would block the whole application on a slow server. A database
-// nobody has asked about yet answers "nothing known", which fails open, so the
-// action stays offered.
-//
-// Prime the cache off the UI goroutine (App.onNodeSelected does) so the answer
-// is there by the time a menu is opened.
+// CachedDatabaseCapabilities answers from the cache only, never the network —
+// for the UI goroutine (e.g. menu Enabled predicates), where a probe would
+// block the app. Unasked databases answer "nothing known", which fails open.
+// App.onNodeSelected primes the cache off the UI goroutine.
 func (sc *ServerConn) CachedDatabaseCapabilities(name string) *gosmo.DatabaseCapabilities {
 	if sc == nil {
 		return unknownDatabaseCapabilities()
@@ -201,43 +178,37 @@ func (sc *ServerConn) CachedDatabaseCapabilities(name string) *gosmo.DatabaseCap
 	return unknownDatabaseCapabilities()
 }
 
-// unknownDatabaseCapabilities is the answer when the probe could not be run:
-// accessible, with nothing known about what may be done inside.
+// unknownDatabaseCapabilities is the answer when no probe could run:
+// accessible, nothing known.
 func unknownDatabaseCapabilities() *gosmo.DatabaseCapabilities {
 	return &gosmo.DatabaseCapabilities{Accessible: true}
 }
 
-// ClearCapabilityCache drops every cached per-database answer, so the next
-// call probes again. Rights granted to the connected login while it is
-// connected take effect on its existing sessions, so a Refresh that re-reads
-// the objects should re-read this too.
+// ClearCapabilityCache drops every per-database answer so the next call probes
+// again. Grants to a connected login affect its existing sessions, so a Refresh
+// re-reads these too.
 func (sc *ServerConn) ClearCapabilityCache() {
 	if sc == nil {
 		return
 	}
 	sc.mu.Lock()
 	sc.dbCaps = nil
-	// A probe already running still finishes and answers its waiters, but a
-	// caller from after the clear must not join it: its answer is pre-clear.
+	// A running probe still answers its waiters, but post-clear callers must
+	// not join it.
 	sc.dbProbes = nil
 	sc.dbGen++
 	sc.mu.Unlock()
 }
 
-// ProbeCapabilities fills the server-scope capability set. Best effort by
-// design: Connect calls it, and a login that cannot be asked what it may do is
-// still a login that can work.
+// ProbeCapabilities fills the server-scope capability set, best effort: a login
+// that can't be asked may still work.
 //
-// Also called again by a Refresh of the server node, off the UI goroutine and
-// while the connection is in use — a right granted to the login after it
-// connected is otherwise never seen. A re-probe that fails keeps the previous
-// answer rather than falling back to "unknown": one dropped round trip should
-// not switch every gate off.
+// A server-node Refresh calls it again off the UI goroutine, so later grants
+// are seen. A failed re-probe keeps the previous answer rather than switching
+// every gate to unknown.
 //
-// Exported because Connect is not the only way a ServerConn comes into
-// existence — a test builds one over a scripted pool — and because a set that
-// was never probed silently fails open, which is invisible in a test that
-// meant to assert a gate.
+// Exported because tests build ServerConns over scripted pools, and an unprobed
+// set silently fails open, masking a gate under test.
 func (sc *ServerConn) ProbeCapabilities() {
 	ctx, cancel := context.WithTimeout(sc.Context(), capabilityProbeTimeout)
 	defer cancel()

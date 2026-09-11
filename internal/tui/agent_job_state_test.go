@@ -9,17 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// Start Job and Stop Job read the job's state before acting, so a request the
-// Agent would refuse is never sent and the user is told why in the app's own
-// words rather than through "SQLServerAgent Error: Request to run job ...
-// refused because the job is already running".
+// Start/Stop Job read the state first so a request Agent would refuse isn't
+// sent, and the user gets an app message instead of "SQLServerAgent Error:
+// Request to run job ... refused because the job is already running".
 //
-// The state is the 17th column of the job read (JobByNameContext's CASE:
-// 1 — Executing — while a session is open, 4 — Idle — otherwise), which is why
-// the fixture varies that field alone; everything else about the job is
-// identical in both runs. The fake answers no xp_sqlagent_enum_jobs read, so
-// this also covers the fallback gosmo takes when Agent's own state is
-// unreachable.
+// State is column 17 of the job read (1 Executing while a session is open, 4
+// Idle otherwise); only it varies. The fake answers no xp_sqlagent_enum_jobs,
+// covering gosmo's fallback.
 func jobRowInState(state int64) []driver.Value {
 	row := jobRow(agentJobName, "Database Maintenance", "sa", true, 0, 0, "")
 	row[len(row)-1] = state
@@ -80,9 +76,8 @@ func TestStartAndStopJobRefuseTheStateTheyWouldNotChange(t *testing.T) {
 	}
 }
 
-// The label and the state are pinned together by name: a shared table read
-// two ways cannot catch a swapped pair, and every one of these values is
-// SQL Server Agent's, not gosmo's to choose.
+// Label and state paired by name; a table read two ways can't catch a swap, and
+// the values are Agent's.
 func TestFormatJobStateNamesEveryAgentState(t *testing.T) {
 	for _, tc := range []struct {
 		state gosmo.JobState
@@ -120,8 +115,7 @@ func TestJobStateRefusalOnlyRefusesAKnownState(t *testing.T) {
 		{gosmo.JobStateExecuting, false, ""},
 		{gosmo.JobStateBetweenRetries, true, `Job "nightly" is already running`},
 		{gosmo.JobStatePerformingCompletionActions, true, `Job "nightly" is already running`},
-		// Neither of these says anything about a live session, so the
-		// request has to reach the server rather than be refused here.
+		// These say nothing about a session, so the request goes to the server.
 		{gosmo.JobStateUnknown, true, ""},
 		{gosmo.JobStateUnknown, false, ""},
 		{gosmo.JobStateSuspended, true, ""},

@@ -1,23 +1,17 @@
 //go:build livedb
 
-// Live verification of Peer's fallback to parentPeerOptions against a real
-// Always On pair.
-//
-// The fallback exists so a resolver hit that will not connect — a saved replica
-// password the config key can no longer decrypt, a login since dropped — never
-// leaves an instance less reachable than it was before any credential was
-// saved. Unit tests pin the option *derivation* (peer_test.go), but nothing
-// they can do proves the second Connect actually happens and yields a usable
-// peer: that is a property of two real logins against two real instances.
+// Live check of Peer's fallback to parentPeerOptions against a real Always On
+// pair: a resolver hit that won't connect (undecryptable saved password,
+// dropped login) must never leave an instance less reachable than without saved
+// credentials. peer_test.go pins the option derivation; only two real instances
+// prove the second Connect happens and works.
 //
 //	go test -tags livedb ./internal/db/ -run TestLivePeer -v \
 //	  -live-primary ubusql1.fritz.box -live-replica ubusql2 \
 //	  -live-user sa -live-password PASS
 //
-// -live-replica is spelled as the catalog reports it
-// (sys.availability_replicas.replica_server_name), since that is what Peer is
-// called with in production. Skipped entirely without the flags, so
-// `go test ./...` is unaffected.
+// -live-replica is spelled as sys.availability_replicas.replica_server_name, as
+// Peer receives it. Skipped without the flags.
 package db
 
 import (
@@ -42,7 +36,7 @@ var (
 // livePeerLogin is the throwaway login the resolver's saved connection names.
 const livePeerLogin = "gossms_peer_probe"
 
-// liveParent opens the parent connection every test here starts from.
+// liveParent opens the parent connection each test starts from.
 func liveParent(t *testing.T) *ServerConn {
 	t.Helper()
 	if *livePrimary == "" || *liveReplica == "" || *liveUser == "" {
@@ -65,10 +59,8 @@ func liveOpts(server, user, password string) config.Connection {
 	}
 }
 
-// liveReplicaExec runs one statement on the replica as the -live-user, for
-// creating and dropping the throwaway login. Deliberately not routed through
-// Peer: the tests below are about Peer, so their fixtures must not depend on
-// it.
+// liveReplicaExec runs one statement on the replica as -live-user. Not routed
+// through Peer, which is what's under test.
 func liveReplicaExec(t *testing.T, stmt string) {
 	t.Helper()
 	db, err := sql.Open("sqlserver", "sqlserver://"+*liveUser+":"+*livePassword+"@"+*liveReplica+"?TrustServerCertificate=true")
@@ -83,8 +75,7 @@ func liveReplicaExec(t *testing.T, stmt string) {
 	}
 }
 
-// createLivePeerLogin installs the throwaway login and drops it again after the
-// test, so a run leaves the replica as it found it.
+// createLivePeerLogin creates the throwaway login and drops it after the test.
 func createLivePeerLogin(t *testing.T) {
 	t.Helper()
 	liveReplicaExec(t, "IF SUSER_ID('"+livePeerLogin+"') IS NOT NULL DROP LOGIN ["+livePeerLogin+"]")
@@ -94,10 +85,8 @@ func createLivePeerLogin(t *testing.T) {
 	})
 }
 
-// TestLivePeerFallsBackToTheParentCredentials is the item this file exists for:
-// a resolver answers for the replica with a saved connection whose password is
-// wrong, and Peer must still return a working connection — reached with the
-// parent's own credentials, which is what Login proves.
+// A resolver answer with a wrong password must still yield a working peer via
+// the parent's credentials (Login proves which).
 func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 	createLivePeerLogin(t)
 	parent := liveParent(t)
@@ -127,9 +116,8 @@ func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 		!strings.EqualFold(name, *liveReplica) {
 		t.Errorf("the peer is connected to %q, want %q", name, *liveReplica)
 	}
-	// The fallback's peer is cached and credentialled like any other, or the
-	// next expansion pays the failed attempt again and the second hop loses the
-	// table.
+	// The fallback peer is cached and credentialled like any other, or the next
+	// expansion repeats the failed attempt.
 	again, err := parent.Peer(ctx, *liveReplica)
 	if err != nil || again != peer {
 		t.Errorf("the second Peer(%q) = %p, %v; want the cached %p", *liveReplica, again, err, peer)
@@ -139,9 +127,8 @@ func TestLivePeerFallsBackToTheParentCredentials(t *testing.T) {
 	}
 }
 
-// The other half: a resolver hit that *does* connect is used as given, so the
-// retry above is a fallback and not the path everything takes. Without this a
-// Peer that ignored the resolver entirely would pass the test above.
+// A working resolver hit is used as given, so the fallback isn't the only path;
+// otherwise a Peer ignoring the resolver would pass the test above.
 func TestLivePeerPrefersAWorkingResolverHit(t *testing.T) {
 	createLivePeerLogin(t)
 	parent := liveParent(t)

@@ -8,10 +8,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Alert Properties, both write pages. The alert scripted here triggers on
-// severity 20 in appdb and already responds to the job — so every test acts on
-// state that is real rather than zero, and a page that dropped what it loaded
-// cannot pass by writing a value that happens to match a blank.
+// Alert Properties write pages. The scripted alert fires on severity 20 in
+// appdb and already responds to the job, so tests act on real state and a page
+// that dropped its load can't pass by matching blanks.
 
 func loadAlertPage(t *testing.T, extra []fakeResponse, build func(sc *db.ServerConn, name *string) propPage) (*fakeInstance, propApply, *propsheet.Form, *string) {
 	t.Helper()
@@ -28,10 +27,8 @@ func alertGeneralResponses() []fakeResponse {
 
 func pageAlertGeneralFor(sc *db.ServerConn, n *string) propPage { return pageAlertGeneral(sc, n) }
 
-// TestAlertGeneralSwitchingToAnErrorNumberClearsTheSeverity. The two triggers
-// are mutually exclusive and go out in one statement, so the field that is no
-// longer in use has to be sent as 0 — an alert left with both set fires on the
-// severity the user thought they had replaced.
+// Triggers are mutually exclusive and sent together, so the unused one must go
+// as 0; with both set the alert fires on the replaced severity.
 func TestAlertGeneralSwitchingToAnErrorNumberClearsTheSeverity(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
@@ -44,9 +41,7 @@ func TestAlertGeneralSwitchingToAnErrorNumberClearsTheSeverity(t *testing.T) {
 	assertOneStatement(t, inst, "sp_update_alert @name = N'Sev 20 errors', @message_id = 9002, @severity = 0")
 }
 
-// TestAlertGeneralWideningTheScopeSendsAnEmptyDatabase. "<all databases>" is
-// the leading sentinel, and it maps to "" rather than to a database named
-// after it.
+// "<all databases>" is a sentinel mapping to "".
 func TestAlertGeneralWideningTheScopeSendsAnEmptyDatabase(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
@@ -58,9 +53,7 @@ func TestAlertGeneralWideningTheScopeSendsAnEmptyDatabase(t *testing.T) {
 	assertOneStatement(t, inst, "sp_update_alert @name = N'Sev 20 errors', @database_name = N''")
 }
 
-// TestAlertGeneralNarrowingTheScopePicksTheNamedDatabase — the other
-// direction, on a database that is neither the sentinel nor the first real
-// entry.
+// Narrowing to a database that's neither the sentinel nor the first entry.
 func TestAlertGeneralNarrowingTheScopePicksTheNamedDatabase(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
@@ -72,8 +65,7 @@ func TestAlertGeneralNarrowingTheScopePicksTheNamedDatabase(t *testing.T) {
 	assertOneStatement(t, inst, "@database_name = N'salesdb'")
 }
 
-// TestAlertGeneralRenamesLastAndUnderTheOldName — as on every renaming page,
-// the writes before it address the alert by the name the server still has.
+// Rename is last, and earlier writes use the old name.
 func TestAlertGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
@@ -98,9 +90,8 @@ func TestAlertGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	}
 }
 
-// TestAlertGeneralUntouchedPageWritesNothing. Nine rows are seeded from the
-// alert, including the delay, which is loaded in seconds and written back in
-// seconds — a unit mismatch there rewrites the alert on every OK.
+// An untouched page writes nothing; the delay loads and saves in seconds, and a
+// unit mismatch would rewrite the alert on every OK.
 func TestAlertGeneralUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
@@ -116,16 +107,15 @@ func TestAlertGeneralUntouchedPageWritesNothing(t *testing.T) {
 
 func pageAlertResponseFor(sc *db.ServerConn, n *string) propPage { return pageAlertResponse(sc, n) }
 
-// The Response page reads the operator list it ticks against and the job list
-// it picks a response job from.
+// The Response page reads the operator list it ticks and the job list for the
+// response job.
 func alertResponseResponses() []fakeResponse {
 	job := jobRow(agentJobName, "Database Maintenance", "appuser", true, 0, 0, "")
 	return append(agentOperatorResponses(), agentJobResponses(job)...)
 }
 
-// TestAlertResponseNotifiesTheOperatorThatWasTicked ticks the second of three
-// operators. The grid is read back index-parallel against the operator list,
-// so getting this wrong pages somebody who is not on call.
+// Ticks the second of three operators; the grid maps index-parallel to the
+// list, and a mismatch pages the wrong person.
 func TestAlertResponseNotifiesTheOperatorThatWasTicked(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertResponseResponses(), pageAlertResponseFor)
 
@@ -137,8 +127,7 @@ func TestAlertResponseNotifiesTheOperatorThatWasTicked(t *testing.T) {
 	assertOneStatement(t, inst, "sp_add_notification @alert_name = N'Sev 20 errors', @operator_name = N'reporting'")
 }
 
-// TestAlertResponseRemovesTheNotificationThatWasUnticked — the destructive
-// direction, on the one operator the alert actually notifies.
+// Unticking removes the notification for the one operator actually notified.
 func TestAlertResponseRemovesTheNotificationThatWasUnticked(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertResponseResponses(), pageAlertResponseFor)
 
@@ -150,9 +139,8 @@ func TestAlertResponseRemovesTheNotificationThatWasUnticked(t *testing.T) {
 	assertOneStatement(t, inst, "sp_delete_notification @alert_name = N'Sev 20 errors', @operator_name = N'dba-oncall'")
 }
 
-// TestAlertResponseShowsWhichOperatorsAreAlreadyNotified. The tick marks come
-// from a different query than the operator list, and they are what tell the
-// user which way a toggle will go.
+// Tick marks come from a different query than the operator list and show which
+// way a toggle goes.
 func TestAlertResponseShowsWhichOperatorsAreAlreadyNotified(t *testing.T) {
 	_, _, form, _ := loadAlertPage(t, alertResponseResponses(), pageAlertResponseFor)
 	tg := toggleGrid(t, form)
@@ -165,9 +153,8 @@ func TestAlertResponseShowsWhichOperatorsAreAlreadyNotified(t *testing.T) {
 	}
 }
 
-// TestAlertResponseSetsTheResponseJobThatWasPicked picks the second of two
-// jobs — a response job is what an alert actually *does*, so the wrong one is
-// the wrong workload running unattended.
+// Picks the second of two jobs; the wrong response job runs the wrong workload
+// unattended.
 func TestAlertResponseSetsTheResponseJobThatWasPicked(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertResponseResponses(), pageAlertResponseFor)
 
@@ -179,8 +166,7 @@ func TestAlertResponseSetsTheResponseJobThatWasPicked(t *testing.T) {
 	assertOneStatement(t, inst, "sp_update_alert @name = N'Sev 20 errors', @job_name = N'Backup log'")
 }
 
-// TestAlertResponseClearingTheJobSendsTheEmptySentinel. noneItem sits at index
-// 0 and means no job at all.
+// noneItem at index 0 means no job.
 func TestAlertResponseClearingTheJobSendsTheEmptySentinel(t *testing.T) {
 	inst, apply, form, _ := loadAlertPage(t, alertResponseResponses(), pageAlertResponseFor)
 

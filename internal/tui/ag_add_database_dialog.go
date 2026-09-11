@@ -11,49 +11,43 @@ import (
 )
 
 // ag_add_database_dialog.go is "Add Database..." on an availability group (and
-// on its Availability Databases folder) — the counterpart of SSMS's Add
-// Database to Availability Group wizard, reduced to the one choice that
-// wizard's pages come down to.
+// its Availability Databases folder): SSMS's Add Database to Availability Group
+// wizard reduced to its one choice.
 //
-// It is built on the newObjectDialog shell, so OK/Apply/Script Changes behave
-// like every other create dialog. What it creates is group membership rather
-// than an object, which is why it overrides the shell's success verb — the
-// database already existed, and saying it was "created" would be a lie.
+// Built on the newObjectDialog shell. It overrides the success verb because it
+// adds membership; the database isn't "created".
 
-// agAddDBPrefetch is the one fetch this dialog needs: which databases on the
-// primary can be added, and why the rest cannot.
+// agAddDBPrefetch is which primary databases can be added, and why the rest
+// can't.
 type agAddDBPrefetch struct {
-	// primary names the replica everything here was read from, for the header.
+	// primary names the replica everything was read from.
 	primary string
 
 	// eligible are the addable database names, in server order.
 	eligible []string
 
-	// excluded explains each database that was left out, e.g.
-	// "HealthClinic — recovery model is SIMPLE". Shown so a database's absence
-	// from the dropdown is never a mystery.
+	// excluded explains each left-out database (e.g. "HealthClinic — recovery
+	// model is SIMPLE"), so absences aren't a mystery.
 	excluded []string
 }
 
-// agDBCandidate is one database being considered for membership, reduced to
-// the four facts the decision turns on. gosmo.Database keeps its metadata
-// behind methods and its fields unexported, so the eligibility rule is written
-// against this instead — which also lets it be tested without a server.
+// agDBCandidate is a database reduced to the four facts eligibility depends on.
+// gosmo.Database hides its metadata behind methods, so the rule is written
+// against this, testable without a server.
 type agDBCandidate struct {
 	Name          string
 	RecoveryModel string
 	State         string
 	IsSystem      bool
 
-	// LogChainStarted is gosmo's DatabaseRecoveryStatus.LogBackupChainStarted:
-	// the database has had a full backup since it entered the FULL recovery
-	// model. It comes from a separate server-wide read rather than from
-	// gosmo.Database, which carries no backup state.
+	// LogChainStarted is DatabaseRecoveryStatus.LogBackupChainStarted: a full
+	// backup since entering FULL recovery. Read separately; gosmo.Database
+	// carries no backup state.
 	LogChainStarted bool
 }
 
-// agCandidatesFrom pairs each database with its log backup chain state, keyed
-// by lower-cased name.
+// agCandidatesFrom pairs each database with its log chain state, keyed by
+// lowercased name.
 func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCandidate {
 	out := make([]agDBCandidate, 0, len(dbs))
 	for _, d := range dbs {
@@ -68,22 +62,19 @@ func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCan
 	return out
 }
 
-// agEligibleDatabases splits the primary's databases into the ones that can
-// join the group and the ones that cannot, with a reason for each exclusion.
+// agEligibleDatabases splits the primary's databases into joinable and not,
+// with a reason per exclusion.
 //
-// The rule SQL Server enforces is full recovery plus a started log backup
-// chain, and both are checked. The second is not "has a row in
-// msdb.dbo.backupset": verified live against the AG cluster on 2026-08-23, the
-// backup history is wrong in both directions — a database whose history has
-// been purged still joins, and one backed up before a SIMPLE round trip does
-// not, failing with Msg 1475. What decides it is
-// sys.database_recovery_status.last_log_backup_lsn, which gosmo reports as
-// DatabaseRecoveryStatus.LogBackupChainStarted.
+// SQL Server requires FULL recovery and a started log backup chain. The chain
+// is sys.database_recovery_status.last_log_backup_lsn (gosmo's
+// LogBackupChainStarted), not msdb backup history, which is wrong both ways
+// (verified live): purged history still joins, and a backup before a SIMPLE
+// round trip fails with Msg 1475.
 func agEligibleDatabases(dbs []agDBCandidate, inGroup map[string]bool) (eligible, excluded []string) {
 	for _, d := range dbs {
 		switch {
 		case d.IsSystem:
-			// Silent: nobody expects master in this list.
+			// Silent: nobody expects master here.
 		case inGroup[strings.ToLower(d.Name)]:
 			excluded = append(excluded, d.Name+" — already in an availability group")
 		case !strings.EqualFold(d.RecoveryModel, string(gosmo.RecoveryModelFull)):
@@ -103,7 +94,7 @@ func agEligibleDatabases(dbs []agDBCandidate, inGroup map[string]bool) (eligible
 type AGAddDatabaseDialog struct {
 	newObjectDialog[agAddDBPrefetch]
 
-	// agName and node are set by show, before the shell's own show runs.
+	// agName and node are set by show before the shell's show.
 	agName string
 	node   *explorerNode
 }
@@ -130,9 +121,8 @@ func (d *AGAddDatabaseDialog) show(sc *db.ServerConn, agName string, node *explo
 	d.SetHeader("Availability group: "+agName, "Server: "+sc.Opts.Server)
 }
 
-// fetchPrefetch reads the candidate list from the primary, not from whichever
-// replica the tree is on: ADD DATABASE runs there, and a secondary's copies are
-// not addable in the first place.
+// fetchPrefetch reads candidates from the primary, where ADD DATABASE runs; a
+// secondary's copies aren't addable.
 func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*agAddDBPrefetch, error) {
 	ag, err := agOnPrimary(ctx, sc, d.agName)
 	if err != nil {
@@ -140,8 +130,8 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	}
 	primary := ag.Server()
 
-	// Every group on the instance, not just this one — a database can only
-	// belong to one, so one already in a different group is just as unaddable.
+	// Every group on the instance: a database in another group is just as
+	// unaddable.
 	groups, err := primary.AvailabilityGroupsContext(ctx)
 	if err != nil {
 		return nil, err
@@ -157,8 +147,7 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 		}
 	}
 
-	// One server-wide read for the log backup chain state of every database,
-	// rather than a backup-history query per candidate.
+	// One server-wide read of every database's log chain state.
 	statuses, err := primary.DatabaseRecoveryStatusesContext(ctx)
 	if err != nil {
 		return nil, err
@@ -223,9 +212,9 @@ func (d *AGAddDatabaseDialog) buildPages(pf *agAddDBPrefetch) {
 	}
 }
 
-// showAGAddDatabaseDialog opens Add Database for a group — the Object Explorer
-// context menu's entry point on an availability group and on its Availability
-// Databases folder. node is the tree node reloaded once the database is added.
+// showAGAddDatabaseDialog opens Add Database for a group, from Object
+// Explorer's menu on the group or its Availability Databases folder. node is
+// reloaded after the add.
 func (a *App) showAGAddDatabaseDialog(sc *db.ServerConn, agName string, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return

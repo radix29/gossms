@@ -11,11 +11,9 @@ import (
 	"time"
 )
 
-// The streaming path (streamResultSet, behind ExecuteToSink) and the
-// buffering path (scanResultSet, behind Execute) must render a row
-// identically — the switch to streaming was meant to change when a row is
-// written, not what it looks like. These tests drive both over the same fake
-// result set and compare.
+// Streaming (streamResultSet, behind ExecuteToSink) and buffering
+// (scanResultSet, behind Execute) must render rows identically; these drive
+// both over the same fake set.
 
 // fakeRowsConn returns one fixed result set for any query.
 type fakeRowsConn struct {
@@ -65,8 +63,7 @@ var (
 	_ driver.ExecerContext  = (*fakeRowsConn)(nil)
 )
 
-// recordingSink captures what a RowSink is handed, so a test can compare it
-// against what the buffering path produced.
+// recordingSink captures what a RowSink is handed.
 type recordingSink struct {
 	begins  [][]string
 	rows    [][]string
@@ -117,7 +114,7 @@ func streamTestRows() [][]driver.Value {
 	}
 }
 
-// The core equivalence claim: same rows in, same cells out.
+// Same rows in, same cells out.
 func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	bufDB := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer bufDB.Close()
@@ -162,9 +159,8 @@ func TestStreamAndScanRenderIdenticalCells(t *testing.T) {
 	}
 }
 
-// An export writes every row the query returned, which is the whole reason
-// the streaming path exists — and it reuses one row buffer across the set,
-// so a sink must see all 500 distinct rows, not 500 views of the last one.
+// An export writes every row, and the reused row buffer means a sink must see
+// 500 distinct rows, not 500 views of the last.
 func TestStreamResultSetWritesEveryRow(t *testing.T) {
 	rows := make([][]driver.Value, 500)
 	for i := range rows {
@@ -190,8 +186,7 @@ func TestStreamResultSetWritesEveryRow(t *testing.T) {
 	}
 }
 
-// A sink that fails mid-set reports the error and the count of rows that did
-// make it, so the caller can say how much of the file is real.
+// A sink failing mid-set reports the error and how many rows made it.
 func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 	db := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer db.Close()
@@ -208,18 +203,16 @@ func TestStreamResultSetReportsSinkFailure(t *testing.T) {
 	}
 }
 
-// beginFailSink refuses to open a set at all — the "the header row wouldn't
-// write" case, e.g. a full disk hit on csvSink's first Write.
+// beginFailSink refuses to open a set (e.g. csvSink's header write hitting a
+// full disk).
 type beginFailSink struct {
 	recordingSink
 }
 
 func (s *beginFailSink) BeginSet([]string) error { return errors.New("begin failed") }
 
-// A failed BeginSet must still get its EndSet: RowSink promises finalisation
-// happens there and nowhere else, and a sink that took a lock or allocated
-// per-set state before the failure has no other place to undo it. The defer
-// used to be registered after the BeginSet call, so this path skipped it.
+// A failed BeginSet still gets its EndSet, the only place a sink can undo
+// per-set state.
 func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 	db := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer db.Close()
@@ -246,21 +239,9 @@ func TestStreamResultSetEndsASetWhoseBeginFailed(t *testing.T) {
 	}
 }
 
-// ExecuteToSink itself is not unit-tested end to end: it runs through
-// sqlexp's ReturnMessage protocol, which a fake driver cannot reproduce — the
-// message loop needs the driver to populate MsgNext/MsgNextResultSet, and a
-// fake that ignores the retmsg out-param just ends the loop immediately,
-// producing a test that passes without exercising anything. The rows-to-cells
-// logic it adds is covered above via streamResultSet; the wiring (Sets stays
-// empty, RowsWritten totals the rows) needs the live-server check
-// docs/testing.md calls for. The one decision a unit test can still reach is which messages
-// the run ends with — see below.
-
-// TestShouldReportSuccessCountsSetsNotRows pins that an *empty* result set
-// counts as a result set on both paths. Reading RowsWritten as the stand-in
-// for "did a set happen" made a zero-row export print "(0 row(s) written)"
-// and "Commands completed successfully." together, while the same query
-// through Execute printed neither.
+// An empty result set counts as a set on both paths; counting rows instead made
+// a zero-row export print both "(0 row(s) written)" and "Commands completed
+// successfully.".
 func TestShouldReportSuccessCountsSetsNotRows(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -283,9 +264,8 @@ func TestShouldReportSuccessCountsSetsNotRows(t *testing.T) {
 	}
 }
 
-// A Progress passed in counts every scanned row, on both the retaining and
-// the streaming path — what the query panel's "Executing..." row counter
-// reads while the run is still in flight.
+// A Progress counts every scanned row on both paths (the "Executing..."
+// counter).
 func TestProgressCountsScannedRows(t *testing.T) {
 	var prog Progress
 
@@ -301,7 +281,7 @@ func TestProgressCountsScannedRows(t *testing.T) {
 		t.Errorf("Rows() after scanResultSet = %d, want %d", got, want)
 	}
 
-	// The same counter carries on across result sets rather than restarting.
+	// The counter continues across result sets.
 	streamDB := openFakeRowsDB(streamTestCols, streamTestRows())
 	defer streamDB.Close()
 	streamRows := queryFakeRows(t, streamDB)
@@ -314,7 +294,7 @@ func TestProgressCountsScannedRows(t *testing.T) {
 		t.Errorf("Rows() after both paths = %d, want %d", got, want)
 	}
 
-	// A nil *Progress is the no-count caller and must not panic.
+	// A nil *Progress must not panic.
 	if got := (*Progress)(nil).Rows(); got != 0 {
 		t.Errorf("nil Progress Rows() = %d, want 0", got)
 	}

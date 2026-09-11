@@ -12,8 +12,8 @@ func benchRows(n int) [][]driver.Value {
 	ts := time.Date(2026, 8, 1, 9, 30, 0, 0, time.UTC)
 	rows := make([][]driver.Value, n)
 	for i := range rows {
-		// Distinct per row: a real driver allocates a fresh string per cell,
-		// so a shared literal here would hide most of what the arena saves.
+		// Distinct per row, as a real driver allocates per cell; a shared
+		// literal would hide the arena's savings.
 		rows[i] = []driver.Value{int64(i), "row value " + strconv.Itoa(i), ts, []byte{0xDE, 0xAD, 0xBE, 0xEF}, nil}
 	}
 	return rows
@@ -34,9 +34,8 @@ func BenchmarkScanResultSetArena(b *testing.B) {
 	}
 }
 
-// scanResultSetNaive is the pre-arena implementation — one string per cell,
-// one slice per row — kept only so the benchmark can show what the packing
-// buys.
+// scanResultSetNaive is one string per cell and one slice per row, for
+// benchmark comparison.
 func scanResultSetNaive(rows *sql.Rows) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {

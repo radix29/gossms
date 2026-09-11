@@ -9,9 +9,8 @@ func snapshotAt(at time.Time, counters counterSet) *Snapshot {
 	return &Snapshot{At: at, Counters: counters, Waits: waitSet{}, Files: fileSet{}}
 }
 
-// The first tick has nothing to compare against. Every rate has to read
-// zero rather than the cumulative total the server has accumulated since it
-// started, which would be an opening spike of millions per second.
+// With no previous snapshot, rates must be zero, not the cumulative totals
+// since startup.
 func TestDeriveWithNoPreviousSnapshot(t *testing.T) {
 	cur := snapshotAt(time.Now(), set(
 		counterRow{objSQLStats, "Batch Requests/sec", "", 8_000_000, cntrPerSecond},
@@ -22,7 +21,7 @@ func TestDeriveWithNoPreviousSnapshot(t *testing.T) {
 	if s.BatchesSec != 0 {
 		t.Errorf("first sample's batch rate = %v, want 0 with nothing to compare against", s.BatchesSec)
 	}
-	// A gauge needs no previous sample and should be readable immediately.
+	// Gauges need no previous sample.
 	if s.PageLifeExpectancy != 5761 {
 		t.Errorf("first sample's PLE = %v, want the gauge read straight through", s.PageLifeExpectancy)
 	}
@@ -49,18 +48,18 @@ func TestDeriveComputesRatesAndUnits(t *testing.T) {
 	if s.BatchesSec != 300 {
 		t.Errorf("batches = %v/sec, want 600 over 2s", s.BatchesSec)
 	}
-	// The backup counter is bytes per second; the panel is megabytes.
+	// Backup counter is bytes/sec; the panel shows MB.
 	if s.BackupMBSec != 100 {
 		t.Errorf("backup throughput = %v MB/sec, want 200MB over 2s", s.BackupMBSec)
 	}
-	// The memory counters are kilobytes; the panel is megabytes.
+	// Memory counters are KB; the panel shows MB.
 	if s.TotalServerMemoryMB != 3072 {
 		t.Errorf("total server memory = %v MB, want 3 GB", s.TotalServerMemoryMB)
 	}
 }
 
-// The CPU split is a gauge the ring buffer already reports as percentages:
-// deriving a rate from it would turn a steady 40% into 0.
+// The CPU split is already a percentage gauge; deriving a rate would turn a
+// steady 40% into 0.
 func TestDeriveReadsCPUUsageAsAGauge(t *testing.T) {
 	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
 	prev := snapshotAt(start, set())
@@ -79,8 +78,7 @@ func TestDeriveReadsCPUUsageAsAGauge(t *testing.T) {
 	}
 }
 
-// Every sample carries its own detail; Store is what decides how long to
-// keep it.
+// Every sample carries detail; Store decides how long to keep it.
 func TestDeriveAlwaysProducesDetail(t *testing.T) {
 	cur := snapshotAt(time.Now(), set())
 	cur.Memory = []MemoryComponent{{Name: memBuffer, MB: 512}}

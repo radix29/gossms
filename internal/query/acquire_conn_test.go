@@ -8,15 +8,11 @@ import (
 	"testing"
 )
 
-// fakeAcquireConn simulates one pooled physical connection: its first
-// ExecContext call (acquireConn's USE/SELECT-1 prologue) returns execErr,
-// if set, and flips valid false exactly the way go-mssqldb's own
-// connectionGood flag drops on a real connection-level failure (see
-// mssql.Conn.checkBadConn) — driver.Validator.IsValid is what
-// sql.DB.putConn consults to decide whether a connection just released
-// back is fit to keep in the pool, and that's the exact mechanism
-// acquireConn's eviction relies on rather than anything gossms controls
-// directly.
+// fakeAcquireConn simulates one pooled connection: its first ExecContext
+// (acquireConn's prologue) returns execErr, if set, and flips valid false as
+// go-mssqldb's connectionGood does on a connection-level failure.
+// sql.DB.putConn checks driver.Validator.IsValid to decide whether to keep a
+// released connection — the mechanism acquireConn's eviction relies on.
 type fakeAcquireConn struct {
 	execErr error
 	valid   bool
@@ -45,9 +41,8 @@ var (
 
 var errFakeAcquireUnsupported = errors.New("fakeAcquireConn: unsupported")
 
-// fakeAcquireConnector hands out conns from a fixed queue, one per physical
-// dial — mirrors a real *sql.DB dialing a fresh connection whenever the
-// pool has none idle, e.g. right after a bad one was evicted.
+// fakeAcquireConnector hands out conns from a queue, one per dial, as sql.DB
+// dials when no idle connection remains (e.g. after an eviction).
 type fakeAcquireConnector struct {
 	conns []*fakeAcquireConn
 	next  int

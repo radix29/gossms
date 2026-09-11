@@ -9,18 +9,13 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
-// Availability Group Properties, all three pages, driven end to end.
-//
-// ag_props_test.go covers the pieces in isolation — the routing-list parser,
-// the preference table, the failover-mode gate, planAGRoutingOps' ordering.
-// What only a page test can show is the statement that reaches the primary:
-// which replica the ALTER names, and in what order the routing writes go out.
-// Every one of these settings is cluster configuration, so the wrong replica
-// is not a cosmetic mistake — it is the failover behaviour of a production
-// group changed without anyone seeing it happen.
+// Availability Group Properties, all three pages, end to end. ag_props_test.go
+// covers the parts; this checks the statement that reaches the primary — which
+// replica each ALTER names and routing write order. The wrong replica silently
+// changes a production group's failover behaviour.
 
-// selectReplica moves the grid cursor onto the named replica, which commits
-// whatever the detail rows held for the row it left.
+// selectReplica moves the cursor onto a replica, committing the detail rows for
+// the row left.
 func selectReplica(t *testing.T, grid *controls.DataGrid, name string) {
 	t.Helper()
 	selectGridRow(t, grid, agReplicaNameCol, name)
@@ -32,10 +27,8 @@ func loadAGGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form,
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGGeneral(sc, agFixtureName) })
 }
 
-// TestAGGeneralFailureConditionLevelWritesTheLevelNotTheIndex. The dropdown's
-// rows are levels 1-5 and the row index is one less than the level, so an
-// off-by-one here writes a different failure policy than the one on screen —
-// and the labels all read plausibly whichever way round it is.
+// Rows are levels 1-5 at index+1; an off-by-one writes a different,
+// plausible-looking policy.
 func TestAGGeneralFailureConditionLevelWritesTheLevelNotTheIndex(t *testing.T) {
 	inst, apply, form, _ := loadAGGeneralPage(t)
 
@@ -47,8 +40,7 @@ func TestAGGeneralFailureConditionLevelWritesTheLevelNotTheIndex(t *testing.T) {
 	assertOneStatement(t, inst, "ALTER AVAILABILITY GROUP [AAG1] SET (FAILURE_CONDITION_LEVEL = 4)")
 }
 
-// TestAGGeneralDTCSupportWritesTheKeyword. The checkbox is a bool and the
-// server takes PER_DB or NONE, so the mapping is the page's.
+// The checkbox maps to PER_DB or NONE.
 func TestAGGeneralDTCSupportWritesTheKeyword(t *testing.T) {
 	inst, apply, form, _ := loadAGGeneralPage(t)
 
@@ -60,9 +52,7 @@ func TestAGGeneralDTCSupportWritesTheKeyword(t *testing.T) {
 	assertOneStatement(t, inst, "ALTER AVAILABILITY GROUP [AAG1] SET (DTC_SUPPORT = PER_DB)")
 }
 
-// TestAGGeneralRequiredSyncSecondariesIsCappedByTheReplicaCount. A synchronous
-// secondary can only be required to commit if one exists; the ceiling is the
-// replica count less the primary, and raising the setting past the number of
+// The ceiling is the replica count less the primary; requiring more than the
 // healthy secondaries stops the primary accepting writes.
 func TestAGGeneralRequiredSyncSecondariesIsCappedByTheReplicaCount(t *testing.T) {
 	_, _, form, _ := loadAGGeneralPage(t)
@@ -74,9 +64,8 @@ func TestAGGeneralRequiredSyncSecondariesIsCappedByTheReplicaCount(t *testing.T)
 	}
 }
 
-// TestAGGeneralWritesOnlyTheReplicaSettingThatChanged. Each replica setting is
-// its own ALTER, and the page diffs against the values it loaded — writing all
-// six would reassert settings someone else may have changed since.
+// Each setting is its own ALTER, diffed against loaded values; writing all six
+// would reassert settings others may have changed.
 func TestAGGeneralWritesOnlyTheReplicaSettingThatChanged(t *testing.T) {
 	inst, apply, form, grid := loadAGGeneralPage(t)
 
@@ -90,10 +79,8 @@ func TestAGGeneralWritesOnlyTheReplicaSettingThatChanged(t *testing.T) {
 		"ALTER AVAILABILITY GROUP [AAG1] MODIFY REPLICA ON N'ubusql3' WITH (AVAILABILITY_MODE = SYNCHRONOUS_COMMIT)")
 }
 
-// TestAGGeneralEditsLandOnTheReplicaTheRowWasOn is the commit-on-move
-// contract, across two replicas: the detail rows belong to whichever row the
-// cursor was on when the typing happened, and a page that filed them under the
-// newly selected row would reconfigure the wrong member of the cluster.
+// Detail rows belong to the row the cursor was on while typing; filing them
+// under the new row reconfigures the wrong replica.
 func TestAGGeneralEditsLandOnTheReplicaTheRowWasOn(t *testing.T) {
 	inst, apply, form, grid := loadAGGeneralPage(t)
 
@@ -120,10 +107,8 @@ func TestAGGeneralEditsLandOnTheReplicaTheRowWasOn(t *testing.T) {
 	}
 }
 
-// TestAGGeneralEverySettingWritesItsOwnOption. Six detail rows map onto six
-// distinct ALTER options, three of which are nested inside a role clause. A
-// row wired to the neighbouring setter still produces a statement the server
-// accepts — it just changes something else.
+// Six rows map to six ALTER options (three inside a role clause); a row wired
+// to its neighbour's setter still produces an accepted statement.
 func TestAGGeneralEverySettingWritesItsOwnOption(t *testing.T) {
 	inst, apply, form, grid := loadAGGeneralPage(t)
 
@@ -160,9 +145,8 @@ func TestAGGeneralEverySettingWritesItsOwnOption(t *testing.T) {
 	}
 }
 
-// TestAGGeneralUntouchedPageWritesNothing. Six detail rows are seeded from the
-// selected replica on load, and a value that did not survive that round trip
-// would rewrite a live replica's configuration on every OK.
+// Six detail rows are seeded on load; a value that doesn't round-trip rewrites
+// a live replica on every OK.
 func TestAGGeneralUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadAGGeneralPage(t)
 
@@ -180,11 +164,8 @@ func loadAGBackupPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form, 
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGBackupPreferences(sc, agFixtureName) })
 }
 
-// TestAGBackupPreferenceWritesTheKeywordBehindTheLabel. agBackupPreferenceItems
-// is a label/keyword table, and the radio is read back by index into it — the
-// shape where a round-trip test proves nothing, since both halves would read
-// the same rotated table. Naming the label and asserting the keyword is what
-// catches it.
+// The radio is read back by index into a label/keyword table; name the label
+// and assert the keyword, since a round trip can't see a rotation.
 func TestAGBackupPreferenceWritesTheKeywordBehindTheLabel(t *testing.T) {
 	inst, apply, form, _ := loadAGBackupPage(t)
 
@@ -196,9 +177,7 @@ func TestAGBackupPreferenceWritesTheKeywordBehindTheLabel(t *testing.T) {
 	assertOneStatement(t, inst, "ALTER AVAILABILITY GROUP [AAG1] SET (AUTOMATED_BACKUP_PREFERENCE = SECONDARY_ONLY)")
 }
 
-// TestAGBackupPreferenceEveryLabelWritesItsOwnKeyword walks the whole table
-// rather than one entry, since a rotation only shows up on the entries a
-// single-value test does not visit.
+// Walk the whole table; a rotation shows only on entries a single test skips.
 func TestAGBackupPreferenceEveryLabelWritesItsOwnKeyword(t *testing.T) {
 	want := map[string]string{
 		"Prefer Secondary": "SECONDARY",
@@ -209,9 +188,8 @@ func TestAGBackupPreferenceEveryLabelWritesItsOwnKeyword(t *testing.T) {
 	for label, keyword := range want {
 		t.Run(label, func(t *testing.T) {
 			inst, apply, form, _ := loadAGBackupPage(t)
-			// The group loads on SECONDARY, so that one label is already
-			// selected and cannot be made dirty — assert it is where the page
-			// put the dot instead.
+			// The group loads on SECONDARY, which can't be made dirty; assert
+			// it's selected instead.
 			if keyword == "SECONDARY" {
 				if got := radioRow(t, form, "Where should backups occur?").Selected(); got != 0 {
 					t.Fatalf("a group set to SECONDARY selects option %d, want %q", got, label)
@@ -227,9 +205,8 @@ func TestAGBackupPreferenceEveryLabelWritesItsOwnKeyword(t *testing.T) {
 	}
 }
 
-// TestAGBackupPriorityLandsOnTheReplicaTheRowIsOn — the third replica, whose
-// priority differs from the other two, so a page reading back the wrong row
-// writes a number that is visibly not the one on screen.
+// The third replica, whose priority differs, so reading the wrong row is
+// visible.
 func TestAGBackupPriorityLandsOnTheReplicaTheRowIsOn(t *testing.T) {
 	inst, apply, form, grid := loadAGBackupPage(t)
 
@@ -242,10 +219,7 @@ func TestAGBackupPriorityLandsOnTheReplicaTheRowIsOn(t *testing.T) {
 	assertOneStatement(t, inst, "MODIFY REPLICA ON N'ubusql3' WITH (BACKUP_PRIORITY = 90)")
 }
 
-// TestAGBackupPriorityZeroExcludesTheReplica. 0 is the single value behind
-// SSMS's separate Exclude Replica checkbox, and the grid's Excluded column
-// only reports it — so the column has to follow the edit, or the page shows a
-// replica as included while staging its exclusion.
+// 0 is SSMS's Exclude Replica; the Excluded column must follow the edit.
 func TestAGBackupPriorityZeroExcludesTheReplica(t *testing.T) {
 	inst, apply, form, grid := loadAGBackupPage(t)
 
@@ -281,9 +255,8 @@ func loadAGRoutingPage(t *testing.T) (*fakeInstance, propApply, *propsheet.Form,
 	return loadAGPage(t, func(sc *db.ServerConn) propPage { return pageAGReadOnlyRouting(sc, agFixtureName) })
 }
 
-// TestAGRoutingShowsEachReplicasOwnList. The list is a per-replica query, and
-// the page would happily show one replica's list against all three if it were
-// not scoped — which is also why the fixture answers it by replica id.
+// The list is per replica; unscoped, one list would show for all three (hence
+// the fixture answers by replica id).
 func TestAGRoutingShowsEachReplicasOwnList(t *testing.T) {
 	_, _, _, grid := loadAGRoutingPage(t)
 
@@ -301,16 +274,14 @@ func TestAGRoutingShowsEachReplicasOwnList(t *testing.T) {
 	}
 }
 
-// TestAGRoutingWritesURLsBeforeListsAndClearsAfterThem. SQL Server refuses a
-// routing list naming a replica with no routing URL, and refuses to clear a
-// URL a list still references — so the ordering is the difference between the
-// page working and the server rejecting it halfway through, leaving the group
-// half-configured.
+// SQL Server refuses a list naming a replica without a URL and refuses to clear
+// a URL a list still names, so order decides whether Apply works or fails
+// halfway.
 func TestAGRoutingWritesURLsBeforeListsAndClearsAfterThem(t *testing.T) {
 	inst, apply, form, grid := loadAGRoutingPage(t)
 
-	// Give the async peer a URL, point the primary's list at it alone, and
-	// drop the URL the old list depended on.
+	// Give the async peer a URL, point the primary's list at it alone, drop the
+	// old URL.
 	selectReplica(t, grid, agAsyncPeer)
 	editText(t, form, "Read-only routing URL", "TCP://ubusql3:1433")
 	selectReplica(t, grid, agSecondary)
@@ -337,9 +308,8 @@ func TestAGRoutingWritesURLsBeforeListsAndClearsAfterThem(t *testing.T) {
 	}
 }
 
-// TestAGRoutingLoadBalancedSetKeepsItsGrouping. The parentheses the user types
-// are the difference between priority order and a load-balanced set, and they
-// have to survive into the T-SQL as nested parentheses.
+// Typed parentheses (load-balanced set vs priority order) must survive as
+// nested parentheses.
 func TestAGRoutingLoadBalancedSetKeepsItsGrouping(t *testing.T) {
 	inst, apply, form, grid := loadAGRoutingPage(t)
 
@@ -352,10 +322,8 @@ func TestAGRoutingLoadBalancedSetKeepsItsGrouping(t *testing.T) {
 	assertOneStatement(t, inst, `READ_ONLY_ROUTING_LIST = ((N'ubusql2', N'ubusql3'))`)
 }
 
-// TestAGRoutingListLandsOnTheReplicaTheRowWasOn. A routing list is a
-// primary-role property, so every replica needs its own for the group to keep
-// routing after a failover — which means the page is edited on rows other than
-// the current primary, and the commit has to follow the cursor.
+// A routing list is a primary-role property every replica needs for after
+// failover, so edits happen on non-primary rows and must follow the cursor.
 func TestAGRoutingListLandsOnTheReplicaTheRowWasOn(t *testing.T) {
 	inst, apply, form, grid := loadAGRoutingPage(t)
 
@@ -369,9 +337,7 @@ func TestAGRoutingListLandsOnTheReplicaTheRowWasOn(t *testing.T) {
 		`MODIFY REPLICA ON N'ubusql3' WITH (PRIMARY_ROLE (READ_ONLY_ROUTING_LIST = (N'ubusql2')))`)
 }
 
-// TestAGRoutingClearingAListWritesNONE. Neither NULL nor an empty string works
-// for either of these — both are server errors — so "cleared" has to become
-// the bare keyword.
+// Neither NULL nor "" works; cleared must become the NONE keyword.
 func TestAGRoutingClearingAListWritesNONE(t *testing.T) {
 	inst, apply, form, grid := loadAGRoutingPage(t)
 
@@ -384,9 +350,7 @@ func TestAGRoutingClearingAListWritesNONE(t *testing.T) {
 	assertOneStatement(t, inst, "PRIMARY_ROLE (READ_ONLY_ROUTING_LIST = NONE)")
 }
 
-// TestAGRoutingRejectsAListNamingSomethingThatIsNotAReplica at the row, not at
-// Apply: a name the page accepted would become a routing list pointing at a
-// replica that does not exist.
+// A name that isn't a replica is rejected at the row, not at Apply.
 func TestAGRoutingRejectsAListNamingSomethingThatIsNotAReplica(t *testing.T) {
 	_, _, form, grid := loadAGRoutingPage(t)
 
@@ -398,10 +362,8 @@ func TestAGRoutingRejectsAListNamingSomethingThatIsNotAReplica(t *testing.T) {
 	}
 }
 
-// TestAGRoutingUntouchedPageWritesNothing. Both fields are seeded from the
-// server — the list through formatRoutingListText, which has to round-trip
-// with the parser, or opening the page and pressing OK rewrites every
-// replica's routing.
+// The list is seeded via formatRoutingListText, which must round-trip with the
+// parser or OK rewrites every replica's routing.
 func TestAGRoutingUntouchedPageWritesNothing(t *testing.T) {
 	inst, apply, _, _ := loadAGRoutingPage(t)
 

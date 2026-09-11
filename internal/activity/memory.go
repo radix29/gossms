@@ -5,15 +5,14 @@ import (
 	"database/sql"
 )
 
-// MemoryComponent is one slice of the memory-composition bar, in megabytes.
+// MemoryComponent is one slice of the memory-composition bar, in MB.
 type MemoryComponent struct {
 	Name string
 	MB   float64
 }
 
-// Memory clerk groups, in the order they are stacked. The clerk list runs
-// to dozens of types, most of them tiny; these are the ones worth naming,
-// and everything else lands in "Other".
+// Memory clerk groups, in stacking order. Most clerk types are tiny; the rest
+// go to "Other".
 const (
 	memBuffer      = "Buffer"
 	memStolen      = "Stolen Buffer"
@@ -31,9 +30,8 @@ var memoryOrder = []string{
 	memColumnstore, memQueryGrants, memOther,
 }
 
-// clerkGroups maps a clerk type to its display group. A clerk not listed
-// here is grouped as Other rather than dropped, so the components always
-// add up to the server's total memory.
+// clerkGroups maps a clerk type to its display group. Unlisted clerks go to
+// Other, so components sum to total memory.
 var clerkGroups = map[string]string{
 	"MEMORYCLERK_SQLBUFFERPOOL":    memBuffer,
 	"MEMORYCLERK_SQLGENERAL":       memStolen,
@@ -54,9 +52,8 @@ SELECT type, SUM(pages_kb) / 1024.0
 FROM sys.dm_os_memory_clerks
 GROUP BY type`
 
-// collectMemory reads the memory clerks grouped for the composition bar.
-// The result is already in display order, so a group with no clerks is
-// simply absent rather than a zero-height slice.
+// collectMemory reads memory clerks grouped for the composition bar, in display
+// order; an empty group is absent.
 func collectMemory(ctx context.Context, db *sql.DB) ([]MemoryComponent, error) {
 	rows, err := db.QueryContext(ctx, clerkQuery)
 	if err != nil {

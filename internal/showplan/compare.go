@@ -6,12 +6,9 @@ import (
 	"strings"
 )
 
-// compare.go pairs two plans of the same query so the differences between them
-// can be shown side by side — SSMS's Compare Showplan, over the operator tree.
-//
-// Pure data, like the rest of the package: it produces the paired rows and
-// says what differs about each, and leaves every question of presentation to
-// the caller.
+// compare.go pairs two plans of the same query for side-by-side comparison
+// (SSMS's Compare Showplan over the operator tree). Pure data; presentation is
+// the caller's.
 
 // ChangeKind classifies one line of a comparison.
 type ChangeKind int
@@ -23,9 +20,8 @@ const (
 	ChangeOnlyRight                   // present in the right plan only
 )
 
-// String names the kind for a grid cell. "Only in A"/"Only in B" rather than
-// left/right: the caller labels its two columns, and a row that says "left"
-// beside a column headed "Plan 42" reads as a third thing.
+// String names the kind for a grid cell. "Only in A/B" rather than left/right,
+// since the caller labels its columns.
 func (k ChangeKind) String() string {
 	switch k {
 	case ChangeSame:
@@ -40,24 +36,21 @@ func (k ChangeKind) String() string {
 	return ""
 }
 
-// NodeDiff is one line of the comparison: a pair of matched operators, or one
-// operator present in a single plan. Depth is the operator's depth in the left
-// tree, or in the right one for a right-only line, so the caller can indent the
-// comparison the way it would indent either tree.
+// NodeDiff is one comparison line: a matched operator pair, or an operator in
+// one plan only. Depth is the depth in the left tree (right for right-only
+// lines), for indentation.
 type NodeDiff struct {
 	Depth int
 	Kind  ChangeKind
 	Left  *Node
 	Right *Node
 
-	// Changes names what moved, one phrase per property, empty for a matched
-	// pair that is identical and for a one-sided line — there is nothing to
-	// compare an absent operator against.
+	// Changes names each differing property; empty for identical pairs and
+	// one-sided lines.
 	Changes []string
 }
 
-// Node returns whichever side of the line exists, preferring the left. Every
-// line has at least one.
+// Node returns whichever side exists, preferring the left.
 func (d NodeDiff) Node() *Node {
 	if d.Left != nil {
 		return d.Left
@@ -65,22 +58,20 @@ func (d NodeDiff) Node() *Node {
 	return d.Right
 }
 
-// PropDiff is one statement-level property compared across the two plans.
+// PropDiff is one statement-level property compared across the plans.
 type PropDiff struct {
 	Name        string
 	Left, Right string
 	Different   bool
 }
 
-// CompareStatements pairs the operators of two statements, preorder, and
-// reports what differs about each pair.
+// CompareStatements pairs two statements' operators in preorder and reports
+// what differs.
 //
-// Matching is by physical operator and the object it reads, in sibling order:
-// two Index Seeks of the same table pair up even when the index changed —
-// which is the comparison a user opens this for, and would be lost if the
-// index were part of what makes two operators "the same". A physical operator
-// that changed (a seek that became a scan) deliberately does not pair: the two
-// show as one-sided lines, which is what happened.
+// Operators match by physical operator and object, in sibling order: two Index
+// Seeks on one table pair even if the index changed (the comparison users
+// want). A changed physical operator (seek → scan) doesn't pair and shows as
+// two one-sided lines.
 func CompareStatements(a, b *Statement) []NodeDiff {
 	var out []NodeDiff
 	if a == nil || b == nil {
@@ -88,7 +79,7 @@ func CompareStatements(a, b *Statement) []NodeDiff {
 	}
 	var walk func(l, r *Node, depth int)
 
-	// only emits one side's subtree as one-sided lines.
+	// only emits a subtree as one-sided lines.
 	var only func(n *Node, depth int, kind ChangeKind)
 	only = func(n *Node, depth int, kind ChangeKind) {
 		if n == nil {
@@ -114,11 +105,9 @@ func CompareStatements(a, b *Statement) []NodeDiff {
 		}
 		out = append(out, NodeDiff{Depth: depth, Kind: kind, Left: l, Right: r, Changes: changes})
 
-		// Pair the children greedily in order: each left child takes the first
-		// unclaimed right child with the same signature. Greedy rather than a
-		// longest-common-subsequence pass because an operator tree's siblings
-		// are two or three wide — the two agree wherever it matters, and the
-		// difference is invisible beside "this operator is only in one plan".
+		// Pair children greedily in order: each left child takes the first
+		// unclaimed right child with the same signature. Siblings are two or
+		// three wide, so an LCS pass wouldn't differ where it matters.
 		taken := make([]bool, len(r.Children))
 		match := make([]int, len(l.Children))
 		for i, lc := range l.Children {
@@ -130,9 +119,8 @@ func CompareStatements(a, b *Statement) []NodeDiff {
 				}
 			}
 		}
-		// Emit in left order, with each unmatched right child following the
-		// matched sibling it sits after — so a subtree added on the right shows
-		// where it was added rather than at the end.
+		// Emit in left order, each unmatched right child after the matched
+		// sibling it follows, so an added subtree shows where it was added.
 		next := 0
 		emitRightUpTo := func(limit int) {
 			for ; next < limit; next++ {
@@ -163,22 +151,19 @@ func CompareStatements(a, b *Statement) []NodeDiff {
 	return out
 }
 
-// signature is what makes two operators the same operator across two plans:
-// the physical operator and the object it touches, without the index — see
-// CompareStatements.
+// signature identifies an operator across plans: physical operator and object,
+// without the index (see CompareStatements).
 func signature(n *Node) string {
 	o := n.Object
 	return strings.Join([]string{n.PhysicalOp, o.Database, o.Schema, o.Table, o.Alias}, "|")
 }
 
-// nodeChanges names what differs between two matched operators, or nothing.
+// nodeChanges names what differs between two matched operators.
 //
-// Estimates are compared with a relative tolerance: a plan re-estimated
-// against slightly different statistics moves every row count in the tree by a
-// hair, and a comparison where every operator says "Changed" says nothing. The
-// two runtime numbers are compared exactly — they are measurements of the two
-// runs being compared, not predictions, and a reads delta the pane hides is
-// hidden on the number the user is tuning against.
+// Estimates use a relative tolerance, since a re-estimate against slightly
+// different statistics nudges every number. The two runtime numbers are
+// compared exactly: they're measurements, and hiding a reads delta hides what
+// the user is tuning.
 func nodeChanges(l, r *Node) []string {
 	var out []string
 	if l.Object.Index != r.Object.Index && (l.Object.Index != "" || r.Object.Index != "") {
@@ -207,15 +192,11 @@ func nodeChanges(l, r *Node) []string {
 	return out
 }
 
-// changeTolerance is how far a number may move before it counts as a change:
-// one per cent, which absorbs a re-estimate against refreshed statistics and
-// still catches every difference worth opening a comparison for.
+// changeTolerance is 1%: absorbs a re-estimate, catches real differences.
 const changeTolerance = 0.01
 
-// moved reports whether two numbers differ by more than the tolerance. A move
-// away from zero always counts — the tolerance is relative, and relative to
-// zero everything is infinite. Two zeros are equal, so the equality test above
-// is also what keeps scale non-zero; no separate guard is needed.
+// moved reports whether two numbers differ beyond the tolerance. Any move away
+// from zero counts. The equality check above also keeps scale non-zero.
 func moved(a, b float64) bool {
 	if a == b {
 		return false
@@ -224,10 +205,9 @@ func moved(a, b float64) bool {
 	return math.Abs(a-b)/scale > changeTolerance
 }
 
-// CompareProperties compares the statement-level numbers SSMS puts above the
-// two trees. Every property is listed, matching or not: the point of the pane
-// is to read the two plans against each other, and a row that vanishes because
-// it happens to agree makes the list a different length for every comparison.
+// CompareProperties compares the statement-level numbers SSMS shows above the
+// trees. Every property is listed, matching or not, so the table has a fixed
+// shape.
 func CompareProperties(a, b *Statement) []PropDiff {
 	if a == nil || b == nil {
 		return nil
@@ -280,8 +260,6 @@ func yesNo(b bool) string {
 	return "No"
 }
 
-// num and cost render an estimate the way a plan does: row counts to one
-// decimal (the optimizer's estimates are fractional), costs to four, which is
-// the precision a plan's own cost numbers carry.
+// num and cost render as a plan does: rows to one decimal, costs to four.
 func num(v float64) string  { return fmt.Sprintf("%.1f", v) }
 func cost(v float64) string { return fmt.Sprintf("%.4f", v) }

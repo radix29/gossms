@@ -5,10 +5,9 @@ import (
 	"database/sql"
 )
 
-// SchedStats is the CPU-pressure picture sys.dm_os_schedulers gives: how much
-// work is queued for the schedulers that run user tasks. It is not the host's
-// CPU percentage — that is CPUUsage, shredded out of the scheduler-monitor
-// ring buffer in cpu.go — and the two answer different questions.
+// SchedStats is sys.dm_os_schedulers' CPU-pressure picture: work queued for
+// user schedulers. Host CPU percentage is CPUUsage (cpu.go), a different
+// question.
 type SchedStats struct {
 	RunnableTasks float64
 	CurrentTasks  float64
@@ -17,9 +16,8 @@ type SchedStats struct {
 	Schedulers    int
 }
 
-// Only VISIBLE ONLINE schedulers run user work; the hidden ones serve
-// internal tasks and their queue depths say nothing about user CPU
-// pressure.
+// Only VISIBLE ONLINE schedulers run user work; hidden ones serve internal
+// tasks.
 const schedQuery = `
 SELECT COUNT(*), SUM(runnable_tasks_count), SUM(current_tasks_count),
        SUM(active_workers_count), SUM(work_queue_count)

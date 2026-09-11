@@ -12,8 +12,8 @@ func sampleAt(t time.Time, batches float64) Sample {
 	}}
 }
 
-// Retention is time-based, not count-based: changing the refresh rate
-// changes how many samples fit in the window, not how far back it reaches.
+// Retention is time-based: the refresh rate changes how many samples fit, not
+// how far back.
 func TestStorePrunesByAge(t *testing.T) {
 	var s Store
 	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
@@ -33,9 +33,7 @@ func TestStorePrunesByAge(t *testing.T) {
 	}
 }
 
-// The full-fidelity Detail is what makes a 30-minute window expensive, so
-// only the newest samples keep it. Every History chart plots the aggregate
-// fields, which every sample keeps.
+// Only the newest samples keep Detail; History's aggregate fields stay on all.
 func TestStoreKeepsDetailOnlyForTheNewestSamples(t *testing.T) {
 	var s Store
 	start := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
@@ -107,10 +105,8 @@ func tempdbSampleAt(t time.Time, versionMB float64) TempDBSample {
 	}
 }
 
-// The tempdb store keeps four hours where the main one keeps thirty
-// minutes: this tab ticks in tens of seconds, and what it exists to show —
-// a version store nothing cleans up, a file filling over an afternoon —
-// builds over hours. Its window is time-based for the same reason.
+// The tempdb store keeps four hours (this tab ticks in tens of seconds and
+// shows problems that build over hours); also time-based.
 func TestTempDBStorePrunesByAge(t *testing.T) {
 	var s TempDBStore
 	start := time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)
@@ -133,9 +129,8 @@ func TestTempDBStorePrunesByAge(t *testing.T) {
 	}
 }
 
-// The file and session lists are only ever read for the newest sample, and
-// a session list on a busy server is the largest thing this store holds.
-// Older samples keep the space and counter levels every chart plots.
+// File and session lists are only read for the newest sample and are the
+// largest data, so older samples keep only the charted levels.
 func TestTempDBStoreKeepsTheListsOnlyForTheNewestSamples(t *testing.T) {
 	var s TempDBStore
 	start := time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)
@@ -157,7 +152,7 @@ func TestTempDBStoreKeepsTheListsOnlyForTheNewestSamples(t *testing.T) {
 		t.Errorf("%d samples still hold their file/session lists, want at most %d",
 			withLists, TempDBDetailWindow+1)
 	}
-	// The newest sample is the one the grids read, so it must be among them.
+	// The newest sample is what the grids read.
 	newest, ok := s.Latest()
 	if !ok || newest.Files == nil || newest.Sessions == nil {
 		t.Errorf("the newest sample lost its lists: %+v", newest)

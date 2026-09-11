@@ -8,14 +8,12 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/charts"
 )
 
-// amBenchWidth is wide enough that the History canvas keeps its fixed width
-// rather than being widened to the viewport, so a run measures the same
-// canvas the panel draws on a normal terminal.
+// amBenchWidth keeps the History canvas at its fixed width, as on a normal
+// terminal.
 const amBenchWidth = 120
 
-// A cache hit has to be indistinguishable from a fresh render — the panel
-// serves a whole frame from it, so a difference anywhere is a stale
-// dashboard the user has no way to notice.
+// A cache hit must equal a fresh render; any difference is an unnoticeable
+// stale dashboard.
 func TestActivityMonitorCachedCanvasMatchesAFreshRender(t *testing.T) {
 	am := newTestActivityMonitor(amBenchWidth, 40)
 	amWithSamples(am, 900)
@@ -39,7 +37,7 @@ func TestActivityMonitorCachedCanvasMatchesAFreshRender(t *testing.T) {
 	}
 }
 
-// The cache must not outlive the data it was rendered from.
+// The cache must not outlive its data.
 func TestActivityMonitorCanvasCacheInvalidation(t *testing.T) {
 	am := newTestActivityMonitor(amBenchWidth, 40)
 	amWithSamples(am, 30)
@@ -54,15 +52,15 @@ func TestActivityMonitorCanvasCacheInvalidation(t *testing.T) {
 		t.Error("a new sample left the cached canvas in place")
 	}
 
-	// The header carries the collector's own state, so pausing has to redraw
-	// even though no sample landed.
+	// The header shows collector state, so pausing redraws without a new
+	// sample.
 	paused := am.dashboardCanvas(cw, ch)
 	am.setPaused(true)
 	if am.dashboardCanvas(cw, ch) == paused {
 		t.Error("pausing left the cached canvas in place")
 	}
 
-	// A tab change draws a different dashboard into a different canvas size.
+	// A tab change draws a different dashboard at a different size.
 	sample := am.dashboardCanvas(cw, ch)
 	am.setTab(amTabSample)
 	cw, ch = am.canvasSize()
@@ -83,8 +81,8 @@ func rowsEqual(a, b []string) bool {
 	return true
 }
 
-// BenchmarkDashboardCanvas is one full render of the History dashboard —
-// what the panel paid on every event before the canvas was cached.
+// BenchmarkDashboardCanvas is one full History render — the uncached per-event
+// cost.
 func BenchmarkDashboardCanvas(b *testing.B) {
 	am := newTestActivityMonitor(amBenchWidth, 40)
 	amWithSamples(am, 900)
@@ -96,9 +94,8 @@ func BenchmarkDashboardCanvas(b *testing.B) {
 	}
 }
 
-// BenchmarkActivityMonitorDraw is a whole panel frame off the cache: the
-// blit, the scrollbars, and the chrome, which is what an ordinary keystroke
-// now costs.
+// BenchmarkActivityMonitorDraw is a frame from cache: blit, scrollbars, chrome
+// — the per-keystroke cost.
 func BenchmarkActivityMonitorDraw(b *testing.B) {
 	am := newTestActivityMonitor(amBenchWidth, 40)
 	amWithSamples(am, 900)

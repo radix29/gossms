@@ -13,10 +13,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// jobStepOnActionItems is the on-success/on-failure action dropdown in
-// sp_add_jobstep's @on_success_action/@on_fail_action encoding: index i maps to
-// action code i+1 (1 quit success, 2 quit failure, 3 next step, 4 a specific
-// step — see the "go to step" number field beside each dropdown).
+// jobStepOnActionItems is the on-success/on-failure dropdown in
+// sp_add_jobstep's encoding: index i is action i+1 (1 quit success, 2 quit
+// failure, 3 next step, 4 go to step N, from the adjacent number field).
 var jobStepOnActionItems = []string{
 	"Quit the job reporting success",
 	"Quit the job reporting failure",
@@ -24,29 +23,23 @@ var jobStepOnActionItems = []string{
 	"Go to step...",
 }
 
-// tsqlSubsystem is the only subsystem the Steps page can edit; every other one
-// is listed read-only — see jobStepEdit.editable.
+// tsqlSubsystem is the only subsystem the Steps page can edit; others are
+// read-only (see jobStepEdit.editable).
 const tsqlSubsystem = "TSQL"
 
 // unchangedDatabaseItem is the Database dropdown's leading sentinel, selected
-// when the step's database_name is one the list can't show: NULL, which every
-// non-T-SQL step has, or a database since dropped or renamed. Without it,
-// indexOf's not-found 0 puts the alphabetically first database in the box and
-// commitCurrent writes it back — an ALTER of the step's target database nobody
-// asked for. gosmo reads an empty Database as "leave it alone", which is what
-// this sentinel maps back to.
+// when database_name isn't listable: NULL (every non-T-SQL step) or a
+// dropped/renamed database. Without it, indexOf's 0 would select the first
+// database and write it back. Maps to "", which gosmo reads as "leave it".
 const unchangedDatabaseItem = "(unchanged)"
 
-// defaultDatabaseItem is the New Job Steps page's counterpart to
-// unchangedDatabaseItem: a step that doesn't exist yet has no database to leave
-// alone, so the sentinel means "don't send @database_name at all" and lets
-// sp_add_jobstep apply the server's default.
+// defaultDatabaseItem is New Job's counterpart: a new step has nothing to leave
+// alone, so it means "omit @database_name" and let sp_add_jobstep default.
 const defaultDatabaseItem = "(default)"
 
-// jobStepEdit tracks one Steps-page row's pending state: an existing step whose
-// definition changed, a new step pending Add (isNew), or an existing step
-// pending Delete. orig is nil for a new step — Update and Delete both need a
-// real *gosmo.JobStep.
+// jobStepEdit tracks one Steps row's pending state: a changed existing step, a
+// new step (isNew), or an existing step pending Delete. orig is nil for new
+// steps; Update and Delete need a real *gosmo.JobStep.
 type jobStepEdit struct {
 	orig          *gosmo.JobStep
 	isNew         bool
@@ -54,8 +47,7 @@ type jobStepEdit struct {
 
 	stepID int // display only; 0 for a not-yet-saved new step
 
-	// subsystem is the step's own, carried through Update unchanged. Not "TSQL"
-	// for every step: the page lists whatever sysjobsteps holds.
+	// subsystem is the step's own, carried through Update unchanged.
 	subsystem string
 
 	name            string
@@ -95,10 +87,9 @@ func jobStepEditFromStep(s *gosmo.JobStep) *jobStepEdit {
 	}
 }
 
-// editable reports whether this page may write the step back — T-SQL only: the
-// edit panel has no CmdExec/PowerShell/SSIS fields, and JobStepRequest carries a
-// subsystem, so writing one of those back would hand its old command text to the
-// query processor as T-SQL.
+// editable reports whether the page may write the step back: T-SQL only. The
+// panel has no CmdExec/PowerShell/SSIS fields and JobStepRequest carries a
+// subsystem, so writing another type back would run its command text as T-SQL.
 func (e *jobStepEdit) editable() bool {
 	return e.isNew || e.subsystem == tsqlSubsystem
 }
@@ -124,36 +115,30 @@ func (e *jobStepEdit) request() gosmo.JobStepRequest {
 	}
 }
 
-// jobStepWritePlan is the Steps page's pending writes, split into the three
-// passes apply runs them in.
+// jobStepWritePlan is the pending writes, split into apply's three passes.
 type jobStepWritePlan struct {
 	updates []*jobStepEdit
 	deletes []*jobStepEdit
 	adds    []*jobStepEdit
 }
 
-// planJobStepWrites splits the page's edits into three fixed passes — updates,
-// deletes, adds — because sp_delete_jobstep renumbers every later step's step_id
-// down by one.
+// planJobStepWrites splits edits into updates, deletes, adds, because
+// sp_delete_jobstep renumbers every later step down by one.
 //
-// Each part of the order is load-bearing. Updates run first, while every step_id
-// loaded with the page is still valid. Deletes then run in **descending**
-// step_id order, so each only renumbers steps already dealt with; ascending
-// order makes the second delete address a step_id the first shifted — either
-// "step N not found" or a successful delete of the wrong step. Adds run last
-// because msdb assigns a new step's number from how many steps remain.
+// Updates first, while loaded step_ids are valid. Deletes in descending step_id
+// order, so each renumbers only steps already handled; ascending makes the
+// second delete hit a shifted id ("not found" or the wrong step). Adds last,
+// since msdb numbers new steps from the remaining count.
 //
-// editable() is already implied by changed(): the panel refuses to copy itself
-// back onto a step of another subsystem, so such a step never reports a change.
-// It is tested again anyway, because this is the pass that would rewrite that
-// step's subsystem if the panel ever stopped refusing.
+// editable() is implied by changed() (the panel won't copy onto another
+// subsystem's step) but checked again, since this pass would rewrite that
+// step's subsystem if that ever changed.
 func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	var plan jobStepWritePlan
 	for _, e := range edits {
 		switch {
 		case e.pendingRemove:
-			// A step added and removed in the same sitting was never on the
-			// server.
+			// Added and removed in one sitting: never on the server.
 			if !e.isNew {
 				plan.deletes = append(plan.deletes, e)
 			}
@@ -169,17 +154,14 @@ func planJobStepWrites(edits []*jobStepEdit) jobStepWritePlan {
 	return plan
 }
 
-// reorderedStepIDs is the order ReorderSteps must be given after the three write
-// passes: the step ids the page's steps will have *then*, in the order the page
-// lists them.
+// reorderedStepIDs is the order ReorderSteps needs after the three passes: the
+// step ids the page's steps will then have, in page order.
 //
-// The numbering is msdb's, not the page's. After the passes the surviving
-// existing steps hold 1..k in their original step_id order — sp_delete_jobstep
-// closes the gaps — and the new steps follow in the order they were added. A
-// page order differing from that is what a reorder expresses; the page's own
-// display numbers say nothing about it.
+// After the passes, surviving steps hold 1..k in their original order (deletes
+// close gaps) and new steps follow in add order. A different page order is the
+// reorder; display numbers don't matter.
 //
-// Returns nil when the page order already matches.
+// Returns nil when already in order.
 func reorderedStepIDs(edits []*jobStepEdit) []int {
 	var surviving, added []*jobStepEdit
 	for _, e := range edits {
@@ -227,19 +209,15 @@ func stepNumberText(e *jobStepEdit) string {
 	return strconv.Itoa(e.stepID)
 }
 
-// pageJobSteps is the Steps page: a grid of every step the job has plus an
-// inline "selected step" edit panel, following database_props_files.go's
-// Add/Remove idiom, plus Move Up / Move Down.
+// pageJobSteps is the Steps page: a grid of the job's steps with an inline edit
+// panel (database_props_files.go's Add/Remove idiom) plus Move Up/Down.
 //
-// Reordering is a fourth apply pass rather than part of the three, because the
-// step ids it names are the ones the other three leave behind — see
-// reorderedStepIDs.
+// Reordering is a fourth pass, since it names ids the other three leave behind
+// (see reorderedStepIDs).
 //
-// Editing is T-SQL-only, but *listing* is not: a job's steps are shown whole,
-// with a Type column, so a mixed job doesn't look shorter than it is. A step of
-// another subsystem is read-only — commitCurrent refuses to copy the form back
-// onto it, which keeps it out of changed() and so out of apply. New steps this
-// page creates are T-SQL.
+// Editing is T-SQL only, but listing isn't: every step is shown with a Type
+// column. Other subsystems are read-only (commitCurrent refuses to copy onto
+// them, keeping them out of apply). New steps are T-SQL.
 func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Steps",
@@ -276,9 +254,8 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			grid := controls.NewDataGrid()
 			grid.SetData(cols, rowsFor())
 
-			// The sentinel goes first so index 0 is the "can't show what the
-			// server reported" fallback rather than a real database — see
-			// unchangedDatabaseItem.
+			// Sentinel first, so index 0 is the "can't show" fallback (see
+			// unchangedDatabaseItem).
 			panel := newJobStepPanel(unchangedDatabaseItem, dbNames)
 
 			hint := propsheet.Hint()
@@ -299,11 +276,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					panel.setReadOnly(false)
 					return
 				}
-				// Said on selection rather than on OK: the whole panel is gated
-				// the moment the row is picked, so the explanation arrives with
-				// the gate. The command loses its highlighting on top of the
-				// gate — highlighting a PowerShell script as T-SQL claims it is
-				// one.
+				// Explained on selection, when the gate applies. Highlighting
+				// is dropped too; highlighting PowerShell as T-SQL would claim
+				// it is T-SQL.
 				if !current.editable() {
 					panel.setReadOnly(true)
 					panel.commandEditor.SetHighlighter(nil)
@@ -322,14 +297,11 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 
 			var newBtn, deleteBtn *widgets.Button
 			newBtn = widgets.NewButton("New", func() {
-				// Deliberately doesn't call panel.read(current) first: the
-				// name row doubles as the previously selected step's live edit
-				// and the new step's seed name, so committing here would
-				// misfile a freshly typed name as a rename of the wrong step.
-				// A read-only step's panel cannot be borrowed to seed a new one:
-				// its rows refuse typing, and its name is the selected step's.
-				// Clear it and unlock it instead of refusing outright, which
-				// would leave New dead for the whole visit to a mixed job.
+				// Don't read the panel into current first: the name row is both
+				// the old step's live edit and the new step's seed, so
+				// committing would misfile a typed name as a rename. A
+				// read-only step's panel can't seed a new one (its rows refuse
+				// typing), so clear and unlock it rather than disabling New.
 				if current != nil && !current.editable() {
 					current = nil
 					panel.clear()
@@ -340,10 +312,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				}
 				panel.addStep(grid, hint, cols, &edits, rowsFor, syncFieldsFromSelection)
 			})
-			// moveSelected moves the selected step one place up (delta -1) or
-			// down (+1). The swap happens in edits, not the visible slice: a
-			// step pending removal still sits between two visible ones, and
-			// swapping the visible copies would leave edits disagreeing.
+			// moveSelected moves the selected step up (-1) or down (+1),
+			// swapping in edits rather than the visible slice, which skips
+			// pending removals.
 			moveSelected := func(delta int) {
 				panel.read(current)
 				vis := visible()
@@ -432,11 +403,10 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
-				// An existing step needs a fresh *gosmo.JobStep fetched under j,
-				// the job under its current name: JobStep.Update/DeleteContext
-				// build their SQL from a job-name reference captured when this
-				// page loaded the step list, which a same-click General rename
-				// makes stale. Fetched lazily, once.
+				// Existing steps need a fresh *gosmo.JobStep fetched under j's
+				// current name: Update/DeleteContext capture the job name at
+				// load, which a same-Apply rename makes stale. Fetched lazily,
+				// once.
 				var freshSteps []*gosmo.JobStep
 				freshStep := func(stepID int) (*gosmo.JobStep, error) {
 					if freshSteps == nil {
@@ -453,7 +423,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					}
 					return nil, fmt.Errorf("gosmo: step %d not found on job %q", stepID, j.Name)
 				}
-				// The three passes and their order are planJobStepWrites'.
+				// Passes and order are planJobStepWrites'.
 				plan := planJobStepWrites(edits)
 				for _, e := range plan.updates {
 					step, err := freshStep(e.orig.StepID)
@@ -478,10 +448,9 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 						return err
 					}
 				}
-				// Fourth pass, and it must be last: the ids it names are the
-				// ones the three passes above leave behind, not the ones the
-				// page loaded. gosmo repairs "go to step N" references itself;
-				// sp_delete_jobstep does not (see MoveStepContext).
+				// Fourth pass, last: its ids are the post-pass ones. gosmo
+				// repairs "go to step N" references; sp_delete_jobstep doesn't
+				// (see MoveStepContext).
 				if ids := reorderedStepIDs(edits); ids != nil {
 					if err := j.ReorderStepsContext(ctx, func(int) []int { return ids }); err != nil {
 						return err

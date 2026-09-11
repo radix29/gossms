@@ -14,30 +14,23 @@ import (
 )
 
 // ag_add_replica_dialog.go is "Add Replica..." on a group's Availability
-// Replicas folder — SSMS's Add Replica to Availability Group wizard. It is the
-// only path to the verb once a group exists: New Availability Group's own Add
-// Replica button just edits the CREATE it is about to issue.
+// Replicas folder (SSMS's Add Replica wizard), the only way to add a replica to
+// an existing group.
 //
 // # Adding a replica is three statements on two instances
 //
-// ALTER AVAILABILITY GROUP ... ADD REPLICA runs on the primary and, on its own,
-// leaves the new replica disconnected. The replica then has to run JOIN against
-// itself — the primary cannot join anything on its behalf — and, for automatic
-// seeding, GRANT CREATE ANY DATABASE, without which SEEDING_MODE = AUTOMATIC
-// seeds nothing and reports no error for it. Exactly the shape
-// NewAGDialog.createGroup has for the replicas named in a CREATE, which is why
-// the two read alike.
+// ADD REPLICA runs on the primary and leaves the replica disconnected. The
+// replica must then JOIN itself and, for automatic seeding, GRANT CREATE ANY
+// DATABASE, without which AUTOMATIC seeding silently seeds nothing. Same shape
+// as NewAGDialog.createGroup.
 //
-// A replica is reached through db.ServerConn.Peer, which uses that instance's
-// own saved connection when there is one and this connection's credentials
-// otherwise — or when that saved connection will not connect, which is what
-// keeps a stale saved login from making a replica unreachable. So a replica
-// wanting a different login or port is reached by connecting to it once via
-// File > Connect first.
+// Replicas are reached through db.ServerConn.Peer: the instance's own saved
+// connection if any (and working), else this connection's credentials. A
+// replica needing a different login or port is reached by connecting to it once
+// via File > Connect.
 
-// agAddReplicaPrefetch is what the dialog reads from the group's primary before
-// any page is built: what the new replica has to be compatible with, and what
-// its settings should default to.
+// agAddReplicaPrefetch is read from the primary before building pages: what the
+// new replica must be compatible with, and its defaults.
 type agAddReplicaPrefetch struct {
 	// primary names the replica everything here was read from.
 	primary string
@@ -45,13 +38,12 @@ type agAddReplicaPrefetch struct {
 	// clusterType fixes the legal failover modes; see agFailoverModesFor.
 	clusterType string
 
-	// existing is every replica already in the group, lower-cased, so a second
-	// attempt at one is refused here rather than by the server.
+	// existing is every current replica, lowercased, so a duplicate is refused
+	// here.
 	existing map[string]bool
 
-	// defaults are the primary replica's own settings. A second replica of the
-	// same group nearly always wants them, and matching the primary is the only
-	// defensible guess for a mode the user has not chosen yet.
+	// defaults are the primary's own settings, the best guess for a new
+	// replica.
 	defaults newAGReplica
 }
 
@@ -59,17 +51,16 @@ type agAddReplicaPrefetch struct {
 type AGAddReplicaDialog struct {
 	newObjectDialog[agAddReplicaPrefetch]
 
-	// agName and node are set by show, before the shell's own show runs.
+	// agName and node are set by show before the shell's show.
 	agName string
 	node   *explorerNode
 
-	// resolved is the instance Connect reached, with the endpoint URL read off
-	// it. Empty until Connect succeeds — which is what preflight tests, since
-	// ADD REPLICA cannot be written without an ENDPOINT_URL and guessing one
-	// produces a replica that never connects.
+	// resolved is the instance Connect reached, with its endpoint URL. Empty
+	// until Connect succeeds, which preflight checks: ADD REPLICA needs an
+	// ENDPOINT_URL, and a guessed one never connects.
 	resolved newAGReplica
 
-	// commit copies the form's rows into resolved. Assigned by buildPages.
+	// commit copies the form into resolved; assigned by buildPages.
 	commit func()
 }
 
@@ -85,8 +76,8 @@ func NewAGAddReplicaDialog(app *App) *AGAddReplicaDialog {
 		build:   d.buildPages,
 		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
 	})
-	// The shell would script all three statements as though they ran here; two
-	// of them belong to the instance being added. See runScript.
+	// The shell would script all three statements as if run here; two belong to
+	// the new instance. See runScript.
 	d.OnScript = d.runScript
 	return d
 }
@@ -100,9 +91,8 @@ func (d *AGAddReplicaDialog) show(sc *db.ServerConn, agName string, node *explor
 	d.SetHeader("Availability group: "+agName, "Server: "+sc.Opts.Server)
 }
 
-// fetchPrefetch reads the group from its primary: ADD REPLICA is rejected on a
-// secondary, and the cluster type and the existing replicas both have to come
-// from the instance that will run the statement.
+// fetchPrefetch reads from the primary: ADD REPLICA is rejected on a secondary,
+// and cluster type and replicas must come from the instance running it.
 func (d *AGAddReplicaDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*agAddReplicaPrefetch, error) {
 	ag, err := agOnPrimary(ctx, sc, d.agName)
 	if err != nil {
@@ -145,9 +135,8 @@ func (d *AGAddReplicaDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCon
 	return pf, nil
 }
 
-// agDefaultFailoverMode is the failover mode a cluster type permits, when it
-// permits only one. WSFC allows two, so the first is offered and the user can
-// change it.
+// agDefaultFailoverMode is the cluster type's failover mode when it permits
+// only one. WSFC allows two; the first is offered.
 func agDefaultFailoverMode(clusterType string) string {
 	allowed, _ := agFailoverModesFor(clusterType)
 	return allowed[0]
@@ -155,11 +144,9 @@ func agDefaultFailoverMode(clusterType string) string {
 
 func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	nameRow := propsheet.Text("Server instance", "", 30)
-	// Editable, not Static. Connect fills it from the instance's own endpoint,
-	// whose host comes from that instance's @@SERVERNAME — so an instance whose
-	// short name the other replicas cannot resolve produces a URL that parses,
-	// is accepted, and then never connects. Typing the FQDN is the only repair,
-	// and there was none.
+	// Editable: Connect fills it from the instance's endpoint, whose host is
+	// its @@SERVERNAME, which other replicas may not resolve. Typing the FQDN
+	// is the fix.
 	endpointRow := propsheet.Text("Endpoint URL", "", 40)
 
 	modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, indexOf(agAvailabilityModeItems, pf.defaults.availabilityMode))
@@ -171,9 +158,8 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	priorityRow := propsheet.Int("Backup priority", int64(pf.defaults.backupPriority), 0, 100, "")
 
 	d.commit = func() {
-		// The row wins over what Connect read, so an edited host is what ADD
-		// REPLICA gets. Clearing it clears resolved too, which validation then
-		// refuses — the same answer as never having connected.
+		// The row wins over what Connect read. Clearing it clears resolved,
+		// which validation refuses.
 		d.resolved.endpointURL = strings.TrimSpace(endpointRow.Value())
 		d.resolved.availabilityMode = modeRow.Value()
 		d.resolved.failoverMode = failoverRow.Value()
@@ -188,9 +174,8 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 		}
 	}
 
-	// Typing over a name that was already connected to invalidates the endpoint
-	// with it. Without this the dialog would show the new name and write ADD
-	// REPLICA for the old one, which is the worst of both.
+	// Retyping a connected name invalidates its endpoint, or the dialog would
+	// show the new name and write ADD REPLICA for the old.
 	nameRow.SetOnChange(func(v string) {
 		if !strings.EqualFold(strings.TrimSpace(v), d.resolved.name) {
 			d.resolved.name, d.resolved.endpointURL = "", ""
@@ -229,9 +214,9 @@ func (d *AGAddReplicaDialog) buildPages(pf *agAddReplicaPrefetch) {
 	d.applyFns[0] = d.addReplica
 }
 
-// validateEndpointURL rejects an endpoint URL that ADD REPLICA would store and
-// then fail to connect over. The shape is tcp://host:port — the only one
-// database mirroring endpoints use, and the one gosmo's endpointURL builds.
+// validateEndpointURL rejects URLs ADD REPLICA would store and then fail to
+// connect over. Shape is tcp://host:port, as mirroring endpoints use and
+// gosmo's endpointURL builds.
 func validateEndpointURL(u string) error {
 	const scheme = "tcp://"
 	rest, ok := strings.CutPrefix(strings.ToLower(u), scheme)
@@ -249,20 +234,19 @@ func validateEndpointURL(u string) error {
 	return nil
 }
 
-// agAllowedFailoverModes is agFailoverModesFor's list alone, for the note.
+// agAllowedFailoverModes is agFailoverModesFor's list, for the note.
 func agAllowedFailoverModes(clusterType string) []string {
 	allowed, _ := agFailoverModesFor(clusterType)
 	return allowed
 }
 
-// validateAddReplica rejects what the server would, naming the reason.
+// validateAddReplica rejects what the server would, with the reason.
 func validateAddReplica(r newAGReplica, pf *agAddReplicaPrefetch) error {
 	if r.name == "" || r.endpointURL == "" {
 		return fmt.Errorf("type the instance to add and press Connect — its endpoint URL has to be read from the instance itself")
 	}
-	// The URL is editable, so it is now the one field a typo reaches the server
-	// through. ADD REPLICA takes a malformed one without complaint and the
-	// replica simply never connects, which is diagnosed hours later.
+	// ADD REPLICA accepts a malformed URL and the replica silently never
+	// connects.
 	if err := validateEndpointURL(r.endpointURL); err != nil {
 		return err
 	}
@@ -278,12 +262,11 @@ func validateAddReplica(r newAGReplica, pf *agAddReplicaPrefetch) error {
 	return nil
 }
 
-// connect resolves the typed instance name: reach it with this connection's
-// credentials and read its endpoint off the instance itself.
+// connect resolves the typed name: reach the instance with this connection's
+// credentials and read its endpoint.
 //
-// Done before OK rather than inside the apply, so the endpoint URL that is
-// about to be written into ADD REPLICA is on screen — and so an unreachable
-// instance is a message in the dialog rather than a half-run pipeline.
+// Done before OK so the endpoint URL is on screen, and an unreachable instance
+// is a dialog message rather than a half-run pipeline.
 func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done func(newAGReplica)) {
 	if name == "" {
 		d.SetMessage("Type the instance to add first.", true)
@@ -296,9 +279,8 @@ func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done
 
 	d.probeReplicaEndpoint("connecting to an availability replica", name,
 		func(peer *db.ServerConn, ep *gosmo.DatabaseMirroringEndpoint) {
-			// The instance's own @@SERVERNAME, not what was typed: ADD REPLICA
-			// addresses the replica by the name the catalog will report, and an
-			// alias or an address here makes JOIN find no matching replica.
+			// The instance's @@SERVERNAME, not what was typed: JOIN matches the
+			// catalog name, and an alias or address finds no replica.
 			d.resolved.name = peer.Server.Name()
 			d.resolved.endpointURL = ep.URL()
 			if pf.existing[strings.ToLower(d.resolved.name)] {
@@ -310,21 +292,18 @@ func (d *AGAddReplicaDialog) connect(pf *agAddReplicaPrefetch, name string, done
 			done(d.resolved)
 		},
 		func(err error) {
-			// Cleared, not left as it was: preflight reads these to decide the
-			// dialog can write ADD REPLICA at all, and a stale pair from an
-			// earlier successful Connect would let it.
+			// Cleared so a stale pair from an earlier Connect can't pass
+			// preflight.
 			d.resolved.name, d.resolved.endpointURL = "", ""
 			d.SetMessage(err.Error(), true)
 		})
 }
 
-// addReplica is the whole pipeline: ADD REPLICA on the primary, then JOIN and
-// (for automatic seeding) GRANT CREATE ANY DATABASE on the replica itself.
+// addReplica is the pipeline: ADD REPLICA on the primary, then JOIN and
+// (automatic seeding) GRANT CREATE ANY DATABASE on the replica.
 //
-// A replica that fails to join leaves a real, added replica behind in a
-// disconnected state — which is why the error says so and names the instance,
-// rather than removing a replica the user asked for on the strength of one
-// failed statement. Same choice createGroup makes for the same reason.
+// A failed JOIN leaves an added, disconnected replica; the error says so and
+// names the instance rather than removing it (as createGroup does).
 func (d *AGAddReplicaDialog) addReplica(ctx context.Context) error {
 	sc, agName, r := d.sc, d.agName, d.resolved
 
@@ -357,9 +336,9 @@ func (d *AGAddReplicaDialog) addReplica(ctx context.Context) error {
 	return nil
 }
 
-// runScript replaces the shell's, which would emit all three statements with
-// nothing saying that only the first runs here. Run whole against the primary,
-// the JOIN either errors or joins the primary to its own group.
+// runScript replaces the shell's, which would present all three statements as
+// runnable here; run on the primary, JOIN errors or joins the primary to its
+// own group.
 func (d *AGAddReplicaDialog) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
@@ -368,13 +347,13 @@ func (d *AGAddReplicaDialog) runScript() {
 	})
 }
 
-// annotateScript labels each statement with the instance it has to run on.
+// annotateScript labels each statement with the instance it must run on.
 func (d *AGAddReplicaDialog) annotateScript(statements []string) string {
 	var b strings.Builder
 	b.WriteString("-- Add Replica: these statements do NOT all run on the same instance.\n")
 
-	// Statement 0 is the ADD REPLICA, on the primary; the JOIN and the GRANT
-	// below it belong to the replica being added.
+	// Statement 0 (ADD REPLICA) is the primary's; JOIN and GRANT are the new
+	// replica's.
 	primary := "(the primary replica)"
 	switch {
 	case d.prefetch != nil && d.prefetch.primary != "":
@@ -393,9 +372,8 @@ func (d *AGAddReplicaDialog) annotateScript(statements []string) string {
 	return b.String()
 }
 
-// showAGAddReplicaDialog opens Add Replica — the Object Explorer context menu's
-// entry point on a group's Availability Replicas folder. node is the tree node
-// reloaded once the replica is added.
+// showAGAddReplicaDialog opens Add Replica from a group's Availability Replicas
+// folder. node is reloaded after the add.
 func (a *App) showAGAddReplicaDialog(sc *db.ServerConn, agName string, node *explorerNode) {
 	if !a.requireConn(sc) {
 		return

@@ -15,36 +15,30 @@ import (
 	"github.com/radix29/gossms/internal/fileutil"
 )
 
-// tracked.go holds the Query Store panel's tracked-query sets: per server, per
-// database, the query ids the user has pinned to the Tracked Queries view.
+// tracked.go holds the Query Store panel's tracked-query sets: per server and
+// database, the query ids pinned to the Tracked Queries view.
 //
-// Its own file rather than a field in config.json, for two reasons. config.json
-// is connection profiles and application settings, written by the Options and
-// Connect dialogs — a set of query ids is neither, and every save of one would
-// rewrite the file holding the encrypted passwords. And a tracked-query file
-// that goes bad costs the user a list they can rebuild in four keystrokes,
-// where config.json's does not.
+// Kept out of config.json: it's neither a profile nor a setting, every save
+// would rewrite the file holding encrypted passwords, and losing it only costs
+// a rebuildable list.
 
 // trackedFileName is the file, beside config.json.
 const trackedFileName = "tracked_queries.json"
 
-// TrackedQueries is the tracked-query sets, keyed by server and then database.
-// Safe for concurrent use: the Query Store panel reads it on the UI goroutine
-// and the Detail Browser's loaders read it on their own.
+// TrackedQueries is the tracked-query sets, keyed by server then database. Safe
+// for concurrent use (the Query Store panel and the Detail Browser's loaders).
 type TrackedQueries struct {
 	mu   sync.Mutex
 	path string
 	sets map[string]map[string][]int64
 
-	// unreadable is the error Load hit on an existing file, if any. It makes
-	// this set write-protected for the same reason Config.unreadable does: the
-	// file's contents are missing from it, so writing it back would replace a
-	// list that is very likely still intact with an empty one.
+	// unreadable is the error Load hit on an existing file. It write-protects
+	// the set, as Config.unreadable does.
 	unreadable error
 }
 
-// trackedFile is the on-disk shape. One named field rather than a bare map, so
-// the format can gain a sibling without every older file failing to parse.
+// trackedFile is the on-disk shape; a named field so the format can grow
+// without breaking older files.
 type trackedFile struct {
 	Tracked map[string]map[string][]int64 `json:"tracked"`
 }
@@ -54,10 +48,8 @@ var (
 	trackedSet  *TrackedQueries
 )
 
-// Tracked returns the process-wide tracked-query sets, read from disk on first
-// use. One instance rather than one per caller: the Query Store panel and the
-// Detail Browser's Tracked Queries grid must show the same list, and each holds
-// its own connection.
+// Tracked returns the process-wide sets, loaded on first use. Shared so the
+// Query Store panel and Detail Browser show the same list.
 func Tracked() *TrackedQueries {
 	trackedOnce.Do(func() {
 		trackedSet = LoadTrackedQueriesFrom(filepath.Join(filepath.Dir(configPath()), trackedFileName))
@@ -65,16 +57,14 @@ func Tracked() *TrackedQueries {
 	return trackedSet
 }
 
-// UseTrackedQueries replaces the process-wide set, and is how a test points it
-// at a temp directory: Tracked() reads the real user's file, and a test that
-// toggled a query through it would edit the list of whoever ran it.
+// UseTrackedQueries replaces the process-wide set, so tests can use a temp
+// directory instead of the user's file.
 func UseTrackedQueries(t *TrackedQueries) {
 	trackedOnce.Do(func() {}) // so a later Tracked() does not load over it
 	trackedSet = t
 }
 
-// LoadTrackedQueriesFrom reads one tracked-query file. Exported for a test,
-// which must not touch the user's own.
+// LoadTrackedQueriesFrom reads one tracked-query file. Exported for tests.
 func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 	t := &TrackedQueries{path: path, sets: map[string]map[string][]int64{}}
 	data, err := os.ReadFile(path)
@@ -88,8 +78,7 @@ func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 	}
 	var f trackedFile
 	if err := json.Unmarshal(data, &f); err != nil {
-		// Same treatment config.json gets: keep the bytes under a .corrupt
-		// name and start empty, rather than silently discarding the only copy.
+		// As with config.json: keep the bytes as .corrupt and start empty.
 		_ = fileutil.WriteAtomic(path+".corrupt", data, 0o600)
 		log.Printf("tracked queries: %s did not parse (%v); kept as %s.corrupt", path, err, path)
 		return t
@@ -102,29 +91,21 @@ func LoadTrackedQueriesFrom(path string) *TrackedQueries {
 	return t
 }
 
-// serverKey folds a server address to one spelling. Addresses are
-// case-insensitive and the same instance is reached by whatever the user typed
-// into Connect, so a set pinned as HOST\SQL2022 must come back for host\sql2022.
+// serverKey folds a server address: addresses are case-insensitive free text,
+// so HOST\SQL2022 and host\sql2022 share a set.
 //
-// The database half of the key is deliberately *not* folded, and the asymmetry
-// is the point: a server address is free text the user types, while every
-// database name reaching this file comes from sys.databases by way of an
-// Object Explorer node, in the server's own spelling. Folding it would merge
-// two genuinely different databases on a case-sensitive server collation,
-// where Sales and sales both exist — which is what SQL Server compares
-// database names with. TestServerIsFoldedAndDatabaseIsNot pins it.
+// The database is deliberately not folded: database names come from
+// sys.databases in the server's spelling, and on a case-sensitive collation
+// Sales and sales are different databases. TestServerIsFoldedAndDatabaseIsNot
+// pins it.
 func serverKey(server string) string { return strings.ToLower(strings.TrimSpace(server)) }
 
-// SameServer reports whether two addresses name the same instance for
-// tracked-query purposes. Exported so a caller deciding which views a toggle
-// made stale asks the same question the sets are keyed by, rather than
-// comparing the two strings itself and missing HOST\SQL2022 against
-// host\sql2022.
+// SameServer reports whether two addresses name the same instance, by the same
+// rule the sets are keyed by.
 func SameServer(a, b string) bool { return serverKey(a) == serverKey(b) }
 
-// set stores ids for one database, sorted and de-duplicated, or drops the entry
-// when the list is empty — an empty set and no set are the same thing, and
-// leaving the empty one behind grows the file with every database ever visited.
+// set stores ids for one database sorted and de-duplicated, or drops the entry
+// when empty so the file doesn't grow with every database visited.
 func (t *TrackedQueries) set(server, database string, ids []int64) {
 	key := serverKey(server)
 	ids = slices.Clone(ids)
@@ -145,8 +126,7 @@ func (t *TrackedQueries) set(server, database string, ids []int64) {
 	t.sets[key][database] = ids
 }
 
-// IDs returns the query ids tracked in one database, ascending. The result is a
-// copy — the caller passes it to a report as a query parameter list.
+// IDs returns a copy of one database's tracked query ids, ascending.
 func (t *TrackedQueries) IDs(server, database string) []int64 {
 	if t == nil {
 		return nil
@@ -166,18 +146,14 @@ func (t *TrackedQueries) IsTracked(server, database string, id int64) bool {
 	return slices.Contains(t.sets[serverKey(server)][database], id)
 }
 
-// Toggle adds a query to the set or removes it, saves the file, and reports
-// which way it went. The set is written on every change rather than at exit:
-// there is no other moment this application saves at, and a list of ids is a
-// few hundred bytes.
+// Toggle adds or removes a query, saves the file, and reports the new state.
+// Saved on every change (there's no other save point; the file is tiny).
 //
-// The error is the *save's*: the in-memory set is updated either way, so a
-// failed write costs the user the list at next start rather than the toggle
-// they just made.
+// The error is the save's; the in-memory set is updated regardless.
 func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool, err error) {
 	if t == nil {
-		// The readers above tolerate a nil set; a writer must not answer
-		// "pinned" for a pin it did not record.
+		// Readers tolerate a nil set; a writer must not claim a pin it didn't
+		// record.
 		return false, errors.New("tracked queries: no set loaded")
 	}
 	t.mu.Lock()
@@ -194,8 +170,8 @@ func (t *TrackedQueries) Toggle(server, database string, id int64) (tracked bool
 	return tracked, t.Save()
 }
 
-// Save writes the file. Refuses to write over a file that could not be read —
-// see the unreadable field.
+// Save writes the file, refusing to overwrite one that couldn't be read (see
+// unreadable).
 func (t *TrackedQueries) Save() error {
 	if t == nil {
 		return errors.New("tracked queries: no set loaded")
