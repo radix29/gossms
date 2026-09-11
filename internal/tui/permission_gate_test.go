@@ -1219,14 +1219,21 @@ func TestSchemalessDatabaseOpsAreGated(t *testing.T) {
 		// in the set, at the right's own scope — the live shape of the
 		// refusal. A name left unanswered would read unknown and fail open.
 		var zero, serverZero []string
+		securables := map[string]bool{}
 		for _, r := range rights {
-			if r.db {
+			switch {
+			case r.securable != "":
+				securables[gosmo.DatabaseSecurableKey(r.securable, "", "obj")] = false
+			case r.db:
 				zero = append(zero, r.name)
-			} else {
+			default:
 				serverZero = append(serverZero, r.name)
 			}
 		}
-		sc := probedConn(t, "appdb", nil, serverZero, []string{"ALTER ANY SCHEMA"}, zero)
+		sc, _ := newFakeConn(t, withSecurableAnswers(
+			capabilityResponses(true, nil, serverZero, []string{"ALTER ANY SCHEMA"}, zero), securables)...)
+		sc.ProbeCapabilities()
+		sc.DatabaseCapabilities(context.Background(), "appdb")
 		if allowsActionOn(sc, "appdb", "", "obj", rights...) {
 			t.Errorf("%v offers Delete to a principal holding only ALTER ANY SCHEMA", nodeType)
 		}
@@ -1251,7 +1258,6 @@ func TestTheNarrowRightPermitsASchemalessDrop(t *testing.T) {
 		{NodeColumnMasterKey, "ALTER ANY COLUMN MASTER KEY"},
 		{NodeColumnEncryptionKey, "ALTER ANY COLUMN ENCRYPTION KEY"},
 		{NodeDatabaseTrigger, "ALTER ANY DATABASE DDL TRIGGER"},
-		{NodeSecurityPolicy, "ALTER ANY SECURITY POLICY"},
 	} {
 		sc := probedConn(t, "appdb", nil, nil, []string{tc.right}, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
 		if !allowsActionOn(sc, "appdb", "", "obj", objectOpRights(tc.node)...) {

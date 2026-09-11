@@ -58,6 +58,14 @@ shipped.
   14, so a right's `role` (the name shown to the user) must be one that confers
   it on every supported major, and a probe on one version does not settle it.
 
+- **Move to Schema is not asked with the Rename/Delete set.** `ALTER SCHEMA ...
+  TRANSFER` needs CONTROL on the securable itself; ALTER on the database,
+  db_ddladmin, ALTER ANY SCHEMA and ALTER on the source schema all permit the
+  drop and are all refused the move (Msg 15151, probed on 13, 14 and 17).
+  Types and XML schema collections ask gosmo's per-securable CONTROL alone
+  (`securableTransferRights`); every sys.objects family still asks the wrong
+  set — see `docs/open-threads.md` § Permission gating.
+
 - **"The edition does not implement this" is a different question from "the
   login may not do this", and it has its own file — `edition_gate.go`.** It
   answers in the same shape (a disabled item with a short note) and composes

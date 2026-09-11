@@ -634,8 +634,10 @@ func securityPolicyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
-			sc, node.data.DBName, rightAlterAnySecPolicy),
+		// The drop's groups: ALTER SECURITY POLICY ... WITH (STATE = ...)
+		// needs the same two rights DROP does — see conjoinedOpRights.
+		gateOnAll(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, objectDataRightGroups(node.data)...),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() {

@@ -65,6 +65,19 @@ type requiredRight struct {
 	// gosmo.DatabaseCapabilities.HasOnObject.
 	object bool
 
+	// securable narrows the question to one assembly, user-defined type or XML
+	// schema collection — classes 5, 6 and 10 — asked of gosmo's per-securable
+	// probe. object cannot speak for these, being class 1 only, and no wider
+	// right can either: a principal granted CONTROL on one assembly, or owning
+	// it, reads 0 at every database and schema scope there is.
+	//
+	// Unlike object it is read Permits-wise, and so can withhold: gosmo's map
+	// is a HAS_PERMS_BY_NAME answer with a row for every securable the login
+	// can see, so a 0 is the server's answer rather than a silence. That is
+	// what lets it be Move to Schema's only right — see
+	// gosmo.ProbedSecurablePermissions for what CONTROL decides, probed live.
+	securable gosmo.DatabaseSecurableKind
+
 	// deniedOnPrincipal names the DATABASE_PRINCIPAL-scope (class 4)
 	// permission whose DENY withholds this right, or "" for a right no class-4
 	// DENY can reach. It is deliberately not r.name: the right is the
@@ -282,6 +295,16 @@ var (
 	// every database- and schema-scope permission there is.
 	rightAlterOnObject = requiredRight{name: "ALTER", db: true, object: true}
 
+	// CONTROL on one assembly, type or XML schema collection: what its owner
+	// holds implicitly, and what CONTROL on — or ownership of — its schema, or
+	// CONTROL on the database, confers. Probed live 2026-09-11 on majors 13, 14
+	// and 17 with a WITHOUT LOGIN user per case: it permits the drop and the
+	// rename beside the wider rights that also do, and it is the *only* thing
+	// that permits ALTER SCHEMA ... TRANSFER — see securableTransferRights.
+	rightControlOnAssembly            = requiredRight{name: "CONTROL", db: true, securable: gosmo.DatabaseSecurableAssembly}
+	rightControlOnType                = requiredRight{name: "CONTROL", db: true, securable: gosmo.DatabaseSecurableType}
+	rightControlOnXmlSchemaCollection = requiredRight{name: "CONTROL", db: true, securable: gosmo.DatabaseSecurableXmlSchemaCollection}
+
 	// rightAlterOnSchema is what SQL Server actually checks for a rename, a
 	// move or a drop of a schema object. No role carries it: it is granted on
 	// the schema itself, and a principal holding it may hold nothing else.
@@ -296,6 +319,8 @@ var (
 // much wider than what is missing.
 func (r requiredRight) nameOnly() string {
 	switch {
+	case r.securable != "":
+		return r.name + " on the " + databaseSecurableWord(r.securable)
 	case r.schema:
 		return r.name + " on the object's schema"
 	case r.membership:
@@ -306,6 +331,15 @@ func (r requiredRight) nameOnly() string {
 		return r.name + " on the object itself"
 	}
 	return r.name
+}
+
+// databaseSecurableWord renders a class 5/6/10 kind as the sentence says it —
+// serverSecurableWord's database-scope twin, keeping "XML" in capitals.
+func databaseSecurableWord(k gosmo.DatabaseSecurableKind) string {
+	if k == gosmo.DatabaseSecurableXmlSchemaCollection {
+		return "XML schema collection"
+	}
+	return strings.ToLower(string(k))
 }
 
 // String renders one right on its own — the permission with the role that also
@@ -435,6 +469,18 @@ func rightsAllow(server *gosmo.Capabilities, dbCaps func(string) *gosmo.Database
 			// fixed role, so a sysadmin reads 0 for diskadmin while being
 			// permitted everything diskadmin carries.
 			if !server.Probed() || server.InServerRole(r.name) || server.IsSysadmin() {
+				return true
+			}
+		case r.securable != "":
+			// No schema guard: an assembly has none, and asks with "".
+			if dbName == "" || object == "" {
+				continue
+			}
+			// PermitsOnSecurable, not HasOnSecurable, and it is the one arm
+			// here that may answer yes for a securable with no row: the map
+			// is not sparse, so a missing row is one created since the probe,
+			// and unknown fails open. A 0 falls through to the wider rights.
+			if dbCaps(dbName).PermitsOnSecurable(r.securable, schema, object, r.name) {
 				return true
 			}
 		case r.object:
@@ -754,13 +800,80 @@ func gate(item controls.MenuItem, sc *db.ServerConn, dbName string, rights ...re
 // gateOn is gate for an action aimed at one object in a schema — see
 // allowsActionOn.
 func gateOn(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object string, rights ...requiredRight) controls.MenuItem {
+	return gateOnAll(item, sc, dbName, schema, object, rights)
+}
+
+// allowsAllOn is allowsActionOn for an action that needs a right from *each*
+// of groups: every group is any-of, as allowsActionOn's one set is, and every
+// group must pass. It exists for the statement that checks two permissions and
+// is refused with either missing — DROP SECURITY POLICY, which needs ALTER ANY
+// SECURITY POLICY and ALTER on the policy's schema. Flattened into one any-of
+// set, either half alone offered a drop the server refuses.
+//
+// An empty group, like an empty set, withholds nothing.
+func allowsAllOn(sc *db.ServerConn, dbName, schema, object string, groups ...[]requiredRight) bool {
+	for _, g := range groups {
+		if !allowsActionOn(sc, dbName, schema, object, g...) {
+			return false
+		}
+	}
+	return true
+}
+
+// missingRight is the right a withheld item's note names: the first right of
+// the first group that fails, or of the first group when none does. It is the
+// first *failing* group rather than the first group because that one may well
+// be held — naming ALTER ANY SECURITY POLICY to a principal who holds it and
+// lacks the schema half sends them after the wrong grant.
+func missingRight(sc *db.ServerConn, dbName, schema, object string, groups ...[]requiredRight) (requiredRight, bool) {
+	var first requiredRight
+	found := false
+	for _, g := range groups {
+		if len(g) == 0 {
+			continue
+		}
+		if !allowsActionOn(sc, dbName, schema, object, g...) {
+			return g[0], true
+		}
+		if !found {
+			first, found = g[0], true
+		}
+	}
+	return first, found
+}
+
+// noteName is how a withheld item's note names one right. Bare for the
+// database- and server-wide rights, which is what the note has always said;
+// scoped for a right on one schema or securable, where "needs ALTER" or
+// "needs CONTROL" reads as the database-wide right — far wider than what is
+// missing.
+func noteName(r requiredRight) string {
+	if r.securable != "" || r.schema {
+		return r.nameOnly()
+	}
+	return r.name
+}
+
+// gateOnAll is gateOn for an action needing a right from each of groups — see
+// allowsAllOn. gateOn is its one-group case, so the note, the DENY reading and
+// the ANDing with the item's own predicate are the same code for both: nesting
+// two gateOns instead ANDs the predicates but keeps only the outer note, which
+// then names a right the principal may already hold.
+func gateOnAll(item controls.MenuItem, sc *db.ServerConn, dbName, schema, object string, groups ...[]requiredRight) controls.MenuItem {
 	prev := item.Enabled
-	allowed := func() bool { return allowsActionOn(sc, dbName, schema, object, rights...) }
+	allowed := func() bool { return allowsAllOn(sc, dbName, schema, object, groups...) }
+	// Every right of every group, for the DENY question: a DENY on a right any
+	// group needs withholds the action, whichever group it sits in.
+	var rights []requiredRight
+	for _, g := range groups {
+		rights = append(rights, g...)
+	}
 	if len(rights) > 0 {
-		// Shown only while the item is disabled, and only the first right —
-		// the whole "Requires X (role) or Y or Z." sentence would double the
-		// width of every context menu it appears in.
-		item.Note = "needs " + rights[0].name
+		// Shown only while the item is disabled, and only one right — the
+		// whole "Requires X (role) or Y or Z." sentence would double the width
+		// of every context menu it appears in.
+		r, _ := missingRight(sc, dbName, schema, object, groups...)
+		item.Note = "needs " + noteName(r)
 		// Unless a DENY on the object is what withheld it, and then naming a
 		// right sends the user after one they may already hold — the denial
 		// beats it. Read once here rather than in the predicate: the menu is

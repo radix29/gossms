@@ -144,7 +144,7 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 			if n.IsSystem {
 				return n, true
 			}
-			if !allowsActionOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRights(n)...) {
+			if !allowsAllOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...) {
 				return n, true
 			}
 		}
@@ -155,7 +155,8 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 		if n.IsSystem {
 			item.Note = objectDataName(n) + " is a system object"
 		} else {
-			item.Note = objectDataName(n) + " needs " + objectDataRights(n)[0].name
+			r, _ := missingRight(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...)
+			item.Note = objectDataName(n) + " needs " + noteName(r)
 		}
 	}
 	return item

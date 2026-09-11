@@ -694,25 +694,24 @@ func (a *App) objectOpsMenuItems(node *explorerNode) []controls.MenuItem {
 		return nil
 	}
 	sc, dbName := resolveConn(node), node.data.DBName
-	rights := objectDataRights(node.data)
+	groups := objectDataRightGroups(node.data)
 	schema, object := objectOpSchema(node), objectOpName(node)
 
 	var items []controls.MenuItem
 	if op.rename != nil {
-		items = append(items, gateOn(controls.MenuItem{Label: "Rename...",
-			Action: func() { a.renameObject(node) }}, sc, dbName, schema, object, rights...))
+		items = append(items, gateOnAll(controls.MenuItem{Label: "Rename...",
+			Action: func() { a.renameObject(node) }}, sc, dbName, schema, object, groups...))
 	}
 	if op.transfer != nil {
-		// The source schema, not the target: the target is picked in the
-		// dialog and its ALTER is checked by the server. Gating on the source
-		// is what stops the item being offered on an object the login cannot
-		// touch at all.
+		// The source half only: the target is picked in the dialog and its
+		// ALTER is checked by the server. Gating on the source is what stops
+		// the item being offered on an object the login cannot touch at all.
 		items = append(items, gateOn(controls.MenuItem{Label: "Move to Schema...",
-			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, schema, object, rights...))
+			Action: func() { a.moveObjectToSchema(node) }}, sc, dbName, schema, object, objectTransferRights(node.data)...))
 	}
 	if op.drop != nil || op.dropWithOption != nil {
-		items = append(items, gateOn(controls.MenuItem{Label: "Delete...",
-			Action: func() { a.deleteObject(node) }}, sc, dbName, schema, object, rights...))
+		items = append(items, gateOnAll(controls.MenuItem{Label: "Delete...",
+			Action: func() { a.deleteObject(node) }}, sc, dbName, schema, object, groups...))
 	}
 	return items
 }
@@ -759,6 +758,9 @@ func objectOpRights(t NodeType) []requiredRight {
 	if rights, ok := dbScopedOpRights[t]; ok {
 		return rights
 	}
+	if rights, ok := securableOpRights[t]; ok {
+		return rights
+	}
 	return objectWriteRights()
 }
 
@@ -772,6 +774,102 @@ func objectDataRights(n nodeData) []requiredRight {
 		return planGuideRights(n.ScopeName)
 	}
 	return objectOpRights(n.Type)
+}
+
+// objectDataRightGroups is every right set an operation on n needs: each set
+// is any-of, and all of them are required — see allowsAllOn. For every family
+// but the ones in conjoinedOpRights it is objectDataRights alone, and gates
+// exactly as that one set always has.
+func objectDataRightGroups(n nodeData) [][]requiredRight {
+	groups := [][]requiredRight{objectDataRights(n)}
+	if also, ok := conjoinedOpRights[n.Type]; ok {
+		groups = append(groups, also)
+	}
+	return groups
+}
+
+// conjoinedOpRights is a second right set a family's Rename/Delete needs *as
+// well as* objectDataRights' — for a statement SQL Server refuses unless it
+// holds a right from each.
+//
+// DROP SECURITY POLICY needs ALTER ANY SECURITY POLICY and ALTER on the
+// policy's schema, and ALTER SECURITY POLICY ... WITH (STATE = ON|OFF) needs
+// the same pair — which is why the policy's Disable/Enable asks these groups
+// too. Probed live 2026-09-11 on majors 13 and 17 with a WITHOUT LOGIN user
+// per case, identical on both, the drop and the toggle agreeing in every row:
+// holding ALTER ANY SECURITY POLICY, both went through exactly when
+// HAS_PERMS_BY_NAME(schema, 'SCHEMA', 'ALTER') read 1 — under ALTER or
+// CONTROL on the schema, its ownership, ALTER ANY SCHEMA, db_ddladmin, ALTER
+// or CONTROL on the database — and both were refused (Msg 3701, Msg 33268)
+// when it read 0: the policy right alone, ALTER on another schema, CONTROL on
+// the policy itself, and DENY ALTER on the schema beside a database-wide
+// ALTER or CONTROL on the schema. Without the policy right, every schema
+// grant was refused.
+//
+// So the schema half is rightAlterOnSchema alone: gosmo's per-schema probe
+// is that very HAS_PERMS_BY_NAME, which already folds in every wider grant,
+// and a DENY on the schema is withheld by objectDenial's schema arm before
+// any grant is read.
+var conjoinedOpRights = map[NodeType][]requiredRight{
+	NodeSecurityPolicy: {rightAlterOnSchema},
+}
+
+// objectTransferRights is what permits Move to Schema on one node. It differs
+// from objectDataRights for the types and the XML schema collection, where
+// ALTER SCHEMA ... TRANSFER is permitted by CONTROL on the securable and by
+// nothing else — see securableTransferRights. Every other family keeps the
+// Rename/Delete set, which is not right for a transfer either: see
+// docs/open-threads.md § Permission gating.
+func objectTransferRights(n nodeData) []requiredRight {
+	if rights, ok := securableTransferRights[n.Type]; ok {
+		return rights
+	}
+	return objectDataRights(n)
+}
+
+// securableOpRights is Rename/Delete's right set for the user-defined types
+// and the XML schema collection — class 6 and class 10 securables that live in
+// a schema. objectWriteRights() almost fits them and is wrong twice: its
+// rightAlterOnObject reads gosmo's class-1 map, where a type is never recorded
+// but a same-named *table* is, and nothing in it speaks for a principal
+// granted CONTROL on the type or owning it.
+//
+// Probed live 2026-09-11 on majors 13, 14 and 17, with a WITHOUT LOGIN user per
+// case, for DROP TYPE, DROP XML SCHEMA COLLECTION and sp_rename's
+// USERDATATYPE: ALTER and CONTROL on the database, ALTER ANY SCHEMA (and so
+// db_ddladmin), ALTER on the schema, CONTROL on the securable and its
+// ownership each permit all three, and DENY CONTROL on the securable refuses
+// them — by hiding it, so its node never reaches the tree.
+var securableOpRights = map[NodeType][]requiredRight{
+	NodeUserDefinedDataType:  securableWriteRights(rightControlOnType),
+	NodeUserDefinedTableType: securableWriteRights(rightControlOnType),
+	NodeUserDefinedType:      securableWriteRights(rightControlOnType),
+	NodeXmlSchemaCollection:  securableWriteRights(rightControlOnXmlSchemaCollection),
+}
+
+// securableWriteRights is objectWriteRights() with the class-1 right swapped
+// for the securable's own CONTROL.
+func securableWriteRights(own requiredRight) []requiredRight {
+	return []requiredRight{
+		rightAlterDatabase, rightControlDB, rightAlterAnySchema,
+		rightAlterOnSchema, own,
+	}
+}
+
+// securableTransferRights is Move to Schema's right set for the same families,
+// and it is one right. Probed live alongside securableOpRights, with ALTER on
+// the target schema held throughout: the transfer went through under CONTROL
+// on the securable, its ownership, CONTROL on or ownership of the source
+// schema, and CONTROL on the database — each of which gosmo's per-securable
+// CONTROL reads as 1 — and was refused (Msg 15151) under ALTER on the
+// database, ALTER ANY SCHEMA, db_ddladmin and ALTER on the source schema, every
+// one of which permits the drop. Offering it on the Delete set offered a move
+// to exactly the principals the server refuses it.
+var securableTransferRights = map[NodeType][]requiredRight{
+	NodeUserDefinedDataType:  {rightControlOnType},
+	NodeUserDefinedTableType: {rightControlOnType},
+	NodeUserDefinedType:      {rightControlOnType},
+	NodeXmlSchemaCollection:  {rightControlOnXmlSchemaCollection},
 }
 
 // principalOpRights is Rename/Delete's right set for the database-level node
@@ -827,10 +925,14 @@ var principalOpRights = map[NodeType][]requiredRight{
 //     objectDataRights answers instead.
 //   - A security policy has a schema, and its drop needs ALTER ANY SECURITY
 //     POLICY *and* ALTER on that schema: each alone is refused (Msg 3701).
-//     The gate asks any-of, so it asks the half without which nothing drops
-//     the policy — never withholding from a principal the server allows,
-//     while one holding the policy right and denied the schema is still
-//     offered a drop the server refuses. See docs/open-threads.md.
+//     This set is the policy half; conjoinedOpRights carries the schema
+//     half, and the gate requires both.
+//
+// An assembly also takes CONTROL on itself, which its owner holds: probed
+// live 2026-09-11 on 13, 14 and 17, CONTROL on the assembly or its ownership
+// permits DROP ASSEMBLY while every database-scope right reads 0. DENY CONTROL
+// on it refuses the drop over ALTER ANY ASSEMBLY — by hiding the assembly, so
+// there is no node to withhold it on — and DENY ALTER refuses nothing.
 //
 // Not every drop could be run everywhere. Without PolyBase, 13 has no external
 // data sources and 13/14 no file formats, so those drops ran on 14 and 17 and
@@ -848,14 +950,15 @@ var dbScopedOpRights = map[NodeType][]requiredRight{
 	NodeColumnMasterKey:     {rightAlterAnyCMK, rightAlterDatabase, rightControlDB},
 	NodeColumnEncryptionKey: {rightAlterAnyCEK, rightAlterDatabase, rightControlDB},
 	NodeDatabaseTrigger:     {rightAlterAnyDatabaseDDLTrigger, rightAlterDatabase, rightControlDB},
-	NodeAssembly:            {rightAlterAnyAssembly, rightAlterDatabase, rightControlDB},
+	NodeAssembly:            {rightAlterAnyAssembly, rightAlterDatabase, rightControlDB, rightControlOnAssembly},
 	NodeExternalDataSource:  {rightAlterAnyExtDataSource, rightAlterDatabase, rightControlDB},
 	NodeExternalFileFormat:  {rightAlterAnyExtFileFormat, rightAlterDatabase, rightControlDB},
 	NodeExternalLibrary:     {rightAlterAnyExtLibrary, rightAlterDatabase, rightControlDB},
 	NodePlanGuide:           planGuideWriteRights(),
 	// No wider pair: a database-wide ALTER reads 0 for ALTER ANY SECURITY
 	// POLICY and is refused the drop (see rightAlterAnySecPolicy), and CONTROL
-	// already answers 1 for the narrow right.
+	// already answers 1 for the narrow right. Only half of what the drop
+	// needs — see conjoinedOpRights.
 	NodeSecurityPolicy: {rightAlterAnySecPolicy},
 }
 

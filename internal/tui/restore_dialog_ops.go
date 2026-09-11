@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -74,6 +75,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 				d.setStatusMsg(fmt.Sprintf("Backup history: %v", err), true)
 				return
 			}
+			hist, deviceless := restorableHistory(hist)
 			if len(hist) > maxHistorySets {
 				hist = hist[:maxHistorySets]
 			}
@@ -86,13 +88,35 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 			d.ddHistSet = widgets.NewDropDown("Backup Set: ", labels, 48)
 			d.rebuildFocusable()
 			d.setFocus(d.focusIdx)
-			if len(hist) == 0 {
+			if len(hist) == 0 && deviceless > 0 {
+				// Form mode wraps the status to two lines; keep it inside them.
+				d.setStatusMsg(fmt.Sprintf("No restorable backups for %s — its %d are automated (no device); "+
+					"use Azure point-in-time restore.", dbName, deviceless), true)
+			} else if len(hist) == 0 {
 				d.setStatusMsg("No backup history for "+dbName, true)
 			} else {
 				d.setStatusMsg(d.restingStatus(), false)
 			}
 		})
 	})
+}
+
+// restorableHistory drops the history entries no RESTORE can name, returning
+// the rest in order and how many were dropped.
+//
+// A Managed Instance's automated backups are recorded in msdb with a NULL
+// physical_device_name (gosmo reads it as ""), and on t-qmi-01 they were every
+// row of every database's history. Listed, each one is a Backup Set entry that
+// restores from nothing — and the cap in loadHistory would let them crowd out
+// the user's own URL backups. Those backups are restored through the control
+// plane (point-in-time restore), not a RESTORE statement. Filtered here rather
+// than in gosmo: the Backup History viewer and Database Properties list the
+// same rows, and there they are true history.
+func restorableHistory(hist []*gosmo.BackupInfo) ([]*gosmo.BackupInfo, int) {
+	kept := slices.DeleteFunc(slices.Clone(hist), func(b *gosmo.BackupInfo) bool {
+		return strings.TrimSpace(b.DeviceName) == ""
+	})
+	return kept, len(hist) - len(kept)
 }
 
 // deviceForRestore returns the backup device the current form selects: the

@@ -293,8 +293,8 @@ func TestPadIsExactlyNColumnsForAnyInput(t *testing.T) {
 func TestDisplayWidthAtMostMatchesDisplayWidth(t *testing.T) {
 	texts := []string{
 		"", "a", "abc", "你好吗", "ééé", "👩‍👩‍👧‍👦 family",
-		"x​y​z", "mixed 你好 ascii", strings.Repeat("ab你", 50),
-		strings.Repeat("́", 30) + "abc",
+		"x\u200by\u200bz", "mixed 你好 ascii", strings.Repeat("ab你", 50),
+		strings.Repeat("\u0301", 30) + "abc",
 	}
 	for _, s := range texts {
 		full := DisplayWidth(s)

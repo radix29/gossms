@@ -421,6 +421,36 @@ func TestDeviceForRestoreFollowsTheSourceRadio(t *testing.T) {
 	}
 }
 
+// A Managed Instance's automated backups carry no device, and on t-qmi-01 they
+// were the whole history. Listed, each is a Backup Set that restores from
+// nothing — and, filtered after the cap instead of before, ten of them would
+// hide the user's own URL backup behind them.
+func TestRestorableHistoryDropsDevicelessEntries(t *testing.T) {
+	var hist []*gosmo.BackupInfo
+	for range maxHistorySets + 2 {
+		hist = append(hist, &gosmo.BackupInfo{DeviceName: ""})
+	}
+	own := &gosmo.BackupInfo{DeviceName: "https://acct.blob.core.windows.net/c/GoTest01.bak"}
+	disk := &gosmo.BackupInfo{DeviceName: `E:\hist\one.bak`}
+	hist = append(hist, own, &gosmo.BackupInfo{DeviceName: "  "}, disk)
+
+	kept, dropped := restorableHistory(hist)
+	if dropped != maxHistorySets+3 {
+		t.Errorf("dropped %d, want %d (the empty and the blank device)", dropped, maxHistorySets+3)
+	}
+	if len(kept) != 2 || kept[0] != own || kept[1] != disk {
+		t.Errorf("kept %v, want the URL and the disk entry, in order", kept)
+	}
+	// Filtering in place would shift the survivors down and nil the tail.
+	if hist[len(hist)-1] != disk || hist[0].DeviceName != "" {
+		t.Error("restorableHistory modified its input; gosmo's slice is not the dialog's to edit")
+	}
+
+	if kept, dropped := restorableHistory(nil); len(kept) != 0 || dropped != 0 {
+		t.Errorf("nil history gave %v, %d", kept, dropped)
+	}
+}
+
 // relocation snapshots the Files view for a background goroutine, which must
 // not read widgets. A field left unread here means the restore silently
 // ignores a folder the user typed.

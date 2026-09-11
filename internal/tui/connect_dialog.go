@@ -394,8 +394,26 @@ func (d *ConnectDialog) drawMatches(s tcell.Screen) {
 			st = selStyle
 		}
 		core.FillRect(s, core.Rect{X: x, Y: y + i, W: w, H: 1}, ' ', st)
-		core.DrawTextClipped(s, x, y+i, w, st, d.matches[i].Name)
+		core.DrawTextClipped(s, x, y+i, w, st, matchLabel(d.matches[i]))
 	}
+}
+
+// Column budgets for the server and database parts of a match-list label.
+const (
+	matchServerWidth   = 15
+	matchDatabaseWidth = 10
+)
+
+// matchLabel is a saved connection's name as the autocomplete list shows it:
+// GeneratedName with the server and database clipped (with an ellipsis) to
+// matchServerWidth and matchDatabaseWidth, so a long FQDN or database name
+// doesn't push the user — the part that tells two matches for one server
+// apart — off the end of the list. Display only: the stored Name is the dedup
+// key and stays whole.
+func matchLabel(c config.Connection) string {
+	c.Server = core.Truncate(c.Server, matchServerWidth)
+	c.Database = core.Truncate(c.Database, matchDatabaseWidth)
+	return c.GeneratedName()
 }
 
 func (d *ConnectDialog) layoutFields() {

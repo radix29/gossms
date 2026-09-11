@@ -626,6 +626,29 @@ func withDeniedSchemas(responses []fakeResponse, schemas ...string) []fakeRespon
 	return responses
 }
 
+// withSecurableAnswers adds gosmo's class 5/6/10 block to a capability script:
+// the HAS_PERMS_BY_NAME answer for CONTROL on each securable, keyed as
+// gosmo.DatabaseSecurableKey spells it and tagged "K:CONTROL" — see gosmo's
+// securableCapabilityQuery. true is 1, false is 0. The map is not sparse in a
+// real probe, so a test gating on it should answer every securable it asks
+// about; one it leaves out reads unknown and fails open.
+func withSecurableAnswers(responses []fakeResponse, answers map[string]bool) []fakeResponse {
+	for i, r := range responses {
+		if r.match != "IS_ROLEMEMBER" {
+			continue
+		}
+		for key, held := range answers {
+			v := int64(0)
+			if held {
+				v = 1
+			}
+			r.rows = append(r.rows, []driver.Value{"K:CONTROL", key, v})
+		}
+		responses[i] = r
+	}
+	return responses
+}
+
 // withDatabaseDenials adds a database-scope (class 0) DENY of each permission
 // to a capability script. The rows ride on the database probe beside the
 // schema- and object-scope ones, tagged "D:" with the database as the name,

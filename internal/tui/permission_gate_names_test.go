@@ -80,6 +80,16 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 		}
 		scope, list := "server", gosmo.ProbedServerPermissions
 		switch {
+		case r.securable != "":
+			// Asked of the class 5/6/10 probe, which has a list of its own. A
+			// name only the database-wide list carries — CONTROL is in both
+			// today — reads unknown for every securable and fails open, which
+			// for Move to Schema's one-right set means withholding nothing.
+			if !slices.Contains(gosmo.ProbedSecurablePermissions, r.name) {
+				t.Errorf("%q is declared securable-scoped but is not in gosmo's ProbedSecurablePermissions — "+
+					"it will read CapabilityUnknown for every securable and gate nothing", r.name)
+			}
+			continue
 		case r.membership:
 			// A membership right names a fixed database role, not a
 			// permission, and is answered by IS_ROLEMEMBER out of
@@ -192,6 +202,7 @@ type parsedRight struct {
 	deniedOnServer  string
 	serverSecurable string
 	deniedOnAG      string
+	securable       string
 	inDB            string
 	serverRole      bool
 	alt             []string
@@ -256,6 +267,12 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 				// for the "declared or not" checks above.
 				if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
 					r.serverSecurable = sel.Sel.Name
+				}
+			case "securable":
+				// gosmo.DatabaseSecurableType and its siblings — read as the
+				// selector's name, for serverSecurable's reason.
+				if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
+					r.securable = sel.Sel.Name
 				}
 			case "membership":
 				id, ok := kv.Value.(*ast.Ident)

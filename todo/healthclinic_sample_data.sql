@@ -31,9 +31,9 @@
 USE HealthClinic;
 SET NOCOUNT ON;
 
-DECLARE @NewDoctors      int = 40;
-DECLARE @NewPatients     int = 500;
-DECLARE @NewAppointments int = 2000;
+DECLARE @NewDoctors      int = 10;
+DECLARE @NewPatients     int = 100;
+DECLARE @NewAppointments int = 200;
 
 -- #temp tables live for the whole session, not the batch: a run that failed
 -- part way would otherwise make the next run fail on "already exists".

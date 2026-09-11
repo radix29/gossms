@@ -50,8 +50,7 @@ method swept.
 
 ## Azure SQL Managed Instance
 
-Supported since v0.0.10. What is open is the `TO URL` follow-up and Entra
-authentication, below.
+Supported. What is open is backup/restore `TO URL` and two Entra cases, below.
 
 **MI reports `ProductVersion` `12.0.2000.8`** while running engine build 18.0,
 so every `colSince` / `VersionMajor` gate in gosmo silently degrades or refuses
@@ -100,72 +99,56 @@ check when one does:
   same fact that makes `CREATE DATABASE`'s file clauses fail with Msg 41918.
   The relocation options are deliberately *not* gated: withholding one that
   works is the worse error.
-- **Restoring from MI's own automated backup history.** Those `backupset` rows
-  carry a NULL `physical_device_name`, which `BackupHistoryContext` reads as
-  `""`, so the Backup History source of the Restore dialog offers an entry with
-  no device. Restoring MI's managed backups is a different mechanism
-  (point-in-time restore through the control plane), not a `RESTORE` statement.
+
+Settled: **Restore's Backup History source drops entries with no device.** MI's
+automated backups are recorded with a NULL `physical_device_name`
+(`device_type` 9) — on `t-qmi-01` they were every one of msdb's 102 rows — and
+are restored by point-in-time restore through the control plane, never by a
+`RESTORE` statement. `restorableHistory` (`restore_dialog_ops.go`) filters them
+*before* the `maxHistorySets` cap, so they cannot crowd out a user's own URL
+backup, and when nothing is left the status says so rather than "No backup
+history". Filtered in the dialog, not gosmo: the Backup History viewer and
+Database Properties show the same rows as true history.
 
 Settled: MI answers `RESTORE VERIFYONLY FROM DISK = N'https://…'` with Msg
 41902 ("Unsupported device type"), and the same statement spelled `FROM URL`
 with Msg 3078 about the blob itself — so `URL` is the right device keyword.
 
-**Every Entra method but Managed Identity is verified end to end** (Phase 5
-of `docs/entra-auth-plan.md`, 2026-09-10, built binary against `t-qmi-01`,
-TenantID blank throughout):
+**Every Entra method but Managed Identity is verified end to end** against
+`t-qmi-01` with TenantID blank: one sign-in covers every later connection of
+the session (Object Explorer, query windows, Activity Monitor), and each method
+saves under its own name. Two facts worth keeping:
 
-- **Device Code**: the code entered ~1.5 min after it was shown — well past
-  the 30 s `connectTimeout`, so the sign-in runs under `SignInTimeout` — and
-  one prompt then covered two Object Explorer expands, two query windows and
-  Activity Monitor's Instance and Sessions tabs; one 33155 in MI's log.
-- **Azure CLI** and **Default** (which reached the CLI after ~2 s of chain
-  probing): an `az` wrapper on `PATH` logged **one** `az account
-  get-access-token --resource https://database.windows.net/` for a connect,
-  two expands and two query windows — S5's subprocess-per-connection storm is
-  gone.
-- **Service Principal**: signs in as `<appId>@<server tenant>`. A wrong
-  secret gives AADSTS7000215 (first line on the status bar, whole in the
-  alert); correcting it in the same dialog then connects — a failed secret is
-  not served from the `EntraCache`.
-- **Password**: a cloud-only tenant user with no MFA, two query windows on one
-  sign-in. An Entra login whose account was deleted and recreated fails with
-  18456 "Could not find a user matching the name provided" *after* a
-  successful token — the login's SID is the old object id; recreate the login.
-- **Each method saves under its own name** (`…,3342,,<appId> (Entra Service
-  Principal)`, `…,3342,, (Entra Azure CLI)`, …).
+- **A failed Service Principal secret is not served from the `EntraCache`** —
+  correcting it in the same dialog connects.
+- **An Entra login whose account was deleted and recreated fails with 18456**
+  "Could not find a user matching the name provided" *after* a successful
+  token — the login's SID is the old object id; recreate the login.
 
-Still open:
+**Open:**
 
-- **Managed Identity** — needs gossms running on an Azure-hosted machine.
+- **Managed Identity** — needs gossms running on an Azure-hosted machine. The
+  dev box is not one (no IMDS at `169.254.169.254`, checked 2026-09-11). The
+  mapping (`ManagedIdentityCredential`, resource ID over client ID) is
+  unit-tested in gosmo's `TestEntraCredentialSpecPerMethod` only.
 - **A token past its ~1 h lifetime** on a new pooled connection — it should
-  renew silently through the cached credential.
-
-MFA, the first one driven: on 2026-09-10 the
-built binary signed in to `t-qmi-01` with Microsoft Entra MFA, TenantID blank,
-as a personal Microsoft account that is a member of the server's tenant
-(`SUSER_SNAME()` = `live.com#…@hotmail.com`, `auth_scheme` FEDERATED): the
-"Signing in..." → "Connecting..." hand-off, then a query window, Activity
-Monitor and an Object Explorer expand, none of which prompted or probed
-again — MI's error log shows one 33155 for the whole session. Before that,
-on 2026-09-10 against `t-qmi-01`: field greying per method,
-Device Code showing a real code in its dialog and Escape cancelling it, a
-bogus tenant's AADSTS90002 error (first line on the status bar, whole in the
-alert), MFA opening Microsoft's authorize page through `xdg-open` in both a
-fresh and an already-running Chrome with nothing stray on the TUI screen, the
-Connect dialog's Cancel ending that sign-in, and the File menu item's gating.
+  renew silently through the cached credential. gosmo's side is unit-tested
+  with a fake clock (`TestEntraCacheRenewsAnExpiringToken`: a token within
+  `entraTokenMargin`, 5 min, of expiry is re-fetched through the same
+  credential). The live part is azidentity's own renewal — a silent refresh
+  for Device Code/MFA, a new `az` call for Azure CLI. A fake clock cannot
+  reach it because azidentity caches the token itself, so it takes a real
+  session held open past an hour, then a new query window.
 
 Settled: **with TenantID blank, MFA and Device Code sign in to the server's
 tenant.** azidentity's default is `organizations`, where a personal Microsoft
 account that is a member of the server's tenant is refused ("Selected user
-account does not exist in tenant 'Microsoft Services'" — the first real MFA
-attempt, 2026-09-10; SSMS signed the same account in). The tenant is only in
-the STS URL the server announces part-way through a login, so gosmo's `Warm`
-opens a login, abandons it once the server has named its SPN and STS URL, and
-signs in to that tenant; the answer is kept per server in the `EntraCache`.
-On `t-qmi-01` the probe takes ~0.25 s and announces SPN
-`https://database.windows.net/` — the scope Warm used to guess from the DNS
-suffix, so that guess was right — and the driven binary's authorize URL now
-names the tenant instead of `organizations`. Each probe costs one
+account does not exist in tenant 'Microsoft Services'"; SSMS signs the same
+account in). The tenant is only in the STS URL the server announces part-way
+through a login, so gosmo's `Warm` opens a login, abandons it once the server
+has named its SPN and STS URL, and signs in to that tenant; the answer is kept
+per server in the `EntraCache`. On `t-qmi-01` the probe takes ~0.25 s and
+announces SPN `https://database.windows.net/`. Each probe costs one
 **Error 33155, severity 20** in MI's error log; on-prem without Entra it is
 an immediate 18456. Do not "optimise" the probe back into a DNS-suffix guess:
 the guess cannot know the tenant. `TestLiveEntraProbe` (gosmo, `-tags
@@ -173,12 +156,12 @@ livedb`) is the repeatable part.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
-**Open: neither release job has run in its current form.** The `homebrew` job
-once went green having pushed nothing (`git diff --quiet` reports no diff for a
-path git has never tracked); it now stages first and compares against the
-index, the shape the `apt` job uses. The tap is correct today, but the fix has
-not run on a real tag. **Watch both jobs on the next tag and confirm the tap
-gained a `gossms <tag>` commit.**
+**Open: neither release job has run in its current form** — the last tag,
+v0.0.10, predates both the push fix and the Verify steps. The `homebrew` job
+stages first and compares against the index (`git diff --quiet` reports no diff
+for a path git has never tracked, which once let it go green having pushed
+nothing), the shape the `apt` job uses. **Watch both jobs on the next tag and
+confirm the tap gained a `gossms <tag>` commit.**
 
 Each job ends in a **Verify** step that fetches the *remote* back and fails
 unless it carries this tag: the tap's requires
@@ -199,9 +182,14 @@ a plausible simplification undoes:
   it exists to catch.
 
 **Open, never run:** `brew install` / `brew test` / `brew audit --strict` **on
-an actual Mac** — nothing here has ever run macOS — a `livecheck` block in the
-formula, and, on the Debian side, `dpkg -i` on a clean container, arm64
-execution and `lintian`.
+an actual Mac** — nothing here has ever run macOS — and, on the Debian side,
+`dpkg -i` on a clean container, arm64 execution and `lintian`.
+
+**Open: `brew audit --strict --online` reports "`version …` is redundant with
+version scanned from URL"** (on Linux Homebrew; `brew style` and the
+`livecheck` block are clean). Not fixed — the verify step above greps for that
+`version` line, so dropping it means changing the verify step too. Decide it
+together with the Mac audit run.
 
 The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 `replace` makes any source build from a release tarball fail, and
@@ -223,8 +211,8 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   server: on win10cli (no Entra) it and the bare `FROM EXTERNAL PROVIDER` fail
   with the *same* Msg 37525, so the parser accepted both. On `t-qmi-01` the
   bare form, run by hand from `sqlcmd` as a SQL-auth sysadmin, created
-  working logins for a user and a service principal (Entra Phase 5); the
-  New Login dialog's `WITH OBJECT_ID` form has still not been executed.
+  working logins for a user and a service principal; the New Login dialog's
+  `WITH OBJECT_ID` form has still not been executed.
 - **The Phase 3 tree families are read-only, and each for its own reason.**
   Read-only means *no create and no edit*: each family does have Script as,
   Delete, and — where SQL Server has the statement — Rename and Move to another
@@ -271,8 +259,6 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   *login* may do, and a read-only database is not a permission — a third gate
   for it would have to cover every READ_ONLY database, not just snapshots. SSMS
   behaves the same way.
-- **Open: gosmo's README documents none of the Phase 3 families**, `TableKind`
-  and the snapshot API included. One pass to make before the next gosmo tag.
 - **System Data Types has no Properties dialog.** SSMS offers none either, and
   there is nothing to show about `int` that its name does not already say. The
   folder and its Detail Browser listing exist; the context menu deliberately
@@ -280,34 +266,39 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 
 ## Permission gating: what is settled — do not re-raise
 
-**Classes 0, 1, 3, 4, 101, 105 and 108 are gated.** What is kept is the live
-behaviour each gate rests on; every row is a *wrong* gate if assumed the other
-way round.
+**Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** What is kept is
+the live behaviour each gate rests on; every row is a *wrong* gate if assumed
+the other way round.
 
-**Open: classes 5, 6 and 10 are reachable and not gated.** Since `f343300` the
-tree reaches assemblies (class 5), types (6) and XML schema collections (10),
-with Delete and — for types and collections — Transfer. The object arm of
-`rightsAllow` reads gosmo's `ObjectPermissions`, which is class 1 only, so a
-DENY (or GRANT) on `ASSEMBLY::`, `TYPE::` or `XML SCHEMA COLLECTION::` is never
-seen: the action is offered and the server refuses it. The reverse holds as
-well, fail-closed: `GRANT CONTROL ON ASSEMBLY::a` (or owning it) permits
-`DROP ASSEMBLY` — verified live on 13, 14 and 17 — while every database-scope
-right reads 0, so Delete is withheld from that principal.
+**Open: Move to Schema on a class-1 object is offered to principals the server
+refuses.** `ALTER SCHEMA ... TRANSFER` of a table needs CONTROL on the table
+itself (plus ALTER on the target schema); probed on 17 on 2026-09-11, it was refused
+(Msg 15151) under db_ddladmin, ALTER on the database, ALTER ANY SCHEMA, ALTER
+on the source schema and ALTER on the table, and went through only under
+CONTROL on the table. Move to Schema for every sys.objects family still asks
+the Rename/Delete set (`objectTransferRights` falls back to
+`objectDataRights`), so it is offered to all five. Closing it needs a CONTROL
+answer at class 1 — gosmo's object block reads explicit rows and ownership,
+not CONTROL on the schema or database — unlike classes 5, 6 and 10 below,
+which already have one.
 
-**Closed 2026-09-10: the rights half.** Every schemaless database-level family
-now has an explicit set (`dbScopedOpRights`, probed live on 13/14/17 with a
+**Every schemaless database-level family has an explicit set** (`dbScopedOpRights`, probed live on 13/14/17 with a
 `WITHOUT LOGIN` user per right — see its comment), and
 `TestSchemalessDatabaseOpsAreGated` fails on a new one without. The OBJECT-scope
 plan guide is answered by the routine (`planGuideRights`), for Delete,
 Enable/Disable and Properties alike.
 
-**Open: a security policy's drop is a conjunction the gate cannot ask.** `DROP
-SECURITY POLICY` needs ALTER ANY SECURITY POLICY **and** ALTER on the policy's
-schema — each alone is refused, Msg 3701, on 13 and 17. `rightsAllow` is any-of,
-so Delete asks the half nothing drops without; a principal holding the policy
-right while lacking (or denied) ALTER on the schema is still offered a drop the
-server refuses. Closing it needs an all-of composition that keeps `gateOn`'s
-note — nesting two `gateOn`s loses the inner note.
+**A security policy's Delete and Disable/Enable ask both halves.** `DROP
+SECURITY POLICY` and `ALTER SECURITY POLICY ... WITH (STATE = ...)` each need
+ALTER ANY SECURITY POLICY **and** ALTER on the policy's schema (Msg 3701 /
+Msg 33268 with either missing). Probed 2026-09-11 on 13 and 17, 17 cases,
+identical: with the policy right held, both went through exactly when
+`HAS_PERMS_BY_NAME(schema, 'SCHEMA', 'ALTER')` read 1 — which folds in CONTROL
+on or ownership of the schema, ALTER ANY SCHEMA, db_ddladmin and ALTER/CONTROL
+on the database — and a schema DENY beat a database-wide ALTER. CONTROL on the
+policy itself permits neither. So the schema half is `rightAlterOnSchema`
+alone (`conjoinedOpRights`), required beside the policy set through
+`gateOnAll`/`allowsAllOn`, whose note names the first *failing* group.
 
 **Open (V5-adjacent): the external library set was not run live.** No instance
 has Machine Learning Services, so `CREATE EXTERNAL LIBRARY` fails (Msg 39020)
@@ -363,6 +354,36 @@ naming the group would replace a note the user can act on with one they cannot
 *undenied* role at both scopes, because changing an owner needs more than
 `ALTER ANY` (CONTROL on the role, plus IMPERSONATE on the new owner).
 
+**Classes 5, 6 and 10 are answered by effective CONTROL, and have no DENY
+arm.** Probed live 2026-09-11 on 13, 14 and 17 with a `WITHOUT LOGIN` user per
+case, identical on all three; "CONTROL" is gosmo's `SecurablePermissions`
+(`HAS_PERMS_BY_NAME(..., 'CONTROL')`), and ALTER on the target schema was
+held for every transfer:
+
+| Held | CONTROL | DROP | `ALTER SCHEMA ... TRANSFER` |
+|---|---|---|---|
+| CONTROL on the securable, or its ownership | 1 | yes | yes |
+| CONTROL on, or ownership of, the schema (types, collections) | 1 | yes | yes |
+| CONTROL on the database | 1 | yes | yes |
+| ALTER on the database, db_ddladmin | 0 | yes | **no** |
+| ALTER ANY SCHEMA, ALTER on the schema (types, collections) | 0 | yes | **no** |
+| ALTER ANY ASSEMBLY (assemblies) | 0 | yes | — |
+| ALTER on the securable alone | 0 (ALTER reads 1) | no | no |
+| db_ddladmin or ALTER ANY ASSEMBLY + DENY ALTER on the securable (assemblies, collections; a type has no ALTER) | 0 | yes | no |
+| ALTER or CONTROL on the database, db_ddladmin, ALTER ANY ASSEMBLY or ALTER on the schema + DENY CONTROL on the securable (db_ddladmin also with the DENY to public) | 0 | no | no |
+
+An alias type's rename (sp_rename `USERDATATYPE`) matched the DROP column in
+every grant row, on 13 and 17 — which is why Rename shares Delete's set.
+
+So Move to Schema asks CONTROL alone (`securableTransferRights`), and
+Delete/Rename ask it beside the wider rights (`securableOpRights`,
+`dbScopedOpRights`). The DENY CONTROL row needs no gate: it takes VIEW
+DEFINITION with it, and the securable vanishes from `sys.assemblies`,
+`sys.types` and `sys.xml_schema_collections` for that principal — there is no
+node to withhold anything on. That is also why gosmo reads no DENY rows at
+these classes. And DENY ALTER withholds neither the drop nor anything else
+gossms offers, while reading ALTER 0 — ALTER is the wrong question here.
+
 ### Where the per-row answers are deliberately not stated
 
 Three pages list securables whose permissibility differs per row, and one
@@ -376,10 +397,10 @@ per-role half.
 AUTHORIZATION` is refused on an undenied role too, so the DENY is not what
 withholds it.
 
-### The rest, unchanged
+### The rest
 
-- **No other class is reachable.** Beyond the gated classes and the open
-  5/6/10 above, gossms's `NodeType` list has no certificate,
+- **No other class is reachable.** Beyond the gated classes above, gossms's
+  `NodeType` list has no certificate,
   symmetric/asymmetric key, fulltext catalog or Service Broker node, and
   column master/encryption keys, partition functions and schemes have no
   securable class of their own.
@@ -859,8 +880,7 @@ they flipped the selector.
 
 ## Connection settings: what the live run settled
 
-From the 2026-09-10 connection-layer work (Encrypt modes, Extra Properties,
-per-role application name, the Entra field mapping, IPv6 addresses).
+Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
 `internal/db/live_connect_test.go` is the repeatable part; it passes on 13,
 17.0 and MI.
 
@@ -917,7 +937,7 @@ per-role application name, the Entra field mapping, IPv6 addresses).
 
 ## By design — not issues, do not re-raise
 
-- **A query window's session (BUG-1, fixed 2026-09-10) behaves like SSMS's, with
+- **A query window's session behaves like SSMS's, with
   three deliberate differences.** A panel closed *while a query is running* is
   not asked about its transaction: the run is cancelled and the session ended,
   which rolls back — its `@@TRANCOUNT` is from before the run, so a prompt
@@ -1218,26 +1238,23 @@ when the underlying issue is fixed.
 - **B3** — `RESTORE ... WITH MOVE` on MI: relocation options are deliberately
   ungated and were never driven; MI places its own files. § Azure SQL Managed
   Instance
-- **B4** — Restore from MI's automated backup history offers an entry with no
-  device (NULL `physical_device_name`); the mechanism is control-plane, not
-  `RESTORE`. § Azure SQL Managed Instance
+- **B5** — Move to Schema on a class-1 object (table, view, procedure, …) is
+  offered on the Rename/Delete set; the server wants CONTROL on the object.
+  Needs a class-1 CONTROL answer from gosmo. § Permission gating
 
 ### Verification gaps
 
 - **V2** — `brew install` / `brew test` / `brew audit --strict` on a real Mac;
-  a `livecheck` block in the formula. § Release workflow
+  the audit's redundant-`version` note. § Release workflow
 - **V3** — Debian side: `dpkg -i` on a clean container, arm64 execution,
   `lintian`. § Release workflow
 - **V4** — External Tables folder and FileTables under the tree, against a real
   PolyBase / FILESTREAM instance. § Deferred scope
 - **V5** — CLR type, assembly and external-resource scripts have never been
-  executed against a server. § Deferred scope
+  executed against a server, and the external library right set was never run
+  live (no Machine Learning Services). § Deferred scope, § Permission gating
 - **V6** — Entra: Managed Identity (needs an Azure-hosted machine) and a
-  token renewed past its lifetime; the other methods and `CREATE LOGIN ...
-  FROM EXTERNAL PROVIDER` are driven on MI. § Deferred scope, § Azure SQL
+  token renewed past its lifetime (gosmo's cache side is unit-tested, the
+  live renewal is not); the other methods and `CREATE LOGIN ... FROM
+  EXTERNAL PROVIDER` are driven on MI. Rechecked 2026-09-11: still open. § Deferred scope, § Azure SQL
   Managed Instance
-
-### Functionality and nice-to-have
-
-- **F1** — Document the Phase 3 families, `TableKind` and the snapshot API in
-  gosmo's README; one pass before the next gosmo tag. § Deferred scope

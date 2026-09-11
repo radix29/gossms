@@ -1,4 +1,5 @@
-connect dialog. for the name of the connection, use only up to 15 chars for the server name and up to 10 chars for the database name so that the user name is still visible in the combo box
+new database and other dialogs.. disable the ok and apply button during apllying
+
 
 **Phase 3 — the tree's missing families (M, ~3–4 weeks)**
 14. Service Broker (whole subtree)
@@ -66,7 +67,7 @@ do not commit or tag anything to git. highlight in the release file the homebre 
 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md
 
-
+update open-threads, delete what it is done and the history. keep only what is actual.
 update the fix lists at the bottom of open threads if something was already fixed.
 
 --------------
