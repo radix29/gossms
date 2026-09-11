@@ -52,6 +52,9 @@ func (p *QueryPanel) Draw(s tcell.Screen) {
 // PanelManager tab bar's title just above it. An open transaction is called
 // out at the end: it holds locks, and closing the window rolls it back.
 func (p *QueryPanel) connInfoText() string {
+	if p.connectingTo != "" {
+		return fmt.Sprintf("Connecting to %s...", p.connectingTo)
+	}
 	if p.conn == nil {
 		return "(not connected)"
 	}
@@ -77,8 +80,12 @@ func (p *QueryPanel) connInfoText() string {
 // and then had its connection silently dropped (p.conn is still this
 // panel's own *db.ServerConn, just no longer open — see Reconnect) from one
 // that was never connected in the first place, since Query > Reconnect only
-// has anything to redial in the former case.
+// has anything to redial in the former case. A connect still in flight is
+// neither, and says so.
 func (p *QueryPanel) notConnectedMessage() string {
+	if p.connectingTo != "" {
+		return fmt.Sprintf("Still connecting to %s — try again once it connects", p.connectingTo)
+	}
 	if p.conn != nil {
 		return "Not connected — use Query > Reconnect"
 	}

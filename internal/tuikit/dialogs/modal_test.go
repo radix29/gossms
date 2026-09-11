@@ -160,7 +160,7 @@ func TestModalDialogLatchDoesNotSurviveIntoTheNextShowing(t *testing.T) {
 
 	labels := []string{"Yes", "No"}
 	y := d.ButtonRowY()
-	x := d.buttonRowStartX(labels) + 1
+	x := d.ButtonRowStartX(labels) + 1
 	press := func() *tcell.EventMouse {
 		return tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone)
 	}
@@ -284,7 +284,7 @@ func TestDrawButtonsClearsTheRowOnAClampedRect(t *testing.T) {
 	if got := rec.at(r.X+1, d.ButtonRowY()); got == 'x' {
 		t.Error("content left of the buttons survived on the button row")
 	}
-	if got := rec.at(d.buttonRowStartX([]string{"OK"}), d.ButtonRowY()); got != '[' {
+	if got := rec.at(d.ButtonRowStartX([]string{"OK"}), d.ButtonRowY()); got != '[' {
 		t.Errorf("button row starts with %q, want '['", got)
 	}
 }

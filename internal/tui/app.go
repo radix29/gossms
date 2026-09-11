@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/pkg/browser"
@@ -125,6 +126,7 @@ type App struct {
 	confirmDialog               *dialogs.ConfirmDialog
 	confirmTypedDialog          *dialogs.TypedConfirmDialog
 	alertDialog                 *dialogs.AlertDialog
+	progressDialog              *dialogs.ProgressDialog
 	deviceCodeDialog            *DeviceCodeDialog
 	backupDialog                *BackupDialog
 	restoreDialog               *RestoreDialog
@@ -138,6 +140,12 @@ type App struct {
 	// monotonic ID counter.
 	tasks   []*Task
 	taskSeq int
+
+	// progressBusy is set while a runWithProgress job holds the progress
+	// dialog; progressSeq numbers the jobs, so a late progressReport cannot
+	// rewrite a later job's dialog. UI goroutine only.
+	progressBusy bool
+	progressSeq  int
 
 	connections []*db.ServerConn
 	cfg         *config.Config
@@ -404,6 +412,25 @@ func (a *App) wakeEventLoop() {
 	}
 }
 
+// animateUntil wakes the event loop every period until done closes — the
+// redraw clock for a widgets.Spinner, which is drawn from elapsed time and has
+// nothing else to repaint it while the work it stands for is quiet. The
+// caller closes done, deferred inside the worker so a panic stops it too.
+func (a *App) animateUntil(what string, period time.Duration, done <-chan struct{}) {
+	a.safego(what, func() {
+		ticker := time.NewTicker(period)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				a.wakeEventLoop()
+			}
+		}
+	})
+}
+
 // buildUI creates all UI components from tuikit building blocks.
 func (a *App) buildUI() {
 	a.explorer = NewObjectExplorer(a)
@@ -482,6 +509,8 @@ func (a *App) buildUI() {
 	a.confirmDialog = registerDialog(a, dialogs.NewConfirmDialog(a.screen))
 	a.confirmTypedDialog = registerDialog(a, dialogs.NewTypedConfirmDialog(a.screen))
 	a.alertDialog = registerDialog(a, dialogs.NewAlertDialog(a.screen))
+	a.progressDialog = registerDialog(a, dialogs.NewProgressDialog(a.screen))
+	a.progressDialog.RevealDelay = progressRevealDelay
 	// After the Connect dialog, which a device code opens over.
 	a.deviceCodeDialog = registerDialog(a, NewDeviceCodeDialog(a))
 	a.backupDialog = registerDialog(a, NewBackupDialog(a))

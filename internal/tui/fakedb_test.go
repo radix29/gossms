@@ -87,6 +87,14 @@ type fakeResponse struct {
 	// driver answers instantly and every read has finished — and been
 	// cancelled by its own defer — before the test regains control.
 	block chan struct{}
+
+	// blockExec holds a matching *write* inside the driver until it is closed
+	// or the statement's context is cancelled — the latter answered with the
+	// context's error, the way a real driver answers a cancelled statement. It
+	// is how a test cancels a write genuinely in flight (the progress dialog's
+	// Cancel); block is not consulted for writes, so a read answer's block
+	// cannot hold an exec that happens to contain its match.
+	blockExec chan struct{}
 }
 
 // fakeInstance is the scripted responses plus the record of every statement
@@ -211,6 +219,28 @@ func (f *fakeInstance) execError(q, curDB string, args []driver.NamedValue) erro
 		}
 		if strings.Contains(q, r.match) {
 			return r.err
+		}
+	}
+	return nil
+}
+
+// execBlock is the blockExec channel of the response matching a write, if any.
+func (f *fakeInstance) execBlock(q, curDB string, args []driver.NamedValue) chan struct{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.responses {
+		r := &f.responses[i]
+		if r.blockExec == nil {
+			continue
+		}
+		if r.db != "" && r.db != curDB {
+			continue
+		}
+		if r.arg != "" && !hasStringArg(args, r.arg) {
+			continue
+		}
+		if strings.Contains(q, r.match) {
+			return r.blockExec
 		}
 	}
 	return nil
@@ -363,11 +393,18 @@ func (c *fakeConn) Prepare(string) (driver.Stmt, error) { return nil, driver.Err
 func (c *fakeConn) Close() error                        { return nil }
 func (c *fakeConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
 
-func (c *fakeConn) ExecContext(_ context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+func (c *fakeConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	// Recorded before the failure check: the statement was attempted, and a
 	// test asserting which writes an aborted apply got as far as needs to see
 	// the one that failed.
 	c.inst.recordExec(c.curDB, q, args)
+	if b := c.inst.execBlock(q, c.curDB, args); b != nil {
+		select {
+		case <-b:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	if err := c.inst.execError(q, c.curDB, args); err != nil {
 		return nil, err
 	}

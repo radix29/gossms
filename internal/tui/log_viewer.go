@@ -744,22 +744,33 @@ func (lv *LogViewer) recycle() {
 			return
 		}
 		lv.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
-		// safegoRepair for the same reason Load uses it: busy is cleared in the
-		// posted callback, which a panic never reaches, and toolsEnabled gates
-		// the whole toolbar on it.
-		lv.app.safegoRepair("cycling an error log", lv.recyclePanicked, func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
-			defer cancel()
-			err := sc.Server.CycleLogContext(ctx, logType)
-			lv.app.postAndWake(func() {
-				lv.busy = false
-				if err != nil {
-					lv.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
-					return
-				}
+		// The job's repair for the same reason Load uses safegoRepair: busy is
+		// cleared in the completion, which a panic never reaches, and
+		// toolsEnabled gates the whole toolbar on it.
+		lv.app.runWithProgress(progressJob{
+			title:   "Recycle Log",
+			message: fmt.Sprintf("Recycling the %s error log...", logType),
+			what:    "cycling an error log",
+			sc:      sc,
+			timeout: logReadTimeout,
+			repair:  lv.recyclePanicked,
+		}, func(ctx context.Context, _ progressReport) error {
+			return sc.Server.CycleLogContext(ctx, logType)
+		}, func(err error, cancelled bool) {
+			lv.busy = false
+			switch {
+			case cancelled:
+				// Reloaded anyway: the cycle may have landed before the
+				// cancel reached the server.
+				lv.app.setStatus(fmt.Sprintf("Recycling the %s error log cancelled", logType))
 				lv.reanchorAfterCycle(logType)
 				lv.Refresh()
-			})
+			case err != nil:
+				lv.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
+			default:
+				lv.reanchorAfterCycle(logType)
+				lv.Refresh()
+			}
 		})
 	})
 }
@@ -1256,20 +1267,28 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 		if !confirmed {
 			return
 		}
-		a.setStatus(fmt.Sprintf("Recycling the %s error log...", logType))
-		a.safego("cycling an error log", func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), logReadTimeout)
-			defer cancel()
-			err := sc.Server.CycleLogContext(ctx, logType)
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
-					return
-				}
+		a.runWithProgress(progressJob{
+			title:   "Recycle Log",
+			message: fmt.Sprintf("Recycling the %s error log...", logType),
+			what:    "cycling an error log",
+			sc:      sc,
+			timeout: logReadTimeout,
+		}, func(ctx context.Context, _ progressReport) error {
+			return sc.Server.CycleLogContext(ctx, logType)
+		}, func(err error, cancelled bool) {
+			switch {
+			case cancelled:
+				// Reloaded anyway: the cycle may have landed before the
+				// cancel reached the server.
+				a.setStatus(fmt.Sprintf("Recycling the %s error log cancelled", logType))
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Recycle failed: %v", withPermissionAdvice(err)))
+				return
+			default:
 				a.setStatus(fmt.Sprintf("%s error log recycled", logType))
-				refreshExplorerNode(a, node)
-				a.refreshOpenLogViewer(sc, logType)
-			})
+			}
+			refreshExplorerNode(a, node)
+			a.refreshOpenLogViewer(sc, logType)
 		})
 	})
 }

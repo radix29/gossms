@@ -105,7 +105,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Reconnect", Action: func() { a.reconnectActiveQuery() },
 				Enabled: func() bool {
 					qp := a.activeQueryPanel()
-					return qp != nil && qp.conn != nil && !qp.executing
+					return qp != nil && qp.conn != nil && !qp.executing && qp.connectingTo == ""
 				}},
 			{Divider: true},
 			{Label: "Refresh IntelliSense Cache", Shortcut: "Ctrl+R", Action: func() { a.refreshCompletionCache() },

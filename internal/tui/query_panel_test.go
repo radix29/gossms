@@ -624,6 +624,41 @@ func TestNotConnectedMessageDistinguishesNeverConnected(t *testing.T) {
 	}
 }
 
+// TestExecuteWhileConnectingSaysConnecting: an F5 in the seconds a new
+// window's connect is still in flight (an Entra token fetch makes them
+// noticeable) used to report "No active connection — use File > Connect",
+// and a Reconnect in that gap started a second dial. Both now say the
+// connect is under way, and neither disturbs the panel.
+func TestExecuteWhileConnectingSaysConnecting(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.editor.SetText("SELECT 1")
+	qp.connectingTo = "t-qmi-01"
+	want := "Still connecting to t-qmi-01 — try again once it connects"
+
+	qp.Execute()
+	if qp.resultsNotice != want {
+		t.Errorf("resultsNotice = %q, want %q", qp.resultsNotice, want)
+	}
+	if qp.results.ColumnIndex("Message") >= 0 {
+		t.Error(`results grid replaced with "No active connection" while connecting`)
+	}
+	if got := qp.connInfoText(); got != "Connecting to t-qmi-01..." {
+		t.Errorf("connInfoText() = %q, want the connecting notice", got)
+	}
+
+	sc := &db.ServerConn{Opts: config.Connection{Server: "t-qmi-01"}}
+	sc.Close()
+	qp.conn = sc // a Reconnect's redial: the old, closed connection stays until the new one lands
+	qp.Reconnect()
+	if a.statusText != want {
+		t.Errorf("Reconnect status = %q, want %q", a.statusText, want)
+	}
+	if qp.conn != sc || qp.connectingTo != "t-qmi-01" {
+		t.Error("Reconnect while connecting started another connect")
+	}
+}
+
 // The results status line used to live on the DataGrid, which isn't drawn
 // on the Messages, Results To Text or Execution Plan tabs — so elapsed
 // time, row counts and the live "Executing..." counter all vanished the

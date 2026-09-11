@@ -22,6 +22,8 @@ func newTestApp() *App {
 	// guarantees it exists.
 	a.keyDiagDialog = NewKeyDiagnosticsDialog(a)
 	a.promptDialog = dialogs.NewPromptDialog(nil)
+	// Every confirmed write runs behind it (runWithProgress).
+	a.progressDialog = dialogs.NewProgressDialog(nil)
 	// As App.buildUI does: a panel that pops a selector menu reaches this, and
 	// a nil one crashes rather than failing the assertion the test came for.
 	a.contextMenu = new(controls.ContextMenu{})

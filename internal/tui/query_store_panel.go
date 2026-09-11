@@ -1151,9 +1151,9 @@ func (p *QueryStorePanel) setPlanForced(force bool) {
 	if plan == nil || !p.app.requireConn(p.conn) {
 		return
 	}
-	verb := "Unforce"
+	verb, doing := "Unforce", "Unforcing"
 	if force {
-		verb = "Force"
+		verb, doing = "Force", "Forcing"
 	}
 	sc, dbName, queryID, planID := p.conn, p.dbName, plan.QueryID, plan.PlanID
 	// Latched before the question, not in the answer: busy is what stops a
@@ -1166,32 +1166,40 @@ func (p *QueryStorePanel) setPlanForced(force bool) {
 			p.busy = false
 			return
 		}
-		p.setStatus(fmt.Sprintf("%s plan %d for query %d...", verb+"ing", planID, queryID))
-		// safegoRepair for the same reason Load uses it: busy is cleared in
-		// the posted callback, which a panic never reaches.
-		p.app.safegoRepair("forcing a Query Store plan", func() { p.forcePanicked(verb) }, func() {
-			ctx, cancel := context.WithTimeout(sc.Context(), qsReadTimeout)
-			defer cancel()
+		p.setStatus(fmt.Sprintf("%s plan %d for query %d...", doing, planID, queryID))
+		// The job's repair for the same reason Load uses safegoRepair: busy is
+		// cleared in the completion, which a panic never reaches.
+		p.app.runWithProgress(progressJob{
+			title:   verb + " Plan",
+			message: fmt.Sprintf("%s plan %d for query %d in %q...", doing, planID, queryID, dbName),
+			what:    "forcing a Query Store plan",
+			sc:      sc,
+			timeout: qsReadTimeout,
+			repair:  func() { p.forcePanicked(verb) },
+		}, func(ctx context.Context, _ progressReport) error {
 			d := sc.Server.Database(dbName)
-			var err error
 			if force {
-				err = d.QueryStoreForcePlanContext(ctx, queryID, planID)
-			} else {
-				err = d.QueryStoreUnforcePlanContext(ctx, queryID, planID)
+				return d.QueryStoreForcePlanContext(ctx, queryID, planID)
 			}
-			p.app.postAndWake(func() {
-				p.busy = false
-				if err != nil {
-					p.setStatus(fmt.Sprintf("%s failed: %v", verb, withPermissionAdvice(err)))
-					return
-				}
+			return d.QueryStoreUnforcePlanContext(ctx, queryID, planID)
+		}, func(err error, cancelled bool) {
+			p.busy = false
+			switch {
+			case cancelled:
+				// The app's status line, not the grid's: Refresh below
+				// rewrites the grid's.
+				p.app.setStatus(fmt.Sprintf("%s plan %d for query %d cancelled", doing, planID, queryID))
+			case err != nil:
+				p.setStatus(fmt.Sprintf("%s failed: %v", verb, withPermissionAdvice(err)))
+				return
+			default:
 				p.app.setStatus(fmt.Sprintf("Plan %d %sd for query %d", planID, verb, queryID))
-				// Both panes are stale: the plan's own IsForced changed, and
-				// the report's Forced Plan column with it. Through Refresh, so
-				// the user is left on the query they just acted on rather than
-				// back at the top of the report.
-				p.Refresh()
-			})
+			}
+			// Both panes are stale: the plan's own IsForced changed, and the
+			// report's Forced Plan column with it — or may have, after a
+			// cancel. Through Refresh, so the user is left on the query they
+			// just acted on rather than back at the top of the report.
+			p.Refresh()
 		})
 	})
 }

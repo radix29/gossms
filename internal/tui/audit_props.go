@@ -254,10 +254,16 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 // for an audit the server has stopped — verified live on win10cli. Re-reading
 // the state is the only way to tell that from the ordinary failure where
 // nothing landed and the user's edits must survive to be retried.
+//
+// The re-read ignores ctx's cancellation: a user cancelling the Apply is one
+// way to reach here, and a read on the cancelled context fails, reporting a
+// stopped audit as the ordinary failure.
 func auditApplyFailure(ctx context.Context, sc *db.ServerConn, name string, wasEnabled bool, applyErr error) error {
 	if !wasEnabled || gosmo.Scripting(ctx) {
 		return applyErr
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), propFetchTimeout)
+	defer cancel()
 	a, err := sc.Server.ServerAuditByNameContext(ctx, name)
 	if err != nil || a.IsEnabled {
 		return applyErr

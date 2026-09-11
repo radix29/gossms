@@ -53,6 +53,14 @@ type QueryPanel struct {
 	// query.Session.
 	session *query.Session
 
+	// connectingTo is the server connectForQueryPanel is still dialling for
+	// this panel, "" when no connect is in flight. Connecting is async and an
+	// Entra login fetches a token first, so a new window can sit unconnected
+	// for seconds; without this, an F5 in that gap reported "No active
+	// connection — use File > Connect", and a second Reconnect started a
+	// second dial whose connection the first one's result then overwrote.
+	connectingTo string
+
 	// tranCount is the session's @@TRANCOUNT as its last run left it — what
 	// decides whether closing, reconnecting or quitting must first ask to
 	// commit. Nothing else runs on the session between runs, so it cannot

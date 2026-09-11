@@ -128,18 +128,26 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 		if !confirmed {
 			return
 		}
-		a.safego("deleting an Agent object", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
-			err := run(ctx)
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
-					return
-				}
+		a.runWithProgress(progressJob{
+			title:   title,
+			message: fmt.Sprintf("Deleting %q...", node.label),
+			what:    "deleting an Agent object",
+			sc:      sc,
+		}, func(ctx context.Context, _ progressReport) error {
+			return run(ctx)
+		}, func(err error, cancelled bool) {
+			switch {
+			case cancelled:
+				// Refreshed anyway: the cancel may have reached the server
+				// after the delete had already committed.
+				a.setStatus(fmt.Sprintf("Delete of %q cancelled", node.label))
+				refreshExplorerNode(a, node.parent)
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
+			default:
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))
 				refreshExplorerNode(a, node.parent)
-			})
+			}
 		})
 	})
 }

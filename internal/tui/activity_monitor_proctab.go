@@ -311,11 +311,20 @@ func (pt *amProcTab) installInMaster() {
 	pt.am.buildTools()
 
 	conn := pt.conn
-	pt.am.app.safegoRepair("installing "+qualified, pt.panicRepair, func() {
-		ctx, cancel := context.WithTimeout(conn.Context(), procRunTimeout)
-		defer cancel()
-		err := pt.proc.Install(ctx, conn.Server.DB(), activity.ProcMaster)
-		pt.am.app.postAndWake(func() { pt.masterInstalled(err) })
+	pt.am.app.runWithProgress(progressJob{
+		title:   "Install " + pt.proc.MasterName + " in master",
+		message: "Creating " + qualified + "...",
+		what:    "installing " + qualified,
+		sc:      conn,
+		timeout: procRunTimeout,
+		repair:  pt.panicRepair,
+	}, func(ctx context.Context, _ progressReport) error {
+		return pt.proc.Install(ctx, conn.Server.DB(), activity.ProcMaster)
+	}, func(err error, cancelled bool) {
+		if cancelled {
+			err = fmt.Errorf("Install of %s cancelled", qualified)
+		}
+		pt.masterInstalled(err)
 	})
 }
 

@@ -125,20 +125,25 @@ saves under its own name. Two facts worth keeping:
   "Could not find a user matching the name provided" *after* a successful
   token — the login's SID is the old object id; recreate the login.
 
+Settled: **a token past its lifetime renews silently** (2026-09-11, built
+binary, Azure CLI, against `t-qmi-01`, with an `az` wrapper logging every
+call). Connected at 09:12 on a token expiring 10:26:55: one `az` call. A new
+query window at 10:24:58, inside `entraTokenMargin` (5 min), made exactly one
+more `az` call, got a token expiring 11:41:59, and connected as FEDERATED with
+no prompt. After the first token's expiry, a third window and an Object Explorer
+expand reused the renewed token with no further `az` call. The 09:12 window's
+session (SPID 127) kept running on its original connection: a token is only
+checked at login. gosmo's part is method-independent and is unit-tested by
+`TestEntraCacheRenewsAnExpiringToken`. Only the credential's `GetToken`
+differs by method — for Device Code/MFA it is azidentity's silent refresh,
+which was not held open past an hour separately.
+
 **Open:**
 
 - **Managed Identity** — needs gossms running on an Azure-hosted machine. The
   dev box is not one (no IMDS at `169.254.169.254`, checked 2026-09-11). The
   mapping (`ManagedIdentityCredential`, resource ID over client ID) is
   unit-tested in gosmo's `TestEntraCredentialSpecPerMethod` only.
-- **A token past its ~1 h lifetime** on a new pooled connection — it should
-  renew silently through the cached credential. gosmo's side is unit-tested
-  with a fake clock (`TestEntraCacheRenewsAnExpiringToken`: a token within
-  `entraTokenMargin`, 5 min, of expiry is re-fetched through the same
-  credential). The live part is azidentity's own renewal — a silent refresh
-  for Device Code/MFA, a new `az` call for Azure CLI. A fake clock cannot
-  reach it because azidentity caches the token itself, so it takes a real
-  session held open past an hour, then a new query window.
 
 Settled: **with TenantID blank, MFA and Device Code sign in to the server's
 tenant.** azidentity's default is `organizations`, where a personal Microsoft
@@ -1217,6 +1222,31 @@ Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
   1.27**: a real offline `go1.26.0` builds both once the `go` directive is
   lowered in *both* `go.mod` files. Go 1.25 untested.
 
+## Progress dialog: what is deliberately out of it
+
+Every confirmed write from Object Explorer, the Details pane, Always On, Agent,
+the Log File Viewer, Query Store and Activity Monitor runs behind
+`dialogs.ProgressDialog` (`App.runWithProgress`, 2026-09-11). Not the rest:
+
+- **Properties and New … keep their own spinner and live Cancel** on the sheet's
+  button row: closing the sheet for a separate dialog would take the pages and
+  the message line — the only account of a partial apply — off screen.
+- **Back Up and Restore keep their progress view**, a Task with a percentage;
+  the Restore dialog's overwrite confirmation hands off to it.
+- **Script runs nothing**, so it never shows the dialog.
+- **The unconfirmed half of a toggle runs behind it too** — Enable, Bring
+  Online, Start Endpoint, Join, Resume — because it shares the confirmed half's
+  run function. The 250 ms reveal delay keeps a fast one invisible.
+- **Driven live on win10cli:** a single DROP blocked on a lock and cancelled
+  (the trace shows it never committed, and the session held no locks or
+  transaction afterwards), a three-table batch cancelled at the blocked third
+  ("2 of 3 deleted"), a fast DROP with no dialog drawn, Restore from Snapshot's
+  uninterruptible dialog, and snapshot / database deletes. **Not driven live:**
+  the failover dialogs (need the AG cluster), and the "Cancelling …" state,
+  which was never on screen long enough to capture: a cancelled DROP returned
+  within one frame. `TestProgressDialogCancelAsksOnceAndStaysOpen` covers its
+  drawing.
+
 ## Fix order
 
 The work still outstanding, ordered by priority within each subsection: bugs
@@ -1253,8 +1283,7 @@ when the underlying issue is fixed.
 - **V5** — CLR type, assembly and external-resource scripts have never been
   executed against a server, and the external library right set was never run
   live (no Machine Learning Services). § Deferred scope, § Permission gating
-- **V6** — Entra: Managed Identity (needs an Azure-hosted machine) and a
-  token renewed past its lifetime (gosmo's cache side is unit-tested, the
-  live renewal is not); the other methods and `CREATE LOGIN ... FROM
-  EXTERNAL PROVIDER` are driven on MI. Rechecked 2026-09-11: still open. § Deferred scope, § Azure SQL
-  Managed Instance
+- **V6** — Entra: Managed Identity (needs an Azure-hosted machine). Every
+  other method, `CREATE LOGIN ... FROM EXTERNAL PROVIDER`, and token renewal
+  past its lifetime (2026-09-11) are driven on MI. § Azure SQL Managed
+  Instance

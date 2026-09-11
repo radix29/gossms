@@ -220,6 +220,19 @@ leaves the result queued and invisible until an unrelated keypress drains it
 result delivery: postAndWake. `QueryPanel`'s elapsed-timer tick is the one
 legitimate bare `wakeEventLoop()` caller: it has no callback to post, only a redraw.
 
+**A write the user confirmed runs through `App.runWithProgress`
+(`progress_job.go`), never a bare `safego`.** The confirmation closes on Yes,
+and without the progress dialog nothing on screen says a DROP is still waiting
+on a lock — the tree stays live under a write that has not landed, and there is
+no way to stop it. The job owns the context, the spinner's clock and the
+dialog's release (panic included); `done` gets `cancelled` only when Cancel was
+pressed *and* the work failed, and a cancelled write re-reads its folder anyway,
+because the cancel can reach the server after the statement committed. A
+statement that stopping halfway leaves worse off than waiting sets
+`uninterruptible` (Restore from Snapshot, both failovers). A batch checks
+`ctx.Err()` before each item as well as handing ctx to it, and reports each item
+through `progressReport`.
+
 **A background operation that latches UI state before it starts must use
 `App.safegoRepair`, not `App.safego`** — a busy flag, a "loading" placeholder, a
 toolbar the flag dims. The latch is released by the callback the goroutine posts

@@ -46,11 +46,7 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 		core.DrawTextClipped(s, inner.X, msgY, inner.W, st, p.message)
 	} else {
 		hintSt := tcell.StyleDefault.Background(pal.DialogBg).Foreground(pal.TextDim)
-		hint := p.hints
-		if p.applying {
-			hint = "Applying…"
-		}
-		core.DrawTextClipped(s, inner.X, msgY, inner.W, hintSt, hint)
+		core.DrawTextClipped(s, inner.X, msgY, inner.W, hintSt, p.hints)
 	}
 
 	p.DrawSeparator(s)
@@ -58,13 +54,47 @@ func (p *PropertySheet) Draw(s tcell.Screen) {
 	if p.zone == zoneButtons {
 		activeIdx = p.btnFocus
 	}
-	p.DrawButtons(s, p.buttonLabels(), activeIdx)
+	labels := p.buttonLabels()
+	// Every button greys while applying except Cancel/Close, and that one only
+	// while pressing it would stop the run (canCancelApply): activateButton
+	// refuses the rest, and a button drawn live that does nothing on Enter
+	// reads as a hang.
+	var disabled []bool
+	if p.applying {
+		disabled = make([]bool, len(labels))
+		for i, label := range labels {
+			disabled[i] = !(p.canCancelApply() && (label == "Cancel" || label == "Close"))
+		}
+	}
+	p.DrawButtonsGated(s, labels, activeIdx, disabled)
+	// After the buttons, never before: on a clamped rect DrawButtonsGated
+	// clears the whole button row, which would wipe the spinner.
+	p.drawApplying(s, labels)
 
 	if p.zone == zoneForm {
 		if f := p.PageForm(p.current); f != nil {
 			f.DrawOverlays(s)
 		}
 	}
+}
+
+// drawApplying paints the spinner and its label at the left end of the button
+// row, opposite the buttons — where Connect puts its own — clipped short of
+// the first button on a dialog clamped too narrow for both.
+func (p *PropertySheet) drawApplying(s tcell.Screen, labels []string) {
+	if !p.applying {
+		return
+	}
+	x := p.InnerRect().X + 1
+	y := p.ButtonRowY()
+	avail := p.ButtonRowStartX(labels) - 1 - x
+	sw := ApplyingSpinner.Width()
+	if avail < sw {
+		return
+	}
+	st := theme.StyleDialog()
+	ApplyingSpinner.DrawSince(s, x, y, st, p.applyStarted)
+	core.DrawTextClipped(s, x+sw+1, y, avail-sw-1, st, p.applyingLabel)
 }
 
 func (p *PropertySheet) drawContent(s tcell.Screen, x, y, w, h int) {

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -104,6 +105,54 @@ func (e committedApplyError) Unwrap() error { return e.err }
 // committedApplyError.
 func applyCommitted(err error) error { return committedApplyError{err} }
 
+// applyRun is the stop switch for one in-flight OK/Apply/Script pipeline —
+// PropDialog's and newObjectDialog's — behind the sheet's live Cancel button
+// (propsheet.PropertySheet.OnCancelApply). UI goroutine only: start and stop
+// run there, and so does the posted completion that reads cancelled.
+type applyRun struct {
+	stop      context.CancelFunc
+	cancelled bool
+}
+
+// start derives the context one run executes under from parent, which keeps
+// parent's values — a WithScript collector stays in force.
+func (r *applyRun) start(parent context.Context) context.Context {
+	ctx, stop := context.WithCancel(parent)
+	r.stop, r.cancelled = stop, false
+	return ctx
+}
+
+// cancel is OnCancelApply: stop the run, and remember that it was the user who
+// stopped it. The driver's error for a cancelled statement need not wrap
+// context.Canceled, so the flag, not the error, is what tells the completion
+// to say "cancelled".
+func (r *applyRun) cancel() {
+	if r.stop != nil {
+		r.cancelled = true
+		r.stop()
+	}
+}
+
+// runApplySteps runs fns in order against ctx, stopping at the first error, and
+// reports how many completed. ctx is checked before every step as well as
+// handed to it: a step whose writes don't all take the context would otherwise
+// run to the end of the pipeline after a cancel.
+func runApplySteps(ctx context.Context, fns []propApply) (completed int, err error) {
+	for _, fn := range fns {
+		if fn == nil {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return completed, err
+		}
+		if err := fn(ctx); err != nil {
+			return completed, err
+		}
+		completed++
+	}
+	return completed, nil
+}
+
 // PropDialog is the app-layer orchestrator for propsheet.PropertySheet: it owns
 // the goroutines that load pages and apply edits, translating between the
 // framework's page-index/seq contract and SQL Server calls. One instance is
@@ -121,6 +170,9 @@ type PropDialog struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// run is the OK/Apply/Script pipeline in flight, if any.
+	run applyRun
 }
 
 // NewPropDialog creates the properties dialog and wires its callbacks.
@@ -135,6 +187,7 @@ func NewPropDialog(app *App) *PropDialog {
 	d.OnClose = d.onClose
 	d.ConfirmDiscard = d.onConfirmDiscard
 	d.OnScript = d.runScript
+	d.OnCancelApply = d.run.cancel
 	return d
 }
 
@@ -351,23 +404,32 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 		return
 	}
 
-	d.SetApplying(true)
+	d.StartApplying(pipelineLabel(runCtx))
 	d.SetMessage("", false)
+	runCtx = d.run.start(runCtx)
+	stop := d.run.stop
 
+	done := make(chan struct{})
+	d.app.animateUntil("animating the properties spinner", propsheet.ApplyingSpinner.Period, done)
 	d.app.safegoRepair("applying property changes", d.applyPanicked, func() {
-		var runErr error
-		for _, fn := range fns {
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
+		defer close(done)
+		defer stop()
+		completed, runErr := runApplySteps(runCtx, fns)
 		d.post(func() {
 			d.SetApplying(false)
 			if runErr != nil {
+				// A committed failure outranks the cancel that may have led to
+				// it: it says what the server was left in, which the cancel
+				// message cannot.
+				_, committed := errors.AsType[committedApplyError](runErr)
+				if d.run.cancelled && !committed {
+					d.SetMessage(propCancelledMessage(runCtx, completed, len(fns)), false)
+					return
+				}
 				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 				// After the message, not before: the reload leaves it
 				// standing, and it is the only account of what went wrong.
-				if _, ok := errors.AsType[committedApplyError](runErr); ok {
+				if committed {
 					d.InvalidateAll()
 				}
 				return
@@ -375,6 +437,22 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 			onSuccess()
 		})
 	})
+}
+
+// propCancelledMessage is what the message line says once a run the user
+// cancelled has returned. A cancelled statement is rolled back, but a page's
+// apply can be several statements and the cancel may land between them — or
+// after the last one had already committed — so a real run never claims that
+// nothing changed. Pages that ran to completion before the cancel certainly
+// did, and are counted.
+func propCancelledMessage(runCtx context.Context, completed, total int) string {
+	if gosmo.Scripting(runCtx) {
+		return "Script Changes cancelled."
+	}
+	if completed == 0 {
+		return "Apply cancelled. Part of it may already have been saved — F5 reloads a page from the server."
+	}
+	return fmt.Sprintf("Apply cancelled after %d of %d pages were saved — F5 reloads a page from the server.", completed, total)
 }
 
 // applyPanicked releases the applying latch after a panic in runPipeline's

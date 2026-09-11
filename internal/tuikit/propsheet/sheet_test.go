@@ -383,12 +383,12 @@ func TestSheetHandleMouseForwardsReleaseToPageList(t *testing.T) {
 	}
 }
 
-// SetApplying(true) makes the sheet ignore every button, Cancel included, so
-// a half-finished apply can't be double-submitted or abandoned mid-write.
-// That is exactly why the flag must always be cleared again: an apply
-// goroutine that dies without clearing it leaves the whole dialog inert with
-// no way out but force-closing it, which is what the app layer's
-// safegoRepair step exists to prevent.
+// With no OnCancelApply, SetApplying(true) makes the sheet ignore every
+// button, Cancel and Escape included, so a half-finished apply can't be
+// double-submitted or abandoned mid-write. That is exactly why the flag must
+// always be cleared again: an apply goroutine that dies without clearing it
+// leaves the whole dialog inert with no way out but force-closing it, which is
+// what the app layer's safegoRepair step exists to prevent.
 func TestSheetApplyingBlocksButtonsUntilCleared(t *testing.T) {
 	p := newTestSheet("General")
 	p.Show()
@@ -405,8 +405,9 @@ func TestSheetApplyingBlocksButtonsUntilCleared(t *testing.T) {
 	p.HandleKey(enter)
 	p.btnFocus = 1 // Cancel — Dismiss, via OnClose
 	p.HandleKey(enter)
-	if applies != 0 || closes != 0 {
-		t.Fatalf("while applying: applies=%d closes=%d, want 0/0", applies, closes)
+	p.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
+	if applies != 0 || closes != 0 || !p.Visible() {
+		t.Fatalf("while applying: applies=%d closes=%d visible=%v, want 0/0/true", applies, closes, p.Visible())
 	}
 
 	p.SetApplying(false)
@@ -414,5 +415,51 @@ func TestSheetApplyingBlocksButtonsUntilCleared(t *testing.T) {
 	p.HandleKey(enter)
 	if applies != 1 {
 		t.Errorf("after SetApplying(false): applies = %d, want 1", applies)
+	}
+}
+
+// With OnCancelApply set, Cancel and Escape stop the run in flight instead of
+// closing the sheet — once: a second press while it winds down asks nothing
+// more — and every other button stays refused. Once the host clears the flag,
+// Cancel closes the sheet again.
+func TestSheetCancelWhileApplyingStopsTheRun(t *testing.T) {
+	enter := tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone)
+	escape := tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone)
+	for _, tc := range []struct {
+		name  string
+		press func(p *PropertySheet)
+	}{
+		{"Cancel button", func(p *PropertySheet) { p.setZone(zoneButtons); p.btnFocus = 1; p.HandleKey(enter) }},
+		{"Escape from the page list", func(p *PropertySheet) { p.setZone(zonePages); p.HandleKey(escape) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newTestSheet("General")
+			p.Show()
+			stops, closes, applies := 0, 0, 0
+			p.OnCancelApply = func() { stops++ }
+			p.OnClose = func() { closes++ }
+			p.OnApply = func() { applies++ }
+
+			p.SetApplying(true)
+			tc.press(p)
+			tc.press(p)
+			p.setZone(zoneButtons)
+			p.btnFocus = 2 // Apply
+			p.HandleKey(enter)
+			if stops != 1 || closes != 0 || applies != 0 || !p.Visible() {
+				t.Fatalf("while applying: stops=%d closes=%d applies=%d visible=%v, want 1/0/0/true",
+					stops, closes, applies, p.Visible())
+			}
+			if p.applyingLabel != "Cancelling..." {
+				t.Errorf("label after cancel = %q, want Cancelling...", p.applyingLabel)
+			}
+
+			p.SetApplying(false)
+			tc.press(p)
+			if stops != 1 || closes != 1 || p.Visible() {
+				t.Errorf("after SetApplying(false): stops=%d closes=%d visible=%v, want 1/1/false",
+					stops, closes, p.Visible())
+			}
+		})
 	}
 }

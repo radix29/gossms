@@ -85,6 +85,11 @@ func TestNewObjectDialogReopenDuringPrefetch(t *testing.T) {
 // waitAndDrain waits for a fetch goroutine to post its callback (a
 // nil-screen App queues it with no event loop to drain it), then runs it on
 // this goroutine, the way Run would.
+//
+// A runWithProgress job posts a progressReport per step before its completion,
+// so while one holds the progress dialog, draining a callback is not the end:
+// it waits on until the job has closed the dialog. Returning at the first
+// report let a test assert on a batch that was still running.
 func waitAndDrain(t *testing.T, a *App) {
 	t.Helper()
 	for range 200 {
@@ -93,7 +98,10 @@ func waitAndDrain(t *testing.T, a *App) {
 		a.pendingMu.Unlock()
 		if n > 0 {
 			a.drainPending()
-			return
+			if !a.progressBusy {
+				return
+			}
+			continue
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

@@ -183,6 +183,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 		opts.Database = database
 	}
 	qp.database = opts.Database
+	qp.connectingTo = opts.Server
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
 	a.safego("connecting the query panel", func() {
@@ -199,6 +200,7 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 			}
 		}
 		a.postAndWake(func() {
+			qp.connectingTo = ""
 			if err != nil {
 				a.setStatus("Connection failed: " + firstErrorLine(err.Error()))
 				return

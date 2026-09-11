@@ -393,26 +393,36 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 		if strings.ContainsRune("aeiou", rune(noun[0])) {
 			article = "an "
 		}
-		a.safego("enabling/disabling "+article+noun, func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
-			err := set(ctx, name, enable)
-			a.postAndWake(func() {
-				word := "disable"
-				if enable {
-					word = "enable"
+		word, doing, jobTitle := "disable", "Disabling", title
+		if enable {
+			word, doing, jobTitle = "enable", "Enabling", "Enable"+strings.TrimPrefix(title, "Disable")
+		}
+		a.runWithProgress(progressJob{
+			title:   jobTitle,
+			message: fmt.Sprintf("%s %s %q...", doing, noun, display),
+			what:    "enabling/disabling " + article + noun,
+			sc:      sc,
+		}, func(ctx context.Context, _ progressReport) error {
+			return set(ctx, name, enable)
+		}, func(err error, cancelled bool) {
+			switch {
+			case cancelled:
+				// The state is re-read rather than assumed: the cancel may
+				// have reached the server after the change had committed.
+				a.setStatus(fmt.Sprintf("%s %q cancelled", doing, display))
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
 				}
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
-					return
-				}
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
+			default:
 				node.data.IsEnabled = enable
 				if parent := node.parent; parent != nil {
 					refreshExplorerNode(a, parent)
 				}
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], display, word))
-			})
+			}
 		})
 	}
 
@@ -473,25 +483,34 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 	name := node.data.Name
 
 	run := func() {
-		a.safego("changing an endpoint's state", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
+		a.runWithProgress(progressJob{
+			title:   "Change Endpoint State",
+			message: fmt.Sprintf("Setting endpoint %q to %s...", name, state),
+			what:    "changing an endpoint's state",
+			sc:      sc,
+		}, func(ctx context.Context, _ progressReport) error {
 			e, err := sc.Server.EndpointByNameContext(ctx, name)
-			if err == nil {
-				err = e.SetStateContext(ctx, state)
+			if err != nil {
+				return err
 			}
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
-					return
+			return e.SetStateContext(ctx, state)
+		}, func(err error, cancelled bool) {
+			switch {
+			case cancelled:
+				a.setStatus(fmt.Sprintf("Setting %q to %s cancelled", name, state))
+				if parent := node.parent; parent != nil {
+					refreshExplorerNode(a, parent)
 				}
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
+			default:
 				node.data.IsEnabled = state == gosmo.EndpointStarted
 				if parent := node.parent; parent != nil {
 					refreshExplorerNode(a, parent)
 				}
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("Endpoint %q is now %s", name, endpointStateLabel(string(state))))
-			})
+			}
 		})
 	}
 
@@ -527,34 +546,37 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 	goOffline := !node.data.IsOffline
 
 	run := func() {
-		a.safego("changing a database's online state", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
+		word, title, message := "online", "Bring Database Online", fmt.Sprintf("Bringing %q online...", dbName)
+		if goOffline {
+			word, title, message = "offline", "Take Database Offline", fmt.Sprintf("Taking %q offline...", dbName)
+		}
+		a.runWithProgress(progressJob{
+			title:   title,
+			message: message,
+			what:    "changing a database's online state",
+			sc:      sc,
+		}, func(ctx context.Context, _ progressReport) error {
 			d := sc.Server.Database(dbName)
-			var err error
 			if goOffline {
-				err = d.SetOfflineContext(ctx)
-			} else {
-				err = d.SetOnlineContext(ctx)
+				return d.SetOfflineContext(ctx)
 			}
-			a.postAndWake(func() {
-				if err != nil {
-					word := "online"
-					if goOffline {
-						word = "offline"
-					}
-					a.setStatus(fmt.Sprintf("Failed to take %q %s: %v", dbName, word, err))
-					return
-				}
+			return d.SetOnlineContext(ctx)
+		}, func(err error, cancelled bool) {
+			switch {
+			case cancelled:
+				// The databases folder, not the node: the node's IsOffline is
+				// what the state would be, and a cancel leaves that unknown
+				// until the folder is re-read.
+				a.setStatus(fmt.Sprintf("Taking %q %s cancelled", dbName, word))
+				a.explorer.RefreshDatabasesFolder(sc)
+			case err != nil:
+				a.setStatus(fmt.Sprintf("Failed to take %q %s: %v", dbName, word, err))
+			default:
 				node.data.IsOffline = goOffline
 				refreshExplorerNode(a, node)
 				a.explorer.rebuild() // repaint node's own icon immediately even when it's collapsed (refreshExplorerNode only rebuilds once an expanded reload completes)
-				word := "online"
-				if goOffline {
-					word = "offline"
-				}
 				a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
-			})
+			}
 		})
 	}
 
@@ -599,18 +621,24 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 		if !confirmed {
 			return
 		}
-		a.safego("restoring a database from a snapshot", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
-			err := sc.Server.RestoreFromSnapshotContext(ctx, source, snapshot)
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to restore %q from %q: %v", source, snapshot, displayError(err)))
-					return
-				}
-				a.setStatus(fmt.Sprintf("Database %q reverted to snapshot %q", source, snapshot))
-				a.explorer.RefreshDatabasesFolder(sc)
-			})
+		// Uninterruptible: a revert stopped halfway leaves the source in
+		// RESTORING, unusable until it is restored again — worse than the
+		// wait for the revert to finish.
+		a.runWithProgress(progressJob{
+			title:           "Restore Database from Snapshot",
+			message:         fmt.Sprintf("Reverting %q to snapshot %q...", source, snapshot),
+			what:            "restoring a database from a snapshot",
+			sc:              sc,
+			uninterruptible: uninterruptibleRestore,
+		}, func(ctx context.Context, _ progressReport) error {
+			return sc.Server.RestoreFromSnapshotContext(ctx, source, snapshot)
+		}, func(err error, _ bool) {
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Failed to restore %q from %q: %v", source, snapshot, displayError(err)))
+				return
+			}
+			a.setStatus(fmt.Sprintf("Database %q reverted to snapshot %q", source, snapshot))
+			a.explorer.RefreshDatabasesFolder(sc)
 		})
 	})
 }

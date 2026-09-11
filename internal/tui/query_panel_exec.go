@@ -66,6 +66,10 @@ func (p *QueryPanel) Reconnect() {
 		p.app.setStatus("Cannot reconnect while a query is executing")
 		return
 	}
+	if p.connectingTo != "" {
+		p.app.setStatus(p.notConnectedMessage())
+		return
+	}
 	p.app.confirmOpenTransactions(p, "reconnecting", func() {
 		old := p.conn
 		p.closeConnection()
@@ -206,7 +210,9 @@ func (p *QueryPanel) runRefused(queryText string) bool {
 		p.resultsNotice = "No query to execute"
 	case !p.connected():
 		p.resultsNotice = p.notConnectedMessage()
-		p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
+		if p.connectingTo == "" {
+			p.results.SetData([]string{"Message"}, [][]string{{"No active connection"}})
+		}
 	case p.executing:
 		p.app.setStatus("A query is already executing in this panel")
 	default:

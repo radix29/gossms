@@ -1,10 +1,13 @@
 package propsheet
 
 import (
+	"time"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // PageState is where a page's data currently stands.
@@ -59,6 +62,14 @@ const defaultHints = "Tab Move focus   ↑↓ Navigate   F5 Refresh   Ctrl+Z Rev
 
 const pageListWidth = 24
 
+// ApplyingSpinner is the busy indicator on the button row while an Apply/OK
+// or Script Changes is in flight — Connect's, so the two waits look alike. The
+// sheet draws it from elapsed time only; the host owns the redraw clock (see
+// widgets.Spinner) and should tick at its Period.
+var ApplyingSpinner = widgets.SpinnerBraille
+
+const defaultApplyingLabel = "Applying..."
+
 // PropertySheet is a multi-page, editable properties dialog: a page list on the
 // left, the selected page's Form on the right, and an OK/Cancel/Apply row. See
 // the package doc for the async load contract.
@@ -88,6 +99,11 @@ type PropertySheet struct {
 	message                 string
 	messageIsErr            bool
 	applying                bool
+	applyingLabel           string
+	applyStarted            time.Time
+	// cancelling is set once OnCancelApply has been asked to stop the run in
+	// flight, so a second Cancel doesn't ask again; cleared with applying.
+	cancelling bool
 
 	// OnLoadPage is called whenever a page needs (re)loading, on first display or
 	// via Refresh. The caller fetches the page's data, typically on a background
@@ -108,6 +124,13 @@ type PropertySheet struct {
 	// for every dirty page's pending edits and hand it off instead of running
 	// it.
 	OnScript func()
+	// OnCancelApply is called when the user presses Cancel (or Close, or
+	// Escape) while an Apply/OK/Script is in flight: stop the run, then report
+	// its outcome through SetApplying(false) as usual. The sheet stays open —
+	// whatever the run got through before the cancel is only known once it
+	// returns, and the message line is where that is said. nil means a run in
+	// flight cannot be stopped, and Cancel greys with every other button.
+	OnCancelApply func()
 }
 
 // NewPropertySheet creates an empty PropertySheet. Call SetPages, SetHeader and
@@ -376,14 +399,44 @@ func (p *PropertySheet) SetMessage(msg string, isErr bool) {
 }
 
 // SetApplying marks whether an Apply/OK is in flight. While true the button row
-// ignores further activation, so a slow Apply can't fire twice, and SelectPage
-// won't start a new page load. Turning it off retries the selected page's load
-// if the user navigated to an unloaded page while applying.
+// ignores further activation — and draws greyed to say so — so a slow Apply
+// can't fire twice, and SelectPage won't start a new page load. The one
+// exception is Cancel, which stays live when OnCancelApply is set and stops the
+// run instead of closing the sheet. Turning it off retries the selected page's
+// load if the user navigated to an unloaded page while applying.
+// SetApplying(true) is StartApplying with the default label.
 func (p *PropertySheet) SetApplying(v bool) {
-	p.applying = v
-	if !v && p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].state == PageNotLoaded {
+	if v {
+		p.StartApplying(defaultApplyingLabel)
+		return
+	}
+	p.applying = false
+	p.cancelling = false
+	if p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].state == PageNotLoaded {
 		p.startLoad(p.current)
 	}
+}
+
+// StartApplying is SetApplying(true) with label beside the spinner instead of
+// "Applying..." — "Scripting..." for Script Changes, which runs the same
+// pipeline but changes nothing. The spinner's clock starts now.
+func (p *PropertySheet) StartApplying(label string) {
+	p.applying = true
+	p.cancelling = false
+	p.applyingLabel = label
+	p.applyStarted = time.Now()
+}
+
+// Applying reports whether an Apply/OK/Script is in flight.
+func (p *PropertySheet) Applying() bool { return p.applying }
+
+// Message returns the message line's text, "" when it shows the hints.
+func (p *PropertySheet) Message() string { return p.message }
+
+// canCancelApply reports whether Cancel would stop the run in flight right
+// now — the one button that stays live while applying.
+func (p *PropertySheet) canCancelApply() bool {
+	return p.applying && !p.cancelling && p.OnCancelApply != nil
 }
 
 func (p *PropertySheet) setZone(z focusZone) {
@@ -398,11 +451,11 @@ func (p *PropertySheet) setZone(z focusZone) {
 // has two shapes (see readOnlyButtonLabels) and an index-based switch would
 // run OK when the user pressed Close.
 func (p *PropertySheet) activateButton(i int) {
-	if p.applying {
-		return
-	}
 	labels := p.buttonLabels()
 	if i < 0 || i >= len(labels) {
+		return
+	}
+	if p.applying && labels[i] != "Cancel" && labels[i] != "Close" {
 		return
 	}
 	switch labels[i] {
@@ -423,7 +476,22 @@ func (p *PropertySheet) activateButton(i int) {
 	}
 }
 
-func (p *PropertySheet) cancel() { p.Dismiss() }
+// cancel is Cancel, Close and Escape. While a run is in flight it stops the run
+// rather than closing: closing would cancel it anyway — OnClose cancels the
+// context it runs under — but take the dialog, and the only account of what
+// the run got through, off screen with it.
+func (p *PropertySheet) cancel() {
+	if !p.applying {
+		p.Dismiss()
+		return
+	}
+	if !p.canCancelApply() {
+		return
+	}
+	p.cancelling = true
+	p.applyingLabel = "Cancelling..."
+	p.OnCancelApply()
+}
 
 // Dismiss closes the sheet and notifies its owner via OnClose. Every path that
 // closes the sheet from the inside — Cancel, Escape, an OK handler whose save

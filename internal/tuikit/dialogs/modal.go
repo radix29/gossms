@@ -222,10 +222,11 @@ func (d *ModalDialog) DrawSeparator(s tcell.Screen) {
 	core.DrawHLine(s, d.rect.X+1, d.ButtonRowY()-1, d.rect.W-2, sep)
 }
 
-// buttonRowStartX returns the x column the button row starts at so the row ends
+// ButtonRowStartX returns the x column the button row starts at so the row ends
 // flush with the dialog's right margin. Shared by DrawButtons and ButtonClicked
-// so hit-testing matches what was drawn.
-func (d *ModalDialog) buttonRowStartX(labels []string) int {
+// so hit-testing matches what was drawn; exported so a dialog drawing its own
+// status at the left end of the row can stop short of the buttons.
+func (d *ModalDialog) ButtonRowStartX(labels []string) int {
 	total := 0
 	for i, label := range labels {
 		if i > 0 {
@@ -251,7 +252,7 @@ func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeId
 	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
 	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
 	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
-	col := d.buttonRowStartX(labels)
+	col := d.ButtonRowStartX(labels)
 	y := d.ButtonRowY()
 	// On a clamped rect, content laid out for the full height reaches this row
 	// and the one below; the buttons are right-aligned, so without the clear what
@@ -285,7 +286,7 @@ func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 	if my != d.ButtonRowY() {
 		return -1
 	}
-	col := d.buttonRowStartX(labels)
+	col := d.ButtonRowStartX(labels)
 	for i, label := range labels {
 		text := "[ " + label + " ]"
 		w := core.DisplayWidth(text)

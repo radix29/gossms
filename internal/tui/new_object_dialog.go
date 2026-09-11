@@ -98,6 +98,9 @@ type newObjectDialog[P any] struct {
 	// the dialog open, so without this a second Apply, or an Apply then OK,
 	// re-issues the same CREATE and comes back with "already exists".
 	created bool
+
+	// run is the OK/Apply/Script pipeline in flight, if any.
+	run applyRun
 }
 
 // probeReplicaEndpoint reaches instance name with this dialog's credentials and
@@ -157,6 +160,7 @@ func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 	d.OnClose = d.onClose
 	d.ConfirmDiscard = d.onConfirmDiscard
 	d.OnScript = d.runScript
+	d.OnCancelApply = d.run.cancel
 }
 
 // show opens the dialog against sc, discarding everything the previous showing
@@ -260,6 +264,16 @@ func (d *newObjectDialog[P]) onConfirmDiscard(page int, proceed func()) {
 	d.app.confirmDiscardChanges(proceed)
 }
 
+// pipelineLabel is what the button-row spinner says while runCtx's pipeline
+// runs — this shell's and PropDialog's. Script Changes runs the same apply
+// closures as Apply, so the context is the only thing that tells them apart.
+func pipelineLabel(runCtx context.Context) string {
+	if gosmo.Scripting(runCtx) {
+		return "Scripting..."
+	}
+	return "Applying..."
+}
+
 // runPipeline validates the dialog and, if it passes, runs every page's apply
 // function in order on a background goroutine, stopping at the first error.
 // runCtx is d.ctx for a real Apply/OK and a gosmo.WithScript context for Script
@@ -282,21 +296,23 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	}
 
 	fns := d.applyFns
-	d.SetApplying(true)
+	d.StartApplying(pipelineLabel(runCtx))
 	d.SetMessage("", false)
+	runCtx = d.run.start(runCtx)
+	stop := d.run.stop
 
+	done := make(chan struct{})
+	d.app.animateUntil("animating the create dialog spinner", propsheet.ApplyingSpinner.Period, done)
 	d.app.safegoRepair("creating the object", d.applyPanicked, func() {
-		var runErr error
-		for _, fn := range fns {
-			if fn == nil {
-				continue
-			}
-			if runErr = fn(runCtx); runErr != nil {
-				break
-			}
-		}
+		defer close(done)
+		defer stop()
+		_, runErr := runApplySteps(runCtx, fns)
 		d.post(func() {
 			d.SetApplying(false)
+			if runErr != nil && d.run.cancelled {
+				d.createCancelled(runCtx)
+				return
+			}
 			if runErr != nil {
 				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 				return
@@ -304,6 +320,20 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 			onSuccess()
 		})
 	})
+}
+
+// createCancelled reports a run the user cancelled. A create is several
+// statements more often than not — the CREATE, then a page's options, members
+// or schedules — and the cancel may land after the CREATE committed, so the
+// object may exist half-configured. The folder it would appear in is
+// refreshed, so Object Explorer is where the user can see which.
+func (d *newObjectDialog[P]) createCancelled(runCtx context.Context) {
+	if gosmo.Scripting(runCtx) {
+		d.SetMessage("Script Changes cancelled.", false)
+		return
+	}
+	d.refresh(d.sc)
+	d.SetMessage("Create cancelled. Part of it may already have run — check Object Explorer before trying again.", false)
 }
 
 func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {

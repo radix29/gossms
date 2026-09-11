@@ -217,6 +217,9 @@ func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refre
 // agOperation is one Always On operation: what to run, where to run it, and
 // what to say and reload afterwards.
 type agOperation struct {
+	// title is the progress dialog's title while the operation runs —
+	// normally its confirmation's.
+	title string
 	// what names the operation in the failure status, e.g. "add database".
 	what string
 	// done is the status line on success.
@@ -234,36 +237,46 @@ type agOperation struct {
 	onLocal func(context.Context, *gosmo.AvailabilityGroup) error
 }
 
-// runAGOperation resolves the group and runs op on a background goroutine.
+// runAGOperation resolves the group and runs op behind the progress dialog.
+// Cancel is live: every operation here is one ALTER AVAILABILITY GROUP (or
+// ALTER DATABASE ... SET HADR), which the server rolls back whole. Failover
+// is the exception and does not come through here — see confirmFailover.
 func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.safego("running an Always On operation", func() {
-		ctx, cancel := serverWriteContext(sc)
-		defer cancel()
-
-		var err error
-		var ag *gosmo.AvailabilityGroup
+	a.runWithProgress(progressJob{
+		title:   op.title,
+		message: strings.ToUpper(op.what[:1]) + op.what[1:] + "...",
+		what:    "running an Always On operation",
+		sc:      sc,
+	}, func(ctx context.Context, _ progressReport) error {
 		run := op.onPrimary
+		var ag *gosmo.AvailabilityGroup
+		var err error
 		if run != nil {
 			ag, err = agOnPrimary(ctx, sc, agName)
 		} else {
 			run = op.onLocal
 			ag, err = sc.Server.AvailabilityGroupByNameContext(ctx, agName)
 		}
-		if err == nil {
-			err = run(ctx, ag)
+		if err != nil {
+			return err
 		}
-
-		a.postAndWake(func() {
-			if err != nil {
-				a.setStatus(fmt.Sprintf("Failed to %s: %v", op.what, err))
-				return
-			}
+		return run(ctx, ag)
+	}, func(err error, cancelled bool) {
+		switch {
+		case cancelled:
+			// Reloaded anyway: the cancel may have reached the server after
+			// the statement had already committed.
+			a.setStatus(fmt.Sprintf("Cancelled: %s", op.what))
+			refreshExplorerNode(a, op.refresh)
+		case err != nil:
+			a.setStatus(fmt.Sprintf("Failed to %s: %v", op.what, err))
+		default:
 			a.setStatus(op.done)
 			refreshExplorerNode(a, op.refresh)
-		})
+		}
 	})
 }
 
@@ -280,6 +293,7 @@ func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.runAGOperation(sc, agName, agOperation{
+				title:   "Remove Database from Group",
 				what:    fmt.Sprintf("remove database %q from %q", dbName, agName),
 				done:    fmt.Sprintf("Database %q removed from availability group %q", dbName, agName),
 				refresh: node.parent,
@@ -301,6 +315,7 @@ func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	dbName, agName := node.data.Name, node.data.AGName
 	a.runAGOperation(sc, agName, agOperation{
+		title:   "Join to Availability Group",
 		what:    fmt.Sprintf("join database %q to %q", dbName, agName),
 		done:    fmt.Sprintf("Database %q on %s joined availability group %q", dbName, sc.Opts.Server, agName),
 		refresh: node.parent,
@@ -327,6 +342,7 @@ func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.runAGOperation(sc, agName, agOperation{
+				title:   "Remove Secondary Database from Group",
 				what:    fmt.Sprintf("remove %s's copy of %q from %q", sc.Opts.Server, dbName, agName),
 				done:    fmt.Sprintf("Database %q on %s removed from availability group %q", dbName, sc.Opts.Server, agName),
 				refresh: node.parent,
@@ -368,6 +384,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 						return
 					}
 					a.runAGOperation(sc, agName, agOperation{
+						title:   "Suspend Data Movement",
 						what:    fmt.Sprintf("suspend data movement for %q", dbName),
 						done:    fmt.Sprintf("Data movement suspended for %q on %s", dbName, sc.Opts.Server),
 						refresh: node.parent,
@@ -392,6 +409,7 @@ func agSuspendScope(server string, isPrimary bool) string {
 func (a *App) resumeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	dbName, agName := node.data.Name, node.data.AGName
 	a.runAGOperation(sc, agName, agOperation{
+		title:   "Resume Data Movement",
 		what:    fmt.Sprintf("resume data movement for %q", dbName),
 		done:    fmt.Sprintf("Data movement resumed for %q on %s", dbName, sc.Opts.Server),
 		refresh: node.parent,
@@ -415,6 +433,7 @@ func (a *App) removeAGReplica(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.runAGOperation(sc, agName, agOperation{
+				title:   "Remove Replica from Group",
 				what:    fmt.Sprintf("remove replica %q from %q", replica, agName),
 				done:    fmt.Sprintf("Replica %q removed from availability group %q", replica, agName),
 				refresh: node.parent,
@@ -481,24 +500,33 @@ func agFailoverRefusal(clusterType string, force bool) string {
 // confirmFailover asks for confirmation and runs the failover through a
 // connection to the replica being promoted.
 func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, replica string, force bool) {
+	// Uninterruptible: a failover abandoned partway can leave the group
+	// RESOLVING with no primary, which is worse than waiting it out.
+	title := "Fail Over"
+	if force {
+		title = "Force Failover"
+	}
 	run := func() {
-		a.safego("failing over an availability group", func() {
-			ctx, cancel := serverWriteContext(sc)
-			defer cancel()
-			err := agFailover(ctx, sc, agName, replica, force)
-			a.postAndWake(func() {
-				if err != nil {
-					a.setStatus(fmt.Sprintf("Failed to fail over %q to %s: %v", agName, replica, err))
-					return
-				}
-				a.setStatus(fmt.Sprintf("Availability group %q failed over to %s", agName, replica))
-				refreshExplorerNode(a, refresh)
-			})
+		a.runWithProgress(progressJob{
+			title:           title,
+			message:         fmt.Sprintf("Failing availability group %q over to %s...", agName, replica),
+			what:            "failing over an availability group",
+			sc:              sc,
+			uninterruptible: uninterruptibleFailover,
+		}, func(ctx context.Context, _ progressReport) error {
+			return agFailover(ctx, sc, agName, replica, force)
+		}, func(err error, _ bool) {
+			if err != nil {
+				a.setStatus(fmt.Sprintf("Failed to fail over %q to %s: %v", agName, replica, err))
+				return
+			}
+			a.setStatus(fmt.Sprintf("Availability group %q failed over to %s", agName, replica))
+			refreshExplorerNode(a, refresh)
 		})
 	}
 
 	if force {
-		a.confirmTypedDialog.ShowTypedConfirm("Force Failover",
+		a.confirmTypedDialog.ShowTypedConfirm(title,
 			fmt.Sprintf("Force availability group %q over to %s, allowing data loss?\n\n"+
 				"Every transaction %s had not hardened is lost, and the remaining secondaries have to be resumed — and may need reseeding — afterwards.",
 				agName, replica, replica),
@@ -510,7 +538,7 @@ func (a *App) confirmFailover(sc *db.ServerConn, refresh *explorerNode, agName, 
 			})
 		return
 	}
-	a.confirmDialog.ShowConfirm("Fail Over",
+	a.confirmDialog.ShowConfirm(title,
 		fmt.Sprintf("Fail availability group %q over to %s?\n\n"+
 			"%s becomes the primary. The target has to be a synchronous-commit replica in the SYNCHRONIZED state; SQL Server refuses rather than failing over with loss.",
 			agName, replica, replica),
@@ -555,6 +583,7 @@ func (a *App) removeAGListener(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.runAGOperation(sc, agName, agOperation{
+				title:   "Remove Listener",
 				what:    fmt.Sprintf("remove listener %q from %q", dnsName, agName),
 				done:    fmt.Sprintf("Listener %q removed from availability group %q", dnsName, agName),
 				refresh: node.parent,
@@ -580,6 +609,7 @@ func (a *App) deleteAvailabilityGroup(sc *db.ServerConn, node *explorerNode) {
 				return
 			}
 			a.runAGOperation(sc, agName, agOperation{
+				title:   "Delete Availability Group",
 				what:    fmt.Sprintf("delete availability group %q", agName),
 				done:    fmt.Sprintf("Availability group %q deleted", agName),
 				refresh: node.parent,

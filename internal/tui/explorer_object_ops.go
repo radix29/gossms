@@ -1205,14 +1205,33 @@ func sharedDeleteWarning(ops []*objectOp) string {
 // what happened. Sequential rather than concurrent: DDL, and a batch that half
 // succeeded has to say which half — a fan-out would report whichever error
 // arrived first as if it were the only one.
+//
+// The drops run behind the progress dialog. Cancel stops the drop in flight
+// and the batch with it — the context is checked before every object as well
+// as handed to each drop, so a batch never runs on past a cancel — and what
+// already went stays gone, which is why the count leads the status line.
 func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, option bool, after func()) {
-	a.safego("deleting objects", func() {
-		ctx, cancel := serverWriteContext(sc)
-		defer cancel()
-		done := 0
-		var failed nodeData
-		var failedErr error
+	done := 0
+	var failed nodeData
+	job := progressJob{
+		title:   "Delete Objects",
+		message: fmt.Sprintf("Deleting %d objects...", len(objs)),
+		what:    "deleting objects",
+		sc:      sc,
+	}
+	if len(objs) == 1 {
+		job.title = "Delete " + ops[0].noun
+		job.message = fmt.Sprintf("Deleting %s %q...", strings.ToLower(ops[0].noun), objectDataName(objs[0]))
+	}
+	a.runWithProgress(job, func(ctx context.Context, report progressReport) error {
 		for i, n := range objs {
+			if err := ctx.Err(); err != nil {
+				failed = n
+				return err
+			}
+			if len(objs) > 1 {
+				report(fmt.Sprintf("Deleting %d of %d: %s", i+1, len(objs), objectDataName(n)))
+			}
 			var err error
 			if ops[i].dropWithOption != nil {
 				err = ops[i].dropWithOption(ctx, sc, n, option)
@@ -1220,31 +1239,37 @@ func (a *App) runDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp, op
 				err = ops[i].drop(ctx, sc, n)
 			}
 			if err != nil {
-				failed, failedErr = n, err
-				break
+				failed = n
+				return err
 			}
 			done++
 		}
-		a.postAndWake(func() {
-			switch {
-			case failedErr != nil && done == 0 && len(objs) == 1:
-				a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(failedErr)))
-			case failedErr != nil:
-				// The count first: the drops already ran, and which of them
-				// landed is what the user has to know before retrying.
-				a.setStatus(fmt.Sprintf("Deleted %d of %d — %s failed: %v",
-					done, len(objs), objectDataName(failed), withPermissionAdvice(failedErr)))
-			case len(objs) == 1:
-				a.setStatus(fmt.Sprintf("%s %q deleted", ops[0].noun, objectDataName(objs[0])))
-			default:
-				a.setStatus(fmt.Sprintf("Deleted %d objects", done))
-			}
-			// Even a partial batch refreshes: some objects are gone, and a
-			// folder still listing them is worse than the failure itself.
-			if done > 0 || failedErr == nil {
-				after()
-			}
-		})
+		return nil
+	}, func(failedErr error, cancelled bool) {
+		switch {
+		case cancelled && len(objs) == 1:
+			a.setStatus(fmt.Sprintf("Delete of %s %q cancelled", strings.ToLower(ops[0].noun), objectDataName(objs[0])))
+		case cancelled:
+			a.setStatus(fmt.Sprintf("Delete cancelled — %d of %d deleted", done, len(objs)))
+		case failedErr != nil && done == 0 && len(objs) == 1:
+			a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(failedErr)))
+		case failedErr != nil:
+			// The count first: the drops already ran, and which of them
+			// landed is what the user has to know before retrying.
+			a.setStatus(fmt.Sprintf("Deleted %d of %d — %s failed: %v",
+				done, len(objs), objectDataName(failed), withPermissionAdvice(failedErr)))
+		case len(objs) == 1:
+			a.setStatus(fmt.Sprintf("%s %q deleted", ops[0].noun, objectDataName(objs[0])))
+		default:
+			a.setStatus(fmt.Sprintf("Deleted %d objects", done))
+		}
+		// Even a partial batch refreshes: some objects are gone, and a
+		// folder still listing them is worse than the failure itself. A
+		// cancelled one does too, whatever the count: the cancel can reach
+		// the server after the drop it interrupted had already committed.
+		if done > 0 || failedErr == nil || cancelled {
+			after()
+		}
 	})
 }
 
@@ -1283,21 +1308,27 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 	// Copied on the UI goroutine, which is the only one that writes it — see
 	// deleteObject. node itself is still needed, but only inside postAndWake.
 	data := node.data
-	a.safego("renaming an object", func() {
-		ctx, cancel := serverWriteContext(sc)
-		defer cancel()
-		err := op.rename(ctx, sc, data, newName)
-		a.postAndWake(func() {
-			if err != nil {
-				a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
-				return
-			}
-			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
-			// The parent, not the node: the node's label is built by the
-			// folder's loader, so only a reload of the folder shows the new
-			// name.
+	a.runWithProgress(progressJob{
+		title:   "Rename " + op.noun,
+		message: fmt.Sprintf("Renaming %s %q to %q...", strings.ToLower(op.noun), oldName, newName),
+		what:    "renaming an object",
+		sc:      sc,
+	}, func(ctx context.Context, _ progressReport) error {
+		return op.rename(ctx, sc, data, newName)
+	}, func(err error, cancelled bool) {
+		// The parent, not the node: the node's label is built by the folder's
+		// loader, so only a reload of the folder shows the new name. After a
+		// cancel too — it may have reached the server after the rename did.
+		switch {
+		case cancelled:
+			a.setStatus(fmt.Sprintf("Rename of %s %q cancelled", strings.ToLower(op.noun), oldName))
 			refreshExplorerNode(a, node.parent)
-		})
+		case err != nil:
+			a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
+		default:
+			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
+			refreshExplorerNode(a, node.parent)
+		}
 	})
 }
 
@@ -1372,20 +1403,26 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 				return
 			}
 			data := node.data
-			a.safego("moving an object between schemas", func() {
-				ctx, cancel := serverWriteContext(sc)
-				defer cancel()
-				err := op.transfer(ctx, sc, data, target)
-				a.postAndWake(func() {
-					if err != nil {
-						a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
-						return
-					}
-					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
-					// The parent folder, not the node: its label is built by
-					// the folder's loader from the schema the object was in.
+			a.runWithProgress(progressJob{
+				title:   "Move to Schema",
+				message: fmt.Sprintf("Moving %s %q into schema %q...", strings.ToLower(op.noun), name, target),
+				what:    "moving an object between schemas",
+				sc:      sc,
+			}, func(ctx context.Context, _ progressReport) error {
+				return op.transfer(ctx, sc, data, target)
+			}, func(err error, cancelled bool) {
+				// The parent folder, not the node: its label is built by the
+				// folder's loader from the schema the object was in.
+				switch {
+				case cancelled:
+					a.setStatus(fmt.Sprintf("Move of %s %q cancelled", strings.ToLower(op.noun), name))
 					refreshExplorerNode(a, node.parent)
-				})
+				case err != nil:
+					a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
+				default:
+					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
+					refreshExplorerNode(a, node.parent)
+				}
 			})
 		})
 }
