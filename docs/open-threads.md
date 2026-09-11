@@ -1236,7 +1236,9 @@ the Log File Viewer, Query Store and Activity Monitor runs behind
 - **Script runs nothing**, so it never shows the dialog.
 - **The unconfirmed half of a toggle runs behind it too** — Enable, Bring
   Online, Start Endpoint, Join, Resume — because it shares the confirmed half's
-  run function. The 250 ms reveal delay keeps a fast one invisible.
+  run function. The 250 ms reveal delay keeps a fast one invisible. So do the
+  Agent writes SSMS never confirms: Enable/Disable on a job, schedule, alert or
+  operator, and Start/Stop Job.
 - **Driven live on win10cli:** a single DROP blocked on a lock and cancelled
   (the trace shows it never committed, and the session held no locks or
   transaction afterwards), a three-table batch cancelled at the blocked third

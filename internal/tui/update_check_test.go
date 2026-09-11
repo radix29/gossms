@@ -16,8 +16,29 @@ func TestCompareVersions(t *testing.T) {
 		{"v1.9.0", "v1.10.0", -1}, // numeric, not lexical, comparison
 		{"v1.10.0", "v1.9.0", 1},
 		{"v2.0.0", "v1.9.9", 1},
-		{"v1.0.0-rc1", "v1.0.0", 0}, // pre-release suffix is ignored
-		{"(devel)", "v1.0.0", -1},   // unparseable tag compares as v0.0.0
+		// A pre-release, including the pseudo-version a checkout build
+		// stamps since Go 1.24, ranks below its release.
+		{"v0.0.11-0.20260911113756-cf929d309586", "v0.0.11", -1},
+		{"v0.0.11", "v0.0.11-0.20260911113756-cf929d309586", 1},
+		{"v0.0.11-0.20260911113756-cf929d309586+dirty", "v0.0.11", -1},
+		{"v0.0.11-0.20260911113756-cf929d309586", "v0.0.10", 1}, // built after v0.0.10
+		{"v1.0.0-rc1", "v1.0.0", -1},
+		{"v1.0.0", "v1.0.0-rc1", 1},
+		{"v1.0.0-rc1", "v1.0.0-rc1", 0},
+		{"v1.0.0-rc1", "v0.9.9", 1}, // the release triple still dominates
+		// Pre-release identifiers, per semver 2.0.0 §11.
+		{"v1.0.0-alpha", "v1.0.0-alpha.1", -1}, // a shorter prefix ranks lower
+		{"v1.0.0-alpha.1", "v1.0.0-alpha.beta", -1},
+		{"v1.0.0-alpha.beta", "v1.0.0-beta", -1},
+		{"v1.0.0-beta.2", "v1.0.0-beta.11", -1}, // numeric identifiers compare numerically
+		{"v1.0.0-beta.11", "v1.0.0-rc.1", -1},
+		{"v1.0.0-1", "v1.0.0-alpha", -1}, // numeric ranks below alphanumeric
+		// Build metadata never affects precedence.
+		{"v1.0.0+build.5", "v1.0.0", 0},
+		{"v1.0.0+dirty", "v1.0.0+other", 0},
+		{"v1.0.1+build.5", "v1.0.1", 0},
+		{"v1.0.0-rc.1+dirty", "v1.0.0-rc.1", 0},
+		{"(devel)", "v1.0.0", -1}, // unparseable tag compares as v0.0.0
 		{"v1.0.0", "(devel)", 1},
 		{"(devel)", "(devel)", 0},
 	}
@@ -35,6 +56,7 @@ func TestIsReleaseVersion(t *testing.T) {
 	}{
 		{"v1.2.3", true},
 		{"v1.2.3-rc1", true},
+		{"v0.0.11-0.20260911113756-cf929d309586+dirty", true}, // checkout build
 		{"v0.0.0", true},
 		{"1.2.3", true}, // "v" prefix not required
 		{"(devel)", false},
@@ -76,6 +98,27 @@ func TestUpdateDialogShowResultRealVersions(t *testing.T) {
 	joined := strings.Join(d.lines, "\n")
 	if !strings.Contains(joined, "A new version of goSSMS is available.") {
 		t.Fatalf("lines = %q, want the new-version-available message", joined)
+	}
+}
+
+// TestUpdateDialogShowResultPseudoVersion covers the version a build from a
+// checkout actually reports since Go 1.24: a pseudo-version, which is a
+// pre-release of the next patch. Built after v0.0.10 it is newer than that
+// release; against v0.0.11 it is older, and must not read as "latest".
+func TestUpdateDialogShowResultPseudoVersion(t *testing.T) {
+	const pseudo = "v0.0.11-0.20260911113756-cf929d309586+dirty"
+	cases := []struct {
+		latest, want string
+	}{
+		{"v0.0.10", "newer than the latest published release"},
+		{"v0.0.11", "A new version of goSSMS is available."},
+	}
+	for _, c := range cases {
+		d := &UpdateDialog{}
+		d.ShowResult(pseudo, githubRelease{TagName: c.latest}, nil)
+		if joined := strings.Join(d.lines, "\n"); !strings.Contains(joined, c.want) {
+			t.Errorf("against %s: lines = %q, want %q", c.latest, joined, c.want)
+		}
 	}
 }
 

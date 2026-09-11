@@ -272,9 +272,14 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 				d.SetPageError(page, seq, displayError(err))
 				return
 			}
-			d.applyFn[page] = apply
+			// applyFn only once the sheet has taken the form: a load left in
+			// flight by an earlier showing, or superseded by a Refresh, would
+			// otherwise install its apply — for another object, or over the
+			// newer form's rows — in this showing's map.
 			d.SetPageReadOnly(page, seq, readOnly)
-			d.SetPageForm(page, seq, form)
+			if d.SetPageForm(page, seq, form) {
+				d.applyFn[page] = apply
+			}
 		})
 	})
 }
@@ -291,9 +296,15 @@ func (d *PropDialog) runPageAction(fn func(ctx context.Context) error, onDone fu
 // pageActionBody is the goroutine body both runPageAction and runPageActionOnce
 // hand to safego: one round trip bounded by propFetchTimeout, reported back on
 // the UI goroutine. The two differ only in what happens on a panic.
+//
+// d.ctx is read here, on the UI goroutine, not inside the closure: show()
+// rewrites it for the next showing, so reading it on the goroutine is a data
+// race, and an action outliving its showing would run under the new one's
+// context instead of being cancelled with its own.
 func (d *PropDialog) pageActionBody(fn func(ctx context.Context) error, onDone func(err error)) func() {
+	sessionCtx := d.ctx
 	return func() {
-		ctx, cancel := context.WithTimeout(d.ctx, propFetchTimeout)
+		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 		defer cancel()
 		err := fn(ctx)
 		d.post(func() { onDone(err) })

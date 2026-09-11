@@ -42,3 +42,13 @@ type Dirty interface {
 type Closable interface {
 	Closable() bool
 }
+
+// Disposable is an optional interface a Panel may implement to release what
+// it owns — an in-flight read, a collector goroutine, a connection — when it
+// is closed. PanelManager never calls it: the host does, just before
+// RemovePanel, so every panel type is disposed through one check rather than a
+// per-type list a new panel can be left out of. A panel that owns nothing
+// beyond its own memory can simply not implement it.
+type Disposable interface {
+	Close()
+}

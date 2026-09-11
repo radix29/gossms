@@ -81,12 +81,13 @@ func TestPeerOptionsDropTheDatabase(t *testing.T) {
 // TestInstanceKeyNormalizesSpellings pins the one normalizer both the peer
 // cache and the credential lookup are keyed by. The catalog reports
 // "HOST\INSTANCE", the user types "host,1433", and a credential saved under
-// one spelling has to be found under the other — a key that kept the port, or
-// the case, would miss on exactly the connection the user just made.
+// one spelling has to be found under the other — a key that kept the case, or
+// the default port, would miss on exactly the connection the user just made.
 func TestInstanceKeyNormalizesSpellings(t *testing.T) {
 	groups := [][]string{
 		{"UBUSQL2", "ubusql2", "ubusql2,1433", "  ubusql2  ", "UbuSQL2:1433"},
-		{"HOST\\INST", "host\\inst", "HOST\\inst,1433"},
+		{"HOST\\INST", "host\\inst", "HOST\\inst,1433", "host\\inst,1500"},
+		{"win10cli,55253", "WIN10CLI:55253"},
 	}
 	for _, g := range groups {
 		want := InstanceKey(g[0])
@@ -99,11 +100,40 @@ func TestInstanceKeyNormalizesSpellings(t *testing.T) {
 			}
 		}
 	}
-	// A named instance is a different instance from the bare host, so the two
-	// must not collapse together — sharing a key would hand HOST\INST the
-	// default instance's login.
-	if InstanceKey("host") == InstanceKey("host\\inst") {
-		t.Error("InstanceKey collapses a named instance onto its host")
+	// Different instances must not collapse together — sharing a key hands one
+	// the other's login. A named instance is not its host's default instance,
+	// and without an instance name the port is what tells two apart: win10cli's
+	// SQL2017 is reached as "win10cli,55253", beside the default on 1433.
+	for _, pair := range [][2]string{
+		{"host", "host\\inst"},
+		{"host", "host,55253"},
+		{"host,1500", "host,55253"},
+	} {
+		if InstanceKey(pair[0]) == InstanceKey(pair[1]) {
+			t.Errorf("InstanceKey collapses %q and %q onto %q", pair[0], pair[1], InstanceKey(pair[0]))
+		}
+	}
+}
+
+// TestConnectionAddressFoldsInTheDialogPort pins the saved-connection side of
+// the key. The Connect dialog stores a port in the separate Port field, so a
+// key built from Server alone put win10cli's two instances on one entry again.
+func TestConnectionAddressFoldsInTheDialogPort(t *testing.T) {
+	for _, tc := range []struct {
+		conn config.Connection
+		want string
+	}{
+		{config.Connection{Server: "win10cli", Port: 55253}, InstanceKey("win10cli,55253")},
+		{config.Connection{Server: "win10cli", Port: 1433}, InstanceKey("win10cli")},
+		{config.Connection{Server: "win10cli"}, InstanceKey("win10cli")},
+		// A port the address carries wins over the dialog's, as Connect has it.
+		{config.Connection{Server: "win10cli,55253", Port: 1433}, InstanceKey("win10cli,55253")},
+		{config.Connection{Server: "win10cli\\sql2017", Port: 55253}, InstanceKey("win10cli\\sql2017")},
+	} {
+		if got := InstanceKey(ConnectionAddress(tc.conn)); got != tc.want {
+			t.Errorf("InstanceKey(ConnectionAddress(%q port %d)) = %q, want %q",
+				tc.conn.Server, tc.conn.Port, got, tc.want)
+		}
 	}
 }
 

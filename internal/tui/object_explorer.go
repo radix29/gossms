@@ -26,7 +26,21 @@ type explorerNode struct {
 	// fresher children, and cancelLoad stops the superseded fetch outright.
 	loadSeq    int
 	cancelLoad context.CancelFunc
+
+	// loadingID is the tree ID of this node's "Loading..." row, allocated once
+	// and reused by every rebuild, so a selection parked on that row stays on
+	// it until the load replaces it (see ObjectExplorer.reselect).
+	loadingID int
+
+	// retired marks a node a Reload replaced: it is no longer part of the tree,
+	// and nothing may load children into it — SetChildren would register them
+	// in byID under a parent nobody can reach. See ObjectExplorer.dropChildren.
+	retired bool
 }
+
+// loadingRow is the TreeNode.Tag of a "Loading..." placeholder: the node whose
+// children it stands in for.
+type loadingRow struct{ owner *explorerNode }
 
 // snapshot returns a detached copy of n carrying only what a loader reads: its
 // label and its nodeData, by value. Every background fetch takes one instead of
@@ -74,6 +88,17 @@ func (n *explorerNode) endLoad(seq int) bool {
 	return true
 }
 
+// abandonLoad stops the node's in-flight fetch, if any, and makes its eventual
+// endLoad report it superseded — for a node leaving the tree, whose result has
+// nowhere to go.
+func (n *explorerNode) abandonLoad() {
+	if n.cancelLoad != nil {
+		n.cancelLoad()
+		n.cancelLoad = nil
+	}
+	n.loadSeq++
+}
+
 // ObjectExplorer wraps a tuikit controls.TreeView and owns the SQL Server
 // object model (roots, expansion state, lazy loading).
 type ObjectExplorer struct {
@@ -83,6 +108,17 @@ type ObjectExplorer struct {
 	roots  []*explorerNode
 	byID   map[int]*explorerNode
 	nextID int
+
+	// reselectFrom is the node a rebuild took the selection away from, set only
+	// while reselect's SelectID runs, so handleSelect can tell a selection the
+	// tree moved by itself from one the user made.
+	reselectFrom *explorerNode
+
+	// retired is every node a Reload replaced whose rows may still be on
+	// screen. They stay in byID until the next rebuild takes them off — until
+	// then the stale rows are still there to click, and Selected() still has to
+	// answer for them — and are released there (see releaseRetired).
+	retired []*explorerNode
 }
 
 // NewObjectExplorer creates the object explorer panel.
@@ -108,8 +144,8 @@ func (oe *ObjectExplorer) HandleMouse(ev *tcell.EventMouse) bool { return oe.vie
 
 // AddRoot adds a new server root node and selects it, so Object Explorer Details
 // populates immediately after a connect rather than sitting empty until the next
-// manual selection. SetNodes' tv.sel clamp only keeps the *previous* selection
-// in bounds — see controls.TreeView.SelectID.
+// manual selection. SetNodes only carries the *previous* selection across — see
+// controls.TreeView.SelectID.
 func (oe *ObjectExplorer) AddRoot(label string, sc *db.ServerConn) *explorerNode {
 	n := &explorerNode{
 		id:    oe.allocID(),
@@ -209,12 +245,7 @@ func (oe *ObjectExplorer) RefreshFolderByType(sc *db.ServerConn, t NodeType) {
 			continue
 		}
 		if n := findDescendantByType(r, t); n != nil {
-			n.data.Loaded = false
-			n.children = nil
-			if n.expanded {
-				oe.app.loadChildren(n)
-			}
-			oe.app.detailBrowser.Invalidate(oe.app, n)
+			oe.Reload(n)
 		}
 		return
 	}
@@ -267,34 +298,106 @@ func (oe *ObjectExplorer) NodeAt(mx, my int) *explorerNode {
 	return oe.byID[id]
 }
 
-// RefreshSelected forces the selected node to reload its children.
-//
-// Refreshing the server root also drops its cached capability answers: rights
-// granted to a login while it is connected take effect on its existing
-// sessions, so a Refresh that re-reads the objects has to re-read what may be
-// done with them, or the tree comes back current and every gate on it stale.
+// RefreshSelected forces the selected node to reload its children — F5 and
+// Edit > Refresh. Everything a Refresh does is Reload's, so this path and the
+// context menu's cannot drift apart again.
 func (oe *ObjectExplorer) RefreshSelected() {
 	n := oe.Selected()
 	if n == nil {
 		oe.app.setStatus("Select an item in Object Explorer first")
 		return
 	}
-	if n.data.Type == NodeServer {
-		n.data.conn.ClearCapabilityCache()
+	oe.Reload(n)
+}
+
+// Reload re-reads n: its children if it is expanded, and its details. It is the
+// one body behind every Refresh — F5, the context menu's, and the reload after
+// a write — so what a Refresh has to release or re-read is done once, here.
+//
+// n's children are replaced, not updated: the load makes new nodes. The old
+// ones are released through dropChildren, or every Refresh leaked them.
+//
+// Two connection-level extras ride along:
+//   - on the server node, the cached capability answers are re-read. Rights
+//     granted to a login while it is connected take effect on its existing
+//     sessions, so a Refresh that re-reads the objects has to re-read what may
+//     be done with them, or the tree comes back current and every gate on it
+//     stale. The per-database answers are dropped (and the selection's
+//     re-primed); the server-scope set is re-probed off the UI goroutine.
+//   - in the Always On subtree, the cached peer connect failures are dropped
+//     (see forgetPeerFailuresForRefresh).
+func (oe *ObjectExplorer) Reload(n *explorerNode) {
+	if n == nil || n.retired {
+		return
 	}
-	forgetPeerFailuresForRefresh(resolveConn(n), n)
+	sc := resolveConn(n)
+	if n.data.Type == NodeServer && sc != nil {
+		sc.ClearCapabilityCache()
+		if sel := oe.Selected(); sel != nil {
+			oe.app.primeDatabaseCapabilities(sel)
+		}
+		if sc.Server != nil {
+			oe.app.safego("re-reading server capabilities", sc.ProbeCapabilities)
+		}
+	}
+	forgetPeerFailuresForRefresh(sc, n)
+	oe.dropChildren(n)
 	n.data.Loaded = false
-	n.children = nil
 	if n.expanded {
 		oe.app.loadChildren(n)
 	}
 	oe.app.detailBrowser.Invalidate(oe.app, n)
 }
 
+// dropChildren detaches n's subtree from n and retires every node in it: each
+// in-flight load is cancelled now, and the nodes are released — dropped from
+// byID and from the Detail Browser — by the next rebuild, which is when their
+// rows leave the screen.
+//
+// A retired node keeps its parent pointer: reselect walks it to find where a
+// selection on a replaced node belongs.
+func (oe *ObjectExplorer) dropChildren(n *explorerNode) {
+	var retire func(*explorerNode)
+	retire = func(c *explorerNode) {
+		c.retired = true
+		c.abandonLoad()
+		oe.retired = append(oe.retired, c)
+		for _, gc := range c.children {
+			retire(gc)
+		}
+	}
+	for _, c := range n.children {
+		retire(c)
+	}
+	n.children = nil
+}
+
+// releaseRetired drops the nodes dropChildren retired from byID and from the
+// Detail Browser's cache — called by rebuild, once they are no longer drawn.
+// Their loads were cancelled when they were retired; this cancels any started
+// since, from a stale row expanded in the meantime.
+func (oe *ObjectExplorer) releaseRetired() {
+	if len(oe.retired) == 0 {
+		return
+	}
+	for _, n := range oe.retired {
+		n.abandonLoad()
+		delete(oe.byID, n.id)
+	}
+	oe.app.detailBrowser.Forget(oe.retired)
+	oe.retired = nil
+}
+
 // SetChildren installs the loaded children for a node, from the background-load
 // callback on the UI goroutine, and rebuilds the flat view. IDs are allocated
 // here rather than during the fetch, since allocID mutates shared state.
+//
+// A retired node takes nothing: its children would be registered in byID under
+// a parent no longer in the tree, and never released.
 func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode) {
+	if n.retired {
+		return
+	}
 	for _, c := range children {
 		c.id = oe.allocID()
 		c.parent = n
@@ -305,13 +408,103 @@ func (oe *ObjectExplorer) SetChildren(n *explorerNode, children []*explorerNode)
 	oe.rebuild()
 }
 
-// rebuild flattens the explorer tree into the controls.TreeView's node list.
+// rebuild flattens the explorer tree into the controls.TreeView's node list,
+// then puts the selection back on the node it belongs to (see reselect).
 func (oe *ObjectExplorer) rebuild() {
+	var prev *explorerNode
+	onPlaceholder := false
+	if tn := oe.view.SelectedNode(); tn != nil {
+		switch tag := tn.Tag.(type) {
+		case *explorerNode:
+			prev = tag
+		case loadingRow:
+			prev, onPlaceholder = tag.owner, true
+		}
+	}
 	flat := make([]controls.TreeNode, 0, 32)
 	for _, r := range oe.roots {
 		flat = oe.flatten(flat, r, 0)
 	}
 	oe.view.SetNodes(flat)
+	oe.releaseRetired()
+	oe.reselect(prev, onPlaceholder, flat)
+}
+
+// reselect moves the selection off a node the rebuild no longer shows — prev,
+// or prev's "Loading..." row when onPlaceholder — and reports the move through
+// OnSelect, so the Details pane and the status bar stop describing it.
+//
+// TreeView.SetNodes already carries a surviving selection across by ID, but a
+// Refresh makes new nodes with new IDs, and a delete or a collapse removes the
+// selected one outright; for those SetNodes can only clamp an index, which
+// lands on whatever row slid into place. Keyboard actions — Delete, Rename,
+// Properties, Script — then went to an object nobody selected.
+func (oe *ObjectExplorer) reselect(prev *explorerNode, onPlaceholder bool, flat []controls.TreeNode) {
+	if prev == nil {
+		return
+	}
+	shown := make(map[*explorerNode]bool, len(flat))
+	placeholderShown := false
+	for _, tn := range flat {
+		switch tag := tn.Tag.(type) {
+		case *explorerNode:
+			shown[tag] = true
+		case loadingRow:
+			placeholderShown = placeholderShown || tag.owner == prev
+		}
+	}
+	if onPlaceholder && placeholderShown || !onPlaceholder && shown[prev] {
+		return // still on screen, and SetNodes kept it selected
+	}
+	target := survivor(prev, shown)
+	if target == nil {
+		// prev's whole root is gone (a disconnect): nothing is related to it, so
+		// report whichever node SetNodes' clamp left selected.
+		if tn := oe.view.SelectedNode(); tn != nil {
+			target, _ = tn.Tag.(*explorerNode)
+		}
+	}
+	if target == nil {
+		return
+	}
+	oe.reselectFrom = prev
+	oe.view.SelectID(target.id)
+	oe.reselectFrom = nil
+}
+
+// survivor is where a selection on n belongs once n is no longer shown: a shown
+// node for the same object under n's parent (a reload re-created it), else the
+// parent itself. The parent is resolved the same way first, so a parent a
+// higher Refresh re-created is found too — it comes back collapsed, and is
+// then the answer. nil when n's root is gone.
+func survivor(n *explorerNode, shown map[*explorerNode]bool) *explorerNode {
+	if shown[n] {
+		return n
+	}
+	if n.parent == nil {
+		return nil
+	}
+	p := survivor(n.parent, shown)
+	if p == nil {
+		return nil
+	}
+	for _, c := range p.children {
+		if shown[c] && sameObject(c, n) {
+			return c
+		}
+	}
+	return p
+}
+
+// sameObject reports whether a and b stand for the same server object — how a
+// node a reload re-created is recognised. A node with no Name (a folder, a log
+// entry) is told apart by its label instead; a label that changed simply fails
+// to match, and the selection goes to the parent, which is the safe miss.
+func sameObject(a, b *explorerNode) bool {
+	if a.data.Type != b.data.Type || a.data.Schema != b.data.Schema || a.data.Name != b.data.Name {
+		return false
+	}
+	return a.data.Name != "" || a.label == b.label
 }
 
 func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, depth int) []controls.TreeNode {
@@ -335,11 +528,15 @@ func (oe *ObjectExplorer) flatten(flat []controls.TreeNode, n *explorerNode, dep
 		return flat
 	}
 	if !n.data.Loaded {
+		if n.loadingID == 0 {
+			n.loadingID = oe.allocID()
+		}
 		flat = append(flat, controls.TreeNode{
-			ID:    oe.allocID(),
+			ID:    n.loadingID,
 			Label: "Loading...",
 			Icon:  nodeIcon(nodeData{Type: NodeLoading}, oe.app.cfg.IconStyle, false),
 			Depth: depth + 1,
+			Tag:   loadingRow{owner: n},
 		})
 		return flat
 	}
@@ -406,7 +603,12 @@ func (oe *ObjectExplorer) handleCollapse(id controls.TreeNodeID) {
 }
 
 func (oe *ObjectExplorer) handleSelect(id controls.TreeNodeID) {
-	if n, ok := oe.byID[id]; ok {
+	n, ok := oe.byID[id]
+	switch {
+	case !ok:
+	case oe.reselectFrom != nil:
+		oe.app.onNodeReselected(oe.reselectFrom, n)
+	default:
 		oe.app.onNodeSelected(n)
 	}
 }

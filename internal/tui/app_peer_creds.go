@@ -46,7 +46,10 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 	if conn.Server == "" {
 		return
 	}
-	key := db.InstanceKey(conn.Server)
+	// ConnectionAddress, not conn.Server: the Connect dialog saves a port in
+	// the separate Port field, and keyed without it "win10cli" and its
+	// SQL2017 instance on 55253 became one instance with the later login.
+	key := db.InstanceKey(db.ConnectionAddress(conn))
 	a.peerCredMu.Lock()
 	defer a.peerCredMu.Unlock()
 	if a.peerCreds == nil {
@@ -76,16 +79,19 @@ func (a *App) rememberPeerCredentials(conn config.Connection) {
 // them onto one key would hand one of them the other's login. As a fallback
 // consulted only when the exact host misses, the worst case is the connect
 // error a miss gives anyway.
+//
+// The "\instance" or ",port" InstanceKey appended is kept: the alias drops the
+// domain, not what tells two instances on one host apart.
 func shortHostKey(key string) string {
-	host, instance, hasInstance := strings.Cut(key, "\\")
+	host, suffix := key, ""
+	if i := strings.IndexAny(key, "\\,"); i >= 0 {
+		host, suffix = key[:i], key[i:]
+	}
 	short, _, dotted := strings.Cut(host, ".")
 	if !dotted || short == "" {
 		return ""
 	}
-	if hasInstance {
-		return short + "\\" + instance
-	}
-	return short
+	return short + suffix
 }
 
 // loadPeerCredentials seeds the map from the saved connections, in the order

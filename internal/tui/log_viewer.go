@@ -1287,7 +1287,7 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 			default:
 				a.setStatus(fmt.Sprintf("%s error log recycled", logType))
 			}
-			refreshExplorerNode(a, node)
+			a.explorer.Reload(node)
 			a.refreshOpenLogViewer(sc, logType)
 		})
 	})

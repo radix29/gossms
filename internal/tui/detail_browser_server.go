@@ -15,7 +15,7 @@ import (
 // gosmo.Server.Info() returns what Connect already loaded) immediately,
 // then backfills available memory and NUMA node count (one DMV query each)
 // followed by per-volume disk free space, appended once it lands.
-func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// Everything below, including the "instant" first stage, runs on a
 	// background goroutine — never call postPartial/postFinal (and the
 	// wakeEventLoop they trigger) directly from ShowNodeDetails' own
@@ -46,7 +46,7 @@ func (db *DetailBrowser) loadServerDetails(app *App, sc *dbconn.ServerConn, node
 		cols := propertyValueColumns
 		db.postPartial(app, seq, cols, rows)
 
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
 		if mem, err := sc.Server.MemoryStatsContext(ctx); err == nil {

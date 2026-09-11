@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -72,47 +73,48 @@ func formatNotifyLevel(n gosmo.NotifyLevel) string {
 	}
 }
 
-// refreshExplorerNode reloads node's children (if it's currently expanded)
-// and invalidates its cached detail view — the shared body behind every
-// Refresh context-menu action, and behind Agent deletes refreshing the
-// parent folder. A nil node is a no-op.
-func refreshExplorerNode(a *App, n *explorerNode) {
-	if n == nil {
-		return
-	}
-	n.data.Loaded = false
-	n.children = nil
-	if n.expanded {
-		a.loadChildren(n)
-	}
-	a.detailBrowser.Invalidate(a, n)
-}
-
-// setAgentEnabled runs run (a gosmo Enable/Disable call) on a background
-// goroutine, then updates node's cached IsEnabled flag and redraws the tree
-// and detail view on success — the shared body behind every Agent entity's
-// Enable/Disable toggle.
-func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, enable bool, run func(ctx context.Context) error) {
+// setAgentEnabled runs run (a gosmo Enable/Disable call) behind the progress
+// dialog, then updates node's cached IsEnabled flag and redraws the tree and
+// detail view on success — the shared body behind every Agent entity's
+// Enable/Disable toggle. noun is the entity's lower-case name ("job",
+// "schedule", …) for the dialog and the status line.
+//
+// Neither direction is confirmed, as in SSMS; the progress dialog's reveal
+// delay keeps a fast toggle invisible, and one waiting on a lock gets a
+// spinner and Cancel instead of leaving the tree live under it.
+func (a *App) setAgentEnabled(sc *db.ServerConn, node *explorerNode, noun string, enable bool, run func(ctx context.Context) error) {
 	if !a.requireConn(sc) {
 		return
 	}
-	a.safego("enabling/disabling an Agent object", func() {
-		ctx, cancel := serverWriteContext(sc)
-		defer cancel()
-		err := run(ctx)
-		a.postAndWake(func() {
-			if err != nil {
-				word := "disable"
-				if enable {
-					word = "enable"
-				}
-				a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, node.label, err))
-				return
+	word, doing, title := "disable", "Disabling", "Disable "
+	if enable {
+		word, doing, title = "enable", "Enabling", "Enable "
+	}
+	Noun := strings.ToUpper(noun[:1]) + noun[1:]
+	a.runWithProgress(progressJob{
+		title:   title + Noun,
+		message: fmt.Sprintf("%s %s %q...", doing, noun, node.label),
+		what:    "enabling/disabling an Agent " + noun,
+		sc:      sc,
+	}, func(ctx context.Context, _ progressReport) error {
+		return run(ctx)
+	}, func(err error, cancelled bool) {
+		switch {
+		case cancelled:
+			// The state is re-read rather than assumed: the cancel may have
+			// reached the server after the change had committed.
+			a.setStatus(fmt.Sprintf("%s %q cancelled", doing, node.label))
+			if parent := node.parent; parent != nil {
+				a.explorer.Reload(parent)
 			}
+		case err != nil:
+			a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, node.label, err))
+		default:
 			node.data.IsEnabled = enable
 			a.explorer.rebuild()
 			a.detailBrowser.Invalidate(a, node)
-		})
+			a.setStatus(fmt.Sprintf("%s %q is now %sd", Noun, node.label, word))
+		}
 	})
 }
 
@@ -141,12 +143,12 @@ func (a *App) deleteAgentEntity(sc *db.ServerConn, node *explorerNode, title, me
 				// Refreshed anyway: the cancel may have reached the server
 				// after the delete had already committed.
 				a.setStatus(fmt.Sprintf("Delete of %q cancelled", node.label))
-				refreshExplorerNode(a, node.parent)
+				a.explorer.Reload(node.parent)
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Delete failed: %v", withPermissionAdvice(err)))
 			default:
 				a.setStatus(fmt.Sprintf("%q deleted", node.label))
-				refreshExplorerNode(a, node.parent)
+				a.explorer.Reload(node.parent)
 			}
 		})
 	})

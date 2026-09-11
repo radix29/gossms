@@ -209,12 +209,12 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 		pf, err := fetch(ctx, sc)
 		d.post(func() {
 			// A prefetch outlives the showing that started it when the dialog
-			// is closed and reopened before it lands. The per-page seq can't
-			// catch that: SetPages rebuilds every slot, so the new showing's
-			// first load carries the same seq the old one did. Without this
-			// guard the stale callback consumes the *new* showing's waiting list
-			// and fails its pages, and the live fetch then lands with nothing
-			// waiting and never calls SetPageForm.
+			// is closed and reopened before it lands. The sheet's seq keeps the
+			// stale result off the new showing's pages, but not off this
+			// dialog's own state: without this guard the stale callback
+			// consumes the *new* showing's waiting list and clears fetching,
+			// and the live fetch then lands with nothing waiting and never
+			// calls SetPageForm.
 			if d.ctx != sessionCtx {
 				return
 			}

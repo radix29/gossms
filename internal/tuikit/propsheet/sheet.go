@@ -23,9 +23,11 @@ const (
 type pageSlot struct {
 	title string
 	state PageState
-	seq   int
-	form  *Form
-	err   error
+	// seq is the token of the load this slot is waiting on — a value of
+	// PropertySheet.seq, not a per-slot count. See PropertySheet.seq.
+	seq  int
+	form *Form
+	err  error
 
 	// readOnly is the reason this page cannot be written, or "" when it can.
 	// Set by SetPageReadOnly before the form arrives; SetPageForm turns it into
@@ -81,6 +83,14 @@ type PropertySheet struct {
 	pages    []pageSlot
 	pageList *controls.ListBox
 	current  int
+
+	// seq numbers every page load the sheet has ever started, across every
+	// page and every showing, and SetPages never resets it. A per-slot counter
+	// restarted at 0 on each SetPages, so page i's first load was seq 1 on
+	// every showing: a load the previous showing left in flight — its
+	// "context canceled" error, or worse, its form and apply for a different
+	// object — passed the next showing's staleness guard on the same page.
+	seq int
 
 	zone     focusZone
 	btnFocus int
@@ -244,7 +254,8 @@ func (p *PropertySheet) SelectPage(i int) {
 func (p *PropertySheet) startLoad(i int) {
 	slot := &p.pages[i]
 	slot.state = PageLoading
-	slot.seq++
+	p.seq++
+	slot.seq = p.seq
 	slot.err = nil
 	if p.OnLoadPage != nil {
 		p.OnLoadPage(i, slot.seq)
@@ -252,15 +263,17 @@ func (p *PropertySheet) startLoad(i int) {
 }
 
 // SetPageForm reports a successful load for page, provided seq still matches: a
-// result for a page refreshed again, or a sheet since hidden, is ignored. Call
-// only from the UI goroutine.
-func (p *PropertySheet) SetPageForm(page, seq int, f *Form) {
+// result for a page refreshed again, a sheet since hidden, or an earlier
+// showing is ignored. It reports whether the form was accepted — a caller that
+// keeps per-page state beside the form (an apply closure) stores it only then.
+// Call only from the UI goroutine.
+func (p *PropertySheet) SetPageForm(page, seq int, f *Form) bool {
 	if page < 0 || page >= len(p.pages) || !p.Visible() {
-		return
+		return false
 	}
 	slot := &p.pages[page]
 	if seq != slot.seq {
-		return
+		return false
 	}
 	slot.form = f
 	slot.state = PageReady
@@ -269,6 +282,7 @@ func (p *PropertySheet) SetPageForm(page, seq int, f *Form) {
 		f.Prepend(Note(slot.readOnly))
 		f.SetReadOnly(true)
 	}
+	return true
 }
 
 // SetPageReadOnly marks page as unwritable, with reason as the sentence shown

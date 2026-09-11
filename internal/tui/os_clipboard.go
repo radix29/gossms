@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 )
 
 // ---------------------------------------------------------------------------
@@ -58,17 +60,25 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 	case "windows":
 		if found("clip") {
 			return &clipboardMethod{
-				copy: func(text string) bool { return runClipboardCmd(text, "clip") },
+				// clip.exe reads plain stdin in the console's OEM code
+				// page, not UTF-8: "ö" (C3 B6) landed on the clipboard as
+				// "├╢" under CP437. A UTF-16LE stream with a BOM is the one
+				// input it takes as Unicode, whatever the code page.
+				copy: func(text string) bool { return runClipboardCmd(utf16LEWithBOM(text), "clip") },
 				paste: func() (string, bool) {
-					// PowerShell's pipeline output reliably appends a
-					// trailing line terminator even with -Raw, unlike
-					// xclip/xsel/pbpaste/wl-paste's exact-bytes output —
-					// trim it here rather than in the shared helper.
-					out, ok := runClipboardOutCmd("powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw")
+					// PowerShell writes redirected stdout in
+					// [Console]::OutputEncoding, the OEM code page, so
+					// Get-Clipboard alone turns "ö" into a lone 0x94 byte.
+					// Switch it to BOM-less UTF-8 first. Its pipeline output
+					// also reliably appends a trailing line terminator even
+					// with -Raw, unlike xclip/xsel/pbpaste/wl-paste's
+					// exact-bytes output — trim it here rather than in the
+					// shared helper.
+					out, ok := runClipboardOutCmd("powershell", "-NoProfile", "-NonInteractive", "-Command", windowsPasteScript)
 					if !ok {
 						return "", false
 					}
-					return strings.TrimRight(out, "\r\n"), true
+					return strings.TrimRight(strings.TrimPrefix(out, "\uFEFF"), "\r\n"), true
 				},
 			}
 		}
@@ -93,6 +103,23 @@ func detectClipboardMethod(lookPath func(string) (string, error)) *clipboardMeth
 		}
 	}
 	return nil
+}
+
+// windowsPasteScript reads the clipboard with PowerShell's stdout switched
+// to BOM-less UTF-8 — see the Windows paste in detectClipboardMethod.
+const windowsPasteScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-Clipboard -Raw"
+
+// utf16LEWithBOM encodes text as UTF-16LE preceded by a byte-order mark,
+// the form clip.exe takes as Unicode. The result is raw bytes carried in a
+// string, for runClipboardCmd's stdin.
+func utf16LEWithBOM(text string) string {
+	units := utf16.Encode([]rune(text))
+	b := make([]byte, 0, 2+2*len(units))
+	b = append(b, 0xFF, 0xFE)
+	for _, u := range units {
+		b = binary.LittleEndian.AppendUint16(b, u)
+	}
+	return string(b)
 }
 
 // runClipboardCmd runs name(args...) with text piped to stdin, for a copy

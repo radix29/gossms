@@ -9,17 +9,22 @@
 //     -X github.com/radix29/gossms/internal/version.Commit=...  \
 //     -X github.com/radix29/gossms/internal/version.Date=..."
 //
-//  2. debug.BuildInfo.Main.Version, which Go itself populates when someone
-//     runs `go install github.com/radix29/gossms/cmd/gossms@<tag>` (or
-//     @latest) — checked in init, below, only when ldflags didn't already
-//     set Version.
+//  2. debug.BuildInfo.Main.Version — checked in init, below, only when
+//     ldflags didn't already set Version. Go populates it with the tag for
+//     `go install github.com/radix29/gossms/cmd/gossms@<tag>` (or @latest),
+//     and, since Go 1.24, with a pseudo-version for a plain `git clone &&
+//     go build`: "v0.0.11-0.20260911113756-cf929d309586" is a commit after
+//     v0.0.10, with "+dirty" appended when the tree had uncommitted
+//     changes. A pseudo-version is a semver pre-release of the next patch,
+//     and the update check ranks it below that release.
 //
-//  3. The literal "(devel)" default, left alone for a plain `git clone &&
-//     go build`/`go run` with no ldflags — matching the same convention
-//     `go version -m` itself uses for an unresolved main-module version.
-//     Commit/Date still populate from the VCS info the Go toolchain embeds
-//     in every binary built from a checkout (go help buildvcs) even in
-//     this case, so the About dialog still shows commit + build date.
+//  3. The literal "(devel)" default, left alone only when the binary
+//     carries no module version at all: `go run`, or `go build
+//     -buildvcs=false` — matching the convention `go version -m` itself
+//     uses for an unresolved main-module version. Commit/Date populate
+//     from the VCS info the Go toolchain embeds in a binary built from a
+//     checkout (go help buildvcs), so the About dialog shows commit + build
+//     date whenever that info is there.
 //
 // Shared between cmd/gossms and internal/tui (the About dialog).
 package version

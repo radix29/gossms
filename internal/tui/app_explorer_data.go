@@ -49,7 +49,13 @@ func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc)
 // Refresh while the initial load hasn't returned yet), beginLoad cancels
 // it and its result — even if it arrives late — is discarded by endLoad,
 // so it can never clobber the newer one.
+//
+// A retired node — one a Reload replaced, expanded from its stale row before
+// the reload landed — is not loaded: SetChildren would refuse the result.
 func (a *App) loadChildren(node *explorerNode) {
+	if node.retired {
+		return
+	}
 	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
 	// The fetch reads a snapshot, never the live node: applyNodeFilter writes
 	// node.data.Filter on the UI goroutine while this is in flight. node itself
@@ -138,6 +144,20 @@ func (a *App) onNodeSelected(node *explorerNode) {
 	a.detailBrowser.ShowNodeDetails(a, node)
 }
 
+// onNodeReselected is onNodeSelected for a selection Object Explorer moved by
+// itself, off from — a node a rebuild no longer shows (ObjectExplorer.reselect).
+// The Details pane follows as always; the status bar only while it still shows
+// from's path. That rebuild is usually the reload after a write, landing just
+// after the write's own message — "deleted", "renamed" — which the new path
+// would otherwise replace before anyone had read it.
+func (a *App) onNodeReselected(from, node *explorerNode) {
+	if a.statusText == FormatNodePath(from) {
+		a.setStatus(FormatNodePath(node))
+	}
+	a.primeDatabaseCapabilities(node)
+	a.detailBrowser.ShowNodeDetails(a, node)
+}
+
 // primeDatabaseCapabilities warms the per-database capability cache for the
 // node the user has just moved to, off the UI goroutine.
 //
@@ -155,7 +175,9 @@ func (a *App) primeDatabaseCapabilities(node *explorerNode) {
 	if isAgentNode(node.data.Type) {
 		dbName = "msdb"
 	}
-	if sc == nil || dbName == "" {
+	// Cached is the common case once a database has been touched: every
+	// keystroke through its nodes lands here, and needs no goroutine.
+	if sc == nil || dbName == "" || sc.HasDatabaseCapabilities(dbName) {
 		return
 	}
 	a.safego("priming database capabilities", func() {
@@ -231,15 +253,7 @@ func insertBeforeRefresh(items, extra []controls.MenuItem) []controls.MenuItem {
 func (a *App) nodeMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	newQuery := controls.MenuItem{Label: "New Query", Action: func() { a.newQueryPanelForConn(sc, node.data.DBName) }}
-	refresh := controls.MenuItem{Label: refreshMenuLabel, Action: func() {
-		forgetPeerFailuresForRefresh(sc, node)
-		node.data.Loaded = false
-		node.children = nil
-		if node.expanded {
-			a.loadChildren(node)
-		}
-		a.detailBrowser.Invalidate(a, node)
-	}}
+	refresh := controls.MenuItem{Label: refreshMenuLabel, Action: func() { a.explorer.Reload(node) }}
 
 	if build, ok := nodeMenus[node.data.Type]; ok {
 		return build(a, sc, node, newQuery, refresh)
@@ -411,14 +425,14 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 				// have reached the server after the change had committed.
 				a.setStatus(fmt.Sprintf("%s %q cancelled", doing, display))
 				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
+					a.explorer.Reload(parent)
 				}
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to %s %q: %v", word, display, err))
 			default:
 				node.data.IsEnabled = enable
 				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
+					a.explorer.Reload(parent)
 				}
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("%s %q is now %sd", strings.ToUpper(noun[:1])+noun[1:], display, word))
@@ -499,14 +513,14 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 			case cancelled:
 				a.setStatus(fmt.Sprintf("Setting %q to %s cancelled", name, state))
 				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
+					a.explorer.Reload(parent)
 				}
 			case err != nil:
 				a.setStatus(fmt.Sprintf("Failed to set %q to %s: %v", name, state, err))
 			default:
 				node.data.IsEnabled = state == gosmo.EndpointStarted
 				if parent := node.parent; parent != nil {
-					refreshExplorerNode(a, parent)
+					a.explorer.Reload(parent)
 				}
 				a.detailBrowser.Invalidate(a, node)
 				a.setStatus(fmt.Sprintf("Endpoint %q is now %s", name, endpointStateLabel(string(state))))
@@ -534,7 +548,7 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 // so going offline (which rolls back every existing connection to the
 // database) is confirmed first; coming back online is not. On success
 // node's icon/state updates and its subtree is refreshed via
-// refreshExplorerNode: an offline database's expanded children are the
+// explorer.Reload: an offline database's expanded children are the
 // single "(Database is offline)" placeholder leaf (see
 // explorer_databases.go), and an online one's real Tables/Views subtree
 // must not linger stale and get re-queried against a now-offline database.
@@ -573,8 +587,8 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 				a.setStatus(fmt.Sprintf("Failed to take %q %s: %v", dbName, word, err))
 			default:
 				node.data.IsOffline = goOffline
-				refreshExplorerNode(a, node)
-				a.explorer.rebuild() // repaint node's own icon immediately even when it's collapsed (refreshExplorerNode only rebuilds once an expanded reload completes)
+				a.explorer.Reload(node)
+				a.explorer.rebuild() // repaint node's own icon immediately even when it's collapsed (Reload only rebuilds once an expanded reload completes)
 				a.setStatus(fmt.Sprintf("Database %q is now %s", dbName, word))
 			}
 		})

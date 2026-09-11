@@ -202,28 +202,19 @@ func (a *App) writePlanFile(path, xml string) bool {
 	return true
 }
 
-// closePanelAt removes the panel at index i, first releasing what it owns: an
-// Activity Monitor's collector and per-tab connections, or a QueryPanel's
-// dedicated connection and session. Also cancels any in-flight query or plan
-// fetch, which would otherwise run to completion server-side and fire its
-// postEvent closure against a panel that is no longer hosted. Ending the
-// session rolls back a transaction still open on it — requestClosePanel is
-// where the user is offered a commit first.
+// closePanelAt removes the panel at index i, first releasing what it owns
+// through layout.Disposable: an Activity Monitor's collector and per-tab
+// connections, a QueryPanel's dedicated connection and session, and the
+// in-flight reads of a Log Viewer, Query Store panel or AG dashboard, which
+// would otherwise run to completion server-side and fire their postEvent
+// closures against a panel that is no longer hosted. One interface check, not
+// a per-type switch: the switch it replaced had missed QueryStorePanel, whose
+// reads kept running on the shared Object Explorer pool until qsReadTimeout.
+// Ending a QueryPanel's session rolls back a transaction still open on it —
+// requestClosePanel is where the user is offered a commit first.
 func (a *App) closePanelAt(i int) {
-	if am, ok := a.panels.PanelAt(i).(*ActivityMonitor); ok {
-		am.Close()
-	}
-	if dash, ok := a.panels.PanelAt(i).(*AGDashboard); ok {
-		dash.Close()
-	}
-	if lv, ok := a.panels.PanelAt(i).(*LogViewer); ok {
-		lv.Close()
-	}
-	if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
-		if qp.executing && qp.cancel != nil {
-			qp.cancel()
-		}
-		qp.closeConnection()
+	if d, ok := a.panels.PanelAt(i).(layout.Disposable); ok {
+		d.Close()
 	}
 	a.panels.RemovePanel(i)
 	a.releaseClosedPanelMemory()

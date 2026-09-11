@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 )
@@ -54,6 +55,12 @@ type capTestScript struct {
 	dbProbes int   // how many HAS_DBACCESS reads happened
 	fail     bool  // make the probe fail
 	access   int64 // what HAS_DBACCESS answers
+	srvFail  bool  // make the server-scope probe fail
+
+	// started, if set, is sent to as a HAS_DBACCESS read begins, which then
+	// waits for release — so a test can act while a probe is in flight.
+	started chan struct{}
+	release chan struct{}
 }
 
 var capTestCurrent *capTestScript
@@ -72,19 +79,33 @@ func (c *capTestConn) ExecContext(context.Context, string, []driver.NamedValue) 
 	return driver.ResultNoRows, nil
 }
 
-func (c *capTestConn) QueryContext(_ context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
+func (c *capTestConn) QueryContext(ctx context.Context, q string, _ []driver.NamedValue) (driver.Rows, error) {
 	s := capTestCurrent
 	switch {
 	case strings.Contains(q, "HAS_DBACCESS"):
 		s.mu.Lock()
 		s.dbProbes++
-		fail, access := s.fail, s.access
+		fail, access, started, release := s.fail, s.access, s.started, s.release
 		s.mu.Unlock()
+		if started != nil {
+			started <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		if fail {
 			return nil, errors.New("mssql: connection reset")
 		}
 		return &capTestRows{cols: 1, rows: [][]driver.Value{{access}}}, nil
 	case strings.Contains(q, "IS_SRVROLEMEMBER"):
+		s.mu.Lock()
+		srvFail := s.srvFail
+		s.mu.Unlock()
+		if srvFail {
+			return nil, errors.New("mssql: connection reset")
+		}
 		return &capTestRows{cols: 3, rows: [][]driver.Value{
 			{"R", "sysadmin", int64(0)},
 			{"P", "VIEW SERVER STATE", int64(0)},
@@ -220,5 +241,275 @@ func TestAnInaccessibleDatabaseIsReportedAsSuch(t *testing.T) {
 	c := sc.DatabaseCapabilities(context.Background(), "backup_test")
 	if c.Accessible {
 		t.Error("Accessible = true for HAS_DBACCESS 0")
+	}
+}
+
+// A probe that started before ClearCapabilityCache must not store its answer
+// after it: the clear is a Refresh asking for rights to be re-read, and the
+// in-flight answer may predate the GRANT it was for — cached, it would be
+// served for the rest of the session.
+func TestProbeInFlightAcrossAClearIsNotCached(t *testing.T) {
+	script := &capTestScript{access: 1, started: make(chan struct{}), release: make(chan struct{})}
+	sc := capTestConnection(t, script)
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		sc.DatabaseCapabilities(ctx, "HealthClinic")
+		close(done)
+	}()
+	<-script.started
+	sc.ClearCapabilityCache()
+	close(script.release)
+	<-done
+
+	script.mu.Lock()
+	script.started = nil
+	script.mu.Unlock()
+	sc.DatabaseCapabilities(ctx, "HealthClinic")
+	script.mu.Lock()
+	defer script.mu.Unlock()
+	if script.dbProbes != 2 {
+		t.Errorf("HAS_DBACCESS read %d times, want 2 — the pre-clear answer was cached", script.dbProbes)
+	}
+}
+
+// A Refresh re-probes the server scope on a live connection. A re-probe that
+// fails must keep the answer it had: falling back to "unknown" fails every
+// gate open over one dropped round trip.
+func TestFailedReprobeKeepsPreviousServerCapabilities(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+
+	script.mu.Lock()
+	script.srvFail = true
+	script.mu.Unlock()
+	sc.ProbeCapabilities()
+
+	if got := sc.Capabilities().Permission("VIEW SERVER STATE"); got != gosmo.CapabilityDenied {
+		t.Errorf("VIEW SERVER STATE after a failed re-probe = %v, want the earlier denied", got)
+	}
+}
+
+// -- single-flight ------------------------------------------------------------
+
+// holdProbes makes every HAS_DBACCESS read in s wait until the returned
+// release is called, and returns the channel each read announces itself on.
+// Cleanup releases whatever is still held and drains late announcements, so a
+// test that fails mid-way does not leave probes blocked into the next one.
+func holdProbes(t *testing.T, s *capTestScript) (started <-chan struct{}, release func()) {
+	t.Helper()
+	st, rel := make(chan struct{}), make(chan struct{})
+	s.mu.Lock()
+	s.started, s.release = st, rel
+	s.mu.Unlock()
+	var once sync.Once
+	release = func() { once.Do(func() { close(rel) }) }
+	t.Cleanup(func() {
+		release()
+		go func() {
+			for range st {
+			}
+		}()
+	})
+	return st, release
+}
+
+// nextProbe waits for the next HAS_DBACCESS read to start.
+func nextProbe(t *testing.T, started <-chan struct{}, why string) {
+	t.Helper()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("no probe started: %s", why)
+	}
+}
+
+// noProbe asserts no further HAS_DBACCESS read starts.
+func noProbe(t *testing.T, started <-chan struct{}, why string) {
+	t.Helper()
+	select {
+	case <-started:
+		t.Fatalf("a second probe started: %s", why)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// waitForWaiters blocks until n callers have joined the probe in flight for
+// name — the only way to know a goroutine has got as far as waiting.
+func waitForWaiters(t *testing.T, sc *ServerConn, name string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		sc.mu.Lock()
+		got := 0
+		if p := sc.dbProbes[name]; p != nil {
+			got = p.waiters
+		}
+		sc.mu.Unlock()
+		if got >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d callers joined the probe for %s, want %d — each ran its own", got, name, n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// R14: arrowing through an unprobed database's nodes primes it once per
+// keystroke. Every caller after the first must wait for the first probe, not
+// run the same two round trips alongside it on the shared pool.
+func TestConcurrentDatabaseProbesShareOneRoundTrip(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+	started, release := holdProbes(t, script)
+	ctx := context.Background()
+
+	const callers = 5
+	results := make(chan *gosmo.DatabaseCapabilities, callers)
+	for range callers {
+		go func() { results <- sc.DatabaseCapabilities(ctx, "HealthClinic") }()
+	}
+	nextProbe(t, started, "the first caller should probe")
+	waitForWaiters(t, sc, "HealthClinic", callers-1)
+	release()
+
+	for range callers {
+		if c := <-results; !c.InRole("db_datareader") {
+			t.Error("a caller that waited did not get the probe's answer")
+		}
+	}
+	noProbe(t, started, "the answer is cached now")
+	script.mu.Lock()
+	defer script.mu.Unlock()
+	if script.dbProbes != 1 {
+		t.Errorf("HAS_DBACCESS read %d times by %d concurrent callers, want 1", script.dbProbes, callers)
+	}
+}
+
+// A probe whose own caller gave up learned nothing about the server. A caller
+// that joined it and still wants an answer must ask again — inheriting the
+// failure would fail its gates open over someone else's closed dialog.
+func TestAWaiterOutlivesAnAbandonedProbe(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+	started, release := holdProbes(t, script)
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leader := make(chan *gosmo.DatabaseCapabilities, 1)
+	go func() { leader <- sc.DatabaseCapabilities(leaderCtx, "HealthClinic") }()
+	nextProbe(t, started, "the first caller should probe")
+
+	waiter := make(chan *gosmo.DatabaseCapabilities, 1)
+	go func() { waiter <- sc.DatabaseCapabilities(context.Background(), "HealthClinic") }()
+	waitForWaiters(t, sc, "HealthClinic", 1)
+
+	cancelLeader()
+	if c := <-leader; c.InRole("db_datareader") {
+		t.Error("the cancelled caller got an answer its probe never received")
+	}
+	nextProbe(t, started, "the waiter should re-probe after the leader gave up")
+	release()
+	if c := <-waiter; !c.InRole("db_datareader") {
+		t.Error("the waiter inherited the abandoned probe's failure")
+	}
+	if !sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("the waiter's own probe was not cached")
+	}
+}
+
+// A waiter stops at its own context, not the probe's timeout: a Properties
+// dialog closed while its database is being probed must not stay blocked.
+func TestAWaiterStopsAtItsOwnContext(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+	started, release := holdProbes(t, script)
+
+	leader := make(chan struct{})
+	go func() {
+		sc.DatabaseCapabilities(context.Background(), "HealthClinic")
+		close(leader)
+	}()
+	nextProbe(t, started, "the first caller should probe")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	waiter := make(chan *gosmo.DatabaseCapabilities, 1)
+	go func() { waiter <- sc.DatabaseCapabilities(ctx, "HealthClinic") }()
+	waitForWaiters(t, sc, "HealthClinic", 1)
+	cancel()
+
+	select {
+	case c := <-waiter:
+		if !c.Accessible || c.InRole("db_datareader") {
+			t.Error("a cancelled waiter should get the fail-open unknown answer")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a cancelled waiter stayed blocked on someone else's probe")
+	}
+	release()
+	<-leader
+}
+
+// A caller from after ClearCapabilityCache must not join a probe from before
+// it: that answer may predate the GRANT the Refresh was for.
+func TestACallerAfterAClearDoesNotJoinAPreClearProbe(t *testing.T) {
+	script := &capTestScript{access: 1}
+	sc := capTestConnection(t, script)
+	started, release := holdProbes(t, script)
+	ctx := context.Background()
+
+	pre := make(chan struct{})
+	go func() {
+		sc.DatabaseCapabilities(ctx, "HealthClinic")
+		close(pre)
+	}()
+	nextProbe(t, started, "the first caller should probe")
+	sc.ClearCapabilityCache()
+
+	post := make(chan struct{})
+	go func() {
+		sc.DatabaseCapabilities(ctx, "HealthClinic")
+		close(post)
+	}()
+	nextProbe(t, started, "a post-clear caller should run its own probe")
+	release()
+	<-pre
+	<-post
+	if !sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("the post-clear probe's answer was not cached")
+	}
+}
+
+// HasDatabaseCapabilities is what lets a selection skip starting a goroutine;
+// it must say "cached" only for an answer the server actually gave.
+func TestHasDatabaseCapabilities(t *testing.T) {
+	script := &capTestScript{access: 1, fail: true}
+	sc := capTestConnection(t, script)
+	ctx := context.Background()
+
+	if sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("cached before any probe")
+	}
+	sc.DatabaseCapabilities(ctx, "HealthClinic")
+	if sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("a failed probe reads as cached, so nothing would ever retry it")
+	}
+	script.mu.Lock()
+	script.fail = false
+	script.mu.Unlock()
+	sc.DatabaseCapabilities(ctx, "HealthClinic")
+	if !sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("not cached after a probe that succeeded")
+	}
+	if sc.HasDatabaseCapabilities("msdb") {
+		t.Error("one database's answer reads as another's")
+	}
+	sc.ClearCapabilityCache()
+	if sc.HasDatabaseCapabilities("HealthClinic") {
+		t.Error("still cached after ClearCapabilityCache")
+	}
+	if (*ServerConn)(nil).HasDatabaseCapabilities("HealthClinic") {
+		t.Error("a nil connection reports a cached answer")
 	}
 }

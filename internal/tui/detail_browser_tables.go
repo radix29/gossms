@@ -44,13 +44,13 @@ func tableKindForNode(t NodeType) gosmo.TableKind {
 // every table at once (same aggregates, grouped by object_id instead of
 // filtered to one). loadDatabasesFolderDetails still fans out — see the note
 // there for why the same collapse isn't available for database sizes.
-func (db *DetailBrowser) loadTablesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// data, not node: this runs on a background goroutine and the UI goroutine
 	// writes node.data underneath it (see explorerNode.snapshot). node stays
 	// behind as the identity panicRepair and postFinal key off.
 	data := node.data
 	app.safegoRepair("loading table details", db.panicRepair(node, seq), func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
 		dbObj, err := sc.Server.DatabaseByNameContext(ctx, data.DBName)

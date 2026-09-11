@@ -149,7 +149,7 @@ func NewNewAGDialog(app *App) *NewAGDialog {
 		pages:   []string{"General", "Backup Preferences"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { refreshExplorerNode(d.app, d.node) },
+		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
 	})
 	// The shell scripts exactly what it would have run, which here is
 	// statements for three different instances with nothing saying so. Replaced

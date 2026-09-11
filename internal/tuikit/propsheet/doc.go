@@ -13,10 +13,11 @@
 //     marks that page's state Loading. The caller is expected to fetch the
 //     data — typically on a background goroutine — and report the result by
 //     calling SetPageForm(page, seq, form) or SetPageError(page, seq, err).
-//   - seq is a per-page monotonic counter. If the page has since been
-//     refreshed (seq bumped again) or the sheet has been hidden, a call
-//     with a stale seq is silently ignored — this is what makes a slow,
-//     superseded fetch harmless. SetPageForm/SetPageError must be called
+//   - seq is a sheet-wide monotonic counter that SetPages never resets. If
+//     the page has since been refreshed, the sheet has been hidden, or it
+//     has been reopened with a new page set, a call with a stale seq is
+//     silently ignored — this is what makes a slow, superseded fetch
+//     harmless. SetPageForm reports whether it accepted the form. SetPageForm/SetPageError must be called
 //     from the same goroutine that calls Draw/HandleKey/HandleMouse (the UI
 //     goroutine); PropertySheet does no locking of its own.
 //

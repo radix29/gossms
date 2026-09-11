@@ -95,9 +95,27 @@ func (tv *TreeView) SetActive(v bool) { tv.active = v }
 
 // SetNodes replaces the entire visible node list — typically rebuilt in
 // OnExpand after loading children.
+//
+// The selection follows the selected node's ID, and its row keeps its screen
+// line. Keeping the index instead is wrong whenever rows are inserted or
+// removed above the selection — children arriving for a folder higher up — and
+// silently moves it onto a different node, which every keyboard action then
+// acts on. Only a selected ID that is gone falls back to clamping the index;
+// SetNodes never fires OnSelect, so a host that replaces nodes resolves where
+// that selection belongs itself (see SelectID).
 func (tv *TreeView) SetNodes(nodes []TreeNode) {
+	prevID, hadSel := 0, false
+	if n := tv.SelectedNode(); n != nil {
+		prevID, hadSel = n.ID, true
+	}
+	line := tv.sel - tv.scroll
 	tv.nodes = nodes
-	tv.sel = core.Clamp(tv.sel, 0, max(0, len(nodes)-1))
+	if i := tv.indexOf(prevID); hadSel && i >= 0 {
+		tv.sel = i
+		tv.scroll = max(0, i-line)
+	} else {
+		tv.sel = core.Clamp(tv.sel, 0, max(0, len(nodes)-1))
+	}
 	// A collapse or refresh that shrinks the list below the old scroll offset
 	// would otherwise leave scroll past the end of nodes, and Draw's loop breaks
 	// on its first iteration — nothing renders until an arrow key recomputes
@@ -113,6 +131,16 @@ func (tv *TreeView) SetNodes(nodes []TreeNode) {
 	tv.scrollX = core.Clamp(tv.scrollX, 0, max(0, tv.contentW-tv.rect.Inner(1).W))
 }
 
+// indexOf returns the index of the node with the given ID in tv.nodes, or -1.
+func (tv *TreeView) indexOf(id TreeNodeID) int {
+	for i := range tv.nodes {
+		if tv.nodes[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // lineWidth returns n's rendered row width in display columns: indent (2 per
 // depth level) + the 4-column expander field + the icon and its separating
 // space, if any + the label.
@@ -126,17 +154,14 @@ func (tv *TreeView) lineWidth(n TreeNode) int {
 }
 
 // SelectID selects the node with the given ID, if present, and fires OnSelect —
-// unlike SetNodes, whose tv.sel clamp is a bounds check with no notion of which
-// node the caller means. Use it for a node added or replaced programmatically
-// that should end up selected and reported like a click would.
+// unlike SetNodes, which only carries an existing selection across and never
+// reports one. Use it for a node added or replaced programmatically that should
+// end up selected and reported like a click would.
 func (tv *TreeView) SelectID(id TreeNodeID) {
-	for i, n := range tv.nodes {
-		if n.ID == id {
-			tv.sel = i
-			tv.ensureVisible(tv.rect.Inner(1).H)
-			tv.fireSelect()
-			return
-		}
+	if i := tv.indexOf(id); i >= 0 {
+		tv.sel = i
+		tv.ensureVisible(tv.rect.Inner(1).H)
+		tv.fireSelect()
 	}
 }
 

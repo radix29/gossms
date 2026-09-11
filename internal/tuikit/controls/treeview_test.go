@@ -57,6 +57,35 @@ func TestSetNodesClampsScrollWhenListShrinks(t *testing.T) {
 	}
 }
 
+// TestSetNodesKeepsSelectedIDWhenRowsInsertedAbove pins that SetNodes follows
+// the selected node by ID, not by index. Children arriving for a folder above
+// the selection used to leave tv.sel on the same index — now a different
+// node — so every keyboard action went to an object the user never picked.
+// The row also keeps its screen line, and SetNodes fires no OnSelect: the
+// selection didn't change.
+func TestSetNodesKeepsSelectedIDWhenRowsInsertedAbove(t *testing.T) {
+	tv := NewTreeView()
+	tv.SetBounds(0, 0, 40, 10) // inner.H = 8
+	tv.SetNodes([]TreeNode{{ID: 1, Label: "folder"}, {ID: 2, Label: "Loading..."}, {ID: 3, Label: "below"}})
+	tv.SelectID(3)
+	line := tv.sel - tv.scroll
+	tv.OnSelect = func(TreeNodeID) { t.Error("SetNodes fired OnSelect though the selected node survived") }
+
+	nodes := []TreeNode{{ID: 1, Label: "folder"}}
+	for i := range 20 {
+		nodes = append(nodes, TreeNode{ID: TreeNodeID(100 + i), Label: "child"})
+	}
+	nodes = append(nodes, TreeNode{ID: 3, Label: "below"})
+	tv.SetNodes(nodes)
+
+	if n := tv.SelectedNode(); n == nil || n.ID != 3 {
+		t.Fatalf("selected node after rows inserted above = %+v, want ID 3", n)
+	}
+	if got := tv.sel - tv.scroll; got != line {
+		t.Errorf("selected row moved from screen line %d to %d", line, got)
+	}
+}
+
 // TestSelectIDSelectsAndFiresOnSelect confirms SelectID both moves the
 // visual selection to the requested node and invokes OnSelect — unlike
 // SetNodes, whose sel-clamping alone doesn't mean "select this node" and

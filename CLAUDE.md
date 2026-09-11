@@ -77,8 +77,11 @@ go vet ./...                       # vet
 
 Version/Commit/Date (`internal/version`) resolve automatically, in priority
 order: `-ldflags -X` (set by `.github/workflows/release.yml` from the pushed
-tag) → `debug.BuildInfo.Main.Version` (from `go install …@<tag>`) → the literal
-`"(devel)"` default. Nothing here is hand-edited before a release.
+tag) → `debug.BuildInfo.Main.Version` (the tag from `go install …@<tag>`; a
+pseudo-version such as `v0.0.11-0.20260911113756-cf929d309586+dirty` from a
+plain `go build` in a checkout) → the literal `"(devel)"` default, which only
+`go run` and `-buildvcs=false` builds show. Nothing here is hand-edited before
+a release.
 
 **Green tests are not verification.** Nearly every real bug in this project's
 history was caught by driving the built binary, not by `go test`. Read

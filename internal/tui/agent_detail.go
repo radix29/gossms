@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -73,7 +72,7 @@ func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) 
 	}
 	rows := [][]string{
 		{"Job name", j.Name},
-		{"Enabled", fmt.Sprintf("%v", j.IsEnabled)},
+		{"Enabled", boolStr(j.IsEnabled)},
 		{"Owner", j.OwnerLoginName},
 		{"Category", j.Category},
 		{"Description", j.Description},
@@ -106,7 +105,7 @@ func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 	}
 	rows := [][]string{
 		{"Schedule name", sch.Name},
-		{"Enabled", fmt.Sprintf("%v", sch.Enabled)},
+		{"Enabled", boolStr(sch.Enabled)},
 		{"Owner", sch.OwnerLoginName},
 		{"Start date", formatAgentDate(sch.ActiveStartDate)},
 		{"End date", endDate},
@@ -142,7 +141,7 @@ func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode
 
 	rows := [][]string{
 		{"Alert name", al.Name},
-		{"Enabled", fmt.Sprintf("%v", al.Enabled)},
+		{"Enabled", boolStr(al.Enabled)},
 		{"Type", "SQL Server event alert"},
 		{"Database", dbScope},
 		{"Error number", errorNumber},
@@ -185,7 +184,7 @@ func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 
 	rows := [][]string{
 		{"Operator name", o.Name},
-		{"Enabled", fmt.Sprintf("%v", o.Enabled)},
+		{"Enabled", boolStr(o.Enabled)},
 		{"Email address", o.EmailAddress},
 		{"Pager address", pager},
 		{"Net send address", netSend},

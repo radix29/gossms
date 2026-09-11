@@ -89,6 +89,47 @@ func TestRememberPeerCredentialsRefreshesTheMap(t *testing.T) {
 // as a peer read quietly using the wrong login.
 var _ db.PeerCredentials = (*App)(nil).peerCredentialsFor
 
+// TestPeerCredentialsKeepTwoInstancesOnOneHostApart is R12: win10cli's
+// default instance and its SQL2017 instance on port 55253 were one key, so the
+// later save answered for both and a peer read tried the other instance's
+// login first — a failed login that counts toward a CHECK_POLICY lockout. The
+// port arrives both ways the Connect dialog saves it: in the Server string,
+// and in the separate Port field.
+func TestPeerCredentialsKeepTwoInstancesOnOneHostApart(t *testing.T) {
+	a := newTestApp()
+	a.cfg.Connections = []config.Connection{
+		{Server: "win10cli", Port: 1433, User: "default_login"},
+		{Server: "win10cli", Port: 55253, User: "sql2017_login"},
+		{Server: "win10cli\\inst", Port: 1500, User: "named_login"},
+		{Server: "otherhost,1600", User: "otherhost_login"},
+	}
+	a.loadPeerCredentials()
+
+	for _, tc := range []struct{ server, want string }{
+		{"win10cli", "default_login"},
+		{"win10cli,1433", "default_login"},
+		{"WIN10CLI,55253", "sql2017_login"},
+		// A named instance keys on its name: a port on it changes nothing.
+		{"win10cli\\inst", "named_login"},
+		{"win10cli\\inst,1500", "named_login"},
+		{"otherhost:1600", "otherhost_login"},
+	} {
+		got, ok := a.peerCredentialsFor(tc.server)
+		if !ok {
+			t.Errorf("no credentials for %q", tc.server)
+			continue
+		}
+		if got.User != tc.want {
+			t.Errorf("%q resolved to %q, want %q", tc.server, got.User, tc.want)
+		}
+	}
+	// The port is part of which instance, so an instance saved only with one
+	// does not answer for its host's default instance.
+	if got, ok := a.peerCredentialsFor("otherhost"); ok {
+		t.Errorf("otherhost resolved to %q, the login saved for otherhost,1600", got.User)
+	}
+}
+
 // TestPeerCredentialsPreferExactHostOverAShortAlias pins the tiering. Two
 // instances can share a short name across domains, so the FQDN fallback must
 // never win against an exact match — folding them onto one key would hand one
@@ -129,6 +170,8 @@ func TestShortHostKeyOnlyAliasesADottedHost(t *testing.T) {
 		{"ubusql2.fritz.box\\prod", "ubusql2\\prod"},
 		{"ubusql2", ""},
 		{"ubusql2\\prod", ""},
+		{"ubusql2.fritz.box,55253", "ubusql2,55253"},
+		{"ubusql2,55253", ""},
 		{"", ""},
 	} {
 		if got := shortHostKey(tc.key); got != tc.want {

@@ -90,7 +90,7 @@ func (a *App) detailMenuItems(db *DetailBrowser) []controls.MenuItem {
 	node := db.currentNode
 	item := controls.MenuItem{
 		Label:  deleteItemLabel(objs),
-		Action: func() { a.confirmDeleteObjects(sc, objs, func() { refreshExplorerNode(a, node) }) },
+		Action: func() { a.confirmDeleteObjects(sc, objs, func() { a.explorer.Reload(node) }) },
 	}
 	return []controls.MenuItem{gateDeleteSelection(item, sc, objs)}
 }

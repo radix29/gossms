@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -136,7 +135,7 @@ func pageScheduleJobs(sc *db.ServerConn, scheduleName *string) propPage {
 			cols := []string{"Job Name", "Enabled"}
 			rows := make([][]string, len(jobs))
 			for i, j := range jobs {
-				rows[i] = []string{j.Name, fmt.Sprintf("%v", j.IsEnabled)}
+				rows[i] = []string{j.Name, boolStr(j.IsEnabled)}
 			}
 			grid := controls.NewDataGrid()
 			grid.SetData(cols, rows)

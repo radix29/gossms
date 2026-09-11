@@ -687,13 +687,29 @@ func TestASysadminKeepsTheSQLAgentActions(t *testing.T) {
 // allowsAction, because a gate that is never wired to an item withholds
 // nothing and every test above still passes.
 func TestTheSQLAgentMenusFollowTheGate(t *testing.T) {
-	labels := map[NodeType]string{
-		NodeAgentUserJobs:    "New Job...",
-		NodeAgentSchedules:   "New Schedule...",
-		NodeAgentEventAlerts: "New Alert...",
-		NodeAgentOperators:   "New Operator...",
+	items := []struct {
+		nodeType NodeType
+		label    string
+	}{
+		{NodeAgentUserJobs, "New Job..."},
+		{NodeAgentSchedules, "New Schedule..."},
+		{NodeAgentEventAlerts, "New Alert..."},
+		{NodeAgentOperators, "New Operator..."},
+		// The leaves' writes (R6). A node's IsEnabled is false here, so the
+		// toggle reads "Enable …".
+		{NodeAgentJob, "Start Job"},
+		{NodeAgentJob, "Stop Job"},
+		{NodeAgentJob, "Enable Job"},
+		{NodeAgentJob, "Delete Job..."},
+		{NodeAgentSchedule, "Enable Schedule"},
+		{NodeAgentSchedule, "Delete Schedule..."},
+		{NodeAgentAlert, "Enable Alert"},
+		{NodeAgentAlert, "Delete Alert..."},
+		{NodeAgentOperator, "Enable Operator"},
+		{NodeAgentOperator, "Delete Operator..."},
 	}
-	for nodeType, label := range labels {
+	for _, it := range items {
+		nodeType, label := it.nodeType, it.label
 		denied := agentConn(t, nil, []string{"CONTROL SERVER"},
 			nil, []string{"SQLAgentUserRole", "db_owner"})
 		if enabledInMenu(t, denied, nodeType, label) {

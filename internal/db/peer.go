@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,9 +40,10 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	}
 
 	// InstanceKey, not a plain lowercase: "UBUSQL2", "ubusql2,1433" and
-	// "ubusql2" are one instance, and the catalog and the user rarely spell it
-	// the same way. The credential resolver is keyed by the same normalizer, so
-	// a hit there and here agree on what "that instance" means.
+	// "ubusql2" are one instance ("ubusql2,1500" is another), and the catalog
+	// and the user rarely spell it the same way. The credential resolver is
+	// keyed by the same normalizer, so a hit there and here agree on what
+	// "that instance" means.
 	key := InstanceKey(server)
 
 	// peerLive, not IsOpen: Peer runs on background loader goroutines while
@@ -224,20 +226,44 @@ func retargetAt(opts config.Connection, server string) config.Connection {
 }
 
 // InstanceKey normalizes a SQL Server instance name to the one spelling used to
-// key peers and their credentials: lowercased host, plus "\instance" for a named
-// instance, with any port dropped.
+// key peers and their credentials: lowercased host, then "\instance" for a
+// named instance, or ",port" for an address that names none and carries a port
+// other than the default 1433.
 //
-// The port goes because it is not part of the instance's identity — "ubusql2"
-// and "ubusql2,1433" are the same server, and a credential saved under one
-// spelling has to be found under the other. It lives here rather than in config
-// because it needs gosmo's address parser.
+// A named instance is identified by its name, so any port on it is dropped —
+// "host\inst,1500" and "host\inst" are one instance. Without a name the port
+// is the only thing that tells two instances on one host apart: win10cli is
+// reached as "win10cli" and its SQL2017 instance as "win10cli,55253", and one
+// key for both meant the later save answered for both — a peer read tried the
+// other instance's login first, a failed login that counts toward a
+// CHECK_POLICY lockout. 1433 is spelled the same as no port because it is the
+// port the driver dials when given none.
+//
+// The catalog reports instance names without a port, so a default instance
+// saved as "host,1500" does not answer a peer read for "HOST" — the price of
+// never handing it to another instance on the same host. Peer then falls back
+// to the parent connection's settings, port included.
+//
+// It lives here rather than in config because it needs gosmo's address parser.
 func InstanceKey(server string) string {
-	host, instance, _ := gosmo.ParseServerAddress(server)
+	host, instance, port := gosmo.ParseServerAddress(server)
 	key := strings.ToLower(strings.TrimSpace(host))
-	if instance != "" {
+	switch {
+	case instance != "":
 		key += "\\" + strings.ToLower(instance)
+	case port != 0 && port != 1433:
+		key += "," + strconv.Itoa(port)
 	}
 	return key
+}
+
+// ConnectionAddress is the single address a saved connection dials: its
+// Server with the Connect dialog's separate Port folded in, the way Connect
+// does it. Key a config.Connection by InstanceKey(ConnectionAddress(c)), never
+// by c.Server alone — that drops a port given only in the Port field, which is
+// how the dialog saves one.
+func ConnectionAddress(c config.Connection) string {
+	return resolveServer(c.Server, c.Port)
 }
 
 // PeerCredentials answers, for one instance name, the saved connection to reach

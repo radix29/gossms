@@ -403,7 +403,7 @@ func (a *App) restoreFilters(sc *dbconn.ServerConn, children []*explorerNode) {
 func (a *App) applyNodeFilter(node *explorerNode, f *nodeFilter) {
 	node.data.Filter = f
 	a.rememberFilter(resolveConn(node), node.data, f)
-	refreshExplorerNode(a, node)
+	a.explorer.Reload(node)
 	a.explorer.rebuild()
 	if f.active() {
 		a.setStatus(fmt.Sprintf("Filter applied to %s: %s", node.label, f.summary()))

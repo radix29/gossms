@@ -157,7 +157,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 			rowsFor := func() [][]string {
 				rows := make([][]string, len(edits))
 				for i, e := range edits {
-					rows[i] = []string{mapCell(e.attached), e.sch.Name, fmt.Sprintf("%v", e.sch.Enabled), e.sch.Description()}
+					rows[i] = []string{mapCell(e.attached), e.sch.Name, boolStr(e.sch.Enabled), e.sch.Description()}
 				}
 				return rows
 			}
@@ -191,7 +191,7 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				}
 				sch := edits[row].sch
 				nameStatic.SetValue(sch.Name)
-				enabledStatic.SetValue(fmt.Sprintf("%v", sch.Enabled))
+				enabledStatic.SetValue(boolStr(sch.Enabled))
 				ownerStatic.SetValue(sch.OwnerLoginName)
 				startStatic.SetValue(formatAgentDate(sch.ActiveStartDate))
 				endDate := "No end date"

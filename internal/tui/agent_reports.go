@@ -87,7 +87,7 @@ func jobExecutionSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string
 	rows := make([][]string, 0, len(jobs))
 	for _, j := range jobs {
 		rows = append(rows, []string{
-			j.Name, fmt.Sprintf("%v", j.IsEnabled), j.Category,
+			j.Name, boolStr(j.IsEnabled), j.Category,
 			formatJobOutcome(j.LastRunOutcome), dashIfZero(j.LastRunDate), dashIfZero(j.NextRunDate),
 		})
 	}
@@ -154,7 +154,7 @@ func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]strin
 		if err != nil {
 			schedules = "Unknown"
 		}
-		rows = append(rows, []string{j.Name, j.Category, fmt.Sprintf("%v", j.IsEnabled), schedules})
+		rows = append(rows, []string{j.Name, j.Category, boolStr(j.IsEnabled), schedules})
 	}
 	return []string{"Job Name", "Category", "Enabled", "Schedules"}, rows, nil
 }
@@ -169,7 +169,7 @@ func jobsWithoutNotificationsReport(ctx context.Context, sc *db.ServerConn) ([]s
 		if j.NotifyLevelEmail != gosmo.NotifyNever {
 			continue
 		}
-		rows = append(rows, []string{j.Name, j.Category, fmt.Sprintf("%v", j.IsEnabled)})
+		rows = append(rows, []string{j.Name, j.Category, boolStr(j.IsEnabled)})
 	}
 	return []string{"Job Name", "Category", "Enabled"}, rows, nil
 }

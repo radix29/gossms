@@ -34,13 +34,13 @@ func formatMB(mb float64) string {
 // first query — each database needs its own USE-scoped query — and running
 // them concurrently (bounded by maxRowFetchConcurrency) means one slow
 // database doesn't hold up the rest.
-func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// data, not node: this runs on a background goroutine and the UI goroutine
 	// writes node.data underneath it (see explorerNode.snapshot). node stays
 	// behind as the identity panicRepair and postFinal key off.
 	data := node.data
 	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
 		all, err := sc.Server.DatabasesContext(ctx)
@@ -78,7 +78,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 				rows[i][c] = "N/A"
 			}
 		}
-		db.backfillRows(app, sc, seq, len(dbs), "loading database size",
+		db.backfillRows(app, fetchCtx, seq, len(dbs), "loading database size",
 			func(ctx context.Context, i int) func() {
 				space, err := dbs[i].SpaceUsedContext(ctx)
 				return func() {
@@ -104,12 +104,12 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(app *App, sc *dbconn.ServerC
 // gosmo's DiskUsage answers both halves in a single round trip — the file
 // sizes the properties show and the allocation breakdown the bars split
 // them by.
-func (db *DetailBrowser) loadDatabaseDetails(app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
+func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
 	// data, not node: the fetch runs on a background goroutine while the UI
 	// goroutine may write node.data — see explorerNode.snapshot.
 	name := node.data.DBName
 	app.safegoRepair("loading database details", db.panicRepair(node, seq), func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
 		d, err := sc.Server.DatabaseByNameContext(ctx, name)
@@ -138,7 +138,7 @@ func (db *DetailBrowser) loadDatabaseDetails(app *App, sc *dbconn.ServerConn, no
 			{"Compatibility Level", fmt.Sprintf("%d", d.CompatibilityLevel())},
 			{"Collation", d.Collation()},
 			{"Create Date", formatSQLDate(d.CreateDate())},
-			{"Read Only", fmt.Sprintf("%v", d.IsReadOnly())},
+			{"Read Only", boolStr(d.IsReadOnly())},
 			{"Size (MB)", sizeStr},
 			{"Data (MB)", dataStr},
 			{"Log (MB)", logStr},

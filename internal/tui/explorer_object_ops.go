@@ -1026,7 +1026,7 @@ func objectDataName(n nodeData) string {
 // this reason.
 func (a *App) deleteObject(node *explorerNode) {
 	a.confirmDeleteObjects(resolveConn(node), []nodeData{node.data}, func() {
-		refreshExplorerNode(a, node.parent)
+		a.explorer.Reload(node.parent)
 	})
 }
 
@@ -1322,12 +1322,12 @@ func (a *App) runRename(sc *db.ServerConn, node *explorerNode, op *objectOp, old
 		switch {
 		case cancelled:
 			a.setStatus(fmt.Sprintf("Rename of %s %q cancelled", strings.ToLower(op.noun), oldName))
-			refreshExplorerNode(a, node.parent)
+			a.explorer.Reload(node.parent)
 		case err != nil:
 			a.setStatus(fmt.Sprintf("Rename failed: %v", withPermissionAdvice(err)))
 		default:
 			a.setStatus(fmt.Sprintf("%s %q renamed to %q", op.noun, oldName, newName))
-			refreshExplorerNode(a, node.parent)
+			a.explorer.Reload(node.parent)
 		}
 	})
 }
@@ -1416,12 +1416,12 @@ func (a *App) confirmMoveToSchema(sc *db.ServerConn, node *explorerNode, op *obj
 				switch {
 				case cancelled:
 					a.setStatus(fmt.Sprintf("Move of %s %q cancelled", strings.ToLower(op.noun), name))
-					refreshExplorerNode(a, node.parent)
+					a.explorer.Reload(node.parent)
 				case err != nil:
 					a.setStatus(fmt.Sprintf("Move failed: %v", withPermissionAdvice(err)))
 				default:
 					a.setStatus(fmt.Sprintf("%s %q moved to schema %q", op.noun, name, target))
-					refreshExplorerNode(a, node.parent)
+					a.explorer.Reload(node.parent)
 				}
 			})
 		})

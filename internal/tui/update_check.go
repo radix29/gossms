@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -94,47 +96,89 @@ func fetchLatestRelease() (githubRelease, error) {
 	return rel, nil
 }
 
-// compareVersions compares two "vMAJOR.MINOR.PATCH"-style tags numerically,
-// returning -1/0/1 for a<b, a==b, a>b. Segments that aren't parseable as
-// integers (including a whole non-tag string like "(devel)") count as 0.
+// compareVersions compares two "vMAJOR.MINOR.PATCH[-pre][+build]" tags by
+// semver 2.0.0 precedence, returning -1/0/1 for a<b, a==b, a>b. A
+// pre-release ranks below its release, which matters because the pseudo-
+// version Go 1.24+ stamps into a build from a checkout is one:
+// "v0.0.11-0.20260911113756-cf929d309586" is a commit after v0.0.10 and
+// before v0.0.11, and must not compare equal to v0.0.11 and report "up to
+// date". Build metadata ("+dirty") is ignored. Segments that aren't
+// parseable as integers (including a whole non-tag string like "(devel)")
+// count as 0.
 func compareVersions(a, b string) int {
-	pa, pb := parseVersionParts(a), parseVersionParts(b)
-	for i := range pa {
-		switch {
-		case pa[i] < pb[i]:
-			return -1
-		case pa[i] > pb[i]:
-			return 1
-		}
+	ca, preA := parseVersion(a)
+	cb, preB := parseVersion(b)
+	if c := slices.Compare(ca[:], cb[:]); c != 0 {
+		return c
 	}
-	return 0
+	switch {
+	case preA == preB:
+		return 0
+	case preA == "":
+		return 1
+	case preB == "":
+		return -1
+	}
+	return comparePrerelease(preA, preB)
 }
 
-// parseVersionParts splits a "vMAJOR.MINOR.PATCH[-pre][+build]" tag into its
-// three numeric components, dropping the "v" prefix and any pre-release or
-// build metadata suffix first.
-func parseVersionParts(v string) [3]int {
-	v = strings.TrimPrefix(v, "v")
-	if i := strings.IndexAny(v, "-+"); i >= 0 {
-		v = v[:i]
-	}
-	var parts [3]int
-	for i, seg := range strings.SplitN(v, ".", 3) {
-		if n, err := strconv.Atoi(seg); err == nil {
-			parts[i] = n
+// comparePrerelease orders two non-empty pre-release strings by semver
+// 2.0.0 §11: dot-separated identifiers compared left to right, numeric ones
+// numerically and below any alphanumeric one, alphanumeric ones in ASCII
+// order, and a shorter run of equal identifiers ranking lower.
+func comparePrerelease(a, b string) int {
+	ia, ib := strings.Split(a, "."), strings.Split(b, ".")
+	for i := range min(len(ia), len(ib)) {
+		na, errA := strconv.ParseUint(ia[i], 10, 64)
+		nb, errB := strconv.ParseUint(ib[i], 10, 64)
+		var c int
+		switch {
+		case errA == nil && errB == nil:
+			c = cmp.Compare(na, nb)
+		case errA == nil:
+			c = -1
+		case errB == nil:
+			c = 1
+		default:
+			c = strings.Compare(ia[i], ib[i])
+		}
+		if c != 0 {
+			return c
 		}
 	}
-	return parts
+	return cmp.Compare(len(ia), len(ib))
+}
+
+// parseVersion splits a "vMAJOR.MINOR.PATCH[-pre][+build]" tag into its
+// three numeric components and its pre-release string, dropping the "v"
+// prefix and any build metadata.
+func parseVersion(v string) (core [3]int, pre string) {
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		v, pre = v[:i], v[i+1:]
+	}
+	for i, seg := range strings.SplitN(v, ".", 3) {
+		if n, err := strconv.Atoi(seg); err == nil {
+			core[i] = n
+		}
+	}
+	return core, pre
 }
 
 // isReleaseVersion reports whether v looks like a parseable
-// "vMAJOR.MINOR.PATCH"-style release tag, as opposed to version.Version's
-// own "(devel)" placeholder for a plain `git clone && go build`/`go run`
-// with no ldflags (see internal/version's doc comment for exactly when
-// "(devel)" applies). Used to avoid comparing an unresolved dev build
-// against a real release and reporting a misleading "new version
-// available"/"newer than latest" claim — every numeric segment parses to 0
-// for "(devel)", which compareVersions would otherwise read as v0.0.0.
+// "vMAJOR.MINOR.PATCH"-style tag — a release, a pre-release, or the
+// pseudo-version a build from a checkout carries — as opposed to
+// version.Version's own "(devel)" placeholder, which is left only when the
+// binary carries no module version at all (`go run`, or a build with
+// -buildvcs=false; see internal/version's doc comment). Used to avoid
+// comparing an unresolved dev build against a real release and reporting a
+// misleading "new version available"/"newer than latest" claim — every
+// numeric segment parses to 0 for "(devel)", which compareVersions would
+// otherwise read as v0.0.0. A pseudo-version needs no such guard:
+// compareVersions ranks it correctly against a release.
 func isReleaseVersion(v string) bool {
 	v = strings.TrimPrefix(v, "v")
 	if i := strings.IndexAny(v, "-+"); i >= 0 {

@@ -97,7 +97,7 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 			// A direct connect that succeeded is proof the instance is up,
 			// which is exactly what the negative peer cache on every other
 			// connection is claiming otherwise for up to peerFailureTTL.
-			a.forgetPeerFailure(opts.Server)
+			a.forgetPeerFailure(db.ConnectionAddress(opts))
 			if err := a.cfg.Save(); err != nil {
 				a.logStatus("save config: %v", err)
 			}

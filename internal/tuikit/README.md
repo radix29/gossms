@@ -129,7 +129,9 @@ methods every panel needs (`SetBounds`, `Draw`, `HandleKey`, `HandleMouse`,
 `Title`). Panels that care about gaining/losing focus implement the optional
 `layout.Activatable` interface (`SetActive(bool)`); `PanelManager` detects
 this via a type assertion and calls it automatically on every switch — no
-panel is forced to implement focus tracking it doesn't need.
+panel is forced to implement focus tracking it doesn't need. Panels that own
+something to release on close — an in-flight read, a connection — implement
+`layout.Disposable` (`Close()`); the host calls it before `RemovePanel`.
 
 **Row data behind an interface, not a concrete slice.** `controls.DataGrid`
 takes any `RowSource` (`Len() int`, `Row(i int) []string`) rather than
@@ -173,9 +175,10 @@ a goroutine or imports the application layer: when a page needs loading it
 calls `OnLoadPage(page, seq)` and waits. The caller (`internal/tui`) does
 the actual fetch — typically on a background goroutine — and reports the
 result via `SetPageForm(page, seq, form)` or `SetPageError(page, seq,
-err)`. `seq` is a per-page monotonic counter; a call with a stale `seq`
-(the page was refreshed again, or the sheet was hidden, before the result
-arrived) is silently ignored. **`SetPageForm`/`SetPageError` must only be
+err)`. `seq` is a sheet-wide monotonic counter that `SetPages` never
+resets; a call with a stale `seq` (the page was refreshed again, the sheet
+was hidden, or it was reopened with a new page set, before the result
+arrived) is silently ignored, and `SetPageForm` returns false. **`SetPageForm`/`SetPageError` must only be
 called from the UI goroutine** — `PropertySheet` does no locking of its
 own, the same contract `App.postEvent` already provides for every other
 background-to-UI handoff in `internal/tui`. A `Form`'s rows unify under a

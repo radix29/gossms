@@ -83,7 +83,7 @@ func NewAGAddReplicaDialog(app *App) *AGAddReplicaDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { refreshExplorerNode(d.app, d.node) },
+		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
 	})
 	// The shell would script all three statements as though they ran here; two
 	// of them belong to the instance being added. See runScript.

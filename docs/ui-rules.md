@@ -79,7 +79,10 @@ behind the mouse and async sections; this file has the rules themselves.
   connection, an active query panel, an Object Explorer selection).
   `MenuItem`/`ToolbarButton` have an `Enabled func() bool`; the reactive fallback is
   a guard plus `setStatus(...)` in existing wording ("Not connected — use File >
-  Connect", "No active query panel").
+  Connect", "No active query panel"). A context-menu item that writes (label
+  starts Delete, Enable, Start, Stop, …) also needs a permission `gate`;
+  `TestEveryWriteMenuItemIsGated` enforces it, and its exemption list is where a
+  deliberately ungated write says why.
 
 - **A switched-off control keeps its place in the focus ring.** `Button`,
   `CheckBox`, `RadioBox` and `InputField` all take `SetEnabled(bool)`/`Enabled()

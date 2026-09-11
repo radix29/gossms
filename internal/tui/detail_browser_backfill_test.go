@@ -25,7 +25,7 @@ func TestBackfillRowsFillsEveryRow(t *testing.T) {
 	cols := []string{"Name", "Size"}
 	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
 
-	db.backfillRows(a, sc, 1, len(rows), "test backfill",
+	db.backfillRows(a, sc.Context(), 1, len(rows), "test backfill",
 		func(_ context.Context, i int) func() {
 			return func() { rows[i][1] = strings.Repeat("x", i+1) }
 		},
@@ -63,7 +63,7 @@ func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
 	cols := []string{"Name", "Size"}
 	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
 
-	db.backfillRows(a, sc, 1, len(rows), "test backfill",
+	db.backfillRows(a, sc.Context(), 1, len(rows), "test backfill",
 		func(_ context.Context, i int) func() {
 			if i == 1 {
 				panic(errors.New("driver blew up on row 1"))
@@ -111,7 +111,7 @@ func TestBackfillRowsGoroutinesAreBoundedNotJustFetches(t *testing.T) {
 	var mu sync.Mutex
 	peak := 0
 
-	db.backfillRows(a, sc, 1, n, "test backfill",
+	db.backfillRows(a, sc.Context(), 1, n, "test backfill",
 		func(_ context.Context, i int) func() {
 			mu.Lock()
 			peak = max(peak, runtime.NumGoroutine()-base)
@@ -155,7 +155,7 @@ func TestBackfillRowsPanicDoesNotKillTheWorker(t *testing.T) {
 		rows[i] = []string{"r", "…"}
 	}
 
-	db.backfillRows(a, sc, 1, n, "test backfill",
+	db.backfillRows(a, sc.Context(), 1, n, "test backfill",
 		func(_ context.Context, i int) func() {
 			if i < maxRowFetchConcurrency {
 				panic("row blew up")
@@ -187,7 +187,7 @@ func TestBackfillRowsReportsThePanic(t *testing.T) {
 	db.seq = 1
 
 	rows := [][]string{{"a", "…"}}
-	db.backfillRows(a, sc, 1, 1, "loading the thing",
+	db.backfillRows(a, sc.Context(), 1, 1, "loading the thing",
 		func(_ context.Context, _ int) func() { panic("boom") },
 		func(i int) { rows[i][1] = "N/A" })
 	a.drainPending()

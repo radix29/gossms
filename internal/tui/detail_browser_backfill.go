@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-
-	dbconn "github.com/radix29/gossms/internal/db"
 )
 
 // backfillRows runs fetch for each of n rows on App.fanOut's bounded pool and
@@ -24,28 +22,37 @@ import (
 // backfillRows queues it only for a panic, as fanOut's onPanic — which runs
 // before fanOut returns, so the caller's cache sees the placeholder, not "…".
 //
-// The write a fetch queues is unconditional even when the user has since
-// selected a different node: rows belongs to this fetch alone, and the
-// caller caches it once backfillRows returns. Skipping the write for a stale
-// seq would cache a row still showing its "…" placeholder — permanently,
-// since reselecting is then a cache hit that never refetches. Only the
-// redraw is conditional.
+// The write a fetch queues is unconditional even when seq has moved on:
+// rows belongs to this fetch alone, and whether the caller's cacheOnly caches
+// it is decided by pending, not seq. Skipping the write for a stale seq would
+// cache a row still showing its "…" placeholder whenever pending still
+// matched — permanently, since reselecting is then a cache hit that never
+// refetches. Only the redraw is conditional.
 //
 // backfillRows returning means every row's closure has been *queued*, not
 // that it has run, so a caller that caches rows afterwards depends on
 // App.postEvent's queue being FIFO: every row's closure is appended before
 // fanOut returns, so a cacheOnly posted after this returns is necessarily
 // appended last and drains last.
+//
+// fetchCtx is the loader's fetch context (see DetailBrowser.fetch), and each
+// row's timeout is derived from it. Once it is cancelled — the user has moved
+// on — the rows not yet started are skipped outright rather than each started
+// only to fail: nothing this fetch still produces is shown or cached (see
+// cancelInflight), so a skipped row's placeholder is never seen.
 func (db *DetailBrowser) backfillRows(
 	app *App,
-	sc *dbconn.ServerConn,
+	fetchCtx context.Context,
 	seq, n int,
 	what string,
 	fetch func(ctx context.Context, i int) func(),
 	markFailed func(i int),
 ) {
 	app.fanOut(n, what, func(i int) {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
+		if fetchCtx.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
 		apply := fetch(ctx, i)

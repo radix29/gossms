@@ -88,6 +88,15 @@ func (p *QueryPanel) connected() bool {
 	return p.app.isConnected(p.conn) && p.session != nil
 }
 
+// Close cancels an in-flight query or plan fetch and ends the panel's session
+// and connection (layout.Disposable). Called from App.closePanelAt.
+func (p *QueryPanel) Close() {
+	if p.executing && p.cancel != nil {
+		p.cancel()
+	}
+	p.closeConnection()
+}
+
 // closeConnection ends the panel's session and closes its connection, for a
 // panel closing, reconnecting or finding its session lost. The session is
 // closed off the UI goroutine: query.Session.Close waits for a run still

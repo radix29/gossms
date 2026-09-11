@@ -66,7 +66,7 @@ func NewNewStatisticsDialog(app *App) *NewStatisticsDialog {
 		pages:   []string{"General"},
 		fetch:   d.fetchPrefetch,
 		build:   d.buildPages,
-		refresh: func(*db.ServerConn) { refreshExplorerNode(d.app, d.node) },
+		refresh: func(*db.ServerConn) { d.app.explorer.Reload(d.node) },
 	})
 	return d
 }
