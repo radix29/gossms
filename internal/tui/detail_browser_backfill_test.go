@@ -12,7 +12,7 @@ import (
 
 // TestBackfillRowsFillsEveryRow is the ordinary path: every row's fetch runs
 // and its posted closure is queued by the time backfillRows returns, so a
-// cacheOnly posted afterwards drains last and sees a fully filled slice.
+// cacheOnlyObjects posted afterwards drains last and sees a fully filled slice.
 func TestBackfillRowsFillsEveryRow(t *testing.T) {
 	a := newTestApp()
 	sc := addTestConn(a, "server-one")
@@ -31,12 +31,12 @@ func TestBackfillRowsFillsEveryRow(t *testing.T) {
 		},
 		func(i int) { rows[i][1] = "N/A" })
 
-	db.cacheOnly(a, node, 1, cols, rows, nil)
+	db.cacheOnlyObjects(a, node, 1, cols, rows, nil, nil)
 	a.drainPending()
 
 	cached, ok := db.cache[node]
 	if !ok {
-		t.Fatal("cacheOnly stored nothing")
+		t.Fatal("cacheOnlyObjects stored nothing")
 	}
 	for i, want := range []string{"x", "xx", "xxx"} {
 		if got := cached.rows[i][1]; got != want {
@@ -72,12 +72,12 @@ func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
 		},
 		func(i int) { rows[i][1] = "N/A" })
 
-	db.cacheOnly(a, node, 1, cols, rows, nil)
+	db.cacheOnlyObjects(a, node, 1, cols, rows, nil, nil)
 	a.drainPending()
 
 	cached, ok := db.cache[node]
 	if !ok {
-		t.Fatal("cacheOnly stored nothing")
+		t.Fatal("cacheOnlyObjects stored nothing")
 	}
 	for i, want := range []string{"ok", "N/A", "ok"} {
 		if got := cached.rows[i][1]; got != want {
@@ -210,7 +210,7 @@ func TestBackfillRowsReportsThePanic(t *testing.T) {
 // must reach the cache, and a cached result must be served back verbatim.
 
 // TestBackfilledRowsReachCacheAfterSelectionMoved: rows mutated in place
-// after the selection moved on (seq advanced) must still be what cacheOnly
+// after the selection moved on (seq advanced) must still be what cacheOnlyObjects
 // stores, not the placeholder version.
 func TestBackfilledRowsReachCacheAfterSelectionMoved(t *testing.T) {
 	// The DetailBrowser is attached only after the connections are in
@@ -240,14 +240,14 @@ func TestBackfilledRowsReachCacheAfterSelectionMoved(t *testing.T) {
 	rows[0][1] = "100 MB"
 	rows[1][1] = "200 MB"
 
-	// The loader finishes and caches. cacheOnly posts via postEvent, which
+	// The loader finishes and caches. cacheOnlyObjects posts via postEvent, which
 	// needs no screen; drain it by hand the way Run()'s loop would.
-	db.cacheOnly(a, node, 1, cols, rows, nil)
+	db.cacheOnlyObjects(a, node, 1, cols, rows, nil, nil)
 	a.drainPending()
 
 	cached, ok := db.cache[node]
 	if !ok {
-		t.Fatal("cacheOnly stored nothing for node")
+		t.Fatal("cacheOnlyObjects stored nothing for node")
 	}
 	for i, want := range []string{"100 MB", "200 MB"} {
 		if got := cached.rows[i][1]; got != want {
@@ -258,7 +258,7 @@ func TestBackfilledRowsReachCacheAfterSelectionMoved(t *testing.T) {
 }
 
 // TestStaleFetchDoesNotClobberNewerCache pins the other half of that
-// contract: cacheOnly refuses to write when a newer fetch for the same node
+// contract: cacheOnlyObjects refuses to write when a newer fetch for the same node
 // has been dispatched since, so unconditionally writing rows[i] can't let
 // an older fetch's data win.
 func TestStaleFetchDoesNotClobberNewerCache(t *testing.T) {
@@ -271,11 +271,11 @@ func TestStaleFetchDoesNotClobberNewerCache(t *testing.T) {
 	cols := []string{"Name"}
 	db.pending[node] = 2 // a newer fetch is already in flight
 
-	db.cacheOnly(a, node, 1, cols, [][]string{{"stale"}}, nil)
+	db.cacheOnlyObjects(a, node, 1, cols, [][]string{{"stale"}}, nil, nil)
 	a.drainPending()
 
 	if _, ok := db.cache[node]; ok {
-		t.Error("cacheOnly wrote the cache for a superseded fetch")
+		t.Error("cacheOnlyObjects wrote the cache for a superseded fetch")
 	}
 }
 

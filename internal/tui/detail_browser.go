@@ -68,7 +68,7 @@ type DetailBrowser struct {
 	tooltip *detailTooltip
 
 	// pending records, per node, the seq of the most recent fetch dispatched for
-	// it — set by fetch, checked by postFinal/cacheOnly before writing cache.
+	// it — set by fetch, checked by postFinal/cacheOnlyObjects before writing cache.
 	// Reselecting a node mid-fetch dispatches a second fetch for the same
 	// pointer, and the first, though cancelled, can still land its final
 	// stage; without the seq whichever finished last wins the cache write.
@@ -493,17 +493,12 @@ func (db *DetailBrowser) postFinalCharts(app *App, node *explorerNode, seq int, 
 	})
 }
 
-// cacheOnly caches the completed result without touching the grid — a
+// cacheOnlyObjects caches the completed result without touching the grid — a
 // progressive loader's last stage, where every row is already updated in place
-// and postFinal's SetData would reset the scroll position. Gated by pending like
-// postFinal.
-func (db *DetailBrowser) cacheOnly(app *App, node *explorerNode, seq int, cols []string, rows [][]string, err error) {
-	db.cacheOnlyObjects(app, node, seq, cols, rows, nil, err)
-}
-
-// cacheOnlyObjects is cacheOnly for a view whose rows are objects. The mapping
-// is cached with the rows so a reselect, which is served from the cache
-// without refetching, still offers Delete.
+// and postFinal's SetData would reset the scroll position. Gated by pending
+// like postFinal. The objs mapping is cached with the rows so a reselect,
+// which is served from the cache without refetching, still offers Delete;
+// pass nil for a view whose rows are not objects.
 func (db *DetailBrowser) cacheOnlyObjects(app *App, node *explorerNode, seq int, cols []string, rows [][]string, objs []nodeData, err error) {
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, &detailResult{cols: cols, rows: rows, objs: objs, err: err})

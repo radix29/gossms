@@ -92,8 +92,8 @@ func TestReloadCancelsReplacedNodesLoad(t *testing.T) {
 	st := newReloadTree(t)
 	oe := st.a.explorer
 	st.logins.expanded = false
-	ctx, seq := st.bob.beginLoad(context.Background(), time.Minute)
-	grandCtx, _ := st.bob.children[0].beginLoad(context.Background(), time.Minute)
+	ctx, seq := st.bob.load.BeginTimeout(context.Background(), time.Minute)
+	grandCtx, _ := st.bob.children[0].load.BeginTimeout(context.Background(), time.Minute)
 
 	oe.Reload(st.logins)
 
@@ -103,8 +103,8 @@ func TestReloadCancelsReplacedNodesLoad(t *testing.T) {
 	if grandCtx.Err() != context.Canceled {
 		t.Errorf("replaced grandchild's load context: err = %v, want Canceled", grandCtx.Err())
 	}
-	if st.bob.endLoad(seq) {
-		t.Error("endLoad for the replaced node's fetch reported it current")
+	if st.bob.load.Done(seq) {
+		t.Error("the replaced node's fetch reported itself current")
 	}
 
 	// A result that arrives anyway is refused rather than registered.
@@ -144,7 +144,7 @@ func TestDetailPendingEndsWhenResultIsCached(t *testing.T) {
 		"postFinalCharts": func(seq int) {
 			dbr.postFinalCharts(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil, nil)
 		},
-		"cacheOnly": func(seq int) { dbr.cacheOnly(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil) },
+		"cacheOnlyObjects": func(seq int) { dbr.cacheOnlyObjects(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil, nil) },
 	} {
 		delete(dbr.cache, node)
 		dbr.pending[node] = 3

@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"context"
-	"time"
-
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -20,12 +17,11 @@ type explorerNode struct {
 	parent   *explorerNode
 	children []*explorerNode
 
-	// loadSeq and cancelLoad guard a node's in-flight background fetch (see
-	// App.loadChildren): loadSeq is bumped on every request, so a result
-	// arriving after a newer fetch started drops itself instead of overwriting
-	// fresher children, and cancelLoad stops the superseded fetch outright.
-	loadSeq    int
-	cancelLoad context.CancelFunc
+	// load guards this node's in-flight background fetch of its children (see
+	// App.loadChildren): a result arriving after a newer fetch started drops
+	// itself instead of overwriting fresher children, and the superseded fetch
+	// is cancelled outright. See latest.
+	load latest
 
 	// loadingID is the tree ID of this node's "Loading..." row, allocated once
 	// and reused by every rebuild, so a selection parked on that row stays on
@@ -54,49 +50,6 @@ type loadingRow struct{ owner *explorerNode }
 // leaving them out stops a snapshot being usable as a tree node by mistake.
 func (n *explorerNode) snapshot() *explorerNode {
 	return &explorerNode{label: n.label, data: n.data}
-}
-
-// beginLoad cancels whatever fetch is in flight for this node and starts a new
-// timeout-bound one derived from parent — the owning connection's Context(), so
-// disconnecting cancels this fetch rather than leaving it to idle out. The
-// caller passes seq to endLoad on completion, so a stale result refuses to
-// overwrite fresher children.
-func (n *explorerNode) beginLoad(parent context.Context, timeout time.Duration) (ctx context.Context, seq int) {
-	if n.cancelLoad != nil {
-		n.cancelLoad()
-	}
-	n.loadSeq++
-	ctx, n.cancelLoad = context.WithTimeout(parent, timeout)
-	return ctx, n.loadSeq
-}
-
-// endLoad reports whether seq is still current; false means a newer beginLoad
-// superseded it and seq's result must be discarded. Clears cancelLoad on
-// success.
-//
-// The cancel is called, not just dropped: the result is already in hand, but the
-// timeout context stays registered on the connection's context with its timer
-// armed until childFetchTimeout expires, for every node ever expanded.
-func (n *explorerNode) endLoad(seq int) bool {
-	if n.loadSeq != seq {
-		return false
-	}
-	if n.cancelLoad != nil {
-		n.cancelLoad()
-		n.cancelLoad = nil
-	}
-	return true
-}
-
-// abandonLoad stops the node's in-flight fetch, if any, and makes its eventual
-// endLoad report it superseded — for a node leaving the tree, whose result has
-// nowhere to go.
-func (n *explorerNode) abandonLoad() {
-	if n.cancelLoad != nil {
-		n.cancelLoad()
-		n.cancelLoad = nil
-	}
-	n.loadSeq++
 }
 
 // ObjectExplorer wraps a tuikit controls.TreeView and owns the SQL Server
@@ -360,7 +313,7 @@ func (oe *ObjectExplorer) dropChildren(n *explorerNode) {
 	var retire func(*explorerNode)
 	retire = func(c *explorerNode) {
 		c.retired = true
-		c.abandonLoad()
+		c.load.Abandon()
 		oe.retired = append(oe.retired, c)
 		for _, gc := range c.children {
 			retire(gc)
@@ -381,7 +334,7 @@ func (oe *ObjectExplorer) releaseRetired() {
 		return
 	}
 	for _, n := range oe.retired {
-		n.abandonLoad()
+		n.load.Abandon()
 		delete(oe.byID, n.id)
 	}
 	oe.app.detailBrowser.Forget(oe.retired)

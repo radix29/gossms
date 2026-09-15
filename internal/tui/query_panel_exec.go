@@ -296,12 +296,12 @@ func (p *QueryPanel) launch(what, status string, prog *query.Progress,
 
 	done := make(chan struct{})
 	p.execDone = done
-	go p.tickExecuting(done)
+	p.app.animateUntil("the query elapsed-time timer", time.Second, done)
 
 	p.app.safegoRepair(what, p.execPanicked, func() {
 		// Both on every exit, not just the normal one: a panic past them leaks
-		// ctx and leaves tickExecuting waking the event loop once a second for
-		// the life of the process.
+		// ctx and leaves the animateUntil ticker waking the event loop once a
+		// second for the life of the process.
 		defer cancel()
 		defer close(done)
 
@@ -369,23 +369,6 @@ func (p *QueryPanel) execPanicked() {
 	p.cancel = nil
 	p.progress = nil
 	p.resultsNotice = "Execution stopped unexpectedly — see the log for details."
-}
-
-// tickExecuting wakes the event loop once a second while a query runs, so
-// updateResultsStatus's elapsed-time counter visibly ticks. Exits as soon as
-// done closes.
-func (p *QueryPanel) tickExecuting(done chan struct{}) {
-	defer p.app.recoverPanic("the query elapsed-time timer")
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			p.app.wakeEventLoop()
-		}
-	}
 }
 
 // setResult installs a finished execution: picks the initial tab — the first

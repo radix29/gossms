@@ -6,7 +6,6 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -49,16 +48,8 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 				return rows
 			}
 
-			grid := controls.NewDataGrid()
-			grid.SetData(cols, rowsFor())
-			grid.SetCellCursor(true)
-			grid.OnActivateCell = func(row, col int) {
-				if col != 0 || row < 0 || row >= len(edits) {
-					return
-				}
-				edits[row].linked = !edits[row].linked
-				redrawGrid(grid, cols, rowsFor())
-			}
+			grid := newCellToggleGrid(cols, 0, func() int { return len(edits) },
+				func(row int) { edits[row].linked = !edits[row].linked }, rowsFor)
 
 			nameStatic := propsheet.Static("Name", "")
 			enabledStatic := propsheet.Static("Enabled", "")
@@ -67,44 +58,35 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 			errorStatic := propsheet.Static("Error number", "")
 			severityStatic := propsheet.Static("Severity", "")
 			responseStatic := propsheet.Static("Response", "")
+			detail := newStaticBlock(nameStatic, enabledStatic, sourceStatic, dbStatic,
+				errorStatic, severityStatic, responseStatic)
 			syncFromSelection := func(row int) {
 				if row < 0 || row >= len(edits) {
-					nameStatic.SetValue("")
-					enabledStatic.SetValue("")
-					sourceStatic.SetValue("")
-					dbStatic.SetValue("")
-					errorStatic.SetValue("")
-					severityStatic.SetValue("")
-					responseStatic.SetValue("")
+					detail.set()
 					return
 				}
 				e := edits[row]
 				al := e.alert
-				nameStatic.SetValue(al.Name)
-				enabledStatic.SetValue(boolStr(al.Enabled))
-				sourceStatic.SetValue(al.EventSource)
 				dbScope := al.DatabaseName
 				if dbScope == "" {
 					dbScope = "<all databases>"
 				}
-				dbStatic.SetValue(dbScope)
 				errorNum := "<not used>"
 				if al.ErrorNumber != 0 {
 					errorNum = strconv.Itoa(al.ErrorNumber)
 				}
-				errorStatic.SetValue(errorNum)
 				severity := "<not used>"
 				if al.Severity != 0 {
 					severity = strconv.Itoa(al.Severity)
 				}
-				severityStatic.SetValue(severity)
 				response := "(none)"
 				if e.linked {
 					response = *jobName + " (this job)"
 				} else if al.JobName != "" {
 					response = al.JobName
 				}
-				responseStatic.SetValue(response)
+				detail.set(al.Name, boolStr(al.Enabled), al.EventSource, dbScope,
+					errorNum, severity, response)
 			}
 			grid.OnSelectRow = syncFromSelection
 			if len(edits) > 0 {

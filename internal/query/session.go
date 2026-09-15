@@ -7,6 +7,8 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // Session is one SQL Server session held as long as its owner wants — what an
@@ -53,9 +55,9 @@ const stateQuery = "SELECT @@SPID, DB_NAME(), @@TRANCOUNT"
 // Open checks a connection out of db for the Session's exclusive use, in
 // database if non-empty, and reads its SPID and state. The connection is never
 // returned to db; Close discards it. A dead pooled connection is retried (see
-// acquireConn).
+// gosmo.AcquireConn).
 func Open(ctx context.Context, db *sql.DB, database string) (*Session, SessionState, error) {
-	conn, err := acquireConn(ctx, db, database)
+	conn, err := gosmo.AcquireConn(ctx, db, database)
 	if err != nil {
 		return nil, SessionState{}, err
 	}

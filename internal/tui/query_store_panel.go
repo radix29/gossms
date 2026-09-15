@@ -164,15 +164,12 @@ type QueryStorePanel struct {
 	// flight. Released by the callback the goroutine posts, which is why every
 	// launch here goes through safegoRepair.
 	busy bool
-	// seq and planSeq discard a superseded read that lands after a newer one —
-	// the two run independently, so they count separately.
-	seq     int
-	planSeq int
-	// cancel and planCancel abort the in-flight report read and plan read.
-	// Two, not one, for the same reason there are two sequence numbers: a
-	// report reload must not kill the plan read beside it.
-	cancel     context.CancelFunc
-	planCancel context.CancelFunc
+	// reportRead and planRead each discard a superseded read that lands after a
+	// newer one and cancel the read it replaced. Two, not one: the report and
+	// the plan pane run independently, and a report reload must not kill the
+	// plan read beside it. See latest.
+	reportRead latest
+	planRead   latest
 
 	// barBuf is the chart's bar slice, kept across draws so plotting a report
 	// every frame does not allocate one per frame. Rebuilt each time, never
@@ -203,11 +200,10 @@ type QueryStorePanel struct {
 	series      qsSeriesData
 	seriesNote  string
 	seriesLabel string
-	// seriesSeq and seriesCancel are a third pair, not a share of the plan
-	// pane's: a series read and a plan read fire from the same cursor move and
-	// must not cancel or supersede one another.
-	seriesSeq    int
-	seriesCancel context.CancelFunc
+	// seriesRead is a third latest, not a share of the plan pane's: a series
+	// read and a plan read fire from the same cursor move and must not cancel
+	// or supersede one another.
+	seriesRead latest
 
 	dragZone qsDragZone
 }
@@ -321,31 +317,9 @@ func (p *QueryStorePanel) applyFocus() {
 // Close cancels any in-flight read. Called from App.closePanelAt; the
 // connection belongs to App, so there is nothing else to release.
 func (p *QueryStorePanel) Close() {
-	p.cancelRead()
-	p.cancelPlans()
-	p.cancelSeries()
-}
-
-// cancelRead aborts the in-flight read, on close and when a new read
-// supersedes one. seq already discards a superseded result, but without
-// cancelling the query runs on the shared host connection until qsReadTimeout.
-func (p *QueryStorePanel) cancelRead() {
-	if p.cancel != nil {
-		p.cancel()
-		p.cancel = nil
-	}
-}
-
-// cancelPlans aborts the in-flight plan read, for the reason cancelRead
-// exists — and more sharply. A plan read fires from the report grid's
-// OnSelectRow, so holding Down through a ranking starts one per row: planSeq
-// discards every superseded *result*, but uncancelled the queries all still run
-// on the shared host connection, each until qsReadTimeout.
-func (p *QueryStorePanel) cancelPlans() {
-	if p.planCancel != nil {
-		p.planCancel()
-		p.planCancel = nil
-	}
+	p.reportRead.Cancel()
+	p.planRead.Cancel()
+	p.seriesRead.Cancel()
 }
 
 // SetBounds positions the panel: the two toolbar rows, then the chart and the
@@ -865,9 +839,10 @@ func (p *QueryStorePanel) load(keepView bool) {
 		p.setStatus("Not connected")
 		return
 	}
-	p.cancelRead()
-	p.seq++
-	seq := p.seq
+	// Begin supersedes and cancels whatever report read is out: this one
+	// replaces it. Uncancelled, a superseded read goes on holding a connection
+	// on the shared host until qsReadTimeout.
+	ctx, seq := p.reportRead.Begin(p.conn.Context())
 	p.busy = true
 	p.setStatus("Running " + p.report().Title + "...")
 	p.refreshToolLabels()
@@ -876,14 +851,11 @@ func (p *QueryStorePanel) load(keepView bool) {
 	// The window the report's query really reads, which for Regressed Queries
 	// is half the one the toolbar names — see queryStoreReport.effectiveOptions.
 	opts := report.effectiveOptions(p.options())
-	ctx, cancel := context.WithCancel(sc.Context())
-	p.cancel = cancel
 	// safegoRepair, not safego: busy is cleared in the callback below, which a
 	// panic on the read goroutine never reaches, and both toolbars are gated
 	// on it — every selector and Refresh would sit inert until the panel was
 	// closed.
 	p.app.safegoRepair("running a Query Store report", func() { p.readPanicked(seq) }, func() {
-		defer cancel()
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
 		d := sc.Server.Database(dbName)
@@ -899,11 +871,10 @@ func (p *QueryStorePanel) load(keepView bool) {
 			res, err = report.load(readCtx, d, opts)
 		}
 		p.app.postAndWake(func() {
-			if seq != p.seq {
+			if !p.reportRead.Done(seq) {
 				return
 			}
 			p.busy = false
-			p.cancel = nil
 			if err != nil {
 				p.res = qsResult{}
 				p.grid.SetError(displayError(err))
@@ -937,11 +908,10 @@ func qsOffResult(info *gosmo.QueryStoreInfo) qsResult {
 // newer Load set busy for itself, and clearing it here would re-enable a
 // toolbar whose read is still out.
 func (p *QueryStorePanel) readPanicked(seq int) {
-	if seq != p.seq {
+	if !p.reportRead.Done(seq) {
 		return
 	}
 	p.busy = false
-	p.cancel = nil
 	p.setStatus("The report stopped unexpectedly — see the log for details")
 }
 
@@ -1040,10 +1010,10 @@ func (p *QueryStorePanel) selectedQueryChanged() {
 // reload that has not landed yet.
 func (p *QueryStorePanel) loadPlans(queryID int64) {
 	p.queryID = queryID
-	p.cancelPlans()
-	p.planSeq++
-	seq := p.planSeq
 	if queryID == 0 || !p.app.isConnected(p.conn) {
+		// Abandon, not Cancel: the pane is being emptied, so a read already on
+		// its way must not fill it back in.
+		p.planRead.Abandon()
 		p.plans = nil
 		resetGrid(p.plansGrid, qsPlanColumns, nil, 0)
 		p.plansGrid.SetStatus("No query selected")
@@ -1055,22 +1025,22 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	// window reported more executions for one plan than the query above it had
 	// altogether.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
-	ctx, cancel := context.WithCancel(sc.Context())
-	p.planCancel = cancel
+	// A plan read fires from the report grid's OnSelectRow, so holding Down
+	// through a ranking starts one per row: without Begin's cancel every
+	// superseded query still runs on the shared host, each until qsReadTimeout.
+	ctx, seq := p.planRead.Begin(sc.Context())
 	// safegoRepair, not safego: the "Reading plans..." placeholder is replaced
 	// by the callback below, which a panic on the read goroutine never reaches,
 	// and nothing else writes the pane until another query is selected — so the
 	// pane would claim to be reading a query it gave up on.
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
-		defer cancel()
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
 		plans, err := sc.Server.Database(dbName).QueryStorePlansContext(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
-			if seq != p.planSeq {
+			if !p.planRead.Done(seq) {
 				return
 			}
-			p.planCancel = nil
 			if err != nil {
 				p.plans = nil
 				p.plansGrid.SetError(displayError(err))
@@ -1093,10 +1063,9 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 // planSeq like the normal completion path: a newer load owns the pane, and
 // blanking it here would drop a result that is still on its way.
 func (p *QueryStorePanel) plansPanicked(seq int) {
-	if seq != p.planSeq {
+	if !p.planRead.Done(seq) {
 		return
 	}
-	p.planCancel = nil
 	p.plans = nil
 	resetGrid(p.plansGrid, qsPlanColumns, nil, 0)
 	p.plansGrid.SetStatus("Reading plans stopped unexpectedly — see the log for details")

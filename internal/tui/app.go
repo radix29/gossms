@@ -76,7 +76,7 @@ type App struct {
 
 	// actualPlanEnabled is the "Include Actual Execution Plan" toolbar toggle,
 	// off by default. QueryPanel.runQuery reads it to choose between
-	// query.Execute and query.ExecuteWithPlan.
+	// query.Session's Execute and ExecuteWithPlan.
 	actualPlanEnabled bool
 
 	// metaEnabled is the "Show Output Column Metadata" toolbar toggle, off by

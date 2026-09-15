@@ -94,7 +94,7 @@ func (p *QueryPanel) notConnectedMessage() string {
 
 // updateResultsStatus pushes the current status line into the results grid,
 // recomputed on every Draw so it tracks row/column navigation and, while a
-// query is executing, ticks live off execStart (see tickExecuting). The
+// query is executing, ticks live off execStart (the launch ticker repaints). The
 // other three tabs get the same line from drawResultsStatus.
 func (p *QueryPanel) updateResultsStatus() {
 	p.results.SetStatus(p.resultsStatusText())

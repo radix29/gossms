@@ -3,12 +3,14 @@ package query
 import (
 	"database/sql/driver"
 	"testing"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // A multi-row showplan set yields every plan. No server has been seen to send
 // that shape (live_plan_test.go probes); this pins scanPlanXML's tolerance.
 func TestScanNextKeepsEveryShowplanRow(t *testing.T) {
-	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
+	db := openFakeRowsDB([]string{gosmo.ShowplanColumn}, [][]driver.Value{
 		{"<plan1/>"}, {"<plan2/>"}, {"<plan3/>"},
 	})
 	defer db.Close()

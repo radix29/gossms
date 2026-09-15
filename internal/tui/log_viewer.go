@@ -172,14 +172,11 @@ type LogViewer struct {
 	detailCacheEntry *gosmo.ErrorLogEntry
 	detailCacheWidth int
 
-	// seq guards against a superseded read landing after a newer one: every load
-	// increments it, and an async result applies only if still the most recent.
-	// Same role as DetailBrowser.seq.
-	seq int
-	// cancel aborts the in-flight read, called by Close so a panel closed
-	// mid-read doesn't leave the query running.
-	cancel context.CancelFunc
-	busy   bool
+	// read guards the in-flight file read: a superseded result applies only if
+	// it is still the most recent, and Close cancels it so a panel closed
+	// mid-read doesn't leave the query running. See latest.
+	read latest
+	busy bool
 
 	dragZone logDragZone
 }
@@ -238,18 +235,10 @@ func (lv *LogViewer) SetActive(v bool) {
 }
 
 // Close cancels any in-flight read. Called from App.closePanelAt; the
-// connection belongs to App, so there is nothing else to release.
-func (lv *LogViewer) Close() { lv.cancelRead() }
-
-// cancelRead aborts the in-flight read, on close and when a new read supersedes
-// one. seq already discards a superseded result, but without cancelling the
-// query runs on the shared host connection until logReadTimeout.
-func (lv *LogViewer) cancelRead() {
-	if lv.cancel != nil {
-		lv.cancel()
-		lv.cancel = nil
-	}
-}
+// connection belongs to App, so there is nothing else to release. The token
+// already discards a superseded result, but without the cancel the query runs
+// on the shared host connection until logReadTimeout.
+func (lv *LogViewer) Close() { lv.read.Cancel() }
 
 // SetBounds positions the panel: the toolbar row, then the grid and the
 // details pane on either side of the splitter.
@@ -575,9 +564,14 @@ func (lv *LogViewer) Load() {
 		lv.setStatus("Not connected")
 		return
 	}
-	lv.cancelRead()
-	lv.seq++
-	seq := lv.seq
+	// Begin supersedes and cancels whatever read is out: this one replaces it.
+	// One cancel for the panel to pull, but a fresh deadline per file read
+	// below: sharing one logReadTimeout lets a slow sp_enumerrorlogs eat the
+	// read's half of it, timing out the file the user asked for because the
+	// *list* was slow. The context is released on the UI goroutine, by the
+	// Done in the callback or in readPanicked — never from the read goroutine,
+	// which must not touch lv.
+	ctx, seq := lv.read.Begin(lv.conn.Context())
 	lv.busy = true
 	lv.setStatus(fmt.Sprintf("Reading %s%s...", lv.scopeLabel(), lv.searchSuffix()))
 	lv.refreshToolLabels()
@@ -588,17 +582,11 @@ func (lv *LogViewer) Load() {
 	// files it actually asked for.
 	refs := slices.Clone(lv.sel)
 	sc := lv.conn
-	// One cancel for the panel to pull, but a fresh deadline per call: sharing
-	// one logReadTimeout lets a slow sp_enumerrorlogs eat the read's half of it,
-	// timing out the file the user asked for because the *list* was slow.
-	ctx, cancel := context.WithCancel(sc.Context())
-	lv.cancel = cancel
 	// safegoRepair, not safego: busy is cleared in the callback below, which a
 	// panic on the read goroutine never reaches, and toolsEnabled gates the
 	// whole toolbar on it — Refresh, Export and both selectors would sit inert
 	// until the panel was closed.
 	lv.app.safegoRepair("reading an error log", func() { lv.readPanicked(seq) }, func() {
-		defer cancel()
 		// Both families, not only the one on screen: the file checklist offers
 		// a cross-family selection, so it needs the other family's archive
 		// numbering before the user opens it — and fetching that lazily would
@@ -627,11 +615,10 @@ func (lv *LogViewer) Load() {
 		rows, readErrs := readLogFiles(lv.app, ctx, sc, refs, search)
 		enumerated.Wait()
 		lv.app.postAndWake(func() {
-			if seq != lv.seq {
+			if !lv.read.Done(seq) {
 				return
 			}
 			lv.busy = false
-			lv.cancel = nil
 			for t, files := range enums {
 				lv.files[t] = files
 			}
@@ -716,11 +703,10 @@ var errLogFileNotRead = errors.New("the read did not finish")
 // newer Load set busy for itself, and clearing it here would re-enable a
 // toolbar whose read is still out.
 func (lv *LogViewer) readPanicked(seq int) {
-	if seq != lv.seq {
+	if !lv.read.Done(seq) {
 		return
 	}
 	lv.busy = false
-	lv.cancel = nil
 	lv.refreshToolLabels()
 	lv.setStatus("Read stopped unexpectedly — see the log for details")
 }
@@ -975,22 +961,13 @@ func flattenLogText(s string) string {
 	return strings.Join(strings.Fields(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)), " ")
 }
 
-// sortLogEntriesDesc orders entries newest first, as SSMS's Log File Viewer
-// opens. The sort is stable, so entries sharing a second keep the order the log
-// wrote them in — reversing those would scramble a startup sequence or a stack
-// dump.
-func sortLogEntriesDesc(entries []*gosmo.ErrorLogEntry) []*gosmo.ErrorLogEntry {
-	slices.SortStableFunc(entries, func(a, b *gosmo.ErrorLogEntry) int {
-		return b.Date.Compare(a.Date)
-	})
-	return entries
-}
-
-// sortLogRowsDesc is sortLogEntriesDesc over merged rows. The sort is stable
-// and the input is in selection order, file by file, so a timestamp shared
-// across two files breaks by file and then by position within the file — the
-// same order every time. An unstable sort, or a merge in completion order,
-// would reorder same-second rows under the cursor on every refresh.
+// sortLogRowsDesc orders merged rows newest first, as SSMS's Log File Viewer
+// opens. The sort is stable and the input is in selection order, file by file,
+// so a timestamp shared across two files breaks by file and then by position
+// within the file — the same order every time. An unstable sort, or a merge in
+// completion order, would reorder same-second rows under the cursor on every
+// refresh, and reversing a shared second would scramble a startup sequence or
+// a stack dump.
 func sortLogRowsDesc(rows []logRow) []logRow {
 	slices.SortStableFunc(rows, func(a, b logRow) int {
 		return b.entry.Date.Compare(a.entry.Date)

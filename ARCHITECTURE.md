@@ -70,9 +70,9 @@ The path from keystroke to result grid, which touches four packages:
    after disconnect.
 2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A
    query window runs on a **`Session`**: one `*sql.Conn` taken out of the
-   panel's pool by `Open` (via `acquireConn`, which retries a transient
-   liveness failure 3 times with linear backoff, mirroring gosmo's own
-   `retry.go`) and held for the panel's lifetime, so temp tables, SET options,
+   panel's pool by `Open` (via `gosmo.AcquireConn`, which retries a transient
+   liveness failure 3 times with linear backoff, on gosmo's own read-retry
+   budget) and held for the panel's lifetime, so temp tables, SET options,
    `USE` and open transactions survive from one Execute to the next, as in
    SSMS. The package-level `Execute` / `ExecuteWithPlan` / … take a `*sql.DB`
    and check a connection out per call instead — database/sql resets a
@@ -196,7 +196,7 @@ gossms/
 │       ├── app_events.go         # key/mouse dispatch, resize/redraw, top-level event loop plumbing
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
 │       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
-│       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Back Up Database/Take-Bring Offline-Online/Rebuild All Indexes task consumers
+│       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online task consumer
 │       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Properties/New Database/New Login dialogs
 │       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog

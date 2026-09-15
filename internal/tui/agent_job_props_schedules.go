@@ -7,7 +7,6 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -158,16 +157,8 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 				return rows
 			}
 
-			grid := controls.NewDataGrid()
-			grid.SetData(cols, rowsFor())
-			grid.SetCellCursor(true)
-			grid.OnActivateCell = func(row, col int) {
-				if col != 0 || row < 0 || row >= len(edits) {
-					return
-				}
-				edits[row].attached = !edits[row].attached
-				redrawGrid(grid, cols, rowsFor())
-			}
+			grid := newCellToggleGrid(cols, 0, func() int { return len(edits) },
+				func(row int) { edits[row].attached = !edits[row].attached }, rowsFor)
 
 			nameStatic := propsheet.Static("Name", "")
 			enabledStatic := propsheet.Static("Enabled", "")
@@ -175,27 +166,20 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 			startStatic := propsheet.Static("Start date", "")
 			endStatic := propsheet.Static("End date", "")
 			descStatic := propsheet.Static("Description", "")
+			detail := newStaticBlock(nameStatic, enabledStatic, ownerStatic,
+				startStatic, endStatic, descStatic)
 			syncFromSelection := func(row int) {
 				if row < 0 || row >= len(edits) {
-					nameStatic.SetValue("")
-					enabledStatic.SetValue("")
-					ownerStatic.SetValue("")
-					startStatic.SetValue("")
-					endStatic.SetValue("")
-					descStatic.SetValue("")
+					detail.set()
 					return
 				}
 				sch := edits[row].sch
-				nameStatic.SetValue(sch.Name)
-				enabledStatic.SetValue(boolStr(sch.Enabled))
-				ownerStatic.SetValue(sch.OwnerLoginName)
-				startStatic.SetValue(formatAgentDate(sch.ActiveStartDate))
 				endDate := "No end date"
 				if !sch.ActiveEndDate.IsZero() {
 					endDate = formatAgentDate(sch.ActiveEndDate)
 				}
-				endStatic.SetValue(endDate)
-				descStatic.SetValue(sch.Description())
+				detail.set(sch.Name, boolStr(sch.Enabled), sch.OwnerLoginName,
+					formatAgentDate(sch.ActiveStartDate), endDate, sch.Description())
 			}
 			grid.OnSelectRow = syncFromSelection
 			if len(edits) > 0 {

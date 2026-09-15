@@ -139,7 +139,9 @@ func qsSeriesColors() []tcell.Color {
 func (p *QueryStorePanel) toggleSeriesMode() {
 	p.seriesMode = !p.seriesMode
 	if !p.seriesMode {
-		p.cancelSeries()
+		// Abandon, not a bare cancel: the chart is going back to the ranking,
+		// so a read still on its way must not land in p.series behind it.
+		p.seriesRead.Abandon()
 		p.series, p.seriesNote = qsSeriesData{}, ""
 		return
 	}
@@ -155,25 +157,16 @@ func (p *QueryStorePanel) loadSeriesIfShown(queryID int64) {
 	}
 }
 
-// cancelSeries aborts the in-flight series read, on close and when a newer one
-// supersedes it — same reason cancelPlans exists, and the same sharpness: the
-// read fires from the report grid's cursor, so holding Down through a ranking
-// starts one per row.
-func (p *QueryStorePanel) cancelSeries() {
-	if p.seriesCancel != nil {
-		p.seriesCancel()
-		p.seriesCancel = nil
-	}
-}
-
 // loadSeries reads one query's per-plan history into the chart, or empties it
 // for a zero id. Its own sequence rather than the report's or the plan pane's,
 // for the reason there are already two: the three reads are independent, and a
 // report reload that has not landed must not blank a series that has.
 func (p *QueryStorePanel) loadSeries(queryID int64) {
-	p.cancelSeries()
-	p.seriesSeq++
-	seq := p.seriesSeq
+	// Abandon first, so a read already on its way cannot fill a chart the
+	// branches below emptied. A series read fires from the report grid's
+	// cursor, so holding Down through a ranking starts one per row, and
+	// uncancelled they all still run on the shared host.
+	p.seriesRead.Abandon()
 	p.series = qsSeriesData{}
 	if queryID == 0 {
 		p.seriesNote = "Select a query in the report below to plot its history"
@@ -192,22 +185,19 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	// beside it do not report on.
 	opts, sc, dbName := p.report().effectiveOptions(p.options()), p.conn, p.dbName
 	p.seriesLabel = qsValueLabel(opts)
-	ctx, cancel := context.WithCancel(sc.Context())
-	p.seriesCancel = cancel
+	ctx, seq := p.seriesRead.Begin(sc.Context())
 	// safegoRepair, not safego: the "Reading..." note is replaced by the
 	// callback below, which a panic on the read goroutine never reaches, and
 	// nothing else writes it until another query is selected — so the chart
 	// would claim to be reading a query it gave up on.
 	p.app.safegoRepair("reading a Query Store query history", func() { p.seriesPanicked(seq) }, func() {
-		defer cancel()
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
 		stats, err := sc.Server.Database(dbName).QueryStoreTrackedQueryContext(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
-			if seq != p.seriesSeq {
+			if !p.seriesRead.Done(seq) {
 				return
 			}
-			p.seriesCancel = nil
 			if err != nil {
 				p.series = qsSeriesData{}
 				p.seriesNote = fmt.Sprintf("History failed: %v", displayError(err))
@@ -227,10 +217,9 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 // the normal completion path: a newer read owns the chart, and blanking it
 // here would drop a series that is still on its way.
 func (p *QueryStorePanel) seriesPanicked(seq int) {
-	if seq != p.seriesSeq {
+	if !p.seriesRead.Done(seq) {
 		return
 	}
-	p.seriesCancel = nil
 	p.series = qsSeriesData{}
 	p.seriesNote = "Reading the query history stopped unexpectedly — see the log for details"
 }

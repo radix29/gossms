@@ -52,7 +52,14 @@ behind the mouse and async sections; this file has the rules themselves.
   `SetData` + `SetSelectedRow` (seventeen sites) still drops the dragged widths
   with no visible symptom: use `resetGrid(grid, headers, rows, row)`.
   `wireGridEditor` (`ag_props.go`) packages the commit/load/redraw wiring for the
-  grid-plus-detail-editor idiom.
+  grid-plus-detail-editor idiom, and `wireCellToggle`/`newCellToggleGrid`
+  (`prop_grid_helpers.go`) package the "activate a cell in one column to change
+  that row" idiom — the bounds check, the mutation and the `redrawGrid` — that
+  nine Properties pages had hand-rolled. A page pairing such a grid with a
+  read-only detail block uses `staticBlock`, whose `set()` clears every row it
+  is not given a value for: clearing a "Selected X" block one `SetValue("")` per
+  row is where a row gets missed, and a missed row goes on describing the object
+  the selection just left.
 - **A mouse gesture's modifier is not yours to rely on — Shift+click especially.**
   A VTE terminal (xfce4-terminal, GNOME Terminal) handles Shift+mouse as its own
   text selection whenever an application has mouse reporting on, and forwards

@@ -693,7 +693,7 @@ func TestResultsStatusTextOnEveryTab(t *testing.T) {
 }
 
 // While a query runs the status is the live elapsed counter, whichever tab
-// is showing — that's the whole point of tickExecuting waking the loop.
+// is showing — that's the whole point of the elapsed-time ticker waking the loop.
 func TestResultsStatusTextWhileExecuting(t *testing.T) {
 	a := newTestApp()
 	qp := NewQueryPanel(a, "Query 1")

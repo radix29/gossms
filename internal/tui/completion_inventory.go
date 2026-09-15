@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -21,10 +20,9 @@ const completionInventoryTimeout = 30 * time.Second
 // after a successful load, so per-keystroke lookups never re-scan
 // catalog.Objects.
 //
-// loadSeq and cancelLoad guard this entry's in-flight fetch, the beginLoad/
-// endLoad pattern explorerNode uses: loadSeq is bumped on every request, so a
-// result arriving after a newer fetch started drops itself, and cancelLoad stops
-// the superseded fetch.
+// load guards this entry's in-flight fetch: a result arriving after a newer
+// fetch started drops itself, and the superseded fetch is cancelled. See
+// latest.
 type completionInventory struct {
 	loading bool
 	err     error
@@ -38,43 +36,13 @@ type completionInventory struct {
 	// offering every table/view in a schema after "schema.".
 	bySchema map[string][]*gosmo.CatalogObject
 
-	loadSeq    int
-	cancelLoad context.CancelFunc
+	load latest
 
 	// serverKey is the sysCompletionInventoryKey of the server+login this entry
 	// belongs to. Recorded at creation so purgeCompletionInventories can find
 	// every entry for a disconnecting connection without splitting the map
 	// key.
 	serverKey string
-}
-
-// cancel stops this entry's in-flight load, if it has one.
-func (inv *completionInventory) cancel() {
-	if inv.cancelLoad != nil {
-		inv.cancelLoad()
-		inv.cancelLoad = nil
-	}
-}
-
-// beginLoad cancels any fetch already in flight for this entry and starts a new
-// timeout-bound one derived from parent. The caller passes seq to endLoad on
-// completion, so a stale result refuses to overwrite fresher data.
-func (inv *completionInventory) beginLoad(parent context.Context, timeout time.Duration) (ctx context.Context, seq int) {
-	inv.cancel()
-	inv.loadSeq++
-	ctx, inv.cancelLoad = context.WithTimeout(parent, timeout)
-	return ctx, inv.loadSeq
-}
-
-// endLoad reports whether seq is still current; false means a newer beginLoad
-// superseded it and seq's result must be discarded. Clears cancelLoad through
-// cancel(), releasing the timeout context rather than leaving its timer armed.
-func (inv *completionInventory) endLoad(seq int) bool {
-	if inv.loadSeq != seq {
-		return false
-	}
-	inv.cancel()
-	return true
 }
 
 // loadPanicked is both loaders' safegoRepair step. loading is otherwise cleared
@@ -87,7 +55,7 @@ func (inv *completionInventory) endLoad(seq int) bool {
 // lookup retries from scratch instead of reading a catalog half-built by the
 // fetch that died. seq keeps a superseded panic off a live newer load.
 func loadPanicked(m map[string]*completionInventory, key string, inv *completionInventory, seq int) {
-	if !inv.endLoad(seq) {
+	if !inv.load.Done(seq) {
 		return
 	}
 	evictInventory(m, key, inv)
@@ -101,7 +69,7 @@ func loadPanicked(m map[string]*completionInventory, key string, inv *completion
 // purgeCompletionInventories drops a server's entries on disconnect, so a
 // reconnect before a superseded load lands has already installed a different
 // live entry under the same key. Deleting that one strands its own in-flight
-// load. inv's loadSeq can't catch this — it is per-entry, and the stale result
+// load. inv's load token can't catch this — it is per-entry, and the stale result
 // belongs to the discarded entry, whose seq nothing bumped.
 func evictInventory(m map[string]*completionInventory, key string, inv *completionInventory) {
 	if m[key] == inv {
@@ -118,8 +86,7 @@ func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
 }
 
 // applyCatalog installs cat and rebuilds the lookup indexes in place, clearing
-// loading and err, so a reused entry keeps its loadSeq/cancelLoad identity
-// across reloads.
+// loading and err, so a reused entry keeps its load identity across reloads.
 func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {
 	inv.catalog = cat
 	inv.err = nil
@@ -162,7 +129,7 @@ func (a *App) ensureCompletionInventory(sc *db.ServerConn, database string) *com
 }
 
 // refreshCompletionInventory starts a fresh load for sc+database (Ctrl+R, Query
-// > Refresh IntelliSense Cache), reusing any existing entry so beginLoad
+// > Refresh IntelliSense Cache), reusing any existing entry so its latest
 // supersedes the in-flight fetch instead of racing it.
 func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 	key := completionInventoryKey(sc.Opts, database)
@@ -188,11 +155,11 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 		if inv.serverKey != serverKey {
 			continue
 		}
-		inv.cancel()
+		inv.load.Cancel()
 		delete(a.completionInventories, key)
 	}
 	if inv, ok := a.sysCompletionInventories[serverKey]; ok {
-		inv.cancel()
+		inv.load.Cancel()
 		delete(a.sysCompletionInventories, serverKey)
 	}
 }
@@ -215,18 +182,18 @@ func (p *QueryPanel) refreshCompletionCache() {
 }
 
 // loadCompletionInventory fetches the catalog on a background goroutine and
-// installs the result via postAndWake. inv.beginLoad/endLoad guard a fast
+// installs the result via postAndWake. inv.load guards a fast
 // double-refresh or a refresh racing the initial load: a newer load for the same
 // key makes this callback discard itself.
 func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, inv *completionInventory) {
 	srv := sc.Server
-	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
+	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
 	a.safegoRepair("loading the autocomplete catalog", func() {
 		loadPanicked(a.completionInventories, key, inv, seq)
 	}, func() {
 		cat, err := srv.Database(database).CatalogContext(ctx)
 		a.postAndWake(func() {
-			if !inv.endLoad(seq) {
+			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key
 			}
 			if err != nil && !sc.IsOpen() {
@@ -327,13 +294,13 @@ func (a *App) retrySysCompletionInventory(sc *db.ServerConn) {
 // reach.
 func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *completionInventory) {
 	srv := sc.Server
-	ctx, seq := inv.beginLoad(sc.Context(), completionInventoryTimeout)
+	ctx, seq := inv.load.BeginTimeout(sc.Context(), completionInventoryTimeout)
 	a.safegoRepair("loading the system autocomplete catalog", func() {
 		loadPanicked(a.sysCompletionInventories, key, inv, seq)
 	}, func() {
 		cat, err := srv.Database("master").SystemCatalogContext(ctx)
 		a.postAndWake(func() {
-			if !inv.endLoad(seq) {
+			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key
 			}
 			if err != nil && !sc.IsOpen() {

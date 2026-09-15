@@ -23,7 +23,7 @@ import (
 // before fanOut returns, so the caller's cache sees the placeholder, not "…".
 //
 // The write a fetch queues is unconditional even when seq has moved on:
-// rows belongs to this fetch alone, and whether the caller's cacheOnly caches
+// rows belongs to this fetch alone, and whether the caller's cacheOnlyObjects caches
 // it is decided by pending, not seq. Skipping the write for a stale seq would
 // cache a row still showing its "…" placeholder whenever pending still
 // matched — permanently, since reselecting is then a cache hit that never
@@ -32,7 +32,7 @@ import (
 // backfillRows returning means every row's closure has been *queued*, not
 // that it has run, so a caller that caches rows afterwards depends on
 // App.postEvent's queue being FIFO: every row's closure is appended before
-// fanOut returns, so a cacheOnly posted after this returns is necessarily
+// fanOut returns, so a cacheOnlyObjects posted after this returns is necessarily
 // appended last and drains last.
 //
 // fetchCtx is the loader's fetch context (see DetailBrowser.fetch), and each

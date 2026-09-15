@@ -26,9 +26,9 @@ func TestClosePanelAtCancelsQueryStoreReads(t *testing.T) {
 	i := a.panels.AddPanel(p)
 
 	var report, plans, series bool
-	p.cancel = func() { report = true }
-	p.planCancel = func() { plans = true }
-	p.seriesCancel = func() { series = true }
+	p.reportRead.cancel = func() { report = true }
+	p.planRead.cancel = func() { plans = true }
+	p.seriesRead.cancel = func() { series = true }
 
 	a.closePanelAt(i)
 

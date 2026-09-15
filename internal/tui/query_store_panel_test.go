@@ -529,7 +529,7 @@ func TestPlanPaneRecoversFromAPanickingRead(t *testing.T) {
 	p, _, _ := newQSPanel(t, "Regressed Queries", qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsReportResponse(), qsPlansResponse())
 	p.plans = []*gosmo.QSPlan{{PlanID: 7}}
-	p.planSeq = 3
+	p.planRead.seq = 3
 	p.plansGrid.SetStatus("Reading plans for query 42...")
 
 	p.plansPanicked(3)
@@ -548,7 +548,7 @@ func TestAStalePlanPanicLeavesTheCurrentPaneAlone(t *testing.T) {
 	p, _, _ := newQSPanel(t, "Regressed Queries", qsOptionsResponse("READ_WRITE", "READ_WRITE"),
 		qsReportResponse(), qsPlansResponse())
 	p.plans = []*gosmo.QSPlan{{PlanID: 7}}
-	p.planSeq = 4
+	p.planRead.seq = 4
 	p.plansGrid.SetStatus("Query 42 — 1 plans")
 
 	p.plansPanicked(3)
@@ -1210,13 +1210,13 @@ func TestShowValueFallsBackToTheCellWithoutAStatement(t *testing.T) {
 	}
 }
 
-// TestASupersededPlanReadIsCancelled. planSeq already discards the stale
+// TestASupersededPlanReadIsCancelled. The plan read's token already discards the stale
 // *result*, but the query itself keeps running on the shared host connection
 // until qsReadTimeout — and a plan read fires from the report grid's
 // OnSelectRow, so holding Down through a ranking starts one per row.
 //
 // The plan response is gated so the read is still in flight when it is
-// superseded: ungated it finishes, and its own defer cancels the context,
+// superseded: ungated it finishes and its completion releases the context,
 // which would let a panel that never cancelled anything pass.
 func TestASupersededPlanReadIsCancelled(t *testing.T) {
 	plans := qsPlansResponse(qsPlanRow(41, 12, false, "", 5, 100))
@@ -1240,7 +1240,7 @@ func TestASupersededPlanReadIsCancelled(t *testing.T) {
 	if err := ctx.Err(); err != nil {
 		t.Fatalf("the plan read was cancelled while it was still the current one: %v", err)
 	}
-	if p.planCancel == nil {
+	if p.planRead.Idle() {
 		t.Fatal("no cancel was kept for the in-flight plan read")
 	}
 
@@ -1252,11 +1252,11 @@ func TestASupersededPlanReadIsCancelled(t *testing.T) {
 
 	// And closing the panel cancels the one that replaced it, which a panel
 	// whose Close only reached the report read would leave running.
-	if p.planCancel == nil {
+	if p.planRead.Idle() {
 		t.Fatal("the replacement read kept no cancel")
 	}
 	p.Close()
-	if p.planCancel != nil {
+	if !p.planRead.Idle() {
 		t.Error("Close left a plan cancel behind")
 	}
 }
@@ -2007,10 +2007,10 @@ func TestThePlanPaneKeepsADraggedColumnWidth(t *testing.T) {
 	if !p.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone)) {
 		t.Fatal("the report grid did not take Down")
 	}
-	// planCancel, not len(p.plans): loadPlans leaves the previous query's plans
+	// planRead.Idle, not len(p.plans): loadPlans leaves the previous query's plans
 	// in place while it reads, so a wait on them being non-empty returns before
 	// the new ones land and the assertion below reads the old grid.
-	drainUntil(t, a, func() bool { return p.queryID == 12 && p.planCancel == nil },
+	drainUntil(t, a, func() bool { return p.queryID == 12 && p.planRead.Idle() },
 		"the second query's plans")
 
 	if got := p.plansGrid.ColumnWidth(col); got != dragged {

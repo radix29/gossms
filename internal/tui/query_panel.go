@@ -94,8 +94,8 @@ type QueryPanel struct {
 	statusRect core.Rect
 
 	// execStart marks when the in-flight execution began — read by
-	// updateResultsStatus for the live elapsed timer, and by tickExecuting to
-	// know when to stop waking the event loop.
+	// updateResultsStatus for the live elapsed timer, which the execDone
+	// ticker wakes the event loop to repaint.
 	execStart time.Time
 
 	// progress is the in-flight run's live row counter, non-nil only while a
@@ -143,9 +143,9 @@ type QueryPanel struct {
 	cancel    context.CancelFunc
 
 	// execDone is closed when the in-flight run's goroutine exits, which is how
-	// tickExecuting knows to stop. Both execute paths close it from a defer, so a
-	// panic can't leave the ticker waking the event loop once a second for the
-	// life of the process.
+	// launch's App.animateUntil ticker knows to stop. Both execute paths close
+	// it from a defer, so a panic can't leave the ticker waking the event loop
+	// once a second for the life of the process.
 	execDone chan struct{}
 }
 

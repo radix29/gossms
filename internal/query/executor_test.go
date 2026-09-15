@@ -8,6 +8,8 @@ import (
 	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 func TestFormatValue(t *testing.T) {
@@ -172,9 +174,9 @@ func TestIsShowplanResultSet(t *testing.T) {
 		cols []string
 		want bool
 	}{
-		{"showplan column alone", []string{showplanColumnName}, true},
+		{"showplan column alone", []string{gosmo.ShowplanColumn}, true},
 		{"real single column, different name", []string{"DoctorID"}, false},
-		{"showplan name alongside another column", []string{showplanColumnName, "Extra"}, false},
+		{"showplan name alongside another column", []string{gosmo.ShowplanColumn, "Extra"}, false},
 		{"no columns", nil, false},
 	}
 	for _, tt := range tests {

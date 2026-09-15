@@ -236,7 +236,7 @@ func executeWithSink(ctx context.Context, db *sql.DB, database, script string, c
 	start := time.Now()
 	res := newResult(opts)
 
-	conn, err := acquireConn(ctx, db, database)
+	conn, err := gosmo.AcquireConn(ctx, db, database)
 	if err != nil {
 		res.addError(err)
 		res.Elapsed = time.Since(start)
@@ -322,60 +322,6 @@ func (c planCapture) setOption() (option, label string) {
 		return "SHOWPLAN_XML", "estimated"
 	}
 	return "STATISTICS XML", "actual"
-}
-
-// acquireConnRetryAttempts is acquireConn's total tries (initial + retries)
-// when its liveness prologue fails transiently. Mirrors gosmo's
-// readRetryAttempts (gosmo/retry.go).
-const acquireConnRetryAttempts = 3
-
-// acquireConnRetryDelay is the backoff before the nth retry (1-based). Mirrors
-// gosmo's readRetryDelay.
-func acquireConnRetryDelay(attempt int) time.Duration {
-	return time.Duration(attempt) * 50 * time.Millisecond
-}
-
-// acquireConn returns a live pinned *sql.Conn, switched to database (USE) if
-// non-empty, retrying on a fresh connection when the pool hands back a dead
-// one. A script needs one connection for its whole run, and database/sql's
-// bad-connection retry covers only *sql.DB calls, not a pinned *sql.Conn — so a
-// connection dropped while idle (NAT timeout, killed session, failover) would
-// fail the next Execute. gosmo's Database.query/queryRow do the same for reads.
-//
-// Only the USE/SELECT-1 prologue is retried, never a user batch, which might
-// re-apply partial side effects.
-func acquireConn(ctx context.Context, db *sql.DB, database string) (*sql.Conn, error) {
-	prologue := "SELECT 1"
-	if database != "" {
-		prologue = "USE " + gosmo.QuoteName(database)
-	}
-	wrapErr := func(err error) error {
-		if database != "" {
-			return fmt.Errorf("switch to database %s: %w", database, err)
-		}
-		return err
-	}
-
-	// Bounded by the >= check below (== would spin forever at 0).
-	for attempt := 1; ; attempt++ {
-		conn, err := db.Conn(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := conn.ExecContext(ctx, prologue); err != nil {
-			conn.Close() // dead — evicted from the pool via driver.Validator.IsValid
-			if ctx.Err() != nil || attempt >= acquireConnRetryAttempts || !gosmo.IsRetryable(err) {
-				return nil, wrapErr(err)
-			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(acquireConnRetryDelay(attempt)):
-			}
-			continue
-		}
-		return conn, nil
-	}
 }
 
 // currentDatabase reads DB_NAME() off the connection the batches ran on, so a
@@ -578,14 +524,10 @@ func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhau
 	return n, true, nil
 }
 
-// showplanColumnName is SQL Server's column name for STATISTICS XML /
-// SHOWPLAN_XML output. Mirrors gosmo's unexported showplanColumn.
-const showplanColumnName = "Microsoft SQL Server 2005 XML Showplan"
-
 // isShowplanResultSet reports whether cols is the single-column execution-plan
 // shape.
 func isShowplanResultSet(cols []string) bool {
-	return len(cols) == 1 && cols[0] == showplanColumnName
+	return len(cols) == 1 && cols[0] == gosmo.ShowplanColumn
 }
 
 // scanNext consumes the result set MsgNext just announced, appending it to res
@@ -633,8 +575,8 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 // scanPlanXML reads the current showplan set into one XML document per row.
 // Every probed server sends one row per set (SHOWPLAN_XML one document per
 // batch, STATISTICS XML one per statement, each in its own set); keeping every
-// row is a tolerance, so a split set wouldn't lose plans. Mirrors gosmo's
-// capturePlan.
+// row is a tolerance, so a split set wouldn't lose plans. The same tolerance,
+// for the same reason, as gosmo's capturePlan.
 //
 // exhausted reports whether the loop reached the set's end; rows.Err() can't
 // tell a failed end from a clean one, and neither needs draining.

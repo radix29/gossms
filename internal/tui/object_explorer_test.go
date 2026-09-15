@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/db"
@@ -251,56 +249,6 @@ func TestExplorerSelectionMatchesNamelessNodeByLabel(t *testing.T) {
 
 	if got := st.a.explorer.Selected(); got == nil || got == archive1 || got.label != "Archive #1" {
 		t.Fatalf("Selected() after a refresh = %v, want the re-created Archive #1", got)
-	}
-}
-
-// beginLoad/endLoad guard App.loadChildren's background fetch against a
-// fast double-expand or a Refresh that lands before the first fetch
-// returns: a newer beginLoad must cancel the previous fetch's context and
-// make its eventual endLoad report itself superseded.
-func TestExplorerNodeBeginEndLoad(t *testing.T) {
-	n := &explorerNode{}
-
-	ctx1, seq1 := n.beginLoad(context.Background(), time.Minute)
-	if seq1 != 1 {
-		t.Fatalf("first beginLoad seq = %d, want 1", seq1)
-	}
-	if ctx1.Err() != nil {
-		t.Fatalf("ctx1 already done before being superseded: %v", ctx1.Err())
-	}
-
-	ctx2, seq2 := n.beginLoad(context.Background(), time.Minute)
-	if seq2 != 2 {
-		t.Fatalf("second beginLoad seq = %d, want 2", seq2)
-	}
-	if ctx1.Err() != context.Canceled {
-		t.Errorf("second beginLoad did not cancel the superseded fetch's context (err=%v)", ctx1.Err())
-	}
-	if ctx2.Err() != nil {
-		t.Errorf("ctx2 should still be live, got %v", ctx2.Err())
-	}
-
-	if n.endLoad(seq1) {
-		t.Errorf("endLoad(stale seq) = true, want false (superseded)")
-	}
-	if n.cancelLoad == nil {
-		t.Errorf("endLoad(stale seq) must not clear cancelLoad for the still-pending current fetch")
-	}
-	if ctx2.Err() != nil {
-		t.Errorf("endLoad(stale seq) cancelled the current fetch's context (err=%v)", ctx2.Err())
-	}
-
-	if !n.endLoad(seq2) {
-		t.Errorf("endLoad(current seq) = false, want true")
-	}
-	if n.cancelLoad != nil {
-		t.Errorf("endLoad(current seq) should clear cancelLoad")
-	}
-	// Cleared by calling it, not by dropping it: a discarded CancelFunc
-	// leaves the timeout context registered on its parent with the timer
-	// armed for the full childFetchTimeout, once per node ever expanded.
-	if ctx2.Err() != context.Canceled {
-		t.Errorf("endLoad(current seq) dropped cancelLoad without calling it (ctx err=%v)", ctx2.Err())
 	}
 }
 

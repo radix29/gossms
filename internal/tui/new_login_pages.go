@@ -8,7 +8,6 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -331,16 +330,8 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 		}
 		return out
 	}
-	grid := controls.NewDataGrid()
-	grid.SetData(userMappingColumns, rowsFor())
-	grid.SetCellCursor(true)
-	grid.OnActivateCell = func(row, col int) {
-		if col != 0 || row < 0 || row >= len(rows) {
-			return
-		}
-		rows[row].mapped = !rows[row].mapped
-		redrawGrid(grid, userMappingColumns, rowsFor())
-	}
+	grid := newCellToggleGrid(userMappingColumns, 0, func() int { return len(rows) },
+		func(row int) { rows[row].mapped = !rows[row].mapped }, rowsFor)
 
 	dbStatic := propsheet.Static("Database", "")
 	// A picker over the selected database's own schemas rather than a text
@@ -481,16 +472,8 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 		}
 		return rows
 	}
-	grid := controls.NewDataGrid()
-	grid.SetData(permissionStateColumns, rowsFor())
-	grid.SetCellCursor(true)
-	grid.OnActivateCell = func(row, col int) {
-		if col != 1 || row < 0 || row >= len(edits) {
-			return
-		}
-		edits[row].current = nextPermState(edits[row].current)
-		redrawGrid(grid, permissionStateColumns, rowsFor())
-	}
+	grid := newCellToggleGrid(permissionStateColumns, 1, func() int { return len(edits) },
+		func(row int) { edits[row].current = nextPermState(edits[row].current) }, rowsFor)
 
 	gridRow := propsheet.NewGridRow(grid, 12)
 	gridRow.DirtyFn = func() bool {

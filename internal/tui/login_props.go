@@ -8,7 +8,6 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -450,16 +449,8 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 				}
 				return rows
 			}
-			grid := controls.NewDataGrid()
-			grid.SetData(userMappingColumns, rowsFor())
-			grid.SetCellCursor(true)
-			grid.OnActivateCell = func(row, col int) {
-				if col != 0 || row < 0 || row >= len(edits) {
-					return
-				}
-				edits[row].mapped = !edits[row].mapped
-				redrawGrid(grid, userMappingColumns, rowsFor())
-			}
+			grid := newCellToggleGrid(userMappingColumns, 0, func() int { return len(edits) },
+				func(row int) { edits[row].mapped = !edits[row].mapped }, rowsFor)
 
 			dbStatic := propsheet.Static("Database", "")
 			schemaText := propsheet.Text("Default schema", "", 20)

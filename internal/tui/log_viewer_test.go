@@ -78,22 +78,23 @@ func TestLogViewerFilterMatchesSourceAndMessage(t *testing.T) {
 	}
 }
 
-// TestSortLogEntriesDesc pins the grid's order: newest first, and stable
-// within one timestamp so a multi-entry second (a startup sequence, a stack
-// dump) still reads in the order the log wrote it.
-func TestSortLogEntriesDesc(t *testing.T) {
+// TestSortLogRowsDesc pins the grid's order: newest first, and stable within
+// one timestamp so a multi-entry second (a startup sequence, a stack dump)
+// still reads in the order the log wrote it, and a second shared across two
+// files breaks by file and then by position within the file.
+func TestSortLogRowsDesc(t *testing.T) {
 	at := func(m int) time.Time { return time.Date(2026, 8, 12, 10, m, 0, 0, time.UTC) }
-	entries := []*gosmo.ErrorLogEntry{
-		{Date: at(0), Text: "oldest"},
-		{Date: at(5), Text: "tie A"},
-		{Date: at(5), Text: "tie B"},
-		{Date: at(9), Text: "newest"},
+	rows := []logRow{
+		{entry: &gosmo.ErrorLogEntry{Date: at(0), Text: "oldest"}},
+		{entry: &gosmo.ErrorLogEntry{Date: at(5), Text: "tie A"}},
+		{entry: &gosmo.ErrorLogEntry{Date: at(5), Text: "tie B"}},
+		{entry: &gosmo.ErrorLogEntry{Date: at(9), Text: "newest"}},
 	}
-	got := sortLogEntriesDesc(entries)
+	got := sortLogRowsDesc(rows)
 	want := []string{"newest", "tie A", "tie B", "oldest"}
 	for i, w := range want {
-		if got[i].Text != w {
-			t.Errorf("entry %d = %q, want %q (order: %v)", i, got[i].Text, w, want)
+		if got[i].entry.Text != w {
+			t.Errorf("row %d = %q, want %q (order: %v)", i, got[i].entry.Text, w, want)
 		}
 	}
 }
@@ -225,20 +226,21 @@ func TestLogViewerBusyToolbarIsInert(t *testing.T) {
 	}
 }
 
-// TestLogViewerLoadCancelsSupersededRead pins the other half: seq discards a
-// superseded result, but the query behind it has to be cancelled too or it runs
-// on the shared host connection until logReadTimeout.
+// TestLogViewerLoadCancelsSupersededRead pins the other half: the token
+// discards a superseded result, but the query behind it has to be cancelled too
+// or it runs on the shared host connection until logReadTimeout. Close is the
+// path a panel shut mid-read takes.
 func TestLogViewerLoadCancelsSupersededRead(t *testing.T) {
 	lv := newTestLogViewer()
 	cancelled := false
-	lv.cancel = func() { cancelled = true }
+	lv.read.cancel = func() { cancelled = true }
 
-	lv.cancelRead()
+	lv.Close()
 	if !cancelled {
-		t.Error("cancelRead() didn't call the in-flight read's cancel func")
+		t.Error("Close() didn't call the in-flight read's cancel func")
 	}
-	if lv.cancel != nil {
-		t.Error("cancelRead() left the stale cancel func in place; the next call would cancel a finished read")
+	if !lv.read.Idle() {
+		t.Error("Close() left the stale cancel func in place; the next call would cancel a finished read")
 	}
 }
 

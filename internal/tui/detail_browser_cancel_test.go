@@ -139,7 +139,7 @@ func TestMovingOnCancelsAFoldersBackfill(t *testing.T) {
 		t.Error("the cancelled fetch kept its pending entry, so its final stage can still cache")
 	}
 
-	// The first wave now answers, and the loader runs on to its cacheOnly.
+	// The first wave now answers, and the loader runs on to its cacheOnlyObjects.
 	close(gate)
 	settleDetails(a)
 	if _, ok := db.cache[folder]; ok {

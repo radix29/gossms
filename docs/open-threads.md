@@ -125,18 +125,15 @@ saves under its own name. Two facts worth keeping:
   "Could not find a user matching the name provided" *after* a successful
   token — the login's SID is the old object id; recreate the login.
 
-Settled: **a token past its lifetime renews silently** (2026-09-11, built
-binary, Azure CLI, against `t-qmi-01`, with an `az` wrapper logging every
-call). Connected at 09:12 on a token expiring 10:26:55: one `az` call. A new
-query window at 10:24:58, inside `entraTokenMargin` (5 min), made exactly one
-more `az` call, got a token expiring 11:41:59, and connected as FEDERATED with
-no prompt. After the first token's expiry, a third window and an Object Explorer
-expand reused the renewed token with no further `az` call. The 09:12 window's
-session (SPID 127) kept running on its original connection: a token is only
-checked at login. gosmo's part is method-independent and is unit-tested by
-`TestEntraCacheRenewsAnExpiringToken`. Only the credential's `GetToken`
-differs by method — for Device Code/MFA it is azidentity's silent refresh,
-which was not held open past an hour separately.
+Settled: **a token past its lifetime renews silently** (verified on
+`t-qmi-01`, Azure CLI method, with every `az` call logged). A window opened
+inside `entraTokenMargin` (5 min) of expiry fetches exactly one new token and
+connects as FEDERATED with no prompt; later windows and Object Explorer expands
+reuse it. An already-connected session is unaffected — a token is only checked
+at login. gosmo's part is method-independent and unit-tested by
+`TestEntraCacheRenewsAnExpiringToken`. Only the credential's `GetToken` differs
+by method; for Device Code/MFA it is azidentity's silent refresh, which was not
+held open past an hour separately.
 
 **Open:**
 
@@ -161,23 +158,21 @@ livedb`) is the repeatable part.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
-**Open: neither release job has run in its current form** — v0.0.10 ran both
-and proved the point: the `homebrew` job went green having pushed nothing, so
-the tap shipped with no `Formula/` at all and `brew install radix29/tap/gossms`
-404'd for that whole cycle. The `apt` job was fine. Both the push fix and the
-Verify steps postdate that tag: the `homebrew` job now stages first and
-compares against the index (`git diff --quiet` reports no diff for a path git
-has never tracked), the shape the `apt` job already used. **Watch both jobs on
-the v0.0.11 tag and confirm the tap gained a `gossms 0.0.11` commit.**
+Both jobs ran in their current form on the **v0.0.11** tag (2026-09-15, run
+35014969713) and both pushed: the tap carries a `gossms v0.0.11` commit whose
+`Formula/gossms.rb` declares `version "0.0.11"`, and `radix29/apt` carries its
+own. The failure mode the shape guards against is a job that goes green having
+pushed nothing: the `homebrew` job stages first and compares against the index
+(`git diff --quiet` reports no diff for a path git has never tracked), which is
+what the `apt` job already did.
 
 Each job ends in a **Verify** step that fetches the *remote* back and fails
 unless it carries this tag: the tap's requires
 `origin/<branch>:Formula/gossms.rb` to declare `version "<tag without v>"`, and
 the apt job's requires both `.deb`s in `pool/`, a `Version:` line in each
 architecture's `Packages`, and all three of `Release`, `InRelease` and
-`Release.gpg`. The scripts have been driven by hand against the live repos in
-both directions; the jobs themselves have not. Two things about those steps that
-a plausible simplification undoes:
+`Release.gpg`. Two things about those steps that a plausible simplification
+undoes:
 
 - **They read the remote with `git`, never over HTTP.** `raw.githubusercontent.com`
   and `https://radix29.github.io/apt` both serve a cached copy for minutes after
@@ -451,10 +446,10 @@ through a database-wide grant.
   deleted; a caller wanting idempotence ignores the error, which the library
   cannot decide for it. `TestDropStatementsAreNotIdempotent` pins it. Scripter's
   *scripts* keep `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
-- **`CertificateByName` answers `(nil, nil)` on absence**, unlike the
-  `ErrNotFound` readers: making it error is a breaking change to a published
-  contract, and its callers branch on absence as the ordinary case. The three
-  conventions are documented on `ErrNotFound` itself;
+- **`CertificateByName` and `AsymmetricKeyByName` answer `(nil, nil)` on
+  absence**, unlike the `ErrNotFound` readers: making them error is a breaking
+  change to a published contract, and their callers branch on absence as the
+  ordinary case. The three conventions are documented on `ErrNotFound` itself;
   `TestLiveCertificateNotFoundIsNilNil` pins both directions.
 - **A missing principal and an invisible one are the same thing to
   `ErrNotFound` — SQL Server's doing, do not fix it in gosmo.** Metadata
@@ -468,6 +463,13 @@ through a database-wide grant.
   1 Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
+- **azidentity has deprecated `UsernamePasswordCredential`** (no MFA), which
+  gosmo's `AuthEntraPassword` / ROPC mode uses at `entra.go` — both the options
+  literal and `NewUsernamePasswordCredential`. The method is **kept**: it is a
+  supported gosmo auth mode, verified live on Managed Instance. Both sites carry
+  `//lint:ignore SA1019` with that reason. The thread to watch is azidentity
+  *removing* the type, not deprecating it — at which point ROPC needs a
+  replacement or the mode goes. gosmo has no `PLAN.md`, so it is tracked here.
 
 Three things about the job-state read are load-bearing and easy to undo:
 
@@ -1263,10 +1265,6 @@ when the underlying issue is fixed.
 
 ### Bugs and suspected defects
 
-- **B1** — Neither release job has run with the push fix or the Verify steps;
-  v0.0.10 ran the old `homebrew` job, which pushed no formula and went green.
-  The v0.0.11 tag closes this: a green `homebrew`/`apt` job is now proof.
-  § Release workflow
 - **B2** — `WITH INIT` is hardcoded on a URL backup device; block-blob backup
   overwrites through `WITH FORMAT`, so MI may refuse the statement the Back Up
   dialog builds. § Azure SQL Managed Instance

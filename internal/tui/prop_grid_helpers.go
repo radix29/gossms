@@ -386,3 +386,77 @@ func mustPropertyRowIndex(rows [][]string, label string) int {
 	}
 	panic("no property row labelled " + label)
 }
+
+// wireCellToggle wires the "activate a cell in one column to change that row's
+// value" idiom nine Properties pages hand-rolled: bounds-check the activation,
+// mutate the page's own edit for that row, then re-render in place.
+//
+// col is the one editable column — every other column, and an out-of-range
+// row, is ignored, which is what stops a click on the header area or on the
+// blank space past the last row from writing to edits[len(edits)-1]. count is
+// read at activation time, not captured, because a filter row can shrink the
+// visible slice after the wiring is done.
+//
+// The redraw is redrawGrid, never SetData: these grids are being navigated
+// while they are toggled, which is exactly the case redrawGrid exists for.
+// Centralising it here is the point — the pair is easy to get right once and
+// easy to get wrong nine times.
+func wireCellToggle(grid *controls.DataGrid, headers []string, col int,
+	count func() int, change func(row int), rowsFor func() [][]string) {
+	grid.OnActivateCell = func(row, c int) {
+		if c != col || row < 0 || row >= count() {
+			return
+		}
+		change(row)
+		redrawGrid(grid, headers, rowsFor())
+	}
+}
+
+// newCellToggleGrid is wireCellToggle for a page that builds the grid too: a
+// cell-cursor DataGrid seeded from rowsFor, with column col editable.
+//
+// Pages whose grid is referenced by other closures before the toggle can be
+// described — a filter row, a second grid loaded from this one's selection —
+// build it themselves and call wireCellToggle.
+func newCellToggleGrid(headers []string, col int,
+	count func() int, change func(row int), rowsFor func() [][]string) *controls.DataGrid {
+	grid := controls.NewDataGrid()
+	grid.SetData(headers, rowsFor())
+	grid.SetCellCursor(true)
+	wireCellToggle(grid, headers, col, count, change, rowsFor)
+	return grid
+}
+
+// staticBlock is a group of read-only detail rows filled from a grid's selected
+// row — the "Selected alert"/"Selected schedule" half of a grid-plus-detail
+// page.
+//
+// It exists for the out-of-range branch. Clearing the block one SetValue("")
+// per row is where a row gets missed, and a missed row goes on describing the
+// object the selection just left, which reads as the grid having selected the
+// wrong thing. set() with no values clears every row, and a short value list
+// clears the rest, so there is no separate clearing path to forget.
+//
+// Rows are constructed by the caller, not from a label list passed in here, so
+// that each label stays a literal argument to propsheet.Static —
+// TestNoPropertySheetLabelIsTruncated reads the call sites, and a label moved
+// into a slice would silently stop being checked.
+type staticBlock struct {
+	rows []*propsheet.StaticRow
+}
+
+func newStaticBlock(rows ...*propsheet.StaticRow) *staticBlock {
+	return &staticBlock{rows: rows}
+}
+
+// set fills the block from values, one per row in construction order; rows past
+// the end of values are cleared.
+func (b *staticBlock) set(values ...string) {
+	for i, r := range b.rows {
+		if i < len(values) {
+			r.SetValue(values[i])
+		} else {
+			r.SetValue("")
+		}
+	}
+}

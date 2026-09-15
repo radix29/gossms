@@ -302,13 +302,8 @@ func buildSecurablesMatrix(
 		}
 		return rows
 	}
-	colGrid.OnActivateCell = func(row, col int) {
-		if col != 1 || row < 0 || row >= len(loadedCols) {
-			return
-		}
-		loadedCols[row].current = nextPermState(loadedCols[row].current)
-		redrawGrid(colGrid, securableColumnColumns, colRows())
-	}
+	wireCellToggle(colGrid, securableColumnColumns, 1, func() int { return len(loadedCols) },
+		func(row int) { loadedCols[row].current = nextPermState(loadedCols[row].current) }, colRows)
 
 	permSection := propsheet.Section("Permissions")
 	selected := -1
@@ -355,13 +350,9 @@ func buildSecurablesMatrix(
 	securableGrid.OnSelectRow = loadSecurable
 	loadSecurable(0)
 
-	permGrid.OnActivateCell = func(row, col int) {
-		if col != 1 || row < 0 || row >= len(visiblePerms) {
-			return
-		}
-		visiblePerms[row].current = nextPermState(visiblePerms[row].current)
-		redrawGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits))
-	}
+	wireCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
+		func(row int) { visiblePerms[row].current = nextPermState(visiblePerms[row].current) },
+		func() [][]string { return permRowsFor(selectedEdits) })
 
 	var loadColsBusy bool
 	loadColsBtn := widgets.NewButton("Load Columns", func() {

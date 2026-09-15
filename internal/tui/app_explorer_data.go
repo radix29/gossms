@@ -38,8 +38,8 @@ func serverWriteContext(sc *db.ServerConn) (context.Context, context.CancelFunc)
 }
 
 // loadChildren loads an explorer node's children in the background. A load
-// already in flight (double expand, Refresh during load) is cancelled by
-// beginLoad, and endLoad discards its late result.
+// already in flight (double expand, Refresh during load) is cancelled by the
+// node's latest, which also discards its late result.
 //
 // A retired node (replaced by a Reload, expanded from its stale row) isn't
 // loaded; SetChildren would refuse it.
@@ -47,7 +47,7 @@ func (a *App) loadChildren(node *explorerNode) {
 	if node.retired {
 		return
 	}
-	ctx, seq := node.beginLoad(resolveConn(node).Context(), childFetchTimeout)
+	ctx, seq := node.load.BeginTimeout(resolveConn(node).Context(), childFetchTimeout)
 	// The fetch reads a snapshot: applyNodeFilter writes node.data.Filter on
 	// the UI goroutine meanwhile. node itself is used only by the posted
 	// callback on the UI goroutine.
@@ -58,7 +58,7 @@ func (a *App) loadChildren(node *explorerNode) {
 	a.safegoRepair("loading Object Explorer children", func() { a.childFetchPanicked(node, seq) }, func() {
 		children := a.fetchChildren(ctx, snap)
 		a.postAndWake(func() {
-			if !node.endLoad(seq) {
+			if !node.load.Done(seq) {
 				return // superseded by a newer fetch for this node
 			}
 			a.explorer.SetChildren(node, children)
@@ -83,7 +83,7 @@ var errChildFetchPanicked = errors.New("loading failed unexpectedly — see the 
 // Guarded by seq like the success path, so a newer expand's children aren't
 // overwritten.
 func (a *App) childFetchPanicked(node *explorerNode, seq int) {
-	if !node.endLoad(seq) {
+	if !node.load.Done(seq) {
 		return
 	}
 	a.explorer.SetChildren(node, []*explorerNode{errExplorerNode(errChildFetchPanicked)})

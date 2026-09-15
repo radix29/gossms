@@ -4,6 +4,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"testing"
+
+	gosmo "github.com/radix29/gosmo"
 )
 
 // runBatch drains a result set scanNext abandoned part-way, and must not drain
@@ -97,7 +99,7 @@ func TestScanNextDoesNotAbandonASetOnlyEndSetFailed(t *testing.T) {
 }
 
 func TestScanPlanXMLIsExhaustedAfterTheLastRow(t *testing.T) {
-	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
+	db := openFakeRowsDB([]string{gosmo.ShowplanColumn}, [][]driver.Value{
 		{"<plan1/>"}, {"<plan2/>"},
 	})
 	defer db.Close()
@@ -120,7 +122,7 @@ func TestScanPlanXMLIsExhaustedAfterTheLastRow(t *testing.T) {
 // A NULL plan row can't scan into a string and leaves rows pending: a real
 // abandon, which the drain is for.
 func TestScanNextAbandonsAPlanSetThatFailsMidScan(t *testing.T) {
-	db := openFakeRowsDB([]string{showplanColumnName}, [][]driver.Value{
+	db := openFakeRowsDB([]string{gosmo.ShowplanColumn}, [][]driver.Value{
 		{"<plan1/>"}, {nil}, {"<plan3/>"},
 	})
 	defer db.Close()

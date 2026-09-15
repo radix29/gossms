@@ -55,9 +55,10 @@ func TestExplorerExpandShowsAnErrorWhenItsLoaderPanics(t *testing.T) {
 	}
 }
 
-// The repair must not outrun a newer expand of the same node. endLoad is what
-// enforces that on the success path, and the repair has to honour it too — or
-// a panicking fetch replaces the children a later, working one just installed.
+// The repair must not outrun a newer expand of the same node. The node's
+// latest is what enforces that on the success path, and the repair has to
+// honour it too — or a panicking fetch replaces the children a later, working
+// one just installed.
 func TestExplorerExpandPanicDoesNotClobberANewerLoad(t *testing.T) {
 	a := newTestApp()
 	addTestConn(a, "server-one")
@@ -67,11 +68,11 @@ func TestExplorerExpandPanicDoesNotClobberANewerLoad(t *testing.T) {
 	}
 
 	// seq 1 is the fetch that panicked; seq 2 has since superseded it and is
-	// still out. Taken straight from beginLoad rather than assigned by hand,
-	// so the test tracks whatever numbering it uses.
-	_, stale := node.beginLoad(t.Context(), childFetchTimeout)
+	// still out. Taken straight from Begin rather than assigned by hand, so the
+	// test tracks whatever numbering it uses.
+	_, stale := node.load.BeginTimeout(t.Context(), childFetchTimeout)
 	a.explorer.SetChildren(node, []*explorerNode{{label: "from the newer load"}})
-	node.beginLoad(t.Context(), childFetchTimeout)
+	node.load.BeginTimeout(t.Context(), childFetchTimeout)
 
 	a.childFetchPanicked(node, stale)
 

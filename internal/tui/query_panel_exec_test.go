@@ -56,7 +56,7 @@ func TestExecutePanicStopsTheTickerAndCancelsTheContext(t *testing.T) {
 
 	select {
 	case <-p.execDone:
-		// closed: tickExecuting has been told to exit
+		// closed: the animateUntil ticker has been told to exit
 	default:
 		t.Fatal("the elapsed-time ticker was never stopped — its goroutine leaks")
 	}

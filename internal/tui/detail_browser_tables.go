@@ -90,7 +90,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *
 		space, spaceErr := dbObj.TableSpaceUsedAllContext(ctx)
 
 		// rows is written inside the posted closure, so every write lands on
-		// the UI goroutine — the same one Draw runs on. cacheOnly's own post
+		// the UI goroutine — the same one Draw runs on. cacheOnlyObjects's own post
 		// is queued after this one and App.postEvent's queue is FIFO, so the
 		// cache never sees a row still showing "…".
 		app.postAndWake(func() {

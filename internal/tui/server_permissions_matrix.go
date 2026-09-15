@@ -180,14 +180,12 @@ func buildPermissionsMatrix(
 	principalGrid.OnSelectRow = loadPrincipal
 	loadPrincipal(0)
 
-	permGrid.OnActivateCell = func(row, col int) {
-		if col != 1 || row < 0 || row >= len(visiblePerms) {
-			return
-		}
-		e := visiblePerms[row]
-		e.current = nextPermState(e.current)
-		redrawGrid(permGrid, permissionStateColumns, permRowsFor(selectedEdits))
-	}
+	wireCellToggle(permGrid, permissionStateColumns, 1, func() int { return len(visiblePerms) },
+		func(row int) {
+			e := visiblePerms[row]
+			e.current = nextPermState(e.current)
+		},
+		func() [][]string { return permRowsFor(selectedEdits) })
 
 	principalFilterRow := propsheet.Text("Filter principals", "", 28)
 	principalFilterRow.SetDirtyTracked(false)
@@ -317,16 +315,8 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 				}
 				return rows
 			}
-			grid := controls.NewDataGrid()
-			grid.SetData(permissionStateColumns, rowsFor())
-			grid.SetCellCursor(true)
-			grid.OnActivateCell = func(row, col int) {
-				if col != 1 || row < 0 || row >= len(visible) {
-					return
-				}
-				visible[row].current = nextPermState(visible[row].current)
-				redrawGrid(grid, permissionStateColumns, rowsFor())
-			}
+			grid := newCellToggleGrid(permissionStateColumns, 1, func() int { return len(visible) },
+				func(row int) { visible[row].current = nextPermState(visible[row].current) }, rowsFor)
 
 			filterRow := propsheet.Text("Filter permissions", "", 28)
 			filterRow.SetDirtyTracked(false)

@@ -302,19 +302,23 @@ func (pt *amProcTab) installInMaster() {
 	}, func(ctx context.Context, _ progressReport) error {
 		return pt.proc.Install(ctx, conn.Server.DB(), activity.ProcMaster)
 	}, func(err error, cancelled bool) {
-		if cancelled {
-			err = fmt.Errorf("Install of %s cancelled", qualified)
-		}
-		pt.masterInstalled(err)
+		pt.masterInstalled(err, cancelled)
 	})
 }
 
-// masterInstalled reports the install and re-runs against the new copy.
-func (pt *amProcTab) masterInstalled(err error) {
+// masterInstalled reports the install and re-runs against the new copy. The
+// cancelled message is built here, not as an error, so it can start with a
+// capital the way every other status line does (staticcheck ST1005).
+func (pt *amProcTab) masterInstalled(err error, cancelled bool) {
 	if !pt.am.app.panelHosted(pt.am) {
 		return
 	}
 	pt.busy = false
+	if cancelled {
+		pt.setStatus("Install of " + pt.proc.Qualified(activity.ProcMaster) + " cancelled")
+		pt.am.buildTools()
+		return
+	}
 	if err != nil {
 		pt.setStatus(err.Error())
 		pt.am.buildTools()
