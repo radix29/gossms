@@ -181,7 +181,7 @@ gossms/
 │   │   ├── core/                 # Rect geometry, drawing primitives, string/int helpers
 │   │   ├── widgets/               # InputField, DropDown, CheckBox, Button, RadioBox, Spinner (a busy indicator as a pure function of elapsed time)
 │   │   ├── layout/                # Panel interface, PanelManager (tabs), Splitter
-│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
+│   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
@@ -198,6 +198,7 @@ gossms/
 │       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Back Up Database/Take-Bring Offline-Online/Rebuild All Indexes task consumers
 │       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Properties/New Database/New Login dialogs
+│       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
 │       ├── toolbar.go            # icon-only quick-action toolbar sharing the menu bar's row, same Enabled-predicate gating
@@ -699,7 +700,7 @@ tagged module before tagging gossms itself.
 
 ## Dependencies
 
-All five direct requires in `go.mod`:
+All six direct requires in `go.mod`:
 
 | Package | Purpose |
 |---------|---------|
@@ -708,3 +709,4 @@ All five direct requires in `go.mod`:
 | [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver itself, plus `batch` for `GO` splitting — `internal/query` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
 | [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of only two external modules `tuikit` imports |
+| [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Microsoft Entra sign-in page in the user's browser. Its `Stdout`/`Stderr` are redirected to `io.Discard` in `installEntraSignIn` — anything it writes would land on the terminal tcell is drawing on |

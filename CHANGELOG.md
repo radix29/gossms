@@ -6,28 +6,236 @@ entries start with v0.0.2 onward.
 
 ## [Unreleased]
 
+## [0.0.11] - 2026-09-15
+
 ### Added
 
-- **Live row counter while a query runs.** The results status line now reads
+- **Microsoft Entra ID sign-in, seven methods, verified against a live
+  tenant.** MFA, Device Code, Password, Service Principal, Managed Identity,
+  Default and Azure CLI. `internal/db/entra.go` holds the pieces gossms adds
+  on top of gosmo's authentication: a process-wide `gosmo.EntraCache`, the
+  device-code prompt hook, and a sign-in phase that runs before the dial.
+  - **The cache is shared by every connection, not one per pool.** Object
+    Explorer, each query window, Activity Monitor and each Always On peer
+    open their own `ConnectContext`; a cache per pool would open an MFA
+    browser window per pool. It is keyed by identity, so one sign-in covers
+    every server in the same tenant, and every reconnect. Sign-ins are held
+    in memory only — restarting gossms signs in again — and **File > Clear
+    Microsoft Entra Sign-ins** forgets them sooner, which is how you switch
+    accounts.
+  - **MFA and Device Code sign in as a step of their own**, before the
+    connection is dialled, with up to five minutes to finish and the status
+    bar saying where to go. `DeviceCodeDialog`
+    (`internal/tui/device_code_dialog.go`) shows the code, copies it with
+    **Copy Code** or Ctrl+C, and cancels the attempt on Escape. It exists
+    because `azidentity` otherwise prints the code to standard output — the
+    terminal tcell is drawing on — where the next redraw erases it.
+  - **TenantID is optional for every method that has one.** Left blank, MFA,
+    Device Code, Password and Service Principal sign in to the tenant the
+    server itself belongs to, as SSMS does, which is what lets a personal
+    Microsoft account added to that tenant sign in at all. Learning that
+    tenant costs one login the client starts and abandons per server per
+    session; Azure SQL records it as Error 33155 and README's Known issues
+    says so.
+  - **The dialog greys the fields the chosen method does not read**, from a
+    single `config.FieldsFor` table, and sends only those on the attempt —
+    a leftover password from a previous SQL Authentication entry is not
+    dialled with an Entra method.
+- **A query window now runs on a session it holds, not on a pooled
+  connection.** `internal/query/session.go` is one SQL Server session kept
+  for as long as its owner wants it: temp tables, `SET` options, `USE` and
+  open transactions survive between runs, which is what an SSMS query window
+  has always done and what package-level `Execute` could not do.
+  `database/sql` marks a returned connection for reset and go-mssqldb sets
+  the TDS reset-connection bit on its next use — `SET` options back to login
+  defaults, `#temp` dropped, an open transaction rolled back — and if the
+  next run landed on a different pooled connection, the first sat idle
+  holding that transaction's locks.
+  - **The connection bar names the session and its open transactions**:
+    `server | user (spid) | database`, with `| 2 open transactions`
+    appended when there are any. An open transaction holds locks and closing
+    the window ends it, so the panel says so rather than leaving it to
+    `@@TRANCOUNT`.
+  - **Closing, reconnecting or quitting with `@@TRANCOUNT > 0` asks to commit
+    first** (`confirmOpenTransactions`), instead of dropping the session and
+    letting the server roll the transaction back whenever it notices.
+  - A lost session is reported as lost — `Query > Reconnect` redials, and is
+    disabled while a connect is in flight rather than opening a second one.
+- **A progress dialog for long writes.** `dialogs.ProgressDialog` and
+  `internal/tui/progress_job.go`: from the moment a confirmation is answered
+  until the server comes back, a Delete, Rename, Take Offline, failover,
+  Agent Start/Stop/Enable/Disable and the rest run behind a dialog with a
+  spinner, elapsed time and a working Cancel that cancels the statement.
+  - **It holds back before drawing** (`progressRevealDelay`), so a `DROP`
+    the server answers at once never flashes a box, while a slow one appears
+    before the user wonders whether the Yes registered.
+  - **Cancel is greyed, with a reason, on the jobs that cannot be safely
+    interrupted** — a failover and a revert to a snapshot.
+  - The dialog stays up after Cancel until the server confirms the statement
+    stopped: the write is not over because the client asked it to be.
+  - The property sheet has the same applying state — OK/Apply/Script Changes
+    show a spinner and disable, and Escape or Cancel stops the run rather
+    than closing over it.
+- **Object Explorer: the remaining SSMS database families.** Each new leaf
+  has Properties, Script and Delete where the object supports them.
+  - **Database Snapshots**, with **New Snapshot...** on the folder and on a
+    database (`CREATE DATABASE … AS SNAPSHOT OF`), **Revert to Snapshot**,
+    and read-only Properties. The file grid is derived from the source's
+    ROWS files and re-derived whenever the source or the name changes, so
+    the paths always match the snapshot actually being created; a log file
+    or a FILESTREAM container is never listed, which is the usual way a
+    hand-written snapshot statement fails.
+  - **Tables now has System, FileTables, External and Graph sub-folders**,
+    as SSMS does.
+  - **Programmability > Types**, with its five SSMS sub-folders — System
+    Data Types, User-Defined Data Types, User-Defined Table Types,
+    User-Defined Types (CLR) — plus **XML Schema Collections**,
+    **Assemblies**, **Rules**, **Defaults** and **Plan Guides**.
+  - **External Resources** — External Data Sources, External File Formats
+    and External Libraries, a sibling of Views rather than anything under
+    Programmability, matching SSMS. External Libraries is omitted outright
+    on SQL Server 2016, which has no `sys.external_libraries`: a folder
+    whose only possible answer is an error is worse than no folder.
+  - **Plan Guide Properties can enable and disable the guide**
+    (`sp_control_plan_guide`), the one writable page among the new families.
+    A disabled guide shapes no plan and is otherwise invisible in the tree
+    but for its label suffix, so this is a real write, gated on
+    `ALTER DATABASE` — which is what the procedure actually checks; there is
+    no "ALTER ANY PLAN GUIDE" for it to take.
+  - The rest are **read-only by the objects' shape, not by omission**:
+    `CREATE TYPE`, `CREATE RULE`, `CREATE DEFAULT`, `CREATE EXTERNAL DATA
+    SOURCE` and `CREATE EXTERNAL FILE FORMAT` have no `ALTER` at all, and
+    the two that do — `ALTER ASSEMBLY`, `ALTER EXTERNAL LIBRARY` — replace
+    a compiled binary a form cannot supply. Every such page is named in
+    `prop_page_requires_test.go`'s `pagesThatOnlyRead`.
+  - **Move to another schema** (`ALTER SCHEMA … TRANSFER`) for the new type
+    families that permit it, gated on `CONTROL` on the securable itself.
+- **Permission gating now understands per-securable rights.** An assembly, a
+  user-defined type and an XML schema collection are securable classes of
+  their own (5, 6 and 10), so `CONTROL` on one is not `CONTROL` on the
+  database. `requiredRight` carries a `gosmo.DatabaseSecurableKind`, the
+  gate asks `PermitsOnSecurable` rather than a database-wide question, and
+  a withheld item's note names the right at its real scope ("CONTROL on the
+  assembly", not "CONTROL"). `gateOnAll` ANDs several right groups while
+  keeping one note, which two nested `gateOn`s could not do.
+- **Resource Governance, a database Properties page on Azure editions.** The
+  percentages an Azure database reports are percentages *of something*, and
+  that something is invisible everywhere else: "CPU 0.6%" against an unnamed
+  limit says nothing, "0.6% of 4 vCores" does.
+  `sys.dm_db_resource_stats` supplies the reading and
+  `sys.dm_user_db_resource_governance` the scale, and the page pairs them.
+  Read-only throughout — every value on it changes by resizing the instance
+  or the database, a control-plane operation no statement from a dialog
+  could make.
+- **Disk-usage charts in Object Explorer Details.** A stacked composition
+  strip under the detail grid for a database, with a pinned readout that a
+  click opens naming what each colour under the pointer is worth. The
+  readout box is shared with Activity Monitor's (`chart_tooltip.go`), so the
+  two read as the same thing.
+- **Live row counter while a query runs.** The results status line reads
   `00:00:07 | Executing... | 128413 rows` — the count ticks with the elapsed
   timer that was already there, so a long-running script shows how much has
   loaded rather than only how long it has taken. The executor bumps a
   `query.Progress` (an atomic, since the count is read on the UI goroutine
-  while the run scans on another) as each row is scanned, on the retaining and
-  the Results To File streaming paths alike; a caller that wants no count
-  passes none, which is why an estimated plan — it scans no rows — shows the
-  elapsed timer alone.
+  while the run scans on another) as each row is scanned, on the retaining
+  and the Results To File streaming paths alike; a caller that wants no
+  count passes none, which is why an estimated plan — it scans no rows —
+  shows the elapsed timer alone.
+- **The Connect dialog accepts an IPv6 address** bare (`fe80::1`),
+  bracketed, or with a port as `[fe80::1]:1433` or `fe80::1,1433`.
+- **F1 documents the progress dialog and the property sheet's Escape**, both
+  of which now stop a running write rather than closing over it.
 
 ### Changed
 
-- **Closing a panel now returns its memory to the OS.** A query panel holds
-  every row of its last result set while it is open, which for a large one
-  runs to gigabytes, so `closePanelAt` follows the removal with
-  `debug.FreeOSMemory` — a collection *and* a scavenge, since Go's pacer would
-  otherwise sit on the freed pages and leave RSS where it was for a user who
-  closed the tab precisely because the machine was struggling. It runs on a
-  background goroutine (a full GC on a multi-gigabyte heap would stall the
-  redraw) and a flag coalesces a burst of closes into one sweep.
+- `gosmo` v0.0.12 → v0.0.13, `tcell/v3` v3.4.2 → v3.5.0.
+- **New connections default to `Encrypt: Mandatory` with Trust Server
+  Certificate ticked**, so an instance using SQL Server's own self-signed
+  certificate still connects while the session is encrypted. A saved
+  connection keeps the mode it was saved with; a hand-edited `config.json`
+  with no mode selects Mandatory rather than leaving the field blank.
+- **A saved password is bound to its connection's server, port, user,
+  authentication method and encryption settings** through the AES-GCM
+  additional data. Editing any of those in `config.json` by hand makes the
+  password unreadable, and it has to be typed again — which is the point:
+  the sealed password cannot be moved to a different server by editing the
+  file next to it.
+- **The recent-connections list holds 30**, up from 15.
+- **Closing a panel returns its memory to the OS.** A query panel holds every
+  row of its last result set while it is open, which for a large one runs to
+  gigabytes, so `closePanelAt` follows the removal with `debug.FreeOSMemory`
+  — a collection *and* a scavenge, since Go's pacer would otherwise sit on
+  the freed pages and leave RSS where it was for a user who closed the tab
+  precisely because the machine was struggling. It runs on a background
+  goroutine (a full GC on a multi-gigabyte heap would stall the redraw) and
+  a flag coalesces a burst of closes into one sweep.
+- **A closed panel now cancels what it was reading.** `layout.Disposable`,
+  implemented by `QueryPanel` and `QueryStorePanel`: `closePanelAt` disposes
+  the panel it removes, so its in-flight reads are cancelled instead of
+  running to completion against a panel nobody will ever see.
+- **Refresh releases the nodes it replaces, and there is one Refresh.** Six
+  copies of the same code became `ObjectExplorer.Reload`, which cancels the
+  replaced subtree's fetches and releases it rather than leaking it, and
+  re-reads server-scope capabilities as well as database-scope — the old
+  behaviour depended on how Refresh had been invoked.
+- **Agent screens show booleans as Yes/No**, not `true`/`false`, at all ten
+  sites.
+- **`InstanceKey` includes the port** for an address with no instance name,
+  so two instances on one host reached by port are no longer the same key.
+- **Check for Updates ranks pre-releases by semver 2.0.0.** The
+  pseudo-version Go stamps into a build from a checkout *is* a pre-release —
+  `v0.0.11-0.20260911113756-cf929d309586` is after v0.0.10 and before
+  v0.0.11 — and the old numeric-segment comparison called it equal to
+  v0.0.11 and reported "up to date".
+- **The Restore dialog drops history entries no `RESTORE` can name.** An
+  Azure automated backup has no device, so it cannot be restored by
+  statement at all; when a database's whole history is of that kind, the
+  dialog says so and points at Azure point-in-time restore instead of
+  showing an empty set with no explanation.
+- **The Detail Browser cancels a fetch it has moved past**, rather than
+  letting a superseded read finish and, worse, cache its result under the
+  node now selected.
+- **The per-database capability probe is single-flight.** Several panels
+  asking about one database at once ran one probe each.
+- **Log File Viewer merges SQL Server and SQL Agent files together**, not
+  only several files of one kind.
+- `internal/tui` grew `explorer_programmability.go`, `explorer_external.go`
+  and `explorer_management.go`; the module families that predate them
+  (stored procedures, functions, sequences, synonyms) stayed in
+  `explorer_objects.go` rather than being moved, since moving working code
+  buys nothing.
+- `docs/review-plan-2026-09-11.md` records the whole-codebase review this
+  release's fixes came out of, item by item, with what each one's evidence
+  and test was.
+
+### Fixed
+
+- **Object Explorer selection jumped to a different node after an async
+  load.** `TreeView.SetNodes` re-applied the old selected *index* to the new
+  list, so a background load that changed the row count moved the selection
+  under the user — and a context menu opened on whatever had taken that row.
+- **Copy and paste garbled non-ASCII text on Windows.** `clip.exe` reads
+  standard input in the console code page, not UTF-8, so `öööö äää` pasted
+  as `├╢├╢├╢├╢ ├ñ├ñ├ñ`. Copy now writes UTF-16LE with a BOM. Paste had the
+  matching bug in the other direction — PowerShell writes redirected output
+  in the OEM code page — and now sets `[Console]::OutputEncoding` to UTF-8
+  before `Get-Clipboard` and strips a stray BOM. Confirmed round-tripping on
+  Windows.
+- **A Properties dialog's previous showing could reach its next one.** A
+  page load or an error from a showing that had already closed landed in the
+  dialog the user had since reopened, on a different object.
+- **SQL Server Agent Start, Stop, Enable, Disable and Delete were offered
+  with no permission gate**, and failed at the server instead of being
+  withheld with a note.
+- **Closing a Query Store panel did not cancel its reads.**
+- **An empty `varbinary` scripted as `0x00`, a different value** —
+  `DATALENGTH(0x)` is 0 and `DATALENGTH(0x00)` is 1. Fixed in gosmo
+  v0.0.13.
+- **A schema-qualified security policy or trigger was named unqualified** in
+  its toggle's confirmation prompt and error message, so two same-named
+  objects in different schemas were indistinguishable.
+- **A long server or database name overflowed the Connect dialog's saved
+  connection list.**
 
 ## [0.0.10] - 2026-09-09
 

@@ -15,11 +15,12 @@ branching exists in exactly two places: `internal/tui/os_clipboard.go`
 - Module: `github.com/radix29/gossms` — https://github.com/radix29/gossms
 - Depends on `github.com/radix29/gosmo`, the author's own companion library for
   SQL Server management objects (https://github.com/radix29/gosmo), and
-  `github.com/gdamore/tcell/v3` (`v3.4.2`) for the TUI backend.
-- `go.mod`'s `require` pins a gosmo tag, but the `replace github.com/radix29/gosmo
+  `github.com/gdamore/tcell/v3` (`v3.5.0`) for the TUI backend.
+- `go.mod`'s `require` pins a gosmo tag, and the `replace github.com/radix29/gosmo
   => ../gosmo` directive is deliberately **active** during development, so builds
-  use the sibling checkout and `HEAD` may depend on untagged gosmo code. Both
-  repos are siblings: `~/go/gossms`, `~/go/gosmo`.
+  use the sibling checkout and `HEAD` may depend on untagged gosmo code. It is
+  commented out only to tag a release, against a gosmo tag that is already
+  pushed. Both repos are siblings: `~/go/gossms`, `~/go/gosmo`.
 - Version resolves automatically from the pushed git tag — see
   `internal/version/version.go` — never hand-edited.
 

@@ -11,11 +11,8 @@ Two companion documents carry the detail this one deliberately doesn't:
 
 ## Current state
 
-`v0.0.10` (2026-09-09) is the current tag. Unreleased since it: the Resource
-Governance database page, query-execution progress, user-defined type and XML
-schema collection properties, the Homebrew first-release fix, and (uncommitted)
-Log File Viewer and release-workflow work. `CHANGELOG.md` records them when
-they ship.
+`v0.0.11` (2026-09-15) is the current tag. Nothing is unreleased against it;
+`CHANGELOG.md` and `RELEASE.md` carry what it contains.
 
 The core SSMS workflows — connect, browse objects, run queries, view and edit
 properties — work on Linux and Windows. goSSMS is installed from a package
@@ -23,6 +20,20 @@ manager on the platforms that have one: a Homebrew tap for macOS and Linux and
 a GPG-signed APT repository for Debian and Ubuntu, both published by
 `.github/workflows/release.yml` from the same archives the GitHub release
 carries.
+
+`v0.0.11` made Microsoft Entra ID sign-in real — seven methods, all but
+Managed Identity verified end to end against a live tenant, sharing one
+process-wide sign-in cache — gave each query window a held SQL Server session
+(temp tables, `SET` options, `USE` and open transactions survive between runs),
+put every long write behind a cancellable progress dialog, and added the
+remaining SSMS database families to Object Explorer (database snapshots with
+New Snapshot and Revert, the four table sub-folders, Programmability > Types,
+XML schema collections, assemblies, rules, defaults, plan guides, external
+resources). It also fixed the v0.0.10 Homebrew tap, whose release job rendered
+the formula and pushed nothing, so `brew install radix29/tap/gossms` 404'd for
+that whole cycle. Its correctness fixes came out of the whole-codebase review
+in `docs/review-plan-2026-09-11.md`; phases A–C of that plan are done, phase D
+(cleanup and refactoring, R15–R27 less R24) is not.
 
 `v0.0.10` made Azure SQL Managed Instance a supported target rather than an
 incidentally reachable one (engine-edition version gating, backup and restore
@@ -71,8 +82,9 @@ changing a query it can reach.
 - Some terminals (e.g. xfce4-terminal) eat specific key shortcuts. Several
   emulators mangle particular chords; `internal/tuikit/README.md` has the
   notes.
-- Entra ID authentication is untested — no infrastructure available, against
-  either Managed Instances or Azure SQL Database.
+- Entra ID Managed Identity is untested: it needs goSSMS running on an
+  Azure-hosted machine. The other six methods are verified end to end against
+  a live tenant on Azure SQL Managed Instance.
 - Backup and restore to Azure Storage were built and validated live, but never
   executed: the test Managed Instance has no shared access signature
   credential on a container. `WITH INIT` on a URL device and `RESTORE ... WITH
@@ -80,10 +92,10 @@ changing a query it can reach.
   `docs/open-threads.md`.
 - macOS is untested — no Mac available, so the Homebrew formula has never been
   through `brew install` / `brew test` / `brew audit` on real hardware.
-- The Homebrew and APT jobs have never run on a real tag. Both were verified
-  by driving their extracted scripts against the `v0.0.9` assets; `dpkg -i` on
-  a clean container, arm64 execution and `lintian` are still unrun. See
-  `docs/open-threads.md`.
+- The Homebrew and APT jobs have now run on a real tag. `v0.0.10` exposed the
+  one failure mode both share — doing nothing and reporting success: the tap
+  job pushed no formula and went green. `dpkg -i` on a clean container, arm64
+  execution and `lintian` are still unrun. See `docs/open-threads.md`.
 - Released binaries are built by GitHub and cosign-signed, but not
   platform-signed; checksums are published. The `.deb` packages are covered by
   the repository's GPG-signed `Release` file; the Homebrew formula by the

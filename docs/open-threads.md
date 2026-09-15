@@ -161,12 +161,14 @@ livedb`) is the repeatable part.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
-**Open: neither release job has run in its current form** — the last tag,
-v0.0.10, predates both the push fix and the Verify steps. The `homebrew` job
-stages first and compares against the index (`git diff --quiet` reports no diff
-for a path git has never tracked, which once let it go green having pushed
-nothing), the shape the `apt` job uses. **Watch both jobs on the next tag and
-confirm the tap gained a `gossms <tag>` commit.**
+**Open: neither release job has run in its current form** — v0.0.10 ran both
+and proved the point: the `homebrew` job went green having pushed nothing, so
+the tap shipped with no `Formula/` at all and `brew install radix29/tap/gossms`
+404'd for that whole cycle. The `apt` job was fine. Both the push fix and the
+Verify steps postdate that tag: the `homebrew` job now stages first and
+compares against the index (`git diff --quiet` reports no diff for a path git
+has never tracked), the shape the `apt` job already used. **Watch both jobs on
+the v0.0.11 tag and confirm the tap gained a `gossms 0.0.11` commit.**
 
 Each job ends in a **Verify** step that fetches the *remote* back and fails
 unless it carries this tag: the tap's requires
@@ -1261,8 +1263,9 @@ when the underlying issue is fixed.
 
 ### Bugs and suspected defects
 
-- **B1** — Neither release job has run with the push fix or the Verify steps.
-  The next tag closes this: a green `homebrew`/`apt` job is now proof.
+- **B1** — Neither release job has run with the push fix or the Verify steps;
+  v0.0.10 ran the old `homebrew` job, which pushed no formula and went green.
+  The v0.0.11 tag closes this: a green `homebrew`/`apt` job is now proof.
   § Release workflow
 - **B2** — `WITH INIT` is hardcoded on a URL backup device; block-blob backup
   overwrites through `WITH FORMAT`, so MI may refuse the statement the Back Up

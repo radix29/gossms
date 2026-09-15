@@ -170,10 +170,16 @@ connected SQL Server version or engine edition are hidden or disabled.
 
 ## Highlights
 
-- **Object Explorer** for databases, tables, views, programmable objects,
-  security, storage, SQL Server Agent, Always On, and other server objects.
+- **Object Explorer** for databases and database snapshots, tables and their
+  System/FileTables/External/Graph folders, views, programmable objects
+  (types, XML schema collections, assemblies, rules, defaults, plan guides),
+  external resources, security, storage, SQL Server Agent, Always On, and
+  other server objects.
 - **Query editor** with multiple tabs, IntelliSense, `GO` batches, unlimited
-  result rows, messages, and XML/JSON viewers.
+  result rows, messages, and XML/JSON viewers. Each tab holds its own SQL
+  Server session, so temp tables, `SET` options, `USE` and open transactions
+  survive between runs; the bar above the editor shows the SPID and any open
+  transaction.
 - **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and
@@ -188,6 +194,11 @@ connected SQL Server version or engine edition are hidden or disabled.
   Instance tab showing CPU, storage, I/O and the resource governor's limits.
 - **Least-privilege operation**: unavailable actions are disabled and missing
   permissions are identified where SQL Server exposes that information.
+- **Long writes run in the foreground**: a delete, rename, take-offline,
+  failover or Agent action shows a progress dialog with elapsed time and a
+  Cancel that cancels the statement on the server. Cancel is greyed, with the
+  reason, where interrupting is unsafe — a failover, or a revert to a
+  snapshot.
 
 ## Required rights
 
