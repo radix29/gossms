@@ -281,8 +281,9 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   *login* may do, and a read-only database is not a permission — a third gate
   for it would have to cover every READ_ONLY database, not just snapshots. SSMS
   behaves the same way.
-- **Open: Service Broker Stages A–D have landed; Stage E — the object ops —
-  is what remains.** `docs/plan-phase3-service-broker.md` § Stage A is done:
+- **Service Broker Stages A–F have landed and are verified live, on majors 13,
+  14 and 17 and on the Managed Instance.**
+  `docs/plan-phase3-service-broker.md` § Stage A is done:
   `service_broker.go`, `service_broker_queue.go`, `service_broker_routing.go`
   and `scripter_service_broker.go` give all seven families a listing, a
   `…ByNameContext` finder, a `Drop…Context` and a CREATE/DROP script, plus the
@@ -313,14 +314,58 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   `queueAlterRights` for its Properties page, `queueDropRights` for its Delete.
   gosmo's `ProbedDatabasePermissions` already carries all five names.
 
-  **What is left is Stage E**: `scriptables` entries, Delete, and Move to
-  Schema for queues. There are no renames at all in this family — no
-  `sp_rename` path exists for any of the seven — and no New-X dialogs; the
-  rights those verbs need are already declared and tested, the menu items are
-  not. `edition_gate.go` still has no entry for
-  `CREATE REMOTE SERVICE BINDING`, which Managed Instance refuses at compile
-  time with Msg 41906; nothing emits that statement yet, and Stage E's
-  Script as ▸ CREATE for that one family is what needs it.
+  § Stage E is done: all seven leaves have a `scriptables` entry
+  (CREATE / DROP / DROP And CREATE, no ALTER) and an `objectOps` entry with a
+  drop; the queue alone has a transfer, and **nothing has a rename** — no
+  `sp_rename` class exists for any of the seven. `azureRefusedScriptVerbs`
+  withholds the binding's CREATE and DROP And CREATE on an Azure edition, which
+  Managed Instance refuses at compile time with Msg 41906; its DROP is left
+  alone, because MI does not refuse that one. A queue drags into a query editor
+  as `[schema].[name]`, the other six as a bare name.
+
+  Verified live on majors 13, 14 and 17 by `live_service_broker_ops_test.go`,
+  which creates one object of each family, scripts each CREATE, drops all seven
+  in dependency order and then runs every generated CREATE back in; and under
+  the tmux harness on 17, where a user message type and a user queue carry
+  Script as / Delete (and Move to Schema on the queue), `DEFAULT` and
+  `dbo.ServiceBrokerQueue` carry neither, and Script Queue as ▸ DROP To opened
+  the right statement in a query window.
+
+  § Stage F is done, on 2026-09-17. The gosmo live suite
+  (`live_service_broker_test.go`, the extended version sweep,
+  `live_scripter_families_test.go`, `live_probednames_test.go`) and gossms's
+  `live_service_broker_ops_test.go` were run on majors 13, 14 and 17 **and on
+  `t-qmi-01`**; the sweep reports 0 failed reads on all four. Under the tmux
+  harness the seven folders were expanded on a database carrying one object of
+  each family, on a broker-free user database, on `master` and on `msdb`, on
+  majors 13 and 17 and on the MI — the empty folders expand to nothing rather
+  than to an error, and `msdb` shows the documented queue/service asymmetry.
+  The Queue and Route Properties writes were driven end to end on 17 (retention,
+  activation status and max readers on the queue; the address on the route),
+  each re-read, reverted and dropped; a disabled queue picks up its
+  `(Disabled)` label on the next folder refresh, not before. The gate was
+  driven live with a login holding only `ALTER ANY MESSAGE TYPE`: the message
+  type's Delete is offered, the route's reads "needs ALTER ANY ROUTE", the
+  queue's Delete and Move to Schema carry *different* reasons, and the Route
+  Properties page opens read-only with a Close-only button row.
+
+  **The one thing still unseen** is the withheld
+  `Script Remote Service Binding as ▸ CREATE` greyed out against a real MI
+  connection — a remote service binding cannot be created on MI, so no such
+  node exists there to right-click. See V7 below.
+
+  **A second MI refusal was found in Stage F and is not gated**: `CREATE ROUTE`
+  and `ALTER ROUTE` with `ADDRESS = 'TRANSPORT'` or with any `MIRROR_ADDRESS`
+  come back **Msg 41943**, "does not support creating route with TRANSPORT or
+  MIRROR address" (probed on `t-qmi-01`, 2026-09-17). An ordinary TCP address
+  is accepted, and unlike the binding's 41906 this one is a *runtime* refusal —
+  a statement before it in the batch runs, the ones after it do not. Nothing
+  gossms emits hits it today: Script as ▸ CREATE can only reproduce a route
+  that already exists, and on MI no route can carry either form. The Route
+  Properties page *can*: a user who types `TRANSPORT` or a mirror address into
+  it on MI gets the server's 41943 rather than a disabled field. Left ungated
+  deliberately — the fields are free text, the message is clear, and gating one
+  value of one field per edition is not a shape `edition_gate.go` has. See B6.
 
   Three things about the two writes that both Properties pages respect, and
   that any later New-X dialog must: a nil field means "leave this setting
@@ -348,15 +393,19 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   or ALTER on its schema. So `queueAlterRights` is `objectWriteRights()` and
   `queueDropRights` is that set minus the object-scoped ALTER — never one entry
   for both.
-  The cost is a gate that is too tight in one case: a principal whose only
-  right is CONTROL on the queue, or who owns it, is not offered a Delete the
-  server would allow. It cannot be fixed by adding a CONTROL-on-object right,
-  because gosmo's object block matches `CONTROL` alongside the permission it
-  asks about and files both under the one name — the map cannot tell a CONTROL
-  grant from an ALTER grant. Keeping `rightAlterOnObject` in the drop set
-  instead would offer the drop to every principal holding only ALTER, which the
-  server refuses, and that is the worse of the two. Distinguishing them means
-  giving gosmo a per-permission object map; not worth it for this case alone.
+  **Closed 2026-09-16**, the way the entry said it could not be: `CONTROL` is
+  now in gosmo's `ProbedObjectPermissions`, so the object map carries an
+  `O:CONTROL` answer beside `O:ALTER` and the two grants can be told apart. The
+  block matches `CONTROL` alongside whatever name it asks about, so the ALTER
+  map still reads 1 for either — but the CONTROL map answers only for a CONTROL
+  grant and for the object's owner, which is exactly the set the server allows
+  the drop to. `queueDropRights` therefore carries `rightControlOnObject` and
+  not `rightAlterOnObject`; re-probed live on major 17 on 2026-09-16, a CONTROL
+  grantee and an owner each dropped the queue.
+
+  The same answer is what `queueTransferRights` is built on — Move to Schema on
+  a queue needs CONTROL on it and is refused to ALTER, probed the same day —
+  and it also unblocks B5 below for every other class-1 family.
 
 
 **Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** What is kept is
@@ -370,10 +419,15 @@ itself (plus ALTER on the target schema); probed on 17 on 2026-09-11, it was ref
 on the source schema and ALTER on the table, and went through only under
 CONTROL on the table. Move to Schema for every sys.objects family still asks
 the Rename/Delete set (`objectTransferRights` falls back to
-`objectDataRights`), so it is offered to all five. Closing it needs a CONTROL
-answer at class 1 — gosmo's object block reads explicit rows and ownership,
-not CONTROL on the schema or database — unlike classes 5, 6 and 10 below,
-which already have one.
+`objectDataRights`), so it is offered to all five. **No longer blocked**:
+`CONTROL` joined gosmo's `ProbedObjectPermissions` on 2026-09-16 and
+`rightControlOnObject` reads it, which is what the queue's own Move to Schema
+is gated on (`queueTransferRights`). Giving the other class-1 families the same
+entry is a deliberate scope call, not a missing capability — it changes the
+gate on tables, views, procedures, functions and sequences at once, and the
+CONTROL map answers for a CONTROL grant and ownership but not for CONTROL on
+the schema or the database, both of which the server also permits the transfer
+to.
 
 **Every schemaless database-level family has an explicit set** (`dbScopedOpRights`, probed live on 13/14/17 with a
 `WITHOUT LOGIN` user per right — see its comment), and
@@ -1362,9 +1416,14 @@ when the underlying issue is fixed.
 - **B3** — `RESTORE ... WITH MOVE` on MI: relocation options are deliberately
   ungated and were never driven; MI places its own files. § Azure SQL Managed
   Instance
+- **B6** — Route Properties on a Managed Instance accepts an `ADDRESS` of
+  `TRANSPORT` or a `MIRROR_ADDRESS` the server then refuses, Msg 41943. Left
+  ungated deliberately; the refusal is a runtime one and its message is clear.
+  § Deferred scope
 - **B5** — Move to Schema on a class-1 object (table, view, procedure, …) is
-  offered on the Rename/Delete set; the server wants CONTROL on the object.
-  Needs a class-1 CONTROL answer from gosmo. § Permission gating
+  offered on the Rename/Delete set; the server wants CONTROL on the object. The
+  class-1 CONTROL answer now exists (`rightControlOnObject`, used by the
+  queue); extending it to the other five is a scope call. § Permission gating
 
 ### Verification gaps
 
@@ -1377,6 +1436,11 @@ when the underlying issue is fixed.
 - **V5** — CLR type, assembly and external-resource scripts have never been
   executed against a server, and the external library right set was never run
   live (no Machine Learning Services). § Deferred scope, § Permission gating
+- **V7** — The withheld `Script Remote Service Binding as ▸ CREATE` has never
+  been seen greyed out against a real MI connection: a binding cannot be
+  created there, so no such node exists to right-click. The rest of the
+  subtree, folders and both Properties writes, was driven on MI on 2026-09-17.
+  § Deferred scope
 - **V6** — Entra: Managed Identity (needs an Azure-hosted machine). Every
   other method, `CREATE LOGIN ... FROM EXTERNAL PROVIDER`, and token renewal
   past its lifetime (2026-09-11) are driven on MI. § Azure SQL Managed

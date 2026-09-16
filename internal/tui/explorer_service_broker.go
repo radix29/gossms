@@ -175,11 +175,12 @@ func loadBrokerPrioritiesChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 // (explorer_loaders.go). Each opens its family's Properties; five of them are
 // read-only pages, and the queue's and the route's can write.
 //
-// Nothing beyond Properties in this pass — no Delete, no Script as, no Rename
-// and no Move to Schema, which are Stage E of
-// docs/plan-phase3-service-broker.md. The rights those verbs will take are
-// already declared (dbScopedOpRights, queueDropRights); the menu items are
-// not.
+// Each is Properties only here because the rest of the menu is spliced in
+// from the shared tables rather than named per family: Delete comes from
+// objectOps, Script as from scriptables, and Move to Schema — queues only,
+// the one schema-scoped family — from the same objectOp's transfer. There are
+// no renames at all in this subtree: no sp_rename class exists for any of the
+// seven.
 //
 // There is no Enable/Disable item for a queue, deliberately: a queue's status
 // is a row on its Properties page, which is one place rather than two. A plan

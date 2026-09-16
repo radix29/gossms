@@ -320,6 +320,14 @@ var (
 	// every database- and schema-scope permission there is.
 	rightAlterOnObject = requiredRight{name: "ALTER", db: true, object: true}
 
+	// rightControlOnObject is CONTROL on one object, and it is not
+	// rightAlterOnObject with a wider name: gosmo's object block matches
+	// CONTROL alongside whatever permission it asks about, so the ALTER map
+	// answers 1 for a principal holding either and cannot tell them apart.
+	// The CONTROL map is the one that can, and the one statement that needs
+	// the distinction is ALTER SCHEMA ... TRANSFER — see queueTransferRights.
+	rightControlOnObject = requiredRight{name: "CONTROL", db: true, object: true}
+
 	// CONTROL on one assembly, type or XML schema collection: what its owner
 	// holds implicitly, and what CONTROL on — or ownership of — its schema, or
 	// CONTROL on the database, confers. Probed live 2026-09-11 on majors 13, 14
@@ -1044,17 +1052,42 @@ func queueAlterRights() []requiredRight { return objectWriteRights() }
 // found: ALTER ON OBJECT::<queue> alters the queue and is refused the drop
 // (Msg 15151), which needs CONTROL on the queue or ALTER on its schema.
 //
-// The consequence, deliberately accepted: a principal whose only right is
-// CONTROL on the queue, or who owns it, is not offered the Delete the server
-// would allow. gosmo's object block matches CONTROL alongside the ALTER it
-// asks about and records both under the one permission name, so the map cannot
-// tell a CONTROL grant from an ALTER grant — keeping rightAlterOnObject here
-// would instead offer the drop to every principal holding only ALTER, which
-// the server refuses. Recorded in docs/open-threads.md § Permission gating.
+// CONTROL on the queue is in the set and the object-scoped ALTER is not, which
+// is the distinction rightControlOnObject exists to make: gosmo's object block
+// matches CONTROL alongside whatever permission it asks about, so the ALTER map
+// reads 1 for a principal holding either and putting rightAlterOnObject here
+// would offer the drop to every ALTER holder the server refuses. The CONTROL
+// map answers only for a CONTROL grant and for the queue's owner, both of whom
+// the server does allow.
 func queueDropRights() []requiredRight {
 	return []requiredRight{
 		rightAlterDatabase, rightControlDB, rightAlterAnySchema, rightAlterOnSchema,
+		rightControlOnObject,
 	}
+}
+
+// queueTransferRights are what permits Move to Schema on a queue, and they
+// are neither of the queue's other two sets: ALTER SCHEMA ... TRANSFER wants
+// CONTROL on the object, which no amount of ALTER substitutes for.
+//
+// Probed live 2026-09-16 on major 17 with a WITHOUT LOGIN user per right,
+// ALTER on the target schema held throughout: CONTROL on the queue, owning the
+// queue, CONTROL on the source schema and CONTROL on the database each
+// transferred it, while ALTER on the queue, ALTER on the source schema,
+// ALTER ANY SCHEMA, db_ddladmin and ALTER on the database were every one
+// refused Msg 15151 — the same split securableTransferRights found for a type
+// and an XML schema collection.
+//
+// Two of the four permitting rights are missing from the set, deliberately.
+// CONTROL on the source schema reads through gosmo's schema probe as ALTER,
+// which ALTER alone also reads, so asking for it would offer the move to the
+// principals the server refuses; and the queue's own CONTROL covers its owner
+// already, since the object block records an owned object under every name it
+// probes. The consequence is the same one queueDropRights accepts: a principal
+// holding only CONTROL on the schema is not offered a move the server would
+// allow. Recorded in docs/open-threads.md § Permission gating.
+func queueTransferRights() []requiredRight {
+	return []requiredRight{rightControlOnObject, rightControlDB}
 }
 
 // agentWriteRights are what permits SQL Agent's New Job / New Schedule /

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -45,6 +47,33 @@ func editionNote(sc *db.ServerConn) string {
 		return ""
 	}
 	return "N/A"
+}
+
+// azureRefusedScriptVerbs names the Script as ▸ verbs whose generated text
+// contains a statement an Azure engine edition refuses to *compile*, keyed by
+// the node type that offers them.
+//
+// CREATE REMOTE SERVICE BINDING is the only one. Probed live on t-qmi-01
+// (EngineEdition 8) on 2026-09-16: it comes back Msg 41906, "not supported in
+// SQL Database Managed Instance", and the refusal aborts the whole batch
+// before any statement in it runs — so it is withheld rather than sent to be
+// refused. ALTER and DROP REMOTE SERVICE BINDING are *not* refused there, and
+// neither is the catalog view, which is why the family ships on MI with only
+// these two verbs missing.
+//
+// Both verbs that emit the CREATE are named: DROP And CREATE carries it too,
+// and the DROP half succeeding first would leave the binding gone and the
+// script half-run if this were treated as a runtime error.
+var azureRefusedScriptVerbs = map[NodeType][]string{
+	NodeRemoteServiceBinding: {"CREATE To", "DROP And CREATE To"},
+}
+
+// editionRefusesScriptVerb reports whether one Script as ▸ verb emits a
+// statement an Azure engine edition refuses. The connection is not consulted
+// here — scriptMenuItems asks gateAzure that, so the note and the disabling
+// stay in one place.
+func editionRefusesScriptVerb(t NodeType, label string) bool {
+	return slices.Contains(azureRefusedScriptVerbs[t], label)
 }
 
 // gateAzure disables item when the connected instance is an Azure engine

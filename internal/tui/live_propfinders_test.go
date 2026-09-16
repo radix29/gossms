@@ -52,6 +52,10 @@ func livePropConn(t *testing.T) (*db.ServerConn, context.Context) {
 	}
 	user, pass, _ := strings.Cut(creds, ":")
 	host, _, _ := strings.Cut(hostAndQuery, "?")
+	// A named instance is a path segment in the DSN (host/SQL2016) — the only
+	// spelling the driver's URL parser accepts — and a backslash in the
+	// Server field the app connects with.
+	host = strings.ReplaceAll(host, "/", `\`)
 
 	sc, err := db.Connect(config.Connection{
 		Server:                 host,

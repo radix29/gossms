@@ -65,17 +65,36 @@ shipped.
   its schema — so `queueAlterRights` gates its Properties page and
   `queueDropRights` its Delete, and neither is reused for the other verb. Ask
   the question per *verb* when probing, not per family; one entry shared
-  between two verbs is wrong in one direction whichever way it is written. What
-  that costs here, and why it is not fixable inside gosmo's object map, is in
-  `docs/open-threads.md` § Permission gating.
+  between two verbs is wrong in one direction whichever way it is written. The
+  queue takes a *third* set for Move to Schema (`queueTransferRights`), which
+  is CONTROL on the queue and nothing else the ALTER map can answer for.
+
+- **`rightAlterOnObject` means "ALTER *or* CONTROL"; `rightControlOnObject`
+  means CONTROL.** gosmo's object block matches `CONTROL` alongside whatever
+  permission name it is given, so the `O:ALTER` map reads 1 for a principal
+  holding either — right for a rename or a drop, which ALTER alone permits, and
+  wrong for `ALTER SCHEMA ... TRANSFER`, which ALTER alone is refused. The
+  `O:CONTROL` map answers only for a CONTROL grant and for the object's owner.
+  Gate a transfer, or anything else the server wants CONTROL for, on
+  `rightControlOnObject`, never on the ALTER one.
+
+- **A transfer or an ownership change deletes the object's explicit
+  permissions.** This is a live-probing trap, not a gossms one: a probe script
+  that grants `CONTROL ON OBJECT::x` to several users and then transfers x
+  between schemas once finds every later grantee refused, which reads exactly
+  like "CONTROL does not permit this" — it cost a wrong answer for the queue's
+  Move to Schema on 2026-09-16. Recreate the object, or re-grant, between
+  cases.
 
 - **Move to Schema is not asked with the Rename/Delete set.** `ALTER SCHEMA ...
   TRANSFER` needs CONTROL on the securable itself; ALTER on the database,
   db_ddladmin, ALTER ANY SCHEMA and ALTER on the source schema all permit the
   drop and are all refused the move (Msg 15151, probed on 13, 14 and 17).
-  Types and XML schema collections ask gosmo's per-securable CONTROL alone
-  (`securableTransferRights`); every sys.objects family still asks the wrong
-  set — see `docs/open-threads.md` § Permission gating.
+  Types and XML schema collections ask gosmo's per-securable CONTROL alone,
+  and a Service Broker queue — a class-1 object — asks the object map's CONTROL
+  (`securableTransferRights`, `queueTransferRights`); the other sys.objects
+  families still ask the wrong set — see `docs/open-threads.md`
+  § Permission gating.
 
 - **"The edition does not implement this" is a different question from "the
   login may not do this", and it has its own file — `edition_gate.go`.** It
@@ -89,6 +108,18 @@ shipped.
   so withholding New Database would withhold something that works. The note
   names the engine edition, never "Azure", so it stays true on SQL Database and
   SQL Edge as well as Managed Instance.
+
+- **An edition's refusal is worth gating only when it is a *compile-time*
+  one.** `CREATE REMOTE SERVICE BINDING` on MI is Msg 41906 and aborts the
+  whole batch before any statement in it runs, so the script it belongs to
+  cannot be allowed to reach the server at all — hence the entry in
+  `azureRefusedScriptVerbs`. `CREATE`/`ALTER ROUTE` with `ADDRESS = 'TRANSPORT'`
+  or a `MIRROR_ADDRESS` on the same instance is Msg 41943 and is a *runtime*
+  refusal: statements before it in the batch have already run, the ones after
+  it do not. A runtime refusal reaches the user as the server's own message,
+  which is the outcome the gate would have produced anyway — gate it only if
+  something else in the same batch must survive. Both were probed on
+  `t-qmi-01`, 2026-09-16 and 2026-09-17.
 
 ## T-SQL and filters
 

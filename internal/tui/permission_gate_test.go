@@ -1158,6 +1158,8 @@ var databaseScopedOpTypes = []NodeType{
 	NodeXmlSchemaCollection, NodeRule, NodeDefault, NodeAssembly,
 	NodePlanGuide, NodeExternalDataSource, NodeExternalFileFormat,
 	NodeExternalLibrary,
+	NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
+	NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority,
 }
 
 // TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review
@@ -1199,6 +1201,9 @@ var schemaScopedOpTypes = []NodeType{
 	NodeForeignKey, NodeCheck, NodeSecurityPolicy, NodeUserDefinedDataType,
 	NodeUserDefinedTableType, NodeUserDefinedType, NodeXmlSchemaCollection,
 	NodeRule, NodeDefault,
+	// The queue is the one Service Broker family with a schema; the other six
+	// are schemaless and are held to an explicit entry by the test below.
+	NodeBrokerQueue,
 }
 
 // TestSchemalessDatabaseOpsAreGated is TestServerScopedOpsAreGated one scope

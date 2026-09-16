@@ -463,6 +463,13 @@ func TestEveryObjectOpNounPluralises(t *testing.T) {
 		"External Data Source":         "External Data Sources",
 		"External File Format":         "External File Formats",
 		"External Library":             "External Libraries",
+		"Message Type":                 "Message Types",
+		"Contract":                     "Contracts",
+		"Queue":                        "Queues",
+		"Service":                      "Services",
+		"Route":                        "Routes",
+		"Remote Service Binding":       "Remote Service Bindings",
+		"Broker Priority":              "Broker Priorities",
 	}
 	for _, op := range objectOps {
 		w, ok := want[op.noun]

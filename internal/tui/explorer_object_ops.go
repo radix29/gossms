@@ -376,6 +376,74 @@ var objectOps = map[NodeType]objectOp{
 		},
 	},
 
+	// The seven Service Broker families. None of them has a rename: there is
+	// no sp_rename class for any of these, and the one ALTER that could carry
+	// a name change (ALTER SERVICE) renames nothing. Only the queue has a
+	// schema to be moved between.
+	//
+	// Every warning here says the drop is refused and leaves the naming of the
+	// blocker to the server, which names it in Msg 3716 ("The message type 'x'
+	// cannot be dropped because it is bound to one or more contract."). A
+	// pre-check would be a second copy of a dependency graph the server
+	// already walks, and ALTER on the database does not override the refusal.
+	NodeMessageType: {
+		noun:    "Message Type",
+		warning: "The drop is refused while a contract names it — the server's error says so.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropMessageTypeContext(ctx, n.Name)
+		},
+	},
+	NodeContract: {
+		noun:    "Contract",
+		warning: "The drop is refused while a service or a conversation priority names it — the server's error says so.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropContractContext(ctx, n.Name)
+		},
+	},
+	NodeBrokerQueue: {
+		noun: "Queue",
+		// The one drop in this set that destroys data: messages still sitting
+		// in the queue go with it, and nothing on screen holds them.
+		warning: "Messages still in the queue are deleted with it, and the drop is refused while a service is bound to it.",
+		drop:    dropIn((*gosmo.Database).DropBrokerQueueContext),
+		// The one schema-scoped family here, so the only one with a Move to
+		// Schema — and its right is neither of the queue's other two: see
+		// queueTransferRights.
+		transfer: transferObjectIn,
+	},
+	NodeBrokerService: {
+		noun:    "Service",
+		warning: "Conversations addressed to it stop being delivered, and the drop is refused while a route or a conversation priority names it.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropBrokerServiceContext(ctx, n.Name)
+		},
+	},
+	NodeRoute: {
+		noun: "Route",
+		// AutoCreatedLocal is an ordinary user route here — sys.routes has no
+		// system flag, so the tree marks none of them system and this Delete
+		// is offered on it like any other. That matches SSMS, and dropping it
+		// is a legitimate thing to do.
+		warning: "Messages for the services it addresses stop being routed.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropRouteContext(ctx, n.Name)
+		},
+	},
+	NodeRemoteServiceBinding: {
+		noun:    "Remote Service Binding",
+		warning: "Conversations with the remote service lose their security binding.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropRemoteServiceBindingContext(ctx, n.Name)
+		},
+	},
+	NodeBrokerPriority: {
+		noun:    "Broker Priority",
+		warning: "Conversations it applies to fall back to the default priority of 5.",
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).DropBrokerPriorityContext(ctx, n.Name)
+		},
+	},
+
 	NodeLogin: {
 		noun:    "Login",
 		warning: "Database users mapped to it are left orphaned.",
@@ -862,8 +930,10 @@ func securableWriteRights(own requiredRight) []requiredRight {
 	}
 }
 
-// securableTransferRights is Move to Schema's right set for the same families,
-// and it is one right. Probed live alongside securableOpRights, with ALTER on
+// securableTransferRights is Move to Schema's right set for the families whose
+// transfer takes CONTROL on the securable — securableOpRights' three, plus the
+// Service Broker queue, whose entry reads the class-1 object map instead of a
+// per-securable probe (see queueTransferRights). Probed live alongside securableOpRights, with ALTER on
 // the target schema held throughout: the transfer went through under CONTROL
 // on the securable, its ownership, CONTROL on or ownership of the source
 // schema, and CONTROL on the database — each of which gosmo's per-securable
@@ -872,6 +942,10 @@ func securableWriteRights(own requiredRight) []requiredRight {
 // one of which permits the drop. Offering it on the Delete set offered a move
 // to exactly the principals the server refuses it.
 var securableTransferRights = map[NodeType][]requiredRight{
+	// A queue is a class-1 object, not a class-6 or class-10 securable, so its
+	// entry reads the object map rather than a per-securable probe — the split
+	// the server makes is the same one. See queueTransferRights.
+	NodeBrokerQueue:          queueTransferRights(),
 	NodeUserDefinedDataType:  {rightControlOnType},
 	NodeUserDefinedTableType: {rightControlOnType},
 	NodeUserDefinedType:      {rightControlOnType},

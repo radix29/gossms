@@ -158,6 +158,31 @@ var (
 		return s.ScriptExternalLibraryContext(ctx, n.Name)
 	}
 
+	// The seven Service Broker families. Six are database-scoped and named by
+	// one name; the queue is the only schema-scoped one, and the only one
+	// whose script method takes a schema.
+	scriptMessageType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptMessageTypeContext(ctx, n.Name)
+	}
+	scriptContract scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptContractContext(ctx, n.Name)
+	}
+	scriptBrokerQueue scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptBrokerQueueContext(ctx, n.Schema, n.Name)
+	}
+	scriptBrokerService scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptBrokerServiceContext(ctx, n.Name)
+	}
+	scriptRoute scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptRouteContext(ctx, n.Name)
+	}
+	scriptRemoteServiceBinding scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptRemoteServiceBindingContext(ctx, n.Name)
+	}
+	scriptBrokerPriority scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptBrokerPriorityContext(ctx, n.Name)
+	}
+
 	scriptLogin serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptLoginContext(ctx, n.Name)
 	}
@@ -251,6 +276,20 @@ var scriptables = map[NodeType]scriptable{
 	NodeExternalDataSource: {"External Data Source", ddlVerbs(scriptExternalDataSource, false)},
 	NodeExternalFileFormat: {"External File Format", ddlVerbs(scriptExternalFileFormat, false)},
 	NodeExternalLibrary:    {"External Library", ddlVerbs(scriptExternalLibrary, false)},
+
+	// Service Broker. CREATE and DROP only, with no ALTER even for the six
+	// families that have one — the same choice the rest of the tree makes, and
+	// the queue's ALTER lives on its Properties page instead.
+	NodeMessageType:   {"Message Type", ddlVerbs(scriptMessageType, false)},
+	NodeContract:      {"Contract", ddlVerbs(scriptContract, false)},
+	NodeBrokerQueue:   {"Queue", ddlVerbs(scriptBrokerQueue, false)},
+	NodeBrokerService: {"Service", ddlVerbs(scriptBrokerService, false)},
+	NodeRoute:         {"Route", ddlVerbs(scriptRoute, false)},
+	// The one family whose CREATE an Azure engine edition refuses outright —
+	// see editionRefusesScriptVerb, which withholds the two verbs that emit
+	// it rather than letting Msg 41906 come back from the server.
+	NodeRemoteServiceBinding: {"Remote Service Binding", ddlVerbs(scriptRemoteServiceBinding, false)},
+	NodeBrokerPriority:       {"Broker Priority", ddlVerbs(scriptBrokerPriority, false)},
 
 	NodeLogin:                    {"Login", serverDDLVerbs(scriptLogin)},
 	NodeServerRole:               {"Server Role", serverDDLVerbs(scriptServerRole)},
@@ -401,7 +440,11 @@ func (a *App) scriptMenuItems(node *explorerNode) []controls.MenuItem {
 	sc := resolveConn(node)
 	verbs := make([]controls.MenuItem, 0, len(s.verbs))
 	for _, v := range s.verbs {
-		verbs = append(verbs, controls.MenuItem{Label: v.label, Sub: a.scriptDestinations(sc, node.data, v)})
+		item := controls.MenuItem{Label: v.label, Sub: a.scriptDestinations(sc, node.data, v)}
+		if editionRefusesScriptVerb(node.data.Type, v.label) {
+			item = gateAzure(item, sc)
+		}
+		verbs = append(verbs, item)
 	}
 	return []controls.MenuItem{{Label: "Script " + s.noun + " as", Sub: verbs}}
 }
