@@ -261,6 +261,41 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   *login* may do, and a read-only database is not a permission — a third gate
   for it would have to cover every READ_ONLY database, not just snapshots. SSMS
   behaves the same way.
+- **Open: Service Broker Stages A and B have landed; the seven leaves are
+  still read-only placeholders.** `docs/plan-phase3-service-broker.md` § Stage A
+  is done —
+  `service_broker.go`, `service_broker_queue.go`, `service_broker_routing.go`
+  and `scripter_service_broker.go` give all seven families a listing, a
+  `…ByNameContext` finder, a `Drop…Context` and a CREATE/DROP script, plus the
+  two DMV reads (`QueueMessageCounts`, `QueueMonitors`) and the two writes
+  Stage C needs: `AlterBrokerQueue`/`BrokerQueue.Alter` and
+  `AlterRoute`/`Route.Alter`. Verified live on majors 13, 14 and 17 by
+  `live_service_broker_test.go` and by the extended version sweep.
+
+  § Stage B is done too: the Service Broker folder sits between Query Store and
+  Security, all fourteen node types are wired (icons in both switches, names,
+  loaders, `filterProps`), and the folder is listed whether or not the broker
+  is enabled — verified live on majors 13 and 17, including the empty-folder
+  case (`master`'s Remote Service Bindings and Broker Priorities expand to
+  nothing rather than to an error) and `msdb`'s Database Mail asymmetry.
+
+  **What Stage B deliberately leaves behind:** none of the seven leaves has a
+  `nodeMenus` entry, so each gets New Query + Refresh and nothing else. There
+  is no Properties dialog (Stage C), no permission gating (Stage D) and no
+  Delete, Script as, Rename or Move to Schema (Stage E) on any of them. A leaf
+  is therefore visible and selectable but does nothing yet — an intentional
+  half-state, not missing wiring. The Detail Browser shows a folder's rows
+  through its generic path only; the per-family columns are Stage C.
+
+  Three things about the two writes that a Properties page has to respect:
+  a nil field means "leave this setting alone", so the page sends only what
+  changed; `QueueSettings.Activation` is restated in full, because the server
+  refuses a partial ACTIVATION block on a queue that has none; and
+  **`RouteSettings` can change a setting but never clear one** — `= NULL` does
+  not parse, an empty value is refused, and a route that must lose its broker
+  instance, mirror address or lifetime is dropped and created again. A Route
+  Properties page therefore cannot offer "clear this field".
+
 - **System Data Types has no Properties dialog.** SSMS offers none either, and
   there is nothing to show about `int` that its name does not already say. The
   folder and its Detail Browser listing exist; the context menu deliberately

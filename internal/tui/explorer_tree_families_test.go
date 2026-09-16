@@ -11,9 +11,11 @@ import (
 	"github.com/radix29/gossms/internal/db"
 )
 
-// The Object Explorer wiring for the eight families Phase 3 added — Types
-// (five sub-folders), Assemblies, Rules, Defaults, Plan Guides and External
-// Resources (three sub-folders). Same per-family checklist
+// The Object Explorer wiring for the families Phase 3 added — Types
+// (five sub-folders), Assemblies, Rules, Defaults, Plan Guides, External
+// Resources (three sub-folders) and Service Broker (seven sub-folders, whose
+// placement and loaders are in explorer_service_broker_test.go). Same
+// per-family checklist
 // explorer_database_scoped_credentials_test.go runs, applied to a batch:
 // a family added to the tree but missed in one of the five touch points
 // reaches the user as a folder with no icon, no children, or a Filter menu
@@ -414,6 +416,9 @@ var newFamilyFolders = []NodeType{
 	NodeAssemblies, NodeRules, NodeDefaults, NodePlanGuides,
 	NodeExternalResources, NodeExternalDataSources, NodeExternalFileFormats,
 	NodeExternalLibraries,
+	NodeServiceBroker, NodeMessageTypes, NodeContracts, NodeBrokerQueues,
+	NodeBrokerServices, NodeRoutes, NodeRemoteServiceBindings,
+	NodeBrokerPriorities,
 }
 
 // newFamilyLeaves is every leaf type the phase added.
@@ -422,6 +427,8 @@ var newFamilyLeaves = []NodeType{
 	NodeUserDefinedType, NodeXmlSchemaCollection,
 	NodeAssembly, NodeRule, NodeDefault, NodePlanGuide,
 	NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary,
+	NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
+	NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority,
 }
 
 func TestNewFamilyFoldersAreWired(t *testing.T) {
@@ -492,6 +499,13 @@ func TestNewFamilyLeavesAreNamed(t *testing.T) {
 		NodeExternalDataSource:   "External Data Source",
 		NodeExternalFileFormat:   "External File Format",
 		NodeExternalLibrary:      "External Library",
+		NodeMessageType:          "Message Type",
+		NodeContract:             "Contract",
+		NodeBrokerQueue:          "Queue",
+		NodeBrokerService:        "Service",
+		NodeRoute:                "Route",
+		NodeRemoteServiceBinding: "Remote Service Binding",
+		NodeBrokerPriority:       "Broker Priority",
 	}
 	for _, nt := range newFamilyLeaves {
 		if got := nodeTypeName(nt); got != want[nt] {
@@ -501,11 +515,11 @@ func TestNewFamilyLeavesAreNamed(t *testing.T) {
 }
 
 // Every folder that lists objects needs filter properties, or its Filter menu
-// item silently offers nothing. Types and External Resources are folders of
-// folders and are deliberately not on this list.
+// item silently offers nothing. Types, External Resources and Service Broker
+// are folders of folders and are deliberately not on this list.
 func TestNewFamilyFoldersAreFilterable(t *testing.T) {
 	for _, nt := range newFamilyFolders {
-		if nt == NodeTypes || nt == NodeExternalResources {
+		if nt == NodeTypes || nt == NodeExternalResources || nt == NodeServiceBroker {
 			if len(filterProps(nt)) != 0 {
 				t.Errorf("%v is a folder of folders and declares filter properties", nt)
 			}

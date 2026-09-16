@@ -180,6 +180,7 @@ func loadDatabaseChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 		l.node("External Resources", NodeExternalResources, "", "", dbName),
 		l.node("Programmability", NodeProgrammability, "", "", dbName),
 		l.node("Query Store", NodeQueryStore, "", "", dbName),
+		l.node("Service Broker", NodeServiceBroker, "", "", dbName),
 		l.node("Security", NodeDatabaseSecurity, "", "", dbName),
 		l.node("Storage", NodeStorage, "", "", dbName),
 	}, nil

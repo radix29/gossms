@@ -143,6 +143,21 @@ const (
 	NodeDefault
 	NodePlanGuides
 	NodePlanGuide
+	NodeServiceBroker
+	NodeMessageTypes
+	NodeMessageType
+	NodeContracts
+	NodeContract
+	NodeBrokerQueues
+	NodeBrokerQueue
+	NodeBrokerServices
+	NodeBrokerService
+	NodeRoutes
+	NodeRoute
+	NodeRemoteServiceBindings
+	NodeRemoteServiceBinding
+	NodeBrokerPriorities
+	NodeBrokerPriority
 	NodeExternalResources
 	NodeExternalDataSources
 	NodeExternalDataSource
@@ -244,6 +259,9 @@ func isContainerNode(t NodeType) bool {
 		NodeTypes, NodeSystemDataTypes, NodeUserDefinedDataTypes,
 		NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXmlSchemaCollections,
 		NodeAssemblies, NodeRules, NodeDefaults, NodePlanGuides,
+		NodeServiceBroker, NodeMessageTypes, NodeContracts, NodeBrokerQueues,
+		NodeBrokerServices, NodeRoutes, NodeRemoteServiceBindings,
+		NodeBrokerPriorities,
 		NodeExternalResources, NodeExternalDataSources, NodeExternalFileFormats,
 		NodeExternalLibraries,
 		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
@@ -379,6 +397,20 @@ func objectIconEmoji(t NodeType) rune {
 		return '🧷'
 	case NodePlanGuide:
 		return '🧭'
+	case NodeMessageType:
+		return '✉'
+	case NodeContract:
+		return '🤝'
+	case NodeBrokerQueue:
+		return '📥'
+	case NodeBrokerService:
+		return '🛎'
+	case NodeRoute:
+		return '🛣'
+	case NodeRemoteServiceBinding:
+		return '🪢'
+	case NodeBrokerPriority:
+		return '🎚'
 	case NodeExternalDataSource:
 		return '🌐'
 	case NodeExternalFileFormat:
@@ -502,6 +534,20 @@ func objectIconSymbols(t NodeType) rune {
 		return '⊔'
 	case NodePlanGuide:
 		return '⊚'
+	case NodeMessageType:
+		return '✉'
+	case NodeContract:
+		return '⋈'
+	case NodeBrokerQueue:
+		return '⊐'
+	case NodeBrokerService:
+		return '⊕'
+	case NodeRoute:
+		return '⇉'
+	case NodeRemoteServiceBinding:
+		return '⊶'
+	case NodeBrokerPriority:
+		return '⇕'
 	case NodeExternalDataSource:
 		return '⊙'
 	case NodeExternalFileFormat:
@@ -623,6 +669,20 @@ func nodeTypeName(t NodeType) string {
 		return "Default"
 	case NodePlanGuide:
 		return "Plan Guide"
+	case NodeMessageType:
+		return "Message Type"
+	case NodeContract:
+		return "Contract"
+	case NodeBrokerQueue:
+		return "Queue"
+	case NodeBrokerService:
+		return "Service"
+	case NodeRoute:
+		return "Route"
+	case NodeRemoteServiceBinding:
+		return "Remote Service Binding"
+	case NodeBrokerPriority:
+		return "Broker Priority"
 	case NodeExternalDataSource:
 		return "External Data Source"
 	case NodeExternalFileFormat:
@@ -646,6 +706,8 @@ func hasChildren(t NodeType) bool {
 		NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
 		NodeUserDefinedType, NodeXmlSchemaCollection,
 		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide,
+		NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
+		NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority,
 		NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary,
 		NodeIndex, NodeTrigger, NodeKey, NodeStatistic,
 		NodeStoredProcedure, NodeFunction, NodeAgentJob, NodeLinkedServer,

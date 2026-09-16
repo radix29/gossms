@@ -38,7 +38,7 @@ func TestStaticLoadersPropagateDBName(t *testing.T) {
 		t.Fatalf("loadDatabaseChildren: %v", err)
 	}
 	wantLabels := []string{"Tables", "Views", "External Resources", "Programmability",
-		"Query Store", "Security", "Storage"}
+		"Query Store", "Service Broker", "Security", "Storage"}
 	if len(children) != len(wantLabels) {
 		t.Fatalf("got %d children, want %d", len(children), len(wantLabels))
 	}

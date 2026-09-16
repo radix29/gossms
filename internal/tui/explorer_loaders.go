@@ -101,6 +101,15 @@ var childLoaders = map[NodeType]childLoader{
 	NodeDefaults:              loadDefaultsChildren,
 	NodePlanGuides:            loadPlanGuidesChildren,
 
+	NodeServiceBroker:         loadServiceBrokerChildren,
+	NodeMessageTypes:          loadMessageTypesChildren,
+	NodeContracts:             loadContractsChildren,
+	NodeBrokerQueues:          loadBrokerQueuesChildren,
+	NodeBrokerServices:        loadBrokerServicesChildren,
+	NodeRoutes:                loadRoutesChildren,
+	NodeRemoteServiceBindings: loadRemoteServiceBindingsChildren,
+	NodeBrokerPriorities:      loadBrokerPrioritiesChildren,
+
 	NodeExternalResources:   loadExternalResourcesChildren,
 	NodeExternalDataSources: loadExternalDataSourcesChildren,
 	NodeExternalFileFormats: loadExternalFileFormatsChildren,

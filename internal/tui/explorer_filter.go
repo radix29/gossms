@@ -132,6 +132,16 @@ func filterProps(t NodeType) []filterProp {
 	case NodeSystemDataTypes, NodeExternalDataSources, NodeExternalFileFormats,
 		NodeExternalLibraries:
 		return []filterProp{name}
+	// The six schemaless Service Broker families. None of their catalog views
+	// records a creation date, so none offers one — the criterion would match
+	// on a zero time and reject every row.
+	case NodeMessageTypes, NodeContracts, NodeBrokerServices, NodeRoutes,
+		NodeRemoteServiceBindings, NodeBrokerPriorities:
+		return []filterProp{name}
+	// Queues are the one schema-scoped Service Broker family: a sys.objects
+	// row of type 'SQ'.
+	case NodeBrokerQueues:
+		return []filterProp{name, schema}
 	case NodeDatabases, NodeSystemDatabases, NodeDatabaseSnapshots, NodeLogins:
 		return []filterProp{name, created}
 	// A Triggers folder hangs under one table or view, so every row in it
