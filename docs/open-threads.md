@@ -199,6 +199,26 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 
 ## Deferred scope (repeatedly, deliberately)
 
+- **Five of the seven Service Broker families ship read-only, and it is a
+  deferral, not the Rules/Defaults refusal.** Six of the seven *do* have an
+  ALTER, so the argument that withheld editing from rules, defaults, types and
+  assemblies — no ALTER means an editor is a drop-and-recreate — does not apply
+  here. Each is withheld for its own reason, argued in its props file: a
+  message type's and a service's ALTER changes a running application's wire
+  contract (the validation a conversation is measured against, or the queue its
+  messages arrive on) rather than a setting; a contract has no ALTER at all; a
+  binding's ALTER names a user that must already own the remote service's
+  certificate, which is a key-management step this build has no page for; and a
+  broker priority's write cannot be gated on any right the server publishes —
+  only ALTER on the database, which would show a read-only banner to every
+  principal who can in fact perform it. Queue and Route are editable because
+  their settings change in operation: a queue taken out of service, a stuck
+  activation procedure, a route repointed at a new address.
+  There are also no New-X dialogs for any of the seven: each object needs the
+  others to exist first, and a service or a contract is authored with its
+  application rather than clicked together. This is the standing answer to "why
+  can't I create a contract?".
+
 - **Changing a login's authentication kind in Login Properties.** New Login
   creates all five kinds (SQL, Windows, Entra, certificate- and
   asymmetric-key-mapped) and the Connect dialog offers the Windows and Entra
@@ -261,40 +281,58 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   *login* may do, and a read-only database is not a permission — a third gate
   for it would have to cover every READ_ONLY database, not just snapshots. SSMS
   behaves the same way.
-- **Open: Service Broker Stages A and B have landed; the seven leaves are
-  still read-only placeholders.** `docs/plan-phase3-service-broker.md` § Stage A
-  is done —
+- **Open: Service Broker Stages A–D have landed; Stage E — the object ops —
+  is what remains.** `docs/plan-phase3-service-broker.md` § Stage A is done:
   `service_broker.go`, `service_broker_queue.go`, `service_broker_routing.go`
   and `scripter_service_broker.go` give all seven families a listing, a
   `…ByNameContext` finder, a `Drop…Context` and a CREATE/DROP script, plus the
   two DMV reads (`QueueMessageCounts`, `QueueMonitors`) and the two writes
-  Stage C needs: `AlterBrokerQueue`/`BrokerQueue.Alter` and
+  Stage C uses: `AlterBrokerQueue`/`BrokerQueue.Alter` and
   `AlterRoute`/`Route.Alter`. Verified live on majors 13, 14 and 17 by
   `live_service_broker_test.go` and by the extended version sweep.
 
-  § Stage B is done too: the Service Broker folder sits between Query Store and
+  § Stage B is done: the Service Broker folder sits between Query Store and
   Security, all fourteen node types are wired (icons in both switches, names,
   loaders, `filterProps`), and the folder is listed whether or not the broker
   is enabled — verified live on majors 13 and 17, including the empty-folder
   case (`master`'s Remote Service Bindings and Broker Priorities expand to
   nothing rather than to an error) and `msdb`'s Database Mail asymmetry.
 
-  **What Stage B deliberately leaves behind:** none of the seven leaves has a
-  `nodeMenus` entry, so each gets New Query + Refresh and nothing else. There
-  is no Properties dialog (Stage C), no permission gating (Stage D) and no
-  Delete, Script as, Rename or Move to Schema (Stage E) on any of them. A leaf
-  is therefore visible and selectable but does nothing yet — an intentional
-  half-state, not missing wiring. The Detail Browser shows a folder's rows
-  through its generic path only; the per-family columns are Stage C.
+  § Stage C is done: `detail_browser_service_broker.go` gives every folder its
+  own columns and every leaf its own Property/Value view, and each of the seven
+  leaves has a Properties dialog reached from a `nodeMenus` entry. Five are
+  read-only (`message_type_props.go`, `contract_props.go`, `service_props.go`,
+  `remote_service_binding_props.go`, `broker_priority_props.go`) and are named
+  in `pagesThatOnlyRead`; Queue and Route write — see § Deferred scope for why
+  the other five do not.
 
-  Three things about the two writes that a Properties page has to respect:
-  a nil field means "leave this setting alone", so the page sends only what
-  changed; `QueueSettings.Activation` is restated in full, because the server
-  refuses a partial ACTIVATION block on a queue that has none; and
-  **`RouteSettings` can change a setting but never clear one** — `= NULL` does
-  not parse, an empty value is refused, and a route that must lose its broker
-  instance, mirror address or lifetime is dropped and created again. A Route
-  Properties page therefore cannot offer "clear this field".
+  § Stage D is done: the five `ALTER ANY …` rights are declared in
+  `permission_gate.go`, each family has an explicit `dbScopedOpRights` entry
+  (so none falls to `objectWriteRights()`, which asks only ALTER ANY SCHEMA for
+  a schemaless node), and the queue's two verbs are gated separately —
+  `queueAlterRights` for its Properties page, `queueDropRights` for its Delete.
+  gosmo's `ProbedDatabasePermissions` already carries all five names.
+
+  **What is left is Stage E**: `scriptables` entries, Delete, and Move to
+  Schema for queues. There are no renames at all in this family — no
+  `sp_rename` path exists for any of the seven — and no New-X dialogs; the
+  rights those verbs need are already declared and tested, the menu items are
+  not. `edition_gate.go` still has no entry for
+  `CREATE REMOTE SERVICE BINDING`, which Managed Instance refuses at compile
+  time with Msg 41906; nothing emits that statement yet, and Stage E's
+  Script as ▸ CREATE for that one family is what needs it.
+
+  Three things about the two writes that both Properties pages respect, and
+  that any later New-X dialog must: a nil field means "leave this setting
+  alone", so the page sends only what changed; `QueueSettings.Activation` is
+  restated in full, because the server refuses a partial ACTIVATION block on a
+  queue that has none — so emptying the procedure name is mapped to
+  `ACTIVATION (DROP)`, and on a queue that has no activation it is an error
+  rather than a statement; and **`RouteSettings` can change a setting but never
+  clear one** — `= NULL` does not parse, an empty value is refused, and a route
+  that must lose its broker instance, mirror address or lifetime is dropped and
+  created again. Route Properties therefore refuses an emptied row with a
+  message rather than treating it as "no change".
 
 - **System Data Types has no Properties dialog.** SSMS offers none either, and
   there is nothing to show about `int` that its name does not already say. The
@@ -302,6 +340,24 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   omits the item.
 
 ## Permission gating: what is settled — do not re-raise
+
+- **A queue's Properties and its Delete are gated on different rights, and the
+  queue's owner is knowingly withheld the Delete.** Probed live 2026-09-16 on
+  majors 13, 14 and 17, identically: `ALTER ON OBJECT::<queue>` alters the
+  queue and is *refused* the drop (Msg 15151), which needs CONTROL on the queue
+  or ALTER on its schema. So `queueAlterRights` is `objectWriteRights()` and
+  `queueDropRights` is that set minus the object-scoped ALTER — never one entry
+  for both.
+  The cost is a gate that is too tight in one case: a principal whose only
+  right is CONTROL on the queue, or who owns it, is not offered a Delete the
+  server would allow. It cannot be fixed by adding a CONTROL-on-object right,
+  because gosmo's object block matches `CONTROL` alongside the permission it
+  asks about and files both under the one name — the map cannot tell a CONTROL
+  grant from an ALTER grant. Keeping `rightAlterOnObject` in the drop set
+  instead would offer the drop to every principal holding only ALTER, which the
+  server refuses, and that is the worse of the two. Distinguishing them means
+  giving gosmo a per-permission object map; not worth it for this case alone.
+
 
 **Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** What is kept is
 the live behaviour each gate rests on; every row is a *wrong* gate if assumed

@@ -210,6 +210,14 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeDefault:              defaultObjectMenuItems,
 	NodePlanGuide:            planGuideMenuItems,
 
+	NodeMessageType:          messageTypeMenuItems,
+	NodeContract:             contractMenuItems,
+	NodeBrokerQueue:          brokerQueueMenuItems,
+	NodeBrokerService:        brokerServiceMenuItems,
+	NodeRoute:                routeMenuItems,
+	NodeRemoteServiceBinding: remoteServiceBindingMenuItems,
+	NodeBrokerPriority:       brokerPriorityMenuItems,
+
 	NodeExternalDataSource: externalDataSourceMenuItems,
 	NodeExternalFileFormat: externalFileFormatMenuItems,
 	NodeExternalLibrary:    externalLibraryMenuItems,

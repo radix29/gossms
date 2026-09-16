@@ -1102,6 +1102,61 @@ func (a *App) showPlanGuidePropertiesFor(sc *db.ServerConn, dbName, name, scopeS
 		func() []propPage { return planGuidePropPages(sc, dbName, name, scopeSchema, scopeName) })
 }
 
+// The Service Broker families' Properties. Five are read-only for the reason
+// each props file argues; Queue and Route can write — see queue_props.go and
+// route_props.go.
+
+// showMessageTypePropertiesFor opens the read-only Properties for a message
+// type.
+func (a *App) showMessageTypePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Message Type Properties", "Message type: "+name, "Database: "+dbName,
+		func() []propPage { return messageTypePropPages(sc, dbName, name) })
+}
+
+// showContractPropertiesFor opens the read-only Properties for a service
+// contract.
+func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Contract Properties", "Contract: "+name, "Database: "+dbName,
+		func() []propPage { return contractPropPages(sc, dbName, name) })
+}
+
+// showBrokerQueuePropertiesFor opens Queue Properties, whose General page
+// writes the queue's status, retention, poison-message handling and
+// activation.
+func (a *App) showBrokerQueuePropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+	a.propDialog.show(sc, dbName, "Queue Properties", "Queue: "+fqn(schema, name), "Database: "+dbName,
+		func() []propPage { return brokerQueuePropPages(sc, dbName, schema, name) })
+}
+
+// showBrokerServicePropertiesFor opens the read-only Properties for a Service
+// Broker service.
+func (a *App) showBrokerServicePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Service Properties", "Service: "+name, "Database: "+dbName,
+		func() []propPage { return brokerServicePropPages(sc, dbName, name) })
+}
+
+// showRoutePropertiesFor opens Route Properties, whose General page writes the
+// route's destination and lifetime.
+func (a *App) showRoutePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Route Properties", "Route: "+name, "Database: "+dbName,
+		func() []propPage { return routePropPages(sc, dbName, name) })
+}
+
+// showRemoteServiceBindingPropertiesFor opens the read-only Properties for a
+// remote service binding.
+func (a *App) showRemoteServiceBindingPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Remote Service Binding Properties",
+		"Binding: "+name, "Database: "+dbName,
+		func() []propPage { return remoteServiceBindingPropPages(sc, dbName, name) })
+}
+
+// showBrokerPriorityPropertiesFor opens the read-only Properties for a
+// conversation priority.
+func (a *App) showBrokerPriorityPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Broker Priority Properties", "Priority: "+name, "Database: "+dbName,
+		func() []propPage { return brokerPriorityPropPages(sc, dbName, name) })
+}
+
 // showExternalDataSourcePropertiesFor opens the read-only Properties for an
 // external data source.
 func (a *App) showExternalDataSourcePropertiesFor(sc *db.ServerConn, dbName, name string) {

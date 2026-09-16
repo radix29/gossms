@@ -275,6 +275,31 @@ var (
 	// gates nothing that exists: that version has no external libraries.
 	rightAlterAnyExtLibrary = requiredRight{name: "ALTER ANY EXTERNAL LIBRARY", role: "db_ddladmin", db: true}
 
+	// The five Service Broker rights. Each is enough on its own to ALTER and
+	// to DROP its family — probed live 2026-09-16 with a WITHOUT LOGIN user
+	// per right on majors 13, 14 and 17, which answered identically, line for
+	// line — and a right from one family confers nothing on another
+	// (ALTER ANY MESSAGE TYPE cannot alter a route, Msg 15151).
+	//
+	// The role is db_owner rather than a narrower one because no narrower one
+	// was probed to carry them on every supported major, and a right's role is
+	// the name the *user* is sent to ask for: naming db_ddladmin on a major
+	// where it does not confer the permission sends them after a grant that
+	// would not help. See docs/db-rules.md on per-version role contents.
+	//
+	// There is deliberately no broker-priority twin: SQL Server enforces a
+	// CREATE/ALTER BROKER PRIORITY permission it does not publish —
+	// HAS_PERMS_BY_NAME answers NULL for every spelling of one, and
+	// sys.fn_builtin_permissions has no DATABASE-class row matching
+	// %PRIORITY% — so a right declared for it would read CapabilityUnknown
+	// forever and gate nothing. A broker priority takes ALTER on the database
+	// alone; see brokerPriorityWriteRights.
+	rightAlterAnyMessageType = requiredRight{name: "ALTER ANY MESSAGE TYPE", role: "db_owner", db: true}
+	rightAlterAnyContract    = requiredRight{name: "ALTER ANY CONTRACT", role: "db_owner", db: true}
+	rightAlterAnyService     = requiredRight{name: "ALTER ANY SERVICE", role: "db_owner", db: true}
+	rightAlterAnyRoute       = requiredRight{name: "ALTER ANY ROUTE", role: "db_owner", db: true}
+	rightAlterAnyRSB         = requiredRight{name: "ALTER ANY REMOTE SERVICE BINDING", role: "db_owner", db: true}
+
 	// The two SQL Agent rights are memberships, not permissions: what permits
 	// New Job and its three siblings is membership of an msdb role, which
 	// grants EXECUTE on individual procedures rather than the database-scope
@@ -971,6 +996,64 @@ func objectWriteRights() []requiredRight {
 	return []requiredRight{
 		rightAlterDatabase, rightControlDB, rightAlterAnySchema,
 		rightAlterOnSchema, rightAlterOnObject,
+	}
+}
+
+// serviceBrokerWriteRights are what permits ALTER and DROP on one of the five
+// schemaless Service Broker families — any one of them.
+//
+// The narrow right comes first, for gateOn's note, and the two database-wide
+// rights stay in the set because the probe found them sufficient: ALTER on the
+// database altered and dropped every one of the seven families on majors 13,
+// 14 and 17. ALTER ANY SCHEMA is deliberately absent — these objects have no
+// schema, so it permits nothing here, which is the whole reason
+// objectWriteRights() cannot stand in (see TestSchemalessDatabaseOpsAreGated).
+func serviceBrokerWriteRights(narrow requiredRight) []requiredRight {
+	return []requiredRight{narrow, rightAlterDatabase, rightControlDB}
+}
+
+// routeWriteRights are what permits ALTER ROUTE and DROP ROUTE alike — the
+// route's Properties page and its Delete share one entry, unlike a queue's.
+func routeWriteRights() []requiredRight {
+	return serviceBrokerWriteRights(rightAlterAnyRoute)
+}
+
+// brokerPriorityWriteRights are what permits CREATE/ALTER/DROP BROKER
+// PRIORITY: ALTER on the database, and the right that subsumes it.
+//
+// There is no narrow right to lead with — see rightAlterAnyMessageType's
+// comment for why one cannot be invented — so unlike every other set here the
+// note this produces names ALTER, which is what the server actually checks.
+func brokerPriorityWriteRights() []requiredRight {
+	return []requiredRight{rightAlterDatabase, rightControlDB}
+}
+
+// queueAlterRights are what permits ALTER QUEUE — the one Service Broker
+// family that is a schema object (a sys.objects row of type 'SQ'), so the
+// ordinary object set fits it exactly: probed live 2026-09-16 on majors 13, 14
+// and 17, ALTER on the queue itself, CONTROL on it, ALTER on its schema,
+// ALTER ANY SCHEMA and ALTER or CONTROL on the database each altered the
+// queue.
+//
+// It is not what permits the queue's Delete — see queueDropRights, and never
+// reuse one entry for both.
+func queueAlterRights() []requiredRight { return objectWriteRights() }
+
+// queueDropRights are what permits DROP QUEUE, and they are queueAlterRights
+// minus the object-scoped ALTER. That one right is the asymmetry the probe
+// found: ALTER ON OBJECT::<queue> alters the queue and is refused the drop
+// (Msg 15151), which needs CONTROL on the queue or ALTER on its schema.
+//
+// The consequence, deliberately accepted: a principal whose only right is
+// CONTROL on the queue, or who owns it, is not offered the Delete the server
+// would allow. gosmo's object block matches CONTROL alongside the ALTER it
+// asks about and records both under the one permission name, so the map cannot
+// tell a CONTROL grant from an ALTER grant — keeping rightAlterOnObject here
+// would instead offer the drop to every principal holding only ALTER, which
+// the server refuses. Recorded in docs/open-threads.md § Permission gating.
+func queueDropRights() []requiredRight {
+	return []requiredRight{
+		rightAlterDatabase, rightControlDB, rightAlterAnySchema, rightAlterOnSchema,
 	}
 }
 

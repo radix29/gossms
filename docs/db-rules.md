@@ -58,6 +58,17 @@ shipped.
   14, so a right's `role` (the name shown to the user) must be one that confers
   it on every supported major, and a probe on one version does not settle it.
 
+- **A family's ALTER and its DROP can take different rights, and then they get
+  different entries.** A Service Broker queue is the worked example: probed
+  live on majors 13, 14 and 17, `ALTER ON OBJECT::<queue>` alters the queue and
+  is refused the drop (Msg 15151), which needs CONTROL on the queue or ALTER on
+  its schema — so `queueAlterRights` gates its Properties page and
+  `queueDropRights` its Delete, and neither is reused for the other verb. Ask
+  the question per *verb* when probing, not per family; one entry shared
+  between two verbs is wrong in one direction whichever way it is written. What
+  that costs here, and why it is not fixable inside gosmo's object map, is in
+  `docs/open-threads.md` § Permission gating.
+
 - **Move to Schema is not asked with the Rename/Delete set.** `ALTER SCHEMA ...
   TRANSFER` needs CONTROL on the securable itself; ALTER on the database,
   db_ddladmin, ALTER ANY SCHEMA and ALTER on the source schema all permit the

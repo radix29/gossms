@@ -4,6 +4,8 @@ import (
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // The seven Service Broker families SSMS files under a database's Service
@@ -167,4 +169,60 @@ func loadBrokerPrioritiesChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 			label := p.Name + " (" + strconv.Itoa(p.Level) + ")"
 			return l.node(label, NodeBrokerPriority, "", p.Name, node.data.DBName)
 		})
+}
+
+// The context menus for the seven leaves, looked up through nodeMenus
+// (explorer_loaders.go). Each opens its family's Properties; five of them are
+// read-only pages, and the queue's and the route's can write.
+//
+// Nothing beyond Properties in this pass — no Delete, no Script as, no Rename
+// and no Move to Schema, which are Stage E of
+// docs/plan-phase3-service-broker.md. The rights those verbs will take are
+// already declared (dbScopedOpRights, queueDropRights); the menu items are
+// not.
+//
+// There is no Enable/Disable item for a queue, deliberately: a queue's status
+// is a row on its Properties page, which is one place rather than two. A plan
+// guide has the item because it has no other page that writes.
+
+func messageTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showMessageTypePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func contractMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showContractPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func brokerQueueMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showBrokerQueuePropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+	})
+}
+
+func brokerServiceMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showBrokerServicePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func routeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showRoutePropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func remoteServiceBindingMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showRemoteServiceBindingPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+func brokerPriorityMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showBrokerPriorityPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
 }

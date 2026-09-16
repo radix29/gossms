@@ -749,6 +749,12 @@ func objectOpRights(t NodeType) []requiredRight {
 	if t == NodeDatabase || t == NodeDatabaseSnapshot {
 		return []requiredRight{rightControlDB, rightAlterAnyDatabase}
 	}
+	// A queue is a schema object and would otherwise fall to
+	// objectWriteRights(), which is right for its Properties page and wrong
+	// for its Delete by exactly one right — see queueDropRights.
+	if t == NodeBrokerQueue {
+		return queueDropRights()
+	}
 	if rights, ok := serverScopedOpRights[t]; ok {
 		return rights
 	}
@@ -955,6 +961,18 @@ var dbScopedOpRights = map[NodeType][]requiredRight{
 	NodeExternalFileFormat:  {rightAlterAnyExtFileFormat, rightAlterDatabase, rightControlDB},
 	NodeExternalLibrary:     {rightAlterAnyExtLibrary, rightAlterDatabase, rightControlDB},
 	NodePlanGuide:           planGuideWriteRights(),
+	// The five schemaless Service Broker families that have a narrow right of
+	// their own, and the one that does not. Probed live 2026-09-16 on majors
+	// 13, 14 and 17, identically on all three: each narrow right alone drops
+	// its family, a right from one family drops nothing in another, and
+	// ALTER on the database drops every one of them. A broker priority has no
+	// grantable right at all — see brokerPriorityWriteRights.
+	NodeMessageType:          serviceBrokerWriteRights(rightAlterAnyMessageType),
+	NodeContract:             serviceBrokerWriteRights(rightAlterAnyContract),
+	NodeBrokerService:        serviceBrokerWriteRights(rightAlterAnyService),
+	NodeRoute:                routeWriteRights(),
+	NodeRemoteServiceBinding: serviceBrokerWriteRights(rightAlterAnyRSB),
+	NodeBrokerPriority:       brokerPriorityWriteRights(),
 	// No wider pair: a database-wide ALTER reads 0 for ALTER ANY SECURITY
 	// POLICY and is refused the drop (see rightAlterAnySecPolicy), and CONTROL
 	// already answers 1 for the narrow right. Only half of what the drop

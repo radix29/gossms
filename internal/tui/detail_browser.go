@@ -641,6 +641,13 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide:
 		return programmabilityDetail(ctx, sc, node)
 
+	case NodeMessageTypes, NodeContracts, NodeBrokerQueues, NodeBrokerServices,
+		NodeRoutes, NodeRemoteServiceBindings, NodeBrokerPriorities:
+		return serviceBrokerFolderDetail(ctx, sc, node, objs)
+	case NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
+		NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority:
+		return serviceBrokerDetail(ctx, sc, node)
+
 	case NodeExternalDataSources, NodeExternalFileFormats, NodeExternalLibraries:
 		return externalFolderDetail(ctx, sc, node, objs)
 	case NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary:

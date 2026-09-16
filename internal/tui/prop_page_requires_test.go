@@ -59,6 +59,13 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Rule":                         rulePropPages(sc, "HealthClinic", "dbo", "PhoneRule"),
 		"Default":                      defaultPropPages(sc, "HealthClinic", "dbo", "TodayDefault"),
 		"Plan Guide":                   planGuidePropPages(sc, "HealthClinic", "pg_reports", "dbo", "GetClaims"),
+		"Message Type":                 messageTypePropPages(sc, "HealthClinic", "//claims/Submit"),
+		"Contract":                     contractPropPages(sc, "HealthClinic", "//claims/Contract"),
+		"Queue":                        brokerQueuePropPages(sc, "HealthClinic", "dbo", "ClaimQueue"),
+		"Service":                      brokerServicePropPages(sc, "HealthClinic", "//claims/Service"),
+		"Route":                        routePropPages(sc, "HealthClinic", "ClaimRoute"),
+		"Remote Service Binding":       remoteServiceBindingPropPages(sc, "HealthClinic", "ClaimBinding"),
+		"Broker Priority":              brokerPriorityPropPages(sc, "HealthClinic", "ClaimPriority"),
 		"External Data Source":         externalDataSourcePropPages(sc, "HealthClinic", "HadoopCluster"),
 		"External File Format":         externalFileFormatPropPages(sc, "HealthClinic", "CsvFormat"),
 		"External Library":             externalLibraryPropPages(sc, "HealthClinic", "ggplot2"),
@@ -110,6 +117,15 @@ var pagesThatOnlyRead = []string{
 	"Assembly/General", "Assembly/Files", "Assembly/Routines",
 	"Rule/General", "Default/General",
 	"Plan Guide/Query",
+	// The Service Broker families. Five of the seven are read-only, each for
+	// a reason its props file argues: a message type's and a service's ALTER
+	// changes a running application's wire contract, a contract has no ALTER
+	// at all, a binding's ALTER is a key-management step, and a broker
+	// priority's write cannot be gated on any right the server publishes.
+	// Queue/General and Route/General are deliberately absent — they write,
+	// and declare queueAlterRights() and routeWriteRights() for it.
+	"Message Type/General", "Contract/General", "Service/General",
+	"Remote Service Binding/General", "Broker Priority/General",
 	"External Data Source/General", "External File Format/General",
 	"External Library/General",
 	// A snapshot is read-only by construction: it has no ALTER, no recovery
@@ -216,6 +232,9 @@ var propPageConstructors = []string{
 	"clrTypePropPages", "xmlSchemaCollectionPropPages",
 	"assemblyPropPages", "rulePropPages", "defaultPropPages",
 	"planGuidePropPages",
+	"messageTypePropPages", "contractPropPages", "brokerQueuePropPages",
+	"brokerServicePropPages", "routePropPages",
+	"remoteServiceBindingPropPages", "brokerPriorityPropPages",
 	"externalDataSourcePropPages", "externalFileFormatPropPages",
 	"externalLibraryPropPages",
 	"databaseSnapshotPropPages",
