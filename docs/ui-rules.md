@@ -105,6 +105,31 @@ behind the mouse and async sections; this file has the rules themselves.
   `Frame(elapsed)`/`FrameSince(start)` answer which frame shows, and the host
   redraws from a clock it already has. Do not add a goroutine to animate one.
 
+- **`SetBounds` must do nothing when the bounds have not moved.** Hosts lay out
+  from `Draw`, so a control is handed the same rect on every frame; work done
+  unconditionally there runs 60 times a second against the user's input. A
+  `ListBox` that re-ran `ensureVisible` on each call snapped its scroll back
+  onto the selected row between one frame and the next, and the wheel looked
+  unable to scroll past the selection at all. Compare the rect first, and keep
+  the re-clamp for the call that really changes it (first real layout, resize).
+
+- **Setting a widget's value programmatically drops its selection.** The
+  selection was anchored in the text being replaced, and an anchor past the end
+  of a shorter new value paints the blanks beyond it as selected —
+  `widgets.InputField` refilled from the Connect dialog's History pane drew a
+  highlight wider than the server name it had just been given. `SetValue`
+  clears `selecting` and re-anchors on the cursor; a widget that grows its own
+  `SetXxx` does the same.
+
+- **A pre-filled field reads from its start; a field being typed into follows
+  its caret.** `SetValue` leaves the caret at the end, so a value longer than
+  the box shows its *tail* — right for a Destination path, where the file name
+  is what matters (`TestInputFieldSetValueLongValueShowsItsTail`), wrong for a
+  value the user picked rather than typed. A caller filling a field from a
+  selection calls `InputField.ShowFromStart()` afterwards, as the Connect
+  dialog's `PreFill` does for every field; the caret stays at the end and the
+  first key scrolls the view back to it.
+
 ## Dialogs and the clipboard
 
 - **A dialog-level scrollbar goes through `ModalDialog.DrawContentScrollbar`, not
@@ -136,6 +161,24 @@ behind the mouse and async sections; this file has the rules themselves.
   assuming the edit landed in the field it watches. `App.pasteInto` drops the text
   unless the widget it was aimed at is still the target — every clipboard read is
   asynchronous, so the dialog may be gone by the time it returns.
+
+- **A tabbed dialog pane rebuilds its focus ring per tab; it does not just skip
+  the hidden tab's controls while drawing.** The Connect dialog holds two tabs'
+  worth of controls in one dialog, and `rebuildFocusable` puts only the visible
+  tab's in the ring — a control the hidden tab owns that stays in the ring is
+  reachable by Tab and takes keystrokes nobody can see the effect of. The same
+  function rebuilds the ring when the dialog switches between its two-pane and
+  one-pane layouts, so a pane that is not drawn is not focusable either. Focus
+  is carried across the rebuild when the same widget is in the new ring (the
+  Custom Properties editor is on both tabs) and falls back to the first entry
+  when it is not. `TestConnectDialogTabRingHoldsOnlyTheVisibleTab` pins it.
+- **A dialog whose layout depends on the terminal size re-decides it in `Show`
+  *and* in `Relayout`, not only in the constructor.** `ModalDialog.Relayout`
+  recentres at the size last requested, so a dialog that picks its own width
+  from `screen.Size()` must override `Relayout` to recompute that width and
+  call `SetSize` — otherwise a terminal widened across an open dialog keeps the
+  narrow layout until it is closed and reopened. The hit-testing geometry then
+  comes from the same `layoutFields` the drawing does, once per frame.
 
 ## Panels, toolbars and grid hosts
 
@@ -177,6 +220,16 @@ behind the mouse and async sections; this file has the rules themselves.
   alike, so assert the bound id with `fakeInstance.ReadArgs`.
 
 ## Mouse, overlays, and async UI
+
+- **A mouse release goes to every open dialog, not just the front one**
+  (`App.routeRelease`). `ModalDialog`'s button latch is cleared by the release
+  its own `HandleMouse` sees, and a dialog that opens a nested one *from a
+  button press* never sees that release — so its next press is refused as a
+  continuation of the click that opened the child, and the dialog appears to
+  ignore the first click after the child closes. The Connect dialog's Delete
+  confirmation shipped that way. Acting on a click needs `Button1`, so the
+  dialogs underneath only reset latches; a new dialog's `HandleMouse` must keep
+  it that way.
 
 **Read `ARCHITECTURE.md` § The mouseDragging idiom before touching any
 `HandleMouse`** — it has the reasoning and the shipped bug behind each rule. Five

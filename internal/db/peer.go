@@ -231,7 +231,7 @@ func InstanceKey(server string) string {
 // InstanceKey(ConnectionAddress(c)), never c.Server alone, which drops a
 // Port-field port.
 func ConnectionAddress(c config.Connection) string {
-	return resolveServer(c.Server, c.Port)
+	return ResolveServer(c.Server, c.Port)
 }
 
 // PeerCredentials returns the saved connection for an instance name; false

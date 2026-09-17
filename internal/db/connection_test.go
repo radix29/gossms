@@ -123,16 +123,16 @@ func TestBuildConnectionStringNamedInstance(t *testing.T) {
 // named instance; that suppresses SQL Browser.
 func TestResolveServerLeavesNamedInstanceAlone(t *testing.T) {
 	for _, port := range []int{0, 1433} {
-		if got := resolveServer(`myserver\SQLEXPRESS`, port); got != `myserver\SQLEXPRESS` {
-			t.Errorf("resolveServer(port=%d) = %q, want myserver\\SQLEXPRESS", port, got)
+		if got := ResolveServer(`myserver\SQLEXPRESS`, port); got != `myserver\SQLEXPRESS` {
+			t.Errorf("ResolveServer(port=%d) = %q, want myserver\\SQLEXPRESS", port, got)
 		}
 	}
-	if got := resolveServer(`myserver\SQLEXPRESS`, 55253); got != `myserver\SQLEXPRESS,55253` {
-		t.Errorf("resolveServer(port=55253) = %q, want myserver\\SQLEXPRESS,55253", got)
+	if got := ResolveServer(`myserver\SQLEXPRESS`, 55253); got != `myserver\SQLEXPRESS,55253` {
+		t.Errorf("ResolveServer(port=55253) = %q, want myserver\\SQLEXPRESS,55253", got)
 	}
 	for _, port := range []int{0, 1433} {
-		if got := resolveServer("myserver", port); got != "myserver" {
-			t.Errorf("resolveServer(host, port=%d) = %q, want myserver", port, got)
+		if got := ResolveServer("myserver", port); got != "myserver" {
+			t.Errorf("ResolveServer(host, port=%d) = %q, want myserver", port, got)
 		}
 	}
 }
@@ -494,8 +494,8 @@ func TestResolveServer(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := resolveServer(c.server, c.dialogPort); got != c.want {
-				t.Errorf("resolveServer(%q, %d) = %q, want %q", c.server, c.dialogPort, got, c.want)
+			if got := ResolveServer(c.server, c.dialogPort); got != c.want {
+				t.Errorf("ResolveServer(%q, %d) = %q, want %q", c.server, c.dialogPort, got, c.want)
 			}
 		})
 	}

@@ -167,8 +167,7 @@ func TestNoDanglingDocReference(t *testing.T) {
 	// document it excuses, never ahead of it: an exemption committed before
 	// its plan lands fails this test on main until the plan is written.
 	exemptSource := map[string]string{
-		"CHANGELOG.md":                   "history; the paths it names were real when the entry was written",
-		"docs/review-plan-2026-09-17.md": "this plan's evidence names deleted documents as its subject matter",
+		"CHANGELOG.md": "history; the paths it names were real when the entry was written",
 	}
 	for _, msg := range staleExemptions(root, exemptSource) {
 		t.Error(msg)

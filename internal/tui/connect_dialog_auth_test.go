@@ -117,16 +117,19 @@ func TestConnectDialogSendsOnlyTheFieldsTheMethodReads(t *testing.T) {
 func TestConnectDialogTabSkipsDisabledFields(t *testing.T) {
 	d := NewConnectDialog(newTestApp())
 	d.Show()
-	selectAuth(t, d, config.AuthEntraMSI) // user, password, tenant greyed
-	d.setFocus(indexOfFocusable(d.focusable, d.fDatabase))
+	// User, Password, Remember Password and Tenant ID are all greyed for
+	// Managed Identity; Client ID is the next live control after the method
+	// dropdown.
+	selectAuth(t, d, config.AuthEntraMSI)
+	d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
 
 	d.HandleKey(tcell.NewEventKey(tcell.KeyTab, "", tcell.ModNone))
 	if d.focusable[d.focusIdx] != d.fClientID {
-		t.Fatalf("Tab from Database focused %T #%d, want the Client ID field", d.focusable[d.focusIdx], d.focusIdx)
+		t.Fatalf("Tab from Authentication focused %T #%d, want the Client ID field", d.focusable[d.focusIdx], d.focusIdx)
 	}
 	d.HandleKey(tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModNone))
-	if d.focusable[d.focusIdx] != d.fDatabase {
-		t.Fatalf("Backtab from Client ID focused #%d, want Database", d.focusIdx)
+	if d.focusable[d.focusIdx] != d.ddAuth {
+		t.Fatalf("Backtab from Client ID focused #%d, want Authentication", d.focusIdx)
 	}
 }
 

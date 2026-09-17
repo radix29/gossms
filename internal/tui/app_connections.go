@@ -79,7 +79,8 @@ func (a *App) connectServer(ctx context.Context, opts config.Connection, phase f
 			a.ensureSysCompletionInventory(sc)
 
 			// Save the successful connection (auto-named, most recent first,
-			// capped at config.MaxSavedConnections) for Connect's autocomplete.
+			// capped at config.MaxSavedConnections) for the Connect dialog's
+			// History pane.
 			a.cfg.AddOrUpdate(opts)
 			// Also remembered as how to reach that instance from others:
 			// connecting to a replica once gives Peer its credentials.

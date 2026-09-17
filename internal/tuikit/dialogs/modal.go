@@ -227,6 +227,13 @@ func (d *ModalDialog) DrawSeparator(s tcell.Screen) {
 // so hit-testing matches what was drawn; exported so a dialog drawing its own
 // status at the left end of the row can stop short of the buttons.
 func (d *ModalDialog) ButtonRowStartX(labels []string) int {
+	return d.rect.Right() - 2 - d.ButtonRowWidth(labels)
+}
+
+// ButtonRowWidth is how many columns a button row occupies, gaps included —
+// what a caller placing something beside a row, or laying out a second group
+// at the other end of it, measures against.
+func (d *ModalDialog) ButtonRowWidth(labels []string) int {
 	total := 0
 	for i, label := range labels {
 		if i > 0 {
@@ -234,7 +241,7 @@ func (d *ModalDialog) ButtonRowStartX(labels []string) int {
 		}
 		total += core.DisplayWidth("[ " + label + " ]")
 	}
-	return d.rect.Right() - 2 - total
+	return total
 }
 
 // DrawButtons renders a row of buttons at ButtonRowY, right-aligned within
@@ -248,19 +255,32 @@ func (d *ModalDialog) DrawButtons(s tcell.Screen, labels []string, activeIdx int
 // disabled may be nil or shorter than labels. Drawing it gated does not gate
 // it: the dialog's own handler still has to refuse the button.
 func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeIdx int, disabled []bool) {
-	p := theme.Active()
-	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
-	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
-	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
-	col := d.ButtonRowStartX(labels)
 	y := d.ButtonRowY()
 	// On a clamped rect, content laid out for the full height reaches this row
 	// and the one below; the buttons are right-aligned, so without the clear what
 	// shows is the tail of a content row with a button row in the middle of it. A
 	// dialog with a button row draws nothing of its own from ButtonRowY down.
+	//
+	// The clear belongs to this entry point alone: a dialog splitting its row
+	// draws the right-aligned group through here first, and a second clear from
+	// DrawButtonsAtGated would wipe it again.
 	if d.clamped() {
 		core.FillRect(s, core.Rect{X: d.rect.X + 1, Y: y, W: d.rect.W - 2, H: d.rect.Bottom() - 1 - y}, ' ', theme.StyleDialog())
 	}
+	d.DrawButtonsAtGated(s, d.ButtonRowStartX(labels), labels, activeIdx, disabled)
+}
+
+// DrawButtonsAtGated draws a gated button row starting at column x, for a
+// dialog placing a group somewhere other than the right-aligned default — a
+// destructive button set apart at the left end of the row, say. It clears
+// nothing, so the caller draws the right-aligned group through
+// DrawButtonsGated first.
+func (d *ModalDialog) DrawButtonsAtGated(s tcell.Screen, x int, labels []string, activeIdx int, disabled []bool) {
+	p := theme.Active()
+	disabledStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.TextDisabled)
+	btnStyle := tcell.StyleDefault.Background(p.ButtonBg).Foreground(p.ButtonFg)
+	activeStyle := tcell.StyleDefault.Background(p.ButtonActive).Foreground(color.White)
+	col, y := x, d.ButtonRowY()
 	for i, label := range labels {
 		st := btnStyle
 		if i == activeIdx {
@@ -279,6 +299,14 @@ func (d *ModalDialog) DrawButtonsGated(s tcell.Screen, labels []string, activeId
 // guards against tcell's held-motion Button1 resend, so a click that twitches
 // before release fires once.
 func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
+	return d.ButtonClickedAt(ev, d.ButtonRowStartX(labels), labels)
+}
+
+// ButtonClickedAt is ButtonClicked for a row drawn at column x by
+// DrawButtonsAtGated. A dialog with two groups calls it once per group; a call
+// that hits nothing latches nothing, so the order of the calls does not
+// matter.
+func (d *ModalDialog) ButtonClickedAt(ev *tcell.EventMouse, x int, labels []string) int {
 	if ev.Buttons() != tcell.Button1 {
 		return -1
 	}
@@ -286,7 +314,7 @@ func (d *ModalDialog) ButtonClicked(ev *tcell.EventMouse, labels []string) int {
 	if my != d.ButtonRowY() {
 		return -1
 	}
-	col := d.ButtonRowStartX(labels)
+	col := x
 	for i, label := range labels {
 		text := "[ " + label + " ]"
 		w := core.DisplayWidth(text)

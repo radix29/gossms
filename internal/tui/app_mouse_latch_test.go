@@ -97,3 +97,43 @@ func TestMenuBarOpensAfterDialogOpeningItem(t *testing.T) {
 			"(MenuBar.mouseDragging left latched by the swallowed release)")
 	}
 }
+
+// releaseCountingDialog records the releases it is handed.
+type releaseCountingDialog struct {
+	dialogs.ModalDialog
+	releases int
+}
+
+func (d *releaseCountingDialog) Draw(tcell.Screen)              {}
+func (d *releaseCountingDialog) HandleKey(*tcell.EventKey) bool { return true }
+func (d *releaseCountingDialog) HandleMouse(ev *tcell.EventMouse) bool {
+	if ev.Buttons() == tcell.ButtonNone {
+		d.releases++
+	}
+	return true
+}
+
+// A release reaches every open dialog, not only the front one. A dialog that
+// opens a nested one from a button press never sees the release while the
+// child is up, so its ModalDialog button latch stayed set and the next press
+// was refused as a continuation of the click that opened the child — the
+// Connect dialog ignored the first click after a Delete confirmation.
+func TestReleaseReachesEveryOpenDialog(t *testing.T) {
+	a := newLatchTestApp()
+	bottom, top := &releaseCountingDialog{}, &releaseCountingDialog{}
+	for _, d := range []*releaseCountingDialog{bottom, top} {
+		d.InitModal(a.screen, "t", 20, 10)
+		d.Show()
+	}
+	a.allDialogs = []Dialog{bottom, top}
+	a.syncDialogStack()
+
+	a.handleMouse(tcell.NewEventMouse(1, 1, tcell.ButtonNone, tcell.ModNone))
+
+	if bottom.releases != 1 {
+		t.Errorf("the buried dialog got %d releases, want 1", bottom.releases)
+	}
+	if top.releases != 1 {
+		t.Errorf("the front dialog got %d releases, want 1", top.releases)
+	}
+}

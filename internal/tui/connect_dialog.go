@@ -2,48 +2,111 @@ package tui
 
 import (
 	"context"
-	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// maxServerMatches caps how many rows of the server-field autocomplete list are
-// drawn and hit-tested. The list doesn't scroll, so a longer prefix is how the
-// rest are reached.
-const maxServerMatches = 10
+// Dialog geometry. The right pane is a column of label+value rows, and every
+// label is padded to connectLabelWidth at construction — InputField and
+// DropDown fix their label at New time, so the caller pads. The widest label,
+// "Host Name In Certificate", is exactly connectLabelWidth columns; a longer
+// one would push its own value column out of line with the rest.
+//
+// connectTwoPaneWidth is also the threshold: a terminal at least that wide
+// gets the History pane, a narrower one gets the right pane alone at
+// connectOnePaneWidth (decision 3 — it drops the pane, it does not clip).
+const (
+	connectLabelWidth = 24
+	connectValueWidth = 34
+	// A field row is label + gap + "[" + value + "]".
+	connectRightWidth  = connectLabelWidth + 1 + connectValueWidth + 2
+	connectHistoryPane = 30
+	// +2 for the dialog border, +1 for the left margin, +1 for the right.
+	connectOnePaneWidth = connectRightWidth + 4
+	// border + history pane + rule + gap + right pane + border.
+	connectTwoPaneWidth = connectHistoryPane + connectRightWidth + 5
+	connectDialogHeight = 24
+)
+
+// connectTab is which of the right pane's two tabs is showing.
+type connectTab int
+
+const (
+	connectTabProperties connectTab = iota
+	connectTabString
+)
+
+var connectTabLabels = [...]string{"Connection Properties", "Connection String"}
+
+// Button row. The indices are what btnFocus holds, left to right as drawn, and
+// everything that draws, gates or hit-tests the row goes through the two label
+// lists so all three agree — a list that differs from the drawn one puts every
+// click one button off.
+//
+// Delete sits alone at the left end, apart from the buttons that act on the
+// form: it destroys a saved connection and its password, and a misclick beside
+// Connect is not something the user can undo.
+const (
+	connectBtnDelete = iota
+	connectBtnReset
+	connectBtnConnect
+	connectBtnCancel
+	connectButtonCount
+)
+
+var (
+	connectLeftButtons  = []string{"Delete"}
+	connectRightButtons = []string{"Reset", "Connect", "Cancel"}
+)
+
+// buttonRowLeftX is where the left-hand group starts.
+func (d *ConnectDialog) buttonRowLeftX() int { return d.InnerRect().X + 1 }
 
 // ConnectDialog is the "Connect to Server" modal dialog, embedding
 // dialogs.ModalDialog and composing tuikit/widgets controls for its fields.
+//
+// The layout follows SSMS 21: saved connections in a History list on the left,
+// and on the right a tabbed pane — the connection's properties, or the
+// connection string they build — over a Custom Properties section both tabs
+// share.
 type ConnectDialog struct {
 	dialogs.ModalDialog
 	app *App
 
-	fServer   *widgets.InputField
-	fPort     *widgets.InputField
-	fDatabase *widgets.InputField
-	fUser     *widgets.InputField
-	fPassword *widgets.InputField
-	fTenantID *widgets.InputField
-	fClientID *widgets.InputField
-	ddAuth    *widgets.DropDown
-	cbTrust   *widgets.CheckBox
-	ddEncrypt *widgets.DropDown
-	fHostCert *widgets.InputField
+	// fServer carries the port folded in, SSMS-style: "host", "host,port",
+	// "host\instance,port". There is no separate Port field — but
+	// config.Connection.Port stays a stored field, because the sealed-password
+	// AAD (config.connectionAAD), the saved-connection dedup key
+	// (Connection.GeneratedName) and db.ResolveServer's SQL Browser rule are
+	// all keyed off it. The fold is presentation only: currentOptions splits
+	// the text back apart with gosmo.ParseServerAddress and PreFill re-joins it
+	// with db.ResolveServer, so a saved entry's GeneratedName is unchanged by
+	// the round trip and its stored password still decrypts.
+	fServer    *widgets.InputField
+	fDatabase  *widgets.InputField
+	fUser      *widgets.InputField
+	fPassword  *widgets.InputField
+	cbRemember *widgets.CheckBox
+	fTenantID  *widgets.InputField
+	fClientID  *widgets.InputField
+	ddAuth     *widgets.DropDown
+	cbTrust    *widgets.CheckBox
+	ddEncrypt  *widgets.DropDown
+	fHostCert  *widgets.InputField
 
 	// fExtraProps is a free-form, word-wrapped text box of extra "key=value"
 	// driver parameters, separated by ';', '&' or line breaks — see
 	// db.ParseExtraProperties. A key one of the dialog's own fields controls
-	// is refused, and the preview says so.
+	// is refused, and the preview says so. It sits in the Custom Properties
+	// section, which both tabs show.
 	fExtraProps *controls.Editor
 
 	// fConnStrPreview previews the connection string the current fields would
@@ -52,14 +115,28 @@ type ConnectDialog struct {
 	// survive leaving the field.
 	fConnStrPreview *controls.Editor
 
-	// extraPropsLabelY and connStrLabelY are the row each editor's own
-	// label is drawn on, computed by layoutFields and read back by Draw.
+	// history is the saved-connection picker in the left pane, and
+	// historyConns the connections behind its rows, most recent first
+	// (config.Config.MatchByServer("")). It replaces the server field's old
+	// autocomplete overlay: the list is the picker, there is no filter box.
+	history      *controls.ListBox
+	historyConns []config.Connection
+
+	// Layout, computed by layoutFields and read back by Draw. rightX is the
+	// left edge of the tabbed pane; paneRuleX is the vertical rule's column,
+	// or -1 in one-pane mode.
+	twoPane          bool
+	rightX           int
+	paneRuleX        int
+	historyHeaderY   int
+	tabRect          core.Rect
 	extraPropsLabelY int
 	connStrLabelY    int
 
+	tab       connectTab
 	focusIdx  int
 	focusable []focusable
-	btnFocus  int // 0=Connect 1=Cancel
+	btnFocus  int // an index into the button row; see connectBtnDelete
 
 	// connecting is set from the moment Connect is pressed until the attempt
 	// resolves: the dialog stays open, every control but Cancel is inert, and
@@ -78,15 +155,6 @@ type ConnectDialog struct {
 	// "Connecting...".
 	connectLabel string
 
-	// Server-field autocomplete: saved connections whose Server matches what is
-	// typed in fServer, listed beneath it once four characters are in — or
-	// immediately on a click in the field, whatever its content (see
-	// openMatchesForClick). A connection is saved automatically the moment it
-	// succeeds (see App.connectServer).
-	matches   []config.Connection
-	matchOpen bool
-	matchSel  int
-
 	// drag is the text-selection gesture a click in one of the dialog's text
 	// fields starts — see dialogs.FieldGesture for the ordering its three calls
 	// depend on.
@@ -96,7 +164,7 @@ type ConnectDialog struct {
 // NewConnectDialog creates the connection dialog.
 func NewConnectDialog(app *App) *ConnectDialog {
 	d := &ConnectDialog{app: app}
-	d.InitModal(app.screen, "Connect to Server", 62, 32)
+	d.InitModal(app.screen, "Connect to Server", connectOnePaneWidth, connectDialogHeight)
 
 	methods := config.AllAuthMethods()
 	authItems := make([]string, len(methods))
@@ -104,25 +172,26 @@ func NewConnectDialog(app *App) *ConnectDialog {
 		authItems[i] = config.AuthMethodName(m)
 	}
 
-	d.fServer = widgets.NewInputField("Server:  ", 38, false)
-	d.fPort = widgets.NewInputField("Port:    ", 6, false)
-	d.fDatabase = widgets.NewInputField("Database:", 38, false)
-	d.fUser = widgets.NewInputField("User:    ", 38, false)
-	d.fPassword = widgets.NewInputField("Password:", 38, true)
-	d.fTenantID = widgets.NewInputField("TenantID:", 38, false)
-	d.fClientID = widgets.NewInputField("ClientID:", 38, false)
-	d.ddAuth = widgets.NewDropDown("Auth:    ", authItems, 38)
-	d.cbTrust = widgets.NewCheckBox("Trust Server Certificate")
-	d.cbTrust.SetChecked(true)
+	label := func(s string) string { return core.PadRight(s, connectLabelWidth) }
+	d.fServer = widgets.NewInputField(label("Server Name"), connectValueWidth, false)
+	d.ddAuth = widgets.NewDropDown(label("Authentication"), authItems, connectValueWidth)
+	d.fUser = widgets.NewInputField(label("User Name"), connectValueWidth, false)
+	d.fPassword = widgets.NewInputField(label("Password"), connectValueWidth, true)
+	d.cbRemember = widgets.NewCheckBox("Remember Password")
+	d.fTenantID = widgets.NewInputField(label("Tenant ID"), connectValueWidth, false)
+	d.fClientID = widgets.NewInputField(label("Client ID"), connectValueWidth, false)
+	d.fDatabase = widgets.NewInputField(label("Database Name"), connectValueWidth, false)
 
 	modes := config.AllEncryptModes()
 	encryptItems := make([]string, len(modes))
 	for i, m := range modes {
 		encryptItems[i] = config.EncryptModeName(m)
 	}
-	d.ddEncrypt = widgets.NewDropDown("Encrypt: ", encryptItems, 38)
+	d.ddEncrypt = widgets.NewDropDown(label("Encrypt"), encryptItems, connectValueWidth)
 	d.setEncryptMode(config.EncryptMandatory)
-	d.fHostCert = widgets.NewInputField("CertHost:", 38, false)
+	d.cbTrust = widgets.NewCheckBox("Trust Server Certificate")
+	d.cbTrust.SetChecked(true)
+	d.fHostCert = widgets.NewInputField(label("Host Name In Certificate"), connectValueWidth, false)
 
 	d.fExtraProps = controls.NewEditor(nil)
 	d.fExtraProps.SetGutterVisible(false)
@@ -132,17 +201,85 @@ func NewConnectDialog(app *App) *ConnectDialog {
 	d.fConnStrPreview.SetGutterVisible(false)
 	d.fConnStrPreview.SetWrapMode(true)
 
+	d.history = controls.NewListBox()
+	d.history.OnSelect = func(i int) { d.applyHistory(i) }
+	d.history.OnActivate = func(i int) {
+		d.applyHistory(i)
+		d.btnFocus = connectBtnConnect
+		d.doButton()
+	}
+
+	d.applySize()
 	d.rebuildFocusable()
 	d.applyAuthFields()
 	return d
 }
 
-func (d *ConnectDialog) rebuildFocusable() {
-	d.focusable = []focusable{
-		d.fServer, d.fPort, d.ddAuth, d.fDatabase,
-		d.fUser, d.fPassword, d.fTenantID, d.fClientID,
-		d.cbTrust, d.ddEncrypt, d.fHostCert, d.fExtraProps, d.fConnStrPreview,
+// applySize picks the two-pane or one-pane width off the current terminal size
+// and recentres. Called from the constructor, from Show and from Relayout, so a
+// terminal resized across an open dialog switches modes rather than keeping the
+// width it opened at.
+func (d *ConnectDialog) applySize() {
+	w := connectOnePaneWidth
+	if d.app != nil && d.app.screen != nil {
+		if sw, _ := d.app.screen.Size(); sw >= connectTwoPaneWidth {
+			w = connectTwoPaneWidth
+		}
 	}
+	d.SetSize(w, connectDialogHeight)
+}
+
+// Relayout re-fits the dialog to a resized terminal, re-deciding the pane mode
+// first: ModalDialog.Relayout only recentres at the size last requested.
+func (d *ConnectDialog) Relayout() { d.applySize() }
+
+// rebuildFocusable rebuilds the focus ring for the current pane mode and tab.
+// A control the hidden tab owns must not be reachable by Tab, so the ring holds
+// only what is on screen; the Custom Properties editor is on both tabs and so
+// is in both rings. Focus stays on the same widget when it survives the
+// rebuild, and falls back to the first entry when it doesn't.
+func (d *ConnectDialog) rebuildFocusable() {
+	prev := d.focusedWidget()
+	var list []focusable
+	if d.twoPane {
+		list = append(list, d.history)
+	}
+	if d.tab == connectTabString {
+		list = append(list, d.fConnStrPreview, d.fExtraProps)
+	} else {
+		list = append(list,
+			d.fServer, d.ddAuth, d.fUser, d.fPassword, d.cbRemember,
+			d.fTenantID, d.fClientID, d.fDatabase, d.ddEncrypt, d.cbTrust,
+			d.fHostCert, d.fExtraProps)
+	}
+	d.focusable = list
+	i := indexOfFocusable(list, prev)
+	if i < 0 {
+		i = 0
+	}
+	d.focusIdx = i
+	d.setFocus(i)
+}
+
+// focusedWidget is the ring entry that has focus, or nil before the first
+// rebuild.
+func (d *ConnectDialog) focusedWidget() focusable {
+	if d.focusIdx < 0 || d.focusIdx >= len(d.focusable) {
+		return nil
+	}
+	return d.focusable[d.focusIdx]
+}
+
+// setTab switches the right pane and rebuilds the focus ring for it.
+func (d *ConnectDialog) setTab(t connectTab) {
+	if d.tab == t {
+		return
+	}
+	d.tab = t
+	// The preview is what the other tab shows; rebuild it before it is looked
+	// at rather than waiting for the next blur.
+	d.refreshConnStrPreview()
+	d.rebuildFocusable()
 }
 
 // authMethod is the method selected in ddAuth.
@@ -155,15 +292,33 @@ func (d *ConnectDialog) authMethod() config.AuthMethod {
 // in the focus ring (docs/ui-rules.md); Tab steps over it (stepFocus), and if
 // the field that has focus is the one just switched off, focus moves back to
 // the method dropdown that switched it.
+//
+// Remember Password is greyed with the Password field it belongs to: a method
+// that sends no password has nothing to remember.
 func (d *ConnectDialog) applyAuthFields() {
 	f := config.FieldsFor(d.authMethod())
 	d.fUser.SetEnabled(f.User)
 	d.fPassword.SetEnabled(f.Password)
+	d.cbRemember.SetEnabled(f.Password)
 	d.fTenantID.SetEnabled(f.Tenant)
 	d.fClientID.SetEnabled(f.Client)
-	if in, ok := d.focusable[d.focusIdx].(*widgets.InputField); ok && !in.Enabled() {
-		d.setFocus(indexOfFocusable(d.focusable, d.ddAuth))
+	// The dropdown is only in the ring on the properties tab; on the other one
+	// nothing focusable can be disabled, so there is nothing to move off.
+	if i := indexOfFocusable(d.focusable, d.ddAuth); i >= 0 && !focusableEnabled(d.focusedWidget()) {
+		d.setFocus(i)
 	}
+}
+
+// focusableEnabled reports whether w accepts input; a widget with no enabled
+// state always does.
+func focusableEnabled(w focusable) bool {
+	switch c := w.(type) {
+	case *widgets.InputField:
+		return c.Enabled()
+	case *widgets.CheckBox:
+		return c.Enabled()
+	}
+	return true
 }
 
 // stepFocus moves focus dir (+1 or -1) around the ring, past any disabled
@@ -173,7 +328,7 @@ func (d *ConnectDialog) stepFocus(dir int) {
 	i := d.focusIdx
 	for range n {
 		i = (i + dir + n) % n
-		if in, ok := d.focusable[i].(*widgets.InputField); ok && !in.Enabled() {
+		if !focusableEnabled(d.focusable[i]) {
 			continue
 		}
 		break
@@ -194,14 +349,20 @@ func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
 	d.setEncryptMode(config.EncryptMandatory)
 }
 
-// PreFill pre-fills the dialog from an existing connection — applyMatch's path
-// when an autocomplete suggestion is chosen.
+// PreFill pre-fills the dialog from an existing connection — the History
+// pane's path when a saved connection is selected.
+//
+// Server and Port come back as the single folded address the field shows;
+// db.ResolveServer is the same join dialling uses, so what is displayed is
+// what would be dialled. Remember Password comes back ticked for an entry that
+// carries a password (or an unreadable one), so entries saved before the box
+// existed keep their password until it is deliberately unticked.
 func (d *ConnectDialog) PreFill(c *config.Connection) {
-	d.fServer.SetValue(c.Server)
-	d.fPort.SetValue(portFieldValue(c.Port))
+	d.fServer.SetValue(db.ResolveServer(c.Server, c.Port))
 	d.fDatabase.SetValue(c.Database)
 	d.fUser.SetValue(c.User)
 	d.fPassword.SetValue(c.Password)
+	d.cbRemember.SetChecked(c.RememberPassword || c.Password != "" || c.PasswordUnreadable())
 	d.fTenantID.SetValue(c.TenantID)
 	d.fClientID.SetValue(c.ClientID)
 	d.cbTrust.SetChecked(c.TrustServerCertificate)
@@ -220,14 +381,141 @@ func (d *ConnectDialog) PreFill(c *config.Connection) {
 	if c.AuthMethod == config.AuthEntraServicePrincipal && c.ClientID == "" {
 		d.fClientID.SetValue(c.User)
 	}
-	d.setFocus(0)
 	d.applyAuthFields()
+	// Every field reads from its start: these values were picked, not typed,
+	// so the head of a long server name or database name is what identifies
+	// the connection, and SetValue alone leaves the view on the tail.
+	for _, f := range []*widgets.InputField{
+		d.fServer, d.fDatabase, d.fUser, d.fPassword, d.fTenantID, d.fClientID,
+		d.fHostCert,
+	} {
+		f.ShowFromStart()
+	}
+	d.refreshConnStrPreview()
 }
 
-// Show opens the dialog, focuses the first field, and refreshes the server-match
-// list against whatever is already in it: fields persist across Show/Hide, so a
-// dialog reopened with a server typed in reflects that at once.
+// applyHistory pre-fills the right pane from History row i.
+func (d *ConnectDialog) applyHistory(i int) {
+	if i < 0 || i >= len(d.historyConns) {
+		return
+	}
+	d.PreFill(&d.historyConns[i])
+}
+
+// syncHistorySelection moves the History highlight onto the row the right pane
+// is showing, matched on the saved-connection key. Without it a reopened dialog
+// highlights whatever row the list was left on while the form shows a different
+// connection: the list survives Hide, and reloadHistory renumbers every row as
+// soon as a connection is made. A form that matches nothing saved — a
+// half-typed server name — leaves the highlight where it is.
+func (d *ConnectDialog) syncHistorySelection() {
+	name := d.currentOptions().GeneratedName()
+	for i, c := range d.historyConns {
+		if c.GeneratedName() == name {
+			d.history.SetSelected(i)
+			return
+		}
+	}
+}
+
+// buttonsDisabled is the gating DrawButtonsGated paints and doButton enforces.
+// Cancel is never gated — it is the only way out of an attempt in flight.
+func (d *ConnectDialog) buttonsDisabled() []bool {
+	gated := make([]bool, connectButtonCount)
+	gated[connectBtnDelete] = d.connecting || d.history.Selected() < 0
+	gated[connectBtnReset] = d.connecting
+	gated[connectBtnConnect] = !d.canConnect() || d.connecting
+	gated[connectBtnCancel] = false
+	return gated
+}
+
+// resetForm clears the right pane back to the state the dialog is built in:
+// empty fields, SQL Server Authentication, Trust Server Certificate on, Encrypt
+// Mandatory, Remember Password off. History is left alone — the saved
+// connections are not what Reset clears.
+//
+// The emptied Server field is also what Show reads to decide whether to
+// pre-fill from History, so a dialog reset and dismissed reopens on the most
+// recent connection rather than staying blank.
+func (d *ConnectDialog) resetForm() {
+	d.fServer.SetValue("")
+	d.fDatabase.SetValue("")
+	d.fUser.SetValue("")
+	d.fPassword.SetValue("")
+	d.fTenantID.SetValue("")
+	d.fClientID.SetValue("")
+	d.fHostCert.SetValue("")
+	d.fExtraProps.SetText("")
+	d.cbRemember.SetChecked(false)
+	d.cbTrust.SetChecked(true)
+	d.ddAuth.SetSelected(0)
+	d.setEncryptMode(config.EncryptMandatory)
+	d.setTab(connectTabProperties)
+	d.applyAuthFields()
+	d.btnFocus = connectBtnConnect
+	if i := indexOfFocusable(d.focusable, d.fServer); i >= 0 {
+		d.setFocus(i)
+	}
+	d.refreshConnStrPreview()
+}
+
+// deleteSelectedHistory removes the highlighted saved connection, after a
+// confirmation naming it — the entry carries the sealed password, so this is
+// not recoverable by retyping the server name.
+//
+// The confirmation runs as a nested dialog over this one, which leaves the
+// Connect dialog inert until it is answered (see dialog_stack.go), so the
+// selection the callback reads cannot have moved under it.
+func (d *ConnectDialog) deleteSelectedHistory() {
+	i := d.history.Selected()
+	if i < 0 || i >= len(d.historyConns) || d.app == nil || d.app.cfg == nil {
+		return
+	}
+	name := d.historyConns[i].GeneratedName()
+	d.app.confirmDialog.ShowConfirm("Delete Connection",
+		"Remove "+name+" from the saved connections? Any password saved with it is deleted too.",
+		func(confirmed bool) {
+			if !confirmed || !d.app.cfg.RemoveConnection(name) {
+				return
+			}
+			if err := d.app.cfg.Save(); err != nil {
+				d.app.alertDialog.ShowAlert("Delete Connection",
+					"Removed, but the configuration could not be saved: "+err.Error())
+			}
+			d.reloadHistory()
+			if len(d.historyConns) == 0 {
+				d.resetForm()
+				return
+			}
+			// Land on the row that took the deleted one's place, so the
+			// highlight and the right pane still agree.
+			next := min(i, len(d.historyConns)-1)
+			d.history.SetSelected(next)
+			d.applyHistory(next)
+		})
+}
+
+// reloadHistory refills the History pane from the saved connections, most
+// recent first — config.Config.MatchByServer with an empty prefix, which is
+// what that ordering guarantee is still for now that the autocomplete overlay
+// it was written for is gone.
+func (d *ConnectDialog) reloadHistory() {
+	d.historyConns = nil
+	if d.app != nil && d.app.cfg != nil {
+		d.historyConns = d.app.cfg.MatchByServer("")
+	}
+	items := make([]string, len(d.historyConns))
+	for i, c := range d.historyConns {
+		items[i] = matchLabel(c)
+	}
+	d.history.SetItems(items)
+}
+
+// Show opens the dialog: the pane mode is re-decided against the current
+// terminal size and the History pane refilled, since a connection made since
+// the last showing is a new row in it.
 func (d *ConnectDialog) Show() {
+	d.applySize()
 	d.ModalDialog.Show()
 	// A latch must not survive into the next showing: a dialog dismissed mid-drag
 	// would reopen still routing every click to that field.
@@ -236,17 +524,25 @@ func (d *ConnectDialog) Show() {
 	// duration, and one that succeeded or was cancelled closed the dialog with
 	// it still there — so Enter on the next showing closed the dialog instead
 	// of connecting.
-	d.btnFocus = 0
+	d.btnFocus = connectBtnConnect
+	d.twoPane = d.Rect().W >= connectTwoPaneWidth
+	d.reloadHistory()
+	// Open on the most recent connection, as SSMS does — but only into an
+	// empty form. The fields persist across Show/Hide, so a dialog reopened
+	// over a half-typed server name must not have it replaced by whatever
+	// History happens to be sitting on.
+	if len(d.historyConns) > 0 && strings.TrimSpace(d.fServer.Value()) == "" {
+		d.history.SetSelected(0)
+		d.applyHistory(0)
+	} else {
+		d.syncHistorySelection()
+	}
+	d.rebuildFocusable()
 	d.setFocus(0)
-	d.updateMatches()
 }
 
 func (d *ConnectDialog) setFocus(i int) {
 	d.focusIdx = setFocusIn(d.focusable, i, d.focusIdx)
-	// The autocomplete list only makes sense while the server field has focus.
-	if i != 0 {
-		d.matchOpen = false
-	}
 	// Every focus change blurs whatever was focused — the point to refresh the
 	// preview, so it updates once a field is left rather than per keystroke.
 	d.refreshConnStrPreview()
@@ -273,142 +569,18 @@ func (d *ConnectDialog) refreshConnStrPreview() {
 	d.fConnStrPreview.SetText(s)
 }
 
-// updateMatches re-runs the server-field autocomplete lookup against what is
-// typed in fServer. Nothing happens below four characters, and the list closes
-// itself once there are no matches.
-func (d *ConnectDialog) updateMatches() {
-	typed := d.fServer.Value()
-	if len(typed) < 4 {
-		d.matchOpen = false
-		d.matches = nil
-		return
-	}
-	d.matches = d.app.cfg.MatchByServer(typed)
-	if len(d.matches) == 0 {
-		d.matchOpen = false
-		return
-	}
-	if d.matchSel < 0 || d.matchSel >= len(d.matches) {
-		d.matchSel = 0
-	}
-	d.matchOpen = true
-}
-
-// ClipboardEdited re-filters the saved-connections list after Ctrl+X or Ctrl+V
-// changed the server field — the follow-up HandleKey does after a keystroke
-// there. Only for that field: an edit elsewhere, a paste into Password, must not
-// re-run the lookup and pop the list open over it.
-func (d *ConnectDialog) ClipboardEdited(target core.ClipboardTarget) {
-	if target == core.ClipboardTarget(d.fServer) {
-		d.updateMatches()
-	}
-}
-
-// openMatchesForClick opens the saved-connections list on a click in the server
-// field however much is typed; an empty field lists every saved connection.
-// Typing afterwards re-filters through updateMatches and its 4-character
-// threshold.
-func (d *ConnectDialog) openMatchesForClick() {
-	d.matches = d.app.cfg.MatchByServer(d.fServer.Value())
-	if len(d.matches) == 0 {
-		d.matchOpen = false
-		return
-	}
-	if d.matchSel < 0 || d.matchSel >= len(d.matches) {
-		d.matchSel = 0
-	}
-	d.matchOpen = true
-}
-
-// applyMatch fills the dialog from a saved connection chosen off the
-// autocomplete list, by arrow+Enter or a click.
-func (d *ConnectDialog) applyMatch(c config.Connection) {
-	d.PreFill(&c)
-	d.matchOpen = false
-}
-
-// Draw renders the dialog.
-func (d *ConnectDialog) Draw(s tcell.Screen) {
-	if !d.Visible() {
-		return
-	}
-	d.DrawBase(s)
-	d.layoutFields()
-
-	inner := d.InnerRect()
-	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	core.DrawText(s, inner.X+1, inner.Y+1, labelStyle, "Server Type: SQL Server Database Engine")
-
-	d.fServer.Draw(s)
-	d.fPort.Draw(s)
-	d.ddAuth.Draw(s)
-	d.fDatabase.Draw(s)
-	d.fUser.Draw(s)
-	d.fPassword.Draw(s)
-	d.fTenantID.Draw(s)
-	d.fClientID.Draw(s)
-
-	d.cbTrust.Draw(s)
-	d.ddEncrypt.Draw(s)
-	d.fHostCert.Draw(s)
-
-	core.DrawText(s, inner.X+1, d.extraPropsLabelY, labelStyle, "Extra Properties:")
-	d.fExtraProps.Draw(s)
-
-	core.DrawText(s, inner.X+1, d.connStrLabelY, labelStyle, "Connection String:")
-	d.fConnStrPreview.Draw(s)
-
-	d.DrawSeparator(s)
-	d.DrawButtonsGated(s, []string{"Connect", "Cancel"}, d.btnFocus,
-		[]bool{!d.canConnect() || d.connecting})
-	// After the buttons, never before: on a clamped rect DrawButtonsGated
-	// clears the whole button row, which would wipe the spinner.
-	d.drawConnecting(s, labelStyle)
-
-	// Drawn last, so neither dropdown's list nor the server-match list is
-	// painted over by the fields and buttons below them.
-	d.ddAuth.DrawOverlay(s)
-	d.ddEncrypt.DrawOverlay(s)
-	d.drawMatches(s)
-}
-
-// drawMatches renders the server-field autocomplete list as an overlay directly
-// beneath fServer, styled like ddAuth's open list. While open it necessarily
-// covers whatever sits below fServer.
-func (d *ConnectDialog) drawMatches(s tcell.Screen) {
-	if !d.matchOpen || len(d.matches) == 0 {
-		return
-	}
-	p := theme.Active()
-	listStyle := tcell.StyleDefault.Background(p.MenuBar).Foreground(p.Text)
-	selStyle := theme.StyleSelected()
-
-	x := d.fServer.InputX() + 1 // +1: past the '[' border, onto the text
-	y := d.fServer.RectY() + 1
-	w := d.fServer.Width()
-	n := min(len(d.matches), maxServerMatches)
-	for i := 0; i < n; i++ {
-		st := listStyle
-		if i == d.matchSel {
-			st = selStyle
-		}
-		core.FillRect(s, core.Rect{X: x, Y: y + i, W: w, H: 1}, ' ', st)
-		core.DrawTextClipped(s, x, y+i, w, st, matchLabel(d.matches[i]))
-	}
-}
-
-// Column budgets for the server and database parts of a match-list label.
+// Column budgets for the server and database parts of a History row label,
+// sized for the connectHistoryPane-column pane.
 const (
-	matchServerWidth   = 15
-	matchDatabaseWidth = 10
+	matchServerWidth   = 14
+	matchDatabaseWidth = 8
 )
 
-// matchLabel is a saved connection's name as the autocomplete list shows it:
+// matchLabel is a saved connection's name as the History pane shows it:
 // GeneratedName with the server and database clipped (with an ellipsis) to
 // matchServerWidth and matchDatabaseWidth, so a long FQDN or database name
-// doesn't push the user — the part that tells two matches for one server
-// apart — off the end of the list. Display only: the stored Name is the dedup
+// doesn't push the user — the part that tells two entries for one server
+// apart — off the end of the row. Display only: the stored Name is the dedup
 // key and stays whole.
 func matchLabel(c config.Connection) string {
 	c.Server = core.Truncate(c.Server, matchServerWidth)
@@ -416,79 +588,27 @@ func matchLabel(c config.Connection) string {
 	return c.GeneratedName()
 }
 
-func (d *ConnectDialog) layoutFields() {
-	inner := d.InnerRect()
-	lx := inner.X + 1
-	row := inner.Y + 3
-	d.fServer.SetBounds(lx, row)
-	row++
-	d.fPort.SetBounds(lx, row)
-	row++
-	d.ddAuth.SetBounds(lx, row)
-	row++
-	d.fDatabase.SetBounds(lx, row)
-	row++
-	d.fUser.SetBounds(lx, row)
-	row++
-	d.fPassword.SetBounds(lx, row)
-	row++
-	d.fTenantID.SetBounds(lx, row)
-	row++
-	d.fClientID.SetBounds(lx, row)
-	row++
-	row++ // blank row above Trust Server Certificate
-	d.cbTrust.SetBounds(lx, row)
-	row++
-	d.ddEncrypt.SetBounds(lx, row)
-	row++
-	d.fHostCert.SetBounds(lx, row)
-	row++
-	row++ // blank row below the TLS settings
-
-	// Same on-screen width as the Password field's whole visible box (label +
-	// brackets + content), from real widget geometry.
-	previewW := d.fPassword.InputX() + d.fPassword.Width() + 2 - lx
-
-	d.extraPropsLabelY = row
-	row++
-	d.fExtraProps.SetBounds(lx, row, previewW, 4)
-	row += 4
-
-	d.connStrLabelY = row
-	row++
-	d.fConnStrPreview.SetBounds(lx, row, previewW, 4)
-}
-
-// defaultPort is SQL Server's own default TCP port, the one the driver dials
-// when the address carries none.
-const defaultPort = 1433
-
-// portFieldValue renders a stored port for the Port field, leaving the default
-// and the unset one blank: the field is optional, and a named instance resolves
-// its port through SQL Browser, so a pre-filled "1433" reads as a requirement
-// and, once carried into the address, overrides the instance lookup.
-func portFieldValue(port int) string {
-	if port == 0 || port == defaultPort {
-		return ""
+// serverParts splits the Server Name field into the server (host, plus its
+// named instance) and the port folded into it, and reports whether the port
+// is usable.
+//
+// An empty port means "unspecified" — 0, which db.ResolveServer leaves out of
+// the address entirely rather than pinning to 1433, since a named instance
+// takes its port from SQL Browser. A non-numeric trailing port is not a port
+// at all: gosmo.ParseServerAddress leaves it in the host, and the driver's own
+// error is what surfaces. A numeric one outside 1-65535 is rejected rather
+// than silently falling back, since connecting to 1433 because "99999" didn't
+// fit looks like the typo worked.
+func (d *ConnectDialog) serverParts() (server string, port int, ok bool) {
+	host, instance, port := gosmo.ParseServerAddress(strings.TrimSpace(d.fServer.Value()))
+	server = host
+	if instance != "" {
+		server = host + `\` + instance
 	}
-	return strconv.Itoa(port)
-}
-
-// port reads the Port field and reports whether it parsed. An empty field means
-// "unspecified" — 0, which resolveServer leaves out of the address entirely
-// rather than pinning to 1433, since a named instance takes its port from SQL
-// Browser. An invalid port is rejected rather than silently falling back:
-// connecting to 1433 because "14 33" didn't parse looks like the typo worked.
-func (d *ConnectDialog) port() (int, bool) {
-	v := strings.TrimSpace(d.fPort.Value())
-	if v == "" {
-		return 0, true
+	if port != 0 && (port < 1 || port > 65535) {
+		return server, 0, false
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 || n > 65535 {
-		return 0, false
-	}
-	return n, true
+	return server, port, true
 }
 
 // currentOptions assembles a config.Connection from the dialog fields. Name is
@@ -500,7 +620,7 @@ func (d *ConnectDialog) port() (int, bool) {
 // would otherwise be saved, sealed, with a connection that never sends it.
 // The widget keeps its text, so switching back restores it.
 func (d *ConnectDialog) currentOptions() config.Connection {
-	port, ok := d.port()
+	server, port, ok := d.serverParts()
 	if !ok {
 		port = 0
 	}
@@ -513,12 +633,13 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 		return ""
 	}
 	return config.Connection{
-		Server:                 d.fServer.Value(),
+		Server:                 server,
 		Port:                   port,
 		Database:               d.fDatabase.Value(),
 		AuthMethod:             authMethod,
 		User:                   only(f.User, d.fUser.Value()),
 		Password:               only(f.Password, d.fPassword.Value()),
+		RememberPassword:       f.Password && d.cbRemember.Checked(),
 		TenantID:               only(f.Tenant, d.fTenantID.Value()),
 		ClientID:               only(f.Client, d.fClientID.Value()),
 		TrustServerCertificate: d.cbTrust.Checked(),
@@ -528,21 +649,18 @@ func (d *ConnectDialog) currentOptions() config.Connection {
 	}
 }
 
+// canConnect reports whether Connect has enough to dial: the driver rejects an
+// empty Server outright, so Connect is gated on it rather than reporting
+// "Could not connect to : ConnectionOptions.Server is required" — which is
+// what pressing Enter on the dialog gossms opens at startup used to produce.
+func (d *ConnectDialog) canConnect() bool {
+	server, _, _ := d.serverParts()
+	return server != ""
+}
+
 // connectSpinner is the busy indicator shown while a connection attempt is in
 // flight. Braille: one cell wide, so the "Connecting..." after it never moves.
 var connectSpinner = widgets.SpinnerBraille
-
-// drawConnecting paints the spinner and its label at the left end of the button
-// row, opposite the buttons themselves.
-func (d *ConnectDialog) drawConnecting(s tcell.Screen, style tcell.Style) {
-	if !d.connecting {
-		return
-	}
-	x := d.InnerRect().X + 1
-	y := d.ButtonRowY()
-	connectSpinner.DrawSince(s, x, y, style, d.connectStarted)
-	core.DrawText(s, x+connectSpinner.Width()+1, y, style, d.connectLabel)
-}
 
 // startConnect puts the dialog into its connecting state and dials. The dialog
 // stays up: it closes on success, and on failure returns to normal with the
@@ -558,8 +676,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 	d.connectCancel = cancel
 	d.connectLabel = "Connecting..."
 	// Cancel is the only live control from here, so focus is moved onto it.
-	d.btnFocus = 1
-	d.matchOpen = false
+	d.btnFocus = connectBtnCancel
 
 	d.app.safego("animating the connect dialog spinner", func() {
 		ticker := time.NewTicker(connectSpinner.Period)
@@ -596,7 +713,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 		// for the duration, and leaving it there would make the Enter that
 		// dismisses the error alert's successor keystroke close the dialog
 		// the failed attempt deliberately kept open.
-		d.btnFocus = 0
+		d.btnFocus = connectBtnConnect
 		return true
 	})
 }
@@ -623,293 +740,8 @@ func (d *ConnectDialog) Hide() {
 	d.ModalDialog.Hide()
 }
 
-// HandleKey routes keyboard events.
-func (d *ConnectDialog) HandleKey(ev *tcell.EventKey) bool {
-	if !d.Visible() {
-		return false
-	}
-
-	// While an attempt is in flight every control but Cancel is inert, so the
-	// fields can't be edited out from under the connection being made. Escape
-	// and Enter both reach Cancel, which is where focus already is; everything
-	// else is swallowed rather than passed on, so Tab can't walk into a
-	// disabled field.
-	if d.connecting {
-		switch ev.Key() {
-		case tcell.KeyEscape, tcell.KeyEnter:
-			d.btnFocus = 1
-			d.doButton()
-		}
-		return true
-	}
-
-	// While the autocomplete list is open, arrows navigate it and Enter/Escape
-	// act on it, ahead of the field's own key handling and the dialog's
-	// Tab-cycling and Enter-confirms.
-	if d.matchOpen && d.focusIdx == 0 {
-		switch ev.Key() {
-		case tcell.KeyDown:
-			if d.matchSel < len(d.matches)-1 {
-				d.matchSel++
-			}
-			return true
-		case tcell.KeyUp:
-			if d.matchSel > 0 {
-				d.matchSel--
-			}
-			return true
-		case tcell.KeyEnter:
-			d.applyMatch(d.matches[d.matchSel])
-			return true
-		case tcell.KeyEscape:
-			d.matchOpen = false
-			return true
-		}
-	}
-
-	switch ev.Key() {
-	case tcell.KeyTab:
-		d.stepFocus(+1)
-		return true
-	case tcell.KeyBacktab:
-		d.stepFocus(-1)
-		return true
-	case tcell.KeyEscape:
-		d.Hide()
-		return true
-	case tcell.KeyEnter:
-		if d.ddAuth.IsOpen() {
-			d.ddAuth.HandleKey(ev)
-			d.applyAuthFields()
-			d.refreshConnStrPreview()
-			return true
-		}
-		if d.ddEncrypt.IsOpen() {
-			d.ddEncrypt.HandleKey(ev)
-			d.refreshConnStrPreview()
-			return true
-		}
-		d.doButton()
-		return true
-	case tcell.KeyF1:
-		d.btnFocus = (d.btnFocus + 1) % 2
-		return true
-	}
-
-	if d.focusIdx < len(d.focusable) {
-		switch w := d.focusable[d.focusIdx].(type) {
-		case *widgets.InputField:
-			consumed := w.HandleKey(ev)
-			if w == d.fServer {
-				d.updateMatches()
-			}
-			return consumed
-		case *widgets.DropDown:
-			consumed := w.HandleKey(ev)
-			if w == d.ddAuth {
-				d.applyAuthFields()
-			}
-			d.refreshConnStrPreview()
-			return consumed
-		case *widgets.CheckBox:
-			consumed := w.HandleKey(ev)
-			d.refreshConnStrPreview()
-			return consumed
-		case *controls.Editor:
-			return w.HandleKey(ev)
-		}
-	}
-	return true
-}
-
-// canConnect reports whether Connect has enough to dial: the driver rejects an
-// empty Server outright, so Connect is gated on it rather than reporting
-// "Could not connect to : ConnectionOptions.Server is required" — which is
-// what pressing Enter on the dialog gossms opens at startup used to produce.
-func (d *ConnectDialog) canConnect() bool {
-	return strings.TrimSpace(d.fServer.Value()) != ""
-}
-
-func (d *ConnectDialog) doButton() {
-	switch d.btnFocus {
-	case 0: // Connect
-		if !d.canConnect() {
-			d.app.setStatus("Enter a server name to connect")
-			return
-		}
-		if _, ok := d.port(); !ok {
-			d.app.alertDialog.ShowAlert("Connect",
-				fmt.Sprintf("Port must be a number from 1 to 65535, not %q", strings.TrimSpace(d.fPort.Value())))
-			return
-		}
-		if d.connecting {
-			return
-		}
-		d.startConnect(d.currentOptions())
-	case 1: // Cancel
-		d.Hide()
-	}
-}
-
-// HandleMouse routes mouse events; the embedded ModalDialog blocks clicks
-// outside its bounds via ConsumeOutsideClick.
-func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
-	if !d.Visible() {
-		return false
-	}
-	// A release must reach every mouseDragging-latched widget even when it lands
-	// outside the dialog or on a widget that isn't focused, or its next press is
-	// swallowed as a continuation of the stale drag. Each returns false on
-	// ButtonNone, so this does nothing beyond resetting the latch.
-	if ev.Buttons() == tcell.ButtonNone {
-		d.cbTrust.HandleMouse(ev)
-		d.ddAuth.HandleMouse(ev)
-		d.ddEncrypt.HandleMouse(ev)
-		// End a text-selection drag in the field that claimed the press,
-		// wherever the release landed. Before ConsumeOutsideClick, which returns
-		// early on a release outside the dialog and would strand the latch.
-		d.drag.Release(ev)
-	}
-	if d.ConsumeOutsideClick(ev) {
-		return true
-	}
-
-	// Always forward a release to whichever field has focus, so a text-selection
-	// drag started in it ends cleanly even if the release lands elsewhere in the
-	// dialog. After the d.drag release above because the gesture tracks only
-	// InputFields, while Editor keeps its own latch.
-	if ev.Buttons() == tcell.ButtonNone {
-		if d.focusIdx < len(d.focusable) {
-			switch f := d.focusable[d.focusIdx].(type) {
-			case *widgets.InputField:
-				f.HandleMouse(ev)
-			case *controls.Editor:
-				f.HandleMouse(ev)
-			}
-		}
-		return true
-	}
-
-	if ev.Buttons() != tcell.Button1 {
-		return false
-	}
-
-	// While an attempt is in flight only Cancel answers a click — same gating
-	// as HandleKey, and ahead of every field hit-test below.
-	if d.connecting {
-		if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i == 1 {
-			d.btnFocus = 1
-			d.doButton()
-		}
-		return true
-	}
-
-	// The gesture belongs to whichever field claimed its press, so motion is
-	// replayed there without hit-testing — ahead of the match-list overlay and
-	// every widget below, none of which can own a gesture this one started.
-	if d.drag.Replay(ev) {
-		return true
-	}
-
-	// The match list is an overlay drawn last (over fPort/ddAuth/etc.), so
-	// it's hit-tested first.
-	if d.matchOpen && len(d.matches) > 0 {
-		if i, ok := d.matchHit(ev); ok {
-			d.applyMatch(d.matches[i])
-			return true
-		}
-		d.matchOpen = false
-	}
-
-	// A dropdown's open list is an overlay drawn last, so it gets first
-	// refusal of every click — ahead of ButtonClicked, which would otherwise
-	// steal a click on a list row overlapping the button row. The open one
-	// first: its list may cover the other dropdown's own row.
-	dropdowns := []*widgets.DropDown{d.ddAuth, d.ddEncrypt}
-	if d.ddEncrypt.IsOpen() {
-		dropdowns = []*widgets.DropDown{d.ddEncrypt, d.ddAuth}
-	}
-	for _, dd := range dropdowns {
-		if dd.HandleMouse(ev) {
-			if dd == d.ddAuth {
-				d.applyAuthFields()
-			}
-			d.refreshConnStrPreview()
-			return true
-		}
-	}
-
-	if i := d.ButtonClicked(ev, []string{"Connect", "Cancel"}); i >= 0 {
-		d.btnFocus = i
-		d.doButton()
-		return true
-	}
-
-	if d.cbTrust.HandleMouse(ev) {
-		d.refreshConnStrPreview()
-		return true
-	}
-
-	// fExtraProps/fConnStrPreview.HandleMouse checks its own bounds (Editor has
-	// no separate HitTest), so it doubles as the hit test.
-	for _, ed := range []*controls.Editor{d.fExtraProps, d.fConnStrPreview} {
-		if ed.HandleMouse(ev) {
-			for fi, foc := range d.focusable {
-				if foc == ed {
-					d.setFocus(fi)
-					break
-				}
-			}
-			return true
-		}
-	}
-
-	mx, my := ev.Position()
-	fields := []*widgets.InputField{
-		d.fServer, d.fPort, d.fDatabase, d.fUser, d.fPassword,
-		d.fTenantID, d.fClientID, d.fHostCert,
-	}
-	for _, f := range fields {
-		if f.HitTest(mx, my) {
-			if !f.Enabled() {
-				// Greyed out for this auth method: a click neither focuses
-				// it nor starts a selection in it.
-				return true
-			}
-			for fi, foc := range d.focusable {
-				if foc == f {
-					d.setFocus(fi)
-					break
-				}
-			}
-			// Position the cursor or start a drag-selection at the click point,
-			// not just switch focus to the field.
-			d.drag.Claim(f, ev)
-			if f == d.fServer {
-				d.openMatchesForClick()
-			}
-			return true
-		}
-	}
-	return true
-}
-
-// matchHit reports which server-match-list row contains the click, as an index
-// into d.matches.
-func (d *ConnectDialog) matchHit(ev *tcell.EventMouse) (int, bool) {
-	mx, my := ev.Position()
-	x := d.fServer.InputX() + 1
-	y := d.fServer.RectY() + 1
-	w := d.fServer.Width()
-	n := min(len(d.matches), maxServerMatches)
-	if my < y || my >= y+n || mx < x || mx >= x+w {
-		return 0, false
-	}
-	return my - y, true
-}
-
 // FocusedClipboardTarget implements core.ClipboardHost: whichever text field or
-// editor has focus. A dropdown, checkbox or button answers nil.
+// editor has focus. A dropdown, checkbox, list or button answers nil.
 func (d *ConnectDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

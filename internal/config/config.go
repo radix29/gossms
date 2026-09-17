@@ -155,6 +155,12 @@ type Connection struct {
 	HostNameInCertificate string      `json:"host_name_in_certificate,omitempty"`
 	ExtraProperties       string      `json:"extra_properties"`
 
+	// RememberPassword is the Connect dialog's "Remember Password" box: the
+	// password is written to config.json only when it is set (see AddOrUpdate).
+	// Deliberately absent from connectionAAD — toggling it must not invalidate
+	// a password sealed before the toggle (secret.go).
+	RememberPassword bool `json:"remember_password"`
+
 	// sealed is the on-disk ciphertext Load could not open (replaced key file,
 	// hand-edited server/user bound into the AAD, truncated write). Save writes
 	// it back verbatim instead of encrypting the "" Password holds, so the
@@ -488,6 +494,12 @@ const MaxSavedConnections = 30
 // untouched.
 func (c *Config) AddOrUpdate(conn Connection) {
 	conn.Name = conn.GeneratedName()
+	// Remember Password off: the entry is saved, the password is not — and the
+	// ciphertext any earlier save left behind goes with the entry it replaces,
+	// since this copy carries neither a password nor a sealed blob.
+	if !conn.RememberPassword {
+		conn.Password = ""
+	}
 	for i, existing := range c.Connections {
 		if existing.Name == conn.Name {
 			c.Connections = slices.Delete(c.Connections, i, i+1)
@@ -500,9 +512,27 @@ func (c *Config) AddOrUpdate(conn Connection) {
 	}
 }
 
+// RemoveConnection deletes the saved connection whose name matches, and reports
+// whether one was found. name is the dedup key AddOrUpdate stores — the
+// connection's GeneratedName — and the entry's sealed password goes with it,
+// since the ciphertext lives on the entry.
+//
+// An entry saved by an older build may carry a Name that is not its generated
+// one, so the generated name is matched too rather than leaving such an entry
+// undeletable.
+func (c *Config) RemoveConnection(name string) bool {
+	for i, existing := range c.Connections {
+		if existing.Name == name || existing.GeneratedName() == name {
+			c.Connections = slices.Delete(c.Connections, i, i+1)
+			return true
+		}
+	}
+	return false
+}
+
 // MatchByServer returns saved connections whose Server has the given
-// case-insensitive prefix, most recent first — the Connect dialog's
-// autocomplete source.
+// case-insensitive prefix, most recent first. The Connect dialog's History
+// pane calls it with an empty prefix: the ordering is what it is still for.
 func (c *Config) MatchByServer(prefix string) []Connection {
 	prefix = strings.ToLower(prefix)
 	var out []Connection

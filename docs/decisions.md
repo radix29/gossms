@@ -890,6 +890,57 @@ Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
   unreadable and is re-entered. The `encrypt` boolean is still written so the
   older release can read the file at all.
 
+## Connect dialog: what the SSMS 21 redesign settled — do not re-raise
+
+The dialog is a History pane plus a two-tab form (Connection Properties /
+Connection String). Four things about it are decided and are not to be
+re-opened without asking the author.
+
+- **A password is stored only when Remember Password is ticked, and the box is
+  off for a new connection.** Every successful connection used to seal its
+  password into `config.json` unconditionally. `Config.AddOrUpdate` now blanks
+  `Password` when `!RememberPassword`, so connecting with the box unticked also
+  drops any ciphertext the entry already held — the entry itself stays, because
+  it is what the History pane lists. The caller's copy is untouched
+  (`AddOrUpdate` takes the connection by value), which is what keeps
+  `App.rememberPeerCredentials` working for live peer connects. A saved entry
+  that carries a password pre-fills with the box ticked, so entries written
+  under the old behaviour keep working until one is deliberately unticked.
+- **`RememberPassword` is deliberately not in `connectionAAD`.** Toggling it
+  must not invalidate a password sealed before the toggle — the same rule
+  `secret.go` already states for `Database` and `ExtraProperties`.
+- **The port is folded into Server Name for display only;
+  `config.Connection.Port` stays a stored field.** It is bound into
+  `connectionAAD` (so respelling a saved entry's host and port stops every
+  stored password for it decrypting), it is part of `GeneratedName` — the
+  saved-connection dedup key and the key the completion inventories share —
+  and `db.ResolveServer` drops 0 and 1433 so a named instance still resolves
+  its dynamic port through SQL Browser. `currentOptions` splits the field with
+  `gosmo.ParseServerAddress`, `PreFill` re-joins it with `db.ResolveServer`
+  (the same join dialling uses, so what is shown is what is dialled), and
+  `TestConnectDialogFoldingThePortKeepsTheConnectionIdentity` is the guard that
+  the round trip leaves `GeneratedName` unchanged. Do not "simplify" either
+  side into hand-rolled string surgery.
+- **The History pane replaced the server field's autocomplete overlay, and
+  there is no filter box.** The list is the picker.
+  `config.Config.MatchByServer` stays, called with `""`: it is still the
+  "most recent first" ordering source, and that guarantee is now what the pane
+  depends on. The dialog opens on the pane's first row — the most recent
+  connection — but only into an empty form, since the fields persist across
+  Show/Hide and a reopened dialog must not overwrite a half-typed server name.
+- **Below the two-pane threshold the dialog drops the History pane; it does not
+  clip or scroll it.** A terminal under ~96 columns gets the tabbed form alone.
+  The consequence is accepted: on such a terminal only the most recent saved
+  connection is offered (it still pre-fills), and any other has to be typed.
+  That is the author's call, not an oversight — do not add a narrow-mode picker
+  without asking.
+- **Out of scope by the author's decision**, from the SSMS 21 mockup: the
+  Browse tab, the Favorites group, the Copy/Paste/Apply/Reset buttons under the
+  connection string, and the Name/Color custom-property rows. The connection
+  string stays a live, masked preview, not an editable field with Apply. The
+  "Server Type: SQL Server Database Engine" line is dropped — one fixed value,
+  and the two-pane header row is worth more.
+
 ## By design — not issues, do not re-raise
 
 - **A query window's session behaves like SSMS's, with

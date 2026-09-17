@@ -243,9 +243,11 @@ func (lv *LogViewer) export() {
 // exportText renders the shown entries as the tab-separated file's contents.
 func (lv *LogViewer) exportText() string {
 	var b strings.Builder
-	b.WriteString(strings.Join(lv.exportColumns(), "\t") + "\n")
+	b.WriteString(strings.Join(lv.exportColumns(), "\t"))
+	b.WriteString("\n")
 	for _, r := range lv.shown {
-		b.WriteString(strings.Join(lv.cells(r), "\t") + "\n")
+		b.WriteString(strings.Join(lv.cells(r), "\t"))
+		b.WriteString("\n")
 	}
 	return b.String()
 }

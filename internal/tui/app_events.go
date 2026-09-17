@@ -367,8 +367,18 @@ const (
 // and acts only on Button1/Button2; PanelManager forwards any release to the
 // active panel.
 func (a *App) routeRelease(ev *tcell.EventMouse) {
-	if top := a.topDialog(); top != nil {
-		top.HandleMouse(ev)
+	// Every open dialog gets the release, bottom to top, not only the front
+	// one. A dialog's button latch (dialogs.ModalDialog.mouseDragging) is
+	// cleared by the release its own HandleMouse sees, and a dialog that
+	// opened a nested one from a button press never sees it while the child is
+	// up — so its next press was refused as a continuation of the click that
+	// opened the child, and the Connect dialog ignored the first click after a
+	// Delete confirmation. Acting on a release needs Button1, so the dialogs
+	// underneath only reset latches.
+	if len(a.dialogStack) > 0 {
+		for _, d := range a.dialogStack {
+			d.HandleMouse(ev)
+		}
 	} else if a.contextMenu.Visible() {
 		a.contextMenu.HandleMouse(ev)
 	}

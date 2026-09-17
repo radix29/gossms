@@ -41,14 +41,24 @@ func NewListBox() *ListBox {
 	return new(ListBox{})
 }
 
-// SetBounds positions the list box. Also re-clamps scroll against the new
-// height: Show() selects the first page (and scrolls it into view) before
-// the first Draw/Layout pass ever assigns real bounds, so ensureVisible's
-// very first call runs against a zero-value rect.H and can scroll one row
-// too far — re-running it here once real bounds are known self-corrects
-// that, and keeps the selection in view across any later resize too.
+// SetBounds positions the list box. A change of bounds also re-clamps scroll
+// against the new height: Show() selects the first page (and scrolls it into
+// view) before the first Draw/Layout pass ever assigns real bounds, so
+// ensureVisible's very first call runs against a zero-value rect.H and can
+// scroll one row too far — re-running it once real bounds are known
+// self-corrects that, and keeps the selection in view across any later resize.
+//
+// Bounds that have not moved do nothing, deliberately. Callers lay out from
+// Draw, so the same rect is re-asserted on every frame, and re-running
+// ensureVisible there would snap scroll back onto the selection between one
+// frame and the next — the wheel appeared unable to scroll past the selected
+// row at all.
 func (l *ListBox) SetBounds(x, y, w, h int) {
-	l.rect = core.Rect{X: x, Y: y, W: w, H: h}
+	r := core.Rect{X: x, Y: y, W: w, H: h}
+	if r == l.rect {
+		return
+	}
+	l.rect = r
 	l.ensureVisible()
 }
 
@@ -214,6 +224,12 @@ func (l *ListBox) fireSelect() {
 }
 
 func (l *ListBox) ensureVisible() {
+	// Never leave blank rows below the last item: a list that grew taller, or
+	// one whose items were replaced by fewer, keeps a scroll offset the new
+	// extent no longer justifies.
+	if maxScroll := len(l.items) - l.rect.H; l.scroll > maxScroll {
+		l.scroll = maxScroll
+	}
 	if l.sel < l.scroll {
 		l.scroll = l.sel
 	}

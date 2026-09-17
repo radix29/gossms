@@ -58,14 +58,16 @@ func TestConnectDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 	d.layoutFields()
 	d.fServer.SetValue("abcdefgh")
 
-	// Two rows below the server field: over fPort/ddAuth, which would
-	// otherwise take the focus out from under the drag.
+	// Two rows below the server field: over the Authentication dropdown and
+	// the User Name field, either of which would otherwise take the focus out
+	// from under the drag.
+	server := indexOfFocusable(d.focusable, d.fServer)
 	ix, y := d.fServer.InputX(), d.fServer.RectY()
 	if got := dragOutOf(t, d, d.fServer, ix+6, y+2); got != "abcde" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "abcde")
 	}
-	if d.focusIdx != 0 {
-		t.Errorf("focusIdx = %d, want 0 — a widget below stole a gesture fServer owned", d.focusIdx)
+	if d.focusIdx != server {
+		t.Errorf("focusIdx = %d, want %d — a widget below stole a gesture fServer owned", d.focusIdx, server)
 	}
 
 	// The release ends it wherever it lands, including outside the dialog,

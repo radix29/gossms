@@ -111,3 +111,62 @@ func TestListBoxEmptySelectedIsMinusOne(t *testing.T) {
 		t.Fatalf("Selected() on empty list = %d, want -1", got)
 	}
 }
+
+func manyRows(n int) []string {
+	items := make([]string, n)
+	for i := range items {
+		items[i] = string(rune('a' + i%26))
+	}
+	return items
+}
+
+// The wheel must scroll past the selected row. Callers lay out from Draw, so
+// SetBounds is re-asserted with the same rect on every frame; when that re-ran
+// ensureVisible, scroll snapped straight back onto the selection between one
+// frame and the next and the list looked stuck.
+func TestListBoxWheelScrollsPastTheSelectionAndSurvivesRelayout(t *testing.T) {
+	l := newTestListBox(manyRows(20)...)
+	for range 8 {
+		l.HandleMouse(tcell.NewEventMouse(1, 1, tcell.WheelDown, tcell.ModNone))
+	}
+	if l.scroll != 8 {
+		t.Fatalf("scroll = %d after 8 wheel clicks, want 8", l.scroll)
+	}
+	l.SetBounds(0, 0, 20, 5) // the next frame's layout
+	if l.scroll != 8 {
+		t.Fatalf("re-asserting the same bounds snapped scroll back to %d, want 8", l.scroll)
+	}
+	if l.Selected() != 0 {
+		t.Errorf("scrolling moved the selection to %d", l.Selected())
+	}
+}
+
+// Bounds that really change still pull the selection back into view — that is
+// what SetBounds' re-clamp is for.
+func TestListBoxChangedBoundsKeepTheSelectionVisible(t *testing.T) {
+	l := newTestListBox(manyRows(20)...)
+	l.SetSelected(19)
+	if l.scroll != 15 {
+		t.Fatalf("scroll = %d with the last of 20 rows selected in 5, want 15", l.scroll)
+	}
+	l.SetBounds(0, 0, 20, 10)
+	if l.scroll != 10 {
+		t.Errorf("scroll = %d after the list grew to 10 rows, want 10", l.scroll)
+	}
+}
+
+// Arrow keys still scroll the selection back into view after a wheel scroll
+// left it off screen.
+func TestListBoxKeyboardPullsTheSelectionBack(t *testing.T) {
+	l := newTestListBox(manyRows(20)...)
+	for range 10 {
+		l.HandleMouse(tcell.NewEventMouse(1, 1, tcell.WheelDown, tcell.ModNone))
+	}
+	l.HandleKey(tcell.NewEventKey(tcell.KeyDown, "", tcell.ModNone))
+	if l.Selected() != 1 {
+		t.Fatalf("selection = %d, want 1", l.Selected())
+	}
+	if l.scroll != 1 {
+		t.Errorf("scroll = %d, want the selection scrolled back into view at 1", l.scroll)
+	}
+}

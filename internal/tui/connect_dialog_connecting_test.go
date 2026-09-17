@@ -16,7 +16,7 @@ func connectingDialog(t *testing.T) *ConnectDialog {
 	d.Show()
 	d.fServer.SetValue("srv")
 	d.connecting = true
-	d.btnFocus = 1
+	d.btnFocus = connectBtnCancel
 	return d
 }
 
@@ -38,8 +38,9 @@ func TestConnectingDisablesEveryControlButCancel(t *testing.T) {
 	if d.focusIdx != 0 {
 		t.Fatalf("focus moved to index %d on Tab during a connect attempt, want it pinned to 0", d.focusIdx)
 	}
-	if d.btnFocus != 1 {
-		t.Fatalf("button focus = %d during a connect attempt, want 1 (Cancel)", d.btnFocus)
+	if d.btnFocus != connectBtnCancel {
+		t.Fatalf("button focus = %d during a connect attempt, want %d (Cancel)",
+			d.btnFocus, connectBtnCancel)
 	}
 }
 
@@ -77,7 +78,7 @@ func TestFailedAttemptLeavesTheDialogOpen(t *testing.T) {
 
 	// What connectServer's done callback does on a failure.
 	d.stopConnecting()
-	d.btnFocus = 0
+	d.btnFocus = connectBtnConnect
 
 	if !d.Visible() {
 		t.Fatal("the dialog closed on a failed attempt, want it left open with the typed values")
@@ -103,7 +104,8 @@ func TestReopenedDialogEnterConnectsAgain(t *testing.T) {
 	d.HandleKey(tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModNone))
 
 	d.Show()
-	if d.btnFocus != 0 {
-		t.Fatalf("button focus = %d on a reopened dialog, want 0 (Connect)", d.btnFocus)
+	if d.btnFocus != connectBtnConnect {
+		t.Fatalf("button focus = %d on a reopened dialog, want %d (Connect)",
+			d.btnFocus, connectBtnConnect)
 	}
 }

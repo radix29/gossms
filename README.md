@@ -106,16 +106,41 @@ to a SQL Server instance.
 
 ### 3. Connect to SQL Server
 
-The Connect to Server dialog opens at startup. Enter the server name and choose
-SQL Server, Windows Integrated, or a supported Microsoft Entra ID authentication
-method.
+The Connect to Server dialog opens at startup. **History**, on the left, lists
+the saved connections most recent first: select one to fill the form, and press
+Enter (or click it again) to connect. On a terminal narrower than about 96
+columns the History pane is not shown and the form takes the whole dialog —
+nothing becomes unreachable, since anything History fills in can also be typed.
 
-For a named instance such as `SERVER\INSTANCE`, leave **Port** blank so SQL
-Browser can resolve the instance. Use a port only when you want to connect to a
-specific port directly. An IPv6 address can be typed bare (`fe80::1`),
-bracketed, or with a port as `[fe80::1]:1433` or `fe80::1,1433`.
+The form itself is on two tabs, **Connection Properties** and **Connection
+String**; Ctrl+PgUp/PgDn or a click on the tab switches between them. **Custom
+Properties** stays visible under both.
 
-Fields the chosen authentication method does not use are greyed out. The
+Under the form, **Reset** empties it back to the defaults — the saved
+connections are left alone — and **Delete** removes the connection History is
+highlighting, after asking. Deleting one takes the password saved with it, so
+it is not undone by retyping the server name; Delete therefore sits alone at
+the left end of the button row, away from Connect. F1 cycles the buttons for
+the keyboard, left to right; Esc still cancels.
+
+Enter the server name and choose SQL Server, Windows Integrated, or a supported
+Microsoft Entra ID authentication method.
+
+**Server Name** carries the port, as SSMS spells it: `host`, `host,1500`,
+`host:1500`, or `host\instance,1500`. For a named instance such as
+`SERVER\INSTANCE`, give no port so SQL Browser can resolve the instance — a
+port there reaches the *default* instance instead. An IPv6 address can be typed
+bare (`fe80::1`), bracketed, or with a port as `[fe80::1]:1433` or
+`fe80::1,1433`.
+
+**Remember Password** decides whether the password is written to
+`config.json` at all. It is off for a new connection, so a password is used to
+connect and then forgotten; connecting with it unticked also removes a password
+stored for that connection earlier. A saved connection that has one opens with
+the box ticked, so existing entries keep working until you untick one.
+
+Fields the chosen authentication method does not use are greyed out — Remember
+Password with them, for a method that sends no password. The
 Microsoft Entra methods are:
 
 | Method | Fields |
@@ -123,17 +148,17 @@ Microsoft Entra methods are:
 | **Microsoft Entra MFA** | Signs in through your browser. **User** is an optional login hint. |
 | **Microsoft Entra Device Code** | Shows a code to enter at Microsoft's sign-in page, on any device — for a machine with no browser, or over SSH. |
 | **Microsoft Entra Password** | **User** and **Password**. No MFA, and deprecated by Microsoft; prefer MFA. |
-| **Microsoft Entra Service Principal** | The application's ID in **ClientID**, its client secret in **Password**. |
-| **Microsoft Entra Managed Identity** | **ClientID** only for a user-assigned identity; blank for system-assigned. |
+| **Microsoft Entra Service Principal** | The application's ID in **Client ID**, its client secret in **Password**. |
+| **Microsoft Entra Managed Identity** | **Client ID** only for a user-assigned identity; blank for system-assigned. |
 | **Microsoft Entra Default** | Tries environment variables, managed identity and the Azure CLI in turn. |
 | **Microsoft Entra Azure CLI** | Uses the account `az login` signed in. |
 
-**TenantID** is optional for every Entra method except Managed Identity, which
+**Tenant ID** is optional for every Entra method except Managed Identity, which
 has no tenant field. Left blank, MFA, Device Code, Password and Service
 Principal sign in to the tenant the server belongs to, as SSMS does — which
 is what lets a personal Microsoft account added to that tenant sign in —
 and Default and Azure CLI use their own. For MFA, Device Code and Password,
-**ClientID** names your organisation's own app registration when it requires
+**Client ID** names your organisation's own app registration when it requires
 one; blank uses Microsoft's public client.
 
 MFA and Device Code sign in as a step of their own before connecting, with up
@@ -148,15 +173,15 @@ Sign-ins** forgets them sooner, to switch accounts.
 New connections encrypt the whole session (**Encrypt: Mandatory**) with **Trust
 Server Certificate** ticked, so an instance using SQL Server's self-signed
 certificate still connects. Untick it to validate the certificate, and fill in
-**CertHost** when connecting by an IP address or alias the certificate does not
+**Host Name In Certificate** when connecting by an IP address or alias the certificate does not
 name. **Strict** (TDS 8.0) needs SQL Server 2022 or later, or Azure SQL
 Managed Instance, with a real certificate. A saved connection keeps the setting
 it was saved with.
 
-**Extra Properties** passes further driver settings as `key=value` pairs
+**Custom Properties** passes further driver settings as `key=value` pairs
 separated by `;` or `&` — for example `ApplicationIntent=ReadOnly;
 MultiSubnetFailover=true` or `packet size=8192`. A setting the dialog has its
-own field for is refused. The **Connection String** preview is exactly what will
+own field for is refused. The **Connection String** tab shows exactly what will
 be dialled, with passwords masked.
 
 On the server, goSSMS's sessions report `program_name` as `goSSMS` (Object
@@ -229,7 +254,9 @@ grant covers its corresponding information.
 
 ## Configuration
 
-Connections are saved automatically, with the 30 most recent listed first.
+Connections are saved automatically, with the 30 most recent listed first in
+the Connect dialog's History pane. A password is saved only when **Remember
+Password** is ticked.
 Tools > Options controls the tree icon style, default results-grid cell width,
 and IntelliSense.
 

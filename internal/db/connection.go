@@ -162,7 +162,7 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 // (entra.go).
 func toGosmoOptions(opts config.Connection, role Role) (gosmo.ConnectionOptions, error) {
 	co := gosmo.ConnectionOptions{
-		Server:                 resolveServer(opts.Server, opts.Port),
+		Server:                 ResolveServer(opts.Server, opts.Port),
 		Database:               opts.Database,
 		Auth:                   toGosmoAuth(opts.AuthMethod),
 		TrustServerCertificate: opts.TrustServerCertificate,
@@ -329,7 +329,7 @@ func (sc *ServerConn) Label() string {
 	return fmt.Sprintf("%s (%s, SQL Server %s)", name, user, version)
 }
 
-// resolveServer folds the dialog's Server and Port into gosmo's single address.
+// ResolveServer folds the dialog's Server and Port into gosmo's single address.
 // Server may already be any gosmo.ParseServerAddress form; a port it carries
 // wins.
 //
@@ -340,7 +340,7 @@ func (sc *ServerConn) Label() string {
 //
 // With "\instance" and no port, a non-default port is appended with a comma;
 // gosmo reads a colon there as part of the instance name.
-func resolveServer(server string, dialogPort int) string {
+func ResolveServer(server string, dialogPort int) string {
 	host, _, embeddedPort := gosmo.ParseServerAddress(server)
 	if embeddedPort != 0 {
 		return server

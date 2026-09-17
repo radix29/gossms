@@ -278,3 +278,48 @@ func TestInputFieldSetValueLongValueShowsItsTail(t *testing.T) {
 		t.Fatalf("drawn text = %q, want %q", got, "hijklmnop")
 	}
 }
+
+// A selection is anchored in the text it was made in, so replacing that text
+// drops it. A stale anchor past the end of a shorter new value painted the
+// blanks beyond it as selected — the Connect dialog's Server Name field showed
+// a highlight wider than the server name it had just been refilled with.
+func TestInputFieldSetValueDropsTheSelection(t *testing.T) {
+	f := NewInputField("", 20, false)
+	f.Focus(true)
+	f.SetValue("sql01.corp.example.com")
+	f.SelectAll()
+	if !f.HasSelection() {
+		t.Fatal("SelectAll left no selection to drop")
+	}
+	f.SetValue("srv")
+	if f.HasSelection() {
+		t.Errorf("SetValue kept a selection: %q", f.SelectedText())
+	}
+	if start, end := f.selectionBounds(); start > len([]rune(f.Value())) || end > len([]rune(f.Value())) {
+		t.Errorf("selection bounds %d..%d reach past the new value %q", start, end, f.Value())
+	}
+}
+
+// ShowFromStart is the pre-fill counterpart to the tail rule above: a value
+// the user picked rather than typed reads from its first column.
+func TestInputFieldShowFromStart(t *testing.T) {
+	f := NewInputField("Server Name ", 10, false)
+	f.SetBounds(0, 0)
+	f.SetValue("abcdefghijklmnop")
+	f.ShowFromStart()
+
+	if got := drawnText(t, f); got != "abcdefghij" {
+		t.Fatalf("drawn text = %q, want %q", got, "abcdefghij")
+	}
+	if f.Value() != "abcdefghijklmnop" {
+		t.Errorf("ShowFromStart changed the value to %q", f.Value())
+	}
+	// The caret is still at the end, so typing appends and the view follows it
+	// back to the tail — one column short of ten, since the caret's own cell
+	// past the last character is kept on screen too.
+	f.Focus(true)
+	f.HandleKey(tcell.NewEventKey(tcell.KeyRune, "q", tcell.ModNone))
+	if got := drawnText(t, f); got != "ijklmnopq" {
+		t.Fatalf("drawn text after typing = %q, want the tail %q", got, "ijklmnopq")
+	}
+}

@@ -147,7 +147,7 @@ func TestAddOrUpdateReplacesExistingAndMovesToEnd(t *testing.T) {
 	cfg.AddOrUpdate(Connection{Server: "b", Port: 1433, Database: "db", User: "u"})
 	// Re-adding "a" with a new password replaces it in place and makes it the
 	// last (most recent) entry.
-	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u", Password: "new"})
+	cfg.AddOrUpdate(Connection{Server: "a", Port: 1433, Database: "db", User: "u", Password: "new", RememberPassword: true})
 
 	if len(cfg.Connections) != 2 {
 		t.Fatalf("len(Connections) = %d, want 2 (no duplicate)", len(cfg.Connections))
@@ -317,6 +317,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		AuthMethod:             AuthSQLServer,
 		User:                   "sa",
 		Password:               "s3cr3t!",
+		RememberPassword:       true,
 		TrustServerCertificate: true,
 		Encrypt:                EncryptStrict,
 		HostNameInCertificate:  "sql.example.com",
@@ -380,7 +381,7 @@ func TestSavePasswordIsEncryptedOnDisk(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	cfg := &Config{}
-	cfg.AddOrUpdate(Connection{Server: "srv", Database: "db", User: "sa", Password: "s3cr3t!"})
+	cfg.AddOrUpdate(Connection{Server: "srv", Database: "db", User: "sa", Password: "s3cr3t!", RememberPassword: true})
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}
@@ -401,7 +402,7 @@ func TestSaveIsAtomic(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
 
 	cfg := &Config{}
-	cfg.AddOrUpdate(Connection{Server: "myserver", Port: 1433, User: "sa", Password: "hunter2"})
+	cfg.AddOrUpdate(Connection{Server: "myserver", Port: 1433, User: "sa", Password: "hunter2", RememberPassword: true})
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
@@ -547,7 +548,7 @@ func TestUndecryptablePasswordSurvivesAnUnrelatedSave(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	cfg := &Config{}
-	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!"})
+	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true})
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}
@@ -604,7 +605,7 @@ func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	cfg := &Config{}
-	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "old-secret"})
+	cfg.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "old-secret", RememberPassword: true})
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}
@@ -617,7 +618,7 @@ func TestReenteredPasswordReplacesAnUnopenableOne(t *testing.T) {
 	}
 
 	loaded := Load()
-	loaded.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "new-secret"})
+	loaded.AddOrUpdate(Connection{Server: "srv", User: "sa", Password: "new-secret", RememberPassword: true})
 	if err := loaded.Save(); err != nil {
 		t.Fatalf("Save() after re-entry: %v", err)
 	}
@@ -815,5 +816,81 @@ func TestOpenLogFileRotatesOnlyPastTheLimit(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("fresh log mode = %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// Remember Password gates whether a password reaches config.json at all.
+// Unchecked, the entry is still saved — it is what the Connect dialog's
+// History pane lists — but with no password and, crucially, no ciphertext
+// left over from an earlier save that had one: a reload must report "no
+// password saved", not "saved but unreadable", or the next connect dials
+// with "" and reads as a login failure instead of a prompt.
+func TestRememberPasswordGatesWhatIsStored(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	conn := Connection{Server: "srv", User: "sa", Password: "s3cr3t!", RememberPassword: true}
+	cfg := &Config{}
+	cfg.AddOrUpdate(conn)
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() with the box checked: %v", err)
+	}
+	loaded := Load()
+	if len(loaded.Connections) != 1 || loaded.Connections[0].Password != "s3cr3t!" {
+		t.Fatalf("checked: loaded = %+v, want the password back", loaded.Connections)
+	}
+	if !loaded.Connections[0].RememberPassword {
+		t.Error("checked: RememberPassword did not round-trip")
+	}
+
+	// The same connection reconnected with the box unchecked.
+	conn.RememberPassword = false
+	loaded.AddOrUpdate(conn)
+	if got := loaded.Connections[0].Password; got != "" {
+		t.Errorf("unchecked: AddOrUpdate stored %q, want the password dropped", got)
+	}
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save() with the box unchecked: %v", err)
+	}
+	again := Load()
+	if len(again.Connections) != 1 {
+		t.Fatalf("unchecked: len(Connections) = %d, want the entry kept", len(again.Connections))
+	}
+	if got := again.Connections[0]; got.Password != "" || got.PasswordUnreadable() {
+		t.Errorf("unchecked: Password = %q, PasswordUnreadable = %v; want empty and readable",
+			got.Password, got.PasswordUnreadable())
+	}
+
+	// The caller's own copy still carries the password — App.connectServer
+	// hands the same value to rememberPeerCredentials for live peer connects.
+	if conn.Password != "s3cr3t!" {
+		t.Errorf("AddOrUpdate mutated the caller's connection: Password = %q", conn.Password)
+	}
+}
+
+// RemoveConnection is the Connect dialog's Delete button: the entry goes, and
+// with it the sealed password it carried.
+func TestRemoveConnection(t *testing.T) {
+	c := &Config{}
+	c.AddOrUpdate(Connection{Server: "a", User: "sa", Password: "p", RememberPassword: true})
+	c.AddOrUpdate(Connection{Server: "b", User: "sa"})
+	name := c.Connections[0].Name
+
+	if !c.RemoveConnection(name) {
+		t.Fatalf("RemoveConnection(%q) found nothing", name)
+	}
+	if len(c.Connections) != 1 || c.Connections[0].Server != "b" {
+		t.Fatalf("connections after the removal: %+v", c.Connections)
+	}
+	if c.RemoveConnection(name) {
+		t.Error("removing the same connection twice reported a second hit")
+	}
+
+	// An entry saved by an older build may carry a Name that isn't its
+	// generated one; matching on the generated name too keeps it deletable.
+	legacy := Connection{Name: "hand written", Server: "c", User: "sa"}
+	c.Connections = append(c.Connections, legacy)
+	if !c.RemoveConnection(legacy.GeneratedName()) {
+		t.Errorf("a connection named %q could not be removed by its generated name %q",
+			legacy.Name, legacy.GeneratedName())
 	}
 }

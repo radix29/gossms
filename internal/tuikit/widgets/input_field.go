@@ -76,11 +76,31 @@ func (f *InputField) HitTest(mx, my int) bool {
 func (f *InputField) Value() string { return string(f.value) }
 
 // SetValue sets the text and moves the cursor to the end.
+//
+// Any selection is dropped: it was anchored in the text being replaced, and a
+// stale anchor past the end of the new value paints the blanks beyond it as
+// selected — a dialog field refilled with a shorter value showed a highlight
+// wider than the value itself.
 func (f *InputField) SetValue(v string) {
 	f.value = []rune(v)
 	f.cursor = len(f.value)
+	f.selecting = false
+	f.selAnchor = f.cursor
 	f.adjustScroll()
 }
+
+// ShowFromStart scrolls the view back to the field's first column, leaving the
+// value and the caret where they are. It is what a caller pre-filling a field
+// uses: SetValue leaves the caret at the end and the view on the value's tail
+// — right for a Destination path, where the file name is what matters, wrong
+// for the Connect dialog's Server Name, which showed
+// "long-server-name.corp.example.com" for a connection the user picked by its
+// first few characters.
+//
+// The caret is then off screen on a focused field until the first key, which
+// adjustScroll brings the view back to; the focus border still says where
+// input would go.
+func (f *InputField) ShowFromStart() { f.scroll = 0 }
 
 // Focus sets the focused state.
 func (f *InputField) Focus(v bool) { f.focused = v }

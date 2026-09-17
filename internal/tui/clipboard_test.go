@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 )
 
@@ -108,11 +107,11 @@ func TestBracketedPasteAppliesAsOneEdit(t *testing.T) {
 }
 
 // newConnectDialogApp opens the Connect dialog over a focused query panel,
-// with one saved connection for its autocomplete list to find.
+// with no saved connections — the dialog opens on the most recent one when
+// there is one, and these tests want an untouched form.
 func newConnectDialogApp(t *testing.T) (*App, *QueryPanel) {
 	t.Helper()
 	a := newClipboardTestApp()
-	a.cfg.Connections = []config.Connection{{Server: "ubusql1", Port: 1433}}
 	qp := focusedQueryPanel(t, a)
 	a.allDialogs = []Dialog{a.connectDialog}
 	a.connectDialog.Show()
@@ -148,31 +147,23 @@ func TestPasteIsDroppedWhenItsTargetIsNoLongerFocused(t *testing.T) {
 	}
 }
 
-// The same paste applied while the dialog is still open goes in, and the
-// dialog gets told so it can re-filter — the ClipboardEditHandler half.
-func TestPasteIntoTheServerFieldRefiltersTheSavedConnections(t *testing.T) {
+// The same paste applied while the dialog is still open goes in — to the
+// field that was focused when the read started, and to no other. It used to
+// be able to reach another: every edit site checked connectDialog.Visible()
+// and re-ran the server lookup directly, so pasting a password popped the
+// autocomplete list open over a server name nobody had touched. That list is
+// gone (the History pane replaced it), but the targeting rule it exposed is
+// what this pins.
+func TestPasteLandsOnlyInTheFieldItWasAimedAt(t *testing.T) {
 	a, _ := newConnectDialogApp(t)
 	a.pasteInto(a.activeClipboardTarget(), clipboardTargetToken(a.topDialog()), "ubus")
 
-	if got := a.connectDialog.fServer.Value(); got != "ubus" {
+	d := a.connectDialog
+	if got := d.fServer.Value(); got != "ubus" {
 		t.Fatalf("server field = %q, want %q", got, "ubus")
 	}
-	if !a.connectDialog.matchOpen {
-		t.Error("the saved-connections list did not reopen after the paste; " +
-			"ClipboardEdited never reached the dialog")
-	}
-}
 
-// ...and a paste into any other field of that dialog must not re-run the
-// lookup. It used to: every edit site checked connectDialog.Visible() and
-// called updateMatches directly, so pasting a password popped the
-// autocomplete list open over a server name nobody had touched.
-func TestPasteIntoAnotherFieldLeavesTheSavedConnectionsAlone(t *testing.T) {
-	a, _ := newConnectDialogApp(t)
-	d := a.connectDialog
-	d.fServer.SetValue("ubus") // enough to match, but the list is closed
 	d.setFocus(slices.Index(d.focusable, focusable(d.fPassword)))
-
 	target := a.activeClipboardTarget()
 	token := clipboardTargetToken(a.topDialog())
 	if target != clipboardTarget(d.fPassword) {
@@ -183,7 +174,7 @@ func TestPasteIntoAnotherFieldLeavesTheSavedConnectionsAlone(t *testing.T) {
 	if d.fPassword.Value() != "hunter2" {
 		t.Fatalf("password field = %q, want the pasted text", d.fPassword.Value())
 	}
-	if d.matchOpen {
-		t.Error("pasting into the password field opened the server autocomplete list")
+	if got := d.fServer.Value(); got != "ubus" {
+		t.Errorf("server field = %q — the password paste reached it too", got)
 	}
 }

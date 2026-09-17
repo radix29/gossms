@@ -338,7 +338,9 @@ gossms/
 │       ├── new_operator_dialog.go       # New Operator, a single General page
 │       │
 │       │  ── Standalone dialogs ──
-│       ├── connect_dialog.go     # Connect dialog — form + saved-connection autocomplete + conn-string preview
+│       ├── connect_dialog.go     # Connect dialog — state, focus ring, History pane, options/prefill, connect lifecycle
+│       ├── connect_dialog_draw.go  # Connect dialog — two-pane/one-pane layout, tab bar, History pane and section rules
+│       ├── connect_dialog_input.go # Connect dialog — keys, buttons and the mouse ordering (overlays, tabs, then panes)
 │       ├── device_code_dialog.go # Microsoft Entra Device Code sign-in: the code + URL, open for exactly as long as the sign-in
 │       ├── find_replace_dialog.go # Edit > Find/Replace — one dialog in two modes, over controls.Editor's search engine
 │       ├── filter_dialog.go      # Object Explorer > Filter Settings — one operator/value row per filterable property
