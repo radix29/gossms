@@ -326,7 +326,7 @@ const qsQueryIDColumn = "Query ID"
 // there asks the server for the real text rather than opening a rendering that
 // a `-- comment` has turned into a mostly commented-out batch.
 func queryStoreQueryText(ctx context.Context, sc *db.ServerConn, dbName string, queryID int64) (string, error) {
-	text, _, err := sc.Server.Database(dbName).QueryStoreQueryTextContext(ctx, queryID)
+	text, _, err := sc.Server.DatabaseRef(dbName).QueryStoreQueryTextContext(ctx, queryID)
 	return text, err
 }
 

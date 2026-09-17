@@ -374,14 +374,14 @@ func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {
 // Apply path still reads, so a name typo is still caught there.
 func scriptSafeJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
 	if gosmo.Scripting(ctx) {
-		return sc.Server.Job(name), nil
+		return sc.Server.JobRef(name), nil
 	}
 	return sc.Server.JobByNameContext(ctx, name)
 }
 
 func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Alert, error) {
 	if gosmo.Scripting(ctx) {
-		return sc.Server.Alert(name), nil
+		return sc.Server.AlertRef(name), nil
 	}
 	return sc.Server.AlertByNameContext(ctx, name)
 }

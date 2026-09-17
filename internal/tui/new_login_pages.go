@@ -173,12 +173,12 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 			return err
 		}
 		if isSQL && (policyRow.Dirty() || expirationRow.Dirty()) {
-			if err := sc.Server.Login(name).SetPasswordPolicyContext(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
+			if err := sc.Server.LoginRef(name).SetPasswordPolicyContext(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
 				return err
 			}
 		}
 		if !mapped && defaultLangRow.Dirty() {
-			if err := sc.Server.Login(name).SetDefaultLanguageContext(ctx, langItems[defaultLangRow.Selected()]); err != nil {
+			if err := sc.Server.LoginRef(name).SetDefaultLanguageContext(ctx, langItems[defaultLangRow.Selected()]); err != nil {
 				return err
 			}
 		}
@@ -250,7 +250,7 @@ func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	)
 
 	apply := func(ctx context.Context) error {
-		l := sc.Server.Login(loginName())
+		l := sc.Server.LoginRef(loginName())
 		for i, v := range rolesGrid.Values() {
 			if !v[0] {
 				continue
@@ -409,7 +409,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 	apply := func(ctx context.Context) error {
 		commitCurrent()
 		name := loginName()
-		l := sc.Server.Login(name)
+		l := sc.Server.LoginRef(name)
 		for _, e := range rows {
 			if !e.mapped {
 				continue
@@ -553,7 +553,7 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 			}
 		}
 		if enabledRow.Dirty() && enabledRow.Selected() == 1 {
-			if err := sc.Server.Login(name).DisableContext(ctx); err != nil {
+			if err := sc.Server.LoginRef(name).DisableContext(ctx); err != nil {
 				return err
 			}
 		}

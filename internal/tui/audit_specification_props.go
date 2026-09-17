@@ -94,7 +94,7 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 				if !grid.Dirty() && !auditRow.Dirty() {
 					return nil
 				}
-				handle := sc.Server.ServerAuditSpecification(specName)
+				handle := sc.Server.ServerAuditSpecificationRef(specName)
 				// One disable window for the whole apply. Each write opens its
 				// own otherwise, so a full Apply stops recording three times
 				// and a failure part-way leaves the earlier writes committed

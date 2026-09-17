@@ -212,7 +212,7 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		// The name-only database handle, not DatabaseByName: the create needs
 		// nothing off sys.databases, and this is the form that also works
 		// under the script context Script-To uses.
-		_, err := sc.Server.Database(dbName).CreateDatabaseAuditSpecificationContext(ctx,
+		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseAuditSpecificationContext(ctx,
 			gosmo.DatabaseAuditSpecificationSpec{
 				Name:         d.objectName(),
 				AuditName:    auditField.Value(),

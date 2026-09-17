@@ -139,7 +139,7 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 		// Server.Database, not DatabaseByName: the CREATE addresses the
 		// database by name, and the by-name read would not work under Script
 		// Changes.
-		_, err := sc.Server.Database(dbName).CreateDatabaseScopedCredentialContext(ctx, spec)
+		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseScopedCredentialContext(ctx, spec)
 		return err
 	}
 }

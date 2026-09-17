@@ -108,7 +108,7 @@ func pageDatabaseScopedCredentialGeneral(sc *db.ServerConn, dbName string, credN
 				// the form and the write addresses the credential by name, so
 				// the extra round trip buys nothing and the lookup would not
 				// work under Script Changes.
-				return sc.Server.Database(dbName).DatabaseScopedCredential(*credName).
+				return sc.Server.DatabaseRef(dbName).DatabaseScopedCredentialRef(*credName).
 					AlterContext(ctx, identity, &typed)
 			}
 			return f, apply, nil

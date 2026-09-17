@@ -206,7 +206,7 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 				// The database handle is the name-only one deliberately: the
 				// specification's writes need nothing off sys.databases, and
 				// this is the form that also works under a script context.
-				handle := sc.Server.Database(dbName).DatabaseAuditSpecification(specName)
+				handle := sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(specName)
 				// One disable window for the whole apply — see the server
 				// half: a window per write stops recording once per statement
 				// and leaves a part-failed apply with the specification off.

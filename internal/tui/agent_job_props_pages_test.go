@@ -30,9 +30,10 @@ func jobGeneralResponses() []fakeResponse {
 
 func pageJobGeneralFor(sc *db.ServerConn, n *string) propPage { return pageJobGeneral(sc, n) }
 
-// Other writes address the job by name, so rename runs last, and the shared
-// name cell must end on the new name for the post-Apply reload.
-func TestJobGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
+// The whole page applies as one sp_update_job, and the rename rides in it
+// under the name the server still has. The shared name cell must still end on
+// the new name for the post-Apply reload.
+func TestJobGeneralAppliesEveryEditInOneStatementUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadJobPage(t, jobGeneralResponses(), pageJobGeneralFor)
 
 	editText(t, form, "Description", "Rebuilds every index nightly")
@@ -41,16 +42,8 @@ func TestJobGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want two statements, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "@job_name = N'Nightly reindex', @description = N'Rebuilds every index nightly'") {
-		t.Errorf("first statement should set the description under the old name:\n%s", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "@job_name = N'Nightly reindex', @new_name = N'Nightly maintenance'") {
-		t.Errorf("the rename should run last, under the old name:\n%s", stmts[1])
-	}
+	assertOneStatement(t, inst,
+		"@job_name = N'Nightly reindex', @new_name = N'Nightly maintenance', @description = N'Rebuilds every index nightly'")
 	if *name != "Nightly maintenance" {
 		t.Errorf("the shared name cell is still %q after the rename", *name)
 	}
@@ -67,16 +60,7 @@ func TestJobGeneralWritesTheOwnerAndCategoryThatWerePicked(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want two statements, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "@category_name = N'Replication'") {
-		t.Errorf("category statement:\n%s", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "@owner_login_name = N'otheruser'") {
-		t.Errorf("owner statement:\n%s", stmts[1])
-	}
+	assertOneStatement(t, inst, "@category_name = N'Replication', @owner_login_name = N'otheruser'")
 }
 
 // The checkbox picks between two gosmo calls; inverted, a switched-off job

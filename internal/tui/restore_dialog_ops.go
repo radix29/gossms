@@ -416,7 +416,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 
 	if closeConns && exists {
 		app.postProgress(task, -1, "Closing existing connections...")
-		if err := srv.Database(target).SetUserAccessContext(ctx, "SINGLE_USER"); err != nil {
+		if err := srv.DatabaseRef(target).SetUserAccessContext(ctx, "SINGLE_USER"); err != nil {
 			return err
 		}
 	}
@@ -431,7 +431,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 			// cancelled by its own Cancel button.
 			cleanupCtx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 			defer cancel()
-			_ = srv.Database(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
+			_ = srv.DatabaseRef(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
 		}
 		return err
 	}

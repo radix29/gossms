@@ -182,7 +182,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 				// own otherwise, so a settings-plus-rename Apply stops auditing
 				// twice and a rename that fails leaves the ALTER committed with
 				// the audit off.
-				handle := sc.Server.ServerAudit(*auditName)
+				handle := sc.Server.ServerAuditRef(*auditName)
 				err := handle.WithDisabled(ctx, func(ctx context.Context) error {
 					if dirty {
 						delay, err := delayRow.IntValue()

@@ -71,39 +71,37 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 				if err != nil {
 					return err
 				}
+				// One sp_update_schedule for the whole page — see the same
+				// batching in pageJobGeneral. A schedule is keyed by
+				// @schedule_id, which the rename does not disturb, so it
+				// rides along rather than going last (see propPage.renames);
+				// commitRename still updates the shared cell the Jobs page
+				// reads.
+				var ch gosmo.ScheduleChanges
 				if freqForm.enabledCheck.Dirty() {
-					if freqForm.enabled() {
-						err = sch.EnableContext(ctx)
-					} else {
-						err = sch.DisableContext(ctx)
-					}
-					if err != nil {
-						return err
-					}
+					ch.Enabled = gosmo.Ptr(freqForm.enabled())
 				}
 				if freqForm.frequencyDirty() {
-					if err := sch.SetFrequencyContext(ctx, freqForm.readFrequency()); err != nil {
-						return err
-					}
+					f := freqForm.readFrequency()
+					ch.Frequency = &f
 				}
 				if freqForm.rangeDirty() {
 					startDate, endDate, startTime, endTime := freqForm.readActiveRange()
-					if err := sch.SetActiveRangeContext(ctx, startDate, endDate, startTime, endTime); err != nil {
-						return err
+					ch.Range = &gosmo.ScheduleActiveRange{
+						StartDate: startDate, EndDate: endDate,
+						StartTime: startTime, EndTime: endTime,
 					}
 				}
 				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-					if err := sch.SetOwnerContext(ctx, owner); err != nil {
-						return err
-					}
+					ch.OwnerLogin = gosmo.Ptr(owner)
 				}
-				// Rename last so earlier writes use the server's current name
-				// (see propPage.renames); commitRename then updates the shared
-				// cell for the Jobs page and reloads.
 				if freqForm.nameField.Dirty() {
-					if err := sch.RenameContext(ctx, freqForm.name()); err != nil {
-						return err
-					}
+					ch.Name = gosmo.Ptr(freqForm.name())
+				}
+				if err := sch.AlterContext(ctx, ch); err != nil {
+					return err
+				}
+				if freqForm.nameField.Dirty() {
 					commitRename(ctx, scheduleName, freqForm.name())
 				}
 				return nil

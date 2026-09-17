@@ -404,8 +404,13 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 	if db == nil {
 		return
 	}
+	// supersede, not stop: the run belongs to a connection being torn down, so
+	// its result has nowhere to go and must not stay current. stop alone left
+	// that to the currentNode branch below, which only covers it because
+	// ShowNodeDetails assigns currentNode in the same call that begins the run
+	// — an invariant nothing pinned. See TestDetailBrowserPurgeConnSupersedes.
 	if db.run.node != nil && resolveConn(db.run.node) == sc {
-		db.run.stop()
+		db.run.supersede()
 	}
 	for node := range db.cache {
 		if resolveConn(node) == sc {

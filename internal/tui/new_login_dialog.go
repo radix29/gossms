@@ -129,7 +129,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 // SQL and Windows logins. An empty list leaves the picker offering nothing,
 // which the General page's apply turns into a refusal naming the missing pick.
 func masterMappableNames(ctx context.Context, sc *db.ServerConn) (certs, keys []string) {
-	master := sc.Server.Database("master")
+	master := sc.Server.DatabaseRef("master")
 	if cs, err := master.CertificatesContext(ctx); err == nil {
 		for _, c := range cs {
 			certs = append(certs, c.Name)

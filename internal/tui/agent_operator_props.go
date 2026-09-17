@@ -77,32 +77,27 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 				if err != nil {
 					return err
 				}
+				// One sp_update_operator for the whole page — see the same
+				// batching in pageJobGeneral. The rename is addressed by
+				// @name, the name the server still has, so it rides along
+				// instead of having to go last (see propPage.renames).
+				var ch gosmo.OperatorChanges
 				if enabledCheck.Dirty() {
-					if enabledCheck.Checked() {
-						err = o.EnableContext(ctx)
-					} else {
-						err = o.DisableContext(ctx)
-					}
-					if err != nil {
-						return err
-					}
+					ch.Enabled = gosmo.Ptr(enabledCheck.Checked())
 				}
 				if emailField.Dirty() {
-					if err := o.SetEmailAddressContext(ctx, emailField.Value()); err != nil {
-						return err
-					}
+					ch.EmailAddress = gosmo.Ptr(emailField.Value())
 				}
 				if categoryRow.Dirty() {
-					if err := o.SetCategoryContext(ctx, preservedValue(categoryRow, noneItem)); err != nil {
-						return err
-					}
+					ch.Category = gosmo.Ptr(preservedValue(categoryRow, noneItem))
 				}
-				// Rename last so earlier writes use the server's current name
-				// (see propPage.renames).
 				if nameField.Dirty() {
-					if err := o.RenameContext(ctx, nameField.Value()); err != nil {
-						return err
-					}
+					ch.Name = gosmo.Ptr(nameField.Value())
+				}
+				if err := o.AlterContext(ctx, ch); err != nil {
+					return err
+				}
+				if nameField.Dirty() {
 					commitRename(ctx, operatorName, nameField.Value())
 				}
 				return nil

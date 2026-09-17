@@ -140,7 +140,7 @@ func (d *NewColumnEncryptionKeyDialog) buildPages(pf *ncekPrefetch) {
 			return fmt.Errorf("encrypted value: %w", err)
 		}
 		// Server.Database, not DatabaseByName — see New Column Master Key.
-		return sc.Server.Database(dbName).CreateColumnEncryptionKeyContext(ctx, d.objectName(),
+		return sc.Server.DatabaseRef(dbName).CreateColumnEncryptionKeyContext(ctx, d.objectName(),
 			[]gosmo.ColumnEncryptionKeyValue{{
 				MasterKeyName:       masterRow.Value(),
 				EncryptionAlgorithm: cekAlgorithm,

@@ -143,9 +143,15 @@ func (a *App) refreshCompletionInventory(sc *db.ServerConn, database string) {
 }
 
 // purgeCompletionInventories drops every cached catalog for sc's server+login
-// and cancels any load still in flight. Entries are keyed by
+// and stops any load still in flight. Entries are keyed by
 // server/port/database/user rather than by *ServerConn, so without this a
 // reconnect is served the catalog captured before the disconnect.
+//
+// Abandon, not Cancel: the entry is leaving the map, so a result already on its
+// way has nowhere to land. Cancel leaves seq untouched, so a fetch that
+// completed just before the disconnect still passed Done and called setStatus,
+// painting "Autocomplete ready for <db>" over "Disconnected" a beat after the
+// user disconnected. See latest, and ARCHITECTURE.md § Latest-only loads.
 func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 	serverKey := sysCompletionInventoryKey(sc.Opts)
 	// Matched on the entry's serverKey rather than by picking the database
@@ -155,11 +161,11 @@ func (a *App) purgeCompletionInventories(sc *db.ServerConn) {
 		if inv.serverKey != serverKey {
 			continue
 		}
-		inv.load.Cancel()
+		inv.load.Abandon()
 		delete(a.completionInventories, key)
 	}
 	if inv, ok := a.sysCompletionInventories[serverKey]; ok {
-		inv.load.Cancel()
+		inv.load.Abandon()
 		delete(a.sysCompletionInventories, serverKey)
 	}
 }
@@ -191,7 +197,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 	a.safegoRepair("loading the autocomplete catalog", func() {
 		loadPanicked(a.completionInventories, key, inv, seq)
 	}, func() {
-		cat, err := srv.Database(database).CatalogContext(ctx)
+		cat, err := srv.DatabaseRef(database).CatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key
@@ -298,7 +304,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	a.safegoRepair("loading the system autocomplete catalog", func() {
 		loadPanicked(a.sysCompletionInventories, key, inv, seq)
 	}, func() {
-		cat, err := srv.Database("master").SystemCatalogContext(ctx)
+		cat, err := srv.DatabaseRef("master").SystemCatalogContext(ctx)
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key

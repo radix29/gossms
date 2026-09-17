@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"context"
 	"testing"
+
+	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/db"
 )
 
 // evictInventory must only drop the entry the finishing load actually
@@ -37,5 +41,50 @@ func TestEvictInventoryMissingKeyIsNoOp(t *testing.T) {
 	evictInventory(m, "gone", &completionInventory{})
 	if len(m) != 0 {
 		t.Errorf("evicting a missing key left the map with %d entries, want 0", len(m))
+	}
+}
+
+// A disconnect must supersede every load it purges, not merely stop it. The
+// purge deletes the entry, so a fetch that completed just before the
+// disconnect has nowhere to land — but Cancel leaves seq untouched, so its
+// callback still passed Done, applied the catalog to an entry no longer in the
+// map, and called setStatus, replacing "Disconnected" on the status bar with
+// "Autocomplete ready for <db>". Abandon is the one that supersedes; see
+// latest, and ARCHITECTURE.md § Latest-only loads.
+//
+// Mutation check: put either Abandon back to Cancel and the matching subtest
+// fails.
+func TestPurgeCompletionInventoriesAbandonsInFlightLoads(t *testing.T) {
+	opts := config.Connection{Server: "srv", User: "sa"}
+	sc := &db.ServerConn{Opts: opts}
+	serverKey := sysCompletionInventoryKey(opts)
+
+	perDB := &completionInventory{loading: true, serverKey: serverKey}
+	sys := &completionInventory{loading: true, serverKey: serverKey}
+
+	// Each entry has a fetch in flight, exactly as loadCompletionInventory
+	// leaves it: a token the callback will hand back to Done.
+	_, perDBToken := perDB.load.Begin(context.Background())
+	_, sysToken := sys.load.Begin(context.Background())
+
+	a := &App{
+		completionInventories: map[string]*completionInventory{
+			completionInventoryKey(opts, "AdventureWorks"): perDB,
+		},
+		sysCompletionInventories: map[string]*completionInventory{serverKey: sys},
+	}
+
+	a.purgeCompletionInventories(sc)
+
+	if len(a.completionInventories) != 0 || len(a.sysCompletionInventories) != 0 {
+		t.Fatalf("purge left %d per-database and %d sys entries, want 0 and 0",
+			len(a.completionInventories), len(a.sysCompletionInventories))
+	}
+
+	if perDB.load.Done(perDBToken) {
+		t.Error("a purged per-database load is still current, so its result would apply a catalog to a dropped entry and overwrite the Disconnected status")
+	}
+	if sys.load.Done(sysToken) {
+		t.Error("a purged sys-schema load is still current, so its result would apply a catalog to a dropped entry and overwrite the Disconnected status")
 	}
 }

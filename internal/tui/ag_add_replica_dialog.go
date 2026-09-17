@@ -324,7 +324,7 @@ func (d *AGAddReplicaDialog) addReplica(ctx context.Context) error {
 		}
 		target = peer.Server
 	}
-	joined := target.AvailabilityGroup(agName)
+	joined := target.AvailabilityGroupRef(agName)
 	if err := joined.JoinContext(ctx, ag.ClusterType); err != nil {
 		return fmt.Errorf("replica %s was added to %q, but could not join it: %w", r.name, agName, err)
 	}

@@ -68,9 +68,10 @@ func TestScheduleGeneralGivingAnEndDateReplacesTheNoEndDateSentinel(t *testing.T
 	assertOneStatement(t, inst, "@active_start_date = 20260101, @active_end_date = 20261231")
 }
 
-// Rename is last and the shared name cell follows it, or the reload looks for a
-// vanished name.
-func TestScheduleGeneralRenamesLastAndUnderTheLoadedID(t *testing.T) {
+// The page applies as one sp_update_schedule, addressed by the schedule_id it
+// loaded, and the shared name cell follows the rename — or the reload looks
+// for a vanished name.
+func TestScheduleGeneralAppliesEveryEditInOneStatementUnderTheLoadedID(t *testing.T) {
 	inst, apply, form, name := loadSchedulePage(t)
 
 	editSelect(t, form, "Owner", "otheruser")
@@ -79,16 +80,8 @@ func TestScheduleGeneralRenamesLastAndUnderTheLoadedID(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want two statements, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "@schedule_id = 7, @owner_login_name = N'otheruser'") {
-		t.Errorf("first statement:\n%s", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "@schedule_id = 7, @new_name = N'Hourly (business hours)'") {
-		t.Errorf("the rename should run last:\n%s", stmts[1])
-	}
+	assertOneStatement(t, inst,
+		"@schedule_id = 7, @new_name = N'Hourly (business hours)', @owner_login_name = N'otheruser'")
 	if *name != "Hourly (business hours)" {
 		t.Errorf("the shared name cell is still %q after the rename", *name)
 	}

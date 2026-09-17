@@ -68,14 +68,14 @@ type objectOp struct {
 // sys.databases round trip buys nothing — and DatabaseByName cannot run under a
 // WithScript-derived context, which Script Changes on Delete needs.
 func dbOf(sc *db.ServerConn, n nodeData) *gosmo.Database {
-	return sc.Server.Database(n.DBName)
+	return sc.Server.DatabaseRef(n.DBName)
 }
 
 // tableOf is the table a table-scoped node (index, statistic, key, constraint)
 // belongs to — nodeData.TableName, since Schema/Name there name the index or
 // constraint itself. A name-only handle, for the same reason as dbOf.
 func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
-	return sc.Server.Database(n.DBName).Table(n.Schema, n.TableName)
+	return sc.Server.DatabaseRef(n.DBName).TableRef(n.Schema, n.TableName)
 }
 
 // objectOps is the per-type table. Every rename going through
@@ -108,7 +108,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Its sparse files are deleted. The source database is not affected.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DatabaseSnapshot(n.Name).DropContext(ctx)
+			return sc.Server.DatabaseSnapshotRef(n.Name).DropContext(ctx)
 		},
 	},
 	NodeTable: {
@@ -452,7 +452,7 @@ var objectOps = map[NodeType]objectOp{
 			return sc.Server.DropLoginContext(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return sc.Server.Login(n.Name).RenameContext(ctx, newName)
+			return sc.Server.LoginRef(n.Name).RenameContext(ctx, newName)
 		},
 	},
 	NodeCredential: {
@@ -464,7 +464,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Logins and job steps mapped to it lose their external identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.Credential(n.Name).DropContext(ctx)
+			return sc.Server.CredentialRef(n.Name).DropContext(ctx)
 		},
 	},
 	NodeDatabaseScopedCredential: {
@@ -480,7 +480,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return dbObj.DatabaseScopedCredential(n.Name).DropContext(ctx)
+			return dbObj.DatabaseScopedCredentialRef(n.Name).DropContext(ctx)
 		},
 		// No rename: there is no ALTER DATABASE SCOPED CREDENTIAL ... WITH NAME
 		// and no sp_rename class for one, the same as the server-level
@@ -494,7 +494,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Server audit specifications bound to it stop recording and are left without an audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerAudit(n.Name).DropContext(ctx)
+			return sc.Server.ServerAuditRef(n.Name).DropContext(ctx)
 		},
 		// No rename: ALTER SERVER AUDIT ... MODIFY NAME exists, but only on a
 		// disabled audit, and gosmo's Rename does the off/on dance for it.
@@ -506,7 +506,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The action groups it names stop being recorded by its audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerAuditSpecification(n.Name).DropContext(ctx)
+			return sc.Server.ServerAuditSpecificationRef(n.Name).DropContext(ctx)
 		},
 		// No rename: ALTER SERVER AUDIT SPECIFICATION has no MODIFY NAME form
 		// at all — verified live, it is a parse error.
@@ -520,7 +520,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return dbObj.DatabaseAuditSpecification(n.Name).DropContext(ctx)
+			return dbObj.DatabaseAuditSpecificationRef(n.Name).DropContext(ctx)
 		},
 		// No rename: ALTER DATABASE AUDIT SPECIFICATION has no MODIFY NAME
 		// form, the same as the server-scope one.
@@ -536,7 +536,7 @@ var objectOps = map[NodeType]objectOp{
 		// no other command here can undo.
 		dropOption: "Also delete the backup file on the server",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, deleteFile bool) error {
-			return sc.Server.BackupDevice(n.Name).DropContext(ctx, deleteFile)
+			return sc.Server.BackupDeviceRef(n.Name).DropContext(ctx, deleteFile)
 		},
 	},
 	NodeDatabaseTrigger: {
@@ -549,7 +549,7 @@ var objectOps = map[NodeType]objectOp{
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			// Database, not DatabaseByName: the trigger is addressed by name
 			// and the lightweight handle needs no sys.databases read.
-			return sc.Server.Database(n.DBName).DatabaseTrigger(n.Name).DropContext(ctx)
+			return sc.Server.DatabaseRef(n.DBName).DatabaseTriggerRef(n.Name).DropContext(ctx)
 		},
 		// No rename: sp_rename has no class for a DDL trigger, and there is
 		// no ALTER ... MODIFY NAME form either.
@@ -563,7 +563,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The DDL or logon policy it enforces stops applying server-wide.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerTrigger(n.Name).DropContext(ctx)
+			return sc.Server.ServerTriggerRef(n.Name).DropContext(ctx)
 		},
 		// No rename: sp_rename has no class for a server-scope trigger, and
 		// the name is baked into the definition CREATE TRIGGER stores.

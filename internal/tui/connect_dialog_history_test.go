@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/tuikit/core"
 )
 
 // twoPaneConnectDialog opens the dialog on a terminal wide enough for the
@@ -215,7 +215,7 @@ func TestConnectDialogRowsFitAboveTheButtonRow(t *testing.T) {
 		t.Errorf("the last field row (%d) collides with the Custom Properties section (%d)",
 			d.fHostCert.RectY(), d.extraPropsLabelY)
 	}
-	if got := len(fmt.Sprintf("%s", d.fHostCert.Label())); got != connectLabelWidth {
+	if got := core.DisplayWidth(d.fHostCert.Label()); got != connectLabelWidth {
 		t.Errorf("the widest label is %d columns, want exactly %d", got, connectLabelWidth)
 	}
 }

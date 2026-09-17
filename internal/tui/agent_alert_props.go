@@ -93,54 +93,48 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 				if err != nil {
 					return err
 				}
+				// One sp_update_alert for the whole page — see the same
+				// batching in pageJobGeneral. The rename is addressed by
+				// @name, the name the server still has, so it rides along
+				// instead of having to go last (see propPage.renames).
+				var ch gosmo.AlertChanges
 				if enabledCheck.Dirty() {
-					if enabledCheck.Checked() {
-						err = al.EnableContext(ctx)
-					} else {
-						err = al.DisableContext(ctx)
-					}
-					if err != nil {
-						return err
-					}
+					ch.Enabled = gosmo.Ptr(enabledCheck.Checked())
 				}
 				if triggerRow.Dirty() || errorField.Dirty() || severityField.Dirty() {
+					// Both parameters go every time, the unused one zeroed:
+					// msdb treats an error number and a severity as mutually
+					// exclusive triggers but leaves whichever it is not sent
+					// in place, so switching from one to the other without
+					// clearing the old value arms both.
 					var errNum, sev int
 					if triggerRow.Selected() == 0 {
 						errNum = intRowValue0(errorField.IntValue())
 					} else {
 						sev = intRowValue0(severityField.IntValue())
 					}
-					if err := al.SetTriggerContext(ctx, errNum, sev); err != nil {
-						return err
-					}
+					ch.ErrorNumber, ch.Severity = gosmo.Ptr(errNum), gosmo.Ptr(sev)
 				}
 				if dbRow.Dirty() {
-					if err := al.SetDatabaseContext(ctx, preservedValue(dbRow, allDatabasesItem)); err != nil {
-						return err
-					}
+					ch.DatabaseName = gosmo.Ptr(preservedValue(dbRow, allDatabasesItem))
 				}
 				if delayField.Dirty() {
 					n := intRowValue0(delayField.IntValue())
-					if err := al.SetDelayContext(ctx, time.Duration(n)*time.Second); err != nil {
-						return err
-					}
+					ch.DelayBetweenResponses = gosmo.Ptr(time.Duration(n) * time.Second)
 				}
 				if messageField.Dirty() {
-					if err := al.SetNotificationMessageContext(ctx, messageField.Value()); err != nil {
-						return err
-					}
+					ch.NotificationMessage = gosmo.Ptr(messageField.Value())
 				}
 				if categoryRow.Dirty() {
-					if err := al.SetCategoryContext(ctx, preservedValue(categoryRow, noneItem)); err != nil {
-						return err
-					}
+					ch.Category = gosmo.Ptr(preservedValue(categoryRow, noneItem))
 				}
-				// Rename last so earlier writes use the server's current name
-				// (see propPage.renames).
 				if nameField.Dirty() {
-					if err := al.RenameContext(ctx, nameField.Value()); err != nil {
-						return err
-					}
+					ch.Name = gosmo.Ptr(nameField.Value())
+				}
+				if err := al.AlterContext(ctx, ch); err != nil {
+					return err
+				}
+				if nameField.Dirty() {
 					commitRename(ctx, alertName, nameField.Value())
 				}
 				return nil

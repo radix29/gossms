@@ -477,7 +477,7 @@ func (d *NewEndpointDialog) configure(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("connect to %s: %w", inst.name, err)
 		}
-		p := &endpointPeer{inst: inst, server: server, master: server.Database("master"), ctx: ctx}
+		p := &endpointPeer{inst: inst, server: server, master: server.DatabaseRef("master"), ctx: ctx}
 		if scripting {
 			p.ctx, p.script = gosmo.WithScript(ctx)
 		}

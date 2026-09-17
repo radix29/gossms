@@ -19,9 +19,9 @@ func loadOperatorGeneralPage(t *testing.T) (*fakeInstance, propApply, *propsheet
 	return inst, apply, form, &name
 }
 
-// sp_update_operator addresses by name, so the e-mail write precedes the
-// rename.
-func TestOperatorGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
+// The page applies as one sp_update_operator, addressed by the name the
+// server still has, with the rename in the same statement.
+func TestOperatorGeneralAppliesEveryEditInOneStatementUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadOperatorGeneralPage(t)
 
 	editText(t, form, "E-mail address", "reports@contoso.com")
@@ -30,16 +30,8 @@ func TestOperatorGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want two statements, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "@name = N'reporting', @email_address = N'reports@contoso.com'") {
-		t.Errorf("first statement:\n%s", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "@name = N'reporting', @new_name = N'reporting-team'") {
-		t.Errorf("the rename should run last, under the old name:\n%s", stmts[1])
-	}
+	assertOneStatement(t, inst,
+		"@name = N'reporting', @new_name = N'reporting-team', @email_address = N'reports@contoso.com'")
 	if *name != "reporting-team" {
 		t.Errorf("the shared name cell is still %q after the rename", *name)
 	}

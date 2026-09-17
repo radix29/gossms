@@ -110,10 +110,10 @@ livedb`) is the repeatable part.
   instead. Re-raising CI needs a new reason, not the same one.
 - **The 137 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
   Most loaders resolve the database with a real `sys.databases` read where
-  `Server.Database(name)`'s handle would do, costing a round trip per folder
+  `Server.DatabaseRef(name)`'s handle would do, costing a round trip per folder
   expansion. Closed unmeasured 2026-09-17: no timing was ever taken, the
   saving is one round trip against reads that are themselves round trips, and
-  the swap is not mechanical — `Database(name)` leaves `id` at 0, so
+  the swap is not mechanical — `DatabaseRef(name)` leaves `id` at 0, so
   `IsSystem()` and `IsSnapshot()` answer `false`, which is the quiet failure
   `CLAUDE.md` names. Reopen it only with a measurement from a real expand
   (the Managed Instance's ~41 ms round trip is the figure that would decide
@@ -456,6 +456,24 @@ through a database-wide grant.
   1 Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
+- **The lookup-free handles carry a `Ref` suffix; the `*ByName` lookups keep
+  their names.** Renamed 2026-09-17 across all eighteen families
+  (`Server.Database` → `Server.DatabaseRef`, `Login`, `Table`, the four Agent
+  ones, the audit/credential/trigger/snapshot/plan-guide/backup-device/AG
+  ones). The un-suffixed name was the trap both `CLAUDE.md`s carried a standing
+  gotcha about: `s.Database("x").State()` compiled, issued no query and
+  answered the zero value. **Two alternatives were considered and rejected.**
+  Giving the *lookup* the plain name (`DatabaseByName` → `Database`) would have
+  renamed 18 of the library's 53 `*ByName` methods and left the other 35
+  suffixed, splitting the convention, and would have turned
+  `DatabaseByNameContext` into `DatabaseContext` — which under gosmo's
+  `FooContext` rule reads as the context variant of the *handle* getter.
+  Giving the handle its own distinct type, with `Load(ctx)` to populate
+  it, is the only form that makes the zero-valued accessors impossible
+  rather than merely visible, and was judged not worth the change to every
+  call site for eighteen families; reopen it only with a bug the suffix
+  failed to prevent. The lightweight form itself is not removable — it is
+  the only one that works under a `WithScript`-derived context.
 - **azidentity has deprecated `UsernamePasswordCredential`** (no MFA), which
   gosmo's `AuthEntraPassword` / ROPC mode uses at `entra.go` — both the options
   literal and `NewUsernamePasswordCredential`. The method is **kept**: it is a

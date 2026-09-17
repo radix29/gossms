@@ -96,38 +96,33 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return err
 				}
+				// One sp_update_job for the whole page: msdb takes every
+				// parameter in one call, and a five-edit apply was five round
+				// trips. The rename rides along in the same statement — it is
+				// addressed by @job_name, the name the server still has, so
+				// there is no ordering to get wrong the way separate calls had
+				// (see propPage.renames). commitRename still runs after, to
+				// update the shared cell the other pages read.
+				var ch gosmo.JobChanges
 				if descRow.Dirty() {
-					if err := j.SetDescriptionContext(ctx, descRow.Value()); err != nil {
-						return err
-					}
+					ch.Description = gosmo.Ptr(descRow.Value())
 				}
 				if cat, ok := changedTo(categoryRow, unsetItem); ok {
-					if err := j.SetCategoryContext(ctx, cat); err != nil {
-						return err
-					}
+					ch.Category = gosmo.Ptr(cat)
 				}
 				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-					if err := j.SetOwnerContext(ctx, owner); err != nil {
-						return err
-					}
+					ch.OwnerLogin = gosmo.Ptr(owner)
 				}
 				if enabledRow.Dirty() {
-					if enabledRow.Checked() {
-						err = j.EnableContext(ctx)
-					} else {
-						err = j.DisableContext(ctx)
-					}
-					if err != nil {
-						return err
-					}
+					ch.Enabled = gosmo.Ptr(enabledRow.Checked())
 				}
-				// Rename last so earlier writes use the server's current name
-				// (see propPage.renames); commitRename then updates the shared
-				// cell for other pages and reloads.
 				if nameRow.Dirty() {
-					if err := j.RenameContext(ctx, nameRow.Value()); err != nil {
-						return err
-					}
+					ch.Name = gosmo.Ptr(nameRow.Value())
+				}
+				if err := j.AlterContext(ctx, ch); err != nil {
+					return err
+				}
+				if nameRow.Dirty() {
 					commitRename(ctx, jobName, nameRow.Value())
 				}
 				return nil

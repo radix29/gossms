@@ -65,8 +65,9 @@ func TestAlertGeneralNarrowingTheScopePicksTheNamedDatabase(t *testing.T) {
 	assertOneStatement(t, inst, "@database_name = N'salesdb'")
 }
 
-// Rename is last, and earlier writes use the old name.
-func TestAlertGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
+// The page applies as one sp_update_alert, with the rename in it under the
+// name the server still has, and the shared name cell follows.
+func TestAlertGeneralAppliesEveryEditInOneStatementUnderTheOldName(t *testing.T) {
 	inst, apply, form, name := loadAlertPage(t, alertGeneralResponses(), pageAlertGeneralFor)
 
 	editText(t, form, "Notification message", "Page the on-call DBA")
@@ -75,16 +76,8 @@ func TestAlertGeneralRenamesLastAndUnderTheOldName(t *testing.T) {
 	if err := apply(t.Context()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want two statements, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "@name = N'Sev 20 errors', @notification_message = N'Page the on-call DBA'") {
-		t.Errorf("first statement:\n%s", stmts[0])
-	}
-	if !strings.Contains(stmts[1], "@name = N'Sev 20 errors', @new_name = N'Severity 20 errors'") {
-		t.Errorf("the rename should run last, under the old name:\n%s", stmts[1])
-	}
+	assertOneStatement(t, inst,
+		"@name = N'Sev 20 errors', @new_name = N'Severity 20 errors', @notification_message = N'Page the on-call DBA'")
 	if *name != "Severity 20 errors" {
 		t.Errorf("the shared name cell is still %q after the rename", *name)
 	}

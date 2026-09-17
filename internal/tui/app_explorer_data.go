@@ -272,7 +272,7 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 		"Disable Server Trigger",
 		fmt.Sprintf("Disable %s? The DDL or logon policy it enforces stops applying server-wide.", name),
 		func(ctx context.Context, name string, on bool) error {
-			t := sc.Server.ServerTrigger(name)
+			t := sc.Server.ServerTriggerRef(name)
 			if on {
 				return t.EnableContext(ctx)
 			}
@@ -291,7 +291,7 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 		func(ctx context.Context, name string, on bool) error {
 			// Database, not DatabaseByName: addressing a trigger needs no
 			// sys.databases read.
-			t := sc.Server.Database(dbName).DatabaseTrigger(name)
+			t := sc.Server.DatabaseRef(dbName).DatabaseTriggerRef(name)
 			if on {
 				return t.EnableContext(ctx)
 			}
@@ -317,7 +317,7 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 		"Disable Audit",
 		fmt.Sprintf("Disable %s? The instance stops recording anything through it.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAudit(name).SetStateContext(ctx, on)
+			return sc.Server.ServerAuditRef(name).SetStateContext(ctx, on)
 		})
 }
 
@@ -328,7 +328,7 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		"Disable Server Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAuditSpecification(name).SetStateContext(ctx, on)
+			return sc.Server.ServerAuditSpecificationRef(name).SetStateContext(ctx, on)
 		})
 }
 
@@ -340,7 +340,7 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		"Disable Database Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups and actions it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.Database(dbName).DatabaseAuditSpecification(name).SetStateContext(ctx, on)
+			return sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name).SetStateContext(ctx, on)
 		})
 }
 
@@ -419,7 +419,7 @@ func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 		"Disable Plan Guide",
 		fmt.Sprintf("Disable %s? The queries it applies hints to go back to the plans the optimizer picks on its own.", name),
 		func(ctx context.Context, name string, on bool) error {
-			g := sc.Server.Database(dbName).PlanGuide(name)
+			g := sc.Server.DatabaseRef(dbName).PlanGuideRef(name)
 			if on {
 				return g.EnableContext(ctx)
 			}
@@ -513,7 +513,7 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 			what:    "changing a database's online state",
 			sc:      sc,
 		}, func(ctx context.Context, _ progressReport) error {
-			d := sc.Server.Database(dbName)
+			d := sc.Server.DatabaseRef(dbName)
 			if goOffline {
 				return d.SetOfflineContext(ctx)
 			}

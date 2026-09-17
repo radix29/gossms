@@ -117,7 +117,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 			return err
 		}
 		if ownerRow.Dirty() {
-			if err := sc.Server.Database(name).SetOwnerContext(ctx, ownerRow.Value()); err != nil {
+			if err := sc.Server.DatabaseRef(name).SetOwnerContext(ctx, ownerRow.Value()); err != nil {
 				return err
 			}
 		}
@@ -136,7 +136,7 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 	f := propsheet.NewForm(rows...)
 
 	apply := func(ctx context.Context) error {
-		d := sc.Server.Database(dbName())
+		d := sc.Server.DatabaseRef(dbName())
 		if err := applyTrackedOptions(ctx, d, tracked); err != nil {
 			return err
 		}
@@ -282,7 +282,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		if len(edits) == 0 {
 			return nil
 		}
-		d := sc.Server.Database(dbName())
+		d := sc.Server.DatabaseRef(dbName())
 		for _, e := range edits {
 			if err := d.AddFileGroupContext(ctx, e.name); err != nil {
 				return err

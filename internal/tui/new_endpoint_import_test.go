@@ -43,7 +43,7 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 	p := &endpointPeer{
 		inst:   &newEndpointInstance{name: name},
 		server: sc.Server,
-		master: sc.Server.Database("master"),
+		master: sc.Server.DatabaseRef("master"),
 		ctx:    context.Background(),
 	}
 	if err := d.ensureCertificate(p.ctx, p); err != nil {

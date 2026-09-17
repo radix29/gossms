@@ -193,7 +193,7 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	p.app.safegoRepair("reading a Query Store query history", func() { p.seriesPanicked(seq) }, func() {
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
-		stats, err := sc.Server.Database(dbName).QueryStoreTrackedQueryContext(readCtx, queryID, opts)
+		stats, err := sc.Server.DatabaseRef(dbName).QueryStoreTrackedQueryContext(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.seriesRead.Done(seq) {
 				return

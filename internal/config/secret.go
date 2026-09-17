@@ -124,16 +124,16 @@ func connectionAAD(c Connection) []byte {
 	if encrypt == "" {
 		encrypt = EncryptOptional
 	}
-	return []byte(fmt.Sprintf("gossms-connection-v3\x00%s\x00%d\x00%s\x00%d\x00%s\x00%t\x00%s\x00%s",
+	return fmt.Appendf(nil, "gossms-connection-v3\x00%s\x00%d\x00%s\x00%d\x00%s\x00%t\x00%s\x00%s",
 		c.Server, c.Port, c.User, int(c.AuthMethod),
-		encrypt, c.TrustServerCertificate, c.HostNameInCertificate, c.ExtraProperties))
+		encrypt, c.TrustServerCertificate, c.HostNameInCertificate, c.ExtraProperties)
 }
 
 // connectionAADv2 is the AAD passwords were sealed with before transport
 // settings were bound (aadPrefixV2). Only ever used to open one.
 func connectionAADv2(c Connection) []byte {
-	return []byte(fmt.Sprintf("gossms-connection-v2\x00%s\x00%s\x00%d",
-		c.Server, c.User, int(c.AuthMethod)))
+	return fmt.Appendf(nil, "gossms-connection-v2\x00%s\x00%s\x00%d",
+		c.Server, c.User, int(c.AuthMethod))
 }
 
 // encryptPassword AES-256-GCM-encrypts c's password under key, binding it to

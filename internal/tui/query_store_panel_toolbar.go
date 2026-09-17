@@ -383,5 +383,5 @@ func (p *QueryStorePanel) database() *gosmo.Database {
 	if p.conn == nil || p.conn.Server == nil {
 		return nil
 	}
-	return p.conn.Server.Database(p.dbName)
+	return p.conn.Server.DatabaseRef(p.dbName)
 }

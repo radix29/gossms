@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -339,14 +340,19 @@ func (d *ConnectDialog) stepFocus(dir int) {
 // setEncryptMode selects m in ddEncrypt. A value not in the list — only a
 // hand-edited config.json has one — selects Mandatory rather than leaving
 // the dropdown on whatever it last showed.
+//
+// The fallback resolves an index rather than calling back in with Mandatory:
+// the recursive form terminated only because AllEncryptModes happens to
+// contain Mandatory, an unpinned dependency across two packages that turned
+// dropping a mode into a stack overflow here. The final 0 keeps that property
+// local — the list is never empty, and its first entry is a real mode.
 func (d *ConnectDialog) setEncryptMode(m config.EncryptMode) {
-	for i, mode := range config.AllEncryptModes() {
-		if mode == m {
-			d.ddEncrypt.SetSelected(i)
-			return
-		}
+	modes := config.AllEncryptModes()
+	i := slices.Index(modes, m)
+	if i < 0 {
+		i = max(slices.Index(modes, config.EncryptMandatory), 0)
 	}
-	d.setEncryptMode(config.EncryptMandatory)
+	d.ddEncrypt.SetSelected(i)
 }
 
 // PreFill pre-fills the dialog from an existing connection — the History

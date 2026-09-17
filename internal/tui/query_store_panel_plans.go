@@ -46,7 +46,7 @@ func (p *QueryStorePanel) setPlanForced(force bool) {
 			timeout: qsReadTimeout,
 			repair:  func() { p.forcePanicked(verb) },
 		}, func(ctx context.Context, _ progressReport) error {
-			d := sc.Server.Database(dbName)
+			d := sc.Server.DatabaseRef(dbName)
 			if force {
 				return d.QueryStoreForcePlanContext(ctx, queryID, planID)
 			}

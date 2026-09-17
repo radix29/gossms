@@ -109,7 +109,7 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 				if identity == "" {
 					return fmt.Errorf("identity is required")
 				}
-				return sc.Server.Credential(*credName).AlterContext(ctx, identity, &typed)
+				return sc.Server.CredentialRef(*credName).AlterContext(ctx, identity, &typed)
 			}
 			return f, apply, nil
 		},

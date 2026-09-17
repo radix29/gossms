@@ -61,12 +61,17 @@ Standing gotchas:
 - The modifier accessor is `Modifiers()`, not `Mod()`.
 - `gosmo.Database.Name` / `.State` / `.RecoveryModel` etc. are *methods*, not
   fields.
-- `gosmo.Server` has **both** `Database(name)` and `DatabaseByName(name)`, and
-  they are not interchangeable — picking the wrong one fails quietly.
-  `Database` is a lightweight handle with no query and zero-valued metadata,
-  and the only one that works under a `WithScript`-derived context;
-  `DatabaseByName` queries `sys.databases`. Both are documented on the methods
-  themselves — `go doc gosmo.Server.Database`.
+- **A gosmo method ending in `Ref` is a lookup-free handle.**
+  `gosmo.Server` has **both** `DatabaseRef(name)` and `DatabaseByName(name)`,
+  and they are not interchangeable. `DatabaseRef` issues no query and leaves
+  every field but the name zero-valued — `IsSystem()` answers `false` for
+  `master` — and is the only form that works under a `WithScript`-derived
+  context; `DatabaseByName` queries `sys.databases`. Eighteen gosmo families
+  pair this way (`LoginRef`, `TableRef`, `JobRef`, …). Before the 2026-09-17
+  rename the handle had the plain name and picking the wrong one failed
+  quietly; the suffix is what makes the choice visible at the call site.
+  Both are documented on the methods themselves — `go doc
+  gosmo.Server.DatabaseRef`.
 
 ## Build & verify
 

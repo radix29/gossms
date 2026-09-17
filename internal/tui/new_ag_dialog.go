@@ -378,7 +378,7 @@ func (d *NewAGDialog) createGroup(ctx context.Context) error {
 			}
 			target = peer.Server
 		}
-		ag := target.AvailabilityGroup(req.Name)
+		ag := target.AvailabilityGroupRef(req.Name)
 		if err := ag.JoinContext(ctx, req.ClusterType); err != nil {
 			return fmt.Errorf("availability group %q was created, but %s could not join it: %w", req.Name, r.name, err)
 		}

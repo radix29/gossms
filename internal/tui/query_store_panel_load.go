@@ -142,7 +142,7 @@ func (p *QueryStorePanel) load(keepView bool) {
 	p.app.safegoRepair("running a Query Store report", func() { p.readPanicked(seq) }, func() {
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
-		d := sc.Server.Database(dbName)
+		d := sc.Server.DatabaseRef(dbName)
 		info, infoErr := d.QueryStoreContext(readCtx)
 		var res qsResult
 		var err error
@@ -320,7 +320,7 @@ func (p *QueryStorePanel) loadPlans(queryID int64) {
 	p.app.safegoRepair("reading Query Store plans", func() { p.plansPanicked(seq) }, func() {
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
-		plans, err := sc.Server.Database(dbName).QueryStorePlansContext(readCtx, queryID, opts)
+		plans, err := sc.Server.DatabaseRef(dbName).QueryStorePlansContext(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.planRead.Done(seq) {
 				return

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	dbconn "github.com/radix29/gossms/internal/db"
 )
 
 // The Detail Browser's fetches run on the shared connection pool, and seq only
@@ -245,5 +247,44 @@ func TestForgetCancelsARetiredNodesFetch(t *testing.T) {
 	db.Forget([]*explorerNode{node})
 	if ctx.Err() == nil {
 		t.Error("the retired node's fetch is still running")
+	}
+}
+
+// PurgeConn must supersede the run it stops, not merely cancel it. The run
+// belongs to a connection being torn down, so its result has nowhere to go —
+// but Cancel (detailRuns.stop) leaves seq untouched, so the run stays current
+// and a result already on its way would paint the disconnected server's rows
+// over whatever is displayed.
+//
+// The divergent case below — run.node on the purged connection while
+// currentNode is on another — is not reachable today, because ShowNodeDetails
+// assigns currentNode in the same call that begins the run. That is exactly
+// why it is pinned here: the old code was correct only by way of that
+// invariant, via the currentNode branch, and nothing said so.
+//
+// Mutation check: put supersede back to stop and this fails.
+func TestPurgeConnSupersedesTheRunItStops(t *testing.T) {
+	a := newTestApp()
+	a.detailBrowser = a.newDetailBrowser()
+	db := a.detailBrowser
+
+	scGone := &dbconn.ServerConn{}
+	scOther := &dbconn.ServerConn{}
+	gone := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: scGone}}
+	other := &explorerNode{label: "Logins", data: nodeData{Type: NodeLogins, conn: scOther}}
+
+	// The divergence: the run is for scGone's node, the pane is showing
+	// scOther's, so PurgeConn(scGone) takes the first branch and not the
+	// currentNode one.
+	_, token := db.run.begin(context.Background(), gone)
+	db.currentNode = other
+
+	db.PurgeConn(scGone)
+
+	if db.run.Done(token) {
+		t.Error("the purged run is still current, so its result would paint the disconnected server's rows over the pane")
+	}
+	if db.currentNode != other {
+		t.Error("PurgeConn cleared the node belonging to the connection that is still up")
 	}
 }
