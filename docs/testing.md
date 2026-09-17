@@ -25,6 +25,15 @@ binary. For anything touching the TUI or the database layer, verify by running i
 Tests must assert an outcome, not that nothing panicked. Check a new test by
 mutating the code it covers and confirming it fails.
 
+**A `-race` failure that a plain `go test` does not show can be a stale build
+cache entry, not a real one.** After a mutation check that edited a source file
+and put it back, `go test -race` kept failing a test that `go test` passed on
+byte-identical source, and inserting any statement into the function made it
+pass — the race-mode archive compiled from the mutated file was being reused.
+`go test -race -count=1 -a ./...` (or `go clean -cache`) rebuilds it; do that
+before believing a `-race`-only failure, and prefer copying the file aside and
+back over editing it in place when A/B-ing a fix.
+
 **A round-trip test proves two functions are inverses, never that either is
 right.** Where a load half and a write half share parallel label/code tables
 (schedule dropdowns, permission-state tables, any `items[]`/`values[]` pair), a
@@ -37,7 +46,8 @@ reaching the server (`agent_schedule_props_page_test.go` pins `@freq_interval`).
 **A DSN test asserts what the driver parses, not only what gosmo writes.** A
 connection string that looks right can still be refused: four gosmo Entra methods
 shipped unable to connect because every test checked the query string gosmo built
-and none handed it to go-mssqldb (`docs/entra-auth-plan.md`, G1–G4). Build the
+and none handed it to go-mssqldb — an Entra auth plan's G1–G4, all four found
+only once a connector was built in a test. Build the
 connector — for an Entra method that runs the driver's own parser and validator
 without dialling — and assert on `msdsn.Parse(dsn).Parameters`. gossms's
 auth-mapping tests (`toGosmoOptions`) are held to the same rule through

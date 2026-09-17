@@ -88,13 +88,13 @@ func TestDetailBrowserPanicRepairClearsTheLoadingLatch(t *testing.T) {
 	dbr := NewDetailBrowser("details")
 	node := &explorerNode{label: "n"}
 
-	dbr.seq = 7
-	dbr.pending[node] = 7
+	dbr.run.seq = 7
+	dbr.run.pending[node] = 7
 	dbr.grid.SetStatus("Loading...")
 
 	dbr.panicRepair(node, 7)()
 
-	if _, still := dbr.pending[node]; still {
+	if _, still := dbr.run.pending[node]; still {
 		t.Error("pending entry survived the panic — the node would never refetch")
 	}
 	if _, cached := dbr.cache[node]; cached {
@@ -116,12 +116,12 @@ func TestDetailBrowserPanicRepairIgnoresASupersededFetch(t *testing.T) {
 
 	// A newer fetch (seq 8) for the same node is in flight, and the user has
 	// since selected something else, so neither guard may fire.
-	dbr.seq = 9
-	dbr.pending[node] = 8
+	dbr.run.seq = 9
+	dbr.run.pending[node] = 8
 
 	dbr.panicRepair(node, 7)()
 
-	if got := dbr.pending[node]; got != 8 {
+	if got := dbr.run.pending[node]; got != 8 {
 		t.Errorf("pending[node] = %d after a stale panic, want 8 — the newer "+
 			"fetch's entry was dropped and its result will not be cached", got)
 	}

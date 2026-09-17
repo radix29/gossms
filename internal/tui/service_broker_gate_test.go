@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// The permission gate for the seven Service Broker families — Stage D of
-// docs/plan-phase3-service-broker.md, probed live 2026-09-16 with a WITHOUT
+// The permission gate for the seven Service Broker families, probed live
+// 2026-09-16 with a WITHOUT
 // LOGIN user per right on majors 13, 14 and 17, which answered identically.
 //
 // Six of the seven have no schema, which is the case docs/db-rules.md's rule

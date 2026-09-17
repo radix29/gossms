@@ -12,7 +12,7 @@ import (
 	"github.com/golang-sql/sqlexp"
 )
 
-// ExecuteToSink's wiring — empty Result.Sets, RowsWritten totals, per-set "(N
+// Session.ExecuteToSink's wiring — empty Result.Sets, RowsWritten totals, per-set "(N
 // row(s) written)", suppressed success notice — runs through sqlexp's
 // ReturnMessage protocol. A fake that ignores the retmsg out-param ends
 // runBatch's loop immediately and tests nothing, so this fake implements the
@@ -270,14 +270,14 @@ func messageTexts(res *Result) []string {
 
 // Rows reach the sink, Result.Sets stays empty, RowsWritten totals every set.
 func TestExecuteToSinkStreamsSetsAndRetainsNothing(t *testing.T) {
-	db := openFakeMsgDB([]fakeMsg{
+	s, _, _ := openFakeSession(t, []fakeMsg{
 		set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)}),
 		set([]string{"s"}, []driver.Value{"alpha"}),
 	})
-	defer db.Close()
+	defer s.Close()
 
 	sink := &recordingSink{}
-	res := ExecuteToSink(context.Background(), db, "", "SELECT 1", sink)
+	res := s.ExecuteToSink(context.Background(), "SELECT 1", sink)
 
 	if len(res.Sets) != 0 {
 		t.Errorf("Result.Sets has %d sets, want 0 — the sink path must retain nothing", len(res.Sets))
@@ -308,11 +308,11 @@ func TestExecuteToSinkStreamsSetsAndRetainsNothing(t *testing.T) {
 // An empty set is still a set: "(0 row(s) written)" and no "Commands completed
 // successfully.".
 func TestExecuteToSinkEmptySetIsStillASet(t *testing.T) {
-	db := openFakeMsgDB([]fakeMsg{set([]string{"n"})})
-	defer db.Close()
+	s, _, _ := openFakeSession(t, []fakeMsg{set([]string{"n"})})
+	defer s.Close()
 
 	sink := &recordingSink{}
-	res := ExecuteToSink(context.Background(), db, "", "SELECT 1 WHERE 1=0", sink)
+	res := s.ExecuteToSink(context.Background(), "SELECT 1 WHERE 1=0", sink)
 
 	if res.RowsWritten != 0 {
 		t.Errorf("RowsWritten = %d, want 0", res.RowsWritten)
@@ -330,11 +330,11 @@ func TestExecuteToSinkEmptySetIsStillASet(t *testing.T) {
 
 // No result set at all is what the success notice is for.
 func TestExecuteToSinkNoResultSetReportsSuccess(t *testing.T) {
-	db := openFakeMsgDB([]fakeMsg{{kind: msgAffected, count: 4}})
-	defer db.Close()
+	s, _, _ := openFakeSession(t, []fakeMsg{{kind: msgAffected, count: 4}})
+	defer s.Close()
 
 	sink := &recordingSink{}
-	res := ExecuteToSink(context.Background(), db, "", "UPDATE t SET c = 1", sink)
+	res := s.ExecuteToSink(context.Background(), "UPDATE t SET c = 1", sink)
 
 	if len(sink.begins) != 0 {
 		t.Errorf("BeginSet called %d times, want 0", len(sink.begins))
@@ -350,13 +350,13 @@ func TestExecuteToSinkNoResultSetReportsSuccess(t *testing.T) {
 // Notices and errors reach Messages on the sink path as on the buffering one;
 // an error suppresses the success notice.
 func TestExecuteToSinkForwardsNoticesAndErrors(t *testing.T) {
-	db := openFakeMsgDB([]fakeMsg{
+	s, _, _ := openFakeSession(t, []fakeMsg{
 		{kind: msgNotice, text: "Warning: null value eliminated."},
 		{kind: msgError, err: errors.New("Invalid column name 'nope'.")},
 	})
-	defer db.Close()
+	defer s.Close()
 
-	res := ExecuteToSink(context.Background(), db, "", "SELECT nope", &recordingSink{})
+	res := s.ExecuteToSink(context.Background(), "SELECT nope", &recordingSink{})
 
 	if !hasMessage(res, "Warning: null value eliminated.") {
 		t.Errorf("messages = %v, want the notice forwarded", messageTexts(res))
@@ -377,14 +377,14 @@ func TestExecuteToSinkForwardsNoticesAndErrors(t *testing.T) {
 // behaviour a fake can't reproduce. Removing the drain still passes here;
 // that's a live-server check.
 func TestExecuteToSinkRecoversAfterASinkFailure(t *testing.T) {
-	db := openFakeMsgDB([]fakeMsg{
+	s, _, _ := openFakeSession(t, []fakeMsg{
 		set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)}, []driver.Value{int64(3)}),
 		set([]string{"s"}, []driver.Value{"after"}),
 	})
-	defer db.Close()
+	defer s.Close()
 
 	sink := &firstSetFailSink{failOn: 2}
-	res := ExecuteToSink(context.Background(), db, "", "SELECT 1", sink)
+	res := s.ExecuteToSink(context.Background(), "SELECT 1", sink)
 
 	if !res.HasErrors() {
 		t.Errorf("messages = %v, want the sink failure reported", messageTexts(res))
@@ -401,8 +401,8 @@ func TestExecuteToSinkRecoversAfterASinkFailure(t *testing.T) {
 	}
 }
 
-// Control: Execute over the same stream retains rows in Sets and writes nothing
-// to a sink.
+// Control: the buffering path over the same stream retains rows in Sets and
+// writes nothing to a sink.
 func TestExecuteRetainsWhatExecuteToSinkStreams(t *testing.T) {
 	db := openFakeMsgDB([]fakeMsg{set([]string{"n"}, []driver.Value{int64(1)}, []driver.Value{int64(2)})})
 	defer db.Close()

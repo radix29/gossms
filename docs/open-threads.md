@@ -33,15 +33,11 @@ tables. Call counts differ between instances for reasons other than version
 (the logins and jobs swept are whatever each instance has), so compare
 failures, not totals.
 
-The gates, recorded because the next audit will otherwise re-derive them:
-
-| Column or construct | Held by |
-|---|---|
-| `STRING_AGG` (2017) — partition functions and schemes, server and database triggers, foreign keys, audit specifications | `sql_agg.go` `commaList` renders the `FOR XML PATH`/`STUFF` form, valid from 2008. No raw `STRING_AGG` in non-test source. |
-| Column Master Keys: `allow_enclave_computations`, `signature` (2019) | `security.go`, `colSince(major, SQLServer2019, …)` |
-| Query Store options: the 2017 and 2019 columns | `query_store.go`, `colSince` per column |
-| `Table.Detail`'s `ledger_type_desc` (2022) | `table.go`, `colSince(…, SQLServer2022, …)` |
-| `Statistic.Header`: DBCC returns 10 columns before 2019, 11 after | `statistics.go` binds **by column name**, with the failure named in the comment |
+**The per-column gate table lives in gosmo** — `~/go/gosmo/OPEN-THREADS.md`
+§ Version support. Every gate it names is a gosmo file, and holding the table
+here is what made the sweep instructions read oddly from that repo. What stays
+here is what is environmental rather than library: which instances exist, what
+each refuses, and the sweep's current result.
 
 A sweep of 0 failures is not proof on its own — it passes just as happily if a
 read was never reached. When re-verifying, confirm the reads were actually
@@ -158,11 +154,9 @@ livedb`) is the repeatable part.
 
 ## Release workflow: two jobs whose only failure mode is "did nothing"
 
-Both jobs ran in their current form on the **v0.0.11** tag (2026-09-15, run
-35014969713) and both pushed: the tap carries a `gossms v0.0.11` commit whose
-`Formula/gossms.rb` declares `version "0.0.11"`, and `radix29/apt` carries its
-own. The failure mode the shape guards against is a job that goes green having
-pushed nothing: the `homebrew` job stages first and compares against the index
+Both jobs ran in their current form on the **v0.0.11** tag and both pushed. The
+failure mode the shape guards against is a job that goes green having pushed
+nothing: the `homebrew` job stages first and compares against the index
 (`git diff --quiet` reports no diff for a path git has never tracked), which is
 what the `apt` job already did.
 
@@ -198,6 +192,29 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 `go install …@<tag>` fail with it.
 
 ## Deferred scope (repeatedly, deliberately)
+
+- **There is no CI, and that is the decision, not an omission.** The 2026-09-17
+  review proposed a `ci.yml` running build/vet/`gofmt -l`/test/`-race`/
+  `staticcheck` on push and pull request, plus a tag-only `release-guard` that
+  fails on an uncommented `replace github.com/radix29/gosmo`. Declined
+  2026-09-17: this is a spare-time single-author project with no other
+  automation, and the mechanical checks stay local discipline — `CLAUDE.md`
+  § Build & verify lists them, and `staticcheck` is now zero-output on both
+  repos, so running it is one command with a yes/no answer. What CI would have
+  caught and nothing else does is the release prerequisite: **gosmo must be
+  tagged carrying `AcquireConn`, `ShowplanColumn`, `LinkedServer`/`ServerRole`
+  and the Service Broker routing families before gossms can be tagged at all.**
+  Re-raising CI needs a new reason, not the same one.
+- **The 137 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
+  Most loaders resolve the database with a real `sys.databases` read where
+  `Server.Database(name)`'s handle would do, costing a round trip per folder
+  expansion. Closed unmeasured 2026-09-17: no timing was ever taken, the
+  saving is one round trip against reads that are themselves round trips, and
+  the swap is not mechanical — `Database(name)` leaves `id` at 0, so
+  `IsSystem()` and `IsSnapshot()` answer `false`, which is the quiet failure
+  `CLAUDE.md` names. Reopen it only with a measurement from a real expand
+  (the Managed Instance's ~41 ms round trip is the figure that would decide
+  it), not from the call count.
 
 - **Five of the seven Service Broker families ship read-only, and it is a
   deferral, not the Rules/Defaults refusal.** Six of the seven *do* have an
@@ -281,91 +298,34 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   *login* may do, and a read-only database is not a permission — a third gate
   for it would have to cover every READ_ONLY database, not just snapshots. SSMS
   behaves the same way.
-- **Service Broker Stages A–F have landed and are verified live, on majors 13,
-  14 and 17 and on the Managed Instance.**
-  `docs/plan-phase3-service-broker.md` § Stage A is done:
-  `service_broker.go`, `service_broker_queue.go`, `service_broker_routing.go`
-  and `scripter_service_broker.go` give all seven families a listing, a
-  `…ByNameContext` finder, a `Drop…Context` and a CREATE/DROP script, plus the
-  two DMV reads (`QueueMessageCounts`, `QueueMonitors`) and the two writes
-  Stage C uses: `AlterBrokerQueue`/`BrokerQueue.Alter` and
-  `AlterRoute`/`Route.Alter`. Verified live on majors 13, 14 and 17 by
-  `live_service_broker_test.go` and by the extended version sweep.
-
-  § Stage B is done: the Service Broker folder sits between Query Store and
-  Security, all fourteen node types are wired (icons in both switches, names,
-  loaders, `filterProps`), and the folder is listed whether or not the broker
-  is enabled — verified live on majors 13 and 17, including the empty-folder
-  case (`master`'s Remote Service Bindings and Broker Priorities expand to
-  nothing rather than to an error) and `msdb`'s Database Mail asymmetry.
-
-  § Stage C is done: `detail_browser_service_broker.go` gives every folder its
-  own columns and every leaf its own Property/Value view, and each of the seven
-  leaves has a Properties dialog reached from a `nodeMenus` entry. Five are
-  read-only (`message_type_props.go`, `contract_props.go`, `service_props.go`,
-  `remote_service_binding_props.go`, `broker_priority_props.go`) and are named
-  in `pagesThatOnlyRead`; Queue and Route write — see § Deferred scope for why
-  the other five do not.
-
-  § Stage D is done: the five `ALTER ANY …` rights are declared in
-  `permission_gate.go`, each family has an explicit `dbScopedOpRights` entry
-  (so none falls to `objectWriteRights()`, which asks only ALTER ANY SCHEMA for
-  a schemaless node), and the queue's two verbs are gated separately —
-  `queueAlterRights` for its Properties page, `queueDropRights` for its Delete.
-  gosmo's `ProbedDatabasePermissions` already carries all five names.
-
-  § Stage E is done: all seven leaves have a `scriptables` entry
-  (CREATE / DROP / DROP And CREATE, no ALTER) and an `objectOps` entry with a
-  drop; the queue alone has a transfer, and **nothing has a rename** — no
-  `sp_rename` class exists for any of the seven. `azureRefusedScriptVerbs`
-  withholds the binding's CREATE and DROP And CREATE on an Azure edition, which
-  Managed Instance refuses at compile time with Msg 41906; its DROP is left
-  alone, because MI does not refuse that one. A queue drags into a query editor
-  as `[schema].[name]`, the other six as a bare name.
-
-  Verified live on majors 13, 14 and 17 by `live_service_broker_ops_test.go`,
-  which creates one object of each family, scripts each CREATE, drops all seven
-  in dependency order and then runs every generated CREATE back in; and under
-  the tmux harness on 17, where a user message type and a user queue carry
-  Script as / Delete (and Move to Schema on the queue), `DEFAULT` and
-  `dbo.ServiceBrokerQueue` carry neither, and Script Queue as ▸ DROP To opened
-  the right statement in a query window.
-
-  § Stage F is done, on 2026-09-17. The gosmo live suite
-  (`live_service_broker_test.go`, the extended version sweep,
-  `live_scripter_families_test.go`, `live_probednames_test.go`) and gossms's
-  `live_service_broker_ops_test.go` were run on majors 13, 14 and 17 **and on
-  `t-qmi-01`**; the sweep reports 0 failed reads on all four. Under the tmux
-  harness the seven folders were expanded on a database carrying one object of
-  each family, on a broker-free user database, on `master` and on `msdb`, on
-  majors 13 and 17 and on the MI — the empty folders expand to nothing rather
-  than to an error, and `msdb` shows the documented queue/service asymmetry.
-  The Queue and Route Properties writes were driven end to end on 17 (retention,
-  activation status and max readers on the queue; the address on the route),
-  each re-read, reverted and dropped; a disabled queue picks up its
-  `(Disabled)` label on the next folder refresh, not before. The gate was
-  driven live with a login holding only `ALTER ANY MESSAGE TYPE`: the message
-  type's Delete is offered, the route's reads "needs ALTER ANY ROUTE", the
-  queue's Delete and Move to Schema carry *different* reasons, and the Route
-  Properties page opens read-only with a Close-only button row.
+- **Service Broker shipped complete and is verified live** on majors 13, 14 and
+  17 and on the Managed Instance: all seven families have a listing, a Detail
+  Browser view, a Properties dialog, a permission-gate entry and script verbs,
+  and the Queue and Route writes were driven end to end. The live suites are
+  gosmo's `live_service_broker_test.go` and gossms's
+  `live_service_broker_ops_test.go`. Two details of the shape that are easy to
+  undo: **nothing in the family has a rename** — no `sp_rename` class exists for
+  any of the seven — and `azureRefusedScriptVerbs` withholds the remote service
+  binding's CREATE and DROP And CREATE on an Azure edition, which MI refuses at
+  compile time with Msg 41906, while leaving its DROP alone.
 
   **The one thing still unseen** is the withheld
   `Script Remote Service Binding as ▸ CREATE` greyed out against a real MI
   connection — a remote service binding cannot be created on MI, so no such
   node exists there to right-click. See V7 below.
 
-  **A second MI refusal was found in Stage F and is not gated**: `CREATE ROUTE`
-  and `ALTER ROUTE` with `ADDRESS = 'TRANSPORT'` or with any `MIRROR_ADDRESS`
-  come back **Msg 41943**, "does not support creating route with TRANSPORT or
-  MIRROR address" (probed on `t-qmi-01`, 2026-09-17). An ordinary TCP address
-  is accepted, and unlike the binding's 41906 this one is a *runtime* refusal —
-  a statement before it in the batch runs, the ones after it do not. Nothing
-  gossms emits hits it today: Script as ▸ CREATE can only reproduce a route
-  that already exists, and on MI no route can carry either form. The Route
-  Properties page *can*: a user who types `TRANSPORT` or a mirror address into
-  it on MI gets the server's 41943 rather than a disabled field. Left ungated
-  deliberately — the fields are free text, the message is clear, and gating one
-  value of one field per edition is not a shape `edition_gate.go` has. See B6.
+  **A second MI refusal is not gated**: `CREATE ROUTE` and `ALTER ROUTE` with
+  `ADDRESS = 'TRANSPORT'` or with any `MIRROR_ADDRESS` come back **Msg 41943**,
+  "does not support creating route with TRANSPORT or MIRROR address" (probed
+  on `t-qmi-01`, 2026-09-17). An ordinary TCP address is accepted, and unlike
+  the binding's 41906 this one is a *runtime* refusal — a statement before it
+  in the batch runs, the ones after it do not. Nothing gossms emits hits it
+  today: Script as ▸ CREATE can only reproduce a route that already exists,
+  and on MI no route can carry either form. The Route Properties page *can*:
+  a user who types `TRANSPORT` or a mirror address into it on MI gets the
+  server's 41943 rather than a disabled field. Left ungated deliberately — the
+  fields are free text, the message is clear, and gating one value of one field
+  per edition is not a shape `edition_gate.go` has. See B6.
 
   Three things about the two writes that both Properties pages respect, and
   that any later New-X dialog must: a nil field means "leave this setting
@@ -393,20 +353,12 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   or ALTER on its schema. So `queueAlterRights` is `objectWriteRights()` and
   `queueDropRights` is that set minus the object-scoped ALTER — never one entry
   for both.
-  **Closed 2026-09-16**, the way the entry said it could not be: `CONTROL` is
-  now in gosmo's `ProbedObjectPermissions`, so the object map carries an
-  `O:CONTROL` answer beside `O:ALTER` and the two grants can be told apart. The
-  block matches `CONTROL` alongside whatever name it asks about, so the ALTER
-  map still reads 1 for either — but the CONTROL map answers only for a CONTROL
-  grant and for the object's owner, which is exactly the set the server allows
-  the drop to. `queueDropRights` therefore carries `rightControlOnObject` and
-  not `rightAlterOnObject`; re-probed live on major 17 on 2026-09-16, a CONTROL
-  grantee and an owner each dropped the queue.
-
-  The same answer is what `queueTransferRights` is built on — Move to Schema on
-  a queue needs CONTROL on it and is refused to ALTER, probed the same day —
-  and it also unblocks B5 below for every other class-1 family.
-
+  The two are told apart by `rightControlOnObject`, which reads the `O:CONTROL`
+  answer gosmo's `ProbedObjectPermissions` carries beside `O:ALTER`: the ALTER
+  map reads 1 for either grant, while the CONTROL map answers only for a CONTROL
+  grant and for the object's owner — exactly the set the server allows the drop
+  to. `queueTransferRights` rests on the same answer: Move to Schema on a queue
+  needs CONTROL on it and is refused to ALTER.
 
 **Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** What is kept is
 the live behaviour each gate rests on; every row is a *wrong* gate if assumed
@@ -419,10 +371,9 @@ itself (plus ALTER on the target schema); probed on 17 on 2026-09-11, it was ref
 on the source schema and ALTER on the table, and went through only under
 CONTROL on the table. Move to Schema for every sys.objects family still asks
 the Rename/Delete set (`objectTransferRights` falls back to
-`objectDataRights`), so it is offered to all five. **No longer blocked**:
-`CONTROL` joined gosmo's `ProbedObjectPermissions` on 2026-09-16 and
-`rightControlOnObject` reads it, which is what the queue's own Move to Schema
-is gated on (`queueTransferRights`). Giving the other class-1 families the same
+`objectDataRights`), so it is offered to all five. **Not blocked**:
+`rightControlOnObject` exists and is what the queue's own Move to Schema is
+gated on (`queueTransferRights`). Giving the other class-1 families the same
 entry is a deliberate scope call, not a missing capability — it changes the
 gate on tables, views, procedures, functions and sequences at once, and the
 CONTROL map answers for a CONTROL grant and ownership but not for CONTROL on
@@ -614,7 +565,8 @@ through a database-wide grant.
   supported gosmo auth mode, verified live on Managed Instance. Both sites carry
   `//lint:ignore SA1019` with that reason. The thread to watch is azidentity
   *removing* the type, not deprecating it — at which point ROPC needs a
-  replacement or the mode goes. gosmo has no `PLAN.md`, so it is tracked here.
+  replacement or the mode goes. Tracked in gosmo, which now has somewhere to
+  track it: `~/go/gosmo/OPEN-THREADS.md` § azidentity.
 
 Three things about the job-state read are load-bearing and easy to undo:
 
@@ -1375,7 +1327,7 @@ Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
 
 Every confirmed write from Object Explorer, the Details pane, Always On, Agent,
 the Log File Viewer, Query Store and Activity Monitor runs behind
-`dialogs.ProgressDialog` (`App.runWithProgress`, 2026-09-11). Not the rest:
+`dialogs.ProgressDialog` (`App.runWithProgress`). Not the rest:
 
 - **Properties and New … keep their own spinner and live Cancel** on the sheet's
   button row: closing the sheet for a separate dialog would take the pages and
@@ -1388,15 +1340,12 @@ the Log File Viewer, Query Store and Activity Monitor runs behind
   run function. The 250 ms reveal delay keeps a fast one invisible. So do the
   Agent writes SSMS never confirms: Enable/Disable on a job, schedule, alert or
   operator, and Start/Stop Job.
-- **Driven live on win10cli:** a single DROP blocked on a lock and cancelled
-  (the trace shows it never committed, and the session held no locks or
-  transaction afterwards), a three-table batch cancelled at the blocked third
-  ("2 of 3 deleted"), a fast DROP with no dialog drawn, Restore from Snapshot's
-  uninterruptible dialog, and snapshot / database deletes. **Not driven live:**
-  the failover dialogs (need the AG cluster), and the "Cancelling …" state,
-  which was never on screen long enough to capture: a cancelled DROP returned
-  within one frame. `TestProgressDialogCancelAsksOnceAndStaysOpen` covers its
-  drawing.
+- **Driven live on win10cli**: blocked-and-cancelled DROPs (single and batch),
+  a fast DROP with no dialog drawn, and Restore from Snapshot's uninterruptible
+  dialog. **Not driven live:** the failover dialogs (need the AG cluster), and
+  the "Cancelling …" state, which was never on screen long enough to capture —
+  a cancelled DROP returned within one frame.
+  `TestProgressDialogCancelAsksOnceAndStaysOpen` covers its drawing.
 
 ## Fix order
 
@@ -1436,6 +1385,14 @@ when the underlying issue is fixed.
 - **V5** — CLR type, assembly and external-resource scripts have never been
   executed against a server, and the external library right set was never run
   live (no Machine Learning Services). § Deferred scope, § Permission gating
+- **V8** — The Details pane's "Not connected" branch
+  (`detail_browser.go`, `ShowNodeDetails`) has never been driven on screen.
+  It is not reachable through File > Disconnect, which removes the subtree and
+  shows the empty pane; reaching it needs a node that outlives its
+  connection's close — a closed peer connection under a node still in the
+  tree, or a selection change queued behind one. The Always On cluster is
+  where that could be staged. Unit-covered by
+  `TestShowNodeDetailsNotConnectedDropsThePreviousNode`.
 - **V7** — The withheld `Script Remote Service Binding as ▸ CREATE` has never
   been seen greyed out against a real MI connection: a binding cannot be
   created there, so no such node exists to right-click. The rest of the

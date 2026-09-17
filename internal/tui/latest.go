@@ -8,12 +8,15 @@ import (
 // latest is the "start a load, cancel the one it replaces, drop stale results"
 // lifecycle, owned once instead of hand-rolled per site. An explorer node's
 // children, a completion inventory's catalog, a Query Store report, its plan
-// pane, its chart and the Log Viewer's read are all latest-only: the newest
+// pane, its chart, the Log Viewer's read, the Detail Browser's fetch, Object
+// Dependencies and a create dialog's prefetch are all latest-only: the newest
 // request is the only one whose result anyone wants, and every earlier one
 // should stop taking a pool connection from it the moment it is superseded.
 //
 // Both halves matter, and every copy of this that shipped with only the first
-// half was a bug (docs/review-plan-2026-09-11.md R3, R5, R13):
+// half was a bug: Refresh left every replaced node's load running, the
+// Properties dialog let a previous showing's page loads reach the next one,
+// and the Detail Browser never cancelled a fetch it had moved past.
 //
 //   - the token discards a superseded result, so a slow fetch cannot overwrite
 //     the fresher one that replaced it;
@@ -21,6 +24,10 @@ import (
 //     connection now rather than at their timeout. Without it, holding Down
 //     through a ranking or arrowing through a folder starts one read per row
 //     and the row the user stops on queues behind all of them.
+//
+// A site needing more than one run's worth of bookkeeping wraps this rather
+// than growing it: DetailBrowser's detailRuns adds the node each run is for and
+// the per-node pending map a cancel has to evict.
 //
 // Every method runs on the UI goroutine; the zero value is ready to use, and a
 // latest with nothing in flight is safe to Cancel, Abandon or ask Idle.

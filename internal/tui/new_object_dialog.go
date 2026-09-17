@@ -89,6 +89,13 @@ type newObjectDialog[P any] struct {
 	fetching bool
 	waiting  []pageRequest
 
+	// prefetchRun is the prefetch in flight, superseded by each new showing.
+	// A prefetch outlives the showing that started it when the dialog is
+	// closed and reopened before it lands; the sheet's per-page seq keeps the
+	// stale result off the new showing's pages, but not off this dialog's own
+	// state — see onLoadPage.
+	prefetchRun latest
+
 	// objectName returns the name typed into the dialog, for the success message;
 	// preflight rejects it before anything is sent. Both are assigned by build.
 	objectName func() string
@@ -167,6 +174,7 @@ func (d *newObjectDialog[P]) init(app *App, cfg newObjectConfig[P]) {
 // left behind: a create dialog always starts empty.
 func (d *newObjectDialog[P]) show(sc *db.ServerConn) {
 	cancelIfSet(d.cancel)
+	d.prefetchRun.Abandon()
 	d.ctx, d.cancel = context.WithCancel(sc.Context())
 	d.sc = sc
 	d.prefetch = nil
@@ -201,21 +209,17 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 	}
 	d.fetching = true
 	sc := d.sc
-	sessionCtx := d.ctx
 	fetch := d.fetch
-	d.app.safegoRepair("loading a new-object page", func() { d.fetchPanicked(sessionCtx) }, func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
+	// Derived from d.ctx, so closing the dialog or disconnecting tears the
+	// prefetch down as well as its own timeout.
+	ctx, token := d.prefetchRun.BeginTimeout(d.ctx, propFetchTimeout)
+	d.app.safegoRepair("loading a new-object page", func() { d.fetchPanicked(token) }, func() {
 		pf, err := fetch(ctx, sc)
 		d.post(func() {
-			// A prefetch outlives the showing that started it when the dialog
-			// is closed and reopened before it lands. The sheet's seq keeps the
-			// stale result off the new showing's pages, but not off this
-			// dialog's own state: without this guard the stale callback
-			// consumes the *new* showing's waiting list and clears fetching,
-			// and the live fetch then lands with nothing waiting and never
-			// calls SetPageForm.
-			if d.ctx != sessionCtx {
+			// Without this guard the stale callback consumes the *new*
+			// showing's waiting list and clears fetching, and the live fetch
+			// then lands with nothing waiting and never calls SetPageForm.
+			if !d.prefetchRun.Done(token) {
 				return
 			}
 			d.fetching = false
@@ -239,10 +243,11 @@ func (d *newObjectDialog[P]) onLoadPage(page, seq int) {
 // fetchPanicked releases the prefetch latch after a panic in onLoadPage's
 // goroutine — its App.safegoRepair step. d.fetching makes the fetch
 // single-flight, so leaving it set means no page ever loads again, and the
-// queued requests have to be failed too or they sit blank. Guarded by sessionCtx
-// like the normal completion path: a reopened dialog has its own fetch out.
-func (d *newObjectDialog[P]) fetchPanicked(sessionCtx context.Context) {
-	if d.ctx != sessionCtx {
+// queued requests have to be failed too or they sit blank. Guarded by the run
+// token like the normal completion path: a reopened dialog has its own fetch
+// out.
+func (d *newObjectDialog[P]) fetchPanicked(token int) {
+	if !d.prefetchRun.Done(token) {
 		return
 	}
 	d.fetching = false

@@ -97,7 +97,7 @@ func TestMovingOnCancelsTheSupersededDetailFetch(t *testing.T) {
 		t.Errorf("status = %q, want a fresh fetch for the node whose fetch was cancelled", got)
 	}
 	drainUntil(t, a, func() bool { _, ok := db.cache[nodeA]; return ok }, "the refetch to be cached")
-	if db.inflight.cancel != nil {
+	if db.run.cancel != nil {
 		t.Error("a fetch that landed kept its context registered")
 	}
 }
@@ -135,7 +135,7 @@ func TestMovingOnCancelsAFoldersBackfill(t *testing.T) {
 			t.Errorf("backfill read %d is still running after the selection moved on", i)
 		}
 	}
-	if _, ok := db.pending[folder]; ok {
+	if _, ok := db.run.pending[folder]; ok {
 		t.Error("the cancelled fetch kept its pending entry, so its final stage can still cache")
 	}
 
@@ -170,7 +170,7 @@ func TestInvalidateCancelsTheFetchItReplaces(t *testing.T) {
 	if first.Err() == nil {
 		t.Error("the fetch Invalidate replaced is still running")
 	}
-	if db.inflight.node != node || db.inflight.cancel == nil {
+	if db.run.node != node || db.run.cancel == nil {
 		t.Error("the refetch is not the fetch in flight")
 	}
 }
@@ -197,7 +197,7 @@ func TestPurgeConnCancelsTheFetchInFlight(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Error("the fetch outlived its connection's purge")
 	}
-	if db.inflight.cancel != nil {
+	if db.run.cancel != nil {
 		t.Error("PurgeConn left the cancelled fetch as the one in flight")
 	}
 }

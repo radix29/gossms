@@ -1,7 +1,7 @@
 //go:build livedb
 
-// Live verification of Stage E of docs/plan-phase3-service-broker.md — the
-// Service Broker object ops, against a real SQL Server.
+// Live verification of the Service Broker object ops, against a real SQL
+// Server.
 //
 // What no unit test settles: whether each generated CREATE actually runs, and
 // whether each Delete's statement is accepted for the object the tree names.

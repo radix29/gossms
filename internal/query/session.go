@@ -83,20 +83,21 @@ func (s *Session) Execute(ctx context.Context, script string, opts ...Option) *R
 	return s.execute(ctx, script, planCaptureNone, nil, opts...)
 }
 
-// ExecuteWithPlan is Execute with the actual plan captured; see the
-// package-level ExecuteWithPlan.
+// ExecuteWithPlan is Execute under SET STATISTICS XML ON, returning each
+// executed statement's actual plan in Result.PlanXML.
 func (s *Session) ExecuteWithPlan(ctx context.Context, script string, opts ...Option) *Result {
 	return s.execute(ctx, script, planCaptureActual, nil, opts...)
 }
 
-// ExecuteEstimatedPlan compiles script without running it; see the
-// package-level version.
+// ExecuteEstimatedPlan runs under SET SHOWPLAN_XML ON: SQL Server compiles
+// each GO batch and returns its estimated plan in Result.PlanXML without
+// executing it, as SSMS's "Display Estimated Execution Plan".
 func (s *Session) ExecuteEstimatedPlan(ctx context.Context, script string) *Result {
 	return s.execute(ctx, script, planCaptureEstimated, nil)
 }
 
-// ExecuteToSink is Execute streaming rows to sink; see the package-level
-// version.
+// ExecuteToSink is Execute streaming every row to sink; Result.Sets comes back
+// empty. Per-set row counts go to Messages and the total to RowsWritten.
 func (s *Session) ExecuteToSink(ctx context.Context, script string, sink RowSink, opts ...Option) *Result {
 	return s.execute(ctx, script, planCaptureNone, sink, opts...)
 }

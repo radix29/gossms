@@ -36,11 +36,23 @@ func livePlanDB(t *testing.T) (*sql.DB, context.Context, func()) {
 	return db, ctx, func() { cancel(); db.Close() }
 }
 
+// livePlanSession opens the Session the plan calls run on — the path a query
+// window takes, and the only one the package still offers for plan capture.
+func livePlanSession(t *testing.T, ctx context.Context, db *sql.DB, database string) *Session {
+	t.Helper()
+	s, _, err := Open(ctx, db, database)
+	if err != nil {
+		t.Fatalf("open session on %s: %v", database, err)
+	}
+	t.Cleanup(s.Close)
+	return s
+}
+
 func TestLivePlanActualKeepsOnePlanPerStatement(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
 
-	res := ExecuteWithPlan(ctx, db, "master", livePlanBatch)
+	res := livePlanSession(t, ctx, db, "master").ExecuteWithPlan(ctx, livePlanBatch)
 	if res.HasErrors() {
 		t.Fatalf("batch failed: %+v", res.Messages)
 	}
@@ -61,7 +73,7 @@ func TestLivePlanEstimatedIsOneCombinedDocument(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()
 
-	res := ExecuteEstimatedPlan(ctx, db, "master", livePlanBatch)
+	res := livePlanSession(t, ctx, db, "master").ExecuteEstimatedPlan(ctx, livePlanBatch)
 	if res.HasErrors() {
 		t.Fatalf("batch failed: %+v", res.Messages)
 	}
@@ -207,7 +219,9 @@ func TestLivePlanProcedureCallPlansAllReachResult(t *testing.T) {
 
 	const batch = "SELECT TOP (1) name FROM sys.types;\nEXEC dbo.gossms_plan_probe;"
 
-	est := ExecuteEstimatedPlan(ctx, db, "tempdb", batch)
+	sess := livePlanSession(t, ctx, db, "tempdb")
+
+	est := sess.ExecuteEstimatedPlan(ctx, batch)
 	if est.HasErrors() {
 		t.Fatalf("estimated batch failed: %+v", est.Messages)
 	}
@@ -220,7 +234,7 @@ func TestLivePlanProcedureCallPlansAllReachResult(t *testing.T) {
 		t.Errorf("combined document holds %d statements, want the batch's and the procedure's", n)
 	}
 
-	act := ExecuteWithPlan(ctx, db, "tempdb", batch)
+	act := sess.ExecuteWithPlan(ctx, batch)
 	if act.HasErrors() {
 		t.Fatalf("actual batch failed: %+v", act.Messages)
 	}

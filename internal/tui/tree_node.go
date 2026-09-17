@@ -188,6 +188,12 @@ const (
 	NodeColumnEncryptionKey
 	NodeLoading
 	NodeError
+
+	// nodeTypeCount is the number of NodeTypes, for tests that must cover
+	// every one — a new type added above is silently missing from a
+	// hand-written list, and cannot be missing from 0..nodeTypeCount.
+	// Keep it last.
+	nodeTypeCount
 )
 
 // nodeIcon returns the icon glyph for a node, in the given icon style.

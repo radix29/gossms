@@ -21,7 +21,7 @@ import (
 //
 // The family exists on Azure SQL Managed Instance and this page works there:
 // only CREATE is refused (Msg 41906, at compile time), which is the edition
-// gate's business — see docs/plan-phase3-service-broker.md.
+// gate's business — see edition_gate.go.
 
 func findRemoteServiceBinding(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.RemoteServiceBinding, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)

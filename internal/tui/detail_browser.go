@@ -36,11 +36,6 @@ type DetailBrowser struct {
 	// from a continued hold, like controls.Toolbar's field of the same name.
 	mouseDragging bool
 
-	// seq stops a slow, superseded fetch overwriting the grid with results for a
-	// node no longer selected: incremented on every call, and an async result
-	// applies only if still the most recent.
-	seq int
-
 	// currentNode is the node ShowNodeDetails last displayed, so Invalidate can
 	// tell whether to refetch immediately or just drop the cache entry.
 	currentNode *explorerNode
@@ -67,32 +62,96 @@ type DetailBrowser struct {
 	// nil when none shows — see detail_browser_charts.go.
 	tooltip *detailTooltip
 
-	// pending records, per node, the seq of the most recent fetch dispatched for
-	// it — set by fetch, checked by postFinal/cacheOnlyObjects before writing cache.
-	// Reselecting a node mid-fetch dispatches a second fetch for the same
-	// pointer, and the first, though cancelled, can still land its final
-	// stage; without the seq whichever finished last wins the cache write.
-	//
-	// An entry lives only while its fetch is in flight: the write that caches
-	// the result deletes it. Kept, it gained one entry per node ever selected
-	// and held every one of those nodes alive.
+	// run is the fetch lifecycle: which run's result is still wanted, and the
+	// cancel that stops a superseded one's reads. See detailRuns.
+	run detailRuns
+}
+
+// detailRuns is the panel's latest, plus the per-node bookkeeping latest does
+// not model: pending records, per node, the token of the most recent fetch
+// dispatched for it, and cancelling a fetch has to evict that entry as well as
+// stopping its reads.
+//
+// Reselecting a node mid-fetch dispatches a second fetch for the same pointer,
+// and the first, though cancelled, can still land its final stage; without the
+// token whichever finished last wins the cache write. An entry lives only
+// while its fetch is in flight — the write that caches the result deletes it.
+// Kept, pending gained one entry per node ever selected and held every one of
+// those nodes alive.
+//
+// Call stop and supersede, never the embedded Cancel and Abandon: those stop
+// the run without evicting its pending entry, which is exactly the bug the
+// eviction exists to prevent (see stop).
+type detailRuns struct {
+	latest
+
+	// node and token are the run Begin last started, until it is stopped;
+	// node is nil when nothing is in flight.
+	node  *explorerNode
+	token int
+
 	pending map[*explorerNode]int
-
-	// inflight is the fetch ShowNodeDetails last dispatched, until it caches
-	// or is cancelled. seq only discards a superseded fetch's result; the
-	// fetch itself ran to completion, so arrowing through N nodes queued the
-	// one the user stopped on behind N fetches (and a folder's 8-wide
-	// backfill each) on the shared 20-connection pool. See cancelInflight.
-	inflight detailFetch
 }
 
-// detailFetch is one dispatched fetch: the node and seq it was dispatched
-// for, and the cancel of the context every one of its reads runs under.
-type detailFetch struct {
-	node   *explorerNode
-	seq    int
-	cancel context.CancelFunc
+// begin supersedes whatever run is in flight — stopping it, and evicting its
+// pending entry — and starts a new one for node under parent, the owning
+// connection's context.
+func (r *detailRuns) begin(parent context.Context, node *explorerNode) (context.Context, int) {
+	r.stop()
+	ctx, token := r.latest.Begin(parent)
+	r.node, r.token = node, token
+	r.pending[node] = token
+	return ctx, token
 }
+
+// stop cancels the run in flight, if any, so its reads stop taking pool
+// connections from the one that replaces it.
+//
+// Its pending entry goes with it, which is what keeps a cancelled fetch out of
+// the cache: its reads now fail with "context canceled", a progressive loader's
+// rows are left part-filled, and each final stage would otherwise still find
+// pending[node] == token and cache that for good — reselecting the node is a
+// cache hit that never refetches. The display half needs nothing: whoever
+// stops a run supersedes it, or is about to.
+func (r *detailRuns) stop() {
+	if r.Idle() {
+		return
+	}
+	r.evict(r.node, r.token)
+	r.latest.Cancel()
+	r.node = nil
+}
+
+// supersede is stop, plus discarding the stopped run's result: for a selection
+// that ends without a new fetch to replace it.
+func (r *detailRuns) supersede() {
+	r.stop()
+	r.latest.Abandon()
+}
+
+// end releases the context of the run dispatched at token once its final stage
+// has landed, keeping its pending entry for the caller to claim. Without it the
+// context stays registered under the connection's until the next selection
+// cancels it. Runs on the UI goroutine.
+func (r *detailRuns) end(token int) {
+	if r.Idle() || r.token != token {
+		return
+	}
+	r.latest.Cancel()
+	r.node = nil
+}
+
+// evict drops node's pending entry if it still belongs to token, so a fetch
+// that has been superseded for that node cannot drop a newer one's entry.
+func (r *detailRuns) evict(node *explorerNode, token int) {
+	if node != nil && r.pending[node] == token {
+		delete(r.pending, node)
+	}
+}
+
+// forget drops node's pending entry whatever run it belongs to — for a node
+// leaving the tree, or one whose cache entry is being invalidated.
+func (r *detailRuns) forget(node *explorerNode) { delete(r.pending, node) }
 
 // detailResult is a cached or in-flight-result payload for one node.
 type detailResult struct {
@@ -116,10 +175,10 @@ func NewDetailBrowser(title string) *DetailBrowser {
 	grid := controls.NewDataGrid()
 	grid.SetCellCursor(true)
 	return new(DetailBrowser{
-		title:   title,
-		grid:    grid,
-		cache:   make(map[*explorerNode]*detailResult),
-		pending: make(map[*explorerNode]int),
+		title: title,
+		grid:  grid,
+		cache: make(map[*explorerNode]*detailResult),
+		run:   detailRuns{pending: make(map[*explorerNode]int)},
 	})
 }
 
@@ -168,9 +227,7 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	if db == nil {
 		return
 	}
-	db.cancelInflight()
-	db.seq++
-	seq := db.seq
+	db.run.supersede()
 	db.currentNode = node
 
 	if node == nil {
@@ -182,6 +239,17 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	sc := resolveConn(node)
 
 	if !app.isConnected(sc) {
+		// Not showEmpty: that rewrites the title, and this pane is showing a
+		// node — but everything else it drops has to go, or the status row
+		// sits under the previous node's charts with its row objects still
+		// live, and the Details context menu offers Delete on one of them.
+		// See resetForNewNode.
+		//
+		// Reached when a node outlives its connection's close, which
+		// File > Disconnect does not do (it removes the subtree and shows
+		// the empty pane): a peer connection closed under a node still in
+		// the tree, or a selection change queued behind one.
+		db.resetForNewNode()
 		db.grid.SetFillLastColumn(true)
 		db.grid.SetData([]string{"Property", "Value"}, [][]string{{"Status", "Not connected"}})
 		return
@@ -193,41 +261,8 @@ func (db *DetailBrowser) ShowNodeDetails(app *App, node *explorerNode) {
 	}
 
 	db.grid.SetStatus("Loading...")
-	ctx, cancel := context.WithCancel(sc.Context())
-	db.inflight = detailFetch{node: node, seq: seq, cancel: cancel}
+	ctx, seq := db.run.begin(sc.Context(), node)
 	db.fetch(ctx, app, sc, node, seq)
-}
-
-// cancelInflight cancels the fetch in flight, if any, so its reads stop taking
-// pool connections from the one that replaces it.
-//
-// Its pending entry goes with it, which is what keeps a cancelled fetch out of
-// the cache: its reads now fail with "context canceled", a progressive loader's
-// rows are left part-filled, and each final stage would otherwise still find
-// pending[node] == seq and cache that for good — reselecting the node is a
-// cache hit that never refetches. The display half needs nothing: whoever
-// cancels also bumps seq, or is about to.
-func (db *DetailBrowser) cancelInflight() {
-	f := db.inflight
-	if f.cancel == nil {
-		return
-	}
-	f.cancel()
-	if db.pending[f.node] == f.seq {
-		delete(db.pending, f.node)
-	}
-	db.inflight = detailFetch{}
-}
-
-// endFetch releases the context of the fetch dispatched at seq once its final
-// stage has landed. Without it the context stays registered under the
-// connection's until the next selection cancels it. Runs on the UI goroutine.
-func (db *DetailBrowser) endFetch(seq int) {
-	if db.inflight.cancel == nil || db.inflight.seq != seq {
-		return
-	}
-	db.inflight.cancel()
-	db.inflight = detailFetch{}
 }
 
 // showEmpty resets the panel to its nothing-selected state.
@@ -235,6 +270,19 @@ func (db *DetailBrowser) showEmpty() {
 	db.title = "Object Explorer Details"
 	db.grid.SetFillLastColumn(false)
 	db.grid.SetData([]string{"Name", "Type"}, nil)
+	db.resetForNewNode()
+}
+
+// resetForNewNode drops everything that described the node leaving the screen,
+// and is what the rowObjs and charts field comments mean by "reset by every
+// path". applyResult and postPartial reset the same fields by installing new
+// ones; every path that installs none — showEmpty, and the "Not connected"
+// branch of ShowNodeDetails — calls this instead.
+//
+// setCharts, not `db.charts = nil`: it also re-splits the panel, giving the
+// grid the rows the strip held, and drops the pinned tooltip, which nothing
+// else clears.
+func (db *DetailBrowser) resetForNewNode() {
 	db.rowObjs = nil
 	db.setCharts(nil)
 }
@@ -289,7 +337,7 @@ func (db *DetailBrowser) Invalidate(app *App, node *explorerNode) {
 		return
 	}
 	delete(db.cache, node)
-	delete(db.pending, node)
+	db.run.forget(node)
 	if db.currentNode == node {
 		db.ShowNodeDetails(app, node)
 	}
@@ -309,12 +357,12 @@ func (db *DetailBrowser) InvalidateWhere(app *App, match func(*explorerNode) boo
 	for node := range db.cache {
 		if match(node) {
 			delete(db.cache, node)
-			delete(db.pending, node)
+			db.run.forget(node)
 		}
 	}
-	for node := range db.pending {
+	for node := range db.run.pending {
 		if match(node) {
-			delete(db.pending, node)
+			db.run.forget(node)
 		}
 	}
 	if db.currentNode != nil && match(db.currentNode) {
@@ -332,11 +380,11 @@ func (db *DetailBrowser) Forget(nodes []*explorerNode) {
 		return
 	}
 	for _, n := range nodes {
-		if db.inflight.node == n {
-			db.cancelInflight()
+		if db.run.node == n {
+			db.run.stop()
 		}
 		delete(db.cache, n)
-		delete(db.pending, n)
+		db.run.forget(n)
 	}
 }
 
@@ -356,26 +404,26 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 	if db == nil {
 		return
 	}
-	if db.inflight.node != nil && resolveConn(db.inflight.node) == sc {
-		db.cancelInflight()
+	if db.run.node != nil && resolveConn(db.run.node) == sc {
+		db.run.stop()
 	}
 	for node := range db.cache {
 		if resolveConn(node) == sc {
 			delete(db.cache, node)
 		}
 	}
-	for node := range db.pending {
+	for node := range db.run.pending {
 		if resolveConn(node) == sc {
-			delete(db.pending, node)
+			db.run.forget(node)
 		}
 	}
 	if db.currentNode != nil && resolveConn(db.currentNode) == sc {
 		// Disconnecting the last server empties the tree and fires no OnSelect,
 		// so nothing else repaints the grid and it keeps showing the
-		// disconnected server's rows. Bumping seq also drops the result of the
-		// fetch cancelled above.
+		// disconnected server's rows. Superseding also drops the result of the
+		// fetch stopped above.
 		db.currentNode = nil
-		db.seq++
+		db.run.supersede()
 		db.showEmpty()
 	}
 }
@@ -384,11 +432,10 @@ func (db *DetailBrowser) PurgeConn(sc *dbconn.ServerConn) {
 // trip (NodeServer, NodeDatabases, NodeLogins) show their fast fields first and
 // backfill progressively; the rest go through fetchNodeDetails.
 //
-// fetchCtx is the fetch's own, cancelled by cancelInflight when the fetch is
+// fetchCtx is the fetch's own, cancelled by detailRuns.stop when the fetch is
 // superseded; every loader derives each read's timeout from it, never from
 // sc.Context() directly, or cancelling it would stop nothing.
 func (db *DetailBrowser) fetch(fetchCtx context.Context, app *App, sc *dbconn.ServerConn, node *explorerNode, seq int) {
-	db.pending[node] = seq
 	switch node.data.Type {
 	case NodeServer:
 		db.loadServerDetails(fetchCtx, app, sc, node, seq)
@@ -432,11 +479,9 @@ var errDetailFetchPanicked = errors.New("loading failed unexpectedly — see the
 // selected.
 func (db *DetailBrowser) panicRepair(node *explorerNode, seq int) func() {
 	return func() {
-		db.endFetch(seq)
-		if db.pending[node] == seq {
-			delete(db.pending, node)
-		}
-		if seq != db.seq {
+		db.run.end(seq)
+		db.run.evict(node, seq)
+		if !db.run.Current(seq) {
 			return
 		}
 		db.grid.SetError(errDetailFetchPanicked)
@@ -452,7 +497,7 @@ func (db *DetailBrowser) postPartial(app *App, seq int, cols []string, rows [][]
 // postPartialObjects is postPartial for a view whose rows are objects.
 func (db *DetailBrowser) postPartialObjects(app *App, seq int, cols []string, rows [][]string, objs []nodeData) {
 	app.postAndWake(func() {
-		if seq != db.seq {
+		if !db.run.Current(seq) {
 			return
 		}
 		db.grid.SetFillLastColumn(isPropertyValueColumns(cols))
@@ -473,7 +518,7 @@ func (db *DetailBrowser) postFinalObjects(app *App, node *explorerNode, seq int,
 	result := &detailResult{cols: cols, rows: rows, objs: objs, err: err}
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, result)
-		if seq != db.seq {
+		if !db.run.Current(seq) {
 			return
 		}
 		db.applyResult(result)
@@ -486,7 +531,7 @@ func (db *DetailBrowser) postFinalCharts(app *App, node *explorerNode, seq int, 
 	result := &detailResult{cols: cols, rows: rows, charts: cs, err: err}
 	app.postAndWake(func() {
 		db.cacheIfCurrent(node, seq, result)
-		if seq != db.seq {
+		if !db.run.Current(seq) {
 			return
 		}
 		db.applyResult(result)
@@ -509,15 +554,15 @@ func (db *DetailBrowser) cacheOnlyObjects(app *App, node *explorerNode, seq int,
 // dispatched for it, and ends that fetch's pending entry. The one cache write
 // every final stage shares; runs on the UI goroutine.
 //
-// A fetch cancelled by cancelInflight has no pending entry left, so nothing it
+// A fetch stopped by detailRuns.stop has no pending entry left, so nothing it
 // produced is cached — see there.
 func (db *DetailBrowser) cacheIfCurrent(node *explorerNode, seq int, result *detailResult) {
-	db.endFetch(seq)
-	if db.pending[node] != seq {
+	db.run.end(seq)
+	if db.run.pending[node] != seq {
 		return
 	}
 	db.cache[node] = result
-	delete(db.pending, node)
+	db.run.forget(node)
 }
 
 // maxRowFetchConcurrency bounds how many per-row backfill goroutines one

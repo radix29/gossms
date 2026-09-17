@@ -19,8 +19,8 @@ func TestBackfillRowsFillsEveryRow(t *testing.T) {
 	node := a.explorer.Selected()
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.seq = 1
-	db.pending[node] = 1
+	db.run.seq = 1
+	db.run.pending[node] = 1
 
 	cols := []string{"Name", "Size"}
 	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
@@ -57,8 +57,8 @@ func TestBackfillRowsMarksAPanickingRowFailed(t *testing.T) {
 	node := a.explorer.Selected()
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.seq = 1
-	db.pending[node] = 1
+	db.run.seq = 1
+	db.run.pending[node] = 1
 
 	cols := []string{"Name", "Size"}
 	rows := [][]string{{"a", "…"}, {"b", "…"}, {"c", "…"}}
@@ -99,7 +99,7 @@ func TestBackfillRowsGoroutinesAreBoundedNotJustFetches(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.seq = 1
+	db.run.seq = 1
 
 	const n = 400
 	rows := make([][]string, n)
@@ -145,7 +145,7 @@ func TestBackfillRowsPanicDoesNotKillTheWorker(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.seq = 1
+	db.run.seq = 1
 
 	// More rows than workers, and every worker's first row panics, so each
 	// one has to survive to pick up the rest.
@@ -184,7 +184,7 @@ func TestBackfillRowsReportsThePanic(t *testing.T) {
 	sc := addTestConn(a, "server-one")
 	a.detailBrowser = NewDetailBrowser("Details")
 	db := a.detailBrowser
-	db.seq = 1
+	db.run.seq = 1
 
 	rows := [][]string{{"a", "…"}}
 	db.backfillRows(a, sc.Context(), 1, 1, "loading the thing",
@@ -230,11 +230,11 @@ func TestBackfilledRowsReachCacheAfterSelectionMoved(t *testing.T) {
 	rows := [][]string{{"db1", "…"}, {"db2", "…"}}
 
 	// A fetch is dispatched for node at seq 1 and shows its placeholder rows.
-	db.seq = 1
-	db.pending[node] = 1
+	db.run.seq = 1
+	db.run.pending[node] = 1
 
 	// The user selects something else before the backfill lands.
-	db.seq = 2
+	db.run.seq = 2
 
 	// The backfill writes land anyway — this is the fix.
 	rows[0][1] = "100 MB"
@@ -269,7 +269,7 @@ func TestStaleFetchDoesNotClobberNewerCache(t *testing.T) {
 	db := a.detailBrowser
 
 	cols := []string{"Name"}
-	db.pending[node] = 2 // a newer fetch is already in flight
+	db.run.pending[node] = 2 // a newer fetch is already in flight
 
 	db.cacheOnlyObjects(a, node, 1, cols, [][]string{{"stale"}}, nil, nil)
 	a.drainPending()
@@ -292,9 +292,9 @@ func TestPurgeConnDropsEntriesForDisconnectedServer(t *testing.T) {
 	db := a.detailBrowser
 
 	db.cache[node1] = &detailResult{cols: []string{"a"}}
-	db.pending[node1] = 1
+	db.run.pending[node1] = 1
 	db.cache[node2] = &detailResult{cols: []string{"b"}}
-	db.pending[node2] = 1
+	db.run.pending[node2] = 1
 	db.currentNode = node1
 
 	db.PurgeConn(sc1)
@@ -302,7 +302,7 @@ func TestPurgeConnDropsEntriesForDisconnectedServer(t *testing.T) {
 	if _, ok := db.cache[node1]; ok {
 		t.Error("cache still holds the disconnected server's node")
 	}
-	if _, ok := db.pending[node1]; ok {
+	if _, ok := db.run.pending[node1]; ok {
 		t.Error("pending still holds the disconnected server's node")
 	}
 	if db.currentNode != nil {
@@ -311,7 +311,7 @@ func TestPurgeConnDropsEntriesForDisconnectedServer(t *testing.T) {
 	if _, ok := db.cache[node2]; !ok {
 		t.Error("PurgeConn dropped the other connection's cache entry")
 	}
-	if _, ok := db.pending[node2]; !ok {
+	if _, ok := db.run.pending[node2]; !ok {
 		t.Error("PurgeConn dropped the other connection's pending entry")
 	}
 	_ = sc2

@@ -54,7 +54,7 @@ func TestReloadReleasesReplacedSubtree(t *testing.T) {
 	for _, n := range []*explorerNode{st.logins, st.alice, st.bob, st.carol, st.bob.children[0]} {
 		dbr.cache[n] = &detailResult{cols: []string{"Name"}, rows: [][]string{{n.label}}}
 	}
-	dbr.pending[st.carol.children[0]] = 7 // a fetch still in flight
+	dbr.run.pending[st.carol.children[0]] = 7 // a fetch still in flight
 	baseByID, baseCache := len(oe.byID), len(dbr.cache)
 	old := []*explorerNode{st.alice, st.bob, st.carol, st.alice.children[0], st.bob.children[0], st.carol.children[0]}
 
@@ -71,7 +71,7 @@ func TestReloadReleasesReplacedSubtree(t *testing.T) {
 		if _, ok := dbr.cache[n]; ok {
 			t.Errorf("replaced node %q is still in the Detail Browser's cache", n.label)
 		}
-		if _, ok := dbr.pending[n]; ok {
+		if _, ok := dbr.run.pending[n]; ok {
 			t.Errorf("replaced node %q is still in the Detail Browser's pending map", n.label)
 		}
 	}
@@ -147,13 +147,13 @@ func TestDetailPendingEndsWhenResultIsCached(t *testing.T) {
 		"cacheOnlyObjects": func(seq int) { dbr.cacheOnlyObjects(a, node, seq, []string{"Name"}, [][]string{{"x"}}, nil, nil) },
 	} {
 		delete(dbr.cache, node)
-		dbr.pending[node] = 3
+		dbr.run.pending[node] = 3
 		final(3)
 		a.drainPending()
 		if _, ok := dbr.cache[node]; !ok {
 			t.Errorf("%s: result not cached", name)
 		}
-		if _, ok := dbr.pending[node]; ok {
+		if _, ok := dbr.run.pending[node]; ok {
 			t.Errorf("%s: pending entry kept after the result was cached", name)
 		}
 	}

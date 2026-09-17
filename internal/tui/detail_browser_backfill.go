@@ -58,7 +58,7 @@ func (db *DetailBrowser) backfillRows(
 		apply := fetch(ctx, i)
 		app.postAndWake(func() {
 			apply()
-			if seq == db.seq {
+			if db.run.Current(seq) {
 				db.grid.RefreshColumnWidths()
 			}
 		})

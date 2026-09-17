@@ -60,7 +60,7 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 			rows[numaRow][1] = "N/A"
 		}
 		app.postAndWake(func() {
-			if seq == db.seq {
+			if db.run.Current(seq) {
 				db.grid.RefreshColumnWidths()
 			}
 		})

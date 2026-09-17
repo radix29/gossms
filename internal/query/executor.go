@@ -3,9 +3,10 @@
 // across batches), with PRINT output, "(n rows affected)" and errors captured
 // into Result.Messages.
 //
-// A Session keeps its connection across scripts, as an SSMS query window does;
-// the package-level Execute functions check one out of the pool per call, and
-// the pool resets it before reuse.
+// A Session keeps its connection across scripts, as an SSMS query window does,
+// and is the only path offering plan capture and row sinks; package-level
+// Execute checks a connection out of the pool per call, and the pool resets it
+// before reuse.
 package query
 
 import (
@@ -64,13 +65,13 @@ type Result struct {
 	progress *Progress
 
 	// PlanXML holds one <ShowPlanXML> document per captured statement/batch, in
-	// execution order: actual plans from ExecuteWithPlan, estimated from
-	// ExecuteEstimatedPlan. Execute never fills it.
+	// execution order: actual plans from Session.ExecuteWithPlan, estimated
+	// from Session.ExecuteEstimatedPlan. Execute never fills it.
 	PlanXML []string
 
 	// State is the session's state after a run on a Session, cancelled runs
 	// included (they can leave a transaction open). Nil for package-level
-	// functions, or when the read failed (SET NOEXEC ON left in force, a dead
+	// Execute, or when the read failed (SET NOEXEC ON left in force, a dead
 	// session).
 	State *SessionState
 
@@ -124,7 +125,7 @@ func (r *Result) addNotice(s string) { r.Messages = append(r.Messages, Message{T
 // Messages gets SSMS's "Commands completed successfully."
 //
 // The test is whether any result set happened, not any row: Sets for Execute,
-// sinkSets for ExecuteToSink. Using RowsWritten would make an empty set print
+// sinkSets for Session.ExecuteToSink. Using RowsWritten would make an empty set print
 // both "(0 row(s) written)" and the success notice. planCaptureEstimated
 // executes nothing, so never reports success.
 func (r *Result) shouldReportSuccess(capture planCapture) bool {
@@ -188,20 +189,41 @@ func WithProgress(prog *Progress) Option {
 //
 // Every row is retained in Result.Sets, uncapped; see cellArena.
 func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
-	return execute(ctx, db, database, script, planCaptureNone, opts...)
-}
+	// Plan capture and row sinks are Session-only: both need a connection that
+	// survives the run (a Session's is never returned to the pool), and every
+	// caller of either is a query window, which has one.
+	const capture = planCaptureNone
 
-// ExecuteWithPlan is Execute under SET STATISTICS XML ON, returning actual
-// plans in Result.PlanXML.
-func ExecuteWithPlan(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
-	return execute(ctx, db, database, script, planCaptureActual, opts...)
-}
+	start := time.Now()
+	res := newResult(opts)
 
-// ExecuteEstimatedPlan runs under SET SHOWPLAN_XML ON: SQL Server compiles each
-// GO batch and returns its estimated plan in Result.PlanXML without executing,
-// as SSMS's "Display Estimated Execution Plan".
-func ExecuteEstimatedPlan(ctx context.Context, db *sql.DB, database, script string) *Result {
-	return execute(ctx, db, database, script, planCaptureEstimated)
+	conn, err := gosmo.AcquireConn(ctx, db, database)
+	if err != nil {
+		res.addError(err)
+		res.Elapsed = time.Since(start)
+		return res
+	}
+	defer conn.Close()
+
+	// The capture-off failure a Session treats as fatal cannot arise here —
+	// nothing is captured — and the pool's reset on next checkout clears any
+	// SET option regardless.
+	if ran, _ := runScript(ctx, conn, script, capture, nil, res); ran {
+		if ctx.Err() != nil {
+			res.Messages = append(res.Messages, cancelledMessage)
+		} else {
+			if capture.readsCurrentDatabase() {
+				if name, err := currentDatabase(ctx, conn); err == nil {
+					res.Database = name
+				}
+			}
+			if res.shouldReportSuccess(capture) {
+				res.addNotice("Commands completed successfully.")
+			}
+		}
+	}
+	res.Elapsed = time.Since(start)
+	return res
 }
 
 // RowSink receives result rows as scanned instead of retaining them in
@@ -220,49 +242,6 @@ type RowSink interface {
 	BeginSet(columns []string) error
 	Row(cells []string) error
 	EndSet(rows int) error
-}
-
-// ExecuteToSink is Execute streaming every row to sink; Result.Sets comes back
-// empty. Per-set row counts go to Messages and the total to RowsWritten.
-func ExecuteToSink(ctx context.Context, db *sql.DB, database, script string, sink RowSink, opts ...Option) *Result {
-	return executeWithSink(ctx, db, database, script, planCaptureNone, sink, opts...)
-}
-
-func execute(ctx context.Context, db *sql.DB, database, script string, capture planCapture, opts ...Option) *Result {
-	return executeWithSink(ctx, db, database, script, capture, nil, opts...)
-}
-
-func executeWithSink(ctx context.Context, db *sql.DB, database, script string, capture planCapture, sink RowSink, opts ...Option) *Result {
-	start := time.Now()
-	res := newResult(opts)
-
-	conn, err := gosmo.AcquireConn(ctx, db, database)
-	if err != nil {
-		res.addError(err)
-		res.Elapsed = time.Since(start)
-		return res
-	}
-	defer conn.Close()
-
-	// The capture-off failure is dropped, as gosmo's capturePlan does: the
-	// pool's reset on next checkout clears the SET option. A Session has no
-	// reset, so treats it as fatal.
-	if ran, _ := runScript(ctx, conn, script, capture, sink, res); ran {
-		if ctx.Err() != nil {
-			res.Messages = append(res.Messages, cancelledMessage)
-		} else {
-			if capture.readsCurrentDatabase() {
-				if name, err := currentDatabase(ctx, conn); err == nil {
-					res.Database = name
-				}
-			}
-			if res.shouldReportSuccess(capture) {
-				res.addNotice("Commands completed successfully.")
-			}
-		}
-	}
-	res.Elapsed = time.Since(start)
-	return res
 }
 
 // cancelledMessage ends the Messages of a cancelled run.

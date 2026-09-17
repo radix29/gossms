@@ -24,10 +24,11 @@ func PropertySection(caption string) PropertyRow { return dialogs.PropertySectio
 type PropertiesDialog struct {
 	*dialogs.PropertiesDialog
 
-	// seq guards against a slow, superseded fetch (see ShowDependencies)
+	// run guards against a slow, superseded fetch (see ShowDependencies)
 	// overwriting the dialog with results for an object that isn't what's
-	// being shown (or being shown at all) anymore.
-	seq int
+	// being shown (or being shown at all) anymore, and cancels its reads when
+	// it is superseded.
+	run latest
 }
 
 // NewPropertiesDialog creates a generic properties dialog.
@@ -36,30 +37,30 @@ func NewPropertiesDialog(app *App) *PropertiesDialog {
 }
 
 // ShowGenericProperties shows arbitrary key-value pairs (e.g. About box).
-// Bumps seq like ShowDependencies does on every new show — this dialog is a
+// Supersedes the run in flight like ShowDependencies does on every new show — this dialog is a
 // single shared instance reused for both features, so a Dependencies fetch
 // still in flight when the dialog is repurposed here (e.g. Escape out of
 // Object Dependencies, then Help > About before the fetch lands) must not
 // be allowed to land later and silently overwrite these rows with stale
 // dependency data.
 func (d *PropertiesDialog) ShowGenericProperties(title string, rows []PropertyRow) {
-	d.seq++
+	d.run.Abandon()
 	d.ShowProperties(title, rows)
 }
 
 // ShowGenericPropertiesSized is ShowGenericProperties at an explicit dialog
 // size, for content the default 60x24 can't hold (the About box).
 func (d *PropertiesDialog) ShowGenericPropertiesSized(title string, rows []PropertyRow, w, h int) {
-	d.seq++
+	d.run.Abandon()
 	d.ShowPropertiesSized(title, rows, w, h)
 }
 
 // ShowDependencies loads and displays what schema.name depends on and what
 // depends on it — SSMS's Object Dependencies dialog. Both Dependencies and
 // Dependents are real network round trips, so the load is asynchronous and
-// guarded by d.seq: this dialog is a single shared instance, and a result
+// guarded by d.run: this dialog is a single shared instance, and a result
 // landing after it has been closed or repurposed must not overwrite what it is
-// showing now.
+// showing now — and its reads stop as soon as it is superseded.
 func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName, schema, name string) {
 	if !app.isConnected(sc) {
 		d.ShowProperties("Object Dependencies", []PropertyRow{
@@ -69,25 +70,22 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 	}
 	title := fmt.Sprintf("Dependencies: %s.%s", schema, name)
 
-	d.seq++
-	seq := d.seq
+	ctx, seq := d.run.BeginTimeout(sc.Context(), childFetchTimeout)
 	d.ShowProperties(title, []PropertyRow{{Key: "Status", Value: "Loading..."}})
 
 	// safegoRepair: the dialog was latched at a "Loading..." row above, and
 	// only the completion callback replaces it.
 	app.safegoRepair("loading dependencies", func() {
-		if seq != d.seq || !d.Visible() {
+		if !d.run.Done(seq) || !d.Visible() {
 			return
 		}
 		d.ShowProperties(title, []PropertyRow{
 			{Key: "Error", Value: "Loading stopped unexpectedly — see the log for details."},
 		})
 	}, func() {
-		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
-		defer cancel()
 		rows, err := fetchDependencyRows(ctx, sc, dbName, schema, name)
 		app.postAndWake(func() {
-			if seq != d.seq || !d.Visible() {
+			if !d.run.Done(seq) || !d.Visible() {
 				return
 			}
 			if err != nil {

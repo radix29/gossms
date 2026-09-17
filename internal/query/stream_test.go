@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Streaming (streamResultSet, behind ExecuteToSink) and buffering
+// Streaming (streamResultSet, behind Session.ExecuteToSink) and buffering
 // (scanResultSet, behind Execute) must render rows identically; these drive
 // both over the same fake set.
 

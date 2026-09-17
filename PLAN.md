@@ -31,9 +31,10 @@ New Snapshot and Revert, the four table sub-folders, Programmability > Types,
 XML schema collections, assemblies, rules, defaults, plan guides, external
 resources). It also fixed the v0.0.10 Homebrew tap, whose release job rendered
 the formula and pushed nothing, so `brew install radix29/tap/gossms` 404'd for
-that whole cycle. Its correctness fixes came out of the whole-codebase review
-in `docs/review-plan-2026-09-11.md`; phases A–C of that plan are done, phase D
-(cleanup and refactoring, R15–R27 less R24) is not.
+that whole cycle. Its correctness fixes came out of a whole-codebase review
+made on 2026-09-11, whose phases A–C shipped in this release; the plan document
+was deleted with its implementation, and what is left of its phase D (cleanup
+and refactoring) is carried in `docs/open-threads.md`.
 
 `v0.0.10` made Azure SQL Managed Instance a supported target rather than an
 incidentally reachable one (engine-edition version gating, backup and restore

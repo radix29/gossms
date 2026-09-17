@@ -11,8 +11,8 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// Stage E of docs/plan-phase3-service-broker.md: the object ops the seven
-// families offer once their reads, pages and gates are in place — Delete for
+// The object ops the seven Service Broker families offer once their reads,
+// pages and gates are in place — Delete for
 // all seven, Script as ▸ CREATE/DROP for all seven, Move to Schema for the
 // queue alone, and no rename anywhere.
 

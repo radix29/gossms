@@ -112,7 +112,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *
 				rows[i][3] = formatMB(float64(s.IndexKB) / 1024)
 				rows[i][4] = formatMB(float64(s.UnusedKB) / 1024)
 			}
-			if seq == db.seq {
+			if db.run.Current(seq) {
 				db.grid.RefreshColumnWidths()
 			}
 		})

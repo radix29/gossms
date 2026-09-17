@@ -205,6 +205,9 @@ var (
 	// permission_gate_names_test.go checks every literal in this block against
 	// gosmo's Probed* list — a name added later and misspelled would read back
 	// as CapabilityUnknown forever and gate nothing.
+	//lint:ignore U1000 declared ahead of a New/Alter Linked Server feature so
+	// permission_gate_names_test.go checks the literal against gosmo's Probed*
+	// list now rather than after a misspelling has shipped.
 	rightAlterAnyLinkedSrv = requiredRight{name: "ALTER ANY LINKED SERVER", role: "sysadmin"}
 
 	rightBackupDatabase = requiredRight{name: "BACKUP DATABASE", role: "db_backupoperator", db: true}
@@ -248,6 +251,8 @@ var (
 		deniedOnPrincipal: "ALTER"}
 	// Held for a feature that does not exist yet — there is no New Table — for
 	// the reason given at rightAlterAnyLinkedSrv.
+	//lint:ignore U1000 declared ahead of a New Table feature, for the reason
+	// given at rightAlterAnyLinkedSrv.
 	rightCreateTable = requiredRight{name: "CREATE TABLE", role: "db_ddladmin", db: true}
 
 	rightAlterAnySchema = requiredRight{name: "ALTER ANY SCHEMA", role: "db_ddladmin", db: true}

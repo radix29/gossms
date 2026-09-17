@@ -345,3 +345,62 @@ func TestUsableDiskVolumesDropsNonsenseAndDuplicates(t *testing.T) {
 		t.Errorf("kept the wrong duplicate for E:\\: available = %v, want 1024", got[0].AvailableMB)
 	}
 }
+
+// B1: the "Not connected" branch is the one path onto the screen that goes
+// through neither applyResult nor postPartial nor showEmpty, so it used to
+// leave the previous node's row→object mapping, chart strip and pinned
+// tooltip in place under a one-row status grid. The visible half is a stale
+// composition bar; the sharp half is detailMenuItems, which reads rowObjs and
+// currentNode together and so offered Delete on the *previous* node's first
+// object, resolved against the new node's connection.
+func TestShowNodeDetailsNotConnectedDropsThePreviousNode(t *testing.T) {
+	a := newTestApp()
+	live := &dbconn.ServerConn{}
+	shown := &explorerNode{label: "Tables", data: nodeData{Type: NodeTables, conn: live}}
+
+	db := NewDetailBrowser("test")
+	db.SetBounds(0, 0, 100, 30)
+	db.currentNode = shown
+	db.applyResult(&detailResult{
+		cols:   []string{"Name", "Type"},
+		rows:   [][]string{{"dbo.orders", "Table"}},
+		objs:   []nodeData{{Type: NodeTable, Name: "orders", Schema: "dbo", conn: live}},
+		charts: stripCharts(),
+	})
+	// Pin a readout on the strip, as a click on a bar does.
+	strip := db.chartsRect()
+	if strip.IsZero() {
+		t.Fatal("no chart strip to pin a tooltip on")
+	}
+	db.tooltip = db.pinChartTooltip(strip.X+1, strip.Bottom()-1)
+	if db.tooltip == nil {
+		t.Fatal("pinChartTooltip returned nil; the test cannot show the pin surviving")
+	}
+	if len(db.rowObjs) == 0 || len(db.charts) == 0 {
+		t.Fatalf("setup left rowObjs=%d charts=%d, want both non-empty", len(db.rowObjs), len(db.charts))
+	}
+
+	dead := &dbconn.ServerConn{}
+	dead.Close() // marks it closed, so isConnected reports false
+	next := &explorerNode{label: "Views", data: nodeData{Type: NodeViews, conn: dead}}
+	db.ShowNodeDetails(a, next)
+
+	if got := db.grid.Row(0); got[1] != "Not connected" {
+		t.Fatalf("grid row 0 = %v, want a Not connected status row", got)
+	}
+	if db.rowObjs != nil {
+		t.Errorf("rowObjs = %v after a disconnected node, want nil — it still describes %q's rows",
+			db.rowObjs, shown.label)
+	}
+	if db.charts != nil {
+		t.Errorf("charts = %d panels after a disconnected node, want none — the previous node's "+
+			"composition bars stay drawn under the status grid", len(db.charts))
+	}
+	if db.tooltip != nil {
+		t.Errorf("tooltip = %+v after a disconnected node, want nil", db.tooltip)
+	}
+	if items := a.detailMenuItems(db); items != nil {
+		t.Errorf("detailMenuItems = %d items on a Not connected pane, want none — that is Delete "+
+			"offered on the previous node's object", len(items))
+	}
+}
