@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,6 +49,76 @@ func suffixMatch(root, ref string) bool {
 		return nil
 	})
 	return found
+}
+
+// staleExemptions reports every exemption that has stopped earning its place,
+// as the message to print for it.
+//
+// Two ways it goes stale. The first is the file being deleted out from under
+// the entry. The second is subtler and is how the 2026-09-11 plan's entry got
+// here: a plan is deleted once its items are done, a new dated plan takes its
+// place, and the exemption keyed to the old filename survives both — it named
+// a path that no longer existed, and go test ./... was red from that alone. So
+// an exempt review-plan under docs/ must also be the newest such plan:
+// retiring a plan without retiring its entry fails at the retirement, which is
+// where the edit is.
+func staleExemptions(root string, exempt map[string]string) []string {
+	var msgs []string
+	plans, _ := filepath.Glob(filepath.Join(root, "docs", "review-plan-*.md"))
+	newest := ""
+	for _, p := range plans {
+		// The names are review-plan-YYYY-MM-DD.md, so lexical order is date
+		// order.
+		if base := filepath.Base(p); base > newest {
+			newest = base
+		}
+	}
+	for _, rel := range slices.Sorted(maps.Keys(exempt)) {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			msgs = append(msgs, fmt.Sprintf("%s is exempt but no longer exists; drop the entry", rel))
+			continue
+		}
+		if dir, base := filepath.Split(rel); filepath.Clean(dir) == "docs" &&
+			strings.HasPrefix(base, "review-plan-") && base != newest {
+			msgs = append(msgs, fmt.Sprintf("%s is exempt but docs/%s is newer; a retired plan takes its "+
+				"exemption with it — drop the entry and delete the plan", rel, newest))
+		}
+	}
+	return msgs
+}
+
+func TestStaleReviewPlanExemptionIsReported(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"review-plan-2026-01-01.md", "review-plan-2026-02-02.md"} {
+		if err := os.WriteFile(filepath.Join(root, "docs", name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		exempt map[string]string
+		want   string
+	}{
+		{"newest plan", map[string]string{"docs/review-plan-2026-02-02.md": "r"}, ""},
+		{"retired plan", map[string]string{"docs/review-plan-2026-01-01.md": "r"}, "is newer"},
+		{"deleted plan", map[string]string{"docs/review-plan-2025-12-31.md": "r"}, "no longer exists"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msgs := staleExemptions(root, tc.exempt)
+			if tc.want == "" {
+				if len(msgs) != 0 {
+					t.Fatalf("want no report, got %q", msgs)
+				}
+				return
+			}
+			if len(msgs) != 1 || !strings.Contains(msgs[0], tc.want) {
+				t.Fatalf("want one report containing %q, got %q", tc.want, msgs)
+			}
+		})
+	}
 }
 
 func TestNoDanglingDocReference(t *testing.T) {
@@ -93,12 +166,10 @@ func TestNoDanglingDocReference(t *testing.T) {
 	// so an entry cannot outlive the file it excuses.
 	exemptSource := map[string]string{
 		"CHANGELOG.md":                   "history; the paths it names were real when the entry was written",
-		"docs/review-plan-2026-09-17.md": "D1's table names the dangling paths as its subject matter",
+		"docs/review-plan-2026-09-17.md": "this plan's evidence names deleted documents as its subject matter",
 	}
-	for rel := range exemptSource {
-		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
-			t.Errorf("%s is exempt but no longer exists; drop the entry", rel)
-		}
+	for _, msg := range staleExemptions(root, exemptSource) {
+		t.Error(msg)
 	}
 
 	fset := token.NewFileSet()

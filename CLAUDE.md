@@ -37,6 +37,7 @@ entry names a section, not a whole document; read the section.
 | Any widget, grid, dialog, menu, toolbar, clipboard, mouse or async UI code | `docs/ui-rules.md` |
 | `HandleMouse`, overlays, focus, drag — the reasoning | `ARCHITECTURE.md` § The mouseDragging idiom |
 | A goroutine delivering a result to the UI | `ARCHITECTURE.md` § Async result delivery: postAndWake |
+| A load a newer one supersedes (any async fetch) | `ARCHITECTURE.md` § Latest-only loads: latest |
 | Permission gating, T-SQL a page emits, OE filters, query execution | `docs/db-rules.md` |
 | Writing or running tests, or calling anything done | `docs/testing.md` |
 | Anything under `internal/tuikit/**` | `internal/tuikit/README.md` § Design principles |

@@ -14,7 +14,7 @@ connect dialog -> remember the password checkbox
 
 reports -> define what reports at database and server level
 
-new connect dialog design. keep both, configure in options which design to use.
+new connect dialog design. keep both, configure in options which design to use. implement a toggle that hides the panel.
 
 - query editor :
     - word wrap (display only, line numbers)

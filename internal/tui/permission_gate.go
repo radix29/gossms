@@ -330,7 +330,7 @@ var (
 	// CONTROL alongside whatever permission it asks about, so the ALTER map
 	// answers 1 for a principal holding either and cannot tell them apart.
 	// The CONTROL map is the one that can, and the one statement that needs
-	// the distinction is ALTER SCHEMA ... TRANSFER — see queueTransferRights.
+	// the distinction is ALTER SCHEMA ... TRANSFER — see classOneTransferRights.
 	rightControlOnObject = requiredRight{name: "CONTROL", db: true, object: true}
 
 	// CONTROL on one assembly, type or XML schema collection: what its owner
@@ -882,11 +882,13 @@ func missingRight(sc *db.ServerConn, dbName, schema, object string, groups ...[]
 
 // noteName is how a withheld item's note names one right. Bare for the
 // database- and server-wide rights, which is what the note has always said;
-// scoped for a right on one schema or securable, where "needs ALTER" or
-// "needs CONTROL" reads as the database-wide right — far wider than what is
-// missing.
+// scoped for a right on one schema, securable or object, where "needs ALTER"
+// or "needs CONTROL" reads as the database-wide right — far wider than what is
+// missing. Move to Schema is the item this matters most on: its note is the
+// only one an object-scoped right leads, and "needs CONTROL" sent the reader
+// after CONTROL on the database when CONTROL on the one object is the grant.
 func noteName(r requiredRight) string {
-	if r.securable != "" || r.schema {
+	if r.securable != "" || r.schema || r.object {
 		return r.nameOnly()
 	}
 	return r.name
@@ -1071,27 +1073,31 @@ func queueDropRights() []requiredRight {
 	}
 }
 
-// queueTransferRights are what permits Move to Schema on a queue, and they
-// are neither of the queue's other two sets: ALTER SCHEMA ... TRANSFER wants
-// CONTROL on the object, which no amount of ALTER substitutes for.
+// classOneTransferRights are what permits Move to Schema on a class-1 object —
+// every sys.objects family the tree offers a transfer on, the Service Broker
+// queue among them — and they are neither of that family's other two sets:
+// ALTER SCHEMA ... TRANSFER wants CONTROL on the object, which no amount of
+// ALTER substitutes for.
 //
-// Probed live 2026-09-16 on major 17 with a WITHOUT LOGIN user per right,
-// ALTER on the target schema held throughout: CONTROL on the queue, owning the
-// queue, CONTROL on the source schema and CONTROL on the database each
-// transferred it, while ALTER on the queue, ALTER on the source schema,
+// Probed live twice, both on major 17 with a WITHOUT LOGIN user per right and
+// ALTER on the target schema held throughout, the two runs agreeing exactly:
+// the queue on 2026-09-16, and a table on 2026-09-11. CONTROL on the object,
+// owning it, CONTROL on the source schema and CONTROL on the database each
+// transferred it, while ALTER on the object, ALTER on the source schema,
 // ALTER ANY SCHEMA, db_ddladmin and ALTER on the database were every one
 // refused Msg 15151 — the same split securableTransferRights found for a type
-// and an XML schema collection.
+// and an XML schema collection. One set serves all of them because the server
+// makes no distinction between the families here: the class is what it checks.
 //
 // Two of the four permitting rights are missing from the set, deliberately.
 // CONTROL on the source schema reads through gosmo's schema probe as ALTER,
 // which ALTER alone also reads, so asking for it would offer the move to the
-// principals the server refuses; and the queue's own CONTROL covers its owner
+// principals the server refuses; and the object's own CONTROL covers its owner
 // already, since the object block records an owned object under every name it
 // probes. The consequence is the same one queueDropRights accepts: a principal
 // holding only CONTROL on the schema is not offered a move the server would
 // allow. Recorded in docs/open-threads.md § Permission gating.
-func queueTransferRights() []requiredRight {
+func classOneTransferRights() []requiredRight {
 	return []requiredRight{rightControlOnObject, rightControlDB}
 }
 

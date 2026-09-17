@@ -230,6 +230,15 @@ leaves the result queued and invisible until an unrelated keypress drains it
 result delivery: postAndWake. `QueryPanel`'s elapsed-timer tick is the one
 legitimate bare `wakeEventLoop()` caller: it has no callback to post, only a redraw.
 
+**A load that a newer one replaces uses `latest` (`internal/tui/latest.go`),
+never a hand-rolled token or cancel.** `Begin`/`BeginTimeout` supersede the run
+in flight *and* cancel it; `Done` reports whether the result is still wanted and
+releases the context; `Cancel` stops a run without superseding it, `Abandon`
+does both. Every copy of this that shipped with only the token half was a bug —
+Refresh leaked replaced nodes' loads, and a Properties dialog's previous showing
+reached the next. A site needing more bookkeeping wraps it (`detailRuns`) rather
+than growing it. See `ARCHITECTURE.md` § Latest-only loads: latest.
+
 **A write the user confirmed runs through `App.runWithProgress`
 (`progress_job.go`), never a bare `safego`.** The confirmation closes on Yes,
 and without the progress dialog nothing on screen says a DROP is still waiting

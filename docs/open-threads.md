@@ -325,7 +325,10 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   a user who types `TRANSPORT` or a mirror address into it on MI gets the
   server's 41943 rather than a disabled field. Left ungated deliberately — the
   fields are free text, the message is clear, and gating one value of one field
-  per edition is not a shape `edition_gate.go` has. See B6.
+  per edition is not a shape `edition_gate.go` has. **Settled 2026-09-17 and
+  closed** — it was B6 in § Fix order until then, and the decision is recorded
+  here rather than there so a re-raise lands on the answer instead of on an
+  item that reads as unfinished work.
 
   Three things about the two writes that both Properties pages respect, and
   that any later New-X dialog must: a nil field means "leave this setting
@@ -357,28 +360,42 @@ The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
   answer gosmo's `ProbedObjectPermissions` carries beside `O:ALTER`: the ALTER
   map reads 1 for either grant, while the CONTROL map answers only for a CONTROL
   grant and for the object's owner — exactly the set the server allows the drop
-  to. `queueTransferRights` rests on the same answer: Move to Schema on a queue
-  needs CONTROL on it and is refused to ALTER.
+  to. `classOneTransferRights` rests on the same answer: Move to Schema on a
+  class-1 object needs CONTROL on it and is refused to ALTER.
+
+- **Move to Schema on every class-1 family is gated on CONTROL on the object,
+  and one set serves all nine.** `ALTER SCHEMA ... TRANSFER` of a class-1 object
+  needs CONTROL on it plus ALTER on the target schema. Probed live twice on
+  major 17, one `WITHOUT LOGIN` user per right and the two runs agreeing
+  exactly — a queue on 2026-09-16, a table on 2026-09-17:
+
+  | right held | `O:ALTER` | `O:CONTROL` | transfer |
+  |---|---|---|---|
+  | ALTER on the object | 1 | 0 | refused, Msg 15151 |
+  | CONTROL on the object, or its ownership | 1 | 1 | went through |
+  | CONTROL on the object, DENY ALTER on it | 0 | 1 | **went through** |
+  | CONTROL on the database | 1 | 1 | went through |
+  | db_ddladmin | 1 | 0 | refused, Msg 15151 |
+  | CONTROL on the database, DENY CONTROL on the object | 0 | 0 | refused, Msg 15151 |
+
+  So `objectTransferRights` falls back to `classOneTransferRights` — CONTROL on
+  the object, or CONTROL on the database — for the table, view, procedure,
+  function, sequence, synonym, rule, default and queue alike, and never to
+  `objectDataRights`, which offered the move to rows one and five.
+  The third row is the one worth keeping: a DENY of ALTER on the object does
+  *not* reach a transfer, because the transfer asks CONTROL and CONTROL is what
+  the principal still holds. Three ALTER-denial menu tests exempt Move to Schema
+  for that reason rather than by oversight.
+  Two permitting rights stay out of the set, knowingly: CONTROL on the source
+  schema reads through gosmo's schema probe as ALTER, which ALTER alone also
+  reads, so asking for it would offer the move to the principals the server
+  refuses. A principal holding only CONTROL on the source schema is therefore
+  not offered a move the server would allow — the same trade `queueDropRights`
+  accepts.
 
 **Classes 0, 1, 3, 4, 5, 6, 10, 101, 105 and 108 are gated.** What is kept is
 the live behaviour each gate rests on; every row is a *wrong* gate if assumed
 the other way round.
-
-**Open: Move to Schema on a class-1 object is offered to principals the server
-refuses.** `ALTER SCHEMA ... TRANSFER` of a table needs CONTROL on the table
-itself (plus ALTER on the target schema); probed on 17 on 2026-09-11, it was refused
-(Msg 15151) under db_ddladmin, ALTER on the database, ALTER ANY SCHEMA, ALTER
-on the source schema and ALTER on the table, and went through only under
-CONTROL on the table. Move to Schema for every sys.objects family still asks
-the Rename/Delete set (`objectTransferRights` falls back to
-`objectDataRights`), so it is offered to all five. **Not blocked**:
-`rightControlOnObject` exists and is what the queue's own Move to Schema is
-gated on (`queueTransferRights`). Giving the other class-1 families the same
-entry is a deliberate scope call, not a missing capability — it changes the
-gate on tables, views, procedures, functions and sequences at once, and the
-CONTROL map answers for a CONTROL grant and ownership but not for CONTROL on
-the schema or the database, both of which the server also permits the transfer
-to.
 
 **Every schemaless database-level family has an explicit set** (`dbScopedOpRights`, probed live on 13/14/17 with a
 `WITHOUT LOGIN` user per right — see its comment), and
@@ -1353,6 +1370,17 @@ The work still outstanding, ordered by priority within each subsection: bugs
 and suspected defects first, then verification gaps, then nice-to-have. Each
 item is a pointer — the reasoning lives in the section it names.
 
+**IDs are permanent and are never reused.** A missing number is a closed item,
+not a typo: B1, B4, B5, B6 and V1 have all been fixed or settled and deleted,
+and the IDs that remain are cited from commit messages and from review plans,
+so nothing is ever renumbered. A new item takes the next unused number in its
+series, whatever position it lands in.
+
+**Both subsections are in priority order, not ID order** — that is what the
+list is for. The bug list is coincidentally in ID order today; the verification
+gaps are not (V8 and V7 sit above V6). Insert a new item where its priority
+puts it.
+
 **Maintained on request only.** Do not regenerate this list as part of ordinary
 work; the author asks for a refresh. An item is closed by *deleting* it here
 when the underlying issue is fixed.
@@ -1365,14 +1393,6 @@ when the underlying issue is fixed.
 - **B3** — `RESTORE ... WITH MOVE` on MI: relocation options are deliberately
   ungated and were never driven; MI places its own files. § Azure SQL Managed
   Instance
-- **B6** — Route Properties on a Managed Instance accepts an `ADDRESS` of
-  `TRANSPORT` or a `MIRROR_ADDRESS` the server then refuses, Msg 41943. Left
-  ungated deliberately; the refusal is a runtime one and its message is clear.
-  § Deferred scope
-- **B5** — Move to Schema on a class-1 object (table, view, procedure, …) is
-  offered on the Rename/Delete set; the server wants CONTROL on the object. The
-  class-1 CONTROL answer now exists (`rightControlOnObject`, used by the
-  queue); extending it to the other five is a scope call. § Permission gating
 
 ### Verification gaps
 

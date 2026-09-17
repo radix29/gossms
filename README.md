@@ -173,8 +173,15 @@ connected SQL Server version or engine edition are hidden or disabled.
 - **Object Explorer** for databases and database snapshots, tables and their
   System/FileTables/External/Graph folders, views, programmable objects
   (types, XML schema collections, assemblies, rules, defaults, plan guides),
-  external resources, security, storage, SQL Server Agent, Always On, and
-  other server objects.
+  external resources, security, storage, Service Broker, SQL Server Agent,
+  Always On, and other server objects.
+- **Service Broker** in full: message types, contracts, queues, services,
+  routes, remote service bindings and conversation priorities, each with a
+  listing, a details view, a Properties dialog and scripting. Queue and Route
+  Properties are editable — the two whose settings change while an application
+  runs; the other five are read-only, because what they define is part of the
+  application's own schema and belongs in the script that ships it. The folder
+  is listed whether or not the broker is enabled on the database.
 - **Query editor** with multiple tabs, IntelliSense, `GO` batches, unlimited
   result rows, messages, and XML/JSON viewers. Each tab holds its own SQL
   Server session, so temp tables, `SET` options, `USE` and open transactions
@@ -249,6 +256,11 @@ saved password unreadable, and it has to be typed again.
 - Backup and restore to Azure Storage build and validate correctly but have
   not been executed end to end; doing so requires a shared access signature
   credential on the container.
+- On Azure SQL Managed Instance, a remote service binding cannot be created,
+  so goSSMS withholds that script action there. Creating a route with an
+  address of `TRANSPORT`, or with any mirror address, is refused by the server
+  (Msg 41943); Route Properties accepts both and reports the refusal rather
+  than disabling the fields.
 - macOS has not yet been tested on physical Mac hardware.
 - Release binaries are not signed for SmartScreen or Gatekeeper, so both warn
   on first run. The published checksums are cosign-signed; see

@@ -79,6 +79,34 @@ files, options, recovery model and more.
 
 ![database properties](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/05_database_props.png)
 
+### Service Broker
+
+**The whole subtree** — Under each database, all seven Service Broker
+families: message types, contracts, queues, services, routes, remote service
+bindings and conversation priorities. Expand one to list its objects, or
+select the folder to see them side by side in the details pane — for queues,
+that means status, retention, activation procedure, reader count and the
+number of messages waiting. A disabled queue says so in the tree. The folder
+appears whether or not the broker is enabled on the database, because every
+one of these objects can be created, listed and dropped either way.
+
+![service broker](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/13_service_broker.png)
+
+**Queue properties** — Queues and routes are the two families you can edit,
+because their settings are the ones that change while an application runs: a
+queue taken out of service, an activation procedure stopped, a reader count
+raised under load, or a route repointed at a new address. Everything the page
+changes is an `ALTER QUEUE` or `ALTER ROUTE` clause, and **Script Changes**
+shows you exactly which before you apply it.
+
+![queue properties](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/14_queue_props.png)
+
+The other five families are read-only. What they define — a message type's
+validation, a contract's messages and who may send each — is part of the
+application's own schema rather than a setting, and changing one mid-flight
+changes the meaning of conversations already under way. **Script as ▸ CREATE**
+is offered for all seven.
+
 ### Query Editor
 
 **Write and run queries** — Syntax-aware editor with query execution buttons,

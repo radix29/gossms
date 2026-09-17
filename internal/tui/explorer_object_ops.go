@@ -408,7 +408,7 @@ var objectOps = map[NodeType]objectOp{
 		drop:    dropIn((*gosmo.Database).DropBrokerQueueContext),
 		// The one schema-scoped family here, so the only one with a Move to
 		// Schema — and its right is neither of the queue's other two: see
-		// queueTransferRights.
+		// classOneTransferRights.
 		transfer: transferObjectIn,
 	},
 	NodeBrokerService: {
@@ -888,17 +888,21 @@ var conjoinedOpRights = map[NodeType][]requiredRight{
 	NodeSecurityPolicy: {rightAlterOnSchema},
 }
 
-// objectTransferRights is what permits Move to Schema on one node. It differs
-// from objectDataRights for the types and the XML schema collection, where
-// ALTER SCHEMA ... TRANSFER is permitted by CONTROL on the securable and by
-// nothing else — see securableTransferRights. Every other family keeps the
-// Rename/Delete set, which is not right for a transfer either: see
-// docs/open-threads.md § Permission gating.
+// objectTransferRights is what permits Move to Schema on one node, and it is
+// never objectDataRights: ALTER SCHEMA ... TRANSFER wants CONTROL on the
+// securable, which the Rename/Delete set answers for nobody in particular.
+//
+// Two shapes, because the server asks the question at two classes. A type or
+// an XML schema collection is class 6 or class 10, and its CONTROL comes from
+// gosmo's per-securable probe — securableTransferRights. Every other family
+// the tree offers a transfer on is a class-1 sys.objects row, whatever the
+// node type calls it, so all of them share one entry read out of the object
+// map: classOneTransferRights.
 func objectTransferRights(n nodeData) []requiredRight {
 	if rights, ok := securableTransferRights[n.Type]; ok {
 		return rights
 	}
-	return objectDataRights(n)
+	return classOneTransferRights()
 }
 
 // securableOpRights is Rename/Delete's right set for the user-defined types
@@ -931,9 +935,11 @@ func securableWriteRights(own requiredRight) []requiredRight {
 }
 
 // securableTransferRights is Move to Schema's right set for the families whose
-// transfer takes CONTROL on the securable — securableOpRights' three, plus the
-// Service Broker queue, whose entry reads the class-1 object map instead of a
-// per-securable probe (see queueTransferRights). Probed live alongside securableOpRights, with ALTER on
+// transfer takes CONTROL on a class 6 or class 10 securable — securableOpRights'
+// three, minus the assembly, which has no schema to move between. A class-1
+// object is not here: its CONTROL is read out of the object map instead, by
+// objectTransferRights' fallback (see classOneTransferRights). Probed live
+// alongside securableOpRights, with ALTER on
 // the target schema held throughout: the transfer went through under CONTROL
 // on the securable, its ownership, CONTROL on or ownership of the source
 // schema, and CONTROL on the database — each of which gosmo's per-securable
@@ -942,10 +948,6 @@ func securableWriteRights(own requiredRight) []requiredRight {
 // one of which permits the drop. Offering it on the Delete set offered a move
 // to exactly the principals the server refuses it.
 var securableTransferRights = map[NodeType][]requiredRight{
-	// A queue is a class-1 object, not a class-6 or class-10 securable, so its
-	// entry reads the object map rather than a per-securable probe — the split
-	// the server makes is the same one. See queueTransferRights.
-	NodeBrokerQueue:          queueTransferRights(),
 	NodeUserDefinedDataType:  {rightControlOnType},
 	NodeUserDefinedTableType: {rightControlOnType},
 	NodeUserDefinedType:      {rightControlOnType},

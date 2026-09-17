@@ -192,6 +192,13 @@ func TestASysadminIsNotWithheldByAnObjectDeny(t *testing.T) {
 // allowsActionOn: the denial is only worth having where the items are built,
 // and it must not name a right in the note — the login holds ALTER already,
 // and being sent to ask for it is the wrong instruction.
+//
+// Move to Schema is exempt, and not by oversight: it asks CONTROL on the
+// object, which a DENY of ALTER does not reach. Probed live on win10cli
+// 2026-09-17 — a user granted CONTROL on the table and denied ALTER on it
+// reads O:ALTER 0, O:CONTROL 1 and transfers the table — so withholding it
+// here would be the gate refusing what the server allows. Its own denial is
+// TestTheClassOneTransferGateMatchesWhatTheServerAllowed's last row.
 func TestTheObjectOpMenuItemsFollowTheObjectDeny(t *testing.T) {
 	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
 	app := &App{}
@@ -205,6 +212,9 @@ func TestTheObjectOpMenuItemsFollowTheObjectDeny(t *testing.T) {
 		t.Fatal("the object-ops menu is empty; the test is addressing the wrong node type")
 	}
 	for i, it := range denied {
+		if it.Label == "Move to Schema..." {
+			continue // asks CONTROL; see the comment above
+		}
 		if itemEnabled(it) {
 			t.Errorf("%s was offered on an object the server denies ALTER on", it.Label)
 		}

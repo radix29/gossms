@@ -571,6 +571,11 @@ func TestObjectOpsOnASchemaNodeIgnoreItsOwnName(t *testing.T) {
 // not allowsActionOn: the gate is only useful if the items the tree builds ask
 // about the schema the node is in, and a builder that passed "" would pass
 // every test above.
+//
+// Move to Schema is left out: ALTER on the source schema permits the rename
+// and the drop and is refused the transfer (Msg 15151, probed on win10cli
+// 2026-09-17), so it is the one item a schema grant does not answer for. Its
+// table is TestTheClassOneTransferGateMatchesWhatTheServerAllowed.
 func TestTheMenuItemsThemselvesFollowTheSchemaGrant(t *testing.T) {
 	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, []string{"dbo"})
 	a := &App{}
@@ -587,6 +592,9 @@ func TestTheMenuItemsThemselvesFollowTheSchemaGrant(t *testing.T) {
 			t.Fatalf("schema %s: a table offered no object-ops items at all", tt.schema)
 		}
 		for _, it := range items {
+			if it.Label == "Move to Schema..." {
+				continue // asks CONTROL on the object; see the comment above
+			}
 			if got := it.Enabled == nil || it.Enabled(); got != tt.want {
 				t.Errorf("schema %s: %q enabled = %v, want %v", tt.schema, it.Label, got, tt.want)
 			}
@@ -872,6 +880,11 @@ func TestObjectOpsOnASchemaNodeIgnoreItsOwnObjectName(t *testing.T) {
 // TestTheObjectOpMenuItemsFollowTheObjectGrant drives the menu rather than
 // allowsActionOn: a right that is never threaded to the call sites changes
 // nothing, and every test above still passes.
+//
+// The grant here is ALTER on the object, so Move to Schema is left out for the
+// third time: ALTER on the object was refused the transfer live (Msg 15151,
+// win10cli 2026-09-17) and the item is correctly withheld from this principal.
+// See TestTheClassOneTransferGateMatchesWhatTheServerAllowed.
 func TestTheObjectOpMenuItemsFollowTheObjectGrant(t *testing.T) {
 	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
 	app := &App{}
@@ -890,6 +903,9 @@ func TestTheObjectOpMenuItemsFollowTheObjectGrant(t *testing.T) {
 		t.Fatal("the object-ops menu is empty; the test is addressing the wrong node type")
 	}
 	for label, ok := range granted {
+		if label == "Move to Schema..." {
+			continue // asks CONTROL on the object; see the comment above
+		}
 		if !ok {
 			t.Errorf("%s was withheld on the object the login was granted ALTER on", label)
 		}
@@ -1597,6 +1613,12 @@ func TestTheMenuNoteNamesTheDatabaseDenial(t *testing.T) {
 	}
 	var checked int
 	for _, it := range items {
+		// Move to Schema is withheld here for want of CONTROL on the object,
+		// not by the database DENY of ALTER, so its note names a right — the
+		// one thing this test is about the absence of everywhere else.
+		if it.Label == "Move to Schema..." {
+			continue
+		}
 		if it.Enabled != nil && !it.Enabled() && it.Note != "" {
 			checked++
 			if it.Note != "ALTER denied on database appdb" {

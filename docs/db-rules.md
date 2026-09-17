@@ -66,7 +66,7 @@ shipped.
   `queueDropRights` its Delete, and neither is reused for the other verb. Ask
   the question per *verb* when probing, not per family; one entry shared
   between two verbs is wrong in one direction whichever way it is written. The
-  queue takes a *third* set for Move to Schema (`queueTransferRights`), which
+  queue takes a *third* set for Move to Schema (`classOneTransferRights`), which
   is CONTROL on the queue and nothing else the ALTER map can answer for.
 
 - **`rightAlterOnObject` means "ALTER *or* CONTROL"; `rightControlOnObject`
@@ -90,11 +90,21 @@ shipped.
   TRANSFER` needs CONTROL on the securable itself; ALTER on the database,
   db_ddladmin, ALTER ANY SCHEMA and ALTER on the source schema all permit the
   drop and are all refused the move (Msg 15151, probed on 13, 14 and 17).
-  Types and XML schema collections ask gosmo's per-securable CONTROL alone,
-  and a Service Broker queue — a class-1 object — asks the object map's CONTROL
-  (`securableTransferRights`, `queueTransferRights`); the other sys.objects
-  families still ask the wrong set — see `docs/open-threads.md`
-  § Permission gating.
+  There are exactly two sets, one per class the server asks the question at.
+  A type or an XML schema collection is class 6 or class 10 and asks gosmo's
+  per-securable CONTROL alone (`securableTransferRights`); **every** other
+  family the tree offers a transfer on — table, view, procedure, function,
+  sequence, synonym, rule, default and the Service Broker queue — is a class-1
+  `sys.objects` row and shares one entry read out of the object map
+  (`classOneTransferRights`). One set serves all nine because the class is what
+  the server checks, not the family.
+  **A DENY of ALTER on the object does not withhold the move**, and that is not
+  an oversight: probed live on win10cli 2026-09-17, a principal granted CONTROL
+  on the table and denied ALTER on it reads `O:ALTER` 0, `O:CONTROL` 1 and
+  transfers the table. A DENY of CONTROL does withhold it. The ALTER-denial
+  tests exempt Move to Schema for this reason, each pointing at
+  `TestTheClassOneTransferGateMatchesWhatTheServerAllowed`, which carries the
+  whole live table.
 
 - **"The edition does not implement this" is a different question from "the
   login may not do this", and it has its own file — `edition_gate.go`.** It

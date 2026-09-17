@@ -133,6 +133,10 @@ Background work follows one shape:
   Not theoretical: go-mssqldb panics outright on a column type ID it doesn't
   know, and every result set calls `DatabaseTypeName()` on every column.
 
+- If a newer request supersedes this one, own the lifecycle with **`latest`**
+  (`latest.go`) rather than a hand-rolled token or cancel — see
+  § Latest-only loads: latest.
+
 `Run()`'s loop clears `wakePending`, drains queued callbacks, syncs the
 dialog stack, handles one event, then re-syncs and draws. The two idioms
 below follow from that: `postAndWake` is how work crosses back onto the UI
@@ -213,6 +217,7 @@ gossms/
 │       ├── explorer_alwayson.go # loaders: Always On High Availability — Availability Groups, Replicas, Databases, Listeners; follows the primary via db.ServerConn.Peer
 │       ├── explorer_programmability.go # loaders: Programmability > Types (five sub-folders), Assemblies, Rules, Defaults, Plan Guides
 │       ├── explorer_external.go  # loaders: External Resources — External Data Sources, File Formats, Libraries (Libraries omitted before 2017)
+│       ├── explorer_service_broker.go # loaders: a database's Service Broker folder — Message Types, Contracts, Queues, Services, Routes, Remote Service Bindings, Broker Priorities (listed whether or not the broker is enabled)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
 │       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: per-NodeType drop/rename table, confirmation (incl. the cascade checkbox), prompt, parent-folder refresh
@@ -220,6 +225,7 @@ gossms/
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
+│       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
 │       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one
 │       ├── permission_gate.go    # rightsAllow: the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function"
 │       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in permission_gate's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
@@ -285,6 +291,7 @@ gossms/
 │       ├── detail_browser_programmability.go # Programmability families: the Types folders and members, Assemblies, Rules, Defaults, Plan Guides
 │       ├── detail_browser_external.go   # External Resources: external data sources, file formats, libraries
 │       ├── detail_browser_snapshots.go  # Database Snapshots folder and one snapshot
+│       ├── detail_browser_service_broker.go # the seven Service Broker families: each folder and its leaves, each leaf reusing its Properties page's finder
 │       ├── detail_browser_charts.go     # composition bars under the grid (a database's disk usage) and their pinned tooltip
 │       ├── detail_browser_ops.go        # the pane's write path: Delete over the grid's block/Ctrl+click selection (SelectedRows, never SelectionBounds)
 │       │
@@ -398,6 +405,13 @@ gossms/
 │       ├── rule_default_props.go # read-only Properties for a standalone rule and a standalone default
 │       ├── plan_guide_props.go   # Plan Guide Properties: General (enable/disable) + read-only Query
 │       ├── external_resource_props.go # read-only Properties for external data sources, file formats and libraries
+│       ├── queue_props.go        # Queue Properties (writable): the ALTER QUEUE settings that change in operation; its ALTER rights are not its Delete's
+│       ├── route_props.go        # Route Properties (writable): ALTER ROUTE, which cannot clear a setting — emptying a row is an error, never a no-op
+│       ├── service_props.go      # read-only Properties for a Service Broker service
+│       ├── contract_props.go     # read-only Properties for a contract (there is no ALTER CONTRACT at all)
+│       ├── message_type_props.go # read-only Properties for a message type
+│       ├── remote_service_binding_props.go # read-only Properties for a remote service binding (works on MI; only its CREATE is edition-gated)
+│       ├── broker_priority_props.go # read-only Properties for a conversation priority: the right that would gate its ALTER cannot be read
 │       │
 │       │  ── New <object> dialogs ──
 │       ├── new_database_dialog.go # New Database — newObjectDialog config, runs CREATE DATABASE
@@ -657,6 +671,64 @@ for the rest of the process's life.
 Cover a new one the way `TestPageActionLatchClearsWhenTheActionPanics` does:
 panic the action, then assert the *next* one still runs. A test that only
 checks the flag flipped passes on a latch nothing can use again.
+
+## Latest-only loads: latest
+
+`internal/tui/latest.go` is the "start a load, cancel the one it replaces,
+drop stale results" lifecycle, owned once. Nearly every asynchronous read in
+the application is latest-only — the newest request is the only one whose
+result anyone wants — and each of these owns a `latest` rather than its own
+copy: an Object Explorer node's children (`object_explorer.go`), the
+completion inventory's catalog, the Query Store panel's report, plan pane and
+series, the Log File Viewer's read, `PropDialog`'s page loads, a
+`newObjectDialog`'s prefetch, and the Detail Browser's fetch.
+
+**Both halves matter, and a copy with only the first is a bug.** The token
+discards a superseded result, so a slow fetch cannot overwrite the fresher one
+that replaced it. The cancel stops the superseded fetch's queries, so they
+release their pool connection now rather than at their timeout — without it,
+holding Down through a folder starts one read per row and the row the user
+stops on queues behind all of them. Three shipped bugs are the ones that
+brought this here: Refresh left every replaced node's load running, the
+Properties dialog let a previous showing's page loads reach the next one, and
+the Detail Browser never cancelled a fetch it had moved past.
+
+The surface, and what each member is for:
+
+- **`Begin(parent)`** derives from `parent` — the owning connection's
+  `Context()`, never `context.Background()`, so disconnecting cancels the run.
+  **`BeginTimeout(parent, d)`** is the same with a deadline of its own, for a
+  run that must not outlive its own timeout even while the connection stays up;
+  it is what the node fetch (`childFetchTimeout`), the property pages
+  (`propFetchTimeout`) and the completion inventory use.
+- **`Done(token)`** is the completion path: it reports whether `token` is still
+  current and, on true, releases the finished run's context. The cancel is
+  called rather than dropped — the result is in hand, but the context stays
+  registered on its parent, with its timer still armed for `BeginTimeout`, for
+  every run ever started, until something cancels it.
+- **`Cancel`** stops the run **without** superseding it: the token stays
+  current, so a result already on its way still lands. That is what a panel's
+  `Close` wants, and it is what `Begin` does before starting the replacement.
+  **`Abandon`** is the one that supersedes — for a run whose result now has
+  nowhere to go, a tree node leaving the tree or a selection that cleared
+  without starting a new read. Reaching for `Cancel` where `Abandon` is meant
+  is the easy mistake: the run stops, and its eventual `Done` still reports it
+  current.
+- **`seq` is never reset.** A per-showing counter that restarts at 0 lets the
+  previous showing's first result pass the next showing's first guard — the
+  R5 bug, and the reason `latest`'s zero value is usable but a `latest` is
+  never re-zeroed to "clear" it. `Abandon` is how you clear one.
+
+Every method runs on the UI goroutine, like all other widget state
+(§ Threading model); `latest` does no locking.
+
+**A site needing more bookkeeping wraps it rather than growing it.**
+`DetailBrowser`'s `detailRuns` (`detail_browser.go`) embeds a `latest` and adds
+the node each run is for plus the per-node `pending` map a cancel has to evict,
+and its own `stop`/`supersede` shadow the embedded `Cancel`/`Abandon` so a
+caller cannot stop a run and leave its pending entry behind. Adding those two
+fields to `latest` itself would put Detail-Browser-shaped state in the eight
+sites that do not want it.
 
 ## Building & testing
 

@@ -446,6 +446,18 @@ func (sc *rowScanner) scan(rows *sql.Rows, row []string, a *cellArena) error {
 
 // scanResultSet reads the whole current result set into string cells, packed
 // into a cellArena since there's no row cap.
+//
+// No trailing rows.Err(), deliberately, and the same goes for streamResultSet
+// below — runBatch ends the message loop with one (see its tail), so a set
+// truncated by a mid-stream failure is still reported, just from the message
+// loop rather than from here. What the absence buys is the partial set: a
+// Next() that fails part-way leaves this returning the rows it did read with a
+// nil error, so scanNext appends them and the user gets the grid *and* the
+// error, the way SSMS shows a query that died on row 900. scanPlanXML, a few
+// functions down, is the one that does check, and so discards its partial
+// result — the asymmetry is a decision about partial output, not an oversight.
+// Both are reached only through scanNext, itself reached only from runBatch;
+// a caller added outside runBatch loses the check and must bring its own.
 func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -470,6 +482,11 @@ func scanResultSet(rows *sql.Rows, prog *Progress) (ResultSet, error) {
 // exhausted reports whether the loop reached the set's end; not derivable from
 // err, since the deferred EndSet can fail on a fully read set, and draining
 // that costs a message (see scanNext).
+//
+// Like scanResultSet, it does not end with rows.Err(): runBatch's trailing one
+// reports a set the server truncated, and the rows already handed to the sink
+// stay written. See scanResultSet for why that asymmetry with scanPlanXML is
+// deliberate.
 func streamResultSet(rows *sql.Rows, sink RowSink, prog *Progress) (n int, exhausted bool, err error) {
 	sc, err := newRowScanner(rows)
 	if err != nil {
@@ -559,6 +576,16 @@ func scanNext(rows *sql.Rows, res *Result, sink RowSink) (abandoned bool) {
 //
 // exhausted reports whether the loop reached the set's end; rows.Err() can't
 // tell a failed end from a clean one, and neither needs draining.
+//
+// The trailing rows.Err() is the one thing this does that the two grid scanners
+// do not, and it is what makes a truncated plan set yield *no* plans rather
+// than the ones that arrived before the failure: scanNext drops plans whenever
+// err is non-nil. Half a showplan is not a plan, so there is nothing worth
+// keeping; a grid truncated at row 900 is still 900 rows. The cost is that
+// runBatch's own trailing rows.Err() then reports the same failure a second
+// time in Messages, which is accepted — the batch has already failed, and the
+// duplicate is cheaper than a scanner that has to know what the message loop
+// will do after it returns.
 func scanPlanXML(rows *sql.Rows) (plans []string, exhausted bool, err error) {
 	for rows.Next() {
 		var xml string
