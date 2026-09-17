@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -45,8 +46,8 @@ func TestTheEditionGateOnlyFiresOnAzure(t *testing.T) {
 // "N/A" says the same thing in the width a menu has.
 func TestAnEditionWithheldItemCarriesTheEditionNote(t *testing.T) {
 	sc := probedAzureConn(t, "")
-	item := gateAzure(gate(controls.MenuItem{Label: "Detach Database..."},
-		sc, "", rightControlDB, rightAlterAnyDatabase), sc)
+	item := gateAzure(gate.Item(controls.MenuItem{Label: "Detach Database..."},
+		sc, "", gate.ControlDB, gate.AlterAnyDatabase), sc)
 
 	if item.Enabled() {
 		t.Error("Detach Database is still offered on a Managed Instance")

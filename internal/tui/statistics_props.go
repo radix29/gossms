@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -34,7 +35,7 @@ func statisticPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table,
 				Level1Type: "TABLE", Level1Name: table,
 				Level2Type: "STATISTICS", Level2Name: name,
 			}
-		}), dbName, schema, table, objectWriteRights()...),
+		}), dbName, schema, table, gate.ObjectWriteRights()...),
 	}
 }
 

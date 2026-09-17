@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -12,7 +13,7 @@ import (
 // Specification Properties — one page, as SSMS's own dialog is.
 func serverAuditSpecificationPropPages(sc *db.ServerConn, specName string) []propPage {
 	return []propPage{
-		withRequires(pageServerAuditSpecificationGeneral(sc, specName), "", rightAlterAnyAudit),
+		withRequires(pageServerAuditSpecificationGeneral(sc, specName), "", gate.AlterAnyAudit),
 	}
 }
 

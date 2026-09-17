@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -38,8 +39,8 @@ func alwaysOnRootMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQue
 		{Divider: true},
 		{Label: "Show Dashboard", Action: func() { a.showAGDashboardFor(sc, "") }},
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Database Mirroring Endpoint...",
-			Action: func() { a.showNewEndpointDialog(sc, node) }}, sc, "", rightAlterAnyEndpoint),
+		gate.Item(controls.MenuItem{Label: "New Database Mirroring Endpoint...",
+			Action: func() { a.showNewEndpointDialog(sc, node) }}, sc, "", gate.AlterAnyEndpoint),
 		{Divider: true},
 		refresh,
 	}
@@ -51,8 +52,8 @@ func agGroupsFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Availability Group...",
-			Action: func() { a.showNewAGDialog(sc, node) }}, sc, "", rightAlterAnyAG),
+		gate.Item(controls.MenuItem{Label: "New Availability Group...",
+			Action: func() { a.showNewAGDialog(sc, node) }}, sc, "", gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
 	}
@@ -66,16 +67,16 @@ func agGroupMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 		{Divider: true},
 		{Label: "Show Dashboard", Action: func() { a.showAGDashboardFor(sc, ag) }},
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "Add Database...",
-			Action: func() { a.showAGAddDatabaseDialog(sc, ag, node) }}, sc, "", "", ag, rightAlterAnyAG),
-		gateOn(controls.MenuItem{Label: "Add Replica...",
-			Action: func() { a.showAGAddReplicaDialog(sc, ag, node) }}, sc, "", "", ag, rightAlterAnyAG),
-		gateOn(controls.MenuItem{Label: "Add Listener...",
-			Action: func() { a.showAGAddListenerDialog(sc, ag, node) }}, sc, "", "", ag, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Database...",
+			Action: func() { a.showAGAddDatabaseDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Replica...",
+			Action: func() { a.showAGAddReplicaDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Listener...",
+			Action: func() { a.showAGAddListenerDialog(sc, ag, node) }}, sc, "", "", ag, gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
-		gateOn(controls.MenuItem{Label: "Delete Availability Group...",
-			Action: func() { a.deleteAvailabilityGroup(sc, node) }}, sc, "", "", ag, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Delete Availability Group...",
+			Action: func() { a.deleteAvailabilityGroup(sc, node) }}, sc, "", "", ag, gate.AlterAnyAG),
 		{Divider: true},
 		{Label: "Properties...", Action: func() { a.showAGPropertiesFor(sc, ag) }},
 	}
@@ -87,8 +88,8 @@ func agReplicasFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "Add Replica...",
-			Action: func() { a.showAGAddReplicaDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Replica...",
+			Action: func() { a.showAGAddReplicaDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
 	}
@@ -100,8 +101,8 @@ func agDatabasesFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "Add Database...",
-			Action: func() { a.showAGAddDatabaseDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Database...",
+			Action: func() { a.showAGAddDatabaseDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
 	}
@@ -117,10 +118,10 @@ func agDatabaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 	items := []controls.MenuItem{newQuery, {Divider: true}}
 
 	if node.data.AGLocalSecondary && !node.data.AGLocalJoined {
-		items = append(items, gate(controls.MenuItem{
+		items = append(items, gate.Item(controls.MenuItem{
 			Label:  "Join to Availability Group",
 			Action: func() { a.joinAGDatabase(sc, node) },
-		}, sc, "", rightAlterAnyAG))
+		}, sc, "", gate.AlterAnyAG))
 	} else {
 		movement := controls.MenuItem{
 			Label:  "Suspend Data Movement...",
@@ -132,23 +133,23 @@ func agDatabaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 				Action: func() { a.resumeAGDatabase(sc, node) },
 			}
 		}
-		items = append(items, gate(movement, sc, "", rightAlterAnyAG))
+		items = append(items, gate.Item(movement, sc, "", gate.AlterAnyAG))
 	}
 
 	items = append(items, controls.MenuItem{Divider: true}, refresh)
 	if node.data.AGLocalSecondary && node.data.AGLocalJoined {
-		items = append(items, gate(controls.MenuItem{
+		items = append(items, gate.Item(controls.MenuItem{
 			Label:  "Remove Secondary Database from Group...",
 			Action: func() { a.unjoinAGDatabase(sc, node) },
-		}, sc, "", rightAlterAnyAG))
+		}, sc, "", gate.AlterAnyAG))
 	}
 	// The only item here writing ALTER AVAILABILITY GROUP, so the only one the
 	// group's class-108 DENY withholds; the others are ALTER DATABASE ... SET
 	// HADR, which it doesn't affect (measured for Resume and Join).
-	return append(items, gateOn(controls.MenuItem{
+	return append(items, gate.ItemOn(controls.MenuItem{
 		Label:  "Remove Database from Group...",
 		Action: func() { a.removeAGDatabase(sc, node) },
-	}, sc, "", "", node.data.AGName, rightAlterAnyAG))
+	}, sc, "", "", node.data.AGName, gate.AlterAnyAG))
 }
 
 // agReplicaMenuItems builds one replica's menu.
@@ -162,14 +163,14 @@ func agReplicaMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "Fail Over to This Replica...", Enabled: secondary,
-			Action: func() { a.failoverToReplica(sc, node, false) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
-		gateOn(controls.MenuItem{Label: "Force Failover to This Replica...", Enabled: secondary,
-			Action: func() { a.failoverToReplica(sc, node, true) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Fail Over to This Replica...", Enabled: secondary,
+			Action: func() { a.failoverToReplica(sc, node, false) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Force Failover to This Replica...", Enabled: secondary,
+			Action: func() { a.failoverToReplica(sc, node, true) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
-		gateOn(controls.MenuItem{Label: "Remove Replica from Group...", Enabled: secondary,
-			Action: func() { a.removeAGReplica(sc, node) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Remove Replica from Group...", Enabled: secondary,
+			Action: func() { a.removeAGReplica(sc, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 	}
 }
 
@@ -179,8 +180,8 @@ func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "Add Listener...",
-			Action: func() { a.showAGAddListenerDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Add Listener...",
+			Action: func() { a.showAGAddListenerDialog(sc, node.data.AGName, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 		{Divider: true},
 		refresh,
 	}
@@ -190,8 +191,8 @@ func agListenersFolderMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 func agListenerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, _, refresh controls.MenuItem) []controls.MenuItem {
 	return []controls.MenuItem{
 		refresh,
-		gateOn(controls.MenuItem{Label: "Remove Listener...",
-			Action: func() { a.removeAGListener(sc, node) }}, sc, "", "", node.data.AGName, rightAlterAnyAG),
+		gate.ItemOn(controls.MenuItem{Label: "Remove Listener...",
+			Action: func() { a.removeAGListener(sc, node) }}, sc, "", "", node.data.AGName, gate.AlterAnyAG),
 		{Divider: true},
 		{Label: "Properties...", Action: func() {
 			a.showAGListenerPropertiesFor(sc, node.data.AGName, node.data.Name)

@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -30,24 +31,24 @@ func probedConn(t *testing.T, dbName string, granted, denied, dbGranted, dbDenie
 // menus of a sysadmin whose probe timed out.
 func TestAnActionIsWithheldOnlyOnAMeasuredDenial(t *testing.T) {
 	denied := probedConn(t, "", nil, []string{"ALTER ANY LOGIN"}, nil, nil)
-	if allowsAction(denied, "", rightAlterAnyLogin) {
+	if gate.Allows(denied, "", gate.AlterAnyLogin) {
 		t.Error("an action was offered though the server denied the right it needs")
 	}
 
 	granted := probedConn(t, "", []string{"ALTER ANY LOGIN"}, nil, nil, nil)
-	if !allowsAction(granted, "", rightAlterAnyLogin) {
+	if !gate.Allows(granted, "", gate.AlterAnyLogin) {
 		t.Error("an action was withheld from a login that holds the right")
 	}
 
 	// Never probed, and a right this instance does not define: both unknown.
 	unprobed, _ := newFakeConn(t)
-	if !allowsAction(unprobed, "", rightAlterAnyLogin) {
+	if !gate.Allows(unprobed, "", gate.AlterAnyLogin) {
 		t.Error("an unprobed connection lost an action — unknown must fail open")
 	}
-	if !allowsAction(denied, "", requiredRight{name: "NO SUCH PERMISSION"}) {
+	if !gate.Allows(denied, "", gate.Right{Name: "NO SUCH PERMISSION"}) {
 		t.Error("a permission this instance does not define was treated as a denial")
 	}
-	if allowsAction(nil, "", rightAlterAnyLogin) != true {
+	if gate.Allows(nil, "", gate.AlterAnyLogin) != true {
 		t.Error("a nil connection withheld an action")
 	}
 }
@@ -58,10 +59,10 @@ func TestAnActionIsWithheldOnlyOnAMeasuredDenial(t *testing.T) {
 func TestAnyOneRightIsEnough(t *testing.T) {
 	f := probedConn(t, "appdb", []string{"ALTER ANY DATABASE"}, nil, nil, []string{"CONTROL", "ALTER"})
 
-	if !allowsAction(f, "appdb", rightControlDB, rightAlterAnyDatabase) {
+	if !gate.Allows(f, "appdb", gate.ControlDB, gate.AlterAnyDatabase) {
 		t.Error("withheld though one of the two rights is granted")
 	}
-	if allowsAction(f, "appdb", rightControlDB, rightAlterDatabase) {
+	if gate.Allows(f, "appdb", gate.ControlDB, gate.AlterDatabase) {
 		t.Error("offered though every right it names is denied")
 	}
 }
@@ -75,11 +76,11 @@ func TestAnInaccessibleDatabaseDeniesEveryDatabaseRight(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "backup_test")
 
-	if allowsAction(sc, "backup_test", rightBackupDatabase) {
+	if gate.Allows(sc, "backup_test", gate.BackupDatabase) {
 		t.Error("Back Up was offered on a database this login cannot open")
 	}
 	// And the fail-open value from a probe that never ran still fails open.
-	if !allowsAction(sc, "never_probed", rightBackupDatabase) {
+	if !gate.Allows(sc, "never_probed", gate.BackupDatabase) {
 		t.Error("a database nobody has asked about lost an action")
 	}
 }
@@ -92,7 +93,7 @@ func TestADatabaseGateNeverProbes(t *testing.T) {
 	sc.ProbeCapabilities()
 
 	before := inst.QueryCount()
-	if !allowsAction(sc, "appdb", rightBackupDatabase) {
+	if !gate.Allows(sc, "appdb", gate.BackupDatabase) {
 		t.Error("an unprobed database withheld an action")
 	}
 	if got := inst.QueryCount(); got != before {
@@ -105,8 +106,8 @@ func TestADatabaseGateNeverProbes(t *testing.T) {
 func TestGateKeepsTheExistingPredicate(t *testing.T) {
 	f := probedConn(t, "", []string{"ALTER ANY LOGIN"}, nil, nil, nil)
 
-	item := gate(controls.MenuItem{Label: "New Login...", Enabled: func() bool { return false }},
-		f, "", rightAlterAnyLogin)
+	item := gate.Item(controls.MenuItem{Label: "New Login...", Enabled: func() bool { return false }},
+		f, "", gate.AlterAnyLogin)
 	if item.Enabled() {
 		t.Error("gate discarded the predicate the item already had")
 	}
@@ -118,7 +119,7 @@ func TestGateKeepsTheExistingPredicate(t *testing.T) {
 func TestAWithheldItemSaysWhat(t *testing.T) {
 	f := probedConn(t, "", nil, []string{"ALTER ANY LOGIN"}, nil, nil)
 
-	item := gate(controls.MenuItem{Label: "New Login..."}, f, "", rightAlterAnyLogin)
+	item := gate.Item(controls.MenuItem{Label: "New Login..."}, f, "", gate.AlterAnyLogin)
 	if !strings.Contains(item.Note, "ALTER ANY LOGIN") {
 		t.Errorf("Note = %q, want the missing right named", item.Note)
 	}
@@ -134,10 +135,10 @@ func TestAWithheldItemDoesNotBlameThePermissionForSomeoneElsesReason(t *testing.
 	// Holds the right; withheld only by the item's own predicate.
 	f := probedConn(t, "", []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil, nil)
 
-	onPrimary := gate(controls.MenuItem{
+	onPrimary := gate.Item(controls.MenuItem{
 		Label:   "Fail Over to This Replica...",
 		Enabled: func() bool { return false },
-	}, f, "", rightAlterAnyAG)
+	}, f, "", gate.AlterAnyAG)
 
 	if onPrimary.Enabled() {
 		t.Fatal("the item's own predicate was discarded")
@@ -149,10 +150,10 @@ func TestAWithheldItemDoesNotBlameThePermissionForSomeoneElsesReason(t *testing.
 	// The other direction: the right is denied and the item's own predicate is
 	// satisfied, so the note is exactly the reason.
 	denied := probedConn(t, "", nil, []string{"ALTER ANY AVAILABILITY GROUP"}, nil, nil)
-	onSecondary := gate(controls.MenuItem{
+	onSecondary := gate.Item(controls.MenuItem{
 		Label:   "Fail Over to This Replica...",
 		Enabled: func() bool { return true },
-	}, denied, "", rightAlterAnyAG)
+	}, denied, "", gate.AlterAnyAG)
 
 	if onSecondary.Enabled() {
 		t.Fatal("the gate did not withhold an action whose right is denied")
@@ -185,7 +186,7 @@ func TestTheActivityMonitorGateReadsTheConnectionItWouldOpen(t *testing.T) {
 		t.Fatalf("activeServerConn = %v, want the connection connOrFirst would return", got)
 	}
 
-	// Through the real predicates, not allowsAction directly: the bug was in
+	// Through the real predicates, not gate.Allows directly: the bug was in
 	// which connection these two hand it, so a test that picks the connection
 	// itself cannot see it.
 	if item := menuItemLabelled(t, a.buildMenus(), "Tools", "Activity Monitor"); item.enabledNow() {
@@ -259,27 +260,27 @@ func TestActiveServerConnDoesNotTouchTheStatusBar(t *testing.T) {
 // TestRequiresTextNamesTheRoleToo, because "ALTER SETTINGS" is not what an
 // administrator grants — serveradmin is.
 func TestRequiresTextNamesTheRoleToo(t *testing.T) {
-	got := requiresText(rightAlterSettings)
+	got := gate.RequiresText(gate.AlterSettings)
 	for _, want := range []string{"ALTER SETTINGS", "serveradmin"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("requiresText = %q, want it to mention %q", got, want)
+			t.Errorf("gate.RequiresText = %q, want it to mention %q", got, want)
 		}
 	}
-	if got := requiresText(rightControlDB, rightAlterAnyDatabase); !strings.Contains(got, " or ") {
-		t.Errorf("requiresText = %q, want alternatives joined with \"or\"", got)
+	if got := gate.RequiresText(gate.ControlDB, gate.AlterAnyDatabase); !strings.Contains(got, " or ") {
+		t.Errorf("gate.RequiresText = %q, want alternatives joined with \"or\"", got)
 	}
 }
 
 // TestRequiresTextNamesEachRoleOnce: the alternatives for one action mostly
 // share a role, and repeating it made three things to ask for read as six.
 func TestRequiresTextNamesEachRoleOnce(t *testing.T) {
-	got := requiresText(databaseWriteRights()...)
+	got := gate.RequiresText(gate.DatabaseWriteRights()...)
 	want := "Requires ALTER, CONTROL or ALTER ANY DATABASE (db_owner, dbcreator)."
 	if got != want {
-		t.Errorf("requiresText = %q, want %q", got, want)
+		t.Errorf("gate.RequiresText = %q, want %q", got, want)
 	}
 	if strings.Count(got, "db_owner") != 1 {
-		t.Errorf("requiresText = %q, want db_owner named once", got)
+		t.Errorf("gate.RequiresText = %q, want db_owner named once", got)
 	}
 }
 
@@ -287,18 +288,18 @@ func TestRequiresTextNamesEachRoleOnce(t *testing.T) {
 // is granted on the schema and no role carries it, so listing it inside the
 // parenthesised roles would send the user after a role that does not confer it.
 func TestRequiresTextKeepsARolelessRightOutOfTheRoleClause(t *testing.T) {
-	got := requiresText(objectOpRights(NodeTable)...)
+	got := gate.RequiresText(objectOpRights(NodeTable)...)
 	want := "Requires ALTER, CONTROL or ALTER ANY SCHEMA (db_owner, db_ddladmin) " +
 		"or ALTER on the object's schema or ALTER on the object itself."
 	if got != want {
-		t.Errorf("requiresText = %q, want %q", got, want)
+		t.Errorf("gate.RequiresText = %q, want %q", got, want)
 	}
 	// Alone, each is the whole sentence — no empty parentheses, no stray "or".
-	if got, want := requiresText(rightAlterOnSchema), "Requires ALTER on the object's schema."; got != want {
-		t.Errorf("requiresText = %q, want %q", got, want)
+	if got, want := gate.RequiresText(gate.AlterOnSchema), "Requires ALTER on the object's schema."; got != want {
+		t.Errorf("gate.RequiresText = %q, want %q", got, want)
 	}
-	if got, want := requiresText(rightAlterOnObject), "Requires ALTER on the object itself."; got != want {
-		t.Errorf("requiresText = %q, want %q", got, want)
+	if got, want := gate.RequiresText(gate.AlterOnObject), "Requires ALTER on the object itself."; got != want {
+		t.Errorf("gate.RequiresText = %q, want %q", got, want)
 	}
 }
 
@@ -307,12 +308,12 @@ func TestRequiresTextKeepsARolelessRightOutOfTheRoleClause(t *testing.T) {
 func TestRequiresTextFitsTheReadOnlyBanner(t *testing.T) {
 	// Only what a page's requires list actually carries: a context menu's
 	// rights never reach the banner, they become gateOn's short Note.
-	for _, rights := range [][]requiredRight{
-		databaseWriteRights(),
-		{rightControlServer},
-		{rightAlterAnyLogin, rightAlterAnyServerRole},
+	for _, rights := range [][]gate.Right{
+		gate.DatabaseWriteRights(),
+		{gate.ControlServer},
+		{gate.AlterAnyLogin, gate.AlterAnyServerRole},
 	} {
-		if n := len(readOnlyBannerPrefix + requiresText(rights...)); n > 120 {
+		if n := len(readOnlyBannerPrefix + gate.RequiresText(rights...)); n > 120 {
 			t.Errorf("banner for %v is %d columns, want <= 120", rights, n)
 		}
 	}
@@ -321,14 +322,14 @@ func TestRequiresTextFitsTheReadOnlyBanner(t *testing.T) {
 	// gated on either names five alternatives or spells out two msdb
 	// memberships, and dropping any of them would send a reader after a
 	// permission that is not the one they can actually be granted. The note
-	// wraps — objectWriteRights() takes three lines in Table Properties'
+	// wraps — gate.ObjectWriteRights() takes three lines in Table Properties'
 	// ~83-column form, verified live — so the cost is vertical space. The cap
 	// is here because propsheet's Shrinkable clips a note's *trailing* lines
 	// when the form is tight, and those are the lines carrying the permission
 	// names; the first line, which says the page is read-only at all, always
 	// survives.
-	for _, rights := range [][]requiredRight{objectWriteRights(), agentWriteRights()} {
-		if n := len(readOnlyBannerPrefix + requiresText(rights...)); n > 200 {
+	for _, rights := range [][]gate.Right{gate.ObjectWriteRights(), gate.AgentWriteRights()} {
+		if n := len(readOnlyBannerPrefix + gate.RequiresText(rights...)); n > 200 {
 			t.Errorf("banner for %v is %d columns, want <= 200", rights, n)
 		}
 	}
@@ -342,7 +343,7 @@ func TestPageReadOnlyReasonNamesTheRight(t *testing.T) {
 	ctx := context.Background()
 
 	denied := probedConn(t, "", nil, []string{"ALTER SETTINGS"}, nil, nil)
-	page := withRequires(propPage{title: "Memory"}, "", rightAlterSettings)
+	page := withRequires(propPage{title: "Memory"}, "", gate.AlterSettings)
 	got := pageReadOnlyReason(ctx, denied, page)
 	if !strings.Contains(got, "ALTER SETTINGS") {
 		t.Errorf("reason = %q, want the right named", got)
@@ -370,7 +371,7 @@ func TestADatabasePageIsReadOnlyOnAnInaccessibleDatabase(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, []string{"ALTER ANY DATABASE"}, nil, nil)...)
 	sc.ProbeCapabilities()
 
-	page := withRequires(propPage{title: "Options"}, "backup_test", databaseWriteRights()...)
+	page := withRequires(propPage{title: "Options"}, "backup_test", gate.DatabaseWriteRights()...)
 	if got := pageReadOnlyReason(context.Background(), sc, page); got == "" {
 		t.Error("a page on a database this login cannot open is still writable")
 	}
@@ -472,19 +473,19 @@ func TestTheLoginsFolderWithholdsNewLogin(t *testing.T) {
 // (permission_gate_names_test.go says why), so BACKUP LOG stands in for the
 // narrower half of a split BACKUP DATABASE.
 func TestAnAlternateSatisfiesADatabaseRight(t *testing.T) {
-	split := requiredRight{name: "BACKUP DATABASE", role: "db_backupoperator", db: true,
-		alt: []string{"BACKUP LOG"}}
+	split := gate.Right{Name: "BACKUP DATABASE", Role: "db_backupoperator", DB: true,
+		Alt: []string{"BACKUP LOG"}}
 
 	// The named right is denied and the alternate granted: the login can still
 	// do the thing, so the action stays.
 	holdsAlt := probedConn(t, "appdb", nil, nil, []string{"BACKUP LOG"}, []string{"BACKUP DATABASE"})
-	if !allowsAction(holdsAlt, "appdb", split) {
+	if !gate.Allows(holdsAlt, "appdb", split) {
 		t.Error("an action was withheld from a login holding the alternate permission")
 	}
 
 	// Both denied — the alternates must not turn the gate into a no-op.
 	holdsNeither := probedConn(t, "appdb", nil, nil, nil, []string{"BACKUP DATABASE", "BACKUP LOG"})
-	if allowsAction(holdsNeither, "appdb", split) {
+	if gate.Allows(holdsNeither, "appdb", split) {
 		t.Error("an action was offered though the named right and its alternate are both denied")
 	}
 
@@ -494,7 +495,7 @@ func TestAnAlternateSatisfiesADatabaseRight(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(false, nil, nil, nil, nil)...)
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
-	if allowsAction(sc, "appdb", split) {
+	if gate.Allows(sc, "appdb", split) {
 		t.Error("an alternate permission reopened an action on a database the login cannot open")
 	}
 }
@@ -520,19 +521,19 @@ func TestAlterOnOneSchemaKeepsTheObjectOpsInThatSchema(t *testing.T) {
 	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, []string{"dbo"})
 	rights := objectOpRights(NodeTable)
 
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", rights...) {
 		t.Error("an object in the granted schema lost its Rename/Move/Delete")
 	}
-	if allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+	if gate.AllowsOn(sc, "appdb", "dbo", "Orders", rights...) {
 		t.Error("an object in a schema the login has no ALTER on kept them")
 	}
 	// A schema nobody probed is unknown, and unknown fails open.
-	if !allowsActionOn(sc, "appdb", "Archive", "Orders", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "Archive", "Orders", rights...) {
 		t.Error("an unprobed schema withheld the items — unknown must fail open")
 	}
 	// And a database-wide right still answers on its own, with no schema.
 	wide := probedConn(t, "appdb", nil, nil, []string{"ALTER"}, nil)
-	if !allowsActionOn(wide, "appdb", "dbo", "Orders", rights...) {
+	if !gate.AllowsOn(wide, "appdb", "dbo", "Orders", rights...) {
 		t.Error("a database-wide ALTER stopped permitting the object ops")
 	}
 }
@@ -544,10 +545,10 @@ func TestAlterOnOneSchemaKeepsTheObjectOpsInThatSchema(t *testing.T) {
 func TestASchemaScopedRightGrantsNothingWithoutASchema(t *testing.T) {
 	sc := schemaProbedConn(t, "appdb", []string{"Sales"}, nil)
 
-	if allowsAction(sc, "appdb", rightAlterOnSchema) {
+	if gate.Allows(sc, "appdb", gate.AlterOnSchema) {
 		t.Error("a schema-scoped right answered yes with no schema to ask about")
 	}
-	if allowsActionOn(sc, "", "Sales", "Orders", rightAlterOnSchema) {
+	if gate.AllowsOn(sc, "", "Sales", "Orders", gate.AlterOnSchema) {
 		t.Error("a schema-scoped right answered yes with no database to ask in")
 	}
 }
@@ -568,7 +569,7 @@ func TestObjectOpsOnASchemaNodeIgnoreItsOwnName(t *testing.T) {
 }
 
 // TestTheMenuItemsThemselvesFollowTheSchemaGrant — through objectOpsMenuItems,
-// not allowsActionOn: the gate is only useful if the items the tree builds ask
+// not gate.AllowsOn: the gate is only useful if the items the tree builds ask
 // about the schema the node is in, and a builder that passed "" would pass
 // every test above.
 //
@@ -613,10 +614,10 @@ func TestAnInaccessibleDatabaseWithholdsTheSchemaScopedRightToo(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "shut")
 
-	if allowsActionOn(sc, "shut", "Sales", "Orders", rightAlterOnSchema) {
+	if gate.AllowsOn(sc, "shut", "Sales", "Orders", gate.AlterOnSchema) {
 		t.Error("a schema-scoped right was allowed in a database the login cannot open")
 	}
-	if allowsActionOn(sc, "shut", "Sales", "Orders", objectOpRights(NodeTable)...) {
+	if gate.AllowsOn(sc, "shut", "Sales", "Orders", objectOpRights(NodeTable)...) {
 		t.Error("the object ops were offered in a database the login cannot open")
 	}
 }
@@ -646,10 +647,10 @@ func TestAnUnprobedMsdbKeepsEverySQLAgentAction(t *testing.T) {
 	sc, _ := newFakeConn(t, capabilityResponses(true, nil, []string{"CONTROL SERVER"}, nil, nil)...)
 	sc.ProbeCapabilities()
 
-	if !allowsAction(sc, "", agentWriteRights()...) {
+	if !gate.Allows(sc, "", gate.AgentWriteRights()...) {
 		t.Error("a connection whose msdb probe has not run lost every SQL Agent action")
 	}
-	if !allowsAction(nil, "", agentWriteRights()...) {
+	if !gate.Allows(nil, "", gate.AgentWriteRights()...) {
 		t.Error("a nil connection withheld the SQL Agent actions")
 	}
 }
@@ -661,19 +662,19 @@ func TestAnUnprobedMsdbKeepsEverySQLAgentAction(t *testing.T) {
 func TestSQLAgentActionsFollowMsdbRoleMembership(t *testing.T) {
 	in := agentConn(t, nil, []string{"CONTROL SERVER"},
 		[]string{"SQLAgentUserRole"}, []string{"db_owner"})
-	if !allowsAction(in, "", agentWriteRights()...) {
+	if !gate.Allows(in, "", gate.AgentWriteRights()...) {
 		t.Error("a member of SQLAgentUserRole was refused the SQL Agent actions")
 	}
 
 	out := agentConn(t, nil, []string{"CONTROL SERVER"},
 		nil, []string{"SQLAgentUserRole", "db_owner"})
-	if allowsAction(out, "", agentWriteRights()...) {
+	if gate.Allows(out, "", gate.AgentWriteRights()...) {
 		t.Error("a login in no msdb Agent role kept the SQL Agent actions")
 	}
 
 	owner := agentConn(t, nil, []string{"CONTROL SERVER"},
 		[]string{"db_owner"}, []string{"SQLAgentUserRole"})
-	if !allowsAction(owner, "", agentWriteRights()...) {
+	if !gate.Allows(owner, "", gate.AgentWriteRights()...) {
 		t.Error("msdb db_owner was refused the SQL Agent actions")
 	}
 }
@@ -686,13 +687,13 @@ func TestSQLAgentActionsFollowMsdbRoleMembership(t *testing.T) {
 func TestASysadminKeepsTheSQLAgentActions(t *testing.T) {
 	sc := agentConn(t, []string{"CONTROL SERVER"}, nil,
 		nil, []string{"SQLAgentUserRole", "db_owner"})
-	if !allowsAction(sc, "", agentWriteRights()...) {
+	if !gate.Allows(sc, "", gate.AgentWriteRights()...) {
 		t.Error("a sysadmin lost the SQL Agent actions to its own msdb role membership")
 	}
 }
 
 // TestTheSQLAgentMenusFollowTheGate drives the menus themselves rather than
-// allowsAction, because a gate that is never wired to an item withholds
+// gate.Allows, because a gate that is never wired to an item withholds
 // nothing and every test above still passes.
 func TestTheSQLAgentMenusFollowTheGate(t *testing.T) {
 	items := []struct {
@@ -774,11 +775,11 @@ func TestEverySQLAgentNodeTypeIsSeenAsOne(t *testing.T) {
 // live run — telling someone who wants to create a job to go and ask for
 // sysadmin, when membership of one msdb role is what they need.
 func TestTheSQLAgentNoteNamesTheNarrowestRight(t *testing.T) {
-	if got := agentWriteRights()[0].name; got != "SQLAgentUserRole" {
+	if got := gate.AgentWriteRights()[0].Name; got != "SQLAgentUserRole" {
 		t.Errorf("the note would say %q; the narrowest sufficient right must come first", got)
 	}
-	if !slices.ContainsFunc(agentWriteRights(), func(r requiredRight) bool {
-		return r.name == "CONTROL SERVER"
+	if !slices.ContainsFunc(gate.AgentWriteRights(), func(r gate.Right) bool {
+		return r.Name == "CONTROL SERVER"
 	}) {
 		t.Error("CONTROL SERVER left the set — a sysadmin is in no SQLAgent* role and would lose the actions")
 	}
@@ -807,16 +808,16 @@ func TestAlterOnOneObjectKeepsTheObjectOpsOnThatObject(t *testing.T) {
 	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
 	rights := objectOpRights(NodeTable)
 
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", rights...) {
 		t.Error("the granted object lost its Rename/Move/Delete")
 	}
 	// The other half, and the one that makes the right worth having rather
 	// than merely harmless: a different object in the same schema must still
 	// lose them.
-	if allowsActionOn(sc, "appdb", "Sales", "Customers", rights...) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Customers", rights...) {
 		t.Error("an object with no grant of its own kept the object ops")
 	}
-	if allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+	if gate.AllowsOn(sc, "appdb", "dbo", "Orders", rights...) {
 		t.Error("an object of the same name in another schema kept the object ops")
 	}
 }
@@ -828,15 +829,15 @@ func TestAlterOnOneObjectKeepsTheObjectOpsOnThatObject(t *testing.T) {
 func TestAnObjectRightNeverWidensWhatIsOffered(t *testing.T) {
 	sc := objectProbedConn(t, "appdb", nil, nil)
 
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", rightAlterOnObject) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.AlterOnObject) {
 		t.Error("an object with no row was treated as granted — the map is sparse, not exhaustive")
 	}
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
 		t.Error("adding the object right resurrected object ops the wider rights had withheld")
 	}
 	// An explicit deny is a row, and must not read as a grant either.
 	denied := objectProbedConn(t, "appdb", nil, []string{"Sales.Orders"})
-	if allowsActionOn(denied, "appdb", "Sales", "Orders", rightAlterOnObject) {
+	if gate.AllowsOn(denied, "appdb", "Sales", "Orders", gate.AlterOnObject) {
 		t.Error("an explicitly denied object was treated as granted")
 	}
 }
@@ -848,16 +849,16 @@ func TestAnObjectRightNeverWidensWhatIsOffered(t *testing.T) {
 func TestAnObjectScopedRightGrantsNothingWithoutAnObject(t *testing.T) {
 	sc := objectProbedConn(t, "appdb", []string{"Sales.Orders"}, nil)
 
-	if allowsAction(sc, "appdb", rightAlterOnObject) {
+	if gate.Allows(sc, "appdb", gate.AlterOnObject) {
 		t.Error("an object-scoped right answered yes with no object to ask about")
 	}
-	if allowsActionOn(sc, "appdb", "Sales", "", rightAlterOnObject) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "", gate.AlterOnObject) {
 		t.Error("an object-scoped right answered yes with an empty object name")
 	}
-	if allowsActionOn(sc, "", "Sales", "Orders", rightAlterOnObject) {
+	if gate.AllowsOn(sc, "", "Sales", "Orders", gate.AlterOnObject) {
 		t.Error("an object-scoped right answered yes with no database to ask in")
 	}
-	if allowsActionOn(sc, "appdb", "", "Orders", rightAlterOnObject) {
+	if gate.AllowsOn(sc, "appdb", "", "Orders", gate.AlterOnObject) {
 		t.Error("an object-scoped right answered yes with no schema to qualify the object")
 	}
 }
@@ -878,7 +879,7 @@ func TestObjectOpsOnASchemaNodeIgnoreItsOwnObjectName(t *testing.T) {
 }
 
 // TestTheObjectOpMenuItemsFollowTheObjectGrant drives the menu rather than
-// allowsActionOn: a right that is never threaded to the call sites changes
+// gate.AllowsOn: a right that is never threaded to the call sites changes
 // nothing, and every test above still passes.
 //
 // The grant here is ALTER on the object, so Move to Schema is left out for the
@@ -916,14 +917,14 @@ func TestTheObjectOpMenuItemsFollowTheObjectGrant(t *testing.T) {
 }
 
 // TestAnObjectScopedPageAnswersForTheObject. Before the page's read-only check
-// and the menus' gate shared one rule (rightsAllow), this check knew only about
+// and the menus' gate shared one rule (gate.RightsAllow), this check knew only about
 // database- and server-scope rights: a principal granted ALTER on the one table
 // reads 0 for every wider permission there is, so every right in
-// objectWriteRights() denied and the page they can write opened with a banner
+// gate.ObjectWriteRights() denied and the page they can write opened with a banner
 // telling them they cannot.
 func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
 	ctx := context.Background()
-	page := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Patient", objectWriteRights()...)
+	page := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Patient", gate.ObjectWriteRights()...)
 
 	denied := []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"}
 	granted, _ := newFakeConn(t, capabilityResponsesWithObjects(true, denied, []string{"dbo"}, []string{"dbo.Patient"}, nil)...)
@@ -934,7 +935,7 @@ func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
 
 	// The same login on a table it was not granted: the object map is sparse,
 	// so silence there must not be read as a grant.
-	other := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Visit", objectWriteRights()...)
+	other := withRequiresOn(propPage{title: "Change Tracking"}, "HealthClinic", "dbo", "Visit", gate.ObjectWriteRights()...)
 	if got := pageReadOnlyReason(ctx, granted, other); got == "" {
 		t.Error("a page on a table with no grant anywhere is still writable")
 	}
@@ -952,7 +953,7 @@ func TestAnObjectScopedPageAnswersForTheObject(t *testing.T) {
 // anyone.
 func TestAnAgentPageAnswersForMsdbMembership(t *testing.T) {
 	ctx := context.Background()
-	page := withRequires(propPage{title: "General"}, "", agentWriteRights()...)
+	page := withRequires(propPage{title: "General"}, "", gate.AgentWriteRights()...)
 
 	member, _ := newFakeConn(t, capabilityResponsesWithRoles(true, nil, []string{"CONTROL SERVER"}, []string{"SQLAgentUserRole"}, []string{"db_owner"})...)
 	member.ProbeCapabilities()
@@ -992,19 +993,19 @@ func serverRoleConn(t *testing.T, granted, denied, roleIn, roleNotIn []string) *
 
 // TestBackupDeviceActionsFollowDiskadminMembership. sp_addumpdevice and
 // sp_dropdevice are permitted by membership of diskadmin and by no server
-// *permission* at all, which is why rightDiskAdmin is a serverRole right.
+// *permission* at all, which is why gate.DiskAdmin is a serverRole right.
 // Gating on CONTROL SERVER instead would withhold the family from the one
 // principal it is for.
 func TestBackupDeviceActionsFollowDiskadminMembership(t *testing.T) {
 	in := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
 		[]string{"diskadmin"}, []string{"sysadmin"})
-	if !allowsAction(in, "", rightDiskAdmin) {
+	if !gate.Allows(in, "", gate.DiskAdmin) {
 		t.Error("a member of diskadmin was refused the backup device actions")
 	}
 
 	out := serverRoleConn(t, nil, []string{"CONTROL SERVER"},
 		nil, []string{"diskadmin", "sysadmin"})
-	if allowsAction(out, "", rightDiskAdmin) {
+	if gate.Allows(out, "", gate.DiskAdmin) {
 		t.Error("a login in neither diskadmin nor sysadmin kept the backup device actions")
 	}
 
@@ -1013,7 +1014,7 @@ func TestBackupDeviceActionsFollowDiskadminMembership(t *testing.T) {
 	// carries. Asking only about the named role withholds the family from the
 	// one login that certainly may use it.
 	admin := serverRoleConn(t, nil, nil, []string{"sysadmin"}, []string{"diskadmin"})
-	if !allowsAction(admin, "", rightDiskAdmin) {
+	if !gate.Allows(admin, "", gate.DiskAdmin) {
 		t.Error("a sysadmin lost the backup device actions to its own diskadmin membership")
 	}
 }
@@ -1024,10 +1025,10 @@ func TestBackupDeviceActionsFollowDiskadminMembership(t *testing.T) {
 // would withhold New Backup Device from everyone on an unprobed connection.
 func TestAnUnprobedServerKeepsTheBackupDeviceActions(t *testing.T) {
 	sc, _ := newFakeConn(t) // never probed
-	if !allowsAction(sc, "", rightDiskAdmin) {
+	if !gate.Allows(sc, "", gate.DiskAdmin) {
 		t.Error("a connection whose capability probe has not run lost the backup device actions")
 	}
-	if !allowsAction(nil, "", rightDiskAdmin) {
+	if !gate.Allows(nil, "", gate.DiskAdmin) {
 		t.Error("a nil connection withheld the backup device actions")
 	}
 }
@@ -1136,9 +1137,9 @@ func serverScopedRightNames() []string {
 	var names []string
 	for _, rights := range serverScopedOpRights {
 		for _, r := range rights {
-			if !r.db && !r.membership && !r.serverRole && !slices.Contains(names, r.name) {
-				names = append(names, r.name)
-				names = append(names, r.alt...)
+			if !r.DB && !r.Membership && !r.ServerRole && !slices.Contains(names, r.Name) {
+				names = append(names, r.Name)
+				names = append(names, r.Alt...)
 			}
 		}
 	}
@@ -1149,8 +1150,8 @@ func msdbRoleNames() []string {
 	var names []string
 	for _, rights := range serverScopedOpRights {
 		for _, r := range rights {
-			if r.membership && !slices.Contains(names, r.name) {
-				names = append(names, r.name)
+			if r.Membership && !slices.Contains(names, r.Name) {
+				names = append(names, r.Name)
 			}
 		}
 	}
@@ -1179,10 +1180,10 @@ var databaseScopedOpTypes = []NodeType{
 }
 
 // TestServerScopedOpsAreGated is the meta-test §2 of the 2026-09-02 review
-// asked for. objectOpRights fell through to objectWriteRights() for everything
+// asked for. objectOpRights fell through to gate.ObjectWriteRights() for everything
 // but NodeDatabase, and every one of those rights is database-, schema- or
 // object-scoped — so with the empty DBName a server-level node carries,
-// rightsAllow took its "no database to ask about" branch and answered yes for
+// gate.RightsAllow took its "no database to ask about" branch and answered yes for
 // a principal holding nothing. Delete and Rename were offered on every login,
 // credential, audit, endpoint and Agent job, then refused by the server.
 func TestServerScopedOpsAreGated(t *testing.T) {
@@ -1201,14 +1202,14 @@ func TestServerScopedOpsAreGated(t *testing.T) {
 		}
 		// The empty dbName is what the node actually carries, and is the whole
 		// bug: asked with it, a database-scoped right set answers yes.
-		if allowsActionOn(sc, "", "", "obj", objectOpRights(nodeType)...) {
+		if gate.AllowsOn(sc, "", "", "obj", objectOpRights(nodeType)...) {
 			t.Errorf("objectOps[%v] offers Rename/Delete to a principal holding nothing", nodeType)
 		}
 	}
 }
 
 // schemaScopedOpTypes is the part of databaseScopedOpTypes whose nodes carry a
-// schema, so that objectWriteRights()' schema and object arms have a securable
+// schema, so that gate.ObjectWriteRights()' schema and object arms have a securable
 // to ask about. Everything else in databaseScopedOpTypes is schemaless and is
 // what TestSchemalessDatabaseOpsAreGated holds to an explicit entry.
 var schemaScopedOpTypes = []NodeType{
@@ -1223,7 +1224,7 @@ var schemaScopedOpTypes = []NodeType{
 }
 
 // TestSchemalessDatabaseOpsAreGated is TestServerScopedOpsAreGated one scope
-// in. A database-level node with no schema falls to objectWriteRights(), whose
+// in. A database-level node with no schema falls to gate.ObjectWriteRights(), whose
 // schema and object arms then have nothing to ask about, leaving ALTER and
 // CONTROL on the database and ALTER ANY SCHEMA — and ALTER ANY SCHEMA permits
 // none of these drops. Probed live 2026-09-10: it was refused DROP ASSEMBLY,
@@ -1244,12 +1245,12 @@ func TestSchemalessDatabaseOpsAreGated(t *testing.T) {
 		_, dbScoped := dbScopedOpRights[nodeType]
 		if !principal && !dbScoped {
 			t.Errorf("%v has no schema and no entry in principalOpRights or dbScopedOpRights; "+
-				"it falls to objectWriteRights(), which asks ALTER ANY SCHEMA and not the right that permits it",
+				"it falls to gate.ObjectWriteRights(), which asks ALTER ANY SCHEMA and not the right that permits it",
 				nodeType)
 			continue
 		}
 		rights := objectOpRights(nodeType)
-		if slices.ContainsFunc(rights, func(r requiredRight) bool { return r.name == rightAlterAnySchema.name }) {
+		if slices.ContainsFunc(rights, func(r gate.Right) bool { return r.Name == gate.AlterAnySchema.Name }) {
 			t.Errorf("%v's rights name ALTER ANY SCHEMA, which permits no schemaless drop", nodeType)
 		}
 		// A principal holding ALTER ANY SCHEMA and answering 0 for every right
@@ -1259,19 +1260,19 @@ func TestSchemalessDatabaseOpsAreGated(t *testing.T) {
 		securables := map[string]bool{}
 		for _, r := range rights {
 			switch {
-			case r.securable != "":
-				securables[gosmo.DatabaseSecurableKey(r.securable, "", "obj")] = false
-			case r.db:
-				zero = append(zero, r.name)
+			case r.Securable != "":
+				securables[gosmo.DatabaseSecurableKey(r.Securable, "", "obj")] = false
+			case r.DB:
+				zero = append(zero, r.Name)
 			default:
-				serverZero = append(serverZero, r.name)
+				serverZero = append(serverZero, r.Name)
 			}
 		}
 		sc, _ := newFakeConn(t, withSecurableAnswers(
 			capabilityResponses(true, nil, serverZero, []string{"ALTER ANY SCHEMA"}, zero), securables)...)
 		sc.ProbeCapabilities()
 		sc.DatabaseCapabilities(context.Background(), "appdb")
-		if allowsActionOn(sc, "appdb", "", "obj", rights...) {
+		if gate.AllowsOn(sc, "appdb", "", "obj", rights...) {
 			t.Errorf("%v offers Delete to a principal holding only ALTER ANY SCHEMA", nodeType)
 		}
 	}
@@ -1297,10 +1298,10 @@ func TestTheNarrowRightPermitsASchemalessDrop(t *testing.T) {
 		{NodeDatabaseTrigger, "ALTER ANY DATABASE DDL TRIGGER"},
 	} {
 		sc := probedConn(t, "appdb", nil, nil, []string{tc.right}, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
-		if !allowsActionOn(sc, "appdb", "", "obj", objectOpRights(tc.node)...) {
+		if !gate.AllowsOn(sc, "appdb", "", "obj", objectOpRights(tc.node)...) {
 			t.Errorf("%v: Delete withheld from a principal holding %s", tc.node, tc.right)
 		}
-		if got := objectOpRights(tc.node)[0].name; got != tc.right {
+		if got := objectOpRights(tc.node)[0].Name; got != tc.right {
 			t.Errorf("%v: the withheld item's note names %q, want the narrow %q", tc.node, got, tc.right)
 		}
 	}
@@ -1315,7 +1316,7 @@ func TestAPlanGuidesDeleteFollowsItsScope(t *testing.T) {
 		ScopeSchema: "dbo", ScopeName: "GetClaims"}
 	sqlGuide := nodeData{Type: NodePlanGuide, DBName: "appdb", Name: "pg_sql"}
 	allows := func(sc *db.ServerConn, n nodeData) bool {
-		return allowsActionOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRights(n)...)
+		return gate.AllowsOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRights(n)...)
 	}
 	conn := func(dbDenied, schemaDenied, objGranted, objDenied []string) *db.ServerConn {
 		responses := capabilityResponsesWithObjects(true, dbDenied, schemaDenied, objGranted, objDenied)
@@ -1391,33 +1392,33 @@ func TestAPlanGuidesDeleteFollowsItsScope(t *testing.T) {
 func TestServerScopedOpRightsMatchTheNewItemRights(t *testing.T) {
 	for _, tc := range []struct {
 		node  NodeType
-		right requiredRight
+		right gate.Right
 	}{
-		{NodeLogin, rightAlterAnyLogin},
-		{NodeServerRole, rightAlterAnyServerRole},
-		{NodeCredential, rightAlterAnyCredential},
-		{NodeAudit, rightAlterAnyAudit},
-		{NodeServerAuditSpecification, rightAlterAnyAudit},
-		{NodeBackupDevice, rightDiskAdmin},
-		{NodeEndpoint, rightAlterAnyEndpoint},
+		{NodeLogin, gate.AlterAnyLogin},
+		{NodeServerRole, gate.AlterAnyServerRole},
+		{NodeCredential, gate.AlterAnyCredential},
+		{NodeAudit, gate.AlterAnyAudit},
+		{NodeServerAuditSpecification, gate.AlterAnyAudit},
+		{NodeBackupDevice, gate.DiskAdmin},
+		{NodeEndpoint, gate.AlterAnyEndpoint},
 	} {
 		rights := objectOpRights(tc.node)
-		if len(rights) != 1 || rights[0].name != tc.right.name {
-			t.Errorf("objectOpRights(%v) = %v, want [%s]", tc.node, rights, tc.right.name)
+		if len(rights) != 1 || rights[0].Name != tc.right.Name {
+			t.Errorf("objectOpRights(%v) = %v, want [%s]", tc.node, rights, tc.right.Name)
 		}
 	}
 	for _, n := range []NodeType{NodeAgentJob, NodeAgentSchedule, NodeAgentAlert, NodeAgentOperator} {
-		got, want := rightNames(objectOpRights(n)), rightNames(agentWriteRights())
+		got, want := rightNames(objectOpRights(n)), rightNames(gate.AgentWriteRights())
 		if !slices.Equal(got, want) {
 			t.Errorf("objectOpRights(%v) = %v, want %v", n, got, want)
 		}
 	}
 }
 
-func rightNames(rights []requiredRight) []string {
+func rightNames(rights []gate.Right) []string {
 	names := make([]string, len(rights))
 	for i, r := range rights {
-		names[i] = r.name
+		names[i] = r.Name
 	}
 	return names
 }
@@ -1446,23 +1447,23 @@ func columnDeniedConn(t *testing.T, dbName string, objGranted, colDenied []strin
 func TestADenyOnAColumnWithholdsTheObjectOps(t *testing.T) {
 	sc := columnDeniedConn(t, "appdb", []string{"Sales.Orders"}, []string{"Sales.Orders.SSN"})
 
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", rightAlterOnObject) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.AlterOnObject) {
 		t.Error("a column denial did not withhold the action — the table's grant answered for it")
 	}
-	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", rightAlterOnObject)
-	if !denied || at.column != "SSN" {
-		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, column SSN, true", r.name, at, denied)
+	r, at, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.AlterOnObject)
+	if !denied || at.Column != "SSN" {
+		t.Fatalf("gate.DeniedOn = %q, %+v, %v; want ALTER, column SSN, true", r.Name, at, denied)
 	}
-	if got, want := deniedText(r, at), "ALTER is denied on column SSN of this object."; got != want {
-		t.Errorf("deniedText = %q, want %q", got, want)
+	if got, want := gate.DeniedText(r, at), "ALTER is denied on column SSN of this object."; got != want {
+		t.Errorf("gate.DeniedText = %q, want %q", got, want)
 	}
 	// The object's own sentence is unchanged where the DENY is on the object.
-	if got, want := deniedText(r, denialSite{}), "ALTER is denied on this object."; got != want {
-		t.Errorf("deniedText for an object denial = %q, want %q", got, want)
+	if got, want := gate.DeniedText(r, gate.Site{}), "ALTER is denied on this object."; got != want {
+		t.Errorf("gate.DeniedText for an object denial = %q, want %q", got, want)
 	}
 	// And the denial stays on the object it was recorded for: a sibling table
 	// keeps whatever the wider scopes gave it.
-	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Customers", rightAlterOnObject); denied {
+	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Customers", gate.AlterOnObject); denied {
 		t.Error("a column denial on one table read as a denial on another")
 	}
 }
@@ -1481,47 +1482,47 @@ func TestADenyOnASchemaWithholdsTheObjectOps(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...) {
 		t.Error("a schema denial did not withhold the action — the database-wide grant answered for it")
 	}
-	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...)
-	if !denied || at.schema != "Sales" {
-		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, schema Sales, true", r.name, at, denied)
+	r, at, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...)
+	if !denied || at.Schema != "Sales" {
+		t.Fatalf("gate.DeniedOn = %q, %+v, %v; want ALTER, schema Sales, true", r.Name, at, denied)
 	}
-	if got, want := deniedText(r, at), "ALTER is denied on schema Sales."; got != want {
-		t.Errorf("deniedText = %q, want %q", got, want)
+	if got, want := gate.DeniedText(r, at), "ALTER is denied on schema Sales."; got != want {
+		t.Errorf("gate.DeniedText = %q, want %q", got, want)
 	}
 	// A schema with no DENY row keeps whatever the wider scopes gave it. dbo is
 	// in the same probe and answers HAS_PERMS_BY_NAME 0 for ALTER, which is what
 	// every schema never granted anything answers — reading that as a denial
 	// would withhold the action on the whole database.
-	if _, _, denied := deniedOnObject(sc, "appdb", "dbo", "Orders", objectWriteRights()...); denied {
+	if _, _, denied := gate.DeniedOn(sc, "appdb", "dbo", "Orders", gate.ObjectWriteRights()...); denied {
 		t.Error("a schema HAS_PERMS_BY_NAME answered 0 for read as an explicit denial")
 	}
-	if !allowsActionOn(sc, "appdb", "dbo", "Orders", objectWriteRights()...) {
+	if !gate.AllowsOn(sc, "appdb", "dbo", "Orders", gate.ObjectWriteRights()...) {
 		t.Error("an ungranted schema withheld the action the database-wide grant permits")
 	}
 }
 
 // TestASysadminIsExemptFromASchemaDenial. The probe reads permissions through
 // public, so a DENY made to public is recorded for a sysadmin too — and SQL
-// Server applies it to nobody. objectDenial's sysadmin exemption covers the
+// Server applies it to nobody. gate.ObjectDenial's sysadmin exemption covers the
 // schema question for the same reason it covers the object one.
 func TestASysadminIsExemptFromASchemaDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, withDeniedSchemas(sysadminCapabilityResponses(), "Sales")...)
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...); denied {
+	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...); denied {
 		t.Error("a sysadmin was withheld by a DENY the server would not apply to it")
 	}
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...) {
 		t.Error("a sysadmin was refused an action on a denied schema")
 	}
 }
 
 // TestADatabaseDenialWithholdsAnObjectGrant is the gap the database arm of
-// objectDenial closes, verified live on 2026-09-04: with
+// gate.ObjectDenial closes, verified live on 2026-09-04: with
 // GRANT ALTER ON OBJECT::dbo.t1 and DENY ALTER at database scope, the server
 // answers HAS_PERMS_BY_NAME('dbo.t1','OBJECT','ALTER') = 0 and refuses the
 // ALTER. SQL Server resolves the wider DENY over the narrower GRANT — only a
@@ -1539,15 +1540,15 @@ func TestADatabaseDenialWithholdsAnObjectGrant(t *testing.T) {
 
 	// Without the database arm this is the object arm answering yes on
 	// HasOnObject, for a write the server refuses.
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
 		t.Error("a database-scope denial did not withhold the action — the object grant answered for it")
 	}
-	r, at, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...)
-	if !denied || at.database != "appdb" {
-		t.Fatalf("deniedOnObject = %q, %+v, %v; want ALTER, database appdb, true", r.name, at, denied)
+	r, at, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...)
+	if !denied || at.Database != "appdb" {
+		t.Fatalf("gate.DeniedOn = %q, %+v, %v; want ALTER, database appdb, true", r.Name, at, denied)
 	}
-	if got, want := deniedText(r, at), "ALTER is denied on database appdb."; got != want {
-		t.Errorf("deniedText = %q, want %q", got, want)
+	if got, want := gate.DeniedText(r, at), "ALTER is denied on database appdb."; got != want {
+		t.Errorf("gate.DeniedText = %q, want %q", got, want)
 	}
 }
 
@@ -1565,33 +1566,33 @@ func TestNotHoldingADatabaseRightIsNotADenial(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...); denied {
+	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...); denied {
 		t.Error("a permission HAS_PERMS_BY_NAME answered 0 for read as an explicit denial")
 	}
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
 		t.Error("the object grant lost its Rename/Move/Delete to a denial that does not exist")
 	}
 }
 
 // TestASysadminIsExemptFromADatabaseDenial. The probe reads permissions through
 // public, so a DENY made to public is recorded for a sysadmin too — and SQL
-// Server applies it to nobody. objectDenial's sysadmin exemption covers the
+// Server applies it to nobody. gate.ObjectDenial's sysadmin exemption covers the
 // database question for the same reason it covers the object and schema ones.
 func TestASysadminIsExemptFromADatabaseDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, withDatabaseDenials(sysadminCapabilityResponses(), "ALTER")...)
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if _, _, denied := deniedOnObject(sc, "appdb", "Sales", "Orders", objectWriteRights()...); denied {
+	if _, _, denied := gate.DeniedOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...); denied {
 		t.Error("a sysadmin was withheld by a DENY the server would not apply to it")
 	}
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectWriteRights()...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...) {
 		t.Error("a sysadmin was refused an action in a database denied the right")
 	}
 }
 
 // TestTheMenuNoteNamesTheDatabaseDenial. gate's note is a second switch over
-// denialSite, separate from deniedText, and a site it has no case for falls
+// gate.Site, separate from gate.DeniedText, and a site it has no case for falls
 // through to "denied on this object" — which sends the user to the object's
 // permissions to remove a DENY that is not there. It shipped that way for the
 // database case and was caught only by reading the live menu, so it is pinned
@@ -1634,7 +1635,7 @@ func TestTheMenuNoteNamesTheDatabaseDenial(t *testing.T) {
 // TestDbAccessadminKeepsRenameAndDeleteOnAUser is the gap principalOpRights
 // closes, verified live on win10cli 2026-09-04: a member of db_accessadmin
 // drops a user, and reads HAS_PERMS_BY_NAME 0 for ALTER, CONTROL and
-// ALTER ANY SCHEMA on the database alike. Every right in objectWriteRights()
+// ALTER ANY SCHEMA on the database alike. Every right in gate.ObjectWriteRights()
 // is one of those three or is scoped to a schema or an object, and a user is
 // neither — so the two items were withheld from exactly the fixed role that
 // exists to perform them, while User Properties, gating on ALTER ANY USER,
@@ -1653,14 +1654,14 @@ func TestDbAccessadminKeepsRenameAndDeleteOnAUser(t *testing.T) {
 		sc := probedConn(t, "appdb", nil, nil,
 			[]string{tc.right}, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
 		// The empty schema is what a user node actually carries.
-		if !allowsActionOn(sc, "appdb", "", "bob", objectOpRights(tc.node)...) {
+		if !gate.AllowsOn(sc, "appdb", "", "bob", objectOpRights(tc.node)...) {
 			t.Errorf("%v: Rename/Delete withheld from a principal holding %s", tc.node, tc.right)
 		}
 		// The other half: holding none of them still withholds, or the entry
 		// would just be another unconditional yes.
 		none := probedConn(t, "appdb", nil, nil, nil,
 			[]string{tc.right, "ALTER", "CONTROL", "ALTER ANY SCHEMA"})
-		if allowsActionOn(none, "appdb", "", "bob", objectOpRights(tc.node)...) {
+		if gate.AllowsOn(none, "appdb", "", "bob", objectOpRights(tc.node)...) {
 			t.Errorf("%v: Rename/Delete offered to a principal holding nothing", tc.node)
 		}
 	}
@@ -1691,13 +1692,13 @@ func TestAPrincipalDenialWithholdsRenameAndDeleteOnThatUser(t *testing.T) {
 	sc := principalDeniedConn(t, "bob")
 	rights := objectOpRights(NodeUser)
 	// A user node carries an empty schema and its own name as the object.
-	if allowsActionOn(sc, "appdb", "", "bob", rights...) {
+	if gate.AllowsOn(sc, "appdb", "", "bob", rights...) {
 		t.Error("Rename/Delete offered on a user carrying a class-4 DENY")
 	}
 	// The other half, and the one that keeps the arm safe: the denial is on
 	// bob alone, and every other user is still writable through the same
 	// database-wide grant.
-	if !allowsActionOn(sc, "appdb", "", "carol", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "", "carol", rights...) {
 		t.Error("a denial on one user withheld the action on every other")
 	}
 }
@@ -1708,32 +1709,32 @@ func TestAPrincipalDenialWithholdsRenameAndDeleteOnThatUser(t *testing.T) {
 // checks ALTER ANY ROLE at database scope for DROP ROLE and ALTER ROLE ... WITH
 // NAME and performs both with the DENY in place, verified live on all three
 // majors. Gating the explorer's Rename/Delete on it would withhold two items
-// the server allows, so rightAlterAnyDBRole deliberately declares no
+// the server allows, so gate.AlterAnyDBRole deliberately declares no
 // deniedOnPrincipal.
 //
 // Rename and drop only: the same DENY *does* withhold ADD/DROP MEMBER, which
-// is rightAlterAnyDBRoleMembers' reason — see
+// is gate.AlterAnyDBRoleMembers' reason — see
 // TestARoleDenialWithholdsMembershipButNotTheRename.
 func TestARoleDenialWithholdsNoRenameOrDrop(t *testing.T) {
 	sc := principalDeniedConn(t, "auditors")
-	if !allowsActionOn(sc, "appdb", "", "auditors", objectOpRights(NodeDatabaseRole)...) {
+	if !gate.AllowsOn(sc, "appdb", "", "auditors", objectOpRights(NodeDatabaseRole)...) {
 		t.Error("a class-4 DENY on a role withheld Rename/Delete, which SQL Server permits")
 	}
 }
 
-// TestATableSharingAUsersNameIsNotDenied. objectDenial is asked about a table
+// TestATableSharingAUsersNameIsNotDenied. gate.ObjectDenial is asked about a table
 // by name just as it is about a user, so the arm has to be discriminated by the
 // right rather than by the node — a table called "bob" beside a denied user
 // "bob" is the collision that makes that non-obvious.
 func TestATableSharingAUsersNameIsNotDenied(t *testing.T) {
 	sc := principalDeniedConn(t, "bob")
-	if !allowsActionOn(sc, "appdb", "Sales", "bob", objectOpRights(NodeTable)...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "bob", objectOpRights(NodeTable)...) {
 		t.Error("a table sharing a denied user's name lost its Rename/Move/Delete")
 	}
 }
 
-// TestTheMenuNoteNamesTheDeniedPrincipal. Two switches over denialSite need
-// every new case, not one — deniedText and the note switch in gateOn — and
+// TestTheMenuNoteNamesTheDeniedPrincipal. Two switches over gate.Site need
+// every new case, not one — gate.DeniedText and the note switch in gateOn — and
 // missing the second is invisible to every other test, which is how the
 // database case shipped reading "denied on this object". The note must also
 // name the class-4 permission rather than the right: the DENY row says ALTER,
@@ -1741,21 +1742,21 @@ func TestATableSharingAUsersNameIsNotDenied(t *testing.T) {
 //
 // "principal", not "user": class 4 records database roles as well, and the
 // membership pages ask this same question about a role (see
-// rightAlterAnyDBRoleMembers). The gate is handed a name and cannot tell which
+// gate.AlterAnyDBRoleMembers). The gate is handed a name and cannot tell which
 // it is, so the sentence must be true of both.
 func TestTheMenuNoteNamesTheDeniedPrincipal(t *testing.T) {
 	sc := principalDeniedConn(t, "bob")
 	rights := objectOpRights(NodeUser)
-	item := gateOn(controls.MenuItem{Label: "Delete..."}, sc, "appdb", "", "bob", rights...)
+	item := gate.ItemOn(controls.MenuItem{Label: "Delete..."}, sc, "appdb", "", "bob", rights...)
 	if want := "ALTER denied on principal bob"; item.Note != want {
 		t.Errorf("menu note = %q, want %q", item.Note, want)
 	}
-	r, at, denied := deniedOnObject(sc, "appdb", "", "bob", rights...)
+	r, at, denied := gate.DeniedOn(sc, "appdb", "", "bob", rights...)
 	if !denied {
-		t.Fatal("deniedOnObject reported no denial")
+		t.Fatal("gate.DeniedOn reported no denial")
 	}
-	if want := "ALTER is denied on principal bob."; deniedText(r, at) != want {
-		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	if want := "ALTER is denied on principal bob."; gate.DeniedText(r, at) != want {
+		t.Errorf("gate.DeniedText = %q, want %q", gate.DeniedText(r, at), want)
 	}
 }
 
@@ -1772,15 +1773,15 @@ func TestTheMenuNoteNamesTheDeniedPrincipal(t *testing.T) {
 func TestARoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
 	sc := principalDeniedConn(t, "sales_role")
 
-	if allowsActionOn(sc, "appdb", "", "sales_role", rightAlterAnyDBRoleMembers) {
+	if gate.AllowsOn(sc, "appdb", "", "sales_role", gate.AlterAnyDBRoleMembers) {
 		t.Error("Members offered on a role carrying a class-4 DENY")
 	}
-	if !allowsActionOn(sc, "appdb", "", "sales_role", rightAlterAnyDBRole) {
+	if !gate.AllowsOn(sc, "appdb", "", "sales_role", gate.AlterAnyDBRole) {
 		t.Error("the plain right withheld a rename the server allows")
 	}
 	// The denial is on that role alone; every other role is still editable
 	// through the same database-wide grant.
-	if !allowsActionOn(sc, "appdb", "", "hr_role", rightAlterAnyDBRoleMembers) {
+	if !gate.AllowsOn(sc, "appdb", "", "hr_role", gate.AlterAnyDBRoleMembers) {
 		t.Error("a denial on one role withheld membership on every other")
 	}
 }
@@ -1792,13 +1793,13 @@ func TestARoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
 // than on the roles it lists.
 func TestAUserDenialWithholdsBeingAddedToARole(t *testing.T) {
 	sc := principalDeniedConn(t, "bob")
-	if allowsActionOn(sc, "appdb", "", "bob", rightAlterAnyDBRoleMembers) {
+	if gate.AllowsOn(sc, "appdb", "", "bob", gate.AlterAnyDBRoleMembers) {
 		t.Error("Membership offered for a user carrying a class-4 DENY")
 	}
 }
 
 // TestMembershipPagesAreGatedOnThePrincipalTheyEdit pins the wiring the two
-// tests above cannot see. They ask allowsActionOn directly; what actually
+// tests above cannot see. They ask gate.AllowsOn directly; what actually
 // reaches it on a Properties dialog is the page's own requires/requiresObject,
 // and a page left on withRequires — no object — asks the class-4 question about
 // nothing and withholds nothing, silently.
@@ -1823,7 +1824,7 @@ func TestMembershipPagesAreGatedOnThePrincipalTheyEdit(t *testing.T) {
 			t.Errorf("%s > %s asks about object %q, want %q — the class-4 arm is never reached",
 				tc.what, tc.title, p.requiresObject, tc.object)
 		}
-		if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnPrincipal != "" }) {
+		if !slices.ContainsFunc(p.requires, func(r gate.Right) bool { return r.DeniedOnPrincipal != "" }) {
 			t.Errorf("%s > %s declares no right carrying deniedOnPrincipal, so a DENY on %s is invisible to it",
 				tc.what, tc.title, tc.object)
 		}
@@ -1835,7 +1836,7 @@ func TestMembershipPagesAreGatedOnThePrincipalTheyEdit(t *testing.T) {
 // class-101/105 DENY per name given, on the securable kind named.
 //
 // It is not a sysadmin — capabilityResponses scripts no role rows — which
-// matters, because objectDenial's first act is to let a sysadmin past every
+// matters, because gate.ObjectDenial's first act is to let a sysadmin past every
 // arm below it.
 func serverDeniedConn(t *testing.T, kind gosmo.ServerSecurableKind, denied ...string) *db.ServerConn {
 	t.Helper()
@@ -1850,7 +1851,7 @@ func serverDeniedConn(t *testing.T, kind gosmo.ServerSecurableKind, denied ...st
 // TestALoginDenialWithholdsEveryWriteOnTheLogin. The login's class-101 DENY is
 // all-or-nothing — DENY ALTER ON LOGIN::x refuses ALTER LOGIN and DROP LOGIN
 // alike, verified live on majors 13 and 17 — so the single arm on
-// rightAlterAnyLogin has to reach Properties, Rename and Delete together.
+// gate.AlterAnyLogin has to reach Properties, Rename and Delete together.
 //
 // The server-wide ALTER ANY LOGIN reads *granted* throughout, which is the
 // whole point: nothing but the catalog read can tell that the write will fail,
@@ -1859,18 +1860,18 @@ func serverDeniedConn(t *testing.T, kind gosmo.ServerSecurableKind, denied ...st
 func TestALoginDenialWithholdsEveryWriteOnTheLogin(t *testing.T) {
 	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "gate_login")
 
-	if !allowsAction(sc, "", rightAlterAnyLogin) {
+	if !gate.Allows(sc, "", gate.AlterAnyLogin) {
 		t.Fatal("the server-wide grant did not read back; this fixture no longer isolates the DENY")
 	}
-	if allowsActionOn(sc, "", "", "gate_login", objectOpRights(NodeLogin)...) {
+	if gate.AllowsOn(sc, "", "", "gate_login", objectOpRights(NodeLogin)...) {
 		t.Error("Rename/Delete offered on a login carrying a class-101 DENY")
 	}
-	if allowsActionOn(sc, "", "", "gate_login", rightAlterAnyLogin) {
+	if gate.AllowsOn(sc, "", "", "gate_login", gate.AlterAnyLogin) {
 		t.Error("Login Properties offered on a login carrying a class-101 DENY")
 	}
 	// The denial is on that login alone; every other one is still editable
 	// through the same server-wide grant.
-	if !allowsActionOn(sc, "", "", "other_login", objectOpRights(NodeLogin)...) {
+	if !gate.AllowsOn(sc, "", "", "other_login", objectOpRights(NodeLogin)...) {
 		t.Error("a denial on one login withheld the writes on every other")
 	}
 }
@@ -1888,16 +1889,16 @@ func TestALoginDenialWithholdsEveryWriteOnTheLogin(t *testing.T) {
 func TestAServerRoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
 	sc := serverDeniedConn(t, gosmo.ServerSecurableServerRole, "gate_role")
 
-	if allowsActionOn(sc, "", "", "gate_role", rightAlterAnyServerRoleMembers) {
+	if gate.AllowsOn(sc, "", "", "gate_role", gate.AlterAnyServerRoleMembers) {
 		t.Error("Members offered on a server role carrying a class-101 DENY")
 	}
-	if !allowsActionOn(sc, "", "", "gate_role", rightAlterAnyServerRole) {
+	if !gate.AllowsOn(sc, "", "", "gate_role", gate.AlterAnyServerRole) {
 		t.Error("the plain right withheld a rename the server allows")
 	}
-	if !allowsActionOn(sc, "", "", "gate_role", objectOpRights(NodeServerRole)...) {
+	if !gate.AllowsOn(sc, "", "", "gate_role", objectOpRights(NodeServerRole)...) {
 		t.Error("Rename/Delete withheld on a server role, which the server permits under this DENY")
 	}
-	if !allowsActionOn(sc, "", "", "other_role", rightAlterAnyServerRoleMembers) {
+	if !gate.AllowsOn(sc, "", "", "other_role", gate.AlterAnyServerRoleMembers) {
 		t.Error("a denial on one server role withheld membership on every other")
 	}
 }
@@ -1910,13 +1911,13 @@ func TestAServerRoleDenialWithholdsMembershipButNotTheRename(t *testing.T) {
 func TestALoginDenialDoesNotWithholdAServerRoleOrEndpointOfTheSameName(t *testing.T) {
 	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "shared")
 
-	if allowsActionOn(sc, "", "", "shared", rightAlterAnyLogin) {
+	if gate.AllowsOn(sc, "", "", "shared", gate.AlterAnyLogin) {
 		t.Fatal("the login's own denial did not read back")
 	}
-	if !allowsActionOn(sc, "", "", "shared", rightAlterAnyServerRoleMembers) {
+	if !gate.AllowsOn(sc, "", "", "shared", gate.AlterAnyServerRoleMembers) {
 		t.Error("a login's DENY withheld a server role's membership edits")
 	}
-	if !allowsActionOn(sc, "", "", "shared", rightAlterAnyEndpoint) {
+	if !gate.AllowsOn(sc, "", "", "shared", gate.AlterAnyEndpoint) {
 		t.Error("a login's DENY withheld an endpoint's ALTER")
 	}
 }
@@ -1928,23 +1929,23 @@ func TestALoginDenialDoesNotWithholdAServerRoleOrEndpointOfTheSameName(t *testin
 func TestAnEndpointDenialWithholdsItsStateChanges(t *testing.T) {
 	sc := serverDeniedConn(t, gosmo.ServerSecurableEndpoint, "gate_ep")
 
-	if allowsActionOn(sc, "", "", "gate_ep", rightAlterAnyEndpoint) {
+	if gate.AllowsOn(sc, "", "", "gate_ep", gate.AlterAnyEndpoint) {
 		t.Error("an endpoint's writes were offered under a class-105 DENY")
 	}
-	if !allowsActionOn(sc, "", "", "other_ep", rightAlterAnyEndpoint) {
+	if !gate.AllowsOn(sc, "", "", "other_ep", gate.AlterAnyEndpoint) {
 		t.Error("a denial on one endpoint withheld the writes on every other")
 	}
 	// New Endpoint names no securable, so the arm is never asked and the
 	// folder item stays offered — a DENY on one endpoint says nothing about
 	// creating another.
-	if !allowsAction(sc, "", rightAlterAnyEndpoint) {
+	if !gate.Allows(sc, "", gate.AlterAnyEndpoint) {
 		t.Error("a DENY on one endpoint withheld New Endpoint, which it does not refuse")
 	}
 }
 
 // TestASysadminIsNotWithheldByAServerDenial. The probe's principal set includes
 // public, so a DENY made to public is recorded for a sysadmin too — whose write
-// SQL Server then performs anyway. objectDenial's first act is the bypass, and
+// SQL Server then performs anyway. gate.ObjectDenial's first act is the bypass, and
 // the server arm sits above the dbName guard, which is exactly where a new arm
 // can end up on the wrong side of it.
 func TestASysadminIsNotWithheldByAServerDenial(t *testing.T) {
@@ -1963,13 +1964,13 @@ func TestASysadminIsNotWithheldByAServerDenial(t *testing.T) {
 	sc, _ := newFakeConn(t, responses...)
 	sc.ProbeCapabilities()
 
-	if !allowsActionOn(sc, "", "", "gate_login", rightAlterAnyLogin) {
+	if !gate.AllowsOn(sc, "", "", "gate_login", gate.AlterAnyLogin) {
 		t.Error("a sysadmin was withheld by a server-class DENY the server ignores for them")
 	}
 }
 
-// TestTheMenuNoteNamesTheDeniedServerSecurable. Two switches over denialSite
-// need every new case, not one — deniedText and the note switch in gateOn —
+// TestTheMenuNoteNamesTheDeniedServerSecurable. Two switches over gate.Site
+// need every new case, not one — gate.DeniedText and the note switch in gateOn —
 // and missing the second is invisible to every other test, which is how the
 // class-4 case shipped reading "denied on this object".
 //
@@ -1979,22 +1980,22 @@ func TestASysadminIsNotWithheldByAServerDenial(t *testing.T) {
 func TestTheMenuNoteNamesTheDeniedServerSecurable(t *testing.T) {
 	sc := serverDeniedConn(t, gosmo.ServerSecurableLogin, "gate_login")
 	rights := objectOpRights(NodeLogin)
-	item := gateOn(controls.MenuItem{Label: "Delete..."}, sc, "", "", "gate_login", rights...)
+	item := gate.ItemOn(controls.MenuItem{Label: "Delete..."}, sc, "", "", "gate_login", rights...)
 	if want := "ALTER denied on login gate_login"; item.Note != want {
 		t.Errorf("menu note = %q, want %q", item.Note, want)
 	}
-	r, at, denied := deniedOnObject(sc, "", "", "gate_login", rights...)
+	r, at, denied := gate.DeniedOn(sc, "", "", "gate_login", rights...)
 	if !denied {
-		t.Fatal("deniedOnObject reported no denial")
+		t.Fatal("gate.DeniedOn reported no denial")
 	}
-	if want := "ALTER is denied on login gate_login."; deniedText(r, at) != want {
-		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	if want := "ALTER is denied on login gate_login."; gate.DeniedText(r, at) != want {
+		t.Errorf("gate.DeniedText = %q, want %q", gate.DeniedText(r, at), want)
 	}
 }
 
 // TestServerScopedPagesAreGatedOnTheSecurableTheyEdit pins the wiring the tests
 // above cannot see — TestMembershipPagesAreGatedOnThePrincipalTheyEdit at
-// server scope. They ask allowsActionOn directly; what actually reaches it on a
+// server scope. They ask gate.AllowsOn directly; what actually reaches it on a
 // Properties dialog is the page's own requires/requiresObject, and a page left
 // on withRequires — no object — asks the server-class question about nothing
 // and withholds nothing, silently.
@@ -2020,7 +2021,7 @@ func TestServerScopedPagesAreGatedOnTheSecurableTheyEdit(t *testing.T) {
 			t.Errorf("%s > %s asks about object %q, want %q — the server-class arm is never reached",
 				tc.what, tc.title, p.requiresObject, tc.object)
 		}
-		if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnServer != "" }) {
+		if !slices.ContainsFunc(p.requires, func(r gate.Right) bool { return r.DeniedOnServer != "" }) {
 			t.Errorf("%s > %s declares no right carrying deniedOnServer, so a DENY on %s is invisible to it",
 				tc.what, tc.title, tc.object)
 		}
@@ -2040,7 +2041,7 @@ func TestLoginServerRolesDeclaresNoServerDenialArm(t *testing.T) {
 	if i < 0 {
 		t.Fatal("Login Properties has no Server Roles page")
 	}
-	if slices.ContainsFunc(pages[i].requires, func(r requiredRight) bool { return r.deniedOnServer != "" }) {
+	if slices.ContainsFunc(pages[i].requires, func(r gate.Right) bool { return r.DeniedOnServer != "" }) {
 		t.Error("Login Properties > Server Roles declares a server-class DENY arm; " +
 			"the server permits a denied login to be added to an undenied role")
 	}
@@ -2057,18 +2058,18 @@ func TestAnAvailabilityGroupDenialWithholdsEveryGroupWrite(t *testing.T) {
 		[]string{"AAG2"}, []string{"AAG1"})...)
 	sc.ProbeCapabilities()
 
-	if !allowsAction(sc, "", rightAlterAnyAG) {
+	if !gate.Allows(sc, "", gate.AlterAnyAG) {
 		t.Fatal("the server-wide grant did not read back; this fixture no longer isolates the DENY")
 	}
-	if allowsActionOn(sc, "", "", "AAG1", rightAlterAnyAG) {
+	if gate.AllowsOn(sc, "", "", "AAG1", gate.AlterAnyAG) {
 		t.Error("a group's writes were offered under a class-108 DENY")
 	}
-	if !allowsActionOn(sc, "", "", "AAG2", rightAlterAnyAG) {
+	if !gate.AllowsOn(sc, "", "", "AAG2", gate.AlterAnyAG) {
 		t.Error("a denial on one group withheld the writes on every other")
 	}
 	// New Availability Group names no group, so the arm is never asked — a
 	// DENY on one group says nothing about creating another.
-	if !allowsAction(sc, "", rightAlterAnyAG) {
+	if !gate.Allows(sc, "", gate.AlterAnyAG) {
 		t.Error("a DENY on one group withheld New Availability Group")
 	}
 }
@@ -2085,16 +2086,16 @@ func TestAGroupIsNotDeniedWhenTheWideRightIsMissing(t *testing.T) {
 		nil, []string{"AAG1"})...)
 	sc.ProbeCapabilities()
 
-	if _, _, denied := deniedOnObject(sc, "", "", "AAG1", rightAlterAnyAG); denied {
+	if _, _, denied := gate.DeniedOn(sc, "", "", "AAG1", gate.AlterAnyAG); denied {
 		t.Error("a login holding no availability-group right was told the group is denied")
 	}
-	item := gateOn(controls.MenuItem{Label: "Add Database..."}, sc, "", "", "AAG1", rightAlterAnyAG)
+	item := gate.ItemOn(controls.MenuItem{Label: "Add Database..."}, sc, "", "", "AAG1", gate.AlterAnyAG)
 	if want := "needs ALTER ANY AVAILABILITY GROUP"; item.Note != want {
 		t.Errorf("menu note = %q, want %q", item.Note, want)
 	}
 }
 
-// TestTheMenuNoteNamesTheDeniedAvailabilityGroup. denialSite's third new case,
+// TestTheMenuNoteNamesTheDeniedAvailabilityGroup. gate.Site's third new case,
 // and the third pair of switches that has to grow together — see
 // TestTheMenuNoteNamesTheDeniedServerSecurable.
 func TestTheMenuNoteNamesTheDeniedAvailabilityGroup(t *testing.T) {
@@ -2103,16 +2104,16 @@ func TestTheMenuNoteNamesTheDeniedAvailabilityGroup(t *testing.T) {
 		nil, []string{"AAG1"})...)
 	sc.ProbeCapabilities()
 
-	item := gateOn(controls.MenuItem{Label: "Delete Availability Group..."}, sc, "", "", "AAG1", rightAlterAnyAG)
+	item := gate.ItemOn(controls.MenuItem{Label: "Delete Availability Group..."}, sc, "", "", "AAG1", gate.AlterAnyAG)
 	if want := "ALTER denied on availability group AAG1"; item.Note != want {
 		t.Errorf("menu note = %q, want %q", item.Note, want)
 	}
-	r, at, denied := deniedOnObject(sc, "", "", "AAG1", rightAlterAnyAG)
+	r, at, denied := gate.DeniedOn(sc, "", "", "AAG1", gate.AlterAnyAG)
 	if !denied {
-		t.Fatal("deniedOnObject reported no denial")
+		t.Fatal("gate.DeniedOn reported no denial")
 	}
-	if want := "ALTER is denied on availability group AAG1."; deniedText(r, at) != want {
-		t.Errorf("deniedText = %q, want %q", deniedText(r, at), want)
+	if want := "ALTER is denied on availability group AAG1."; gate.DeniedText(r, at) != want {
+		t.Errorf("gate.DeniedText = %q, want %q", gate.DeniedText(r, at), want)
 	}
 }
 
@@ -2134,7 +2135,7 @@ func TestAvailabilityGroupPagesAreGatedOnTheGroupTheyEdit(t *testing.T) {
 			if len(p.requires) == 0 {
 				continue
 			}
-			if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.deniedOnAG != "" }) {
+			if !slices.ContainsFunc(p.requires, func(r gate.Right) bool { return r.DeniedOnAG != "" }) {
 				continue
 			}
 			if p.requiresObject != "AAG1" {

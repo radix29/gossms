@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -28,12 +29,12 @@ import (
 // concerns.
 func agPropPages(sc *db.ServerConn, agName string) []propPage {
 	return []propPage{
-		// withRequiresOn, not withRequires: rightAlterAnyAG's class-108 arm
+		// withRequiresOn, not withRequires: gate.AlterAnyAG's class-108 arm
 		// needs the group named. Every apply here is ALTER AVAILABILITY GROUP,
 		// which DENY ALTER on the group refuses.
-		withRequiresOn(pageAGGeneral(sc, agName), "", "", agName, rightAlterAnyAG),
-		withRequiresOn(pageAGBackupPreferences(sc, agName), "", "", agName, rightAlterAnyAG),
-		withRequiresOn(pageAGReadOnlyRouting(sc, agName), "", "", agName, rightAlterAnyAG),
+		withRequiresOn(pageAGGeneral(sc, agName), "", "", agName, gate.AlterAnyAG),
+		withRequiresOn(pageAGBackupPreferences(sc, agName), "", "", agName, gate.AlterAnyAG),
+		withRequiresOn(pageAGReadOnlyRouting(sc, agName), "", "", agName, gate.AlterAnyAG),
 	}
 }
 

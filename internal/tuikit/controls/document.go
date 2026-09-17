@@ -60,6 +60,20 @@ type Document struct {
 	// It describes one mutation only, so a cache further behind than that has
 	// to start over.
 	dirtyFrom int
+
+	// dirtyTo bounds that range above: the line after the last one the
+	// mutation touched, or -1 when the mutation could have changed every line
+	// from dirtyFrom down. Only setLine gives it a bound, and that bound is
+	// always dirtyFrom+1 — one line, same line count.
+	//
+	// prefixStates doesn't need it: a state replay carries forward and stops
+	// where it converges, so an over-wide dirty range costs time, not
+	// correctness. A cache indexed by line and spliced in place — the search
+	// match list — does: replaceRange leaves dirtyFrom > 0 with the line
+	// count unchanged whenever a span is replaced by one of equal length
+	// (every same-size undo), and rescanning only dirtyFrom would then keep
+	// stale entries for the rest of the span.
+	dirtyTo int
 }
 
 // newDocument returns a Document holding a single empty line — the same
@@ -99,7 +113,7 @@ func (d *Document) setLine(i int, line []rune) {
 	}
 	d.version++
 	d.maxWidthValid = false
-	d.dirtyFrom = i
+	d.dirtyFrom, d.dirtyTo = i, i+1
 }
 
 // setLines replaces the whole buffer and bumps the version.
@@ -154,7 +168,7 @@ func (d *Document) touch(from int) {
 	if from < len(d.lineW) {
 		d.lineW = d.lineW[:from]
 	}
-	d.dirtyFrom = from
+	d.dirtyFrom, d.dirtyTo = from, -1
 }
 
 // maxDisplayWidth returns the display width of the widest line, measured

@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -21,13 +22,13 @@ func serverPropPages(sc *db.ServerConn) []propPage {
 	// CONTROL SERVER. General has no apply at all and so needs nothing.
 	return []propPage{
 		pageServerGeneral(sc),
-		withRequires(pageServerMemory(sc), "", rightAlterSettings),
-		withRequires(pageServerProcessors(sc), "", rightAlterSettings),
-		withRequires(pageServerSecurity(sc), "", rightAlterSettings),
-		withRequires(pageServerConnections(sc), "", rightAlterSettings),
-		withRequires(pageServerDatabaseSettings(sc), "", rightAlterSettings),
-		withRequires(pageServerAdvanced(sc), "", rightAlterSettings),
-		withRequires(pageServerPermissions(sc), "", rightControlServer),
+		withRequires(pageServerMemory(sc), "", gate.AlterSettings),
+		withRequires(pageServerProcessors(sc), "", gate.AlterSettings),
+		withRequires(pageServerSecurity(sc), "", gate.AlterSettings),
+		withRequires(pageServerConnections(sc), "", gate.AlterSettings),
+		withRequires(pageServerDatabaseSettings(sc), "", gate.AlterSettings),
+		withRequires(pageServerAdvanced(sc), "", gate.AlterSettings),
+		withRequires(pageServerPermissions(sc), "", gate.ControlServer),
 	}
 }
 

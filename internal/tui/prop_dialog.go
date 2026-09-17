@@ -9,6 +9,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
@@ -47,8 +48,8 @@ type propPage struct {
 	// for a page that only reads, or whose write right the probe cannot see.
 	//
 	// Evaluated on the load goroutine, so a database-scope right here may cost
-	// a probe; the UI goroutine's gates use the cache instead (allowsAction).
-	requires []requiredRight
+	// a probe; the UI goroutine's gates use the cache instead (gate.Allows).
+	requires []gate.Right
 
 	// requiresIn is the database whose capabilities a database-scope entry in
 	// requires is read against. Empty for a server-scoped page.
@@ -59,7 +60,7 @@ type propPage struct {
 	// lives in, and the object itself. Both empty for a page whose rights are
 	// all database- or server-wide.
 	//
-	// Without them objectWriteRights() cannot answer for the principal it
+	// Without them gate.ObjectWriteRights() cannot answer for the principal it
 	// exists for: a grant of ALTER made directly on one table is reflected at
 	// no wider scope, so every other right in the set denies and the page that
 	// principal *can* write comes up read-only. See withRequiresOn.
@@ -524,18 +525,18 @@ func pageReadOnlyReason(ctx context.Context, sc *db.ServerConn, p propPage) stri
 		return ""
 	}
 	// The probing form of DatabaseCapabilities, which the menu gates may not
-	// use — see rightsAllow, which is the single copy of the rule both follow.
+	// use — see gate.RightsAllow, which is the single copy of the rule both follow.
 	dbCaps := func(name string) *gosmo.DatabaseCapabilities {
 		return sc.DatabaseCapabilities(ctx, name)
 	}
-	if rightsAllow(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...) {
+	if gate.RightsAllow(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...) {
 		return ""
 	}
 	// A DENY on the object is a different sentence: the login may hold every
 	// right the page lists, and telling it to go and ask for one of them
 	// describes neither what is wrong nor what would fix it.
-	if r, at, denied := objectDenial(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...); denied {
-		return readOnlyBannerPrefix + deniedText(r, at)
+	if r, at, denied := gate.ObjectDenial(sc.Capabilities(), dbCaps, p.requiresIn, p.requiresSchema, p.requiresObject, p.requires...); denied {
+		return readOnlyBannerPrefix + gate.DeniedText(r, at)
 	}
-	return readOnlyBannerPrefix + requiresText(p.requires...)
+	return readOnlyBannerPrefix + gate.RequiresText(p.requires...)
 }

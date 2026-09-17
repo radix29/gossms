@@ -3,6 +3,7 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -407,11 +408,11 @@ func serverMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 		{Divider: true},
 		{Label: "Disconnect", Action: func() { a.disconnectActive() }},
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
-			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
+		gate.Item(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase),
 		{Divider: true},
-		gate(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
-			sc, "", rightViewServerState),
+		gate.Item(controls.MenuItem{Label: "Activity Monitor", Action: func() { a.showActivityMonitorFor(sc) }},
+			sc, "", gate.ViewServerState),
 		{Label: "View SQL Server Log", Action: func() {
 			a.showLogViewerFor(sc, gosmo.ErrorLogSQLServer, 0)
 		}},
@@ -425,10 +426,10 @@ func databasesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
-			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase),
-		gateAzure(gate(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
-			sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
+		gate.Item(controls.MenuItem{Label: "New Database...", Action: func() { a.showNewDatabaseDialog(sc) }},
+			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase),
+		gateAzure(gate.Item(controls.MenuItem{Label: "Attach Database...", Action: func() { a.showAttachDatabaseDialog(sc) }},
+			sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
 		{Divider: true},
 		{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, "") }},
 		{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, "") }},
@@ -445,33 +446,33 @@ func databaseMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 	items := []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
-			sc, node.data.DBName, rightBackupDatabase, rightAlterAnyDatabase),
-		gate(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
-			sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase, rightCreateAnyDatabase),
+		gate.Item(controls.MenuItem{Label: "Back Up Database...", Action: func() { a.showBackupDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, gate.BackupDatabase, gate.AlterAnyDatabase),
+		gate.Item(controls.MenuItem{Label: "Restore Database...", Action: func() { a.showRestoreDialog(sc, node.data.DBName) }},
+			sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase, gate.CreateAnyDatabase),
 		{Label: "View Backup History", Action: func() { a.showBackupHistoryFor(sc, node.data.DBName) }},
 		// ALTER DATABASE ... SET OFFLINE is Msg 5008 on an Azure edition,
 		// so the toggle is withheld there in both directions.
-		gateAzure(gate(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
-			sc, node.data.DBName, rightAlterDatabase, rightAlterAnyDatabase), sc),
+		gateAzure(gate.Item(controls.MenuItem{Label: offlineLabel, Action: func() { a.toggleDatabaseOffline(sc, node) }},
+			sc, node.data.DBName, gate.AlterDatabase, gate.AlterAnyDatabase), sc),
 	}
 	// Snapshotting a system database is refused by the server, so the
 	// item follows Detach's rule below rather than being offered and
 	// failing.
 	if !node.data.IsSystem {
 		items = append(items,
-			gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+			gateAzure(gate.Item(controls.MenuItem{Label: "New Snapshot...", Action: func() {
 				a.showNewSnapshotDialog(sc, node.data.DBName)
-			}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc))
+			}}, sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc))
 	}
 	// Detach is offered on user databases only: sp_detach_db refuses a
 	// system database outright, and a permanently grey item explains
 	// nothing the name doesn't already say.
 	if !node.data.IsSystem {
 		items = append(items,
-			gateAzure(gate(controls.MenuItem{Label: "Detach Database...", Action: func() {
+			gateAzure(gate.Item(controls.MenuItem{Label: "Detach Database...", Action: func() {
 				a.showDetachDatabaseDialog(sc, node.data.DBName)
-			}}, sc, node.data.DBName, rightControlDB, rightAlterAnyDatabase), sc))
+			}}, sc, node.data.DBName, gate.ControlDB, gate.AlterAnyDatabase), sc))
 	}
 	return append(items,
 		controls.MenuItem{Divider: true},
@@ -486,9 +487,9 @@ func databaseSnapshotsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, n
 		{Divider: true},
 		// CREATE DATABASE ... AS SNAPSHOT OF is a CREATE DATABASE, and
 		// takes the same rights New Database does.
-		gateAzure(gate(controls.MenuItem{Label: "New Snapshot...", Action: func() {
+		gateAzure(gate.Item(controls.MenuItem{Label: "New Snapshot...", Action: func() {
 			a.showNewSnapshotDialog(sc, "")
-		}}, sc, "", rightCreateAnyDatabase, rightAlterAnyDatabase), sc),
+		}}, sc, "", gate.CreateAnyDatabase, gate.AlterAnyDatabase), sc),
 		{Divider: true},
 		refresh,
 	}
@@ -500,9 +501,9 @@ func databaseSnapshotMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 		{Divider: true},
 		// RESTORE ... FROM DATABASE_SNAPSHOT is a restore of the *source*
 		// database, so it takes the source's rights, not the snapshot's.
-		gateAzure(gate(controls.MenuItem{Label: "Restore Database from Snapshot...", Action: func() {
+		gateAzure(gate.Item(controls.MenuItem{Label: "Restore Database from Snapshot...", Action: func() {
 			a.restoreFromSnapshot(sc, node)
-		}}, sc, node.data.SourceDatabase, rightControlDB, rightAlterAnyDatabase), sc),
+		}}, sc, node.data.SourceDatabase, gate.ControlDB, gate.AlterAnyDatabase), sc),
 	}
 	// Delete is not listed here: contextMenuItemsForNode splices it in
 	// above Refresh for every type objectOps covers, and a copy here is a
@@ -522,9 +523,9 @@ func queryStoreMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "Open Query Store...", Action: func() {
+		gate.Item(controls.MenuItem{Label: "Open Query Store...", Action: func() {
 			a.showQueryStorePanelFor(sc, node.data.DBName, "")
-		}}, sc, node.data.DBName, rightViewDBState),
+		}}, sc, node.data.DBName, gate.ViewDBState),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() { a.showDatabasePropertiesFor(sc, node.data.DBName) }},
@@ -538,9 +539,9 @@ func queryStoreReportMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
+		gate.Item(controls.MenuItem{Label: "Open in Query Store Panel", Action: func() {
 			a.showQueryStorePanelFor(sc, node.data.DBName, node.data.Name)
-		}}, sc, node.data.DBName, rightViewDBState),
+		}}, sc, node.data.DBName, gate.ViewDBState),
 		{Divider: true},
 		refresh,
 	}
@@ -556,9 +557,9 @@ func databaseAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explo
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Database Audit Specification...",
+		gate.Item(controls.MenuItem{Label: "New Database Audit Specification...",
 			Action: func() { a.showNewDatabaseAuditSpecificationDialog(sc, node) }},
-			sc, node.data.DBName, rightAlterAnyDBAudit),
+			sc, node.data.DBName, gate.AlterAnyDBAudit),
 		{Divider: true},
 		refresh,
 	}
@@ -568,9 +569,9 @@ func databaseAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explor
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: auditToggleLabel(node),
+		gate.Item(controls.MenuItem{Label: auditToggleLabel(node),
 			Action: func() { a.toggleDatabaseAuditSpecification(sc, node) }},
-			sc, node.data.DBName, rightAlterAnyDBAudit),
+			sc, node.data.DBName, gate.AlterAnyDBAudit),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() {
@@ -583,9 +584,9 @@ func databaseScopedCredentialsMenuItems(a *App, sc *db.ServerConn, node *explore
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Database Scoped Credential...",
+		gate.Item(controls.MenuItem{Label: "New Database Scoped Credential...",
 			Action: func() { a.showNewDatabaseScopedCredentialDialog(sc, node) }},
-			sc, node.data.DBName, dbScopedCredentialRights()...),
+			sc, node.data.DBName, gate.DBScopedCredentialRights()...),
 		{Divider: true},
 		refresh,
 	}
@@ -605,8 +606,8 @@ func databaseTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, new
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: dbTrigToggle, Action: func() { a.toggleDatabaseTrigger(sc, node) }},
-			sc, node.data.DBName, rightAlterAnyDatabaseDDLTrigger),
+		gate.Item(controls.MenuItem{Label: dbTrigToggle, Action: func() { a.toggleDatabaseTrigger(sc, node) }},
+			sc, node.data.DBName, gate.AlterAnyDatabaseDDLTrigger),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() {
@@ -637,7 +638,7 @@ func securityPolicyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQ
 		{Divider: true},
 		// The drop's groups: ALTER SECURITY POLICY ... WITH (STATE = ...)
 		// needs the same two rights DROP does — see conjoinedOpRights.
-		gateOnAll(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
+		gate.ItemOnAll(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleSecurityPolicy(sc, node) }},
 			sc, node.data.DBName, node.data.Schema, node.data.Name, objectDataRightGroups(node.data)...),
 		{Divider: true},
 		refresh,
@@ -651,9 +652,9 @@ func columnMasterKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Column Master Key...",
+		gate.Item(controls.MenuItem{Label: "New Column Master Key...",
 			Action: func() { a.showNewColumnMasterKeyDialog(sc, node) }},
-			sc, node.data.DBName, rightAlterAnyCMK),
+			sc, node.data.DBName, gate.AlterAnyCMK),
 		{Divider: true},
 		refresh,
 	}
@@ -663,9 +664,9 @@ func columnEncryptionKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Column Encryption Key...",
+		gate.Item(controls.MenuItem{Label: "New Column Encryption Key...",
 			Action: func() { a.showNewColumnEncryptionKeyDialog(sc, node) }},
-			sc, node.data.DBName, rightAlterAnyCEK),
+			sc, node.data.DBName, gate.AlterAnyCEK),
 		{Divider: true},
 		refresh,
 	}

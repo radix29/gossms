@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -53,7 +54,7 @@ func (a *App) showNewOperatorDialog(sc *db.ServerConn) {
 // serverScopedOpRights. Each is an msdb sp_* call refused to logins in no
 // SQLAgent* role.
 func agentGate(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
-	return gate(item, sc, "msdb", agentWriteRights()...)
+	return gate.Item(item, sc, "msdb", gate.AgentWriteRights()...)
 }
 
 // agentJobMenuItems builds the context menu for a NodeAgentJob leaf.

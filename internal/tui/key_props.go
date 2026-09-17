@@ -6,6 +6,7 @@ import (
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -24,7 +25,7 @@ import (
 // reload re-fetches under the new name.
 func keyPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
 	namePtr := &name
-	w := objectWriteRights()
+	w := gate.ObjectWriteRights()
 	return []propPage{
 		withRequiresOn(pageKeyGeneral(sc, dbName, schema, table, namePtr), dbName, schema, table, w...),
 		withRequiresOn(pageKeyOptions(sc, dbName, schema, table, namePtr), dbName, schema, table, w...),

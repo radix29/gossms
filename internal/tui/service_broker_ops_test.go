@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -99,25 +100,25 @@ func TestAQueuesMoveTakesControlNotAlter(t *testing.T) {
 	n := nodeData{Type: NodeBrokerQueue, DBName: brokerDB, Schema: "sales", Name: "IdleQueue"}
 	rights := objectTransferRights(n)
 	for _, r := range rights {
-		if sameRight(r, rightAlterOnObject) {
+		if sameRight(r, gate.AlterOnObject) {
 			t.Error("Move to Schema asks about ALTER on the queue, which the server refuses the transfer to")
 		}
-		if sameRight(r, rightAlterOnSchema) || sameRight(r, rightAlterAnySchema) || sameRight(r, rightAlterDatabase) {
-			t.Errorf("Move to Schema asks about %q, which was refused the transfer live", r.name)
+		if sameRight(r, gate.AlterOnSchema) || sameRight(r, gate.AlterAnySchema) || sameRight(r, gate.AlterDatabase) {
+			t.Errorf("Move to Schema asks about %q, which was refused the transfer live", r.Name)
 		}
 	}
-	if !slicesContainsRight(rights, rightControlOnObject) {
+	if !slicesContainsRight(rights, gate.ControlOnObject) {
 		t.Error("Move to Schema never asks about CONTROL on the queue, the right that permits it")
 	}
 
 	// A principal holding CONTROL on the queue and nothing else keeps the
 	// item; the same principal holding only ALTER on it loses it.
 	withControl := probedConnWithObject(t, brokerDB, "sales.IdleQueue", "CONTROL")
-	if !allowsActionOn(withControl, brokerDB, "sales", "IdleQueue", rights...) {
+	if !gate.AllowsOn(withControl, brokerDB, "sales", "IdleQueue", rights...) {
 		t.Error("Move to Schema withheld from a principal holding CONTROL on the queue")
 	}
 	withAlter := probedConnWithObject(t, brokerDB, "sales.IdleQueue", "ALTER")
-	if allowsActionOn(withAlter, brokerDB, "sales", "IdleQueue", rights...) {
+	if gate.AllowsOn(withAlter, brokerDB, "sales", "IdleQueue", rights...) {
 		t.Error("Move to Schema offered to a principal holding only ALTER on the queue")
 	}
 }
@@ -252,10 +253,10 @@ func probedConnWithObject(t *testing.T, dbName, object, permission string) *db.S
 // sameRight compares two requiredRights, which are not comparable with == —
 // one field is a slice. reflect.DeepEqual is what the rest of the gate tests
 // use for the same reason.
-func sameRight(a, b requiredRight) bool { return reflect.DeepEqual(a, b) }
+func sameRight(a, b gate.Right) bool { return reflect.DeepEqual(a, b) }
 
-// slicesContainsRight is slices.Contains for a requiredRight.
-func slicesContainsRight(rights []requiredRight, want requiredRight) bool {
+// slicesContainsRight is slices.Contains for a gate.Right.
+func slicesContainsRight(rights []gate.Right, want gate.Right) bool {
 	for _, r := range rights {
 		if sameRight(r, want) {
 			return true
@@ -321,22 +322,22 @@ func TestScriptingEachFamilyReachesTheRightObject(t *testing.T) {
 // on the queue is refused Msg 15151.
 func TestAQueuesDeleteFollowsControlNotAlter(t *testing.T) {
 	rights := objectOpRights(NodeBrokerQueue)
-	if slicesContainsRight(rights, rightAlterOnObject) {
+	if slicesContainsRight(rights, gate.AlterOnObject) {
 		t.Error("Delete asks about ALTER on the queue, which the server refuses the drop to")
 	}
 
 	withControl := probedConnWithObject(t, brokerDB, "sales.IdleQueue", "CONTROL")
-	if !allowsActionOn(withControl, brokerDB, "sales", "IdleQueue", rights...) {
+	if !gate.AllowsOn(withControl, brokerDB, "sales", "IdleQueue", rights...) {
 		t.Error("Delete withheld from a principal holding CONTROL on the queue")
 	}
 	withAlter := probedConnWithObject(t, brokerDB, "sales.IdleQueue", "ALTER")
-	if allowsActionOn(withAlter, brokerDB, "sales", "IdleQueue", rights...) {
+	if gate.AllowsOn(withAlter, brokerDB, "sales", "IdleQueue", rights...) {
 		t.Error("Delete offered to a principal holding only ALTER on the queue")
 	}
 
 	// The Properties page is the other way round: ALTER on the queue is
 	// exactly what ALTER QUEUE takes.
-	if !allowsActionOn(withAlter, brokerDB, "sales", "IdleQueue", queueAlterRights()...) {
+	if !gate.AllowsOn(withAlter, brokerDB, "sales", "IdleQueue", gate.QueueAlterRights()...) {
 		t.Error("Queue Properties withheld from a principal holding ALTER on the queue")
 	}
 }

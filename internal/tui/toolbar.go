@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/radix29/gossms/internal/tuikit/controls"
+import (
+	"github.com/radix29/gossms/internal/tui/gate"
+	"github.com/radix29/gossms/internal/tuikit/controls"
+)
 
 // buildToolbar assembles the icon-only toolbar embedded in the menu bar
 // row, right-aligned (see App.layoutAll/App.draw). Called once at startup and
@@ -25,7 +28,7 @@ func (a *App) buildToolbar() []controls.ToolbarButton {
 		{Icon: "📈", Tooltip: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 			Enabled: func() bool {
 				return len(a.connections) > 0 &&
-					allowsAction(a.activeServerConn(), "", rightViewServerState)
+					gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 			}},
 	}
 }

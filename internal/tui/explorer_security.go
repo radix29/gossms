@@ -3,6 +3,7 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -113,8 +114,8 @@ func loginsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
-			sc, "", rightAlterAnyLogin),
+		gate.Item(controls.MenuItem{Label: "New Login...", Action: func() { a.showNewLoginDialog(sc) }},
+			sc, "", gate.AlterAnyLogin),
 		{Divider: true},
 		refresh,
 	}
@@ -136,8 +137,8 @@ func credentialsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuer
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
-			sc, "", rightAlterAnyCredential),
+		gate.Item(controls.MenuItem{Label: "New Credential...", Action: func() { a.showNewCredentialDialog(sc) }},
+			sc, "", gate.AlterAnyCredential),
 		{Divider: true},
 		refresh,
 	}
@@ -153,8 +154,8 @@ func auditsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, re
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
-			sc, "", rightAlterAnyAudit),
+		gate.Item(controls.MenuItem{Label: "New Audit...", Action: func() { a.showNewAuditDialog(sc) }},
+			sc, "", gate.AlterAnyAudit),
 		{Divider: true},
 		refresh,
 	}
@@ -164,9 +165,9 @@ func auditMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, ref
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: auditToggleLabel(node),
+		gate.Item(controls.MenuItem{Label: auditToggleLabel(node),
 			Action: func() { a.toggleAudit(sc, node) }},
-			sc, "", rightAlterAnyAudit),
+			sc, "", gate.AlterAnyAudit),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() { a.showAuditPropertiesFor(sc, node.data.Name) }},
@@ -177,9 +178,9 @@ func serverAuditSpecificationsMenuItems(a *App, sc *db.ServerConn, node *explore
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Server Audit Specification...",
+		gate.Item(controls.MenuItem{Label: "New Server Audit Specification...",
 			Action: func() { a.showNewServerAuditSpecificationDialog(sc) }},
-			sc, "", rightAlterAnyAudit),
+			sc, "", gate.AlterAnyAudit),
 		{Divider: true},
 		refresh,
 	}
@@ -189,9 +190,9 @@ func serverAuditSpecificationMenuItems(a *App, sc *db.ServerConn, node *explorer
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: auditToggleLabel(node),
+		gate.Item(controls.MenuItem{Label: auditToggleLabel(node),
 			Action: func() { a.toggleServerAuditSpecification(sc, node) }},
-			sc, "", rightAlterAnyAudit),
+			sc, "", gate.AlterAnyAudit),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() { a.showServerAuditSpecificationPropertiesFor(sc, node.data.Name) }},

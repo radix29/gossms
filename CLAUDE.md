@@ -44,6 +44,7 @@ entry names a section, not a whole document; read the section.
 | A new tuikit control or dialog | `internal/tuikit/README.md` § Adding a new control |
 | gosmo changes / the `replace` directive | the `dev-with-local-gosmo` skill; `~/go/gosmo/CLAUDE.md` |
 | Known bugs, deferred scope, release blockers | `docs/open-threads.md` — check before reporting something as newly found |
+| Whether a question is already settled | `docs/decisions.md` — the "do not re-raise" record; check before proposing a change it excludes |
 
 ## The one rule that matters most: verify against real source, don't guess
 
@@ -126,10 +127,15 @@ gosmo only.
 - Every `tuikit` sub-package is one file per type or tightly related group, plus
   `common.go` for cross-file helpers and `doc.go` for the package doc.
   `internal/tui` files are one-per-purpose (`app.go`, `menu.go`, …).
-- Splitting a file that has grown too large: one file per type/group, plus
-  `common.go` and `doc.go`. Extract each section by exact line range, never
-  retype by hand, diff the extracted text byte-for-byte against the original,
-  and only then delete the source.
+- Splitting a file that has grown too large: **over ~900 non-test lines** is
+  the threshold, and it is a prompt to look, not a defect on its own — split
+  when a change is landing in the file anyway, along the lines its own section
+  comments already draw. One file per type/group, plus `common.go` and
+  `doc.go`. Extract each section by exact line range, never retype by hand,
+  diff the extracted text byte-for-byte against the original, and only then
+  delete the source. A new `internal/tui` file needs a row in
+  `ARCHITECTURE.md` § Package map in the same commit —
+  `TestPackageMapListsEveryTUIFile` fails without one.
 
 ## Repo hygiene
 
@@ -137,6 +143,10 @@ gosmo only.
   SQL. Don't build from it or act on it unless asked, and leave it out of cleanups.
 - `CHANGELOG.md` and `RELEASE.md` cover the release process. Don't edit either as
   part of a feature or fix unless asked.
+- **A doc-link exemption ships with the document it excuses, never before it.**
+  `exemptSource` in `internal/tui/doc_links_test.go` checks each exempt path
+  still exists, so committing the entry ahead of the review plan it covers
+  breaks `TestNoDanglingDocReference` on `main` until the plan is written.
 - **Check a path exists before writing to it.** A shell `cat > file` or a
   `Write` overwrites without asking, and a plausible new filename is often
   already taken — `internal/tui/agent_job_state_test.go` looked like a new test

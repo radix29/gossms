@@ -7,6 +7,7 @@ import (
 	gosmoversion "github.com/radix29/gosmo/version"
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/layout"
 	"github.com/radix29/gossms/internal/version"
@@ -134,7 +135,7 @@ func (a *App) buildMenus() []controls.Menu {
 			{Label: "Activity Monitor", Action: func() { a.showActivityMonitor() },
 				Enabled: func() bool {
 					return len(a.connections) > 0 &&
-						allowsAction(a.activeServerConn(), "", rightViewServerState)
+						gate.Allows(a.activeServerConn(), "", gate.ViewServerState)
 				}},
 			{Label: "Query List", Action: func() { a.showQueryList() }},
 			{Label: "Background Tasks", Action: func() { a.tasksDialog.Show() }},

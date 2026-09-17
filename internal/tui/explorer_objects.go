@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -515,8 +516,8 @@ func indexesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, r
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
-			sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
+		gate.ItemOn(controls.MenuItem{Label: "New Index", Sub: a.newIndexMenuItems(sc, node)},
+			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
 		{Divider: true},
 		{Label: "Rebuild All Indexes", Action: func() {
 			a.openQueryWithText(sc, node.data.DBName,
@@ -531,9 +532,9 @@ func statisticsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: "New Statistics...",
+		gate.ItemOn(controls.MenuItem{Label: "New Statistics...",
 			Action: func() { a.showNewStatisticsDialog(sc, node) }},
-			sc, node.data.DBName, node.data.Schema, node.data.Name, objectWriteRights()...),
+			sc, node.data.DBName, node.data.Schema, node.data.Name, gate.ObjectWriteRights()...),
 		{Divider: true},
 		refresh,
 	}

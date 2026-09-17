@@ -5,6 +5,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -24,7 +25,7 @@ func findAgentOperator(ctx context.Context, sc *db.ServerConn, name string) (*go
 func operatorPropPages(sc *db.ServerConn, operatorName string) []propPage {
 	name := &operatorName
 	return []propPage{
-		withRequires(pageOperatorGeneral(sc, name), "", agentWriteRights()...),
+		withRequires(pageOperatorGeneral(sc, name), "", gate.AgentWriteRights()...),
 		pageOperatorNotifications(sc, name),
 	}
 }

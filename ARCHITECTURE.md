@@ -43,8 +43,8 @@ Before adding to any of them:
 | `docs/testing.md` | What counts as verification: the tmux and live-server harnesses, and the `fakedb_test.go` rules |
 | `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
 | `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
-| `PLAN.md` | Where the project stands: current state, version support, known issues |
 | `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
+| `docs/decisions.md` | Settled decisions and deliberate exclusions — the "do not re-raise" record |
 
 `README.md` is user-facing and owns features. The keyboard reference is the
 F1 help dialog (`internal/tui/help_dialog.go`) — a key binding change updates
@@ -147,15 +147,20 @@ is routed once it is already there.
 
 `internal/tui` is a flat package, so every file is listed individually with
 its purpose; `internal/tuikit`, `internal/tui/planview`,
-`internal/tui/sqlparse` and `internal/tui/dashboard` are summarized by
-directory and documented in their own README and `doc.go`. A file absent from a summarized directory has not
-been omitted — look there directly.
+`internal/tui/sqlparse`, `internal/tui/dashboard` and `internal/tui/gate` are
+summarized by directory and documented in their own README and `doc.go`. A file
+absent from a summarized directory has not been omitted — look there directly.
 
-All three `tui` sub-packages are leaves: they depend on `tuikit` and the
-standard library, never on `tui` itself. That is what makes each
-extractable. `dashboard` is the newest, and it exists for a second reason:
-`cmd/amdemo` has to draw the same dashboards the panel draws without
-dragging in the whole application.
+`planview`, `sqlparse` and `dashboard` are leaves: they depend on `tuikit` and
+the standard library, never on `tui` itself. That is what makes each
+extractable. `dashboard` exists for a second reason: `cmd/amdemo` has to draw
+the same dashboards the panel draws without dragging in the whole application.
+
+`gate` is the fourth sub-package and the one that is not a leaf: it imports
+`internal/db` and `gosmo`, because the question it answers is "what has this
+connection been probed to allow". It knows nothing about `App` — that is what
+made it extractable — and the one-way rule it keeps is the same one: `gate`
+never imports `tui`. See § Why the permission gate is its own package.
 
 ```
 gossms/
@@ -192,6 +197,7 @@ gossms/
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
+│       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
 │       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense (pure functions over runes; no App, no connection)
 │       │
@@ -201,7 +207,11 @@ gossms/
 │       ├── app_connections.go    # connect/disconnect lifecycle, saved-connection bookkeeping, activeServerConn/selectedServerConn helpers
 │       ├── app_peer_creds.go     # App's db.PeerCredentials answer: which saved connection to reach a given instance with
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online task consumer
-│       ├── app_panel_actions.go  # panel-level actions: new/open/save/close query, execute/cancel query, launch Properties/New Database/New Login dialogs
+│       ├── app_panel_actions.go  # opening panels and files: new query panel, open a .sql or .sqlplan, save a plan back out
+│       ├── app_panel_close.go    # closing a panel and quitting: Disposable release, the open-transaction commit prompt, the unsaved-query prompts quit walks, activeQueryPanel/withQueryPanel
+│       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
+│       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
+│       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs
 │       ├── progress_job.go       # progressJob + App.runWithProgress: one long write run behind dialogs.ProgressDialog, from the answered confirmation until the server comes back; reveal delay, cancellation, and the reasons an uninterruptible job greys Cancel
 │       ├── dialog_stack.go       # z-ordered Dialog stack: draw/input routing for every modal dialog
 │       ├── menu.go               # top menu bar structure (File/Edit/View/Query/Tools/Help), context-gated via each MenuItem's Enabled predicate, + About dialog
@@ -220,15 +230,18 @@ gossms/
 │       ├── explorer_service_broker.go # loaders: a database's Service Broker folder — Message Types, Contracts, Queues, Services, Routes, Remote Service Bindings, Broker Priorities (listed whether or not the broker is enabled)
 │       ├── explorer_drag.go      # drag a tree node into a query editor as a quoted T-SQL identifier
 │       ├── explorer_filter.go    # per-folder filter model (SSMS Filter Settings): properties, operators, matching; applied in fetchChildren
-│       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: per-NodeType drop/rename table, confirmation (incl. the cascade checkbox), prompt, parent-folder refresh
+│       ├── explorer_object_ops.go # general Delete/Rename/Move to Schema: the per-NodeType drop/rename table and the gosmo adapters behind it
+│       ├── explorer_object_menu.go # the Rename/Delete menu pair a node offers, and the schema/object name a gate question is scoped by
+│       ├── explorer_object_rights.go # what permits Rename/Move/Delete per NodeType: the securable, principal, database- and server-scoped right tables
+│       ├── explorer_object_actions.go # the flows themselves: confirmation (incl. the cascade checkbox), script-instead-of-run, the prompt, and the parent-folder refresh
 │       ├── scripting.go          # Object Explorer's "Script <Noun> as ▸" cascade: which verbs each NodeType offers, how each is generated, and the three destinations
 │       ├── system_principals.go  # which of the principals SQL Server creates for itself count as built-in (no Delete, no Rename)
 │       ├── db_scan.go            # eachDatabase / onlineDatabases: the shared per-database fetch a page runs over every database it can query
 │       ├── tasks.go              # background task registry: Task (progress/cancel), App start/postProgress/postTaskDone
 │       ├── latest.go              # the shared latest-only fetch lifecycle: supersede the run in flight, cancel it, drop its stale result — see § Latest-only loads
 │       ├── safego.go             # App.safego/safegoRepair/recoverPanic, and fanOut — the one bounded worker pool; every background goroutine runs under one
-│       ├── permission_gate.go    # rightsAllow: the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function"
-│       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in permission_gate's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
+│       ├── prop_page_gate.go    # withRequires/withRequiresOn: attaches a gate.Right set to a propPage, the one tie between the gate package and the Properties dialogs
+│       ├── edition_gate.go       # gateAzure: what the *engine edition* refuses, in the gate package's shape and composed outside it — the edition's note wins, since no permission gets a user past a statement the edition does not implement
 │       ├── permission_display.go # capabilitySet + knownDenied: what a page renders when a value could not be read (N/A, never 0)
 │       ├── permission_error.go   # classifies a SQL Server refusal and names the right it wants, instead of the wrapped driver error
 │       ├── panel_toolbar.go      # the one-row toolbar shared by Activity Monitor, the Log File Viewer and Query Store, incl. the "More ▾" overflow menu a too-narrow row collapses into (not App's own toolbar)
@@ -266,14 +279,21 @@ gossms/
 │       ├── activity_monitor_proctab.go # Block and Sessions tabs: own connection, procedure lookup/install, Refresh + Install in master, result grid
 │       │
 │       │  ── Log File Viewer ──
-│       ├── log_viewer.go              # LogViewer state: log-family/archive selectors, the merged multi-file selection (logFileRef/logRow), filter, read + export; implements layout.Panel
+│       ├── log_viewer.go              # LogViewer state, construction and layout: the selectors, the filter field and the grid; implements layout.Panel
+│       ├── log_viewer_toolbar.go      # the toolbar cells: labels, disabled reasons, and the wording that names the file or files on screen
+│       ├── log_viewer_load.go         # the read: which files the panel is pointed at, the concurrent read of each, and the recycle that renumbers them
+│       ├── log_viewer_rows.go         # what the read becomes on screen: grid columns, the client-side filter, the summary line, the text helpers both use
+│       ├── log_viewer_files.go        # choosing files: the family menu, the file menu, the multi-file checklist, Export, and the App-level recycle/refresh entry points
 │       ├── log_viewer_draw.go         # toolbar row, entry grid, splitter, selected-entry details pane
 │       ├── log_viewer_input.go        # HandleKey/HandleMouse: filter/grid focus, details scroll, gesture zones
 │       ├── log_search_dialog.go       # Log File Viewer search: a query the server runs across the archives, not a filter over what was read
 │       │
 │       │  ── Query Store ──
 │       ├── query_store_reports.go     # the seven SSMS views: one table of title/description/default statistic/loader, and the typed rows (qsResult) both surfaces render — the Detail Browser's grid and the panel's chart
-│       ├── query_store_panel.go       # QueryStorePanel state: the report/metric/statistic/window/top selectors, the report and plan reads, Force/Unforce/Show Plan/Script; implements layout.Panel
+│       ├── query_store_panel.go       # QueryStorePanel state, construction and layout: the selectors' current values, the grids and the two splitters; implements layout.Panel
+│       ├── query_store_panel_toolbar.go # the two tool rows: each cell's label, its disabled reason, and the menu each selector pops
+│       ├── query_store_panel_load.go  # the report read: the options the selections come to, the tracked-query set, the load, the plan pane's own read and the summary line
+│       ├── query_store_panel_plans.go # what the plan pane's selection can do: Force/Unforce, Show Plan, Compare Plans, Script the force
 │       ├── query_store_panel_draw.go  # the two toolbar rows, the bar chart, and the two grids either side of the splitters
 │       ├── query_store_panel_input.go # HandleKey/HandleMouse: grid focus, splitter keys, gesture zones
 │       ├── query_store_series.go      # the panel's second chart mode: the cursor's query plotted per plan, interval by interval — a mode of the chart, not an eighth report
@@ -445,6 +465,40 @@ gossms/
 │       ├── restore_dialog_ops.go # Restore Database's background-task execution + history/file-list lookups
 │       └── restore_dialog_files.go # Restore's File Locations view: the three relocation choices, the per-file preview and the MOVE clauses behind it
 ```
+
+### Why the permission gate is its own package
+
+`internal/tui/gate` is the one piece carved out of the flat package, and the
+measurement behind it is the reason nothing else is. The 2026-09-17 review
+asked whether `internal/tui`'s size costs anything real: 228 non-test files and
+62 374 LOC, with 132 of them — 47 % — never mentioning `*App` at all. The gate
+was the pilot, chosen because it is the largest App-free cluster with a clean
+seam.
+
+What actually moved is smaller than it looks. `permission_gate.go` (1 127 LOC)
+and its names test (316 LOC) are App-free and moved whole; the other seven gate
+test files — 3 200 LOC — drive `App.objectOpsMenuItems`, `explorerNode` and
+`propPage`, so they are menu tests, not gate tests, and stayed. `withRequires`
+and `withRequiresOn` stayed too, in `prop_page_gate.go`: they take a `propPage`.
+
+The number, `touch internal/tui/app.go` → `go test -c ./internal/tui/`, eight
+interleaved pairs on one machine:
+
+| | median | mean | range |
+|---|---|---|---|
+| Before | 3.9 s | 3.90 s | 3.08 – 4.56 s |
+| After | 3.4 s | 3.51 s | 2.56 – 4.66 s |
+
+The run-to-run spread is larger than the difference, and 1 127 LOC is 1.8 % of
+the package, so there is nothing here to extrapolate from: **splitting
+`internal/tui` does not buy back compile time.** The remaining clusters
+(`new_*`, `agent_*`, `detail_*`, `database_*`) are not worth the same treatment
+on that argument, and the flat package stands. Do not re-open it on a
+build-speed premise without a new measurement.
+
+What the extraction did buy is a boundary the compiler enforces: `gate` cannot
+reach `App`, so the fail-open rule cannot quietly acquire a dependency on
+application state. That, not the clock, is why it stayed split.
 
 ## Common tasks
 

@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -19,13 +20,13 @@ import (
 // built — each is version-sensitive and needs its own gosmo DDL/query
 // support.
 func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
-	w := objectWriteRights()
+	w := gate.ObjectWriteRights()
 	return []propPage{
 		pageTableGeneral(sc, dbName, schema, name),
 		pageTableColumns(sc, dbName, schema, name),
 		pageTableStorage(sc, dbName, schema, name),
 		withRequiresOn(pageTableChangeTracking(sc, dbName, schema, name), dbName, schema, name, w...),
-		withRequires(pageTablePermissions(sc, dbName, schema, name), dbName, rightControlDB),
+		withRequires(pageTablePermissions(sc, dbName, schema, name), dbName, gate.ControlDB),
 		withRequiresOn(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{
 				Level0Type: "SCHEMA", Level0Name: schema,

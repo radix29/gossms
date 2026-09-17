@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
 // itemNamed returns the menu item node offers under label, driving the real
-// tree menu builder rather than allowsAction — a gate declared correctly but
+// tree menu builder rather than gate.Allows — a gate declared correctly but
 // never attached to the item, or attached with the wrong database or schema,
 // passes every test that asks the rights directly.
 func itemNamed(t *testing.T, node *explorerNode, label string) controls.MenuItem {
@@ -158,19 +159,19 @@ func TestADenyOnTheObjectWithholdsWhatEveryWiderRightPermits(t *testing.T) {
 	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
 	rights := objectOpRights(NodeTable)
 
-	if allowsActionOn(sc, "appdb", "Sales", "Orders", rights...) {
+	if gate.AllowsOn(sc, "appdb", "Sales", "Orders", rights...) {
 		t.Error("an object with an explicit DENY kept its object ops, though every wider right is overridden by it")
 	}
 	// The other half: the denial reaches that object and nothing else. A
 	// blanket withhold would be just as wrong, and passes the check above.
-	if !allowsActionOn(sc, "appdb", "Sales", "Customers", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Customers", rights...) {
 		t.Error("an object with no denial of its own lost its object ops")
 	}
-	if !allowsActionOn(sc, "appdb", "dbo", "Orders", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "dbo", "Orders", rights...) {
 		t.Error("an object of the same name in another schema lost its object ops")
 	}
 	// And an action that names no object still reads the wider rights only.
-	if !allowsAction(sc, "appdb", databaseWriteRights()...) {
+	if !gate.Allows(sc, "appdb", gate.DatabaseWriteRights()...) {
 		t.Error("a database-scope action was withheld by an object's denial")
 	}
 }
@@ -183,13 +184,13 @@ func TestADenyOnTheObjectWithholdsWhatEveryWiderRightPermits(t *testing.T) {
 // HAS_PERMS_BY_NAME 1 and the rename succeeds.
 func TestASysadminIsNotWithheldByAnObjectDeny(t *testing.T) {
 	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, true)
-	if !allowsActionOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
+	if !gate.AllowsOn(sc, "appdb", "Sales", "Orders", objectOpRights(NodeTable)...) {
 		t.Error("a sysadmin lost the object ops to a DENY that does not apply to them")
 	}
 }
 
 // TestTheObjectOpMenuItemsFollowTheObjectDeny drives the menu, not
-// allowsActionOn: the denial is only worth having where the items are built,
+// gate.AllowsOn: the denial is only worth having where the items are built,
 // and it must not name a right in the note — the login holds ALTER already,
 // and being sent to ask for it is the wrong instruction.
 //
@@ -237,13 +238,13 @@ func TestTheObjectOpMenuItemsFollowTheObjectDeny(t *testing.T) {
 // wrong nor what would fix it.
 func TestAPageDeniedOnItsObjectSaysSoRatherThanNamingARight(t *testing.T) {
 	sc := deniedObjectConn(t, "appdb", []string{"Sales.Orders"}, false)
-	page := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Orders", objectWriteRights()...)
+	page := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Orders", gate.ObjectWriteRights()...)
 
 	got := pageReadOnlyReason(context.Background(), sc, page)
 	if want := readOnlyBannerPrefix + "ALTER is denied on this object."; got != want {
 		t.Errorf("banner = %q, want %q", got, want)
 	}
-	ok := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Customers", objectWriteRights()...)
+	ok := withRequiresOn(propPage{title: "General"}, "appdb", "Sales", "Customers", gate.ObjectWriteRights()...)
 	if got := pageReadOnlyReason(context.Background(), sc, ok); got != "" {
 		t.Errorf("a page on an object with no denial was made read-only: %q", got)
 	}

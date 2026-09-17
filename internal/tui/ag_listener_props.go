@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -26,7 +27,7 @@ import (
 func agListenerPropPages(sc *db.ServerConn, agName, dnsName string) []propPage {
 	// Gated on the group, not the listener: the apply is ALTER AVAILABILITY
 	// GROUP ... MODIFY LISTENER, so the class-108 DENY sits on the group.
-	return []propPage{withRequiresOn(pageAGListenerGeneral(sc, agName, dnsName), "", "", agName, rightAlterAnyAG)}
+	return []propPage{withRequiresOn(pageAGListenerGeneral(sc, agName, dnsName), "", "", agName, gate.AlterAnyAG)}
 }
 
 // agFindListener reads one listener by name through the group's primary.

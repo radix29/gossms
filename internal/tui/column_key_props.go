@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -164,7 +165,7 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 			}
 			return propsheet.NewForm(formRows...), apply, nil
 		},
-	}, dbName, rightAlterAnyCEK)}
+	}, dbName, gate.AlterAnyCEK)}
 }
 
 // checkRotation refuses the rotations that are not one — a master key named

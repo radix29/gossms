@@ -1,4 +1,4 @@
-package tui
+package gate
 
 import (
 	"go/ast"
@@ -14,7 +14,7 @@ import (
 
 // TestEveryGatedRightIsOneGosmoActuallyProbes.
 //
-// A requiredRight is only ever asked about through Capabilities.Allows or
+// A Right is only ever asked about through Capabilities.Allows or
 // DatabaseCapabilities.Allows, and both answer *true* for a name that was
 // never probed — the fail-open rule the whole layer is built on. So a name
 // that is not in gosmo's Probed* list, or is in the list for the other scope,
@@ -31,9 +31,9 @@ import (
 // first time a right is added, which is the case this test exists for. Same
 // reasoning as prop_label_width_test.go.
 func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
-	rights := parseRequiredRights(t, "permission_gate.go")
+	rights := parseRequiredRights(t, "gate.go")
 	if len(rights) < 15 {
-		t.Fatalf("found only %d requiredRight literals; the parser has stopped seeing them", len(rights))
+		t.Fatalf("found only %d Right literals; the parser has stopped seeing them", len(rights))
 	}
 	for _, r := range rights {
 		// Checked before the scope switch and outside it, because
@@ -68,7 +68,7 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 		}
 		// deniedOnAG is the same check against class 108's own list, which is
 		// separate because gosmo asks that scope with HAS_PERMS_BY_NAME rather
-		// than reading the catalog — see requiredRight.deniedOnAG.
+		// than reading the catalog — see gate.Right.deniedOnAG.
 		if r.deniedOnAG != "" && !slices.Contains(gosmo.ProbedAvailabilityGroupPermissions, r.deniedOnAG) {
 			t.Errorf("%q declares deniedOnAG %q, which is not in gosmo's "+
 				"ProbedAvailabilityGroupPermissions — the class-108 arm will never fire",
@@ -137,8 +137,8 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 						"it will read CapabilityUnknown for every object and gate nothing", name)
 				}
 			}
-			// Object scope does not replace the wider one: rightAlterOnObject
-			// is db:true as well, and rightsAllow asks both arms, so the name
+			// Object scope does not replace the wider one: gate.AlterOnObject
+			// is db:true as well, and gate.RightsAllow asks both arms, so the name
 			// has to be in the wider list too. Hence no continue here.
 			if r.db {
 				scope, list = "database", gosmo.ProbedDatabasePermissions
@@ -167,11 +167,11 @@ func TestEveryGatedRightIsOneGosmoActuallyProbes(t *testing.T) {
 }
 
 // TestEveryGatedRightNamesARealRole. The role is display-only — it is what
-// requiresText tells the user to go and ask for — so a typo cannot break a
+// gate.RequiresText tells the user to go and ask for — so a typo cannot break a
 // gate. It sends them to an administrator asking for a role that does not
 // exist, which is worse than saying nothing.
 func TestEveryGatedRightNamesARealRole(t *testing.T) {
-	for _, r := range parseRequiredRights(t, "permission_gate.go") {
+	for _, r := range parseRequiredRights(t, "gate.go") {
 		if r.role == "" {
 			continue
 		}
@@ -185,7 +185,7 @@ func TestEveryGatedRightNamesARealRole(t *testing.T) {
 	}
 }
 
-// parsedRight is one requiredRight composite literal as written in the source.
+// parsedRight is one gate.Right composite literal as written in the source.
 type parsedRight struct {
 	name       string
 	role       string
@@ -208,7 +208,7 @@ type parsedRight struct {
 	alt             []string
 }
 
-// parseRequiredRights returns every `requiredRight{...}` literal in file.
+// parseRequiredRights returns every `Right{...}` literal in file.
 // Fields are read by name, so reordering them in the struct changes nothing
 // here; a field given a non-literal value is skipped, and there are none.
 func parseRequiredRights(t *testing.T, file string) []parsedRight {
@@ -228,7 +228,7 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 		if !ok {
 			return true
 		}
-		if id, ok := lit.Type.(*ast.Ident); !ok || id.Name != "requiredRight" {
+		if id, ok := lit.Type.(*ast.Ident); !ok || id.Name != "Right" {
 			return true
 		}
 		var r parsedRight
@@ -242,47 +242,47 @@ func parseRequiredRights(t *testing.T, file string) []parsedRight {
 				continue
 			}
 			switch key.Name {
-			case "name":
+			case "Name":
 				r.name = stringLit(t, kv.Value)
-			case "role":
+			case "Role":
 				r.role = stringLit(t, kv.Value)
-			case "db":
+			case "DB":
 				id, ok := kv.Value.(*ast.Ident)
 				r.db = ok && id.Name == "true"
-			case "schema":
+			case "Schema":
 				id, ok := kv.Value.(*ast.Ident)
 				r.schema = ok && id.Name == "true"
-			case "object":
+			case "Object":
 				id, ok := kv.Value.(*ast.Ident)
 				r.object = ok && id.Name == "true"
-			case "deniedOnPrincipal":
+			case "DeniedOnPrincipal":
 				r.deniedOnPrincipal = stringLit(t, kv.Value)
-			case "deniedOnServer":
+			case "DeniedOnServer":
 				r.deniedOnServer = stringLit(t, kv.Value)
-			case "deniedOnAG":
+			case "DeniedOnAG":
 				r.deniedOnAG = stringLit(t, kv.Value)
-			case "serverSecurable":
+			case "ServerSecurable":
 				// A qualified identifier — gosmo.ServerSecurableLogin — so
 				// what is read back is the selector's name, which is enough
 				// for the "declared or not" checks above.
 				if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
 					r.serverSecurable = sel.Sel.Name
 				}
-			case "securable":
+			case "Securable":
 				// gosmo.DatabaseSecurableType and its siblings — read as the
 				// selector's name, for serverSecurable's reason.
 				if sel, ok := kv.Value.(*ast.SelectorExpr); ok {
 					r.securable = sel.Sel.Name
 				}
-			case "membership":
+			case "Membership":
 				id, ok := kv.Value.(*ast.Ident)
 				r.membership = ok && id.Name == "true"
-			case "inDB":
+			case "InDB":
 				r.inDB = stringLit(t, kv.Value)
-			case "serverRole":
+			case "ServerRole":
 				id, ok := kv.Value.(*ast.Ident)
 				r.serverRole = ok && id.Name == "true"
-			case "alt":
+			case "Alt":
 				alts, ok := kv.Value.(*ast.CompositeLit)
 				if !ok {
 					continue

@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -28,7 +29,7 @@ import (
 // server-scope ALTER ANY SERVER AUDIT the audit itself takes.
 func databaseAuditSpecificationPropPages(sc *db.ServerConn, dbName, specName string) []propPage {
 	return []propPage{
-		withRequires(pageDatabaseAuditSpecificationGeneral(sc, dbName, specName), dbName, rightAlterAnyDBAudit),
+		withRequires(pageDatabaseAuditSpecificationGeneral(sc, dbName, specName), dbName, gate.AlterAnyDBAudit),
 	}
 }
 

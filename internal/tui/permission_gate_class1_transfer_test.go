@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -76,7 +77,7 @@ func classOneConn(t *testing.T, dbGranted []string, alterOnSchema bool, objRows 
 
 // moveItem is the Move to Schema item objectOpsMenuItems builds for one family
 // on sc, and whether it is enabled. It drives the menu rather than
-// allowsActionOn, because a right set that is never threaded to the call site
+// gate.AllowsOn, because a right set that is never threaded to the call site
 // changes nothing and every set-shaped test still passes.
 func moveItem(t *testing.T, sc *db.ServerConn, typ NodeType) (controls.MenuItem, bool) {
 	t.Helper()
@@ -154,14 +155,14 @@ func TestAWithheldClassOneMoveNamesTheObject(t *testing.T) {
 
 // TestNoClassOneTransferSetAsksAboutAlter. The set-shaped half of the table:
 // every right the live run refused must be absent, not merely outvoted. A set
-// carrying rightAlterOnObject offers the move to every ALTER holder, because
+// carrying gate.AlterOnObject offers the move to every ALTER holder, because
 // the O:ALTER map reads 1 for a CONTROL grant too and cannot tell them apart.
 func TestNoClassOneTransferSetAsksAboutAlter(t *testing.T) {
 	for _, typ := range classOneTransferFamilies {
 		rights := objectTransferRights(nodeData{Type: typ, Schema: "sales", Name: "Thing", DBName: "appdb"})
 		for _, r := range rights {
-			for _, refused := range []requiredRight{
-				rightAlterOnObject, rightAlterOnSchema, rightAlterAnySchema, rightAlterDatabase,
+			for _, refused := range []gate.Right{
+				gate.AlterOnObject, gate.AlterOnSchema, gate.AlterAnySchema, gate.AlterDatabase,
 			} {
 				if sameRight(r, refused) {
 					t.Errorf("%v: Move to Schema asks about %q, which the server refused the transfer to",
@@ -169,7 +170,7 @@ func TestNoClassOneTransferSetAsksAboutAlter(t *testing.T) {
 				}
 			}
 		}
-		if !slicesContainsRight(rights, rightControlOnObject) {
+		if !slicesContainsRight(rights, gate.ControlOnObject) {
 			t.Errorf("%v: Move to Schema never asks about CONTROL on the object, the right that permits it", typ)
 		}
 	}

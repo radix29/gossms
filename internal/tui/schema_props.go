@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -21,11 +22,11 @@ import (
 // sys.schemas has no create_date/modify_date columns.
 func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 	return []propPage{
-		withRequires(pageSchemaGeneral(sc, dbName, schemaName), dbName, rightAlterAnySchema, rightControlDB),
-		withRequires(pageSchemaPermissions(sc, dbName, schemaName), dbName, rightControlDB),
+		withRequires(pageSchemaGeneral(sc, dbName, schemaName), dbName, gate.AlterAnySchema, gate.ControlDB),
+		withRequires(pageSchemaPermissions(sc, dbName, schemaName), dbName, gate.ControlDB),
 		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "SCHEMA", Level0Name: schemaName}
-		}), dbName, rightAlterAnySchema, rightControlDB),
+		}), dbName, gate.AlterAnySchema, gate.ControlDB),
 	}
 }
 

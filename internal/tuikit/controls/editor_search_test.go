@@ -1,8 +1,12 @@
 package controls
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v3"
 )
 
 // setSearch compiles opts onto e, failing the test on a compile error.
@@ -397,5 +401,143 @@ func BenchmarkSearchScanNonASCII(b *testing.B) {
 	for b.Loop() {
 		e.search.scanned = false
 		e.scanMatches()
+	}
+}
+
+// TestSearchIncrementalScanMatchesFullScan is the reference-implementation
+// check behind scanMatches' resume path, the shape
+// TestPrefixStatesMatchFullScan uses for prefixStates: after every edit in a
+// scripted series, the incrementally maintained match list must equal the one
+// a from-scratch scan of the same text produces. A splice that leaves a stale
+// entry, or that breaks the by-row ordering matchSpansForLine binary-searches,
+// shows up here and nowhere else.
+func TestSearchIncrementalScanMatchesFullScan(t *testing.T) {
+	const script = "SELECT col1 FROM t\nWHERE col1 = col1\n-- nothing here\ncol1\n\nfinal col1 line"
+
+	edits := []struct {
+		name string
+		do   func(e *Editor)
+	}{
+		{"type into a line with matches", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 0
+			e.insertRune('x')
+		}},
+		{"type into line 0", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 0, 0
+			e.insertRune('y')
+		}},
+		{"type a match into an empty line", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 4, 0
+			for _, r := range "col1 col1" {
+				e.insertRune(r)
+			}
+		}},
+		{"break a match apart", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 3, 3
+			e.backspace()
+		}},
+		{"split a line in two", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 1, 6
+			e.insertNewline()
+		}},
+		{"undo the split", func(e *Editor) { e.Undo() }},
+		{"type on a non-ASCII line", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 2, 0
+			for _, r := range "üü col1 " {
+				e.insertRune(r)
+			}
+		}},
+		{"type through HandleKey, deep in the document", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 5, 0
+			e.HandleKey(runeKey('z', tcell.ModNone))
+		}},
+		{"undo it", func(e *Editor) {
+			// pushUndoLocal's span is the edited row plus one either side, so
+			// this undo is a replaceRange of three lines that leaves the line
+			// count alone and dirtyFrom above zero — the mutation a resume
+			// keyed on dirtyFrom alone would mistake for a one-line edit.
+			e.Undo()
+		}},
+		{"replace the current match", func(e *Editor) {
+			e.cursorRow, e.cursorCol = 0, 0
+			e.search.cur = -1
+			e.FindNext(1)
+			e.ReplaceCurrent()
+		}},
+	}
+
+	e := newTestEditor(script)
+	setSearch(t, e, SearchOptions{Query: "col1", Replace: "colN"})
+	e.scanMatches()
+
+	for _, edit := range edits {
+		edit.do(e)
+		got := slices.Clone(e.scanMatches())
+
+		ref := newTestEditor(e.Text())
+		setSearch(t, ref, SearchOptions{Query: "col1", Replace: "colN"})
+		want := ref.scanMatches()
+
+		if !slices.Equal(got, want) {
+			t.Fatalf("after %s: matches = %v, want %v (text %q)", edit.name, got, want, e.Text())
+		}
+		if !slices.IsSortedFunc(got, func(a, b searchMatch) int { return a.row - b.row }) {
+			t.Fatalf("after %s: match list is not sorted by row: %v", edit.name, got)
+		}
+	}
+}
+
+// TestSearchResumesOnSingleLineEdit pins the resume path itself: the
+// differential test above passes whether or not a single-line edit takes it,
+// since the full scan is always correct. A typing edit must not fall back.
+func TestSearchResumesOnSingleLineEdit(t *testing.T) {
+	e := newTestEditor("col1 a\ncol1 b\ncol1 c")
+	setSearch(t, e, SearchOptions{Query: "col1"})
+	e.scanMatches()
+
+	for _, row := range []int{0, 1, 2} {
+		e.cursorRow, e.cursorCol = row, 6
+		e.insertRune('x')
+		if e.doc.dirtyTo != e.doc.dirtyFrom+1 || e.doc.dirtyFrom != row {
+			t.Fatalf("row %d: dirty range [%d,%d), want [%d,%d) — typing must be a single-line setLine",
+				row, e.doc.dirtyFrom, e.doc.dirtyTo, row, row+1)
+		}
+		if e.search.scanVer+1 != e.doc.Version() || e.search.scanLen != e.doc.Len() {
+			t.Fatalf("row %d: cache is not exactly one version behind (scanVer %d, version %d) — the resume branch is unreachable",
+				row, e.search.scanVer, e.doc.Version())
+		}
+		e.scanMatches()
+	}
+}
+
+// BenchmarkSearchTypingWithMatches is the measurement behind the resume path:
+// a keystroke with a search active, which is what every keystroke costs once
+// the user has run a single Find — nothing clears the search when the dialog
+// closes. Before the resume, this was a full regexp sweep of the document per
+// character: 6.3 ms at 1,000 lines, 123 ms at 20,000.
+func BenchmarkSearchTypingWithMatches(b *testing.B) {
+	for _, n := range []int{1000, 5000, 20000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			e := NewEditor(nil)
+			e.SetText(benchScript(n))
+			if err := e.SetSearch(SearchOptions{Query: "col1"}); err != nil {
+				b.Fatalf("SetSearch: %v", err)
+			}
+			e.scanMatches()
+
+			// The caret moves down the document so no single line grows by one
+			// rune per iteration, which would end up measuring a huge line.
+			row := 0
+			b.ResetTimer()
+			for b.Loop() {
+				e.cursorRow, e.cursorCol = row, 0
+				e.insertRune('x')
+				e.scanMatches()
+				row++
+				if row >= e.doc.Len() {
+					row = 0
+				}
+			}
+		})
 	}
 }

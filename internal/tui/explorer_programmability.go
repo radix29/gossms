@@ -3,6 +3,7 @@ package tui
 import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -240,7 +241,7 @@ func planGuideMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gateOn(controls.MenuItem{Label: planGuideToggle, Action: func() { a.togglePlanGuide(sc, node) }},
+		gate.ItemOn(controls.MenuItem{Label: planGuideToggle, Action: func() { a.togglePlanGuide(sc, node) }},
 			sc, node.data.DBName, node.data.ScopeSchema, node.data.ScopeName,
 			planGuideRights(node.data.ScopeName)...),
 		{Divider: true},

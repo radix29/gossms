@@ -5,6 +5,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -21,7 +22,7 @@ func jobPropPages(d *PropDialog, sc *db.ServerConn, jobName string) []propPage {
 	// write (see propPage.renames); commitRename then updates the cell so
 	// PropDialog.InvalidateAll's reload uses the new name.
 	name := &jobName
-	w := agentWriteRights()
+	w := gate.AgentWriteRights()
 	return []propPage{
 		withRequires(pageJobGeneral(sc, name), "", w...),
 		withRequires(pageJobSteps(d, sc, name), "", w...),

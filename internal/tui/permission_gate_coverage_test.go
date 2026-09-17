@@ -11,7 +11,7 @@ import (
 )
 
 // ungatedWritablePages are the writable pages that deliberately declare no
-// requiredRight, each with the reason it cannot. A page listed here has been
+// gate.Right, each with the reason it cannot. A page listed here has been
 // looked at; a page missing from here and from every withRequires call has
 // not, which is what the test below is for.
 var ungatedWritablePages = map[string]string{

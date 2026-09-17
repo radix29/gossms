@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -18,12 +19,12 @@ import (
 // does not set renames.
 //
 // The rights are CONTROL on the database alone, not the wider database set —
-// see dbScopedCredentialRights, which records the live probe behind that.
+// see gate.DBScopedCredentialRights, which records the live probe behind that.
 func databaseScopedCredentialPropPages(sc *db.ServerConn, dbName, credName string) []propPage {
 	name := credName
 	return []propPage{
 		withRequires(pageDatabaseScopedCredentialGeneral(sc, dbName, &name), dbName,
-			dbScopedCredentialRights()...),
+			gate.DBScopedCredentialRights()...),
 	}
 }
 

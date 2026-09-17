@@ -10,6 +10,7 @@ import (
 	"github.com/radix29/gossms/internal/activity"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/dashboard"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/charts"
 	"github.com/radix29/gossms/internal/tuikit/core"
 )
@@ -832,11 +833,11 @@ func (am *ActivityMonitor) buildTools() {
 			// alter the procedure 'sp_block'...". CONTROL SERVER rather than a
 			// role test, since HAS_PERMS_BY_NAME answers 1 for sysadmin while
 			// IS_SRVROLEMEMBER doesn't fold it in.
-			denied := !allowsAction(pt.conn, "", rightControlServer)
+			denied := !gate.Allows(pt.conn, "", gate.ControlServer)
 			am.tools = append(am.tools, toolButton{
 				label:    "Install in master",
 				disabled: pt.busy || pt.conn == nil || denied,
-				reason:   requiresText(rightControlServer),
+				reason:   gate.RequiresText(gate.ControlServer),
 				action:   pt.confirmInstallInMaster,
 			})
 		}

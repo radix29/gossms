@@ -32,7 +32,7 @@ import (
 // serverIsAzure reports whether sc is connected to an Azure engine edition —
 // SQL Database, Managed Instance, Synapse or SQL Edge. A connection with no
 // server info answers no, so an unreachable probe never withholds an action,
-// matching allowsActionOn's fail-open rule.
+// matching gate.AllowsOn's fail-open rule.
 func serverIsAzure(sc *db.ServerConn) bool {
 	return sc != nil && sc.Server != nil && sc.Server.Info().IsAzure()
 }

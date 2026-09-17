@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	dbconn "github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -130,8 +131,8 @@ func pluralNoun(noun string) string {
 // deleted — the rights objectOpsMenuItems gates the tree's Delete on, asked per
 // object, plus the system-object rule the tree applies through nodeData.IsSystem.
 //
-// Per object rather than once for the folder: rightAlterOnSchema and
-// rightAlterOnObject answer about a named securable, so a selection spanning
+// Per object rather than once for the folder: gate.AlterOnSchema and
+// gate.AlterOnObject answer about a named securable, so a selection spanning
 // two schemas can be permitted in one and refused in the other, and one answer
 // for the batch would be right about at most one of them.
 //
@@ -144,7 +145,7 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 			if n.IsSystem {
 				return n, true
 			}
-			if !allowsAllOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...) {
+			if !gate.AllowsAllOn(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...) {
 				return n, true
 			}
 		}
@@ -155,8 +156,8 @@ func gateDeleteSelection(item controls.MenuItem, sc *dbconn.ServerConn, objs []n
 		if n.IsSystem {
 			item.Note = objectDataName(n) + " is a system object"
 		} else {
-			r, _ := missingRight(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...)
-			item.Note = objectDataName(n) + " needs " + noteName(r)
+			r, _ := gate.Missing(sc, n.DBName, objectDataSchema(n), objectDataObject(n), objectDataRightGroups(n)...)
+			item.Note = objectDataName(n) + " needs " + gate.NoteName(r)
 		}
 	}
 	return item

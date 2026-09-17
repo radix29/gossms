@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
+	"github.com/radix29/gossms/internal/tui/gate"
 )
 
 // refusalKind is how much a SQL Server error number lets us claim.
@@ -166,7 +167,7 @@ func (r refusal) advice() string {
 		}
 	case 5011:
 		if m := reAlterDatabase.FindStringSubmatch(r.message); m != nil {
-			return m[1] + " does not exist, or this login needs " + rightAlterDatabase.String() + " on it."
+			return m[1] + " does not exist, or this login needs " + gate.AlterDatabase.String() + " on it."
 		}
 	case 3701, 15151:
 		if m := reCannotBecause.FindStringSubmatch(r.message); m != nil {

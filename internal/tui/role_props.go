@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -32,22 +33,22 @@ import (
 func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
-		withRequires(pageRoleGeneral(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
+		withRequires(pageRoleGeneral(sc, dbName, namePtr), dbName, gate.AlterAnyDBRole),
 		// Members, alone on this dialog, is gated on the role itself: a class-4
 		// DENY on the role withholds ADD/DROP MEMBER while leaving the rename
 		// and the drop the other pages make alone. The name is the one the
 		// dialog was opened with — a rename is not blocked by that DENY, and
 		// the probe that answers the question recorded the old name too.
-		withRequiresOn(pageRoleMembers(sc, dbName, namePtr), dbName, "", roleName, rightAlterAnyDBRoleMembers),
-		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"), dbName, rightAlterAnySchema, rightControlDB),
-		withRequires(pageRoleOwnedRoles(sc, dbName, namePtr), dbName, rightAlterAnyDBRole),
-		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, rightControlDB),
+		withRequiresOn(pageRoleMembers(sc, dbName, namePtr), dbName, "", roleName, gate.AlterAnyDBRoleMembers),
+		withRequires(pagePrincipalOwnedSchemas(sc, dbName, namePtr, "role"), dbName, gate.AlterAnySchema, gate.ControlDB),
+		withRequires(pageRoleOwnedRoles(sc, dbName, namePtr), dbName, gate.AlterAnyDBRole),
+		withRequires(pageDatabasePrincipalSecurables(d, sc, dbName, namePtr), dbName, gate.ControlDB),
 		// A database role is classed as USER in sp_addextendedproperty's
 		// level names — it's a database principal like a user, not a
 		// level of its own.
 		withRequires(pageExtendedProperties(sc, dbName, func() gosmo.ExtendedPropertyLevel {
 			return gosmo.ExtendedPropertyLevel{Level0Type: "USER", Level0Name: *namePtr}
-		}), dbName, rightAlterAnyDBRole),
+		}), dbName, gate.AlterAnyDBRole),
 	}
 }
 

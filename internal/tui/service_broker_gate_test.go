@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"slices"
 	"testing"
 )
@@ -11,7 +12,7 @@ import (
 // LOGIN user per right on majors 13, 14 and 17, which answered identically.
 //
 // Six of the seven have no schema, which is the case docs/db-rules.md's rule
-// is about: such a node falling to objectWriteRights() is asked about
+// is about: such a node falling to gate.ObjectWriteRights() is asked about
 // ALTER ANY SCHEMA — which permits none of these drops — and never about the
 // narrow right that does.
 
@@ -36,13 +37,13 @@ func TestTheNarrowServiceBrokerRightPermitsTheDrop(t *testing.T) {
 		sc := probedConn(t, "appdb", nil, nil, []string{right},
 			[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
 		rights := objectOpRights(nodeType)
-		if !allowsActionOn(sc, "appdb", "", "obj", rights...) {
+		if !gate.AllowsOn(sc, "appdb", "", "obj", rights...) {
 			t.Errorf("%v: Delete withheld from a principal holding %s", nodeType, right)
 		}
 		// gateOn shows only rights[0] in a withheld item's note, so the
 		// narrowest sufficient right has to lead: "needs CONTROL" sends a user
 		// who wants to drop a route away to ask for the database.
-		if got := rights[0].name; got != right {
+		if got := rights[0].Name; got != right {
 			t.Errorf("%v: the withheld item's note names %q, want the narrow %q", nodeType, got, right)
 		}
 	}
@@ -61,7 +62,7 @@ func TestOneServiceBrokerRightPermitsNothingInAnotherFamily(t *testing.T) {
 		}
 		sc := probedConn(t, "appdb", nil, nil, others,
 			[]string{"ALTER", "CONTROL", "ALTER ANY SCHEMA", right})
-		if allowsActionOn(sc, "appdb", "", "obj", objectOpRights(nodeType)...) {
+		if gate.AllowsOn(sc, "appdb", "", "obj", objectOpRights(nodeType)...) {
 			t.Errorf("%v: Delete offered to a principal holding every right but %s", nodeType, right)
 		}
 	}
@@ -75,12 +76,12 @@ func TestOneServiceBrokerRightPermitsNothingInAnotherFamily(t *testing.T) {
 func TestABrokerPriorityIsGatedOnTheDatabasesAlter(t *testing.T) {
 	rights := objectOpRights(NodeBrokerPriority)
 	for _, r := range rights {
-		if r.name != "ALTER" && r.name != "CONTROL" {
-			t.Errorf("a broker priority is gated on %q, which the server does not publish", r.name)
+		if r.Name != "ALTER" && r.Name != "CONTROL" {
+			t.Errorf("a broker priority is gated on %q, which the server does not publish", r.Name)
 		}
 	}
 	sc := probedConn(t, "appdb", nil, nil, []string{"ALTER"}, []string{"CONTROL", "ALTER ANY SCHEMA"})
-	if !allowsActionOn(sc, "appdb", "", "obj", rights...) {
+	if !gate.AllowsOn(sc, "appdb", "", "obj", rights...) {
 		t.Error("Delete withheld from a principal holding ALTER on the database")
 	}
 	// Every other Service Broker right held, and the priority still withheld:
@@ -90,13 +91,13 @@ func TestABrokerPriorityIsGatedOnTheDatabasesAlter(t *testing.T) {
 		others = append(others, name)
 	}
 	sc = probedConn(t, "appdb", nil, nil, others, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
-	if allowsActionOn(sc, "appdb", "", "obj", rights...) {
+	if gate.AllowsOn(sc, "appdb", "", "obj", rights...) {
 		t.Error("Delete offered to a principal holding only the other families' rights")
 	}
 }
 
 // TestNoSchemalessServiceBrokerFamilyAsksAboutSchemas. ALTER ANY SCHEMA
-// permits no schemaless drop, and a family that fell to objectWriteRights()
+// permits no schemaless drop, and a family that fell to gate.ObjectWriteRights()
 // would ask about it and about nothing narrower — the failure
 // TestSchemalessDatabaseOpsAreGated exists for, one family earlier.
 func TestNoSchemalessServiceBrokerFamilyAsksAboutSchemas(t *testing.T) {
@@ -107,14 +108,14 @@ func TestNoSchemalessServiceBrokerFamilyAsksAboutSchemas(t *testing.T) {
 	for _, nodeType := range schemaless {
 		if _, ok := dbScopedOpRights[nodeType]; !ok {
 			t.Errorf("%v has no schema and no dbScopedOpRights entry; it falls to "+
-				"objectWriteRights(), which asks ALTER ANY SCHEMA and not the right that permits it", nodeType)
+				"gate.ObjectWriteRights(), which asks ALTER ANY SCHEMA and not the right that permits it", nodeType)
 			continue
 		}
 		rights := objectOpRights(nodeType)
-		if slices.ContainsFunc(rights, func(r requiredRight) bool { return r.name == rightAlterAnySchema.name }) {
+		if slices.ContainsFunc(rights, func(r gate.Right) bool { return r.Name == gate.AlterAnySchema.Name }) {
 			t.Errorf("%v's rights name ALTER ANY SCHEMA, which permits no schemaless drop", nodeType)
 		}
-		if slices.ContainsFunc(rights, func(r requiredRight) bool { return r.object || r.schema }) {
+		if slices.ContainsFunc(rights, func(r gate.Right) bool { return r.Object || r.Schema }) {
 			t.Errorf("%v is schemaless but carries an object- or schema-scoped right, "+
 				"which is asked about nothing and answers for nobody", nodeType)
 		}
@@ -137,13 +138,13 @@ func TestAQueuesAlterAndDropTakeDifferentRights(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if !allowsActionOn(sc, "appdb", "dbo", "ClaimQueue", queueAlterRights()...) {
+	if !gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", gate.QueueAlterRights()...) {
 		t.Error("Queue Properties comes up read-only for a principal holding ALTER on the queue")
 	}
-	if allowsActionOn(sc, "appdb", "dbo", "ClaimQueue", queueDropRights()...) {
+	if gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", gate.QueueDropRights()...) {
 		t.Error("Delete is offered to a principal holding only ALTER on the queue, which the server refuses")
 	}
-	if allowsActionOn(sc, "appdb", "dbo", "ClaimQueue", objectOpRights(NodeBrokerQueue)...) {
+	if gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", objectOpRights(NodeBrokerQueue)...) {
 		t.Error("objectOpRights answers the queue's Delete with its Properties set")
 	}
 }
@@ -157,7 +158,7 @@ func TestAQueuesDropFollowsItsSchema(t *testing.T) {
 	sc.ProbeCapabilities()
 	sc.DatabaseCapabilities(context.Background(), "appdb")
 
-	if !allowsActionOn(sc, "appdb", "dbo", "ClaimQueue", queueDropRights()...) {
+	if !gate.AllowsOn(sc, "appdb", "dbo", "ClaimQueue", gate.QueueDropRights()...) {
 		t.Error("Delete withheld from a principal holding ALTER on the queue's schema")
 	}
 }
@@ -176,7 +177,7 @@ func TestTheQueuePageIsGatedOnTheQueueItself(t *testing.T) {
 	if p.requiresSchema != "dbo" || p.requiresObject != "ClaimQueue" {
 		t.Errorf("the page names securable %q.%q, want dbo.ClaimQueue", p.requiresSchema, p.requiresObject)
 	}
-	if !slices.ContainsFunc(p.requires, func(r requiredRight) bool { return r.object }) {
+	if !slices.ContainsFunc(p.requires, func(r gate.Right) bool { return r.Object }) {
 		t.Error("the page declares no object-scoped right, so a grant on the queue itself speaks for nobody")
 	}
 }
@@ -187,10 +188,10 @@ func TestTheQueuePageIsGatedOnTheQueueItself(t *testing.T) {
 func TestTheRoutePageAndTheRoutesDeleteShareOneRight(t *testing.T) {
 	sc, _ := newFakeConn(t)
 	pages := routePropPages(sc, "appdb", "ClaimRoute")
-	names := func(rights []requiredRight) []string {
+	names := func(rights []gate.Right) []string {
 		var out []string
 		for _, r := range rights {
-			out = append(out, r.name)
+			out = append(out, r.Name)
 		}
 		return out
 	}

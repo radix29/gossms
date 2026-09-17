@@ -10,7 +10,7 @@ shipped.
   the rights are the *page's*, not the dialog's.** `withRequires` at the
   `[]propPage` constructor, or `withRequiresOn` when any right is schema- or
   object-scoped — an object-scoped right asked without a securable answers for
-  nobody, so a page on `objectWriteRights()` wrapped in plain `withRequires`
+  nobody, so a page on `gate.ObjectWriteRights()` wrapped in plain `withRequires`
   compiles, looks right, and shows a read-only banner to the one principal who
   could actually write it. The securable for an index, a statistic or a key is the
   **table**: that is what SQL Server checks and what gosmo's probe records.
@@ -20,8 +20,8 @@ shipped.
   nothing (unless named in `pagesThatOnlyRead`, only for pages with no `apply`),
   on a stale exemption, on an object-scoped page with no securable, and on a new
   `[]propPage` constructor absent from its list.
-  **The banner's check and the menus' gate are one function, `rightsAllow`
-  (`permission_gate.go`) — never add a second copy.** They had diverged: the
+  **The banner's check and the menus' gate are one function, `gate.RightsAllow`
+  (`internal/tui/gate`) — never add a second copy.** They had diverged: the
   banner's half knew only server and database scope, so it showed a false
   read-only for every object-scoped right and never fired at all for SQL Agent's
   msdb memberships, which fail open when read as server permissions. The callers
@@ -29,7 +29,7 @@ shipped.
   the UI goroutine, probing for a page's `load`.
   **Inside it, the object-scope DENY is asked first and separately.** Every right
   in a set is an alternative that can only *add* permission, but SQL Server
-  resolves a DENY on the object over all of them, so `objectDenial` runs before
+  resolves a DENY on the object over all of them, so `gate.ObjectDenial` runs before
   the loop rather than as another case in it — and it exempts sysadmin, because
   the probe reads permissions through `public` and a DENY to public is recorded
   for the one login the server never applies it to. **A DENY on one *column* is
@@ -49,7 +49,7 @@ shipped.
   and note that a *server*-scope permission asked of a database comes back from
   `HAS_PERMS_BY_NAME` as **NULL, not 0** (`ALTER ANY CREDENTIAL` does), which a
   gate built on it reads as `CapabilityUnknown` forever rather than as "no".
-  **A node with no schema must never fall to `objectWriteRights()`**: its schema
+  **A node with no schema must never fall to `gate.ObjectWriteRights()`**: its schema
   and object arms have nothing to ask, leaving ALTER ANY SCHEMA — which permits
   no schemaless DROP at all — and never the narrow right that does. Ten families
   shipped that way; `TestSchemalessDatabaseOpsAreGated` now refuses an eleventh.

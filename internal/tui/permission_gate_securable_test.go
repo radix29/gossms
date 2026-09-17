@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 )
 
 // The class 5/6/10 gate — assemblies, user-defined types and XML schema
@@ -164,7 +165,7 @@ func TestASecurableTheProbeNeverReachedFailsOpen(t *testing.T) {
 
 // TestATypeIsNotAnsweredByATableOfTheSameName. Types live in their own
 // namespace, so s1.x can be a type and a table at once, and the type sets used
-// to carry rightAlterOnObject — whose class-1 map records the *table*. A DENY
+// to carry gate.AlterOnObject — whose class-1 map records the *table*. A DENY
 // on the table then withheld the type's Delete, and a grant on it offered one.
 func TestATypeIsNotAnsweredByATableOfTheSameName(t *testing.T) {
 	f := securableFamilies[0]
@@ -182,7 +183,7 @@ func TestATypeIsNotAnsweredByATableOfTheSameName(t *testing.T) {
 		return sc
 	}
 	allows := func(sc *db.ServerConn) bool {
-		return allowsActionOn(sc, "appdb", objectDataSchema(n), objectDataObject(n), objectDataRights(n)...)
+		return gate.AllowsOn(sc, "appdb", objectDataSchema(n), objectDataObject(n), objectDataRights(n)...)
 	}
 	if allows(conn([]string{"s1.x"}, nil, false)) {
 		t.Error("a GRANT ALTER on table s1.x offered Delete on type s1.x")

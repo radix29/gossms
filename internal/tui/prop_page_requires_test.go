@@ -107,9 +107,9 @@ var pagesThatOnlyRead = []string{
 	// The Phase 3 tree families. Every one of these is read-only because the
 	// object has no ALTER a form could build, or needs a binary payload no
 	// dialog can supply — argued in each family's props file, and recorded in
-	// docs/open-threads.md § Deferred scope. Plan Guide/General is the one
+	// docs/decisions.md § Deferred scope. Plan Guide/General is the one
 	// exception and is deliberately absent from this list: it enables and
-	// disables the guide, and declares rightAlterDatabase for it.
+	// disables the guide, and declares gate.AlterDatabase for it.
 	"User-Defined Data Type/General",
 	"User-Defined Table Type/General", "User-Defined Table Type/Columns",
 	"User-Defined Type/General",
@@ -123,7 +123,7 @@ var pagesThatOnlyRead = []string{
 	// at all, a binding's ALTER is a key-management step, and a broker
 	// priority's write cannot be gated on any right the server publishes.
 	// Queue/General and Route/General are deliberately absent — they write,
-	// and declare queueAlterRights() and routeWriteRights() for it.
+	// and declare gate.QueueAlterRights() and gate.RouteWriteRights() for it.
 	"Message Type/General", "Contract/General", "Service/General",
 	"Remote Service Binding/General", "Broker Priority/General",
 	"External Data Source/General", "External File Format/General",
@@ -177,7 +177,7 @@ func TestPagesThatOnlyReadHasNoStaleEntries(t *testing.T) {
 	}
 }
 
-// TestAnObjectScopedPageNamesItsSecurable. objectWriteRights()'s last two
+// TestAnObjectScopedPageNamesItsSecurable. gate.ObjectWriteRights()'s last two
 // entries are asked about a schema and an object, and answer for nobody when
 // the page did not say which — the principal granted ALTER on one table reads 0
 // everywhere else, so the page they can write would come up read-only. Wrapping
@@ -187,12 +187,12 @@ func TestAnObjectScopedPageNamesItsSecurable(t *testing.T) {
 	for _, key := range keys {
 		p := pages[key]
 		for _, r := range p.requires {
-			if (r.object || r.schema) && p.requiresSchema == "" {
-				t.Errorf("%s requires %q at object/schema scope but names no schema — use withRequiresOn", key, r.name)
+			if (r.Object || r.Schema) && p.requiresSchema == "" {
+				t.Errorf("%s requires %q at object/schema scope but names no schema — use withRequiresOn", key, r.Name)
 				break
 			}
-			if r.object && p.requiresObject == "" {
-				t.Errorf("%s requires %q on the object itself but names no object — use withRequiresOn", key, r.name)
+			if r.Object && p.requiresObject == "" {
+				t.Errorf("%s requires %q on the object itself but names no object — use withRequiresOn", key, r.Name)
 				break
 			}
 			// The three DENY arms are asked about a *name* and nothing else — a
@@ -202,8 +202,8 @@ func TestAnObjectScopedPageNamesItsSecurable(t *testing.T) {
 			// failure TestServerScopedPagesAreGatedOnTheSecurableTheyEdit and
 			// TestMembershipPagesAreGatedOnThePrincipalTheyEdit pin for the
 			// pages that exist today; this catches the next one to arrive.
-			if (r.deniedOnPrincipal != "" || r.deniedOnServer != "" || r.deniedOnAG != "") && p.requiresObject == "" {
-				t.Errorf("%s requires %q with a DENY arm but names no securable — use withRequiresOn", key, r.name)
+			if (r.DeniedOnPrincipal != "" || r.DeniedOnServer != "" || r.DeniedOnAG != "") && p.requiresObject == "" {
+				t.Errorf("%s requires %q with a DENY arm but names no securable — use withRequiresOn", key, r.Name)
 				break
 			}
 		}

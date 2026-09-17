@@ -204,7 +204,7 @@ func TestDBScopedCredGeneralRefusesABlankIdentity(t *testing.T) {
 
 // The page's rights are CONTROL on the database alone. ALTER on the database
 // does not permit the write — probed live — so a set that included
-// rightAlterDatabase would open the page fully editable for a principal the
+// gate.AlterDatabase would open the page fully editable for a principal the
 // server then refuses.
 func TestDBScopedCredPagesRequireControlOnly(t *testing.T) {
 	sc, _ := newFakeConn(t)
@@ -215,7 +215,7 @@ func TestDBScopedCredPagesRequireControlOnly(t *testing.T) {
 	if pages[0].requiresIn != "appdb" {
 		t.Errorf("the page asks about database %q, want appdb", pages[0].requiresIn)
 	}
-	if len(pages[0].requires) != 1 || pages[0].requires[0].name != "CONTROL" {
+	if len(pages[0].requires) != 1 || pages[0].requires[0].Name != "CONTROL" {
 		t.Errorf("requires = %v, want exactly [CONTROL]", pages[0].requires)
 	}
 }

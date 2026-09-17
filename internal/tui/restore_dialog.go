@@ -334,7 +334,7 @@ func (d *RestoreDialog) restingStatus() string {
 // backups at all. The recovery, replace and relocation options are left alone
 // deliberately — none of them was driven against a Managed Instance in the
 // audit, and withholding one that works is the worse error. See
-// docs/open-threads.md.
+// docs/decisions.md § Azure SQL Managed Instance.
 func (d *RestoreDialog) applyDeviceRules() {
 	d.btnBrowse.SetEnabled(!serverIsAzure(d.sc) && !gosmo.IsBackupURL(d.deviceForRestore()))
 	if !d.statusErr && (d.status == "" || d.status == "Ready" || d.status == restoreURLHint) {

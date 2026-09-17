@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -33,20 +34,20 @@ import (
 func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 	namePtr := &roleName
 	return []propPage{
-		withRequires(pageServerRoleGeneral(sc, namePtr), "", rightAlterAnyServerRole),
+		withRequires(pageServerRoleGeneral(sc, namePtr), "", gate.AlterAnyServerRole),
 		// Members alone carries the class-101 arm, and only through
 		// withRequiresOn: the DENY that withholds ADD/DROP MEMBER leaves the
 		// rename on General and the drop in the tree alone, so gating the
 		// whole dialog on it would grey two writes the server performs. See
-		// rightAlterAnyServerRoleMembers.
+		// gate.AlterAnyServerRoleMembers.
 		//
 		// The page is asked about the role it edits and not about the logins
 		// it lists. Which members may be added is a different answer per row —
 		// but at server scope it is not even that, since a login's own DENY
 		// does not stop it being added; see the same comment.
-		withRequiresOn(pageServerRoleMembers(sc, namePtr), "", "", roleName, rightAlterAnyServerRoleMembers),
-		withRequires(pageServerRoleOwnedRoles(sc, namePtr), "", rightAlterAnyServerRole),
-		withRequires(pageServerRoleSecurables(sc, namePtr), "", rightControlServer),
+		withRequiresOn(pageServerRoleMembers(sc, namePtr), "", "", roleName, gate.AlterAnyServerRoleMembers),
+		withRequires(pageServerRoleOwnedRoles(sc, namePtr), "", gate.AlterAnyServerRole),
+		withRequires(pageServerRoleSecurables(sc, namePtr), "", gate.ControlServer),
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -37,7 +38,7 @@ func findRoute(ctx context.Context, sc *db.ServerConn, dbName, name string) (*go
 
 func routePropPages(sc *db.ServerConn, dbName, name string) []propPage {
 	return []propPage{
-		withRequires(pageRouteGeneral(sc, dbName, name), dbName, routeWriteRights()...),
+		withRequires(pageRouteGeneral(sc, dbName, name), dbName, gate.RouteWriteRights()...),
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -26,20 +27,20 @@ import (
 func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPage {
 	namePtr := &loginName
 	return []propPage{
-		// withRequiresOn, not withRequires: rightAlterAnyLogin carries the
+		// withRequiresOn, not withRequires: gate.AlterAnyLogin carries the
 		// class-101 arm, and a page that names no securable asks it about
 		// nothing and withholds nothing. DENY ALTER ON LOGIN::x withholds the
 		// rename and the password alike, so this page and Status below are
 		// read-only under it.
-		withRequiresOn(pageLoginGeneral(sc, namePtr), "", "", loginName, rightAlterAnyLogin),
+		withRequiresOn(pageLoginGeneral(sc, namePtr), "", "", loginName, gate.AlterAnyLogin),
 		// Server Roles declares the plain right, and deliberately. Its write
 		// is ALTER SERVER ROLE r ADD/DROP MEMBER, which a DENY on *this login*
 		// does not withhold — verified live on majors 13 and 17, unlike the
 		// database scope, where the member is checked. What does withhold it
 		// is a DENY on the role, a different answer per row of the list, which
 		// one page-level banner cannot state. See
-		// rightAlterAnyServerRoleMembers.
-		withRequires(pageLoginServerRoles(sc, namePtr), "", rightAlterAnyServerRole),
+		// gate.AlterAnyServerRoleMembers.
+		withRequires(pageLoginServerRoles(sc, namePtr), "", gate.AlterAnyServerRole),
 		// User Mapping deliberately declares nothing. Its writes create and
 		// drop *database* users, so what permits them is ALTER ANY USER in
 		// each mapped database — a different answer per row of the grid, which
@@ -47,9 +48,9 @@ func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPa
 		// worse than none: it would tell a db_accessadmin they cannot do the
 		// one thing they can.
 		pageLoginUserMapping(sc, namePtr),
-		withRequires(pageLoginSecurables(sc, namePtr), "", rightControlServer),
+		withRequires(pageLoginSecurables(sc, namePtr), "", gate.ControlServer),
 		pageLoginEffectivePermissions(d, sc, namePtr),
-		withRequiresOn(pageLoginStatus(sc, namePtr), "", "", loginName, rightAlterAnyLogin),
+		withRequiresOn(pageLoginStatus(sc, namePtr), "", "", loginName, gate.AlterAnyLogin),
 	}
 }
 

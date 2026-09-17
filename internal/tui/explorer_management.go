@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -151,8 +152,8 @@ func backupDevicesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
-			sc, "", rightDiskAdmin),
+		gate.Item(controls.MenuItem{Label: "New Backup Device...", Action: func() { a.showNewBackupDeviceDialog(sc) }},
+			sc, "", gate.DiskAdmin),
 		{Divider: true},
 		refresh,
 	}
@@ -172,8 +173,8 @@ func serverTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 	return []controls.MenuItem{
 		newQuery,
 		{Divider: true},
-		gate(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleServerTrigger(sc, node) }},
-			sc, "", rightControlServer),
+		gate.Item(controls.MenuItem{Label: toggleLabel, Action: func() { a.toggleServerTrigger(sc, node) }},
+			sc, "", gate.ControlServer),
 		{Divider: true},
 		refresh,
 		{Label: "Properties...", Action: func() { a.showServerTriggerPropertiesFor(sc, node.data.Name) }},
@@ -184,11 +185,11 @@ func endpointMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, 
 	// gateOn, not gate: ALTER ENDPOINT ... STATE is what these three
 	// write, and DENY ALTER ON ENDPOINT::e refuses it with Msg 6004 over
 	// a server-wide ALTER ANY ENDPOINT. The arm is only reached by a call
-	// that names the endpoint — see rightAlterAnyEndpoint.
+	// that names the endpoint — see gate.AlterAnyEndpoint.
 	stateItem := func(label string, state gosmo.EndpointState) controls.MenuItem {
-		return gateOn(controls.MenuItem{Label: label,
+		return gate.ItemOn(controls.MenuItem{Label: label,
 			Action: func() { a.setEndpointState(sc, node, state) }},
-			sc, "", "", node.data.Name, rightAlterAnyEndpoint)
+			sc, "", "", node.data.Name, gate.AlterAnyEndpoint)
 	}
 	return []controls.MenuItem{
 		newQuery,
@@ -223,8 +224,8 @@ func errorLogsMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery,
 		newQuery,
 		{Divider: true},
 		{Label: "View Current Log", Action: func() { a.showLogViewerFor(sc, logType, 0) }},
-		gate(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
-			sc, "", rightControlServer),
+		gate.Item(controls.MenuItem{Label: "Recycle", Action: func() { a.recycleLogFrom(sc, logType, node) }},
+			sc, "", gate.ControlServer),
 		{Divider: true},
 		refresh,
 	}

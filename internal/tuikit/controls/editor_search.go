@@ -53,6 +53,7 @@ type editorSearch struct {
 	cur        int // index into matches, or -1 when nothing is current
 	scanned    bool
 	scanVer    uint64
+	scanLen    int
 	scanDocPtr *Document
 
 	// selStart/selEnd bound an InSelection ReplaceAll, captured at SetSearch time
@@ -107,42 +108,102 @@ func (e *Editor) HasSearch() bool { return e.search.re != nil }
 // SearchOpts returns the options the active search was compiled from.
 func (e *Editor) SearchOpts() SearchOptions { return e.search.opts }
 
-// scanMatches rebuilds the match list if it isn't current for this document
-// version, and returns it.
+// scanMatches brings the match list up to date with the document and returns
+// it.
+//
+// Typing with a search active is the hot path: nothing clears the search when
+// the Find dialog closes (F3 has to keep working, which is SSMS parity), so
+// every keystroke for the rest of the panel's life lands here through Draw.
+// A full rescan is a regexp sweep over every line — 123ms on a 20,000-line
+// script — so a one-line edit resumes instead, the way prefixStates.at does:
+// the cache is exactly one version behind, the mutation touched exactly one
+// line and left the line count alone, so every other match keeps its row and
+// only that line's run is re-scanned and spliced back in. Anything else falls
+// back to the full scan.
 func (e *Editor) scanMatches() []searchMatch {
 	s := &e.search
 	if s.re == nil {
 		return nil
 	}
-	if s.scanned && s.scanDocPtr == e.doc && s.scanVer == e.doc.Version() {
-		return s.matches
+	doc := e.doc
+	switch {
+	case !s.scanned || s.scanDocPtr != doc || s.scanLen != doc.Len():
+		// A different document, or one that grew or shrank: matches are indexed
+		// by row, so a changed line count invalidates every row below the edit.
+		s.fullScan(doc)
+	case s.scanVer == doc.Version():
+		// Nothing has changed since the last scan.
+	case s.scanVer+1 == doc.Version() && doc.dirtyTo == doc.dirtyFrom+1:
+		// Exactly one mutation since, and it was a single-line setLine — the
+		// path typing takes. Only that row's matches can have moved.
+		s.rescanLine(doc, doc.dirtyFrom)
+	default:
+		s.fullScan(doc)
 	}
+	return s.matches
+}
+
+// fullScan rebuilds the whole match list from the document.
+func (s *editorSearch) fullScan(doc *Document) {
 	s.matches = s.matches[:0]
-	for row, line := range e.doc.all() {
-		text := string(line)
-		if text == "" {
+	for row, line := range doc.all() {
+		s.matches = s.appendLineMatches(s.matches, row, string(line))
+	}
+	s.stamp(doc)
+}
+
+// rescanLine replaces row's run of matches in place, leaving every other row's
+// entries — and their row indices — as they were. The list stays sorted by
+// row, which matchSpansForLine's binary search and FindNext's ordering both
+// depend on, because the replacement occupies exactly the old run's position.
+func (s *editorSearch) rescanLine(doc *Document, row int) {
+	start, end := rowRange(s.matches, row)
+	fresh := s.appendLineMatches(nil, row, string(doc.Line(row)))
+	s.matches = slices.Replace(s.matches, start, end, fresh...)
+	s.stamp(doc)
+}
+
+// stamp records which document and version the match list now describes.
+func (s *editorSearch) stamp(doc *Document) {
+	s.scanned, s.scanVer, s.scanLen, s.scanDocPtr = true, doc.Version(), doc.Len(), doc
+}
+
+// appendLineMatches appends every match on one line's text to dst.
+func (s *editorSearch) appendLineMatches(dst []searchMatch, row int, text string) []searchMatch {
+	if text == "" {
+		return dst
+	}
+	// Byte offsets from the regexp engine become rune indices once per line
+	// rather than per match: every position Editor works in is a rune index,
+	// and a byte offset reaching one lands mid-character on the first
+	// non-ASCII line.
+	byteToRune := byteRuneIndex(text)
+	for _, loc := range s.re.FindAllStringIndex(text, -1) {
+		start, end := loc[0], loc[1]
+		if byteToRune != nil {
+			start, end = byteToRune[start], byteToRune[end]
+		}
+		if start == end {
+			// A zero-width match (`^`, `\b`, `x*`) has nothing to select or
+			// replace, and Find Next would stall on it forever.
 			continue
 		}
-		// Byte offsets from the regexp engine become rune indices once per line
-		// rather than per match: every position Editor works in is a rune index,
-		// and a byte offset reaching one lands mid-character on the first
-		// non-ASCII line.
-		byteToRune := byteRuneIndex(text)
-		for _, loc := range s.re.FindAllStringIndex(text, -1) {
-			start, end := loc[0], loc[1]
-			if byteToRune != nil {
-				start, end = byteToRune[start], byteToRune[end]
-			}
-			if start == end {
-				// A zero-width match (`^`, `\b`, `x*`) has nothing to select or
-				// replace, and Find Next would stall on it forever.
-				continue
-			}
-			s.matches = append(s.matches, searchMatch{row: row, startCol: start, endCol: end})
-		}
+		dst = append(dst, searchMatch{row: row, startCol: start, endCol: end})
 	}
-	s.scanned, s.scanVer, s.scanDocPtr = true, e.doc.Version(), e.doc
-	return s.matches
+	return dst
+}
+
+// rowRange returns the half-open index range of row's matches in a list sorted
+// by row, [start, start) when the row has none.
+func rowRange(matches []searchMatch, row int) (start, end int) {
+	start, _ = slices.BinarySearchFunc(matches, row, func(m searchMatch, r int) int {
+		return m.row - r
+	})
+	end = start
+	for end < len(matches) && matches[end].row == row {
+		end++
+	}
+	return start, end
 }
 
 // byteRuneIndex maps every byte offset of s that starts a rune (plus len(s)) to
@@ -429,13 +490,7 @@ func (e *Editor) matchSpansForLine(row int) []searchMatch {
 	if len(matches) == 0 {
 		return nil
 	}
-	start, _ := slices.BinarySearchFunc(matches, row, func(m searchMatch, r int) int {
-		return m.row - r
-	})
-	end := start
-	for end < len(matches) && matches[end].row == row {
-		end++
-	}
+	start, end := rowRange(matches, row)
 	if start == end {
 		return nil
 	}

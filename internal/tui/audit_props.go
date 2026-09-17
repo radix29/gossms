@@ -9,6 +9,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -23,7 +24,7 @@ import (
 func auditPropPages(sc *db.ServerConn, auditName string) []propPage {
 	name := auditName
 	return []propPage{
-		withRequires(pageAuditGeneral(sc, &name), "", rightAlterAnyAudit),
+		withRequires(pageAuditGeneral(sc, &name), "", gate.AlterAnyAudit),
 	}
 }
 

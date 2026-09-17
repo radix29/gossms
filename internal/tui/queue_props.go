@@ -7,6 +7,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -21,7 +22,7 @@ import (
 //
 // The rights are the queue's own and are *not* the ones its Delete takes —
 // ALTER ON OBJECT::<queue> writes this page and is refused the drop, which
-// needs CONTROL on the queue or ALTER on its schema. See queueAlterRights.
+// needs CONTROL on the queue or ALTER on its schema. See gate.QueueAlterRights.
 
 func findBrokerQueue(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.BrokerQueue, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
@@ -55,7 +56,7 @@ func findQueueMonitor(ctx context.Context, sc *db.ServerConn, dbName string, obj
 func brokerQueuePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 	return []propPage{
 		withRequiresOn(pageBrokerQueueGeneral(sc, dbName, schema, name), dbName, schema, name,
-			queueAlterRights()...),
+			gate.QueueAlterRights()...),
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -18,7 +19,7 @@ import (
 func credentialPropPages(sc *db.ServerConn, credName string) []propPage {
 	name := credName
 	return []propPage{
-		withRequires(pageCredentialGeneral(sc, &name), "", rightAlterAnyCredential),
+		withRequires(pageCredentialGeneral(sc, &name), "", gate.AlterAnyCredential),
 	}
 }
 

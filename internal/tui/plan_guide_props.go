@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/theme"
@@ -22,7 +23,7 @@ import (
 // Enable/Disable is a real write nonetheless: a disabled guide shapes no plan,
 // and it is invisible in the tree except for the label suffix.
 //
-// The right is rightAlterDatabase, which is what sp_control_plan_guide
+// The right is gate.AlterDatabase, which is what sp_control_plan_guide
 // actually checks — there is no "ALTER ANY PLAN GUIDE" for it to take.
 
 func findPlanGuide(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PlanGuide, error) {
@@ -49,8 +50,8 @@ func planGuidePropPages(sc *db.ServerConn, dbName, name, scopeSchema, scopeName 
 // names ALTER DATABASE — so inventing one here would gate the page on a
 // permission HAS_PERMS_BY_NAME answers NULL for, which reads as "unknown"
 // forever.
-func planGuideWriteRights() []requiredRight {
-	return []requiredRight{rightAlterDatabase, rightControlDB, rightAlterAnyDatabase}
+func planGuideWriteRights() []gate.Right {
+	return []gate.Right{gate.AlterDatabase, gate.ControlDB, gate.AlterAnyDatabase}
 }
 
 // planGuideRights is what permits sp_control_plan_guide — DROP, ENABLE and
@@ -63,9 +64,9 @@ func planGuideWriteRights() []requiredRight {
 // on the routine each drop and disable an OBJECT guide and are refused a SQL
 // one, and a DENY of ALTER on the routine or its schema refuses the OBJECT
 // guide even to a principal holding ALTER on the database.
-func planGuideRights(scopeName string) []requiredRight {
+func planGuideRights(scopeName string) []gate.Right {
 	if scopeName != "" {
-		return objectWriteRights()
+		return gate.ObjectWriteRights()
 	}
 	return planGuideWriteRights()
 }

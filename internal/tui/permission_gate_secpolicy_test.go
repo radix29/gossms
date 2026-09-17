@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
@@ -138,7 +139,7 @@ func TestADetailBrowserPolicySelectionNeedsBothHalves(t *testing.T) {
 // it did before, for a set whose first right is database-wide.
 func TestGateOnKeepsItsOneGroupNote(t *testing.T) {
 	sc := probedConn(t, "appdb", nil, nil, nil, []string{"ALTER", "CONTROL", "ALTER ANY SCHEMA"})
-	item := gateOn(controls.MenuItem{Label: "Delete..."}, sc, "appdb", "", "obj", objectWriteRights()...)
+	item := gate.ItemOn(controls.MenuItem{Label: "Delete..."}, sc, "appdb", "", "obj", gate.ObjectWriteRights()...)
 	if itemEnabled(item) || item.Note != "needs ALTER" {
 		t.Errorf("gateOn note = %q (offered %v), want %q", item.Note, itemEnabled(item), "needs ALTER")
 	}

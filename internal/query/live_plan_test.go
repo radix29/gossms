@@ -186,7 +186,7 @@ func showplanSetRowCounts(t *testing.T, ctx context.Context, db *sql.DB, setOpt,
 // Checks scanPlanXML's assumption that no batch puts more than one row in a
 // showplan set. A failure is new information, not a defect (the loop handles
 // it), and means scanPlanXML's comment, gosmo's capturePlan and
-// docs/open-threads.md need updating.
+// docs/decisions.md § By design need updating.
 func TestLivePlanEveryShowplanSetHoldsOneRow(t *testing.T) {
 	db, ctx, done := livePlanDB(t)
 	defer done()

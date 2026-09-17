@@ -154,7 +154,7 @@ func TestSignInPhaseIsOnlyForSignInMethods(t *testing.T) {
 	// server cannot even be asked for its tenant (port 1 on the loopback
 	// refuses at once) — returns the error without moving on to
 	// "Connecting...". The hand-off after a completed sign-in needs a live
-	// tenant (docs/open-threads.md § Azure SQL Managed Instance).
+	// tenant (docs/decisions.md § Azure SQL Managed Instance).
 	if err := a.signInPhase(context.Background(),
 		config.Connection{Server: "127.0.0.1", Port: 1, AuthMethod: config.AuthEntraInteractive},
 		func(l string) { labels = append(labels, l) }); err == nil {

@@ -6,6 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -23,7 +24,7 @@ func findAgentAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo
 // alertPropPages builds the page set for Alert Properties.
 func alertPropPages(sc *db.ServerConn, alertName string) []propPage {
 	name := &alertName
-	w := agentWriteRights()
+	w := gate.AgentWriteRights()
 	return []propPage{
 		withRequires(pageAlertGeneral(sc, name), "", w...),
 		withRequires(pageAlertResponse(sc, name), "", w...),

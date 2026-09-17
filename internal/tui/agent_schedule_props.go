@@ -5,6 +5,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -25,7 +26,7 @@ func findAgentSchedule(ctx context.Context, sc *db.ServerConn, name string) (*go
 func schedulePropPages(sc *db.ServerConn, scheduleName string) []propPage {
 	name := &scheduleName
 	return []propPage{
-		withRequires(pageScheduleGeneral(sc, name), "", agentWriteRights()...),
+		withRequires(pageScheduleGeneral(sc, name), "", gate.AgentWriteRights()...),
 		pageScheduleJobs(sc, name),
 	}
 }

@@ -88,7 +88,7 @@ var readTimeoutSites = map[string]int{
 	"detail_browser_logins.go":    1,
 	"detail_browser_server.go":    1,
 	"detail_browser_tables.go":    1,
-	"explorer_object_ops.go":      1,
+	"explorer_object_actions.go":  1,
 	"properties_dialog.go":        1,
 	"restore_dialog_ops.go":       7,
 	"scripting.go":                1,

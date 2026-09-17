@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -40,7 +41,7 @@ const unsetItem = "(not set)"
 // Flush/Clear actions. On an Azure engine edition a read-only Resource
 // Governance page follows them.
 func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
-	w := databaseWriteRights()
+	w := gate.DatabaseWriteRights()
 	pages := []propPage{
 		withRequires(pageDatabaseGeneral(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseFiles(sc, dbName), dbName, w...),
@@ -48,7 +49,7 @@ func databasePropPages(sc *db.ServerConn, dbName string) []propPage {
 		withRequires(pageDatabaseOptions(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseChangeTracking(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseQueryStore(sc, dbName), dbName, w...),
-		withRequires(pageDatabasePermissions(sc, dbName), dbName, rightControlDB, rightAlterAnyDatabase),
+		withRequires(pageDatabasePermissions(sc, dbName), dbName, gate.ControlDB, gate.AlterAnyDatabase),
 		withRequires(pageDatabaseExtendedProperties(sc, dbName), dbName, w...),
 		withRequires(pageDatabaseScopedConfig(sc, dbName), dbName, w...),
 	}

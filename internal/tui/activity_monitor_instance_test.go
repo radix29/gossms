@@ -13,7 +13,7 @@ import (
 
 // The Instance tab reads Azure-only views, so these tests ask which connections
 // see it. The tab bar is a filtered slice, scroll arrays stay amTabCount-sized,
-// and setTab is the gate (docs/open-threads.md § Azure SQL Managed Instance).
+// and setTab is the gate (docs/decisions.md § Azure SQL Managed Instance).
 
 // newAzureActivityMonitor is newTestActivityMonitor against a Managed Instance;
 // the fake answers a real MI's connect-time row.

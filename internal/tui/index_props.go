@@ -8,6 +8,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
+	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
@@ -117,7 +118,7 @@ func (r rebuildOptions) apply(ctx context.Context, t *gosmo.Table, idx *gosmo.In
 // REBUILD-time-only clauses with no persisted state to show afterward,
 // unlike fill factor, pad index, and the SET-able options this page has.
 func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, name string) []propPage {
-	w := objectWriteRights()
+	w := gate.ObjectWriteRights()
 	return []propPage{
 		pageIndexGeneral(sc, dbName, schema, table, name),
 		withRequiresOn(pageIndexOptions(sc, dbName, schema, table, name), dbName, schema, table, w...),

@@ -17,7 +17,7 @@ import (
 // moving a service to a different queue mid-conversation changes where its
 // messages arrive. Script as ▸ CREATE is what this build offers. The page is
 // named in prop_page_requires_test.go's pagesThatOnlyRead, and the deferral is
-// recorded in docs/open-threads.md § Deferred scope.
+// recorded in docs/decisions.md § Deferred scope.
 
 func findBrokerService(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.BrokerService, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)

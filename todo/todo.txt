@@ -61,11 +61,10 @@ do not commit or tag anything to git.
 fix go.mod before, reference the new :
 
 prepare gossms for release v0.0.11. Update readme.md, release.md, changelog.md, plan.md and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
-do not commit or tag anything to git. highlight in the release file the homebre and ppa as the most important features .
-in the release file put the accent on Homebrew, apt and EntraID. These are the most important things related to this release. there will be an nnouncement related to this later on.
+do not commit or tag anything to git. 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md
 
-update open-threads, delete what it is done and the history. keep only what is actual.
+update open-threads and decisions, delete what it is done and the history. keep only what is actual.
 update the fix lists at the bottom of open threads if something was already fixed.
 
 --------------
