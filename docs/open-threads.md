@@ -148,3 +148,18 @@ when the underlying issue is fixed.
 ### Verification gaps
 
 None outstanding.
+
+### Nice to have
+
+- **N1 — IntelliSense query-tree shapes deliberately left out.**
+  `sqlparse.ScopeAt` and `completion_relations.go` resolve CTEs, derived
+  tables, sub-SELECTs and `UNION`/`EXCEPT`/`INTERSECT` chains; five shapes
+  were left out on purpose and answer with *nothing* rather than a wrong
+  list. Temp tables and table variables (`#t`, `@t`) need `CREATE TABLE` /
+  `DECLARE` shapes plus sigils the tokenizer drops, and they outlive the
+  statement, so they need a batch-wide binding table the package does not
+  have. Table-valued function result shapes, `PIVOT`/`UNPIVOT` output
+  columns, and `OPENJSON`/`OPENROWSET` `WITH` column lists each need their
+  own grammar. Cross-database three-part chains need an inventory per
+  database, not the two `completionInventory`s the provider carries. None is
+  a defect in what shipped; each is its own pass if the user asks for it.

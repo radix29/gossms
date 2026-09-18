@@ -56,45 +56,45 @@ script "SELECT * FROM dbo.Patients p\n/*\nGO\n*/\nWHERE p."
 0,5 normal batch=0 quote=- | id:"SELEC"@0
 0,6 normal batch=0 quote=- | kw:"SELECT"@0
 0,7 normal batch=0 quote=- | kw:"SELECT"@0
-0,8 normal batch=0 quote=- | kw:"SELECT"@0
-0,9 normal batch=0 quote=- | kw:"SELECT"@0
-0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"F"@9
-0,11 normal batch=0 quote=- | kw:"SELECT"@0 id:"FR"@9
-0,12 normal batch=0 quote=- | kw:"SELECT"@0 id:"FRO"@9
-0,13 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9
-0,14 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9
-0,15 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"d"@14
-0,16 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"db"@14
-0,17 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14
-0,18 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17
-0,19 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"P"@18
-0,20 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pa"@18
-0,21 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pat"@18
-0,22 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pati"@18
-0,23 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patie"@18
-0,24 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patien"@18
-0,25 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patient"@18
-0,26 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18
-0,27 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18
-0,28 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-1,0 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-1,1 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-1,2 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-2,0 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-2,1 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-2,2 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-3,0 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-3,1 blockcomment batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-3,2 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-4,0 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
-4,1 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"W"@38
-4,2 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WH"@38
-4,3 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WHE"@38
-4,4 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WHER"@38
-4,5 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38
-4,6 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38
-4,7 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38 id:"p"@44
-4,8 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38 id:"p"@44 dot:""@45
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"F"@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FR"@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FRO"@9
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"d"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"db"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"P"@18
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pa"@18
+0,21 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pat"@18
+0,22 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Pati"@18
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patie"@18
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patien"@18
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patient"@18
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+1,0 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+1,1 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+1,2 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+2,0 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+2,1 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+2,2 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+3,0 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+3,1 blockcomment batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+3,2 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+4,0 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27
+4,1 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"W"@38
+4,2 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WH"@38
+4,3 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WHE"@38
+4,4 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 id:"WHER"@38
+4,5 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38
+4,6 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38
+4,7 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38 id:"p"@44
+4,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Patients"@18 id:"p"@27 kw:"WHERE"@38 id:"p"@44 dot:""@45
 
 == consecutive semicolon
 script "SELECT 1;;;SELECT 2"
@@ -700,29 +700,29 @@ script "SELECT f(a, b), (c), COUNT(*) FROM T GROUP BY a, b"
 0,25 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUN"@21
 0,26 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21
 0,27 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26
-0,28 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26
-0,29 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28
-0,30 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28
-0,31 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 id:"F"@30
-0,32 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 id:"FR"@30
-0,33 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 id:"FRO"@30
-0,34 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30
-0,35 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30
-0,36 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35
-0,37 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35
-0,38 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"G"@37
-0,39 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GR"@37
-0,40 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GRO"@37
-0,41 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GROU"@37
-0,42 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37
-0,43 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37
-0,44 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 id:"B"@43
-0,45 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43
-0,46 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43
-0,47 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46
-0,48 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47
-0,49 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47
-0,50 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47 id:"b"@49
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27
+0,29 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28
+0,30 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28
+0,31 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 id:"F"@30
+0,32 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 id:"FR"@30
+0,33 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 id:"FRO"@30
+0,34 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30
+0,35 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30
+0,36 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35
+0,37 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35
+0,38 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"G"@37
+0,39 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GR"@37
+0,40 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GRO"@37
+0,41 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 id:"GROU"@37
+0,42 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37
+0,43 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37
+0,44 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 id:"B"@43
+0,45 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43
+0,46 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43
+0,47 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46
+0,48 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47
+0,49 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47
+0,50 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47 id:"b"@49
 
 == plain
 script "SELECT a, b FROM dbo.T WHERE x = 1"
@@ -774,65 +774,65 @@ script "SELECT o.* FROM [my db].dbo.[Ord.ers] AS o JOIN a.b.c d ON d.x = o.y"
 0,7 normal batch=0 quote=- | kw:"SELECT"@0
 0,8 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7
 0,9 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8
-0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8
-0,11 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8
-0,12 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 id:"F"@11
-0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 id:"FR"@11
-0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 id:"FRO"@11
-0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,17 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,18 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,19 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,20 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,21 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,22 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11
-0,23 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16
-0,24 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23
-0,25 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"d"@24
-0,26 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"db"@24
-0,27 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24
-0,28 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,29 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,30 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,31 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,32 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,33 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,34 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,35 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,36 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
-0,37 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28
-0,38 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28
-0,39 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 id:"A"@38
-0,40 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38
-0,41 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38
-0,42 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41
-0,43 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41
-0,44 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"J"@43
-0,45 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"JO"@43
-0,46 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"JOI"@43
-0,47 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43
-0,48 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43
-0,49 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48
-0,50 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49
-0,51 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50
-0,52 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51
-0,53 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52
-0,54 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52
-0,55 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54
-0,56 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54
-0,57 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 id:"O"@56
-0,58 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56
-0,59 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56
-0,60 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59
-0,61 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60
-0,62 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
-0,63 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
-0,64 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
-0,65 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
-0,66 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65
-0,67 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65 dot:""@66
-0,68 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65 dot:""@66 id:"y"@67
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 id:"F"@11
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 id:"FR"@11
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 id:"FRO"@11
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,17 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,18 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,19 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,20 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,21 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,22 bracket batch=0 quote=16 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"d"@24
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"db"@24
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,29 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,30 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,31 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,32 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,33 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,34 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,35 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,36 bracket batch=0 quote=28 | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27
+0,37 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28
+0,38 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28
+0,39 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 id:"A"@38
+0,40 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38
+0,41 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38
+0,42 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41
+0,43 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41
+0,44 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"J"@43
+0,45 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"JO"@43
+0,46 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 id:"JOI"@43
+0,47 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43
+0,48 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43
+0,49 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48
+0,50 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49
+0,51 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50
+0,52 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51
+0,53 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52
+0,54 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52
+0,55 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54
+0,56 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54
+0,57 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 id:"O"@56
+0,58 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56
+0,59 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56
+0,60 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59
+0,61 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60
+0,62 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
+0,63 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
+0,64 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
+0,65 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61
+0,66 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65
+0,67 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65 dot:""@66
+0,68 normal batch=0 quote=- | kw:"SELECT"@0 id:"o"@7 dot:""@8 star:""@9 kw:"FROM"@11 id:"my db"@16 dot:""@23 id:"dbo"@24 dot:""@27 id:"Ord.ers"@28 kw:"AS"@38 id:"o"@41 kw:"JOIN"@43 id:"a"@48 dot:""@49 id:"b"@50 dot:""@51 id:"c"@52 id:"d"@54 kw:"ON"@56 id:"d"@59 dot:""@60 id:"x"@61 id:"o"@65 dot:""@66 id:"y"@67
 
 == semicolon in string
 script "SELECT 'a;b' AS c FROM T WHERE y = 'GO'"
@@ -1135,17 +1135,17 @@ script "SELECT * FROM [Cus"
 0,5 normal batch=0 quote=- | id:"SELEC"@0
 0,6 normal batch=0 quote=- | kw:"SELECT"@0
 0,7 normal batch=0 quote=- | kw:"SELECT"@0
-0,8 normal batch=0 quote=- | kw:"SELECT"@0
-0,9 normal batch=0 quote=- | kw:"SELECT"@0
-0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"F"@9
-0,11 normal batch=0 quote=- | kw:"SELECT"@0 id:"FR"@9
-0,12 normal batch=0 quote=- | kw:"SELECT"@0 id:"FRO"@9
-0,13 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9
-0,14 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@9
-0,15 bracket batch=0 quote=14 | kw:"SELECT"@0 kw:"FROM"@9
-0,16 bracket batch=0 quote=14 | kw:"SELECT"@0 kw:"FROM"@9
-0,17 bracket batch=0 quote=14 | kw:"SELECT"@0 kw:"FROM"@9
-0,18 bracket batch=0 quote=14 | kw:"SELECT"@0 kw:"FROM"@9
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"F"@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FR"@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FRO"@9
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,15 bracket batch=0 quote=14 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,16 bracket batch=0 quote=14 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,17 bracket batch=0 quote=14 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,18 bracket batch=0 quote=14 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
 
 == unterminated string
 script "SELECT 'never closed\nGO\nSELECT 2"
@@ -1185,7 +1185,7 @@ script "SELECT 'never closed\nGO\nSELECT 2"
 
 [typing]
 14521178b8978031 bracket spans go line
-a64a596d308a017d commented go with trailing alias
+802748d306c3537a commented go with trailing alias
 de0a28388fd5e914 consecutive semicolon
 51a1bc46948677fd double quote spans go line
 e2e1f55f81c02875 empty
@@ -1204,9 +1204,9 @@ aac369723f929b5b go with a count
 063bf3d44f7e1ce5 line comment with go
 96da860c6596bab2 line comment with semicolon
 6c0e57627523875a only go
-1a06b77f6709be5a parens and commas
+2bb13b2bcbe4f099 parens and commas
 2a7c83f4b1259a40 plain
-cfaa46d3a82bc39e qualified names
+546be5206cfd8e41 qualified names
 3f598307574f2189 semicolon in string
 49d8eb01fa9d5dc6 semicolon inside brackets
 870555c362bbf9c8 semicolon then go
@@ -1215,14 +1215,14 @@ cfaa46d3a82bc39e qualified names
 19fabe35180adc1f trailing semicolon
 56a0dd9e511a4019 unicode
 84bfa35532870482 unterminated block comment
-211cee105db37a6c unterminated bracket
+7cd79667ccd8f73f unterminated bracket
 df68d02169bb915b unterminated string
 
 [generated]
 906a5e1b28cf442a script000 "\"unterminated\n[bracketed] a.b.c ; SELECT 2 FROM B\n  go \nWHERE x = 1 ; 'unterminated\nGO\n; SELECT 2 FROM B [bracketed]"
 1e76a9194850c2e9 script001 "; SELECT 2 FROM B\n\"unterminated SELECT a, b FROM dbo.T\nSELECT a, b FROM dbo.T  'unterminated\nSELECT * FROM [Cus    \nSELECT 'GO'"
-57531309b8ca71e5 script002 "*/"
-09db246f0ae2624f script003 "'closed' \"dq\"\nf(x, y)\nSELECT 'GO' GO 3\n*/ ; SELECT 2 FROM B\nJOIN o ON o.id = t.id\na.b.c /* inline */ 'unterminated"
+08a9da31e19d7c92 script002 "*/"
+2c43c1bfdcbf5e83 script003 "'closed' \"dq\"\nf(x, y)\nSELECT 'GO' GO 3\n*/ ; SELECT 2 FROM B\nJOIN o ON o.id = t.id\na.b.c /* inline */ 'unterminated"
 963c90fc32e87201 script004 "-- trailing comment JOIN o ON o.id = t.id\nN'lit;eral' \"unterminated ; SELECT 2 FROM B\n'closed' /* inline */ ''\n\"unterminated\n go \na.b.c"
 668afae068fe2028 script005 "-- trailing comment  go  N'lit;eral'\n; SELECT 2 FROM B [unterminated\n[unterminated GO 3"
 9efbbc3ce73d0df5 script006 "   \nN'lit;eral'\nJOIN o ON o.id = t.id N'lit;eral' \"dq\"\n"
@@ -1238,36 +1238,36 @@ ce143cdcebc4d72f script009 "'closed' N'lit;eral'\nSELECT a, b FROM dbo.T\nSELECT
 5fa26a2406b65a6b script016 " go  ''\nf(x, y)"
 a20c9e836ba97026 script017 "SELECT a, b FROM dbo.T f(x, y)\nSELECT 'GO' \"unterminated"
 4c895a8ebac62a21 script018 "/*\nJOIN o ON o.id = t.id"
-98053bf005d3ac22 script019 "*/ ;\n'closed' SELECT * FROM [Cus \nN'lit;eral' 'closed' ;"
-87a2f863940b9886 script020 "SELECT 'GO' JOIN o ON o.id = t.id\nJOIN o ON o.id = t.id\nWHERE x = 1 SELECT * FROM [Cus\n'' N'lit;eral'\n    ''"
-c6579d34e7517a58 script021 "/* inline */\n[bracketed]\n[unterminated [bracketed]\n*/ \na.b.c */\n[unterminated GO"
+8a06b6ffa807cc52 script019 "*/ ;\n'closed' SELECT * FROM [Cus \nN'lit;eral' 'closed' ;"
+9928c9eafb706137 script020 "SELECT 'GO' JOIN o ON o.id = t.id\nJOIN o ON o.id = t.id\nWHERE x = 1 SELECT * FROM [Cus\n'' N'lit;eral'\n    ''"
+d040db2b266d20fe script021 "/* inline */\n[bracketed]\n[unterminated [bracketed]\n*/ \na.b.c */\n[unterminated GO"
 c1a3fae00d90cfaa script022 "SELECT a, b FROM dbo.T     N'lit;eral'"
-c6259b6c50701a1a script023 "GO 3 'closed' N'lit;eral'\n   \n;  */\n\"unterminated\nWHERE x = 1"
-63c8648eb24334e4 script024 " go  */\n\"unterminated  go \n; SELECT 2 FROM B [unterminated SELECT 'GO'"
+9754fce7894d8c0c script023 "GO 3 'closed' N'lit;eral'\n   \n;  */\n\"unterminated\nWHERE x = 1"
+b25be976b01275a5 script024 " go  */\n\"unterminated  go \n; SELECT 2 FROM B [unterminated SELECT 'GO'"
 791ebc95702df15c script025 "   "
 0ad40161f9a1be6b script026 "a.b.c\nN'lit;eral' ]  go \nGO 3"
 66f5a4aa3b4ac15c script027 "[unterminated\nSELECT 'GO'\n/* inline */\nGO 3\n[bracketed] JOIN o ON o.id = t.id\n''"
 0897caddd5dde3ae script028 "/* SELECT a, b FROM dbo.T SELECT 'GO'\n'unterminated ;\n''\n/*\n*/ WHERE x = 1 ; SELECT 2 FROM B"
 e54faaf9876a6f04 script029 "; SELECT 2 FROM B '' ;\n\"dq\"  [unterminated\n*/\n*/"
 d75dc234c7d15521 script030 "\"unterminated */\na.b.c"
-5a4418501995468e script031 "SELECT * FROM [Cus\n[unterminated\nSELECT * FROM [Cus /* \"dq\""
+258e5f50d04bb15a script031 "SELECT * FROM [Cus\n[unterminated\nSELECT * FROM [Cus /* \"dq\""
 6ffe63ae583cc86e script032 "-- trailing comment GO\n\"dq\"\n   \n/* inline */ SELECT 'GO'\n\"unterminated"
 6372703bc73b13a5 script033 "N'lit;eral' N'lit;eral'\n'closed' N'lit;eral' a.b.c\n    /* -- trailing comment\na.b.c ] GO\nGO 3     "
 fcaa320fbca44667 script034 "-- trailing comment\n; SELECT 2 FROM B"
 336876f93e660bf5 script035 "       "
 5f8804e8421732ab script036 "\"unterminated\n-- trailing comment /* N'lit;eral'\nN'lit;eral' ; SELECT 2 FROM B GO 3\nSELECT 'GO'"
 2284bc5aff02cefc script037 "[unterminated\nN'lit;eral'"
-ebfcf1780ede542b script038 "*/\nSELECT 'GO'  SELECT * FROM [Cus\nSELECT * FROM [Cus     GO 3\n'closed'"
+4d9ed0d864ea2271 script038 "*/\nSELECT 'GO'  SELECT * FROM [Cus\nSELECT * FROM [Cus     GO 3\n'closed'"
 63c55d27d9db14db script039 "f(x, y) [bracketed] GO 3\na.b.c\n SELECT a, b FROM dbo.T\n'closed'\nSELECT a, b FROM dbo.T f(x, y)\n''"
 af416de3e10ca7ec script040 "JOIN o ON o.id = t.id  GO 3\nJOIN o ON o.id = t.id ]\n;\n go  ; SELECT 'GO'\n'closed'\nSELECT a, b FROM dbo.T"
-b94ffeecc1618c86 script041 "*/ 'closed'\n[bracketed] ;\n] [bracketed] ; SELECT 2 FROM B\nSELECT 'GO'    \n] GO"
+f398cd983814b251 script041 "*/ 'closed'\n[bracketed] ;\n] [bracketed] ; SELECT 2 FROM B\nSELECT 'GO'    \n] GO"
 acb733eeb98733d1 script042 "'closed'\nN'lit;eral'\n/* inline */ ]\n] /* inline */ -- trailing comment"
-f1b356cdcea421df script043 "   \nJOIN o ON o.id = t.id\n'' 'closed'\nSELECT * FROM [Cus ;\n[bracketed] [bracketed]"
+fd9795a4e9a89ee8 script043 "   \nJOIN o ON o.id = t.id\n'' 'closed'\nSELECT * FROM [Cus ;\n[bracketed] [bracketed]"
 465ca700245632e0 script044 "; SELECT 2 FROM B ''\n/* inline */ SELECT a, b FROM dbo.T\n'unterminated [bracketed]\n[unterminated JOIN o ON o.id = t.id \"unterminated"
 6462c0b5869883b3 script045 "SELECT 'GO'"
-4728f3e21f42ccde script046 "[bracketed] SELECT a, b FROM dbo.T SELECT a, b FROM dbo.T\nGO 3 */ /* inline */\nGO\n\"dq\"\n; SELECT 2 FROM B [unterminated 'closed'"
+3b664fea11c99a94 script046 "[bracketed] SELECT a, b FROM dbo.T SELECT a, b FROM dbo.T\nGO 3 */ /* inline */\nGO\n\"dq\"\n; SELECT 2 FROM B [unterminated 'closed'"
 1bc9572ed76729d7 script047 "; SELECT 2 FROM B '' /* inline */"
-8baa07eeb1197775 script048 "JOIN o ON o.id = t.id WHERE x = 1 SELECT * FROM [Cus\nSELECT 'GO' \"unterminated [unterminated"
+7969eebfed7bb785 script048 "JOIN o ON o.id = t.id WHERE x = 1 SELECT * FROM [Cus\nSELECT 'GO' \"unterminated [unterminated"
 3dccc469908cc5ea script049 "-- trailing comment\n; ]    \n[unterminated\n]\n    SELECT a, b FROM dbo.T\n'unterminated"
 d399ef6549c8fe48 script050 "JOIN o ON o.id = t.id ; SELECT 2 FROM B\n'unterminated"
 a448fdffcdc69036 script051 "[unterminated"
@@ -1281,18 +1281,18 @@ f4b05ce76af83e9c script058 "\"dq\"\n]  go  f(x, y)\nJOIN o ON o.id = t.id\nSELEC
 73324dafc664129d script059 "\"dq\"     /* inline */\n'unterminated\n[unterminated ;\n[bracketed] a.b.c\n'unterminated N'lit;eral'"
 a4dc205262b788d0 script060 ";\na.b.c"
 535b08fe48338fd6 script061 "N'lit;eral'  go \nGO  GO\nSELECT a, b FROM dbo.T\n] [bracketed]\n;\n'' SELECT 'GO'"
-10091a8fbcc530e8 script062 "SELECT * FROM [Cus\nJOIN o ON o.id = t.id    \n/* inline */  go \n'' /* inline */"
-57531309b8ca71e5 script063 "*/"
+d61e06491bf8edfb script062 "SELECT * FROM [Cus\nJOIN o ON o.id = t.id    \n/* inline */  go \n'' /* inline */"
+08a9da31e19d7c92 script063 "*/"
 7d128373fd11df87 script064 "'closed'\n; SELECT 2 FROM B\n/* inline */ SELECT a, b FROM dbo.T\n-- trailing comment\n'closed' \"unterminated\n/* inline */ ]"
-5cccd9eafb2382c6 script065 "*/ SELECT a, b FROM dbo.T\na.b.c\n'closed'\nGO 3 N'lit;eral' /* inline */\n/* inline */"
+f215c4742c2dbc0e script065 "*/ SELECT a, b FROM dbo.T\na.b.c\n'closed'\nGO 3 N'lit;eral' /* inline */\n/* inline */"
 5b24af700170ae19 script066 "-- trailing comment \"dq\"\nSELECT 'GO' \"dq\"\n\"unterminated\nN'lit;eral' WHERE x = 1\n''\n\"unterminated /*"
 760b9c12ac293a9b script067 "'unterminated \"unterminated\n; SELECT 2 FROM B"
 525ac6038857828e script068 "[unterminated a.b.c\nSELECT * FROM [Cus \"dq\"\n [bracketed]"
 321c0d4a87447683 script069 "\"unterminated */\nJOIN o ON o.id = t.id \"dq\""
-0febb141fd41ca18 script070 "; SELECT 2 FROM B  go  SELECT * FROM [Cus\n/* inline */ ;\nSELECT * FROM [Cus\n-- trailing comment N'lit;eral' N'lit;eral'"
+545204c3a19cf2d9 script070 "; SELECT 2 FROM B  go  SELECT * FROM [Cus\n/* inline */ ;\nSELECT * FROM [Cus\n-- trailing comment N'lit;eral' N'lit;eral'"
 db2741a4f1333b78 script071 "; 'unterminated\n; [bracketed] f(x, y)"
 c6c72b7127a078eb script072 "'unterminated    \na.b.c"
-2b7088936c2f55da script073 " SELECT * FROM [Cus \"dq\"\n] f(x, y) ; SELECT 2 FROM B\nWHERE x = 1"
+33b43b2d93bc0cf5 script073 " SELECT * FROM [Cus \"dq\"\n] f(x, y) ; SELECT 2 FROM B\nWHERE x = 1"
 6d398141ac6fde57 script074 "/*\n'closed' /* inline */\n[unterminated\n\"unterminated SELECT 'GO' ]\n[unterminated SELECT a, b FROM dbo.T"
 e6dd55cdf3abd2f5 script075 "; SELECT 2 FROM B GO"
 6a6b5ebe26bc771b script076 "'' N'lit;eral' /*\n    -- trailing comment\na.b.c \n\"dq\" ;\n''"
@@ -1308,13 +1308,13 @@ fe1942bd62c07e7f script083 "WHERE x = 1\nSELECT 'GO' ;\nJOIN o ON o.id = t.id\n\
 5a53bd3642480fad script086 "JOIN o ON o.id = t.id a.b.c -- trailing comment\nN'lit;eral'"
 f2bb20ee29a857bd script087 "[bracketed]\n;\n"
 f9c3481476deb4fb script088 "SELECT 'GO' -- trailing comment\nGO 3 /* inline */ 'unterminated\n; */\n\"unterminated WHERE x = 1"
-e89607faef0f0e56 script089 "'' */ [bracketed]\nN'lit;eral'    \n/*\n; SELECT 2 FROM B */\n/*\n/* inline */"
+34ed878ad07e2c85 script089 "'' */ [bracketed]\nN'lit;eral'    \n/*\n; SELECT 2 FROM B */\n/*\n/* inline */"
 3d6cb6c0e5671370 script090 "'unterminated\n[unterminated\n*/ /* inline */"
-1979a38982c131ee script091 "/* inline */ */\nSELECT 'GO' f(x, y) SELECT a, b FROM dbo.T\n /*\n*/ N'lit;eral'\n/* inline */ */ 'closed'\n'unterminated [unterminated"
+25bd6ccf5b27817c script091 "/* inline */ */\nSELECT 'GO' f(x, y) SELECT a, b FROM dbo.T\n /*\n*/ N'lit;eral'\n/* inline */ */ 'closed'\n'unterminated [unterminated"
 83c79236a97e45f6 script092 "] JOIN o ON o.id = t.id -- trailing comment"
-3f97259684a00669 script093 "a.b.c  go \n*/ 'closed'\n[bracketed] WHERE x = 1\n*/ [bracketed]"
+f4e8d44b3e99d12b script093 "a.b.c  go \n*/ 'closed'\n[bracketed] WHERE x = 1\n*/ [bracketed]"
 2fc0d4125ab8c685 script094 "/* inline */ /*\n] GO 3\nGO 3 ; SELECT * FROM [Cus"
-2debcbb1dd742719 script095 "N'lit;eral' /* inline */\n*/ \"dq\""
+a583b5059109a719 script095 "N'lit;eral' /* inline */\n*/ \"dq\""
 80728d172d6421f3 script096 "a.b.c\n/* f(x, y) GO\nJOIN o ON o.id = t.id [bracketed]"
 f23e9d20a9805772 script097 "[bracketed]"
 fcbf15aa1a8a9f9d script098 "SELECT a, b FROM dbo.T a.b.c\nGO 3"
@@ -1325,7 +1325,7 @@ fcbf15aa1a8a9f9d script098 "SELECT a, b FROM dbo.T a.b.c\nGO 3"
 dcceaffb9716ed0f script103 "GO\n/* GO 3\n    \n\na.b.c [unterminated\na.b.c /* inline */"
 5925e079e3ea3bdb script104 " go  JOIN o ON o.id = t.id\n'closed'\n go  SELECT 'GO'\nN'lit;eral' \"dq\" N'lit;eral'\nJOIN o ON o.id = t.id N'lit;eral'"
 f6de1395ca419dcb script105 "JOIN o ON o.id = t.id [bracketed]\nGO  GO"
-03678c1b7c144c72 script106 "*/ GO 3\n; SELECT 2 FROM B SELECT 'GO'\n*/ SELECT 'GO' SELECT * FROM [Cus\nSELECT 'GO' SELECT a, b FROM dbo.T\n\"dq\""
+76eafa6b9c62d65d script106 "*/ GO 3\n; SELECT 2 FROM B SELECT 'GO'\n*/ SELECT 'GO' SELECT * FROM [Cus\nSELECT 'GO' SELECT a, b FROM dbo.T\n\"dq\""
 259dd66b361dc063 script107 "GO 3 SELECT 'GO'\n]"
 7b08dcb36386194b script108 "JOIN o ON o.id = t.id\n\"dq\""
 1bf92002b707e238 script109 "\"dq\"\nN'lit;eral' GO 3 'closed'\n''\n    -- trailing comment"
@@ -1337,10 +1337,10 @@ ff1fea3c53b4dbaa script112 "'unterminated ;\n; SELECT 2 FROM B /* inline */ ; SE
 4d0a5514c8a07256 script115 "SELECT a, b FROM dbo.T\n[bracketed] -- trailing comment SELECT a, b FROM dbo.T"
 52541313274f32f7 script116 "/* inline */ [bracketed]"
 95ad2791c93302d4 script117 "[bracketed] JOIN o ON o.id = t.id N'lit;eral'\nWHERE x = 1 GO\na.b.c 'closed'\nGO ;\n[bracketed]\n; SELECT 2 FROM B WHERE x = 1"
-8bb4e87b8846d6d5 script118 " go  'closed'\nSELECT * FROM [Cus JOIN o ON o.id = t.id  go "
+6839ba0090d5b181 script118 " go  'closed'\nSELECT * FROM [Cus JOIN o ON o.id = t.id  go "
 2331ab3a70a6395b script119 " go \n]\n/* SELECT * FROM [Cus\n/* GO 3\nSELECT a, b FROM dbo.T"
-5987aea07b9c5330 script120 "SELECT * FROM [Cus  go \n-- trailing comment\n*/ a.b.c /* inline */\nGO 3 'closed'"
-58f8a201466d12b1 script121 "-- trailing comment  go \nSELECT a, b FROM dbo.T SELECT * FROM [Cus\n]"
+528901a12b1818a4 script120 "SELECT * FROM [Cus  go \n-- trailing comment\n*/ a.b.c /* inline */\nGO 3 'closed'"
+9cbe9c1aeb8bc178 script121 "-- trailing comment  go \nSELECT a, b FROM dbo.T SELECT * FROM [Cus\n]"
 a3b91efcc8b331f6 script122 "\"dq\" GO\n'unterminated\nSELECT a, b FROM dbo.T -- trailing comment SELECT * FROM [Cus"
 ff9c4d780d9b8461 script123 "GO N'lit;eral' ; SELECT 2 FROM B\n\"unterminated \n/* SELECT 'GO'\nN'lit;eral' GO 3"
 ab127208afd0e189 script124 "GO\n] /* inline */\n;\n[bracketed] -- trailing comment N'lit;eral'"
@@ -1349,7 +1349,7 @@ ab127208afd0e189 script124 "GO\n] /* inline */\n;\n[bracketed] -- trailing comme
 d222ce4dcee4fb48 script127 "GO ;\n[bracketed] \"unterminated\n;"
 bd65fd07632b5fbc script128 "\"unterminated ''  go \n/* SELECT * FROM [Cus\n go "
 1d232e29d878fd3f script129 ";\nf(x, y) JOIN o ON o.id = t.id"
-117212d30a9b1910 script130 "SELECT a, b FROM dbo.T SELECT a, b FROM dbo.T ;\nWHERE x = 1\nf(x, y) */\nJOIN o ON o.id = t.id \nf(x, y)"
+0139ecb0b67ea817 script130 "SELECT a, b FROM dbo.T SELECT a, b FROM dbo.T ;\nWHERE x = 1\nf(x, y) */\nJOIN o ON o.id = t.id \nf(x, y)"
 d6911708d5888db9 script131 "a.b.c [unterminated\nSELECT * FROM [Cus\n   "
 771f668df7abf796 script132 "-- trailing comment */\n\"unterminated\n go  f(x, y)"
 ebae243b8f749b68 script133 "/* inline */ WHERE x = 1\n/* SELECT 'GO' 'unterminated\n go  GO 3"
@@ -1362,65 +1362,65 @@ a82cc5d07dc9166d script138 " go  WHERE x = 1\n go \n go \n/*  go  JOIN o ON o.id
 f5c7dc71b9d35cc9 script140 "SELECT 'GO' ; SELECT 2 FROM B GO 3\n;\n] /* inline */\nGO 3 /* inline */\n''  go \nN'lit;eral'"
 d80f52114e4edca6 script141 "   \nJOIN o ON o.id = t.id WHERE x = 1 ''\n\"dq\" SELECT a, b FROM dbo.T ;\n\"unterminated /* inline */\nSELECT 'GO'"
 c9bd1cb74d0de9ee script142 " ]\nSELECT a, b FROM dbo.T"
-2cf97efabb51a79e script143 " '' SELECT * FROM [Cus\n go  f(x, y) /*\nSELECT a, b FROM dbo.T */ \"dq\""
+42288be3824382a5 script143 " '' SELECT * FROM [Cus\n go  f(x, y) /*\nSELECT a, b FROM dbo.T */ \"dq\""
 e9ae8d4ed02b1569 script144 "SELECT 'GO' a.b.c /*"
 64a9aa29b20bd373 script145 "f(x, y)\nSELECT 'GO' /* inline */\n; SELECT 2 FROM B a.b.c GO 3\n[unterminated \"dq\"\n-- trailing comment GO 3 GO 3"
-7e0e6123bea38311 script146 " go  [unterminated ''\n[bracketed]\n*/ N'lit;eral' */\nSELECT * FROM [Cus"
+a05c0b6800db6f76 script146 " go  [unterminated ''\n[bracketed]\n*/ N'lit;eral' */\nSELECT * FROM [Cus"
 5ea565550cf53516 script147 "/*\nN'lit;eral'\n/* -- trailing comment\n] a.b.c"
 d05205f5c51ae0d0 script148 "   \n]\n\"dq\" f(x, y)\n; SELECT 2 FROM B\nSELECT 'GO'  go "
-7ac8ddb1c95cd86b script149 " \"dq\" */\nN'lit;eral' 'unterminated GO\n    SELECT 'GO'\n; SELECT 2 FROM B\nN'lit;eral' GO 3"
+0b8ac30a3c7741a7 script149 " \"dq\" */\nN'lit;eral' 'unterminated GO\n    SELECT 'GO'\n; SELECT 2 FROM B\nN'lit;eral' GO 3"
 bec1416bb32b21c0 script150 "WHERE x = 1\nGO GO\n   \n"
 e21cd23b6396697f script151 "\"unterminated /*\n/*\n    \n    [unterminated\nf(x, y)\na.b.c /*"
-fccf96e8bcba13bb script152 "\n go  '' \"dq\"\n    ; SELECT 2 FROM B\nSELECT * FROM [Cus WHERE x = 1 JOIN o ON o.id = t.id\n\"dq\" /*"
-abdddca613dbb8ba script153 "SELECT * FROM [Cus\n'closed' SELECT a, b FROM dbo.T\n/*  [unterminated\nGO ''\n[unterminated\n   "
-065fb8befd11a25d script154 "JOIN o ON o.id = t.id\nf(x, y) */\n; N'lit;eral' \"unterminated"
+c11e6dedc2d81f1f script152 "\n go  '' \"dq\"\n    ; SELECT 2 FROM B\nSELECT * FROM [Cus WHERE x = 1 JOIN o ON o.id = t.id\n\"dq\" /*"
+bf2c36cd9cc9cbf0 script153 "SELECT * FROM [Cus\n'closed' SELECT a, b FROM dbo.T\n/*  [unterminated\nGO ''\n[unterminated\n   "
+a8741d0497a56c9c script154 "JOIN o ON o.id = t.id\nf(x, y) */\n; N'lit;eral' \"unterminated"
 8deffe9d9f579c64 script155 " go \na.b.c\n\"unterminated\n[bracketed] SELECT a, b FROM dbo.T\nJOIN o ON o.id = t.id ''\n]"
 80c4226a5ec5d06c script156 "\"dq\" ;"
 b8096b717e9f3625 script157 "/* inline */\n\"unterminated\n    f(x, y)\n\"unterminated\n"
 15245e8052e62d39 script158 "a.b.c ]"
 f04ffc89ed6f9142 script159 "GO 3 "
-18c4798c09913332 script160 "SELECT * FROM [Cus N'lit;eral' ; SELECT 2 FROM B\n\"dq\"\n   \n 'unterminated"
+a2e4b189355217ca script160 "SELECT * FROM [Cus N'lit;eral' ; SELECT 2 FROM B\n\"dq\"\n   \n 'unterminated"
 edd1b57a1249f8aa script161 "\"dq\" 'unterminated \"dq\"\n    SELECT 'GO'\n-- trailing comment\n\"dq\" ] ''\n/* inline */"
 ebb4ef86ab791e4b script162 "SELECT 'GO' /* inline */"
 05e9717f23392d3a script163 "GO 3 ''\n;"
-6820a1f3701c915b script164 "*/ N'lit;eral' SELECT a, b FROM dbo.T\n*/ ;\nGO '' SELECT * FROM [Cus\nSELECT 'GO'\nSELECT a, b FROM dbo.T a.b.c \"unterminated"
+60931fa33597e877 script164 "*/ N'lit;eral' SELECT a, b FROM dbo.T\n*/ ;\nGO '' SELECT * FROM [Cus\nSELECT 'GO'\nSELECT a, b FROM dbo.T a.b.c \"unterminated"
 33425a265952cabb script165 "GO SELECT 'GO' \"unterminated\nGO 3 /* inline */\n; SELECT 2 FROM B ; SELECT 2 FROM B\n]\n go  GO \nGO N'lit;eral'"
 af863b92f207904e script166 " go  ; SELECT 2 FROM B\n'unterminated SELECT * FROM [Cus\nWHERE x = 1 'closed'\na.b.c f(x, y)\n''\nSELECT * FROM [Cus /* [bracketed]"
 f882ef45e12fea8a script167 " go  a.b.c  go \n; SELECT 2 FROM B SELECT a, b FROM dbo.T\nGO 3 [unterminated\n-- trailing comment [bracketed]\n; SELECT 2 FROM B WHERE x = 1"
-ae64fab6e40f9f92 script168 "SELECT * FROM [Cus\n-- trailing comment\nf(x, y)    \nGO 3 'unterminated SELECT * FROM [Cus\nJOIN o ON o.id = t.id"
-8ef5610ab48ced25 script169 "f(x, y)\n\n\n*/ -- trailing comment f(x, y)\nJOIN o ON o.id = t.id JOIN o ON o.id = t.id\nSELECT a, b FROM dbo.T"
+2ce62bae6cf8a1ce script168 "SELECT * FROM [Cus\n-- trailing comment\nf(x, y)    \nGO 3 'unterminated SELECT * FROM [Cus\nJOIN o ON o.id = t.id"
+da509b46f492acdd script169 "f(x, y)\n\n\n*/ -- trailing comment f(x, y)\nJOIN o ON o.id = t.id JOIN o ON o.id = t.id\nSELECT a, b FROM dbo.T"
 096994b9ca1fc06d script170 "[bracketed] [bracketed]"
 c92b5cf785a6fa37 script171 "; SELECT 2 FROM B\n]\nf(x, y) -- trailing comment ; SELECT 2 FROM B"
 10164a92e0ad8f03 script172 "SELECT a, b FROM dbo.T \"unterminated ]\n go \n    [bracketed]\n   \nSELECT 'GO' SELECT 'GO'\n\"unterminated     a.b.c"
 67802e3c27dbde15 script173 "'' /*"
-6648ca83e5b9a42d script174 "a.b.c\n; SELECT 2 FROM B\nSELECT * FROM [Cus \"dq\""
+2c1770b17ead84d4 script174 "a.b.c\n; SELECT 2 FROM B\nSELECT * FROM [Cus \"dq\""
 d4062f1334489b2e script175 "N'lit;eral'"
 ae7f75cba84bdaea script176 " [bracketed]"
 ed6e9ade7149c2e7 script177 "SELECT 'GO' JOIN o ON o.id = t.id\n'' \"unterminated"
 51c22fbbc97cdc52 script178 "[bracketed] 'unterminated ]\n'closed' ''\nGO ''\n'unterminated"
 bbcdc4808358726d script179 "'unterminated GO 3\n; SELECT 2 FROM B\n*/\n   \n-- trailing comment 'closed'\n] f(x, y)"
-10e8795c8a9d972f script180 "GO 3 WHERE x = 1\nSELECT a, b FROM dbo.T */ "
+a9fed8a472dbe68d script180 "GO 3 WHERE x = 1\nSELECT a, b FROM dbo.T */ "
 acf9e8343ac7af1b script181 "\"unterminated\n[bracketed] [bracketed]"
-a33702c3a8a7e92d script182 "a.b.c\n/* WHERE x = 1\nSELECT * FROM [Cus /* inline */\n  go  SELECT * FROM [Cus\n'' \n-- trailing comment WHERE x = 1 [bracketed]"
+3d88a25dac056336 script182 "a.b.c\n/* WHERE x = 1\nSELECT * FROM [Cus /* inline */\n  go  SELECT * FROM [Cus\n'' \n-- trailing comment WHERE x = 1 [bracketed]"
 2acd5dc4b1540845 script183 "] GO"
-5e40dcf947847499 script184 "\"dq\" */ JOIN o ON o.id = t.id\n/* inline */ ''\n'closed' '' \n]\n'' [bracketed]\n]     ;"
+614975b89d249e7d script184 "\"dq\" */ JOIN o ON o.id = t.id\n/* inline */ ''\n'closed' '' \n]\n'' [bracketed]\n]     ;"
 e0e2b0c88b80867c script185 "JOIN o ON o.id = t.id 'unterminated ''\n/* ; SELECT 2 FROM B SELECT * FROM [Cus\n    \"unterminated\n]\n'closed' [bracketed]\n; SELECT 2 FROM B a.b.c"
-993c157c6659c8d1 script186 "    SELECT a, b FROM dbo.T SELECT * FROM [Cus\n; -- trailing comment \"dq\"\nWHERE x = 1\n'closed' N'lit;eral' -- trailing comment\n; /* ''\n*/ GO"
+691949a85c8b3270 script186 "    SELECT a, b FROM dbo.T SELECT * FROM [Cus\n; -- trailing comment \"dq\"\nWHERE x = 1\n'closed' N'lit;eral' -- trailing comment\n; /* ''\n*/ GO"
 65341a85e012fb56 script187 "GO\nSELECT 'GO'\n; SELECT 2 FROM B a.b.c f(x, y)\n    -- trailing comment ]\n; SELECT 2 FROM B 'unterminated /* inline */\n -- trailing comment"
 91718fb45cfe9655 script188 "'' [bracketed]"
 5fe9c664caa49ccb script189 "/* \"unterminated\nN'lit;eral'"
 fe1f9b929b6c2108 script190 "/* inline */\n    \"unterminated */"
 ac1ac2ccd9980482 script191 "; JOIN o ON o.id = t.id [bracketed]\n/* inline */ N'lit;eral' /*\n'closed' ''\nN'lit;eral'\nSELECT * FROM [Cus"
-a1fbc2a020510420 script192 "*/\n*/  SELECT * FROM [Cus\nGO [unterminated WHERE x = 1\nJOIN o ON o.id = t.id\nSELECT a, b FROM dbo.T [bracketed]\n/* \"dq\""
+5e407cef76d1f505 script192 "*/\n*/  SELECT * FROM [Cus\nGO [unterminated WHERE x = 1\nJOIN o ON o.id = t.id\nSELECT a, b FROM dbo.T [bracketed]\n/* \"dq\""
 b78a9d4dadb96e8e script193 "'unterminated \"dq\"\nf(x, y)\n\"dq\" [bracketed] */\n\"unterminated"
-dd0d4f903dcf303a script194 "''\n\"dq\"\n; /* inline */\nJOIN o ON o.id = t.id -- trailing comment\n; SELECT * FROM [Cus"
-6b922ddd65dec20e script195 "\"dq\"\nGO 3    \n[bracketed]\n; SELECT a, b FROM dbo.T /* inline */\n*/"
-f4b47e34d6a99f0d script196 "] WHERE x = 1\na.b.c a.b.c\nGO SELECT a, b FROM dbo.T */\nSELECT a, b FROM dbo.T SELECT 'GO'\n   "
+71dd5938de9806d0 script194 "''\n\"dq\"\n; /* inline */\nJOIN o ON o.id = t.id -- trailing comment\n; SELECT * FROM [Cus"
+e1d931db06fccca4 script195 "\"dq\"\nGO 3    \n[bracketed]\n; SELECT a, b FROM dbo.T /* inline */\n*/"
+5c29596aa09fd357 script196 "] WHERE x = 1\na.b.c a.b.c\nGO SELECT a, b FROM dbo.T */\nSELECT a, b FROM dbo.T SELECT 'GO'\n   "
 fce669dfe9281efa script197 "SELECT a, b FROM dbo.T SELECT a, b FROM dbo.T"
 9bb51ee4801d68ca script198 "\"unterminated  go  [unterminated\n[unterminated\na.b.c\n */\n; SELECT 2 FROM B \"dq\""
 474bfb728032294e script199 "[bracketed]\na.b.c\nJOIN o ON o.id = t.id \"dq\""
 bfc75322b11cd003 script200 "]\n'unterminated\n    */\nGO GO\nSELECT * FROM [Cus */ ]"
-7b25984e5e21b7d3 script201 "GO 3 WHERE x = 1\nWHERE x = 1 [bracketed] [bracketed]\n*/\na.b.c SELECT * FROM [Cus SELECT 'GO'\nSELECT * FROM [Cus\n'closed' \"dq\""
+8198f7206fa791aa script201 "GO 3 WHERE x = 1\nWHERE x = 1 [bracketed] [bracketed]\n*/\na.b.c SELECT * FROM [Cus SELECT 'GO'\nSELECT * FROM [Cus\n'closed' \"dq\""
 468cdd5daadffcfa script202 " go  [bracketed]\n[bracketed]   go "
 20fae6f76c7df26d script203 "f(x, y)"
 57e57ca887acfd43 script204 " GO 3\n[bracketed]\na.b.c [unterminated\n*/\n/* ; SELECT a, b FROM dbo.T"
@@ -1429,51 +1429,51 @@ c93de7fcdd6d6ada script205 "; SELECT 2 FROM B N'lit;eral'\nGO 3\n'unterminated W
 0e2ec1dfca117c20 script207 "'' \"dq\"\n    ''"
 06882b8825410c7e script208 "\"unterminated -- trailing comment\n-- trailing comment\nJOIN o ON o.id = t.id SELECT 'GO'"
 44889c029ef08fd8 script209 "a.b.c /* */\nGO 3\n;\n\"unterminated"
-bc84765373c3e8c6 script210 "; SELECT 2 FROM B \"unterminated ; SELECT 2 FROM B\n\"unterminated JOIN o ON o.id = t.id \"dq\"\n/* inline */ */"
+7f61eedf7e5d672d script210 "; SELECT 2 FROM B \"unterminated ; SELECT 2 FROM B\n\"unterminated JOIN o ON o.id = t.id \"dq\"\n/* inline */ */"
 db151357707a0574 script211 "f(x, y) \n/* inline */\n\"dq\""
 cd360e09268aa7c8 script212 "/* inline */\n\"dq\"\n''"
-bc723205b6761bd7 script213 "SELECT 'GO'\n]\n''\nJOIN o ON o.id = t.id SELECT * FROM [Cus /*"
-af2b5ceb0b37a679 script214 "*/ [unterminated ]"
+c6682950411ea3af script213 "SELECT 'GO'\n]\n''\nJOIN o ON o.id = t.id SELECT * FROM [Cus /*"
+cde3b0528a038a8b script214 "*/ [unterminated ]"
 ef464598824dc87f script215 "GO 3 GO 'unterminated\n   \nN'lit;eral'"
 054195434e6a11cb script216 "] 'closed'\n[unterminated \nSELECT a, b FROM dbo.T /* -- trailing comment"
 d93b986d25eb4974 script217 "SELECT a, b FROM dbo.T\n[bracketed]\n/* inline */ WHERE x = 1\n\"unterminated ;\n[unterminated"
-ab1a8b8a1965f415 script218 "SELECT 'GO'\n/* inline */ SELECT * FROM [Cus f(x, y)\nN'lit;eral' [unterminated\n[unterminated ; SELECT 2 FROM B ''"
+13c2921d7642fc02 script218 "SELECT 'GO'\n/* inline */ SELECT * FROM [Cus f(x, y)\nN'lit;eral' [unterminated\n[unterminated ; SELECT 2 FROM B ''"
 e54363ff578e383d script219 "\"unterminated\nSELECT 'GO'\n    /* inline */\n'unterminated f(x, y) "
 8594233db3ffd501 script220 "a.b.c     [bracketed]\nWHERE x = 1 JOIN o ON o.id = t.id WHERE x = 1\n\"unterminated\nSELECT * FROM [Cus\nN'lit;eral' ;\nN'lit;eral' WHERE x = 1"
 a8aa44720dc04e6d script221 "[bracketed] [unterminated\nSELECT a, b FROM dbo.T 'closed' 'closed'\n[bracketed] f(x, y)\n'unterminated    \nWHERE x = 1"
 722a5073c1951426 script222 "JOIN o ON o.id = t.id\na.b.c \"unterminated ; SELECT 2 FROM B\n'unterminated"
-ee9f1f6a7152a92f script223 "*/\n'unterminated /*"
+51912a4884eb4f57 script223 "*/\n'unterminated /*"
 298b8fbba710a259 script224 "[unterminated\n''\n] /* inline */\nN'lit;eral' f(x, y)"
 2d7205eea39657a0 script225 "f(x, y)  go \nSELECT a, b FROM dbo.T\nSELECT a, b FROM dbo.T [bracketed]\nf(x, y) a.b.c -- trailing comment\n go  "
 c24bd026e2f67ae4 script226 "-- trailing comment\n \"dq\"\nWHERE x = 1 'closed'\n/* inline */\nf(x, y) a.b.c"
 7478c21b748a2c89 script227 " go "
 8eb2608ada5d0e68 script228 "SELECT a, b FROM dbo.T \"dq\"\n'closed' \"dq\"\n] SELECT 'GO'\n    /* inline */\n;"
 e37e43f47fcaef3a script229 " /*\n/* inline */"
-52205b47ccbb3dd7 script230 "[bracketed]\n*/ \"unterminated [bracketed]"
+8b3e3c6b7fdefa88 script230 "[bracketed]\n*/ \"unterminated [bracketed]"
 5d0ff64bdbffe104 script231 "     go "
 e6b3e4830f370a91 script232 "''  go  a.b.c"
 5898834644524349 script233 "'' \"unterminated [unterminated\n\"unterminated"
 740eb2880ccd1642 script234 "a.b.c"
 dbd035b3094713ec script235 ";\n'closed' -- trailing comment"
 f2507468e06d98d3 script236 "\"unterminated SELECT 'GO'\n*/"
-62868c169a94b863 script237 "   \nSELECT a, b FROM dbo.T ]\nGO  go \n    -- trailing comment\nJOIN o ON o.id = t.id \"dq\" ]\nSELECT * FROM [Cus N'lit;eral'"
-d28e3a7dad773c82 script238 "[bracketed]\n*/ f(x, y) -- trailing comment\n /*\n; /*"
+db854c30766c4630 script237 "   \nSELECT a, b FROM dbo.T ]\nGO  go \n    -- trailing comment\nJOIN o ON o.id = t.id \"dq\" ]\nSELECT * FROM [Cus N'lit;eral'"
+6dab0786db400008 script238 "[bracketed]\n*/ f(x, y) -- trailing comment\n /*\n; /*"
 6e4c743a682e2094 script239 "\"dq\"\n'' ;"
-10d964b61f9d59b3 script240 "'' JOIN o ON o.id = t.id SELECT 'GO'\nSELECT * FROM [Cus SELECT a, b FROM dbo.T\na.b.c SELECT 'GO' \"unterminated"
-bd20a76d60c04ab2 script241 "[bracketed] SELECT * FROM [Cus\n/*\nN'lit;eral' N'lit;eral'\nSELECT * FROM [Cus f(x, y)"
+8006ae813158dd04 script240 "'' JOIN o ON o.id = t.id SELECT 'GO'\nSELECT * FROM [Cus SELECT a, b FROM dbo.T\na.b.c SELECT 'GO' \"unterminated"
+9b9b859adc96450a script241 "[bracketed] SELECT * FROM [Cus\n/*\nN'lit;eral' N'lit;eral'\nSELECT * FROM [Cus f(x, y)"
 53d0839ec2cf648a script242 ";\n[bracketed] JOIN o ON o.id = t.id GO\n/*\n'unterminated ]\n go  GO "
 c1cd9edd6068648a script243 "''\n'closed'"
 d664a99e9fb4ed47 script244 "''\n'unterminated a.b.c */\n[bracketed]\nJOIN o ON o.id = t.id SELECT 'GO' SELECT * FROM [Cus\n; SELECT 2 FROM B SELECT 'GO'"
 c6686c521af5f72c script245 "[bracketed]\n/* f(x, y)  go "
-cd73cb80fba6ac7d script246 "    */ ]"
+93456557e17d321e script246 "    */ ]"
 556ee62289fd9397 script247 "f(x, y)      go "
 0e7ea13309550f56 script248 ";\n'unterminated\nJOIN o ON o.id = t.id /* inline */"
 7c930de762476f0c script249 "GO\n ''\n go  [unterminated\nSELECT 'GO' SELECT 'GO'\n[bracketed]\n go  SELECT 'GO'"
-aa59365ffe707c7e script250 "*/ f(x, y)\nN'lit;eral'"
+211afd6719d9511b script250 "*/ f(x, y)\nN'lit;eral'"
 84dab937d19e4014 script251 "-- trailing comment\n    ''\n\"dq\" \"unterminated\nGO 3 -- trailing comment SELECT a, b FROM dbo.T\n[bracketed]\nSELECT 'GO' ; SELECT 2 FROM B /*"
 4276474b55ec4179 script252 "/*\n'unterminated"
 e00efa4be272c5d7 script253 "GO f(x, y)\nSELECT 'GO' a.b.c\n-- trailing comment\n   \n\"dq\""
-5dee33b8283a0e44 script254 "SELECT * FROM [Cus ;\na.b.c a.b.c\n[bracketed] SELECT 'GO'"
+faf4ecb53fd4ff42 script254 "SELECT * FROM [Cus ;\na.b.c a.b.c\n[bracketed] SELECT 'GO'"
 686ae38bfb7440bb script255 "'unterminated f(x, y)\n GO 3 \n    ] WHERE x = 1\n; SELECT 2 FROM B ''"
 43cc3d54431f0d23 script256 "'unterminated WHERE x = 1 \"unterminated\na.b.c f(x, y)"
 420d280c930e89d4 script257 "WHERE x = 1 \"dq\" [bracketed]\n''\nSELECT 'GO'\n/* SELECT 'GO' /* inline */\n'unterminated  go "
@@ -1481,14 +1481,14 @@ dee0ab4b7e752836 script258 "SELECT a, b FROM dbo.T 'unterminated\n   \n\"untermi
 890f1490642ec2a5 script259 "\"unterminated\n/*\nWHERE x = 1 \"dq\""
 78c008d7482a3fa6 script260 "SELECT 'GO'\nWHERE x = 1 JOIN o ON o.id = t.id\n/* inline */ f(x, y)"
 f4d4193747808463 script261 "    GO 3\nSELECT a, b FROM dbo.T\nJOIN o ON o.id = t.id\nSELECT a, b FROM dbo.T 'unterminated [unterminated\n\"dq\" 'unterminated\nf(x, y) [bracketed]"
-c2ae4fc4dcf949df script262 "SELECT * FROM [Cus /* a.b.c\nGO 3"
+9c12b23eaececa64 script262 "SELECT * FROM [Cus /* a.b.c\nGO 3"
 184a1e119564de2c script263 "'closed'"
 7c30a6985712517d script264 "\"dq\" ] ''"
-4bc7e9102d78de45 script265 "SELECT * FROM [Cus -- trailing comment\nJOIN o ON o.id = t.id SELECT * FROM [Cus \"unterminated\nSELECT a, b FROM dbo.T"
+8d1af027914c9415 script265 "SELECT * FROM [Cus -- trailing comment\nJOIN o ON o.id = t.id SELECT * FROM [Cus \"unterminated\nSELECT a, b FROM dbo.T"
 277f80cee066ddf2 script266 "-- trailing comment SELECT 'GO'\nGO\nf(x, y) -- trailing comment\nGO\n; SELECT 2 FROM B SELECT 'GO'"
 598fcba551d4e577 script267 " JOIN o ON o.id = t.id\nWHERE x = 1"
 70580383b8c89abe script268 "[unterminated SELECT 'GO'\n\n'closed'\n/* \"unterminated ; SELECT 2 FROM B\n'unterminated\n/* /*"
-e3d9c4ac282fde1c script269 "SELECT * FROM [Cus SELECT * FROM [Cus\nGO 3\n go  SELECT a, b FROM dbo.T"
+b8534c7bb4bba60a script269 "SELECT * FROM [Cus SELECT * FROM [Cus\nGO 3\n go  SELECT a, b FROM dbo.T"
 fd4c538eb74d3ded script270 "[bracketed] \"unterminated\n] */    \nGO\nf(x, y) -- trailing comment"
 b8a0cf6112177e81 script271 "[unterminated a.b.c ; SELECT 2 FROM B\nf(x, y)\nWHERE x = 1 "
 9b7d3c42587b497d script272 "-- trailing comment JOIN o ON o.id = t.id"
@@ -1497,7 +1497,7 @@ d60a71ce3cbf96ce script273 "\"unterminated\nf(x, y)    \n'unterminated  go  */\n
 8972fe8549ae7347 script275 "'closed' SELECT a, b FROM dbo.T SELECT 'GO'\n'unterminated\n-- trailing comment\n''  ''\nSELECT a, b FROM dbo.T    \nf(x, y) JOIN o ON o.id = t.id"
 5e70767ed23f4afa script276 "/* SELECT a, b FROM dbo.T\n[bracketed]\n/*\n[bracketed] ;\nSELECT 'GO' /* inline */"
 6462c0b5869883b3 script277 "SELECT 'GO'"
-914d08d06519ad32 script278 "SELECT * FROM [Cus */ SELECT 'GO'\nN'lit;eral' 'closed'"
+b1a9691fc19bdbb1 script278 "SELECT * FROM [Cus */ SELECT 'GO'\nN'lit;eral' 'closed'"
 3e4da18aa2f08ede script279 "/* inline */\nJOIN o ON o.id = t.id\n\"unterminated /* \"unterminated"
 924120bec4c975d9 script280 "\n\"dq\""
 ee586f48b7416ffb script281 "f(x, y) /* inline */ -- trailing comment\n go \nGO WHERE x = 1\nJOIN o ON o.id = t.id ''\n-- trailing comment "
@@ -1508,47 +1508,47 @@ da3f7bde84a606f0 script285 "-- trailing comment"
 c164476047b7999e script286 "'closed' GO 3\nSELECT a, b FROM dbo.T /* SELECT a, b FROM dbo.T\nSELECT * FROM [Cus N'lit;eral' 'closed'\nf(x, y)\n'unterminated \"dq\" SELECT a, b FROM dbo.T"
 922f656d99578c25 script287 " \nf(x, y) f(x, y)\n\"unterminated"
 eed29fbd6a3a4fe5 script288 "\"dq\"\n   "
-b6f1cc1db51bc2b4 script289 "*/\n; SELECT 2 FROM B '' ; SELECT 2 FROM B\n/*\n[bracketed] */\n-- trailing comment [bracketed]"
+e8232c51da8cd907 script289 "*/\n; SELECT 2 FROM B '' ; SELECT 2 FROM B\n/*\n[bracketed] */\n-- trailing comment [bracketed]"
 ef5318e40cb19e70 script290 "''"
 9b2114b24b68a1c6 script291 "N'lit;eral'\n'unterminated GO\n go \n; SELECT 2 FROM B"
 57531309b8ca71e5 script292 "] "
 533a9bcacd0204fb script293 "GO 3 JOIN o ON o.id = t.id \"dq\"\nN'lit;eral' GO 3\na.b.c -- trailing comment\n-- trailing comment\nf(x, y) /* inline */\nf(x, y) 'closed' [bracketed]"
 9e50e1b53a7fb09d script294 " go  'unterminated -- trailing comment"
-f03ed76de069ef35 script295 "SELECT a, b FROM dbo.T  go \n;\n go  \"dq\" SELECT * FROM [Cus"
+e76771330e5b3976 script295 "SELECT a, b FROM dbo.T  go \n;\n go  \"dq\" SELECT * FROM [Cus"
 740eb2880ccd1642 script296 "a.b.c"
 7478c21b748a2c89 script297 " go "
-3620162cfe67e525 script298 "N'lit;eral' */ WHERE x = 1\n'unterminated JOIN o ON o.id = t.id JOIN o ON o.id = t.id"
+56772ead8c245335 script298 "N'lit;eral' */ WHERE x = 1\n'unterminated JOIN o ON o.id = t.id JOIN o ON o.id = t.id"
 0e7690781372f4d6 script299 "SELECT a, b FROM dbo.T [unterminated\n\"unterminated\nf(x, y)"
-3c87a2e40a73e128 script300 "] -- trailing comment\n*/"
+323531b02c3b84fe script300 "] -- trailing comment\n*/"
 a501fad8de2af94e script301 "f(x, y)\n'' WHERE x = 1 'unterminated"
 129d48c47e2c3725 script302 "GO 3 f(x, y)\nf(x, y) \"unterminated SELECT * FROM [Cus\n'closed' GO 3 f(x, y)\nSELECT 'GO' 'unterminated"
 7eeca71a7ab66525 script303 "\"dq\""
 339c712be622f10f script304 "[unterminated\n''\nSELECT 'GO' \n/* inline */ a.b.c WHERE x = 1\nGO 3"
 23c0c44ad1744c89 script305 "/* */\n] SELECT 'GO'\n; SELECT a, b FROM dbo.T\n/* inline */ SELECT 'GO'"
 a71551163cfb2acb script306 "GO"
-d2a1ae3a1db7897e script307 "JOIN o ON o.id = t.id\n]\n; SELECT 2 FROM B */\n[unterminated"
+c1345a6cad34b09a script307 "JOIN o ON o.id = t.id\n]\n; SELECT 2 FROM B */\n[unterminated"
 a448fdffcdc69036 script308 "[unterminated"
 ed36e9c87b2ca55f script309 "JOIN o ON o.id = t.id f(x, y) \"unterminated"
 13169dea88f7fb39 script310 "'closed' /* inline */"
-a22157f12e960915 script311 "SELECT * FROM [Cus\nGO 3 SELECT * FROM [Cus\nSELECT 'GO' ]\n[unterminated"
-553072371f94cfc5 script312 "[bracketed] SELECT * FROM [Cus\n    N'lit;eral' \"unterminated\nJOIN o ON o.id = t.id\n/* inline */\n[unterminated f(x, y)"
+ac2054bc32c8431d script311 "SELECT * FROM [Cus\nGO 3 SELECT * FROM [Cus\nSELECT 'GO' ]\n[unterminated"
+07bc23094dc25105 script312 "[bracketed] SELECT * FROM [Cus\n    N'lit;eral' \"unterminated\nJOIN o ON o.id = t.id\n/* inline */\n[unterminated f(x, y)"
 149df8f49c82e8fe script313 "/* inline */\nWHERE x = 1"
 93e7b9ae931a143c script314 "GO 3 \"unterminated"
-25ba39c5dd809d00 script315 "GO SELECT * FROM [Cus ]"
+5a748b6086d87a9e script315 "GO SELECT * FROM [Cus ]"
 9cc0da275df25550 script316 "'' ]"
-18a2d17fb107e9a4 script317 "SELECT * FROM [Cus\n[bracketed] GO\nf(x, y) -- trailing comment SELECT * FROM [Cus\nN'lit;eral' N'lit;eral'\n; GO\nGO 3 /*"
-d10ba008bdf469fa script318 "N'lit;eral' SELECT * FROM [Cus\n   \nSELECT 'GO' /*"
+6117e755d0417874 script317 "SELECT * FROM [Cus\n[bracketed] GO\nf(x, y) -- trailing comment SELECT * FROM [Cus\nN'lit;eral' N'lit;eral'\n; GO\nGO 3 /*"
+cf55791ed1bfe2f6 script318 "N'lit;eral' SELECT * FROM [Cus\n   \nSELECT 'GO' /*"
 08a8457dcfdf6163 script319 "] SELECT 'GO' [bracketed]\nf(x, y) f(x, y)\n''\nSELECT a, b FROM dbo.T a.b.c\nSELECT a, b FROM dbo.T\n; SELECT 2 FROM B"
 7478c21b748a2c89 script320 " go "
-937d02350c462147 script321 "SELECT * FROM [Cus \"dq\"\n[unterminated SELECT a, b FROM dbo.T 'unterminated"
+582729d71ba376f9 script321 "SELECT * FROM [Cus \"dq\"\n[unterminated SELECT a, b FROM dbo.T 'unterminated"
 fe129d057bacb8fc script322 "a.b.c\nGO 3 /* inline */ [unterminated"
 e01ee7a534be203a script323 "GO SELECT a, b FROM dbo.T f(x, y)\nSELECT 'GO' /* inline */\n''\nf(x, y) GO 3\n[bracketed]  GO"
 d4281ef9b11d418a script324 "/* inline */ \"unterminated\nf(x, y) 'closed'\nN'lit;eral' /* inline */\n-- trailing comment\nWHERE x = 1\n go "
-970c76cafb3a1f5e script325 "WHERE x = 1 SELECT * FROM [Cus\nGO 3\n\"unterminated \"dq\" [unterminated\n\"dq\" ]\n'closed' f(x, y)"
+5a9dd48dabb16abe script325 "WHERE x = 1 SELECT * FROM [Cus\nGO 3\n\"unterminated \"dq\" [unterminated\n\"dq\" ]\n'closed' f(x, y)"
 1d3133092367fdf3 script326 "-- trailing comment /* inline */"
 6388e946846b9be9 script327 "a.b.c \"dq\"\n; SELECT 2 FROM B f(x, y)\nJOIN o ON o.id = t.id\nJOIN o ON o.id = t.id    \n\"dq\""
 3919ab09111e9e38 script328 "-- trailing comment \"dq\" -- trailing comment\n/* inline */ ; SELECT 2 FROM B SELECT a, b FROM dbo.T\n-- trailing comment WHERE x = 1"
-b2d17301d1a47f1f script329 "'' \nGO ; SELECT * FROM [Cus"
+cd71c3ecc381ae17 script329 "'' \nGO ; SELECT * FROM [Cus"
 c935894383611d42 script330 "SELECT 'GO'\nJOIN o ON o.id = t.id \"unterminated\n[bracketed]\nSELECT 'GO' [unterminated GO\n/* inline */ 'closed'"
 ff66634d0e5f5c4c script331 "'unterminated 'closed'\n[bracketed] -- trailing comment */"
 50caf8a6750e300c script332 "SELECT a, b FROM dbo.T GO WHERE x = 1\nN'lit;eral' ; SELECT 2 FROM B    "
@@ -1559,8 +1559,8 @@ f1ccc9b78ff894e9 script334 "[bracketed] GO 3 ;\nGO 3 N'lit;eral'\nWHERE x = 1 JO
 5ecb2257a4340f4f script337 "''\na.b.c\n] ; SELECT 2 FROM B"
 51cd3b7c96ee90a0 script338 "[unterminated SELECT a, b FROM dbo.T\n\"dq\" SELECT a, b FROM dbo.T\n[bracketed]  go \n; SELECT 2 FROM B  go "
 b129a82be21f1404 script339 "SELECT 'GO'\n/* */ 'unterminated\n; -- trailing comment */\n] ; SELECT 'GO'"
-505fef08724b77be script340 "N'lit;eral' a.b.c\nSELECT 'GO' [bracketed]\nJOIN o ON o.id = t.id \"dq\"\nN'lit;eral'\n*/ a.b.c\n''     "
-a21e94ac327d614e script341 "N'lit;eral'\n*/\na.b.c N'lit;eral'\n*/ 'unterminated"
+d85a7c9ef34cbed5 script340 "N'lit;eral' a.b.c\nSELECT 'GO' [bracketed]\nJOIN o ON o.id = t.id \"dq\"\nN'lit;eral'\n*/ a.b.c\n''     "
+a0f2253771a91e62 script341 "N'lit;eral'\n*/\na.b.c N'lit;eral'\n*/ 'unterminated"
 a448fdffcdc69036 script342 "[unterminated"
 1addeb5808eefa91 script343 "-- trailing comment\nJOIN o ON o.id = t.id \n\"unterminated N'lit;eral'\nN'lit;eral'    \n\n"
 d50039fe09a80cdc script344 "] ''\n[unterminated     \"unterminated"
@@ -1569,35 +1569,35 @@ d50039fe09a80cdc script344 "] ''\n[unterminated     \"unterminated"
 c44846404d10d88f script347 "[unterminated\n'' GO 3"
 1c92ec7caf48cf89 script348 "/* inline */ [unterminated\nGO /* inline */\n-- trailing comment 'unterminated\n/* inline */\nGO \"unterminated"
 2a8a001d97a21fcb script349 "   \n       \n    ; SELECT 2 FROM B\n[unterminated\n[bracketed] SELECT 'GO'"
-021a6031c9519aaf script350 "SELECT * FROM [Cus SELECT a, b FROM dbo.T\nSELECT 'GO' /* inline */    \n-- trailing comment -- trailing comment\nGO 3\n\"unterminated\na.b.c"
+3890f17bc95fbb3d script350 "SELECT * FROM [Cus SELECT a, b FROM dbo.T\nSELECT 'GO' /* inline */    \n-- trailing comment -- trailing comment\nGO 3\n\"unterminated\na.b.c"
 3d8ba3dc454cdafd script351 "/* inline */\n]\n[unterminated\n go  SELECT * FROM [Cus a.b.c\n[bracketed] N'lit;eral' [bracketed]"
 8431466ee8e4515d script352 " \"unterminated\n   \n; SELECT 2 FROM B  go \nGO\n\"unterminated 'closed'  go \n/* inline */ N'lit;eral'"
-ac59ced520bd0ac7 script353 "*/ [unterminated\nN'lit;eral'\n[unterminated SELECT a, b FROM dbo.T\n[bracketed]  -- trailing comment\n    SELECT a, b FROM dbo.T ]"
+cef97297aefbef3d script353 "*/ [unterminated\nN'lit;eral'\n[unterminated SELECT a, b FROM dbo.T\n[bracketed]  -- trailing comment\n    SELECT a, b FROM dbo.T ]"
 53d6a0f412085dfb script354 "] /*\n-- trailing comment\n go  /*\nJOIN o ON o.id = t.id\n'unterminated"
-10a6714a8e36eec6 script355 "'closed' SELECT 'GO' SELECT * FROM [Cus\n'unterminated\n-- trailing comment\nSELECT a, b FROM dbo.T\n*/\n go "
+a338b1f143609bdb script355 "'closed' SELECT 'GO' SELECT * FROM [Cus\n'unterminated\n-- trailing comment\nSELECT a, b FROM dbo.T\n*/\n go "
 9dc448fc7da8a2c6 script356 "[unterminated\nN'lit;eral' N'lit;eral' "
 033f5619ff847e13 script357 "GO 3 a.b.c 'closed'\nf(x, y) /* inline */\nSELECT 'GO'\n/* [unterminated /* inline */\n\"dq\" \"unterminated\n] ; -- trailing comment"
-7c65853850530212 script358 "/* inline */\n go   go   go \n*/ GO 'closed'\n'closed'\n[unterminated "
-38554c741e353a8a script359 "'' */\nN'lit;eral'\n'closed' /* inline */"
+9a3b8794ad68908a script358 "/* inline */\n go   go   go \n*/ GO 'closed'\n'closed'\n[unterminated "
+f0d4b6953469bfbc script359 "'' */\nN'lit;eral'\n'closed' /* inline */"
 704b011f73de172f script360 "SELECT a, b FROM dbo.T f(x, y)"
-d3597b4758928969 script361 "; /* inline */ */\n/* inline */ ] GO\nN'lit;eral' ; SELECT 2 FROM B\n'closed' JOIN o ON o.id = t.id\nSELECT 'GO' \n\"dq\" -- trailing comment GO"
+ad935d43ae6659a9 script361 "; /* inline */ */\n/* inline */ ] GO\nN'lit;eral' ; SELECT 2 FROM B\n'closed' JOIN o ON o.id = t.id\nSELECT 'GO' \n\"dq\" -- trailing comment GO"
 f27b8f56f935d2cd script362 "'unterminated \"dq\"\n*/ ]\n'' SELECT * FROM [Cus\nSELECT 'GO' ]"
 b565e6b2ef068f6e script363 "N'lit;eral' /*\n]"
 8439d1d636fff492 script364 "/* 'unterminated\n'closed' WHERE x = 1\na.b.c GO 3\n go  N'lit;eral'\n/* inline */ 'unterminated\nSELECT 'GO'"
-ce4314984c9f80f6 script365 "; a.b.c\na.b.c  go \nGO GO 3\n go \n; SELECT * FROM [Cus"
+7bd0304316130b6f script365 "; a.b.c\na.b.c  go \nGO GO 3\n go \n; SELECT * FROM [Cus"
 2ce0d0e22d42de0f script366 "a.b.c ; JOIN o ON o.id = t.id\n; JOIN o ON o.id = t.id"
-2a113b434ee4d553 script367 "SELECT 'GO'  SELECT 'GO'\n SELECT * FROM [Cus\n/* inline */ SELECT a, b FROM dbo.T"
+55bfa4e0060b1b2d script367 "SELECT 'GO'  SELECT 'GO'\n SELECT * FROM [Cus\n/* inline */ SELECT a, b FROM dbo.T"
 8c2114254f47e8c1 script368 "[bracketed]\n[bracketed] GO"
 9d083903ef57a693 script369 "a.b.c [bracketed]\nGO [bracketed]\nSELECT 'GO'"
 0469918ee3306dac script370 "f(x, y)\n/* SELECT * FROM [Cus\nWHERE x = 1\n; SELECT 2 FROM B\n/* [bracketed]"
 37a6c3e5480698bd script371 "WHERE x = 1 f(x, y) f(x, y)\n    SELECT 'GO'    \n\"unterminated ; SELECT 2 FROM B    \na.b.c a.b.c ]\nGO 3 WHERE x = 1\nf(x, y)"
-6ba838c38f0b7f23 script372 "a.b.c\n*/ "
+2d4d1e88bdb6f8cb script372 "a.b.c\n*/ "
 67e1efa1f4461d0e script373 "/* inline */\n\"unterminated \n\"unterminated\n''"
 7f05c028ff0f98af script374 "'closed' a.b.c\n; SELECT 2 FROM B\n[bracketed] -- trailing comment ; SELECT 2 FROM B"
 6e8b4866ba22c25e script375 "[bracketed] [unterminated [unterminated"
-9e8721f0f7fad379 script376 "*/ -- trailing comment \"dq\"\n go  \"dq\" JOIN o ON o.id = t.id\n    \n; SELECT 2 FROM B\nSELECT 'GO'"
+bf92c4c71a4c1f14 script376 "*/ -- trailing comment \"dq\"\n go  \"dq\" JOIN o ON o.id = t.id\n    \n; SELECT 2 FROM B\nSELECT 'GO'"
 3b603bed74a7bfe5 script377 "'closed' \n\"unterminated"
-c802547549bceccf script378 "GO 3 f(x, y)\n /* inline */\nN'lit;eral'\n;\n*/ SELECT a, b FROM dbo.T  go "
+45d0d41f12aecb06 script378 "GO 3 f(x, y)\n /* inline */\nN'lit;eral'\n;\n*/ SELECT a, b FROM dbo.T  go "
 88cebfcb4b092e24 script379 "/*\nGO"
 6768d1b426041845 script380 "N'lit;eral' ]    \nSELECT 'GO' /*\n\nN'lit;eral'\n; \"dq\"\n'closed' JOIN o ON o.id = t.id"
 56f4930059fe0051 script381 "''\n /* inline */\nWHERE x = 1 f(x, y) N'lit;eral'"
@@ -1610,12 +1610,12 @@ e46d6fa3450d499b script386 "f(x, y)\nSELECT 'GO'\n/* SELECT 'GO'"
 5a6167ca81b62bab script388 "'unterminated\nN'lit;eral'\nN'lit;eral' SELECT * FROM [Cus [bracketed]\n'unterminated\nGO 3\nf(x, y) JOIN o ON o.id = t.id"
 bd248122fe1829f1 script389 " 'unterminated\n*/ 'closed' /* inline */"
 937d0e6ddf447a0b script390 "; SELECT 2 FROM B N'lit;eral'\nf(x, y) 'unterminated\n    ; \"dq\"\n/* a.b.c"
-b6cd7f18d5cff6df script391 "SELECT * FROM [Cus SELECT 'GO' SELECT 'GO'\n-- trailing comment GO 3 'unterminated\nGO 3\n[unterminated \"unterminated\nGO\n; SELECT a, b FROM dbo.T"
+a270f67198a38e56 script391 "SELECT * FROM [Cus SELECT 'GO' SELECT 'GO'\n-- trailing comment GO 3 'unterminated\nGO 3\n[unterminated \"unterminated\nGO\n; SELECT a, b FROM dbo.T"
 2e0412fc9c10c323 script392 " a.b.c\n[unterminated SELECT a, b FROM dbo.T\n/* inline */ SELECT * FROM [Cus [unterminated\nSELECT a, b FROM dbo.T\n'closed' GO  go \nGO "
 f26f61ed794866be script393 "WHERE x = 1 SELECT 'GO'\n\"dq\" GO 3"
-6f34af4143ef667b script394 "JOIN o ON o.id = t.id SELECT a, b FROM dbo.T\n \"dq\" GO\n''\n\"dq\" */"
+9237cb878e42fc20 script394 "JOIN o ON o.id = t.id SELECT a, b FROM dbo.T\n \"dq\" GO\n''\n\"dq\" */"
 f07cef33adaa6f19 script395 "'closed'\n\"unterminated f(x, y)\n[unterminated N'lit;eral'\n[unterminated\n[bracketed] ] -- trailing comment\n[unterminated SELECT * FROM [Cus"
 aae1fcfb4fb9defb script396 " GO 3"
-6514d05a38e377a5 script397 "    */\n-- trailing comment ; SELECT 2 FROM B \n-- trailing comment f(x, y) GO 3\nf(x, y) ''\nWHERE x = 1\n'' 'closed'"
+db043968b915172b script397 "    */\n-- trailing comment ; SELECT 2 FROM B \n-- trailing comment f(x, y) GO 3\nf(x, y) ''\nWHERE x = 1\n'' 'closed'"
 9218692487def0b3 script398 "GO 3\nf(x, y)"
 e737b9b6a9b31470 script399 "[bracketed] WHERE x = 1\n    GO 3\n\"dq\" WHERE x = 1\nGO"

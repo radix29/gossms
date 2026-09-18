@@ -10,13 +10,6 @@
 
 -------------
 
-query editor: improve intellisense to work with CTE and subqueries. ex:
-with t1 (
-    select * from sys.databases
-)
-select <intellisense columns> from t1
-if it is a lot of work createa a plan file
-
 - query editor :
     - word wrap (display only, line numbers)
     - auto indent ?

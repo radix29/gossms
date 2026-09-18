@@ -15,26 +15,21 @@ import (
 // Candidate resolution against a completionInventory
 // ---------------------------------------------------------------------------
 
-// resolveQualifierToObject resolves a dot-qualifier to the CatalogObject it
-// names: first an alias or bare table name already in refs (the common
-// case), falling back to a direct name match across the whole inventory for
-// a table the FROM-scope parse missed or that isn't in scope yet. sysInv is
-// consulted too, so an alias/bare-name over a "sys.xxx" reference (e.g.
-// "FROM sys.objects o") resolves its columns the same way a user table
-// would.
-func resolveQualifierToObject(inv, sysInv *completionInventory, refs []sqlparse.FromRef, qualifier string) *gosmo.CatalogObject {
-	ql := strings.ToLower(qualifier)
-	for _, ref := range refs {
-		if ref.Alias != "" && strings.ToLower(ref.Alias) == ql {
-			return findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
-		}
+// resolveQualifierToRelation resolves a dot-qualifier to the relation it
+// names: first an alias, bare table name, CTE name or derived-table alias
+// already resolved out of the cursor's own query (the common case), falling
+// back to a direct name match across the whole inventory for a table the
+// FROM-scope parse missed or that isn't in scope yet. sysInv is consulted too,
+// so an alias/bare-name over a "sys.xxx" reference (e.g. "FROM sys.objects o")
+// resolves its columns the same way a user table would.
+func resolveQualifierToRelation(inv, sysInv *completionInventory, rels []relation, qualifier string) (relation, bool) {
+	if r, ok := findRelation(rels, qualifier); ok {
+		return r, true
 	}
-	for _, ref := range refs {
-		if ref.Alias == "" && strings.ToLower(ref.Name) == ql {
-			return findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
-		}
+	if obj := findCatalogObjectByName(inv, sysInv, qualifier); obj != nil {
+		return relation{name: qualifier, obj: obj}, true
 	}
-	return findCatalogObjectByName(inv, sysInv, qualifier)
+	return relation{}, false
 }
 
 func findCatalogObject(inv, sysInv *completionInventory, schema, name string) *gosmo.CatalogObject {
@@ -71,14 +66,14 @@ func findCatalogObjectByName(inv, sysInv *completionInventory, name string) *gos
 }
 
 // memberCandidates resolves "qualifier.prefix": qualifier is tried first as
-// a FROM-scope alias/table (-> that object's columns), then as a schema
-// name in the connected database (-> every table/view in it), then as a
-// schema name in the sys-schema inventory ("sys" being the only one that
-// ever matters there). Nothing matching returns nil, closing the popup
-// rather than showing something wrong.
-func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, refs []sqlparse.FromRef, qualifier, prefix string) []controls.CompletionItem {
-	if obj := resolveQualifierToObject(inv, sysInv, refs, qualifier); obj != nil {
-		return p.columnItemsFor(obj, prefix)
+// a FROM-scope alias/table/CTE/derived table (-> that relation's columns),
+// then as a schema name in the connected database (-> every table/view in
+// it), then as a schema name in the sys-schema inventory ("sys" being the
+// only one that ever matters there). Nothing matching returns nil, closing
+// the popup rather than showing something wrong.
+func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []relation, qualifier, prefix string) []controls.CompletionItem {
+	if r, ok := resolveQualifierToRelation(inv, sysInv, rels, qualifier); ok {
+		return p.columnItemsFor(r.columns(), prefix)
 	}
 	if objs, ok := inv.bySchema[strings.ToLower(qualifier)]; ok {
 		return p.objectItems(objs, prefix)
@@ -95,15 +90,26 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, refs []s
 }
 
 // tableCandidates offers every schema (the connected database's own, plus
-// "sys" once its inventory has loaded) and every table/view whose name
-// starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
-// context, and the fallback when a column context has no FROM-scope yet.
+// "sys" once its inventory has loaded), every table/view, and every visible
+// CTE name whose name starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/
+// TRUNCATE TABLE context, and the fallback when a column context has no
+// FROM-scope yet (which passes no CTEs: a CTE name is a relation, not a
+// column).
 // The sys-schema inventory's own objects are not mixed into the unqualified
 // list below: there are hundreds of them, so they're offered only once a
 // query qualifies with "sys." (see memberCandidates).
-func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
+	for _, cte := range ctes {
+		if !strings.HasPrefix(strings.ToLower(cte.Name), pl) {
+			continue
+		}
+		items = append(items, controls.CompletionItem{
+			Text: bracketIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
+			Icon: p.tableIcon(gosmo.CatalogTable),
+		})
+	}
 	for _, schema := range inv.catalog.Schemas {
 		if !strings.HasPrefix(strings.ToLower(schema), pl) {
 			continue
@@ -157,12 +163,12 @@ func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject) controls.CompletionIte
 	}
 }
 
-// columnItemsFor offers every column of obj whose name starts with prefix —
+// columnItemsFor offers every column in cols whose name starts with prefix —
 // the "alias." / "table." member-lookup result.
-func (p *QueryPanel) columnItemsFor(obj *gosmo.CatalogObject, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
-	for _, col := range obj.Columns {
+	for _, col := range cols {
 		if !strings.HasPrefix(strings.ToLower(col.Name), pl) {
 			continue
 		}
@@ -175,50 +181,43 @@ func (p *QueryPanel) columnItemsFor(obj *gosmo.CatalogObject, prefix string) []c
 	return items
 }
 
-// scopedColumnCandidates offers the union of every FROM-scope ref's
+// scopedColumnCandidates offers the union of every in-scope relation's
 // columns (deduplicated by name — a column present on more than one joined
-// table shows once) plus each ref's alias/table name itself, so typing
+// table shows once) plus each relation's own alias/table/CTE name, so typing
 // "c." after "c" was just offered still works — the unqualified SELECT/
 // WHERE/ON/GROUP BY/ORDER BY/HAVING/SET context.
-func (p *QueryPanel) scopedColumnCandidates(inv, sysInv *completionInventory, refs []sqlparse.FromRef, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	seenCol := make(map[string]bool)
 	seenRef := make(map[string]bool)
-	for _, ref := range refs {
-		obj := findCatalogObject(inv, sysInv, ref.Schema, ref.Name)
-		if obj != nil {
-			for _, col := range obj.Columns {
-				key := strings.ToLower(col.Name)
-				if seenCol[key] || !strings.HasPrefix(key, pl) {
-					continue
-				}
-				seenCol[key] = true
-				qname := ref.Alias
-				if qname == "" {
-					qname = ref.Name
-				}
-				items = append(items, controls.CompletionItem{
-					Text: bracketIfNeeded(col.Name), Label: col.Name,
-					Detail: formatColumnType(col) + " — " + qname, Icon: p.columnIcon(),
-				})
+	for _, rel := range rels {
+		for _, col := range rel.columns() {
+			key := strings.ToLower(col.Name)
+			if seenCol[key] || !strings.HasPrefix(key, pl) {
+				continue
 			}
+			seenCol[key] = true
+			detail := formatColumnType(col)
+			if rel.name != "" {
+				detail += " — " + rel.name
+			}
+			items = append(items, controls.CompletionItem{
+				Text: bracketIfNeeded(col.Name), Label: col.Name,
+				Detail: detail, Icon: p.columnIcon(),
+			})
 		}
-		qname := ref.Alias
-		if qname == "" {
-			qname = ref.Name
-		}
-		qkey := strings.ToLower(qname)
-		if qname == "" || seenRef[qkey] || !strings.HasPrefix(qkey, pl) {
+		qkey := strings.ToLower(rel.name)
+		if rel.name == "" || seenRef[qkey] || !strings.HasPrefix(qkey, pl) {
 			continue
 		}
 		seenRef[qkey] = true
 		objType := gosmo.CatalogTable
-		if obj != nil {
-			objType = obj.Type
+		if rel.obj != nil {
+			objType = rel.obj.Type
 		}
 		items = append(items, controls.CompletionItem{
-			Text: bracketIfNeeded(qname), Label: qname, Detail: "table reference", Icon: p.tableIcon(objType),
+			Text: bracketIfNeeded(rel.name), Label: rel.name, Detail: "table reference", Icon: p.tableIcon(objType),
 		})
 	}
 	sortCompletionItems(items)
@@ -288,7 +287,16 @@ func formatDataTypeLen(dataType string, maxLength, precision, scale int) string 
 // formatColumnType renders a CatalogColumn's type plus, when it's not
 // nullable, a ", not null" suffix — used by IntelliSense's completion detail
 // text, where a nullable column's detail stays bare to save popup width.
+//
+// A column with no DataType is a synthetic one whose type could not be worked
+// out — a derived table's or CTE's expression column. It renders as the bare
+// word "column": nullability is unknown too, and a zero CatalogColumn has
+// IsNullable false, so the suffix would otherwise assert NOT NULL about every
+// column this code knows least about.
 func formatColumnType(col gosmo.CatalogColumn) string {
+	if col.DataType == "" {
+		return "column"
+	}
 	t := formatDataTypeLen(string(col.DataType), col.MaxLength, col.Precision, col.Scale)
 	if !col.IsNullable {
 		t += ", not null"

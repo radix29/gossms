@@ -16,10 +16,19 @@ import (
 // spirit as controls.Editor's own SelectStatementAtCursor (see
 // tuikit/controls/sql_statement.go). It recognises enough of the grammar
 // (comments, string/quoted-identifier literals, FROM/JOIN/WHERE/... clause
-// keywords, dot-qualified names) to get common queries right; anything
-// genuinely ambiguous offers nothing rather than guessing wrong. Keyword
-// completion, CTEs/derived tables, temp tables and table variables, and
-// cross-database chains are out of scope.
+// keywords, dot-qualified names, CTE bodies and derived tables) to get
+// common queries right; anything genuinely ambiguous offers nothing rather
+// than guessing wrong.
+//
+// What that covers: FROM/JOIN/APPLY refs and their aliases, WITH bindings
+// (their own column list or the one their body produces, a CTE built on an
+// earlier CTE, a recursive one without looping), derived tables and
+// sub-SELECTs at any nesting, and the clause state of the innermost query
+// rather than the statement — so a cursor inside a CTE body completes
+// against that body. Out of scope, and answered with nothing rather than a
+// plausible wrong list: keyword completion, temp tables and table variables,
+// table-valued function result shapes, PIVOT/UNPIVOT, OPENJSON/OPENROWSET
+// WITH column lists, and cross-database chains.
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
@@ -127,18 +136,29 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	if stmtEnd < batchEnd {
 		forwardTokens, _, _, _ = sqlparse.TokenizeRange(buf, forwardFrom, stmtEnd, false)
 	}
-	refs := sqlparse.ParseFromScope(append(append([]sqlparse.Token{}, tokens...), forwardTokens...))
+	stmtTokens := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
+
+	// The query tree, not the flat scan: the cursor's innermost SELECT, the
+	// CTEs visible from it, and its own clause state (see sqlparse.ScopeAt).
+	// A statement the parser can make nothing of leaves Query nil, and the
+	// flat FROM-scope scan still answers for it.
+	scope := sqlparse.ScopeAt(stmtTokens, upTo)
+	refs, clause := scope.Query.FromRefs(), scope.Clause
+	if scope.Query == nil {
+		refs, clause = sqlparse.ParseFromScope(stmtTokens), sqlparse.CurrentClause(tokens)
+	}
+	rels := resolveRefs(newResolveCtx(inv, sysInv, scope.CTEs), refs)
 
 	switch {
 	case hasQualifier:
-		return p.memberCandidates(inv, sysInv, refs, qualifier, prefix), replaceFrom
-	case sqlparse.CurrentClause(tokens) == sqlparse.ClauseTable:
-		return p.tableCandidates(inv, sysInv, prefix), replaceFrom
-	case len(refs) == 0:
-		// Column context but nothing's been FROM'd yet — nothing to pull
-		// columns from, so fall back to the object list.
-		return p.tableCandidates(inv, sysInv, prefix), replaceFrom
+		return p.memberCandidates(inv, sysInv, rels, qualifier, prefix), replaceFrom
+	case clause == sqlparse.ClauseTable:
+		return p.tableCandidates(inv, sysInv, scope.CTEs, prefix), replaceFrom
+	case len(rels) == 0:
+		// Column context but nothing resolvable has been FROM'd yet — nothing
+		// to pull columns from, so fall back to the object list.
+		return p.tableCandidates(inv, sysInv, nil, prefix), replaceFrom
 	default:
-		return p.scopedColumnCandidates(inv, sysInv, refs, prefix), replaceFrom
+		return p.scopedColumnCandidates(rels, prefix), replaceFrom
 	}
 }

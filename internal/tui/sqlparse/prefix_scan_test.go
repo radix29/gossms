@@ -54,7 +54,7 @@ func splitRunes(script string) [][]rune {
 // clean one needs both, and a buffer-reusing call cannot check its own reuse.
 func flattenFresh(lines [][]rune) []rune { return FlattenLinesInto(nil, lines) }
 
-var tokKindNames = [...]string{"id", "kw", "dot", "comma", "lparen", "rparen"}
+var tokKindNames = [...]string{"id", "kw", "dot", "comma", "lparen", "rparen", "star"}
 
 var lexStateNames = [...]string{"normal", "linecomment", "blockcomment", "singlequote", "bracket", "doublequote"}
 

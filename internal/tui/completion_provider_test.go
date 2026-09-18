@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -757,6 +758,7 @@ func TestFormatColumnType(t *testing.T) {
 		{"decimal precision/scale", gosmo.CatalogColumn{DataType: "decimal", Precision: 18, Scale: 2, IsNullable: true}, "decimal(18,2)"},
 		{"not null suffix", gosmo.CatalogColumn{DataType: "int", IsNullable: false}, "int, not null"},
 		{"plain int nullable", gosmo.CatalogColumn{DataType: "int", IsNullable: true}, "int"},
+		{"untyped synthetic column", gosmo.CatalogColumn{Name: "id"}, "column"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -808,5 +810,136 @@ func TestParseFromScopeHandlesMultipleJoinsAndCommas(t *testing.T) {
 		if refs[i] != w {
 			t.Errorf("refs[%d] = %+v, want %+v", i, refs[i], w)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CTEs, derived tables and subqueries (sqlparse.ScopeAt + completion_relations)
+// ---------------------------------------------------------------------------
+
+// itemDetail returns the detail text of the item labelled label, or "" when
+// no item carries that label.
+func itemDetail(items []controls.CompletionItem, label string) string {
+	for _, it := range items {
+		if it.Label == label {
+			return it.Detail
+		}
+	}
+	return ""
+}
+
+func TestSQLCompletionCTEColumnsInMainQuery(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM dbo.Customers)\nSELECT | FROM t1")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	for _, want := range []string{"Id", "Name", "Email"} {
+		if !containsLabel(items, want) {
+			t.Errorf("items %v missing %q", labels(items), want)
+		}
+	}
+	if got, want := itemDetail(items, "Name"), "nvarchar(50), not null — t1"; got != want {
+		t.Errorf("detail for Name = %q, want %q", got, want)
+	}
+}
+
+func TestSQLCompletionCTENameOfferedInFromPosition(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM dbo.Customers) SELECT * FROM t|")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if !containsLabel(items, "t1") {
+		t.Fatalf("items %v missing the CTE name t1", labels(items))
+	}
+	if got := itemDetail(items, "t1"); got != "CTE" {
+		t.Errorf("detail for t1 = %q, want %q", got, "CTE")
+	}
+}
+
+func TestSQLCompletionCTEQualifierResolvesColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT Id, Name FROM dbo.Customers) SELECT t1.| FROM t1")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if got, want := labels(items), []string{"Id", "Name"}; !slices.Equal(got, want) {
+		t.Errorf("items = %v, want %v", got, want)
+	}
+}
+
+func TestSQLCompletionChainedCTEColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"WITH a AS (SELECT Id x FROM dbo.Customers),\n     b AS (SELECT x FROM a)\nSELECT | FROM b")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if !containsLabel(items, "x") {
+		t.Errorf("items %v missing the chained CTE column x", labels(items))
+	}
+	if got, want := itemDetail(items, "x"), "int, not null — b"; got != want {
+		t.Errorf("detail for x = %q, want %q", got, want)
+	}
+}
+
+func TestSQLCompletionDerivedTableQualifierResolvesColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"SELECT * FROM (SELECT Name, Email FROM dbo.Customers) d WHERE d.|")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if got, want := labels(items), []string{"Email", "Name"}; !slices.Equal(got, want) {
+		t.Errorf("items = %v, want %v", got, want)
+	}
+}
+
+// Inside a CTE body the clause state is the body's own, not the outer
+// statement's — a FROM there offers tables, where the flat scan used to see
+// the enclosing SELECT's column context.
+func TestSQLCompletionInsideCTEBodyUsesItsOwnClause(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM |) SELECT * FROM t1")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	for _, want := range []string{"dbo", "dbo.Customers", "dbo.Orders"} {
+		if !containsLabel(items, want) {
+			t.Errorf("items %v missing %q", labels(items), want)
+		}
+	}
+}
+
+// A column context inside a CTE body resolves against that body's own FROM,
+// not the main query's.
+func TestSQLCompletionInsideCTEBodyScopesToItsOwnFrom(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT | FROM dbo.Orders) SELECT * FROM dbo.Customers")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if !containsLabel(items, "CustomerId") {
+		t.Errorf("items %v missing Orders' CustomerId", labels(items))
+	}
+	if containsLabel(items, "Email") {
+		t.Errorf("items %v leaked Customers' Email into the CTE body", labels(items))
+	}
+}
+
+// An expression column a CTE body only aliases has no type to report; the
+// detail reads "column" rather than asserting one (see formatColumnType).
+func TestSQLCompletionCTEExpressionColumnIsUntyped(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT COUNT(*) n FROM dbo.Orders) SELECT | FROM t1")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if got, want := itemDetail(items, "n"), "column — t1"; got != want {
+		t.Errorf("detail for n = %q, want %q", got, want)
+	}
+}
+
+// "WITH (NOLOCK)" is a table hint, not a CTE clause — nothing may be bound.
+func TestSQLCompletionTableHintWithIsNotACTE(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "SELECT | FROM dbo.Customers WITH (NOLOCK)")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if !containsLabel(items, "Email") {
+		t.Errorf("items %v missing Customers' Email", labels(items))
 	}
 }

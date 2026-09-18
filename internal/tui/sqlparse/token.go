@@ -20,6 +20,10 @@ const (
 	TokenComma
 	TokenParenOpen
 	TokenParenClose
+	// TokenStar is '*'. It is a token only because the select-list parser
+	// needs to tell "SELECT *" and "SELECT a.*" from a named column; nothing
+	// else reads it, and every other operator is still dropped.
+	TokenStar
 )
 
 type Token struct {
@@ -299,6 +303,9 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 		case c == ')':
 			emit(Token{Kind: TokenParenClose, Start: i})
 			i++
+		case c == '*':
+			emit(Token{Kind: TokenStar, Start: i})
+			i++
 		case c == ';':
 			if stopAtSemicolon {
 				return lexResult{state, i, quoteStart, firstGo, lastGo}
@@ -526,5 +533,5 @@ var sqlKeywordList = []string{
 	"CASE", "WHEN", "THEN", "ELSE", "END", "CAST", "CONVERT", "DECLARE",
 	"EXEC", "EXECUTE", "PROCEDURE", "FUNCTION", "VIEW", "INDEX", "PRIMARY",
 	"KEY", "FOREIGN", "REFERENCES", "DEFAULT", "CHECK", "CONSTRAINT",
-	"ALTER", "DROP", "CREATE", "WITH", "MERGE",
+	"ALTER", "DROP", "CREATE", "WITH", "MERGE", "APPLY",
 }

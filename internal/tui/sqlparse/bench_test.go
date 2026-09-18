@@ -123,3 +123,50 @@ func TestSQLKeywordCanonicalMatchesTable(t *testing.T) {
 		}
 	}
 }
+
+// benchStatement is one statement of the shape the query tree exists for: a
+// CTE chain over derived tables and a join, all of it inside parentheses the
+// flat scan used to skip and the parser now walks.
+func benchStatement() []Token {
+	const sql = `WITH recent AS (
+    SELECT o.CustomerID, o.OrderDate, o.Total
+    FROM   dbo.Orders AS o
+    WHERE  o.OrderDate > '2026-01-01'
+), ranked AS (
+    SELECT r.CustomerID, SUM(r.Total) AS Spend
+    FROM   recent AS r
+    GROUP BY r.CustomerID
+)
+SELECT c.Name, k.Spend, d.LastOrder
+FROM   dbo.Customers AS c
+JOIN   ranked AS k ON k.CustomerID = c.CustomerID
+JOIN   (SELECT CustomerID, MAX(OrderDate) AS LastOrder FROM dbo.Orders GROUP BY CustomerID) AS d
+       ON d.CustomerID = c.CustomerID
+WHERE  c.Region = N'north' AND k.Spend > 1000`
+	buf := []rune(sql)
+	toks, _, _, _ := TokenizeRange(buf, 0, len(buf), false)
+	return toks
+}
+
+// ScopeAt runs once per keystroke while the popup is open, on the cursor's
+// statement only. ParseFromScope, the flat scan it replaced, is the reference:
+// the tree parse costs more because it no longer skips paren contents, and
+// this is where a regression in that cost would show up.
+func BenchmarkScopeAt(b *testing.B) {
+	toks := benchStatement()
+	upTo := toks[len(toks)-1].Start
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ScopeAt(toks, upTo)
+	}
+}
+
+func BenchmarkParseFromScopeReference(b *testing.B) {
+	toks := benchStatement()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ParseFromScope(toks)
+	}
+}
