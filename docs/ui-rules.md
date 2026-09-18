@@ -245,7 +245,8 @@ invariants, and where each is implemented:
 3. A widget that acts on `Button1` needs a per-widget `mouseDragging` latch, set on
    the press and cleared on the matching `ButtonNone`.
 4. A latch must not survive into the widget's next showing — `ModalDialog.Show()`
-   clears both.
+   clears both, and `FieldGesture.Clear` drops the gesture *and* the field's own
+   `mouseDragging`, for the dialogs that hand the same field back on the reshow.
 5. A host that returns early from `HandleMouse` must still forward `ButtonNone` to a
    latch-bearing child.
 
@@ -268,8 +269,15 @@ confirmation the retyping exists to slow down.
 **The release forwarded to the *focused* field is
 `forwardReleaseToFocusedField` (`dialog_common.go`), not a hand-written type
 switch.** `FieldGesture.Release` covers the field that claimed a press;
-invariant 5 also wants the field that has focus without one, and on Connect an
-`*controls.Editor`, which the gesture never tracks. Backup, Restore and Connect
+invariant 5 also wants the focused `*controls.Editor`, which the gesture never
+tracks and which keeps its own latch. Its `InputField` arm is belt-and-braces
+and has no reachable caller: in Backup, Restore and Connect the only route a
+press takes to an `InputField` is `FieldGesture.Claim`, so a latched field
+always has the gesture too. The one way the two halves came apart — a dialog
+dismissed mid-drag and reopened, in the dialogs that build their fields once —
+is closed in `FieldGesture.Clear`, which now drops the field's own
+`mouseDragging` as well (`InputField.CancelMouseDrag`), pinned by
+`TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture`. Backup, Restore and Connect
 each wrote that switch out and Connect's was the only one with the Editor arm.
 It answers only "was this the release, and has it been delivered" — the
 `!= Button1` early return stays at the call site, because Connect reads the

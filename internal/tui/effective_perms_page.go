@@ -106,28 +106,17 @@ func pagePrincipalEffectivePermissions(d *PropDialog, sc *db.ServerConn, dbName 
 					hint.SetError("Enter both a schema and a table or view name.")
 					return
 				}
-				hint.Set("Resolving...")
-
-				var perms []*gosmo.EffectivePermission
-				d.runPageActionOnce(&showBusy, func(ctx context.Context) error {
-					var err error
-					switch scope {
-					case effScopeSchema:
-						perms, err = database.EffectiveSchemaPermissionsContext(ctx, schema, *principal)
-					case effScopeObject:
-						perms, err = database.EffectiveObjectPermissionsContext(ctx, schema, object, *principal)
-					default:
-						perms, err = database.EffectivePermissionsContext(ctx, *principal)
-					}
-					return err
-				}, func(err error) {
-					if err != nil {
-						hint.SetError("Error: " + err.Error())
-						return
-					}
-					fill(perms)
-					hint.Set(effectiveResultSummary(len(perms), *principal))
-				})
+				effectivePermsShow(d, hint, &showBusy, principal, fill,
+					func(ctx context.Context) ([]*gosmo.EffectivePermission, error) {
+						switch scope {
+						case effScopeSchema:
+							return database.EffectiveSchemaPermissionsContext(ctx, schema, *principal)
+						case effScopeObject:
+							return database.EffectiveObjectPermissionsContext(ctx, schema, object, *principal)
+						default:
+							return database.EffectivePermissionsContext(ctx, *principal)
+						}
+					})
 			})
 
 			f := propsheet.NewForm(
@@ -158,20 +147,10 @@ func pageLoginEffectivePermissions(d *PropDialog, sc *db.ServerConn, principal *
 
 			var showBusy bool
 			showBtn := widgets.NewButton("Show", func() {
-				hint.Set("Resolving...")
-				var perms []*gosmo.EffectivePermission
-				d.runPageActionOnce(&showBusy, func(ctx context.Context) error {
-					var err error
-					perms, err = sc.Server.EffectiveServerPermissionsContext(ctx, *principal)
-					return err
-				}, func(err error) {
-					if err != nil {
-						hint.SetError("Error: " + err.Error())
-						return
-					}
-					fill(perms)
-					hint.Set(effectiveResultSummary(len(perms), *principal))
-				})
+				effectivePermsShow(d, hint, &showBusy, principal, fill,
+					func(ctx context.Context) ([]*gosmo.EffectivePermission, error) {
+						return sc.Server.EffectiveServerPermissionsContext(ctx, *principal)
+					})
 			})
 
 			f := propsheet.NewForm(
@@ -186,6 +165,37 @@ func pageLoginEffectivePermissions(d *PropDialog, sc *db.ServerConn, principal *
 			return f, func(context.Context) error { return nil }, nil
 		},
 	}
+}
+
+// effectivePermsShow is one press of either page's Show button: the
+// "Resolving..." state, the fetch off the UI goroutine, and the one way both
+// pages report what came back. The pages differ only in which gosmo call fetch
+// makes.
+//
+// The database page's scope validation stays at its call site: it must refuse
+// the press *before* "Resolving..." goes up, and each refusal has its own
+// message.
+//
+// principal stays a pointer: it is the rename box every page of the dialog
+// shares (see loginPropPages), so the summary names whoever the principal is
+// by the time the fetch returns.
+func effectivePermsShow(d *PropDialog, hint *propsheet.HintRow, busy *bool, principal *string,
+	fill func([]*gosmo.EffectivePermission),
+	fetch func(ctx context.Context) ([]*gosmo.EffectivePermission, error)) {
+	hint.Set("Resolving...")
+	var perms []*gosmo.EffectivePermission
+	d.runPageActionOnce(busy, func(ctx context.Context) error {
+		var err error
+		perms, err = fetch(ctx)
+		return err
+	}, func(err error) {
+		if err != nil {
+			hint.SetError("Error: " + err.Error())
+			return
+		}
+		fill(perms)
+		hint.Set(effectiveResultSummary(len(perms), *principal))
+	})
 }
 
 // effectiveResultSummary is the line under the Show button once a run

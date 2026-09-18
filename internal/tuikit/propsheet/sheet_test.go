@@ -53,8 +53,10 @@ func TestSheetStalePageFormIgnored(t *testing.T) {
 	}
 	p.Show() // triggers load #1, seq1 captured
 
-	// A second load starts (e.g. a refresh) before the first's result comes
-	// back, bumping the page's seq.
+	// Load #1 lands, and a refresh starts load #2, bumping the page's seq.
+	// (Refresh is a no-op while the page is still PageLoading, so the page has
+	// to reach PageReady first for a second load to start at all.)
+	p.SetPageForm(0, seq1, NewForm(Static("First", "yes")))
 	p.Refresh(0)
 
 	// The stale result from load #1 arrives late.
@@ -461,5 +463,35 @@ func TestSheetCancelWhileApplyingStopsTheRun(t *testing.T) {
 					stops, closes, p.Visible())
 			}
 		})
+	}
+}
+
+// Refresh on a page whose load is still out must not dispatch a second one.
+// The host cannot cancel a load it was never told was superseded, so every
+// extra dispatch is another fetch holding a connection the page's real load
+// then queues behind.
+func TestSheetRefreshWhileLoadingStartsNothing(t *testing.T) {
+	p := newTestSheet("General")
+	loads := 0
+	p.OnLoadPage = func(page, seq int) { loads++ }
+	p.Show()
+	if loads != 1 || p.PageState(0) != PageLoading {
+		t.Fatalf("test setup: loads = %d, state = %v", loads, p.PageState(0))
+	}
+
+	p.Refresh(0)
+	p.Refresh(0)
+	if loads != 1 {
+		t.Fatalf("loads = %d after two Refresh() calls during a load, want 1", loads)
+	}
+	if p.PageState(0) != PageLoading {
+		t.Fatalf("PageState(0) = %v, want still PageLoading", p.PageState(0))
+	}
+
+	// The page's own load lands; Refresh works again.
+	p.SetPageForm(0, 1, NewForm(Static("Name", "x")))
+	p.Refresh(0)
+	if loads != 2 {
+		t.Fatalf("loads = %d after a Refresh on a loaded page, want 2", loads)
 	}
 }

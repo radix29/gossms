@@ -308,6 +308,55 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	return true
 }
 
+// applyMousePress is the Button1 body both mouse paths share: HandleMouse's
+// unwrapped branch and handleMouseWrapped differ only in how they derive
+// (row, col) — a clamp plus runeColAtScreenX against a physical row, versus a
+// visual-line lookup plus RuneIndexAtColumn against a segment — and everything
+// after that is this. Keeping it in one place is what stops the two copies
+// drifting: they already had, when only the unwrapped one set selBlock.
+//
+// Always reports true: a Button1 press over the content area is handled.
+func (e *Editor) applyMousePress(row, col int, ev *tcell.EventMouse) bool {
+	if !e.mouseDragging {
+		// Fresh click: reposition the cursor. Without Shift, arm a new anchor
+		// here — HasSelection() stays false until the drag moves off this
+		// point. With Shift, keep the active anchor (or the pre-click cursor)
+		// and move only the cursor, the click-to-extend behaviour most editors
+		// give Shift+Click. Alt on the press picks block vs. linear selection
+		// for the whole drag, best-effort since terminals vary in reporting it
+		// — and never in wrap mode, which breaks the fixed rune columns a block
+		// selection assumes, so the press clears it there rather than leaving
+		// whatever the previous mode armed.
+		e.mouseDragging = true
+		// A second unmodified press on the same spot selects the word under it.
+		// mouseDragging is latched above, so resends while the button is held
+		// land in the drag branch and extend from the word. pressIsDouble runs
+		// for every fresh press, modified or not, so a Shift- or Alt-clicked
+		// press still counts as "the previous press" — which is why the
+		// modifier test lives inside it rather than in an && here that would
+		// discard the press before consulting it.
+		if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
+			e.selectWordAt(row, col)
+			return true
+		}
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			if !e.selecting {
+				e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol
+			}
+		} else {
+			e.selAnchorRow, e.selAnchorCol = row, col
+		}
+		e.selecting = true
+		e.selBlock = !e.wrapMode && ev.Modifiers()&tcell.ModAlt != 0
+		e.cursorRow, e.cursorCol = row, col
+	} else {
+		// Continued drag: move the cursor, anchor and mode stay fixed.
+		e.cursorRow, e.cursorCol = row, col
+	}
+	e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)
+	return true
+}
+
 // HandleMouse handles mouse events.
 func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	// As with HandleKey's completionOpen check: the popup floats independently of
@@ -378,43 +427,7 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 	if ev.Buttons() == tcell.Button1 {
 		row := core.Clamp(e.scrollRow+min(my-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
-		col := e.runeColAtScreenX(row, mx-contentX)
-		if !e.mouseDragging {
-			// Fresh click: reposition the cursor. Without Shift, arm a new
-			// anchor here — HasSelection() stays false until the drag moves off
-			// this point. With Shift, keep the active anchor (or the pre-click
-			// cursor) and move only the cursor, the click-to-extend behaviour
-			// most editors give Shift+Click. Alt on the press picks block vs.
-			// linear selection for the whole drag, best-effort since terminals
-			// vary in reporting it.
-			e.mouseDragging = true
-			// A second unmodified press on the same spot selects the word under
-			// it. mouseDragging is latched above, so resends while the button is
-			// held land in the drag branch and extend from the word.
-			// pressIsDouble runs for every fresh press, modified or not, so a
-			// Shift- or Alt-clicked press still counts as "the previous press" —
-			// which is why the modifier test lives inside it rather than in an
-			// && here that would discard the press before consulting it.
-			if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
-				e.selectWordAt(row, col)
-				return true
-			}
-			if ev.Modifiers()&tcell.ModShift != 0 {
-				if !e.selecting {
-					e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol
-				}
-			} else {
-				e.selAnchorRow, e.selAnchorCol = row, col
-			}
-			e.selecting = true
-			e.selBlock = ev.Modifiers()&tcell.ModAlt != 0
-			e.cursorRow, e.cursorCol = row, col
-		} else {
-			// Continued drag: move the cursor, anchor and mode stay fixed.
-			e.cursorRow, e.cursorCol = row, col
-		}
-		e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)
-		return true
+		return e.applyMousePress(row, e.runeColAtScreenX(row, mx-contentX), ev)
 	}
 	switch ev.Buttons() {
 	case tcell.WheelUp:

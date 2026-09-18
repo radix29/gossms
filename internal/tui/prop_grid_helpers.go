@@ -522,3 +522,42 @@ func indexKeyColumnGrid(idx *gosmo.Index) *controls.DataGrid {
 	grid.SetCellCursor(true)
 	return grid
 }
+
+// auditSelectRow builds the "Audit" dropdown both audit-specification pages
+// show, from the audits offered and the one the specification is bound to.
+//
+// The branch is the point. An orphaned specification — its audit dropped out
+// from under it, which SQL Server allows — has a name in no list, and the
+// database page narrows the list further by leaving out audits another
+// specification already holds. Either way the bound name can be absent, and a
+// dropdown opened with the first real audit preselected would let a stray
+// Apply silently rebind the specification to whichever audit sorts first. The
+// missing name is added as missingAuditItem and selected instead; the apply
+// paths test the row's value against that constant before writing.
+func auditSelectRow(names []string, current string) *propsheet.SelectRow {
+	selected := slices.Index(names, current)
+	if selected < 0 {
+		names = append([]string{missingAuditItem}, names...)
+		selected = 0
+	}
+	return propsheet.Select("Audit", names, selected)
+}
+
+// unionSorted returns list widened with every extra it does not already hold,
+// sorted — the audit-specification pick lists' rule.
+//
+// The list comes from the server, so a group the instance still defines is
+// always in it; one it no longer defines, but that the specification goes on
+// recording, is not. Dropping it from the pick list would hide a recorded
+// group from the page that is the only way to stop recording it. The pages
+// read their grids back positionally against the slice this returns, so the
+// sort has to happen here, once, not at each grid.
+func unionSorted(list, extra []string) []string {
+	for _, v := range extra {
+		if !slices.Contains(list, v) {
+			list = append(list, v)
+		}
+	}
+	slices.Sort(list)
+	return list
+}

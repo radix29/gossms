@@ -626,7 +626,11 @@ placement that is not local to the call:
   Hit-testing a motion event ends the selection the moment the pointer leaves
   the field's rect; letting it reach `ButtonClicked` fires a button the moment
   a selection drag wanders over the button row.
-- `Clear` goes in `Show`, per invariant 4 above.
+- `Clear` goes in `Show`, per invariant 4 above. It drops the field's own
+  `mouseDragging` too: Connect, Options, Find/Replace and Log Search build
+  their fields once, so a dialog dismissed mid-drag hands back a field still
+  latched, and its first press after the reopen took the continued-drag branch
+  and armed no anchor.
 
 Seven dialogs had hand-rolled this, each with a comment restating a different
 part of the reasoning; `dialogs.FieldGesture` now holds it once and each
@@ -745,8 +749,20 @@ the application is latest-only — the newest request is the only one whose
 result anyone wants — and each of these owns a `latest` rather than its own
 copy: an Object Explorer node's children (`object_explorer.go`), the
 completion inventory's catalog, the Query Store panel's report, plan pane and
-series, the Log File Viewer's read, `PropDialog`'s page loads, a
-`newObjectDialog`'s prefetch, and the Detail Browser's fetch.
+series, the Log File Viewer's read, a `newObjectDialog`'s prefetch, and the
+Detail Browser's fetch.
+
+`PropDialog`'s page loads are the one site that keeps the two halves apart,
+because the sheet already owns one of them: `propsheet.PropertySheet` numbers
+every page load with its own `seq` and drops a result that no longer matches
+it, so a `latest` per page would carry a second counter shadowing it. What the
+framework cannot own is the cancel — `tuikit` knows nothing about
+`context`-scoped fetches, and must not learn — so `PropDialog` holds it in
+`pageRuns`, a `context.CancelFunc` per page index, cancelled and re-armed by
+`onLoadPage` and drained by `show`/`onClose`. `PropertySheet.Refresh` is the
+other half of the same rule: it refuses to dispatch a second load for a page
+that is still loading, since the host it would dispatch to was never told the
+first one was superseded.
 
 **Both halves matter, and a copy with only the first is a bug.** The token
 discards a superseded result, so a slow fetch cannot overwrite the fresher one

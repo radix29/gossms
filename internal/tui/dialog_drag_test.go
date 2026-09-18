@@ -360,3 +360,39 @@ func TestFindDialogDragOutOfAFieldKeepsExtending(t *testing.T) {
 		t.Error("the field is still latched — its next off-rect press was accepted")
 	}
 }
+
+// A dialog dismissed mid-drag — Escape with the button still down — never sees
+// the release, so both halves of the latch survive: the gesture and the
+// field's own mouseDragging. Show clears the gesture; it must clear the
+// field's too, because Connect builds its fields once in NewConnectDialog and
+// keeps them across showings (Backup, Restore and Filter rebuild theirs, which
+// is why the same hole does not open there). While it did not, the first press
+// in fServer after the reopen took InputField.HandleMouse's continued-drag
+// branch, which arms no anchor, and the drag that followed selected from
+// wherever the old cursor sat.
+func TestConnectDialogShowClearsTheFieldLatchTooNotJustTheGesture(t *testing.T) {
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	d := NewConnectDialog(a)
+	d.Show()
+	d.layoutFields()
+	d.fServer.SetValue("abcdefgh")
+
+	ix, y := d.fServer.InputX(), d.fServer.RectY()
+	// Pressed and never released: the dialog goes away with the button down.
+	d.HandleMouse(tcell.NewEventMouse(ix+1, y, tcell.Button1, tcell.ModNone))
+	if d.drag.Field() == nil {
+		t.Fatal("the press did not arm a latch — test premise is wrong")
+	}
+	d.Hide()
+
+	d.Show()
+	d.layoutFields()
+	if d.drag.Field() != nil {
+		t.Fatal("Show left the gesture armed from the previous showing")
+	}
+	if d.fServer.HandleMouse(tcell.NewEventMouse(ix+6, y+2, tcell.Button1, tcell.ModNone)) {
+		t.Error("the field is still latched after the reopen — its next off-rect press " +
+			"was accepted as a continued drag")
+	}
+}

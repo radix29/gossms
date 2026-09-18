@@ -48,8 +48,11 @@ Single-file binaries for Windows, Linux and macOS are on the
 
 ### Connection
 
-**Connect to SQL Server** — The connection dialog lets you pick an auth mode,
-specify server, database and credentials.
+**Connect to SQL Server** — Recent connections are listed on the left; pick one
+to fill the form, or type a new server. The Connection Properties tab covers
+authentication (SQL Server, Windows and every Microsoft Entra method), database,
+encryption and custom properties, and the Connection String tab shows the same
+connection as a string.
 
 ![connect](https://github.com/radix29/gossms/raw/main/docs/wiki/screenshots/01_connect.png)
 

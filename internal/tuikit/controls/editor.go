@@ -231,7 +231,22 @@ func (e *Editor) gutterWidth() int {
 //
 // A Highlighter applies in wrap mode too: drawWrapped fetches runs per logical
 // line and resolves each column through styleAt.
-func (e *Editor) SetWrapMode(v bool) { e.wrapMode = v }
+//
+// Switching mode resets the state the two modes disagree about, because a value
+// carried across reads as a different thing on the other side: selBlock's
+// rectangular selection assumes the fixed rune columns wrap mode breaks (and
+// handleMouseWrapped never sets it, so no click would clear it), scrollCol is
+// meaningful only outside wrap mode, and scrollRow indexes visual rows in wrap
+// mode and logical lines outside it. Setting the mode it already has is a no-op,
+// so the common construction-time call does not move the cursor.
+func (e *Editor) SetWrapMode(v bool) {
+	if v == e.wrapMode {
+		return
+	}
+	e.selecting, e.selBlock, e.mouseDragging = false, false, false
+	e.scrollRow, e.scrollCol = 0, 0
+	e.wrapMode = v
+}
 
 // SetReadOnly makes the editor reject every mutating key — typed characters,
 // Enter, Backspace/Delete, Tab/Backtab indent, undo/redo, and the line/case/

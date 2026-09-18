@@ -326,11 +326,22 @@ func (p *PropertySheet) SetPageError(page, seq int, err error) {
 
 // Refresh re-queries page, prompting via ConfirmDiscard first if it has
 // unsaved edits.
+//
+// A page whose load is still out is left alone: the load in flight is already
+// the fresh read Refresh would ask for, and dispatching a second OnLoadPage
+// for it puts two fetches out for one page — the host cannot cancel what it
+// has not been told was superseded, so holding F5 down queues one pooled
+// connection per press ahead of the read the user is waiting for. Same
+// judgement as SelectPage's: navigating to a still-loading page is fine, and
+// starting a *second* load for it is not.
 func (p *PropertySheet) Refresh(page int) {
 	if page < 0 || page >= len(p.pages) {
 		return
 	}
 	slot := &p.pages[page]
+	if slot.state == PageLoading {
+		return
+	}
 	if slot.form != nil && slot.form.Dirty() && p.ConfirmDiscard != nil {
 		p.ConfirmDiscard(page, func() { p.startLoad(page) })
 		return

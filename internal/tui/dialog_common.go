@@ -163,14 +163,23 @@ func (a *App) confirmDiscardChanges(proceed func()) {
 // a latch-bearing child": Backup, Restore and Connect all reached it by
 // writing the same switch out.
 //
-// Call it below ConsumeOutsideClick and below FieldGesture.Release, which
-// covers only the field that claimed a press; this covers the field that has
-// focus without one, and on Connect an Editor, which the gesture never tracks.
+// Call it below ConsumeOutsideClick and below FieldGesture.Release. The live
+// arm is the Editor: an Editor keeps its own latch and is deliberately outside
+// FieldGesture, so nothing above here ends a selection drag started in one.
 //
 // focused is whatever the dialog's focus ring points at. Only an InputField
 // and an Editor are forwarded to: the checkboxes, radio groups and drop-downs
 // were already given the release above ConsumeOutsideClick, and handing it to
 // one twice would toggle it.
+//
+// The InputField arm is belt-and-braces, not a path these three dialogs take.
+// In all of them the only route a press takes to an InputField is
+// FieldGesture.Claim, so a latched field always has the gesture too and
+// FieldGesture.Release — which runs above this — has already ended it; the one
+// way the halves came apart, a dialog dismissed mid-drag and reopened, is
+// closed in FieldGesture.Clear. The arm stays because a fourth caller, or a
+// dialog that hit-tests a field itself, would need it, and it costs a type
+// switch case.
 //
 // It deliberately does not call FieldGesture.Release or .Replay, and does not
 // answer the non-Button1 question. Their placement differs per dialog —

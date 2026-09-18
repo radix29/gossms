@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/showplan"
 )
 
@@ -97,20 +98,37 @@ func qsForceMessage(force bool, dbName string, queryID, planID int64) string {
 		planID, queryID, dbName)
 }
 
-// showPlan opens the selected plan in its own PlanPanel — the same detached
-// window the Execution Plan tab's Expand button opens.
-func (p *QueryStorePanel) showPlan() {
+// selectedParsedPlan resolves the selected row to its plan and that plan's
+// parsed showplan document, reporting why it could not in the status line and
+// answering a nil document when so. A nil document is the only thing a caller
+// has to test: there is no row, or the row has no plan, or the plan would not
+// parse, and none of the three leaves anything to open.
+//
+// The empty-XML check is separate from the parse because Query Store can hold
+// a plan row whose XML it no longer has, and Parse then reports a document
+// error where "there is no plan here" is what happened.
+func (p *QueryStorePanel) selectedParsedPlan() (*gosmo.QSPlan, *showplan.Plan) {
 	plan := p.selectedPlan()
 	if plan == nil {
-		return
+		return nil, nil
 	}
 	if plan.QueryPlanXML == "" {
 		p.setStatus(fmt.Sprintf("Query Store holds no plan XML for plan %d", plan.PlanID))
-		return
+		return plan, nil
 	}
 	parsed, err := showplan.Parse([]byte(plan.QueryPlanXML))
 	if err != nil {
 		p.setStatus(fmt.Sprintf("Plan %d could not be read: %v", plan.PlanID, err))
+		return plan, nil
+	}
+	return plan, parsed
+}
+
+// showPlan opens the selected plan in its own PlanPanel — the same detached
+// window the Execution Plan tab's Expand button opens.
+func (p *QueryStorePanel) showPlan() {
+	plan, parsed := p.selectedParsedPlan()
+	if parsed == nil {
 		return
 	}
 	p.app.openPlanPanel(fmt.Sprintf("Plan %d — query %d (%s)", plan.PlanID, plan.QueryID, p.dbName), parsed)
@@ -123,20 +141,8 @@ func (p *QueryStorePanel) showPlan() {
 // Pressing it again on the marked plan clears the mark, so a mark made by
 // accident is undone the same way it was made.
 func (p *QueryStorePanel) comparePlans() {
-	plan := p.selectedPlan()
-	if plan == nil {
-		return
-	}
-	// Same check showPlan makes, and for the same reason: Query Store can hold
-	// a plan row whose XML it no longer has, and Parse then reports a document
-	// error where "there is no plan here" is what happened.
-	if plan.QueryPlanXML == "" {
-		p.setStatus(fmt.Sprintf("Query Store holds no plan XML for plan %d", plan.PlanID))
-		return
-	}
-	parsed, err := showplan.Parse([]byte(plan.QueryPlanXML))
-	if err != nil {
-		p.setStatus(fmt.Sprintf("Plan %d could not be read: %v", plan.PlanID, err))
+	plan, parsed := p.selectedParsedPlan()
+	if parsed == nil {
 		return
 	}
 	if p.cmpPlanID == plan.PlanID {

@@ -144,7 +144,9 @@ func visualIndexForCursor(vls []visualLine, row, col int) int {
 // mouse's Y position map to visual rows (vls, from buildVisualLines)
 // rather than directly to logical lines. vls is precomputed by the caller
 // (HandleMouse) rather than recomputed here, since it's already needed
-// there for the scrollbar hit-test on Button1 events.
+// there for the scrollbar hit-test on Button1 events. Once (row, col) is
+// derived, the press goes to applyMousePress — the body shared with
+// HandleMouse's unwrapped branch.
 func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, vls []visualLine) bool {
 	if ev.Buttons() == tcell.Button1 {
 		vi := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)
@@ -158,34 +160,7 @@ func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, 
 		if col > vl.end {
 			col = vl.end
 		}
-		if !e.mouseDragging {
-			// Fresh click: reposition the cursor. Without Shift, arm a new
-			// selection anchor here (HasSelection() stays false until the
-			// drag moves away from this point). With Shift, extend the
-			// existing selection instead — see the identical Shift+Click
-			// handling in HandleMouse (editor_input.go) for the rationale.
-			e.mouseDragging = true
-			// Double-click selects the word under the pointer, same as in
-			// non-wrap mode (see HandleMouse).
-			if e.pressIsDouble(row, col, ev.When(), ev.Modifiers()) {
-				e.selectWordAt(row, col)
-				return true
-			}
-			if ev.Modifiers()&tcell.ModShift != 0 {
-				if !e.selecting {
-					e.selAnchorRow, e.selAnchorCol = e.cursorRow, e.cursorCol
-				}
-			} else {
-				e.selAnchorRow, e.selAnchorCol = row, col
-			}
-			e.selecting = true
-			e.cursorRow, e.cursorCol = row, col
-		} else {
-			// Continued drag: move the cursor, anchor stays fixed.
-			e.cursorRow, e.cursorCol = row, col
-		}
-		e.desiredCol = core.ColumnOfRune(line, col)
-		return true
+		return e.applyMousePress(row, col, ev)
 	}
 	if ev.Buttons() == tcell.WheelUp && e.scrollRow > 0 {
 		e.scrollRow--

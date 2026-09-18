@@ -485,7 +485,8 @@ through a database-wide grant.
   other gosmo types that already did this; `Database` and `Server` were the
   only two with `Name()` as a method. `IsSystem()` and `IsSnapshot()` stay
   methods because they are derivations over `ID`/`SourceDatabaseID`, and
-  `Server()` stays one because it is a back-pointer, as `Table.DB()` is.
+  `Server()` stays one because it is a back-pointer, as `Table.Database()`
+  is (named `Table.DB()` until review plan P9 renamed it, 2026-09-18).
   `Server.Name()` is left alone: it reads `s.info.Name`, not its own storage.
   The reason is that the *unguessable* shape was the defect — a caller could
   not tell which form a given type used, and guessing wrong on `Database`

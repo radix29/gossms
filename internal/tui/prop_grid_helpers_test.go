@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -405,4 +406,36 @@ func TestMustPropertyRowIndexFindsRowsByLabel(t *testing.T) {
 		}
 	}()
 	mustPropertyRowIndex(rows, "Nope")
+}
+
+// The two rules the audit-specification pages now share. The page tests at
+// both scopes (audit_specification_props_page_test.go,
+// database_audit_specification_props_page_test.go) assert the same two
+// behaviours through the real loaders; these pin the helpers themselves, so a
+// drift shows here rather than as two page failures with no common cause.
+func TestAuditSelectRowStandsInForAMissingAudit(t *testing.T) {
+	row := auditSelectRow([]string{"HIPAA", "Rollover"}, "HIPAA")
+	if got := row.Value(); got != "HIPAA" {
+		t.Errorf("a bound audit selects %q", got)
+	}
+
+	// An orphan: the bound name is in no list, and the first real audit must
+	// not stand in for it — a stray Apply would rebind the specification.
+	row = auditSelectRow([]string{"HIPAA", "Rollover"}, "")
+	if got := row.Value(); got != missingAuditItem {
+		t.Errorf("an orphan selects %q, want the stand-in", got)
+	}
+	if got := row.Items()[0]; got != missingAuditItem {
+		t.Errorf("the stand-in is not the first item: %v", row.Items())
+	}
+}
+
+func TestUnionSortedKeepsARecordedValueTheServerNoLongerOffers(t *testing.T) {
+	got := unionSorted(
+		[]string{"SCHEMA_OBJECT_ACCESS_GROUP", "BACKUP_RESTORE_GROUP"},
+		[]string{"DATABASE_ROLE_MEMBER_CHANGE_GROUP", "BACKUP_RESTORE_GROUP"})
+	want := []string{"BACKUP_RESTORE_GROUP", "DATABASE_ROLE_MEMBER_CHANGE_GROUP", "SCHEMA_OBJECT_ACCESS_GROUP"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v — sorted, with no duplicate", got, want)
+	}
 }

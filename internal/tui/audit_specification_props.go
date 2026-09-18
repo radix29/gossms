@@ -45,28 +45,8 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 			for i, a := range audits {
 				auditNames[i] = a.Name
 			}
-			// An orphaned specification — its audit dropped out from under it,
-			// which SQL Server allows — has a name in no list. Offering the
-			// dropdown with the first audit preselected would make a stray
-			// Apply silently rebind it, so the missing name is added and
-			// selected instead.
-			selected := slices.Index(auditNames, spec.AuditName)
-			if selected < 0 {
-				auditNames = append([]string{missingAuditItem}, auditNames...)
-				selected = 0
-			}
-			auditRow := propsheet.Select("Audit", auditNames, selected)
-
-			// The pick list comes from the server, so a group the
-			// specification already records is always in it; a group the
-			// instance no longer defines would otherwise vanish from the page
-			// while still being recorded.
-			for _, g := range spec.ActionGroups {
-				if !slices.Contains(groups, g) {
-					groups = append(groups, g)
-				}
-			}
-			slices.Sort(groups)
+			auditRow := auditSelectRow(auditNames, spec.AuditName)
+			groups = unionSorted(groups, spec.ActionGroups)
 
 			grid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 14)
 			text := make([][]string, len(groups))

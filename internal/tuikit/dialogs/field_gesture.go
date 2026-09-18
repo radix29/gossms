@@ -67,10 +67,28 @@ func (g *FieldGesture) Claim(f *widgets.InputField, ev *tcell.EventMouse) {
 	f.HandleMouse(ev)
 }
 
-// Clear drops a held gesture without forwarding anything. Call it from Show:
-// a latch must not survive into the dialog's next showing, or the first press
-// of the new session is read as the continuation of the last one's drag.
-func (g *FieldGesture) Clear() { g.field = nil }
+// Clear drops a held gesture without forwarding anything, and drops the
+// field's own mouseDragging latch with it. Call it from Show: a latch must not
+// survive into the dialog's next showing, or the first press of the new
+// session is read as the continuation of the last one's drag.
+//
+// Both halves, because a dialog dismissed mid-drag — Escape with the button
+// still down — never sees the release, so the field stays latched along with
+// the gesture, and the dialogs that build their fields once (Connect, Options,
+// Find/Replace, Log Search) hand that same field back on the next showing.
+// Clearing the gesture alone left the field's latch set, and the first press in
+// it after the reopen took InputField.HandleMouse's continued-drag branch,
+// placing the cursor without arming a new anchor, so the drag that followed
+// selected from wherever the old cursor was. Invariant 4 in docs/ui-rules.md
+// wants both latches gone, and this is the only call that can reach the
+// field's. Backup, Restore and Filter rebuild their fields in show, so the
+// stale one is discarded there rather than cleared.
+func (g *FieldGesture) Clear() {
+	if g.field != nil {
+		g.field.CancelMouseDrag()
+	}
+	g.field = nil
+}
 
 // Field is the field holding the gesture, or nil when none is. It answers
 // *which* field for a caller — or a test — that needs more than "a gesture is

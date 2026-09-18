@@ -172,6 +172,19 @@ type PropDialog struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// pageRuns is the cancel half of the latest-only contract for the page
+	// loads, keyed by page index — see ARCHITECTURE.md § Latest-only loads.
+	// The sheet owns the seq that discards a superseded page's result, so this
+	// side owns only the cancel that stops it fetching; a full latest per page
+	// would carry a second sequence counter shadowing the sheet's.
+	//
+	// Whoever starts a load for a page cancels that page's previous run first,
+	// so a supersede (InvalidateAll after an Apply, a re-show) releases the
+	// pooled connection the replaced read is holding now, rather than at
+	// propFetchTimeout with the read nobody wants queued in front of the one
+	// they are waiting for. UI goroutine only, like every other field here.
+	pageRuns map[int]*pageRun
+
 	// run is the OK/Apply/Script pipeline in flight, if any.
 	run applyRun
 }
@@ -213,6 +226,7 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 		d.cancel()
 	}
 	d.ctx, d.cancel = context.WithCancel(sc.Context())
+	d.stopPageRuns()
 	d.sc = sc
 	d.database = database
 	d.pages = pages()
@@ -228,7 +242,54 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.Show()
 }
 
-func (d *PropDialog) onClose() { cancelIfSet(d.cancel) }
+func (d *PropDialog) onClose() {
+	cancelIfSet(d.cancel)
+	d.stopPageRuns()
+}
+
+// pageRun is one in-flight page load, held so a later load of the same page can
+// stop it. A struct rather than a bare context.CancelFunc because the completed
+// run has to recognise itself in the map — funcs do not compare.
+type pageRun struct{ cancel context.CancelFunc }
+
+// startPageRun supersedes page's load in flight, if any, and returns the
+// context the replacement runs under.
+func (d *PropDialog) startPageRun(page int, parent context.Context) (context.Context, *pageRun) {
+	d.stopPageRun(page)
+	ctx, cancel := context.WithTimeout(parent, propFetchTimeout)
+	run := &pageRun{cancel: cancel}
+	if d.pageRuns == nil {
+		d.pageRuns = make(map[int]*pageRun, len(d.pages))
+	}
+	d.pageRuns[page] = run
+	return ctx, run
+}
+
+// stopPageRun cancels page's load in flight, if any, and forgets it.
+func (d *PropDialog) stopPageRun(page int) {
+	if run := d.pageRuns[page]; run != nil {
+		run.cancel()
+		delete(d.pageRuns, page)
+	}
+}
+
+// endPageRun releases run's context once its result is in hand, unless a newer
+// load for the same page has already replaced it — that one owns the entry.
+func (d *PropDialog) endPageRun(page int, run *pageRun) {
+	run.cancel()
+	if d.pageRuns[page] == run {
+		delete(d.pageRuns, page)
+	}
+}
+
+// stopPageRuns cancels every load in flight: the dialog is closing, or being
+// re-seeded for the next object. Cancelling d.ctx stops them too, but the map
+// would keep a dead entry per page across the next showing.
+func (d *PropDialog) stopPageRuns() {
+	for page := range d.pageRuns {
+		d.stopPageRun(page)
+	}
+}
 
 // cancelIfSet calls cancel if non-nil — the shared body behind every property
 // and creation dialog's OnClose, cancelling whatever fetch or apply is still in
@@ -255,20 +316,23 @@ func (d *PropDialog) onLoadPage(page, seq int) {
 		return
 	}
 	p := d.pages[page]
-	sessionCtx := d.ctx
 	sc := d.sc
+	// On the UI goroutine, before the load starts: the run this one supersedes
+	// must stop now, and d.ctx must be read here rather than inside the
+	// closure — show() rewrites it for the next showing.
+	ctx, run := d.startPageRun(page, d.ctx)
 
 	d.app.safegoRepair("loading a properties page", func() {
+		d.endPageRun(page, run)
 		d.SetPageError(page, seq, errPageLoadPanicked)
 	}, func() {
-		ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
-		defer cancel()
 		// Before the load, not after: the probe is what decides whether the
 		// form the load builds is editable, and SetPageReadOnly has to reach
 		// the slot ahead of SetPageForm.
 		readOnly := pageReadOnlyReason(ctx, sc, p)
 		form, apply, err := p.load(ctx)
 		d.post(func() {
+			d.endPageRun(page, run)
 			if err != nil {
 				d.SetPageError(page, seq, displayError(err))
 				return

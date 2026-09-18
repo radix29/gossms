@@ -95,24 +95,8 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 					auditNames = append(auditNames, a.Name)
 				}
 			}
-			// An orphaned specification's audit is in no list — see the server
-			// half for why the missing name is added rather than the first
-			// real audit preselected.
-			selected := slices.Index(auditNames, spec.AuditName)
-			if selected < 0 {
-				auditNames = append([]string{missingAuditItem}, auditNames...)
-				selected = 0
-			}
-			auditRow := propsheet.Select("Audit", auditNames, selected)
-
-			// A group the instance no longer defines is still recorded, so it
-			// is added to the pick list rather than vanishing from the page.
-			for _, g := range spec.ActionGroups {
-				if !slices.Contains(groups, g) {
-					groups = append(groups, g)
-				}
-			}
-			slices.Sort(groups)
+			auditRow := auditSelectRow(auditNames, spec.AuditName)
+			groups = unionSorted(groups, spec.ActionGroups)
 
 			groupGrid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 12)
 			gText := make([][]string, len(groups))
