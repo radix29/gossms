@@ -63,7 +63,7 @@ type objectOp struct {
 
 // dbOf is the database a node's object lives in.
 //
-// Server.Database, not DatabaseByName: every statement below names its object in
+// DatabaseRef, not DatabaseByName: every statement below names its object in
 // the text and reads nothing off the *gosmo.Database but its name, so the
 // sys.databases round trip buys nothing — and DatabaseByName cannot run under a
 // WithScript-derived context, which Script Changes on Delete needs.
@@ -547,7 +547,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The DDL policy it enforces stops applying across the database.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			// Database, not DatabaseByName: the trigger is addressed by name
+			// DatabaseRef, not DatabaseByName: the trigger is addressed by name
 			// and the lightweight handle needs no sys.databases read.
 			return sc.Server.DatabaseRef(n.DBName).DatabaseTriggerRef(n.Name).DropContext(ctx)
 		},

@@ -7,9 +7,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // plan_guide_props.go is Plan Guide Properties: General, which can enable and
@@ -167,8 +165,5 @@ func readOnlySQLRow(label, text, empty string) propsheet.Row {
 	if strings.TrimSpace(text) == "" {
 		return propsheet.Note(empty)
 	}
-	ed := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
-	ed.SetText(text)
-	ed.SetReadOnly(true)
-	return propsheet.NewEditorRow(label, ed, 10)
+	return sqlBodyRow(label, text, 10)
 }

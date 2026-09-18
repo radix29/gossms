@@ -2,7 +2,9 @@ package tui
 
 import (
 	"github.com/gdamore/tcell/v3"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
 // dialog_common.go holds the small behaviours shared by the hand-rolled
@@ -151,4 +153,40 @@ func (a *App) confirmDiscardChanges(proceed func()) {
 				proceed()
 			}
 		})
+}
+
+// forwardReleaseToFocusedField hands a release to the dialog's focused field
+// so a text-selection drag in it ends cleanly wherever the pointer was when
+// the button came up, and reports whether the event was that release — a true
+// answer means HandleMouse is done with it. Invariant 5 in docs/ui-rules.md,
+// "a host that returns early from HandleMouse must still forward ButtonNone to
+// a latch-bearing child": Backup, Restore and Connect all reached it by
+// writing the same switch out.
+//
+// Call it below ConsumeOutsideClick and below FieldGesture.Release, which
+// covers only the field that claimed a press; this covers the field that has
+// focus without one, and on Connect an Editor, which the gesture never tracks.
+//
+// focused is whatever the dialog's focus ring points at. Only an InputField
+// and an Editor are forwarded to: the checkboxes, radio groups and drop-downs
+// were already given the release above ConsumeOutsideClick, and handing it to
+// one twice would toggle it.
+//
+// It deliberately does not call FieldGesture.Release or .Replay, and does not
+// answer the non-Button1 question. Their placement differs per dialog —
+// docs/ui-rules.md puts Release above ConsumeOutsideClick and above any mode
+// switch, Replay after it and before any hit-test, and Connect reads the wheel
+// between the two — so a helper that fixed an order would be wrong for the
+// dialogs with a mode or a scrollable pane.
+func forwardReleaseToFocusedField(ev *tcell.EventMouse, focused any) bool {
+	if ev.Buttons() != tcell.ButtonNone {
+		return false
+	}
+	switch f := focused.(type) {
+	case *widgets.InputField:
+		f.HandleMouse(ev)
+	case *controls.Editor:
+		f.HandleMouse(ev)
+	}
+	return true
 }

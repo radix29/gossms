@@ -628,12 +628,12 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 			return nil, nil, err
 		}
 		dbs = filterObjects(node.data.Filter, dbs, func(d *gosmo.Database) nodeData {
-			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
+			return nodeData{Name: d.Name, CreateDate: d.CreateDate}
 		})
 		rows := make([][]string, 0, 4)
 		for _, d := range dbs {
 			if d.IsSystem() {
-				rows = append(rows, []string{d.Name(), d.State(), string(d.RecoveryModel())})
+				rows = append(rows, []string{d.Name, d.State, string(d.RecoveryModel)})
 			}
 		}
 		return []string{"Name", "State", "Recovery"}, rows, nil

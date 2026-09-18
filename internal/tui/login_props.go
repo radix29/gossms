@@ -403,7 +403,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			// secondary failing a page that has every other database to
 			// show, which is not what the mapping half above does.
 			edits, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (*mapEdit, error) {
-				m, isMapped := mappingByDB[d.Name()]
+				m, isMapped := mappingByDB[d.Name]
 				user := *loginName
 				schema := "dbo"
 				if isMapped {
@@ -429,7 +429,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					origRoles = append(origRoles, isMapped && slices.Contains(m.Roles, r.Name))
 				}
 				return &mapEdit{
-					dbName: d.Name(), origMapped: isMapped, mapped: isMapped,
+					dbName: d.Name, origMapped: isMapped, mapped: isMapped,
 					user: user, origSchema: schema, schema: schema,
 					roleNames: roleNames, origRoles: origRoles,
 					roles: append([]bool(nil), origRoles...),

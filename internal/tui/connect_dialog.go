@@ -675,6 +675,13 @@ var connectSpinner = widgets.SpinnerBraille
 func (d *ConnectDialog) startConnect(opts config.Connection) {
 	d.stopConnecting()
 	attempt := make(chan struct{})
+	// Background is deliberate here, and is the one place ARCHITECTURE.md
+	// § Threading model's "derive from ServerConn.Context()" cannot apply:
+	// this dial is what produces the first ServerConn, so there is no parent
+	// to derive from. Cancel (and Escape, which presses it) aborts the attempt
+	// through this cancel func; quitting mid-dial leaves it running, but Run
+	// returns straight into main's exit, so the attempt never outlives the
+	// process.
 	ctx, cancel := context.WithCancel(context.Background())
 	d.connecting = true
 	d.connectStarted = time.Now()

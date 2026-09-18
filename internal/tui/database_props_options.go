@@ -131,9 +131,9 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 
 			rows, tracked, userAccessRow := databaseOptionRows(o)
 
-			compatItems := compatItemsFor(int(d.CompatibilityLevel()), serverMajor(sc))
+			compatItems := compatItemsFor(int(d.CompatibilityLevel), serverMajor(sc))
 			compatRow := propsheet.Select("Compatibility level", compatItems,
-				indexOf(compatItems, strconv.Itoa(int(d.CompatibilityLevel()))))
+				indexOf(compatItems, strconv.Itoa(int(d.CompatibilityLevel))))
 
 			f := propsheet.NewForm(append(rows,
 				propsheet.Static("Broker enabled", boolStr(o.IsBrokerEnabled)),

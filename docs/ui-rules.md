@@ -265,6 +265,18 @@ a drag from the field to the button row pressed the button under the pointer,
 which on Prompt *accepted* the rename and on TypedConfirm answered the
 confirmation the retyping exists to slow down.
 
+**The release forwarded to the *focused* field is
+`forwardReleaseToFocusedField` (`dialog_common.go`), not a hand-written type
+switch.** `FieldGesture.Release` covers the field that claimed a press;
+invariant 5 also wants the field that has focus without one, and on Connect an
+`*controls.Editor`, which the gesture never tracks. Backup, Restore and Connect
+each wrote that switch out and Connect's was the only one with the Editor arm.
+It answers only "was this the release, and has it been delivered" — the
+`!= Button1` early return stays at the call site, because Connect reads the
+wheel between the release and its hit-tests.
+`TestFieldGestureCallsAreOrderedCorrectly` fails on a gesture-owning `tui`
+dialog whose `HandleMouse` type-asserts to an `InputField` or an `Editor`.
+
 **Not every mouse event is followed by a draw.** `App.Run` skips the frame after a
 motion-only event (button state unchanged, no wheel) while more events are queued:
 a drag over a results grid drew a 6 ms frame per cell crossed and fell 2.2 s

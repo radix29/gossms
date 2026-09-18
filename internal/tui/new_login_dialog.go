@@ -62,7 +62,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 	}
 	dbNames := make([]string, 0, len(dbs))
 	for _, d := range dbs {
-		dbNames = append(dbNames, d.Name())
+		dbNames = append(dbNames, d.Name)
 	}
 	// Two round trips per ONLINE database, so serially this is 2N latencies
 	// inside one propFetchTimeout before the dialog can show any page at all.
@@ -89,7 +89,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		for i, sch := range schemas {
 			schemaNames[i] = sch.Name
 		}
-		return nloginDBRoles{dbName: d.Name(), roleNames: roleNames, schemaNames: schemaNames}, nil
+		return nloginDBRoles{dbName: d.Name, roleNames: roleNames, schemaNames: schemaNames}, nil
 	})
 	if err != nil {
 		return nil, err

@@ -90,11 +90,11 @@ func (d *NewSnapshotDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn
 	}
 	pf := &snapshotPrefetch{existing: make(map[string]bool, len(dbs))}
 	for _, dbObj := range dbs {
-		pf.existing[strings.ToLower(dbObj.Name())] = true
-		if dbObj.IsSystem() || dbObj.IsSnapshot() || dbObj.State() != "ONLINE" {
+		pf.existing[strings.ToLower(dbObj.Name)] = true
+		if dbObj.IsSystem() || dbObj.IsSnapshot() || dbObj.State != "ONLINE" {
 			continue
 		}
-		pf.sources = append(pf.sources, dbObj.Name())
+		pf.sources = append(pf.sources, dbObj.Name)
 	}
 	return pf, nil
 }

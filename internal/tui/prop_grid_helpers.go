@@ -12,6 +12,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // boolStr renders a bool as "True"/"False", the Static-row convention used
@@ -459,4 +460,65 @@ func (b *staticBlock) set(values ...string) {
 			r.SetValue("")
 		}
 	}
+}
+
+// sqlBodyRow is a read-only SQL editor row holding body — the "here is the
+// object's T-SQL" row every Definition page shows. The three lines it wraps
+// are easy to write and easy to write incompletely: an editor left writable
+// offers the user edits the page has no way to save.
+func sqlBodyRow(label, body string, height int) propsheet.Row {
+	ed := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
+	ed.SetText(body)
+	ed.SetReadOnly(true)
+	return propsheet.NewEditorRow(label, ed, height)
+}
+
+// definitionPage is the read-only Definition page a DDL trigger shows at
+// either scope. A database trigger's body comes from sys.sql_modules and a
+// server trigger's from sys.server_sql_modules, which is the whole of the
+// difference — so load supplies the body and everything else, the wording for
+// a body that cannot be read included, lives here once.
+//
+// An encrypted trigger, and a CLR trigger (which has no row in either view at
+// all), report the absence on the page rather than failing it: everything the
+// catalog does know about the trigger is on the General page above.
+func definitionPage(load func(context.Context) (string, error)) propPage {
+	return propPage{
+		title: "Definition",
+		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
+			body, err := load(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if strings.TrimSpace(body) == "" {
+				return propsheet.NewForm(
+					propsheet.Section("Definition"),
+					propsheet.Note("The trigger's definition is not readable — it is either encrypted (WITH ENCRYPTION) or a CLR trigger, which stores no T-SQL body."),
+				), nil, nil
+			}
+			return propsheet.NewForm(
+				propsheet.Section("Definition"),
+				sqlBodyRow("Body", body, 16),
+			), nil, nil
+		},
+	}
+}
+
+// indexKeyColumnGrid is the key-column list an index and a key both show: the
+// same ordinal/name/direction rows under indexKeyColumns, built from the same
+// field. Written twice, the two copies were free to disagree about what
+// "Descending" means.
+func indexKeyColumnGrid(idx *gosmo.Index) *controls.DataGrid {
+	rows := make([][]string, len(idx.KeyColumns))
+	for i, c := range idx.KeyColumns {
+		order := "Ascending"
+		if c.Descending {
+			order = "Descending"
+		}
+		rows[i] = []string{strconv.Itoa(i + 1), c.Name, order}
+	}
+	grid := controls.NewDataGrid()
+	grid.SetData(indexKeyColumns, rows)
+	grid.SetCellCursor(true)
+	return grid
 }

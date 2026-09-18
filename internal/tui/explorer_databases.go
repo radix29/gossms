@@ -70,9 +70,9 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 		if d.IsSnapshot() {
 			continue
 		}
-		n := l.node(agLabelForDatabase(d.Name(), agStates), NodeDatabase, "", d.Name(), d.Name())
-		n.data.IsOffline = d.State() != "ONLINE"
-		n.data.CreateDate = d.CreateDate()
+		n := l.node(agLabelForDatabase(d.Name, agStates), NodeDatabase, "", d.Name, d.Name)
+		n.data.IsOffline = d.State != "ONLINE"
+		n.data.CreateDate = d.CreateDate
 		userDBs = append(userDBs, n)
 	}
 	folders := []*explorerNode{}
@@ -117,9 +117,9 @@ func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 	var out []*explorerNode
 	for _, d := range dbs {
 		if d.IsSystem() {
-			n := l.node(d.Name(), NodeDatabase, "", d.Name(), d.Name())
-			n.data.IsOffline = d.State() != "ONLINE"
-			n.data.CreateDate = d.CreateDate()
+			n := l.node(d.Name, NodeDatabase, "", d.Name, d.Name)
+			n.data.IsOffline = d.State != "ONLINE"
+			n.data.CreateDate = d.CreateDate
 			n.data.IsSystem = true
 			out = append(out, n)
 		}

@@ -116,7 +116,14 @@ is a data race, not merely bad style.
 Background work follows one shape:
 
 - Derive a context from `ServerConn.Context()`, never `context.Background()`
-  — see the lifetime rule above. For cancellable, user-visible work use
+  — see the lifetime rule above. That includes a *dial* that clones an
+  existing connection (`connectForQueryPanel`, `connectForActivityMonitor`,
+  `amProcTab.activate`): `ConnectContext`'s ctx covers only the attempt, so
+  scoping it to the parent cancels a reconnect in flight on disconnect
+  without shortening the new connection's own life. The Connect dialog's
+  first dial is the one documented exception — there is no `ServerConn` yet
+  to derive from, and `connect_dialog.go` says so at the call. For
+  cancellable, user-visible work use
   `App.startTask(parent, label)`, which returns a `*Task` and a derived
   context, registers it for the Background Tasks dialog, and gives the user
   a Cancel button.

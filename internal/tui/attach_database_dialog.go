@@ -78,7 +78,7 @@ func (d *AttachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerC
 	}
 	pf := &attachPrefetch{existing: make(map[string]bool, len(dbs))}
 	for _, db := range dbs {
-		pf.existing[strings.ToLower(db.Name())] = true
+		pf.existing[strings.ToLower(db.Name)] = true
 	}
 	if info := sc.Server.Info(); info != nil {
 		pf.dataPath = info.DefaultDataPath

@@ -50,7 +50,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, ap
 		}
 
 		all = filterObjects(data.Filter, all, func(d *gosmo.Database) nodeData {
-			return nodeData{Name: d.Name(), CreateDate: d.CreateDate()}
+			return nodeData{Name: d.Name, CreateDate: d.CreateDate}
 		})
 
 		dbs := make([]*gosmo.Database, 0, len(all))
@@ -64,8 +64,8 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, ap
 				continue
 			}
 			dbs = append(dbs, d)
-			rows = append(rows, []string{d.Name(), d.State(), string(d.RecoveryModel()), "…", "…", "…", "…", "…"})
-			objs = append(objs, nodeData{Type: NodeDatabase, DBName: d.Name(), Name: d.Name()})
+			rows = append(rows, []string{d.Name, d.State, string(d.RecoveryModel), "…", "…", "…", "…", "…"})
+			objs = append(objs, nodeData{Type: NodeDatabase, DBName: d.Name, Name: d.Name})
 		}
 		db.postPartialObjects(app, seq, databasesFolderColumns, rows, objs)
 
@@ -132,13 +132,13 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 			cs = diskUsageCharts(usage)
 		}
 		db.postFinalCharts(app, node, seq, []string{"Property", "Value"}, [][]string{
-			{"Name", d.Name()},
-			{"State", d.State()},
-			{"Recovery Model", string(d.RecoveryModel())},
-			{"Compatibility Level", fmt.Sprintf("%d", d.CompatibilityLevel())},
-			{"Collation", d.Collation()},
-			{"Create Date", formatSQLDate(d.CreateDate())},
-			{"Read Only", boolStr(d.IsReadOnly())},
+			{"Name", d.Name},
+			{"State", d.State},
+			{"Recovery Model", string(d.RecoveryModel)},
+			{"Compatibility Level", fmt.Sprintf("%d", d.CompatibilityLevel)},
+			{"Collation", d.Collation},
+			{"Create Date", formatSQLDate(d.CreateDate)},
+			{"Read Only", boolStr(d.IsReadOnly)},
 			{"Size (MB)", sizeStr},
 			{"Data (MB)", dataStr},
 			{"Log (MB)", logStr},

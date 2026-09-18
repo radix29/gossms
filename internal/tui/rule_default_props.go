@@ -6,9 +6,7 @@ import (
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // rule_default_props.go is the read-only Properties for a standalone rule and
@@ -96,12 +94,9 @@ func bindableObjectForm(kind, name, schema, created, modified, definition, note 
 		return f
 	}
 
-	ed := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
-	ed.SetText(definition)
-	ed.SetReadOnly(true)
 	f.Add(
 		propsheet.Section("Definition"),
-		propsheet.NewEditorRow("Body", ed, 10),
+		sqlBodyRow("Body", definition, 10),
 		propsheet.Note(note),
 	)
 	return f

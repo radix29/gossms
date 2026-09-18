@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -28,7 +29,26 @@ func findCredential(ctx context.Context, sc *db.ServerConn, credName string) (*g
 	return sc.Server.CredentialByNameContext(ctx, credName)
 }
 
-// pageCredentialGeneral is Credential Properties > General.
+// credentialFacts is everything a Credential Properties > General page shows,
+// however the scope obtained it. A database-scoped credential has no
+// cryptographic provider binding, so it leaves targetType and provider empty
+// and the provider section is dropped.
+type credentialFacts struct {
+	name         string
+	identity     string
+	credentialID int
+	created      time.Time
+	modified     time.Time
+	targetType   string
+	provider     string
+}
+
+// credentialGeneralPage builds Credential Properties > General for either
+// scope: dbName is "" at the server level and names the database otherwise,
+// which is the only row that differs. The two scopes are one page shape on
+// purpose — docs/decisions.md § Database-scoped credentials requires them to
+// state the same rule in the same wording, and when each wrote its own copy
+// the two explanations had already drifted apart while saying the same thing.
 //
 // Identity and password are one unit here, and that is not a UI preference:
 // ALTER CREDENTIAL resets both halves every time, and SQL Server documents an
@@ -36,16 +56,21 @@ func findCredential(ctx context.Context, sc *db.ServerConn, credName string) (*g
 // that changes the identity while keeping the secret, and the secret cannot be
 // read back to re-supply it — so changing the identity with the password blank
 // is refused rather than applied, which would silently destroy the secret.
-func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
+//
+// alter addresses the credential by name from the caller's own handle: the
+// identity comes from the form, so the extra by-name read buys nothing and
+// would not work under Script Changes.
+func credentialGeneralPage(dbName string, load func(context.Context) (credentialFacts, error),
+	alter func(ctx context.Context, identity string, secret *string) error) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			c, err := findCredential(ctx, sc, *credName)
+			c, err := load(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			identityRow := propsheet.Text("Identity", c.Identity, 40)
+			identityRow := propsheet.Text("Identity", c.identity, 40)
 			passwordRow := propsheet.Password("Password", 20)
 			confirmRow := propsheet.Password("Confirm password", 20)
 			// On passwordRow, not confirmRow, for the reason spelled out on
@@ -61,14 +86,19 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 
 			rows := []propsheet.Row{
 				propsheet.Section("Credential identity"),
-				propsheet.Static("Credential name", c.Name),
+				propsheet.Static("Credential name", c.name),
+			}
+			if dbName != "" {
+				rows = append(rows, propsheet.Static("Database", dbName))
+			}
+			rows = append(rows,
 				identityRow,
 				propsheet.Section("Secret"),
 				passwordRow, confirmRow,
 				propsheet.Note("The stored secret can never be read back. Leave both blank to keep the credential exactly as it is; changing the identity requires re-entering the password, because SQL Server clears the secret on any ALTER that omits it."),
-			}
-			if c.TargetType != "" {
-				provider := c.CryptographicProvider
+			)
+			if c.targetType != "" {
+				provider := c.provider
 				if provider == "" {
 					provider = "<not visible to this login>"
 				}
@@ -80,9 +110,9 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 			}
 			rows = append(rows,
 				propsheet.Section("Summary"),
-				propsheet.Static("Credential ID", strconv.Itoa(c.CredentialID)),
-				propsheet.Static("Created", formatSQLDate(c.CreateDate)),
-				propsheet.Static("Modified", formatSQLDate(c.ModifyDate)),
+				propsheet.Static("Credential ID", strconv.Itoa(c.credentialID)),
+				propsheet.Static("Created", formatSQLDate(c.created)),
+				propsheet.Static("Modified", formatSQLDate(c.modified)),
 			)
 
 			f := propsheet.NewForm(rows...)
@@ -98,20 +128,42 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 				if typed != confirmRow.Value() {
 					return fmt.Errorf("passwords do not match")
 				}
-				// The name-only handle, not the by-name read: the identity is
-				// taken from the form and the write addresses the credential
-				// by name, so the extra round trip buys nothing and would not
-				// work under Script Changes.
 				// Trimmed for the reason New Credential trims it: SQL Server
-				// stores IDENTITY verbatim, so trailing whitespace silently
-				// breaks authentication.
+				// stores IDENTITY verbatim, so a pasted trailing space becomes
+				// part of the account name and the credential then fails to
+				// authenticate with nothing on the page saying why.
 				identity := strings.TrimSpace(identityRow.Value())
 				if identity == "" {
 					return fmt.Errorf("identity is required")
 				}
-				return sc.Server.CredentialRef(*credName).AlterContext(ctx, identity, &typed)
+				return alter(ctx, identity, &typed)
 			}
 			return f, apply, nil
 		},
 	}
+}
+
+// pageCredentialGeneral is Credential Properties > General at the server
+// level; credentialGeneralPage holds the shape and the reasoning.
+func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
+	return credentialGeneralPage("",
+		func(ctx context.Context) (credentialFacts, error) {
+			c, err := findCredential(ctx, sc, *credName)
+			if err != nil {
+				return credentialFacts{}, err
+			}
+			return credentialFacts{
+				name:         c.Name,
+				identity:     c.Identity,
+				credentialID: c.CredentialID,
+				created:      c.CreateDate,
+				modified:     c.ModifyDate,
+				targetType:   c.TargetType,
+				provider:     c.CryptographicProvider,
+			}, nil
+		},
+		func(ctx context.Context, identity string, secret *string) error {
+			// CredentialRef, the name-only handle, not the by-name read.
+			return sc.Server.CredentialRef(*credName).AlterContext(ctx, identity, secret)
+		})
 }

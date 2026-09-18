@@ -38,7 +38,7 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 	}
 	existing := make(map[string]bool, len(dbs))
 	for _, d := range dbs {
-		existing[strings.ToLower(d.Name())] = true
+		existing[strings.ToLower(d.Name)] = true
 	}
 
 	logins, err := sc.Server.LoginsContext(ctx)
@@ -65,8 +65,8 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 		existingNames:   existing,
 		loginNames:      loginNames,
 		modelOptions:    modelOpts,
-		modelRecovery:   model.RecoveryModel(),
-		modelCompat:     model.CompatibilityLevel(),
+		modelRecovery:   model.RecoveryModel,
+		modelCompat:     model.CompatibilityLevel,
 		defaultDataPath: info.DefaultDataPath,
 		defaultLogPath:  info.DefaultLogPath,
 		defaultOwner:    sc.Opts.User,

@@ -160,7 +160,7 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		// Server.Database, not DatabaseByName: the create reads nothing off
+		// DatabaseRef, not DatabaseByName: the create reads nothing off
 		// the handle and this one also works under Script Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
 		name := d.objectName()

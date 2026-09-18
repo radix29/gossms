@@ -314,7 +314,7 @@ func (d *RestoreDialog) startRestore() {
 			d.setStatusMsg(d.restingStatus(), false)
 			exists := false
 			for _, dbo := range dbs {
-				if strings.EqualFold(dbo.Name(), target) {
+				if strings.EqualFold(dbo.Name, target) {
 					exists = true
 					break
 				}
@@ -408,7 +408,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 	}
 	exists := false
 	for _, dbo := range dbs {
-		if strings.EqualFold(dbo.Name(), target) {
+		if strings.EqualFold(dbo.Name, target) {
 			exists = true
 			break
 		}

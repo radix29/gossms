@@ -135,10 +135,7 @@ func (d *RestoreDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 
-	if ev.Buttons() == tcell.ButtonNone {
-		if f, ok := d.focusable[d.focusIdx].(*widgets.InputField); ok {
-			f.HandleMouse(ev)
-		}
+	if forwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

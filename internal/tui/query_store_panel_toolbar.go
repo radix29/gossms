@@ -377,7 +377,7 @@ func (p *QueryStorePanel) availableMetrics() []gosmo.QSMetric {
 }
 
 // database is the lightweight handle every read and write here goes through.
-// Database, not DatabaseByName: this needs no metadata, and a by-name read on
+// DatabaseRef, not DatabaseByName: this needs no metadata, and a by-name read on
 // every menu open would put a query behind every click.
 func (p *QueryStorePanel) database() *gosmo.Database {
 	if p.conn == nil || p.conn.Server == nil {

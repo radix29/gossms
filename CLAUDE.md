@@ -59,14 +59,17 @@ Standing gotchas:
 - `Screen.PollEvent`/`PostEvent` don't exist in tcell v3 — replaced by a
   channel, `EventQ()`.
 - The modifier accessor is `Modifiers()`, not `Mod()`.
-- `gosmo.Database.Name` / `.State` / `.RecoveryModel` etc. are *methods*, not
-  fields.
+- `gosmo.Database.Name` / `.State` / `.RecoveryModel` etc. are exported
+  *fields*, like every other gosmo type's — they were accessor methods until
+  2026-09-18. `IsSystem()`, `IsSnapshot()` and `Server()` stay methods: the
+  first two are derived from `ID`/`SourceDatabaseID`, the third is a
+  back-pointer.
 - **A gosmo method ending in `Ref` is a lookup-free handle.**
   `gosmo.Server` has **both** `DatabaseRef(name)` and `DatabaseByName(name)`,
   and they are not interchangeable. `DatabaseRef` issues no query and leaves
   every field but the name zero-valued — `IsSystem()` answers `false` for
   `master` — and is the only form that works under a `WithScript`-derived
-  context; `DatabaseByName` queries `sys.databases`. Eighteen gosmo families
+  context; `DatabaseByName` queries `sys.databases`. Twenty-two gosmo families
   pair this way (`LoginRef`, `TableRef`, `JobRef`, …). Before the 2026-09-17
   rename the handle had the plain name and picking the wrong one failed
   quietly; the suffix is what makes the choice visible at the call site.

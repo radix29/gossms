@@ -123,7 +123,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 
 			ownerRow := selectPreserving("Owner", loginNames, opts.Owner, unknownOwnerItem)
 			recoveryItems := []string{"SIMPLE", "FULL", "BULK_LOGGED"}
-			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel())))
+			recoveryRow := propsheet.Select("Recovery model", recoveryItems, indexOf(recoveryItems, string(d.RecoveryModel)))
 			// An Azure edition owns its own backup chain and answers any
 			// ALTER DATABASE ... SET RECOVERY with Msg 5008 — a user database
 			// there is FULL and stays FULL. Read-only rather than absent, so
@@ -138,16 +138,16 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 
 			rows := []propsheet.Row{
 				propsheet.Section("Database information"),
-				propsheet.Static("Name", d.Name()),
-				propsheet.Static("Status", d.State()),
+				propsheet.Static("Name", d.Name),
+				propsheet.Static("Status", d.State),
 				ownerRow,
-				propsheet.Static("Date created", formatSQLDate(d.CreateDate())),
+				propsheet.Static("Date created", formatSQLDate(d.CreateDate)),
 				propsheet.Static("Size (MB)", fmt.Sprintf("%.2f", space.TotalMB)),
 				propsheet.Static("Space available (MB)", fmt.Sprintf("%.2f", space.UnallocatedMB)),
 				propsheet.Static("Number of users", userCount),
 				propsheet.Section("Maintenance"),
-				propsheet.Static("Collation", d.Collation()),
-				propsheet.Static("Compatibility level", strconv.Itoa(int(d.CompatibilityLevel()))),
+				propsheet.Static("Collation", d.Collation),
+				propsheet.Static("Compatibility level", strconv.Itoa(int(d.CompatibilityLevel))),
 				recoveryRow,
 			}
 			rows = append(rows, recoveryNote...)
@@ -162,7 +162,7 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 				propsheet.Static("Containment type", opts.Containment),
 				propsheet.Static("Encrypted", boolStr(opts.IsEncrypted)),
 				propsheet.Static("Trustworthy", boolStr(opts.IsTrustworthy)),
-				propsheet.Static("Read only", boolStr(d.IsReadOnly())),
+				propsheet.Static("Read only", boolStr(d.IsReadOnly)),
 			)
 			f := propsheet.NewForm(rows...)
 

@@ -168,8 +168,15 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 	qp.connectingTo = opts.Server
 	a.setStatus(fmt.Sprintf("Connecting to %s...", opts.Server))
 
+	// The dial is scoped to the connection it is cloned from, per
+	// ARCHITECTURE.md § Threading model: disconnecting the Object Explorer
+	// node aborts a reconnect still in flight instead of leaving it to the
+	// 15 s connect timeout. Only the attempt is scoped — ConnectContext roots
+	// the new connection's own context at Background, so the panel's
+	// connection still outlives sc once the dial has returned.
+	parent := sc.Context()
 	a.safego("connecting the query panel", func() {
-		newConn, err := db.ConnectContext(context.Background(), opts, db.RoleQuery)
+		newConn, err := db.ConnectContext(parent, opts, db.RoleQuery)
 		var sess *query.Session
 		var state query.SessionState
 		if err == nil {
@@ -213,8 +220,11 @@ func (a *App) connectForQueryPanel(qp *QueryPanel, sc *db.ServerConn, database s
 // closes it; frequent DMV reads mustn't queue ahead of Object Explorer's work.
 func (a *App) connectForActivityMonitor(am *ActivityMonitor, sc *db.ServerConn) {
 	opts := sc.Opts
+	// Scoped to sc for the duration of the dial only, exactly as
+	// connectForQueryPanel is.
+	parent := sc.Context()
 	a.safego("connecting Activity Monitor", func() {
-		newConn, err := db.ConnectContext(context.Background(), opts, db.RoleActivityMonitor)
+		newConn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
 		a.postAndWake(func() {
 			if err != nil {
 				// Both feeds: neither collector will start, and TempDB would

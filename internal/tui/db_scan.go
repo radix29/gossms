@@ -12,7 +12,7 @@ import (
 func onlineDatabases(dbs []*gosmo.Database) []*gosmo.Database {
 	out := make([]*gosmo.Database, 0, len(dbs))
 	for _, d := range dbs {
-		if d.State() == "ONLINE" {
+		if d.State == "ONLINE" {
 			out = append(out, d)
 		}
 	}

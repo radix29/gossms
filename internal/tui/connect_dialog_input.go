@@ -169,13 +169,7 @@ func (d *ConnectDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// drag started in it ends cleanly even if the release lands elsewhere in the
 	// dialog. After the d.drag release above because the gesture tracks only
 	// InputFields, while Editor keeps its own latch.
-	if ev.Buttons() == tcell.ButtonNone {
-		switch f := d.focusedWidget().(type) {
-		case *widgets.InputField:
-			f.HandleMouse(ev)
-		case *controls.Editor:
-			f.HandleMouse(ev)
-		}
+	if forwardReleaseToFocusedField(ev, d.focusedWidget()) {
 		return true
 	}
 

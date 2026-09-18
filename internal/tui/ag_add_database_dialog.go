@@ -52,11 +52,11 @@ func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCan
 	out := make([]agDBCandidate, 0, len(dbs))
 	for _, d := range dbs {
 		out = append(out, agDBCandidate{
-			Name:            d.Name(),
-			RecoveryModel:   string(d.RecoveryModel()),
-			State:           d.State(),
+			Name:            d.Name,
+			RecoveryModel:   string(d.RecoveryModel),
+			State:           d.State,
 			IsSystem:        d.IsSystem(),
-			LogChainStarted: logChain[strings.ToLower(d.Name())],
+			LogChainStarted: logChain[strings.ToLower(d.Name)],
 		})
 	}
 	return out

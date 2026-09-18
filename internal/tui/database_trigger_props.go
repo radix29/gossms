@@ -7,9 +7,7 @@ import (
 	gosmo "github.com/radix29/gosmo"
 
 	"github.com/radix29/gossms/internal/db"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
-	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // databaseTriggerPropPages builds the page set for Database Trigger
@@ -60,40 +58,19 @@ func pageDatabaseTriggerGeneral(sc *db.ServerConn, dbName, trigName string) prop
 
 // pageDatabaseTriggerDefinition is Database Trigger Properties > Definition:
 // the trigger body as sys.sql_modules stores it, in a read-only SQL editor.
-//
-// An encrypted trigger, and a CLR trigger (which has no row in that view at
-// all), report the absence on the page rather than failing it — everything the
-// catalog does know about the trigger is on the General page above.
+// definitionPage holds the page shape, which the server-scoped trigger shares.
 func pageDatabaseTriggerDefinition(sc *db.ServerConn, dbName, trigName string) propPage {
-	return propPage{
-		title: "Definition",
-		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, err := loadDatabaseTrigger(ctx, sc, dbName, trigName)
-			if err != nil {
-				return nil, nil, err
-			}
-			if strings.TrimSpace(t.Definition) == "" {
-				return propsheet.NewForm(
-					propsheet.Section("Definition"),
-					propsheet.Note("The trigger's definition is not readable — it is either encrypted (WITH ENCRYPTION) or a CLR trigger, which stores no T-SQL body."),
-				), nil, nil
-			}
-
-			ed := controls.NewEditor(controls.SQLHighlighter(theme.Active()))
-			ed.SetText(t.Definition)
-			ed.SetReadOnly(true)
-
-			f := propsheet.NewForm(
-				propsheet.Section("Definition"),
-				propsheet.NewEditorRow("Body", ed, 16),
-			)
-			return f, nil, nil
-		},
-	}
+	return definitionPage(func(ctx context.Context) (string, error) {
+		t, err := loadDatabaseTrigger(ctx, sc, dbName, trigName)
+		if err != nil {
+			return "", err
+		}
+		return t.Definition, nil
+	})
 }
 
 // loadDatabaseTrigger reads one DDL trigger with every field populated.
-// DatabaseByName, not Database: the pages show CreateDate and the definition,
+// DatabaseByName, not DatabaseRef: the pages show CreateDate and the definition,
 // which the lightweight handle leaves zero-valued.
 func loadDatabaseTrigger(ctx context.Context, sc *db.ServerConn, dbName, trigName string) (*gosmo.DatabaseTrigger, error) {
 	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)

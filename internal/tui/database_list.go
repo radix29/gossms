@@ -45,10 +45,10 @@ func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, erro
 	}
 	out := make([]string, 0, len(dbs))
 	for _, d := range dbs {
-		if strings.EqualFold(d.Name(), "tempdb") || d.State() != "ONLINE" {
+		if strings.EqualFold(d.Name, "tempdb") || d.State != "ONLINE" {
 			continue
 		}
-		out = append(out, d.Name())
+		out = append(out, d.Name)
 	}
 	return out, nil
 }
@@ -58,7 +58,7 @@ func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, erro
 func namesOf(dbs []*gosmo.Database) []string {
 	out := make([]string, len(dbs))
 	for i, d := range dbs {
-		out[i] = d.Name()
+		out[i] = d.Name
 	}
 	return out
 }

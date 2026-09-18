@@ -75,7 +75,7 @@ func (d *DetachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerC
 	if err != nil {
 		return nil, err
 	}
-	pf := &detachPrefetch{state: dbase.State(), sessions: -1}
+	pf := &detachPrefetch{state: dbase.State, sessions: -1}
 	if pf.state == "ONLINE" {
 		if files, err := dbase.FilesContext(ctx); err == nil {
 			pf.files = sortDatabaseFiles(files)

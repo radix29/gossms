@@ -474,6 +474,25 @@ through a database-wide grant.
   call site for eighteen families; reopen it only with a bug the suffix
   failed to prevent. The lightweight form itself is not removable — it is
   the only one that works under a `WithScript`-derived context.
+- **`Database`'s catalog state is exported fields, not accessors.** Changed
+  2026-09-18 (review plan R2, option (a)): `Name`, `ID`, `State`,
+  `RecoveryModel`, `CompatibilityLevel`, `Collation`, `IsReadOnly`,
+  `CreateDate` and `SourceDatabaseID` are exported fields, matching the ~112
+  other gosmo types that already did this; `Database` and `Server` were the
+  only two with `Name()` as a method. `IsSystem()` and `IsSnapshot()` stay
+  methods because they are derivations over `ID`/`SourceDatabaseID`, and
+  `Server()` stays one because it is a back-pointer, as `Table.DB()` is.
+  `Server.Name()` is left alone: it reads `s.info.Name`, not its own storage.
+  The reason is that the *unguessable* shape was the defect — a caller could
+  not tell which form a given type used, and guessing wrong on `Database`
+  interacted with the `Ref` trap, since `DatabaseRef("master").IsSystem()`
+  compiles, issues no query and answers `false`. That trap is unchanged by
+  this, and is now stated on `Server.DatabaseRef` and on the `Database` type
+  itself. A breaking change, authorised in advance: ~520 call sites in gosmo
+  (including its live-tagged tests) and 61 in gossms, all mechanical and
+  compiler-enumerated.
+  The standing gotcha in both `CLAUDE.md`s is now a description of the rule
+  rather than a warning about a trap.
 - **azidentity has deprecated `UsernamePasswordCredential`** (no MFA), which
   gosmo's `AuthEntraPassword` / ROPC mode uses at `entra.go` — both the options
   literal and `NewUsernamePasswordCredential`. The method is **kept**: it is a

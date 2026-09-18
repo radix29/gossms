@@ -92,11 +92,8 @@ func (d *BackupDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// Always forward a release to a focused input so a text-selection drag
-	// terminates cleanly (see ConnectDialog.HandleMouse).
-	if ev.Buttons() == tcell.ButtonNone {
-		if f, ok := d.focusable[d.focusIdx].(*widgets.InputField); ok {
-			f.HandleMouse(ev)
-		}
+	// terminates cleanly, and drop anything that is not a left press.
+	if forwardReleaseToFocusedField(ev, d.focusable[d.focusIdx]) {
 		return true
 	}
 	if ev.Buttons() != tcell.Button1 {

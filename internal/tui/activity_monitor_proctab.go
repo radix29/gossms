@@ -130,8 +130,14 @@ func (pt *amProcTab) activate() {
 	pt.am.buildTools()
 
 	opts := pt.am.conn.Opts
+	// The dial is scoped to the panel's connection, per ARCHITECTURE.md
+	// § Threading model: closing the Activity Monitor's connection aborts this
+	// clone's attempt rather than leaving it to the 15 s connect timeout. The
+	// tab's own connection is unaffected once the dial has returned —
+	// ConnectContext roots it at Background.
+	parent := pt.am.conn.Context()
 	pt.am.app.safegoRepair("connecting Activity Monitor "+pt.proc.MasterName+" tab", pt.panicRepair, func() {
-		conn, err := db.ConnectContext(context.Background(), opts, db.RoleActivityMonitor)
+		conn, err := db.ConnectContext(parent, opts, db.RoleActivityMonitor)
 		pt.am.app.postAndWake(func() { pt.connected(conn, err) })
 	})
 }

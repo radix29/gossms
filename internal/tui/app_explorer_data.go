@@ -289,7 +289,7 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 		"Disable Database Trigger",
 		fmt.Sprintf("Disable %s? The DDL policy it enforces stops applying in %s.", name, dbName),
 		func(ctx context.Context, name string, on bool) error {
-			// Database, not DatabaseByName: addressing a trigger needs no
+			// DatabaseRef, not DatabaseByName: addressing a trigger needs no
 			// sys.databases read.
 			t := sc.Server.DatabaseRef(dbName).DatabaseTriggerRef(name)
 			if on {
@@ -412,7 +412,7 @@ func (a *App) toggleEnabledState(sc *db.ServerConn, node *explorerNode, noun, di
 //
 // Disabling is confirmed: a disabled guide shows up only as a regressed query.
 // State is in the label (loadPlanGuidesChildren), so the parent is refreshed.
-// Server.Database, not DatabaseByName: nothing is read off sys.databases.
+// DatabaseRef, not DatabaseByName: nothing is read off sys.databases.
 func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 	name, dbName := node.data.Name, node.data.DBName
 	a.toggleEnabledState(sc, node, "plan guide", name,

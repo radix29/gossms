@@ -244,3 +244,26 @@ func TestCompareCountsEveryActualRowAndRead(t *testing.T) {
 		t.Errorf("a 0.5%% re-estimate reads as %v with changes %v", got[0].Kind, got[0].Changes)
 	}
 }
+
+// The same operator that went parallel: a pairing on signature, since Parallel
+// is not part of it, and the row that names the flip. Without this the
+// "Parallel x → y" row is the one line in the package no fixture produces, and
+// the plan users most want compared is the one that changed DOP.
+func TestCompareNamesAnOperatorThatWentParallel(t *testing.T) {
+	serial := stmt(node(0, "Clustered Index Scan", "orders", "PK_orders", 1e6, 12.0))
+	par := stmt(node(0, "Clustered Index Scan", "orders", "PK_orders", 1e6, 12.0))
+	par.Root.Parallel = true
+
+	diffs := CompareStatements(serial, par)
+	if len(diffs) != 1 || diffs[0].Kind != ChangeDifferent {
+		t.Fatalf("comparison = %v, want the scan paired and changed", lines(diffs))
+	}
+	if got := strings.Join(diffs[0].Changes, "; "); got != "Parallel No → Yes" {
+		t.Errorf("changes = %q, want %q", got, "Parallel No → Yes")
+	}
+	// And the other way round, so neither direction is the untested one.
+	back := CompareStatements(par, serial)
+	if got := strings.Join(back[0].Changes, "; "); got != "Parallel Yes → No" {
+		t.Errorf("changes = %q, want %q", got, "Parallel Yes → No")
+	}
+}

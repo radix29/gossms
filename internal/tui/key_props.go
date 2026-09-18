@@ -2,12 +2,10 @@ package tui
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
-	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -60,17 +58,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				return nil, nil, err
 			}
 
-			rows := make([][]string, len(idx.KeyColumns))
-			for i, c := range idx.KeyColumns {
-				order := "Ascending"
-				if c.Descending {
-					order = "Descending"
-				}
-				rows[i] = []string{strconv.Itoa(i + 1), c.Name, order}
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData(indexKeyColumns, rows)
-			grid.SetCellCursor(true)
+			grid := indexKeyColumnGrid(idx)
 
 			nameRow := propsheet.Text("Key name", idx.Name, 24)
 

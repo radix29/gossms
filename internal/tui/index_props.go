@@ -160,17 +160,7 @@ func pageIndexGeneral(sc *db.ServerConn, dbName, schema, table, name string) pro
 				return nil, nil, err
 			}
 
-			rows := make([][]string, len(idx.KeyColumns))
-			for i, c := range idx.KeyColumns {
-				order := "Ascending"
-				if c.Descending {
-					order = "Descending"
-				}
-				rows[i] = []string{strconv.Itoa(i + 1), c.Name, order}
-			}
-			grid := controls.NewDataGrid()
-			grid.SetData(indexKeyColumns, rows)
-			grid.SetCellCursor(true)
+			grid := indexKeyColumnGrid(idx)
 
 			included := "(none)"
 			if len(idx.IncludedColumns) > 0 {
