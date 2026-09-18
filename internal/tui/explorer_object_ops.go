@@ -65,8 +65,9 @@ type objectOp struct {
 //
 // DatabaseRef, not DatabaseByName: every statement below names its object in
 // the text and reads nothing off the *gosmo.Database but its name, so the
-// sys.databases round trip buys nothing — and DatabaseByName cannot run under a
-// WithScript-derived context, which Script Changes on Delete needs.
+// sys.databases round trip buys nothing. That is the whole reason; a
+// WithScript-derived context is not a second one, since WithScript intercepts
+// writes only and the by-name read under it would reach the server anyway.
 func dbOf(sc *db.ServerConn, n nodeData) *gosmo.Database {
 	return sc.Server.DatabaseRef(n.DBName)
 }
@@ -476,11 +477,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "External data sources and backup URLs bound to it lose their identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			dbObj, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
-			if err != nil {
-				return err
-			}
-			return dbObj.DatabaseScopedCredentialRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseScopedCredentialRef(n.Name).DropContext(ctx)
 		},
 		// No rename: there is no ALTER DATABASE SCOPED CREDENTIAL ... WITH NAME
 		// and no sp_rename class for one, the same as the server-level
@@ -516,11 +513,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The action groups and actions it names stop being recorded by its audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			dbObj, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
-			if err != nil {
-				return err
-			}
-			return dbObj.DatabaseAuditSpecificationRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseAuditSpecificationRef(n.Name).DropContext(ctx)
 		},
 		// No rename: ALTER DATABASE AUDIT SPECIFICATION has no MODIFY NAME
 		// form, the same as the server-scope one.
@@ -547,9 +540,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The DDL policy it enforces stops applying across the database.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			// DatabaseRef, not DatabaseByName: the trigger is addressed by name
-			// and the lightweight handle needs no sys.databases read.
-			return sc.Server.DatabaseRef(n.DBName).DatabaseTriggerRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseTriggerRef(n.Name).DropContext(ctx)
 		},
 		// No rename: sp_rename has no class for a DDL trigger, and there is
 		// no ALTER ... MODIFY NAME form either.

@@ -159,7 +159,9 @@ func TestDatabaseScopedCredentialScriptsAndDrops(t *testing.T) {
 // node names — StatementsIn, because the bare USE is stripped as plumbing and
 // with it the only record of where the DROP landed.
 func TestDatabaseScopedCredentialDropStatement(t *testing.T) {
-	sc, inst := newFakeConn(t, dbScopedCredDatabaseRow())
+	// No sys.databases response: the drop goes through dbOf and must not need
+	// one — see TestDropsThroughDbOfReadNoCatalog.
+	sc, inst := newFakeConn(t)
 	err := objectOps[NodeDatabaseScopedCredential].drop(t.Context(), sc,
 		nodeData{Type: NodeDatabaseScopedCredential, DBName: "appdb", Name: "app_cred"})
 	if err != nil {

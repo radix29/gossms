@@ -126,7 +126,24 @@ when the underlying issue is fixed.
 
 ### Bugs and suspected defects
 
-None outstanding.
+- **B7 — ~20 gosmo `Ref` method docs still carry the over-broad `WithScript`
+  claim.** Review plan P5 corrected the four prose sites it named
+  (`CLAUDE.md`, `docs/decisions.md`, `dbOf`, and the authority
+  bullet in `~/go/gosmo/CLAUDE.md`), but the same sentence — "the only usable
+  form under a `WithScript` context" — is repeated on the `Ref` method doc
+  comments themselves: `database_trigger.go:123`, `agent_job.go:247`,
+  `server_trigger.go:122`, `plan_guide.go:175`, `backup_device.go:116`,
+  `agent_alert.go:181`, `agent_operator.go:93`, `agent_schedule.go:188`,
+  `database_credential.go:119`, `database_audit_specification.go:178`,
+  `table.go:50`, `database_snapshot.go:52`, `login.go:591`,
+  `server_role.go:117`, `server_config.go:103`, `statistics.go:112`,
+  `availability_group.go:203`, `database.go:705`, `server.go:404` and
+  neighbours. `WithScript` intercepts writes only, so a by-name read under one
+  reaches the real server — `script.go:60` says so — and the claim is true only
+  when there is nothing to read yet (no connection, or an object the script is
+  about to create). Left undone deliberately: ~20 doc comments in a second
+  repository, each needing the narrow wording, is its own pass. Mechanical, no
+  code change, and `go doc` is where a caller reads it, so it is worth doing.
 
 ### Verification gaps
 

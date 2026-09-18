@@ -26,6 +26,13 @@ import (
 // identifier a comment might name. Widening it to "every gosmo method a
 // comment mentions still exists" would need the whole gosmo API surface and
 // would fail on prose that names a method in passing.
+//
+// The gap that leaves, stated so it is not mistaken for coverage: this reads
+// *names*, not claims. A comment whose names are all current and whose
+// justification is false passes — loadDatabaseTrigger's said "DatabaseByName,
+// not DatabaseRef: the pages show CreateDate and the definition", naming both
+// methods correctly while attributing two of the trigger's own fields to the
+// database (review plan P6, corrected 2026-09-18). Only a reader catches that.
 func TestNoCommentNamesARenamedGosmoHandle(t *testing.T) {
 	// Each pattern is a spelling that stopped existing in the rename, with
 	// what to write instead. The contrast forms ("X, not Y") are listed

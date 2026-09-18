@@ -164,8 +164,10 @@ extractable. `dashboard` exists for a second reason: `cmd/amdemo` has to draw
 the same dashboards the panel draws without dragging in the whole application.
 
 `gate` is the fourth sub-package and the one that is not a leaf: it imports
-`internal/db` and `gosmo`, because the question it answers is "what has this
-connection been probed to allow". It knows nothing about `App` — that is what
+`internal/db`, `gosmo` and `internal/tuikit/controls` — `internal/db` and
+`gosmo` because the question it answers is "what has this connection been
+probed to allow", and `controls` because `gate.Item` wraps a
+`controls.MenuItem` in the answer. It knows nothing about `App` — that is what
 made it extractable — and the one-way rule it keeps is the same one: `gate`
 never imports `tui`. See § Why the permission gate is its own package.
 

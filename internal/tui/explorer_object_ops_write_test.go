@@ -262,3 +262,50 @@ func TestDecliningTheColumnRenameWarningWritesNothing(t *testing.T) {
 		t.Errorf("statements = %q, want none after declining", stmts)
 	}
 }
+
+// Every database-scoped drop addresses its object by name in the statement
+// text and reads nothing off the *gosmo.Database, so every one of them goes
+// through dbOf and none should touch sys.databases. Two entries did not until
+// 2026-09-18 (review plan P2), spending a round trip each and failing with
+// "database not found" where the sibling would have emitted the DROP. The
+// assertion is a *read* count: assertNoStatementsIn sees writes only, and the
+// bug here was an extra read.
+func TestDropsThroughDbOfReadNoCatalog(t *testing.T) {
+	for _, tc := range []struct {
+		nt NodeType
+		n  nodeData
+		// resp is what the drop legitimately reads on its way — never
+		// sys.databases. Only the audit specification has one: it reads its
+		// own state first, because dropping an enabled specification fails.
+		resp []fakeResponse
+		want string
+	}{
+		{nt: NodeDatabaseScopedCredential,
+			n:    nodeData{Type: NodeDatabaseScopedCredential, DBName: "appdb", Name: "app_cred"},
+			want: "DROP DATABASE SCOPED CREDENTIAL [app_cred]"},
+		{nt: NodeDatabaseAuditSpecification,
+			n: nodeData{Type: NodeDatabaseAuditSpecification, DBName: "appdb", Name: "app_audit_spec"},
+			resp: []fakeResponse{{
+				match: "is_state_enabled FROM sys.database_audit_specifications",
+				cols:  1, rows: [][]driver.Value{{false}},
+			}},
+			want: "DROP DATABASE AUDIT SPECIFICATION [app_audit_spec]"},
+		{nt: NodeDatabaseTrigger,
+			n:    nodeData{Type: NodeDatabaseTrigger, DBName: "appdb", Name: "ddl_audit"},
+			want: "DROP TRIGGER [ddl_audit] ON DATABASE"},
+	} {
+		t.Run(nodeTypeName(tc.nt), func(t *testing.T) {
+			// No scripted sys.databases row: a drop that looks one up gets no
+			// answer and fails, which is the second half of what this pins.
+			sc, inst := newFakeConn(t, tc.resp...)
+			if err := objectOps[tc.nt].drop(t.Context(), sc, tc.n); err != nil {
+				t.Fatalf("drop: %v", err)
+			}
+			if reads := inst.Reads("sys.databases"); len(reads) != 0 {
+				t.Errorf("drop read sys.databases, want no catalog read:\n%s", strings.Join(reads, "\n"))
+			}
+			assertOneStatementIn(t, inst, "appdb", tc.want)
+			assertNoStatementsIn(t, inst, "master")
+		})
+	}
+}

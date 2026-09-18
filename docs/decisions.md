@@ -473,7 +473,11 @@ through a database-wide grant.
   rather than merely visible, and was judged not worth the change to every
   call site for eighteen families; reopen it only with a bug the suffix
   failed to prevent. The lightweight form itself is not removable — it is
-  the only one that works under a `WithScript`-derived context.
+  the only one that works when there is nothing to read yet, per
+  `~/go/gosmo/CLAUDE.md` § Conventions, the `Ref` bullet, which owns that
+  rule. (Corrected 2026-09-18, review plan P5: the sentence used to say
+  "under a `WithScript`-derived context", which is over-broad —
+  `WithScript` intercepts writes only.)
 - **`Database`'s catalog state is exported fields, not accessors.** Changed
   2026-09-18 (review plan R2, option (a)): `Name`, `ID`, `State`,
   `RecoveryModel`, `CompatibilityLevel`, `Collation`, `IsReadOnly`,

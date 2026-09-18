@@ -97,6 +97,10 @@ Two further facts:
 
 ### P2 — two drop entries bypass `dbOf`, costing a `sys.databases` round trip each
 
+**Done (2026-09-18)**, with P5, P6 and P7. `TestDropsThroughDbOfReadNoCatalog`
+(`explorer_object_ops_write_test.go`) pins it, and covers the sibling trigger
+entry as the third case.
+
 `internal/tui/explorer_object_ops.go` defines `dbOf` (line 64) precisely so
 the per-NodeType drop/rename table never resolves a database it does not read
 anything off. 24 entries use `dbOf(sc, n)`. Two do not:
@@ -198,6 +202,9 @@ either way". Three current instances, all load-bearing.
 
 ### P5 — "the only form that works under a `WithScript`-derived context" is over-broad
 
+**Done (2026-09-18)**, for the four sites named below. The same claim on ~20
+gosmo `Ref` *method* doc comments is left, as `docs/open-threads.md` B7.
+
 Stated unconditionally in four places:
 
 - `CLAUDE.md` § The one rule that matters most — "`DatabaseRef` … is the only
@@ -232,6 +239,10 @@ round trip buys nothing — and drops the second.
 
 ### P6 — `loadDatabaseTrigger`'s comment justifies the wrong thing
 
+**Done (2026-09-18)**. The call was switched to `DatabaseRef` rather than
+re-justified, matching the two sibling sites; `ref_comment_test.go`'s doc
+comment now states the gap it leaves.
+
 `internal/tui/database_trigger_props.go:73`:
 
 > `DatabaseByName`, not `DatabaseRef`: the pages show `CreateDate` and the
@@ -254,6 +265,8 @@ argument and is optional here — but if it is left as `DatabaseByName`, the
 comment must give the real reason or none.
 
 ### P7 — `ARCHITECTURE.md` understates `gate`'s imports
+
+**Done (2026-09-18)**.
 
 § Package map: "`gate` … imports `internal/db` and `gosmo`". The package also
 imports `internal/tuikit/controls` (`gate/menu.go`'s `controls.MenuItem`

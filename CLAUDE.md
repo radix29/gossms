@@ -68,8 +68,11 @@ Standing gotchas:
   `gosmo.Server` has **both** `DatabaseRef(name)` and `DatabaseByName(name)`,
   and they are not interchangeable. `DatabaseRef` issues no query and leaves
   every field but the name zero-valued — `IsSystem()` answers `false` for
-  `master` — and is the only form that works under a `WithScript`-derived
-  context; `DatabaseByName` queries `sys.databases`. Twenty-two gosmo families
+  `master` — and is the only form that works when there is nothing to read
+  yet; `DatabaseByName` queries `sys.databases`. `~/go/gosmo/CLAUDE.md` §
+  Conventions, the `Ref` bullet, is the authority on when that is — note
+  that a `WithScript`-derived context is *not* on its own one of those
+  cases, since `WithScript` intercepts writes only. Twenty-two gosmo families
   pair this way (`LoginRef`, `TableRef`, `JobRef`, …). Before the 2026-09-17
   rename the handle had the plain name and picking the wrong one failed
   quietly; the suffix is what makes the choice visible at the call site.
