@@ -1172,7 +1172,7 @@ var databaseScopedOpTypes = []NodeType{
 	NodeDatabaseAuditSpecification, NodeDatabaseTrigger,
 	NodeDatabaseScopedCredential,
 	NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,
-	NodeXmlSchemaCollection, NodeRule, NodeDefault, NodeAssembly,
+	NodeXMLSchemaCollection, NodeRule, NodeDefault, NodeAssembly,
 	NodePlanGuide, NodeExternalDataSource, NodeExternalFileFormat,
 	NodeExternalLibrary,
 	NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
@@ -1216,7 +1216,7 @@ var schemaScopedOpTypes = []NodeType{
 	NodeTable, NodeView, NodeStoredProcedure, NodeFunction, NodeTrigger,
 	NodeSequence, NodeSynonym, NodeColumn, NodeIndex, NodeStatistic, NodeKey,
 	NodeForeignKey, NodeCheck, NodeSecurityPolicy, NodeUserDefinedDataType,
-	NodeUserDefinedTableType, NodeUserDefinedType, NodeXmlSchemaCollection,
+	NodeUserDefinedTableType, NodeUserDefinedType, NodeXMLSchemaCollection,
 	NodeRule, NodeDefault,
 	// The queue is the one Service Broker family with a schema; the other six
 	// are schemaless and are held to an explicit entry by the test below.

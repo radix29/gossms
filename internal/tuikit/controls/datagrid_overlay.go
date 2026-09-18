@@ -184,8 +184,8 @@ func (g *DataGrid) DrawOverlay(s tcell.Screen) {
 // Clipboard target — active only while the content viewer is open
 // ---------------------------------------------------------------------------
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll make *DataGrid
-// itself a clipboard target (see internal/tui/clipboard.go's
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it make
+// *DataGrid itself a clipboard target (see internal/tui/clipboard.go's
 // clipboardTarget and propsheet.ClipboardRow), forwarding to the built-in
 // viewer's read-only Editor while it's open. HasSelection is always false
 // otherwise, so a host that falls back to its own row/cell copy behavior

@@ -103,7 +103,7 @@ func (d *NewJobDialog) buildPages(pf *njobPrefetch) {
 	sc := d.sc
 
 	generalForm, generalApply, jobName, enabled := buildNewJobGeneralPage(sc, pf)
-	stepsForm, stepsApply, stepCount := buildNewJobStepsPage(sc, pf, jobName)
+	stepsForm, stepsApply, stepCount := buildNewJobStepsPage(sc, pf, jobName, d.app.cfg.IndentWidth)
 	schedulesForm, schedulesApply := buildNewJobSchedulesPage(sc, pf, jobName)
 	notificationsForm, notificationsApply := buildNewJobNotificationsPage(sc, pf, jobName)
 

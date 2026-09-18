@@ -163,3 +163,25 @@ None outstanding.
   own grammar. Cross-database three-part chains need an inventory per
   database, not the two `completionInventory`s the provider carries. None is
   a defect in what shipped; each is its own pass if the user asks for it.
+
+- **N2 — completion's prefix scan is O(script) on every keystroke.**
+  `sqlparse.ScanPrefix` (`internal/tui/sqlparse/token.go:440`) lexes the whole
+  prefix with tokens off before tokenizing the cursor's own statement, because
+  an unterminated block comment thousands of lines up moves where that
+  statement starts. The requirement is real and the existing pass is already
+  the optimised one — `BenchmarkCompletionPrefixScan_*` against
+  `BenchmarkCompletionPrefixScanReference_*` in
+  `internal/tui/sqlparse/bench_test.go` is the measurement. On the author's
+  machine (i5-2500K, `-benchtime 200x`): **0.57 ms per keystroke on a
+  100-statement script, 5.7 ms on 1000**, one alloc either way, all of it on
+  the UI goroutine while the popup is open, and linear from there.
+  The fix, if it is ever worth it: cache the lexer state at each top-level `;`
+  and `GO` boundary keyed by `Document.Version()`
+  (`internal/tuikit/controls/document.go:99`) and restart the first pass from
+  the last valid boundary at or before the cursor, so an edit below it costs
+  O(statement). `TokenizeRangeFrom` (`token.go:124`) already takes an explicit
+  start state, so both halves exist.
+  **Deliberately not scheduled.** Nobody has reported it, and the correctness
+  argument means a stale cache is a silently wrong completion rather than a
+  slow one. The trigger is someone editing a script big enough to feel it;
+  re-run the benchmarks above first.

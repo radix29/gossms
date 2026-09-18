@@ -363,8 +363,8 @@ func (p *PlanComparePanel) routeDrag(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// HasSelection, SelectedText, Cut, Paste and SelectAll implement
-// clipboardTarget by forwarding to the focused grid.
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// implement clipboardTarget by forwarding to the focused grid.
 func (p *PlanComparePanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
 func (p *PlanComparePanel) SelectedText() string { return p.focusedGrid().SelectedText() }
 func (p *PlanComparePanel) Cut() string          { return p.focusedGrid().Cut() }

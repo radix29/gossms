@@ -38,9 +38,14 @@ behind the mouse and async sections; this file has the rules themselves.
   is seeded from `Text()` afterwards (see the bullet above), so a width set later
   would make an already-open file read as edited. Changing the width at runtime
   (Options > OK) deliberately does not re-expand existing text; it pushes the new
-  width into every open `QueryPanel` and into `controls.SetDefaultIndentWidth`,
-  which is how editors built where the config is out of reach (property-sheet
-  T-SQL rows, the Agent job-step command box) pick it up.
+  width into every open `QueryPanel`, into every open property sheet's
+  `EditorRow`s (`PropertySheet.SetEditorIndentWidth` — the Agent job-step Command
+  box is the one *writable* editor that is not a `QueryPanel`), and into
+  `controls.SetDefaultIndentWidth`, which is how editors built where the config
+  is out of reach (the read-only property-sheet T-SQL rows) pick it up.
+  A writable editor built outside a `QueryPanel` takes the width from the config
+  at construction — the job-step panel is handed `cfg.IndentWidth` by its two
+  callers — so one editor never reads its two indent settings from two places.
 - **A widget's `HandleKey`/`HandleMouse` returns `true` only for events it actually
   acted on** — never "I'm focused, so I consumed it." `propsheet.Form` gives the
   focused row first refusal and falls back to its own Tab/Up/Down cycling only on

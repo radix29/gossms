@@ -130,8 +130,8 @@ var (
 	scriptClrType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptClrTypeContext(ctx, n.Schema, n.Name)
 	}
-	scriptXmlSchemaCollection scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptXmlSchemaCollectionContext(ctx, n.Schema, n.Name)
+	scriptXMLSchemaCollection scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptXMLSchemaCollectionContext(ctx, n.Schema, n.Name)
 	}
 	scriptRule scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptRuleContext(ctx, n.Schema, n.Name)
@@ -263,7 +263,7 @@ var scriptables = map[NodeType]scriptable{
 	NodeUserDefinedDataType:  {"User-Defined Data Type", ddlVerbs(scriptUserDefinedDataType, false)},
 	NodeUserDefinedTableType: {"User-Defined Table Type", ddlVerbs(scriptUserDefinedTableType, false)},
 	NodeUserDefinedType:      {"User-Defined Type", ddlVerbs(scriptClrType, false)},
-	NodeXmlSchemaCollection:  {"XML Schema Collection", ddlVerbs(scriptXmlSchemaCollection, false)},
+	NodeXMLSchemaCollection:  {"XML Schema Collection", ddlVerbs(scriptXMLSchemaCollection, false)},
 	NodeRule:                 {"Rule", ddlVerbs(scriptRule, false)},
 	NodeDefault:              {"Default", ddlVerbs(scriptDefault, false)},
 	// The binary is elided the way the credential secret is — see gosmo's

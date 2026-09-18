@@ -172,3 +172,39 @@ func TestCounterQueryQuotesEveryName(t *testing.T) {
 		}
 	}
 }
+
+// Both hit ratios carry cntr_type 537003264 and neither is a running total, so
+// neither may be read as a delta — the two pairs below are consecutive live
+// readings from win10cli (SQL Server 17.0.1135.8) on 2026-09-18, and the delta
+// each one would give is an impossible hit ratio. See the cntrFraction arm.
+func TestNeitherCacheHitRatioIsReadAsADelta(t *testing.T) {
+	start := time.Date(2026, 9, 18, 15, 35, 52, 0, time.UTC)
+	// Buffer Manager: a window over recent page lookups, taken mid-scan after a
+	// DBCC DROPCLEANBUFFERS; it grew across these two. Plan Cache: the sum over
+	// five cache stores, two of which restarted at zero between the readings.
+	snap := func(at time.Time, bufCur, bufBase, planCur, planBase int64) *Snapshot {
+		return snapshotAt(at, set(
+			counterRow{objBufferMgr, "Buffer cache hit ratio", "", bufCur, cntrFraction},
+			counterRow{objBufferMgr, "Buffer cache hit ratio base", "", bufBase, cntrBase},
+			counterRow{objPlanCache, "Cache Hit Ratio", totalInstance, planCur, cntrFraction},
+			counterRow{objPlanCache, "Cache Hit Ratio Base", totalInstance, planBase, cntrBase},
+		))
+	}
+	prev := snap(start, 29456, 29511, 3438, 5226)
+	cur := snap(start.Add(3*time.Second), 87411, 87411, 2209, 3509)
+
+	s := Derive(prev, cur)
+
+	// 87411/87411; the delta reads 57955/57900 = 100.09%.
+	if s.BufferCacheHitPct != 100 {
+		t.Errorf("buffer cache hit = %v%%, want the window's 100%%", s.BufferCacheHitPct)
+	}
+	// 2209/3509; the delta reads -1229/-1717 = 71.58%, two negatives passing for
+	// a rate.
+	// Variables, not a constant expression: the compiler would fold that one at
+	// a precision value() cannot reach, and the assertion would fail by 1 ulp.
+	planCur, planBase := 2209.0, 3509.0
+	if want := planCur / planBase * 100; s.PlanCacheHitPct != want {
+		t.Errorf("plan cache hit = %v%%, want %v%%", s.PlanCacheHitPct, want)
+	}
+}

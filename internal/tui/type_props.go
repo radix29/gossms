@@ -54,12 +54,12 @@ func findClrType(ctx context.Context, sc *db.ServerConn, dbName, schema, name st
 	return d.ClrTypeByNameContext(ctx, schema, name)
 }
 
-func findXmlSchemaCollection(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.XmlSchemaCollection, error) {
+func findXMLSchemaCollection(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.XMLSchemaCollection, error) {
 	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.XmlSchemaCollectionByNameContext(ctx, schema, name)
+	return d.XMLSchemaCollectionByNameContext(ctx, schema, name)
 }
 
 // findSystemDataType picks one built-in type out of the instance's list.
@@ -211,16 +211,16 @@ func clrTypePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage
 
 func xmlSchemaCollectionPropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 	return []propPage{
-		pageXmlSchemaCollectionGeneral(sc, dbName, schema, name),
-		pageXmlSchemaCollectionSchema(sc, dbName, schema, name),
+		pageXMLSchemaCollectionGeneral(sc, dbName, schema, name),
+		pageXMLSchemaCollectionSchema(sc, dbName, schema, name),
 	}
 }
 
-func pageXmlSchemaCollectionGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
+func pageXMLSchemaCollectionGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			c, err := findXmlSchemaCollection(ctx, sc, dbName, schema, name)
+			c, err := findXMLSchemaCollection(ctx, sc, dbName, schema, name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -238,18 +238,18 @@ func pageXmlSchemaCollectionGeneral(sc *db.ServerConn, dbName, schema, name stri
 	}
 }
 
-// pageXmlSchemaCollectionSchema shows the collection's documents as the
+// pageXMLSchemaCollectionSchema shows the collection's documents as the
 // server reassembles them, in a read-only XML editor.
 //
 // The read is XML_SCHEMA_NAMESPACE, which is a second round trip after the
 // catalog row and can return nothing for a collection the caller cannot see
 // into; an empty result reports itself rather than drawing an empty editor,
 // which would read as a collection holding no documents.
-func pageXmlSchemaCollectionSchema(sc *db.ServerConn, dbName, schema, name string) propPage {
+func pageXMLSchemaCollectionSchema(sc *db.ServerConn, dbName, schema, name string) propPage {
 	return propPage{
 		title: "Schema",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			c, err := findXmlSchemaCollection(ctx, sc, dbName, schema, name)
+			c, err := findXMLSchemaCollection(ctx, sc, dbName, schema, name)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -145,7 +145,7 @@ func TestTypesFolderChildren(t *testing.T) {
 		{"User-Defined Data Types", NodeUserDefinedDataTypes},
 		{"User-Defined Table Types", NodeUserDefinedTableTypes},
 		{"User-Defined Types", NodeUserDefinedTypes},
-		{"XML Schema Collections", NodeXmlSchemaCollections},
+		{"XML Schema Collections", NodeXMLSchemaCollections},
 	}
 	if len(children) != len(want) {
 		t.Fatalf("Types = %v, want %d folders", labelsOfNodes(children), len(want))
@@ -260,17 +260,17 @@ func TestClrTypesLoader(t *testing.T) {
 	assertCarriesDatabase(t, children, NodeUserDefinedType)
 }
 
-func TestXmlSchemaCollectionsLoader(t *testing.T) {
+func TestXMLSchemaCollectionsLoader(t *testing.T) {
 	sc := newFamilyConn(t, fakeResponse{
 		match: "FROM   sys.xml_schema_collections", cols: 5,
 		rows: [][]driver.Value{
 			{"InvoiceSchema", "dbo", int64(65536), treeFamilyCreated, treeFamilyCreated},
 		}})
-	children := loadFamily(t, sc, NodeXmlSchemaCollections)
+	children := loadFamily(t, sc, NodeXMLSchemaCollections)
 	if got := labelsOfNodes(children); !slices.Equal(got, []string{"dbo.InvoiceSchema"}) {
 		t.Fatalf("children = %v", got)
 	}
-	assertCarriesDatabase(t, children, NodeXmlSchemaCollection)
+	assertCarriesDatabase(t, children, NodeXMLSchemaCollection)
 	// The folder offers a Creation Date filter, which matches on this field —
 	// a zero here would reject every row.
 	if !children[0].data.CreateDate.Equal(treeFamilyCreated) {
@@ -412,7 +412,7 @@ func TestExternalResourceLoaders(t *testing.T) {
 // object glyph and refuses to open.
 var newFamilyFolders = []NodeType{
 	NodeTypes, NodeSystemDataTypes, NodeUserDefinedDataTypes,
-	NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXmlSchemaCollections,
+	NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXMLSchemaCollections,
 	NodeAssemblies, NodeRules, NodeDefaults, NodePlanGuides,
 	NodeExternalResources, NodeExternalDataSources, NodeExternalFileFormats,
 	NodeExternalLibraries,
@@ -424,7 +424,7 @@ var newFamilyFolders = []NodeType{
 // newFamilyLeaves is every leaf type the phase added.
 var newFamilyLeaves = []NodeType{
 	NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
-	NodeUserDefinedType, NodeXmlSchemaCollection,
+	NodeUserDefinedType, NodeXMLSchemaCollection,
 	NodeAssembly, NodeRule, NodeDefault, NodePlanGuide,
 	NodeExternalDataSource, NodeExternalFileFormat, NodeExternalLibrary,
 	NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
@@ -491,7 +491,7 @@ func TestNewFamilyLeavesAreNamed(t *testing.T) {
 		NodeUserDefinedDataType:  "User-Defined Data Type",
 		NodeUserDefinedTableType: "User-Defined Table Type",
 		NodeUserDefinedType:      "User-Defined Type",
-		NodeXmlSchemaCollection:  "XML Schema Collection",
+		NodeXMLSchemaCollection:  "XML Schema Collection",
 		NodeAssembly:             "Assembly",
 		NodeRule:                 "Rule",
 		NodeDefault:              "Default",

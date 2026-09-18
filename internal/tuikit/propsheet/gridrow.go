@@ -108,8 +108,8 @@ func (r *GridRow) CopyText() string {
 	return strings.Join(cells, "\t")
 }
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll implement
-// ClipboardRow by forwarding to the grid, which is itself only a real
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// implement ClipboardRow by forwarding to the grid, which is itself only a real
 // clipboard target while its built-in "Show Value" content viewer is open
 // (see controls.DataGrid.HasSelection) — so PropertySheet's Ctrl+C/X/V and
 // Select All reach that popup's read-only text instead of CopyText's plain

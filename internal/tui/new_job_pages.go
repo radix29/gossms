@@ -54,7 +54,7 @@ func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.For
 // jobStepEdit/jobStepOnActionItems/stepNumberText directly — every row
 // here is simply isNew:true from the start, since the job doesn't exist
 // yet. "Start at Step" is dropped (nothing to start yet).
-func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string) (*propsheet.Form, propApply, func() int) {
+func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() string, indentWidth int) (*propsheet.Form, propApply, func() int) {
 	var edits []*jobStepEdit
 
 	visible := func() []*jobStepEdit { return visibleSteps(edits) }
@@ -74,7 +74,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 	// The sentinel goes first, so a step the user never picked a database
 	// for is created against the server's own default rather than against
 	// whichever database sorts first — see defaultDatabaseItem.
-	panel := newJobStepPanel(defaultDatabaseItem, pf.dbNames)
+	panel := newJobStepPanel(defaultDatabaseItem, pf.dbNames, indentWidth)
 
 	selected := func() *jobStepEdit {
 		vis := visible()

@@ -1,7 +1,7 @@
 package planview
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll let a host wire
-// PlanView into its own App-level Copy/Cut/Paste (see
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it let a
+// host wire PlanView into its own App-level Copy/Cut/Paste (see
 // internal/tui/clipboard.go's clipboardTarget interface) exactly like
 // DetailBrowser does for its grid — the XML tab forwards to its editor's
 // text selection; the Plan and Tree tabs report the selected operator's

@@ -92,9 +92,9 @@ func (pp *PlanPanel) HandleKey(ev *tcell.EventKey) bool { return pp.planView.Han
 // HandleMouse delegates to the wrapped PlanView.
 func (pp *PlanPanel) HandleMouse(ev *tcell.EventMouse) bool { return pp.planView.HandleMouse(ev) }
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll implement
-// clipboardTarget (see internal/tui/clipboard.go) by forwarding to the
-// wrapped PlanView — same pattern as DetailBrowser forwarding to its grid.
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// implement clipboardTarget (see internal/tui/clipboard.go) by forwarding to
+// the wrapped PlanView — same pattern as DetailBrowser forwarding to its grid.
 func (pp *PlanPanel) HasSelection() bool   { return pp.planView.HasSelection() }
 func (pp *PlanPanel) SelectedText() string { return pp.planView.SelectedText() }
 func (pp *PlanPanel) Cut() string          { return pp.planView.Cut() }

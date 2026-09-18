@@ -45,17 +45,20 @@ type jobStepPanel struct {
 }
 
 // newJobStepPanel builds the panel. The sentinel leads the Database dropdown,
-// so a database's dropdown index is its dbNames index plus one.
-func newJobStepPanel(sentinel string, dbNames []string) *jobStepPanel {
+// so a database's dropdown index is its dbNames index plus one. indentWidth is
+// the configured indent size (cfg.IndentWidth).
+func newJobStepPanel(sentinel string, dbNames []string, indentWidth int) *jobStepPanel {
 	// The command gets the query editor (highlighting, line numbers) so "line
 	// 12" errors can be found.
 	sqlHighlight := controls.SQLHighlighter(theme.Active())
 	editor := controls.NewEditor(sqlHighlight)
-	// The step command is T-SQL, so it gets the query editor's smart indent
-	// too. Its indent width comes from controls' package default, which
-	// App/Options keep in step with the config — this panel is built where the
-	// config is out of reach.
+	// The step command is T-SQL, so it gets the query editor's smart indent and
+	// its indent width, both from the config the caller passes in — the width
+	// would otherwise come from controls' package default and the two settings
+	// would be read from two places for one editor. Options pushes a later
+	// change in through the sheet (SetEditorIndentWidth).
 	editor.SetSmartIndent(true)
+	editor.SetIndentWidth(indentWidth)
 	p := &jobStepPanel{
 		sentinel:        sentinel,
 		dbNames:         dbNames,

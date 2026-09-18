@@ -1067,10 +1067,20 @@ re-opened without asking the author.
   command, so it works from the page list and the button row — but
   `PropertySheet.HandleKey` gives the focused row first refusal through
   `focusedRowHandles`, so undo inside a job step's T-SQL box does not discard
-  every other row's edits. And **`Ctrl+Z` must stay free inside a form row**:
-  `widgets.InputField` takes `Ctrl+A`/`Ctrl+U` and no propsheet row hosts a
-  `controls.Editor`, the one widget with a `Ctrl+Z` of its own. A row that ever
-  embeds a full editor takes this key back and needs a different one.
+  every other row's edits. And **the rows that host a `controls.Editor` — the
+  one row widget with a `Ctrl+Z` of its own — are what that first refusal is
+  for**: `propsheet.EditorRow`, at three live call sites
+  (`prop_grid_helpers.go`'s `sqlBodyRow` on every Definition page,
+  `type_props.go`'s XML schema collection Documents box, and
+  `agent_job_step_panel.go`'s step Command box). The two read-only ones can
+  never fire it — `controls.readOnlySafeKey` rejects `Ctrl+Z`, so the key falls
+  through to `RevertPage` — and the writable one is reached first by
+  `focusedRowHandles`, which is what keeps page-level revert and in-box undo
+  apart. `widgets.InputField`, the other row widget that claims keys, takes
+  `Ctrl+A`/`Ctrl+U` and not `Ctrl+Z`, so ordinary rows leave it free. A fourth
+  `EditorRow`, writable or not, inherits all of this for free; a *new row type*
+  with a `Ctrl+Z` of its own and no `KeyHandler` does not, and needs a
+  different key.
 
 - **The editor's redo stack is deliberately uncapped in bytes, and `applyStep`'s
   slice is deliberately unguarded.** `maxUndoSteps` and `applyStep` in
@@ -1181,6 +1191,35 @@ re-opened without asking the author.
   resolve through the filter on both. Do not add an `OR instance_name IS NULL`
   arm.
 
+- **Both cache hit ratios are read as `cntr_value / base`, and neither is a
+  since-startup average.** Settled by a live run against win10cli (SQL Server
+  17.0.1135.8) on 2026-09-18, because the `cntrFraction` arm in
+  `internal/activity/counters.go` never touches `prev` while the
+  `cntrAverageBulk` arm right below it does, which reads as an oversight. It is
+  not one, and the two counters are not even the same shape:
+
+  - **Buffer Manager's "Buffer cache hit ratio" is a window over recent page
+    lookups**, not a running total. Twelve readings three seconds apart across a
+    `DBCC DROPCLEANBUFFERS` and a 1.5 GB scan gave bases of 104, 3728, 33057,
+    29511, 87411, 21375, 126, 218 — it falls as often as it rises. `cur/base` is
+    therefore already a live number; a delta divides one window by the change in
+    another window's *size*, which reads 100.09% across the 29511 → 87411 pair.
+  - **Plan Cache's "Cache Hit Ratio" at `_Total` is the sum of its five cache
+    stores' own rows** (Bound Trees, Extended Stored Procedures, Object Plans,
+    SQL Plans, Temporary Tables & Table Variables — they add up exactly), and
+    each restarts at zero when that store is trimmed. Ordinary churn steps the
+    sum backwards by an unrelated mix of hits and lookups (-1229 value against
+    -1717 base, observed mid-run with no explicit flush), and a delta reads 104%
+    and 672% when only some of the stores restart. It is not frozen either: the
+    same trimming keeps the base small, so the average decayed 90.68% → 54.24%
+    across one burst of ad-hoc batches.
+
+  So the delta form is wrong for one counter and unsafe for the other, and the
+  "Buffer cache hit ratio is always 99.9%" complaint is about what the engine
+  counts, not about this arithmetic. `TestNeitherCacheHitRatioIsReadAsADelta`
+  pins both with the readings above. Do not re-propose a `prev`-based arm for
+  `cntrFraction`.
+
 - **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb returns
   `float64` for both `REAL` and `FLOAT`. It is correct if the driver ever
   narrows, and `formatFloat` already takes the bit size.
@@ -1198,8 +1237,12 @@ re-opened without asking the author.
   grant for nothing.
 
 - **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
-  retryable is correct** (`go-mssqldb@v1.9.4/error.go:79`, and `mssql.go:1352`
-  "Ignore non-fatal server errors").
+  retryable is correct.** Both repos require go-mssqldb v1.11.0, where
+  `ServerError`'s doc comment still reads "returned when the server got a fatal
+  error that aborts the process and severs the connection", and the two rows
+  loops that route a token error through `Conn.checkBadConn` still discard the
+  plain `mssql.Error` case with "Ignore non-fatal server errors". Cited by
+  symbol, not by line: both have moved across releases.
 
 - **One worker pool is spawned outside `safego`/`safegoRepair`** —
   `App.fanOut` (`safego.go`), which the Detail Browser backfill and the Log File
@@ -1264,6 +1307,22 @@ re-opened without asking the author.
   `GOPROXY=off`, +23 MB), and **neither gossms nor gosmo actually needs Go
   1.27**: a real offline `go1.26.0` builds both once the `go` directive is
   lowered in *both* `go.mod` files. Go 1.25 untested.
+
+- **The two search dialogs' key-routing skeleton stays duplicated.**
+  `FindReplaceDialog.HandleKey` (`internal/tui/find_replace_dialog.go`) and
+  `LogSearchDialog.HandleKey` (`internal/tui/log_search_dialog.go`) share the
+  Tab/Backtab `nextFocus`/`prevFocus` + `syncFocus` pair, Escape, Enter →
+  `pressButton(btnFocus())` and the trailing `fields()[focusIdx]` dispatch.
+  Reviewed 2026-09-18 and left alone: only the Tab/Backtab half has no
+  per-dialog variation, and everything around it genuinely differs — Escape
+  hides one and dismisses the other, `FindReplaceDialog` has an extra `F3` arm,
+  and the field switch handles several widget types in one dialog and only
+  `*widgets.InputField` in the other. A `dialogFocusKey` helper would be twelve
+  lines with two callers. Extract it if a third search dialog appears, or
+  opportunistically if a change lands in either file anyway; do not re-propose
+  it on the duplication alone. `log_search_dialog.go`'s `HandleMouse` comment
+  ("the same shape as `FindReplaceDialog`'s") is the cross-reference that goes
+  stale — check it when either file moves.
 
 ## Release workflow
 

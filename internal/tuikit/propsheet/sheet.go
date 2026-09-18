@@ -302,6 +302,30 @@ func (p *PropertySheet) SetPageReadOnly(page, seq int, reason string) {
 	slot.readOnly = reason
 }
 
+// SetEditorIndentWidth pushes n to the Editor behind every EditorRow on every
+// loaded page, so a live indent-size change reaches a box already on screen.
+// Editors built later pick the width up from controls.SetDefaultIndentWidth
+// instead; the host sets both.
+//
+// Not guarded by seq or visibility, unlike the page setters above: it carries
+// no page's data, so a stale call can only set the width a page's next load
+// would have set anyway. Read-only rows are included — their text is not
+// re-expanded (see controls.Editor.SetIndentWidth), and a row that stops being
+// read-only must not be left on the old width.
+func (p *PropertySheet) SetEditorIndentWidth(n int) {
+	for i := range p.pages {
+		f := p.pages[i].form
+		if f == nil {
+			continue
+		}
+		for _, r := range f.Rows() {
+			if er, ok := r.(*EditorRow); ok {
+				er.Editor().SetIndentWidth(n)
+			}
+		}
+	}
+}
+
 // buttonLabels is the button row for the page on screen.
 func (p *PropertySheet) buttonLabels() []string {
 	if p.current >= 0 && p.current < len(p.pages) && p.pages[p.current].readOnly != "" {

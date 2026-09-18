@@ -215,9 +215,9 @@ func (p *QueryStorePanel) routeDrag(ev *tcell.EventMouse) bool {
 	return true
 }
 
-// HasSelection, SelectedText, Cut, Paste and SelectAll implement
-// clipboardTarget by forwarding to the focused grid — the same forwarding
-// DetailBrowser does to its one grid.
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// implement clipboardTarget by forwarding to the focused grid — the same
+// forwarding DetailBrowser does to its one grid.
 func (p *QueryStorePanel) HasSelection() bool   { return p.focusedGrid().HasSelection() }
 func (p *QueryStorePanel) SelectedText() string { return p.focusedGrid().SelectedText() }
 func (p *QueryStorePanel) Cut() string          { return p.focusedGrid().Cut() }

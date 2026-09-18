@@ -5,6 +5,7 @@ import (
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tuikit/controls"
+	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
 // internal/config can't import tuikit, so it carries its own copy of the
@@ -77,5 +78,38 @@ func TestOptionsApplyClampsIndentWidth(t *testing.T) {
 		if got := a.cfg.IndentWidth; got != config.DefaultIndentWidth {
 			t.Errorf("apply(%q): cfg.IndentWidth = %d, want the default %d", in, got, config.DefaultIndentWidth)
 		}
+	}
+}
+
+// The Agent job-step Command box is the one writable editor that is not a
+// QueryPanel — it is an EditorRow on a property-sheet page — so apply has to
+// reach it through the open dialogs, not through a.panels.
+func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+
+	a := newTestApp()
+	a.cfg.IndentWidth = config.DefaultIndentWidth
+
+	panel := newJobStepPanel(unchangedDatabaseItem, []string{"master"}, a.cfg.IndentWidth)
+	sheet := propsheet.NewPropertySheet(&fakeSizedScreen{w: 120, h: 40}, "Job Properties")
+	pd := registerDialog(a, &PropDialog{PropertySheet: sheet, app: a, pages: []propPage{{title: "Steps"}}})
+	pd.SetPages([]string{"Steps"})
+	pd.OnLoadPage = func(page, seq int) {
+		pd.SetPageForm(page, seq, propsheet.NewForm(panel.rows()...))
+	}
+	pd.Show()
+	pd.SelectPage(0)
+	if got := panel.commandEditor.IndentWidth(); got != config.DefaultIndentWidth {
+		t.Fatalf("setup: command editor IndentWidth() = %d, want %d", got, config.DefaultIndentWidth)
+	}
+
+	d := NewOptionsDialog(a)
+	d.Show()
+	d.fIndentWidth.SetValue("2")
+	d.apply()
+
+	if got := panel.commandEditor.IndentWidth(); got != 2 {
+		t.Errorf("open job-step editor IndentWidth() = %d, want 2 — apply must reach the open sheets", got)
 	}
 }

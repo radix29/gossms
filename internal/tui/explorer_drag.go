@@ -44,7 +44,7 @@ func explorerDragText(n *explorerNode) string {
 		// built-in system data types, which have no schema of their own worth
 		// quoting into a query.
 		NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,
-		NodeXmlSchemaCollection, NodeRule, NodeDefault,
+		NodeXMLSchemaCollection, NodeRule, NodeDefault,
 		// The one schema-scoped Service Broker family. The other six are
 		// database-scoped and fall through to the bare name, and so does a
 		// route, whose name is not a schema object's at all.

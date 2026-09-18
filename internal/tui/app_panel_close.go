@@ -104,11 +104,11 @@ func (a *App) requestClosePanel(i int) {
 	})
 }
 
-// hasOpenTransaction reports whether qp's session is holding a transaction
+// hasOpenTransaction reports whether p's session is holding a transaction
 // that ending the session would roll back. A panel mid-run is left out: its
 // count is from before the run, and the run is cancelled on close anyway.
-func (qp *QueryPanel) hasOpenTransaction() bool {
-	return qp.tranCount > 0 && qp.connected() && !qp.executing
+func (p *QueryPanel) hasOpenTransaction() bool {
+	return p.tranCount > 0 && p.connected() && !p.executing
 }
 
 // confirmOpenTransactions asks SSMS's "There are uncommitted transactions"
@@ -153,9 +153,9 @@ func (a *App) requestQuit() (quitting bool) {
 	return false
 }
 
-// needsQuitPrompt reports whether quitting would lose something of qp's.
-func (qp *QueryPanel) needsQuitPrompt() bool {
-	return qp.Dirty() || qp.hasOpenTransaction()
+// needsQuitPrompt reports whether quitting would lose something of p's.
+func (p *QueryPanel) needsQuitPrompt() bool {
+	return p.Dirty() || p.hasOpenTransaction()
 }
 
 // queryPanelsToAskBeforeQuit lists every open query panel with an open

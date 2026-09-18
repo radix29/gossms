@@ -340,7 +340,7 @@ var (
 	// that permits ALTER SCHEMA ... TRANSFER — see securableTransferRights.
 	ControlOnAssembly            = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableAssembly}
 	ControlOnType                = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableType}
-	ControlOnXmlSchemaCollection = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableXmlSchemaCollection}
+	ControlOnXMLSchemaCollection = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableXMLSchemaCollection}
 
 	// AlterOnSchema is what SQL Server actually checks for a rename, a
 	// move or a drop of a schema object. No role carries it: it is granted on

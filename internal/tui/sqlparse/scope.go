@@ -489,9 +489,19 @@ func (p *queryParser) parseBranch() *Query {
 // following WITH — a table hint, EXECUTE ... WITH RESULT SETS — is not a CTE
 // clause, so the whole parse is abandoned unless the first binding matches,
 // and only the WITH itself is consumed.
+//
+// Bindings that did parse are kept even when a later one does not. The tail of
+// a half-typed clause — everything from the comma the user just typed onwards —
+// stops matching for the keystrokes before the next binding's name arrives, and
+// dropping the earlier bindings there would empty the completion popup on the
+// exact script the package exists for.
 func (p *queryParser) parseCTEs(q *Query) {
-	start := p.i
 	p.i++ // WITH
+	// resume is where the branch loop picks up if a binding fails to parse:
+	// just past the last complete one, so the abandoned tail is walked as
+	// ordinary tokens exactly once and the bodies already stored in ctes are
+	// not re-walked as subqueries.
+	resume := p.i
 	var ctes []CTE
 	for {
 		t, ok := p.cur()
@@ -520,6 +530,7 @@ func (p *queryParser) parseCTEs(q *Query) {
 			p.i++
 		}
 		ctes = append(ctes, cte)
+		resume = p.i
 		if p.at(TokenComma) {
 			p.i++
 			continue
@@ -527,9 +538,11 @@ func (p *queryParser) parseCTEs(q *Query) {
 		q.CTEs = ctes
 		return
 	}
-	// Not a CTE clause after all: rewind to just past WITH and let the branch
-	// loop walk what follows as ordinary tokens.
-	p.i = start + 1
+	// A binding didn't match: keep the ones that did and let the branch loop
+	// walk what follows as ordinary tokens. With none at all this is not a CTE
+	// clause, and resume is still just past WITH.
+	q.CTEs = ctes
+	p.i = resume
 }
 
 // parseColumnNameList parses "( a, b, c )" at p.i, reporting false — and

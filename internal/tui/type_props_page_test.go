@@ -183,10 +183,10 @@ func xmlSchemaCollectionResponses(definition driver.Value) []fakeResponse {
 	}
 }
 
-func TestXmlSchemaCollectionSchemaPageShowsTheDocuments(t *testing.T) {
+func TestXMLSchemaCollectionSchemaPageShowsTheDocuments(t *testing.T) {
 	const doc = `<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"/>`
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses(doc)...)
-	form, apply := loadPage(t, pageXmlSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, apply := loadPage(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	var ed *propsheet.EditorRow
 	for _, r := range form.Rows() {
@@ -211,9 +211,9 @@ func TestXmlSchemaCollectionSchemaPageShowsTheDocuments(t *testing.T) {
 // XML_SCHEMA_NAMESPACE returns nothing to a login without VIEW DEFINITION.
 // An empty editor there reads as a collection holding no documents, which is
 // not a state the catalog can be in.
-func TestXmlSchemaCollectionSchemaPageReportsAnUnreadableSchema(t *testing.T) {
+func TestXMLSchemaCollectionSchemaPageReportsAnUnreadableSchema(t *testing.T) {
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses(nil)...)
-	form, _ := loadPage(t, pageXmlSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, _ := loadPage(t, pageXMLSchemaCollectionSchema(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	for _, r := range form.Rows() {
 		if _, ok := r.(*propsheet.EditorRow); ok {
@@ -222,9 +222,9 @@ func TestXmlSchemaCollectionSchemaPageReportsAnUnreadableSchema(t *testing.T) {
 	}
 }
 
-func TestXmlSchemaCollectionGeneralShowsItsDates(t *testing.T) {
+func TestXMLSchemaCollectionGeneralShowsItsDates(t *testing.T) {
 	sc, inst := newTypePropConn(t, xmlSchemaCollectionResponses("<xsd:schema/>")...)
-	form, _ := loadPage(t, pageXmlSchemaCollectionGeneral(sc, propTypeDB, "dbo", "Claims"), inst)
+	form, _ := loadPage(t, pageXMLSchemaCollectionGeneral(sc, propTypeDB, "dbo", "Claims"), inst)
 
 	if got := staticValue(t, form, "Created"); !strings.Contains(got, "2026-05-06") {
 		t.Errorf("Created is %q", got)

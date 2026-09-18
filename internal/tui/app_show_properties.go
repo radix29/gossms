@@ -388,9 +388,9 @@ func (a *App) showClrTypePropertiesFor(sc *db.ServerConn, dbName, schema, name s
 		func() []propPage { return clrTypePropPages(sc, dbName, schema, name) })
 }
 
-// showXmlSchemaCollectionPropertiesFor opens the read-only Properties for an
+// showXMLSchemaCollectionPropertiesFor opens the read-only Properties for an
 // XML schema collection.
-func (a *App) showXmlSchemaCollectionPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
+func (a *App) showXMLSchemaCollectionPropertiesFor(sc *db.ServerConn, dbName, schema, name string) {
 	a.propDialog.show(sc, dbName, "XML Schema Collection Properties",
 		"Collection: "+fqn(schema, name), "Database: "+dbName,
 		func() []propPage { return xmlSchemaCollectionPropPages(sc, dbName, schema, name) })

@@ -298,18 +298,18 @@ var objectOps = map[NodeType]objectOp{
 		drop:     dropIn((*gosmo.Database).DropTypeContext),
 		transfer: transferTypeIn,
 	},
-	NodeXmlSchemaCollection: {
+	NodeXMLSchemaCollection: {
 		noun: "XML Schema Collection",
 		// Same shape as a type's: the server refuses the drop while a column,
 		// parameter or variable is bound to the collection, and names it.
 		warning: "The drop is refused while a column, parameter or variable is typed on it — the server's error names what blocks it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropXmlSchemaCollectionContext(ctx, n.Schema, n.Name)
+			return dbOf(sc, n).DropXMLSchemaCollectionContext(ctx, n.Schema, n.Name)
 		},
 		// ALTER SCHEMA TRANSFER needs the XML SCHEMA COLLECTION:: class here,
 		// not the default OBJECT one.
 		transfer: func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-			return dbOf(sc, n).TransferXmlSchemaCollectionContext(ctx, targetSchema, n.Schema, n.Name)
+			return dbOf(sc, n).TransferXMLSchemaCollectionContext(ctx, targetSchema, n.Schema, n.Name)
 		},
 	},
 	// Rules and defaults are ordinary sys.objects rows, so sp_rename's OBJECT

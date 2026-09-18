@@ -133,8 +133,8 @@ const (
 	NodeUserDefinedTableType
 	NodeUserDefinedTypes
 	NodeUserDefinedType
-	NodeXmlSchemaCollections
-	NodeXmlSchemaCollection
+	NodeXMLSchemaCollections
+	NodeXMLSchemaCollection
 	NodeAssemblies
 	NodeAssembly
 	NodeRules
@@ -263,7 +263,7 @@ func isContainerNode(t NodeType) bool {
 		NodeTriggers, NodeProgrammability, NodeDatabaseTriggers,
 		NodeSequences, NodeSynonyms, NodeChecks,
 		NodeTypes, NodeSystemDataTypes, NodeUserDefinedDataTypes,
-		NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXmlSchemaCollections,
+		NodeUserDefinedTableTypes, NodeUserDefinedTypes, NodeXMLSchemaCollections,
 		NodeAssemblies, NodeRules, NodeDefaults, NodePlanGuides,
 		NodeServiceBroker, NodeMessageTypes, NodeContracts, NodeBrokerQueues,
 		NodeBrokerServices, NodeRoutes, NodeRemoteServiceBindings,
@@ -393,7 +393,7 @@ func objectIconEmoji(t NodeType) rune {
 		return '🧾'
 	case NodeUserDefinedType:
 		return '🧬'
-	case NodeXmlSchemaCollection:
+	case NodeXMLSchemaCollection:
 		return '📜'
 	case NodeAssembly:
 		return '📦'
@@ -530,7 +530,7 @@ func objectIconSymbols(t NodeType) rune {
 		return '◩'
 	case NodeUserDefinedType:
 		return '◪'
-	case NodeXmlSchemaCollection:
+	case NodeXMLSchemaCollection:
 		return '⊏'
 	case NodeAssembly:
 		return '⊛'
@@ -665,7 +665,7 @@ func nodeTypeName(t NodeType) string {
 		return "User-Defined Table Type"
 	case NodeUserDefinedType:
 		return "User-Defined Type"
-	case NodeXmlSchemaCollection:
+	case NodeXMLSchemaCollection:
 		return "XML Schema Collection"
 	case NodeAssembly:
 		return "Assembly"
@@ -710,7 +710,7 @@ func hasChildren(t NodeType) bool {
 		NodeBackupDevice, NodeServerTrigger, NodeDatabaseTrigger, NodeEndpoint,
 		NodeSchema, NodeForeignKey, NodeCheck, NodeSequence, NodeSynonym,
 		NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
-		NodeUserDefinedType, NodeXmlSchemaCollection,
+		NodeUserDefinedType, NodeXMLSchemaCollection,
 		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide,
 		NodeMessageType, NodeContract, NodeBrokerQueue, NodeBrokerService,
 		NodeRoute, NodeRemoteServiceBinding, NodeBrokerPriority,

@@ -23,7 +23,7 @@ func loadTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 		l.node("User-Defined Data Types", NodeUserDefinedDataTypes, "", "", dbName),
 		l.node("User-Defined Table Types", NodeUserDefinedTableTypes, "", "", dbName),
 		l.node("User-Defined Types", NodeUserDefinedTypes, "", "", dbName),
-		l.node("XML Schema Collections", NodeXmlSchemaCollections, "", "", dbName),
+		l.node("XML Schema Collections", NodeXMLSchemaCollections, "", "", dbName),
 	}, nil
 }
 
@@ -93,15 +93,15 @@ func loadUserDefinedTypesChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 		})
 }
 
-func loadXmlSchemaCollectionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+func loadXMLSchemaCollectionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
-		func() ([]*gosmo.XmlSchemaCollection, error) { return dbObj.XmlSchemaCollectionsContext(l.ctx) },
-		func(c *gosmo.XmlSchemaCollection) *explorerNode {
-			n := l.node(c.Schema+"."+c.Name, NodeXmlSchemaCollection, c.Schema, c.Name, node.data.DBName)
+		func() ([]*gosmo.XMLSchemaCollection, error) { return dbObj.XMLSchemaCollectionsContext(l.ctx) },
+		func(c *gosmo.XMLSchemaCollection) *explorerNode {
+			n := l.node(c.Schema+"."+c.Name, NodeXMLSchemaCollection, c.Schema, c.Name, node.data.DBName)
 			n.data.CreateDate = c.CreateDate
 			return n
 		})
@@ -206,7 +206,7 @@ func userDefinedTypeMenuItems(a *App, sc *db.ServerConn, node *explorerNode, new
 
 func xmlSchemaCollectionMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
-		a.showXmlSchemaCollectionPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
+		a.showXMLSchemaCollectionPropertiesFor(sc, node.data.DBName, node.data.Schema, node.data.Name)
 	})
 }
 

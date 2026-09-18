@@ -256,7 +256,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 
 			// Sentinel first, so index 0 is the "can't show" fallback (see
 			// unchangedDatabaseItem).
-			panel := newJobStepPanel(unchangedDatabaseItem, dbNames)
+			panel := newJobStepPanel(unchangedDatabaseItem, dbNames, d.app.cfg.IndentWidth)
 
 			hint := propsheet.Hint()
 

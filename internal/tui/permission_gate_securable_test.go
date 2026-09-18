@@ -29,7 +29,7 @@ var securableFamilies = []securableFamily{
 	{NodeUserDefinedDataType, gosmo.DatabaseSecurableType, "s1", "x", "type"},
 	{NodeUserDefinedTableType, gosmo.DatabaseSecurableType, "s1", "x", "type"},
 	{NodeUserDefinedType, gosmo.DatabaseSecurableType, "s1", "x", "type"},
-	{NodeXmlSchemaCollection, gosmo.DatabaseSecurableXmlSchemaCollection, "s1", "x", "XML schema collection"},
+	{NodeXMLSchemaCollection, gosmo.DatabaseSecurableXMLSchemaCollection, "s1", "x", "XML schema collection"},
 	{NodeAssembly, gosmo.DatabaseSecurableAssembly, "", "a1", "assembly"},
 }
 

@@ -346,9 +346,20 @@ func runBatch(ctx context.Context, conn *sql.Conn, sqlText string, res *Result, 
 			}
 		case sqlexp.MsgNextResultSet:
 			active = rows.NextResultSet()
+		case sqlexp.MsgLastInsertID:
+			// sqlexp's sixth type, and the one go-mssqldb never enqueues:
+			// SQL Server reports an identity through SCOPE_IDENTITY(), not
+			// through the protocol, so there is nothing a script executor
+			// would show. Ignored explicitly so only a type neither sqlexp
+			// nor the driver has today reaches default.
 		default:
-			// Unreachable with sqlexp's current message set; a future type
-			// would otherwise spin this loop at 100% CPU.
+			// Unreachable because go-mssqldb enqueues only the five types
+			// above; sqlexp itself declares no sixth beyond MsgLastInsertID.
+			// A guard against a driver change, not a library one: a new type
+			// would otherwise spin this loop at 100% CPU. It ends the batch
+			// with an error in the Messages pane, truncating output the rest
+			// of the batch had already produced, so a type that starts
+			// arriving wants an arm of its own rather than this.
 			res.addError(fmt.Errorf("unexpected message type %T from the driver", m))
 			active = false
 		}

@@ -152,9 +152,10 @@ func (t *ToggleGridRow) activateCell(row, col int) {
 	}
 }
 
-// Dirty, Revert, and Validate implement Editable, shadowing GridRow's own
-// DirtyFn/RevertFn-based (unset here) implementations — ToggleGridRow
-// tracks its own baseline instead of relying on the page to supply one.
+// Dirty and the Revert and Validate beside it implement Editable, shadowing
+// GridRow's own DirtyFn/RevertFn-based (unset here) implementations —
+// ToggleGridRow tracks its own baseline instead of relying on the page to
+// supply one.
 func (t *ToggleGridRow) Dirty() bool {
 	for i := range t.values {
 		if !slices.Equal(t.values[i], t.baseline[i]) {

@@ -158,10 +158,10 @@ func cteColumns(rc resolveCtx, cte sqlparse.CTE) []gosmo.CatalogColumn {
 		return body
 	}
 	cols := make([]gosmo.CatalogColumn, len(cte.Columns))
+	if len(body) == len(cte.Columns) {
+		copy(cols, body)
+	}
 	for i, name := range cte.Columns {
-		if len(body) == len(cte.Columns) {
-			cols[i] = body[i]
-		}
 		cols[i].Name = name
 	}
 	return cols

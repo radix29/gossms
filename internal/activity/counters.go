@@ -174,6 +174,27 @@ func (c counterSet) value(prev counterSet, object, counter, instance string, ela
 		return float64(delta) / elapsed
 
 	case cntrFraction:
+		// cur/base, never a delta, for both readers of this arm — measured
+		// 2026-09-18 against SQL Server 17.0.1135.8, and neither one is the
+		// cumulative-since-startup average the formula looks like:
+		//
+		// Buffer Manager's "Buffer cache hit ratio" is a window over recent page
+		// lookups. Twelve readings three seconds apart across a DBCC
+		// DROPCLEANBUFFERS and a 1.5 GB scan gave bases of 104, 3728, 33057,
+		// 29511, 87411, 21375, 126, 218, so differencing two of them divides one
+		// window by the change in another window's size — 100.09% across the
+		// 29511 → 87411 pair.
+		//
+		// Plan Cache's "Cache Hit Ratio" at _Total is the sum of its five cache
+		// stores' own rows, each of which restarts at zero when that store is
+		// trimmed. So the sum steps backwards by an arbitrary mix of hits and
+		// lookups under nothing worse than ordinary churn (-1229 value against
+		// -1717 base, observed), and a delta reads 104% and 672% when only some
+		// of the stores restart. Its average decays fast enough to be live
+		// anyway: 90.68% to 54.24% across one burst of ad-hoc batches, because
+		// the same trimming keeps the base small.
+		//
+		// docs/decisions.md § Activity Monitor has the full readings.
 		base, ok := c.base(object, counter, instance)
 		if !ok || base == 0 {
 			return 0

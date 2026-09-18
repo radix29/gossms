@@ -128,7 +128,7 @@ var securableOpRights = map[NodeType][]gate.Right{
 	NodeUserDefinedDataType:  securableWriteRights(gate.ControlOnType),
 	NodeUserDefinedTableType: securableWriteRights(gate.ControlOnType),
 	NodeUserDefinedType:      securableWriteRights(gate.ControlOnType),
-	NodeXmlSchemaCollection:  securableWriteRights(gate.ControlOnXmlSchemaCollection),
+	NodeXMLSchemaCollection:  securableWriteRights(gate.ControlOnXMLSchemaCollection),
 }
 
 // securableWriteRights is gate.ObjectWriteRights() with the class-1 right swapped
@@ -157,7 +157,7 @@ var securableTransferRights = map[NodeType][]gate.Right{
 	NodeUserDefinedDataType:  {gate.ControlOnType},
 	NodeUserDefinedTableType: {gate.ControlOnType},
 	NodeUserDefinedType:      {gate.ControlOnType},
-	NodeXmlSchemaCollection:  {gate.ControlOnXmlSchemaCollection},
+	NodeXMLSchemaCollection:  {gate.ControlOnXMLSchemaCollection},
 }
 
 // principalOpRights is Rename/Delete's right set for the database-level node

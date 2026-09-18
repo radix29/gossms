@@ -95,18 +95,18 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		}
 		return []string{"Name", "Assembly", "Class", "Nullable"}, rows, nil
 
-	case NodeXmlSchemaCollections:
-		cols, err := d.XmlSchemaCollectionsContext(ctx)
+	case NodeXMLSchemaCollections:
+		cols, err := d.XMLSchemaCollectionsContext(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
-		cols = filterObjects(n.Filter, cols, func(c *gosmo.XmlSchemaCollection) nodeData {
+		cols = filterObjects(n.Filter, cols, func(c *gosmo.XMLSchemaCollection) nodeData {
 			return nodeData{Name: c.Name, Schema: c.Schema, CreateDate: c.CreateDate}
 		})
 		rows := make([][]string, 0, len(cols))
 		for _, c := range cols {
 			rows = append(rows, []string{dottedName(c.Schema, c.Name), formatSQLDate(c.CreateDate), formatSQLDate(c.ModifyDate)})
-			*objs = append(*objs, nodeData{Type: NodeXmlSchemaCollection, DBName: n.DBName, Schema: c.Schema, Name: c.Name})
+			*objs = append(*objs, nodeData{Type: NodeXMLSchemaCollection, DBName: n.DBName, Schema: c.Schema, Name: c.Name})
 		}
 		return []string{"Name", "Created", "Modified"}, rows, nil
 
@@ -255,8 +255,8 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 			"Nullable", boolStr(t.IsNullable),
 		)
 
-	case NodeXmlSchemaCollection:
-		c, err := findXmlSchemaCollection(ctx, sc, n.DBName, n.Schema, n.Name)
+	case NodeXMLSchemaCollection:
+		c, err := findXMLSchemaCollection(ctx, sc, n.DBName, n.Schema, n.Name)
 		if err != nil {
 			return nil, nil, err
 		}

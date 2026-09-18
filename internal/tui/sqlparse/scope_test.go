@@ -162,6 +162,27 @@ func TestScopeAt(t *testing.T) {
 		from:   "r",
 		ctes:   "r",
 	}, {
+		// The four rows of one keystroke sequence: typing the comma, then the
+		// next binding's name, then its body. Only the second ever lost the
+		// bindings that had already parsed.
+		name:   "a complete binding survives the comma before the next one",
+		sql:    "WITH a AS (SELECT 1 AS x FROM t), SELECT | FROM a",
+		clause: ClauseColumn,
+		from:   "a",
+		ctes:   "a",
+	}, {
+		name:   "a complete binding survives a half-typed second binding",
+		sql:    "WITH a AS (SELECT 1 AS x FROM t), b AS (SELECT | FROM a",
+		clause: ClauseColumn,
+		from:   "a",
+		ctes:   "a, b",
+	}, {
+		name:   "both bindings once the second one closes",
+		sql:    "WITH a AS (SELECT 1 AS x FROM t), b AS (SELECT y FROM a) SELECT | FROM b",
+		clause: ClauseColumn,
+		from:   "b",
+		ctes:   "a, b",
+	}, {
 		name:   "WITH (NOLOCK) is a hint, not a CTE",
 		sql:    "SELECT * FROM t1 WITH (NOLOCK) WHERE |",
 		clause: ClauseColumn,

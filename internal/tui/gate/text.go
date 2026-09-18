@@ -36,7 +36,7 @@ func (r Right) nameOnly() string {
 // databaseSecurableWord renders a class 5/6/10 kind as the sentence says it —
 // serverSecurableWord's database-scope twin, keeping "XML" in capitals.
 func databaseSecurableWord(k gosmo.DatabaseSecurableKind) string {
-	if k == gosmo.DatabaseSecurableXmlSchemaCollection {
+	if k == gosmo.DatabaseSecurableXMLSchemaCollection {
 		return "XML schema collection"
 	}
 	return strings.ToLower(string(k))

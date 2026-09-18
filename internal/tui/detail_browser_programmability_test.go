@@ -131,7 +131,7 @@ func TestEveryNewLeafHasItsOwnDetailView(t *testing.T) {
 			match: "sys.assembly_types", cols: 9,
 			rows: [][]driver.Value{{"Geo", "dbo", int64(259), int64(-1), int64(0), int64(0),
 				true, "GeoUtils", "GeoUtils.Point"}}}}},
-		{NodeXmlSchemaCollection, "dbo", "Claims", xmlSchemaCollectionResponses("<xsd:schema/>")},
+		{NodeXMLSchemaCollection, "dbo", "Claims", xmlSchemaCollectionResponses("<xsd:schema/>")},
 		{NodeAssembly, "", propAssembly, assemblyPropResponses()},
 		{NodeRule, "dbo", "PhoneRule", []fakeResponse{ruleResponse("AS @v > 0")}},
 		{NodeDefault, "dbo", "TodayDefault", []fakeResponse{defaultResponse("AS GETDATE()")}},
@@ -170,7 +170,7 @@ func TestEveryNewLeafOffersProperties(t *testing.T) {
 
 	withProperties := []NodeType{
 		NodeUserDefinedDataType, NodeUserDefinedTableType, NodeUserDefinedType,
-		NodeXmlSchemaCollection, NodeAssembly, NodeRule, NodeDefault,
+		NodeXMLSchemaCollection, NodeAssembly, NodeRule, NodeDefault,
 		NodePlanGuide, NodeExternalDataSource, NodeExternalFileFormat,
 		NodeExternalLibrary,
 	}

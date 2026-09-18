@@ -31,7 +31,7 @@ func TestNewLeafScriptVerbs(t *testing.T) {
 		{"alias type", opNode(NodeUserDefinedDataType, "dbo", "Phone", ""), "Script User-Defined Data Type as"},
 		{"table type", opNode(NodeUserDefinedTableType, "dbo", "IDList", ""), "Script User-Defined Table Type as"},
 		{"CLR type", opNode(NodeUserDefinedType, "dbo", "Point", ""), "Script User-Defined Type as"},
-		{"XML schema collection", opNode(NodeXmlSchemaCollection, "dbo", "OrderSchema", ""), "Script XML Schema Collection as"},
+		{"XML schema collection", opNode(NodeXMLSchemaCollection, "dbo", "OrderSchema", ""), "Script XML Schema Collection as"},
 		{"rule", opNode(NodeRule, "dbo", "PhoneRule", ""), "Script Rule as"},
 		{"default", opNode(NodeDefault, "dbo", "Zero", ""), "Script Default as"},
 		{"assembly", opNode(NodeAssembly, "", "Geometry", ""), "Script Assembly as"},
@@ -79,7 +79,7 @@ func TestNewLeafObjectOps(t *testing.T) {
 		{"alias type", opNode(NodeUserDefinedDataType, "dbo", "Phone", ""), true, true, true},
 		{"table type", opNode(NodeUserDefinedTableType, "dbo", "IDList", ""), false, true, true},
 		{"CLR type", opNode(NodeUserDefinedType, "dbo", "Point", ""), false, true, true},
-		{"XML schema collection", opNode(NodeXmlSchemaCollection, "dbo", "OrderSchema", ""), false, true, true},
+		{"XML schema collection", opNode(NodeXMLSchemaCollection, "dbo", "OrderSchema", ""), false, true, true},
 		// Rules and defaults are ordinary sys.objects rows, so both of
 		// sp_rename's and ALTER SCHEMA TRANSFER's default classes serve.
 		{"rule", opNode(NodeRule, "dbo", "PhoneRule", ""), true, true, true},
@@ -128,7 +128,7 @@ func TestNewLeafDeleteStatements(t *testing.T) {
 		{"alias type", NodeUserDefinedDataType, [2]string{"sales", "Phone"}, "DROP TYPE [sales].[Phone]"},
 		{"table type", NodeUserDefinedTableType, [2]string{"sales", "IDList"}, "DROP TYPE [sales].[IDList]"},
 		{"CLR type", NodeUserDefinedType, [2]string{"sales", "Point"}, "DROP TYPE [sales].[Point]"},
-		{"XML schema collection", NodeXmlSchemaCollection, [2]string{"sales", "OrderSchema"},
+		{"XML schema collection", NodeXMLSchemaCollection, [2]string{"sales", "OrderSchema"},
 			"DROP XML SCHEMA COLLECTION [sales].[OrderSchema]"},
 		{"rule", NodeRule, [2]string{"sales", "PhoneRule"}, "DROP RULE [sales].[PhoneRule]"},
 		{"default", NodeDefault, [2]string{"sales", "Zero"}, "DROP DEFAULT [sales].[Zero]"},
@@ -174,7 +174,7 @@ func TestMovingATypeUsesTheTypeClass(t *testing.T) {
 		want string
 	}{
 		{"alias type", NodeUserDefinedDataType, "Phone", "ALTER SCHEMA [archive] TRANSFER TYPE::[sales].[Phone]"},
-		{"XML schema collection", NodeXmlSchemaCollection, "OrderSchema",
+		{"XML schema collection", NodeXMLSchemaCollection, "OrderSchema",
 			"ALTER SCHEMA [archive] TRANSFER XML SCHEMA COLLECTION::[sales].[OrderSchema]"},
 		// A rule is an ordinary object and takes the default class.
 		{"rule", NodeRule, "PhoneRule", "ALTER SCHEMA [archive] TRANSFER [sales].[PhoneRule]"},
@@ -227,7 +227,7 @@ func TestExplorerDragTextForTheNewLeaves(t *testing.T) {
 		{opNode(NodeUserDefinedDataType, "sales", "Phone", ""), "[sales].[Phone]"},
 		{opNode(NodeUserDefinedTableType, "sales", "IDList", ""), "[sales].[IDList]"},
 		{opNode(NodeUserDefinedType, "sales", "Point", ""), "[sales].[Point]"},
-		{opNode(NodeXmlSchemaCollection, "sales", "OrderSchema", ""), "[sales].[OrderSchema]"},
+		{opNode(NodeXMLSchemaCollection, "sales", "OrderSchema", ""), "[sales].[OrderSchema]"},
 		{opNode(NodeRule, "sales", "PhoneRule", ""), "[sales].[PhoneRule]"},
 		{opNode(NodeDefault, "sales", "Zero", ""), "[sales].[Zero]"},
 		{opNode(NodeAssembly, "", "Geometry", ""), "[Geometry]"},

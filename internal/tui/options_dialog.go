@@ -269,14 +269,20 @@ func (d *OptionsDialog) doButton() {
 	}
 }
 
+// editorIndentHost is a dialog holding Editors that Options' indent size has to
+// reach while it is open — every propsheet.PropertySheet-based dialog, by
+// promotion. Matched structurally rather than by naming the two concrete
+// dialogs, since which sheets host a writable EditorRow changes with the pages.
+type editorIndentHost interface{ SetEditorIndentWidth(n int) }
+
 // apply commits all four settings — icon style, max cell length, indent size
 // and whether IntelliSense is enabled — to the config, persists it, and
 // rebuilds the Object Explorer so the icon change is visible immediately.
 //
 // The indent size needs one step the others don't: MaxCellLength and
 // IntelliSenseDisabled are read from cfg where they are used, but the width
-// lives in each Editor, so it has to be pushed into the open query panels (and
-// into the default new editors are seeded from) here.
+// lives in each Editor, so it has to be pushed into the open query panels and
+// property sheets (and into the default new editors are seeded from) here.
 func (d *OptionsDialog) apply() {
 	styles := config.AllIconStyles()
 	if i := d.rbIconStyle.Selected(); i >= 0 && i < len(styles) {
@@ -296,6 +302,16 @@ func (d *OptionsDialog) apply() {
 	for i := 0; i < d.app.panels.Count(); i++ {
 		if qp, ok := d.app.panels.PanelAt(i).(*QueryPanel); ok {
 			qp.editor.SetIndentWidth(n)
+		}
+	}
+	// The open property sheets too: the Agent job-step Command box is a
+	// writable editor that is not a QueryPanel, so walking the panels alone
+	// leaves it on the old width until the page is rebuilt. Every sheet-based
+	// dialog answers this, so a future writable EditorRow is covered without
+	// another arm here.
+	for _, dlg := range d.app.allDialogs {
+		if h, ok := dlg.(editorIndentHost); ok {
+			h.SetEditorIndentWidth(n)
 		}
 	}
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()

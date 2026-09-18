@@ -124,10 +124,11 @@ func (r *EditorRow) notifyChanged(ver uint64) {
 	}
 }
 
-// Dirty, Revert and Validate implement Editable. Dirty is asked on every draw
-// of a sheet showing a modified marker, so an untouched document answers from
-// the revision counter alone and only an edited one is rebuilt and compared —
-// which it must be, since an edit undone by hand is clean again.
+// Dirty and the Revert and Validate beside it implement Editable. Dirty is
+// asked on every draw of a sheet showing a modified marker, so an untouched
+// document answers from the revision counter alone and only an edited one is
+// rebuilt and compared — which it must be, since an edit undone by hand is
+// clean again.
 func (r *EditorRow) Dirty() bool {
 	if r.version() == r.origVer {
 		return false
@@ -213,9 +214,9 @@ func (r *EditorRow) HandleMouse(ev *tcell.EventMouse) bool {
 func (r *EditorRow) DrawOverlay(s tcell.Screen) { r.ed.DrawOverlay(s) }
 func (r *EditorRow) OverlayActive() bool        { return r.ed.CompletionActive() }
 
-// CopyText, HasSelection, SelectedText, Cut, Paste and SelectAll implement
-// ClipboardRow by forwarding to the editor, so the sheet's Ctrl+C/X/V and
-// Select All act on the text the caret is in. With nothing selected, Ctrl+C
+// CopyText and the HasSelection, SelectedText, Cut, Paste and SelectAll beside
+// it implement ClipboardRow by forwarding to the editor, so the sheet's
+// Ctrl+C/X/V and Select All act on the text the caret is in. With nothing selected, Ctrl+C
 // copies the whole script — a TextRow copies its whole value the same way.
 func (r *EditorRow) CopyText() string   { return r.ed.Text() }
 func (r *EditorRow) HasSelection() bool { return r.ed.HasSelection() }

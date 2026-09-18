@@ -120,7 +120,7 @@ func filterProps(t NodeType) []filterProp {
 	// time and reject every row (see nodeData.CreateDate).
 	case NodeUserDefinedDataTypes, NodeUserDefinedTableTypes, NodeUserDefinedTypes:
 		return []filterProp{name, schema}
-	case NodeXmlSchemaCollections, NodeRules, NodeDefaults:
+	case NodeXMLSchemaCollections, NodeRules, NodeDefaults:
 		return []filterProp{name, schema, created}
 	case NodeAssemblies:
 		return []filterProp{name, created}

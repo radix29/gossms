@@ -399,8 +399,9 @@ func (r *TextRow) HandleMouse(ev *tcell.EventMouse) bool {
 }
 func (r *TextRow) CopyText() string { return r.field.Value() }
 
-// HasSelection, SelectedText, Cut, Paste, and SelectAll forward to the
-// wrapped InputField's own implementations, making TextRow a ClipboardRow.
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it forward
+// to the wrapped InputField's own implementations, making TextRow a
+// ClipboardRow.
 func (r *TextRow) HasSelection() bool   { return r.field.HasSelection() }
 func (r *TextRow) SelectedText() string { return r.field.SelectedText() }
 func (r *TextRow) Cut() string {
@@ -425,9 +426,9 @@ func (r *TextRow) SelectAll() {
 	}
 }
 
-// SetDirtyTracked(false) makes the row a *view control* rather than an edit: it
-// never reports dirty and Revert leaves it alone. For a row steering what a
-// read-only page displays — a filter box, a scope picker — rather than
+// SetDirtyTracked with false makes the row a *view control* rather than an
+// edit: it never reports dirty and Revert leaves it alone. For a row steering
+// what a read-only page displays — a filter box, a scope picker — rather than
 // something Apply writes. Without it such a page reports unsaved changes it
 // can't save, and Refresh prompts to discard them.
 func (r *TextRow) SetDirtyTracked(v bool) { r.untracked = !v }
@@ -623,7 +624,7 @@ func (r *SelectRow) Edit(i int) {
 	r.notifyChanged(before)
 }
 
-// SetDirtyTracked(false) makes the row a view control rather than an edit —
+// SetDirtyTracked with false makes the row a view control rather than an edit —
 // see TextRow.SetDirtyTracked.
 func (r *SelectRow) SetDirtyTracked(v bool) { r.untracked = !v }
 

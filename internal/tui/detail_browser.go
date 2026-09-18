@@ -681,13 +681,13 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return storageSecurityDetail(ctx, sc, node)
 
 	case NodeSystemDataTypes, NodeUserDefinedDataTypes, NodeUserDefinedTableTypes,
-		NodeUserDefinedTypes, NodeXmlSchemaCollections,
+		NodeUserDefinedTypes, NodeXMLSchemaCollections,
 		NodeAssemblies, NodeRules, NodeDefaults:
 		return programmabilityFolderDetail(ctx, sc, node, objs)
 	case NodePlanGuides:
 		return planGuidesFolderDetail(ctx, sc, node, objs)
 	case NodeSystemDataType, NodeUserDefinedDataType, NodeUserDefinedTableType,
-		NodeUserDefinedType, NodeXmlSchemaCollection,
+		NodeUserDefinedType, NodeXMLSchemaCollection,
 		NodeAssembly, NodeRule, NodeDefault, NodePlanGuide:
 		return programmabilityDetail(ctx, sc, node)
 
@@ -874,9 +874,9 @@ func (db *DetailBrowser) HandleMouse(ev *tcell.EventMouse) bool {
 	return db.grid.HandleMouse(ev)
 }
 
-// HasSelection, SelectedText, Cut, Paste and SelectAll implement clipboardTarget
-// by forwarding to the grid, which is a real clipboard target only while its
-// "Show Value" viewer is open.
+// HasSelection and the SelectedText, Cut, Paste and SelectAll beside it
+// implement clipboardTarget by forwarding to the grid, which is a real
+// clipboard target only while its "Show Value" viewer is open.
 func (db *DetailBrowser) HasSelection() bool   { return db.grid.HasSelection() }
 func (db *DetailBrowser) SelectedText() string { return db.grid.SelectedText() }
 func (db *DetailBrowser) Cut() string          { return db.grid.Cut() }

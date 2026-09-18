@@ -27,7 +27,8 @@ const (
 	msgNotice
 	msgError
 	msgAffected
-	msgBreak // breaks the connection, as a killed session or a failover does
+	msgLastInsertID // sqlexp's sixth type; go-mssqldb never sends one
+	msgBreak        // breaks the connection, as a killed session or a failover does
 )
 
 type fakeMsg struct {
@@ -149,6 +150,8 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 			err = enqueue(sqlexp.MsgError{Error: m.err})
 		case msgAffected:
 			err = enqueue(sqlexp.MsgRowsAffected{Count: m.count})
+		case msgLastInsertID:
+			err = enqueue(sqlexp.MsgLastInsertID{Value: m.count})
 		case msgBreak:
 			c.invalid = true
 		}
@@ -398,6 +401,29 @@ func TestExecuteToSinkRecoversAfterASinkFailure(t *testing.T) {
 	}
 	if got := sink.rows[len(sink.rows)-1][0]; got != "after" {
 		t.Errorf("last streamed cell = %q, want %q", got, "after")
+	}
+}
+
+// MsgLastInsertID is the one sqlexp type go-mssqldb never enqueues, and
+// runBatch's default arm is a guard against a driver that starts to. Reaching
+// default would end the batch with "unexpected message type" in the Messages
+// pane and truncate the rest of it, so the type has an arm that ignores it.
+func TestExecuteIgnoresLastInsertID(t *testing.T) {
+	db := openFakeMsgDB([]fakeMsg{
+		{kind: msgLastInsertID, count: 42},
+		{kind: msgAffected, count: 1},
+	})
+	defer db.Close()
+
+	res := Execute(context.Background(), db, "", "INSERT INTO t VALUES (1)")
+
+	if res.HasErrors() {
+		t.Errorf("messages = %v, want no error — MsgLastInsertID must not reach the default arm",
+			messageTexts(res))
+	}
+	if !hasMessage(res, "(1 row affected)") {
+		t.Errorf("messages = %v, want the message after MsgLastInsertID still drained",
+			messageTexts(res))
 	}
 }
 
