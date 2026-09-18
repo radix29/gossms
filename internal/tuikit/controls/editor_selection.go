@@ -252,7 +252,7 @@ func (e *Editor) Paste(text string) {
 	if e.HasSelection() {
 		e.deleteSelection()
 	}
-	lines := strings.Split(strings.ReplaceAll(expandTabs(text), "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(e.expandTabs(text), "\r\n", "\n"), "\n")
 	for i, line := range lines {
 		if i > 0 {
 			e.insertNewline()

@@ -19,6 +19,28 @@ behind the mouse and async sections; this file has the rules themselves.
   is set, so which lines carried a CR is gone before Save can ask, and testing
   for CRLF's mere presence turned one stray CRLF into a whole-file rewrite of a
   mostly-LF script.
+- **Editor auto-indent lives in the `KeyEnter` branch of `editor_input.go`, never
+  in `insertNewline`.** `Paste` and `blockPaste` drive `insertNewline` once per
+  pasted line, so indenting there re-indents each line on top of the indentation
+  it already carries and a pasted script arrives as a staircase. The branch reads
+  `blockEditing()` *before* `deleteSelection`, which drops the block along with
+  the selection — asking afterwards always answers `false` — and the spaces go in
+  under the existing `pushUndoLocal`, so one Ctrl+Z undoes the whole Enter.
+  `SetSmartIndent` adds one level on top when the text *left of the cursor*
+  ends with `(` or with `select`/`from`/`where` as its **last token** — last
+  token, not "the line starts with", which is what stops the indentation
+  drifting right one level per clause down a query. It is off by default and
+  on only for the T-SQL editors: those keywords mean nothing in the plain
+  multi-line text boxes that also use `Editor`. Being in the key handler, it
+  is typing-only by construction — a pasted script keeps its own indentation.
+- **Call `Editor.SetIndentWidth` at construction, before any `SetText`.**
+  `SetText` expands tabs at the editor's *current* width, and `QueryPanel.savedText`
+  is seeded from `Text()` afterwards (see the bullet above), so a width set later
+  would make an already-open file read as edited. Changing the width at runtime
+  (Options > OK) deliberately does not re-expand existing text; it pushes the new
+  width into every open `QueryPanel` and into `controls.SetDefaultIndentWidth`,
+  which is how editors built where the config is out of reach (property-sheet
+  T-SQL rows, the Agent job-step command box) pick it up.
 - **A widget's `HandleKey`/`HandleMouse` returns `true` only for events it actually
   acted on** — never "I'm focused, so I consumed it." `propsheet.Form` gives the
   focused row first refusal and falls back to its own Tab/Up/Down cycling only on

@@ -409,7 +409,7 @@ func (e *Editor) replaceMatch(m searchMatch) {
 	if e.search.opts.Regexp {
 		repl = e.search.re.ReplaceAllString(old, repl)
 	}
-	replRunes := []rune(expandTabs(repl))
+	replRunes := []rune(e.expandTabs(repl))
 
 	updated := make([]rune, 0, len(line)-(m.endCol-m.startCol)+len(replRunes))
 	updated = append(updated, line[:m.startCol]...)

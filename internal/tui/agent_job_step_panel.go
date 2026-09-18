@@ -51,6 +51,11 @@ func newJobStepPanel(sentinel string, dbNames []string) *jobStepPanel {
 	// 12" errors can be found.
 	sqlHighlight := controls.SQLHighlighter(theme.Active())
 	editor := controls.NewEditor(sqlHighlight)
+	// The step command is T-SQL, so it gets the query editor's smart indent
+	// too. Its indent width comes from controls' package default, which
+	// App/Options keep in step with the config — this panel is built where the
+	// config is out of reach.
+	editor.SetSmartIndent(true)
 	p := &jobStepPanel{
 		sentinel:        sentinel,
 		dbNames:         dbNames,

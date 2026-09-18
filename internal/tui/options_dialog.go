@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/radix29/gossms/internal/config"
+	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/dialogs"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -17,6 +18,7 @@ type optionsZone int
 const (
 	zoneIconStyle optionsZone = iota
 	zoneMaxCellLen
+	zoneIndentWidth
 	zoneIntelliSense
 	zoneOptButtons
 )
@@ -29,11 +31,14 @@ type OptionsDialog struct {
 
 	rbIconStyle    *widgets.RadioBox
 	fMaxCellLen    *widgets.InputField
+	fIndentWidth   *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
-	// drag owns the text-selection gesture a press in fMaxCellLen starts —
-	// see dialogs.FieldGesture for why the three calls it drives have to sit
-	// where they do in HandleMouse.
+	// drag owns the text-selection gesture a press in one of the two input
+	// fields starts — see dialogs.FieldGesture for why the three calls it
+	// drives have to sit where they do in HandleMouse. One value suffices for
+	// both fields: the gesture is per-target, holding whichever field claimed
+	// the press.
 	drag dialogs.FieldGesture
 
 	zone     optionsZone
@@ -43,7 +48,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 60, 15)
+	d.InitModal(app.screen, "Options", 60, 17)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -53,6 +58,7 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.rbIconStyle = widgets.NewRadioBox("Object Explorer Icons:", labels)
 
 	d.fMaxCellLen = widgets.NewInputField("Max default cell length:", 5, false)
+	d.fIndentWidth = widgets.NewInputField("Indent size (spaces):", 5, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	return d
 }
@@ -68,6 +74,7 @@ func (d *OptionsDialog) Show() {
 		}
 	}
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
+	d.fIndentWidth.SetValue(strconv.Itoa(d.app.cfg.IndentWidth))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setZone(zoneIconStyle)
 	d.ModalDialog.Show()
@@ -80,6 +87,7 @@ func (d *OptionsDialog) setZone(z optionsZone) {
 	d.zone = z
 	d.rbIconStyle.Focus(z == zoneIconStyle)
 	d.fMaxCellLen.Focus(z == zoneMaxCellLen)
+	d.fIndentWidth.Focus(z == zoneIndentWidth)
 	d.cbIntelliSense.Focus(z == zoneIntelliSense)
 }
 
@@ -96,7 +104,10 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
 	d.fMaxCellLen.Draw(s)
 
-	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+8)
+	d.fIndentWidth.SetBounds(inner.X+1, inner.Y+8)
+	d.fIndentWidth.Draw(s)
+
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+10)
 	d.cbIntelliSense.Draw(s)
 
 	d.DrawSeparator(s)
@@ -123,9 +134,24 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		}
 		switch ev.Key() {
 		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneIntelliSense)
+			d.setZone(zoneIndentWidth)
 		case tcell.KeyBacktab, tcell.KeyUp:
 			d.setZone(zoneIconStyle)
+		case tcell.KeyEnter:
+			d.doButton()
+		default:
+			return false
+		}
+		return true
+	case zoneIndentWidth:
+		if d.fIndentWidth.HandleKey(ev) {
+			return true
+		}
+		switch ev.Key() {
+		case tcell.KeyTab, tcell.KeyDown:
+			d.setZone(zoneIntelliSense)
+		case tcell.KeyBacktab, tcell.KeyUp:
+			d.setZone(zoneMaxCellLen)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -140,7 +166,7 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		case tcell.KeyTab, tcell.KeyDown:
 			d.setZone(zoneOptButtons)
 		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxCellLen)
+			d.setZone(zoneIndentWidth)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -187,7 +213,7 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// HandleMouse calls further down ever see it, leaving their
 	// mouseDragging latch set and swallowing the next press. Reset it here
 	// first; each returns false on ButtonNone so this has no other effect.
-	// drag.Release does the same for fMaxCellLen, and must likewise come
+	// drag.Release does the same for the input fields, and must likewise come
 	// before ConsumeOutsideClick.
 	if ev.Buttons() == tcell.ButtonNone {
 		d.rbIconStyle.HandleMouse(ev)
@@ -217,6 +243,11 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.drag.Claim(d.fMaxCellLen, ev)
 		return true
 	}
+	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fIndentWidth.HitTest(mx, my) {
+		d.setZone(zoneIndentWidth)
+		d.drag.Claim(d.fIndentWidth, ev)
+		return true
+	}
 	if d.rbIconStyle.HandleMouse(ev) {
 		d.setZone(zoneIconStyle)
 		return true
@@ -238,9 +269,14 @@ func (d *OptionsDialog) doButton() {
 	}
 }
 
-// apply commits all three settings — icon style, max cell length and whether
-// IntelliSense is enabled — to the config, persists it, and rebuilds the Object
-// Explorer so the icon change is visible immediately.
+// apply commits all four settings — icon style, max cell length, indent size
+// and whether IntelliSense is enabled — to the config, persists it, and
+// rebuilds the Object Explorer so the icon change is visible immediately.
+//
+// The indent size needs one step the others don't: MaxCellLength and
+// IntelliSenseDisabled are read from cfg where they are used, but the width
+// lives in each Editor, so it has to be pushed into the open query panels (and
+// into the default new editors are seeded from) here.
 func (d *OptionsDialog) apply() {
 	styles := config.AllIconStyles()
 	if i := d.rbIconStyle.Selected(); i >= 0 && i < len(styles) {
@@ -251,6 +287,17 @@ func (d *OptionsDialog) apply() {
 	} else {
 		d.app.cfg.MaxCellLength = config.DefaultMaxCellLength
 	}
+	n := config.DefaultIndentWidth
+	if v, err := strconv.Atoi(d.fIndentWidth.Value()); err == nil && v >= 1 && v <= config.MaxIndentWidth {
+		n = v
+	}
+	d.app.cfg.IndentWidth = n
+	controls.SetDefaultIndentWidth(n)
+	for i := 0; i < d.app.panels.Count(); i++ {
+		if qp, ok := d.app.panels.PanelAt(i).(*QueryPanel); ok {
+			qp.editor.SetIndentWidth(n)
+		}
+	}
 	d.app.cfg.IntelliSenseDisabled = !d.cbIntelliSense.Checked()
 	if err := d.app.cfg.Save(); err != nil {
 		d.app.logStatus("save config: %v", err)
@@ -258,12 +305,15 @@ func (d *OptionsDialog) apply() {
 	d.app.explorer.rebuild()
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: the max-cell-length
-// field, the dialog's only text entry. The radio box, the checkbox and the
-// button row answer nil.
+// FocusedClipboardTarget implements core.ClipboardHost: whichever of the two
+// input fields has focus. The radio box, the checkbox and the button row
+// answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	if d.zone == zoneMaxCellLen {
+	switch d.zone {
+	case zoneMaxCellLen:
 		return d.fMaxCellLen
+	case zoneIndentWidth:
+		return d.fIndentWidth
 	}
 	return nil
 }

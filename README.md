@@ -211,7 +211,10 @@ connected SQL Server version or engine edition are hidden or disabled.
   result rows, messages, and XML/JSON viewers. Each tab holds its own SQL
   Server session, so temp tables, `SET` options, `USE` and open transactions
   survive between runs; the bar above the editor shows the SPID and any open
-  transaction.
+  transaction. Enter keeps the current line's indentation, adding one level
+  after a line ending in `(` or in `SELECT`/`FROM`/`WHERE`; Tab, Shift+Tab and
+  the indent/dedent commands shift by the Options indent size (4 spaces by
+  default). Pasted text keeps the indentation it came with.
 - **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and
@@ -258,7 +261,7 @@ Connections are saved automatically, with the 30 most recent listed first in
 the Connect dialog's History pane. A password is saved only when **Remember
 Password** is ticked.
 Tools > Options controls the tree icon style, default results-grid cell width,
-and IntelliSense.
+query-editor indent size (spaces per indent level, default 4) and IntelliSense.
 
 Configuration is stored at:
 

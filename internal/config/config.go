@@ -311,6 +311,10 @@ type Config struct {
 	// IntelliSenseDisabled turns off editor autocomplete. Inverted so the zero
 	// value keeps it on.
 	IntelliSenseDisabled bool `json:"intellisense_disabled"`
+	// IndentWidth is how many spaces the query editor's Tab, indent/dedent and
+	// auto-indent use. Zero, or anything outside 1..MaxIndentWidth, means
+	// DefaultIndentWidth.
+	IndentWidth int `json:"indent_width"`
 
 	// unreadable is the error Load hit reading an existing config.json. It
 	// write-protects this Config (see Save): the file's contents are missing,
@@ -323,6 +327,16 @@ type Config struct {
 // truncating, absent an Options override; a column dragged wider shows more.
 // Load applies it to a zero MaxCellLength.
 const DefaultMaxCellLength = 24
+
+// DefaultIndentWidth is how many spaces the query editor indents by absent an
+// Options override, and MaxIndentWidth the sanity ceiling Load and the Options
+// field clamp to. Both must agree with controls.DefaultIndentWidth /
+// controls.MaxIndentWidth in internal/tuikit/controls, which config must not
+// import; TestIndentWidthDefaultsAgree in internal/tui holds them together.
+const (
+	DefaultIndentWidth = 4
+	MaxIndentWidth     = 16
+)
 
 // configPath returns the path to the config file.
 func configPath() string {
@@ -385,6 +399,7 @@ func Load() *Config {
 	if err != nil {
 		cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
 		cfg.MaxCellLength = DefaultMaxCellLength
+		cfg.IndentWidth = DefaultIndentWidth
 		if !errors.Is(err, fs.ErrNotExist) {
 			log.Printf("config: %s exists but could not be read (%v); "+
 				"starting with no saved settings and refusing to overwrite it", path, err)
@@ -403,6 +418,9 @@ func Load() *Config {
 	}
 	if cfg.MaxCellLength <= 0 {
 		cfg.MaxCellLength = DefaultMaxCellLength
+	}
+	if cfg.IndentWidth < 1 || cfg.IndentWidth > MaxIndentWidth {
+		cfg.IndentWidth = DefaultIndentWidth
 	}
 
 	key, err := loadOrCreateKey(filepath.Dir(path))

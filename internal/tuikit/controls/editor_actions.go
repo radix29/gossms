@@ -133,46 +133,147 @@ func (e *Editor) MoveLinesDown() {
 	e.ensureCursorVisible()
 }
 
-// indentWidth is how many spaces IndentLines and the Tab key insert. Tabs
-// are never inserted — only converted away from by DedentLines/dedentAmount
-// — since Editor's rendering has no tab-stop expansion.
-const indentWidth = 4
+// DefaultIndentWidth is how many spaces IndentLines and the Tab key insert in
+// an Editor whose width has not been set. Tabs are never inserted — only
+// converted away from by DedentLines/dedentAmount — since Editor's rendering
+// has no tab-stop expansion.
+//
+// internal/config declares a constant that must agree with this one;
+// TestIndentWidthDefaultsAgree in internal/tui holds them together.
+const DefaultIndentWidth = 4
 
-// expandTabs replaces every literal tab in text with indentWidth spaces, so
+// defaultIndentWidth is what NewEditor seeds e.indentWidth with. It exists so
+// editors built where the application config is out of reach (property-sheet
+// T-SQL rows, the Agent job-step command box) still honour the user's indent
+// size; every editor that can reach the config calls SetIndentWidth instead.
+var defaultIndentWidth = DefaultIndentWidth
+
+// SetDefaultIndentWidth sets the width newly created Editors start with.
+// Values outside 1..MaxIndentWidth are ignored. Existing editors keep theirs —
+// use SetIndentWidth for those.
+func SetDefaultIndentWidth(n int) {
+	if n < 1 || n > MaxIndentWidth {
+		return
+	}
+	defaultIndentWidth = n
+}
+
+// MaxIndentWidth is the sanity ceiling SetIndentWidth and
+// SetDefaultIndentWidth enforce; internal/config clamps to the same range.
+const MaxIndentWidth = 16
+
+// SetIndentWidth sets how many spaces Tab, IndentLines, DedentLines and tab
+// expansion use in this editor. Values outside 1..MaxIndentWidth are ignored.
+//
+// Call it at construction, before any SetText: SetText expands tabs at the
+// editor's current width, and a caller that snapshots Text() afterwards (see
+// docs/ui-rules.md § Editor) would read a later width change as a user edit.
+// Changing the width at runtime deliberately does not re-expand existing text.
+func (e *Editor) SetIndentWidth(n int) {
+	if n < 1 || n > MaxIndentWidth {
+		return
+	}
+	e.indentWidth = n
+}
+
+// IndentWidth returns the editor's indent width in spaces.
+func (e *Editor) IndentWidth() int { return e.indentWidth }
+
+// expandTabs replaces every literal tab in text with e.indentWidth spaces, so
 // content loaded from disk or pasted in renders the same as typed
 // indentation (Editor's rendering has no tab-stop expansion, so a raw tab
 // would otherwise draw as a single narrow column).
-func expandTabs(text string) string {
-	return strings.ReplaceAll(text, "\t", strings.Repeat(" ", indentWidth))
+func (e *Editor) expandTabs(text string) string {
+	return strings.ReplaceAll(text, "\t", strings.Repeat(" ", e.indentWidth))
 }
 
-// IndentLines inserts indentWidth spaces at column 0 of the current line (or
+// sqlIndentKeywords are the clause keywords that, left standing as the last
+// token on a line, open a block the next line belongs inside. Only these three
+// — the list the behaviour was asked for — and deliberately not BEGIN/END or
+// JOIN: anything that needs matching to a closer needs a parser, and a
+// half-done one indents wrongly more often than not.
+var sqlIndentKeywords = map[string]bool{"select": true, "from": true, "where": true}
+
+// SetSmartIndent turns on the extra indent level smartIndentBonus describes.
+// Off by default: SELECT/FROM/WHERE mean nothing in the plain multi-line text
+// boxes that also use Editor, so only the SQL editors ask for it.
+func (e *Editor) SetSmartIndent(v bool) { e.smartIndent = v }
+
+// smartIndentBonus reports the extra indent Enter adds beyond the current
+// line's own leading whitespace: one level when the text to the left of the
+// cursor ends with an open parenthesis, or with one of sqlIndentKeywords as
+// its last token.
+//
+// "Last token" is what keeps the indentation from drifting right across a
+// query: `SELECT` alone indents the column list that follows, while
+// `SELECT a, b` does not, so the next clause starts back at the same column as
+// the one above it.
+func (e *Editor) smartIndentBonus() int {
+	if !e.smartIndent || e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
+		return 0
+	}
+	line := e.doc.Line(e.cursorRow)
+	left := strings.TrimRight(string(line[:min(e.cursorCol, len(line))]), " \t")
+	if left == "" {
+		return 0
+	}
+	if left[len(left)-1] == '(' {
+		return e.indentWidth
+	}
+	// The token is whatever follows the last separator; a leading "(" counts as
+	// one so "VALUES (SELECT" reads as "SELECT".
+	if i := strings.LastIndexAny(left, " \t("); sqlIndentKeywords[strings.ToLower(left[i+1:])] {
+		return e.indentWidth
+	}
+	return 0
+}
+
+// leadingIndentForNewLine reports how many leading whitespace runes the line
+// the cursor sits on starts with, clamped to the cursor column so that
+// splitting inside the indentation copies only what is to the left of the
+// cursor — what SSMS's smart indenting does. Runs of tabs cannot occur in the
+// buffer (expandTabs), but a tab counts as one rune anyway, mirroring
+// dedentAmount.
+func (e *Editor) leadingIndentForNewLine() int {
+	if e.cursorRow < 0 || e.cursorRow >= e.doc.Len() {
+		return 0
+	}
+	line := e.doc.Line(e.cursorRow)
+	limit := min(e.cursorCol, len(line))
+	n := 0
+	for n < limit && (line[n] == ' ' || line[n] == '\t') {
+		n++
+	}
+	return n
+}
+
+// IndentLines inserts e.indentWidth spaces at column 0 of the current line (or
 // every line spanned by the selection). An active selection is preserved,
-// its columns shifted right by indentWidth on whichever row(s) the
+// its columns shifted right by e.indentWidth on whichever row(s) the
 // anchor/cursor sit.
 func (e *Editor) IndentLines() {
 	e.pushUndo()
 	sr, er := e.affectedLineRange()
 	for r := sr; r <= er; r++ {
 		line := e.doc.Line(r)
-		nl := make([]rune, len(line)+indentWidth)
-		for i := range indentWidth {
+		nl := make([]rune, len(line)+e.indentWidth)
+		for i := range e.indentWidth {
 			nl[i] = ' '
 		}
-		copy(nl[indentWidth:], line)
+		copy(nl[e.indentWidth:], line)
 		e.doc.setLine(r, nl)
 		if r == e.cursorRow {
-			e.cursorCol += indentWidth
+			e.cursorCol += e.indentWidth
 		}
 		if e.selecting && r == e.selAnchorRow {
-			e.selAnchorCol += indentWidth
+			e.selAnchorCol += e.indentWidth
 		}
 	}
 	e.clampCursor()
 	e.ensureCursorVisible()
 }
 
-// DedentLines removes one leading tab, or up to indentWidth leading spaces,
+// DedentLines removes one leading tab, or up to e.indentWidth leading spaces,
 // from the current line (or every line spanned by the selection). An active
 // selection is preserved, its columns shifted left by however much was
 // actually removed from that row.
@@ -181,7 +282,7 @@ func (e *Editor) DedentLines() {
 	sr, er := e.affectedLineRange()
 	for r := sr; r <= er; r++ {
 		line := e.doc.Line(r)
-		removed := dedentAmount(line)
+		removed := e.dedentAmount(line)
 		if removed == 0 {
 			continue
 		}
@@ -201,14 +302,14 @@ func (e *Editor) DedentLines() {
 
 // dedentAmount reports how many leading runes DedentLines should strip from
 // line: one leading tab (from content written before tabs were converted to
-// spaces, or pasted in from elsewhere), else up to indentWidth leading
+// spaces, or pasted in from elsewhere), else up to e.indentWidth leading
 // spaces.
-func dedentAmount(line []rune) int {
+func (e *Editor) dedentAmount(line []rune) int {
 	if len(line) > 0 && line[0] == '\t' {
 		return 1
 	}
 	n := 0
-	for n < len(line) && n < indentWidth && line[n] == ' ' {
+	for n < len(line) && n < e.indentWidth && line[n] == ' ' {
 		n++
 	}
 	return n

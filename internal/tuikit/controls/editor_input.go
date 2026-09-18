@@ -155,10 +155,27 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyEnter:
 		e.pushUndoLocal()
+		// Read before deleteSelection, which drops the block along with the
+		// selection — asking afterwards always answers false.
+		wasBlock := e.blockEditing()
 		if hadSelection {
 			e.deleteSelection()
 		}
+		// Auto-indent lives here, in the key handler, and never in
+		// insertNewline: Paste and blockPaste drive insertNewline once per
+		// pasted line, so indenting there would re-indent each line on top of
+		// the indentation it already carries — paste turns into a staircase.
+		// Block editing keeps its existing plain split. The indent is measured
+		// before the split, and the spaces go in under the pushUndoLocal above,
+		// so one Ctrl+Z undoes the whole Enter.
+		indent := 0
+		if !wasBlock {
+			indent = e.leadingIndentForNewLine() + e.smartIndentBonus()
+		}
 		e.insertNewline()
+		for range indent {
+			e.insertRune(' ')
+		}
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		e.pushUndoLocal()
 		switch {
@@ -196,7 +213,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		}
 		if e.blockEditing() {
 			e.pushUndoLocal()
-			for range indentWidth {
+			for range e.indentWidth {
 				e.blockInsertRune(' ')
 			}
 			dropSelection = false
@@ -214,7 +231,7 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if hadSelection {
 			e.deleteSelection()
 		}
-		for range indentWidth {
+		for range e.indentWidth {
 			e.insertRune(' ')
 		}
 	case tcell.KeyBacktab:

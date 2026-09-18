@@ -440,14 +440,51 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 		IconStyle:            IconStylePortable,
 		MaxCellLength:        123,
 		IntelliSenseDisabled: true,
+		IndentWidth:          2,
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Save() = %v", err)
 	}
 	got := Load()
 	if got.IconStyle != IconStylePortable || got.MaxCellLength != 123 ||
-		!got.IntelliSenseDisabled {
+		!got.IntelliSenseDisabled || got.IndentWidth != 2 {
 		t.Errorf("round-tripped config = %+v, want every field preserved", got)
+	}
+}
+
+// Load clamps an out-of-range or absent indent width to the default, in every
+// branch: no file, a parsed file, and an unparseable one.
+func TestLoadClampsIndentWidth(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string // "" means write no file at all
+		want int
+	}{
+		{"no file", "", DefaultIndentWidth},
+		{"absent", `{}`, DefaultIndentWidth},
+		{"zero", `{"indent_width":0}`, DefaultIndentWidth},
+		{"negative", `{"indent_width":-3}`, DefaultIndentWidth},
+		{"over ceiling", `{"indent_width":99}`, DefaultIndentWidth},
+		{"corrupt", `{"indent_width":2`, DefaultIndentWidth},
+		{"in range", `{"indent_width":2}`, 2},
+		{"at ceiling", `{"indent_width":16}`, MaxIndentWidth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			if tc.raw != "" {
+				cfgDir := filepath.Join(dir, "gossms")
+				if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(tc.raw), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := Load().IndentWidth; got != tc.want {
+				t.Errorf("Load().IndentWidth = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

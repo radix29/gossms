@@ -235,6 +235,11 @@ func NewApp() *App {
 		statusText: "Ready  |  F1 Help  |  Ctrl+N New Query  |  F9 Connect  |  Ctrl+Q Quit",
 		cfg:        config.Load(),
 	})
+	// Editors built where the config is out of reach (property-sheet T-SQL
+	// rows, the Agent job-step command box) pick the width up from this
+	// default; the ones that can reach it call SetIndentWidth as well, so a
+	// live change from Options reaches them without a restart.
+	controls.SetDefaultIndentWidth(a.cfg.IndentWidth)
 	a.loadPeerCredentials()
 	return a
 }

@@ -180,6 +180,11 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 		results:  results,
 		splitter: layout.NewHorizontalSplitter("─── Results ─── (drag or Ctrl+Up/Down to resize)"),
 	})
+	// Before anything sets text: SetText expands tabs at the editor's current
+	// width, and savedText is seeded from Text() afterwards — see
+	// controls.SetIndentWidth.
+	p.editor.SetIndentWidth(app.cfg.IndentWidth)
+	p.editor.SetSmartIndent(true)
 	p.messages = controls.NewEditor(p.messagesHighlighter)
 	p.messages.SetReadOnly(true)
 	p.resultsText = controls.NewEditor(nil)

@@ -184,13 +184,23 @@ type Editor struct {
 	// search holds the active find/replace pattern and its match list. The zero
 	// value means no search.
 	search editorSearch
+
+	// indentWidth is how many spaces Tab, IndentLines, DedentLines, auto-indent
+	// and tab expansion use. Seeded by NewEditor from defaultIndentWidth; see
+	// SetIndentWidth for why it has to be set before any SetText.
+	indentWidth int
+
+	// smartIndent enables the extra indent level after an open parenthesis or a
+	// trailing SQL clause keyword — see SetSmartIndent.
+	smartIndent bool
 }
 
 // NewEditor creates an Editor. Pass a Highlighter or nil.
 func NewEditor(h Highlighter) *Editor {
 	return new(Editor{
-		doc:       newDocument(),
-		highlight: h,
+		doc:         newDocument(),
+		highlight:   h,
+		indentWidth: defaultIndentWidth,
 	})
 }
 
@@ -310,7 +320,7 @@ func (e *Editor) Text() string {
 // a stale selection anchor past the new buffer's end makes SelectedText panic,
 // and a stale undo step restores text never typed into this document.
 func (e *Editor) SetText(text string) {
-	parts := strings.Split(strings.ReplaceAll(expandTabs(text), "\r\n", "\n"), "\n")
+	parts := strings.Split(strings.ReplaceAll(e.expandTabs(text), "\r\n", "\n"), "\n")
 	lines := make([][]rune, len(parts))
 	for i, p := range parts {
 		lines[i] = []rune(p)

@@ -139,7 +139,7 @@ func (e *Editor) blockDelete() {
 //
 // The caller pushes the undo step.
 func (e *Editor) blockPaste(text string) {
-	parts := strings.Split(strings.ReplaceAll(expandTabs(text), "\r\n", "\n"), "\n")
+	parts := strings.Split(strings.ReplaceAll(e.expandTabs(text), "\r\n", "\n"), "\n")
 	col := e.cursorCol
 	switch {
 	case e.blockEditing():
