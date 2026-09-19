@@ -9,12 +9,12 @@ import (
 )
 
 // testCompletionProvider returns a CompletionProvider offering candidates
-// (exact Text/Label match) whose name has, as a case-insensitive prefix,
-// whatever identifier characters immediately precede the cursor — a
-// minimal stand-in for internal/tui's real SQL-aware provider, exercising
-// exactly the same Editor/provider contract.
+// (exact Text/Label match) whose name is case-insensitively prefixed by the
+// identifier characters immediately before the cursor — a minimal stand-in for
+// internal/tui's SQL-aware provider over the same Editor/provider contract.
 func testCompletionProvider(candidates ...string) CompletionProvider {
-	return func(lines [][]rune, row, col int) ([]CompletionItem, int) {
+	return func(req CompletionRequest) ([]CompletionItem, int) {
+		lines, row, col := req.Lines, req.Row, req.Col
 		if row >= len(lines) {
 			return nil, col
 		}
@@ -84,8 +84,8 @@ func TestEditorCompletionCommitReplacesPrefixAndUndoRestores(t *testing.T) {
 		t.Fatalf("cursorCol after commit = %d, want %d", e.cursorCol, len("Customers"))
 	}
 
-	// A single Ctrl+Z must restore exactly the typed prefix, not the
-	// pre-commit undo history entry from before typing even began.
+	// A single Ctrl+Z must restore the typed prefix, not the undo entry from
+	// before typing began.
 	e.HandleKey(key(tcell.KeyCtrlZ, tcell.ModNone))
 	if got := e.Text(); got != "Cu" {
 		t.Fatalf("Text() after undo = %q, want %q", got, "Cu")
@@ -341,8 +341,8 @@ func TestEditorCompletionCtrlSpaceFallsBackToContextMenuWithoutProvider(t *testi
 
 func TestEditorCompletionPlaceholderNotSelectableOrCommittable(t *testing.T) {
 	e := newTestEditor("")
-	e.SetCompletionProvider(func(lines [][]rune, row, col int) ([]CompletionItem, int) {
-		return []CompletionItem{{Label: "Loading suggestions...", Placeholder: true}}, col
+	e.SetCompletionProvider(func(req CompletionRequest) ([]CompletionItem, int) {
+		return []CompletionItem{{Label: "Loading suggestions...", Placeholder: true}}, req.Col
 	})
 
 	typeString(e, "x")
@@ -381,18 +381,18 @@ func TestEditorCompletionRectFlipsAboveNearBottomEdge(t *testing.T) {
 	}
 }
 
-// TestEditorCompletionRectReservesDetailColumn pins down that Draw and
+// TestEditorCompletionRectReservesDetailColumn pins that Draw and
 // completionRect agree on the label/detail column split, both reading
-// completionColumnWidths. Deriving it from two separate formulas sizes the
-// rect as if detail existed while Draw computes detailW as 0 and never
-// writes it, so column type info silently never appears.
+// completionColumnWidths. Two separate formulas size the rect as if detail
+// existed while Draw computes detailW as 0 and never writes it, so column type
+// info silently never appears.
 func TestEditorCompletionRectReservesDetailColumn(t *testing.T) {
 	e := newTestEditor("")
-	e.SetCompletionProvider(func(lines [][]rune, row, col int) ([]CompletionItem, int) {
+	e.SetCompletionProvider(func(req CompletionRequest) ([]CompletionItem, int) {
 		return []CompletionItem{
 			{Text: "Id", Label: "Id", Detail: "int, not null"},
 			{Text: "Name", Label: "Name", Detail: "nvarchar(50)"},
-		}, col
+		}, req.Col
 	})
 	typeString(e, "x")
 	if !e.CompletionActive() {
@@ -437,11 +437,10 @@ func TestEditorCompletionRowNavigationClamps(t *testing.T) {
 	}
 }
 
-// TestEditorPasteClosesCompletionAndKeepsTextVerbatim pins Paste's
-// deliberate bypass of the completion popup: pasted text is finished text,
-// so it goes in exactly as given and the popup — open on the prefix the
-// paste lands after — closes rather than re-querying against the pasted
-// token.
+// TestEditorPasteClosesCompletionAndKeepsTextVerbatim pins Paste's deliberate
+// bypass of the popup: pasted text is finished text, so it goes in as given
+// and the popup — open on the prefix the paste lands after — closes rather
+// than re-querying against the pasted token.
 func TestEditorPasteClosesCompletionAndKeepsTextVerbatim(t *testing.T) {
 	e := newTestEditor("")
 	e.SetCompletionProvider(testCompletionProvider("Customers", "CustomerOrders"))
@@ -462,14 +461,14 @@ func TestEditorPasteClosesCompletionAndKeepsTextVerbatim(t *testing.T) {
 }
 
 // '#' and '@' introduce a name the same way '[' does — a temp table or a
-// variable, where the host's provider decides what the name means. Without
-// this the popup stayed shut until a second character arrived, so the first
-// keystroke of "#staging" showed nothing.
+// variable, with the host's provider deciding what the name means. Without
+// this the popup stays shut until a second character arrives, so the first
+// keystroke of "#staging" shows nothing.
 func TestEditorCompletionSigilOpens(t *testing.T) {
 	for _, sigil := range []string{"#", "@", "##"} {
 		// The stub provider matches on word runes alone, so the candidate is
-		// spelled without a sigil; what is under test is the gate, not how a
-		// real provider reads one.
+		// spelled without a sigil: the gate is under test, not how a real
+		// provider reads one.
 		e := newTestEditor("")
 		e.SetCompletionProvider(testCompletionProvider("staging"))
 		typeString(e, sigil)
@@ -480,5 +479,58 @@ func TestEditorCompletionSigilOpens(t *testing.T) {
 		if !e.CompletionActive() {
 			t.Errorf("expected %q to keep the popup open", sigil+"sta")
 		}
+	}
+}
+
+// Nothing in Editor reads CompletionRequest.Text — it exists for a provider
+// that caches across calls — so only a test can tell whether Editor fills it
+// with the revision the lines belong to. A Doc that changed identity between
+// keystrokes, or a Version that didn't move after an edit, sends such a
+// provider back to a full rescan every time; a Version that moved without the
+// text changing, or a DirtyFrom above the edited line, lets it answer from a
+// stale cache. That second failure is silent and wrong, hence this test.
+func TestEditorCompletionRequestCarriesTextRevision(t *testing.T) {
+	e := newTestEditor("SELECT 1\nSELECT 2\n")
+	var got []TextRevision
+	e.SetCompletionProvider(func(req CompletionRequest) ([]CompletionItem, int) {
+		got = append(got, req.Text)
+		return []CompletionItem{{Text: "Customers", Label: "Customers"}}, req.Col
+	})
+
+	e.cursorRow, e.cursorCol = 2, 0
+	typeString(e, "ab")
+	if len(got) != 2 {
+		t.Fatalf("provider called %d times, want 2", len(got))
+	}
+	if got[0].Doc == nil {
+		t.Fatal("Text.Doc is nil, want the editor's document")
+	}
+	if got[0].Doc != got[1].Doc {
+		t.Error("Text.Doc changed identity between keystrokes")
+	}
+	if got[0].Doc != any(e.doc) {
+		t.Error("Text.Doc is not the editor's own document")
+	}
+	if got[1].Version != got[0].Version+1 {
+		t.Errorf("Version went %d -> %d, want one bump per typed rune",
+			got[0].Version, got[1].Version)
+	}
+	for i, tr := range got {
+		if tr.DirtyFrom != 2 {
+			t.Errorf("call %d: DirtyFrom = %d, want 2 (the edited line)", i, tr.DirtyFrom)
+		}
+	}
+
+	// Cursor movement alone must leave the version where it is: a provider
+	// keyed on it then reuses everything it computed for the last keystroke,
+	// which is what makes arrowing around cost nothing.
+	before := got[len(got)-1].Version
+	got = got[:0]
+	e.HandleKey(key(tcell.KeyLeft, tcell.ModNone))
+	if len(got) == 0 {
+		t.Fatal("provider not called after cursor movement")
+	}
+	if v := got[0].Version; v != before {
+		t.Errorf("Version = %d after a bare cursor move, want %d (text unchanged)", v, before)
 	}
 }

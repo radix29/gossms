@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// benchScript builds a script of roughly n statements, shaped like a real
-// one: batch separators, comments, string literals, and multi-line
-// statements, so the tokenizer does representative work rather than racing
-// through uniform filler.
+// benchScript builds a script of roughly n statements shaped like a real one:
+// batch separators, comments, string literals and multi-line statements, so
+// the tokenizer does representative work rather than racing through uniform
+// filler.
 func benchScript(n int) [][]rune {
 	var b strings.Builder
 	for i := 0; i < n; i++ {
@@ -30,15 +30,14 @@ func benchScript(n int) [][]rune {
 	return out
 }
 
-// The completion provider re-flattens and re-scans the buffer from offset 0
-// on every keystroke while the popup is open (see sqlCompletionCandidates).
-// These benchmarks measure what that costs as the script grows, with the
-// cursor at the end — the worst case, since the prefix scan runs from the
-// start of the buffer to the cursor.
+// The completion provider re-flattens and re-scans the buffer from offset 0 on
+// every keystroke while the popup is open (see sqlCompletionCandidates). These
+// measure what that costs as the script grows, with the cursor at the end —
+// the worst case, since the prefix scan runs from offset 0 to the cursor.
 //
-// This is the production path: ScanPrefix lexes the prefix without
-// materialising tokens, then tokenizes only the cursor's statement. Compare
-// against BenchmarkCompletionPrefixScanReference_* below, which is the
+// The production path: ScanPrefix lexes the prefix without materialising
+// tokens, then tokenizes only the cursor's statement. Compare against
+// BenchmarkCompletionPrefixScanReference_* below, the
 // tokenize-everything-then-discard approach it replaced.
 func benchmarkPrefixScan(b *testing.B, stmts int) {
 	lines := benchScript(stmts)
@@ -57,18 +56,91 @@ func benchmarkPrefixScan(b *testing.B, stmts int) {
 func BenchmarkCompletionPrefixScan_100Stmts(b *testing.B)  { benchmarkPrefixScan(b, 100) }
 func BenchmarkCompletionPrefixScan_1000Stmts(b *testing.B) { benchmarkPrefixScan(b, 1000) }
 
-// benchmarkPrefixScanReference measures the approach ScanPrefix
-// replaced — flatten into a fresh buffer, tokenize the whole prefix, then
-// discard every token before the statement start — so the difference stays
-// visible and a regression toward it is obvious.
+// The two above measure a cold scan — the first keystroke, the one case an
+// incremental cache cannot help with. These four model typing into an open
+// popup: an edit lands somewhere in the buffer and the prefix is rescanned,
+// over and over. Two things separate them.
 //
-// It reconstructs that shape out of the production pieces rather than out of
-// the standalone baseline it used to call, which was deleted along with the
-// differential tests that compared the two. Only the ';'
-// boundary is applied, not the GO scan the real one also did: what this
-// measures is the cost of materialising every token in the prefix and then
-// throwing most of them away, and that is unchanged by where exactly the
-// discard line falls.
+// The edit row:
+//
+//   - CursorLine: the edit is on the cursor's own line, at the end of a large
+//     script. Every boundary in the prefix is below the edit, so this is the
+//     case an incremental scan must turn into O(statement).
+//   - FirstLine: the edit is on line 1, so no boundary survives and the scan
+//     runs from 0 regardless — the guard rail: the worst case must not come
+//     out slower than the uncached scan it replaces.
+//
+// And the path:
+//
+//   - Uncached: bare ScanPrefix, the code the cache replaced — the baseline
+//     the cached pair is read against, and what the two cold benchmarks above
+//     measure per keystroke.
+//   - Cached: PrefixCache.Scan carrying a real revision, what QueryPanel does
+//     on every keystroke.
+//
+// The edit alternates appending and removing a rune so the script neither
+// grows without bound nor settles into an unchanged buffer, and it bumps the
+// revision exactly as Document.setLine does — one version per edit, DirtyFrom
+// at the edited row. editRow of -1 means the cursor's own line.
+//
+// Both cached benchmarks still pay for FlattenLinesInto, which is O(script)
+// and which the cache does not touch: what is left after the cached numbers
+// drop is mostly that copy, not lexing.
+func benchmarkPrefixScanTyping(b *testing.B, stmts, editRow int, cached bool) {
+	lines := benchScript(stmts)
+	row := len(lines) - 2
+	if editRow < 0 {
+		editRow = row
+	}
+	var reuse []rune // QueryPanel.completionBuf, kept across keystrokes
+	var cache PrefixCache
+	doc := new(int) // stands in for the *Document the real revision carries
+	var version uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%2 == 0 {
+			lines[editRow] = append(lines[editRow], 'x')
+		} else {
+			lines[editRow] = lines[editRow][:len(lines[editRow])-1]
+		}
+		version++
+		col := len(lines[row])
+		reuse = FlattenLinesInto(reuse, lines)
+		upTo := OffsetForCursor(lines, row, col)
+		if cached {
+			cache.Scan(lines, reuse, row, upTo,
+				TextRevision{Doc: doc, Version: version, DirtyFrom: editRow})
+		} else {
+			ScanPrefix(lines, reuse, row, upTo)
+		}
+	}
+}
+
+func BenchmarkCompletionPrefixScanTypingCursorLineUncached_1000Stmts(b *testing.B) {
+	benchmarkPrefixScanTyping(b, 1000, -1, false)
+}
+
+func BenchmarkCompletionPrefixScanTypingFirstLineUncached_1000Stmts(b *testing.B) {
+	benchmarkPrefixScanTyping(b, 1000, 0, false)
+}
+
+func BenchmarkCompletionPrefixScanTypingCursorLine_1000Stmts(b *testing.B) {
+	benchmarkPrefixScanTyping(b, 1000, -1, true)
+}
+
+func BenchmarkCompletionPrefixScanTypingFirstLine_1000Stmts(b *testing.B) {
+	benchmarkPrefixScanTyping(b, 1000, 0, true)
+}
+
+// benchmarkPrefixScanReference measures the approach ScanPrefix replaced —
+// flatten into a fresh buffer, tokenize the whole prefix, then discard every
+// token before the statement start — so a regression toward it stays obvious.
+//
+// It reconstructs that shape out of the production pieces. Only the ';'
+// boundary is applied, not the GO scan: what this measures is the cost of
+// materialising every token in the prefix and throwing most away, which is
+// unchanged by where the discard line falls.
 func benchmarkPrefixScanReference(b *testing.B, stmts int) {
 	lines := benchScript(stmts)
 	row := len(lines) - 2
@@ -92,7 +164,7 @@ func BenchmarkCompletionPrefixScanReference_1000Stmts(b *testing.B) {
 
 // sqlKeywordCanonical uppercases into a fixed-size stack array, so a keyword
 // longer than it would be silently unrecognisable — clause detection and
-// FROM-scope parsing would both quietly misread it as an identifier.
+// FROM-scope parsing would misread it as an identifier.
 func TestKeywordsFitCanonicalScratch(t *testing.T) {
 	for _, kw := range sqlKeywordList {
 		if len(kw) > maxSQLKeywordLen {
@@ -102,9 +174,8 @@ func TestKeywordsFitCanonicalScratch(t *testing.T) {
 	}
 }
 
-// The canonical lookup must agree with the list it's derived from,
-// for either input case, and must reject non-keywords and the non-ASCII
-// words it deliberately skips.
+// The canonical lookup must agree with the list it derives from, for either
+// input case, and must reject non-keywords and the non-ASCII words it skips.
 func TestSQLKeywordCanonicalMatchesTable(t *testing.T) {
 	for _, in := range []string{"SELECT", "select", "SeLeCt", "from", "REFERENCES"} {
 		got, ok := sqlKeywordCanonical([]rune(in), 0, len([]rune(in)))
@@ -150,8 +221,8 @@ WHERE  c.Region = N'north' AND k.Spend > 1000`
 
 // ScopeAt runs once per keystroke while the popup is open, on the cursor's
 // statement only. ParseFromScope, the flat scan it replaced, is the reference:
-// the tree parse costs more because it no longer skips paren contents, and
-// this is where a regression in that cost would show up.
+// the tree parse costs more because it no longer skips paren contents, and a
+// regression in that cost shows up here.
 func BenchmarkScopeAt(b *testing.B) {
 	toks := benchStatement()
 	upTo := toks[len(toks)-1].Start

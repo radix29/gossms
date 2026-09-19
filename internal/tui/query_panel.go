@@ -8,6 +8,7 @@ import (
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tui/planview"
+	"github.com/radix29/gossms/internal/tui/sqlparse"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
 	"github.com/radix29/gossms/internal/tuikit/layout"
@@ -56,15 +57,15 @@ type QueryPanel struct {
 	// connectingTo is the server connectForQueryPanel is still dialling for
 	// this panel, "" when no connect is in flight. Connecting is async and an
 	// Entra login fetches a token first, so a new window can sit unconnected
-	// for seconds; without this, an F5 in that gap reported "No active
-	// connection — use File > Connect", and a second Reconnect started a
-	// second dial whose connection the first one's result then overwrote.
+	// for seconds. Without it, an F5 in that gap reports "No active connection"
+	// and a second Reconnect starts a second dial whose connection the first
+	// one's result overwrites.
 	connectingTo string
 
-	// tranCount is the session's @@TRANCOUNT as its last run left it — what
-	// decides whether closing, reconnecting or quitting must first ask to
-	// commit. Nothing else runs on the session between runs, so it cannot
-	// go stale except by the session dying, which rolls the transaction back.
+	// tranCount is the session's @@TRANCOUNT as its last run left it, deciding
+	// whether closing, reconnecting or quitting must first ask to commit.
+	// Nothing else runs on the session between runs, so it can only go stale by
+	// the session dying, which rolls the transaction back.
 	tranCount int
 
 	filePath    string      // last path used by Save; "" if never saved
@@ -79,18 +80,18 @@ type QueryPanel struct {
 
 	// runMode is the resultsMode the in-flight or most recent execution started
 	// under, snapshotted by runQuery. Anything that must agree with how that
-	// execution ran reads this, not resultsMode, which the Query menu can change
-	// mid-run.
+	// execution ran reads this, not resultsMode, which the Query menu can
+	// change mid-run.
 	runMode ResultsMode
 
 	result    *query.Result // last execution's result; nil until first run
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
-	// statusRect is the results area's bottom row, where drawResultsStatus paints
-	// the execution status for every tab the DataGrid isn't drawing — the grid
-	// renders the same line inside its own rect. Zero when the results area is
-	// too short to spare a row.
+	// statusRect is the results area's bottom row, where drawResultsStatus
+	// paints the execution status for every tab the DataGrid isn't drawing —
+	// the grid renders the same line inside its own rect. Zero when the results
+	// area is too short to spare a row.
 	statusRect core.Rect
 
 	// execStart marks when the in-flight execution began — read by
@@ -101,15 +102,15 @@ type QueryPanel struct {
 	// progress is the in-flight run's live row counter, non-nil only while a
 	// query (not an estimated plan, which scans no rows) is executing. The
 	// executor goroutine bumps it as rows are scanned and resultsStatusText
-	// reads it on the UI goroutine — see query.Progress — so the "Executing..."
-	// line shows how much has loaded, not just how long it has taken.
+	// reads it on the UI goroutine (see query.Progress), so "Executing..."
+	// shows how much has loaded, not just how long it has taken.
 	progress *query.Progress
 
 	// resultsNotice is a one-shot message ("No query to execute", "Not
 	// connected") outranking the computed elapsed/row/col status in
-	// updateResultsStatus until the next execution starts. Without it the very
-	// next Draw recomputes the line from the last real result before the user
-	// sees it.
+	// updateResultsStatus until the next execution starts. Without it the next
+	// Draw recomputes the line from the last real result before the user sees
+	// it.
 	resultsNotice string
 
 	// messageErrorLines marks which rendered line of p.messages belongs to an
@@ -126,8 +127,8 @@ type QueryPanel struct {
 	resultsFocused bool
 
 	// dragZone is the sub-region that claimed the Button1 press being held, or
-	// qZoneNone between gestures. tcell resends Button1 on every motion while the
-	// button is down, and the results tab bar sits a row below the splitter,
+	// qZoneNone between gestures. tcell resends Button1 on every motion while
+	// the button is down, and the results tab bar sits a row below the splitter,
 	// itself directly below the editor — so a text-selection drag heading down
 	// out of the editor walks over both, grabbing the splitter and then flipping
 	// the active tab on every motion. Mirrors propsheet.PropertySheet.dragZone;
@@ -139,13 +140,20 @@ type QueryPanel struct {
 	// sqlparse.FlattenLinesInto). Valid only within one call.
 	completionBuf []rune
 
+	// completionPrefix makes that scan's batch-boundary pass incremental,
+	// resuming from the last boundary above the edit instead of relexing the
+	// whole prefix on every keystroke (see sqlparse.PrefixCache). Unlike
+	// completionBuf it stays live *across* calls, and needs no reset: it falls
+	// back to a full scan whenever it cannot justify a resume.
+	completionPrefix sqlparse.PrefixCache
+
 	executing bool
 	cancel    context.CancelFunc
 
 	// execDone is closed when the in-flight run's goroutine exits, which is how
 	// launch's App.animateUntil ticker knows to stop. Both execute paths close
 	// it from a defer, so a panic can't leave the ticker waking the event loop
-	// once a second for the life of the process.
+	// every second for the life of the process.
 	execDone chan struct{}
 }
 
@@ -192,7 +200,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	// An XML or JSON cell goes to its own query tab with matching highlighting
 	// instead of the grid's 60-column popup; anything else falls through to the
 	// popup. The declared column type comes from the active result set, since a
-	// value's text isn't a reliable XML tell — see classifyCellKind.
+	// value's text isn't a reliable XML tell (see classifyCellKind).
 	results.OnShowValue = func(col int, column, value string) bool {
 		return app.openCellValuePanel(p.columnType(col), column, value)
 	}
@@ -245,8 +253,8 @@ func (p *QueryPanel) layoutChildren() {
 	bottom := p.splitter.SecondRect()
 	p.editor.SetBounds(top.X, top.Y, top.W, top.H)
 	// Once a result or plan exists, the first row of the results area is its tab
-	// bar. results, messages, resultsText and planView share the rect below it,
-	// and only one is drawn or routed to at a time.
+	// bar. results, messages, resultsText and planView share the rect below it;
+	// only one is drawn or routed to at a time.
 	respY, respH := bottom.Y, bottom.H
 	if (p.result != nil || p.planView != nil) && bottom.H > 1 {
 		p.tabRect = core.Rect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: 1}
@@ -255,9 +263,9 @@ func (p *QueryPanel) layoutChildren() {
 		p.tabRect = core.Rect{}
 	}
 	// DataGrid draws its own status bar on the last row of its rect; the other
-	// three don't, so they get one row less and drawResultsStatus paints the same
-	// line into the gap. Sized here rather than per tab, so switching tabs needs
-	// no relayout. Below two rows nothing is left to give up.
+	// three don't, so they get one row less and drawResultsStatus paints the
+	// same line into the gap. Sized here rather than per tab, so switching tabs
+	// needs no relayout. Below two rows nothing is left to give up.
 	p.statusRect = core.Rect{}
 	otherH := respH
 	if respH > 1 {
@@ -285,9 +293,9 @@ func (p *QueryPanel) SetActive(v bool) {
 func (p *QueryPanel) editorHasFocus() bool  { return p.active && !p.resultsFocused }
 func (p *QueryPanel) resultsHasFocus() bool { return p.active && p.resultsFocused }
 
-// syncFocusVisuals applies editorHasFocus/resultsHasFocus to the editor's cursor,
-// the results grid's selection highlight and the Messages editor's cursor.
-// Called whenever p.active or p.resultsFocused changes, so at most one
+// syncFocusVisuals applies editorHasFocus/resultsHasFocus to the editor's
+// cursor, the results grid's selection highlight and the Messages editor's
+// cursor. Called whenever p.active or p.resultsFocused changes, so at most one
 // sub-region ever shows itself as focused.
 func (p *QueryPanel) syncFocusVisuals() {
 	p.editor.SetActive(p.editorHasFocus())

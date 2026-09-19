@@ -7,53 +7,54 @@ import (
 
 // ---------------------------------------------------------------------------
 // SQL-aware completion.Provider for the query editor — the only caller of
-// controls.Editor.SetCompletionProvider in the app. Resolves the identifier
-// at the cursor against the connected database's completionInventory
+// controls.Editor.SetCompletionProvider in the app. Resolves the identifier at
+// the cursor against the connected database's completionInventory
 // (completion_inventory.go): schemas, tables, views, and columns, with
 // schema/alias/table-dot member lookup and FROM-clause alias resolution.
 //
-// This is a lexical approximation, not a full T-SQL parser — the same
-// spirit as controls.Editor's own SelectStatementAtCursor (see
-// tuikit/controls/sql_statement.go). It recognises enough of the grammar
-// (comments, string/quoted-identifier literals, FROM/JOIN/WHERE/... clause
-// keywords, dot-qualified names, CTE bodies and derived tables) to get
-// common queries right; anything genuinely ambiguous offers nothing rather
-// than guessing wrong.
+// A lexical approximation, not a full T-SQL parser — the same spirit as
+// controls.Editor's SelectStatementAtCursor (tuikit/controls/sql_statement.go).
+// It recognises enough of the grammar (comments, string/quoted-identifier
+// literals, clause keywords, dot-qualified names, CTE bodies, derived tables)
+// to get common queries right; anything genuinely ambiguous offers nothing
+// rather than guessing wrong.
 //
-// What that covers: FROM/JOIN/APPLY refs and their aliases, WITH bindings
-// (their own column list or the one their body produces, a CTE built on an
-// earlier CTE, a recursive one without looping), derived tables and
-// sub-SELECTs at any nesting, and the clause state of the innermost query
-// rather than the statement — so a cursor inside a CTE body completes
-// against that body. Out of scope, and answered with nothing rather than a
-// plausible wrong list: keyword completion, temp tables and table variables,
-// table-valued function result shapes, PIVOT/UNPIVOT, OPENJSON/OPENROWSET
+// In scope: FROM/JOIN/APPLY refs and their aliases; WITH bindings (their own
+// column list or the one their body produces, a CTE built on an earlier CTE, a
+// recursive one without looping); derived tables and sub-SELECTs at any
+// nesting; the clause state of the innermost query rather than the statement,
+// so a cursor inside a CTE body completes against that body; temp tables (#t,
+// ##t) and table variables (@t), resolved from their declaration — CREATE
+// TABLE, DECLARE ... TABLE, SELECT ... INTO — found by scanning the cursor's
+// GO-delimited batch, with PIVOT/UNPIVOT reshaping the reference it follows
+// (see sqlparse.ScanBindings and sqlparse.Pivot).
+//
+// Out of scope, answered with nothing rather than a plausible wrong list:
+// keyword completion, table-valued function result shapes, OPENJSON/OPENROWSET
 // WITH column lists, and cross-database chains.
-//
-// Temp tables (#t, ##t) and table variables (@t) are in scope too, resolved
-// from the declaration — CREATE TABLE, DECLARE ... TABLE, or SELECT ... INTO —
-// found by scanning the cursor's GO-delimited batch, and PIVOT/UNPIVOT
-// reshapes the reference it follows (see sqlparse.ScanBindings and
-// sqlparse.Pivot).
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
-// this panel's editor (see NewQueryPanel). p's conn/database are read fresh
-// on every call, so reconnecting or switching database (a mid-script USE)
-// takes effect on the very next keystroke without needing to rebuild it.
+// this panel's editor (see NewQueryPanel). p's conn/database are read fresh on
+// every call, so reconnecting or switching database (a mid-script USE) takes
+// effect on the next keystroke without rebuilding it.
 func (p *QueryPanel) newCompletionProvider() controls.CompletionProvider {
-	return func(lines [][]rune, row, col int) ([]controls.CompletionItem, int) {
-		return p.sqlCompletionCandidates(lines, row, col)
+	return func(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+		return p.sqlCompletionCandidates(req)
 	}
 }
 
-// loadingCompletionItem is shown, alone, while the backing inventory hasn't
-// finished its first load yet — see completion_inventory.go's
-// refreshCompletionPopups, which re-queries this provider once the real
-// data lands so this placeholder gets replaced without another keystroke.
+// loadingCompletionItem is shown, alone, until the backing inventory finishes
+// its first load. completion_inventory.go's refreshCompletionPopups re-queries
+// this provider once the data lands, replacing it without another keystroke.
 var loadingCompletionItem = controls.CompletionItem{Label: "Loading suggestions...", Placeholder: true}
 
-func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]controls.CompletionItem, int) {
+// sqlCompletionCandidates answers one provider call. req.Text identifies the
+// revision of req.Lines, which lets the prefix scan resume from
+// p.completionPrefix rather than restarting at offset 0 on every keystroke; a
+// zero Text (as the tests pass) never resumes.
+func (p *QueryPanel) sqlCompletionCandidates(req controls.CompletionRequest) ([]controls.CompletionItem, int) {
+	lines, row, col := req.Lines, req.Row, req.Col
 	if p.app.cfg.IntelliSenseDisabled {
 		return nil, col
 	}
@@ -67,8 +68,10 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 
 	// Scoped to the current statement — a table named in an earlier ';'- or
 	// GO-separated statement must not leak into this one's FROM-scope/clause
-	// detection (see sqlparse.ScanPrefix).
-	pre := sqlparse.ScanPrefix(lines, buf, row, upTo)
+	// detection (see sqlparse.ScanPrefix, which PrefixCache answers for).
+	pre := p.completionPrefix.Scan(lines, buf, row, upTo, sqlparse.TextRevision{
+		Doc: req.Text.Doc, Version: req.Text.Version, DirtyFrom: req.Text.DirtyFrom,
+	})
 	tokens, state, batchStart, quoteStart := pre.Tokens, pre.State, pre.BatchStart, pre.QuoteStart
 
 	var qualifier, prefix string
@@ -79,10 +82,9 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 		qualifier, prefix, replaceFrom, hasQualifier = sqlparse.TokenContext(tokens, upTo)
 	case sqlparse.LexBracket:
 		// An unterminated bracket identifier ("FROM [Cus|") is the one
-		// non-normal lexer state completion still works in: everything
-		// after the '[' is the prefix, and the whole "[..." span gets
-		// replaced on commit (bracketIfNeeded re-quotes the inserted name
-		// only when it actually needs quoting).
+		// non-normal lexer state completion still works in: everything after
+		// the '[' is the prefix, and the whole "[..." span is replaced on
+		// commit (bracketIfNeeded re-quotes only when needed).
 		qualifier, _, _, hasQualifier = sqlparse.TokenContext(tokens, quoteStart)
 		prefix = string(buf[quoteStart+1 : upTo])
 		replaceFrom = quoteStart
@@ -91,11 +93,11 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	}
 
 	// Everything above works in flattened-buffer offsets, but the
-	// controls.CompletionProvider contract wants a column on the cursor's
-	// row — the editor replaces [replaceFrom, col) there and anchors the
-	// popup at it. The replaced span always starts on the cursor's own row
-	// (identifiers can't span lines; a '[' on an earlier row is malformed
-	// anyway and bails), so subtracting the row's start offset converts it.
+	// controls.CompletionProvider contract wants a column on the cursor's row —
+	// the editor replaces [replaceFrom, col) there and anchors the popup at it.
+	// The replaced span always starts on the cursor's own row (identifiers
+	// can't span lines; a '[' on an earlier row is malformed and bails), so
+	// subtracting the row's start offset converts it.
 	rowStart := sqlparse.OffsetForCursor(lines, row, 0)
 	if replaceFrom < rowStart {
 		return nil, col
@@ -111,13 +113,11 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	}
 	sysInv := p.app.ensureSysCompletionInventory(p.conn)
 
-	// FROM-scope/clause analysis looks at the whole current statement, not
-	// just the part already typed — a table named in "SELECT | FROM
-	// Customers c" (cursor still in the column list) resolves just as well
-	// as one already fully typed above the cursor. The forward scan must
-	// resume in normal lexer state; when the cursor sits inside an
-	// unterminated bracket identifier, skip past its closing ']' (if any)
-	// first.
+	// FROM-scope/clause analysis looks at the whole statement, not just the
+	// part already typed — a table named in "SELECT | FROM Customers c"
+	// resolves as well as one typed above the cursor. The forward scan must
+	// resume in normal lexer state, so when the cursor sits inside an
+	// unterminated bracket identifier, skip past its closing ']' first.
 	forwardFrom := upTo
 	if state == sqlparse.LexBracket {
 		for forwardFrom < len(buf) && buf[forwardFrom] != ']' {
@@ -130,12 +130,10 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	batchEnd := sqlparse.StatementEndOffset(lines, buf, row, forwardFrom)
 	forwardTokens, _, _, _ := sqlparse.TokenizeRange(buf, forwardFrom, batchEnd, false)
 
-	// Multiple statements stacked in the editor with no ';' between them
-	// still parse as one ';'/GO-delimited batch above; narrow further to
-	// the DML statement containing the cursor so a bare column context in
-	// one statement doesn't pick up FROM refs from an unrelated statement
-	// stacked above or below it (see sqlparse.DMLStatementStarts /
-	// sqlparse.NarrowToDMLStatement).
+	// Statements stacked with no ';' between them still parse as one
+	// ';'/GO-delimited batch above; narrow to the DML statement holding the
+	// cursor so a bare column context doesn't pick up FROM refs from an
+	// unrelated statement above or below it (see sqlparse.NarrowToDMLStatement).
 	combined := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
 	stmtStart, stmtEnd := sqlparse.NarrowToDMLStatement(combined, batchStart, batchEnd, upTo)
 	tokens = sqlparse.TokensFrom(tokens, stmtStart)
@@ -145,9 +143,9 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	stmtTokens := append(append([]sqlparse.Token{}, tokens...), forwardTokens...)
 
 	// The query tree, not the flat scan: the cursor's innermost SELECT, the
-	// CTEs visible from it, and its own clause state (see sqlparse.ScopeAt).
-	// A statement the parser can make nothing of leaves Query nil, and the
-	// flat FROM-scope scan still answers for it.
+	// CTEs visible from it, and its own clause state (see sqlparse.ScopeAt). A
+	// statement the parser can make nothing of leaves Query nil, and the flat
+	// FROM-scope scan answers for it.
 	scope := sqlparse.ScopeAt(stmtTokens, upTo)
 	refs, clause := scope.Query.FromRefs(), scope.Clause
 	if scope.Query == nil {
@@ -157,8 +155,7 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	// Temp tables and table variables are declared in a different statement
 	// from the one using them, so their shapes come from a scan of the whole
 	// GO-delimited batch — the one piece of cross-statement work a keystroke
-	// can do. bindingsInPlay keeps it off the path of every script that
-	// doesn't name one; see sqlparse.ScanBindings.
+	// does. bindingsWanted keeps it off the path of scripts that name none.
 	var bindings []sqlparse.Binding
 	if bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix) &&
 		sqlparse.ContainsSigil(buf, pre.GoStart) {
@@ -174,8 +171,8 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	case clause == sqlparse.ClauseTable:
 		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix), replaceFrom
 	case len(rels) == 0:
-		// Column context but nothing resolvable has been FROM'd yet — nothing
-		// to pull columns from, so fall back to the object list.
+		// Column context but nothing resolvable FROM'd yet: no columns to
+		// pull, so fall back to the object list.
 		return p.tableCandidates(inv, sysInv, nil, bindings, prefix), replaceFrom
 	default:
 		return p.scopedColumnCandidates(rels, prefix), replaceFrom
@@ -183,14 +180,14 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 }
 
 // bindingsWanted reports whether this keystroke's answer can depend on the
-// batch's declarations: something it is about to resolve carries a
-// temp-table or table-variable sigil — a FROM-scope name at any nesting, a CTE
-// body's, or the name being typed — or it is a table clause, where every temp
-// table in the batch belongs in the list even before the sigil is typed.
+// batch's declarations: something it is about to resolve carries a temp-table
+// or table-variable sigil — a FROM-scope name at any nesting, a CTE body's, or
+// the name being typed — or it is a table clause, where every temp table in the
+// batch belongs in the list even before the sigil is typed.
 //
 // It gates the batch scan ScanBindings needs. A column-context keystroke in a
-// script that merely passes scalar variables around — "WHERE id = @id", which
-// is most of them — names no table variable, so it never pays for one.
+// script that merely passes scalar variables around ("WHERE id = @id", most of
+// them) names no table variable, so it never pays for one.
 func bindingsWanted(clause sqlparse.Clause, q *sqlparse.Query, refs []sqlparse.FromRef, ctes []sqlparse.CTE, qualifier, prefix string) bool {
 	if clause == sqlparse.ClauseTable || sqlparse.HasSigil(qualifier) || sqlparse.HasSigil(prefix) {
 		return true
@@ -206,9 +203,8 @@ func bindingsWanted(clause sqlparse.Clause, q *sqlparse.Query, refs []sqlparse.F
 	return refsUseSigil(refs)
 }
 
-// queryUsesSigil walks one query's own refs, its derived tables, its
-// sub-SELECTs and its CTE bodies, bounded by the same depth cap relation
-// resolution uses.
+// queryUsesSigil walks one query's refs, derived tables, sub-SELECTs and CTE
+// bodies, bounded by the same depth cap relation resolution uses.
 func queryUsesSigil(q *sqlparse.Query, depth int) bool {
 	if q == nil || depth >= maxRelationDepth {
 		return false

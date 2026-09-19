@@ -208,7 +208,7 @@ gossms/
 │       ├── dashboard/            # Activity Monitor dashboard layout: draws a HistoryView/SampleView/TempDBView/InstanceView with tuikit/charts; no App, no connection
 │       ├── gate/                 # the permission gate: gate.RightsAllow — the right(s) each action needs (server-, database-, schema- or object-scoped), the object/column/schema DENY asked first, and the fail-open rule that withholds a menu/toolbar/context item only on a measured "no". The banner's check and the menus' gate are this one function
 │       ├── planview/             # reusable control rendering a parsed plan: Plan (graph)/Tree/XML tabs
-│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT) and ScanBindings' batch-wide temp-table/table-variable declarations. Pure functions over runes; no App, no connection
+│       ├── sqlparse/             # T-SQL lexer + statement-scope scanner behind IntelliSense: flat FROM/clause scan, ScopeAt's Query tree (CTEs, derived tables, sub-SELECTs, PIVOT) and ScanBindings' batch-wide temp-table/table-variable declarations. Functions over runes; no App, no connection — pure but for PrefixCache (prefix_cache.go), the one stateful type, which makes the completion prefix scan incremental and is owned by the QueryPanel that calls it
 │       │
 │       │  ── App core ──
 │       ├── app.go                # root App orchestrator, event loop, SQL Server object tree fetch

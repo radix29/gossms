@@ -21,8 +21,8 @@ type CompletionItem struct {
 	// Text is what gets inserted on commit, replacing the span the provider
 	// reported via replaceFrom.
 	Text string
-	// Label is the left column shown in the popup — usually Text, but a provider
-	// may show something more readable, such as a plain Label for a
+	// Label is the left column shown in the popup — usually Text, but a
+	// provider may show something more readable, such as a plain Label for a
 	// bracket-quoted Text.
 	Label string
 	// Detail is an optional right-aligned, dimmed column ("table", "int, not
@@ -31,27 +31,58 @@ type CompletionItem struct {
 	// Icon, if non-zero, is drawn as a single-column glyph before Label. Editor
 	// assigns it no meaning.
 	Icon rune
-	// Placeholder marks a row that is shown but can't be navigated to or
-	// committed — a "Loading suggestions..." entry while a provider's backing
-	// data isn't ready.
+	// Placeholder marks a row shown but not navigable or committable — a
+	// "Loading suggestions..." entry while a provider's data isn't ready.
 	Placeholder bool
 }
 
+// TextRevision identifies the revision of the text a CompletionRequest
+// carries, so a provider keeping a cache across calls can tell whether it may
+// resume. Same key prefixStates uses, for the same reason: Doc pins which
+// buffer the version counts, since two buffers number their versions
+// independently from zero, and DirtyFrom describes one mutation only — a cache
+// more than one version behind must start over.
+//
+// Doc is opaque on purpose: a provider compares it for identity and nothing
+// else.
+type TextRevision struct {
+	// Doc identifies the buffer. Compare it, don't dereference it.
+	Doc any
+	// Version is the buffer's mutation counter.
+	Version uint64
+	// DirtyFrom is the lowest line index the last mutation could have changed
+	// the meaning of. Meaningful only when Version is exactly one ahead of what
+	// the provider last saw for the same Doc.
+	DirtyFrom int
+}
+
+// CompletionRequest is what Editor tells a provider about where and what to
+// complete.
+type CompletionRequest struct {
+	// Lines is the whole buffer. Read-only: Editor keeps using these slices.
+	Lines [][]rune
+	// Row, Col is the cursor.
+	Row, Col int
+	// Text identifies this revision of Lines — see TextRevision.
+	Text TextRevision
+}
+
 // CompletionProvider returns the candidates for the identifier being typed at
-// (row, col) in lines, and the column that identifier starts at — the span
-// [replaceFrom, col) replaced when an item commits. An empty items slice means
+// (Row, Col) in Lines, and the column that identifier starts at — the span
+// [replaceFrom, Col) replaced when an item commits. An empty items slice means
 // there is nothing to offer here (the cursor is inside a string literal or
 // comment), and Editor closes any open popup.
 //
-// Called from scratch after every key that could affect the result, so a
-// provider needs no state of its own between calls.
-type CompletionProvider func(lines [][]rune, row, col int) (items []CompletionItem, replaceFrom int)
+// Called after every key that could affect the result. A provider may answer
+// each call from scratch; one that caches between calls must key the cache on
+// req.Text and rebuild whenever that key cannot justify a resume.
+type CompletionProvider func(req CompletionRequest) (items []CompletionItem, replaceFrom int)
 
 // maxCompletionRows caps the popup's visible height; more candidates scroll.
 const maxCompletionRows = 10
 
 // maxCompletionLabelW and maxCompletionDetailW cap each column's width, so a
-// very long identifier or detail can't blow the popup up.
+// long identifier or detail can't blow the popup up.
 const (
 	maxCompletionLabelW  = 40
 	maxCompletionDetailW = 24
@@ -71,10 +102,10 @@ func (e *Editor) SetCompletionProvider(p CompletionProvider) {
 // DataGrid.OverlayActive.
 func (e *Editor) CompletionActive() bool { return e.completionOpen }
 
-// RefreshCompletion re-queries the provider at the current cursor position if
-// the popup is open — for a caller whose backing data changed asynchronously and
-// wants an open "Loading..." placeholder replaced with real results before the
-// next keystroke. No-op while closed, so it is safe to call unconditionally.
+// RefreshCompletion re-queries the provider at the cursor if the popup is
+// open, for a caller whose backing data arrived asynchronously and wants an
+// open "Loading..." placeholder replaced before the next keystroke. No-op
+// while closed, so it is safe to call unconditionally.
 func (e *Editor) RefreshCompletion() {
 	if e.completionOpen {
 		e.updateCompletion()
@@ -91,10 +122,26 @@ func (e *Editor) closeCompletion() {
 	e.completionSbDragging = false
 }
 
-// updateCompletion re-queries the provider at the current cursor position and
-// opens, refreshes or closes the popup to match. Called after every key that
-// reached Editor's normal handling, so typing, deleting and cursor movement keep
-// the popup in sync without per-key special-casing.
+// completionRequest packages the cursor position and the buffer's current
+// revision for a provider call. Both call sites go through it so they cannot
+// disagree about which revision the lines belong to.
+func (e *Editor) completionRequest() CompletionRequest {
+	return CompletionRequest{
+		Lines: e.doc.all(),
+		Row:   e.cursorRow,
+		Col:   e.cursorCol,
+		Text: TextRevision{
+			Doc:       e.doc,
+			Version:   e.doc.Version(),
+			DirtyFrom: e.doc.dirtyFrom,
+		},
+	}
+}
+
+// updateCompletion re-queries the provider at the cursor and opens, refreshes
+// or closes the popup to match. Called after every key that reached Editor's
+// normal handling, so typing, deleting and cursor movement keep the popup in
+// sync without per-key special-casing.
 func (e *Editor) updateCompletion() {
 	if e.completionProvider == nil || e.readOnly {
 		return
@@ -106,7 +153,7 @@ func (e *Editor) updateCompletion() {
 			return
 		}
 	}
-	items, from := e.completionProvider(e.doc.all(), e.cursorRow, e.cursorCol)
+	items, from := e.completionProvider(e.completionRequest())
 	if len(items) == 0 {
 		e.closeCompletion()
 		return
@@ -123,19 +170,18 @@ func (e *Editor) updateCompletion() {
 	e.ensureCompletionVisible()
 }
 
-// canAutoOpenCompletion reports whether the text left of the cursor is the
-// beginning of a word being typed — the gate HandleKey applies, with typedChar,
-// before a typed character opens the popup from closed. The fragment touching
-// the cursor must start with a letter, or follow one of the sigils a name can
-// open with: '[' for a quoted identifier, '#' or '@' for a name a host's
-// provider may bind (a temp table or a variable). Each of those also opens the
-// popup on its own, since the name it introduces has no other first keystroke.
-// A space, a '.', a digit starting a numeric literal or an empty line never
-// auto-opens it; Ctrl+Space always can.
+// canAutoOpenCompletion reports whether the text left of the cursor begins a
+// word being typed — the gate HandleKey applies, with typedChar, before a typed
+// character opens the popup from closed. The fragment touching the cursor must
+// start with a letter or one of the sigils a name can open with: '[' for a
+// quoted identifier, '#' or '@' for a name a host's provider may bind. Each
+// sigil also opens the popup on its own, since the name it introduces has no
+// other first keystroke. A space, a '.', a digit starting a numeric literal or
+// an empty line never auto-opens it; Ctrl+Space always can.
 //
-// What a sigil means is entirely the provider's business — this only decides
-// that a name may be starting, and a provider with nothing to offer closes the
-// popup again on the same keystroke.
+// What a sigil means is the provider's business — this only decides that a name
+// may be starting, and a provider with nothing to offer closes the popup again
+// on the same keystroke.
 func (e *Editor) canAutoOpenCompletion() bool {
 	if e.cursorRow >= e.doc.Len() || e.cursorCol <= 0 {
 		return false
@@ -160,7 +206,7 @@ func isNameSigil(r rune) bool { return r == '[' || r == '#' || r == '@' }
 
 // currentTokenStart returns the column where the identifier touching the cursor
 // begins — used only to recognise that the cursor is still on the token Escape
-// was pressed at. A commit's replace span always comes from the provider.
+// was pressed at. A commit's replace span comes from the provider.
 func (e *Editor) currentTokenStart() int {
 	if e.cursorRow >= e.doc.Len() {
 		return e.cursorCol
@@ -173,15 +219,15 @@ func (e *Editor) currentTokenStart() int {
 	return i
 }
 
-// triggerCompletionExplicit is Ctrl+Space: query immediately and, if exactly one
-// real candidate matches, commit it instead of opening the popup — SSMS's
+// triggerCompletionExplicit is Ctrl+Space: query immediately and, if exactly
+// one real candidate matches, commit it instead of opening the popup — SSMS's
 // "complete word" behaviour.
 func (e *Editor) triggerCompletionExplicit() {
 	if e.completionProvider == nil || e.readOnly {
 		return
 	}
 	e.completionSuppressed = false
-	items, from := e.completionProvider(e.doc.all(), e.cursorRow, e.cursorCol)
+	items, from := e.completionProvider(e.completionRequest())
 	real := 0
 	realIdx := -1
 	for i, it := range items {
@@ -209,8 +255,8 @@ func (e *Editor) triggerCompletionExplicit() {
 }
 
 // firstSelectableCompletion scans completionItems from start in direction dir
-// for the first non-Placeholder row, wrapping once. Returns start unchanged when
-// every item is a placeholder.
+// for the first non-Placeholder row, wrapping once. Returns start unchanged
+// when every item is a placeholder.
 func (e *Editor) firstSelectableCompletion(start, dir int) int {
 	n := len(e.completionItems)
 	if n == 0 {
@@ -281,9 +327,8 @@ func (e *Editor) dismissCompletion() {
 }
 
 // handleCompletionKey gives the open popup first refusal of a key: list
-// navigation, commit and dismiss are consumed here, and everything else falls
-// through to HandleKey's normal processing, which calls updateCompletion
-// afterwards.
+// navigation, commit and dismiss are consumed here; everything else falls
+// through to HandleKey's normal processing, which calls updateCompletion after.
 func (e *Editor) handleCompletionKey(ev *tcell.EventKey) bool {
 	// A modified key is never popup navigation: Ctrl+Up/Down resize the host's
 	// panels, Ctrl+Shift+Up/Down move lines, Shift+arrows extend a selection.
@@ -363,8 +408,8 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 	}
 
 	// Scrollbar drag/click takes priority over the item hit-testing below: the
-	// bar is drawn over the rightmost popup column, which would otherwise read as
-	// a click on whatever item sits in that row.
+	// bar is drawn over the rightmost popup column, which would otherwise read
+	// as a click on whatever item sits in that row.
 	if core.HandleScrollbarDrag(ev, rect.Right()-1, rect.Y, rect.H, len(e.completionItems), &e.completionSbDragging, &e.completionScroll) {
 		return true
 	}
@@ -417,7 +462,7 @@ func (e *Editor) handleCompletionMouse(ev *tcell.EventMouse) bool {
 // ---------------------------------------------------------------------------
 
 // completionColumnWidths computes the label and detail column widths for the
-// current completionItems, shared by completionRect and DrawOverlay so the two
+// current completionItems, shared by completionRect and DrawOverlay so they
 // can't disagree about how much space detail got.
 func (e *Editor) completionColumnWidths() (labelW, detailW int) {
 	for _, it := range e.completionItems {
@@ -454,8 +499,8 @@ func (e *Editor) completionRect() core.Rect {
 	contentX := e.rect.X + e.gutterWidth()
 	x := contentX + (e.completionFrom - e.scrollCol)
 	// Keep the popup horizontally inside the editor's rect: a token start
-	// scrolled off to the left, or near the right edge, must not put it over the
-	// gutter or off-screen.
+	// scrolled off to the left, or near the right edge, must not put it over
+	// the gutter or off-screen.
 	x = max(e.rect.X, min(x, e.rect.Right()-w))
 	y := e.cursorRow - e.scrollRow + e.rect.Y + 1
 

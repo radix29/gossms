@@ -20,9 +20,9 @@ const (
 	TokenComma
 	TokenParenOpen
 	TokenParenClose
-	// TokenStar is '*'. It is a token only because the select-list parser
-	// needs to tell "SELECT *" and "SELECT a.*" from a named column; nothing
-	// else reads it, and every other operator is still dropped.
+	// TokenStar is '*'. A token only because the select-list parser must tell
+	// "SELECT *" and "SELECT a.*" from a named column; every other operator
+	// is dropped.
 	TokenStar
 )
 
@@ -45,14 +45,13 @@ const (
 
 // FlattenLinesInto joins a multi-line buffer into one rune slice with '\n'
 // separators, so the tokenizer scans linearly without juggling (row, col)
-// pairs — a comment or string literal spanning several lines then falls out of
-// the same state machine.
+// pairs — a multi-line comment or string literal then falls out of the same
+// state machine.
 //
-// It reuses dst's capacity when big enough and sizes a fresh allocation up front
-// otherwise. Both matter: this runs on every keystroke while the completion
-// popup is open, so callers keep dst across keystrokes to stop a large script
-// copying itself each time, and growing a nil slice re-copies the whole buffer
-// a dozen times over.
+// It reuses dst's capacity when big enough and sizes a fresh allocation up
+// front otherwise. This runs on every keystroke while the completion popup is
+// open: callers keep dst across keystrokes so a large script does not copy
+// itself each time, and growing a nil slice re-copies the buffer a dozen times.
 //
 // The result borrows dst, so it is valid only until the next call with the same
 // dst — every consumer copies what it keeps (a Token holds a string).
@@ -91,8 +90,8 @@ func OffsetForCursor(lines [][]rune, row, col int) int {
 }
 
 // TokenizeRange scans buf[from:upTo] into a token stream, always starting in
-// LexNormal state — valid from the buffer start and when resumed at the cursor,
-// since callers resume there only after confirming the state is LexNormal.
+// LexNormal state — valid from the buffer start, and at the cursor because
+// callers resume there only after confirming that state.
 //
 // The second return is the lexer's state on reaching upTo: LexBracket means
 // upTo sits inside an unterminated bracket identifier, which the completion
@@ -110,29 +109,28 @@ func OffsetForCursor(lines [][]rune, row, col int) int {
 //     and the third return is that ';'s offset, or upTo if none.
 //
 // The fourth return is the offset of the opening '[' or '"' when the final
-// state is LexBracket/LexDoubleQuote — how the completion provider finds where
-// an unterminated bracket identifier's replace span starts. Meaningless in
-// every other final state.
+// state is LexBracket/LexDoubleQuote — where an unterminated bracket
+// identifier's replace span starts. Meaningless in every other final state.
 func TokenizeRange(buf []rune, from, upTo int, stopAtSemicolon bool) ([]Token, LexState, int, int) {
 	return TokenizeRangeFrom(buf, from, upTo, stopAtSemicolon, LexNormal)
 }
 
 // TokenizeRangeFrom is TokenizeRange with an explicit starting lexer state, for
-// resuming a scan at an offset whose state a previous pass established. Every
-// caller passes LexNormal — ScanPrefix resumes only at a normal-state batch
-// boundary — but the parameter makes that a stated precondition.
+// resuming at an offset whose state a previous pass established. Every caller
+// passes LexNormal — ScanPrefix resumes only at a normal-state batch boundary —
+// but the parameter makes that precondition explicit.
 func TokenizeRangeFrom(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState) ([]Token, LexState, int, int) {
-	// Roughly one token per 8 runes of SQL, so the append loop stops re-copying
-	// a large script's token stream on every keystroke. An estimate only.
+	// Estimate: roughly one token per 8 runes of SQL, so the append loop stops
+	// re-copying a large script's token stream on every keystroke.
 	tokens := make([]Token, 0, (upTo-from)/8+16)
-	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{})
+	r := lexSQL(buf, from, upTo, stopAtSemicolon, initial, &tokens, goScan{}, nil)
 	return tokens, r.state, r.boundary, r.quoteStart
 }
 
 // goScan bounds which lines lexSQL considers candidate "GO" batch separators:
 // only one whose first rune sits in [lo, hi). The zero value disables GO
 // detection, which a tokens-only scan passes. The bound keeps the cursor's own
-// row out of the prefix scan and rows at or above it out of the forward scan.
+// row out of the prefix scan, and rows at or above it out of the forward scan.
 type goScan struct{ lo, hi int }
 
 func (g goScan) enabled() bool         { return g.hi > g.lo }
@@ -150,8 +148,8 @@ type lexResult struct {
 	quoteStart int
 	// firstGo is the offset of the first bare "GO" separator line inside the
 	// scan's goScan bounds, or -1 if none. lastGo is the offset of the line
-	// *after* the last such line, or 0 if none — the batch boundary each
-	// establishes, from the two directions the callers need.
+	// *after* the last such line, or 0 if none — the same batch boundary from
+	// the two directions callers need.
 	firstGo int
 	lastGo  int
 }
@@ -161,14 +159,22 @@ type lexResult struct {
 // tokens, when non-nil, receives a token per identifier/keyword/punctuation.
 // nil lexes without materialising anything, which is what the prefix pass
 // wants: identifier tokens are a scan's only allocating part, and a pass that
-// exists purely to locate the current statement discards all of them.
+// only locates the current statement discards all of them.
 //
-// gs, when enabled, also makes this where bare "GO" batch separators are
-// recognised. That has to happen inside the state machine, not in a separate
-// textual pass: a "GO" alone on a line inside a block comment, a string literal
-// or a bracketed identifier is not a separator, and treating it as one scopes
-// completion to the wrong statement.
-func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan) lexResult {
+// gs, when enabled, makes this where bare "GO" batch separators are recognised.
+// That must happen inside the state machine, not in a separate textual pass: a
+// "GO" alone on a line inside a block comment, a string literal or a bracketed
+// identifier is not a separator, and treating it as one scopes completion to
+// the wrong statement.
+//
+// onBoundary, when non-nil, is called once per batch boundary the walk crosses,
+// in ascending offset order, with the offset a scan may resume at in LexNormal
+// state and whether a "GO" separator line established it rather than a
+// top-level ';'. lexResult keeps only the last of each, all a cold scan needs;
+// the sink is how PrefixCache collects the rest, so it can restart a later scan
+// from the last boundary below an edit. One call per statement, so it costs
+// nothing measurable.
+func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan, onBoundary func(off int, isGo bool)) lexResult {
 	state := initial
 	quoteStart := 0
 	semiStart := from
@@ -187,6 +193,9 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 			firstGo = start
 		}
 		lastGo = next
+		if onBoundary != nil {
+			onBoundary(next, true)
+		}
 	}
 	if from == 0 || (from > 0 && buf[from-1] == '\n') {
 		noteGoLine(from)
@@ -204,8 +213,8 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 	}
 	// emitIdent takes slice bounds rather than a finished Token so the string
 	// conversion happens only for a token actually kept: as an argument,
-	// string(buf[lo:hi]) is evaluated before emit can decline it, allocating a
-	// string per identifier even on a tokens == nil pass.
+	// string(buf[lo:hi]) would be evaluated before emit could decline it,
+	// allocating per identifier even on a tokens == nil pass.
 	emitIdent := func(start, lo, hi int) {
 		if keep(start) {
 			*tokens = append(*tokens, Token{Kind: TokenIdent, Text: string(buf[lo:hi]), Start: start})
@@ -311,20 +320,22 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 				return lexResult{state, i, quoteStart, firstGo, lastGo}
 			}
 			semiStart = i + 1
+			if onBoundary != nil {
+				onBoundary(semiStart, false)
+			}
 			i++
 		case c == '#' || c == '@':
 			// A temp table (#t, ##t), a variable or table variable (@t), or a
 			// built-in global (@@ROWCOUNT): the sigil is part of the name, not
-			// punctuation before it. Dropping it made "FROM #Orders" read as a
-			// reference to a catalog table named Orders and offer its columns,
-			// and left "@t" and a real table t indistinguishable.
+			// punctuation before it. Drop it and "FROM #Orders" reads as the
+			// catalog table Orders and offers its columns, and "@t" and a real
+			// table t become indistinguishable.
 			//
 			// One or two sigil runes — the run must be uniform, "#@x" being no
 			// name at all — then however many word runes follow. The sigil
-			// alone is a token too, with nothing after it: that is what the
-			// cursor sits on at the first keystroke of "#t", and without it
-			// the completion popup would see no prefix and commit its choice
-			// after the sigil rather than over it.
+			// alone is a token too: that is what the cursor sits on at the
+			// first keystroke of "#t", and without it the popup would see no
+			// prefix and commit after the sigil rather than over it.
 			start := i
 			i++
 			if i < upTo && buf[i] == c {
@@ -341,8 +352,8 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 				i++
 			}
 			// Classification is pure and unused when nothing is collected, so a
-			// non-collecting pass skips it — the hottest branch in the scan, hit
-			// once per word of the whole prefix.
+			// non-collecting pass skips it — the hottest branch in the scan,
+			// hit once per word of the whole prefix.
 			if !keep(start) {
 				break
 			}
@@ -368,12 +379,12 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 	return lexResult{state, semiStart, quoteStart, firstGo, lastGo}
 }
 
-// StatementEndOffset finds where the statement containing the cursor ends — the
+// StatementEndOffset finds where the statement containing the cursor ends: the
 // next top-level ';' at or after upTo, the start of the next bare "GO" line
 // after cursorRow, or len(buf), whichever comes first. With ScanPrefix's batch
-// start, this lets FROM-scope and clause analysis see the whole statement
-// wherever in it the cursor sits: a table named in "SELECT | FROM Customers c"
-// resolves the same as one typed above the cursor.
+// start, FROM-scope and clause analysis see the whole statement wherever in it
+// the cursor sits — a table named in "SELECT | FROM Customers c" resolves the
+// same as one typed above the cursor.
 //
 // Both boundaries come out of one lexer pass, so a ';' or "GO" inside a comment
 // or a literal ends nothing.
@@ -382,7 +393,7 @@ func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 	// confirming the lexer is in LexNormal there. Only rows strictly below the
 	// cursor's own can end its statement.
 	r := lexSQL(buf, upTo, len(buf), true, LexNormal, nil,
-		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil)
 	end := r.boundary
 	if r.firstGo >= 0 && r.firstGo < end {
 		end = r.firstGo
@@ -396,11 +407,10 @@ func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 //
 // A separator is optional leading whitespace, "GO" (case-insensitive, and not
 // the head of a longer word like "goto" or "gone"), then only whitespace, an
-// optional repeat count, and/or a trailing line comment. This is the same rule
-// as controls.isGoSeparatorLine, which is what the editor selects and executes
-// statements by; the two are duplicated because tuikit must not import tui, and
-// TestGoSeparatorLineCases in each package pins the same list of lines so a
-// change to one shows up as a failure in the other.
+// optional repeat count, and/or a trailing line comment. Same rule as
+// controls.isGoSeparatorLine, which the editor selects and executes statements
+// by; duplicated because tuikit must not import tui, and TestGoSeparatorLineCases
+// in each package pins the same lines so a change to one fails in the other.
 //
 // The scan bails on the first rune that can't be part of a separator, so an
 // ordinary line costs a rune or two rather than a walk to its end: this runs
@@ -455,7 +465,7 @@ type PrefixScan struct {
 	// the later of this and the last top-level ';'. Only the batch scan for
 	// temp-table and table-variable declarations reads it (see ScanBindings) —
 	// a declaration is a different statement from the one using it, so the
-	// ';' half of BatchStart is exactly the boundary it must not stop at.
+	// ';' half of BatchStart is the boundary it must not stop at.
 	GoStart int
 }
 
@@ -463,22 +473,28 @@ type PrefixScan struct {
 // statement alone.
 //
 // Two passes, because the whole prefix must be lexed to know where the current
-// statement starts — an unterminated block comment thousands of lines up changes
-// the answer — while only the current statement's tokens are read. The first
-// pass therefore lexes with tokens off, the expensive half: materialising an
-// identifier allocates a string, and on a large script the discarded tokens
-// outnumber the kept ones by orders of magnitude.
+// statement starts — an unterminated block comment thousands of lines up
+// changes the answer — while only that statement's tokens are read. The first
+// pass lexes with tokens off, the expensive half: materialising an identifier
+// allocates a string, and on a large script the discarded tokens outnumber the
+// kept ones by orders of magnitude.
+//
+// **The completion provider does not call this — it calls PrefixCache.Scan**
+// (prefix_cache.go), which answers the same question incrementally, because
+// this first pass is O(script) on the UI goroutine per keystroke. This stays as
+// the reference implementation the cache is differentially tested against after
+// every edit; removing it would leave prefix_cache_test.go nothing to check.
 func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 	// Only "GO" lines strictly above the cursor's row separate the statement
 	// the cursor is in — hence the bound at that row's start.
 	r := lexSQL(buf, 0, upTo, false, LexNormal, nil,
-		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)})
+		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)}, nil)
 
 	// The statement starts at whichever boundary is later: past the last
 	// top-level ';', or the line after the last real "GO". The second pass
 	// resumes in LexNormal unconditionally because both are normal-state
-	// positions by construction — the lexer recognises either only there, and a
-	// separator line carries nothing that could still be open past it.
+	// positions — the lexer recognises either only there, and a separator line
+	// leaves nothing open past it.
 	batchStart := max(r.boundary, r.lastGo)
 	tokens, _, _, _ := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
 	return PrefixScan{
@@ -493,12 +509,11 @@ func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 // BatchEndOffset is where the cursor's GO-delimited batch ends: the start of
 // the next bare "GO" line below the cursor's own row, or len(buf).
 // StatementEndOffset's counterpart for the wider span ScanBindings needs, and
-// deliberately not stopped by a ';' — the declaration of a temp table is a
-// statement of its own, and every statement after it in the batch still sees
-// the name.
+// deliberately not stopped by a ';' — a temp table's declaration is a statement
+// of its own, and every later statement in the batch still sees the name.
 func BatchEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 	r := lexSQL(buf, upTo, len(buf), false, LexNormal, nil,
-		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)}, nil)
 	if r.firstGo >= 0 {
 		return r.firstGo
 	}
@@ -523,7 +538,7 @@ const maxSQLKeywordLen = 24
 
 // sqlKeywordCanon maps each keyword from sqlKeywordList to itself: handing back
 // the map's own key lets a keyword token carry a canonical string without
-// allocating one. IsKeyword reads the same map.
+// allocating. IsKeyword reads the same map.
 var sqlKeywordCanon = func() map[string]string {
 	m := make(map[string]string, len(sqlKeywordList))
 	for _, k := range sqlKeywordList {
@@ -540,9 +555,8 @@ func IsKeyword(upper string) bool {
 
 // sqlKeywordCanonical reports whether buf[start:end] is a SQL keyword and, if
 // so, returns its canonical uppercase spelling without allocating. The word is
-// ASCII-uppercased into a stack array for the lookup (Go compiles a map index on
-// string(byteSlice) without copying), and the returned string is the table's own
-// key.
+// ASCII-uppercased into a stack array for the lookup (Go compiles a map index
+// on string(byteSlice) without copying), and the result is the table's own key.
 //
 // Anything longer than the longest keyword, or holding a non-ASCII rune, is
 // rejected outright: neither can match, and skipping them keeps the array small

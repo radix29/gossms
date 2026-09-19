@@ -11,10 +11,9 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
 
-// linesAndCursor splits s (which must contain exactly one '|' cursor
-// marker) into Editor-shaped [][]rune lines plus the (row, col) the marker
-// occupied, so a completion test can be written as one readable string
-// instead of assembling lines and coordinates by hand.
+// linesAndCursor splits s (which must contain exactly one '|' cursor marker)
+// into Editor-shaped [][]rune lines plus the (row, col) the marker occupied,
+// so a completion test can be written as one readable string.
 func linesAndCursor(t *testing.T, s string) (lines [][]rune, row, col int) {
 	t.Helper()
 	marker := strings.IndexByte(s, '|')
@@ -61,10 +60,10 @@ func newTestQueryPanelWithInventory(t *testing.T, database string, objects []gos
 	key := completionInventoryKey(sc.Opts, database)
 	a.completionInventories = map[string]*completionInventory{key: newCompletionInventory(cat)}
 
-	// Seed an already-loaded (empty) sys-schema inventory too — like the
+	// Seed an already-loaded (empty) sys-schema inventory too: like the
 	// per-database one above, this keeps ensureSysCompletionInventory from
-	// finding its key absent and starting a real background load against
-	// the fake connection's nil gosmo.Server, which would panic.
+	// finding its key absent and starting a real background load against the
+	// fake connection's nil gosmo.Server, which would panic.
 	sysKey := sysCompletionInventoryKey(sc.Opts)
 	a.sysCompletionInventories = map[string]*completionInventory{sysKey: newCompletionInventory(&gosmo.Catalog{})}
 	return qp
@@ -107,6 +106,15 @@ func labels(items []controls.CompletionItem) []string {
 	return out
 }
 
+// completionReq packages a test's (lines, row, col) the way Editor packages a
+// real one. Text is left zero: these tests drive the provider directly, so
+// there is no document to identify, and a zero TextRevision is the "cannot
+// justify a resume" case — the provider answers from a full scan, which is
+// what every expectation here is written against.
+func completionReq(lines [][]rune, row, col int) controls.CompletionRequest {
+	return controls.CompletionRequest{Lines: lines, Row: row, Col: col}
+}
+
 func containsLabel(items []controls.CompletionItem, label string) bool {
 	for _, it := range items {
 		if it.Label == label {
@@ -120,7 +128,7 @@ func TestSQLCompletionAfterFromOffersSchemasTablesViews(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if from != col {
 		t.Errorf("replaceFrom = %d, want %d (nothing typed yet)", from, col)
 	}
@@ -135,7 +143,7 @@ func TestSQLCompletionAfterSchemaDotOffersSchemaMembers(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	wantFrom := len([]rune("SELECT * FROM dbo."))
 	if from != wantFrom {
 		t.Errorf("replaceFrom = %d, want %d", from, wantFrom)
@@ -154,7 +162,7 @@ func TestSQLCompletionAliasDotWithASOffersColumns(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers AS c WHERE c.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"Id", "Name", "Email"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing column %q", labels(items), want)
@@ -169,7 +177,7 @@ func TestSQLCompletionAliasDotWithoutASOffersColumns(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers c WHERE c.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Name") {
 		t.Errorf("items %v missing Name (bare alias without AS)", labels(items))
 	}
@@ -179,7 +187,7 @@ func TestSQLCompletionUnqualifiedTableNameAsAlias(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers WHERE Customers.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Email") {
 		t.Errorf("items %v missing Email (table's own name used as qualifier)", labels(items))
 	}
@@ -189,7 +197,7 @@ func TestSQLCompletionSuppressedInsideStringLiteral(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers WHERE Name = 'foo|bar'")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none inside a string literal", labels(items))
 	}
@@ -199,7 +207,7 @@ func TestSQLCompletionSuppressedInsideLineComment(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers -- note foo|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none inside a line comment", labels(items))
 	}
@@ -209,7 +217,7 @@ func TestSQLCompletionSuppressedInsideBlockComment(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.Customers /* foo|bar */")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none inside a block comment", labels(items))
 	}
@@ -219,7 +227,7 @@ func TestSQLCompletionColumnContextFallsBackToObjectListWhenNothingInScope(t *te
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Customers") {
 		t.Errorf("items %v want the object list when no FROM has been typed yet", labels(items))
 	}
@@ -230,7 +238,7 @@ func TestSQLCompletionJoinUnionsColumnsAndOffersQualifiers(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM dbo.Customers c JOIN dbo.Orders o ON c.Id = o.CustomerId WHERE |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"c", "o", "Name", "CustomerId", "Total"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -251,7 +259,7 @@ func TestSQLCompletionUnresolvedQualifierReturnsNothing(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT zz.| FROM dbo.Customers c")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none for an unresolvable qualifier", labels(items))
 	}
@@ -262,7 +270,7 @@ func TestSQLCompletionStatementScopedBySemicolon(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM dbo.Orders AS o WHERE o.Id = 1;\nSELECT o.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none — alias %q from an earlier ';'-separated statement must not leak forward", labels(items), "o")
 	}
@@ -273,18 +281,17 @@ func TestSQLCompletionStatementScopedByGoBatchSeparator(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM dbo.Orders AS o\nGO\nSELECT o.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none — alias %q from an earlier GO-separated batch must not leak forward", labels(items), "o")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// DML-keyword statement boundaries: multiple statements stacked in the
-// editor with no ';' between them (SSMS never requires one) must not bleed
-// FROM-scope into each other, but legitimate multi-clause constructs that
-// share one real statement (UNION, CTEs, INSERT...SELECT) must not be
-// split apart either.
+// DML-keyword statement boundaries: statements stacked with no ';' between
+// them (SSMS never requires one) must not bleed FROM-scope into each other,
+// while multi-clause constructs sharing one real statement (UNION, CTEs,
+// INSERT...SELECT) must not be split apart.
 // ---------------------------------------------------------------------------
 
 func TestSQLCompletionNoSemicolonBetweenStatementsDoesNotLeak(t *testing.T) {
@@ -292,7 +299,7 @@ func TestSQLCompletionNoSemicolonBetweenStatementsDoesNotLeak(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM dbo.Customers\nSELECT * FROM dbo.Orders\nSELECT |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if containsLabel(items, "Name") || containsLabel(items, "Total") {
 		t.Errorf("items %v should not pick up columns from unrelated statements stacked above with no ';'", labels(items))
 	}
@@ -308,7 +315,7 @@ func TestSQLCompletionNoSemicolonBetweenStatementsBackward(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM dbo.Customers c\nSELECT o.|\nFROM dbo.Orders o")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Total") {
 		t.Errorf("items %v missing Orders.Total — this statement's own alias must resolve", labels(items))
 	}
@@ -322,18 +329,17 @@ func TestSQLCompletionUnionedSelectsShareOneStatement(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT Id FROM dbo.Customers\nUNION\nSELECT |\nFROM dbo.Orders")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Id") {
 		t.Errorf("items %v missing Id — a UNION'd SELECT is the same statement, not a new one", labels(items))
 	}
 }
 
-// CTE alias resolution itself ("FROM cte c" -> cte's columns) is out of
-// scope (see the package doc comment) since "cte" isn't a real catalog
-// object, so this checks sqlparse.DMLStatementStarts directly instead of round-
-// tripping through sqlCompletionCandidates: WITH's own main SELECT
-// (after its parenthesized CTE body closes) must not itself be flagged as
-// a second, separate statement.
+// CTE alias resolution itself ("FROM cte c" -> cte's columns) is out of scope
+// (see the package doc comment) since "cte" isn't a real catalog object, so
+// this checks sqlparse.DMLStatementStarts directly rather than round-tripping
+// through sqlCompletionCandidates: WITH's main SELECT, after its parenthesized
+// CTE body closes, must not be flagged as a second statement.
 func TestDMLStatementStartsWithClauseMainSelectNotSplit(t *testing.T) {
 	buf := []rune("WITH cte AS (SELECT Id FROM dbo.Customers) SELECT * FROM cte")
 	tokens, _, _, _ := sqlparse.TokenizeRange(buf, 0, len(buf), false)
@@ -380,7 +386,7 @@ func TestSQLCompletionInsertSelectSharesOneStatement(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", objects)
 	lines, row, col := linesAndCursor(t, "INSERT INTO dbo.Archive\nSELECT |\nFROM dbo.Source")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "SrcId") {
 		t.Errorf("items %v missing SrcId — INSERT...SELECT is one statement, not two", labels(items))
 	}
@@ -397,23 +403,23 @@ func TestSQLCompletionInsertValuesThenNewStatement(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"INSERT INTO dbo.Archive VALUES (1)\nSELECT s.|\nFROM dbo.Source s")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "SrcId") {
 		t.Errorf("items %v missing SrcId — this SELECT's own alias must resolve", labels(items))
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Whole-statement FROM-scope: a table/alias typed after the cursor (e.g.
-// "SELECT | FROM Customers c", the common order of writing a query in SSMS)
-// must resolve just as well as one already typed above the cursor.
+// Whole-statement FROM-scope: a table/alias typed after the cursor ("SELECT |
+// FROM Customers c", the usual order of writing a query) must resolve as well
+// as one typed above the cursor.
 // ---------------------------------------------------------------------------
 
 func TestSQLCompletionColumnContextWhenFromTypedAfterCursor(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT |\nFROM dbo.Customers c")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"Id", "Name", "Email", "c"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -428,7 +434,7 @@ func TestSQLCompletionAliasDotResolvesWhenFromTypedAfterCursor(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT c.|\nFROM dbo.Customers c")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Name") {
 		t.Errorf("items %v missing Name — alias %q defined later in the statement should still resolve", labels(items), "c")
 	}
@@ -439,7 +445,7 @@ func TestSQLCompletionForwardScanStopsAtSemicolon(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT o.| FROM dbo.Customers o;\nSELECT * FROM dbo.Orders o")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Email") {
 		t.Errorf("items %v missing Customers' Email — alias %q should resolve within this statement", labels(items), "o")
 	}
@@ -453,7 +459,7 @@ func TestSQLCompletionForwardScanStopsAtGoBatchSeparator(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT o.|\nGO\nSELECT * FROM dbo.Orders o")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none — alias %q from a later GO-separated batch must not resolve either", labels(items), "o")
 	}
@@ -462,16 +468,16 @@ func TestSQLCompletionForwardScanStopsAtGoBatchSeparator(t *testing.T) {
 // ---------------------------------------------------------------------------
 // replaceFrom is a column on the cursor's row. The provider tokenizes a
 // flattened whole-buffer copy, but the Editor contract replaces
-// [replaceFrom, col) on the cursor's own row and anchors the popup at it —
-// returning buffer offsets instead makes a commit append, and the popup
-// draw far right of the cursor, on any row after the first.
+// [replaceFrom, col) on the cursor's own row and anchors the popup there —
+// returning buffer offsets makes a commit append, and the popup draw far right
+// of the cursor, on any row after the first.
 // ---------------------------------------------------------------------------
 
 func TestSQLCompletionReplaceFromIsCursorRowColumnOnLaterRows(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "-- patients query\nSELECT * FROM Cus|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Customers") {
 		t.Fatalf("items %v missing dbo.Customers", labels(items))
 	}
@@ -484,7 +490,7 @@ func TestSQLCompletionAliasDotColumnOnLaterRow(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT *\nFROM dbo.Customers c\nWHERE c.Na|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Name") {
 		t.Fatalf("items %v missing Name", labels(items))
 	}
@@ -497,7 +503,7 @@ func TestSQLCompletionKeywordCollidingPrefixStillReplaces(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM OR|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Orders") {
 		t.Fatalf("items %v missing dbo.Orders for prefix \"OR\"", labels(items))
 	}
@@ -515,7 +521,7 @@ func TestSQLCompletionInsideOpenBracketIdentifier(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM [Cus|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Customers") {
 		t.Fatalf("items %v missing dbo.Customers for open-bracket prefix", labels(items))
 	}
@@ -528,7 +534,7 @@ func TestSQLCompletionQualifiedOpenBracket(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT * FROM dbo.[Ord|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Orders") {
 		t.Fatalf("items %v missing dbo.Orders after \"dbo.[Ord\"", labels(items))
 	}
@@ -545,7 +551,7 @@ func TestSQLCompletionOpenBracketNameWithSpace(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", objects)
 	lines, row, col := linesAndCursor(t, "SELECT * FROM [Order De|")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "dbo.Order Details") {
 		t.Fatalf("items %v missing dbo.Order Details", labels(items))
 	}
@@ -563,7 +569,7 @@ func TestSQLCompletionOpenBracketColumnContextScansForwardPastBracket(t *testing
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT [N|] FROM dbo.Customers c")
 
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Name") {
 		t.Fatalf("items %v missing Name — FROM after the open bracket must still resolve", labels(items))
 	}
@@ -601,7 +607,7 @@ func TestSQLCompletionSysSchemaDotOffersSystemCatalogViews(t *testing.T) {
 	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM sys.|")
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"sys.objects", "sys.columns"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -623,7 +629,7 @@ func TestSQLCompletionSysAllKeywordPrefixResolvesMembers(t *testing.T) {
 	// "all" lexes as the T-SQL keyword ALL — it must still behave as the
 	// member prefix being typed after "sys.".
 	lines, row, col := linesAndCursor(t, "SELECT * FROM sys.all|")
-	items, from := qp.sqlCompletionCandidates(lines, row, col)
+	items, from := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"sys.all_objects", "sys.all_columns"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -651,7 +657,7 @@ func TestSQLCompletionSysSchemaAliasColumnsResolve(t *testing.T) {
 	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT o.| FROM sys.objects o")
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"object_id", "name"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing sys.objects column %q", labels(items), want)
@@ -665,7 +671,7 @@ func TestSQLCompletionSysSchemaListedButObjectsNotUnqualified(t *testing.T) {
 	qp.app.sysCompletionInventories[sysKey] = newCompletionInventory(sysCatalogFixture())
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "sys") {
 		t.Errorf("items %v missing %q schema", labels(items), "sys")
 	}
@@ -680,7 +686,7 @@ func TestSQLCompletionSysSchemaLoadingShowsPlaceholder(t *testing.T) {
 	qp.app.sysCompletionInventories[sysKey] = &completionInventory{loading: true}
 
 	lines, row, col := linesAndCursor(t, "SELECT * FROM sys.|")
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 1 || !items[0].Placeholder {
 		t.Fatalf("items = %+v, want a single Placeholder row while the sys inventory is still loading", items)
 	}
@@ -691,7 +697,7 @@ func TestSQLCompletionNoConnectionReturnsNothing(t *testing.T) {
 	qp.conn = nil
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none without a connection", labels(items))
 	}
@@ -702,7 +708,7 @@ func TestSQLCompletionDisabledReturnsNothing(t *testing.T) {
 	qp.app.cfg.IntelliSenseDisabled = true
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 0 {
 		t.Errorf("items = %v, want none while IntelliSense is disabled", labels(items))
 	}
@@ -714,14 +720,14 @@ func TestSQLCompletionLoadingShowsPlaceholder(t *testing.T) {
 	sc := addTestConn(a, "testserver")
 	qp.conn = sc
 	qp.database = "testdb"
-	// Seed a still-loading entry directly — ensureCompletionInventory only
+	// Seed a still-loading entry directly: ensureCompletionInventory only
 	// starts a background load when the key is absent, and the fake
 	// connection's nil gosmo.Server would panic a real load goroutine.
 	key := completionInventoryKey(sc.Opts, qp.database)
 	a.completionInventories = map[string]*completionInventory{key: {loading: true}}
 	lines, row, col := linesAndCursor(t, "SELECT * FROM |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if len(items) != 1 || !items[0].Placeholder {
 		t.Fatalf("items = %+v, want a single Placeholder row while loading", items)
 	}
@@ -780,9 +786,9 @@ func TestTokenizeSQLPrefixReportsBracketStateAndStart(t *testing.T) {
 	}
 }
 
-// EXCEPT/INTERSECT are in sqlKeywords and UNION resets sqlparse.ParseFromScope's
-// expectRef, so "UNION SELECT Id FROM B" doesn't mis-parse the second
-// SELECT's own column ("Id") as a table reference.
+// EXCEPT/INTERSECT are in sqlKeywords and UNION resets
+// sqlparse.ParseFromScope's expectRef, so "UNION SELECT Id FROM B" doesn't
+// mis-parse the second SELECT's column ("Id") as a table reference.
 func TestParseFromScopeResetsAfterUnion(t *testing.T) {
 	buf := []rune("FROM A UNION SELECT Id FROM B")
 	tokens, _, _, _ := sqlparse.TokenizeRange(buf, 0, len(buf), false)
@@ -832,7 +838,7 @@ func TestSQLCompletionCTEColumnsInMainQuery(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM dbo.Customers)\nSELECT | FROM t1")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"Id", "Name", "Email"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -847,7 +853,7 @@ func TestSQLCompletionCTENameOfferedInFromPosition(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM dbo.Customers) SELECT * FROM t|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "t1") {
 		t.Fatalf("items %v missing the CTE name t1", labels(items))
 	}
@@ -860,7 +866,7 @@ func TestSQLCompletionCTEQualifierResolvesColumns(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT Id, Name FROM dbo.Customers) SELECT t1.| FROM t1")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if got, want := labels(items), []string{"Id", "Name"}; !slices.Equal(got, want) {
 		t.Errorf("items = %v, want %v", got, want)
 	}
@@ -871,7 +877,7 @@ func TestSQLCompletionChainedCTEColumns(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"WITH a AS (SELECT Id x FROM dbo.Customers),\n     b AS (SELECT x FROM a)\nSELECT | FROM b")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "x") {
 		t.Errorf("items %v missing the chained CTE column x", labels(items))
 	}
@@ -885,20 +891,20 @@ func TestSQLCompletionDerivedTableQualifierResolvesColumns(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT * FROM (SELECT Name, Email FROM dbo.Customers) d WHERE d.|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if got, want := labels(items), []string{"Email", "Name"}; !slices.Equal(got, want) {
 		t.Errorf("items = %v, want %v", got, want)
 	}
 }
 
 // Inside a CTE body the clause state is the body's own, not the outer
-// statement's — a FROM there offers tables, where the flat scan used to see
-// the enclosing SELECT's column context.
+// statement's — a FROM there offers tables, not the enclosing SELECT's column
+// context.
 func TestSQLCompletionInsideCTEBodyUsesItsOwnClause(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT * FROM |) SELECT * FROM t1")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"dbo", "dbo.Customers", "dbo.Orders"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -912,7 +918,7 @@ func TestSQLCompletionInsideCTEBodyScopesToItsOwnFrom(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT | FROM dbo.Orders) SELECT * FROM dbo.Customers")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "CustomerId") {
 		t.Errorf("items %v missing Orders' CustomerId", labels(items))
 	}
@@ -927,7 +933,7 @@ func TestSQLCompletionCTEExpressionColumnIsUntyped(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "WITH t1 AS (SELECT COUNT(*) n FROM dbo.Orders) SELECT | FROM t1")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if got, want := itemDetail(items, "n"), "column — t1"; got != want {
 		t.Errorf("detail for n = %q, want %q", got, want)
 	}
@@ -938,7 +944,7 @@ func TestSQLCompletionTableHintWithIsNotACTE(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "SELECT | FROM dbo.Customers WITH (NOLOCK)")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if !containsLabel(items, "Email") {
 		t.Errorf("items %v missing Customers' Email", labels(items))
 	}
@@ -953,7 +959,7 @@ func TestSQLCompletionOffersDeclaredTempTablesAndVariables(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"CREATE TABLE #staging (Id int)\nDECLARE @rows TABLE (Id int)\nSELECT * FROM |")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if got := itemDetail(items, "#staging"); got != "temp table" {
 		t.Errorf("#staging detail = %q, want %q (items %v)", got, "temp table", labels(items))
 	}
@@ -968,7 +974,7 @@ func TestSQLCompletionCommitsSigilNamesUnbracketed(t *testing.T) {
 	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
 	lines, row, col := linesAndCursor(t, "DECLARE @rows TABLE (Id int)\nSELECT * FROM @|")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, it := range items {
 		if it.Label == "@rows" {
 			if it.Text != "@rows" {
@@ -985,7 +991,7 @@ func TestSQLCompletionTempTableColumnsInScope(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"CREATE TABLE #staging (Ref int NOT NULL, Note nvarchar(50))\nSELECT | FROM #staging")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"Ref", "Note"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -1001,7 +1007,7 @@ func TestSQLCompletionTempTableMemberLookup(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"DECLARE @rows TABLE (Ref int)\nSELECT @rows.| FROM @rows")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if got := labels(items); len(got) != 1 || got[0] != "Ref" {
 		t.Errorf("items = %v, want [Ref]", got)
 	}
@@ -1015,7 +1021,7 @@ func TestSQLCompletionTempTableScopedToItsBatch(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"CREATE TABLE #Orders (Ref int)\nGO\nSELECT | FROM #Orders")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	if containsLabel(items, "Ref") {
 		t.Errorf("items %v offer a column from the previous batch's declaration", labels(items))
 	}
@@ -1029,7 +1035,7 @@ func TestSQLCompletionPivotOutputColumns(t *testing.T) {
 	lines, row, col := linesAndCursor(t,
 		"SELECT | FROM dbo.Orders PIVOT (SUM(Total) FOR CustomerId IN ([1], [2])) AS p")
 
-	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
 	for _, want := range []string{"1", "2", "Id"} {
 		if !containsLabel(items, want) {
 			t.Errorf("items %v missing %q", labels(items), want)
@@ -1038,6 +1044,101 @@ func TestSQLCompletionPivotOutputColumns(t *testing.T) {
 	for _, unwanted := range []string{"Total", "CustomerId"} {
 		if containsLabel(items, unwanted) {
 			t.Errorf("items %v still offer %q, which the pivot consumed", labels(items), unwanted)
+		}
+	}
+}
+
+// TestSQLCompletionPrefixCacheMatchesUncached pins the one call site that
+// hands req.Text to the panel's sqlparse.PrefixCache. Every other test here
+// passes a zero Text, the "cannot justify a resume" case, so without this one
+// nothing in the package exercises a warm cache and a mis-plumbed field (a
+// constant DirtyFrom, the wrong Version, a Doc shared across tabs) would go
+// unnoticed until it served a completion scoped to the wrong batch.
+//
+// It types a script rune by rune through one panel carrying a real revision,
+// and compares each answer against a fresh panel asked the same question with
+// no identity — the uncached path the rest of the file treats as the oracle.
+// The script is deliberately boundary-dense: the batches a stale boundary
+// would leak between are the whole risk.
+//
+// Mutation-checked on the Version field, the one that can serve a stale
+// answer. Dropping Doc or mis-setting DirtyFrom only *disables* the resume, so
+// no correctness test can catch either; the benchmarks pin those.
+func TestSQLCompletionPrefixCacheMatchesUncached(t *testing.T) {
+	const script = "SELECT * FROM dbo.Customers;\n" +
+		"GO\n" +
+		"CREATE TABLE #t (Ref int);\n" +
+		"SELECT c.Id FROM dbo.Customers AS c JOIN dbo.Orders AS o ON o.CustomerId = c.Id;\n" +
+		"GO\n" +
+		"SELECT t. FROM #t AS t"
+
+	warm := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	doc := new(int) // stands in for the editor's *Document — compared, never read
+
+	full := []rune(script)
+	var version uint64
+	for n := 1; n <= len(full); n++ {
+		text := string(full[:n])
+		parts := strings.Split(text, "\n")
+		lines := make([][]rune, len(parts))
+		for i, part := range parts {
+			lines[i] = []rune(part)
+		}
+		row := len(lines) - 1
+		col := len(lines[row])
+
+		// Typing a rune is one mutation on the row it lands in, which is what
+		// the editor reports; a newline dirties the row it opens.
+		version++
+		req := controls.CompletionRequest{Lines: lines, Row: row, Col: col}
+		req.Text = controls.TextRevision{Doc: doc, Version: version, DirtyFrom: row}
+
+		gotItems, gotFrom := warm.sqlCompletionCandidates(req)
+
+		cold := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		wantItems, wantFrom := cold.sqlCompletionCandidates(completionReq(lines, row, col))
+
+		if gotFrom != wantFrom || !slices.Equal(labels(gotItems), labels(wantItems)) {
+			t.Fatalf("after typing %d runes (%q):\n cached: from=%d %v\nuncached: from=%d %v",
+				n, text, gotFrom, labels(gotItems), wantFrom, labels(wantItems))
+		}
+	}
+
+	// Typing alone only appends, so every boundary the cache holds stays true
+	// and a cache ignoring the revision would pass. These edit the text *above*
+	// the cursor, the case the version and DirtyFrom checks exist for: each
+	// moves the batch the last line belongs to, so serving it from the previous
+	// scan's boundaries offers columns from the wrong batch.
+	edits := []struct {
+		name string
+		text string
+	}{
+		{"last go commented out", strings.Replace(script, "c.Id;\nGO", "c.Id;\n-- GO", 1)},
+		{"first go commented out", strings.Replace(script, "GO\nCREATE", "-- GO\nCREATE", 1)},
+		{"block comment opened", strings.Replace(script, "CREATE TABLE", "/* CREATE TABLE", 1)},
+		{"back to the original", script},
+	}
+	for _, e := range edits {
+		parts := strings.Split(e.text, "\n")
+		lines := make([][]rune, len(parts))
+		for i, part := range parts {
+			lines[i] = []rune(part)
+		}
+		row := len(lines) - 1
+		col := len(lines[row]) - len(" FROM #t AS t")
+
+		version++
+		req := controls.CompletionRequest{Lines: lines, Row: row, Col: col}
+		req.Text = controls.TextRevision{Doc: doc, Version: version, DirtyFrom: 1}
+
+		gotItems, gotFrom := warm.sqlCompletionCandidates(req)
+
+		cold := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+		wantItems, wantFrom := cold.sqlCompletionCandidates(completionReq(lines, row, col))
+
+		if gotFrom != wantFrom || !slices.Equal(labels(gotItems), labels(wantItems)) {
+			t.Errorf("%s:\n cached: from=%d %v\nuncached: from=%d %v",
+				e.name, gotFrom, labels(gotItems), wantFrom, labels(wantItems))
 		}
 	}
 }

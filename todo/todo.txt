@@ -41,7 +41,7 @@ review both projects and check for bugs, inconsistencies, optimizations, simplif
 
 show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
 
-optimize and compact calude.md , architecture.md, plan.md etc in both projects
+optimize and compact calude.md , architecture.md, etc in both projects
 
 go over the source files code comments and compact them. make them concise. throw unnecessary wording. do not keep history in comments only the actual state, unless necessary.
 
