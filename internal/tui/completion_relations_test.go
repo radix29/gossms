@@ -11,7 +11,12 @@ import (
 
 // resolveTestSQL parses sql — which must hold exactly one '|' cursor marker —
 // and resolves the cursor's own query's FROM refs against a catalog built from
-// objects, the same two steps the provider will make in step 5.
+// objects, the same steps the provider makes.
+//
+// The whole script is one batch here, so declarations are scanned over all of
+// it while the query tree sees only the cursor's own statement — the split the
+// provider makes with NarrowToDMLStatement, and the one that keeps a
+// declaration above the cursor out of its FROM scope.
 func resolveTestSQL(t *testing.T, sql string, objects []gosmo.CatalogObject) []relation {
 	t.Helper()
 	cursor := strings.Index(sql, "|")
@@ -19,8 +24,11 @@ func resolveTestSQL(t *testing.T, sql string, objects []gosmo.CatalogObject) []r
 		t.Fatalf("sql must hold exactly one '|' cursor marker: %q", sql)
 	}
 	buf := []rune(strings.Replace(sql, "|", "", 1))
+	upTo := len([]rune(sql[:cursor]))
 	tokens, _, _, _ := sqlparse.TokenizeRange(buf, 0, len(buf), false)
-	scope := sqlparse.ScopeAt(tokens, len([]rune(sql[:cursor])))
+	start, end := sqlparse.NarrowToDMLStatement(tokens, 0, len(buf), upTo)
+	stmtTokens, _, _, _ := sqlparse.TokenizeRange(buf, start, end, false)
+	scope := sqlparse.ScopeAt(stmtTokens, upTo)
 	if scope.Query == nil {
 		t.Fatalf("no query in scope for %q", sql)
 	}
@@ -32,7 +40,7 @@ func resolveTestSQL(t *testing.T, sql string, objects []gosmo.CatalogObject) []r
 			cat.Schemas = append(cat.Schemas, o.Schema)
 		}
 	}
-	rc := newResolveCtx(newCompletionInventory(cat), nil, scope.CTEs)
+	rc := newResolveCtx(newCompletionInventory(cat), nil, scope.CTEs, sqlparse.ScanBindings(tokens))
 	return resolveRefs(rc, scope.Query.From)
 }
 
@@ -204,5 +212,148 @@ func TestResolveDepthCapStopsDeepNesting(t *testing.T) {
 	rels := resolveTestSQL(t, strings.Replace(sql, "SELECT *", "SELECT |", 1), testCustomersOrders())
 	if len(rels) != 0 {
 		t.Fatalf("got %d relations (%q), want none past the depth cap", len(rels), columnSpecs(rels[0]))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Temp tables and table variables
+// ---------------------------------------------------------------------------
+
+func TestResolveTempTableFromCreateTable(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"CREATE TABLE #t (Id int NOT NULL, Name nvarchar(50))\nSELECT | FROM #t",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "#t")), "Id:int Name:nvarchar"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// A declared type has to render the way the catalog's own would — nvarchar's
+// max_length is bytes there, and formatDataTypeLen halves it on the way out,
+// so a declared character count that isn't doubled prints at half its size.
+func TestResolveTempTableColumnTypesRenderLikeTheCatalog(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"CREATE TABLE #t (Name nvarchar(50), Note varchar(MAX), Amount decimal(18, 2) NOT NULL, Code char(2))\nSELECT | FROM #t",
+		testCustomersOrders())
+	got := make([]string, 0, 4)
+	for _, c := range oneRelation(t, rels, "#t").columns() {
+		got = append(got, formatColumnType(c))
+	}
+	want := []string{"nvarchar(50)", "varchar(MAX)", "decimal(18,2), not null", "char(2)"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("types = %v, want %v", got, want)
+	}
+}
+
+func TestResolveTableVariableFromDeclare(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"DECLARE @t TABLE (Id int, Total decimal(18, 2))\nSELECT | FROM @t",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "@t")), "Id:int Total:decimal"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+func TestResolveTempTableFromSelectInto(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT c.Name, c.Email INTO #t FROM dbo.Customers c\nSELECT | FROM #t",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "#t")), "Name:nvarchar Email:varchar"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+func TestResolveTempTableAlias(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"CREATE TABLE #t (Id int)\nSELECT | FROM #t AS x",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "x")), "Id:int"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// The sigil is part of the name, so an undeclared "#Orders" is not the catalog
+// table "Orders" — which is exactly what it resolved to before the tokenizer
+// kept it.
+func TestResolveUndeclaredTempTableIsNotACatalogTable(t *testing.T) {
+	rels := resolveTestSQL(t, "SELECT | FROM #Orders", testCustomersOrders())
+	if len(rels) != 0 {
+		t.Fatalf("got %d relations (%q), want none", len(rels), columnSpecs(rels[0]))
+	}
+}
+
+// A redeclared name means the later shape; the earlier one is history.
+func TestResolveTempTableLastDeclarationWins(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"CREATE TABLE #t (Old int)\nDROP TABLE #t\nCREATE TABLE #t (New int)\nSELECT | FROM #t",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "#t")), "New:int"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// "SELECT * INTO #t FROM #t" is not legal T-SQL, but a half-typed script on
+// the way to something else is what this runs on.
+func TestResolveSelfReferencingTempTableTerminates(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT * INTO #t FROM #t\nSELECT | FROM #t",
+		testCustomersOrders())
+	if len(rels) != 0 {
+		t.Fatalf("got %d relations (%q), want none", len(rels), columnSpecs(rels[0]))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PIVOT / UNPIVOT
+// ---------------------------------------------------------------------------
+
+// PIVOT drops the aggregated column and the one it spreads, and adds the
+// IN-list names. Before this parsed, the clause keyword was read as the alias
+// and the source's own columns were offered under the name PIVOT.
+func TestResolvePivotOutputColumns(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT | FROM dbo.Orders PIVOT (SUM(Total) FOR CustomerId IN ([1], [2])) AS p",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 1: 2:"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// COUNT(*) aggregates no column, so only the pivoted column goes.
+func TestResolvePivotOverNoColumnKeepsTheRest(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT | FROM dbo.Orders PIVOT (COUNT(*) FOR CustomerId IN ([1])) AS p",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int Total:decimal 1:"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+// UNPIVOT drops the IN-list columns and adds the value and name columns. The
+// value column takes the type the unpivoted columns share.
+func TestResolveUnpivotOutputColumns(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT | FROM dbo.Orders UNPIVOT (Amount FOR Kind IN (Id, Total)) AS u",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "u")), "CustomerId:int Amount:int Kind:"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+func TestResolvePivotOverDerivedTable(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"SELECT | FROM (SELECT CustomerId, Total FROM dbo.Orders) src PIVOT (SUM(Total) FOR CustomerId IN ([1])) AS p",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "1:"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
+	}
+}
+
+func TestResolvePivotOverTempTable(t *testing.T) {
+	rels := resolveTestSQL(t,
+		"CREATE TABLE #t (Id int, Yr int, Amt money)\nSELECT | FROM #t PIVOT (SUM(Amt) FOR Yr IN ([2005], [2006])) AS p",
+		testCustomersOrders())
+	if got, want := columnSpecs(oneRelation(t, rels, "p")), "Id:int 2005: 2006:"; got != want {
+		t.Errorf("columns = %q, want %q", got, want)
 	}
 }

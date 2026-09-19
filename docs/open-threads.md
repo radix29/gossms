@@ -111,14 +111,12 @@ and suspected defects first, then verification gaps, then nice-to-have. Each
 item is a pointer — the reasoning lives in the section it names.
 
 **IDs are permanent and are never reused.** A missing number is a closed item,
-not a typo: B1-B6 and V1-V8 have all been fixed or settled and deleted, and
-the IDs that remain are cited from commit messages and from review plans, so
-nothing is ever renumbered. A new item takes the next unused number in its
-series, whatever position it lands in.
+not a typo — the IDs that remain are cited from commit messages, so nothing is
+ever renumbered. A new item takes the next unused number in its series,
+whatever position it lands in.
 
-**Both subsections are in priority order, not ID order** — that is what the
-list is for; V8 sat above V7 while both were open. Insert a new item where its
-priority puts it.
+**Both subsections are in priority order, not ID order.** Insert a new item
+where its priority puts it, not at the end.
 
 **Maintained on request only.** Do not regenerate this list as part of ordinary
 work; the author asks for a refresh. An item is closed by *deleting* it here
@@ -126,24 +124,7 @@ when the underlying issue is fixed.
 
 ### Bugs and suspected defects
 
-- **B7 — ~20 gosmo `Ref` method docs still carry the over-broad `WithScript`
-  claim.** Review plan P5 corrected the four prose sites it named
-  (`CLAUDE.md`, `docs/decisions.md`, `dbOf`, and the authority
-  bullet in `~/go/gosmo/CLAUDE.md`), but the same sentence — "the only usable
-  form under a `WithScript` context" — is repeated on the `Ref` method doc
-  comments themselves: `database_trigger.go:123`, `agent_job.go:247`,
-  `server_trigger.go:122`, `plan_guide.go:175`, `backup_device.go:116`,
-  `agent_alert.go:181`, `agent_operator.go:93`, `agent_schedule.go:188`,
-  `database_credential.go:119`, `database_audit_specification.go:178`,
-  `table.go:50`, `database_snapshot.go:52`, `login.go:591`,
-  `server_role.go:117`, `server_config.go:103`, `statistics.go:112`,
-  `availability_group.go:203`, `database.go:705`, `server.go:404` and
-  neighbours. `WithScript` intercepts writes only, so a by-name read under one
-  reaches the real server — `script.go:60` says so — and the claim is true only
-  when there is nothing to read yet (no connection, or an object the script is
-  about to create). Left undone deliberately: ~20 doc comments in a second
-  repository, each needing the narrow wording, is its own pass. Mechanical, no
-  code change, and `go doc` is where a caller reads it, so it is worth doing.
+None outstanding.
 
 ### Verification gaps
 
@@ -153,16 +134,21 @@ None outstanding.
 
 - **N1 — IntelliSense query-tree shapes deliberately left out.**
   `sqlparse.ScopeAt` and `completion_relations.go` resolve CTEs, derived
-  tables, sub-SELECTs and `UNION`/`EXCEPT`/`INTERSECT` chains; five shapes
-  were left out on purpose and answer with *nothing* rather than a wrong
-  list. Temp tables and table variables (`#t`, `@t`) need `CREATE TABLE` /
-  `DECLARE` shapes plus sigils the tokenizer drops, and they outlive the
-  statement, so they need a batch-wide binding table the package does not
-  have. Table-valued function result shapes, `PIVOT`/`UNPIVOT` output
-  columns, and `OPENJSON`/`OPENROWSET` `WITH` column lists each need their
-  own grammar. Cross-database three-part chains need an inventory per
-  database, not the two `completionInventory`s the provider carries. None is
-  a defect in what shipped; each is its own pass if the user asks for it.
+  tables, sub-SELECTs, `UNION`/`EXCEPT`/`INTERSECT` chains, `PIVOT`/`UNPIVOT`
+  output columns, and temp tables and table variables (`sqlparse.ScanBindings`,
+  batch-scoped). Three shapes are still left out on purpose and answer with
+  *nothing* rather than a wrong list. Table-valued function result shapes and
+  `OPENJSON`/`OPENROWSET` `WITH` column lists each need their own grammar, the
+  first also needing result shapes the catalog does not carry. Cross-database
+  three-part chains need an inventory per database, not the two
+  `completionInventory`s the provider carries. None is a defect in what
+  shipped; each is its own pass if the user asks for it.
+
+  Two limits the shipped halves carry, both deliberate: a temp table survives
+  `GO` in the real session but its binding does not, so a `CREATE TABLE #t` in
+  one batch and a `SELECT ... FROM #t` in the next answers with nothing; and a
+  `PIVOT`'s new columns are untyped, since the aggregate decides the type and
+  the package does not model aggregates.
 
 - **N2 — completion's prefix scan is O(script) on every keystroke.**
   `sqlparse.ScanPrefix` (`internal/tui/sqlparse/token.go:440`) lexes the whole

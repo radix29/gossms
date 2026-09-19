@@ -943,3 +943,101 @@ func TestSQLCompletionTableHintWithIsNotACTE(t *testing.T) {
 		t.Errorf("items %v missing Customers' Email", labels(items))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Temp tables, table variables and PIVOT, end to end through the provider
+// ---------------------------------------------------------------------------
+
+func TestSQLCompletionOffersDeclaredTempTablesAndVariables(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"CREATE TABLE #staging (Id int)\nDECLARE @rows TABLE (Id int)\nSELECT * FROM |")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if got := itemDetail(items, "#staging"); got != "temp table" {
+		t.Errorf("#staging detail = %q, want %q (items %v)", got, "temp table", labels(items))
+	}
+	if got := itemDetail(items, "@rows"); got != "table variable" {
+		t.Errorf("@rows detail = %q, want %q (items %v)", got, "table variable", labels(items))
+	}
+}
+
+// A sigil name is never bracketed on commit: "[@t]" is a column or object
+// name, not the variable, and "[#t]" is not what was typed.
+func TestSQLCompletionCommitsSigilNamesUnbracketed(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t, "DECLARE @rows TABLE (Id int)\nSELECT * FROM @|")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	for _, it := range items {
+		if it.Label == "@rows" {
+			if it.Text != "@rows" {
+				t.Errorf("commit text = %q, want %q", it.Text, "@rows")
+			}
+			return
+		}
+	}
+	t.Errorf("items %v missing @rows", labels(items))
+}
+
+func TestSQLCompletionTempTableColumnsInScope(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"CREATE TABLE #staging (Ref int NOT NULL, Note nvarchar(50))\nSELECT | FROM #staging")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	for _, want := range []string{"Ref", "Note"} {
+		if !containsLabel(items, want) {
+			t.Errorf("items %v missing %q", labels(items), want)
+		}
+	}
+	if got := itemDetail(items, "Note"); !strings.HasPrefix(got, "nvarchar(50)") {
+		t.Errorf("Note detail = %q, want it to start with %q", got, "nvarchar(50)")
+	}
+}
+
+func TestSQLCompletionTempTableMemberLookup(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"DECLARE @rows TABLE (Ref int)\nSELECT @rows.| FROM @rows")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if got := labels(items); len(got) != 1 || got[0] != "Ref" {
+		t.Errorf("items = %v, want [Ref]", got)
+	}
+}
+
+// A declaration in an earlier GO batch is out of scope, and an undeclared
+// name resolves to nothing rather than to the catalog table that shares it
+// without the sigil.
+func TestSQLCompletionTempTableScopedToItsBatch(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"CREATE TABLE #Orders (Ref int)\nGO\nSELECT | FROM #Orders")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	if containsLabel(items, "Ref") {
+		t.Errorf("items %v offer a column from the previous batch's declaration", labels(items))
+	}
+	if containsLabel(items, "CustomerId") {
+		t.Errorf("items %v resolved #Orders to the catalog table Orders", labels(items))
+	}
+}
+
+func TestSQLCompletionPivotOutputColumns(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "testdb", testCustomersOrders())
+	lines, row, col := linesAndCursor(t,
+		"SELECT | FROM dbo.Orders PIVOT (SUM(Total) FOR CustomerId IN ([1], [2])) AS p")
+
+	items, _ := qp.sqlCompletionCandidates(lines, row, col)
+	for _, want := range []string{"1", "2", "Id"} {
+		if !containsLabel(items, want) {
+			t.Errorf("items %v missing %q", labels(items), want)
+		}
+	}
+	for _, unwanted := range []string{"Total", "CustomerId"} {
+		if containsLabel(items, unwanted) {
+			t.Errorf("items %v still offer %q, which the pivot consumed", labels(items), unwanted)
+		}
+	}
+}

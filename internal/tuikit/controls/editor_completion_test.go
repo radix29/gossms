@@ -460,3 +460,25 @@ func TestEditorPasteClosesCompletionAndKeepsTextVerbatim(t *testing.T) {
 		t.Fatalf("Text() after Paste = %q, want %q — pasted text must go in verbatim", got, "Cust\nFROM t")
 	}
 }
+
+// '#' and '@' introduce a name the same way '[' does — a temp table or a
+// variable, where the host's provider decides what the name means. Without
+// this the popup stayed shut until a second character arrived, so the first
+// keystroke of "#staging" showed nothing.
+func TestEditorCompletionSigilOpens(t *testing.T) {
+	for _, sigil := range []string{"#", "@", "##"} {
+		// The stub provider matches on word runes alone, so the candidate is
+		// spelled without a sigil; what is under test is the gate, not how a
+		// real provider reads one.
+		e := newTestEditor("")
+		e.SetCompletionProvider(testCompletionProvider("staging"))
+		typeString(e, sigil)
+		if !e.CompletionActive() {
+			t.Errorf("expected %q to open the popup", sigil)
+		}
+		typeString(e, "sta")
+		if !e.CompletionActive() {
+			t.Errorf("expected %q to keep the popup open", sigil+"sta")
+		}
+	}
+}

@@ -10,6 +10,10 @@
 
 -------------
 
+intellisense: 
+- open the suggestion with Ctrl+space
+- when you type something woth the intellisense window open, search any portion of the object not only if it starts with what you type.
+
 - query editor :
     - word wrap (display only, line numbers)
     

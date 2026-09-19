@@ -312,6 +312,29 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 			}
 			semiStart = i + 1
 			i++
+		case c == '#' || c == '@':
+			// A temp table (#t, ##t), a variable or table variable (@t), or a
+			// built-in global (@@ROWCOUNT): the sigil is part of the name, not
+			// punctuation before it. Dropping it made "FROM #Orders" read as a
+			// reference to a catalog table named Orders and offer its columns,
+			// and left "@t" and a real table t indistinguishable.
+			//
+			// One or two sigil runes — the run must be uniform, "#@x" being no
+			// name at all — then however many word runes follow. The sigil
+			// alone is a token too, with nothing after it: that is what the
+			// cursor sits on at the first keystroke of "#t", and without it
+			// the completion popup would see no prefix and commit its choice
+			// after the sigil rather than over it.
+			start := i
+			i++
+			if i < upTo && buf[i] == c {
+				i++
+			}
+			for i < upTo && core.IsWordRune(buf[i]) {
+				i++
+			}
+			// Never a keyword: a sigil-prefixed word is a name by construction.
+			emitIdent(start, start, i)
 		case core.IsWordRune(c):
 			start := i
 			for i < upTo && core.IsWordRune(buf[i]) {
@@ -332,7 +355,7 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 				emitIdent(start, start, i)
 			}
 		default:
-			// whitespace, operators, semicolons, @/# sigils, numeric literals, ...
+			// whitespace, operators, semicolons, numeric literals, ...
 			if c == '\n' {
 				noteGoLine(i + 1)
 			}
@@ -426,6 +449,14 @@ type PrefixScan struct {
 	State      LexState
 	BatchStart int
 	QuoteStart int
+
+	// GoStart is where the cursor's GO-delimited batch begins: the line after
+	// the last real "GO" above it, or 0. BatchStart is at or after it, being
+	// the later of this and the last top-level ';'. Only the batch scan for
+	// temp-table and table-variable declarations reads it (see ScanBindings) —
+	// a declaration is a different statement from the one using it, so the
+	// ';' half of BatchStart is exactly the boundary it must not stop at.
+	GoStart int
 }
 
 // ScanPrefix locates the statement the cursor sits in and tokenizes that
@@ -455,7 +486,23 @@ func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
 		State:      r.state,
 		BatchStart: batchStart,
 		QuoteStart: r.quoteStart,
+		GoStart:    r.lastGo,
 	}
+}
+
+// BatchEndOffset is where the cursor's GO-delimited batch ends: the start of
+// the next bare "GO" line below the cursor's own row, or len(buf).
+// StatementEndOffset's counterpart for the wider span ScanBindings needs, and
+// deliberately not stopped by a ';' — the declaration of a temp table is a
+// statement of its own, and every statement after it in the batch still sees
+// the name.
+func BatchEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
+	r := lexSQL(buf, upTo, len(buf), false, LexNormal, nil,
+		goScan{lo: OffsetForCursor(lines, cursorRow+1, 0), hi: len(buf)})
+	if r.firstGo >= 0 {
+		return r.firstGo
+	}
+	return len(buf)
 }
 
 // TokensFrom returns the suffix of tokens (already in ascending start order)

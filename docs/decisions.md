@@ -108,7 +108,7 @@ livedb`) is the repeatable part.
   would have caught and nothing else does — gosmo needing a tag before gossms
   can have one — is tracked in `docs/open-threads.md` § Release workflow
   instead. Re-raising CI needs a new reason, not the same one.
-- **The 137 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
+- **The 134 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
   Most loaders resolve the database with a real `sys.databases` read where
   `Server.DatabaseRef(name)`'s handle would do, costing a round trip per folder
   expansion. Closed unmeasured 2026-09-17: no timing was ever taken, the
@@ -457,47 +457,40 @@ through a database-wide grant.
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
 - **The lookup-free handles carry a `Ref` suffix; the `*ByName` lookups keep
-  their names.** Renamed 2026-09-17 across all eighteen families
+  their names.** Twenty-two families pair this way
   (`Server.Database` → `Server.DatabaseRef`, `Login`, `Table`, the four Agent
   ones, the audit/credential/trigger/snapshot/plan-guide/backup-device/AG
   ones). The un-suffixed name was the trap both `CLAUDE.md`s carried a standing
   gotcha about: `s.Database("x").State()` compiled, issued no query and
   answered the zero value. **Two alternatives were considered and rejected.**
   Giving the *lookup* the plain name (`DatabaseByName` → `Database`) would have
-  renamed 18 of the library's 53 `*ByName` methods and left the other 35
-  suffixed, splitting the convention, and would have turned
+  renamed the 22 paired families' `*ByName` methods and left the library's
+  other 29 suffixed, splitting the convention, and would have turned
   `DatabaseByNameContext` into `DatabaseContext` — which under gosmo's
   `FooContext` rule reads as the context variant of the *handle* getter.
   Giving the handle its own distinct type, with `Load(ctx)` to populate
   it, is the only form that makes the zero-valued accessors impossible
   rather than merely visible, and was judged not worth the change to every
-  call site for eighteen families; reopen it only with a bug the suffix
+  call site for twenty-two families; reopen it only with a bug the suffix
   failed to prevent. The lightweight form itself is not removable — it is
   the only one that works when there is nothing to read yet, per
   `~/go/gosmo/CLAUDE.md` § Conventions, the `Ref` bullet, which owns that
-  rule. (Corrected 2026-09-18, review plan P5: the sentence used to say
-  "under a `WithScript`-derived context", which is over-broad —
-  `WithScript` intercepts writes only.)
-- **`Database`'s catalog state is exported fields, not accessors.** Changed
-  2026-09-18 (review plan R2, option (a)): `Name`, `ID`, `State`,
-  `RecoveryModel`, `CompatibilityLevel`, `Collation`, `IsReadOnly`,
-  `CreateDate` and `SourceDatabaseID` are exported fields, matching the ~112
-  other gosmo types that already did this; `Database` and `Server` were the
-  only two with `Name()` as a method. `IsSystem()` and `IsSnapshot()` stay
-  methods because they are derivations over `ID`/`SourceDatabaseID`, and
-  `Server()` stays one because it is a back-pointer, as `Table.Database()`
-  is (named `Table.DB()` until review plan P9 renamed it, 2026-09-18).
-  `Server.Name()` is left alone: it reads `s.info.Name`, not its own storage.
+  rule — and *not* "under a `WithScript`-derived context", which is
+  over-broad: `WithScript` intercepts writes only.
+- **`Database`'s catalog state is exported fields, not accessors.** `Name`,
+  `ID`, `State`, `RecoveryModel`, `CompatibilityLevel`, `Collation`,
+  `IsReadOnly`, `CreateDate` and `SourceDatabaseID` are exported fields,
+  matching the ~112 other gosmo types that do the same; `Database` and
+  `Server` were the only two that ever had `Name()` as a method. `IsSystem()`
+  and `IsSnapshot()` stay methods because they are derivations over
+  `ID`/`SourceDatabaseID`, and `Server()` stays one because it is a
+  back-pointer, as `Table.Database()` is. `Server.Name()` is left alone: it reads `s.info.Name`, not its own storage.
   The reason is that the *unguessable* shape was the defect — a caller could
   not tell which form a given type used, and guessing wrong on `Database`
   interacted with the `Ref` trap, since `DatabaseRef("master").IsSystem()`
   compiles, issues no query and answers `false`. That trap is unchanged by
   this, and is now stated on `Server.DatabaseRef` and on the `Database` type
-  itself. A breaking change, authorised in advance: ~520 call sites in gosmo
-  (including its live-tagged tests) and 61 in gossms, all mechanical and
-  compiler-enumerated.
-  The standing gotcha in both `CLAUDE.md`s is now a description of the rule
-  rather than a warning about a trap.
+  itself.
 - **azidentity has deprecated `UsernamePasswordCredential`** (no MFA), which
   gosmo's `AuthEntraPassword` / ROPC mode uses at `entra.go` — both the options
   literal and `NewUsernamePasswordCredential`. The method is **kept**: it is a
@@ -1062,7 +1055,7 @@ re-opened without asking the author.
 
 - **`Form.Revert()` is exposed, not retired.** `Ctrl+Z` on a `PropertySheet`
   calls `RevertPage`, which reaches `Form.Revert`, every row's `Revert` and all
-  21 `RevertFn` closures. Two rules come with it, both easy to undo by accident:
+  25 `RevertFn` closures. Two rules come with it, both easy to undo by accident:
   **`Ctrl+Z` is handled ahead of the zone switch, beside `F5`** — a sheet-level
   command, so it works from the page list and the button row — but
   `PropertySheet.HandleKey` gives the focused row first refusal through
@@ -1395,9 +1388,8 @@ asserts exactly that — do not delete the branch as dead code.
 
 ## The old top-level plan document — settled, do not re-raise
 
-Deleted 2026-09-17 in both repos (gosmo dropped its own in `916c114`). The
-top-level plan file is not to be recreated and not to be used as a working file.
-What it carried lives in the documents that own it: project state and package
-map in `ARCHITECTURE.md`, unfinished work and unfixed bugs in
+Neither repo has a top-level plan file, and one is not to be recreated or used
+as a working file. What it carried lives in the documents that own it: project
+state and package map in `ARCHITECTURE.md`, unfinished work and unfixed bugs in
 `docs/open-threads.md`, what shipped per tag in `CHANGELOG.md`, settled
 questions here.

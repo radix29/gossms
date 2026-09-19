@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	gosmo "github.com/radix29/gosmo"
@@ -59,12 +60,13 @@ const maxRelationDepth = 8
 type resolveCtx struct {
 	inv, sysInv *completionInventory
 	ctes        []sqlparse.CTE
+	bindings    []sqlparse.Binding
 	depth       int
 	expanding   map[string]bool
 }
 
-func newResolveCtx(inv, sysInv *completionInventory, ctes []sqlparse.CTE) resolveCtx {
-	return resolveCtx{inv: inv, sysInv: sysInv, ctes: ctes, expanding: map[string]bool{}}
+func newResolveCtx(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding) resolveCtx {
+	return resolveCtx{inv: inv, sysInv: sysInv, ctes: ctes, bindings: bindings, expanding: map[string]bool{}}
 }
 
 // withCTEs returns a context that also sees ctes, innermost first, so a name
@@ -94,6 +96,9 @@ func resolveRefs(rc resolveCtx, refs []sqlparse.FromRef) []relation {
 // to a catalog object. A schema-qualified ref is never a CTE — "dbo.t1" names a
 // real object even when a CTE t1 is in scope.
 func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
+	if ref.Pivot != nil {
+		return resolvePivotRef(rc, ref)
+	}
 	if ref.Derived != nil {
 		cols := queryColumns(rc, ref.Derived)
 		return relation{name: ref.Alias, aliased: true, cols: cols}, len(cols) > 0
@@ -103,6 +108,19 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 		name, aliased = ref.Name, false
 	}
 	if ref.Schema == "" {
+		if sqlparse.HasSigil(ref.Name) {
+			// A temp table or table variable. The catalog can never hold one,
+			// so a name the batch bound nothing to resolves to nothing rather
+			// than falling through to an object sharing the name without its
+			// sigil — which is what "FROM #Orders" did before the tokenizer
+			// kept the '#'.
+			b, ok := findBinding(rc.bindings, ref.Name)
+			if !ok {
+				return relation{}, false
+			}
+			cols := bindingColumns(rc, b)
+			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
+		}
 		if cte, ok := findCTE(rc.ctes, ref.Name); ok {
 			cols := cteColumns(rc, cte)
 			return relation{name: name, aliased: aliased, cols: cols}, len(cols) > 0
@@ -112,6 +130,158 @@ func resolveRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
 		return relation{name: name, aliased: aliased, obj: obj}, true
 	}
 	return relation{}, false
+}
+
+// resolvePivotRef resolves the reference a PIVOT/UNPIVOT clause is applied to
+// and reshapes its columns. The source is resolved with the clause and the
+// pivoted alias stripped off, so this recurses exactly once.
+func resolvePivotRef(rc resolveCtx, ref sqlparse.FromRef) (relation, bool) {
+	src := ref
+	src.Pivot, src.Alias = nil, ""
+	base, ok := resolveRef(rc, src)
+	if !ok {
+		return relation{}, false
+	}
+	cols := pivotColumns(base.columns(), ref.Pivot)
+	return relation{name: ref.Alias, aliased: ref.Alias != "", cols: cols}, len(cols) > 0
+}
+
+// pivotColumns applies a PIVOT/UNPIVOT clause to the source's columns:
+//
+//   - PIVOT drops the aggregated column and the one it spreads, and adds one
+//     column per IN-list name. Those carry no type: the aggregate decides it
+//     (COUNT over anything is int), and this package does not model aggregates.
+//   - UNPIVOT drops the IN-list columns and adds the value column and the name
+//     column. The value column's type is the one the unpivoted columns share —
+//     T-SQL requires them to share one — so it is taken from the first of them
+//     that the source actually has; the name column's is unknown.
+//
+// A name the source doesn't carry simply drops nothing, so a half-typed clause
+// costs columns it shouldn't rather than inventing ones it can't have.
+func pivotColumns(src []gosmo.CatalogColumn, pv *sqlparse.Pivot) []gosmo.CatalogColumn {
+	drop := map[string]bool{}
+	var added []gosmo.CatalogColumn
+	if pv.Unpivot {
+		for _, n := range pv.In {
+			drop[strings.ToLower(n)] = true
+		}
+		value := gosmo.CatalogColumn{Name: pv.Value}
+		for _, n := range pv.In {
+			if col, ok := findColumnIn(src, n); ok {
+				value = col
+				value.Name = pv.Value
+				break
+			}
+		}
+		added = append(added, value, gosmo.CatalogColumn{Name: pv.For})
+	} else {
+		drop[strings.ToLower(pv.Agg)] = true
+		drop[strings.ToLower(pv.For)] = true
+		for _, n := range pv.In {
+			added = append(added, gosmo.CatalogColumn{Name: n})
+		}
+	}
+	delete(drop, "")
+
+	cols := make([]gosmo.CatalogColumn, 0, len(src)+len(added))
+	for _, col := range src {
+		if !drop[strings.ToLower(col.Name)] {
+			cols = append(cols, col)
+		}
+	}
+	return append(cols, added...)
+}
+
+func findColumnIn(cols []gosmo.CatalogColumn, name string) (gosmo.CatalogColumn, bool) {
+	for _, col := range cols {
+		if strings.EqualFold(col.Name, name) {
+			return col, true
+		}
+	}
+	return gosmo.CatalogColumn{}, false
+}
+
+// findBinding matches a sigil-carrying name against the batch's declarations,
+// last one winning: a script that drops and recreates #t means the later
+// shape, and the earlier declaration is history by the time the cursor is
+// below it.
+func findBinding(bindings []sqlparse.Binding, name string) (sqlparse.Binding, bool) {
+	for i := len(bindings) - 1; i >= 0; i-- {
+		if strings.EqualFold(bindings[i].Name, name) {
+			return bindings[i], true
+		}
+	}
+	return sqlparse.Binding{}, false
+}
+
+// bindingColumns computes a temp table's or table variable's columns: the
+// declared list for a CREATE TABLE / DECLARE ... TABLE, the query's own shape
+// for a SELECT ... INTO. The expanding guard is cteColumns' — "SELECT * INTO
+// #t FROM #t" is not legal T-SQL, but a half-typed script is not legal T-SQL
+// either, and this runs on every keystroke of one.
+func bindingColumns(rc resolveCtx, b sqlparse.Binding) []gosmo.CatalogColumn {
+	if b.Columns != nil {
+		cols := make([]gosmo.CatalogColumn, 0, len(b.Columns))
+		for _, c := range b.Columns {
+			cols = append(cols, bindingColumn(c))
+		}
+		return cols
+	}
+	if b.Query == nil {
+		return nil
+	}
+	key := strings.ToLower(b.Name)
+	if rc.expanding[key] {
+		return nil
+	}
+	rc.expanding[key] = true
+	defer delete(rc.expanding, key)
+	return queryColumns(rc, b.Query)
+}
+
+// bindingColumn turns one declared column into the catalog shape the rest of
+// completion works in, filling the same length/precision/scale fields
+// formatDataTypeLen reads back — so a declared "nvarchar(50)" renders exactly
+// as the catalog's own nvarchar(50) would. That means doubling the declared
+// character count: sys.columns stores an nvarchar's max_length in bytes, and
+// formatDataTypeLen halves it again on the way out.
+func bindingColumn(c sqlparse.BindingColumn) gosmo.CatalogColumn {
+	t := strings.ToLower(c.Type)
+	col := gosmo.CatalogColumn{Name: c.Name, DataType: gosmo.DataType(t), IsNullable: c.Nullable}
+	switch t {
+	case "varchar", "char", "varbinary", "binary":
+		col.MaxLength, _ = typeArgInt(c.TypeArgs, 0)
+	case "nvarchar", "nchar":
+		if n, ok := typeArgInt(c.TypeArgs, 0); ok && n > 0 {
+			col.MaxLength = n * 2
+		} else {
+			col.MaxLength = n
+		}
+	case "decimal", "numeric":
+		col.Precision, _ = typeArgInt(c.TypeArgs, 0)
+		col.Scale, _ = typeArgInt(c.TypeArgs, 1)
+	case "datetime2", "time", "datetimeoffset":
+		col.Scale, _ = typeArgInt(c.TypeArgs, 0)
+	}
+	return col
+}
+
+// typeArgInt reads one type argument as a number, with MAX as the -1 the
+// catalog stores for it. Anything else leaves the field zero, which
+// formatDataTypeLen renders as the bare type name rather than a length read
+// out of a fragment.
+func typeArgInt(args []string, i int) (int, bool) {
+	if i >= len(args) {
+		return 0, false
+	}
+	if strings.EqualFold(args[i], "MAX") {
+		return -1, true
+	}
+	n, err := strconv.Atoi(args[i])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func findCTE(ctes []sqlparse.CTE, name string) (sqlparse.CTE, bool) {

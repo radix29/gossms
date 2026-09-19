@@ -13,6 +13,49 @@
 
 [cursor-sweep]
 
+== bare sigils
+script "SELECT @@ROWCOUNT, # FROM T WHERE x = @"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"S"@0
+0,2 normal batch=0 quote=- | id:"SE"@0
+0,3 normal batch=0 quote=- | id:"SEL"@0
+0,4 normal batch=0 quote=- | id:"SELE"@0
+0,5 normal batch=0 quote=- | id:"SELEC"@0
+0,6 normal batch=0 quote=- | kw:"SELECT"@0
+0,7 normal batch=0 quote=- | kw:"SELECT"@0
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 id:"@"@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@"@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@R"@7
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@RO"@7
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROW"@7
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWC"@7
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCO"@7
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOU"@7
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUN"@7
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19
+0,21 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19
+0,22 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 id:"F"@21
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 id:"FR"@21
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 id:"FRO"@21
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26
+0,29 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 id:"W"@28
+0,30 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 id:"WH"@28
+0,31 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 id:"WHE"@28
+0,32 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 id:"WHER"@28
+0,33 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28
+0,34 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28
+0,35 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28 id:"x"@34
+0,36 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28 id:"x"@34
+0,37 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28 id:"x"@34
+0,38 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28 id:"x"@34
+0,39 normal batch=0 quote=- | kw:"SELECT"@0 id:"@@ROWCOUNT"@7 comma:""@17 id:"#"@19 kw:"FROM"@21 id:"T"@26 kw:"WHERE"@28 id:"x"@34 id:"@"@38
+
 == bracket spans go line
 script "SELECT [weird\nGO\nname] FROM T"
 0,0 normal batch=0 quote=- |
@@ -228,6 +271,56 @@ script "SELECT 'it''s' FROM T"
 0,19 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@15
 0,20 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@15
 0,21 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@15 id:"T"@20
+
+== global temp table
+script "SELECT * INTO ##g FROM dbo.T\nSELECT * FROM ##g"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"S"@0
+0,2 normal batch=0 quote=- | id:"SE"@0
+0,3 normal batch=0 quote=- | id:"SEL"@0
+0,4 normal batch=0 quote=- | id:"SELE"@0
+0,5 normal batch=0 quote=- | id:"SELEC"@0
+0,6 normal batch=0 quote=- | kw:"SELECT"@0
+0,7 normal batch=0 quote=- | kw:"SELECT"@0
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"I"@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"IN"@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"INT"@9
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"#"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 id:"F"@18
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 id:"FR"@18
+0,21 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 id:"FRO"@18
+0,22 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"d"@23
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"db"@23
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27
+1,0 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27
+1,1 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 id:"S"@29
+1,2 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 id:"SE"@29
+1,3 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 id:"SEL"@29
+1,4 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 id:"SELE"@29
+1,5 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 id:"SELEC"@29
+1,6 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29
+1,7 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29
+1,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36
+1,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36
+1,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 id:"F"@38
+1,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 id:"FR"@38
+1,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 id:"FRO"@38
+1,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 kw:"FROM"@38
+1,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 kw:"FROM"@38
+1,15 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 kw:"FROM"@38 id:"#"@43
+1,16 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 kw:"FROM"@38 id:"##"@43
+1,17 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"INTO"@9 id:"##g"@14 kw:"FROM"@18 id:"dbo"@23 dot:""@26 id:"T"@27 kw:"SELECT"@29 star:""@36 kw:"FROM"@38 id:"##g"@43
 
 == go casing and spacing
 script "SELECT 1\n  go  \nSELECT 2\n\tGo\t\nSELECT 3"
@@ -724,6 +817,85 @@ script "SELECT f(a, b), (c), COUNT(*) FROM T GROUP BY a, b"
 0,49 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47
 0,50 normal batch=0 quote=- | kw:"SELECT"@0 id:"f"@7 lparen:""@8 id:"a"@9 comma:""@10 id:"b"@12 rparen:""@13 comma:""@14 lparen:""@16 id:"c"@17 rparen:""@18 comma:""@19 id:"COUNT"@21 lparen:""@26 star:""@27 rparen:""@28 kw:"FROM"@30 id:"T"@35 kw:"GROUP"@37 kw:"BY"@43 id:"a"@46 comma:""@47 id:"b"@49
 
+== pivot
+script "SELECT * FROM dbo.Orders PIVOT (SUM(Total) FOR Yr IN ([2005], [2006])) AS p"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"S"@0
+0,2 normal batch=0 quote=- | id:"SE"@0
+0,3 normal batch=0 quote=- | id:"SEL"@0
+0,4 normal batch=0 quote=- | id:"SELE"@0
+0,5 normal batch=0 quote=- | id:"SELEC"@0
+0,6 normal batch=0 quote=- | kw:"SELECT"@0
+0,7 normal batch=0 quote=- | kw:"SELECT"@0
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"F"@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FR"@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FRO"@9
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"d"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"db"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"O"@18
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 kw:"OR"@18
+0,21 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Ord"@18
+0,22 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orde"@18
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 kw:"ORDER"@18
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"P"@25
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PI"@25
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIV"@25
+0,29 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVO"@25
+0,30 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25
+0,31 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25
+0,32 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31
+0,33 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"S"@32
+0,34 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SU"@32
+0,35 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32
+0,36 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35
+0,37 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"T"@36
+0,38 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"To"@36
+0,39 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Tot"@36
+0,40 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Tota"@36
+0,41 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36
+0,42 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41
+0,43 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41
+0,44 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"F"@43
+0,45 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FO"@43
+0,46 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43
+0,47 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43
+0,48 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Y"@47
+0,49 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47
+0,50 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47
+0,51 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 id:"I"@50
+0,52 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50
+0,53 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50
+0,54 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,55 bracket batch=0 quote=54 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,56 bracket batch=0 quote=54 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,57 bracket batch=0 quote=54 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,58 bracket batch=0 quote=54 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,59 bracket batch=0 quote=54 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53
+0,60 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54
+0,61 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,62 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,63 bracket batch=0 quote=62 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,64 bracket batch=0 quote=62 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,65 bracket batch=0 quote=62 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,66 bracket batch=0 quote=62 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,67 bracket batch=0 quote=62 | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60
+0,68 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62
+0,69 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68
+0,70 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69
+0,71 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69
+0,72 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69 id:"A"@71
+0,73 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69 kw:"AS"@71
+0,74 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69 kw:"AS"@71
+0,75 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"PIVOT"@25 lparen:""@31 id:"SUM"@32 lparen:""@35 id:"Total"@36 rparen:""@41 id:"FOR"@43 id:"Yr"@47 kw:"IN"@50 lparen:""@53 id:"2005"@54 comma:""@60 id:"2006"@62 rparen:""@68 rparen:""@69 kw:"AS"@71 id:"p"@74
+
 == plain
 script "SELECT a, b FROM dbo.T WHERE x = 1"
 0,0 normal batch=0 quote=- |
@@ -982,6 +1154,34 @@ script "SELECT 1 FROM A; SELECT 2 FROM B; SELECT 3 FROM C"
 0,48 normal batch=33 quote=- | kw:"SELECT"@34 id:"3"@41 kw:"FROM"@43
 0,49 normal batch=33 quote=- | kw:"SELECT"@34 id:"3"@41 kw:"FROM"@43 id:"C"@48
 
+== sigil in a literal and a comment
+script "SELECT '#t' -- @v\nFROM T"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"S"@0
+0,2 normal batch=0 quote=- | id:"SE"@0
+0,3 normal batch=0 quote=- | id:"SEL"@0
+0,4 normal batch=0 quote=- | id:"SELE"@0
+0,5 normal batch=0 quote=- | id:"SELEC"@0
+0,6 normal batch=0 quote=- | kw:"SELECT"@0
+0,7 normal batch=0 quote=- | kw:"SELECT"@0
+0,8 singlequote batch=0 quote=- | kw:"SELECT"@0
+0,9 singlequote batch=0 quote=- | kw:"SELECT"@0
+0,10 singlequote batch=0 quote=- | kw:"SELECT"@0
+0,11 normal batch=0 quote=- | kw:"SELECT"@0
+0,12 normal batch=0 quote=- | kw:"SELECT"@0
+0,13 normal batch=0 quote=- | kw:"SELECT"@0
+0,14 linecomment batch=0 quote=- | kw:"SELECT"@0
+0,15 linecomment batch=0 quote=- | kw:"SELECT"@0
+0,16 linecomment batch=0 quote=- | kw:"SELECT"@0
+0,17 linecomment batch=0 quote=- | kw:"SELECT"@0
+1,0 normal batch=0 quote=- | kw:"SELECT"@0
+1,1 normal batch=0 quote=- | kw:"SELECT"@0 id:"F"@18
+1,2 normal batch=0 quote=- | kw:"SELECT"@0 id:"FR"@18
+1,3 normal batch=0 quote=- | kw:"SELECT"@0 id:"FRO"@18
+1,4 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@18
+1,5 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@18
+1,6 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@18 id:"T"@23
+
 == string spans go line
 script "SELECT 'weird\nGO\nname' FROM T"
 0,0 normal batch=0 quote=- |
@@ -1014,6 +1214,160 @@ script "SELECT 'weird\nGO\nname' FROM T"
 2,10 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@23
 2,11 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@23
 2,12 normal batch=0 quote=- | kw:"SELECT"@0 kw:"FROM"@23 id:"T"@28
+
+== table variable
+script "DECLARE @rows TABLE (Id int)\nINSERT INTO @rows SELECT Id FROM dbo.T\nSELECT * FROM @rows"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"D"@0
+0,2 normal batch=0 quote=- | id:"DE"@0
+0,3 normal batch=0 quote=- | id:"DEC"@0
+0,4 normal batch=0 quote=- | id:"DECL"@0
+0,5 normal batch=0 quote=- | id:"DECLA"@0
+0,6 normal batch=0 quote=- | id:"DECLAR"@0
+0,7 normal batch=0 quote=- | kw:"DECLARE"@0
+0,8 normal batch=0 quote=- | kw:"DECLARE"@0
+0,9 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@"@8
+0,10 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@r"@8
+0,11 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@ro"@8
+0,12 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@row"@8
+0,13 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8
+0,14 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8
+0,15 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 id:"T"@14
+0,16 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 id:"TA"@14
+0,17 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 id:"TAB"@14
+0,18 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 id:"TABL"@14
+0,19 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14
+0,20 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14
+0,21 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20
+0,22 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"I"@21
+0,23 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21
+0,24 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21
+0,25 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"i"@24
+0,26 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 kw:"IN"@24
+0,27 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24
+0,28 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27
+1,0 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27
+1,1 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 id:"I"@29
+1,2 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"IN"@29
+1,3 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 id:"INS"@29
+1,4 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 id:"INSE"@29
+1,5 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 id:"INSER"@29
+1,6 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29
+1,7 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29
+1,8 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 id:"I"@36
+1,9 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"IN"@36
+1,10 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 id:"INT"@36
+1,11 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36
+1,12 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36
+1,13 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@"@41
+1,14 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@r"@41
+1,15 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@ro"@41
+1,16 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@row"@41
+1,17 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41
+1,18 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41
+1,19 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 id:"S"@47
+1,20 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 id:"SE"@47
+1,21 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 id:"SEL"@47
+1,22 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 id:"SELE"@47
+1,23 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 id:"SELEC"@47
+1,24 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47
+1,25 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47
+1,26 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"I"@54
+1,27 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54
+1,28 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54
+1,29 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 id:"F"@57
+1,30 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 id:"FR"@57
+1,31 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 id:"FRO"@57
+1,32 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57
+1,33 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57
+1,34 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"d"@62
+1,35 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"db"@62
+1,36 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62
+1,37 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65
+1,38 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66
+2,0 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66
+2,1 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 id:"S"@68
+2,2 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 id:"SE"@68
+2,3 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 id:"SEL"@68
+2,4 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 id:"SELE"@68
+2,5 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 id:"SELEC"@68
+2,6 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68
+2,7 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68
+2,8 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75
+2,9 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75
+2,10 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 id:"F"@77
+2,11 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 id:"FR"@77
+2,12 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 id:"FRO"@77
+2,13 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77
+2,14 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77
+2,15 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77 id:"@"@82
+2,16 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77 id:"@r"@82
+2,17 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77 id:"@ro"@82
+2,18 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77 id:"@row"@82
+2,19 normal batch=0 quote=- | kw:"DECLARE"@0 id:"@rows"@8 kw:"TABLE"@14 lparen:""@20 id:"Id"@21 id:"int"@24 rparen:""@27 kw:"INSERT"@29 kw:"INTO"@36 id:"@rows"@41 kw:"SELECT"@47 id:"Id"@54 kw:"FROM"@57 id:"dbo"@62 dot:""@65 id:"T"@66 kw:"SELECT"@68 star:""@75 kw:"FROM"@77 id:"@rows"@82
+
+== temp tables
+script "CREATE TABLE #t (Id int)\nSELECT * FROM #t t WHERE t.Id = @n"
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"C"@0
+0,2 normal batch=0 quote=- | id:"CR"@0
+0,3 normal batch=0 quote=- | id:"CRE"@0
+0,4 normal batch=0 quote=- | id:"CREA"@0
+0,5 normal batch=0 quote=- | id:"CREAT"@0
+0,6 normal batch=0 quote=- | kw:"CREATE"@0
+0,7 normal batch=0 quote=- | kw:"CREATE"@0
+0,8 normal batch=0 quote=- | kw:"CREATE"@0 id:"T"@7
+0,9 normal batch=0 quote=- | kw:"CREATE"@0 id:"TA"@7
+0,10 normal batch=0 quote=- | kw:"CREATE"@0 id:"TAB"@7
+0,11 normal batch=0 quote=- | kw:"CREATE"@0 id:"TABL"@7
+0,12 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7
+0,13 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7
+0,14 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#"@13
+0,15 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13
+0,16 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13
+0,17 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16
+0,18 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"I"@17
+0,19 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17
+0,20 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17
+0,21 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"i"@20
+0,22 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 kw:"IN"@20
+0,23 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20
+0,24 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23
+1,0 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23
+1,1 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 id:"S"@25
+1,2 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 id:"SE"@25
+1,3 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 id:"SEL"@25
+1,4 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 id:"SELE"@25
+1,5 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 id:"SELEC"@25
+1,6 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25
+1,7 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25
+1,8 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32
+1,9 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32
+1,10 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 id:"F"@34
+1,11 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 id:"FR"@34
+1,12 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 id:"FRO"@34
+1,13 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34
+1,14 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34
+1,15 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#"@39
+1,16 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39
+1,17 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39
+1,18 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42
+1,19 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42
+1,20 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 id:"W"@44
+1,21 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 id:"WH"@44
+1,22 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 id:"WHE"@44
+1,23 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 id:"WHER"@44
+1,24 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44
+1,25 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44
+1,26 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50
+1,27 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51
+1,28 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"I"@52
+1,29 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52
+1,30 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52
+1,31 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52
+1,32 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52
+1,33 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52 id:"@"@57
+1,34 normal batch=0 quote=- | kw:"CREATE"@0 kw:"TABLE"@7 id:"#t"@13 lparen:""@16 id:"Id"@17 id:"int"@20 rparen:""@23 kw:"SELECT"@25 star:""@32 kw:"FROM"@34 id:"#t"@39 id:"t"@42 kw:"WHERE"@44 id:"t"@50 dot:""@51 id:"Id"@52 id:"@n"@57
 
 == trailing semicolon
 script "SELECT 1 FROM T;"
@@ -1084,6 +1438,86 @@ script "SELECT [Ку], 'пароль' FROM [密码] WHERE x = N'密'"
 0,44 singlequote batch=0 quote=- | kw:"SELECT"@0 id:"Ку"@7 comma:""@11 kw:"FROM"@22 id:"密码"@27 kw:"WHERE"@32 id:"x"@38 id:"N"@42
 0,45 singlequote batch=0 quote=- | kw:"SELECT"@0 id:"Ку"@7 comma:""@11 kw:"FROM"@22 id:"密码"@27 kw:"WHERE"@32 id:"x"@38 id:"N"@42
 0,46 normal batch=0 quote=- | kw:"SELECT"@0 id:"Ку"@7 comma:""@11 kw:"FROM"@22 id:"密码"@27 kw:"WHERE"@32 id:"x"@38 id:"N"@42
+
+== unpivot
+script "SELECT * FROM dbo.Orders UNPIVOT (Amount FOR Kind IN (Q1, Q2)) AS u WHERE u."
+0,0 normal batch=0 quote=- |
+0,1 normal batch=0 quote=- | id:"S"@0
+0,2 normal batch=0 quote=- | id:"SE"@0
+0,3 normal batch=0 quote=- | id:"SEL"@0
+0,4 normal batch=0 quote=- | id:"SELE"@0
+0,5 normal batch=0 quote=- | id:"SELEC"@0
+0,6 normal batch=0 quote=- | kw:"SELECT"@0
+0,7 normal batch=0 quote=- | kw:"SELECT"@0
+0,8 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,9 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7
+0,10 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"F"@9
+0,11 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FR"@9
+0,12 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 id:"FRO"@9
+0,13 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,14 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9
+0,15 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"d"@14
+0,16 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"db"@14
+0,17 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14
+0,18 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17
+0,19 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"O"@18
+0,20 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 kw:"OR"@18
+0,21 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Ord"@18
+0,22 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orde"@18
+0,23 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 kw:"ORDER"@18
+0,24 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18
+0,25 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18
+0,26 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"U"@25
+0,27 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UN"@25
+0,28 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNP"@25
+0,29 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPI"@25
+0,30 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIV"@25
+0,31 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVO"@25
+0,32 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25
+0,33 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25
+0,34 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33
+0,35 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"A"@34
+0,36 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Am"@34
+0,37 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amo"@34
+0,38 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amou"@34
+0,39 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amoun"@34
+0,40 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34
+0,41 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34
+0,42 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"F"@41
+0,43 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FO"@41
+0,44 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41
+0,45 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41
+0,46 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"K"@45
+0,47 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Ki"@45
+0,48 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kin"@45
+0,49 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45
+0,50 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45
+0,51 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 id:"I"@50
+0,52 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50
+0,53 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50
+0,54 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53
+0,55 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q"@54
+0,56 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54
+0,57 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56
+0,58 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56
+0,59 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q"@58
+0,60 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58
+0,61 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60
+0,62 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61
+0,63 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61
+0,64 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 id:"A"@63
+0,65 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63
+0,66 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63
+0,67 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66
+0,68 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66
+0,69 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 id:"W"@68
+0,70 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 id:"WH"@68
+0,71 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 id:"WHE"@68
+0,72 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 id:"WHER"@68
+0,73 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 kw:"WHERE"@68
+0,74 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 kw:"WHERE"@68
+0,75 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 kw:"WHERE"@68 id:"u"@74
+0,76 normal batch=0 quote=- | kw:"SELECT"@0 star:""@7 kw:"FROM"@9 id:"dbo"@14 dot:""@17 id:"Orders"@18 id:"UNPIVOT"@25 lparen:""@33 id:"Amount"@34 id:"FOR"@41 id:"Kind"@45 kw:"IN"@50 lparen:""@53 id:"Q1"@54 comma:""@56 id:"Q2"@58 rparen:""@60 rparen:""@61 kw:"AS"@63 id:"u"@66 kw:"WHERE"@68 id:"u"@74 dot:""@75
 
 == unterminated block comment
 script "SELECT 1\n/* never closed\nGO\nSELECT 2"
@@ -1184,6 +1618,7 @@ script "SELECT 'never closed\nGO\nSELECT 2"
 2,8 singlequote batch=0 quote=- | kw:"SELECT"@0
 
 [typing]
+c46ead117004498e bare sigils
 14521178b8978031 bracket spans go line
 802748d306c3537a commented go with trailing alias
 de0a28388fd5e914 consecutive semicolon
@@ -1192,6 +1627,7 @@ e2e1f55f81c02875 empty
 06b94a2ffbc8acdc escaped bracket
 9e3b637d4502101f escaped doublequote
 525814170fa6771a escaped quote
+57c61e2b72f7dfd3 global temp table
 f8fad5e2ef15c44f go casing and spacing
 eef94152fcd3c83d go inside block comment
 5bfd4cba52e09c87 go inside block comment then code
@@ -1205,15 +1641,20 @@ aac369723f929b5b go with a count
 96da860c6596bab2 line comment with semicolon
 6c0e57627523875a only go
 2bb13b2bcbe4f099 parens and commas
+f53671fffd69d643 pivot
 2a7c83f4b1259a40 plain
 546be5206cfd8e41 qualified names
 3f598307574f2189 semicolon in string
 49d8eb01fa9d5dc6 semicolon inside brackets
 870555c362bbf9c8 semicolon then go
 475e5ac4d902ee0d semicolons
+794083067be8a1ed sigil in a literal and a comment
 42098a35ea40c88e string spans go line
+ea2ddea81da173da table variable
+f6c33f6a4dd314e8 temp tables
 19fabe35180adc1f trailing semicolon
 56a0dd9e511a4019 unicode
+78d1708bd1ae812a unpivot
 84bfa35532870482 unterminated block comment
 7cd79667ccd8f73f unterminated bracket
 df68d02169bb915b unterminated string

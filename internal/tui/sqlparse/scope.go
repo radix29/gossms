@@ -60,6 +60,12 @@ type FromRef struct {
 	// Derived is the query behind "( ... ) [AS] alias", with Schema and Name
 	// empty. Only the tree parser below sets it; ParseFromScope never does.
 	Derived *Query
+
+	// Pivot is the PIVOT/UNPIVOT clause applied to this reference, reshaping
+	// what it puts in scope (see pivot.go). Alias is then the pivoted result's
+	// name — the source's own alias is not addressable past the clause, so it
+	// is not kept. Only the tree parser sets it.
+	Pivot *Pivot
 }
 
 // ParseFromScope walks tokens looking for table references introduced by
@@ -625,7 +631,7 @@ func (p *queryParser) skipSelectModifiers() {
 		case p.atKeyword("TOP"):
 			p.i++
 			// The count: "TOP (expr)", or the bare "10"/"@n" the lexer hands
-			// back as an identifier (it keeps digits, and drops the '@').
+			// back as an identifier (it keeps digits, and keeps the '@').
 			// Whatever it is, it is never a select item.
 			if p.at(TokenParenOpen) {
 				p.skipParenGroup()
@@ -716,7 +722,9 @@ func (p *queryParser) parseRef(q *Query) bool {
 		if sub == nil {
 			return false
 		}
-		q.From = append(q.From, FromRef{Derived: sub, Alias: p.parseAlias()})
+		ref := FromRef{Derived: sub}
+		p.parseRefTail(&ref)
+		q.From = append(q.From, ref)
 		return true
 	}
 	if t.Kind != TokenIdent {
@@ -733,9 +741,28 @@ func (p *queryParser) parseRef(q *Query) bool {
 		// hint. Either way the alias, if any, follows the group.
 		p.skipParenGroup()
 	}
-	ref.Alias = p.parseAlias()
+	p.parseRefTail(&ref)
 	q.From = append(q.From, ref)
 	return true
+}
+
+// parseRefTail consumes what can follow a table reference's name: an optional
+// PIVOT/UNPIVOT clause and an alias.
+//
+// Both orders occur — "t PIVOT (...) AS p" and "(SELECT ...) AS src PIVOT (...)
+// AS p" — and the clause is checked first in each, because parseAlias would
+// otherwise take the bare word PIVOT for the alias it is not. When a clause is
+// found, the alias that follows it is the reference's: a pivoted source's own
+// alias is only addressable inside the clause.
+func (p *queryParser) parseRefTail(ref *FromRef) {
+	ref.Pivot = p.parsePivot()
+	ref.Alias = p.parseAlias()
+	if ref.Pivot != nil {
+		return
+	}
+	if pv := p.parsePivot(); pv != nil {
+		ref.Pivot, ref.Alias = pv, p.parseAlias()
+	}
 }
 
 // parseAlias consumes an optional "AS name" or bare trailing name.

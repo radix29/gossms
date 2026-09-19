@@ -90,15 +90,15 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 }
 
 // tableCandidates offers every schema (the connected database's own, plus
-// "sys" once its inventory has loaded), every table/view, and every visible
-// CTE name whose name starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/
-// TRUNCATE TABLE context, and the fallback when a column context has no
-// FROM-scope yet (which passes no CTEs: a CTE name is a relation, not a
-// column).
+// "sys" once its inventory has loaded), every table/view, every visible CTE
+// name and every temp table/table variable the batch declares whose name
+// starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
+// context, and the fallback when a column context has no FROM-scope yet
+// (which passes no CTEs: a CTE name is a relation, not a column).
 // The sys-schema inventory's own objects are not mixed into the unqualified
 // list below: there are hundreds of them, so they're offered only once a
 // query qualifies with "sys." (see memberCandidates).
-func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, prefix string) []controls.CompletionItem {
+func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sqlparse.CTE, bindings []sqlparse.Binding, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	for _, cte := range ctes {
@@ -108,6 +108,26 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		items = append(items, controls.CompletionItem{
 			Text: bracketIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
 			Icon: p.tableIcon(gosmo.CatalogTable),
+		})
+	}
+	seenBinding := map[string]bool{}
+	for i := len(bindings) - 1; i >= 0; i-- {
+		// Backwards and deduplicated, to match findBinding: a redeclared name
+		// is one candidate, and it is the later declaration's.
+		name := bindings[i].Name
+		key := strings.ToLower(name)
+		if seenBinding[key] || !strings.HasPrefix(key, pl) {
+			continue
+		}
+		seenBinding[key] = true
+		detail := "temp table"
+		if strings.HasPrefix(name, "@") {
+			detail = "table variable"
+		}
+		// Never bracketed: "[@t]" names a column or object, not the variable,
+		// and "[#t]" is legal but not what the user typed.
+		items = append(items, controls.CompletionItem{
+			Text: name, Label: name, Detail: detail, Icon: p.tableIcon(gosmo.CatalogTable),
 		})
 	}
 	for _, schema := range inv.catalog.Schemas {

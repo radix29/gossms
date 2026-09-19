@@ -204,6 +204,17 @@ var diffCorpus = map[string]string{
 	"qualified names":       "SELECT o.* FROM [my db].dbo.[Ord.ers] AS o JOIN a.b.c d ON d.x = o.y",
 	"parens and commas":     "SELECT f(a, b), (c), COUNT(*) FROM T GROUP BY a, b",
 	"unicode":               "SELECT [Ку], 'пароль' FROM [密码] WHERE x = N'密'",
+
+	// Sigil names: the tokenizer keeps '#'/'@' as part of the identifier, and
+	// a sigil with nothing after it is still the token the popup replaces.
+	"temp tables":                      "CREATE TABLE #t (Id int)\nSELECT * FROM #t t WHERE t.Id = @n",
+	"table variable":                   "DECLARE @rows TABLE (Id int)\nINSERT INTO @rows SELECT Id FROM dbo.T\nSELECT * FROM @rows",
+	"global temp table":                "SELECT * INTO ##g FROM dbo.T\nSELECT * FROM ##g",
+	"bare sigils":                      "SELECT @@ROWCOUNT, # FROM T WHERE x = @",
+	"sigil in a literal and a comment": "SELECT '#t' -- @v\nFROM T",
+
+	"pivot":   "SELECT * FROM dbo.Orders PIVOT (SUM(Total) FOR Yr IN ([2005], [2006])) AS p",
+	"unpivot": "SELECT * FROM dbo.Orders UNPIVOT (Amount FOR Kind IN (Q1, Q2)) AS u WHERE u.",
 }
 
 // fragments are recombined into synthetic scripts below. The set is chosen so

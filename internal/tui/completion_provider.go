@@ -29,6 +29,12 @@ import (
 // plausible wrong list: keyword completion, temp tables and table variables,
 // table-valued function result shapes, PIVOT/UNPIVOT, OPENJSON/OPENROWSET
 // WITH column lists, and cross-database chains.
+//
+// Temp tables (#t, ##t) and table variables (@t) are in scope too, resolved
+// from the declaration — CREATE TABLE, DECLARE ... TABLE, or SELECT ... INTO —
+// found by scanning the cursor's GO-delimited batch, and PIVOT/UNPIVOT
+// reshapes the reference it follows (see sqlparse.ScanBindings and
+// sqlparse.Pivot).
 // ---------------------------------------------------------------------------
 
 // newCompletionProvider builds the controls.CompletionProvider installed on
@@ -147,18 +153,92 @@ func (p *QueryPanel) sqlCompletionCandidates(lines [][]rune, row, col int) ([]co
 	if scope.Query == nil {
 		refs, clause = sqlparse.ParseFromScope(stmtTokens), sqlparse.CurrentClause(tokens)
 	}
-	rels := resolveRefs(newResolveCtx(inv, sysInv, scope.CTEs), refs)
+
+	// Temp tables and table variables are declared in a different statement
+	// from the one using them, so their shapes come from a scan of the whole
+	// GO-delimited batch — the one piece of cross-statement work a keystroke
+	// can do. bindingsInPlay keeps it off the path of every script that
+	// doesn't name one; see sqlparse.ScanBindings.
+	var bindings []sqlparse.Binding
+	if bindingsWanted(clause, scope.Query, refs, scope.CTEs, qualifier, prefix) &&
+		sqlparse.ContainsSigil(buf, pre.GoStart) {
+		batchEnd := sqlparse.BatchEndOffset(lines, buf, row, forwardFrom)
+		batchTokens, _, _, _ := sqlparse.TokenizeRange(buf, pre.GoStart, batchEnd, false)
+		bindings = sqlparse.ScanBindings(batchTokens)
+	}
+	rels := resolveRefs(newResolveCtx(inv, sysInv, scope.CTEs, bindings), refs)
 
 	switch {
 	case hasQualifier:
 		return p.memberCandidates(inv, sysInv, rels, qualifier, prefix), replaceFrom
 	case clause == sqlparse.ClauseTable:
-		return p.tableCandidates(inv, sysInv, scope.CTEs, prefix), replaceFrom
+		return p.tableCandidates(inv, sysInv, scope.CTEs, bindings, prefix), replaceFrom
 	case len(rels) == 0:
 		// Column context but nothing resolvable has been FROM'd yet — nothing
 		// to pull columns from, so fall back to the object list.
-		return p.tableCandidates(inv, sysInv, nil, prefix), replaceFrom
+		return p.tableCandidates(inv, sysInv, nil, bindings, prefix), replaceFrom
 	default:
 		return p.scopedColumnCandidates(rels, prefix), replaceFrom
 	}
+}
+
+// bindingsWanted reports whether this keystroke's answer can depend on the
+// batch's declarations: something it is about to resolve carries a
+// temp-table or table-variable sigil — a FROM-scope name at any nesting, a CTE
+// body's, or the name being typed — or it is a table clause, where every temp
+// table in the batch belongs in the list even before the sigil is typed.
+//
+// It gates the batch scan ScanBindings needs. A column-context keystroke in a
+// script that merely passes scalar variables around — "WHERE id = @id", which
+// is most of them — names no table variable, so it never pays for one.
+func bindingsWanted(clause sqlparse.Clause, q *sqlparse.Query, refs []sqlparse.FromRef, ctes []sqlparse.CTE, qualifier, prefix string) bool {
+	if clause == sqlparse.ClauseTable || sqlparse.HasSigil(qualifier) || sqlparse.HasSigil(prefix) {
+		return true
+	}
+	for _, cte := range ctes {
+		if queryUsesSigil(cte.Body, 0) {
+			return true
+		}
+	}
+	if q != nil {
+		return queryUsesSigil(q, 0)
+	}
+	return refsUseSigil(refs)
+}
+
+// queryUsesSigil walks one query's own refs, its derived tables, its
+// sub-SELECTs and its CTE bodies, bounded by the same depth cap relation
+// resolution uses.
+func queryUsesSigil(q *sqlparse.Query, depth int) bool {
+	if q == nil || depth >= maxRelationDepth {
+		return false
+	}
+	if refsUseSigil(q.From) {
+		return true
+	}
+	for _, r := range q.From {
+		if queryUsesSigil(r.Derived, depth+1) {
+			return true
+		}
+	}
+	for _, sub := range q.Subqueries {
+		if queryUsesSigil(sub, depth+1) {
+			return true
+		}
+	}
+	for _, cte := range q.CTEs {
+		if queryUsesSigil(cte.Body, depth+1) {
+			return true
+		}
+	}
+	return false
+}
+
+func refsUseSigil(refs []sqlparse.FromRef) bool {
+	for _, r := range refs {
+		if r.Derived == nil && r.Schema == "" && sqlparse.HasSigil(r.Name) {
+			return true
+		}
+	}
+	return false
 }
