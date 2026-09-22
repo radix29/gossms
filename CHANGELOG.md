@@ -6,6 +6,122 @@ entries start with v0.0.2 onward.
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-09-22
+
+### Added
+
+- **Service Broker in Object Explorer.** Every database gains a **Service
+  Broker** folder with the seven SSMS families: Message Types, Contracts,
+  Queues, Services, Routes, Remote Service Bindings and Broker Priorities
+  (`internal/tui/explorer_service_broker.go`). Each has a listing, an Object
+  Explorer Details view (`detail_browser_service_broker.go`), a Properties
+  dialog, Script as CREATE/DROP and Delete. The folder is listed whether or
+  not the broker is enabled on the database, as SSMS does — the objects exist
+  either way.
+  - **Queue and Route Properties are editable** (`queue_props.go`,
+    `route_props.go`) and send only the settings that changed, as one
+    `ALTER QUEUE` / `ALTER ROUTE`. They are the two whose settings change
+    while an application runs — status, retention, activation, poison-message
+    handling; address, lifetime, mirror address. The Queues listing and a
+    queue's details view show its message count.
+  - **The other five are read-only.** What a message type, contract, service,
+    remote service binding or broker priority defines is part of the
+    application's schema and belongs in the script that ships it.
+  - **Permission-gated per family**, including Move to Schema on a queue,
+    which reads the class-1 object map like any other `sys.objects` family.
+  - **Azure SQL Managed Instance:** a remote service binding cannot be created
+    there, so the script action is withheld. A route with a `TRANSPORT`
+    address or any mirror address is refused by the server (Msg 41943); Route
+    Properties accepts both and reports the refusal rather than disabling the
+    fields. README's Known issues says so.
+- **A redesigned Connect dialog.** A **History** pane on the left lists saved
+  connections most recent first — select one to fill the form, Enter or a
+  second click to connect; it is hidden on a terminal narrower than ~96
+  columns, where nothing it fills in becomes unreachable. The form is split
+  into **Connection Properties** and **Connection String** tabs
+  (Ctrl+PgUp/PgDn), with **Custom Properties** visible under both. **Reset**
+  empties the form without touching saved connections; **Delete** removes the
+  highlighted saved connection, and its saved password, after asking, and
+  sits alone at the left of the button row, away from Connect. F1 cycles the
+  buttons.
+- **Remember Password.** A new checkbox decides whether the password is
+  written to `config.json` at all. Off for a new connection; connecting with
+  it unticked also removes a password stored earlier. A saved connection that
+  has one opens with it ticked, so existing entries keep working. Greyed, with
+  the other unused fields, for a method that sends no password.
+- **Configurable indent size and smart indentation in the query editor.**
+  Tools > Options gains an indent size (spaces per level, default 4). Tab,
+  Shift+Tab and the indent/dedent commands shift by it; Enter keeps the
+  current line's indentation and adds one level after a line ending in `(` or
+  in `SELECT`/`FROM`/`WHERE`. Pasted text keeps the indentation it came with.
+  Changing the setting applies to every open query window and to the SQL
+  editors inside open property sheets.
+- **IntelliSense resolves query structure, not only the flat FROM list.**
+  `sqlparse.ScopeAt` builds a query tree, so columns complete from CTEs,
+  derived tables, sub-SELECTs, `UNION`/`EXCEPT`/`INTERSECT` chains and
+  `PIVOT`/`UNPIVOT` output, including a `SELECT *` over one
+  (`completion_relations.go`). `sqlparse.ScanBindings` reads the batch's
+  `CREATE TABLE #t` and `DECLARE @t TABLE` declarations, so temp tables and
+  table variables complete with their columns, and typing `#` or `@` now
+  opens the suggestion list. Shapes it does not model — table-valued function
+  results, `OPENJSON`/`OPENROWSET ... WITH`, cross-database chains — answer
+  with nothing rather than a wrong list; `docs/open-threads.md` N1.
+- **Linux desktop launcher and icons.** `packaging/linux/gossms.desktop`
+  (`Terminal=true`) and the hicolor icon set from `docs/ico/linux` ship in the
+  Linux release archives, and both the Homebrew formula (on Linux) and the
+  `.deb` install them, so goSSMS appears in the desktop's application menu.
+
+### Changed
+
+- `gosmo` v0.0.13 → v0.0.14 — the Service Broker families, `AcquireConn`,
+  batched Agent writes, and the `Ref`-suffixed lookup-free handles
+  (`DatabaseRef`, `TableRef`, …), which every call site now uses by name.
+- **SQL Server Agent Properties apply in one statement.** Job, Alert,
+  Operator and Schedule pages send one `sp_update_*` call with every changed
+  field, rename included, instead of one round trip per field.
+- **Connect dialog labels match SSMS**: `Client ID`, `Tenant ID`, `Host Name
+  In Certificate`, `Custom Properties` (was `ClientID`, `TenantID`,
+  `CertHost`, `Extra Properties`). **Server Name** carries the port as SSMS
+  spells it — `host,1500`, `host:1500`, `host\instance,1500`.
+- **The completion prefix scan is incremental** (`sqlparse.PrefixCache`): a
+  keystroke re-lexes from the last statement boundary above the edit rather
+  than from the top of the script, so IntelliSense stays responsive in a
+  long script. The scan below the cursor is still linear;
+  `docs/open-threads.md` N3.
+- Properties dialogs own a per-page cancel: refreshing a page, or re-applying,
+  cancels the load it replaces and releases its connection immediately rather
+  than at the 30-second fetch timeout.
+- Query and Query Store panels share one latest-only read helper
+  (`internal/tui/latest.go`); report and plan reads superseded by a newer one
+  are cancelled, not just ignored.
+
+### Fixed
+
+- **Move to Schema was gated on the wrong right** for tables, views,
+  procedures, functions and the other `sys.objects` families. It was offered
+  on the Rename/Delete set — to a principal holding only `ALTER`, or
+  `db_ddladmin`, which the server refuses with Msg 15151 — and withheld from
+  one holding `CONTROL` with `ALTER` denied, which the server allows. It now
+  asks for `CONTROL` on the object, the right `ALTER SCHEMA ... TRANSFER`
+  actually checks, verified live against six grant shapes.
+- **Deleting a database-scoped credential or a database audit specification**
+  looked the database up first, costing a `sys.databases` round trip and
+  failing with "database not found" where every other family emits the
+  `DROP`.
+- **Pressing F5 on a Properties page still loading** started a second load
+  without stopping the first; four presses held four pooled connections for up
+  to 30 seconds.
+- A Properties dialog reused for another object could show the previous
+  object's dependency list when its fetch finished late; the fetch is now
+  cancelled when the dialog is repurposed.
+- **A scripted sequence over a user-defined alias type** lost the type's
+  schema, so the script resolved a different type — or none — when run by a
+  principal with another default schema (gosmo v0.0.14).
+- The query editor's wrap-mode switch left the previous mode's block
+  selection and scroll position behind.
+- The Connect dialog's encryption fallback recursed through a mode it assumed
+  was always present; dropping that mode would have been a stack overflow.
+
 ## [0.0.11] - 2026-09-15
 
 ### Added

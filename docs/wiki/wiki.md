@@ -19,17 +19,19 @@ A terminal-based SQL Server Management Studio for Linux, macOS, and Windows.
 One executable — no GUI, no installer, no SQL client tools or drivers
 required. More content here soon.
 
-Current release: **v0.0.11**. See
+Current release: **v0.0.12**. See
 [RELEASE.md](https://github.com/radix29/gossms/blob/main/RELEASE.md) for what
 changed and
 [CHANGELOG.md](https://github.com/radix29/gossms/blob/main/CHANGELOG.md) for
 the detail behind it. Supported servers: **SQL Server 2016 SP1 and later**, on
 Windows and Linux, and **Azure SQL Managed Instance**.
 
-**New in v0.0.11:** install from **Homebrew** or **APT**, and sign in with
-**Microsoft Entra ID** — seven methods, including Device Code, which shows a
-code to enter from a phone or another machine and so works over SSH on a host
-with no browser.
+**New in v0.0.12:** **Service Broker** in Object Explorer, a redesigned
+Connect dialog with a History pane and **Remember Password**, smarter
+IntelliSense (CTEs, derived tables, temp tables and table variables), and
+configurable indentation in the query editor.
+
+Questions and feedback: [goSSMS on Discord](https://discord.gg/7YVKzB3vZ).
 
 ## Install
 

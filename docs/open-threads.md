@@ -43,12 +43,9 @@ method swept.
 
 ## Release workflow: what is still open
 
-**gosmo must be tagged before gossms can be tagged at all.** `go.mod` requires
-`v0.0.13`, which predates `AcquireConn`, `ShowplanColumn`, the
-`LinkedServer`/`ServerRole` work and the Service Broker routing families that
-`internal/tui` now calls — so a build with the `replace` commented out does not
-resolve. Tag gosmo, bump `require`, then comment the `replace` out, in that
-order; `RELEASE.md` owns the steps.
+**Tag v0.0.12, then re-activate the `replace`.** gosmo v0.0.14 is tagged and
+pushed, `go.mod` requires it and the `replace` is commented out, so a clean
+build resolves. Delete this paragraph once the tag is pushed.
 
 **`brew audit --strict --online` reports "`version …` is redundant with version
 scanned from URL"** (on Linux Homebrew; `brew style` and the `livecheck` block
@@ -151,13 +148,13 @@ None outstanding.
   the package does not model aggregates.
 
 - **N3 — `BatchEndOffset`'s forward scan is still O(script).**
-  N2's prefix scan is now incremental (`sqlparse.PrefixCache`), but
-  `sqlparse.BatchEndOffset` (`internal/tui/sqlparse/token.go:513`) still lexes
+  The prefix scan is incremental (`sqlparse.PrefixCache`), but
+  `sqlparse.BatchEndOffset` (`internal/tui/sqlparse/token.go`) still lexes
   forward from the cursor to the next bare `GO`, and to the end of the buffer
   when there is none — so a cursor in the last batch of a large script pays for
   nothing, and one near the top pays for everything below it. It runs once per
   keystroke while the popup is open, on the same UI goroutine.
-  Deliberately out of scope of the N2 work: the boundaries it needs are *ahead*
+  Deliberately out of scope of the prefix-cache work: the boundaries it needs are *ahead*
   of the cursor, which is exactly the half `PrefixCache` does not record, and
   caching them would have to be invalidated by every edit below the cursor
   rather than above it. Not currently measured — the trigger is a benchmark

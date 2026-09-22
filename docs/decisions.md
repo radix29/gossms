@@ -106,8 +106,8 @@ livedb`) is the repeatable part.
   § Build & verify lists them, and `staticcheck` is now zero-output on both
   repos, so running it is one command with a yes/no answer. The one thing CI
   would have caught and nothing else does — gosmo needing a tag before gossms
-  can have one — is tracked in `docs/open-threads.md` § Release workflow
-  instead. Re-raising CI needs a new reason, not the same one.
+  can have one — is a release step instead (`CLAUDE.md` § What this is, and
+  the `replace` entry under § By design below). Re-raising CI needs a new reason, not the same one.
 - **The 134 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
   Most loaders resolve the database with a real `sys.databases` read where
   `Server.DatabaseRef(name)`'s handle would do, costing a round trip per folder
@@ -395,8 +395,9 @@ withholds it.
 ### The rest
 
 - **No other class is reachable.** Beyond the gated classes above, gossms's
-  `NodeType` list has no certificate,
-  symmetric/asymmetric key, fulltext catalog or Service Broker node, and
+  `NodeType` list has no certificate, symmetric/asymmetric key or fulltext
+  catalog node. The Service Broker families are gated by their database-wide
+  `ALTER ANY …` rights (`internal/tui/gate/gate.go`), not a class probe, and
   column master/encryption keys, partition functions and schemes have no
   securable class of their own.
 - **The column path is dormant in production — do not re-raise.**
@@ -872,7 +873,7 @@ they flipped the selector.
 
 ## Connection settings: what the live run settled
 
-Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
+Encrypt modes, Custom Properties, the Entra field mapping and IPv6 addresses.
 `internal/db/live_connect_test.go` is the repeatable part; it passes on 13,
 17.0 and MI.
 
@@ -885,20 +886,20 @@ Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
 - **Mandatory with Trust Server Certificate off fails on every on-prem
   instance here** (`x509: certificate is not valid for any names`), for the
   same reason. That is why Trust stays ticked by default beside Mandatory.
-- **CertHost was verified on MI by IP address**: the TLS validation that fails
+- **Host Name In Certificate was verified on MI by IP address**: the TLS validation that fails
   without it (`doesn't contain any IP SANs`) passes with it. The login that
   follows is then refused by Azure's gateway (40532: it routes on the server
   name), which is Azure's, not TLS's.
 - **`net_packet_size` reads 58 bytes high on an encrypted session** (4154 for
   the driver's default 4096, on 17.0 and MI alike), and the server caps 8192 to
-  8000. The live Extra Properties test asks for 16000 and allows for the 58.
+  8000. The live Custom Properties test asks for 16000 and allows for the 58.
 - **Azure encrypts every session**: Optional still reads `encrypt_option` TRUE
   on MI. The live test checks Optional only off Azure.
 - **On MI, a `packet size` below 4096 cannot connect at all** — `TLS Handshake
   failed: cannot read handshake packet: invalid packet size, it is longer than
   buffer size`, for both Optional and Mandatory. go-mssqldb sizes its handshake
   buffer from the requested packet size and MI's handshake does not fit. A
-  driver limitation reached only through Extra Properties; 17.0 takes 2048
+  driver limitation reached only through Custom Properties; 17.0 takes 2048
   fine.
 - **`ApplicationIntent=ReadOnly` was verified on AAG1** with read-only routing
   set up for the run and reverted after: straight to the secondary, no intent is
@@ -914,7 +915,7 @@ Encrypt modes, Extra Properties, the Entra field mapping and IPv6 addresses.
   (`fe80::1\INST,1500`). gosmo refuses it without one: the driver keeps the
   brackets of a port-less literal in the Browser probe's address, so there is
   no URL form that works.
-- **Extra Properties separators are `;`, `&` and line breaks, not spaces** —
+- **Custom Properties separators are `;`, `&` and line breaks, not spaces** —
   `packet size=8192 database=foo` is one entry whose value is
   `8192 database=foo`, which the driver rejects. The dialog's Enter is its
   Connect key, so in practice the separator is `;` or `&`.
@@ -932,15 +933,14 @@ Connection String). Four things about it are decided and are not to be
 re-opened without asking the author.
 
 - **A password is stored only when Remember Password is ticked, and the box is
-  off for a new connection.** Every successful connection used to seal its
-  password into `config.json` unconditionally. `Config.AddOrUpdate` now blanks
+  off for a new connection.** `Config.AddOrUpdate` blanks
   `Password` when `!RememberPassword`, so connecting with the box unticked also
   drops any ciphertext the entry already held — the entry itself stays, because
   it is what the History pane lists. The caller's copy is untouched
   (`AddOrUpdate` takes the connection by value), which is what keeps
   `App.rememberPeerCredentials` working for live peer connects. A saved entry
-  that carries a password pre-fills with the box ticked, so entries written
-  under the old behaviour keep working until one is deliberately unticked.
+  that carries a password pre-fills with the box ticked, so entries saved
+  before the box existed keep working until one is deliberately unticked.
 - **`RememberPassword` is deliberately not in `connectionAAD`.** Toggling it
   must not invalidate a password sealed before the toggle — the same rule
   `secret.go` already states for `Database` and `ExtraProperties`.

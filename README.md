@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://github.com/radix29/gossms/commits/main"><img src="https://img.shields.io/github/last-commit/radix29/gossms?style=flat" alt="Last commit"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/radix29/gossms?style=flat" alt="License"></a>
+  <a href="https://discord.gg/7YVKzB3vZ"><img src="https://img.shields.io/badge/Discord-join-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 # goSSMS
@@ -85,6 +86,9 @@ Installed through Homebrew or APT, `gossms` is already on your `PATH`:
 gossms
 ```
 
+On Linux, both also add a **goSSMS** entry to the desktop's application menu,
+which opens it in a terminal.
+
 Otherwise, on Windows, open PowerShell in the extracted folder and run:
 
 ```powershell
@@ -153,23 +157,6 @@ Microsoft Entra methods are:
 | **Microsoft Entra Default** | Tries environment variables, managed identity and the Azure CLI in turn. |
 | **Microsoft Entra Azure CLI** | Uses the account `az login` signed in. |
 
-**Tenant ID** is optional for every Entra method except Managed Identity, which
-has no tenant field. Left blank, MFA, Device Code, Password and Service
-Principal sign in to the tenant the server belongs to, as SSMS does — which
-is what lets a personal Microsoft account added to that tenant sign in —
-and Default and Azure CLI use their own. For MFA, Device Code and Password,
-**Client ID** names your organisation's own app registration when it requires
-one; blank uses Microsoft's public client.
-
-MFA and Device Code sign in as a step of their own before connecting, with up
-to five minutes to finish; the status bar says where to go. Device Code's code
-appears in a dialog — **Copy Code** (or Ctrl+C) copies it to the clipboard —
-and Escape or **Cancel Sign-in** cancels the attempt. One sign-in covers the
-whole session: Object Explorer, every query window, Activity Monitor and
-reconnects, on every server in the same tenant. Sign-ins are held in memory
-only, so goSSMS signs in again after a restart; **File > Clear Microsoft Entra
-Sign-ins** forgets them sooner, to switch accounts.
-
 New connections encrypt the whole session (**Encrypt: Mandatory**) with **Trust
 Server Certificate** ticked, so an instance using SQL Server's self-signed
 certificate still connects. Untick it to validate the certificate, and fill in
@@ -214,7 +201,9 @@ connected SQL Server version or engine edition are hidden or disabled.
   transaction. Enter keeps the current line's indentation, adding one level
   after a line ending in `(` or in `SELECT`/`FROM`/`WHERE`; Tab, Shift+Tab and
   the indent/dedent commands shift by the Options indent size (4 spaces by
-  default). Pasted text keeps the indentation it came with.
+  default). Pasted text keeps the indentation it came with. IntelliSense
+  completes columns from CTEs, derived tables, sub-SELECTs and `PIVOT`, and
+  from temp tables and table variables declared in the batch.
 - **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and
@@ -274,33 +263,12 @@ password is bound to its connection's server, port, user, authentication method
 and encryption settings: editing any of those in `config.json` by hand makes the
 saved password unreadable, and it has to be typed again.
 
-## Known issues
-
-- Every Microsoft Entra method except Managed Identity has been verified end
-  to end on Azure SQL Managed Instance. Managed Identity needs goSSMS running
-  on an Azure-hosted machine and has not been tested.
-- To learn which tenant to sign in to, goSSMS starts a login to the server
-  and abandons it before signing in, once per server per session. Azure SQL
-  records each as Error 33155 ("A disconnect event was raised when server is
-  waiting for Federated Authentication token") in its error log.
-- Backup and restore to Azure Storage build and validate correctly but have
-  not been executed end to end; doing so requires a shared access signature
-  credential on the container.
-- On Azure SQL Managed Instance, a remote service binding cannot be created,
-  so goSSMS withholds that script action there. Creating a route with an
-  address of `TRANSPORT`, or with any mirror address, is refused by the server
-  (Msg 41943); Route Properties accepts both and reports the refusal rather
-  than disabling the fields.
-- macOS has not yet been tested on physical Mac hardware.
-- Release binaries are not signed for SmartScreen or Gatekeeper, so both warn
-  on first run. The published checksums are cosign-signed; see
-  [Direct download](#direct-download).
-
 ## Links
 
 - [Releases and downloads](https://github.com/radix29/gossms/releases)
 - [Release notes](https://github.com/radix29/gossms/blob/main/RELEASE.md)
 - [Report an issue](https://github.com/radix29/gossms/issues)
+- [Discord server](https://discord.gg/7YVKzB3vZ) — questions, feedback and release announcements
 
 ## License
 
