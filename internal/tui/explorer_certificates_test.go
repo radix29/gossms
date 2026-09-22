@@ -301,8 +301,8 @@ func TestCertificateDetail(t *testing.T) {
 	}
 }
 
-// CertificateByName answers (nil, nil) for a missing certificate — one dropped
-// since the tree was read. The detail pane must say so, not panic.
+// CertificateByName answers ErrNotFound for a missing certificate — one
+// dropped since the tree was read. The detail pane must say so, not panic.
 func TestCertificateDetailOfADroppedCertificate(t *testing.T) {
 	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{
 		match: "FROM   sys.certificates", arg: "gone", cols: 15,

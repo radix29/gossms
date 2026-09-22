@@ -18,23 +18,23 @@ import (
 // PARTITION SCHEME only names the next filegroup to use.
 
 // findPartitionFunction resolves a partition function by name. It exists
-// only to save the DatabaseByNameContext step at its three call sites; the
+// only to save the DatabaseByName step at its three call sites; the
 // lookup itself is gosmo's, which matches the name in SQL and so under the
 // server's collation.
 func findPartitionFunction(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionFunction, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.PartitionFunctionByNameContext(ctx, name)
+	return d.PartitionFunctionByName(ctx, name)
 }
 
 func findPartitionScheme(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.PartitionScheme, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.PartitionSchemeByNameContext(ctx, name)
+	return d.PartitionSchemeByName(ctx, name)
 }
 
 func partitionFunctionPropPages(sc *db.ServerConn, dbName, name string) []propPage {

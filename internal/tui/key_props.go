@@ -85,7 +85,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				if err != nil {
 					return err
 				}
-				if err := idx.RenameContext(ctx, t, nameRow.Value()); err != nil {
+				if err := idx.Rename(ctx, t, nameRow.Value()); err != nil {
 					return err
 				}
 				commitRename(ctx, name, nameRow.Value())
@@ -126,7 +126,7 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 					return err
 				}
 				if rowLocksRow.Dirty() || pageLocksRow.Dirty() {
-					if err := idx.SetLockOptionsContext(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
+					if err := idx.SetLockOptions(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
 						return err
 					}
 				}

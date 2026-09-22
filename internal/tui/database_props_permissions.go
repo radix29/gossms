@@ -12,19 +12,19 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Permissions",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			perms, err := d.DatabasePermissionsContext(ctx)
+			perms, err := d.DatabasePermissions(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -52,11 +52,11 @@ func pageDatabaseExtendedProperties(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Extended Properties",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			props, err := d.DatabaseExtendedPropertiesContext(ctx)
+			props, err := d.DatabaseExtendedProperties(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

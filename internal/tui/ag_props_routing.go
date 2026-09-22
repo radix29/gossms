@@ -43,7 +43,7 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			replicas, err := ag.ReplicasContext(ctx)
+			replicas, err := ag.Replicas(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -52,7 +52,7 @@ func pageAGReadOnlyRouting(sc *db.ServerConn, agName string) propPage {
 			edits := make([]*agRoutingEdit, len(replicas))
 			for i, r := range replicas {
 				names[i] = r.ReplicaServerName
-				list, err := r.ReadOnlyRoutingListContext(ctx)
+				list, err := r.ReadOnlyRoutingList(ctx)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -163,7 +163,7 @@ func applyAGRouting(ctx context.Context, ag *gosmo.AvailabilityGroup, edits []*a
 	if !changed {
 		return nil
 	}
-	replicas, err := ag.ReplicasContext(ctx)
+	replicas, err := ag.Replicas(ctx)
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func applyAGRouting(ctx context.Context, ag *gosmo.AvailabilityGroup, edits []*a
 			return err
 		}
 		if !op.isList {
-			if err := r.SetReadOnlyRoutingURLContext(ctx, op.edit.url); err != nil {
+			if err := r.SetReadOnlyRoutingURL(ctx, op.edit.url); err != nil {
 				return err
 			}
 			continue
@@ -191,7 +191,7 @@ func applyAGRouting(ctx context.Context, ag *gosmo.AvailabilityGroup, edits []*a
 		if err != nil {
 			return fmt.Errorf("read-only routing list for %s: %w", op.edit.name, err)
 		}
-		if err := r.SetReadOnlyRoutingListContext(ctx, list); err != nil {
+		if err := r.SetReadOnlyRoutingList(ctx, list); err != nil {
 			return err
 		}
 	}

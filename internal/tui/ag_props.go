@@ -51,7 +51,7 @@ func agOnPrimary(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Av
 // agOnPrimaryFollowed is agOnPrimary plus whether a peer connection was needed,
 // which the dashboard reports.
 func agOnPrimaryFollowed(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.AvailabilityGroup, bool, error) {
-	ag, err := sc.Server.AvailabilityGroupByNameContext(ctx, name)
+	ag, err := sc.Server.AvailabilityGroupByName(ctx, name)
 	if err != nil {
 		return nil, false, err
 	}
@@ -65,7 +65,7 @@ func agOnPrimaryFollowed(ctx context.Context, sc *db.ServerConn, name string) (*
 	if err != nil {
 		return nil, false, fmt.Errorf("connect to primary replica %s: %w", ag.PrimaryReplicaServerName, err)
 	}
-	ag, err = peer.Server.AvailabilityGroupByNameContext(ctx, name)
+	ag, err = peer.Server.AvailabilityGroupByName(ctx, name)
 	return ag, true, err
 }
 
@@ -133,11 +133,11 @@ type agReplicaEdit struct {
 func agReplicaEditFrom(r *gosmo.AvailabilityReplica) *agReplicaEdit {
 	return &agReplicaEdit{
 		name:             r.ReplicaServerName,
-		availabilityMode: r.AvailabilityMode, origAvailabilityMode: r.AvailabilityMode,
-		failoverMode: r.FailoverMode, origFailoverMode: r.FailoverMode,
-		primaryRole: r.PrimaryRoleAllowConnections, origPrimaryRole: r.PrimaryRoleAllowConnections,
-		secondaryRole: r.SecondaryRoleAllowConnections, origSecondaryRole: r.SecondaryRoleAllowConnections,
-		seedingMode: r.SeedingMode, origSeedingMode: r.SeedingMode,
+		availabilityMode: string(r.AvailabilityMode), origAvailabilityMode: string(r.AvailabilityMode),
+		failoverMode: string(r.FailoverMode), origFailoverMode: string(r.FailoverMode),
+		primaryRole: string(r.PrimaryRoleAllowConnections), origPrimaryRole: string(r.PrimaryRoleAllowConnections),
+		secondaryRole: string(r.SecondaryRoleAllowConnections), origSecondaryRole: string(r.SecondaryRoleAllowConnections),
+		seedingMode: string(r.SeedingMode), origSeedingMode: string(r.SeedingMode),
 		sessionTimeout: r.SessionTimeout, origSessionTimeout: r.SessionTimeout,
 	}
 }
@@ -198,11 +198,11 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			replicas, err := ag.ReplicasContext(ctx)
+			replicas, err := ag.Replicas(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			dbs, err := ag.DatabasesContext(ctx)
+			dbs, err := ag.Databases(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -260,7 +260,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			// only EXTERNAL, NONE only MANUAL (else Msg 47101). Narrowing the
 			// dropdown is the gate; agSetSelect re-widens it for an
 			// already-illegal stored value so it can be seen and fixed.
-			failoverModeItems, clusterWhy := agFailoverModesFor(ag.ClusterType)
+			failoverModeItems, clusterWhy := agFailoverModesFor(string(ag.ClusterType))
 
 			modeRow := propsheet.Select("Availability mode", agAvailabilityModeItems, 0)
 			failoverRow := propsheet.Select("Failover mode", failoverModeItems, 0)
@@ -326,7 +326,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			rows := []propsheet.Row{
 				propsheet.Section("Availability group"),
 				propsheet.Static("Name", ag.Name),
-				propsheet.Static("Cluster type", orDefault(ag.ClusterType, "WSFC (not reported before SQL Server 2017)")),
+				propsheet.Static("Cluster type", orDefault(string(ag.ClusterType), "WSFC (not reported before SQL Server 2017)")),
 				propsheet.Static("Primary replica", orDefault(ag.PrimaryReplicaServerName, "(not visible from here)")),
 				propsheet.Static("Synchronization health", orDefault(ag.SynchronizationHealth, "(unknown)")),
 				propsheet.Static("Basic availability group", boolStr(ag.BasicFeatures)),
@@ -340,9 +340,9 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 			}
 			if len(failoverModeItems) == 1 {
 				rows = append(rows, propsheet.Note(fmt.Sprintf("Cluster type %s %s, so every replica's failover mode must be %s — the dropdown offers nothing else.",
-					strings.ToUpper(orDefault(ag.ClusterType, "WSFC")), clusterWhy, failoverModeItems[0])))
+					strings.ToUpper(orDefault(string(ag.ClusterType), "WSFC")), clusterWhy, failoverModeItems[0])))
 			}
-			if strings.EqualFold(ag.ClusterType, "EXTERNAL") {
+			if strings.EqualFold(string(ag.ClusterType), "EXTERNAL") {
 				rows = append(rows, propsheet.Note("A resource agent may also maintain the required-synchronized-secondaries setting itself and reassert its own value."))
 			}
 			rows = append(rows,
@@ -367,22 +367,22 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := ag.SetRequiredSynchronizedSecondariesToCommitContext(ctx, int(n)); err != nil {
+					if err := ag.SetRequiredSynchronizedSecondariesToCommit(ctx, int(n)); err != nil {
 						return err
 					}
 				}
 				if dbFailoverRow.Dirty() {
-					if err := ag.SetDBFailoverContext(ctx, dbFailoverRow.Checked()); err != nil {
+					if err := ag.SetDBFailover(ctx, dbFailoverRow.Checked()); err != nil {
 						return err
 					}
 				}
 				if dtcRow.Dirty() {
-					if err := ag.SetDTCSupportContext(ctx, dtcRow.Checked()); err != nil {
+					if err := ag.SetDTCSupport(ctx, dtcRow.Checked()); err != nil {
 						return err
 					}
 				}
 				if failureLevelRow.Dirty() {
-					if err := ag.SetFailureConditionLevelContext(ctx, failureLevelRow.Selected()+1); err != nil {
+					if err := ag.SetFailureConditionLevel(ctx, failureLevelRow.Selected()+1); err != nil {
 						return err
 					}
 				}
@@ -391,7 +391,7 @@ func pageAGGeneral(sc *db.ServerConn, agName string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := ag.SetHealthCheckTimeoutContext(ctx, int(ms)); err != nil {
+					if err := ag.SetHealthCheckTimeout(ctx, int(ms)); err != nil {
 						return err
 					}
 				}
@@ -408,7 +408,7 @@ func applyAGReplicaEdits(ctx context.Context, ag *gosmo.AvailabilityGroup, edits
 	if !agAnyReplicaDirty(edits) {
 		return nil
 	}
-	replicas, err := ag.ReplicasContext(ctx)
+	replicas, err := ag.Replicas(ctx)
 	if err != nil {
 		return err
 	}
@@ -422,32 +422,32 @@ func applyAGReplicaEdits(ctx context.Context, ag *gosmo.AvailabilityGroup, edits
 			return agMissingReplicaErr(e.name)
 		}
 		if e.availabilityMode != e.origAvailabilityMode {
-			if err := r.SetAvailabilityModeContext(ctx, e.availabilityMode); err != nil {
+			if err := r.SetAvailabilityMode(ctx, gosmo.AvailabilityMode(e.availabilityMode)); err != nil {
 				return err
 			}
 		}
 		if e.failoverMode != e.origFailoverMode {
-			if err := r.SetFailoverModeContext(ctx, e.failoverMode); err != nil {
+			if err := r.SetFailoverMode(ctx, gosmo.FailoverMode(e.failoverMode)); err != nil {
 				return err
 			}
 		}
 		if e.primaryRole != e.origPrimaryRole {
-			if err := r.SetPrimaryRoleAllowConnectionsContext(ctx, e.primaryRole); err != nil {
+			if err := r.SetPrimaryRoleAllowConnections(ctx, gosmo.AllowConnections(e.primaryRole)); err != nil {
 				return err
 			}
 		}
 		if e.secondaryRole != e.origSecondaryRole {
-			if err := r.SetSecondaryRoleAllowConnectionsContext(ctx, e.secondaryRole); err != nil {
+			if err := r.SetSecondaryRoleAllowConnections(ctx, gosmo.AllowConnections(e.secondaryRole)); err != nil {
 				return err
 			}
 		}
 		if e.seedingMode != e.origSeedingMode {
-			if err := r.SetSeedingModeContext(ctx, e.seedingMode); err != nil {
+			if err := r.SetSeedingMode(ctx, gosmo.SeedingMode(e.seedingMode)); err != nil {
 				return err
 			}
 		}
 		if e.sessionTimeout != e.origSessionTimeout {
-			if err := r.SetSessionTimeoutContext(ctx, e.sessionTimeout); err != nil {
+			if err := r.SetSessionTimeout(ctx, e.sessionTimeout); err != nil {
 				return err
 			}
 		}

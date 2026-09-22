@@ -88,11 +88,11 @@ func (d *NewStatisticsDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	if err != nil {
 		return nil, err
 	}
-	cols, err := t.ColumnsContext(ctx)
+	cols, err := t.Columns(ctx)
 	if err != nil {
 		return nil, err
 	}
-	stats, err := t.StatisticsContext(ctx)
+	stats, err := t.Statistics(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (d *NewStatisticsDialog) createStatistic(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.CreateStatisticWithOptionsContext(ctx, d.request())
+	return t.CreateStatisticWithOptions(ctx, d.request())
 }
 
 // request assembles the CreateStatisticRequest from the form.

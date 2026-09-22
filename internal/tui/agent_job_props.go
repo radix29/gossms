@@ -41,9 +41,9 @@ func (a *App) showJobPropertiesFor(sc *db.ServerConn, jobName string) {
 		func() []propPage { return jobPropPages(a.propDialog, sc, jobName) })
 }
 
-// findAgentJob wraps gosmo.Server.JobByNameContext for page closures.
+// findAgentJob wraps gosmo.Server.JobByName for page closures.
 func findAgentJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Job, error) {
-	return sc.Server.JobByNameContext(ctx, name)
+	return sc.Server.JobByName(ctx, name)
 }
 
 func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
@@ -55,7 +55,7 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -63,7 +63,7 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 			for i, l := range logins {
 				loginNames[i] = l.Name
 			}
-			cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassJob)
+			cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassJob)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -119,7 +119,7 @@ func pageJobGeneral(sc *db.ServerConn, jobName *string) propPage {
 				if nameRow.Dirty() {
 					ch.Name = gosmo.Ptr(nameRow.Value())
 				}
-				if err := j.AlterContext(ctx, ch); err != nil {
+				if err := j.Alter(ctx, ch); err != nil {
 					return err
 				}
 				if nameRow.Dirty() {

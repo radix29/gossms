@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/radix29/gosmo"
@@ -597,11 +596,11 @@ func (d *PropDialog) runScript() {
 	sc, database := d.sc, d.database
 	noChanges := func() { d.SetMessage("No changes to script.", false) }
 	d.runPipeline(scriptCtx, noChanges, func() {
-		if len(script.Statements) == 0 {
+		if len(script.Entries) == 0 {
 			noChanges()
 			return
 		}
-		d.app.openQueryWithText(sc, database, strings.Join(script.Statements, "\n\n"))
+		d.app.openQueryWithText(sc, database, script.String())
 	})
 }
 

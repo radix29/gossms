@@ -20,11 +20,11 @@ import (
 // recorded in docs/decisions.md § Deferred scope.
 
 func findBrokerService(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.BrokerService, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.BrokerServiceByNameContext(ctx, name)
+	return d.BrokerServiceByName(ctx, name)
 }
 
 func brokerServicePropPages(sc *db.ServerConn, dbName, name string) []propPage {

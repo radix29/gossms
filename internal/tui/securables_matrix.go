@@ -96,15 +96,15 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 	return propPage{
 		title: "Securables",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			database, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			database, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			entries, err := database.PermissionsForPrincipalContext(ctx, *principal)
+			entries, err := database.PermissionsForPrincipal(ctx, *principal)
 			if err != nil {
 				return nil, nil, err
 			}
-			colEntries, err := database.ColumnPermissionsForPrincipalContext(ctx, *principal)
+			colEntries, err := database.ColumnPermissionsForPrincipal(ctx, *principal)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -135,7 +135,7 @@ func pageDatabasePrincipalSecurables(d *PropDialog, sc *db.ServerConn, dbName st
 			// search gives the picker something to show before the user
 			// types.
 			find := func(ctx context.Context, term string) ([]securable, error) {
-				refs, err := database.FindSecurablesContext(ctx,
+				refs, err := database.FindSecurables(ctx,
 					gosmo.SecurableSearch{Name: term, Limit: securableSearchLimit + 1})
 				if err != nil {
 					return nil, err
@@ -370,7 +370,7 @@ func buildSecurablesMatrix(
 			// sys.tables and so fails on a view, which carries column
 			// permissions exactly like a table.
 			var err error
-			cols, err = database.ObjectColumnsContext(ctx, sec.Schema, sec.Name)
+			cols, err = database.ObjectColumns(ctx, sec.Schema, sec.Name)
 			return err
 		}, func(err error) {
 			if err != nil {
@@ -628,10 +628,10 @@ func applyColumnSecurable(ctx context.Context, d *gosmo.Database, verb string, o
 	cols := []string{column}
 	switch verb {
 	case "GRANT":
-		return d.GrantColumnPermissionWithOptionsContext(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.GrantColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	case "DENY":
-		return d.DenyColumnPermissionWithOptionsContext(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.DenyColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	default:
-		return d.RevokeColumnPermissionWithOptionsContext(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.RevokeColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	}
 }

@@ -51,11 +51,11 @@ type nsymPrefetch struct {
 }
 
 func fetchNewSymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nsymPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := dbObj.SymmetricKeysContext(ctx)
+	keys, err := dbObj.SymmetricKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,14 +63,14 @@ func fetchNewSymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbName
 	for _, k := range keys {
 		pf.existingNames[strings.ToLower(k.Name)] = true
 	}
-	certs, err := dbObj.CertificatesContext(ctx)
+	certs, err := dbObj.Certificates(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, c := range certs {
 		pf.certificates = append(pf.certificates, c.Name)
 	}
-	asym, err := dbObj.AsymmetricKeysContext(ctx)
+	asym, err := dbObj.AsymmetricKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 			if p.Disposition == gosmo.ProviderOpenExisting {
 				spec.Algorithm = ""
 			}
-			return sc.Server.DatabaseRef(dbName).CreateSymmetricKeyContext(ctx, spec)
+			return sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
 		}
 		spec := gosmo.SymmetricKeySpec{
 			Name:          in.name,
@@ -216,7 +216,7 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 		if in.asymmetricKey != "" {
 			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByAsymmetricKey, Name: in.asymmetricKey})
 		}
-		return sc.Server.DatabaseRef(dbName).CreateSymmetricKeyContext(ctx, spec)
+		return sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
 	}
 }
 

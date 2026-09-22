@@ -54,11 +54,11 @@ func loginPropPages(d *PropDialog, sc *db.ServerConn, loginName string) []propPa
 	}
 }
 
-// findLogin is a thin wrapper over gosmo.Server.LoginByNameContext, kept so
+// findLogin is a thin wrapper over gosmo.Server.LoginByName, kept so
 // every page's load/apply closure has one short name to call rather than
 // reaching into sc.Server directly.
 func findLogin(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Login, error) {
-	return sc.Server.LoginByNameContext(ctx, name)
+	return sc.Server.LoginByName(ctx, name)
 }
 
 // noneItem is the stand-in for a mapping the server reports as absent — a
@@ -97,7 +97,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			det, err := l.DetailsContext(ctx)
+			det, err := l.Details(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -108,7 +108,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			langs, err := sc.Server.LanguagesContext(ctx)
+			langs, err := sc.Server.Languages(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -116,7 +116,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 			for i, lg := range langs {
 				langNames[i] = lg.Name
 			}
-			creds, err := sc.Server.CredentialsContext(ctx)
+			creds, err := sc.Server.Credentials(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -209,33 +209,33 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 					return err
 				}
 				if isSQLLogin && passwordRow.Value() != "" {
-					if err := l.ChangePasswordWithOptionsContext(ctx, passwordRow.Value(), mustChangeRow.Checked(), unlockRow.Checked()); err != nil {
+					if err := l.ChangePasswordWithOptions(ctx, passwordRow.Value(), mustChangeRow.Checked(), unlockRow.Checked()); err != nil {
 						return err
 					}
 				}
 				if isSQLLogin && (policyRow.Dirty() || expirationRow.Dirty()) {
-					if err := l.SetPasswordPolicyContext(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
+					if err := l.SetPasswordPolicy(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
 						return err
 					}
 				}
 				if db, ok := changedTo(defaultDBRow, unsetItem); ok {
-					if err := l.SetDefaultDatabaseContext(ctx, db); err != nil {
+					if err := l.SetDefaultDatabase(ctx, db); err != nil {
 						return err
 					}
 				}
 				if lang, ok := changedTo(defaultLangRow, unsetItem); ok {
-					if err := l.SetDefaultLanguageContext(ctx, lang); err != nil {
+					if err := l.SetDefaultLanguage(ctx, lang); err != nil {
 						return err
 					}
 				}
 				if credentialRow.Dirty() {
 					if origCredential != "" {
-						if err := l.UnmapCredentialContext(ctx, origCredential); err != nil {
+						if err := l.UnmapCredential(ctx, origCredential); err != nil {
 							return err
 						}
 					}
 					if v := preservedValue(credentialRow, noneItem); v != "" {
-						if err := l.MapCredentialContext(ctx, v); err != nil {
+						if err := l.MapCredential(ctx, v); err != nil {
 							return err
 						}
 					}
@@ -243,7 +243,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 				// Renaming last keeps every write above addressed by the
 				// name the server still has — see propPage.renames.
 				if nameRow != nil && nameRow.Dirty() {
-					if err := l.RenameContext(ctx, nameRow.Value()); err != nil {
+					if err := l.Rename(ctx, nameRow.Value()); err != nil {
 						return err
 					}
 					commitRename(ctx, loginName, nameRow.Value())
@@ -259,7 +259,7 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 	return propPage{
 		title: "Server Roles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			roles, err := sc.Server.ServerRolesContext(ctx)
+			roles, err := sc.Server.ServerRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -316,11 +316,11 @@ func pageLoginServerRoles(sc *db.ServerConn, loginName *string) propPage {
 						continue
 					}
 					if member {
-						if err := l.AddServerRoleMemberContext(ctx, roles[i].Name); err != nil {
+						if err := l.AddServerRoleMember(ctx, roles[i].Name); err != nil {
 							return err
 						}
 					} else {
-						if err := l.RemoveServerRoleMemberContext(ctx, roles[i].Name); err != nil {
+						if err := l.RemoveServerRoleMember(ctx, roles[i].Name); err != nil {
 							return err
 						}
 					}
@@ -382,11 +382,11 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			dbs, err := sc.Server.DatabasesContext(ctx)
+			dbs, err := sc.Server.Databases(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			mappings, err := l.UserMappingsContext(ctx)
+			mappings, err := l.UserMappings(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -396,7 +396,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 			}
 
 			// One more round trip per ONLINE database on top of the one
-			// UserMappingsContext already makes per database, so serially
+			// UserMappings already makes per database, so serially
 			// this page is 2N latencies deep. A database whose roles can't
 			// be read drops out of the list the same way an offline one
 			// does — the alternative is one unreadable availability-group
@@ -412,7 +412,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 						schema = m.DefaultSchema
 					}
 				}
-				roles, err := d.DatabaseRolesContext(ctx)
+				roles, err := d.DatabaseRoles(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -536,11 +536,11 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 						continue
 					}
 					if e.mapped {
-						if err := l.MapToDatabaseContext(ctx, e.dbName, e.user, ""); err != nil {
+						if err := l.MapToDatabase(ctx, e.dbName, e.user, ""); err != nil {
 							return err
 						}
 					} else {
-						if err := l.UnmapFromDatabaseContext(ctx, e.dbName); err != nil {
+						if err := l.UnmapFromDatabase(ctx, e.dbName); err != nil {
 							return err
 						}
 					}
@@ -550,15 +550,15 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 						continue
 					}
 					if e.schema != e.origSchema {
-						d, err := sc.Server.DatabaseByNameContext(ctx, e.dbName)
+						d, err := sc.Server.DatabaseByName(ctx, e.dbName)
 						if err != nil {
 							return err
 						}
-						u, err := d.UserByNameContext(ctx, e.user)
+						u, err := d.UserByName(ctx, e.user)
 						if err != nil {
 							return err
 						}
-						if err := u.SetDefaultSchemaContext(ctx, e.schema); err != nil {
+						if err := u.SetDefaultSchema(ctx, e.schema); err != nil {
 							return err
 						}
 					}
@@ -572,7 +572,7 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 					if !rolesChanged {
 						continue
 					}
-					d, err := sc.Server.DatabaseByNameContext(ctx, e.dbName)
+					d, err := sc.Server.DatabaseByName(ctx, e.dbName)
 					if err != nil {
 						return err
 					}
@@ -581,11 +581,11 @@ func pageLoginUserMapping(sc *db.ServerConn, loginName *string) propPage {
 							continue
 						}
 						if e.roles[i] {
-							if err := d.AddRoleMemberContext(ctx, name, e.user); err != nil {
+							if err := d.AddRoleMember(ctx, name, e.user); err != nil {
 								return err
 							}
 						} else {
-							if err := d.RemoveRoleMemberContext(ctx, name, e.user); err != nil {
+							if err := d.RemoveRoleMember(ctx, name, e.user); err != nil {
 								return err
 							}
 						}
@@ -617,7 +617,7 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			det, err := l.DetailsContext(ctx)
+			det, err := l.Details(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -630,7 +630,7 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 				badPasswordTime = formatSQLDate(det.BadPasswordTime)
 			}
 
-			sessions, err := sc.Server.ActiveSessionsContext(ctx, true)
+			sessions, err := sc.Server.ActiveSessions(ctx, true)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -677,26 +677,26 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 				if connectRow.Dirty() {
 					switch connectRow.Selected() {
 					case 0:
-						if err := sc.Server.GrantServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					case 1:
-						if err := sc.Server.DenyServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					case 2:
-						if err := sc.Server.RevokeServerPermissionContext(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.RevokeServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
 							return err
 						}
 					}
 				}
 				if enabledRow.Dirty() {
 					if enabledRow.Selected() == 1 {
-						if err := l.DisableContext(ctx); err != nil {
+						if err := l.Disable(ctx); err != nil {
 							return err
 						}
 					} else {
-						if err := l.EnableContext(ctx); err != nil {
+						if err := l.Enable(ctx); err != nil {
 							return err
 						}
 					}

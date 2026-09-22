@@ -36,7 +36,7 @@ func agFindListener(ctx context.Context, sc *db.ServerConn, agName, dnsName stri
 	if err != nil {
 		return nil, err
 	}
-	listeners, err := ag.ListenersContext(ctx)
+	listeners, err := ag.Listeners(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 				// statements is better off with the old port than a new port on
 				// a listener missing a subnet.
 				for _, ip := range pending {
-					if err := ag.AddListenerIPContext(ctx, dnsName, ip); err != nil {
+					if err := ag.AddListenerIP(ctx, dnsName, ip); err != nil {
 						return err
 					}
 				}
@@ -159,7 +159,7 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := ag.SetListenerPortContext(ctx, dnsName, int(n)); err != nil {
+					if err := ag.SetListenerPort(ctx, dnsName, int(n)); err != nil {
 						return err
 					}
 				}

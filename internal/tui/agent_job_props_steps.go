@@ -226,7 +226,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			steps, err := j.StepsContext(ctx)
+			steps, err := j.Steps(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -360,7 +360,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 				if err != nil {
 					return "", err
 				}
-				if err := j.StartContext(ctx, e.name); err != nil {
+				if err := j.Start(ctx, e.name); err != nil {
 					return "", err
 				}
 				return "Job started at step " + e.name, nil
@@ -404,14 +404,14 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					return err
 				}
 				// Existing steps need a fresh *gosmo.JobStep fetched under j's
-				// current name: Update/DeleteContext capture the job name at
+				// current name: Update/Delete capture the job name at
 				// load, which a same-Apply rename makes stale. Fetched lazily,
 				// once.
 				var freshSteps []*gosmo.JobStep
 				freshStep := func(stepID int) (*gosmo.JobStep, error) {
 					if freshSteps == nil {
 						var err error
-						freshSteps, err = j.StepsContext(ctx)
+						freshSteps, err = j.Steps(ctx)
 						if err != nil {
 							return nil, err
 						}
@@ -430,7 +430,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := step.UpdateContext(ctx, e.request()); err != nil {
+					if err := step.Update(ctx, e.request()); err != nil {
 						return err
 					}
 				}
@@ -439,20 +439,20 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := step.DeleteContext(ctx); err != nil {
+					if err := step.Delete(ctx); err != nil {
 						return err
 					}
 				}
 				for _, e := range plan.adds {
-					if err := j.AddStepContext(ctx, e.request()); err != nil {
+					if err := j.AddStep(ctx, e.request()); err != nil {
 						return err
 					}
 				}
 				// Fourth pass, last: its ids are the post-pass ones. gosmo
 				// repairs "go to step N" references; sp_delete_jobstep doesn't
-				// (see MoveStepContext).
+				// (see MoveStep).
 				if ids := reorderedStepIDs(edits); ids != nil {
-					if err := j.ReorderStepsContext(ctx, func(int) []int { return ids }); err != nil {
+					if err := j.ReorderSteps(ctx, func(int) []int { return ids }); err != nil {
 						return err
 					}
 				}

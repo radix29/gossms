@@ -47,7 +47,7 @@ type nloginPrefetch struct {
 }
 
 func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefetch, error) {
-	logins, err := sc.Server.LoginsContext(ctx)
+	logins, err := sc.Server.Logins(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		existing[strings.ToLower(l.Name)] = true
 	}
 
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 	// roles or schemas to offer, which is what the User Mapping page already
 	// shows for an offline one.
 	dbRoles, err := eachDatabase(ctx, onlineDatabases(dbs), func(ctx context.Context, d *gosmo.Database) (nloginDBRoles, error) {
-		roles, err := d.DatabaseRolesContext(ctx)
+		roles, err := d.DatabaseRoles(ctx)
 		if err != nil {
 			return nloginDBRoles{}, err
 		}
@@ -81,7 +81,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 			}
 			roleNames = append(roleNames, r.Name)
 		}
-		schemas, err := d.SchemasContext(ctx)
+		schemas, err := d.Schemas(ctx)
 		if err != nil {
 			return nloginDBRoles{}, err
 		}
@@ -95,7 +95,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		return nil, err
 	}
 
-	langs, err := sc.Server.LanguagesContext(ctx)
+	langs, err := sc.Server.Languages(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 		langNames[i] = lg.Name
 	}
 
-	roles, err := sc.Server.ServerRolesContext(ctx)
+	roles, err := sc.Server.ServerRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +130,12 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 // which the General page's apply turns into a refusal naming the missing pick.
 func masterMappableNames(ctx context.Context, sc *db.ServerConn) (certs, keys []string) {
 	master := sc.Server.DatabaseRef("master")
-	if cs, err := master.CertificatesContext(ctx); err == nil {
+	if cs, err := master.Certificates(ctx); err == nil {
 		for _, c := range cs {
 			certs = append(certs, c.Name)
 		}
 	}
-	if ks, err := master.AsymmetricKeysContext(ctx); err == nil {
+	if ks, err := master.AsymmetricKeys(ctx); err == nil {
 		for _, k := range ks {
 			keys = append(keys, k.Name)
 		}

@@ -279,7 +279,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 	return propPage{
 		title: "Securables",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			perms, err := sc.Server.ServerPermissionsContext(ctx)
+			perms, err := sc.Server.ServerPermissions(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

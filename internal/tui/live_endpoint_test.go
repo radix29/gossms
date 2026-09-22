@@ -216,7 +216,7 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 	// the assertions can tell "left alone" from "created".
 	before := map[string]*gosmo.DatabaseMirroringEndpoint{}
 	for _, sc := range []*db.ServerConn{local, named1, named2} {
-		ep, err := sc.Server.DatabaseMirroringEndpointContext(ctx)
+		ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
 		if err != nil {
 			t.Fatalf("%s: read endpoint: %v", sc.Server.Name(), err)
 		}
@@ -296,7 +296,7 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 	// instance can have only one, and the run's whole claim on them is that it
 	// added peers to what was there.
 	for _, i := range []int{0, 2} {
-		ep, err := []*db.ServerConn{local, named1, named2}[i].Server.DatabaseMirroringEndpointContext(ctx)
+		ep, err := []*db.ServerConn{local, named1, named2}[i].Server.DatabaseMirroringEndpoint(ctx)
 		if err != nil {
 			t.Fatalf("%s: re-read endpoint: %v", names[i], err)
 		}
@@ -312,7 +312,7 @@ func TestLiveEndpointExchangeNamesNamedInstances(t *testing.T) {
 
 	// The one instance that had none gets the endpoint, authenticated by its
 	// own certificate under the mapped name.
-	ep, err := named1.Server.DatabaseMirroringEndpointContext(ctx)
+	ep, err := named1.Server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		t.Fatalf("%s: re-read endpoint: %v", names[1], err)
 	}

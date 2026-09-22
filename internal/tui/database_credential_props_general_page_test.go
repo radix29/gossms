@@ -14,7 +14,7 @@ import (
 // The credential scripted here is the second of three, so a page that ignored
 // its selection and read whichever row sorts first cannot pass. The by-name
 // read is scoped with arg: and placed before the list read, because gosmo's
-// DatabaseScopedCredentialByNameContext query also contains
+// DatabaseScopedCredentialByName query also contains
 // "FROM   sys.database_scoped_credentials" and responses match by substring in
 // order.
 //

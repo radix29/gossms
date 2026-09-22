@@ -300,7 +300,7 @@ func TestQueryStoreIsOnAcceptsReadOnly(t *testing.T) {
 		{"OFF", false},
 		{"ERROR", false},
 	} {
-		if got := queryStoreIsOn(&gosmo.QueryStoreInfo{ActualState: tt.state}); got != tt.want {
+		if got := queryStoreIsOn(&gosmo.QueryStoreInfo{ActualState: gosmo.QueryStoreState(tt.state)}); got != tt.want {
 			t.Errorf("queryStoreIsOn(%q) = %v, want %v", tt.state, got, tt.want)
 		}
 	}

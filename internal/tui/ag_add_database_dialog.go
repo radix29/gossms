@@ -132,13 +132,13 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 
 	// Every group on the instance: a database in another group is just as
 	// unaddable.
-	groups, err := primary.AvailabilityGroupsContext(ctx)
+	groups, err := primary.AvailabilityGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
 	inGroup := map[string]bool{}
 	for _, g := range groups {
-		dbs, err := g.DatabasesContext(ctx)
+		dbs, err := g.Databases(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	}
 
 	// One server-wide read of every database's log chain state.
-	statuses, err := primary.DatabaseRecoveryStatusesContext(ctx)
+	statuses, err := primary.DatabaseRecoveryStatuses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
 	}
 
-	dbs, err := primary.DatabasesContext(ctx)
+	dbs, err := primary.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (d *AGAddDatabaseDialog) buildPages(pf *agAddDBPrefetch) {
 		if err != nil {
 			return err
 		}
-		return ag.AddDatabaseContext(ctx, d.objectName())
+		return ag.AddDatabase(ctx, d.objectName())
 	}
 }
 

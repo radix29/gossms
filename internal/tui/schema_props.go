@@ -32,11 +32,11 @@ func schemaPropPages(sc *db.ServerConn, dbName, schemaName string) []propPage {
 
 // findSchema resolves dbName/schemaName to a *gosmo.Schema.
 func findSchema(ctx context.Context, sc *db.ServerConn, dbName, schemaName string) (*gosmo.Schema, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.SchemaByNameContext(ctx, schemaName)
+	return d.SchemaByName(ctx, schemaName)
 }
 
 func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
@@ -47,23 +47,23 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			counts, err := schema.ObjectCountsByTypeContext(ctx)
+			counts, err := schema.ObjectCountsByType(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			perms, err := d.SchemaPermissionsContext(ctx, schemaName)
+			perms, err := d.SchemaPermissions(ctx, schemaName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -151,7 +151,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 					if err != nil {
 						return err
 					}
-					return s.ChangeOwnerContext(ctx, owner)
+					return s.ChangeOwner(ctx, owner)
 				}
 			}
 			return f, apply, nil
@@ -163,19 +163,19 @@ func pageSchemaPermissions(sc *db.ServerConn, dbName, schemaName string) propPag
 	return propPage{
 		title: "Permissions",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			perms, err := d.SchemaPermissionsContext(ctx, schemaName)
+			perms, err := d.SchemaPermissions(ctx, schemaName)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

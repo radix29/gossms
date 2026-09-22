@@ -24,7 +24,7 @@ import (
 //
 // databaseNames is the first case: every database, in the server's order.
 func databaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func databaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
 // each fail with "BACKUP DATABASE is terminating abnormally". Offering either
 // gives the user a dropdown entry whose only outcome is that error.
 func backupDatabaseNames(ctx context.Context, sc *db.ServerConn) ([]string, error) {
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}

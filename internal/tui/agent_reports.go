@@ -37,16 +37,16 @@ func agentReportDetail(ctx context.Context, sc *db.ServerConn, title string) ([]
 }
 
 func agentMetadataSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	schedules, schErr := sc.Server.SchedulesContext(ctx)
-	alerts, aErr := sc.Server.AlertsContext(ctx)
-	eventAlerts, eaErr := sc.Server.EventAlertsContext(ctx)
-	operators, oErr := sc.Server.OperatorsContext(ctx)
-	jobCats, jcErr := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassJob)
-	alertCats, acErr := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
+	schedules, schErr := sc.Server.Schedules(ctx)
+	alerts, aErr := sc.Server.Alerts(ctx)
+	eventAlerts, eaErr := sc.Server.EventAlerts(ctx)
+	operators, oErr := sc.Server.Operators(ctx)
+	jobCats, jcErr := sc.Server.Categories(ctx, gosmo.CategoryClassJob)
+	alertCats, acErr := sc.Server.Categories(ctx, gosmo.CategoryClassAlert)
 
 	enabled, disabled := 0, 0
 	for _, j := range jobs {
@@ -58,7 +58,7 @@ func agentMetadataSummaryReport(ctx context.Context, sc *db.ServerConn) ([]strin
 	}
 
 	statusText := "Unknown"
-	if status, err := sc.Server.AgentInfoContext(ctx); err == nil {
+	if status, err := sc.Server.AgentInfo(ctx); err == nil {
 		statusText = status.StatusText
 	}
 
@@ -78,7 +78,7 @@ func agentMetadataSummaryReport(ctx context.Context, sc *db.ServerConn) ([]strin
 }
 
 func jobExecutionSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -93,7 +93,7 @@ func jobExecutionSummaryReport(ctx context.Context, sc *db.ServerConn) ([]string
 }
 
 func failedJobRunsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,7 +108,7 @@ func failedJobRunsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]
 }
 
 func disabledJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -129,13 +129,13 @@ func disabledJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]s
 // "couldn't check" is exactly what this report surfaces, and silence reads as
 // fine (as countOrDash does).
 func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	rows := make([][]string, 0)
 	for _, j := range jobs {
-		scheds, err := j.SchedulesContext(ctx)
+		scheds, err := j.Schedules(ctx)
 		// A cancelled context fails every remaining job; report the
 		// cancellation instead.
 		if err != nil && ctx.Err() != nil {
@@ -154,7 +154,7 @@ func jobsWithoutSchedulesReport(ctx context.Context, sc *db.ServerConn) ([]strin
 }
 
 func jobsWithoutNotificationsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -169,7 +169,7 @@ func jobsWithoutNotificationsReport(ctx context.Context, sc *db.ServerConn) ([]s
 }
 
 func recentlyModifiedJobsReport(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

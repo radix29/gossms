@@ -231,7 +231,7 @@ func TestPrefixStatesIncrementalReplayMatchesFullReplay(t *testing.T) {
 	}, "\n"))
 	doc := e.Document()
 
-	var cache prefixStates[bool]
+	var cache prefixStates[int]
 	// Warm it, then edit one line at a time and re-check the whole document.
 	// Each edit is a single setLine, which is the case the resume path takes.
 	edits := []struct {
@@ -245,17 +245,20 @@ func TestPrefixStatesIncrementalReplayMatchesFullReplay(t *testing.T) {
 		{2, "/* reopened"},                        // opens mid-document
 		{8, "SELECT 5 */"},                        // closes at the bottom
 		{0, "SELECT 0 /*"},                        // line 0: dirtyFrom 0, full replay
+		{2, "/* nested"},                          // inside a comment: one level deeper
+		{3, "*/ still inside the outer one"},      // closes the inner level only
+		{3, "*/ */ SELECT 2"},                     // closes both
 	}
 	for i := range doc.Len() {
-		cache.at(doc, i, false, blockCommentToggleEnd)
+		cache.at(doc, i, 0, blockCommentDepthEnd)
 	}
 	for n, ed := range edits {
 		e.doc.setLine(ed.row, []rune(ed.text))
 		for i := range doc.Len() {
-			got := cache.at(doc, i, false, blockCommentToggleEnd)
-			want := startsInBlockComment(doc.all(), i)
+			got := cache.at(doc, i, 0, blockCommentDepthEnd)
+			want := blockCommentDepthAt(doc.all(), i)
 			if got != want {
-				t.Fatalf("after edit %d (row %d -> %q): line %d starts-in-comment = %v, want %v",
+				t.Fatalf("after edit %d (row %d -> %q): line %d starting comment depth = %v, want %v",
 					n, ed.row, ed.text, i, got, want)
 			}
 		}
@@ -272,9 +275,9 @@ func TestPrefixStatesResumeHandlesLineCountChanges(t *testing.T) {
 	e.SetText("SELECT 1\n/* open\ninside\n*/ SELECT 2\nSELECT 3")
 	doc := e.Document()
 
-	var cache prefixStates[bool]
+	var cache prefixStates[int]
 	for i := range doc.Len() {
-		cache.at(doc, i, false, blockCommentToggleEnd)
+		cache.at(doc, i, 0, blockCommentDepthEnd)
 	}
 
 	// One structural mutation, so the version advances by exactly 1 — the
@@ -283,8 +286,8 @@ func TestPrefixStatesResumeHandlesLineCountChanges(t *testing.T) {
 	e.insertNewline()
 
 	for i := range doc.Len() {
-		got := cache.at(doc, i, false, blockCommentToggleEnd)
-		want := startsInBlockComment(doc.all(), i)
+		got := cache.at(doc, i, 0, blockCommentDepthEnd)
+		want := blockCommentDepthAt(doc.all(), i)
 		if got != want {
 			t.Errorf("after inserting a line: line %d (%q) starts-in-comment = %v, want %v",
 				i, string(doc.Line(i)), got, want)
@@ -299,7 +302,7 @@ func TestPrefixStatesResumeHandlesLineCountChanges(t *testing.T) {
 // happens to keep the line count — and only the length test in
 // prefixStates.at keeps it off the ones that don't.
 //
-// Every case is checked against startsInBlockComment over the whole document,
+// Every case is checked against blockCommentDepthAt over the whole document,
 // so a resume that trusts a stale earlier state shows up as a wrong colour
 // rather than as a passing round trip.
 func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
@@ -315,7 +318,7 @@ func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
 	}, "\n"))
 	doc := e.Document()
 
-	var cache prefixStates[bool]
+	var cache prefixStates[int]
 	splices := []struct {
 		name   string
 		row, n int
@@ -332,7 +335,7 @@ func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
 		{"a span at line 0", 0, 1, []string{"SELECT 0 */"}},
 	}
 	for i := range doc.Len() {
-		cache.at(doc, i, false, blockCommentToggleEnd)
+		cache.at(doc, i, 0, blockCommentDepthEnd)
 	}
 	for n, sp := range splices {
 		with := make([][]rune, len(sp.with))
@@ -341,10 +344,10 @@ func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
 		}
 		e.doc.replaceRange(sp.row, sp.n, with)
 		for i := range doc.Len() {
-			got := cache.at(doc, i, false, blockCommentToggleEnd)
-			want := startsInBlockComment(doc.all(), i)
+			got := cache.at(doc, i, 0, blockCommentDepthEnd)
+			want := blockCommentDepthAt(doc.all(), i)
 			if got != want {
-				t.Fatalf("after splice %d (%s): line %d starts-in-comment = %v, want %v",
+				t.Fatalf("after splice %d (%s): line %d starting comment depth = %v, want %v",
 					n, sp.name, i, got, want)
 			}
 		}

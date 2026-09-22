@@ -14,7 +14,7 @@ import (
 // databasesFolderColumns are the Databases folder's detail-grid columns:
 // identity fields first, then size figures backfilled progressively (see
 // loadDatabasesFolderDetails) since each database's size needs its own
-// round trip via gosmo's SpaceUsedContext.
+// round trip via gosmo's SpaceUsed.
 var databasesFolderColumns = []string{
 	"Name", "State", "Recovery",
 	"Total (MB)", "Data (MB)", "Log (MB)", "Avail. Data (MB)", "Avail. Log (MB)",
@@ -30,7 +30,7 @@ func formatMB(mb float64) string {
 // Recovery columns as soon as the single, fast database-list query
 // returns, then backfills each row's size columns — up to
 // maxRowFetchConcurrency databases at a time — as its own
-// SpaceUsedContext round trip completes. Sizes can't be answered from that
+// SpaceUsed round trip completes. Sizes can't be answered from that
 // first query — each database needs its own USE-scoped query — and running
 // them concurrently (bounded by maxRowFetchConcurrency) means one slow
 // database doesn't hold up the rest.
@@ -43,7 +43,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, ap
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
-		all, err := sc.Server.DatabasesContext(ctx)
+		all, err := sc.Server.Databases(ctx)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -80,7 +80,7 @@ func (db *DetailBrowser) loadDatabasesFolderDetails(fetchCtx context.Context, ap
 		}
 		db.backfillRows(app, fetchCtx, seq, len(dbs), "loading database size",
 			func(ctx context.Context, i int) func() {
-				space, err := dbs[i].SpaceUsedContext(ctx)
+				space, err := dbs[i].SpaceUsed(ctx)
 				return func() {
 					if err != nil {
 						markFailed(i)
@@ -112,7 +112,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
-		d, err := sc.Server.DatabaseByNameContext(ctx, name)
+		d, err := sc.Server.DatabaseByName(ctx, name)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -121,7 +121,7 @@ func (db *DetailBrowser) loadDatabaseDetails(fetchCtx context.Context, app *App,
 		// answers its sys.databases metadata and nothing else, so the space
 		// figures are reported as N/A and the strip is left off rather than
 		// drawn empty — the properties are still worth showing.
-		usage, usageErr := d.DiskUsageContext(ctx)
+		usage, usageErr := d.DiskUsage(ctx)
 
 		sizeStr, dataStr, logStr, availDataStr, availLogStr := "N/A", "N/A", "N/A", "N/A", "N/A"
 		var cs []detailChart
@@ -179,11 +179,11 @@ func diskUsageCharts(u gosmo.DiskUsage) []detailChart {
 // gosmo independently of the tree, so the folder's filter is applied here too
 // — over the gosmo objects, before the rows are built.
 func databaseTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	triggers, err := dbObj.DatabaseTriggersContext(ctx)
+	triggers, err := dbObj.DatabaseTriggers(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -208,11 +208,11 @@ func databaseTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, no
 // definition is not shown here — it is multi-line, which a grid row flattens;
 // the Properties dialog's Definition page is where it belongs.
 func databaseTriggerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	t, err := dbObj.DatabaseTriggerByNameContext(ctx, node.data.Name)
+	t, err := dbObj.DatabaseTriggerByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -26,17 +26,17 @@ func countOrDash(n int, err error) string {
 func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
 	statusText := "Unknown"
 	lastStartup := ""
-	if status, err := sc.Server.AgentInfoContext(ctx); err == nil {
+	if status, err := sc.Server.AgentInfo(ctx); err == nil {
 		statusText = status.StatusText
 		if !status.LastStartupTime.IsZero() {
 			lastStartup = formatSQLDate(status.LastStartupTime)
 		}
 	}
 
-	jobs, jErr := sc.Server.JobsContext(ctx)
-	schedules, schErr := sc.Server.SchedulesContext(ctx)
-	alerts, aErr := sc.Server.EventAlertsContext(ctx)
-	operators, oErr := sc.Server.OperatorsContext(ctx)
+	jobs, jErr := sc.Server.Jobs(ctx)
+	schedules, schErr := sc.Server.Schedules(ctx)
+	alerts, aErr := sc.Server.EventAlerts(ctx)
+	operators, oErr := sc.Server.Operators(ctx)
 
 	rows := [][]string{
 		{"Status", statusText},
@@ -53,7 +53,7 @@ func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]st
 
 // agentJobDetail builds a job's detail view.
 func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	j, err := sc.Server.JobByNameContext(ctx, node.data.Name)
+	j, err := sc.Server.JobByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,11 +91,11 @@ func agentJobDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) 
 
 // agentScheduleDetail builds a schedule's detail view.
 func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	sch, err := sc.Server.ScheduleByNameContext(ctx, node.data.Name)
+	sch, err := sc.Server.ScheduleByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
-	jobs, jErr := sch.JobsContext(ctx)
+	jobs, jErr := sch.Jobs(ctx)
 
 	endDate := formatAgentDate(sch.ActiveEndDate)
 	if endDate == "" {
@@ -115,7 +115,7 @@ func agentScheduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 
 // agentAlertDetail builds an alert's detail view.
 func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	al, err := sc.Server.AlertByNameContext(ctx, node.data.Name)
+	al, err := sc.Server.AlertByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -148,7 +148,7 @@ func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode
 		{"Category", al.Category},
 		{"Last occurrence", lastOccurrence},
 	}
-	if notifs, err := al.NotificationsContext(ctx); err == nil {
+	if notifs, err := al.Notifications(ctx); err == nil {
 		for _, n := range notifs {
 			rows = append(rows, []string{"Notify operator", n.OperatorName + " (" + n.Method.String() + ")"})
 		}
@@ -161,7 +161,7 @@ func agentAlertDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode
 
 // agentOperatorDetail builds an operator's detail view.
 func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	o, err := sc.Server.OperatorByNameContext(ctx, node.data.Name)
+	o, err := sc.Server.OperatorByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -188,12 +188,12 @@ func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 		{"Category", o.Category},
 		{"Last email", lastEmail},
 	}
-	if alerts, err := o.NotifyingAlertsContext(ctx); err == nil {
+	if alerts, err := o.NotifyingAlerts(ctx); err == nil {
 		for _, n := range alerts {
 			rows = append(rows, []string{"Notifies (alert)", n.AlertName + " — " + n.Method.String()})
 		}
 	}
-	if jobs, err := o.NotifyingJobsContext(ctx); err == nil {
+	if jobs, err := o.NotifyingJobs(ctx); err == nil {
 		for _, n := range jobs {
 			rows = append(rows, []string{"Notifies (job)", n.JobName + " — " + formatNotifyLevel(n.Level)})
 		}
@@ -203,7 +203,7 @@ func agentOperatorDetail(ctx context.Context, sc *db.ServerConn, node *explorerN
 
 // agentJobActivityDetail builds the "Job Activity" leaf's detail view.
 func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -227,7 +227,7 @@ func agentJobActivityDetail(ctx context.Context, sc *db.ServerConn) ([]string, [
 // agentJobHistoryDetail builds the Job History leaf: the latest job-level
 // outcome of every job.
 func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]string, error) {
-	history, err := sc.Server.JobHistoryContext(ctx, 100)
+	history, err := sc.Server.JobHistory(ctx, 100)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -243,7 +243,7 @@ func agentJobHistoryDetail(ctx context.Context, sc *db.ServerConn) ([]string, []
 // agentCategoriesDetail lists every category of a class, for Job and Alert
 // Categories.
 func agentCategoriesDetail(ctx context.Context, sc *db.ServerConn, class gosmo.CategoryClass) ([]string, [][]string, error) {
-	cats, err := sc.Server.CategoriesContext(ctx, class)
+	cats, err := sc.Server.Categories(ctx, class)
 	if err != nil {
 		return nil, nil, err
 	}

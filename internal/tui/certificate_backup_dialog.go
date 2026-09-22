@@ -121,7 +121,7 @@ func (d *BackupCertificateDialog) buildPages(pf *certBackupPrefetch) {
 			spec.EncryptionPassword = scriptSafePassword(ctx, encPass.Value())
 			spec.DecryptionPassword = scriptSafePassword(ctx, decPass.Value())
 		}
-		return d.sc.Server.DatabaseRef(d.dbName).CertificateRef(c.Name).BackupContext(ctx, spec)
+		return d.sc.Server.DatabaseRef(d.dbName).CertificateRef(c.Name).Backup(ctx, spec)
 	}
 }
 

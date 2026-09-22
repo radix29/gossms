@@ -66,7 +66,7 @@ func (d *RestoreDialog) loadHistory(dbName string) {
 	app.safego("loading backup history", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		hist, err := sc.Server.BackupHistoryContext(ctx, dbName)
+		hist, err := sc.Server.BackupHistory(ctx, dbName)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -175,7 +175,7 @@ func (d *RestoreDialog) loadFileList() {
 	app.safego("reading a backup set's file list", func() {
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
-		files, err := srv.BackupFileListForSetContext(ctx, dev, fileNumber)
+		files, err := srv.BackupFileListForSet(ctx, dev, fileNumber)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -245,13 +245,13 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 	app.safego("analyzing the backup device", func() {
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
-		headers, err := srv.BackupHeadersContext(ctx, dev)
+		headers, err := srv.BackupHeaders(ctx, dev)
 		var files []*gosmo.BackupFile
 		if err == nil && len(headers) > 0 {
 			// The view opens on headers[0], so the file list must name that set,
 			// by the same rule selectHeader's reload uses — otherwise the panel
 			// disagrees with itself the moment the user arrows off and back.
-			files, err = srv.BackupFileListForSetContext(ctx, dev, backupSetNumber(headers, 0))
+			files, err = srv.BackupFileListForSet(ctx, dev, backupSetNumber(headers, 0))
 		}
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
@@ -302,7 +302,7 @@ func (d *RestoreDialog) startRestore() {
 	app.safego("preparing the restore", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		dbs, err := sc.Server.DatabasesContext(ctx)
+		dbs, err := sc.Server.Databases(ctx)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -384,58 +384,27 @@ func (d *RestoreDialog) beginRestore(dev, target string) {
 }
 
 // runRestore is the background body of startRestore: verify (optional),
-// read metadata, relocate files for a renamed target, close existing
-// connections (optional), then the RESTORE itself with progress.
+// read metadata, relocate files for a renamed target, then the RESTORE itself
+// with progress — closing existing connections in the same batch when asked.
 func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target string, recovery, replace, verify, closeConns bool, fileNumber int, plan relocPlan) error {
 	app, srv := d.app, d.sc.Server
 
 	if verify {
 		app.postProgress(task, -1, "Verifying backup...")
-		if err := srv.VerifyBackupContext(ctx, dev); err != nil {
+		if err := srv.VerifyBackup(ctx, dev); err != nil {
 			return err
 		}
 	}
 
 	app.postProgress(task, -1, "Reading backup metadata...")
-	ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber, plan)
+	ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, closeConns, fileNumber, plan)
 	if err != nil {
 		return err
-	}
-
-	dbs, err := srv.DatabasesContext(ctx)
-	if err != nil {
-		return err
-	}
-	exists := false
-	for _, dbo := range dbs {
-		if strings.EqualFold(dbo.Name, target) {
-			exists = true
-			break
-		}
-	}
-
-	if closeConns && exists {
-		app.postProgress(task, -1, "Closing existing connections...")
-		if err := srv.DatabaseRef(target).SetUserAccessContext(ctx, "SINGLE_USER"); err != nil {
-			return err
-		}
 	}
 
 	app.postProgress(task, -1, "Restoring...")
 	ropts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
-	if err := srv.RestoreContext(ctx, ropts); err != nil {
-		if closeConns && exists {
-			// Best effort: don't leave the still-existing database stuck in
-			// SINGLE_USER after a failed restore. Fresh timeout off the
-			// connection's context, not the task's, which may already be
-			// cancelled by its own Cancel button.
-			cleanupCtx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
-			defer cancel()
-			_ = srv.DatabaseRef(target).SetUserAccessContext(cleanupCtx, "MULTI_USER")
-		}
-		return err
-	}
-	return nil
+	return srv.Restore(ctx, ropts)
 }
 
 // relocateFiles returns the MOVE clauses that put the backup set's files where
@@ -494,9 +463,15 @@ func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, s
 // holding one. It and plan are passed in rather than read off the dialog because
 // this runs on a background goroutine, where d.headerIdx and the Files view's
 // widgets must not be touched.
-func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace bool, fileNumber int, plan relocPlan) (gosmo.RestoreOptions, error) {
+//
+// closeConns is left to gosmo, which closes the connections in the RESTORE's
+// own batch. As a separate SET SINGLE_USER first, the freed slot was anyone's
+// until the RESTORE arrived — gossms's own background reads included — and a
+// Managed Instance refused the statement outright; gosmo also puts the
+// database back to MULTI_USER, including after a cancelled restore.
+func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace, closeConns bool, fileNumber int, plan relocPlan) (gosmo.RestoreOptions, error) {
 	srv := d.sc.Server
-	headers, err := srv.BackupHeadersContext(ctx, dev)
+	headers, err := srv.BackupHeaders(ctx, dev)
 	if err != nil {
 		return gosmo.RestoreOptions{}, err
 	}
@@ -520,7 +495,7 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 		// the device without one describes set 1, whose logical file names
 		// belong to a different database whenever backups were appended, and
 		// MOVE clauses naming files the restored set lacks fail the RESTORE.
-		files, err := srv.BackupFileListForSetContext(ctx, dev, fileNumber)
+		files, err := srv.BackupFileListForSet(ctx, dev, fileNumber)
 		if err != nil {
 			return gosmo.RestoreOptions{}, err
 		}
@@ -533,10 +508,20 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 		Devices:       []string{dev},
 		FileNumber:    fileNumber,
 		RelocateFiles: relocate,
-		Recovery:      recovery,
-		NoRecovery:    !recovery,
+		Recovery:      recoveryFor(recovery),
 		Replace:       replace,
+
+		CloseExistingConnections: closeConns,
 	}, nil
+}
+
+// recoveryFor maps the dialog's two-way Recovery Options radio box onto
+// gosmo's recovery state.
+func recoveryFor(recovery bool) gosmo.RestoreRecovery {
+	if recovery {
+		return gosmo.RestoreWithRecovery
+	}
+	return gosmo.RestoreWithNoRecovery
 }
 
 // script builds the RESTORE statement's T-SQL, including the file relocation
@@ -555,7 +540,7 @@ func (d *RestoreDialog) script() {
 		return
 	}
 	recovery := d.rbRecovery.Selected() == 0
-	replace := d.cbReplace.Checked()
+	replace, closeConns := d.cbReplace.Checked(), d.cbClose.Checked()
 	fileNumber, plan := d.restoreFileNumber(), d.relocation() // snapshots on the UI goroutine — see beginRestore
 
 	d.setStatusMsg("Building script...", false)
@@ -565,10 +550,12 @@ func (d *RestoreDialog) script() {
 	app.safego("scripting the restore", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, fileNumber, plan)
+		ropts, err := d.buildRestoreOptions(ctx, dev, target, recovery, replace, closeConns, fileNumber, plan)
 		var stmt string
 		if err == nil {
-			stmt, err = gosmo.BuildRestoreStatement(ropts)
+			// The instance's own form: on a Managed Instance, closing
+			// connections is KILLs rather than the SINGLE_USER it refuses.
+			stmt, err = sc.Server.BuildRestoreStatement(ropts)
 		}
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {

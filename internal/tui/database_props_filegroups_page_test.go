@@ -14,7 +14,7 @@ import (
 // file), ARCHIVE (read-only, one file) and STAGING (one file) — so the page
 // has a row in each toggle state and more than one row to get wrong.
 //
-// FileGroupsContext returns one row per file joined to its filegroup, ordered
+// FileGroups returns one row per file joined to its filegroup, ordered
 // by filegroup name, and folds them into groups.
 func filegroupsPageResponses() []fakeResponse {
 	fg := func(name string, isDefault, readOnly bool, file string, primary bool) []driver.Value {

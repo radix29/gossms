@@ -22,19 +22,19 @@ import (
 // has the new one.
 
 func findColumnMasterKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ColumnMasterKey, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.ColumnMasterKeyByNameContext(ctx, name)
+	return d.ColumnMasterKeyByName(ctx, name)
 }
 
 func findColumnEncryptionKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ColumnEncryptionKey, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.ColumnEncryptionKeyByNameContext(ctx, name)
+	return d.ColumnEncryptionKeyByName(ctx, name)
 }
 
 func columnMasterKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
@@ -73,15 +73,15 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 	return []propPage{withRequires(propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			k, err := dbObj.ColumnEncryptionKeyByNameContext(ctx, name)
+			k, err := dbObj.ColumnEncryptionKeyByName(ctx, name)
 			if err != nil {
 				return nil, nil, err
 			}
-			masters, err := dbObj.ColumnMasterKeysContext(ctx)
+			masters, err := dbObj.ColumnMasterKeys(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -150,7 +150,7 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 					if err != nil {
 						return fmt.Errorf("encrypted value: %w", err)
 					}
-					if err := k.AddValueContext(ctx, gosmo.ColumnEncryptionKeyValue{
+					if err := k.AddValue(ctx, gosmo.ColumnEncryptionKeyValue{
 						MasterKeyName:       add,
 						EncryptionAlgorithm: cekAlgorithm,
 						EncryptedValue:      blob,
@@ -159,7 +159,7 @@ func columnEncryptionKeyPropPages(sc *db.ServerConn, dbName, name string) []prop
 					}
 				}
 				if dropWanted {
-					return k.DropValueContext(ctx, drop)
+					return k.DropValue(ctx, drop)
 				}
 				return nil
 			}

@@ -58,13 +58,13 @@ type amInstanceSample struct {
 // Only the history read is fatal; the limit views are backdrop, and losing the
 // tab over them would be worse.
 func probeInstance(ctx context.Context, srv *gosmo.Server) (*amInstanceSample, error) {
-	stats, err := srv.ServerResourceStatsContext(ctx, instanceHistoryRows)
+	stats, err := srv.ServerResourceStats(ctx, instanceHistoryRows)
 	if err != nil {
 		return nil, err
 	}
 	s := &amInstanceSample{At: time.Now(), Stats: stats}
-	s.Governance, _ = srv.InstanceResourceGovernanceContext(ctx)
-	s.JobObject, _ = srv.OSJobObjectContext(ctx)
+	s.Governance, _ = srv.InstanceResourceGovernance(ctx)
+	s.JobObject, _ = srv.OSJobObject(ctx)
 	return s, nil
 }
 

@@ -15,7 +15,7 @@ import (
 // The credential scripted here is the second of three, so a page that ignored
 // its selection and read whichever row sorts first cannot pass. The by-name
 // read is scoped with arg: and placed before the list read, because gosmo's
-// CredentialByNameContext query also contains "FROM   sys.credentials" and
+// CredentialByName query also contains "FROM   sys.credentials" and
 // responses match by substring in order.
 
 const credentialUnderTest = "app_cred"
@@ -238,7 +238,7 @@ func TestCredentialGeneralScriptsTheSecretAsAPlaceholder(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	want := `ALTER CREDENTIAL [app_cred] WITH IDENTITY = N'DOMAIN\svc_app', SECRET = N'<insert secret here>'`
-	if got := strings.Join(script.Statements, "\n"); got != want {
+	if got := strings.Join(script.Statements(), "\n"); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }

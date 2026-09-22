@@ -27,7 +27,7 @@ type nauditPrefetch struct {
 }
 
 func fetchNewAuditPrefetch(ctx context.Context, sc *db.ServerConn) (*nauditPrefetch, error) {
-	audits, err := sc.Server.ServerAuditsContext(ctx)
+	audits, err := sc.Server.ServerAudits(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (d *NewAuditDialog) buildPages(pf *nauditPrefetch) {
 				spec.MaxRolloverFiles = gosmo.AuditUnlimited
 			}
 		}
-		_, err := sc.Server.CreateServerAuditContext(ctx, spec)
+		_, err := sc.Server.CreateServerAudit(ctx, spec)
 		return err
 	}
 }

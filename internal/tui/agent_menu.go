@@ -229,7 +229,7 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 		what:    what,
 		sc:      sc,
 	}, func(ctx context.Context, _ progressReport) error {
-		j, err := sc.Server.JobByNameContext(ctx, name)
+		j, err := sc.Server.JobByName(ctx, name)
 		if err != nil {
 			return err
 		}
@@ -237,9 +237,9 @@ func (a *App) runAgentJobStateAction(sc *db.ServerConn, node *explorerNode, star
 			return nil
 		}
 		if start {
-			return j.StartContext(ctx, "")
+			return j.Start(ctx, "")
 		}
-		return j.StopContext(ctx)
+		return j.Stop(ctx)
 	}, func(err error, cancelled bool) {
 		switch {
 		case cancelled:
@@ -280,56 +280,56 @@ func (a *App) showAgentJobHistory(sc *db.ServerConn, jobName string) {
 func (a *App) setAgentJobEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	name := node.data.Name
 	a.setAgentEnabled(sc, node, "job", enable, func(ctx context.Context) error {
-		j, err := sc.Server.JobByNameContext(ctx, name)
+		j, err := sc.Server.JobByName(ctx, name)
 		if err != nil {
 			return err
 		}
 		if enable {
-			return j.EnableContext(ctx)
+			return j.Enable(ctx)
 		}
-		return j.DisableContext(ctx)
+		return j.Disable(ctx)
 	})
 }
 
 func (a *App) setAgentScheduleEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	name := node.data.Name
 	a.setAgentEnabled(sc, node, "schedule", enable, func(ctx context.Context) error {
-		sch, err := sc.Server.ScheduleByNameContext(ctx, name)
+		sch, err := sc.Server.ScheduleByName(ctx, name)
 		if err != nil {
 			return err
 		}
 		if enable {
-			return sch.EnableContext(ctx)
+			return sch.Enable(ctx)
 		}
-		return sch.DisableContext(ctx)
+		return sch.Disable(ctx)
 	})
 }
 
 func (a *App) setAgentAlertEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	name := node.data.Name
 	a.setAgentEnabled(sc, node, "alert", enable, func(ctx context.Context) error {
-		al, err := sc.Server.AlertByNameContext(ctx, name)
+		al, err := sc.Server.AlertByName(ctx, name)
 		if err != nil {
 			return err
 		}
 		if enable {
-			return al.EnableContext(ctx)
+			return al.Enable(ctx)
 		}
-		return al.DisableContext(ctx)
+		return al.Disable(ctx)
 	})
 }
 
 func (a *App) setAgentOperatorEnabled(sc *db.ServerConn, node *explorerNode, enable bool) {
 	name := node.data.Name
 	a.setAgentEnabled(sc, node, "operator", enable, func(ctx context.Context) error {
-		o, err := sc.Server.OperatorByNameContext(ctx, name)
+		o, err := sc.Server.OperatorByName(ctx, name)
 		if err != nil {
 			return err
 		}
 		if enable {
-			return o.EnableContext(ctx)
+			return o.Enable(ctx)
 		}
-		return o.DisableContext(ctx)
+		return o.Disable(ctx)
 	})
 }
 
@@ -340,11 +340,11 @@ func (a *App) deleteAgentJob(sc *db.ServerConn, node *explorerNode) {
 	a.deleteAgentEntity(sc, node, "Delete Job",
 		fmt.Sprintf("Delete SQL Server Agent job %q? This cannot be undone.", name),
 		func(ctx context.Context) error {
-			j, err := sc.Server.JobByNameContext(ctx, name)
+			j, err := sc.Server.JobByName(ctx, name)
 			if err != nil {
 				return err
 			}
-			return j.DropContext(ctx)
+			return j.Drop(ctx)
 		})
 }
 
@@ -353,11 +353,11 @@ func (a *App) deleteAgentSchedule(sc *db.ServerConn, node *explorerNode) {
 	a.deleteAgentEntity(sc, node, "Delete Schedule",
 		fmt.Sprintf("Delete schedule %q? A schedule still attached to a job can't be deleted until it's detached.", name),
 		func(ctx context.Context) error {
-			sch, err := sc.Server.ScheduleByNameContext(ctx, name)
+			sch, err := sc.Server.ScheduleByName(ctx, name)
 			if err != nil {
 				return err
 			}
-			return sch.DropContext(ctx)
+			return sch.Drop(ctx)
 		})
 }
 
@@ -366,11 +366,11 @@ func (a *App) deleteAgentAlert(sc *db.ServerConn, node *explorerNode) {
 	a.deleteAgentEntity(sc, node, "Delete Alert",
 		fmt.Sprintf("Delete alert %q? This cannot be undone.", name),
 		func(ctx context.Context) error {
-			al, err := sc.Server.AlertByNameContext(ctx, name)
+			al, err := sc.Server.AlertByName(ctx, name)
 			if err != nil {
 				return err
 			}
-			return al.DropContext(ctx)
+			return al.Drop(ctx)
 		})
 }
 
@@ -379,10 +379,10 @@ func (a *App) deleteAgentOperator(sc *db.ServerConn, node *explorerNode) {
 	a.deleteAgentEntity(sc, node, "Delete Operator",
 		fmt.Sprintf("Delete operator %q? This cannot be undone.", name),
 		func(ctx context.Context) error {
-			o, err := sc.Server.OperatorByNameContext(ctx, name)
+			o, err := sc.Server.OperatorByName(ctx, name)
 			if err != nil {
 				return err
 			}
-			return o.DropContext(ctx)
+			return o.Drop(ctx)
 		})
 }

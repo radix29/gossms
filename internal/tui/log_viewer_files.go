@@ -275,7 +275,7 @@ func (a *App) recycleLogFrom(sc *db.ServerConn, logType gosmo.ErrorLogType, node
 			sc:      sc,
 			timeout: logReadTimeout,
 		}, func(ctx context.Context, _ progressReport) error {
-			return sc.Server.CycleLogContext(ctx, logType)
+			return sc.Server.CycleLog(ctx, logType)
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:

@@ -25,7 +25,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 	return propPage{
 		title: "Alerts",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			alerts, err := sc.Server.EventAlertsContext(ctx)
+			alerts, err := sc.Server.EventAlerts(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -128,7 +128,7 @@ func pageJobAlerts(sc *db.ServerConn, jobName *string) propPage {
 					if e.linked {
 						target = *jobName
 					}
-					if err := e.alert.SetJobResponseContext(ctx, target); err != nil {
+					if err := e.alert.SetJobResponse(ctx, target); err != nil {
 						return err
 					}
 				}
@@ -162,7 +162,7 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			operators, err := sc.Server.OperatorsContext(ctx)
+			operators, err := sc.Server.Operators(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -212,7 +212,7 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 					// treats as "leave the operator unchanged" (sp_update_job
 					// can't clear one). Otherwise ticking E-mail with no
 					// operator would send to the first operator.
-					if err := j.SetEmailNotifyContext(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
+					if err := j.SetEmailNotify(ctx, preservedValue(operatorSelect, noneItem), emailLevel); err != nil {
 						return err
 					}
 				}
@@ -221,7 +221,7 @@ func pageJobNotifications(sc *db.ServerConn, jobName *string) propPage {
 					if deleteCheck.Checked() {
 						deleteLevel = notifyConditionLevels[deleteConditionSelect.Selected()]
 					}
-					if err := j.SetDeleteLevelContext(ctx, deleteLevel); err != nil {
+					if err := j.SetDeleteLevel(ctx, deleteLevel); err != nil {
 						return err
 					}
 				}

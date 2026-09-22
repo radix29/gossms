@@ -51,7 +51,7 @@ func loadAgentErrorLogsChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 // "Archive #1 — <date>").
 func loadErrorLogChildren(l loaderCtx, logType gosmo.ErrorLogType, leaf NodeType) ([]*explorerNode, error) {
 	return listChildren(func() ([]*gosmo.ErrorLogFile, error) {
-		return l.sc.Server.EnumErrorLogsContext(l.ctx, logType)
+		return l.sc.Server.EnumErrorLogs(l.ctx, logType)
 	}, func(f *gosmo.ErrorLogFile) *explorerNode {
 		n := l.node(errorLogFileLabel(f), leaf, "", errorLogFileLabel(f), "")
 		n.data.LogType = logType
@@ -82,14 +82,14 @@ func errorLogFileLabel(f *gosmo.ErrorLogFile) string {
 }
 
 func loadLinkedServersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.LinkedServer, error) { return l.sc.Server.LinkedServersContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.LinkedServer, error) { return l.sc.Server.LinkedServers(l.ctx) },
 		func(ls *gosmo.LinkedServer) *explorerNode {
 			return l.node(ls.Name, NodeLinkedServer, "", ls.Name, "")
 		})
 }
 
 func loadBackupDevicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.BackupDevice, error) { return l.sc.Server.BackupDevicesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.BackupDevice, error) { return l.sc.Server.BackupDevices(l.ctx) },
 		func(d *gosmo.BackupDevice) *explorerNode {
 			return l.node(d.Name, NodeBackupDevice, "", d.Name, "")
 		})
@@ -99,7 +99,7 @@ func loadBackupDevicesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 // These are a different family from a database's Triggers folder, which lists
 // DML triggers on a table.
 func loadServerTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.ServerTrigger, error) { return l.sc.Server.ServerTriggersContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.ServerTrigger, error) { return l.sc.Server.ServerTriggers(l.ctx) },
 		func(t *gosmo.ServerTrigger) *explorerNode {
 			// A disabled DDL trigger is inert, and nothing else in the row
 			// says so — the security policies folder labels its own the same
@@ -120,7 +120,7 @@ func loadServerTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 // is one whose port nothing explains. A built-in endpoint's node is marked
 // IsSystem, which is what withholds Rename and Delete.
 func loadEndpointsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Endpoint, error) { return l.sc.Server.EndpointsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Endpoint, error) { return l.sc.Server.Endpoints(l.ctx) },
 		func(e *gosmo.Endpoint) *explorerNode {
 			// A stopped or disabled endpoint accepts nothing, and the icon is
 			// the same either way — the same reason a disabled server trigger

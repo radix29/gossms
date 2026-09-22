@@ -29,14 +29,14 @@ import (
 // and only the CREATE is collected — a script for a database that already has
 // a master key does not try to make a second one.
 func ensureMasterKey(ctx context.Context, d *gosmo.Database, password string) error {
-	has, err := d.HasMasterKeyContext(ctx)
+	has, err := d.HasMasterKey(ctx)
 	if err != nil {
 		return err
 	}
 	if has {
 		return nil
 	}
-	return d.CreateMasterKeyContext(ctx, password)
+	return d.CreateMasterKey(ctx, password)
 }
 
 // Private-key protection choices, in the order keyProtectionFields' radio

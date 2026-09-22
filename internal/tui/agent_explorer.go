@@ -66,7 +66,7 @@ func isSystemAgentJob(j *gosmo.Job) bool {
 // loadAgentUserJobsChildren returns every non-system job (see
 // isSystemAgentJob).
 func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	jobs, err := l.sc.Server.JobsContext(l.ctx)
+	jobs, err := l.sc.Server.Jobs(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func loadAgentUserJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 
 // loadAgentSystemJobsChildren returns the system jobs (see isSystemAgentJob).
 func loadAgentSystemJobsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	jobs, err := l.sc.Server.JobsContext(l.ctx)
+	jobs, err := l.sc.Server.Jobs(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func agentJobNode(l loaderCtx, j *gosmo.Job) *explorerNode {
 
 // loadAgentSchedulesChildren returns every SQL Server Agent schedule.
 func loadAgentSchedulesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Schedule, error) { return l.sc.Server.SchedulesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Schedule, error) { return l.sc.Server.Schedules(l.ctx) },
 		func(sch *gosmo.Schedule) *explorerNode {
 			n := l.node(sch.Name, NodeAgentSchedule, "", sch.Name, "")
 			n.data.IsEnabled = sch.Enabled
@@ -125,7 +125,7 @@ func loadAgentAlertsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 // loadAgentEventAlertsChildren returns the SQL-only alert subset (see
 // gosmo.Server.EventAlerts).
 func loadAgentEventAlertsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Alert, error) { return l.sc.Server.EventAlertsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Alert, error) { return l.sc.Server.EventAlerts(l.ctx) },
 		func(a *gosmo.Alert) *explorerNode {
 			n := l.node(a.Name, NodeAgentAlert, "", a.Name, "")
 			n.data.IsEnabled = a.Enabled
@@ -135,7 +135,7 @@ func loadAgentEventAlertsChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 
 // loadAgentOperatorsChildren returns every SQL Server Agent operator.
 func loadAgentOperatorsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Operator, error) { return l.sc.Server.OperatorsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Operator, error) { return l.sc.Server.Operators(l.ctx) },
 		func(o *gosmo.Operator) *explorerNode {
 			n := l.node(o.Name, NodeAgentOperator, "", o.Name, "")
 			n.data.IsEnabled = o.Enabled

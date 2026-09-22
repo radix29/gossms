@@ -61,7 +61,7 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			replicas, err := ag.ReplicasContext(ctx)
+			replicas, err := ag.Replicas(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -72,7 +72,7 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 			}
 
 			prefRow := propsheet.Radio("Where should backups occur?", agBackupPreferenceLabels(),
-				agBackupPreferenceIndex(ag.AutomatedBackupPreference))
+				agBackupPreferenceIndex(string(ag.AutomatedBackupPreference)))
 
 			headers := []string{"Server instance", "Backup priority", "Excluded"}
 			gridRows := func() [][]string {
@@ -149,7 +149,7 @@ func pageAGBackupPreferences(sc *db.ServerConn, agName string) propPage {
 				}
 				if prefRow.Dirty() {
 					pref := agBackupPreferenceItems[prefRow.Selected()].keyword
-					if err := ag.SetAutomatedBackupPreferenceContext(ctx, pref); err != nil {
+					if err := ag.SetAutomatedBackupPreference(ctx, gosmo.BackupPreference(pref)); err != nil {
 						return err
 					}
 				}
@@ -171,7 +171,7 @@ func applyAGBackupPriorities(ctx context.Context, ag *gosmo.AvailabilityGroup, e
 	if !changed {
 		return nil
 	}
-	replicas, err := ag.ReplicasContext(ctx)
+	replicas, err := ag.Replicas(ctx)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func applyAGBackupPriorities(ctx context.Context, ag *gosmo.AvailabilityGroup, e
 		if r == nil {
 			return agMissingReplicaErr(e.name)
 		}
-		if err := r.SetBackupPriorityContext(ctx, e.priority); err != nil {
+		if err := r.SetBackupPriority(ctx, e.priority); err != nil {
 			return err
 		}
 	}

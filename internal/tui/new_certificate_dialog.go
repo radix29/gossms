@@ -37,11 +37,11 @@ type ncertPrefetch struct {
 }
 
 func fetchNewCertificatePrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*ncertPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	certs, err := dbObj.CertificatesContext(ctx)
+	certs, err := dbObj.Certificates(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func fetchNewCertificatePrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 	for _, c := range certs {
 		existing[strings.ToLower(c.Name)] = true
 	}
-	has, err := dbObj.HasMasterKeyContext(ctx)
+	has, err := dbObj.HasMasterKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {
 		if spec.EncryptionPassword, err = protection.apply(ctx, dbObj); err != nil {
 			return err
 		}
-		return dbObj.CreateCertificateContext(ctx, spec)
+		return dbObj.CreateCertificate(ctx, spec)
 	}
 }
 

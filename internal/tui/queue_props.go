@@ -25,11 +25,11 @@ import (
 // needs CONTROL on the queue or ALTER on its schema. See gate.QueueAlterRights.
 
 func findBrokerQueue(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.BrokerQueue, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.BrokerQueueByNameContext(ctx, schema, name)
+	return d.BrokerQueueByName(ctx, schema, name)
 }
 
 // findQueueMonitor returns the broker's activation state for one queue, or
@@ -37,11 +37,11 @@ func findBrokerQueue(ctx context.Context, sc *db.ServerConn, dbName, schema, nam
 // when it first has reason to look at the queue — and so is a login without
 // VIEW DATABASE STATE, so neither is an error the caller has to handle.
 func findQueueMonitor(ctx context.Context, sc *db.ServerConn, dbName string, objectID int) *gosmo.QueueMonitor {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil
 	}
-	monitors, err := d.QueueMonitorsContext(ctx)
+	monitors, err := d.QueueMonitors(ctx)
 	if err != nil {
 		return nil
 	}
@@ -150,7 +150,7 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 				if err != nil {
 					return err
 				}
-				return queue.AlterContext(ctx, s)
+				return queue.Alter(ctx, s)
 			}
 			return f, apply, nil
 		},

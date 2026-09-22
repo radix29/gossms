@@ -25,7 +25,7 @@ import (
 // source changes — so it is the one figure here that moves.
 
 func findDatabaseSnapshot(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.DatabaseSnapshot, error) {
-	return sc.Server.DatabaseSnapshotByNameContext(ctx, name)
+	return sc.Server.DatabaseSnapshotByName(ctx, name)
 }
 
 func databaseSnapshotPropPages(sc *db.ServerConn, name string) []propPage {
@@ -68,7 +68,7 @@ func pageDatabaseSnapshotFiles(sc *db.ServerConn, name string) propPage {
 	return propPage{
 		title: "Files",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			files, err := sc.Server.DatabaseFilesContext(ctx, name)
+			files, err := sc.Server.DatabaseFiles(ctx, name)
 			if err != nil {
 				return nil, nil, err
 			}

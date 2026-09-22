@@ -20,7 +20,7 @@ import (
 // snapshots of different databases taken minutes apart, and the tree shows
 // the name alone.
 func databaseSnapshotsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	snaps, err := sc.Server.DatabaseSnapshotsContext(ctx)
+	snaps, err := sc.Server.DatabaseSnapshots(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,7 +60,7 @@ func databaseSnapshotDetail(ctx context.Context, sc *dbconn.ServerConn, node *ex
 	// A file read that fails says so in its own row rather than failing the
 	// pane: the catalog row above is already worth showing, and a snapshot
 	// whose files cannot be read is exactly the one worth looking at.
-	files, err := sc.Server.DatabaseFilesContext(ctx, s.Name)
+	files, err := sc.Server.DatabaseFiles(ctx, s.Name)
 	if err != nil {
 		rows = append(rows, []string{"Files", "N/A"})
 		return []string{"Property", "Value"}, rows, nil

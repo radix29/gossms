@@ -14,7 +14,7 @@ import (
 // The trigger under test is the second of three and is the disabled one, so a
 // page that ignored its selection and read whichever row sorts first cannot
 // pass. The by-name read is scoped with arg: and placed before the list read,
-// because gosmo's ServerTriggerByNameContext query also contains
+// because gosmo's ServerTriggerByName query also contains
 // "FROM   sys.server_triggers" and responses match by substring in order.
 
 const serverTriggerUnderTest = "ddl_audit"

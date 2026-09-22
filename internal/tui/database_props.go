@@ -67,27 +67,27 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			space, err := d.SpaceUsedContext(ctx)
+			space, err := d.SpaceUsed(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			opts, err := d.OptionsContext(ctx)
+			opts, err := d.Options(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			history, err := sc.Server.BackupHistoryContext(ctx, dbName)
+			history, err := sc.Server.BackupHistory(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -167,18 +167,18 @@ func pageDatabaseGeneral(sc *db.ServerConn, dbName string) propPage {
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
 				if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-					if err := d.SetOwnerContext(ctx, owner); err != nil {
+					if err := d.SetOwner(ctx, owner); err != nil {
 						return err
 					}
 				}
 				if recoveryRow.Dirty() {
 					model := gosmo.RecoveryModel(recoveryItems[recoveryRow.Selected()])
-					if err := d.SetRecoveryModelContext(ctx, model); err != nil {
+					if err := d.SetRecoveryModel(ctx, model); err != nil {
 						return err
 					}
 				}

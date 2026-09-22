@@ -39,11 +39,11 @@ func tablePropPages(sc *db.ServerConn, dbName, schema, name string) []propPage {
 // findTable resolves dbName/schema/name to a *gosmo.Table, the one lookup
 // every page on this dialog needs first.
 func findTable(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.Table, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.TableByNameContext(ctx, schema, name)
+	return d.TableByName(ctx, schema, name)
 }
 
 func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
@@ -54,23 +54,23 @@ func pageTableGeneral(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			detail, err := t.DetailContext(ctx)
+			detail, err := t.Detail(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			rowCount, err := t.RowCountContext(ctx)
+			rowCount, err := t.RowCount(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			fks, err := t.ForeignKeysContext(ctx)
+			fks, err := t.ForeignKeys(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			idxs, err := t.IndexesContext(ctx)
+			idxs, err := t.Indexes(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			triggers, err := t.TriggersContext(ctx)
+			triggers, err := t.Triggers(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -116,7 +116,7 @@ func pageTableColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			cols, err := t.ColumnsContext(ctx)
+			cols, err := t.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -199,15 +199,15 @@ func pageTableStorage(sc *db.ServerConn, dbName, schema, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			space, err := t.SpaceUsedContext(ctx)
+			space, err := t.SpaceUsed(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			rowCount, err := t.RowCountContext(ctx)
+			rowCount, err := t.RowCount(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			parts, err := t.PartitionsContext(ctx)
+			parts, err := t.Partitions(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -242,11 +242,11 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 	return propPage{
 		title: "Change Tracking",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			dbCT, err := d.ChangeTrackingContext(ctx)
+			dbCT, err := d.ChangeTracking(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -254,7 +254,7 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 			// since the tree was populated — shows as "tracking off" rather
 			// than failing the page, which is what the listing scan this
 			// replaced did.
-			current, err := d.TableChangeTrackingForContext(ctx, schema, name)
+			current, err := d.TableChangeTrackingFor(ctx, schema, name)
 			if err != nil {
 				if !errors.Is(err, gosmo.ErrNotFound) {
 					return nil, nil, err
@@ -268,7 +268,7 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 			f := propsheet.NewForm(
 				propsheet.Section("Database change tracking"),
 				propsheet.Static("Database change tracking", boolStr(dbCT.Enabled)),
-				propsheet.Static("Retention period", strconv.Itoa(dbCT.RetentionPeriod)+" "+strings.ToLower(orDefault(dbCT.RetentionUnit, "DAYS"))),
+				propsheet.Static("Retention period", strconv.Itoa(dbCT.RetentionPeriod)+" "+strings.ToLower(orDefault(string(dbCT.RetentionUnit), "DAYS"))),
 				propsheet.Static("Auto cleanup", boolStr(dbCT.AutoCleanup)),
 				propsheet.Section("Table change tracking"),
 				enabledRow,
@@ -280,11 +280,11 @@ func pageTableChangeTracking(sc *db.ServerConn, dbName, schema, name string) pro
 				if !enabledRow.Dirty() && !trackColsRow.Dirty() {
 					return nil
 				}
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
-				return d.SetTableChangeTrackingContext(ctx, schema, name, enabledRow.Selected() == 1, trackColsRow.Selected() == 1)
+				return d.SetTableChangeTracking(ctx, schema, name, enabledRow.Selected() == 1, trackColsRow.Selected() == 1)
 			}
 			return f, apply, nil
 		},
@@ -295,19 +295,19 @@ func pageTablePermissions(sc *db.ServerConn, dbName, schema, name string) propPa
 	return propPage{
 		title: "Permissions",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			perms, err := d.PermissionsContext(ctx, schema, name)
+			perms, err := d.Permissions(ctx, schema, name)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

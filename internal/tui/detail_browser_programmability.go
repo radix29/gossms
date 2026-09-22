@@ -23,14 +23,14 @@ import (
 // has already narrowed node.data.Type to one this switch handles.
 func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	n := node.data
-	d, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+	d, err := sc.Server.DatabaseByName(ctx, n.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	switch n.Type {
 	case NodeSystemDataTypes:
-		types, err := d.SystemDataTypesContext(ctx)
+		types, err := d.SystemDataTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -49,7 +49,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Length", "Precision", "Scale", "Nullable"}, rows, nil
 
 	case NodeUserDefinedDataTypes:
-		types, err := d.UserDefinedDataTypesContext(ctx)
+		types, err := d.UserDefinedDataTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -66,7 +66,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Base Type", "Nullable", "Rule", "Default"}, rows, nil
 
 	case NodeUserDefinedTableTypes:
-		types, err := d.UserDefinedTableTypesContext(ctx)
+		types, err := d.UserDefinedTableTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -81,7 +81,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Memory Optimized"}, rows, nil
 
 	case NodeUserDefinedTypes:
-		types, err := d.ClrTypesContext(ctx)
+		types, err := d.ClrTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -96,7 +96,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Assembly", "Class", "Nullable"}, rows, nil
 
 	case NodeXMLSchemaCollections:
-		cols, err := d.XMLSchemaCollectionsContext(ctx)
+		cols, err := d.XMLSchemaCollections(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -111,7 +111,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Created", "Modified"}, rows, nil
 
 	case NodeAssemblies:
-		asms, err := d.AssembliesContext(ctx)
+		asms, err := d.Assemblies(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -128,7 +128,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Permission Set", "Owner", "Visible", "Created"}, rows, nil
 
 	case NodeRules:
-		rules, err := d.RulesContext(ctx)
+		rules, err := d.Rules(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -143,7 +143,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		return []string{"Name", "Created", "Definition"}, rows, nil
 
 	default: // NodeDefaults
-		defs, err := d.DefaultsContext(ctx)
+		defs, err := d.Defaults(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -165,11 +165,11 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 // says so.
 func planGuidesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	n := node.data
-	d, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+	d, err := sc.Server.DatabaseByName(ctx, n.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	guides, err := d.PlanGuidesContext(ctx)
+	guides, err := d.PlanGuides(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,7 +233,7 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		// The columns are the type — a table type with none is not a thing
 		// the catalog can hold — so they are listed here rather than left to
 		// the Properties dialog.
-		cols, err := t.ColumnsContext(ctx)
+		cols, err := t.Columns(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -284,7 +284,7 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		// Files, not FileContent: the payload is a binary the pane has
 		// nothing to do with, and reading it costs the whole assembly over
 		// the wire for a row that would show a hex preview of it.
-		files, err := a.FilesContext(ctx)
+		files, err := a.Files(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

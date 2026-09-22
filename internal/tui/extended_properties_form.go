@@ -37,12 +37,12 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 	return propPage{
 		title: "Extended Properties",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
 			lvl := level()
-			props, err := d.ExtendedPropertiesContext(ctx, lvl)
+			props, err := d.ExtendedProperties(ctx, lvl)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -55,7 +55,7 @@ func pageExtendedProperties(sc *db.ServerConn, dbName string, level func() gosmo
 // buildExtendedPropertiesForm builds the Extended Properties page every
 // object-Properties dialog shares: a Name/Value grid, a "selected
 // property" field pair below it for editing, and Add/Remove — level
-// determines which object the Add/Set/DropExtendedPropertyContext calls
+// determines which object the Add/Set/DropExtendedProperty calls
 // target (empty for database-level, SCHEMA+TABLE for a table, also usable
 // for column-level extended properties with SCHEMA+TABLE+COLUMN once a
 // caller needs that). props is whatever the caller already fetched
@@ -204,22 +204,22 @@ func buildExtendedPropertiesForm(sc *db.ServerConn, dbName string, level gosmo.E
 	)
 	apply := func(ctx context.Context) error {
 		commitCurrent()
-		d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+		d, err := sc.Server.DatabaseByName(ctx, dbName)
 		if err != nil {
 			return err
 		}
 		for _, e := range edits {
 			switch {
 			case e.pendingRemove && !e.isNew:
-				if err := d.DropExtendedPropertyContext(ctx, e.name, level); err != nil {
+				if err := d.DropExtendedProperty(ctx, e.name, level); err != nil {
 					return err
 				}
 			case e.isNew && !e.pendingRemove:
-				if err := d.AddExtendedPropertyContext(ctx, e.name, e.value, level); err != nil {
+				if err := d.AddExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}
 			case !e.isNew && !e.pendingRemove && e.value != e.origValue:
-				if err := d.SetExtendedPropertyContext(ctx, e.name, e.value, level); err != nil {
+				if err := d.SetExtendedProperty(ctx, e.name, e.value, level); err != nil {
 					return err
 				}
 			}

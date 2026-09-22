@@ -103,15 +103,15 @@ func (d *PropertiesDialog) ShowDependencies(app *App, sc *db.ServerConn, dbName,
 // whole call (see the caller's childFetchTimeout) so a hung server leaves
 // the goroutine and its connection to time out instead of blocking forever.
 func fetchDependencyRows(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) ([]PropertyRow, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	deps, err := dbObj.DependenciesContext(ctx, schema, name)
+	deps, err := dbObj.Dependencies(ctx, schema, name)
 	if err != nil {
 		return nil, err
 	}
-	dependents, err := dbObj.DependentsContext(ctx, schema, name)
+	dependents, err := dbObj.Dependents(ctx, schema, name)
 	if err != nil {
 		return nil, err
 	}

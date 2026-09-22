@@ -126,7 +126,7 @@ func TestLiveLegacyFileListingDegradesRatherThanFailing(t *testing.T) {
 	sc, ctx := liveLegacySAConn(t)
 	dir := liveLegacyListDir(t, sc)
 
-	found, err := sc.Server.EnumFileSystemContext(ctx, dir)
+	found, err := sc.Server.EnumFileSystem(ctx, dir)
 	if err != nil {
 		t.Fatalf("list %q: %v", dir, err)
 	}
@@ -156,7 +156,7 @@ func TestLiveLegacyListingIsRefusedForANonSysadmin(t *testing.T) {
 
 	// The directory has to have entries in it as sysadmin, or "empty for the
 	// probe login" says nothing.
-	found, err := sa.Server.EnumFileSystemContext(saCtx, dir)
+	found, err := sa.Server.EnumFileSystem(saCtx, dir)
 	if err != nil || len(found) == 0 {
 		t.Fatalf("list %q as %s: %d entries, err %v — the fixture needs a non-empty directory", dir, *liveLegacySA, len(found), err)
 	}
@@ -193,7 +193,7 @@ func TestLiveLegacyListingIsRefusedForANonSysadmin(t *testing.T) {
 		t.Fatal("the probe login is a sysadmin; nothing is being tested")
 	}
 
-	got, err := sc.Server.EnumFileSystemContext(ctx, dir)
+	got, err := sc.Server.EnumFileSystem(ctx, dir)
 	if err != nil {
 		t.Fatalf("xp_dirtree raised an error for a non-sysadmin: %v — the refusal exists "+
 			"because it does not, so the guard's premise has changed", err)

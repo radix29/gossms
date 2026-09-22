@@ -39,7 +39,7 @@ func scriptNewCertificate(t *testing.T, d *NewCertificateDialog) []string {
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	return script.Statements
+	return script.Statements()
 }
 
 // No master key: Script Changes creates one before the certificate, and
@@ -55,8 +55,8 @@ func TestNewCertificateScriptsTheMasterKeyFirstWithoutThePassword(t *testing.T) 
 
 	stmts := scriptNewCertificate(t, d)
 	want := []string{
-		"USE [certdb];\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = N'<insert password here>'",
-		"USE [certdb];\nCREATE CERTIFICATE [c1] WITH SUBJECT = N'test cert', EXPIRY_DATE = N'20991231'",
+		"USE [certdb];\nGO\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = N'<insert password here>'",
+		"USE [certdb];\nGO\nCREATE CERTIFICATE [c1] WITH SUBJECT = N'test cert', EXPIRY_DATE = N'20991231'",
 	}
 	if strings.Join(stmts, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), strings.Join(want, "\n"))
@@ -70,7 +70,7 @@ func TestNewCertificateLeavesAnExistingMasterKeyAlone(t *testing.T) {
 	editText(t, d.forms[0], "Subject", "s")
 
 	stmts := scriptNewCertificate(t, d)
-	if len(stmts) != 1 || !strings.HasPrefix(stmts[0], "USE [certdb];\nCREATE CERTIFICATE [c1]") {
+	if len(stmts) != 1 || !strings.HasPrefix(stmts[0], "USE [certdb];\nGO\nCREATE CERTIFICATE [c1]") {
 		t.Fatalf("want the CREATE CERTIFICATE alone, got:\n%s", strings.Join(stmts, "\n"))
 	}
 }
@@ -87,7 +87,7 @@ func TestNewCertificateByPasswordNeedsNoMasterKey(t *testing.T) {
 	editText(t, f, "Confirm password", "k3y!pw")
 
 	stmts := scriptNewCertificate(t, d)
-	want := "USE [certdb];\nCREATE CERTIFICATE [c1] ENCRYPTION BY PASSWORD = N'<insert password here>' WITH SUBJECT = N's'"
+	want := "USE [certdb];\nGO\nCREATE CERTIFICATE [c1] ENCRYPTION BY PASSWORD = N'<insert password here>' WITH SUBJECT = N's'"
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}

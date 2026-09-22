@@ -291,7 +291,7 @@ func TestGrowthAndMaxSizeText(t *testing.T) {
 // "leave FILEGROWTH alone", so the two have to be told apart before the
 // statement is built. They were not: the ALTER came out with no FILEGROWTH
 // clause, and where growth was the only edit the whole statement collapsed to
-// the bare identifying NAME — gosmo returns "" for that and AlterFileContext
+// the bare identifying NAME — gosmo returns "" for that and AlterFile
 // returns nil, so Apply reported success and the file went on growing.
 //
 // The statement itself is asserted a level up, in

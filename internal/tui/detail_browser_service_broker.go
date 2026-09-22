@@ -21,14 +21,14 @@ import (
 // already narrowed node.data.Type to one this switch handles.
 func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	n := node.data
-	d, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+	d, err := sc.Server.DatabaseByName(ctx, n.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	switch n.Type {
 	case NodeMessageTypes:
-		types, err := d.MessageTypesContext(ctx)
+		types, err := d.MessageTypes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -45,7 +45,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Validation", "Schema collection", "Owner"}, rows, nil
 
 	case NodeContracts:
-		contracts, err := d.ContractsContext(ctx)
+		contracts, err := d.Contracts(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -64,7 +64,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return brokerQueuesFolderDetail(ctx, d, n, objs)
 
 	case NodeBrokerServices:
-		services, err := d.BrokerServicesContext(ctx)
+		services, err := d.BrokerServices(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -81,7 +81,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Queue", "Contracts", "Owner"}, rows, nil
 
 	case NodeRoutes:
-		routes, err := d.RoutesContext(ctx)
+		routes, err := d.Routes(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -100,7 +100,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Remote service", "Address", "Expires"}, rows, nil
 
 	case NodeRemoteServiceBindings:
-		bindings, err := d.RemoteServiceBindingsContext(ctx)
+		bindings, err := d.RemoteServiceBindings(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -116,7 +116,7 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 		return []string{"Name", "Remote service", "User", "Anonymous"}, rows, nil
 
 	default: // NodeBrokerPriorities
-		priorities, err := d.BrokerPrioritiesContext(ctx)
+		priorities, err := d.BrokerPriorities(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -142,14 +142,14 @@ func serviceBrokerFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 // blank, never "0": a queue whose internal table has no statistics row is
 // not an empty queue, it is a queue nothing is known about.
 func brokerQueuesFolderDetail(ctx context.Context, d *gosmo.Database, n nodeData, objs *[]nodeData) ([]string, [][]string, error) {
-	queues, err := d.BrokerQueuesContext(ctx)
+	queues, err := d.BrokerQueues(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	queues = filterObjects(n.Filter, queues, func(q *gosmo.BrokerQueue) nodeData {
 		return nodeData{Name: q.Name, Schema: q.Schema, CreateDate: q.CreateDate}
 	})
-	counts, err := d.QueueMessageCountsContext(ctx)
+	counts, err := d.QueueMessageCounts(ctx)
 	if err != nil {
 		counts = nil
 	}
@@ -225,7 +225,7 @@ func serviceBrokerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explo
 		// does not, and a queue the broker has never monitored has no monitor
 		// row at all — the normal case, not an error. Neither failure may cost
 		// the rows above.
-		if count, err := q.MessageCountContext(ctx); err == nil {
+		if count, err := q.MessageCount(ctx); err == nil {
 			rows = append(rows, []string{"Messages", strconv.FormatInt(count, 10)})
 		}
 		if m := findQueueMonitor(ctx, sc, n.DBName, q.ObjectID); m != nil {

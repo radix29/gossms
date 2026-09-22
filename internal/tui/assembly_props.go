@@ -21,11 +21,11 @@ import (
 // prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findAssembly(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Assembly, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.AssemblyByNameContext(ctx, name)
+	return d.AssemblyByName(ctx, name)
 }
 
 func assemblyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
@@ -77,7 +77,7 @@ func pageAssemblyFiles(sc *db.ServerConn, dbName, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			files, err := a.FilesContext(ctx)
+			files, err := a.Files(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -110,7 +110,7 @@ func pageAssemblyRoutines(sc *db.ServerConn, dbName, name string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			mods, err := a.ModulesContext(ctx)
+			mods, err := a.Modules(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

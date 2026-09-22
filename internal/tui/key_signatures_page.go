@@ -85,7 +85,7 @@ func certificateSignaturesPage(sc *db.ServerConn, dbName, name string) propPage 
 		}
 		return &keySigner{kind: gosmo.SignerCertificate, name: name, protection: c.PvtKeyEncryptionType,
 			signed: func(ctx context.Context, d *gosmo.Database) ([]*gosmo.ModuleSignature, error) {
-				return d.CertificateRef(name).SignedModulesContext(ctx)
+				return d.CertificateRef(name).SignedModules(ctx)
 			}}, nil
 	}), dbName, "", name, keySignatureRights(gate.ControlOnCertificate)...)
 }
@@ -98,7 +98,7 @@ func asymmetricKeySignaturesPage(sc *db.ServerConn, dbName, name string) propPag
 		}
 		return &keySigner{kind: gosmo.SignerAsymmetricKey, name: name, protection: k.PvtKeyEncryptionType,
 			signed: func(ctx context.Context, d *gosmo.Database) ([]*gosmo.ModuleSignature, error) {
-				return d.AsymmetricKeyRef(name).SignedModulesContext(ctx)
+				return d.AsymmetricKeyRef(name).SignedModules(ctx)
 			}}, nil
 	}), dbName, "", name, keySignatureRights(gate.ControlOnAsymmetricKey)...)
 }
@@ -107,7 +107,7 @@ func keySignaturesPage(sc *db.ServerConn, dbName string, signer func(context.Con
 	return propPage{
 		title: "Signatures",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -119,7 +119,7 @@ func keySignaturesPage(sc *db.ServerConn, dbName string, signer func(context.Con
 			if err != nil {
 				return nil, nil, err
 			}
-			mods, err := d.SignableModulesContext(ctx)
+			mods, err := d.SignableModules(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -250,7 +250,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 		signer := gosmo.Signer{Kind: s.kind, Name: s.name}
 		for _, e := range edits {
 			if e.pendingRemove && !e.isNew {
-				if err := ref.DropSignatureContext(ctx, e.schema, e.module, signer, e.counter); err != nil {
+				if err := ref.DropSignature(ctx, e.schema, e.module, signer, e.counter); err != nil {
 					return err
 				}
 			}
@@ -265,7 +265,7 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 			if byPassword {
 				signer.Password = scriptSafePassword(ctx, passField.Value())
 			}
-			if err := ref.AddSignatureContext(ctx, e.schema, e.module, signer, false); err != nil {
+			if err := ref.AddSignature(ctx, e.schema, e.module, signer, false); err != nil {
 				return err
 			}
 		}
@@ -279,11 +279,11 @@ func buildKeySignaturesForm(s *keySigner, signed []*gosmo.ModuleSignature, mods 
 // signature on it. These families have no Properties dialog, so this is where
 // a module's signers are shown.
 func moduleDetail(ctx context.Context, sc *db.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	d, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	sigs, err := d.SignaturesOnContext(ctx, node.data.Schema, node.data.Name)
+	sigs, err := d.SignaturesOn(ctx, node.data.Schema, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}

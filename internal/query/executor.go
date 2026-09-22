@@ -21,8 +21,9 @@ import (
 
 	"github.com/golang-sql/sqlexp"
 	mssql "github.com/microsoft/go-mssqldb"
-	"github.com/microsoft/go-mssqldb/batch"
 	gosmo "github.com/radix29/gosmo"
+
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
 // ResultSet is one grid of data returned by a batch.
@@ -282,14 +283,16 @@ func runScript(ctx context.Context, conn *sql.Conn, script string, capture planC
 		}()
 	}
 
-	for _, b := range batch.Split(script, "GO") {
-		if strings.TrimSpace(b) == "" {
-			continue
+	for _, b := range sqltext.SplitBatches(script) {
+		for range b.Count {
+			if ctx.Err() != nil {
+				return true, nil
+			}
+			runBatch(ctx, conn, b.Text, res, sink)
 		}
-		if ctx.Err() != nil {
-			break
+		if b.Count > 1 {
+			res.addNotice(fmt.Sprintf("Batch execution completed %d times.", b.Count))
 		}
-		runBatch(ctx, conn, b, res, sink)
 	}
 	return true, nil
 }

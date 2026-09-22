@@ -49,12 +49,12 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
-		if mem, err := sc.Server.MemoryStatsContext(ctx); err == nil {
+		if mem, err := sc.Server.MemoryStats(ctx); err == nil {
 			rows[availMemRow][1] = formatMB(float64(mem.AvailableMemoryMB))
 		} else {
 			rows[availMemRow][1] = "N/A"
 		}
-		if proc, err := sc.Server.ProcessorInfoContext(ctx); err == nil {
+		if proc, err := sc.Server.ProcessorInfo(ctx); err == nil {
 			rows[numaRow][1] = strconv.Itoa(proc.NUMANodeCount)
 		} else {
 			rows[numaRow][1] = "N/A"
@@ -89,7 +89,7 @@ func (db *DetailBrowser) loadServerDetails(fetchCtx context.Context, app *App, s
 // the pair that actually governs it.
 func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string {
 	if sc.Server.Info().IsAzure() {
-		st, err := sc.Server.LatestServerResourceStatsContext(ctx)
+		st, err := sc.Server.LatestServerResourceStats(ctx)
 		if err != nil {
 			return nil
 		}
@@ -97,7 +97,7 @@ func serverDiskSpaceRows(ctx context.Context, sc *dbconn.ServerConn) [][2]string
 		return [][2]string{{"Storage", formatMB(free) + " free of " + formatMB(float64(st.ReservedStorageMB))}}
 	}
 
-	vols, err := sc.Server.DiskVolumesContext(ctx)
+	vols, err := sc.Server.DiskVolumes(ctx)
 	if err != nil {
 		return nil
 	}
@@ -166,7 +166,7 @@ func diskVolumeValue(v gosmo.DiskVolumeInfo) string {
 // detail view: one row per log file, matching what the folder's own children
 // list.
 func errorLogFilesDetail(ctx context.Context, sc *dbconn.ServerConn, logType gosmo.ErrorLogType) ([]string, [][]string, error) {
-	files, err := sc.Server.EnumErrorLogsContext(ctx, logType)
+	files, err := sc.Server.EnumErrorLogs(ctx, logType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -186,7 +186,7 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 		{"Log", logType.String()},
 		{"File", node.label},
 	}
-	if files, err := sc.Server.EnumErrorLogsContext(ctx, logType); err == nil {
+	if files, err := sc.Server.EnumErrorLogs(ctx, logType); err == nil {
 		for _, f := range files {
 			if f.Number == logNum {
 				rows = append(rows,
@@ -196,7 +196,7 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 			}
 		}
 	}
-	entries, err := sc.Server.ReadLogContext(ctx, logType, logNum)
+	entries, err := sc.Server.ReadLog(ctx, logType, logNum)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -213,7 +213,7 @@ func errorLogFileDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 // independently of the tree, so the folder's filter is applied here too — over
 // the gosmo objects, before the rows are built.
 func backupDevicesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	devices, err := sc.Server.BackupDevicesContext(ctx)
+	devices, err := sc.Server.BackupDevices(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -237,7 +237,7 @@ func backupDevicesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 // report as the device being unreadable. The Media Contents page of Backup
 // Device Properties is where that read belongs.
 func backupDeviceDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	d, err := sc.Server.BackupDeviceByNameContext(ctx, node.data.Name)
+	d, err := sc.Server.BackupDeviceByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,7 +252,7 @@ func backupDeviceDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 // It reads gosmo independently of the tree, so the folder's filter is applied
 // here too — over the gosmo objects, before the rows are built.
 func serverTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	triggers, err := sc.Server.ServerTriggersContext(ctx)
+	triggers, err := sc.Server.ServerTriggers(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -277,7 +277,7 @@ func serverTriggersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node
 // definition is not shown here — it is multi-line, which a grid row flattens;
 // the Properties dialog's Definition page is where it belongs.
 func serverTriggerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	t, err := sc.Server.ServerTriggerByNameContext(ctx, node.data.Name)
+	t, err := sc.Server.ServerTriggerByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -294,7 +294,7 @@ func serverTriggerDetail(ctx context.Context, sc *dbconn.ServerConn, node *explo
 // independently of the tree, so the folder's filter is applied here too — over
 // the gosmo objects, before the rows are built.
 func endpointsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	endpoints, err := sc.Server.EndpointsContext(ctx)
+	endpoints, err := sc.Server.Endpoints(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -320,7 +320,7 @@ func endpointsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 
 // endpointDetail is one endpoint's Property/Value view.
 func endpointDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	e, err := sc.Server.EndpointByNameContext(ctx, node.data.Name)
+	e, err := sc.Server.EndpointByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}

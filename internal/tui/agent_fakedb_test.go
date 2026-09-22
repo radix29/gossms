@@ -27,8 +27,8 @@ const (
 
 var agentEpoch = time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC)
 
-// jobRow is one row of the 17-column job SELECT used by JobsContext and
-// JobByNameContext.
+// jobRow is one row of the 17-column job SELECT used by Jobs and
+// JobByName.
 func jobRow(name, category, owner string, enabled bool, deleteLevel, notifyLevel int64, operator string) []driver.Value {
 	return []driver.Value{
 		"job-" + name, name, "Rebuilds every index",
@@ -52,7 +52,7 @@ func agentJobResponses(job []driver.Value) []fakeResponse {
 	}
 }
 
-// agentCategoryResponse answers CategoriesContext for every class (an int
+// agentCategoryResponse answers Categories for every class (an int
 // parameter, which fakeResponse.arg can't discriminate). No page loads two
 // classes.
 func agentCategoryResponse() fakeResponse {

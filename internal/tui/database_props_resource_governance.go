@@ -31,7 +31,7 @@ func pageDatabaseResourceGovernance(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Resource Governance",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -42,8 +42,8 @@ func pageDatabaseResourceGovernance(sc *db.ServerConn, dbName string) propPage {
 			// gosmo reports as ErrNotFound. Neither is a reason to fail the
 			// page — a login that cannot see the numbers should be told why,
 			// not handed an error where a property sheet belongs.
-			g, govErr := d.ResourceGovernanceContext(ctx)
-			latest, statsErr := d.LatestResourceStatsContext(ctx)
+			g, govErr := d.ResourceGovernance(ctx)
+			latest, statsErr := d.LatestResourceStats(ctx)
 			if g == nil && latest == nil {
 				return propsheet.NewForm(
 					propsheet.Section("Resource governance"),

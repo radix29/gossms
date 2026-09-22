@@ -17,8 +17,8 @@ import (
 // does exactly two things to it; anything wider would invite a third write into
 // a function two dialogs depend on.
 type roleWriter interface {
-	RenameContext(ctx context.Context, newName string) error
-	ChangeOwnerContext(ctx context.Context, newOwner string) error
+	Rename(ctx context.Context, newName string) error
+	ChangeOwner(ctx context.Context, newOwner string) error
 }
 
 // roleGeneral is one role as its General page needs it: the facts both scopes
@@ -126,7 +126,7 @@ func roleGeneralPage(roleName *string,
 						return err
 					}
 					if owner, ok := changedTo(ownerRow, unknownOwnerItem); ok {
-						if err := role.ChangeOwnerContext(ctx, owner); err != nil {
+						if err := role.ChangeOwner(ctx, owner); err != nil {
 							return err
 						}
 					}
@@ -134,7 +134,7 @@ func roleGeneralPage(roleName *string,
 					// page on the dialog is addressed by this name, so it must
 					// not change until the server has accepted the rename.
 					if nameRow.Dirty() {
-						if err := role.RenameContext(ctx, nameRow.Value()); err != nil {
+						if err := role.Rename(ctx, nameRow.Value()); err != nil {
 							return err
 						}
 						commitRename(ctx, roleName, nameRow.Value())

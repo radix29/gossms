@@ -19,7 +19,7 @@ func qsSeriesResponse(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "GROUP BY p.plan_id, rsi.runtime_stats_interval_id", cols: 5, rows: rows}
 }
 
-// qsIntervalRow is one row of the five-column shape QueryStoreTrackedQueryContext
+// qsIntervalRow is one row of the five-column shape QueryStoreTrackedQuery
 // returns — see gosmo's QSPlanIntervalStat scan.
 func qsIntervalRow(planID int64, start time.Time, execs int64, value float64) []driver.Value {
 	return []driver.Value{planID, start, start.Add(time.Hour), execs, value}

@@ -24,7 +24,7 @@ type ncredentialPrefetch struct {
 }
 
 func fetchNewCredentialPrefetch(ctx context.Context, sc *db.ServerConn) (*ncredentialPrefetch, error) {
-	creds, err := sc.Server.CredentialsContext(ctx)
+	creds, err := sc.Server.Credentials(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func fetchNewCredentialPrefetch(ctx context.Context, sc *db.ServerConn) (*ncrede
 	// read needs rights this dialog does not otherwise require — so a failure
 	// here leaves the dropdown empty rather than failing the dialog.
 	var providerNames []string
-	if providers, err := sc.Server.CryptographicProvidersContext(ctx); err == nil {
+	if providers, err := sc.Server.CryptographicProviders(ctx); err == nil {
 		for _, p := range providers {
 			providerNames = append(providerNames, p.Name)
 		}
@@ -129,7 +129,7 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 		if providerRow != nil && providerRow.Selected() != 0 {
 			spec.CryptographicProvider = providerRow.Value()
 		}
-		_, err := sc.Server.CreateCredentialContext(ctx, spec)
+		_, err := sc.Server.CreateCredential(ctx, spec)
 		return err
 	}
 }

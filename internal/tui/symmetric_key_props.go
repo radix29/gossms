@@ -24,11 +24,11 @@ import (
 // an absent key into an ErrNotFound, unlike the certificate and asymmetric-key
 // finders, so there is no (nil, nil) to translate.
 func findSymmetricKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.SymmetricKey, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.SymmetricKeyByNameContext(ctx, name)
+	return d.SymmetricKeyByName(ctx, name)
 }
 
 func symmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
@@ -60,7 +60,7 @@ func symmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				keyOwnerNote("symmetric key"),
 			)
 			return f, keyOwnerApply(sc, dbName, owner, func(ctx context.Context, d *gosmo.Database, o string) error {
-				return d.SymmetricKeyRef(name).ChangeOwnerContext(ctx, o)
+				return d.SymmetricKeyRef(name).ChangeOwner(ctx, o)
 			}), nil
 		},
 	}
@@ -156,15 +156,15 @@ type symKeyCatalog struct {
 }
 
 func loadSymKeyCatalog(ctx context.Context, d *gosmo.Database) (*symKeyCatalog, error) {
-	certs, err := d.CertificatesContext(ctx)
+	certs, err := d.Certificates(ctx)
 	if err != nil {
 		return nil, err
 	}
-	asym, err := d.AsymmetricKeysContext(ctx)
+	asym, err := d.AsymmetricKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sym, err := d.SymmetricKeysContext(ctx)
+	sym, err := d.SymmetricKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -318,11 +318,11 @@ func symmetricKeyEncryptionPage(sc *db.ServerConn, dbName, name string) propPage
 	return propPage{
 		title: "Encryption",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			k, err := d.SymmetricKeyByNameContext(ctx, name)
+			k, err := d.SymmetricKeyByName(ctx, name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -559,12 +559,12 @@ func buildSymmetricKeyEncryptionForm(k *gosmo.SymmetricKey, cat *symKeyCatalog, 
 			removes = append(slices.Delete(removes, i, i+1), last)
 		}
 		for _, e := range adds {
-			if err := ref.AddEncryptionContext(ctx, e.encryptor(ctx), dec); err != nil {
+			if err := ref.AddEncryption(ctx, e.encryptor(ctx), dec); err != nil {
 				return err
 			}
 		}
 		for _, e := range removes {
-			if err := ref.DropEncryptionContext(ctx, e.encryptor(ctx), dec); err != nil {
+			if err := ref.DropEncryption(ctx, e.encryptor(ctx), dec); err != nil {
 				return err
 			}
 		}

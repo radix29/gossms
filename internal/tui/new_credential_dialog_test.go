@@ -43,12 +43,12 @@ func TestNewCredentialTrimsTheIdentity(t *testing.T) {
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(script.Statements) != 1 {
-		t.Fatalf("want one statement, got %d:\n%s", len(script.Statements), strings.Join(script.Statements, "\n"))
+	if len(script.Statements()) != 1 {
+		t.Fatalf("want one statement, got %d:\n%s", len(script.Statements()), strings.Join(script.Statements(), "\n"))
 	}
 	want := `CREATE CREDENTIAL [rv_test_cred] WITH IDENTITY = N'DOMAIN\svc_acct', SECRET = N'<insert secret here>'`
-	if script.Statements[0] != want {
-		t.Errorf("got:\n%s\nwant:\n%s", script.Statements[0], want)
+	if script.Statements()[0] != want {
+		t.Errorf("got:\n%s\nwant:\n%s", script.Statements()[0], want)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestNewCredentialDialogsScriptTheSecretAsAPlaceholder(t *testing.T) {
 		if err := apply(ctx); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		out := strings.Join(script.Statements, "\n")
+		out := strings.Join(script.Statements(), "\n")
 		if strings.Contains(out, typed) || !strings.Contains(out, "SECRET = N'<insert secret here>'") {
 			t.Errorf("want the placeholder and not the typed secret, got:\n%s", out)
 		}

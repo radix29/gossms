@@ -110,7 +110,7 @@ func (lv *LogViewer) Load() {
 			defer enumerated.Done()
 			for _, t := range logFamilies {
 				enumCtx, enumCancel := context.WithTimeout(ctx, logReadTimeout)
-				files, err := sc.Server.EnumErrorLogsContext(enumCtx, t)
+				files, err := sc.Server.EnumErrorLogs(enumCtx, t)
 				enumCancel()
 				if err == nil {
 					enums[t] = files
@@ -170,7 +170,7 @@ func readLogFiles(app *App, ctx context.Context, sc *db.ServerConn, refs []logFi
 	app.fanOut(len(refs), "reading an error log", func(i int) {
 		readCtx, cancel := context.WithTimeout(ctx, logReadTimeout)
 		defer cancel()
-		entries, err := sc.Server.ReadLogFilteredContext(readCtx, refs[i].Type, refs[i].Num, search)
+		entries, err := sc.Server.ReadLogFiltered(readCtx, refs[i].Type, refs[i].Num, search)
 		if err != nil {
 			errs[i] = err
 			return
@@ -246,7 +246,7 @@ func (lv *LogViewer) recycle() {
 			timeout: logReadTimeout,
 			repair:  lv.recyclePanicked,
 		}, func(ctx context.Context, _ progressReport) error {
-			return sc.Server.CycleLogContext(ctx, logType)
+			return sc.Server.CycleLog(ctx, logType)
 		}, func(err error, cancelled bool) {
 			lv.busy = false
 			switch {

@@ -25,7 +25,7 @@ type noperatorPrefetch struct {
 }
 
 func fetchNewOperatorPrefetch(ctx context.Context, sc *db.ServerConn) (*noperatorPrefetch, error) {
-	ops, err := sc.Server.OperatorsContext(ctx)
+	ops, err := sc.Server.Operators(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func fetchNewOperatorPrefetch(ctx context.Context, sc *db.ServerConn) (*noperato
 	for _, o := range ops {
 		existing[strings.ToLower(o.Name)] = true
 	}
-	cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassOperator)
+	cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassOperator)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (d *NewOperatorDialog) buildPages(pf *noperatorPrefetch) {
 		if categoryRow.Selected() != 0 {
 			req.Category = categoryRow.Value()
 		}
-		_, err := sc.Server.CreateOperatorContext(ctx, req)
+		_, err := sc.Server.CreateOperator(ctx, req)
 		return err
 	}
 }

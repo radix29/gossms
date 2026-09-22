@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -46,7 +45,7 @@ func findStatistic(ctx context.Context, sc *db.ServerConn, dbName, schema, table
 	if err != nil {
 		return nil, nil, err
 	}
-	st, err := t.StatisticByNameContext(ctx, name)
+	st, err := t.StatisticByName(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -110,11 +109,11 @@ func pageStatisticColumns(sc *db.ServerConn, dbName, schema, table, name string)
 			if err != nil {
 				return nil, nil, err
 			}
-			statCols, err := st.ColumnsContext(ctx)
+			statCols, err := st.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			tableCols, err := t.ColumnsContext(ctx)
+			tableCols, err := t.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -195,7 +194,7 @@ func pageStatisticDetails(d *PropDialog, sc *db.ServerConn, dbName, schema, tabl
 			if err != nil {
 				return nil, nil, err
 			}
-			hdr, err := st.HeaderContext(ctx)
+			hdr, err := st.Header(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -210,32 +209,30 @@ func pageStatisticDetails(d *PropDialog, sc *db.ServerConn, dbName, schema, tabl
 
 			statusRow := propsheet.Static("Last action", "")
 			updateBtn := d.asyncStatusButton("Update Statistics", statusRow, "Updating...", func(ctx context.Context) (string, error) {
-				if err := st.UpdateContext(ctx, 0); err != nil {
+				if err := st.Update(ctx, 0); err != nil {
 					return "", err
 				}
 				return "Statistics updated (full scan)", nil
 			})
+			// gosmo's Scripter, the same statement Object Explorer's Script
+			// Statistics as ▸ CREATE To emits: a hand-built CREATE here once
+			// dropped the filter, NORECOMPUTE and INCREMENTAL, so a filtered
+			// statistic scripted as an unfiltered one.
 			scriptCreateBtn := widgets.NewButton("Script as CREATE", func() {
 				statusRow.SetValue("Scripting...")
-				var ddl string
+				var text string
 				d.runPageAction(func(ctx context.Context) error {
-					cols, err := st.ColumnsContext(ctx)
-					if err != nil {
-						return err
-					}
-					quoted := make([]string, len(cols))
-					for i, c := range cols {
-						quoted[i] = fqn("", c)
-					}
-					ddl = fmt.Sprintf("CREATE STATISTICS %s ON %s (%s)", fqn("", st.Name), fqn(schema, table), strings.Join(quoted, ", "))
-					return nil
+					var err error
+					text, err = ddl(gosmo.ScriptCreate, scriptStatistic)(ctx, sc,
+						nodeData{DBName: dbName, Schema: schema, TableName: table, Name: st.Name})
+					return err
 				}, func(err error) {
 					if err != nil {
 						statusRow.SetValue("Error: " + err.Error())
 						return
 					}
 					statusRow.SetValue("")
-					d.app.openQueryWithText(sc, dbName, ddl)
+					d.app.openQueryWithText(sc, dbName, text)
 				})
 			})
 			scriptUpdateBtn := widgets.NewButton("Script as UPDATE", func() {
@@ -275,7 +272,7 @@ func pageStatisticHistogram(sc *db.ServerConn, dbName, schema, table, name strin
 			if err != nil {
 				return nil, nil, err
 			}
-			cols, err := st.ColumnsContext(ctx)
+			cols, err := st.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -283,7 +280,7 @@ func pageStatisticHistogram(sc *db.ServerConn, dbName, schema, table, name strin
 			if len(cols) > 0 {
 				leadCol = cols[0]
 			}
-			steps, err := st.HistogramContext(ctx)
+			steps, err := st.Histogram(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -338,7 +335,7 @@ func pageStatisticDensityVector(sc *db.ServerConn, dbName, schema, table, name s
 			if err != nil {
 				return nil, nil, err
 			}
-			densities, err := st.DensityVectorContext(ctx)
+			densities, err := st.DensityVector(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

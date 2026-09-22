@@ -242,7 +242,7 @@ behind the mouse and async sections; this file has the rules themselves.
   `qsResultRow.queryText` held in memory; `DetailBrowser.showQueryStoreValue`
   cannot — its grid is `[][]string` shared with every other node type — so it
   re-reads the statement by the row's `Query ID` through
-  `gosmo.QueryStoreQueryTextContext`. A test asserting only that *a* read happened
+  `gosmo.QueryStoreQueryText`. A test asserting only that *a* read happened
   cannot catch a hook that addressed the wrong row: the fake answers every id
   alike, so assert the bound id with `fakeInstance.ReadArgs`.
 

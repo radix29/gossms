@@ -29,7 +29,7 @@ type njobPrefetch struct {
 }
 
 func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch, error) {
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	for _, j := range jobs {
 		existing[strings.ToLower(j.Name)] = true
 	}
-	logins, err := sc.Server.LoginsContext(ctx)
+	logins, err := sc.Server.Logins(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	for i, l := range logins {
 		loginNames[i] = l.Name
 	}
-	cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassJob)
+	cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassJob)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	if err != nil {
 		return nil, err
 	}
-	scheds, err := sc.Server.SchedulesContext(ctx)
+	scheds, err := sc.Server.Schedules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	for i, sch := range scheds {
 		schedNames[i] = sch.Name
 	}
-	ops, err := sc.Server.OperatorsContext(ctx)
+	ops, err := sc.Server.Operators(ctx)
 	if err != nil {
 		return nil, err
 	}

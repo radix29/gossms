@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -48,173 +47,176 @@ type serverScriptFn func(s *gosmo.ServerScripter, ctx context.Context, n nodeDat
 
 var (
 	scriptTable scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptTableContext(ctx, n.Schema, n.Name)
+		return s.ScriptTable(ctx, n.Schema, n.Name)
 	}
 	scriptView scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptViewContext(ctx, n.Schema, n.Name)
+		return s.ScriptView(ctx, n.Schema, n.Name)
 	}
 	scriptProc scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptStoredProcedureContext(ctx, n.Schema, n.Name)
+		return s.ScriptStoredProcedure(ctx, n.Schema, n.Name)
 	}
 	scriptFunc scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptFunctionContext(ctx, n.Schema, n.Name)
+		return s.ScriptFunction(ctx, n.Schema, n.Name)
 	}
 	scriptTrigger scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptTriggerContext(ctx, n.Schema, n.Name)
+		return s.ScriptTrigger(ctx, n.Schema, n.Name)
 	}
 	scriptSeq scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSequenceContext(ctx, n.Schema, n.Name)
+		return s.ScriptSequence(ctx, n.Schema, n.Name)
 	}
 	scriptSynonym scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSynonymContext(ctx, n.Schema, n.Name)
+		return s.ScriptSynonym(ctx, n.Schema, n.Name)
 	}
 	scriptSchema scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSchemaContext(ctx, n.Name)
+		return s.ScriptSchema(ctx, n.Name)
 	}
 	scriptUser scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptUserContext(ctx, n.Name)
+		return s.ScriptUser(ctx, n.Name)
 	}
 	scriptDBRole scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDatabaseRoleContext(ctx, n.Name)
+		return s.ScriptDatabaseRole(ctx, n.Name)
 	}
 	scriptDB scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDatabaseContext(ctx)
+		return s.ScriptDatabase(ctx)
 	}
 
 	// The table-scoped families name their table in TableName; Schema/Name
 	// point at the index or constraint itself.
 	scriptIndex scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptIndexContext(ctx, n.Schema, n.TableName, n.Name)
+		return s.ScriptIndex(ctx, n.Schema, n.TableName, n.Name)
 	}
 	scriptCheck scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptCheckConstraintContext(ctx, n.Schema, n.TableName, n.Name)
+		return s.ScriptCheckConstraint(ctx, n.Schema, n.TableName, n.Name)
 	}
 	scriptFK scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptForeignKeyContext(ctx, n.Schema, n.TableName, n.Name)
+		return s.ScriptForeignKey(ctx, n.Schema, n.TableName, n.Name)
+	}
+	scriptStatistic scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptStatistic(ctx, n.Schema, n.TableName, n.Name)
 	}
 
 	scriptPartFunc scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptPartitionFunctionContext(ctx, n.Name)
+		return s.ScriptPartitionFunction(ctx, n.Name)
 	}
 	scriptPartScheme scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptPartitionSchemeContext(ctx, n.Name)
+		return s.ScriptPartitionScheme(ctx, n.Name)
 	}
 	scriptSecPolicy scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSecurityPolicyContext(ctx, n.Schema, n.Name)
+		return s.ScriptSecurityPolicy(ctx, n.Schema, n.Name)
 	}
 	scriptCMK scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptColumnMasterKeyContext(ctx, n.Name)
+		return s.ScriptColumnMasterKey(ctx, n.Name)
 	}
 	scriptCEK scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptColumnEncryptionKeyContext(ctx, n.Name)
+		return s.ScriptColumnEncryptionKey(ctx, n.Name)
 	}
 	scriptDBAuditSpec scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDatabaseAuditSpecificationContext(ctx, n.Name)
+		return s.ScriptDatabaseAuditSpecification(ctx, n.Name)
 	}
 	scriptDBTrigger scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDatabaseTriggerContext(ctx, n.Name)
+		return s.ScriptDatabaseTrigger(ctx, n.Name)
 	}
 	scriptDBScopedCredential scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDatabaseScopedCredentialContext(ctx, n.Name)
+		return s.ScriptDatabaseScopedCredential(ctx, n.Name)
 	}
 	scriptCertificate scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptCertificateContext(ctx, n.Name)
+		return s.ScriptCertificate(ctx, n.Name)
 	}
 	scriptAsymmetricKey scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptAsymmetricKeyContext(ctx, n.Name)
+		return s.ScriptAsymmetricKey(ctx, n.Name)
 	}
 	scriptSymmetricKey scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSymmetricKeyContext(ctx, n.Name)
+		return s.ScriptSymmetricKey(ctx, n.Name)
 	}
 
 	// The Programmability families that arrived with the tree's missing
 	// folders. None of them has an ALTER form — see gosmo's
 	// scripter_programmability.go — so every one is wired with alter false.
 	scriptUserDefinedDataType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptUserDefinedDataTypeContext(ctx, n.Schema, n.Name)
+		return s.ScriptUserDefinedDataType(ctx, n.Schema, n.Name)
 	}
 	scriptUserDefinedTableType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptUserDefinedTableTypeContext(ctx, n.Schema, n.Name)
+		return s.ScriptUserDefinedTableType(ctx, n.Schema, n.Name)
 	}
 	scriptClrType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptClrTypeContext(ctx, n.Schema, n.Name)
+		return s.ScriptClrType(ctx, n.Schema, n.Name)
 	}
 	scriptXMLSchemaCollection scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptXMLSchemaCollectionContext(ctx, n.Schema, n.Name)
+		return s.ScriptXMLSchemaCollection(ctx, n.Schema, n.Name)
 	}
 	scriptRule scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptRuleContext(ctx, n.Schema, n.Name)
+		return s.ScriptRule(ctx, n.Schema, n.Name)
 	}
 	scriptDefault scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDefaultContext(ctx, n.Schema, n.Name)
+		return s.ScriptDefault(ctx, n.Schema, n.Name)
 	}
 	// Assemblies, plan guides and the external resources are
 	// database-scoped, not schema-scoped: each is addressed by a single
 	// name, and nodeData.Schema is empty on all of them.
 	scriptAssembly scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptAssemblyContext(ctx, n.Name)
+		return s.ScriptAssembly(ctx, n.Name)
 	}
 	scriptPlanGuide scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptPlanGuideContext(ctx, n.Name)
+		return s.ScriptPlanGuide(ctx, n.Name)
 	}
 	scriptExternalDataSource scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptExternalDataSourceContext(ctx, n.Name)
+		return s.ScriptExternalDataSource(ctx, n.Name)
 	}
 	scriptExternalFileFormat scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptExternalFileFormatContext(ctx, n.Name)
+		return s.ScriptExternalFileFormat(ctx, n.Name)
 	}
 	scriptExternalLibrary scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptExternalLibraryContext(ctx, n.Name)
+		return s.ScriptExternalLibrary(ctx, n.Name)
 	}
 
 	// The seven Service Broker families. Six are database-scoped and named by
 	// one name; the queue is the only schema-scoped one, and the only one
 	// whose script method takes a schema.
 	scriptMessageType scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptMessageTypeContext(ctx, n.Name)
+		return s.ScriptMessageType(ctx, n.Name)
 	}
 	scriptContract scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptContractContext(ctx, n.Name)
+		return s.ScriptContract(ctx, n.Name)
 	}
 	scriptBrokerQueue scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptBrokerQueueContext(ctx, n.Schema, n.Name)
+		return s.ScriptBrokerQueue(ctx, n.Schema, n.Name)
 	}
 	scriptBrokerService scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptBrokerServiceContext(ctx, n.Name)
+		return s.ScriptBrokerService(ctx, n.Name)
 	}
 	scriptRoute scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptRouteContext(ctx, n.Name)
+		return s.ScriptRoute(ctx, n.Name)
 	}
 	scriptRemoteServiceBinding scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptRemoteServiceBindingContext(ctx, n.Name)
+		return s.ScriptRemoteServiceBinding(ctx, n.Name)
 	}
 	scriptBrokerPriority scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptBrokerPriorityContext(ctx, n.Name)
+		return s.ScriptBrokerPriority(ctx, n.Name)
 	}
 
 	scriptLogin serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptLoginContext(ctx, n.Name)
+		return s.ScriptLogin(ctx, n.Name)
 	}
 	scriptServerRole serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptServerRoleContext(ctx, n.Name)
+		return s.ScriptServerRole(ctx, n.Name)
 	}
 	scriptCredential serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptCredentialContext(ctx, n.Name)
+		return s.ScriptCredential(ctx, n.Name)
 	}
 	scriptServerAudit serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptServerAuditContext(ctx, n.Name)
+		return s.ScriptServerAudit(ctx, n.Name)
 	}
 	scriptServerAuditSpecification serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptServerAuditSpecificationContext(ctx, n.Name)
+		return s.ScriptServerAuditSpecification(ctx, n.Name)
 	}
 	scriptBackupDevice serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptBackupDeviceContext(ctx, n.Name)
+		return s.ScriptBackupDevice(ctx, n.Name)
 	}
 	scriptServerTrigger serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptServerTriggerContext(ctx, n.Name)
+		return s.ScriptServerTrigger(ctx, n.Name)
 	}
 	scriptEndpoint serverScriptFn = func(s *gosmo.ServerScripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptEndpointContext(ctx, n.Name)
+		return s.ScriptEndpoint(ctx, n.Name)
 	}
 )
 
@@ -230,11 +232,11 @@ var scriptables = map[NodeType]scriptable{
 	NodeView:  {"View", append(ddlVerbs(scriptView, true), rowVerbs...)},
 	NodeStoredProcedure: {"Stored Procedure", append(ddlVerbs(scriptProc, true),
 		scriptVerb{"EXECUTE To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-			return s.ScriptExecuteContext(ctx, n.Schema, n.Name)
+			return s.ScriptExecute(ctx, n.Schema, n.Name)
 		})})},
 	NodeFunction: {"Function", append(ddlVerbs(scriptFunc, true),
 		scriptVerb{"SELECT To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-			return s.ScriptFunctionCallContext(ctx, n.Schema, n.Name, n.FuncType)
+			return s.ScriptFunctionCall(ctx, n.Schema, n.Name, n.FuncType)
 		})})},
 	NodeTrigger: {"Trigger", ddlVerbs(scriptTrigger, true)},
 
@@ -242,8 +244,11 @@ var scriptables = map[NodeType]scriptable{
 	NodeKey:        {"Key", ddlVerbs(scriptIndex, false)},
 	NodeCheck:      {"Constraint", ddlVerbs(scriptCheck, false)},
 	NodeForeignKey: {"Foreign Key", ddlVerbs(scriptFK, false)},
-	NodeSequence:   {"Sequence", ddlVerbs(scriptSeq, false)},
-	NodeSynonym:    {"Synonym", ddlVerbs(scriptSynonym, false)},
+	// An index's own statistic has no CREATE or DROP of its own — gosmo
+	// refuses to script one, naming the index to script instead.
+	NodeStatistic: {"Statistics", append(ddlVerbs(scriptStatistic, false), statisticUpdateVerb)},
+	NodeSequence:  {"Sequence", ddlVerbs(scriptSeq, false)},
+	NodeSynonym:   {"Synonym", ddlVerbs(scriptSynonym, false)},
 
 	NodeSchema:       {"Schema", ddlVerbs(scriptSchema, false)},
 	NodeUser:         {"User", ddlVerbs(scriptUser, false)},
@@ -263,17 +268,17 @@ var scriptables = map[NodeType]scriptable{
 	// place of it — see gosmo's buildDatabaseScopedCredentialScript.
 	NodeDatabaseScopedCredential: {"Database Scoped Credential", ddlVerbs(scriptDBScopedCredential, false)},
 	// CREATE is FROM BINARY: the public certificate exactly, the private key
-	// not at all — see gosmo's ScriptCertificateContext. No ALTER: the only
+	// not at all — see gosmo's ScriptCertificate. No ALTER: the only
 	// ALTERs are private-key operations, which nothing on screen reproduces.
 	NodeCertificate: {"Certificate", ddlVerbs(scriptCertificate, false)},
 	// CREATE generates a NEW key pair with this one's owner and algorithm — the
 	// key material cannot be read back — and says so in a comment; see gosmo's
-	// ScriptAsymmetricKeyContext. No ALTER, for the certificate's reason.
+	// ScriptAsymmetricKey. No ALTER, for the certificate's reason.
 	NodeAsymmetricKey: {"Asymmetric Key", ddlVerbs(scriptAsymmetricKey, false)},
 	// CREATE makes a NEW key with this one's algorithm, owner and ENCRYPTION BY
 	// list, passwords as placeholders — the same key only with KEY_SOURCE and
 	// IDENTITY_VALUE, which cannot be read back; see gosmo's
-	// ScriptSymmetricKeyContext. No ALTER: ADD/DROP ENCRYPTION needs the key
+	// ScriptSymmetricKey. No ALTER: ADD/DROP ENCRYPTION needs the key
 	// open, and is the Encryption page's write, not a script of the object.
 	NodeSymmetricKey: {"Symmetric Key", ddlVerbs(scriptSymmetricKey, false)},
 
@@ -329,13 +334,13 @@ var scriptables = map[NodeType]scriptable{
 // as a script rather than as an immediate action.
 var indexMaintenanceVerbs = []scriptVerb{
 	{"REBUILD To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.RebuildContext(ctx, t, 0)
+		return idx.Rebuild(ctx, t, 0)
 	})},
 	{"REORGANIZE To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.ReorganizeContext(ctx, t)
+		return idx.Reorganize(ctx, t)
 	})},
 	{"UPDATE STATISTICS To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.UpdateStatisticsContext(ctx, t)
+		return idx.UpdateStatistics(ctx, t)
 	})},
 }
 
@@ -347,11 +352,11 @@ var statisticUpdateVerb = scriptVerb{"UPDATE STATISTICS To", func(ctx context.Co
 	if err != nil {
 		return "", err
 	}
-	st, err := t.StatisticByNameContext(ctx, n.Name)
+	st, err := t.StatisticByName(ctx, n.Name)
 	if err != nil {
 		return "", err
 	}
-	return collectScript(ctx, func(ctx context.Context) error { return st.UpdateContext(ctx, 0) })
+	return collectScript(ctx, func(ctx context.Context) error { return st.Update(ctx, 0) })
 }}
 
 // indexMaintenance binds one of gosmo's index maintenance methods as a
@@ -364,7 +369,7 @@ func indexMaintenance(f func(ctx context.Context, t *gosmo.Table, idx *gosmo.Ind
 		if err != nil {
 			return "", err
 		}
-		idx, err := t.IndexByNameContext(ctx, n.Name)
+		idx, err := t.IndexByName(ctx, n.Name)
 		if err != nil {
 			return "", err
 		}
@@ -379,22 +384,22 @@ func collectScript(ctx context.Context, write func(context.Context) error) (stri
 	if err := write(scriptCtx); err != nil {
 		return "", err
 	}
-	return strings.Join(script.Statements, "\n\n"), nil
+	return script.String(), nil
 }
 
 // rowVerbs are the four row-level templates a table or view offers.
 var rowVerbs = []scriptVerb{
 	{"SELECT To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptSelectContext(ctx, n.Schema, n.Name)
+		return s.ScriptSelect(ctx, n.Schema, n.Name)
 	})},
 	{"INSERT To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptInsertContext(ctx, n.Schema, n.Name)
+		return s.ScriptInsert(ctx, n.Schema, n.Name)
 	})},
 	{"UPDATE To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptUpdateContext(ctx, n.Schema, n.Name)
+		return s.ScriptUpdate(ctx, n.Schema, n.Name)
 	})},
 	{"DELETE To", dml(func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
-		return s.ScriptDeleteContext(ctx, n.Schema, n.Name)
+		return s.ScriptDelete(ctx, n.Schema, n.Name)
 	})},
 }
 
@@ -422,7 +427,7 @@ func serverDDLVerbs(f serverScriptFn) []scriptVerb {
 // ddl binds a Scripter method to one verb.
 func ddl(v gosmo.ScriptVerb, f scriptFn) scriptGen {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
-		d, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+		d, err := sc.Server.DatabaseByName(ctx, n.DBName)
 		if err != nil {
 			return "", err
 		}

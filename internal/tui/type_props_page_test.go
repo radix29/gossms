@@ -24,7 +24,7 @@ const propTypeDB = "appdb"
 var propTypeDate = time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 
 // newTypePropConn is newFakeConn with the sys.databases row every
-// database-scoped finder in this file resolves through DatabaseByNameContext
+// database-scoped finder in this file resolves through DatabaseByName
 // before its own read. Shared by the other tree-family props tests.
 func newTypePropConn(t *testing.T, responses ...fakeResponse) (*db.ServerConn, *fakeInstance) {
 	t.Helper()
@@ -96,11 +96,11 @@ func tableTypeResponses() []fakeResponse {
 		{match: "FROM   sys.table_types tt", cols: 5, rows: [][]driver.Value{
 			{"IdList", "dbo", int64(258), int64(9999), false},
 		}},
-		{match: "FROM   sys.columns c", cols: 17, rows: [][]driver.Value{
+		{match: "FROM   sys.columns c", cols: 26, rows: [][]driver.Value{
 			{"Id", int64(1), "int", int64(4), int64(10), int64(0),
-				false, false, false, nil, nil, nil, false, nil, nil, nil, false},
+				false, false, false, nil, nil, nil, false, nil, nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false},
 			{"Label", int64(2), "nvarchar", int64(100), int64(0), int64(0),
-				true, false, false, nil, nil, nil, false, "SQL_Latin1_General_CP1_CI_AS", nil, nil, false},
+				true, false, false, nil, nil, nil, false, "SQL_Latin1_General_CP1_CI_AS", nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false},
 		}},
 	}
 }

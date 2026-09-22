@@ -181,7 +181,7 @@ func (d *NewEndpointDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn
 		pf.blocker = fmt.Sprintf("Always On availability groups are not enabled on %s. Enable the feature and restart the instance first — on Linux, `mssql-conf set hadr.hadrenabled 1`.", sc.Opts.Server)
 		return pf, nil
 	}
-	ep, err := sc.Server.DatabaseMirroringEndpointContext(ctx)
+	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func (d *NewEndpointDialog) addInstance(name string, done func(*newEndpointInsta
 		if reported := peer.Server.Name(); reported != "" {
 			inst.name = reported
 		}
-		ep, err := peer.Server.DatabaseMirroringEndpointContext(ctx)
+		ep, err := peer.Server.DatabaseMirroringEndpoint(ctx)
 		if err != nil {
 			d.app.postAndWake(func() {
 				done(nil, fmt.Errorf("read %s's endpoint: %w", name, err))
@@ -528,11 +528,23 @@ func endpointScriptGroupsFrom(peers []*endpointPeer) []endpointScriptGroup {
 			certSkipped: p.certSkipped,
 		}
 		if p.script != nil {
-			g.stmts = p.script.Statements
+			g.stmts = p.script.Statements()
 		}
 		groups = append(groups, g)
 	}
 	return groups
+}
+
+// findCertificateIfAny is CertificateByName with absence as a nil certificate
+// rather than an error: the pipeline creates or imports one on exactly that
+// branch, and under WithScript a certificate whose CREATE was only collected
+// reads as absent too.
+func findCertificateIfAny(ctx context.Context, d *gosmo.Database, name string) (*gosmo.Certificate, error) {
+	c, err := d.CertificateByName(ctx, name)
+	if errors.Is(err, gosmo.ErrNotFound) {
+		return nil, nil
+	}
+	return c, err
 }
 
 // ensureCertificate gives one instance a master key and a certificate of its
@@ -543,16 +555,16 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 	}
 
 	certName := d.certificateName(p.inst.name)
-	cert, err := p.master.CertificateByNameContext(ctx, certName)
+	cert, err := findCertificateIfAny(ctx, p.master, certName)
 	if err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	if cert == nil {
 		spec := gosmo.CertificateSpec{Name: certName, Subject: p.inst.name + " database mirroring endpoint"}
-		if err := p.master.CreateCertificateContext(ctx, spec); err != nil {
+		if err := p.master.CreateCertificate(ctx, spec); err != nil {
 			return fmt.Errorf("%s: %w", p.inst.name, err)
 		}
-		if cert, err = p.master.CertificateByNameContext(ctx, certName); err != nil {
+		if cert, err = findCertificateIfAny(ctx, p.master, certName); err != nil {
 			return fmt.Errorf("%s: %w", p.inst.name, err)
 		}
 	}
@@ -570,7 +582,7 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 		return fmt.Errorf("%s already has a certificate named %s without a private key — it cannot present that certificate. Rename or drop it first", p.inst.name, certName)
 	}
 	p.cert = cert
-	if p.encoded, err = cert.EncodedContext(ctx); err != nil {
+	if p.encoded, err = cert.Encoded(ctx); err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	return nil
@@ -594,7 +606,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	// absence reports the CREATE LOGIN error instead of the permission or
 	// connection error that really stopped the pipeline, on a dialog where that
 	// distinction is the whole diagnosis.
-	_, err := p.server.LoginByNameContext(ctx, login)
+	_, err := p.server.LoginByName(ctx, login)
 	switch {
 	case err == nil:
 		// Already there; nothing to create.
@@ -610,7 +622,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		// hides a principal the caller lacks VIEW ANY DEFINITION on by returning
 		// no rows, not an error, so the lookup above cannot tell the two apart.
 		// Tolerate the collision, as the CreateUser call below does.
-		if err := p.server.CreateLoginContext(ctx, login, password, nil); err != nil && !isAlreadyExists(err) {
+		if err := p.server.CreateLogin(ctx, login, password, nil); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create login %s: %w", p.inst.name, login, err)
 		}
 	default:
@@ -621,19 +633,19 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	// also keeps a scripted run runnable — CREATE USER is not idempotent, and
 	// the tolerate-the-error path never runs under WithScript, so an existing
 	// user would be emitted as a statement that fails.
-	_, err = p.master.UserByNameContext(ctx, user)
+	_, err = p.master.UserByName(ctx, user)
 	switch {
 	case err == nil:
 		// Already there; nothing to create.
 	case errors.Is(err, gosmo.ErrNotFound):
-		if err := p.master.CreateUserContext(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
+		if err := p.master.CreateUser(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
 		}
 	default:
 		return fmt.Errorf("%s: look up user %s: %w", p.inst.name, user, err)
 	}
 
-	existing, err := p.master.CertificateByNameContext(ctx, certName)
+	existing, err := findCertificateIfAny(ctx, p.master, certName)
 	if err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
@@ -656,7 +668,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		return nil
 	}
 	spec := gosmo.CertificateSpec{Name: certName, Authorization: user, FromBinary: other.encoded}
-	if err := p.master.CreateCertificateContext(ctx, spec); err != nil {
+	if err := p.master.CreateCertificate(ctx, spec); err != nil {
 		return fmt.Errorf("%s: import %s's certificate: %w", p.inst.name, other.inst.name, err)
 	}
 	return nil
@@ -665,7 +677,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 // ensureEndpoint creates p's endpoint if it has none, then grants every peer's
 // login CONNECT on it.
 func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer, all []*endpointPeer) error {
-	ep, err := p.server.DatabaseMirroringEndpointContext(ctx)
+	ep, err := p.server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
@@ -681,12 +693,12 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 			Encryption:          "REQUIRED",
 			EncryptionAlgorithm: d.algorithm,
 		}
-		if ep, err = p.server.CreateDatabaseMirroringEndpointContext(ctx, spec); err != nil {
+		if ep, err = p.server.CreateDatabaseMirroringEndpoint(ctx, spec); err != nil {
 			return fmt.Errorf("%s: create endpoint: %w", p.inst.name, err)
 		}
 	}
 	if !strings.EqualFold(ep.State, "STARTED") {
-		if err := ep.StartContext(ctx); err != nil {
+		if err := ep.Start(ctx); err != nil {
 			return fmt.Errorf("%s: start endpoint %s: %w", p.inst.name, ep.Name, err)
 		}
 	}
@@ -703,7 +715,7 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 			// along with the login.
 			continue
 		}
-		if err := ep.GrantConnectContext(ctx, endpointPrincipalBase(other.inst.name)+"_login"); err != nil {
+		if err := ep.GrantConnect(ctx, endpointPrincipalBase(other.inst.name)+"_login"); err != nil {
 			return fmt.Errorf("%s: grant %s connect: %w", p.inst.name, other.inst.name, err)
 		}
 	}
@@ -716,8 +728,9 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 // elsewhere) and the GRANTs land on the wrong endpoint.
 //
 // The statements are already grouped by instance — each peer collects its own,
-// see configure — so nothing here maps a flat list back onto a list of targets
-// the way NewAGDialog.annotateScript does.
+// see configure — and each group carries notes about certificates the script
+// could not include, which is why this does not render one collector with
+// gosmo's per-instance labels the way NewAGDialog.runScript does.
 func (d *NewEndpointDialog) runScript() {
 	scriptCtx, _ := gosmo.WithScript(d.ctx)
 	sc := d.sc

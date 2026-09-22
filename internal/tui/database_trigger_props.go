@@ -72,10 +72,10 @@ func pageDatabaseTriggerDefinition(sc *db.ServerConn, dbName, trigName string) p
 // loadDatabaseTrigger reads one DDL trigger with every field populated.
 //
 // DatabaseRef, not DatabaseByName: CreateDate and Definition are fields of the
-// *trigger*, scanned by DatabaseTriggerByNameContext, and that method reads
+// *trigger*, scanned by DatabaseTriggerByName, and that method reads
 // nothing off its *gosmo.Database but the name it puts in the error text — so
 // the sys.databases round trip buys nothing here, as at the two other sites
 // addressing this same object (explorer_object_ops.go, app_explorer_data.go).
 func loadDatabaseTrigger(ctx context.Context, sc *db.ServerConn, dbName, trigName string) (*gosmo.DatabaseTrigger, error) {
-	return sc.Server.DatabaseRef(dbName).DatabaseTriggerByNameContext(ctx, trigName)
+	return sc.Server.DatabaseRef(dbName).DatabaseTriggerByName(ctx, trigName)
 }

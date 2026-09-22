@@ -245,7 +245,7 @@ func (a *App) runAGOperation(sc *db.ServerConn, agName string, op agOperation) {
 			ag, err = agOnPrimary(ctx, sc, agName)
 		} else {
 			run = op.onLocal
-			ag, err = sc.Server.AvailabilityGroupByNameContext(ctx, agName)
+			ag, err = sc.Server.AvailabilityGroupByName(ctx, agName)
 		}
 		if err != nil {
 			return err
@@ -284,7 +284,7 @@ func (a *App) removeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				done:    fmt.Sprintf("Database %q removed from availability group %q", dbName, agName),
 				refresh: node.parent,
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveDatabaseContext(ctx, dbName)
+					return ag.RemoveDatabase(ctx, dbName)
 				},
 			})
 		})
@@ -304,7 +304,7 @@ func (a *App) joinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		done:    fmt.Sprintf("Database %q on %s joined availability group %q", dbName, sc.Opts.Server, agName),
 		refresh: node.parent,
 		onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-			return ag.JoinDatabaseContext(ctx, dbName)
+			return ag.JoinDatabase(ctx, dbName)
 		},
 	})
 }
@@ -328,7 +328,7 @@ func (a *App) unjoinAGDatabase(sc *db.ServerConn, node *explorerNode) {
 				done:    fmt.Sprintf("Database %q on %s removed from availability group %q", dbName, sc.Opts.Server, agName),
 				refresh: node.parent,
 				onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.UnjoinDatabaseContext(ctx, dbName)
+					return ag.UnjoinDatabase(ctx, dbName)
 				},
 			})
 		})
@@ -347,7 +347,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 	a.safego("reading an availability group's local role", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		ag, err := sc.Server.AvailabilityGroupByNameContext(ctx, agName)
+		ag, err := sc.Server.AvailabilityGroupByName(ctx, agName)
 		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Failed to read availability group %q: %v", agName, err))
@@ -367,7 +367,7 @@ func (a *App) suspendAGDatabase(sc *db.ServerConn, node *explorerNode) {
 						done:    fmt.Sprintf("Data movement suspended for %q on %s", dbName, sc.Opts.Server),
 						refresh: node.parent,
 						onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-							return ag.SuspendDatabaseContext(ctx, dbName)
+							return ag.SuspendDatabase(ctx, dbName)
 						},
 					})
 				})
@@ -391,7 +391,7 @@ func (a *App) resumeAGDatabase(sc *db.ServerConn, node *explorerNode) {
 		done:    fmt.Sprintf("Data movement resumed for %q on %s", dbName, sc.Opts.Server),
 		refresh: node.parent,
 		onLocal: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-			return ag.ResumeDatabaseContext(ctx, dbName)
+			return ag.ResumeDatabase(ctx, dbName)
 		},
 	})
 }
@@ -415,7 +415,7 @@ func (a *App) removeAGReplica(sc *db.ServerConn, node *explorerNode) {
 				done:    fmt.Sprintf("Replica %q removed from availability group %q", replica, agName),
 				refresh: node.parent,
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveReplicaContext(ctx, replica)
+					return ag.RemoveReplica(ctx, replica)
 				},
 			})
 		})
@@ -435,13 +435,13 @@ func (a *App) failoverToReplica(sc *db.ServerConn, node *explorerNode, force boo
 	a.safego("checking whether an availability group can be failed over", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		ag, err := sc.Server.AvailabilityGroupByNameContext(ctx, agName)
+		ag, err := sc.Server.AvailabilityGroupByName(ctx, agName)
 		a.postAndWake(func() {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Failed to read availability group %q: %v", agName, err))
 				return
 			}
-			if reason := agFailoverRefusal(ag.ClusterType, force); reason != "" {
+			if reason := agFailoverRefusal(string(ag.ClusterType), force); reason != "" {
 				a.alertDialog.ShowAlert("Failover", reason)
 				return
 			}
@@ -530,14 +530,14 @@ func agFailover(ctx context.Context, sc *db.ServerConn, agName, replica string, 
 		}
 		target = peer
 	}
-	ag, err := target.Server.AvailabilityGroupByNameContext(ctx, agName)
+	ag, err := target.Server.AvailabilityGroupByName(ctx, agName)
 	if err != nil {
 		return err
 	}
 	if force {
-		return ag.ForceFailoverAllowDataLossContext(ctx)
+		return ag.ForceFailoverAllowDataLoss(ctx)
 	}
-	return ag.FailoverContext(ctx)
+	return ag.Failover(ctx)
 }
 
 // -- Listeners -------------------------------------------------------------
@@ -558,7 +558,7 @@ func (a *App) removeAGListener(sc *db.ServerConn, node *explorerNode) {
 				done:    fmt.Sprintf("Listener %q removed from availability group %q", dnsName, agName),
 				refresh: node.parent,
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.RemoveListenerContext(ctx, dnsName)
+					return ag.RemoveListener(ctx, dnsName)
 				},
 			})
 		})
@@ -584,7 +584,7 @@ func (a *App) deleteAvailabilityGroup(sc *db.ServerConn, node *explorerNode) {
 				done:    fmt.Sprintf("Availability group %q deleted", agName),
 				refresh: node.parent,
 				onPrimary: func(ctx context.Context, ag *gosmo.AvailabilityGroup) error {
-					return ag.DropContext(ctx)
+					return ag.Drop(ctx)
 				},
 			})
 		})

@@ -33,11 +33,11 @@ var masterKeyRights = []gate.Right{gate.ControlDB}
 // findMasterKey reads the master key of dbName, or fails when there is none
 // the caller can see — MasterKey's (nil, nil).
 func findMasterKey(ctx context.Context, sc *db.ServerConn, dbName string) (*gosmo.MasterKey, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	m, err := d.MasterKeyContext(ctx)
+	m, err := d.MasterKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -176,22 +176,22 @@ func buildMasterKeyEncryptionForm(m *gosmo.MasterKey, ref *gosmo.MasterKey) (*pr
 			if v != addConfirm.Value() {
 				return fmt.Errorf("the password to add and its confirmation do not match")
 			}
-			if err := ref.AddEncryptionContext(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
+			if err := ref.AddEncryption(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
 				return err
 			}
 		}
 		if smk.Dirty() && smk.Checked() {
-			if err := ref.AddEncryptionContext(ctx, gosmo.MasterKeyEncryptor{ServiceMasterKey: true}, open); err != nil {
+			if err := ref.AddEncryption(ctx, gosmo.MasterKeyEncryptor{ServiceMasterKey: true}, open); err != nil {
 				return err
 			}
 		}
 		if v := dropPass.Value(); v != "" {
-			if err := ref.DropEncryptionContext(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
+			if err := ref.DropEncryption(ctx, gosmo.MasterKeyEncryptor{Password: scriptSafePassword(ctx, v)}, open); err != nil {
 				return err
 			}
 		}
 		if smk.Dirty() && !smk.Checked() {
-			if err := ref.DropEncryptionContext(ctx, gosmo.MasterKeyEncryptor{ServiceMasterKey: true}, open); err != nil {
+			if err := ref.DropEncryption(ctx, gosmo.MasterKeyEncryptor{ServiceMasterKey: true}, open); err != nil {
 				return err
 			}
 		}

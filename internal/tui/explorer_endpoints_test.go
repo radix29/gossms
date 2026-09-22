@@ -99,7 +99,7 @@ func endpointRows() fakeResponse {
 
 // endpointByName scopes the by-name read with arg:, and it must be placed
 // before the list response: the fake matches by substring in order, and
-// EndpointByNameContext's query also contains "FROM   sys.endpoints", so
+// EndpointByName's query also contains "FROM   sys.endpoints", so
 // without it every endpoint resolves to whichever row is listed first — which
 // makes a drop test pass whatever name it is given.
 func endpointByName(name string, row []driver.Value) fakeResponse {

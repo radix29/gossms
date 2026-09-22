@@ -25,13 +25,13 @@ func onlineDatabases(dbs []*gosmo.Database) []*gosmo.Database {
 // A database whose fetch fails is dropped rather than failing the caller —
 // one inaccessible-but-ONLINE database (no permission, an unreadable
 // availability-group secondary) must not take down a page that has 49 others
-// to show. That is the policy gosmo's Login.UserMappingsContext already
+// to show. That is the policy gosmo's Login.UserMappings already
 // applies on the same page, and it matches what these callers already do with
 // a database that is merely offline: it drops out of the list.
 //
 // A cancelled context is not a drop. Every remaining database would fail the
 // same way, so the error is returned instead of issuing a doomed query per
-// database — again the rule UserMappingsContext states.
+// database — again the rule UserMappings states.
 //
 // Serial on purpose, and measured: fanning these queries across a worker pool
 // was slower against the live instance (46 databases, 2026-08-14) at every

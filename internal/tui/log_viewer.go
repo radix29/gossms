@@ -33,7 +33,7 @@ const (
 )
 
 // logFileRef names one log file: the two arguments
-// gosmo.Server.ReadLogFilteredContext takes. A LogViewer holds an ordered set
+// gosmo.Server.ReadLogFiltered takes. A LogViewer holds an ordered set
 // of these rather than a single pair, so several files can be merged into one
 // date-sorted grid — the single-file view is the one-element case.
 type logFileRef struct {

@@ -18,7 +18,7 @@ func pageServerAdvanced(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Advanced",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

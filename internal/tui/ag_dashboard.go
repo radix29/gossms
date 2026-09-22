@@ -217,11 +217,11 @@ func (d *AGDashboard) read(ctx context.Context) (agSnapshot, error) {
 	if err != nil {
 		return agSnapshot{}, err
 	}
-	replicas, err := ag.ReplicasContext(ctx)
+	replicas, err := ag.Replicas(ctx)
 	if err != nil {
 		return agSnapshot{}, err
 	}
-	dbs, err := ag.DatabasesContext(ctx)
+	dbs, err := ag.Databases(ctx)
 	if err != nil {
 		return agSnapshot{}, err
 	}
@@ -368,8 +368,8 @@ func agReplicaRows(replicas []*gosmo.AvailabilityReplica, dbs []agDatabaseMetric
 		rows[i] = []string{
 			r.ReplicaServerName,
 			orDefault(titleWord(r.Role), "—"),
-			orDefault(commitModeName(r.AvailabilityMode), "—"),
-			orDefault(titleWord(r.FailoverMode), "—"),
+			orDefault(commitModeName(string(r.AvailabilityMode)), "—"),
+			orDefault(titleWord(string(r.FailoverMode)), "—"),
 			orDefault(agReplicaSyncSummary(r, dbs), "—"),
 			orDefault(titleWord(r.ConnectedState), "—"),
 			orDefault(titleWord(r.SynchronizationHealth), "—"),

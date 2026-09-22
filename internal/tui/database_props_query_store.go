@@ -19,11 +19,11 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Query Store",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			qs, err := d.QueryStoreContext(ctx)
+			qs, err := d.QueryStore(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -44,15 +44,15 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			}
 			cleanupItems := []string{"AUTO", "OFF"}
 
-			stateRow := propsheet.Select("Requested state", stateItems, indexOf(stateItems, qs.DesiredState))
+			stateRow := propsheet.Select("Requested state", stateItems, indexOf(stateItems, string(qs.DesiredState)))
 			// The server's own capture mode still has to display even when it
 			// is one this list no longer offers — a 2019 database attached to
 			// a 2017 instance cannot happen, but indexOf's not-found 0 would
 			// silently rename it NONE if it did.
-			captureItems, captureIdx := preservingItems(captureItems, qs.CaptureMode)
+			captureItems, captureIdx := preservingItems(captureItems, string(qs.CaptureMode))
 			captureRow := propsheet.Select("Query capture mode", captureItems, captureIdx)
 			maxSizeRow := propsheet.Int("Max size", qs.MaxStorageMB, 10, 2147483647, "MB")
-			cleanupRow := propsheet.Select("Size based cleanup mode", cleanupItems, indexOf(cleanupItems, qs.SizeCleanupMode))
+			cleanupRow := propsheet.Select("Size based cleanup mode", cleanupItems, indexOf(cleanupItems, string(qs.SizeCleanupMode)))
 			staleRow := propsheet.Int("Stale query threshold", int64(qs.StaleThresholdDays), 0, 999999, "days")
 			flushIntervalRow := propsheet.Int("Data flush interval", int64(qs.FlushIntervalSec), 1, 86400, "sec")
 			intervalRow := propsheet.Int("Statistics interval", int64(qs.IntervalMinutes), 1, 1440, "min")
@@ -62,7 +62,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			// value the server never reported, written back on Apply as though
 			// it had.
 			var waitStatsRow *propsheet.SelectRow
-			if waitIdx, ok := indexOfOK(onOff, qs.WaitStatsCaptureMode); ok && hasWaitStats {
+			if waitIdx, ok := indexOfOK(onOff, string(qs.WaitStatsCaptureMode)); ok && hasWaitStats {
 				waitStatsRow = propsheet.Select("Wait stats capture", onOff, waitIdx)
 			}
 
@@ -79,7 +79,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 
 			rows := []propsheet.Row{
 				propsheet.Section("Operation mode"),
-				propsheet.Static("Actual state", qs.ActualState),
+				propsheet.Static("Actual state", string(qs.ActualState)),
 				stateRow,
 				captureRow,
 				propsheet.Section("Storage"),
@@ -106,7 +106,7 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
@@ -136,15 +136,15 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 						return err
 					}
 					opts := gosmo.QueryStoreOptions{
-						DesiredState: stateItems[stateRow.Selected()], MaxStorageMB: maxSize,
-						CaptureMode: captureItems[captureRow.Selected()], SizeCleanupMode: cleanupItems[cleanupRow.Selected()],
+						DesiredState: gosmo.QueryStoreState(stateItems[stateRow.Selected()]), MaxStorageMB: maxSize,
+						CaptureMode: gosmo.QueryStoreCaptureMode(captureItems[captureRow.Selected()]), SizeCleanupMode: gosmo.QueryStoreCleanupMode(cleanupItems[cleanupRow.Selected()]),
 						StaleThresholdDays: int(stale), FlushIntervalSec: int(flushInterval), IntervalMinutes: int(interval),
 						MaxPlansPerQuery: int(maxPlans),
 					}
 					// A row the server has no setting for leaves its field at
 					// the zero value, which is what gosmo omits the clause on.
 					if waitStatsRow != nil {
-						opts.WaitStatsCaptureMode = onOff[waitStatsRow.Selected()]
+						opts.WaitStatsCaptureMode = gosmo.QueryStoreWaitStatsMode(onOff[waitStatsRow.Selected()])
 					}
 					if hasCustomPolicy {
 						execCount, err := execCountRow.IntValue()
@@ -168,17 +168,17 @@ func pageDatabaseQueryStore(sc *db.ServerConn, dbName string) propPage {
 						opts.CapturePolicyExecCPUMs = execCPU
 						opts.CapturePolicyStaleHours = int(staleHours)
 					}
-					if err := d.SetQueryStoreOptionsContext(ctx, opts); err != nil {
+					if err := d.SetQueryStoreOptions(ctx, opts); err != nil {
 						return err
 					}
 				}
 				if flushCheck.Checked() {
-					if err := d.FlushQueryStoreContext(ctx); err != nil {
+					if err := d.FlushQueryStore(ctx); err != nil {
 						return err
 					}
 				}
 				if clearCheck.Checked() {
-					if err := d.ClearQueryStoreContext(ctx); err != nil {
+					if err := d.ClearQueryStore(ctx); err != nil {
 						return err
 					}
 				}

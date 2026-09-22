@@ -267,17 +267,17 @@ func queryStoreReportIndex(title string) int {
 // queryStoreFolderDetail is the Query Store folder's own grid: what state
 // Query Store is in, and what the seven leaves below it show.
 func queryStoreFolderDetail(ctx context.Context, sc *db.ServerConn, dbName string) ([]string, [][]string, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, nil, err
 	}
 	rows := make([][]string, 0, len(queryStoreReports)+3)
-	if info, err := d.QueryStoreContext(ctx); err == nil {
+	if info, err := d.QueryStore(ctx); err == nil {
 		rows = append(rows,
 			[]string{"State", queryStoreStateText(info)},
 			[]string{"Storage used", fmt.Sprintf("%s MB of %s MB",
 				core.FormatThousands(info.CurrentStorageMB), core.FormatThousands(info.MaxStorageMB))},
-			[]string{"Capture mode", info.CaptureMode},
+			[]string{"Capture mode", string(info.CaptureMode)},
 		)
 	}
 	for _, r := range queryStoreReports {
@@ -293,13 +293,13 @@ func queryStoreReportDetail(ctx context.Context, sc *db.ServerConn, dbName, titl
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown Query Store report %q", title)
 	}
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, nil, err
 	}
 	// A database with Query Store off answers every report with no rows,
 	// which is indistinguishable from a database nothing ran in. Say which.
-	if info, err := d.QueryStoreContext(ctx); err == nil && !queryStoreIsOn(info) {
+	if info, err := d.QueryStore(ctx); err == nil && !queryStoreIsOn(info) {
 		return propertyValueColumns, queryStoreOffRows(info), nil
 	}
 	to := time.Now()
@@ -326,7 +326,7 @@ const qsQueryIDColumn = "Query ID"
 // there asks the server for the real text rather than opening a rendering that
 // a `-- comment` has turned into a mostly commented-out batch.
 func queryStoreQueryText(ctx context.Context, sc *db.ServerConn, dbName string, queryID int64) (string, error) {
-	text, _, err := sc.Server.DatabaseRef(dbName).QueryStoreQueryTextContext(ctx, queryID)
+	text, _, err := sc.Server.DatabaseRef(dbName).QueryStoreQueryText(ctx, queryID)
 	return text, err
 }
 
@@ -409,9 +409,9 @@ func queryStoreIsOn(info *gosmo.QueryStoreInfo) bool {
 // explanation for a report that stopped growing.
 func queryStoreStateText(info *gosmo.QueryStoreInfo) string {
 	if info.ActualState == info.DesiredState || info.DesiredState == "" {
-		return info.ActualState
+		return string(info.ActualState)
 	}
-	return info.ActualState + " (requested " + info.DesiredState + ")"
+	return string(info.ActualState + " (requested " + info.DesiredState + ")")
 }
 
 // -- the seven reports ---------------------------------------------------------
@@ -454,7 +454,7 @@ func queryStatResult(stats []*gosmo.QSQueryStat, opts gosmo.QueryStoreReportOpti
 }
 
 func topResourceQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	stats, err := d.QueryStoreTopResourceQueriesContext(ctx, opts)
+	stats, err := d.QueryStoreTopResourceQueries(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -462,7 +462,7 @@ func topResourceQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo
 }
 
 func forcedPlanQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	stats, err := d.QueryStoreForcedPlanQueriesContext(ctx, opts)
+	stats, err := d.QueryStoreForcedPlanQueries(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -482,7 +482,7 @@ func trackedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.Que
 	if opts.Top < len(opts.QueryIDs) {
 		opts.Top = len(opts.QueryIDs)
 	}
-	stats, err := d.QueryStoreTopResourceQueriesContext(ctx, opts)
+	stats, err := d.QueryStoreTopResourceQueries(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -561,7 +561,7 @@ func queryStoreRegressionOptions(opts gosmo.QueryStoreReportOptions) gosmo.Query
 // queryStoreReport.effectiveOptions — applying it here as well would split the
 // recent half a second time.
 func regressedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	stats, err := d.QueryStoreRegressedQueriesContext(ctx, opts)
+	stats, err := d.QueryStoreRegressedQueries(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -593,7 +593,7 @@ func regressedQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.Q
 }
 
 func highVariationQueriesReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	stats, err := d.QueryStoreHighVariationQueriesContext(ctx, opts)
+	stats, err := d.QueryStoreHighVariationQueries(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -622,7 +622,7 @@ func highVariationQueriesReport(ctx context.Context, d *gosmo.Database, opts gos
 }
 
 func overallConsumptionReport(ctx context.Context, d *gosmo.Database, opts gosmo.QueryStoreReportOptions) (qsResult, error) {
-	intervals, err := d.QueryStoreOverallConsumptionContext(ctx, opts)
+	intervals, err := d.QueryStoreOverallConsumption(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}
@@ -654,7 +654,7 @@ func queryWaitStatisticsReport(ctx context.Context, d *gosmo.Database, opts gosm
 	// The metric selects a runtime-stats column, and wait statistics have
 	// none of them — the value is always wait time. The statistic still
 	// applies, and is passed through.
-	waits, err := d.QueryStoreWaitCategoriesContext(ctx, opts)
+	waits, err := d.QueryStoreWaitCategories(ctx, opts)
 	if err != nil {
 		return qsResult{}, err
 	}

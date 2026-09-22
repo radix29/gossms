@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -147,6 +148,40 @@ func TestSQLHighlighterBlockCommentSpansMultipleLines(t *testing.T) {
 	}
 }
 
+// T-SQL nests block comments, so the first "*/" closes only the inner one: the
+// GO below it is comment text, not code — the executor does not split on it
+// (sqltext.SplitBatches), and colouring it as code would claim it does. Checked
+// on one line and across lines, since the second goes through the per-line
+// depth the cache carries.
+func TestSQLHighlighterNestedBlockComment(t *testing.T) {
+	oneLine := [][]rune{[]rune("/* outer /* inner */ SELECT */ SELECT 1")}
+	if got, want := highlightLineWords(t, oneLine, 0), []string{"/* outer /* inner */ SELECT */", "SELECT", "1"}; !slices.Equal(got, want) {
+		t.Errorf("one line: runs = %q, want %q", got, want)
+	}
+
+	lines := [][]rune{
+		[]rune("SELECT 1"),
+		[]rune("/* outer /* inner */"),
+		[]rune("GO"),
+		[]rune("*/ SELECT 2"),
+		[]rune("SELECT 3"),
+	}
+	if got, want := highlightLineWords(t, lines, 2), []string{"GO"}; !slices.Equal(got, want) {
+		t.Errorf("line 2: runs = %q, want the whole line as one comment run %q", got, want)
+	}
+	hl := SQLHighlighter(&theme.Default)
+	doc := docOf(lines)
+	if runs := hl(doc, 2); len(runs) != 1 || runs[0] != (ColorRun{0, 2, hl(doc, 1)[0].Style}) {
+		t.Errorf("line 2 runs = %v, want one comment-styled run over the whole line", runs)
+	}
+	if got, want := highlightLineWords(t, lines, 3), []string{"*/", "SELECT", "2"}; !slices.Equal(got, want) {
+		t.Errorf("line 3: runs = %q, want %q — the outer comment closes here", got, want)
+	}
+	if got, want := highlightLineWords(t, lines, 4), []string{"SELECT", "3"}; !slices.Equal(got, want) {
+		t.Errorf("line 4: runs = %q, want %q", got, want)
+	}
+}
+
 // TestSQLHighlighterUnterminatedBlockCommentDoesNotHang guards the same
 // class of bug as the @/# test above: an unterminated /* (blockCommentEnd
 // returning -1 forever) must not spin — every line after it is treated as
@@ -185,7 +220,7 @@ var memoCorpus = [][]rune{
 }
 
 // reference highlights one line the way the pre-memoization highlighter did:
-// a closure that has never been called takes startsInBlockComment's full
+// a closure that has never been called takes blockCommentDepthAt's full
 // replay for every idx (the memo's fast path needs idx == lastIdx+1, and
 // lastIdx starts at -1), so this is the original implementation rather than a
 // second copy of it maintained alongside.
@@ -277,7 +312,7 @@ func TestSQLHighlighterMemoSurvivesDocumentReplacement(t *testing.T) {
 }
 
 // A "/*" inside a "--" line comment or a string literal used to poison every
-// line after it: blockCommentToggleEnd toggled on it regardless of context, so
+// line after it: the per-line comment scan counted it regardless of context, so
 // the scan stayed "inside a comment" for the rest of the document and coloured
 // the following lines as comment text.
 func TestSQLHighlighterIgnoresBlockCommentOpenerInsideCommentsAndStrings(t *testing.T) {

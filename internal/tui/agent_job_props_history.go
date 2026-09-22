@@ -21,7 +21,7 @@ func pageJobHistory(d *PropDialog, sc *db.ServerConn, jobName *string) propPage 
 			if err != nil {
 				return nil, nil, err
 			}
-			history, err := j.HistoryContext(ctx, 0)
+			history, err := j.History(ctx, 0)
 			if err != nil {
 				return nil, nil, err
 			}

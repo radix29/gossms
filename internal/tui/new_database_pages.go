@@ -113,11 +113,11 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 			compatN, _ := strconv.Atoi(compatItems[compatRow.Selected()])
 			opts.CompatLevel = gosmo.CompatibilityLevel(compatN)
 		}
-		if err := sc.Server.CreateDatabaseContext(ctx, name, opts); err != nil {
+		if err := sc.Server.CreateDatabase(ctx, name, opts); err != nil {
 			return err
 		}
 		if ownerRow.Dirty() {
-			if err := sc.Server.DatabaseRef(name).SetOwnerContext(ctx, ownerRow.Value()); err != nil {
+			if err := sc.Server.DatabaseRef(name).SetOwner(ctx, ownerRow.Value()); err != nil {
 				return err
 			}
 		}
@@ -284,7 +284,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 		}
 		d := sc.Server.DatabaseRef(dbName())
 		for _, e := range edits {
-			if err := d.AddFileGroupContext(ctx, e.name); err != nil {
+			if err := d.AddFileGroup(ctx, e.name); err != nil {
 				return err
 			}
 			if e.fileName != "" {
@@ -296,17 +296,17 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 					Name: e.fileName, FileGroup: e.name, Path: path,
 					SizeKB: e.fileSizeKB, GrowthKB: e.fileGrowthKB,
 				}
-				if err := d.AddFileContext(ctx, spec); err != nil {
+				if err := d.AddFile(ctx, spec); err != nil {
 					return err
 				}
 			}
 			if e.isReadOnly {
-				if err := d.SetFileGroupReadOnlyContext(ctx, e.name, true); err != nil {
+				if err := d.SetFileGroupReadOnly(ctx, e.name, true); err != nil {
 					return err
 				}
 			}
 			if e.isDefault {
-				if err := d.SetDefaultFileGroupContext(ctx, e.name); err != nil {
+				if err := d.SetDefaultFileGroup(ctx, e.name); err != nil {
 					return err
 				}
 			}

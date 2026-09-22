@@ -20,7 +20,7 @@ func (db *DetailBrowser) loadLoginsDetails(fetchCtx context.Context, app *App, s
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
-		logins, err := sc.Server.LoginsContext(ctx)
+		logins, err := sc.Server.Logins(ctx)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return

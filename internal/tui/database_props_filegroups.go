@@ -28,11 +28,11 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Filegroups",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			fgs, err := d.FileGroupsContext(ctx)
+			fgs, err := d.FileGroups(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -152,19 +152,19 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 
 			apply := func(ctx context.Context) error {
 				syncToggles()
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
 				for _, e := range edits {
 					switch {
 					case e.pendingRemove && !e.isNew:
-						if err := d.RemoveFileGroupContext(ctx, e.name); err != nil {
+						if err := d.RemoveFileGroup(ctx, e.name); err != nil {
 							return err
 						}
 						continue
 					case e.isNew && !e.pendingRemove:
-						if err := d.AddFileGroupContext(ctx, e.name); err != nil {
+						if err := d.AddFileGroup(ctx, e.name); err != nil {
 							return err
 						}
 					}
@@ -172,12 +172,12 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 						continue
 					}
 					if e.isReadOnly != e.origReadOnly {
-						if err := d.SetFileGroupReadOnlyContext(ctx, e.name, e.isReadOnly); err != nil {
+						if err := d.SetFileGroupReadOnly(ctx, e.name, e.isReadOnly); err != nil {
 							return err
 						}
 					}
 					if e.isDefault && !e.origIsDefault {
-						if err := d.SetDefaultFileGroupContext(ctx, e.name); err != nil {
+						if err := d.SetDefaultFileGroup(ctx, e.name); err != nil {
 							return err
 						}
 					}

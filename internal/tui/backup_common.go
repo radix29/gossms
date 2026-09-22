@@ -190,7 +190,7 @@ func sqlStringLiteral(s string) string {
 
 // backupHistoryQuery returns the msdb query behind "View Backup History"
 // (Object Explorer, database node) — the same backupset/backupmediafamily
-// join gosmo.Server.BackupHistoryContext runs, but as literal T-SQL opened
+// join gosmo.Server.BackupHistory runs, but as literal T-SQL opened
 // in a query window, so the result set is live and re-runnable.
 func backupHistoryQuery(dbName string) string {
 	return fmt.Sprintf(`SELECT bs.database_name          AS [Database],

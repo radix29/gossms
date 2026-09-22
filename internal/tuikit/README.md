@@ -64,6 +64,11 @@ tuikit/
 │               ramps), axis.go, legend.go, common.go (Series and the stacked-run
 │               composition every stacked chart shares), history.go,
 │               stacked_history.go, barchart.go, stacked_bar.go, vbar.go, kpi.go
+├── sqltext/    T-SQL text rules shared outside tuikit too — the "GO" separator
+│             line rule and SplitBatches, the executor's GO-batch splitter;
+│             standard library only, so internal/query and sqlparse use it
+│             without importing anything that draws
+│             — doc.go, go_separator.go, split.go
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, editorrow.go,
                 togglegrid.go, form.go;
@@ -87,6 +92,10 @@ theme  ◄── core ◄── widgets ◄── layout ◄── dialogs ◄�
 ```
 
 - **theme** has zero internal dependencies (only `tcell`).
+- **sqltext** sits outside the graph above: it imports only the standard
+  library, not even `tcell`. `controls` uses it, and so do `internal/query`
+  and `internal/tui/sqlparse`, which is why it must stay free of anything
+  that draws.
 - **core** depends on `theme` for `Init()`'s default style.
 - **widgets**, **layout**, **dialogs**, and **controls** depend on `core` and `theme`.
 - **dialogs** and **controls** are the only packages aware of higher-level

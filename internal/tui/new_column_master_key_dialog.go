@@ -76,11 +76,11 @@ func (d *NewColumnMasterKeyDialog) show(sc *db.ServerConn, node *explorerNode) {
 }
 
 func (d *NewColumnMasterKeyDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ncmkPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, d.dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, d.dbName)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := dbObj.ColumnMasterKeysContext(ctx)
+	keys, err := dbObj.ColumnMasterKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -167,12 +167,12 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		provider := strings.TrimSpace(providerField.Value())
 		path := strings.TrimSpace(pathField.Value())
 		if !hasEnclaves || !enclaveRow.Checked() {
-			return dbObj.CreateColumnMasterKeyContext(ctx, name, provider, path, false)
+			return dbObj.CreateColumnMasterKey(ctx, name, provider, path, false)
 		}
 		sig, err := parseHexBytes(strings.TrimSpace(signatureField.Value()))
 		if err != nil {
 			return fmt.Errorf("signature: %w", err)
 		}
-		return dbObj.CreateColumnMasterKeyWithSignatureContext(ctx, name, provider, path, sig)
+		return dbObj.CreateColumnMasterKeyWithSignature(ctx, name, provider, path, sig)
 	}
 }

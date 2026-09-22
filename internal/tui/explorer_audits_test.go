@@ -328,7 +328,7 @@ func TestDroppingADisabledAuditDoesNotToggleIt(t *testing.T) {
 
 // auditByName and specByName scope a by-name read with arg:, and each must be
 // placed *before* the matching list response: the fake matches by substring in
-// order, and ServerAuditByNameContext's query also contains
+// order, and ServerAuditByName's query also contains
 // "FROM   sys.server_audits", so without it every audit resolves to whichever
 // row is listed first — which makes a by-name test pass whatever name it is
 // given.

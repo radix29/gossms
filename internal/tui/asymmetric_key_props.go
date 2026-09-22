@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	gosmo "github.com/radix29/gosmo"
@@ -15,22 +16,19 @@ import (
 // owner, Signatures lists and edits the modules it signs, and Remove Private
 // Key is an Object Explorer command. There is no BACKUP ASYMMETRIC KEY.
 
-// findAsymmetricKey resolves name in dbName, turning AsymmetricKeyByName's
-// published (nil, nil) for an absent key into an error — findCertificate's
+// findAsymmetricKey resolves name in dbName, rewording AsymmetricKeyByName's
+// ErrNotFound for a key dropped since the tree was read — findCertificate's
 // shape.
 func findAsymmetricKey(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.AsymmetricKey, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	k, err := d.AsymmetricKeyByNameContext(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if k == nil {
+	k, err := d.AsymmetricKeyByName(ctx, name)
+	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, fmt.Errorf("asymmetric key %q no longer exists in %q", name, dbName)
 	}
-	return k, nil
+	return k, err
 }
 
 func asymmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
@@ -59,7 +57,7 @@ func asymmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				keyOwnerNote("asymmetric key"),
 			)
 			return f, keyOwnerApply(sc, dbName, owner, func(ctx context.Context, d *gosmo.Database, o string) error {
-				return d.AsymmetricKeyRef(name).ChangeOwnerContext(ctx, o)
+				return d.AsymmetricKeyRef(name).ChangeOwner(ctx, o)
 			}), nil
 		},
 	}

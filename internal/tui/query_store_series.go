@@ -20,7 +20,7 @@ import (
 // way the plan pane and the two plan actions do, and is a mode of the chart
 // rather than an eighth report.
 //
-// The read is gosmo's QueryStoreTrackedQueryContext, with the same options the
+// The read is gosmo's QueryStoreTrackedQuery, with the same options the
 // report was run with. Top, the execution floor and the tracked-query set do
 // not reach that query at all — it is one query over every interval — so the
 // selectors that carry them stay live for the report grid below, which still
@@ -193,7 +193,7 @@ func (p *QueryStorePanel) loadSeries(queryID int64) {
 	p.app.safegoRepair("reading a Query Store query history", func() { p.seriesPanicked(seq) }, func() {
 		readCtx, readCancel := context.WithTimeout(ctx, qsReadTimeout)
 		defer readCancel()
-		stats, err := sc.Server.DatabaseRef(dbName).QueryStoreTrackedQueryContext(readCtx, queryID, opts)
+		stats, err := sc.Server.DatabaseRef(dbName).QueryStoreTrackedQuery(readCtx, queryID, opts)
 		p.app.postAndWake(func() {
 			if !p.seriesRead.Done(seq) {
 				return

@@ -38,7 +38,7 @@ type agGroupRollup struct {
 
 // readAllGroups reads every availability group on the instance.
 func (d *AGDashboard) readAllGroups(ctx context.Context) (agSnapshot, error) {
-	groups, err := d.conn.Server.AvailabilityGroupsContext(ctx)
+	groups, err := d.conn.Server.AvailabilityGroups(ctx)
 	if err != nil {
 		return agSnapshot{}, err
 	}
@@ -54,10 +54,10 @@ func (d *AGDashboard) readAllGroups(ctx context.Context) (agSnapshot, error) {
 			continue
 		}
 		r := agGroupRollup{group: view.ag, unreachable: view.unreachable, followed: view.followed}
-		if replicas, err := view.ag.ReplicasContext(ctx); err == nil {
+		if replicas, err := view.ag.Replicas(ctx); err == nil {
 			r.replicas = replicas
 		}
-		if dbs, err := view.ag.DatabasesContext(ctx); err == nil {
+		if dbs, err := view.ag.Databases(ctx); err == nil {
 			r.dbs = agComputeDatabaseMetrics(dbs)
 		}
 		rollups = append(rollups, r)
@@ -106,7 +106,7 @@ func agGroupRows(groups []agGroupRollup) [][]string {
 		rows[i] = []string{
 			g.group.Name,
 			orDefault(g.group.PrimaryReplicaServerName, "(none visible)"),
-			orDefault(g.group.ClusterType, "WSFC (implied)"),
+			orDefault(string(g.group.ClusterType), "WSFC (implied)"),
 			orDefault(titleWord(g.group.SynchronizationHealth), "—"),
 			strconv.Itoa(len(g.replicas)),
 			strconv.Itoa(agDistinctDatabases(g.dbs)),

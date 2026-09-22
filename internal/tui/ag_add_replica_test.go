@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/radix29/gosmo"
 )
 
 func addReplicaPrefetch() *agAddReplicaPrefetch {
@@ -94,41 +97,56 @@ func TestAGDefaultFailoverMode(t *testing.T) {
 	}
 }
 
+// scriptAddReplica runs Add Replica's pipeline under Script Changes against
+// the AG fixture, whose primary is the fake connection itself.
+func scriptAddReplica(t *testing.T, r newAGReplica) string {
+	t.Helper()
+	sc, _ := newFakeConn(t, agResponses()...)
+	d := &AGAddReplicaDialog{agName: agFixtureName, resolved: r}
+	d.sc = sc
+	scriptCtx, script := gosmo.WithScript(context.Background())
+	if err := d.addReplica(scriptCtx); err != nil {
+		t.Fatalf("addReplica under WithScript: %v", err)
+	}
+	return multiInstanceScript("Add Replica", script)
+}
+
 // The script must name each statement's instance; run whole on the primary,
 // JOIN errors or joins the primary to its own group.
 func TestAddReplicaScriptNamesEachInstance(t *testing.T) {
-	d := &AGAddReplicaDialog{agName: "AAG1", resolved: resolvedReplica()}
-	d.prefetch = addReplicaPrefetch()
+	got := scriptAddReplica(t, resolvedReplica())
 
-	got := d.annotateScript([]string{
-		"ALTER AVAILABILITY GROUP [AAG1] ADD REPLICA ON N'ubusql2' WITH (...)",
-		"ALTER AVAILABILITY GROUP [AAG1] JOIN WITH (CLUSTER_TYPE = EXTERNAL)",
-		"ALTER AVAILABILITY GROUP [AAG1] GRANT CREATE ANY DATABASE",
-	})
-
-	for _, want := range []string{
-		"-- on ubusql1\nALTER AVAILABILITY GROUP [AAG1] ADD REPLICA",
+	wantOrder := []string{
+		"-- on " + agPrimary + "\nALTER AVAILABILITY GROUP [AAG1] ADD REPLICA",
+		"\nGO\n",
 		"-- on ubusql2\nALTER AVAILABILITY GROUP [AAG1] JOIN",
-		"-- on ubusql2\nALTER AVAILABILITY GROUP [AAG1] GRANT CREATE ANY DATABASE",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("script does not contain %q:\n%s", want, got)
+		"\nGO\n",
+		"\nALTER AVAILABILITY GROUP [AAG1] GRANT CREATE ANY DATABASE",
+		"\nGO\n",
+	}
+	pos := 0
+	for _, want := range wantOrder {
+		i := strings.Index(got[pos:], want)
+		if i < 0 {
+			t.Fatalf("script is missing %q after position %d:\n%s", want, pos, got)
 		}
+		pos += i + len(want)
+	}
+	if n := strings.Count(got, "-- on "); n != 2 {
+		t.Errorf("got %d instance labels, want 2 (the primary, then the new replica):\n%s", n, got)
 	}
 }
 
-// MANUAL seeding has no GRANT; no label for a missing statement.
+// MANUAL seeding has no GRANT, and nothing after it is mislabelled.
 func TestAddReplicaScriptWithoutTheGrant(t *testing.T) {
-	d := &AGAddReplicaDialog{agName: "AAG1", resolved: resolvedReplica()}
-	d.resolved.seedingMode = "MANUAL"
-	d.prefetch = addReplicaPrefetch()
-
-	got := d.annotateScript([]string{
-		"ALTER AVAILABILITY GROUP [AAG1] ADD REPLICA ON N'ubusql2' WITH (...)",
-		"ALTER AVAILABILITY GROUP [AAG1] JOIN WITH (CLUSTER_TYPE = EXTERNAL)",
-	})
+	r := resolvedReplica()
+	r.seedingMode = "MANUAL"
+	got := scriptAddReplica(t, r)
 	if strings.Contains(got, "GRANT CREATE ANY DATABASE") {
 		t.Errorf("manual-seeding script mentions the grant:\n%s", got)
+	}
+	if !strings.Contains(got, "-- on ubusql2\nALTER AVAILABILITY GROUP [AAG1] JOIN") {
+		t.Errorf("the JOIN is not labelled with the new replica:\n%s", got)
 	}
 	if strings.Contains(got, "(unknown instance)") {
 		t.Errorf("script has an unlabelled statement:\n%s", got)

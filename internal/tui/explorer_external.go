@@ -31,24 +31,24 @@ func loadExternalResourcesChildren(l loaderCtx, node *explorerNode) ([]*explorer
 }
 
 func loadExternalDataSourcesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
-		func() ([]*gosmo.ExternalDataSource, error) { return dbObj.ExternalDataSourcesContext(l.ctx) },
+		func() ([]*gosmo.ExternalDataSource, error) { return dbObj.ExternalDataSources(l.ctx) },
 		func(s *gosmo.ExternalDataSource) *explorerNode {
 			return l.node(s.Name, NodeExternalDataSource, "", s.Name, node.data.DBName)
 		})
 }
 
 func loadExternalFileFormatsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
-		func() ([]*gosmo.ExternalFileFormat, error) { return dbObj.ExternalFileFormatsContext(l.ctx) },
+		func() ([]*gosmo.ExternalFileFormat, error) { return dbObj.ExternalFileFormats(l.ctx) },
 		func(f *gosmo.ExternalFileFormat) *explorerNode {
 			return l.node(f.Name, NodeExternalFileFormat, "", f.Name, node.data.DBName)
 		})
@@ -58,12 +58,12 @@ func loadExternalFileFormatsChildren(l loaderCtx, node *explorerNode) ([]*explor
 // CREATE EXTERNAL LIBRARY. The label carries the language, which is the one
 // thing separating two libraries of the same name in different runtimes.
 func loadExternalLibrariesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
-		func() ([]*gosmo.ExternalLibrary, error) { return dbObj.ExternalLibrariesContext(l.ctx) },
+		func() ([]*gosmo.ExternalLibrary, error) { return dbObj.ExternalLibraries(l.ctx) },
 		func(lib *gosmo.ExternalLibrary) *explorerNode {
 			label := lib.Name
 			if lib.Language != "" {

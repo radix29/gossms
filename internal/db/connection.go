@@ -135,12 +135,12 @@ func ConnectContext(ctx context.Context, opts config.Connection, role Role) (*Se
 	// shown then cancels the same way.
 	ctx = withSignInCanceller(ctx, cancel)
 
-	srv, err := gosmo.ConnectContext(ctx, co)
+	srv, err := gosmo.Connect(ctx, co)
 	if err != nil {
 		err = explainExtraProperty(err)
 		return nil, &ConnectionError{Server: opts.Server, Cause: err.Error(), Err: err}
 	}
-	login, _ := srv.CurrentLoginContext(ctx)
+	login, _ := srv.CurrentLogin(ctx)
 	connCtx, connCancel := context.WithCancel(context.Background())
 	sc := &ServerConn{Opts: opts, Server: srv, Login: login, ctx: connCtx, cancel: connCancel, role: role}
 	sc.ProbeCapabilities()

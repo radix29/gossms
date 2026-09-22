@@ -66,7 +66,7 @@ func pagePrincipalEffectivePermissions(d *PropDialog, sc *db.ServerConn, dbName 
 	return propPage{
 		title: "Effective Permissions",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			database, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			database, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -110,11 +110,11 @@ func pagePrincipalEffectivePermissions(d *PropDialog, sc *db.ServerConn, dbName 
 					func(ctx context.Context) ([]*gosmo.EffectivePermission, error) {
 						switch scope {
 						case effScopeSchema:
-							return database.EffectiveSchemaPermissionsContext(ctx, schema, *principal)
+							return database.EffectiveSchemaPermissions(ctx, schema, *principal)
 						case effScopeObject:
-							return database.EffectiveObjectPermissionsContext(ctx, schema, object, *principal)
+							return database.EffectiveObjectPermissions(ctx, schema, object, *principal)
 						default:
-							return database.EffectivePermissionsContext(ctx, *principal)
+							return database.EffectivePermissions(ctx, *principal)
 						}
 					})
 			})
@@ -149,7 +149,7 @@ func pageLoginEffectivePermissions(d *PropDialog, sc *db.ServerConn, principal *
 			showBtn := widgets.NewButton("Show", func() {
 				effectivePermsShow(d, hint, &showBusy, principal, fill,
 					func(ctx context.Context) ([]*gosmo.EffectivePermission, error) {
-						return sc.Server.EffectiveServerPermissionsContext(ctx, *principal)
+						return sc.Server.EffectiveServerPermissions(ctx, *principal)
 					})
 			})
 

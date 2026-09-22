@@ -11,11 +11,11 @@ func pageServerSecurity(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Security",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			sec, err := sc.Server.SecurityInfoContext(ctx)
+			sec, err := sc.Server.SecurityInfo(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

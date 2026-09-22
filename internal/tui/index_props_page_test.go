@@ -31,7 +31,7 @@ const (
 	idxTable         = "Orders"
 )
 
-// idxTableResp answers Database.TableByNameContext for sales.Orders.
+// idxTableResp answers Database.TableByName for sales.Orders.
 func idxTableResp() fakeResponse {
 	return fakeResponse{match: "FROM   sys.tables t", db: idxDatabase, cols: 12, rows: [][]driver.Value{
 		{idxTableObjectID, idxSchema, idxTable, time.Time{}, time.Time{}, false, false,
@@ -39,7 +39,7 @@ func idxTableResp() fakeResponse {
 	}}
 }
 
-// idxListResp answers Table.indexListContext with one index. The scan order is
+// idxListResp answers Table.indexList with one index. The scan order is
 // sys.indexes' own; see gosmo's table.go.
 func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
 	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 18, rows: [][]driver.Value{{
@@ -72,7 +72,7 @@ func plainIndex() indexFixture {
 	return indexFixture{typeDesc: "NONCLUSTERED", fillFactor: 80, rowLocks: true, pageLocks: true, compression: "NONE"}
 }
 
-// idxColumnsResp answers Table.indexColumnsContext: index_id, column name,
+// idxColumnsResp answers Table.indexColumns: index_id, column name,
 // descending, included.
 //
 // Matched on its ORDER BY rather than on its FROM: the table's own column
@@ -198,8 +198,8 @@ func TestIndexOptionsWritesNothingWhenUntouched(t *testing.T) {
 
 // -- Included Columns --------------------------------------------------------
 
-// idxColumnResp answers Table.ColumnsContext. Only the name and the type
-// matter to this page; the rest of columnSelect's seventeen values are what
+// idxColumnResp answers Table.Columns. Only the name and the type
+// matter to this page; the rest of columnSelect's twenty-six values are what
 // the scan needs to get that far.
 func idxColumnResp(names ...string) fakeResponse {
 	rows := make([][]driver.Value, len(names))
@@ -212,9 +212,14 @@ func idxColumnResp(names ...string) fakeResponse {
 			false, "",
 			int64(0), int64(0),
 			false,
+			"sys", false,
+			false, false,
+			false, false,
+			"",
+			int64(0), false,
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 17, rows: rows}
+	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 26, rows: rows}
 }
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on

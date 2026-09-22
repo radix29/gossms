@@ -21,7 +21,7 @@ import (
 
 var snapshotCreated = time.Date(2026, 9, 1, 14, 15, 0, 0, time.UTC)
 
-// databasesListResp answers Server.DatabasesContext. The last column is
+// databasesListResp answers Server.Databases. The last column is
 // source_database_id, which is what makes a row a snapshot.
 func databasesListResp(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "compatibility_level, collation_name", cols: 9, rows: rows}
@@ -34,7 +34,7 @@ func databaseRow(id int, name string, sourceID int) []driver.Value {
 	}
 }
 
-// snapshotListResp answers Server.DatabaseSnapshotsContext.
+// snapshotListResp answers Server.DatabaseSnapshots.
 func snapshotListResp(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "d.source_database_id IS NOT NULL", cols: 6, rows: rows}
 }
@@ -167,7 +167,7 @@ func TestDatabaseSnapshotsFolderDetail(t *testing.T) {
 func TestDatabaseSnapshotPropertiesAreReadOnly(t *testing.T) {
 	sc, inst := newFakeConn(t,
 		snapshotListResp(snapshotRow(9, "appdb_snapshot", "appdb", 7)),
-		// Server.DatabaseFilesContext reads sys.master_files, not
+		// Server.DatabaseFiles reads sys.master_files, not
 		// sys.database_files: a snapshot's own files are recorded there and
 		// the read needs no connection into the snapshot.
 		fakeResponse{match: "FROM   sys.master_files mf", cols: 9, rows: [][]driver.Value{

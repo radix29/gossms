@@ -224,7 +224,7 @@ func TestAsymmetricKeysFolderDetail(t *testing.T) {
 	}
 }
 
-// AsymmetricKeyByName answers (nil, nil) for a key dropped since the tree was
+// AsymmetricKeyByName answers ErrNotFound for a key dropped since the tree was
 // read; the detail pane must say so, not panic.
 func TestAsymmetricKeyDetailOfADroppedKey(t *testing.T) {
 	sc, _ := newFakeConn(t, dbScopedCredDatabaseRow(), fakeResponse{

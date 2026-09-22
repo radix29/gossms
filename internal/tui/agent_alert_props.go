@@ -15,10 +15,10 @@ import (
 // *string name cell so a General rename is seen by later pages in the same
 // Apply.
 
-// findAgentAlert wraps gosmo.Server.AlertByNameContext, like
+// findAgentAlert wraps gosmo.Server.AlertByName, like
 // findAgentJob/findAgentSchedule.
 func findAgentAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Alert, error) {
-	return sc.Server.AlertByNameContext(ctx, name)
+	return sc.Server.AlertByName(ctx, name)
 }
 
 // alertPropPages builds the page set for Alert Properties.
@@ -51,7 +51,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
+			cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassAlert)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -131,7 +131,7 @@ func pageAlertGeneral(sc *db.ServerConn, alertName *string) propPage {
 				if nameField.Dirty() {
 					ch.Name = gosmo.Ptr(nameField.Value())
 				}
-				if err := al.AlterContext(ctx, ch); err != nil {
+				if err := al.Alter(ctx, ch); err != nil {
 					return err
 				}
 				if nameField.Dirty() {
@@ -154,11 +154,11 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			operators, err := sc.Server.OperatorsContext(ctx)
+			operators, err := sc.Server.Operators(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			notifs, err := al.NotificationsContext(ctx)
+			notifs, err := al.Notifications(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -178,7 +178,7 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 			notifyGrid := propsheet.NewToggleGrid([]string{"Notify", "Operator"}, []int{0}, 10)
 			notifyGrid.SetRows(opText, opVals)
 
-			jobs, err := sc.Server.JobsContext(ctx)
+			jobs, err := sc.Server.Jobs(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -207,15 +207,15 @@ func pageAlertResponse(sc *db.ServerConn, alertName *string) propPage {
 						continue
 					}
 					if v[0] {
-						if err := al.NotifyContext(ctx, opNames[i], gosmo.NotifyMethodEmail); err != nil {
+						if err := al.Notify(ctx, opNames[i], gosmo.NotifyMethodEmail); err != nil {
 							return err
 						}
-					} else if err := al.RemoveNotifyContext(ctx, opNames[i]); err != nil {
+					} else if err := al.RemoveNotify(ctx, opNames[i]); err != nil {
 						return err
 					}
 				}
 				if responseJobSelect.Dirty() {
-					if err := al.SetJobResponseContext(ctx, preservedValue(responseJobSelect, noneItem)); err != nil {
+					if err := al.SetJobResponse(ctx, preservedValue(responseJobSelect, noneItem)); err != nil {
 						return err
 					}
 				}

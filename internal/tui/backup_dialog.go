@@ -429,10 +429,10 @@ func (d *BackupDialog) startBackup() {
 	// session and the dialog sits in the progress view with a dead Cancel.
 	app.safegoRepair("the backup", func() { app.markTaskDone(task, errTaskPanicked) }, func() {
 		opts.Progress = func(pct int, msg string) { app.postProgress(task, pct, msg) }
-		err := srv.BackupContext(ctx, opts)
+		err := srv.Backup(ctx, opts)
 		if err == nil && verify {
 			app.postProgress(task, -1, "Verifying backup...")
-			err = srv.VerifyBackupContext(ctx, dest)
+			err = srv.VerifyBackup(ctx, dest)
 		}
 		app.postTaskDone(task, err)
 	})

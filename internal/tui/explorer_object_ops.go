@@ -80,7 +80,7 @@ func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
 }
 
 // objectOps is the per-type table. Every rename going through
-// Database.RenameObjectContext is sp_rename's 'OBJECT' class — view, procedure,
+// Database.RenameObject is sp_rename's 'OBJECT' class — view, procedure,
 // function, sequence, synonym, trigger, constraint. Indexes and statistics have
 // their own sp_rename object types and gosmo methods.
 var objectOps = map[NodeType]objectOp{
@@ -89,14 +89,14 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Existing connections to it will be closed.",
 		typed:   true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DropDatabaseContext(ctx, n.Name, true)
+			return sc.Server.DropDatabase(ctx, n.Name, true)
 		},
 		// MODIFY NAME needs exclusive access, which the tree's own metadata
 		// connections deny — so the rename always closes connections, and always
 		// asks first.
 		renameWarning: "Renaming a database needs exclusive access to it. Existing connections will be closed and their transactions rolled back. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return sc.Server.RenameDatabaseContext(ctx, n.Name, newName, true)
+			return sc.Server.RenameDatabase(ctx, n.Name, newName, true)
 		},
 	},
 	// A snapshot's drop deletes its sparse files and leaves the source
@@ -109,7 +109,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Its sparse files are deleted. The source database is not affected.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DatabaseSnapshotRef(n.Name).DropContext(ctx)
+			return sc.Server.DatabaseSnapshotRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeTable: {
@@ -121,21 +121,21 @@ var objectOps = map[NodeType]objectOp{
 		// decision and not a retry.
 		dropOption: "Also drop the foreign keys that reference it",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, cascade bool) error {
-			return dbOf(sc, n).DropTableContext(ctx, n.Schema, n.Name, cascade)
+			return dbOf(sc, n).DropTable(ctx, n.Schema, n.Name, cascade)
 		},
 		transfer: transferObjectIn,
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return dbOf(sc, n).RenameTableContext(ctx, n.Schema, n.Name, newName)
+			return dbOf(sc, n).RenameTable(ctx, n.Schema, n.Name, newName)
 		},
 	},
-	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropViewContext), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedureContext), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunctionContext), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropView), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedure), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunction), rename: renameObjectIn, transfer: transferObjectIn},
 	// A trigger belongs to its table and moves with it; ALTER SCHEMA TRANSFER
 	// refuses one.
-	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTriggerContext), rename: renameObjectIn},
-	NodeSequence: {noun: "Sequence", drop: dropIn((*gosmo.Database).DropSequenceContext), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeSynonym:  {noun: "Synonym", drop: dropIn((*gosmo.Database).DropSynonymContext), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTrigger), rename: renameObjectIn},
+	NodeSequence: {noun: "Sequence", drop: dropIn((*gosmo.Database).DropSequence), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeSynonym:  {noun: "Synonym", drop: dropIn((*gosmo.Database).DropSynonym), rename: renameObjectIn, transfer: transferObjectIn},
 
 	NodeColumn: {
 		noun: "Column",
@@ -146,14 +146,14 @@ var objectOps = map[NodeType]objectOp{
 		// naming to the server rather than listing classes.
 		warning: "Its data goes with it, and the drop is refused while a constraint, index or statistic depends on the column — the server's error names the object that blocks it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return tableOf(sc, n).DropColumnContext(ctx, n.Name)
+			return tableOf(sc, n).DropColumn(ctx, n.Name)
 		},
 		// sp_rename updates the column and nothing that names it, and SQL
 		// Server's caution ("may break scripts and stored procedures") is a
 		// notice on a rename that already succeeded — so ask first.
 		renameWarning: "Renaming a column does not update anything that names it. Views, procedures, functions, computed columns, check constraints and filtered indexes keep the old name and break at their next use. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return tableOf(sc, n).RenameColumnContext(ctx, n.Name, newName)
+			return tableOf(sc, n).RenameColumn(ctx, n.Name, newName)
 		},
 	},
 
@@ -164,14 +164,14 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return idx.DropContext(ctx, t)
+			return idx.Drop(ctx, t)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			t, idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
 				return err
 			}
-			return idx.RenameContext(ctx, t, newName)
+			return idx.Rename(ctx, t, newName)
 		},
 	},
 	NodeStatistic: {
@@ -181,14 +181,14 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return st.DropContext(ctx)
+			return st.Drop(ctx)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			_, st, err := findStatistic(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
 				return err
 			}
-			return st.RenameContext(ctx, newName)
+			return st.Rename(ctx, newName)
 		},
 	},
 	NodeKey: {
@@ -201,7 +201,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return idx.RenameContext(ctx, t, newName)
+			return idx.Rename(ctx, t, newName)
 		},
 	},
 	NodeForeignKey: {noun: "Foreign Key", drop: dropConstraint, rename: renameObjectIn},
@@ -215,7 +215,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return pf.DropContext(ctx)
+			return pf.Drop(ctx)
 		},
 	},
 	NodePartitionScheme: {
@@ -226,7 +226,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return ps.DropContext(ctx)
+			return ps.Drop(ctx)
 		},
 	},
 	NodeSecurityPolicy: {
@@ -237,7 +237,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return p.DropContext(ctx)
+			return p.Drop(ctx)
 		},
 	},
 	NodeColumnMasterKey: {
@@ -248,7 +248,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return k.DropContext(ctx)
+			return k.Drop(ctx)
 		},
 	},
 	NodeColumnEncryptionKey: {
@@ -262,7 +262,7 @@ var objectOps = map[NodeType]objectOp{
 			if err != nil {
 				return err
 			}
-			return k.DropContext(ctx)
+			return k.Drop(ctx)
 		},
 	},
 
@@ -277,25 +277,25 @@ var objectOps = map[NodeType]objectOp{
 	NodeUserDefinedDataType: {
 		noun:    "User-Defined Data Type",
 		warning: typeInUseWarning,
-		drop:    dropIn((*gosmo.Database).DropTypeContext),
+		drop:    dropIn((*gosmo.Database).DropType),
 		// sp_rename's USERDATATYPE class covers alias types and nothing else
 		// in sys.types — see gosmo's RenameUserDefinedDataType, which is why
 		// the table and CLR types below have no rename.
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return dbOf(sc, n).RenameUserDefinedDataTypeContext(ctx, n.Schema, n.Name, newName)
+			return dbOf(sc, n).RenameUserDefinedDataType(ctx, n.Schema, n.Name, newName)
 		},
 		transfer: transferTypeIn,
 	},
 	NodeUserDefinedTableType: {
 		noun:     "User-Defined Table Type",
 		warning:  typeInUseWarning,
-		drop:     dropIn((*gosmo.Database).DropTypeContext),
+		drop:     dropIn((*gosmo.Database).DropType),
 		transfer: transferTypeIn,
 	},
 	NodeUserDefinedType: {
 		noun:     "User-Defined Type",
 		warning:  typeInUseWarning,
-		drop:     dropIn((*gosmo.Database).DropTypeContext),
+		drop:     dropIn((*gosmo.Database).DropType),
 		transfer: transferTypeIn,
 	},
 	NodeXMLSchemaCollection: {
@@ -304,12 +304,12 @@ var objectOps = map[NodeType]objectOp{
 		// parameter or variable is bound to the collection, and names it.
 		warning: "The drop is refused while a column, parameter or variable is typed on it — the server's error names what blocks it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropXMLSchemaCollectionContext(ctx, n.Schema, n.Name)
+			return dbOf(sc, n).DropXMLSchemaCollection(ctx, n.Schema, n.Name)
 		},
 		// ALTER SCHEMA TRANSFER needs the XML SCHEMA COLLECTION:: class here,
 		// not the default OBJECT one.
 		transfer: func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-			return dbOf(sc, n).TransferXMLSchemaCollectionContext(ctx, targetSchema, n.Schema, n.Name)
+			return dbOf(sc, n).TransferXMLSchemaCollection(ctx, targetSchema, n.Schema, n.Name)
 		},
 	},
 	// Rules and defaults are ordinary sys.objects rows, so sp_rename's OBJECT
@@ -319,14 +319,14 @@ var objectOps = map[NodeType]objectOp{
 		// The column or type keeps its values but stops being checked, which
 		// is not something the object's absence from the tree makes visible.
 		warning:  "Columns and types still bound to it stop being validated, and the drop is refused until sp_unbindrule releases them.",
-		drop:     dropIn((*gosmo.Database).DropRuleContext),
+		drop:     dropIn((*gosmo.Database).DropRule),
 		rename:   renameObjectIn,
 		transfer: transferObjectIn,
 	},
 	NodeDefault: {
 		noun:     "Default",
 		warning:  "Columns and types still bound to it stop getting a default value, and the drop is refused until sp_unbindefault releases them.",
-		drop:     dropIn((*gosmo.Database).DropDefaultContext),
+		drop:     dropIn((*gosmo.Database).DropDefault),
 		rename:   renameObjectIn,
 		transfer: transferObjectIn,
 	},
@@ -337,7 +337,7 @@ var objectOps = map[NodeType]objectOp{
 		// back from the original .dll.
 		warning: "The drop is refused while a CLR routine or type is bound to it, and the assembly binary cannot be recovered from gossms.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropAssemblyContext(ctx, n.Name)
+			return dbOf(sc, n).DropAssembly(ctx, n.Name)
 		},
 		// No rename and no transfer: an assembly is database-scoped, has no
 		// schema to move between, and sp_rename has no class for one.
@@ -348,7 +348,7 @@ var objectOps = map[NodeType]objectOp{
 		// looks like nothing happening until a plan regresses.
 		warning: "The queries it applies hints to go back to the plans the optimizer picks on its own.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropPlanGuideContext(ctx, n.Name)
+			return dbOf(sc, n).DropPlanGuide(ctx, n.Name)
 		},
 		// No rename: sp_control_plan_guide has no rename operation, and
 		// sp_rename has no class for a plan guide.
@@ -357,14 +357,14 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "External Data Source",
 		warning: "The drop is refused while an external table, file format reference or backup URL names it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropExternalDataSourceContext(ctx, n.Name)
+			return dbOf(sc, n).DropExternalDataSource(ctx, n.Name)
 		},
 	},
 	NodeExternalFileFormat: {
 		noun:    "External File Format",
 		warning: "The drop is refused while an external table uses it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropExternalFileFormatContext(ctx, n.Name)
+			return dbOf(sc, n).DropExternalFileFormat(ctx, n.Name)
 		},
 	},
 	NodeExternalLibrary: {
@@ -373,7 +373,7 @@ var objectOps = map[NodeType]objectOp{
 		// dropped library has to be uploaded again from its source.
 		warning: "R and Python scripts that load the package stop working, and the uploaded package cannot be recovered from gossms.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropExternalLibraryContext(ctx, n.Name)
+			return dbOf(sc, n).DropExternalLibrary(ctx, n.Name)
 		},
 	},
 
@@ -391,14 +391,14 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "Message Type",
 		warning: "The drop is refused while a contract names it — the server's error says so.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropMessageTypeContext(ctx, n.Name)
+			return dbOf(sc, n).DropMessageType(ctx, n.Name)
 		},
 	},
 	NodeContract: {
 		noun:    "Contract",
 		warning: "The drop is refused while a service or a conversation priority names it — the server's error says so.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropContractContext(ctx, n.Name)
+			return dbOf(sc, n).DropContract(ctx, n.Name)
 		},
 	},
 	NodeBrokerQueue: {
@@ -406,7 +406,7 @@ var objectOps = map[NodeType]objectOp{
 		// The one drop in this set that destroys data: messages still sitting
 		// in the queue go with it, and nothing on screen holds them.
 		warning: "Messages still in the queue are deleted with it, and the drop is refused while a service is bound to it.",
-		drop:    dropIn((*gosmo.Database).DropBrokerQueueContext),
+		drop:    dropIn((*gosmo.Database).DropBrokerQueue),
 		// The one schema-scoped family here, so the only one with a Move to
 		// Schema — and its right is neither of the queue's other two: see
 		// gate.ClassOneTransferRights.
@@ -416,7 +416,7 @@ var objectOps = map[NodeType]objectOp{
 		noun:    "Service",
 		warning: "Conversations addressed to it stop being delivered, and the drop is refused while a route or a conversation priority names it.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropBrokerServiceContext(ctx, n.Name)
+			return dbOf(sc, n).DropBrokerService(ctx, n.Name)
 		},
 	},
 	NodeRoute: {
@@ -427,21 +427,21 @@ var objectOps = map[NodeType]objectOp{
 		// is a legitimate thing to do.
 		warning: "Messages for the services it addresses stop being routed.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropRouteContext(ctx, n.Name)
+			return dbOf(sc, n).DropRoute(ctx, n.Name)
 		},
 	},
 	NodeRemoteServiceBinding: {
 		noun:    "Remote Service Binding",
 		warning: "Conversations with the remote service lose their security binding.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropRemoteServiceBindingContext(ctx, n.Name)
+			return dbOf(sc, n).DropRemoteServiceBinding(ctx, n.Name)
 		},
 	},
 	NodeBrokerPriority: {
 		noun:    "Broker Priority",
 		warning: "Conversations it applies to fall back to the default priority of 5.",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DropBrokerPriorityContext(ctx, n.Name)
+			return dbOf(sc, n).DropBrokerPriority(ctx, n.Name)
 		},
 	},
 
@@ -450,10 +450,10 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Database users mapped to it are left orphaned.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DropLoginContext(ctx, n.Name)
+			return sc.Server.DropLogin(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return sc.Server.LoginRef(n.Name).RenameContext(ctx, newName)
+			return sc.Server.LoginRef(n.Name).Rename(ctx, newName)
 		},
 	},
 	NodeCredential: {
@@ -465,7 +465,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Logins and job steps mapped to it lose their external identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.CredentialRef(n.Name).DropContext(ctx)
+			return sc.Server.CredentialRef(n.Name).Drop(ctx)
 		},
 	},
 	NodeDatabaseScopedCredential: {
@@ -477,7 +477,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "External data sources and backup URLs bound to it lose their identity, and the stored secret cannot be recovered.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DatabaseScopedCredentialRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseScopedCredentialRef(n.Name).Drop(ctx)
 		},
 		// No rename: there is no ALTER DATABASE SCOPED CREDENTIAL ... WITH NAME
 		// and no sp_rename class for one, the same as the server-level
@@ -493,7 +493,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Logins, users and signed modules mapped to it stop working, and a private key held only here is lost.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).CertificateRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).CertificateRef(n.Name).Drop(ctx)
 		},
 		// No rename: there is no ALTER CERTIFICATE ... WITH NAME and no
 		// sp_rename class for one.
@@ -507,7 +507,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Logins, users and signed modules mapped to it stop working, and the key pair cannot be recreated.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).AsymmetricKeyRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).AsymmetricKeyRef(n.Name).Drop(ctx)
 		},
 		// No rename: no ALTER ASYMMETRIC KEY ... WITH NAME, no sp_rename class.
 	},
@@ -521,7 +521,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Data encrypted with it cannot be decrypted again, unless the key was created with KEY_SOURCE and IDENTITY_VALUE and is re-created from them.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).SymmetricKeyRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).SymmetricKeyRef(n.Name).Drop(ctx)
 		},
 		// No rename: no ALTER SYMMETRIC KEY ... WITH NAME, no sp_rename class.
 	},
@@ -533,7 +533,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "Server audit specifications bound to it stop recording and are left without an audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerAuditRef(n.Name).DropContext(ctx)
+			return sc.Server.ServerAuditRef(n.Name).Drop(ctx)
 		},
 		// No rename: ALTER SERVER AUDIT ... MODIFY NAME exists, but only on a
 		// disabled audit, and gosmo's Rename does the off/on dance for it.
@@ -545,7 +545,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The action groups it names stop being recorded by its audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerAuditSpecificationRef(n.Name).DropContext(ctx)
+			return sc.Server.ServerAuditSpecificationRef(n.Name).Drop(ctx)
 		},
 		// No rename: ALTER SERVER AUDIT SPECIFICATION has no MODIFY NAME form
 		// at all — verified live, it is a parse error.
@@ -555,7 +555,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The action groups and actions it names stop being recorded by its audit.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DatabaseAuditSpecificationRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseAuditSpecificationRef(n.Name).Drop(ctx)
 		},
 		// No rename: ALTER DATABASE AUDIT SPECIFICATION has no MODIFY NAME
 		// form, the same as the server-scope one.
@@ -571,7 +571,7 @@ var objectOps = map[NodeType]objectOp{
 		// no other command here can undo.
 		dropOption: "Also delete the backup file on the server",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, deleteFile bool) error {
-			return sc.Server.BackupDeviceRef(n.Name).DropContext(ctx, deleteFile)
+			return sc.Server.BackupDeviceRef(n.Name).Drop(ctx, deleteFile)
 		},
 	},
 	NodeDatabaseTrigger: {
@@ -582,7 +582,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The DDL policy it enforces stops applying across the database.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).DatabaseTriggerRef(n.Name).DropContext(ctx)
+			return dbOf(sc, n).DatabaseTriggerRef(n.Name).Drop(ctx)
 		},
 		// No rename: sp_rename has no class for a DDL trigger, and there is
 		// no ALTER ... MODIFY NAME form either.
@@ -596,7 +596,7 @@ var objectOps = map[NodeType]objectOp{
 		warning: "The DDL or logon policy it enforces stops applying server-wide.",
 		solo:    true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.ServerTriggerRef(n.Name).DropContext(ctx)
+			return sc.Server.ServerTriggerRef(n.Name).Drop(ctx)
 		},
 		// No rename: sp_rename has no class for a server-scope trigger, and
 		// the name is baked into the definition CREATE TRIGGER stores.
@@ -612,11 +612,11 @@ var objectOps = map[NodeType]objectOp{
 			// Read the endpoint rather than acting on a name-only handle: the
 			// built-in ones cannot be dropped, and IsSystem — which is what
 			// gosmo refuses on — is part of what the read populates.
-			e, err := sc.Server.EndpointByNameContext(ctx, n.Name)
+			e, err := sc.Server.EndpointByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return e.DropContext(ctx)
+			return e.Drop(ctx)
 		},
 		// No rename: ALTER ENDPOINT has no WITH NAME, and sp_rename has no
 		// class for one.
@@ -625,14 +625,14 @@ var objectOps = map[NodeType]objectOp{
 		noun: "Server Role",
 		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DropServerRoleContext(ctx, n.Name)
+			return sc.Server.DropServerRole(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			r, err := sc.Server.ServerRoleByNameContext(ctx, n.Name)
+			r, err := sc.Server.ServerRoleByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return r.RenameContext(ctx, newName)
+			return r.Rename(ctx, newName)
 		},
 	},
 	NodeUser: {
@@ -640,15 +640,15 @@ var objectOps = map[NodeType]objectOp{
 		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
-			return d.DropUserContext(ctx, n.Name)
+			return d.DropUser(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			d := dbOf(sc, n)
-			u, err := d.UserByNameContext(ctx, n.Name)
+			u, err := d.UserByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return u.RenameContext(ctx, newName)
+			return u.Rename(ctx, newName)
 		},
 	},
 	NodeDatabaseRole: {
@@ -656,14 +656,14 @@ var objectOps = map[NodeType]objectOp{
 		solo: true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
-			return d.DropDatabaseRoleContext(ctx, n.Name)
+			return d.DropDatabaseRole(ctx, n.Name)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
 			r, err := findRole(ctx, sc, n.DBName, n.Name)
 			if err != nil {
 				return err
 			}
-			return r.RenameContext(ctx, newName)
+			return r.Rename(ctx, newName)
 		},
 	},
 	NodeSchema: {
@@ -672,7 +672,7 @@ var objectOps = map[NodeType]objectOp{
 		noun: "Schema",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 			d := dbOf(sc, n)
-			return d.DropSchemaContext(ctx, n.Name)
+			return d.DropSchema(ctx, n.Name)
 		},
 	},
 
@@ -680,41 +680,41 @@ var objectOps = map[NodeType]objectOp{
 	NodeAgentJob: {
 		noun: "Job",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			j, err := sc.Server.JobByNameContext(ctx, n.Name)
+			j, err := sc.Server.JobByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return j.RenameContext(ctx, newName)
+			return j.Rename(ctx, newName)
 		},
 	},
 	NodeAgentSchedule: {
 		noun: "Schedule",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			s, err := sc.Server.ScheduleByNameContext(ctx, n.Name)
+			s, err := sc.Server.ScheduleByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return s.RenameContext(ctx, newName)
+			return s.Rename(ctx, newName)
 		},
 	},
 	NodeAgentAlert: {
 		noun: "Alert",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			al, err := sc.Server.AlertByNameContext(ctx, n.Name)
+			al, err := sc.Server.AlertByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return al.RenameContext(ctx, newName)
+			return al.Rename(ctx, newName)
 		},
 	},
 	NodeAgentOperator: {
 		noun: "Operator",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			o, err := sc.Server.OperatorByNameContext(ctx, n.Name)
+			o, err := sc.Server.OperatorByName(ctx, n.Name)
 			if err != nil {
 				return err
 			}
-			return o.RenameContext(ctx, newName)
+			return o.Rename(ctx, newName)
 		},
 	},
 }
@@ -730,7 +730,7 @@ func dropIn(fn func(*gosmo.Database, context.Context, string, string) error) fun
 // renameObjectIn is sp_rename's 'OBJECT' class, shared by every schema-scoped
 // object that isn't a table, index, or statistic.
 func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-	return dbOf(sc, n).RenameObjectContext(ctx, n.Schema, n.Name, newName)
+	return dbOf(sc, n).RenameObject(ctx, n.Schema, n.Name, newName)
 }
 
 // typeInUseWarning is the delete warning the three type families share. Like
@@ -742,19 +742,19 @@ const typeInUseWarning = "The drop is refused while a column, parameter, variabl
 // ALTER SCHEMA ... TRANSFER needs the TYPE:: class here: a type is not in
 // sys.objects, so the default class transferObjectIn uses finds nothing.
 func transferTypeIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-	return dbOf(sc, n).TransferTypeContext(ctx, targetSchema, n.Schema, n.Name)
+	return dbOf(sc, n).TransferType(ctx, targetSchema, n.Schema, n.Name)
 }
 
 // transferObjectIn moves a schema-scoped object into another schema. Shared
 // by every family ALTER SCHEMA ... TRANSFER's default OBJECT class covers.
 func transferObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-	return dbOf(sc, n).TransferObjectContext(ctx, targetSchema, n.Schema, n.Name)
+	return dbOf(sc, n).TransferObject(ctx, targetSchema, n.Schema, n.Name)
 }
 
 // dropConstraint removes a primary key, unique constraint, foreign key, or
 // CHECK constraint — one ALTER TABLE ... DROP CONSTRAINT for all four.
 func dropConstraint(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-	return tableOf(sc, n).DropConstraintContext(ctx, n.Name)
+	return tableOf(sc, n).DropConstraint(ctx, n.Name)
 }
 
 // objectOpFor returns the Delete/Rename behaviour for a node type, or nil

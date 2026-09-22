@@ -28,15 +28,15 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			spec, err := sc.Server.ServerAuditSpecificationByNameContext(ctx, specName)
+			spec, err := sc.Server.ServerAuditSpecificationByName(ctx, specName)
 			if err != nil {
 				return nil, nil, err
 			}
-			audits, err := sc.Server.ServerAuditsContext(ctx)
+			audits, err := sc.Server.ServerAudits(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			groups, err := sc.Server.AuditActionGroupsContext(ctx)
+			groups, err := sc.Server.AuditActionGroups(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -95,16 +95,16 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 						// Dropped before added: a specification is allowed no
 						// duplicate group, and doing it the other way round leaves
 						// the set momentarily larger for no reason.
-						if err := handle.DropActionGroupsContext(ctx, drop...); err != nil {
+						if err := handle.DropActionGroups(ctx, drop...); err != nil {
 							return err
 						}
-						if err := handle.AddActionGroupsContext(ctx, add...); err != nil {
+						if err := handle.AddActionGroups(ctx, add...); err != nil {
 							return err
 						}
 					}
 
 					if auditRow.Dirty() && auditRow.Value() != missingAuditItem {
-						if err := handle.SetAuditContext(ctx, auditRow.Value()); err != nil {
+						if err := handle.SetAudit(ctx, auditRow.Value()); err != nil {
 							return err
 						}
 					}

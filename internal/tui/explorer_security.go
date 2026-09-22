@@ -22,7 +22,7 @@ func loadSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 }
 
 func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Login, error) { return l.sc.Server.LoginsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Login, error) { return l.sc.Server.Logins(l.ctx) },
 		func(login *gosmo.Login) *explorerNode {
 			n := l.node(login.Name, NodeLogin, "", login.Name, "")
 			n.data.CreateDate = login.CreateDate
@@ -32,7 +32,7 @@ func loadLoginsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 }
 
 func loadServerRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.ServerRole, error) { return l.sc.Server.ServerRolesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.ServerRole, error) { return l.sc.Server.ServerRoles(l.ctx) },
 		func(r *gosmo.ServerRole) *explorerNode {
 			n := l.node(r.Name, NodeServerRole, "", r.Name, "")
 			n.data.IsSystem = isSystemServerRole(r)
@@ -41,7 +41,7 @@ func loadServerRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 }
 
 func loadCredentialsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.Credential, error) { return l.sc.Server.CredentialsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Credential, error) { return l.sc.Server.Credentials(l.ctx) },
 		func(c *gosmo.Credential) *explorerNode {
 			n := l.node(c.Name, NodeCredential, "", c.Name, "")
 			n.data.CreateDate = c.CreateDate
@@ -59,7 +59,7 @@ func loadCredentialsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 func loadCryptographicProvidersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(
 		func() ([]*gosmo.CryptographicProvider, error) {
-			return l.sc.Server.CryptographicProvidersContext(l.ctx)
+			return l.sc.Server.CryptographicProviders(l.ctx)
 		},
 		func(p *gosmo.CryptographicProvider) *explorerNode {
 			// A disabled provider decrypts nothing, and nothing else in the
@@ -75,7 +75,7 @@ func loadCryptographicProvidersChildren(l loaderCtx, node *explorerNode) ([]*exp
 }
 
 func loadAuditsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	return listChildren(func() ([]*gosmo.ServerAudit, error) { return l.sc.Server.ServerAuditsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.ServerAudit, error) { return l.sc.Server.ServerAudits(l.ctx) },
 		func(a *gosmo.ServerAudit) *explorerNode {
 			// A disabled audit records nothing, and nothing else in the row
 			// says so — the same label the Triggers folder uses.
@@ -93,7 +93,7 @@ func loadAuditsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error
 func loadServerAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(
 		func() ([]*gosmo.ServerAuditSpecification, error) {
-			return l.sc.Server.ServerAuditSpecificationsContext(l.ctx)
+			return l.sc.Server.ServerAuditSpecifications(l.ctx)
 		},
 		func(spec *gosmo.ServerAuditSpecification) *explorerNode {
 			label := spec.Name

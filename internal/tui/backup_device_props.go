@@ -31,7 +31,7 @@ func pageBackupDeviceGeneral(sc *db.ServerConn, devName string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.BackupDeviceByNameContext(ctx, devName)
+			d, err := sc.Server.BackupDeviceByName(ctx, devName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -63,12 +63,12 @@ func pageBackupDeviceMediaContents(sc *db.ServerConn, devName string) propPage {
 	return propPage{
 		title: "Media Contents",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.BackupDeviceByNameContext(ctx, devName)
+			d, err := sc.Server.BackupDeviceByName(ctx, devName)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			headers, readErr := d.HeadersContext(ctx)
+			headers, readErr := d.Headers(ctx)
 			if readErr != nil {
 				return propsheet.NewForm(
 					propsheet.Section("Media contents"),

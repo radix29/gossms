@@ -65,11 +65,11 @@ func (d *NewColumnEncryptionKeyDialog) show(sc *db.ServerConn, node *explorerNod
 }
 
 func (d *NewColumnEncryptionKeyDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ncekPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, d.dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, d.dbName)
 	if err != nil {
 		return nil, err
 	}
-	masters, err := dbObj.ColumnMasterKeysContext(ctx)
+	masters, err := dbObj.ColumnMasterKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (d *NewColumnEncryptionKeyDialog) fetchPrefetch(ctx context.Context, sc *db
 	for i, m := range masters {
 		names[i] = m.Name
 	}
-	keys, err := dbObj.ColumnEncryptionKeysContext(ctx)
+	keys, err := dbObj.ColumnEncryptionKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (d *NewColumnEncryptionKeyDialog) buildPages(pf *ncekPrefetch) {
 			return fmt.Errorf("encrypted value: %w", err)
 		}
 		// DatabaseRef, not DatabaseByName — see New Column Master Key.
-		return sc.Server.DatabaseRef(dbName).CreateColumnEncryptionKeyContext(ctx, d.objectName(),
+		return sc.Server.DatabaseRef(dbName).CreateColumnEncryptionKey(ctx, d.objectName(),
 			[]gosmo.ColumnEncryptionKeyValue{{
 				MasterKeyName:       masterRow.Value(),
 				EncryptionAlgorithm: cekAlgorithm,

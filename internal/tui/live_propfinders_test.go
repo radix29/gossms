@@ -114,9 +114,9 @@ func TestLivePropFinders(t *testing.T) {
 		mustExec(`USE [` + dbName + `]; EXEC sp_executesql N'` + strings.ReplaceAll(stmt, "'", "''") + `'`)
 	}
 
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
-		t.Fatalf("DatabaseByNameContext: %v", err)
+		t.Fatalf("DatabaseByName: %v", err)
 	}
 
 	t.Run("findSchema", func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestLivePropFinders(t *testing.T) {
 	})
 
 	t.Run("changeTracking", func(t *testing.T) {
-		on, err := d.TableChangeTrackingForContext(ctx, "app", "child")
+		on, err := d.TableChangeTrackingFor(ctx, "app", "child")
 		if err != nil {
 			t.Fatalf("app.child: %v", err)
 		}
@@ -196,14 +196,14 @@ func TestLivePropFinders(t *testing.T) {
 		}
 		// A table with tracking off must come back as a row, not as
 		// ErrNotFound — the page shows it as "off", not as an error.
-		off, err := d.TableChangeTrackingForContext(ctx, "app", "parent")
+		off, err := d.TableChangeTrackingFor(ctx, "app", "parent")
 		if err != nil {
 			t.Fatalf("app.parent: %v", err)
 		}
 		if off.Enabled {
 			t.Errorf("app.parent = %+v, want tracking off", off)
 		}
-		if _, err := d.TableChangeTrackingForContext(ctx, "app", "nope"); !errors.Is(err, gosmo.ErrNotFound) {
+		if _, err := d.TableChangeTrackingFor(ctx, "app", "nope"); !errors.Is(err, gosmo.ErrNotFound) {
 			t.Errorf("missing table: err = %v, want ErrNotFound", err)
 		}
 	})

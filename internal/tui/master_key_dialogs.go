@@ -134,7 +134,7 @@ func (d *BackupMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 		if err != nil {
 			return err
 		}
-		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().BackupContext(ctx,
+		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().Backup(ctx,
 			strings.TrimSpace(fileField.Value()), scriptSafePassword(ctx, encPass.Value()), open)
 	}
 }
@@ -202,7 +202,7 @@ func (d *RegenerateMasterKeyDialog) buildPages(pf *masterKeyPrefetch) {
 		if err != nil {
 			return err
 		}
-		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().RegenerateContext(ctx,
+		return d.sc.Server.DatabaseRef(d.dbName).MasterKeyRef().Regenerate(ctx,
 			scriptSafePassword(ctx, newPass.Value()), force.Checked(), open)
 	}
 }

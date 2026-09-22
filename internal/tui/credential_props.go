@@ -26,7 +26,7 @@ func credentialPropPages(sc *db.ServerConn, credName string) []propPage {
 
 // findCredential resolves credName to a *gosmo.Credential.
 func findCredential(ctx context.Context, sc *db.ServerConn, credName string) (*gosmo.Credential, error) {
-	return sc.Server.CredentialByNameContext(ctx, credName)
+	return sc.Server.CredentialByName(ctx, credName)
 }
 
 // credentialFacts is everything a Credential Properties > General page shows,
@@ -165,6 +165,6 @@ func pageCredentialGeneral(sc *db.ServerConn, credName *string) propPage {
 		},
 		func(ctx context.Context, identity string, secret *string) error {
 			// CredentialRef, the name-only handle, not the by-name read.
-			return sc.Server.CredentialRef(*credName).AlterContext(ctx, identity, secret)
+			return sc.Server.CredentialRef(*credName).Alter(ctx, identity, secret)
 		})
 }

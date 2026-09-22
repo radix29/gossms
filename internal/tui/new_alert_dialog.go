@@ -26,7 +26,7 @@ type nalertPrefetch struct {
 }
 
 func fetchNewAlertPrefetch(ctx context.Context, sc *db.ServerConn) (*nalertPrefetch, error) {
-	alerts, err := sc.Server.AlertsContext(ctx)
+	alerts, err := sc.Server.Alerts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func fetchNewAlertPrefetch(ctx context.Context, sc *db.ServerConn) (*nalertPrefe
 	if err != nil {
 		return nil, err
 	}
-	cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassAlert)
+	cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassAlert)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func fetchNewAlertPrefetch(ctx context.Context, sc *db.ServerConn) (*nalertPrefe
 	for i, c := range cats {
 		catNames[i] = c.Name
 	}
-	ops, err := sc.Server.OperatorsContext(ctx)
+	ops, err := sc.Server.Operators(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 		if categoryRow.Selected() != 0 {
 			req.Category = categoryRow.Value()
 		}
-		_, err := sc.Server.CreateAlertContext(ctx, req)
+		_, err := sc.Server.CreateAlert(ctx, req)
 		return err
 	}
 
@@ -151,7 +151,7 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 			if !v[0] {
 				continue
 			}
-			if err := al.NotifyContext(ctx, pf.operatorNames[i], gosmo.NotifyMethodEmail); err != nil {
+			if err := al.Notify(ctx, pf.operatorNames[i], gosmo.NotifyMethodEmail); err != nil {
 				return err
 			}
 		}

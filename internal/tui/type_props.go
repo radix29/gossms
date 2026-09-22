@@ -27,39 +27,39 @@ import (
 // there is nothing to show about `int` that its name does not already say.
 
 // findUserDefinedDataType resolves an alias type, saving its callers the
-// DatabaseByNameContext step. The pattern every finder in this file follows,
+// DatabaseByName step. The pattern every finder in this file follows,
 // and the reason the Detail Browser and this dialog can never disagree about
 // which object a node names.
 func findUserDefinedDataType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.UserDefinedDataType, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.UserDefinedDataTypeByNameContext(ctx, schema, name)
+	return d.UserDefinedDataTypeByName(ctx, schema, name)
 }
 
 func findUserDefinedTableType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.UserDefinedTableType, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.UserDefinedTableTypeByNameContext(ctx, schema, name)
+	return d.UserDefinedTableTypeByName(ctx, schema, name)
 }
 
 func findClrType(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.ClrType, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.ClrTypeByNameContext(ctx, schema, name)
+	return d.ClrTypeByName(ctx, schema, name)
 }
 
 func findXMLSchemaCollection(ctx context.Context, sc *db.ServerConn, dbName, schema, name string) (*gosmo.XMLSchemaCollection, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.XMLSchemaCollectionByNameContext(ctx, schema, name)
+	return d.XMLSchemaCollectionByName(ctx, schema, name)
 }
 
 // findSystemDataType picks one built-in type out of the instance's list.
@@ -67,11 +67,11 @@ func findXMLSchemaCollection(ctx context.Context, sc *db.ServerConn, dbName, sch
 // as a list and nothing else — so this is the whole listing filtered, not a
 // second query shape. The Detail Browser is its only caller.
 func findSystemDataType(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.SystemDataType, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	types, err := d.SystemDataTypesContext(ctx)
+	types, err := d.SystemDataTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func pageTableTypeGeneral(sc *db.ServerConn, dbName, schema, name string) propPa
 
 // pageTableTypeColumns is the type's shape. The columns come from the
 // internal table sys.table_types points at, not from the type's own id — see
-// gosmo's UserDefinedTableType.ColumnsContext, where reaching for the obvious
+// gosmo's UserDefinedTableType.Columns, where reaching for the obvious
 // id returns nothing at all.
 func pageTableTypeColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 	return propPage{
@@ -160,7 +160,7 @@ func pageTableTypeColumns(sc *db.ServerConn, dbName, schema, name string) propPa
 			if err != nil {
 				return nil, nil, err
 			}
-			cols, err := t.ColumnsContext(ctx)
+			cols, err := t.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -253,7 +253,7 @@ func pageXMLSchemaCollectionSchema(sc *db.ServerConn, dbName, schema, name strin
 			if err != nil {
 				return nil, nil, err
 			}
-			def, err := c.DefinitionContext(ctx)
+			def, err := c.Definition(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -38,7 +38,7 @@ func TestSelectStatementAtCursorGoSeparated(t *testing.T) {
 
 func TestSelectStatementAtCursorIgnoresGoLikeIdentifier(t *testing.T) {
 	// "goto_flag" starts with "go" but isn't a standalone GO separator —
-	// mirrors go-mssqldb's batch.Split treatment of "goto"/"gone".
+	// the same rule the executor splits batches by (sqltext.GoSeparatorAt).
 	e := newTestEditor("SELECT goto_flag\nFROM t;")
 
 	e.cursorRow, e.cursorCol = 1, 0
@@ -199,7 +199,7 @@ func TestSelectStatementAtCursorNoOpOnBlankSeparatorLine(t *testing.T) {
 }
 
 // Ctrl+Enter's own GO detection is already inside the state machine — the
-// isGoSeparatorLine test at the top of the line loop only runs in stNormal —
+// sqltext.IsGoSeparatorLine test at the top of the line loop only runs in stNormal —
 // so a GO commented out with a block comment never splits a statement in two.
 // Pinned here because the completion-side scan in internal/tui had exactly
 // this bug and the two rules are meant to stay in step.
@@ -216,62 +216,17 @@ func TestSelectStatementAtCursorIgnoresGoInsideBlockComment(t *testing.T) {
 	}
 }
 
-// goSeparatorLineCases is the definition of a "GO" batch separator, shared
-// verbatim with internal/tui/sqlparse's TestGoSeparatorLineCases. The
-// two implementations are duplicated because tuikit must not import tui, so
-// the table is what keeps them from drifting apart; change one list and the
-// other package fails.
-//
-// The executor's own splitter (github.com/microsoft/go-mssqldb/batch.Split) is
-// looser, and deliberately not copied — measured against v1.11.0, it also
-// splits on "GO;", "GO x", "GO_" and "GO/*c*/", each of which leaves the junk
-// at the head of the next batch for the server to reject, and it reads "GO5"
-// as a repeat count of 5 while refusing "GO -- 5 items" because of the digit
-// in the comment.
-var goSeparatorLineCases = []struct {
-	line string
-	want bool
-}{
-	{"GO", true},
-	{"go", true},
-	{"Go", true},
-	{"gO", true},
-	{" GO ", true},
-	{"\tGO\t", true},
-	{"  go  ", true},
-	{"GO 5", true},
-	{"GO 5 ", true},
-	{"GO\t10", true},
-	{"GO 0", true},
-	{"GO -- comment", true},
-	{"GO--x", true},
-	{"GO -- 5 items", true},
-	{"GO 5 -- twice", true},
-	{"", false},
-	{" ", false},
-	{"\t", false},
-	{"G", false},
-	{"O", false},
-	{"G O", false},
-	{"GOO", false},
-	{"GOTO", false},
-	{"gone", false},
-	{"XGO", false},
-	{"SELECT 1", false},
-	{"GO5", false},
-	{"GO_", false},
-	{"GO x", false},
-	{"GO 5x", false},
-	{"GO;", false},
-	{";GO", false},
-	{"GO/*c*/", false},
-	{"\uff27\uff2f", false},
-}
+// T-SQL nests block comments, so the first "*/" closes only the inner one and
+// the GO below it is still commented out — as the executor splits it.
+func TestSelectStatementAtCursorIgnoresGoInsideNestedBlockComment(t *testing.T) {
+	const script = "SELECT 1\n/* /* */\nGO\n*/\nFROM dbo.T"
+	e := newTestEditor(script)
 
-func TestGoSeparatorLineCases(t *testing.T) {
-	for _, tt := range goSeparatorLineCases {
-		if got := isGoSeparatorLine([]rune(tt.line)); got != tt.want {
-			t.Errorf("isGoSeparatorLine(%q) = %v, want %v", tt.line, got, tt.want)
-		}
+	e.cursorRow, e.cursorCol = 4, 2
+	if !e.SelectStatementAtCursor() {
+		t.Fatal("expected a statement to be selected")
+	}
+	if got := e.SelectedText(); got != script {
+		t.Fatalf("statement = %q, want the whole script %q — the GO in the nested comment split it", got, script)
 	}
 }

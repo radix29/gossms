@@ -53,7 +53,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *
 		ctx, cancel := context.WithTimeout(fetchCtx, childFetchTimeout)
 		defer cancel()
 
-		dbObj, err := sc.Server.DatabaseByNameContext(ctx, data.DBName)
+		dbObj, err := sc.Server.DatabaseByName(ctx, data.DBName)
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -62,7 +62,7 @@ func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *
 		// filterObjects below either way — see nodeFilter.pushdown. The kind
 		// is what makes the pane agree with the tree: the Tables folder lists
 		// the plain user tables only, and each sub-folder its own family.
-		tables, err := dbObj.TablesOfKindFilteredContext(ctx, tableKindForNode(data.Type), serverFilter(data.Filter))
+		tables, err := dbObj.TablesOfKindFiltered(ctx, tableKindForNode(data.Type), serverFilter(data.Filter))
 		if err != nil {
 			db.postFinal(app, node, seq, nil, nil, err)
 			return
@@ -86,8 +86,8 @@ func (db *DetailBrowser) loadTablesFolderDetails(fetchCtx context.Context, app *
 		// they're independent queries and one answering is better than
 		// neither. A table absent from a map has no allocated pages at all,
 		// which reads as zero, not as a failure.
-		counts, countsErr := dbObj.TableRowCountsContext(ctx)
-		space, spaceErr := dbObj.TableSpaceUsedAllContext(ctx)
+		counts, countsErr := dbObj.TableRowCounts(ctx)
+		space, spaceErr := dbObj.TableSpaceUsedAll(ctx)
 
 		// rows is written inside the posted closure, so every write lands on
 		// the UI goroutine — the same one Draw runs on. cacheOnlyObjects's own post

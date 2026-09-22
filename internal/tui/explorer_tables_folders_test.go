@@ -38,7 +38,7 @@ func folderName(t NodeType) string {
 	return nodeTypeName(t)
 }
 
-// tablesPresenceResp answers Database.TableKindsPresentContext. It is matched
+// tablesPresenceResp answers Database.TableKindsPresent. It is matched
 // on the aggregate's own text and must be scripted *before* the listing
 // answer: responses match by substring in order, and both queries read
 // "FROM   sys.tables t".

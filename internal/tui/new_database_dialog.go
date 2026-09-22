@@ -32,7 +32,7 @@ type ndbPrefetch struct {
 }
 
 func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefetch, error) {
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 		existing[strings.ToLower(d.Name)] = true
 	}
 
-	logins, err := sc.Server.LoginsContext(ctx)
+	logins, err := sc.Server.Logins(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +51,11 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 	}
 	slices.Sort(loginNames)
 
-	model, err := sc.Server.DatabaseByNameContext(ctx, "model")
+	model, err := sc.Server.DatabaseByName(ctx, "model")
 	if err != nil {
 		return nil, err
 	}
-	modelOpts, err := model.OptionsContext(ctx)
+	modelOpts, err := model.Options(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -54,7 +54,7 @@ func serverRolePropPages(sc *db.ServerConn, roleName string) []propPage {
 // findServerRole resolves roleName to a *gosmo.ServerRole, the one lookup
 // every page on this dialog needs first.
 func findServerRole(ctx context.Context, sc *db.ServerConn, roleName string) (*gosmo.ServerRole, error) {
-	return sc.Server.ServerRoleByNameContext(ctx, roleName)
+	return sc.Server.ServerRoleByName(ctx, roleName)
 }
 
 // serverPrincipalNames returns every server principal (login or server
@@ -78,15 +78,15 @@ func pageServerRoleGeneral(sc *db.ServerConn, roleName *string) propPage {
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			roles, err := sc.Server.ServerRolesContext(ctx)
+			roles, err := sc.Server.ServerRoles(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			perms, err := sc.Server.ServerPermissionsContext(ctx)
+			perms, err := sc.Server.ServerPermissions(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
@@ -131,15 +131,15 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 	return propPage{
 		title: "Members",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			members, err := sc.Server.ServerRoleMembersContext(ctx, *roleName)
+			members, err := sc.Server.ServerRoleMembers(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := sc.Server.ServerRolesContext(ctx)
+			roles, err := sc.Server.ServerRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -166,10 +166,10 @@ func pageServerRoleMembers(sc *db.ServerConn, roleName *string) propPage {
 				principalType: principalType,
 				note:          "Add a login or another server role from the dropdown, or select a row above and Remove it.",
 				add: func(ctx context.Context, name string) error {
-					return sc.Server.AddServerRoleMemberContext(ctx, *roleName, name)
+					return sc.Server.AddServerRoleMember(ctx, *roleName, name)
 				},
 				remove: func(ctx context.Context, name string) error {
-					return sc.Server.RemoveServerRoleMemberContext(ctx, *roleName, name)
+					return sc.Server.RemoveServerRoleMember(ctx, *roleName, name)
 				},
 			})
 			return f, apply, nil
@@ -181,11 +181,11 @@ func pageServerRoleOwnedRoles(sc *db.ServerConn, roleName *string) propPage {
 	return propPage{
 		title: "Owned Roles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			allRoles, err := sc.Server.ServerRolesContext(ctx)
+			allRoles, err := sc.Server.ServerRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -208,7 +208,7 @@ func pageServerRoleOwnedRoles(sc *db.ServerConn, roleName *string) propPage {
 				ItemSection: "Selected role",
 				Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
 				ChangeOwner: func(ctx context.Context, r *gosmo.ServerRole, newOwner string) error {
-					return r.ChangeOwnerContext(ctx, newOwner)
+					return r.ChangeOwner(ctx, newOwner)
 				},
 			})
 			return f, apply, nil

@@ -460,7 +460,7 @@ func (d *NewAGDialog) buildBackupPage(pf *newAGPrefetch) {
 // the two states that would produce a group that looks created and never
 // connects: no endpoint at all, and one that is not started.
 func replicaEndpoint(ctx context.Context, sc *db.ServerConn) (*gosmo.DatabaseMirroringEndpoint, error) {
-	ep, err := sc.Server.DatabaseMirroringEndpointContext(ctx)
+	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		return nil, err
 	}

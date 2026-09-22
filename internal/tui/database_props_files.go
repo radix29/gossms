@@ -22,7 +22,7 @@ const logFileType = "LOG"
 
 // addableFileTypes are the file types the picker offers — the two
 // sys.database_files reports that ALTER DATABASE ... ADD FILE names in the
-// statement itself. It is not the set of types a file can *have*: FilesContext
+// statement itself. It is not the set of types a file can *have*: Files
 // also reports FILESTREAM, so the picker is widened for display when a selected
 // file's type is outside this list.
 var addableFileTypes = []string{"ROWS", logFileType}
@@ -215,19 +215,19 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Files",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			opts, err := d.OptionsContext(ctx)
+			opts, err := d.Options(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			files, err := d.FilesContext(ctx)
+			files, err := d.Files(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			fgs, err := d.FileGroupsContext(ctx)
+			fgs, err := d.FileGroups(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -307,7 +307,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 					return
 				}
 				// Widened for the same reason as the type picker: a file can
-				// sit in a filegroup FileGroupsContext didn't list, and a
+				// sit in a filegroup FileGroups didn't list, and a
 				// stand-in name would read as the server's answer.
 				items, i := preservingItems(fgNames, fileGroup)
 				filegroupSelect.SetItems(items)
@@ -538,18 +538,18 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 
 			apply := func(ctx context.Context) error {
 				commitCurrent()
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
 				for _, e := range edits {
 					switch {
 					case e.pendingRemove && !e.isNew:
-						if err := d.RemoveFileContext(ctx, e.origName); err != nil {
+						if err := d.RemoveFile(ctx, e.origName); err != nil {
 							return err
 						}
 					case e.isNew && !e.pendingRemove:
-						if err := d.AddFileContext(ctx, e.spec()); err != nil {
+						if err := d.AddFile(ctx, e.spec()); err != nil {
 							return err
 						}
 					case !e.isNew && !e.pendingRemove:
@@ -559,7 +559,7 @@ func pageDatabaseFiles(sc *db.ServerConn, dbName string) propPage {
 						// Addressed by origName, not name: a rename is carried
 						// inside the modify as NEWNAME, so the file still
 						// answers to its old name at this point.
-						if err := d.AlterFileContext(ctx, e.origName, e.modify()); err != nil {
+						if err := d.AlterFile(ctx, e.origName, e.modify()); err != nil {
 							return err
 						}
 					}

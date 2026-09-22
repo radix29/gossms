@@ -18,11 +18,11 @@ import (
 // it. The page is named in prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findContract(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.ServiceContract, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.ContractByNameContext(ctx, name)
+	return d.ContractByName(ctx, name)
 }
 
 func contractPropPages(sc *db.ServerConn, dbName, name string) []propPage {

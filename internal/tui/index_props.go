@@ -108,7 +108,7 @@ func (r rebuildOptions) apply(ctx context.Context, t *gosmo.Table, idx *gosmo.In
 	if compressionDirty {
 		compression = r.compression.Value()
 	}
-	return idx.RebuildWithOptionsContext(ctx, t, int(fillFactor), r.pad.Checked(), compression)
+	return idx.RebuildWithOptions(ctx, t, int(fillFactor), r.pad.Checked(), compression)
 }
 
 // indexPropPages builds the page set for Index Properties. There's no
@@ -144,7 +144,7 @@ func findIndex(ctx context.Context, sc *db.ServerConn, dbName, schema, table, na
 	if err != nil {
 		return nil, nil, err
 	}
-	idx, err := t.IndexByNameContext(ctx, name)
+	idx, err := t.IndexByName(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -231,11 +231,11 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 					return err
 				}
 				if ignoreDupRow != nil && (ignoreDupRow.Dirty() || rowLocksRow.Dirty() || pageLocksRow.Dirty()) {
-					if err := idx.SetOptionsContext(ctx, t, ignoreDupRow.Checked(), rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
+					if err := idx.SetOptions(ctx, t, ignoreDupRow.Checked(), rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
 						return err
 					}
 				} else if ignoreDupRow == nil && (rowLocksRow.Dirty() || pageLocksRow.Dirty()) {
-					if err := idx.SetLockOptionsContext(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
+					if err := idx.SetLockOptions(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
 						return err
 					}
 				}
@@ -259,7 +259,7 @@ func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *str
 			if err != nil {
 				return nil, nil, err
 			}
-			info, err := idx.StorageInfoContext(ctx, t)
+			info, err := idx.StorageInfo(ctx, t)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -304,7 +304,7 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 			if err != nil {
 				return nil, nil, err
 			}
-			cols, err := t.ColumnsContext(ctx)
+			cols, err := t.Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -355,7 +355,7 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 						newIncluded = append(newIncluded, c.Name)
 					}
 				}
-				return idx.SetIncludedColumnsContext(ctx, t, newIncluded)
+				return idx.SetIncludedColumns(ctx, t, newIncluded)
 			}
 			return f, apply, nil
 		},
@@ -394,7 +394,7 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 			if err != nil {
 				return nil, nil, err
 			}
-			frag, err := idx.FragmentationContext(ctx, t, "SAMPLED")
+			frag, err := idx.Fragmentation(ctx, t, "SAMPLED")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -409,19 +409,19 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 
 			statusRow := propsheet.Static("Last action", "")
 			rebuildBtn := d.asyncStatusButton("Rebuild", statusRow, "Rebuilding...", func(ctx context.Context) (string, error) {
-				if err := idx.RebuildContext(ctx, t, 0); err != nil {
+				if err := idx.Rebuild(ctx, t, 0); err != nil {
 					return "", err
 				}
 				return "Rebuild complete", nil
 			})
 			reorgBtn := d.asyncStatusButton("Reorganize", statusRow, "Reorganizing...", func(ctx context.Context) (string, error) {
-				if err := idx.ReorganizeContext(ctx, t); err != nil {
+				if err := idx.Reorganize(ctx, t); err != nil {
 					return "", err
 				}
 				return "Reorganize complete", nil
 			})
 			updateStatsBtn := d.asyncStatusButton("Update Statistics", statusRow, "Updating statistics...", func(ctx context.Context) (string, error) {
-				if err := idx.UpdateStatisticsContext(ctx, t); err != nil {
+				if err := idx.UpdateStatistics(ctx, t); err != nil {
 					return "", err
 				}
 				return "Statistics updated", nil

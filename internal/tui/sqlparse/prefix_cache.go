@@ -7,8 +7,7 @@ import "sort"
 //
 // It mirrors controls.TextRevision field for field; the query panel converts
 // at the one call site. A lexer over runes has no business importing a widget
-// package to name a cache key — the same reason goSeparatorLineAt is
-// duplicated in controls.
+// package to name a cache key.
 type TextRevision struct {
 	// Doc identifies the buffer. Compared, never dereferenced, so it must be
 	// comparable — a pointer, in practice. A zero Doc means "no identity" and

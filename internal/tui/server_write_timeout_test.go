@@ -56,7 +56,7 @@ func TestServerWriteContextOutlivesAFolderRead(t *testing.T) {
 // to have, by file. The declaration itself counts as one, which is why
 // app_explorer_data.go is one higher than its two reads.
 //
-// Every entry is a *read*, with one deliberate exception noted below. Writes go
+// Every entry is a *read*. Writes go
 // through serverWriteContext, and nothing at run time tells the two budgets
 // apart: the wrong one only shows as a write abandoned part-done, against a
 // server slow enough to reach it. The habit that put the read's timeout on the
@@ -67,12 +67,9 @@ func TestServerWriteContextOutlivesAFolderRead(t *testing.T) {
 // commit. A new write does not appear here at all — it wants
 // serverWriteContext.
 //
-// The exception is restore_dialog_ops.go's seventh reference, the
-// SET MULTI_USER after a failed restore. That one is a *repair* and is on the
-// short budget deliberately, for the reason gosmo's Server.restoreMultiUser
-// gives for its own 10s: the caller still holds the single-user slot, so the
-// ALTER has nothing to wait for, and a repair that hangs is worse than one that
-// gives up.
+// restore_dialog_ops.go had a seventh, the dialog's own SET MULTI_USER after a
+// failed restore, deliberately on the short budget. The repair is gosmo's now
+// (RestoreOptions.CloseExistingConnections), on gosmo's own 10s.
 var readTimeoutSites = map[string]int{
 	"alwayson_menu.go":     2,
 	"app_connections.go":   1,
@@ -90,7 +87,7 @@ var readTimeoutSites = map[string]int{
 	"detail_browser_tables.go":    1,
 	"explorer_object_actions.go":  1,
 	"properties_dialog.go":        1,
-	"restore_dialog_ops.go":       7,
+	"restore_dialog_ops.go":       6,
 	"scripting.go":                1,
 }
 

@@ -11,7 +11,7 @@ import (
 // others succeed; a live server can't produce that, so fakeResponse.err scoped
 // by arg does.
 
-// jobSchedulesResponses answers Job.SchedulesContext; failFor, if set, is the
+// jobSchedulesResponses answers Job.Schedules; failFor, if set, is the
 // job_id whose read fails.
 func jobSchedulesResponses(failFor string, withSchedule ...string) []fakeResponse {
 	const match = "WHERE  js.job_id = @p1"

@@ -28,7 +28,7 @@ func findForeignKey(ctx context.Context, sc *db.ServerConn, dbName, schema, tabl
 	if err != nil {
 		return nil, nil, err
 	}
-	fk, err := t.ForeignKeyByNameContext(ctx, name)
+	fk, err := t.ForeignKeyByName(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}

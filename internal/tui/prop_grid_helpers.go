@@ -306,7 +306,7 @@ func buildFilterInfoForm(d *PropDialog, t *gosmo.Table, hasFilter bool, filterDe
 		if filterDef == "" {
 			return "", fmt.Errorf("no filter expression to check")
 		}
-		if err := t.CheckWhereSyntaxContext(ctx, filterDef); err != nil {
+		if err := t.CheckWhereSyntax(ctx, filterDef); err != nil {
 			return "", err
 		}
 		return "Valid", nil
@@ -315,7 +315,7 @@ func buildFilterInfoForm(d *PropDialog, t *gosmo.Table, hasFilter bool, filterDe
 		if filterDef == "" {
 			return "", fmt.Errorf("no filter expression to estimate")
 		}
-		n, err := t.CountWhereContext(ctx, filterDef)
+		n, err := t.CountWhere(ctx, filterDef)
 		if err != nil {
 			return "", err
 		}

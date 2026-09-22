@@ -57,11 +57,11 @@ func userPropPages(d *PropDialog, sc *db.ServerConn, dbName, userName string) []
 // findUser resolves dbName/userName to a *gosmo.User, the one lookup
 // every page on this dialog needs first.
 func findUser(ctx context.Context, sc *db.ServerConn, dbName, userName string) (*gosmo.User, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.UserByNameContext(ctx, userName)
+	return d.UserByName(ctx, userName)
 }
 
 func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPage {
@@ -69,27 +69,27 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 		title:   "General",
 		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			u, err := d.UserByNameContext(ctx, *userName)
+			u, err := d.UserByName(ctx, *userName)
 			if err != nil {
 				return nil, nil, err
 			}
-			schemas, err := d.SchemasContext(ctx)
+			schemas, err := d.Schemas(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			securables, err := d.PermissionsForPrincipalContext(ctx, *userName)
+			securables, err := d.PermissionsForPrincipal(ctx, *userName)
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -198,17 +198,17 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 						return err
 					}
 					if schema, ok := changedTo(schemaRow, unsetItem); ok {
-						if err := u.SetDefaultSchemaContext(ctx, schema); err != nil {
+						if err := u.SetDefaultSchema(ctx, schema); err != nil {
 							return err
 						}
 					}
 					if login, ok := changedTo(loginRow, noneItem); ok {
-						if err := u.SetLoginContext(ctx, login); err != nil {
+						if err := u.SetLogin(ctx, login); err != nil {
 							return err
 						}
 					}
 					if nameRow.Dirty() {
-						if err := u.RenameContext(ctx, nameRow.Value()); err != nil {
+						if err := u.Rename(ctx, nameRow.Value()); err != nil {
 							return err
 						}
 						commitRename(ctx, userName, nameRow.Value())
@@ -235,11 +235,11 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 	return propPage{
 		title: "Membership",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			allRoles, err := d.DatabaseRolesContext(ctx)
+			allRoles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -296,7 +296,7 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 			)
 
 			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
@@ -307,11 +307,11 @@ func pageUserMembership(sc *db.ServerConn, dbName string, userName *string) prop
 						continue
 					}
 					if member {
-						if err := d.AddRoleMemberContext(ctx, roles[i].Name, *userName); err != nil {
+						if err := d.AddRoleMember(ctx, roles[i].Name, *userName); err != nil {
 							return err
 						}
 					} else {
-						if err := d.RemoveRoleMemberContext(ctx, roles[i].Name, *userName); err != nil {
+						if err := d.RemoveRoleMember(ctx, roles[i].Name, *userName); err != nil {
 							return err
 						}
 					}

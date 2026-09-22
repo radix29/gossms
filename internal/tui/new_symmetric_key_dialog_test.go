@@ -37,7 +37,7 @@ func scriptNewSymmetricKey(t *testing.T, d *NewSymmetricKeyDialog) []string {
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	return script.Statements
+	return script.Statements()
 }
 
 // Every encryptor at once, in gosmo's order, each secret a placeholder — and
@@ -57,7 +57,7 @@ func TestNewSymmetricKeyScriptsEveryEncryptionWithPlaceholders(t *testing.T) {
 	editText(t, f, "Confirm identity value", "the identity")
 
 	stmts := scriptNewSymmetricKey(t, d)
-	want := "USE [keydb];\nCREATE SYMMETRIC KEY [k1] WITH ALGORITHM = AES_128, " +
+	want := "USE [keydb];\nGO\nCREATE SYMMETRIC KEY [k1] WITH ALGORITHM = AES_128, " +
 		"KEY_SOURCE = N'<insert key source here>', IDENTITY_VALUE = N'<insert identity value here>' " +
 		"ENCRYPTION BY CERTIFICATE [cert_b], PASSWORD = N'<insert password here>', ASYMMETRIC KEY [asym_b]"
 	if len(stmts) != 1 || stmts[0] != want {
@@ -77,7 +77,7 @@ func TestNewSymmetricKeyDefaults(t *testing.T) {
 	editSelect(t, d.forms[0], "Asymmetric key", "asym_b")
 
 	stmts := scriptNewSymmetricKey(t, d)
-	want := "USE [keydb];\nCREATE SYMMETRIC KEY [k1] WITH ALGORITHM = AES_256 ENCRYPTION BY ASYMMETRIC KEY [asym_b]"
+	want := "USE [keydb];\nGO\nCREATE SYMMETRIC KEY [k1] WITH ALGORITHM = AES_256 ENCRYPTION BY ASYMMETRIC KEY [asym_b]"
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}

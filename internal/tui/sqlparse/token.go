@@ -1,10 +1,10 @@
 package sqlparse
 
 import (
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,13 @@ type lexResult struct {
 // nothing measurable.
 func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, tokens *[]Token, gs goScan, onBoundary func(off int, isGo bool)) lexResult {
 	state := initial
+	// depth is the block-comment nesting level: T-SQL nests them, so
+	// "/* /* */ GO */" is one comment and its GO no separator. Every caller
+	// starts in LexNormal; one starting inside a comment is at level 1.
+	depth := 0
+	if initial == LexBlockComment {
+		depth = 1
+	}
 	quoteStart := 0
 	semiStart := from
 	firstGo, lastGo := -1, 0
@@ -185,7 +192,7 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 		if !gs.enabled() || !gs.covers(start) {
 			return
 		}
-		next, ok := goSeparatorLineAt(buf, start, upTo)
+		next, _, ok := sqltext.GoSeparatorAt(buf, start, upTo)
 		if !ok {
 			return
 		}
@@ -234,10 +241,16 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 			i++
 			continue
 		case LexBlockComment:
-			if c == '*' && i+1 < upTo && buf[i+1] == '/' {
-				state = LexNormal
+			switch {
+			case c == '/' && i+1 < upTo && buf[i+1] == '*':
+				depth++
 				i += 2
-			} else {
+			case c == '*' && i+1 < upTo && buf[i+1] == '/':
+				if depth--; depth == 0 {
+					state = LexNormal
+				}
+				i += 2
+			default:
 				i++
 			}
 			continue
@@ -287,7 +300,7 @@ func lexSQL(buf []rune, from, upTo int, stopAtSemicolon bool, initial LexState, 
 			state = LexLineComment
 			i += 2
 		case c == '/' && i+1 < upTo && buf[i+1] == '*':
-			state = LexBlockComment
+			state, depth = LexBlockComment, 1
 			i += 2
 		case c == '\'':
 			state = LexSingleQuote
@@ -399,56 +412,6 @@ func StatementEndOffset(lines [][]rune, buf []rune, cursorRow, upTo int) int {
 		end = r.firstGo
 	}
 	return end
-}
-
-// goSeparatorLineAt reports whether the line beginning at buf[start] — running
-// to the next '\n' or to limit — is a "GO" batch separator, and returns the
-// offset of the line after it.
-//
-// A separator is optional leading whitespace, "GO" (case-insensitive, and not
-// the head of a longer word like "goto" or "gone"), then only whitespace, an
-// optional repeat count, and/or a trailing line comment. Same rule as
-// controls.isGoSeparatorLine, which the editor selects and executes statements
-// by; duplicated because tuikit must not import tui, and TestGoSeparatorLineCases
-// in each package pins the same lines so a change to one fails in the other.
-//
-// The scan bails on the first rune that can't be part of a separator, so an
-// ordinary line costs a rune or two rather than a walk to its end: this runs
-// once per line of the whole prefix on every keystroke while the popup is open.
-func goSeparatorLineAt(buf []rune, start, limit int) (int, bool) {
-	i := start
-	for i < limit && buf[i] != '\n' && unicode.IsSpace(buf[i]) {
-		i++
-	}
-	if i+1 >= limit ||
-		(buf[i] != 'G' && buf[i] != 'g') ||
-		(buf[i+1] != 'O' && buf[i+1] != 'o') {
-		return 0, false
-	}
-	i += 2
-	if i < limit && (unicode.IsLetter(buf[i]) || unicode.IsDigit(buf[i]) || buf[i] == '_') {
-		return 0, false
-	}
-	for i < limit && buf[i] != '\n' {
-		switch {
-		case unicode.IsSpace(buf[i]), unicode.IsDigit(buf[i]):
-			i++
-		case buf[i] == '-' && i+1 < limit && buf[i+1] == '-':
-			// The rest of the line is a comment; skip to its end.
-			for i < limit && buf[i] != '\n' {
-				i++
-			}
-		default:
-			return 0, false
-		}
-	}
-	return min(i+1, limit), true
-}
-
-// isGoSeparatorLine applies goSeparatorLineAt's rule to a standalone line.
-func isGoSeparatorLine(line []rune) bool {
-	_, ok := goSeparatorLineAt(line, 0, len(line))
-	return ok
 }
 
 // PrefixScan is everything the query editor's completion provider needs to

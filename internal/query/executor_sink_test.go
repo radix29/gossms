@@ -60,6 +60,8 @@ type fakeMsgConn struct {
 	invalid   bool
 	failExec  string
 	execs     []string
+	// batchTexts is the text of every scripted batch QueryContext served, in order.
+	batchTexts []string
 }
 
 func (c *fakeMsgConn) Prepare(string) (driver.Stmt, error) { return nil, errFakeMsgUnsupported }
@@ -117,6 +119,7 @@ func (c *fakeMsgConn) QueryContext(ctx context.Context, q string, _ []driver.Nam
 	}
 	script := c.batches[c.next]
 	c.next++
+	c.batchTexts = append(c.batchTexts, q)
 
 	rows := &fakeMsgRows{}
 	for _, m := range script {

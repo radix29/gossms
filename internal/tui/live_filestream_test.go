@@ -6,7 +6,7 @@
 // Everything the page knows about a FILESTREAM file came from a hand-written
 // sys.database_files until 2026-09-05: that a file's type_desc is FILESTREAM,
 // that its physical name is a directory, that its size and growth are zero, and
-// that FileGroupsContext lists the filegroup at all. All four are now measured
+// that FileGroups lists the filegroup at all. All four are now measured
 // here, and so is the statement the page builds for a new one — SIZE and
 // FILEGROWTH on a FILESTREAM file are refused with Msg 5509, which no fake can
 // discover.
@@ -80,13 +80,13 @@ func TestLiveFilestreamFilesPage(t *testing.T) {
 
 	// -- what gosmo reports, which is what the page's pickers are built from --
 
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		t.Fatalf("DatabaseByName: %v", err)
 	}
-	fgs, err := d.FileGroupsContext(ctx)
+	fgs, err := d.FileGroups(ctx)
 	if err != nil {
-		t.Fatalf("FileGroupsContext: %v", err)
+		t.Fatalf("FileGroups: %v", err)
 	}
 	var fsGroup *gosmo.FileGroup
 	for _, fg := range fgs {
@@ -98,15 +98,15 @@ func TestLiveFilestreamFilesPage(t *testing.T) {
 	// built from these names, and a FILESTREAM filegroup missing from them
 	// would leave the page unable to name where such a file lives.
 	if fsGroup == nil {
-		t.Fatalf("FileGroupsContext did not return the FILESTREAM filegroup; got %v", fgs)
+		t.Fatalf("FileGroups did not return the FILESTREAM filegroup; got %v", fgs)
 	}
 	if !fsGroup.IsFileStream() {
 		t.Errorf("fsdata reports type %q, want %q", fsGroup.Type, gosmo.FileStreamFileGroup)
 	}
 
-	files, err := d.FilesContext(ctx)
+	files, err := d.Files(ctx)
 	if err != nil {
-		t.Fatalf("FilesContext: %v", err)
+		t.Fatalf("Files: %v", err)
 	}
 	var fsFile *gosmo.DatabaseFileInfo
 	for _, f := range files {
@@ -144,7 +144,7 @@ func TestLiveFilestreamFilesPage(t *testing.T) {
 		t.Errorf("the grid reports the real FILESTREAM file as %q/%q", row[typeCol], row[fgCol])
 	}
 
-	// Onto the data file first: FilesContext orders by type_desc, so the page
+	// Onto the data file first: Files orders by type_desc, so the page
 	// opens on the FILESTREAM file and its Filegroup picker already reads
 	// fsdata — starting there would leave the picker undirtied and prove
 	// nothing about the choice being what decides the file's type.
@@ -161,9 +161,9 @@ func TestLiveFilestreamFilesPage(t *testing.T) {
 		t.Fatalf("adding a FILESTREAM file: %v", err)
 	}
 
-	after, err := d.FilesContext(ctx)
+	after, err := d.Files(ctx)
 	if err != nil {
-		t.Fatalf("FilesContext after the add: %v", err)
+		t.Fatalf("Files after the add: %v", err)
 	}
 	var added *gosmo.DatabaseFileInfo
 	for _, f := range after {

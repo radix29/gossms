@@ -73,7 +73,7 @@ func (d *AGAddListenerDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	if err != nil {
 		return nil, err
 	}
-	listeners, err := ag.ListenersContext(ctx)
+	listeners, err := ag.Listeners(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (d *AGAddListenerDialog) buildPages(pf *aglistenerPrefetch) {
 		if err != nil {
 			return err
 		}
-		return ag.AddListenerContext(ctx, spec)
+		return ag.AddListener(ctx, spec)
 	}
 }
 

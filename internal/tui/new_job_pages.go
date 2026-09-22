@@ -43,7 +43,7 @@ func buildNewJobGeneralPage(sc *db.ServerConn, pf *njobPrefetch) (*propsheet.For
 		if categoryRow.Selected() != 0 {
 			req.Category = categoryRow.Value()
 		}
-		_, err := sc.Server.CreateJobContext(ctx, req)
+		_, err := sc.Server.CreateJob(ctx, req)
 		return err
 	}
 	return f, apply, jobName, enabled
@@ -136,7 +136,7 @@ func buildNewJobStepsPage(sc *db.ServerConn, pf *njobPrefetch, jobName func() st
 			return err
 		}
 		for _, e := range visible() {
-			if err := j.AddStepContext(ctx, e.request()); err != nil {
+			if err := j.AddStep(ctx, e.request()); err != nil {
 				return err
 			}
 		}
@@ -175,7 +175,7 @@ func buildNewJobSchedulesPage(sc *db.ServerConn, pf *njobPrefetch, jobName func(
 			if !v[0] {
 				continue
 			}
-			if err := j.AttachScheduleContext(ctx, pf.scheduleNames[i]); err != nil {
+			if err := j.AttachSchedule(ctx, pf.scheduleNames[i]); err != nil {
 				return err
 			}
 		}
@@ -221,12 +221,12 @@ func buildNewJobNotificationsPage(sc *db.ServerConn, pf *njobPrefetch, jobName f
 				return fmt.Errorf("no operators exist to notify — create one first, or clear E-mail")
 			}
 			opName := pf.operatorNames[operatorSelect.Selected()]
-			if err := j.SetEmailNotifyContext(ctx, opName, notifyConditionLevels[conditionSelect.Selected()]); err != nil {
+			if err := j.SetEmailNotify(ctx, opName, notifyConditionLevels[conditionSelect.Selected()]); err != nil {
 				return err
 			}
 		}
 		if deleteCheck.Checked() {
-			if err := j.SetDeleteLevelContext(ctx, notifyConditionLevels[deleteConditionSelect.Selected()]); err != nil {
+			if err := j.SetDeleteLevel(ctx, notifyConditionLevels[deleteConditionSelect.Selected()]); err != nil {
 				return err
 			}
 		}

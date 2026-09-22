@@ -169,16 +169,16 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 		if !mapped && defaultDBRow.Dirty() {
 			opts.DefaultDatabase = defaultDBRow.Value()
 		}
-		if err := sc.Server.CreateLoginContext(ctx, name, password, opts); err != nil {
+		if err := sc.Server.CreateLogin(ctx, name, password, opts); err != nil {
 			return err
 		}
 		if isSQL && (policyRow.Dirty() || expirationRow.Dirty()) {
-			if err := sc.Server.LoginRef(name).SetPasswordPolicyContext(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
+			if err := sc.Server.LoginRef(name).SetPasswordPolicy(ctx, policyRow.Checked(), expirationRow.Checked()); err != nil {
 				return err
 			}
 		}
 		if !mapped && defaultLangRow.Dirty() {
-			if err := sc.Server.LoginRef(name).SetDefaultLanguageContext(ctx, langItems[defaultLangRow.Selected()]); err != nil {
+			if err := sc.Server.LoginRef(name).SetDefaultLanguage(ctx, langItems[defaultLangRow.Selected()]); err != nil {
 				return err
 			}
 		}
@@ -255,7 +255,7 @@ func buildNewLoginServerRolesPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			if !v[0] {
 				continue
 			}
-			if err := l.AddServerRoleMemberContext(ctx, toggleable[i].Name); err != nil {
+			if err := l.AddServerRoleMember(ctx, toggleable[i].Name); err != nil {
 				return err
 			}
 		}
@@ -414,7 +414,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			if !e.mapped {
 				continue
 			}
-			if err := l.MapToDatabaseContext(ctx, e.dbName, name, e.schema); err != nil {
+			if err := l.MapToDatabase(ctx, e.dbName, name, e.schema); err != nil {
 				return err
 			}
 		}
@@ -432,7 +432,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 			if !rolesChanged {
 				continue
 			}
-			d, err := sc.Server.DatabaseByNameContext(ctx, e.dbName)
+			d, err := sc.Server.DatabaseByName(ctx, e.dbName)
 			if err != nil {
 				return err
 			}
@@ -440,7 +440,7 @@ func buildNewLoginUserMappingPage(sc *db.ServerConn, pf *nloginPrefetch, loginNa
 				if !e.roles[i] {
 					continue
 				}
-				if err := d.AddRoleMemberContext(ctx, roleName, name); err != nil {
+				if err := d.AddRoleMember(ctx, roleName, name); err != nil {
 					return err
 				}
 			}
@@ -506,9 +506,9 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 			var err error
 			switch e.current {
 			case "GRANT":
-				err = sc.Server.GrantServerPermissionContext(ctx, e.permission, name)
+				err = sc.Server.GrantServerPermission(ctx, e.permission, name)
 			case "DENY":
-				err = sc.Server.DenyServerPermissionContext(ctx, e.permission, name)
+				err = sc.Server.DenyServerPermission(ctx, e.permission, name)
 			}
 			if err != nil {
 				return err
@@ -543,17 +543,17 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 		if connectRow.Dirty() {
 			switch connectRow.Selected() {
 			case 0:
-				if err := sc.Server.GrantServerPermissionContext(ctx, "CONNECT SQL", name); err != nil {
+				if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", name); err != nil {
 					return err
 				}
 			case 1:
-				if err := sc.Server.DenyServerPermissionContext(ctx, "CONNECT SQL", name); err != nil {
+				if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", name); err != nil {
 					return err
 				}
 			}
 		}
 		if enabledRow.Dirty() && enabledRow.Selected() == 1 {
-			if err := sc.Server.LoginRef(name).DisableContext(ctx); err != nil {
+			if err := sc.Server.LoginRef(name).Disable(ctx); err != nil {
 				return err
 			}
 		}

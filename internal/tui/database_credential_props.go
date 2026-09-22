@@ -27,11 +27,11 @@ func databaseScopedCredentialPropPages(sc *db.ServerConn, dbName, credName strin
 // findDatabaseScopedCredential resolves credName to a
 // *gosmo.DatabaseScopedCredential in dbName.
 func findDatabaseScopedCredential(ctx context.Context, sc *db.ServerConn, dbName, credName string) (*gosmo.DatabaseScopedCredential, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return dbObj.DatabaseScopedCredentialByNameContext(ctx, credName)
+	return dbObj.DatabaseScopedCredentialByName(ctx, credName)
 }
 
 // pageDatabaseScopedCredentialGeneral is Database Scoped Credential
@@ -59,6 +59,6 @@ func pageDatabaseScopedCredentialGeneral(sc *db.ServerConn, dbName string, credN
 			// extra round trip buys nothing and the lookup would not work
 			// under Script Changes.
 			return sc.Server.DatabaseRef(dbName).DatabaseScopedCredentialRef(*credName).
-				AlterContext(ctx, identity, secret)
+				Alter(ctx, identity, secret)
 		})
 }

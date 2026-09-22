@@ -209,7 +209,7 @@ func (f *scheduleFreqForm) readFrequency() gosmo.ScheduleFrequency {
 }
 
 // readActiveRange parses the Duration fields into
-// SetActiveRangeContext's/CreateScheduleRequest's shape.
+// SetActiveRange's/CreateScheduleRequest's shape.
 func (f *scheduleFreqForm) readActiveRange() (startDate, endDate time.Time, startTime, endTime int) {
 	if t, err := parseAgentClock(f.startTimeField.Value()); err == nil {
 		startTime = t

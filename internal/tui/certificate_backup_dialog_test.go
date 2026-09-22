@@ -38,7 +38,7 @@ func scriptCertificateBackup(t *testing.T, d *BackupCertificateDialog) []string 
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	return script.Statements
+	return script.Statements()
 }
 
 // The certificate file is suggested in the server's backup directory, and an
@@ -46,7 +46,7 @@ func scriptCertificateBackup(t *testing.T, d *BackupCertificateDialog) []string 
 func TestBackupCertificatePublicOnly(t *testing.T) {
 	d := backupCertificateTestDialog(t, "ENCRYPTED_BY_MASTER_KEY")
 	stmts := scriptCertificateBackup(t, d)
-	want := `USE [certdb];` + "\n" + `BACKUP CERTIFICATE [c2] TO FILE = N'C:\Backup\c2.cer'`
+	want := `USE [certdb];` + "\nGO\n" + `BACKUP CERTIFICATE [c2] TO FILE = N'C:\Backup\c2.cer'`
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}
@@ -64,7 +64,7 @@ func TestBackupCertificateWithAPasswordProtectedKey(t *testing.T) {
 	editText(t, f, "Decryption password", "Dec!pw1")
 
 	stmts := scriptCertificateBackup(t, d)
-	want := `USE [certdb];` + "\n" + `BACKUP CERTIFICATE [c2] TO FILE = N'D:\keys\c2.cer' WITH PRIVATE KEY (FILE = N'D:\keys\c2.pvk', ` +
+	want := `USE [certdb];` + "\nGO\n" + `BACKUP CERTIFICATE [c2] TO FILE = N'D:\keys\c2.cer' WITH PRIVATE KEY (FILE = N'D:\keys\c2.pvk', ` +
 		`ENCRYPTION BY PASSWORD = N'` + scriptedPasswordPlaceholder + `', DECRYPTION BY PASSWORD = N'` + scriptedPasswordPlaceholder + `')`
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)

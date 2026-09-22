@@ -88,7 +88,7 @@ settled: `docs/decisions.md` § Release workflow.
 - **A named-instance connection to `win10cli\sql2017` fails on the *second*
   concurrent connection.** Connecting by name and then doing anything that
   needs a second pooled connection while the first is pinned — a listing whose
-  rows are still open when a per-row read runs, `SecurityPoliciesContext` being
+  rows are still open when a per-row read runs, `SecurityPolicies` being
   the one the sweep hits — fails with `acquire connection: no instance matching
   'sql2017' returned from host 'win10cli.fritz.box'`. It is the SQL Browser
   declining the second resolution, not a gosmo defect: the identical run

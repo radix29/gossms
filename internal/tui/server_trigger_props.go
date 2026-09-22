@@ -31,7 +31,7 @@ func pageServerTriggerGeneral(sc *db.ServerConn, trigName string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, err := sc.Server.ServerTriggerByNameContext(ctx, trigName)
+			t, err := sc.Server.ServerTriggerByName(ctx, trigName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -58,7 +58,7 @@ func pageServerTriggerGeneral(sc *db.ServerConn, trigName string) propPage {
 // shares.
 func pageServerTriggerDefinition(sc *db.ServerConn, trigName string) propPage {
 	return definitionPage(func(ctx context.Context) (string, error) {
-		t, err := sc.Server.ServerTriggerByNameContext(ctx, trigName)
+		t, err := sc.Server.ServerTriggerByName(ctx, trigName)
 		if err != nil {
 			return "", err
 		}

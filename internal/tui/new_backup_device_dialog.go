@@ -28,7 +28,7 @@ type nbackupDevicePrefetch struct {
 }
 
 func fetchNewBackupDevicePrefetch(ctx context.Context, sc *db.ServerConn) (*nbackupDevicePrefetch, error) {
-	devices, err := sc.Server.BackupDevicesContext(ctx)
+	devices, err := sc.Server.BackupDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (d *NewBackupDeviceDialog) buildPages(pf *nbackupDevicePrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		_, err := sc.Server.CreateBackupDeviceContext(ctx, d.objectName(),
+		_, err := sc.Server.CreateBackupDevice(ctx, d.objectName(),
 			gosmo.BackupDeviceDisk, strings.TrimSpace(fileField.Value()))
 		return err
 	}

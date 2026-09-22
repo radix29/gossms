@@ -52,23 +52,23 @@ func freeAuditNames(auditNames []string, specs []*gosmo.DatabaseAuditSpecificati
 }
 
 func fetchNewDBAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*ndbAuditSpecPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	specs, err := dbObj.DatabaseAuditSpecificationsContext(ctx)
+	specs, err := dbObj.DatabaseAuditSpecifications(ctx)
 	if err != nil {
 		return nil, err
 	}
-	audits, err := sc.Server.ServerAuditsContext(ctx)
+	audits, err := sc.Server.ServerAudits(ctx)
 	if err != nil {
 		return nil, err
 	}
-	groups, err := sc.Server.DatabaseAuditActionGroupsContext(ctx)
+	groups, err := sc.Server.DatabaseAuditActionGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
-	actions, err := sc.Server.DatabaseAuditActionsContext(ctx)
+	actions, err := sc.Server.DatabaseAuditActions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		// The name-only database handle, not DatabaseByName: the create needs
 		// nothing off sys.databases, and this is the form that also works
 		// under the script context Script-To uses.
-		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseAuditSpecificationContext(ctx,
+		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseAuditSpecification(ctx,
 			gosmo.DatabaseAuditSpecificationSpec{
 				Name:         d.objectName(),
 				AuditName:    auditField.Value(),

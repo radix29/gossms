@@ -19,7 +19,7 @@ import (
 // finds a database's secondary and log files by itself only at the paths
 // recorded inside the primary file, which is exactly what stops being true
 // once someone copies the files elsewhere. Reading that recorded list back is
-// what makes the paths correctable — see gosmo's DetachedDatabaseInfoContext,
+// what makes the paths correctable — see gosmo's DetachedDatabaseInfo,
 // which goes through the undocumented DBCC CHECKPRIMARYFILE.
 
 // attachPrefetch is what the page needs before anything is typed.
@@ -72,7 +72,7 @@ func (d *AttachDatabaseDialog) show(sc *db.ServerConn) {
 }
 
 func (d *AttachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*attachPrefetch, error) {
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		d.app.safegoRepair("reading a detached database's file list", d.readPanicked, func() {
 			ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 			defer cancel()
-			info, err := sc.Server.DetachedDatabaseInfoContext(ctx, path)
+			info, err := sc.Server.DetachedDatabaseInfo(ctx, path)
 			d.app.postAndWake(func() {
 				if d.ctx != sessionCtx {
 					return // the dialog was closed and reopened while this was out
@@ -232,7 +232,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 				return err
 			}
 		}
-		return sc.Server.AttachDatabaseContext(ctx, gosmo.AttachSpec{
+		return sc.Server.AttachDatabase(ctx, gosmo.AttachSpec{
 			Name:       d.objectName(),
 			Files:      paths,
 			Owner:      strings.TrimSpace(ownerRow.Value()),
@@ -323,7 +323,7 @@ func attachFilePaths(files []*gosmo.DetachedFile, primaryPath string, rebuildLog
 func checkAttachFiles(ctx context.Context, srv *gosmo.Server, paths []string) error {
 	var missing []string
 	for _, p := range paths {
-		exists, _, err := srv.FileSystemExistsContext(ctx, p)
+		exists, _, err := srv.FileSystemExists(ctx, p)
 		if err != nil {
 			return nil
 		}

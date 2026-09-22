@@ -52,23 +52,23 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			spec, err := dbObj.DatabaseAuditSpecificationByNameContext(ctx, specName)
+			spec, err := dbObj.DatabaseAuditSpecificationByName(ctx, specName)
 			if err != nil {
 				return nil, nil, err
 			}
-			audits, err := sc.Server.ServerAuditsContext(ctx)
+			audits, err := sc.Server.ServerAudits(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			groups, err := sc.Server.DatabaseAuditActionGroupsContext(ctx)
+			groups, err := sc.Server.DatabaseAuditActionGroups(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			actionNames, err := sc.Server.DatabaseAuditActionsContext(ctx)
+			actionNames, err := sc.Server.DatabaseAuditActions(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -79,7 +79,7 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 			// on major 17), so a rebind onto a taken audit is refused. This
 			// specification's own audit stays, or the page would open showing
 			// something other than what it is bound to.
-			all, err := dbObj.DatabaseAuditSpecificationsContext(ctx)
+			all, err := dbObj.DatabaseAuditSpecifications(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -198,14 +198,14 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 					// Dropped before added: a specification allows no
 					// duplicate group, and re-adding one it still records is
 					// an error rather than a no-op.
-					if err := handle.DropActionsContext(ctx, dropGroups, dropActions); err != nil {
+					if err := handle.DropActions(ctx, dropGroups, dropActions); err != nil {
 						return err
 					}
-					if err := handle.AddActionsContext(ctx, addGroups, addActions); err != nil {
+					if err := handle.AddActions(ctx, addGroups, addActions); err != nil {
 						return err
 					}
 					if auditRow.Dirty() && auditRow.Value() != missingAuditItem {
-						return handle.SetAuditContext(ctx, auditRow.Value())
+						return handle.SetAudit(ctx, auditRow.Value())
 					}
 					return nil
 				})

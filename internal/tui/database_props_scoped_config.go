@@ -19,7 +19,7 @@ type scopedConfigRow struct {
 }
 
 // scopedConfigBoolRow is scopedConfigRow's Select-row counterpart, for
-// ON/OFF-style options — SetDatabaseScopedConfigContext takes the keyword
+// ON/OFF-style options — SetDatabaseScopedConfig takes the keyword
 // ALTER DATABASE SCOPED CONFIGURATION expects ("ON"/"OFF"), not the "0"/"1"
 // sys.database_scoped_configurations reports a boolean option's value as.
 type scopedConfigBoolRow struct {
@@ -96,7 +96,7 @@ func newScopedConfigBoolEditor(configs []*gosmo.DatabaseScopedConfig, tracked *[
 }
 
 // applyScopedConfigRows writes back every dirty row in intRows/boolRows
-// via Database.SetDatabaseScopedConfigContext.
+// via Database.SetDatabaseScopedConfig.
 func applyScopedConfigRows(ctx context.Context, d *gosmo.Database, intRows []scopedConfigRow, boolRows []scopedConfigBoolRow) error {
 	for _, r := range intRows {
 		if !r.row.Dirty() {
@@ -106,7 +106,7 @@ func applyScopedConfigRows(ctx context.Context, d *gosmo.Database, intRows []sco
 		if err != nil {
 			return err
 		}
-		if err := d.SetDatabaseScopedConfigContext(ctx, r.name, strconv.FormatInt(v, 10), false); err != nil {
+		if err := d.SetDatabaseScopedConfig(ctx, r.name, strconv.FormatInt(v, 10), false); err != nil {
 			return err
 		}
 	}
@@ -115,7 +115,7 @@ func applyScopedConfigRows(ctx context.Context, d *gosmo.Database, intRows []sco
 			continue
 		}
 		value := onOff[r.row.Selected()]
-		if err := d.SetDatabaseScopedConfigContext(ctx, r.name, value, false); err != nil {
+		if err := d.SetDatabaseScopedConfig(ctx, r.name, value, false); err != nil {
 			return err
 		}
 	}
@@ -131,11 +131,11 @@ func pageDatabaseScopedConfig(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Database Scoped Configurations",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			configs, err := d.DatabaseScopedConfigsContext(ctx)
+			configs, err := d.DatabaseScopedConfigs(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -173,7 +173,7 @@ func pageDatabaseScopedConfig(sc *db.ServerConn, dbName string) propPage {
 			)
 
 			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}

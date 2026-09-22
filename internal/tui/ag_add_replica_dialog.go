@@ -98,18 +98,18 @@ func (d *AGAddReplicaDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCon
 	if err != nil {
 		return nil, err
 	}
-	replicas, err := ag.ReplicasContext(ctx)
+	replicas, err := ag.Replicas(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	pf := &agAddReplicaPrefetch{
 		primary:     ag.PrimaryReplicaServerName,
-		clusterType: ag.ClusterType,
+		clusterType: string(ag.ClusterType),
 		existing:    map[string]bool{},
 		defaults: newAGReplica{
 			availabilityMode: "SYNCHRONOUS_COMMIT",
-			failoverMode:     agDefaultFailoverMode(ag.ClusterType),
+			failoverMode:     agDefaultFailoverMode(string(ag.ClusterType)),
 			seedingMode:      "AUTOMATIC",
 			primaryRole:      "ALL",
 			secondaryRole:    "NO",
@@ -123,11 +123,11 @@ func (d *AGAddReplicaDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCon
 			continue
 		}
 		pf.defaults = newAGReplica{
-			availabilityMode: orDefault(r.AvailabilityMode, "SYNCHRONOUS_COMMIT"),
-			failoverMode:     orDefault(r.FailoverMode, agDefaultFailoverMode(ag.ClusterType)),
-			seedingMode:      orDefault(r.SeedingMode, "AUTOMATIC"),
-			primaryRole:      orDefault(r.PrimaryRoleAllowConnections, "ALL"),
-			secondaryRole:    orDefault(r.SecondaryRoleAllowConnections, "NO"),
+			availabilityMode: orDefault(string(r.AvailabilityMode), "SYNCHRONOUS_COMMIT"),
+			failoverMode:     orDefault(string(r.FailoverMode), agDefaultFailoverMode(string(ag.ClusterType))),
+			seedingMode:      orDefault(string(r.SeedingMode), "AUTOMATIC"),
+			primaryRole:      orDefault(string(r.PrimaryRoleAllowConnections), "ALL"),
+			secondaryRole:    orDefault(string(r.SecondaryRoleAllowConnections), "NO"),
 			backupPriority:   r.BackupPriority,
 			sessionTimeout:   r.SessionTimeout,
 		}
@@ -312,24 +312,26 @@ func (d *AGAddReplicaDialog) addReplica(ctx context.Context) error {
 		return err
 	}
 	spec := r.spec()
-	if err := ag.AddReplicaContext(ctx, spec); err != nil {
+	if err := ag.AddReplica(ctx, spec); err != nil {
 		return err
 	}
 
-	target := sc.Server
+	// Under Script Changes nothing connects to the new replica: its JOIN is
+	// scripted through the primary's handle and labelled with the replica.
+	target, joinCtx := sc.Server, gosmo.WithScriptServer(ctx, r.name)
 	if !gosmo.Scripting(ctx) {
 		peer, err := sc.Peer(ctx, r.name)
 		if err != nil {
 			return fmt.Errorf("replica %s was added to %q, but connecting to it to join failed: %w", r.name, agName, err)
 		}
-		target = peer.Server
+		target, joinCtx = peer.Server, ctx
 	}
 	joined := target.AvailabilityGroupRef(agName)
-	if err := joined.JoinContext(ctx, ag.ClusterType); err != nil {
+	if err := joined.Join(joinCtx, ag.ClusterType); err != nil {
 		return fmt.Errorf("replica %s was added to %q, but could not join it: %w", r.name, agName, err)
 	}
 	if strings.EqualFold(r.seedingMode, "AUTOMATIC") {
-		if err := joined.GrantCreateAnyDatabaseContext(ctx); err != nil {
+		if err := joined.GrantCreateAnyDatabase(joinCtx); err != nil {
 			return fmt.Errorf("replica %s was added to %q and joined it, but granting it CREATE ANY DATABASE failed — automatic seeding will silently seed nothing until that is granted: %w", r.name, agName, err)
 		}
 	}
@@ -343,33 +345,8 @@ func (d *AGAddReplicaDialog) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "", d.annotateScript(script.Statements))
+		d.app.openQueryWithText(sc, "", multiInstanceScript("Add Replica", script))
 	})
-}
-
-// annotateScript labels each statement with the instance it must run on.
-func (d *AGAddReplicaDialog) annotateScript(statements []string) string {
-	var b strings.Builder
-	b.WriteString("-- Add Replica: these statements do NOT all run on the same instance.\n")
-
-	// Statement 0 (ADD REPLICA) is the primary's; JOIN and GRANT are the new
-	// replica's.
-	primary := "(the primary replica)"
-	switch {
-	case d.prefetch != nil && d.prefetch.primary != "":
-		primary = d.prefetch.primary
-	case d.sc != nil:
-		primary = d.sc.Opts.Server
-	}
-	targets := []string{primary, d.resolved.name, d.resolved.name}
-	for i, stmt := range statements {
-		target := "(unknown instance)"
-		if i < len(targets) {
-			target = targets[i]
-		}
-		fmt.Fprintf(&b, "\n-- on %s\n%s\nGO\n", target, stmt)
-	}
-	return b.String()
 }
 
 // showAGAddReplicaDialog opens Add Replica from a group's Availability Replicas

@@ -40,7 +40,7 @@ func loadAlwaysOnChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 func loadAvailabilityGroupsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(
 		func() ([]*gosmo.AvailabilityGroup, error) {
-			return l.sc.Server.AvailabilityGroupsContext(l.ctx)
+			return l.sc.Server.AvailabilityGroups(l.ctx)
 		},
 		func(ag *gosmo.AvailabilityGroup) *explorerNode {
 			n := l.node(agLabel(ag.Name, ag.PrimaryReplicaServerName, ag.IsLocalPrimary()),
@@ -111,7 +111,7 @@ type agView struct {
 // incomplete but still worth showing, and an unreachable peer must not make the
 // whole branch unexpandable. Callers surface view.unreachable instead.
 func resolveAGView(l loaderCtx, name string) (agView, error) {
-	ag, err := l.sc.Server.AvailabilityGroupByNameContext(l.ctx, name)
+	ag, err := l.sc.Server.AvailabilityGroupByName(l.ctx, name)
 	if err != nil {
 		return agView{}, err
 	}
@@ -124,7 +124,7 @@ func resolveAGView(l loaderCtx, name string) (agView, error) {
 	if err != nil {
 		return agView{ag: ag, unreachable: primary}, nil
 	}
-	primaryAG, err := peer.Server.AvailabilityGroupByNameContext(l.ctx, name)
+	primaryAG, err := peer.Server.AvailabilityGroupByName(l.ctx, name)
 	if err != nil {
 		return agView{ag: ag, unreachable: primary}, nil
 	}
@@ -157,7 +157,7 @@ func loadAvailabilityReplicasChildren(l loaderCtx, node *explorerNode) ([]*explo
 	if err != nil {
 		return nil, err
 	}
-	replicas, err := view.ag.ReplicasContext(l.ctx)
+	replicas, err := view.ag.Replicas(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func replicaLabel(r *gosmo.AvailabilityReplica) string {
 		parts = append(parts, titleWord(r.Role))
 	}
 	if r.AvailabilityMode != "" {
-		parts = append(parts, commitModeName(r.AvailabilityMode))
+		parts = append(parts, commitModeName(string(r.AvailabilityMode)))
 	}
 	if len(parts) == 0 {
 		return r.ReplicaServerName
@@ -217,7 +217,7 @@ func loadAvailabilityDatabasesChildren(l loaderCtx, node *explorerNode) ([]*expl
 	if err != nil {
 		return nil, err
 	}
-	dbs, err := view.ag.DatabasesContext(l.ctx)
+	dbs, err := view.ag.Databases(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -255,14 +255,14 @@ func agLocalDatabaseJoinState(l loaderCtx, view agView, dbs []*gosmo.Availabilit
 	if view.followed {
 		// dbs came from the primary's connection, whose rows describe the
 		// primary's view; re-read from this instance.
-		ag, err := l.sc.Server.AvailabilityGroupByNameContext(l.ctx, agName)
+		ag, err := l.sc.Server.AvailabilityGroupByName(l.ctx, agName)
 		if err != nil {
 			return false, nil
 		}
 		if ag.IsLocalPrimary() {
 			return false, nil
 		}
-		if local, err = ag.DatabasesContext(l.ctx); err != nil {
+		if local, err = ag.Databases(l.ctx); err != nil {
 			return false, nil
 		}
 	} else if view.ag.IsLocalPrimary() {
@@ -374,13 +374,13 @@ func agLocalDatabaseStates(l loaderCtx) map[string]agDatabaseSummary {
 	if info := l.sc.Server.Info(); info == nil || !info.IsHADREnabled {
 		return nil
 	}
-	groups, err := l.sc.Server.AvailabilityGroupsContext(l.ctx)
+	groups, err := l.sc.Server.AvailabilityGroups(l.ctx)
 	if err != nil || len(groups) == 0 {
 		return nil
 	}
 	out := map[string]agDatabaseSummary{}
 	for _, ag := range groups {
-		dbs, err := ag.DatabasesContext(l.ctx)
+		dbs, err := ag.Databases(l.ctx)
 		if err != nil {
 			continue
 		}
@@ -413,7 +413,7 @@ func loadAGListenersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 	if err != nil {
 		return nil, err
 	}
-	listeners, err := view.ag.ListenersContext(l.ctx)
+	listeners, err := view.ag.Listeners(l.ctx)
 	if err != nil {
 		return nil, err
 	}

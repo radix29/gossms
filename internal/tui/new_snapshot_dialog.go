@@ -84,7 +84,7 @@ func (d *NewSnapshotDialog) show(sc *db.ServerConn, source string) {
 }
 
 func (d *NewSnapshotDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*snapshotPrefetch, error) {
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		d.app.safegoRepair("reading a snapshot's default file paths", d.readPanicked, func() {
 			ctx, cancel := context.WithTimeout(sessionCtx, propFetchTimeout)
 			defer cancel()
-			specs, err := sc.Server.SnapshotFileDefaultsContext(ctx, source, name)
+			specs, err := sc.Server.SnapshotFileDefaults(ctx, source, name)
 			d.app.postAndWake(func() {
 				if d.ctx != sessionCtx {
 					return // the dialog was closed and reopened while this was out
@@ -235,7 +235,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
 		commitCurrent()
-		_, err := sc.Server.CreateDatabaseSnapshotContext(ctx, gosmo.CreateDatabaseSnapshotRequest{
+		_, err := sc.Server.CreateDatabaseSnapshot(ctx, gosmo.CreateDatabaseSnapshotRequest{
 			Name:           d.objectName(),
 			SourceDatabase: sourceRow.Value(),
 			Files:          d.files,

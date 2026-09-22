@@ -55,11 +55,11 @@ func rolePropPages(d *PropDialog, sc *db.ServerConn, dbName, roleName string) []
 // findRole resolves dbName/roleName to a *gosmo.DatabaseRole, the one
 // lookup every page on this dialog needs first.
 func findRole(ctx context.Context, sc *db.ServerConn, dbName, roleName string) (*gosmo.DatabaseRole, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.RoleByNameContext(ctx, roleName)
+	return d.RoleByName(ctx, roleName)
 }
 
 // principalNames returns every database principal (user or role) that
@@ -79,27 +79,27 @@ func principalNames(users []*gosmo.User, roles []*gosmo.DatabaseRole) []string {
 func pageRoleGeneral(sc *db.ServerConn, dbName string, roleName *string) propPage {
 	return roleGeneralPage(roleName,
 		func(ctx context.Context) (roleGeneral, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			role, err := d.RoleByNameContext(ctx, *roleName)
+			role, err := d.RoleByName(ctx, *roleName)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			schemas, err := d.SchemasContext(ctx)
+			schemas, err := d.Schemas(ctx)
 			if err != nil {
 				return roleGeneral{}, err
 			}
-			securables, err := d.PermissionsForPrincipalContext(ctx, *roleName)
+			securables, err := d.PermissionsForPrincipal(ctx, *roleName)
 			if err != nil {
 				return roleGeneral{}, err
 			}
@@ -151,19 +151,19 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 	return propPage{
 		title: "Members",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			members, err := d.RoleMembersContext(ctx, *roleName)
+			members, err := d.RoleMembers(ctx, *roleName)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -190,10 +190,10 @@ func pageRoleMembers(sc *db.ServerConn, dbName string, roleName *string) propPag
 				principalType: principalType,
 				note:          "Add a user or another role from the dropdown, or select a row above and Remove it.",
 				add: func(ctx context.Context, name string) error {
-					return d.AddRoleMemberContext(ctx, *roleName, name)
+					return d.AddRoleMember(ctx, *roleName, name)
 				},
 				remove: func(ctx context.Context, name string) error {
-					return d.RemoveRoleMemberContext(ctx, *roleName, name)
+					return d.RemoveRoleMember(ctx, *roleName, name)
 				},
 			})
 			return f, apply, nil
@@ -205,15 +205,15 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 	return propPage{
 		title: "Owned Roles",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			allRoles, err := d.DatabaseRolesContext(ctx)
+			allRoles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -236,7 +236,7 @@ func pageRoleOwnedRoles(sc *db.ServerConn, dbName string, roleName *string) prop
 				ItemSection: "Selected role",
 				Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
 				ChangeOwner: func(ctx context.Context, r *gosmo.DatabaseRole, newOwner string) error {
-					return r.ChangeOwnerContext(ctx, newOwner)
+					return r.ChangeOwner(ctx, newOwner)
 				},
 			})
 			return f, apply, nil

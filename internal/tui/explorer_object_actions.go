@@ -160,7 +160,7 @@ func (a *App) scriptDeletes(sc *db.ServerConn, objs []nodeData, ops []*objectOp,
 				break
 			}
 		}
-		text := strings.Join(script.Statements, "\n\n")
+		text := script.String()
 		// The database the first object lives in: a selection comes from one
 		// folder, and a server-level principal's is "", which opens the panel on
 		// the connection's own default.
@@ -377,11 +377,11 @@ func (a *App) moveObjectToSchema(node *explorerNode) {
 	a.safego("listing schemas", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		d, err := sc.Server.DatabaseByNameContext(ctx, data.DBName)
+		d, err := sc.Server.DatabaseByName(ctx, data.DBName)
 		var names []string
 		if err == nil {
 			var schemas []*gosmo.Schema
-			if schemas, err = d.SchemasContext(ctx); err == nil {
+			if schemas, err = d.Schemas(ctx); err == nil {
 				for _, s := range schemas {
 					if !strings.EqualFold(s.Name, data.Schema) {
 						names = append(names, s.Name)

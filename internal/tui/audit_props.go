@@ -89,7 +89,7 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 		title:   "General",
 		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			a, err := sc.Server.ServerAuditByNameContext(ctx, *auditName)
+			a, err := sc.Server.ServerAuditByName(ctx, *auditName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -220,14 +220,14 @@ func pageAuditGeneral(sc *db.ServerConn, auditName *string) propPage {
 								spec.MaxRolloverFiles = gosmo.AuditUnlimited
 							}
 						}
-						if err := handle.AlterContext(ctx, spec); err != nil {
+						if err := handle.Alter(ctx, spec); err != nil {
 							return err
 						}
 					}
 					// Renaming last keeps the write above addressed by the name
 					// the server still has — see propPage.renames.
 					if nameRow.Dirty() {
-						if err := handle.RenameContext(ctx, nameRow.Value()); err != nil {
+						if err := handle.Rename(ctx, nameRow.Value()); err != nil {
 							return err
 						}
 						commitRename(ctx, auditName, nameRow.Value())
@@ -265,7 +265,7 @@ func auditApplyFailure(ctx context.Context, sc *db.ServerConn, name string, wasE
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), propFetchTimeout)
 	defer cancel()
-	a, err := sc.Server.ServerAuditByNameContext(ctx, name)
+	a, err := sc.Server.ServerAuditByName(ctx, name)
 	if err != nil || a.IsEnabled {
 		return applyErr
 	}

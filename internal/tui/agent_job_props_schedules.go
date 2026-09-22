@@ -129,11 +129,11 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			all, err := sc.Server.SchedulesContext(ctx)
+			all, err := sc.Server.Schedules(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			attachedScheds, err := j.SchedulesContext(ctx)
+			attachedScheds, err := j.Schedules(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -220,10 +220,10 @@ func pageJobSchedules(sc *db.ServerConn, jobName *string) propPage {
 						continue
 					}
 					if e.attached {
-						if err := j.AttachScheduleContext(ctx, e.sch.Name); err != nil {
+						if err := j.AttachSchedule(ctx, e.sch.Name); err != nil {
 							return err
 						}
-					} else if err := j.DetachScheduleContext(ctx, e.sch.Name); err != nil {
+					} else if err := j.DetachSchedule(ctx, e.sch.Name); err != nil {
 						return err
 					}
 				}

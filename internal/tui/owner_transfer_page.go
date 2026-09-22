@@ -212,19 +212,19 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 	return propPage{
 		title: "Owned Schemas",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			allSchemas, err := d.SchemasContext(ctx)
+			allSchemas, err := d.Schemas(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			users, err := d.UsersContext(ctx)
+			users, err := d.Users(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := d.DatabaseRolesContext(ctx)
+			roles, err := d.DatabaseRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -234,7 +234,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 				if s.Owner != *principalName {
 					continue
 				}
-				count, err := s.ObjectCountContext(ctx)
+				count, err := s.ObjectCount(ctx)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -259,7 +259,7 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 				ItemSection: "Selected schema",
 				Note:        "Changing schema ownership can affect permission chaining and deployment scripts.",
 				ChangeOwner: func(ctx context.Context, o ownedSchema, newOwner string) error {
-					return o.schema.ChangeOwnerContext(ctx, newOwner)
+					return o.schema.ChangeOwner(ctx, newOwner)
 				},
 			})
 			return f, apply, nil

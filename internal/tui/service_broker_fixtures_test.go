@@ -132,7 +132,7 @@ func queueCountResp() fakeResponse {
 	}}
 }
 
-// oneQueueCountResp answers BrokerQueue.MessageCountContext, the per-queue
+// oneQueueCountResp answers BrokerQueue.MessageCount, the per-queue
 // read the leaf's Detail Browser view makes.
 func oneQueueCountResp() fakeResponse {
 	return fakeResponse{match: "WHERE  it.parent_object_id = @p1", cols: 1, rows: [][]driver.Value{

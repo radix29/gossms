@@ -15,7 +15,7 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 		title: "Database Settings",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			info := sc.Server.Info()
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -67,17 +67,17 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 					return err
 				}
 				if filestreamCfg != nil && filestream.Dirty() {
-					opt, err := sc.Server.ConfigurationByNameContext(ctx, "filestream access level")
+					opt, err := sc.Server.ConfigurationByName(ctx, "filestream access level")
 					if err != nil {
 						return err
 					}
-					if err := opt.SetValueContext(ctx, int64(filestream.Selected())); err != nil {
+					if err := opt.SetValue(ctx, int64(filestream.Selected())); err != nil {
 						return err
 					}
 					changed = true
 				}
 				if changed {
-					return sc.Server.ReconfigureContext(ctx, false)
+					return sc.Server.Reconfigure(ctx, false)
 				}
 				return nil
 			}

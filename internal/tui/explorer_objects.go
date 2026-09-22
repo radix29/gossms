@@ -25,7 +25,7 @@ import (
 // absent folder and an empty one are different answers, and only the absent
 // one is honest about a server that cannot have the objects.
 func loadTablesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func tableSubFolders(l loaderCtx, node *explorerNode, dbObj *gosmo.Database) ([]
 		l.node("System Tables", NodeSystemTables, "", "", dbName),
 		l.node("FileTables", NodeFileTables, "", "", dbName),
 	}
-	present, err := dbObj.TableKindsPresentContext(l.ctx)
+	present, err := dbObj.TableKindsPresent(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func loadTablesOfKind(l loaderCtx, node *explorerNode, dbObj *gosmo.Database,
 	// its own filter, the way System Views does — not the parent's.
 	filter := serverFilter(node.data.Filter)
 	return listChildren(
-		func() ([]*gosmo.Table, error) { return dbObj.TablesOfKindFilteredContext(l.ctx, kind, filter) },
+		func() ([]*gosmo.Table, error) { return dbObj.TablesOfKindFiltered(l.ctx, kind, filter) },
 		func(t *gosmo.Table) *explorerNode {
 			n := l.node(tableLabel(t), NodeTable, t.Schema, t.Name, node.data.DBName)
 			n.data.CreateDate = t.CreateDate
@@ -108,7 +108,7 @@ func tableLabel(t *gosmo.Table) string {
 // tablesOfKindLoader is the childLoader for one of the four sub-folders.
 func tablesOfKindLoader(kind gosmo.TableKind, system bool) childLoader {
 	return func(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-		dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+		dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 		if err != nil {
 			return nil, err
 		}
@@ -145,11 +145,11 @@ func loadViewChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) 
 // tableFor resolves node's owning table — node.data.Schema/Name are the
 // table's own, propagated onto it by loadTableChildren above.
 func tableFor(l loaderCtx, node *explorerNode) (*gosmo.Table, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return dbObj.TableByNameContext(l.ctx, node.data.Schema, node.data.Name)
+	return dbObj.TableByName(l.ctx, node.data.Schema, node.data.Name)
 }
 
 // loadColumnsChildren returns one table's columns. Columns that are part of
@@ -160,7 +160,7 @@ func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	if err != nil {
 		return nil, err
 	}
-	cols, err := table.ColumnsContext(l.ctx)
+	cols, err := table.Columns(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func loadKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) 
 	if err != nil {
 		return nil, err
 	}
-	indexes, err := table.IndexesContext(l.ctx)
+	indexes, err := table.Indexes(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func loadKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) 
 			out = append(out, n)
 		}
 	}
-	fks, err := table.ForeignKeysContext(l.ctx)
+	fks, err := table.ForeignKeys(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ func loadConstraintsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.CheckConstraint, error) { return table.CheckConstraintsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.CheckConstraint, error) { return table.CheckConstraints(l.ctx) },
 		func(cc *gosmo.CheckConstraint) *explorerNode {
 			n := l.node(cc.Name, NodeCheck, node.data.Schema, cc.Name, node.data.DBName)
 			n.data.TableName = node.data.Name
@@ -237,7 +237,7 @@ func loadIndexesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 	if err != nil {
 		return nil, err
 	}
-	indexes, err := table.IndexesContext(l.ctx)
+	indexes, err := table.Indexes(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func loadStatisticsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, e
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.Statistic, error) { return table.StatisticsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Statistic, error) { return table.Statistics(l.ctx) },
 		func(st *gosmo.Statistic) *explorerNode {
 			n := l.node(st.Name, NodeStatistic, node.data.Schema, st.Name, node.data.DBName)
 			n.data.TableName = node.data.Name
@@ -298,7 +298,7 @@ func procFields(p *gosmo.StoredProcedure) (string, string, time.Time) {
 func loadSchemaScoped[T any](l loaderCtx, node *explorerNode, nt NodeType, system bool,
 	fetch func(*gosmo.Database) ([]T, error), fields schemaScoped[T],
 ) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +326,7 @@ func withSystemFolder(l loaderCtx, node *explorerNode, label string, nt NodeType
 func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	views, err := loadSchemaScoped(l, node, NodeView, false,
 		func(d *gosmo.Database) ([]*gosmo.View, error) {
-			return d.ViewsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.ViewsFiltered(l.ctx, serverFilter(node.data.Filter))
 		}, viewFields)
 	if err != nil {
 		return nil, err
@@ -338,7 +338,7 @@ func loadViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadSchemaScoped(l, node, NodeView, true,
 		func(d *gosmo.Database) ([]*gosmo.View, error) {
-			return d.SystemViewsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.SystemViewsFiltered(l.ctx, serverFilter(node.data.Filter))
 		}, viewFields)
 }
 
@@ -347,7 +347,7 @@ func loadSystemViewsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, 
 func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	procs, err := loadSchemaScoped(l, node, NodeStoredProcedure, false,
 		func(d *gosmo.Database) ([]*gosmo.StoredProcedure, error) {
-			return d.StoredProceduresFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.StoredProceduresFiltered(l.ctx, serverFilter(node.data.Filter))
 		}, procFields)
 	if err != nil {
 		return nil, err
@@ -360,7 +360,7 @@ func loadStoredProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadSchemaScoped(l, node, NodeStoredProcedure, true,
 		func(d *gosmo.Database) ([]*gosmo.StoredProcedure, error) {
-			return d.SystemStoredProceduresFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.SystemStoredProceduresFiltered(l.ctx, serverFilter(node.data.Filter))
 		}, procFields)
 }
 
@@ -369,7 +369,7 @@ func loadSystemProceduresChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	funcs, err := loadFunctionNodes(l, node, false,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
-			return d.UserDefinedFunctionsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.UserDefinedFunctionsFiltered(l.ctx, serverFilter(node.data.Filter))
 		})
 	if err != nil {
 		return nil, err
@@ -381,7 +381,7 @@ func loadFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return loadFunctionNodes(l, node, true,
 		func(d *gosmo.Database) ([]*gosmo.UserDefinedFunction, error) {
-			return d.SystemFunctionsFilteredContext(l.ctx, serverFilter(node.data.Filter))
+			return d.SystemFunctionsFiltered(l.ctx, serverFilter(node.data.Filter))
 		})
 }
 
@@ -391,7 +391,7 @@ func loadSystemFunctionsChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 	fetch func(*gosmo.Database) ([]*gosmo.UserDefinedFunction, error),
 ) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
@@ -420,13 +420,13 @@ func loadFunctionNodes(l loaderCtx, node *explorerNode, system bool,
 // have read as the sibling of Programmability > Database Triggers, which is a
 // different family entirely — see loadProgrammabilityChildren.
 func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
 		func() ([]*gosmo.Trigger, error) {
-			return dbObj.ObjectTriggersContext(l.ctx, node.data.Schema, node.data.Name)
+			return dbObj.ObjectTriggers(l.ctx, node.data.Schema, node.data.Name)
 		},
 		func(t *gosmo.Trigger) *explorerNode {
 			return l.node(t.Name, NodeTrigger, node.data.Schema, t.Name, node.data.DBName)
@@ -434,22 +434,22 @@ func loadTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, err
 }
 
 func loadSequencesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.Sequence, error) { return dbObj.SequencesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Sequence, error) { return dbObj.Sequences(l.ctx) },
 		func(seq *gosmo.Sequence) *explorerNode {
 			return l.node(seq.Schema+"."+seq.Name, NodeSequence, seq.Schema, seq.Name, node.data.DBName)
 		})
 }
 
 func loadSynonymsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.Synonym, error) { return dbObj.SynonymsContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Synonym, error) { return dbObj.Synonyms(l.ctx) },
 		func(syn *gosmo.Synonym) *explorerNode {
 			return l.node(syn.Schema+"."+syn.Name, NodeSynonym, syn.Schema, syn.Name, node.data.DBName)
 		})

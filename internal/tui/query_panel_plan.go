@@ -23,7 +23,7 @@ func (p *QueryPanel) ShowEstimatedPlan() {
 // cancel an in-flight plan fetch for free, and a panel closed mid-fetch still
 // has its status line cleared. Uses query.Session.ExecuteEstimatedPlan rather
 // than talking to gosmo directly, so a script containing GO batch separators
-// is split the same way Execute splits it — gosmo's own EstimatedPlanContext
+// is split the same way Execute splits it — gosmo's own EstimatedPlan
 // takes one statement at a time and would otherwise reject any multi-batch
 // script with a syntax error on "GO" itself.
 func (p *QueryPanel) runEstimatedPlan(queryText string) {

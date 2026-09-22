@@ -90,7 +90,7 @@ func (a *App) childFetchPanicked(node *explorerNode, seq int) {
 }
 
 // refreshAgentRootLabel appends " (Stopped)" to the "SQL Server Agent" child
-// once a background AgentInfoContext check says it isn't running. Separate from
+// once a background AgentInfo check says it isn't running. Separate from
 // loadServerChildren so that static loader never waits on the round trip. A
 // failed check leaves the label alone.
 func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
@@ -108,7 +108,7 @@ func (a *App) refreshAgentRootLabel(serverNode *explorerNode) {
 	a.safego("refreshing the SQL Server Agent node", func() {
 		ctx, cancel := context.WithTimeout(sc.Context(), childFetchTimeout)
 		defer cancel()
-		status, err := sc.Server.AgentInfoContext(ctx)
+		status, err := sc.Server.AgentInfo(ctx)
 		a.postAndWake(func() {
 			if err != nil || status.StatusText == "" || status.StatusText == "Unknown" || status.Running {
 				return
@@ -257,9 +257,9 @@ func (a *App) toggleSecurityPolicy(sc *db.ServerConn, node *explorerNode) {
 				return err
 			}
 			if on {
-				return p.EnableContext(ctx)
+				return p.Enable(ctx)
 			}
-			return p.DisableContext(ctx)
+			return p.Disable(ctx)
 		})
 }
 
@@ -274,9 +274,9 @@ func (a *App) toggleServerTrigger(sc *db.ServerConn, node *explorerNode) {
 		func(ctx context.Context, name string, on bool) error {
 			t := sc.Server.ServerTriggerRef(name)
 			if on {
-				return t.EnableContext(ctx)
+				return t.Enable(ctx)
 			}
-			return t.DisableContext(ctx)
+			return t.Disable(ctx)
 		})
 }
 
@@ -293,9 +293,9 @@ func (a *App) toggleDatabaseTrigger(sc *db.ServerConn, node *explorerNode) {
 			// sys.databases read.
 			t := sc.Server.DatabaseRef(dbName).DatabaseTriggerRef(name)
 			if on {
-				return t.EnableContext(ctx)
+				return t.Enable(ctx)
 			}
-			return t.DisableContext(ctx)
+			return t.Disable(ctx)
 		})
 }
 
@@ -317,7 +317,7 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 		"Disable Audit",
 		fmt.Sprintf("Disable %s? The instance stops recording anything through it.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAuditRef(name).SetStateContext(ctx, on)
+			return sc.Server.ServerAuditRef(name).SetState(ctx, on)
 		})
 }
 
@@ -328,7 +328,7 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		"Disable Server Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAuditSpecificationRef(name).SetStateContext(ctx, on)
+			return sc.Server.ServerAuditSpecificationRef(name).SetState(ctx, on)
 		})
 }
 
@@ -340,7 +340,7 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		"Disable Database Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups and actions it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name).SetStateContext(ctx, on)
+			return sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name).SetState(ctx, on)
 		})
 }
 
@@ -421,9 +421,9 @@ func (a *App) togglePlanGuide(sc *db.ServerConn, node *explorerNode) {
 		func(ctx context.Context, name string, on bool) error {
 			g := sc.Server.DatabaseRef(dbName).PlanGuideRef(name)
 			if on {
-				return g.EnableContext(ctx)
+				return g.Enable(ctx)
 			}
-			return g.DisableContext(ctx)
+			return g.Disable(ctx)
 		})
 }
 
@@ -450,11 +450,11 @@ func (a *App) setEndpointState(sc *db.ServerConn, node *explorerNode, state gosm
 			what:    "changing an endpoint's state",
 			sc:      sc,
 		}, func(ctx context.Context, _ progressReport) error {
-			e, err := sc.Server.EndpointByNameContext(ctx, name)
+			e, err := sc.Server.EndpointByName(ctx, name)
 			if err != nil {
 				return err
 			}
-			return e.SetStateContext(ctx, state)
+			return e.SetState(ctx, state)
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
@@ -515,9 +515,9 @@ func (a *App) toggleDatabaseOffline(sc *db.ServerConn, node *explorerNode) {
 		}, func(ctx context.Context, _ progressReport) error {
 			d := sc.Server.DatabaseRef(dbName)
 			if goOffline {
-				return d.SetOfflineContext(ctx)
+				return d.SetOffline(ctx)
 			}
-			return d.SetOnlineContext(ctx)
+			return d.SetOnline(ctx)
 		}, func(err error, cancelled bool) {
 			switch {
 			case cancelled:
@@ -583,7 +583,7 @@ func (a *App) restoreFromSnapshot(sc *db.ServerConn, node *explorerNode) {
 			sc:              sc,
 			uninterruptible: uninterruptibleRestore,
 		}, func(ctx context.Context, _ progressReport) error {
-			return sc.Server.RestoreFromSnapshotContext(ctx, source, snapshot)
+			return sc.Server.RestoreFromSnapshot(ctx, source, snapshot)
 		}, func(err error, _ bool) {
 			if err != nil {
 				a.setStatus(fmt.Sprintf("Failed to restore %q from %q: %v", source, snapshot, displayError(err)))

@@ -164,22 +164,35 @@ func TestNewAGRequestRequiresThePrimaryFirst(t *testing.T) {
 	}
 }
 
-// The script is three instances' worth of statements in one window. Without the
-// per-statement labels, running it whole against the primary either errors or
-// joins the primary to its own group.
-func TestAnnotateScriptLabelsEachInstance(t *testing.T) {
-	d := &NewAGDialog{replicas: newAGReplicaPair()}
-	d.replicas[1].seedingMode = "AUTOMATIC"
+// scriptNewAG runs New Availability Group's pipeline under Script Changes. No
+// peer is reachable: the script is what the user takes to the secondaries.
+func scriptNewAG(t *testing.T, edit func([]*newAGReplica) []*newAGReplica) string {
+	t.Helper()
+	local, _ := newFakeConn(t)
+	d := agDialogWithPeer(t, local, nil)
+	if edit != nil {
+		d.replicas = edit(d.replicas)
+	}
+	scriptCtx, script := gosmo.WithScript(context.Background())
+	if err := d.createGroup(scriptCtx); err != nil {
+		t.Fatalf("createGroup under WithScript: %v", err)
+	}
+	return multiInstanceScript("New Availability Group", script)
+}
 
-	got := d.annotateScript([]string{
-		"CREATE AVAILABILITY GROUP [AAG2] ...",
-		"ALTER AVAILABILITY GROUP [AAG2] JOIN WITH (CLUSTER_TYPE = EXTERNAL)",
-		"ALTER AVAILABILITY GROUP [AAG2] GRANT CREATE ANY DATABASE",
-	})
+// The script is several instances' worth of statements in one window. Without
+// the per-instance labels, running it whole against the primary either errors
+// or joins the primary to its own group.
+func TestNewAGScriptLabelsEachInstance(t *testing.T) {
+	got := scriptNewAG(t, nil)
 
-	// The CREATE belongs to the local instance; both statements after it to the
-	// secondary, in the order createGroup issues them.
-	wantOrder := []string{"-- on ubusql1", "CREATE AVAILABILITY GROUP", "-- on ubusql2", "JOIN", "-- on ubusql2", "GRANT CREATE ANY DATABASE"}
+	// The CREATE belongs to the local instance; the JOIN and GRANT after it to
+	// the secondary, each in a batch of its own.
+	wantOrder := []string{
+		"-- on FAKE\\SQL\nCREATE AVAILABILITY GROUP [AAG2]", "\nGO\n",
+		"-- on ubusql2\nALTER AVAILABILITY GROUP [AAG2] JOIN", "\nGO\n",
+		"\nALTER AVAILABILITY GROUP [AAG2] GRANT CREATE ANY DATABASE", "\nGO\n",
+	}
 	pos := 0
 	for _, want := range wantOrder {
 		i := strings.Index(got[pos:], want)
@@ -190,19 +203,24 @@ func TestAnnotateScriptLabelsEachInstance(t *testing.T) {
 	}
 }
 
-// A MANUAL-seeding secondary gets no GRANT, so the labels must shift with it —
-// a fixed two-per-secondary assumption would mislabel every statement after the
-// first such replica.
-func TestAnnotateScriptSkipsTheGrantForManualSeeding(t *testing.T) {
-	d := &NewAGDialog{replicas: newAGReplicaPair()}
-	d.replicas[1].seedingMode = "MANUAL"
-
-	got := d.annotateScript([]string{"CREATE ...", "JOIN ..."})
+// A MANUAL-seeding secondary gets no GRANT. The positional labels this
+// replaced shifted every label after such a replica; the collector records
+// each statement's instance where it is captured, so nothing can shift.
+func TestNewAGScriptWithManualSeedingSecondaries(t *testing.T) {
+	got := scriptNewAG(t, func(rs []*newAGReplica) []*newAGReplica {
+		rs[1].seedingMode = "MANUAL"
+		return append(rs, &newAGReplica{name: "ubusql3", endpointURL: "tcp://ubusql3:5022", failoverMode: "EXTERNAL", seedingMode: "AUTOMATIC"})
+	})
 	if strings.Contains(got, "(unknown instance)") {
 		t.Errorf("script labelled a statement as unknown:\n%s", got)
 	}
-	if n := strings.Count(got, "-- on ubusql2"); n != 1 {
-		t.Errorf("got %d statements labelled for the secondary, want 1:\n%s", n, got)
+	// ubusql2's run is its JOIN alone; the only GRANT is ubusql3's.
+	if !strings.Contains(got, "-- on ubusql2\nALTER AVAILABILITY GROUP [AAG2] JOIN WITH (CLUSTER_TYPE = EXTERNAL)\nGO\n\n-- on ubusql3\n") {
+		t.Errorf("the MANUAL secondary's run is not its JOIN alone:\n%s", got)
+	}
+	_, after, _ := strings.Cut(got, "-- on ubusql3\n")
+	if !strings.Contains(after, "GRANT CREATE ANY DATABASE") || strings.Count(got, "GRANT CREATE ANY DATABASE") != 1 {
+		t.Errorf("want exactly one GRANT, under ubusql3:\n%s", got)
 	}
 }
 

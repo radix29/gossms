@@ -20,14 +20,14 @@ import (
 // externalFolderDetail lists one of the three External Resources folders.
 func externalFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
 	n := node.data
-	d, err := sc.Server.DatabaseByNameContext(ctx, n.DBName)
+	d, err := sc.Server.DatabaseByName(ctx, n.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	switch n.Type {
 	case NodeExternalDataSources:
-		srcs, err := d.ExternalDataSourcesContext(ctx)
+		srcs, err := d.ExternalDataSources(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -42,7 +42,7 @@ func externalFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *expl
 		return []string{"Name", "Type", "Location", "Credential", "Database"}, rows, nil
 
 	case NodeExternalFileFormats:
-		fmts, err := d.ExternalFileFormatsContext(ctx)
+		fmts, err := d.ExternalFileFormats(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -57,7 +57,7 @@ func externalFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *expl
 		return []string{"Name", "Format", "Field Terminator", "Encoding", "Compression"}, rows, nil
 
 	default: // NodeExternalLibraries
-		libs, err := d.ExternalLibrariesContext(ctx)
+		libs, err := d.ExternalLibraries(ctx)
 		if err != nil {
 			return nil, nil, err
 		}

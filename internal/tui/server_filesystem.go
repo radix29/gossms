@@ -25,7 +25,7 @@ import (
 // double how long an unreachable server looks like a hang, to buy headroom
 // nothing needs.
 //
-// Measured on win10cli 2026-08-14, through EnumFileSystemContext, best of
+// Measured on win10cli 2026-08-14, through EnumFileSystem, best of
 // three: C:\Windows\System32 4551 entries in 1.2s, C:\Windows 101 in 35ms,
 // C:\Program Files 29 in 11ms. The worst directory on a Windows box already
 // clears this by more than 10x.
@@ -107,7 +107,7 @@ func (fs *serverFS) List(dir string) ([]dialogs.FileEntry, error) {
 	defer cancel()
 
 	if dir == "" {
-		drives, err := fs.sc.Server.FixedDrivesContext(ctx)
+		drives, err := fs.sc.Server.FixedDrives(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func (fs *serverFS) List(dir string) ([]dialogs.FileEntry, error) {
 		return entries, nil
 	}
 
-	found, err := fs.sc.Server.EnumFileSystemContext(ctx, dir)
+	found, err := fs.sc.Server.EnumFileSystem(ctx, dir)
 	if err != nil {
 		return nil, displayError(err)
 	}
@@ -162,7 +162,7 @@ func (fs *serverFS) Default() string {
 func (fs *serverFS) Exists(path string) (bool, bool, error) {
 	ctx, cancel := fs.ctx()
 	defer cancel()
-	return fs.sc.Server.FileSystemExistsContext(ctx, path)
+	return fs.sc.Server.FileSystemExists(ctx, path)
 }
 
 // legacyListingRefusal turns the one silent failure in this file into a spoken

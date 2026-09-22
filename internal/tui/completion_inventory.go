@@ -197,7 +197,7 @@ func (a *App) loadCompletionInventory(sc *db.ServerConn, database, key string, i
 	a.safegoRepair("loading the autocomplete catalog", func() {
 		loadPanicked(a.completionInventories, key, inv, seq)
 	}, func() {
-		cat, err := srv.DatabaseRef(database).CatalogContext(ctx)
+		cat, err := srv.DatabaseRef(database).Catalog(ctx)
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key
@@ -304,7 +304,7 @@ func (a *App) loadSysCompletionInventory(sc *db.ServerConn, key string, inv *com
 	a.safegoRepair("loading the system autocomplete catalog", func() {
 		loadPanicked(a.sysCompletionInventories, key, inv, seq)
 	}, func() {
-		cat, err := srv.DatabaseRef("master").SystemCatalogContext(ctx)
+		cat, err := srv.DatabaseRef("master").SystemCatalog(ctx)
 		a.postAndWake(func() {
 			if !inv.load.Done(seq) {
 				return // superseded by a newer load for this key

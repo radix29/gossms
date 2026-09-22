@@ -26,11 +26,11 @@ type ndbScopedCredPrefetch struct {
 }
 
 func fetchNewDBScopedCredPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*ndbScopedCredPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	creds, err := dbObj.DatabaseScopedCredentialsContext(ctx)
+	creds, err := dbObj.DatabaseScopedCredentials(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 		// DatabaseRef, not DatabaseByName: the CREATE addresses the
 		// database by name, and the by-name read would not work under Script
 		// Changes.
-		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseScopedCredentialContext(ctx, spec)
+		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseScopedCredential(ctx, spec)
 		return err
 	}
 }

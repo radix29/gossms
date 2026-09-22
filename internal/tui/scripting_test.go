@@ -26,6 +26,10 @@ func TestScriptMenuItemsPerNodeType(t *testing.T) {
 		{"index", opNode(NodeIndex, "dbo", "IX_Orders", "Orders"), "Script Index as",
 			[]string{"CREATE To", "DROP To", "DROP And CREATE To",
 				"REBUILD To", "REORGANIZE To", "UPDATE STATISTICS To"}},
+		// A statistic scripts through gosmo, filter and options included; the
+		// Properties page's Script as CREATE is the same generator.
+		{"statistic", opNode(NodeStatistic, "dbo", "st_Orders", "Orders"), "Script Statistics as",
+			[]string{"CREATE To", "DROP To", "DROP And CREATE To", "UPDATE STATISTICS To"}},
 		// A key is an index too, but ALTER INDEX on a constraint-backing one
 		// is Index Properties' business, not the constraint's menu.
 		{"key", opNode(NodeKey, "dbo", "PK_Orders", "Orders"), "Script Key as",

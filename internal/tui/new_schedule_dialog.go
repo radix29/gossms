@@ -23,7 +23,7 @@ type nschedulePrefetch struct {
 }
 
 func fetchNewSchedulePrefetch(ctx context.Context, sc *db.ServerConn) (*nschedulePrefetch, error) {
-	scheds, err := sc.Server.SchedulesContext(ctx)
+	scheds, err := sc.Server.Schedules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func fetchNewSchedulePrefetch(ctx context.Context, sc *db.ServerConn) (*nschedul
 	for _, sch := range scheds {
 		existing[strings.ToLower(sch.Name)] = true
 	}
-	jobs, err := sc.Server.JobsContext(ctx)
+	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 			FreqRelativeInterval: freq.FreqRelativeInterval, FreqRecurrenceFactor: freq.FreqRecurrenceFactor,
 		}
 		req.ActiveStartDate, req.ActiveEndDate, req.ActiveStartTime, req.ActiveEndTime = freqForm.readActiveRange()
-		_, err := sc.Server.CreateScheduleContext(ctx, req)
+		_, err := sc.Server.CreateSchedule(ctx, req)
 		return err
 	}
 
@@ -111,7 +111,7 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 			if err != nil {
 				return err
 			}
-			if err := j.AttachScheduleContext(ctx, name); err != nil {
+			if err := j.AttachSchedule(ctx, name); err != nil {
 				return err
 			}
 		}

@@ -108,9 +108,9 @@ func TestEndpointConfigureCollectsPerInstance(t *testing.T) {
 		t.Fatalf("configure under WithScript: %v", err)
 	}
 
-	if len(outer.Statements) != 0 {
+	if len(outer.Statements()) != 0 {
 		t.Errorf("%d statements landed in the pipeline-wide collector, want 0 — they belong to an instance:\n%s",
-			len(outer.Statements), strings.Join(outer.Statements, "\n"))
+			len(outer.Statements()), strings.Join(outer.Statements(), "\n"))
 	}
 	if len(d.scriptedGroups) != 2 {
 		t.Fatalf("configure produced %d groups, want one per instance (2)", len(d.scriptedGroups))

@@ -5,6 +5,7 @@ import (
 	"unicode"
 
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/sqltext"
 )
 
 // ---------------------------------------------------------------------------
@@ -14,9 +15,8 @@ import (
 
 // SelectStatementAtCursor selects the T-SQL statement containing the
 // cursor. Statement boundaries are ';', a "GO" batch separator alone on its
-// own line — mirroring, for "GO", the same rule go-mssqldb's batch.Split
-// applies when internal/query splits a script into batches to execute (see
-// internal/query/executor.go) — and, additionally, a top-level (paren-depth
+// own line — sqltext.IsGoSeparatorLine, the same rule internal/query splits a
+// script into batches to execute by — and, additionally, a top-level (paren-depth
 // zero) DML-leading keyword (SELECT/INSERT/UPDATE/DELETE/MERGE/WITH), so
 // scripts stacking several ad hoc statements with no ';' between them still
 // split correctly. A UNION/EXCEPT/INTERSECT-chained SELECT, a CTE's own main
@@ -90,6 +90,9 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 		stDoubleQuote
 	)
 	state := stNormal
+	// T-SQL block comments nest, so "/* /* */ GO */" is one comment and its
+	// GO no separator — the same rule sqltext.SplitBatches executes by.
+	commentDepth := 0
 	curRow, curCol := 0, 0
 
 	// DML-leader statement-boundary tracking (see the doc comment above) —
@@ -101,7 +104,7 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 	pendingMainSelect := false
 
 	for r, line := range lines {
-		if state == stNormal && isGoSeparatorLine(line) {
+		if state == stNormal && sqltext.IsGoSeparatorLine(line) {
 			segments = append(segments, span{curRow, curCol, r, 0})
 			curRow, curCol = r+1, 0
 			parenDepth = 0
@@ -113,10 +116,16 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 		for c < len(line) {
 			switch state {
 			case stBlockComment:
-				if c+1 < len(line) && line[c] == '*' && line[c+1] == '/' {
-					state = stNormal
+				switch {
+				case c+1 < len(line) && line[c] == '/' && line[c+1] == '*':
+					commentDepth++
 					c += 2
-				} else {
+				case c+1 < len(line) && line[c] == '*' && line[c+1] == '/':
+					if commentDepth--; commentDepth == 0 {
+						state = stNormal
+					}
+					c += 2
+				default:
 					c++
 				}
 			case stSingleQuote:
@@ -157,7 +166,7 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 				case c+1 < len(line) && line[c] == '-' && line[c+1] == '-':
 					c = len(line) // line comment: rest of the line is skipped
 				case c+1 < len(line) && line[c] == '/' && line[c+1] == '*':
-					state = stBlockComment
+					state, commentDepth = stBlockComment, 1
 					c += 2
 				case line[c] == '\'':
 					state = stSingleQuote
@@ -255,38 +264,6 @@ func sqlStatementAt(lines [][]rune, row, col int) (startRow, startCol, endRow, e
 	}
 	sg := segments[found]
 	return trimStatementRange(lines, sg.sr, sg.sc, sg.er, sg.ec)
-}
-
-// isGoSeparatorLine reports whether line consists of nothing but a "GO"
-// batch separator: optional leading whitespace, "GO" (case-insensitive,
-// not itself the prefix of a longer identifier like "goto" or "gone"),
-// then only whitespace, an optional repeat count, and/or a trailing line
-// comment until the end of the line.
-func isGoSeparatorLine(line []rune) bool {
-	i := 0
-	for i < len(line) && unicode.IsSpace(line[i]) {
-		i++
-	}
-	if i+2 > len(line) || unicode.ToUpper(line[i]) != 'G' || unicode.ToUpper(line[i+1]) != 'O' {
-		return false
-	}
-	i += 2
-	if i < len(line) && (unicode.IsLetter(line[i]) || unicode.IsDigit(line[i]) || line[i] == '_') {
-		return false
-	}
-	for i < len(line) {
-		switch {
-		case unicode.IsSpace(line[i]):
-			i++
-		case unicode.IsDigit(line[i]):
-			i++
-		case i+1 < len(line) && line[i] == '-' && line[i+1] == '-':
-			return true
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 // trimStatementRange trims leading and trailing whitespace (including

@@ -24,7 +24,7 @@ func qsReportResponse(rows ...[]driver.Value) fakeResponse {
 	return fakeResponse{match: "FROM   sys.query_store_query ", cols: 12, rows: rows}
 }
 
-// qsPlanRow is one row of the fourteen-column shape QueryStorePlansContext
+// qsPlanRow is one row of the fourteen-column shape QueryStorePlans
 // returns — see gosmo's QSPlan scan.
 func qsPlanRow(planID, queryID int64, forced bool, xml string, execs int64, value float64) []driver.Value {
 	return []driver.Value{
@@ -386,7 +386,7 @@ func TestRegressedQueriesPlotsTheRegressionNotTheCost(t *testing.T) {
 		float64(4000), float64(1000), int64(40), float64(3000), float64(0),
 	}
 	sc, _ := newFakeConn(t, qsDatabaseResponse(), qsReportResponse(stats))
-	d, err := sc.Server.DatabaseByName("appdb")
+	d, err := sc.Server.DatabaseByName(t.Context(), "appdb")
 	if err != nil {
 		t.Fatalf("DatabaseByName: %v", err)
 	}

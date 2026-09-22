@@ -46,7 +46,7 @@ const agentRootLabel = "SQL Server Agent"
 // the local replica's alone.
 //
 // A snapshot is an ordinary row in sys.databases, so it comes back from
-// DatabasesContext with the user databases and has to be excluded here or it
+// Databases with the user databases and has to be excluded here or it
 // appears twice — once as a user database and once under its own folder.
 // Database.IsSnapshot answers from the source_database_id the listing already
 // read, so the exclusion costs no second query. The Detail Browser's own
@@ -58,7 +58,7 @@ const agentRootLabel = "SQL Server Agent"
 // no snapshots is exactly the server that needs to reach it. An Azure engine
 // edition is the exception — see below.
 func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbs, err := l.sc.Server.DatabasesContext(l.ctx)
+	dbs, err := l.sc.Server.Databases(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func loadDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, er
 // database's are; see loadDatabaseSnapshotChildren for the folders it gets.
 func loadDatabaseSnapshotsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
 	return listChildren(
-		func() ([]*gosmo.DatabaseSnapshot, error) { return l.sc.Server.DatabaseSnapshotsContext(l.ctx) },
+		func() ([]*gosmo.DatabaseSnapshot, error) { return l.sc.Server.DatabaseSnapshots(l.ctx) },
 		func(s *gosmo.DatabaseSnapshot) *explorerNode {
 			n := l.node(s.Name, NodeDatabaseSnapshot, "", s.Name, s.Name)
 			n.data.CreateDate = s.CreateDate
@@ -113,7 +113,7 @@ func loadDatabaseSnapshotsChildren(l loaderCtx, node *explorerNode) ([]*explorer
 
 // loadSystemDatabasesChildren lists master/tempdb/model/msdb.
 func loadSystemDatabasesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbs, err := l.sc.Server.DatabasesContext(l.ctx)
+	dbs, err := l.sc.Server.Databases(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -221,12 +221,12 @@ func loadProgrammabilityChildren(l loaderCtx, node *explorerNode) ([]*explorerNo
 // and for the same reason: a disabled trigger enforces nothing and nothing
 // else in the row says so.
 func loadDatabaseTriggersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
-		func() ([]*gosmo.DatabaseTrigger, error) { return dbObj.DatabaseTriggersContext(l.ctx) },
+		func() ([]*gosmo.DatabaseTrigger, error) { return dbObj.DatabaseTriggers(l.ctx) },
 		func(t *gosmo.DatabaseTrigger) *explorerNode {
 			label := t.Name
 			if !t.IsEnabled {
@@ -276,13 +276,13 @@ func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 // the server-scope folder uses, and for the same reason: a disabled
 // specification records nothing and nothing else in the row says so.
 func loadDatabaseAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
 		func() ([]*gosmo.DatabaseAuditSpecification, error) {
-			return dbObj.DatabaseAuditSpecificationsContext(l.ctx)
+			return dbObj.DatabaseAuditSpecifications(l.ctx)
 		},
 		func(spec *gosmo.DatabaseAuditSpecification) *explorerNode {
 			label := spec.Name
@@ -300,13 +300,13 @@ func loadDatabaseAuditSpecificationsChildren(l loaderCtx, node *explorerNode) ([
 // sys.database_scoped_credentials, a separate securable from the server-level
 // family under Security > Credentials.
 func loadDatabaseScopedCredentialsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
 		func() ([]*gosmo.DatabaseScopedCredential, error) {
-			return dbObj.DatabaseScopedCredentialsContext(l.ctx)
+			return dbObj.DatabaseScopedCredentials(l.ctx)
 		},
 		func(c *gosmo.DatabaseScopedCredential) *explorerNode {
 			n := l.node(c.Name, NodeDatabaseScopedCredential, "", c.Name, node.data.DBName)
@@ -319,13 +319,13 @@ func loadDatabaseScopedCredentialsChildren(l loaderCtx, node *explorerNode) ([]*
 // ones SQL Server makes for itself excluded (gosmo's AsymmetricKeys does
 // that). No suffix: an asymmetric key has no expiry or state to flag.
 func loadAsymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	return listChildren(
 		func() ([]*gosmo.AsymmetricKey, error) {
-			return dbObj.AsymmetricKeysContext(l.ctx)
+			return dbObj.AsymmetricKeys(l.ctx)
 		},
 		func(k *gosmo.AsymmetricKey) *explorerNode {
 			n := l.node(k.Name, NodeAsymmetricKey, "", k.Name, node.data.DBName)
@@ -340,14 +340,14 @@ func loadAsymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNod
 // still serves an endpoint or a signed module, but BEGIN DIALOG and anything
 // else that checks the date refuses it, and nothing else in the row says so.
 func loadCertificatesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	return listChildren(
 		func() ([]*gosmo.Certificate, error) {
-			return dbObj.CertificatesContext(l.ctx)
+			return dbObj.Certificates(l.ctx)
 		},
 		func(c *gosmo.Certificate) *explorerNode {
 			n := l.node(certificateLabel(c, now), NodeCertificate, "", c.Name, node.data.DBName)
@@ -363,13 +363,13 @@ func loadCertificatesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode,
 // which is who could use the node anyway. The one key family with a
 // create_date, carried for the filter.
 func loadSymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
 	keys, err := listChildren(
 		func() ([]*gosmo.SymmetricKey, error) {
-			return dbObj.SymmetricKeysContext(l.ctx)
+			return dbObj.SymmetricKeys(l.ctx)
 		},
 		func(k *gosmo.SymmetricKey) *explorerNode {
 			n := l.node(k.Name, NodeSymmetricKey, "", k.Name, node.data.DBName)
@@ -379,7 +379,7 @@ func loadSymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 	if err != nil {
 		return nil, err
 	}
-	mk, err := dbObj.MasterKeyContext(l.ctx)
+	mk, err := dbObj.MasterKey(l.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -409,11 +409,11 @@ func certificateExpired(c *gosmo.Certificate, now time.Time) bool {
 // policies, each labelled with its state — a disabled policy filters
 // nothing, which is the first thing to know about one.
 func loadSecurityPoliciesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.SecurityPolicy, error) { return dbObj.SecurityPoliciesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.SecurityPolicy, error) { return dbObj.SecurityPolicies(l.ctx) },
 		func(p *gosmo.SecurityPolicy) *explorerNode {
 			label := p.Schema + "." + p.Name
 			if !p.IsEnabled {
@@ -435,33 +435,33 @@ func loadAlwaysEncryptedKeysChildren(l loaderCtx, node *explorerNode) ([]*explor
 }
 
 func loadColumnMasterKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.ColumnMasterKey, error) { return dbObj.ColumnMasterKeysContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.ColumnMasterKey, error) { return dbObj.ColumnMasterKeys(l.ctx) },
 		func(k *gosmo.ColumnMasterKey) *explorerNode {
 			return l.node(k.Name, NodeColumnMasterKey, "", k.Name, node.data.DBName)
 		})
 }
 
 func loadColumnEncryptionKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.ColumnEncryptionKey, error) { return dbObj.ColumnEncryptionKeysContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.ColumnEncryptionKey, error) { return dbObj.ColumnEncryptionKeys(l.ctx) },
 		func(k *gosmo.ColumnEncryptionKey) *explorerNode {
 			return l.node(k.Name, NodeColumnEncryptionKey, "", k.Name, node.data.DBName)
 		})
 }
 
 func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.User, error) { return dbObj.UsersContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.User, error) { return dbObj.Users(l.ctx) },
 		func(u *gosmo.User) *explorerNode {
 			n := l.node(u.Name, NodeUser, "", u.Name, node.data.DBName)
 			n.data.IsSystem = isSystemUser(u.Name)
@@ -470,11 +470,11 @@ func loadUsersChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error)
 }
 
 func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.DatabaseRole, error) { return dbObj.DatabaseRolesContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.DatabaseRole, error) { return dbObj.DatabaseRoles(l.ctx) },
 		func(r *gosmo.DatabaseRole) *explorerNode {
 			n := l.node(r.Name, NodeDatabaseRole, "", r.Name, node.data.DBName)
 			n.data.IsSystem = isSystemDatabaseRole(r)
@@ -483,11 +483,11 @@ func loadDatabaseRolesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode
 }
 
 func loadSchemasChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
-	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	dbObj, err := l.sc.Server.DatabaseByName(l.ctx, node.data.DBName)
 	if err != nil {
 		return nil, err
 	}
-	return listChildren(func() ([]*gosmo.Schema, error) { return dbObj.SchemasContext(l.ctx) },
+	return listChildren(func() ([]*gosmo.Schema, error) { return dbObj.Schemas(l.ctx) },
 		func(s *gosmo.Schema) *explorerNode {
 			n := l.node(s.Name, NodeSchema, s.Name, s.Name, node.data.DBName)
 			n.data.IsSystem = isSystemSchema(s.Name)
@@ -712,7 +712,7 @@ func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQu
 		{Divider: true},
 		removePrivateKeyItem(sc, node, gate.AlterOnAsymmetricKey, func() {
 			a.removePrivateKey(sc, node, "asymmetric key", func(ctx context.Context, d *gosmo.Database) error {
-				return d.AsymmetricKeyRef(node.data.Name).RemovePrivateKeyContext(ctx)
+				return d.AsymmetricKeyRef(node.data.Name).RemovePrivateKey(ctx)
 			})
 		}),
 		{Divider: true},
@@ -781,7 +781,7 @@ func certificateMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuer
 		{Label: "Back Up Certificate...", Action: func() { a.showBackupCertificateDialog(sc, node) }},
 		removePrivateKeyItem(sc, node, gate.AlterOnCertificate, func() {
 			a.removePrivateKey(sc, node, "certificate", func(ctx context.Context, d *gosmo.Database) error {
-				return d.CertificateRef(node.data.Name).RemovePrivateKeyContext(ctx)
+				return d.CertificateRef(node.data.Name).RemovePrivateKey(ctx)
 			})
 		}),
 		{Divider: true},

@@ -107,7 +107,7 @@ livedb`) is the repeatable part.
   would have caught and nothing else does — gosmo needing a tag before gossms
   can have one — is a release step instead (`CLAUDE.md` § What this is, and
   the `replace` entry under § By design below). Re-raising CI needs a new reason, not the same one.
-- **The `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
+- **The `DatabaseByName` calls in `internal/tui` stay as they are.**
   Most loaders resolve the database with a real `sys.databases` read where
   `Server.DatabaseRef(name)`'s handle would do, costing a round trip per folder
   expansion. Unmeasured: the saving is one round trip against reads that are themselves round trips, and
@@ -449,11 +449,16 @@ through a database-wide grant.
   deleted; a caller wanting idempotence ignores the error, which the library
   cannot decide for it. `TestDropStatementsAreNotIdempotent` pins it. Scripter's
   *scripts* keep `IF EXISTS` — DROP-and-CREATE output exists to be re-run.
-- **`CertificateByName` and `AsymmetricKeyByName` answer `(nil, nil)` on
-  absence**, unlike the `ErrNotFound` readers: making them error is a breaking
-  change to a published contract, and their callers branch on absence as the
-  ordinary case. The three conventions are documented on `ErrNotFound` itself;
-  `TestLiveCertificateNotFoundIsNilNil` pins both directions.
+- **`CertificateByName` and `AsymmetricKeyByName` answer absence with
+  `ErrNotFound`, like every other `*ByName` reader** (2026-09-22). They
+  answered `(nil, nil)` until then, kept only because changing a published
+  contract was breaking; the 2026-09-22 review's compatibility waiver removed
+  that reason, and the change shipped in the same breaking release as the
+  `…Context` rename. A caller that branches on absence as the ordinary case
+  tests `errors.Is(err, gosmo.ErrNotFound)` — the endpoint pipeline's
+  `findCertificateIfAny` wraps exactly that. The two remaining conventions are
+  documented on `ErrNotFound` itself; `TestLiveCertificateNotFoundIsErrNotFound`
+  pins both directions.
 - **A missing principal and an invisible one are the same thing to
   `ErrNotFound` — SQL Server's doing, do not fix it in gosmo.** Metadata
   visibility hides a principal the caller lacks `VIEW ANY DEFINITION` on by
@@ -475,9 +480,7 @@ through a database-wide grant.
   query and answers the zero value, which is the trap the suffix makes visible.
   **Two alternatives are rejected.** Giving the *lookup* the plain name
   (`DatabaseByName` → `Database`) would split the convention with the
-  library's other `*ByName` methods, and would turn `DatabaseByNameContext`
-  into `DatabaseContext` — which under gosmo's `FooContext` rule reads as the
-  context variant of the *handle* getter. Giving the handle its own distinct
+  library's other `*ByName` methods. Giving the handle its own distinct
   type, with `Load(ctx)` to populate it, is the only form that makes the
   zero-valued accessors impossible rather than merely visible, and is not worth
   the change to every call site; reopen it only with a bug the suffix failed
@@ -528,7 +531,7 @@ Three things about the job-state read are load-bearing and easy to undo:
 `internal/tui/live_filestream_test.go` (build tag `livedb`) runs Database
 Properties > Files against a real FILESTREAM database on win10cli.
 
-- **`FileGroupsContext` returns a FILESTREAM filegroup like any other** — name,
+- **`FileGroups` returns a FILESTREAM filegroup like any other** — name,
   files and all — so the Filegroup picker lists it, and `preservingItems`'
   widening is not needed for this case.
 - **The filegroup is the whole of what makes a file FILESTREAM.** ALTER
@@ -693,7 +696,7 @@ they flipped the selector.
 - **No "Configure" button on the panel.** Query Store's settings are a Database
   Properties page, as in SSMS; the folder's context menu opens it.
 - **Plot History does not dim Top or the execution floor.** gosmo's
-  `QueryStoreTrackedQueryContext` ignores `Top`, `MinExecCount`,
+  `QueryStoreTrackedQuery` ignores `Top`, `MinExecCount`,
   `MinRegressionPct` and `QueryIDs` outright — it is one query over every
   interval — so neither selector changes what the chart plots. They stay live
   because the *report grid* below the chart is still on screen and still
@@ -1001,7 +1004,7 @@ identical on all four; the finished UI was then driven on 17 and on MI.
   own Triggers folder, which is where SSMS puts it; a database-wide roll-up
   would list every one of them a second time, beside a "Database Triggers"
   folder (DDL, `parent_class = 0`) — a distinction without a difference.
-  `Database.TriggersContext` is gosmo's database-wide read; gossms simply has
+  `Database.Triggers` is gosmo's database-wide read; gossms simply has
   no folder for it.
 - **A view is not a leaf.** It carries INSTEAD OF triggers, so `NodeView` has
   the same Triggers folder a table has. `Database.ObjectTriggers` is the by-name

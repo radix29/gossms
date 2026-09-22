@@ -24,7 +24,7 @@ import (
 // independently of the tree, so the folder's filter is applied here too — over
 // the gosmo objects, before the rows are built.
 func credentialsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	creds, err := sc.Server.CredentialsContext(ctx)
+	creds, err := sc.Server.Credentials(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -48,7 +48,7 @@ func credentialsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *e
 // credentialDetail is one credential's Property/Value view. The secret is not
 // shown because it cannot be read — see gosmo's credential.go.
 func credentialDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	c, err := sc.Server.CredentialByNameContext(ctx, node.data.Name)
+	c, err := sc.Server.CredentialByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +87,7 @@ func credentialKind(c *gosmo.Credential) string {
 // no filterObjects call here — adding one without adding the folder there
 // would filter the pane by a criterion the tree cannot express.
 func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	providers, err := sc.Server.CryptographicProvidersContext(ctx)
+	providers, err := sc.Server.CryptographicProviders(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -105,7 +105,7 @@ func cryptographicProvidersFolderDetail(ctx context.Context, sc *dbconn.ServerCo
 // no by-name read in gosmo for a provider — sys.cryptographic_providers is
 // listed whole — so the row is picked out of the list.
 func cryptographicProviderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	providers, err := sc.Server.CryptographicProvidersContext(ctx)
+	providers, err := sc.Server.CryptographicProviders(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -131,7 +131,7 @@ func cryptographicProviderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 // is independent of the tree's, so the folder's filter is applied here too,
 // over the gosmo objects before the rows are built.
 func auditsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	audits, err := sc.Server.ServerAuditsContext(ctx)
+	audits, err := sc.Server.ServerAudits(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -154,7 +154,7 @@ func auditsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explor
 
 // auditDetail is one audit's Property/Value view.
 func auditDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	a, err := sc.Server.ServerAuditByNameContext(ctx, node.data.Name)
+	a, err := sc.Server.ServerAuditByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -217,7 +217,7 @@ func auditFileCountText(a *gosmo.ServerAudit) string {
 // -- Server audit specifications -------------------------------------------------
 
 func serverAuditSpecificationsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	specs, err := sc.Server.ServerAuditSpecificationsContext(ctx)
+	specs, err := sc.Server.ServerAuditSpecifications(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -240,7 +240,7 @@ func serverAuditSpecificationsFolderDetail(ctx context.Context, sc *dbconn.Serve
 }
 
 func serverAuditSpecificationDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	spec, err := sc.Server.ServerAuditSpecificationByNameContext(ctx, node.data.Name)
+	spec, err := sc.Server.ServerAuditSpecificationByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,11 +265,11 @@ func serverAuditSpecificationDetail(ctx context.Context, sc *dbconn.ServerConn, 
 // -- Database audit specifications ------------------------------------------------
 
 func databaseAuditSpecificationsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	specs, err := dbObj.DatabaseAuditSpecificationsContext(ctx)
+	specs, err := dbObj.DatabaseAuditSpecifications(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -295,11 +295,11 @@ func databaseAuditSpecificationsFolderDetail(ctx context.Context, sc *dbconn.Ser
 }
 
 func databaseAuditSpecificationDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	spec, err := dbObj.DatabaseAuditSpecificationByNameContext(ctx, node.data.Name)
+	spec, err := dbObj.DatabaseAuditSpecificationByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -369,11 +369,11 @@ func auditNameText(spec *gosmo.ServerAuditSpecification) string {
 // folder's filter is applied here too, over the gosmo objects before the rows
 // are built.
 func databaseScopedCredentialsFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	creds, err := dbObj.DatabaseScopedCredentialsContext(ctx)
+	creds, err := dbObj.DatabaseScopedCredentials(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -398,11 +398,11 @@ func databaseScopedCredentialsFolderDetail(ctx context.Context, sc *dbconn.Serve
 // secret is not shown because it cannot be read — see gosmo's
 // database_credential.go.
 func databaseScopedCredentialDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	c, err := dbObj.DatabaseScopedCredentialByNameContext(ctx, node.data.Name)
+	c, err := dbObj.DatabaseScopedCredentialByName(ctx, node.data.Name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -421,11 +421,11 @@ func databaseScopedCredentialDetail(ctx context.Context, sc *dbconn.ServerConn, 
 // column rather than a label suffix here, so the "(Expired)" the tree adds is
 // the Expired column instead.
 func certificatesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	certs, err := dbObj.CertificatesContext(ctx)
+	certs, err := dbObj.Certificates(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -496,11 +496,11 @@ func privateKeyText(desc string) string {
 
 // asymmetricKeysFolderDetail lists one database's asymmetric keys.
 func asymmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	keys, err := dbObj.AsymmetricKeysContext(ctx)
+	keys, err := dbObj.AsymmetricKeys(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -567,11 +567,11 @@ func asymmetricKeyProviderText(k *gosmo.AsymmetricKey) string {
 // entry is the zero nodeData, which no object operation claims, so selecting
 // it offers nothing rather than something that acts on the wrong row.
 func symmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 	if err != nil {
 		return nil, nil, err
 	}
-	keys, err := dbObj.SymmetricKeysContext(ctx)
+	keys, err := dbObj.SymmetricKeys(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -598,7 +598,7 @@ func symmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node 
 // failed — the key list is still worth showing then. See gosmo's HasMasterKey
 // for the one master key a low-privilege principal still reads as absent.
 func masterKeyText(ctx context.Context, d *gosmo.Database) string {
-	has, err := d.HasMasterKeyContext(ctx)
+	has, err := d.HasMasterKey(ctx)
 	switch {
 	case err != nil:
 		return "unknown"

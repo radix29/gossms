@@ -260,7 +260,7 @@ func TestLogViewerRecycleIsInertWhileBusy(t *testing.T) {
 // straight past, and toolsEnabled gates the entire toolbar on it — so without
 // the repair step every button sits inert for the panel's lifetime.
 //
-// A nil gosmo.Server is what panics: CycleLogContext reaches straight through
+// A nil gosmo.Server is what panics: CycleLog reaches straight through
 // to the connection pool it does not have.
 func TestLogViewerRecyclePanicClearsTheLatch(t *testing.T) {
 	a := newTestApp()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -376,14 +375,14 @@ func scriptSafeJob(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.
 	if gosmo.Scripting(ctx) {
 		return sc.Server.JobRef(name), nil
 	}
-	return sc.Server.JobByNameContext(ctx, name)
+	return sc.Server.JobByName(ctx, name)
 }
 
 func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Alert, error) {
 	if gosmo.Scripting(ctx) {
 		return sc.Server.AlertRef(name), nil
 	}
-	return sc.Server.AlertByNameContext(ctx, name)
+	return sc.Server.AlertByName(ctx, name)
 }
 
 // The placeholders a typed secret is scripted as. A credential's is the one
@@ -431,10 +430,10 @@ func (d *newObjectDialog[P]) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
-		if len(script.Statements) == 0 {
+		if len(script.Entries) == 0 {
 			d.SetMessage("No changes to script.", false)
 			return
 		}
-		d.app.openQueryWithText(sc, d.scriptDatabase, strings.Join(script.Statements, "\n\n"))
+		d.app.openQueryWithText(sc, d.scriptDatabase, script.String())
 	})
 }

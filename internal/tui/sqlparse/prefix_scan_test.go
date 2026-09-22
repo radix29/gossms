@@ -366,66 +366,6 @@ func compareScans(want, got PrefixScan) string {
 	return ""
 }
 
-// goSeparatorLineCases is the definition of a "GO" batch separator, shared
-// verbatim with internal/tuikit/controls's TestGoSeparatorLineCases. The
-// two implementations are duplicated because tuikit must not import tui, so
-// the table is what keeps them from drifting apart; change one list and the
-// other package fails.
-//
-// The executor's own splitter (github.com/microsoft/go-mssqldb/batch.Split) is
-// looser, and deliberately not copied — measured against v1.11.0, it also
-// splits on "GO;", "GO x", "GO_" and "GO/*c*/", each of which leaves the junk
-// at the head of the next batch for the server to reject, and it reads "GO5"
-// as a repeat count of 5 while refusing "GO -- 5 items" because of the digit
-// in the comment.
-var goSeparatorLineCases = []struct {
-	line string
-	want bool
-}{
-	{"GO", true},
-	{"go", true},
-	{"Go", true},
-	{"gO", true},
-	{" GO ", true},
-	{"\tGO\t", true},
-	{"  go  ", true},
-	{"GO 5", true},
-	{"GO 5 ", true},
-	{"GO\t10", true},
-	{"GO 0", true},
-	{"GO -- comment", true},
-	{"GO--x", true},
-	{"GO -- 5 items", true},
-	{"GO 5 -- twice", true},
-	{"", false},
-	{" ", false},
-	{"\t", false},
-	{"G", false},
-	{"O", false},
-	{"G O", false},
-	{"GOO", false},
-	{"GOTO", false},
-	{"gone", false},
-	{"XGO", false},
-	{"SELECT 1", false},
-	{"GO5", false},
-	{"GO_", false},
-	{"GO x", false},
-	{"GO 5x", false},
-	{"GO;", false},
-	{";GO", false},
-	{"GO/*c*/", false},
-	{"\uff27\uff2f", false},
-}
-
-func TestGoSeparatorLineCases(t *testing.T) {
-	for _, tt := range goSeparatorLineCases {
-		if got := isGoSeparatorLine([]rune(tt.line)); got != tt.want {
-			t.Errorf("isGoSeparatorLine(%q) = %v, want %v", tt.line, got, tt.want)
-		}
-	}
-}
-
 // The bug this whole GO-detection rework exists for: a "GO" commented out
 // with a block comment is not a batch separator, so the alias declared above
 // it is still in scope and `p.` completes against it. Asserted as the scope
@@ -437,6 +377,8 @@ func TestGoSeparatorLineCases(t *testing.T) {
 func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 	cases := map[string]string{
 		"block comment": "SELECT * FROM dbo.Patients p\n/*\nGO\n*/\nWHERE p.",
+		// T-SQL nests block comments: the first "*/" closes only the inner one.
+		"nested block comment": "SELECT * FROM dbo.Patients p\n/* /* */\nGO\n*/\nWHERE p.",
 		"string literal": "SELECT * FROM dbo.Patients p WHERE note = 'x\nGO\ny'\n" +
 			"AND p.",
 		"bracket identifier": "SELECT * FROM dbo.[Pat\nGO\nients] p\nWHERE p.",
@@ -455,15 +397,31 @@ func TestCommentedOutGoDoesNotStartANewBatch(t *testing.T) {
 	}
 }
 
-// The inverse: a real GO still ends the batch, so an alias above it is gone.
+// The inverse: a real GO still ends the batch, so an alias above it is gone —
+// including after a nested comment that has closed at every level.
 func TestRealGoStillStartsANewBatch(t *testing.T) {
-	script := "SELECT * FROM dbo.Patients p\nGO\nWHERE p."
+	for _, script := range []string{
+		"SELECT * FROM dbo.Patients p\nGO\nWHERE p.",
+		"SELECT * FROM dbo.Patients p /* /* */ */\nGO\nWHERE p.",
+	} {
+		lines := splitRunes(script)
+		buf := flattenFresh(lines)
+		row := len(lines) - 1
+		want := OffsetForCursor(lines, 2, 0)
+		if got := ScanPrefix(lines, buf, row, OffsetForCursor(lines, row, len(lines[row]))).BatchStart; got != want {
+			t.Errorf("%q: batchStart = %d, want %d (the line after the GO)", script, got, want)
+		}
+	}
+}
+
+// A cursor after the inner "*/" of a nested comment is still inside the outer
+// one, so the scan reports LexBlockComment and completion stays quiet.
+func TestNestedBlockCommentKeepsCursorInComment(t *testing.T) {
+	script := "SELECT * FROM dbo.Patients p /* /* inner */ p."
 	lines := splitRunes(script)
 	buf := flattenFresh(lines)
-	row := len(lines) - 1
-	want := OffsetForCursor(lines, 2, 0)
-	if got := ScanPrefix(lines, buf, row, OffsetForCursor(lines, row, len(lines[row]))).BatchStart; got != want {
-		t.Errorf("batchStart = %d, want %d (the line after the GO)", got, want)
+	if got := ScanPrefix(lines, buf, 0, len(buf)).State; got != LexBlockComment {
+		t.Errorf("state = %v, want LexBlockComment", got)
 	}
 }
 

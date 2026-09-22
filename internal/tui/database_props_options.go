@@ -39,7 +39,7 @@ func dbOptBoolRow(tracked *[]dbOptRow, opt gosmo.DatabaseOption, label string, v
 }
 
 // userAccessItems is the Restrict access dropdown, deliberately not one of the
-// tracked options: it is written with SetUserAccessContext, whose ALTER carries
+// tracked options: it is written with SetUserAccess, whose ALTER carries
 // WITH ROLLBACK IMMEDIATE. Through SetDatabaseOption the same choice emits a
 // bare SET SINGLE_USER, which blocks until every other connection leaves — a
 // dialog that appears to hang, on a database nobody can reconnect to.
@@ -59,7 +59,7 @@ func databaseOptionRows(o *gosmo.DatabaseOptions) ([]propsheet.Row, []dbOptRow, 
 	snapshotIsolationOn := o.SnapshotIsolation == "ON" || o.SnapshotIsolation == "ENABLED"
 
 	userAccessRow := propsheet.Select("Restrict access", userAccessItems,
-		indexOf(userAccessItems, o.UserAccess))
+		indexOf(userAccessItems, string(o.UserAccess)))
 
 	rows := []propsheet.Row{
 		propsheet.Section("Automatic"),
@@ -100,7 +100,7 @@ func applyTrackedOptions(ctx context.Context, d *gosmo.Database, tracked []dbOpt
 			continue
 		}
 		value := r.items[r.row.Selected()]
-		if err := d.SetDatabaseOptionContext(ctx, r.opt, value); err != nil {
+		if err := d.SetDatabaseOption(ctx, r.opt, value); err != nil {
 			return err
 		}
 	}
@@ -113,18 +113,18 @@ func applyRestrictAccess(ctx context.Context, d *gosmo.Database, row *propsheet.
 	if !row.Dirty() {
 		return nil
 	}
-	return d.SetUserAccessContext(ctx, userAccessItems[row.Selected()])
+	return d.SetUserAccess(ctx, gosmo.UserAccess(userAccessItems[row.Selected()]))
 }
 
 func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 	return propPage{
 		title: "Options",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+			d, err := sc.Server.DatabaseByName(ctx, dbName)
 			if err != nil {
 				return nil, nil, err
 			}
-			o, err := d.OptionsContext(ctx)
+			o, err := d.Options(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -140,7 +140,7 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 				compatRow)...)
 
 			apply := func(ctx context.Context) error {
-				d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
@@ -152,7 +152,7 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := d.SetCompatibilityLevelContext(ctx, gosmo.CompatibilityLevel(n)); err != nil {
+					if err := d.SetCompatibilityLevel(ctx, gosmo.CompatibilityLevel(n)); err != nil {
 						return err
 					}
 				}

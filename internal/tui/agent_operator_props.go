@@ -15,10 +15,10 @@ import (
 // the operator. Pager/Net Send excluded (SQL-only scope). Pages share a *string
 // name cell so a General rename is seen later in the same Apply.
 
-// findAgentOperator wraps gosmo.Server.OperatorByNameContext, like
+// findAgentOperator wraps gosmo.Server.OperatorByName, like
 // findAgentJob.
 func findAgentOperator(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Operator, error) {
-	return sc.Server.OperatorByNameContext(ctx, name)
+	return sc.Server.OperatorByName(ctx, name)
 }
 
 // operatorPropPages builds the page set for Operator Properties.
@@ -46,7 +46,7 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			cats, err := sc.Server.CategoriesContext(ctx, gosmo.CategoryClassOperator)
+			cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassOperator)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -94,7 +94,7 @@ func pageOperatorGeneral(sc *db.ServerConn, operatorName *string) propPage {
 				if nameField.Dirty() {
 					ch.Name = gosmo.Ptr(nameField.Value())
 				}
-				if err := o.AlterContext(ctx, ch); err != nil {
+				if err := o.Alter(ctx, ch); err != nil {
 					return err
 				}
 				if nameField.Dirty() {
@@ -117,11 +117,11 @@ func pageOperatorNotifications(sc *db.ServerConn, operatorName *string) propPage
 			if err != nil {
 				return nil, nil, err
 			}
-			alerts, err := o.NotifyingAlertsContext(ctx)
+			alerts, err := o.NotifyingAlerts(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			jobs, err := o.NotifyingJobsContext(ctx)
+			jobs, err := o.NotifyingJobs(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

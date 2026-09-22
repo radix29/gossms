@@ -51,7 +51,7 @@ func falses(n int) []driver.Value {
 // This is the test the autogrowth bug needed. Every encoder-level assertion
 // around fileEdit.modify passed while the page as a whole did nothing:
 // gosmo reads a zero growth as "leave FILEGROWTH alone", so the ALTER lost
-// its only clause, buildAlterFileStatement returned "", AlterFileContext
+// its only clause, buildAlterFileStatement returned "", AlterFile
 // returned nil, and Apply reported success. Nothing short of running the
 // apply closure and looking at what reached the server could see it.
 func TestFilesPageWritesTheAutogrowthItWasGiven(t *testing.T) {
@@ -227,7 +227,7 @@ func TestFilesPageWontAddAFileTypeItCannotBuild(t *testing.T) {
 // run said this page was one clause away from being able to make.
 //
 // The Filegroup picker has always listed the FILESTREAM filegroup —
-// FileGroupsContext returns it like any other — so the combination was already
+// FileGroups returns it like any other — so the combination was already
 // reachable, and the statement it built carried SIZE and FILEGROWTH, which SQL
 // Server refuses outright: "The properties SIZE or FILEGROWTH cannot be
 // specified for the FILESTREAM data file" (Msg 5509), measured on win10cli

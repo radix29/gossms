@@ -323,8 +323,8 @@ func TestAttachScriptingDoesNotCheckTheFiles(t *testing.T) {
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("script: %v", err)
 	}
-	if len(script.Statements) == 0 || !strings.Contains(script.Statements[0], "CREATE DATABASE [AppDB]") {
-		t.Fatalf("scripted %v, want the CREATE DATABASE ... FOR ATTACH", script.Statements)
+	if len(script.Statements()) == 0 || !strings.Contains(script.Statements()[0], "CREATE DATABASE [AppDB]") {
+		t.Fatalf("scripted %v, want the CREATE DATABASE ... FOR ATTACH", script.Statements())
 	}
 	if n := inst.QueryCount() - before; n != 0 {
 		t.Errorf("scripting ran %d queries, want none — the files were not probed", n)

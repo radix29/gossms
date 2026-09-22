@@ -209,7 +209,7 @@ func TestXMLHighlighterIncrementalCacheMatchesFullReplay(t *testing.T) {
 // of edits that open and close comments and CDATA sections. xmlOpenBlock has
 // no callers outside this test and exists for it — it is the reference
 // implementation the cache is required to agree with, the role
-// startsInBlockComment plays for SQL in highlighter_cache_test.go.
+// blockCommentDepthAt plays for SQL in highlighter_cache_test.go.
 func TestXMLPrefixStatesMatchFullReplayAcrossEdits(t *testing.T) {
 	e := NewEditor(nil)
 	e.SetBounds(0, 0, 80, 20)

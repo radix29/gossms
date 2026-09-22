@@ -16,10 +16,10 @@ import (
 // rename (the run's last write, see propPage.renames) is seen by
 // PropDialog.InvalidateAll's reload.
 
-// findAgentSchedule wraps gosmo.Server.ScheduleByNameContext, like
+// findAgentSchedule wraps gosmo.Server.ScheduleByName, like
 // findAgentJob.
 func findAgentSchedule(ctx context.Context, sc *db.ServerConn, name string) (*gosmo.Schedule, error) {
-	return sc.Server.ScheduleByNameContext(ctx, name)
+	return sc.Server.ScheduleByName(ctx, name)
 }
 
 // schedulePropPages builds the page set for Schedule Properties.
@@ -47,7 +47,7 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -98,7 +98,7 @@ func pageScheduleGeneral(sc *db.ServerConn, scheduleName *string) propPage {
 				if freqForm.nameField.Dirty() {
 					ch.Name = gosmo.Ptr(freqForm.name())
 				}
-				if err := sch.AlterContext(ctx, ch); err != nil {
+				if err := sch.Alter(ctx, ch); err != nil {
 					return err
 				}
 				if freqForm.nameField.Dirty() {
@@ -121,7 +121,7 @@ func pageScheduleJobs(sc *db.ServerConn, scheduleName *string) propPage {
 			if err != nil {
 				return nil, nil, err
 			}
-			jobs, err := sch.JobsContext(ctx)
+			jobs, err := sch.Jobs(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -143,7 +143,7 @@ func (sc *ServerConn) probeDatabase(ctx context.Context, name string, gen uint64
 
 	pctx, cancel := context.WithTimeout(ctx, capabilityProbeTimeout)
 	defer cancel()
-	c, err = sc.Server.DatabaseRef(name).CapabilitiesContext(pctx)
+	c, err = sc.Server.DatabaseRef(name).Capabilities(pctx)
 	if err != nil {
 		return unknownDatabaseCapabilities()
 	}
@@ -213,7 +213,7 @@ func (sc *ServerConn) ProbeCapabilities() {
 	ctx, cancel := context.WithTimeout(sc.Context(), capabilityProbeTimeout)
 	defer cancel()
 
-	if c, err := sc.Server.CapabilitiesContext(ctx); err == nil {
+	if c, err := sc.Server.Capabilities(ctx); err == nil {
 		sc.caps.Store(c)
 	}
 }

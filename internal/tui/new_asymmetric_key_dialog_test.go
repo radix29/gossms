@@ -37,7 +37,7 @@ func scriptNewAsymmetricKey(t *testing.T, d *NewAsymmetricKeyDialog) []string {
 	if err := d.applyFns[0](ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	return script.Statements
+	return script.Statements()
 }
 
 // No master key: Script Changes creates one first, the password a placeholder.
@@ -51,8 +51,8 @@ func TestNewAsymmetricKeyScriptsTheMasterKeyFirst(t *testing.T) {
 
 	stmts := scriptNewAsymmetricKey(t, d)
 	want := []string{
-		"USE [keydb];\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = N'<insert password here>'",
-		"USE [keydb];\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_4096",
+		"USE [keydb];\nGO\nCREATE MASTER KEY ENCRYPTION BY PASSWORD = N'<insert password here>'",
+		"USE [keydb];\nGO\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_4096",
 	}
 	if strings.Join(stmts, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), strings.Join(want, "\n"))
@@ -65,7 +65,7 @@ func TestNewAsymmetricKeyDefaultsAndExistingMasterKey(t *testing.T) {
 	editText(t, d.forms[0], "Key name", "k1")
 
 	stmts := scriptNewAsymmetricKey(t, d)
-	want := "USE [keydb];\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_2048"
+	want := "USE [keydb];\nGO\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_2048"
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}
@@ -80,7 +80,7 @@ func TestNewAsymmetricKeyByPassword(t *testing.T) {
 	editText(t, f, "Confirm password", "k3y!pw")
 
 	stmts := scriptNewAsymmetricKey(t, d)
-	want := "USE [keydb];\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_2048 ENCRYPTION BY PASSWORD = N'<insert password here>'"
+	want := "USE [keydb];\nGO\nCREATE ASYMMETRIC KEY [k1] WITH ALGORITHM = RSA_2048 ENCRYPTION BY PASSWORD = N'<insert password here>'"
 	if len(stmts) != 1 || stmts[0] != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(stmts, "\n"), want)
 	}

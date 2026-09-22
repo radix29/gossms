@@ -36,7 +36,7 @@ func pageEndpointGeneral(sc *db.ServerConn, epName string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			e, err := sc.Server.EndpointByNameContext(ctx, epName)
+			e, err := sc.Server.EndpointByName(ctx, epName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -72,7 +72,7 @@ func pageEndpointPayload(sc *db.ServerConn, epName string) propPage {
 	return propPage{
 		title: "Type Properties",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			e, err := sc.Server.EndpointByNameContext(ctx, epName)
+			e, err := sc.Server.EndpointByName(ctx, epName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -108,7 +108,7 @@ func endpointPayloadTitle(payload string) string {
 }
 
 func endpointMirroringForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.Form, propApply, error) {
-	d, err := e.MirroringDetailContext(ctx)
+	d, err := e.MirroringDetail(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,7 +130,7 @@ func endpointMirroringForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.F
 }
 
 func endpointServiceBrokerForm(ctx context.Context, e *gosmo.Endpoint) (*propsheet.Form, propApply, error) {
-	d, err := e.ServiceBrokerDetailContext(ctx)
+	d, err := e.ServiceBrokerDetail(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

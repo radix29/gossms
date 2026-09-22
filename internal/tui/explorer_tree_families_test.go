@@ -34,7 +34,7 @@ func treeFamilyDatabaseRow() fakeResponse {
 }
 
 // newFamilyConn is newFakeConn with the database row every one of these
-// loaders resolves through DatabaseByNameContext before its own read.
+// loaders resolves through DatabaseByName before its own read.
 func newFamilyConn(t *testing.T, responses ...fakeResponse) *db.ServerConn {
 	t.Helper()
 	sc, _ := newFakeConn(t, append([]fakeResponse{treeFamilyDatabaseRow()}, responses...)...)

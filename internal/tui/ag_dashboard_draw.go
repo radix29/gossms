@@ -109,8 +109,8 @@ func (d *AGDashboard) drawHeader(s tcell.Screen) {
 		g := d.snap.group
 		state = orDefault(g.SynchronizationHealth, "(unknown)")
 		primary = orDefault(g.PrimaryReplicaServerName, "(none visible)")
-		cluster = orDefault(g.ClusterType, "WSFC (implied)")
-		backups = orDefault(g.AutomatedBackupPreference, "—")
+		cluster = orDefault(string(g.ClusterType), "WSFC (implied)")
+		backups = orDefault(string(g.AutomatedBackupPreference), "—")
 	}
 
 	core.DrawTextClipped(s, left, top, w, base.Bold(true),

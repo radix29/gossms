@@ -483,7 +483,7 @@ func serverInfoResponse() fakeResponse {
 // It matches on the query's table alias, not on the view name, because it is
 // prepended ahead of everything a test scripts and responses are matched in
 // order and never consumed. Matching "dm_os_sys_info" therefore also answered
-// Server.ProcessorInfoContext's `SELECT cpu_count, hyperthread_ratio FROM
+// Server.ProcessorInfo's `SELECT cpu_count, hyperthread_ratio FROM
 // sys.dm_os_sys_info`, whose own response sat behind it, unreachable: the
 // Processors page read this row's two columns instead and reported 16384
 // processors with a hyperthread ratio of 8. Both are two-column reads of one
@@ -491,7 +491,7 @@ func serverInfoResponse() fakeResponse {
 // get it.
 //
 // "physical_memory_kb" is not the discriminator either: sys.dm_os_sys_memory
-// has total_physical_memory_kb, so it shadows MemoryStatsContext instead and
+// has total_physical_memory_kb, so it shadows MemoryStats instead and
 // moves the same bug onto a different page. Keep a prepended response's match
 // to text only its own query carries — here the `osi` alias.
 func sysInfoResponse() fakeResponse {

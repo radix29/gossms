@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,22 +23,18 @@ import (
 // filesystem. ACTIVE FOR BEGIN_DIALOG is the one flag, and is left to a
 // scripted ALTER.
 
-// findCertificate resolves name in dbName. CertificateByName answers
-// (nil, nil) for a certificate that is not there — a published contract of
-// gosmo's — so that is turned into an error here rather than dereferenced.
+// findCertificate resolves name in dbName, rewording CertificateByName's
+// ErrNotFound for a certificate dropped since the tree was read.
 func findCertificate(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.Certificate, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	c, err := d.CertificateByNameContext(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if c == nil {
+	c, err := d.CertificateByName(ctx, name)
+	if errors.Is(err, gosmo.ErrNotFound) {
 		return nil, fmt.Errorf("certificate %q no longer exists in %q", name, dbName)
 	}
-	return c, nil
+	return c, err
 }
 
 func certificatePropPages(sc *db.ServerConn, dbName, name string) []propPage {
@@ -81,7 +78,7 @@ func certificatePropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				keyOwnerNote("certificate"),
 			)
 			return f, keyOwnerApply(sc, dbName, owner, func(ctx context.Context, d *gosmo.Database, o string) error {
-				return d.CertificateRef(name).ChangeOwnerContext(ctx, o)
+				return d.CertificateRef(name).ChangeOwner(ctx, o)
 			}), nil
 		},
 	}

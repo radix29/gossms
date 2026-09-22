@@ -133,11 +133,11 @@ func (d *NewIndexDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (
 	if err != nil {
 		return nil, err
 	}
-	cols, err := t.ColumnsContext(ctx)
+	cols, err := t.Columns(ctx)
 	if err != nil {
 		return nil, err
 	}
-	indexes, err := t.IndexesContext(ctx)
+	indexes, err := t.Indexes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (d *NewIndexDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (
 	if d.kind.typ == gosmo.IndexTypeXML {
 		// A secondary XML index is built over a primary one, which the
 		// catalog reports as an XML index with no secondary type.
-		xml, err := t.XMLIndexesContext(ctx)
+		xml, err := t.XMLIndexes(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -158,18 +158,18 @@ func (d *NewIndexDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (
 			}
 		}
 	}
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, d.dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, d.dbName)
 	if err != nil {
 		return nil, err
 	}
-	fgs, err := dbObj.FileGroupsContext(ctx)
+	fgs, err := dbObj.FileGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, fg := range fgs {
 		pf.fileGroups = append(pf.fileGroups, fg.Name)
 	}
-	schemes, err := dbObj.PartitionSchemesContext(ctx)
+	schemes, err := dbObj.PartitionSchemes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (d *NewIndexDialog) createIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.CreateIndexContext(ctx, d.request())
+	return t.CreateIndex(ctx, d.request())
 }
 
 // request assembles the CreateIndexRequest from whichever rows this type's

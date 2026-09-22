@@ -56,7 +56,7 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Processors",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -66,7 +66,7 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 			// leaves the three counts unreadable and the affinity grid empty
 			// (LogicalCPUCount is zero for the same reason), but the Threads
 			// and Parallelism rows below are still editable.
-			proc, procErr := sc.Server.ProcessorInfoContext(ctx)
+			proc, procErr := sc.Server.ProcessorInfo(ctx)
 			if procErr != nil {
 				proc = &gosmo.ProcessorInfo{}
 			}
@@ -162,11 +162,11 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 						wantAffMask = 0
 					}
 					if wantAffMask != affMask {
-						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity mask")
+						opt, err := sc.Server.ConfigurationByName(ctx, "affinity mask")
 						if err != nil {
 							return err
 						}
-						if err := opt.SetValueContext(ctx, wantAffMask); err != nil {
+						if err := opt.SetValue(ctx, wantAffMask); err != nil {
 							return err
 						}
 						changed = true
@@ -176,18 +176,18 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 						wantIOMask = 0
 					}
 					if wantIOMask != ioMask {
-						opt, err := sc.Server.ConfigurationByNameContext(ctx, "affinity I/O mask")
+						opt, err := sc.Server.ConfigurationByName(ctx, "affinity I/O mask")
 						if err != nil {
 							return err
 						}
-						if err := opt.SetValueContext(ctx, wantIOMask); err != nil {
+						if err := opt.SetValue(ctx, wantIOMask); err != nil {
 							return err
 						}
 						changed = true
 					}
 				}
 				if changed {
-					return sc.Server.ReconfigureContext(ctx, false)
+					return sc.Server.Reconfigure(ctx, false)
 				}
 				return nil
 			}

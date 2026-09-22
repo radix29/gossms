@@ -41,17 +41,17 @@ func keyOwnerNote(noun string) propsheet.Row {
 // the list (a certificate-mapped user, an application role), so an untouched
 // row stays clean.
 func keyOwnerRow(ctx context.Context, sc *db.ServerConn, dbName, current string, withRoles bool) (*propsheet.SelectRow, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	users, err := d.UsersContext(ctx)
+	users, err := d.Users(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var roles []*gosmo.DatabaseRole
 	if withRoles {
-		if roles, err = d.DatabaseRolesContext(ctx); err != nil {
+		if roles, err = d.DatabaseRoles(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -205,7 +205,7 @@ func (p *providerKeyFields) validate() error {
 // cannot create a key in one either, and the dialog's own purpose — a key SQL
 // Server holds — must not fail with it.
 func readProviders(ctx context.Context, sc *db.ServerConn) []*gosmo.CryptographicProvider {
-	ps, err := sc.Server.CryptographicProvidersContext(ctx)
+	ps, err := sc.Server.CryptographicProviders(ctx)
 	if err != nil {
 		return nil
 	}

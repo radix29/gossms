@@ -142,7 +142,7 @@ var sqlKeywords = map[string]bool{
 // Editor.Draw calls it once per visible row, and Draw runs on every event the
 // app processes — every keystroke, mouse-move tick and timer tick included.
 // Deciding whether a line starts inside an unterminated /* */ means replaying
-// every prior line (startsInBlockComment): O(N) per line, O(H*N) per Draw for
+// every prior line (blockCommentDepthAt): O(N) per line, O(H*N) per Draw for
 // a viewport of H rows. Measured on a 40-row viewport scrolled to the bottom
 // of the document, that is ~4.6ms per pass at 1,000 lines and ~48ms at 10,000
 // — i.e. typing in a large script is bounded by the highlighter.
@@ -163,18 +163,19 @@ func SQLHighlighter(p *theme.Palette) Highlighter {
 	cmtStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorComment)
 	numStyle := tcell.StyleDefault.Background(p.EditorBg).Foreground(p.EditorNumber)
 
-	var starts prefixStates[bool]
+	var starts prefixStates[int]
 
 	return func(doc *Document, idx int) []ColorRun {
 		line := doc.Line(idx)
 		runs := make([]ColorRun, 0, 8)
 		i := 0
 
-		// A block comment carried over, unterminated, from an earlier line.
-		startsInComment := starts.at(doc, idx, false, blockCommentToggleEnd)
+		// A block comment carried over, unterminated, from an earlier line —
+		// nested depth levels deep.
+		depth := starts.at(doc, idx, 0, blockCommentDepthEnd)
 
-		if startsInComment {
-			end := blockCommentEnd(line, 0)
+		if depth > 0 {
+			end := blockCommentEnd(line, 0, depth)
 			if end < 0 {
 				return append(runs, ColorRun{0, len(line), cmtStyle})
 			}
@@ -185,7 +186,7 @@ func SQLHighlighter(p *theme.Palette) Highlighter {
 		for i < len(line) {
 			// Block comment
 			if i+1 < len(line) && line[i] == '/' && line[i+1] == '*' {
-				end := blockCommentEnd(line, i+2)
+				end := blockCommentEnd(line, i+2, 1)
 				if end < 0 {
 					runs = append(runs, ColorRun{i, len(line) - i, cmtStyle})
 					break
@@ -242,20 +243,31 @@ func SQLHighlighter(p *theme.Palette) Highlighter {
 	}
 }
 
-// blockCommentEnd returns the rune index right after the first "*/" found
-// in line at or after from, or -1 if the comment doesn't close on this
-// line (it continues onto the next one).
-func blockCommentEnd(line []rune, from int) int {
+// blockCommentEnd returns the rune index right after the "*/" that closes a
+// block comment open depth levels deep at line[from], or -1 if it doesn't
+// close on this line (it continues onto the next one). T-SQL nests block
+// comments — each "/*" inside one needs its own "*/" — and so do the editor's
+// statement select and the executor's batch splitter (sqltext.SplitBatches);
+// colouring "/* /* */ GO */" as code after the first "*/" would show a GO the
+// executor never splits on.
+func blockCommentEnd(line []rune, from, depth int) int {
 	for j := from; j+1 < len(line); j++ {
-		if line[j] == '*' && line[j+1] == '/' {
-			return j + 2
+		switch {
+		case line[j] == '/' && line[j+1] == '*':
+			depth++
+			j++
+		case line[j] == '*' && line[j+1] == '/':
+			if depth--; depth == 0 {
+				return j + 2
+			}
+			j++
 		}
 	}
 	return -1
 }
 
-// blockCommentToggleEnd reports whether line leaves an unterminated /* open,
-// given whether it started inside one.
+// blockCommentDepthEnd returns how many block comments are still open at the
+// end of line, given how many were open at its start.
 //
 // It skips over "--" line comments and '...' string literals exactly as
 // SQLHighlighter's main loop does, so a "/*" appearing inside either one does
@@ -264,41 +276,45 @@ func blockCommentEnd(line []rune, from int) int {
 // line rendered as one.
 //
 // This is the single definition of that per-line step, shared by the
-// prefixStates cache SQLHighlighter reads and startsInBlockComment's full
+// prefixStates cache SQLHighlighter reads and blockCommentDepthAt's full
 // replay, which is the reference that cache's tests check against.
 //
 // An unterminated string ends at the end of its line, which is also what the
 // main loop does — a genuinely multi-line literal is still mis-scanned, and
 // consistently so.
-func blockCommentToggleEnd(line []rune, in bool) bool {
+func blockCommentDepthEnd(line []rune, depth int) int {
 	for j := 0; j < len(line); {
-		if in {
-			end := blockCommentEnd(line, j)
-			if end < 0 {
-				break // the rest of this line stays inside the comment
+		if depth > 0 {
+			switch {
+			case j+1 < len(line) && line[j] == '/' && line[j+1] == '*':
+				depth++
+				j += 2
+			case j+1 < len(line) && line[j] == '*' && line[j+1] == '/':
+				depth--
+				j += 2
+			default:
+				j++
 			}
-			in = false
-			j = end
 			continue
 		}
 		switch {
 		case j+1 < len(line) && line[j] == '/' && line[j+1] == '*':
-			in = true
+			depth = 1
 			j += 2
 		case j+1 < len(line) && line[j] == '-' && line[j+1] == '-':
-			return false // rest of the line is a comment that ends with it
+			return 0 // rest of the line is a comment that ends with it
 		case line[j] == '\'':
 			j = stringLiteralEnd(line, j)
 		default:
 			j++
 		}
 	}
-	return in
+	return depth
 }
 
 // stringLiteralEnd returns the rune index just past the '...' literal opening
 // at line[from], or len(line) if it never closes on this line. Mirrors the
-// scan SQLHighlighter's main loop performs inline, which blockCommentToggleEnd
+// scan SQLHighlighter's main loop performs inline, which blockCommentDepthEnd
 // has to agree with rune for rune.
 func stringLiteralEnd(line []rune, from int) int {
 	j := from + 1
@@ -311,13 +327,14 @@ func stringLiteralEnd(line []rune, from int) int {
 	return j
 }
 
-// startsInBlockComment reports whether line idx begins already inside an
-// unterminated /* ... */ block comment carried over from an earlier line —
-// found by replaying blockCommentToggleEnd across lines[0:idx].
-func startsInBlockComment(lines [][]rune, idx int) bool {
-	in := false
+// blockCommentDepthAt returns how many /* ... */ block comments line idx
+// begins inside, carried over unterminated from earlier lines — found by
+// replaying blockCommentDepthEnd across lines[0:idx]. Zero means the line
+// starts in code.
+func blockCommentDepthAt(lines [][]rune, idx int) int {
+	depth := 0
 	for i := 0; i < idx; i++ {
-		in = blockCommentToggleEnd(lines[i], in)
+		depth = blockCommentDepthEnd(lines[i], depth)
 	}
-	return in
+	return depth
 }

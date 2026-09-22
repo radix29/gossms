@@ -12,15 +12,15 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Permissions",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			perms, err := sc.Server.ServerPermissionsContext(ctx)
+			perms, err := sc.Server.ServerPermissions(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			logins, err := sc.Server.LoginsContext(ctx)
+			logins, err := sc.Server.Logins(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			roles, err := sc.Server.ServerRolesContext(ctx)
+			roles, err := sc.Server.ServerRoles(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -606,7 +606,7 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeSQLServerLog, NodeAgentErrorLog:
 		return errorLogFileDetail(ctx, sc, node)
 	case NodeSystemDatabases:
-		dbs, err := sc.Server.DatabasesContext(ctx)
+		dbs, err := sc.Server.Databases(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -622,11 +622,11 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return []string{"Name", "State", "Recovery"}, rows, nil
 
 	case NodeViews:
-		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 		if err != nil {
 			return nil, nil, err
 		}
-		views, err := dbObj.ViewsFilteredContext(ctx, serverFilter(node.data.Filter))
+		views, err := dbObj.ViewsFiltered(ctx, serverFilter(node.data.Filter))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -641,11 +641,11 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return []string{"Name", "Created"}, rows, nil
 
 	case NodeStoredProcedures:
-		dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+		dbObj, err := sc.Server.DatabaseByName(ctx, node.data.DBName)
 		if err != nil {
 			return nil, nil, err
 		}
-		procs, err := dbObj.StoredProceduresFilteredContext(ctx, serverFilter(node.data.Filter))
+		procs, err := dbObj.StoredProceduresFiltered(ctx, serverFilter(node.data.Filter))
 		if err != nil {
 			return nil, nil, err
 		}

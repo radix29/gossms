@@ -13,14 +13,14 @@ func pageServerMemory(sc *db.ServerConn) propPage {
 	return propPage{
 		title: "Memory",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
 			// Not fatal — see server_props_general.go. The four Current
 			// values rows below are the only thing that needs it, and the
 			// configuration rows above them are editable without it.
-			mem, memErr := sc.Server.MemoryStatsContext(ctx)
+			mem, memErr := sc.Server.MemoryStats(ctx)
 			if memErr != nil {
 				// A refused read returns nil, and the rows below read fields
 				// off it before memMB can decide anything.

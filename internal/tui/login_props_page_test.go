@@ -153,7 +153,7 @@ func TestLoginStatusReadsTheConnectStateBackAsTheServerReportsIt(t *testing.T) {
 }
 
 // serverRolesResponse scripts the fixed server roles in the order
-// ServerRolesContext returns them (ORDER BY name), with appuser already a
+// ServerRoles returns them (ORDER BY name), with appuser already a
 // member of dbcreator and of nothing else.
 func serverRolesResponse() fakeResponse {
 	member := func(names ...string) driver.Value {
@@ -178,7 +178,7 @@ func serverRolesResponse() fakeResponse {
 
 // TestServerRolesGrantsTheRoleTheRowIsNamedFor is the index-alignment test.
 //
-// The page builds its grid from ServerRolesContext's slice and reads it back
+// The page builds its grid from ServerRoles's slice and reads it back
 // with `for i, v := range rolesGrid.Values()` against `roles[i]` — so the
 // checkbox and the role it grants are related by nothing but position. Ticking
 // the row labelled sysadmin has to grant *sysadmin*; if the two lists ever

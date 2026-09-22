@@ -30,15 +30,15 @@ type nauditSpecPrefetch struct {
 }
 
 func fetchNewAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn) (*nauditSpecPrefetch, error) {
-	specs, err := sc.Server.ServerAuditSpecificationsContext(ctx)
+	specs, err := sc.Server.ServerAuditSpecifications(ctx)
 	if err != nil {
 		return nil, err
 	}
-	audits, err := sc.Server.ServerAuditsContext(ctx)
+	audits, err := sc.Server.ServerAudits(ctx)
 	if err != nil {
 		return nil, err
 	}
-	groups, err := sc.Server.AuditActionGroupsContext(ctx)
+	groups, err := sc.Server.AuditActionGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 				chosen = append(chosen, g)
 			}
 		}
-		_, err := sc.Server.CreateServerAuditSpecificationContext(ctx, gosmo.ServerAuditSpecificationSpec{
+		_, err := sc.Server.CreateServerAuditSpecification(ctx, gosmo.ServerAuditSpecificationSpec{
 			Name:         d.objectName(),
 			AuditName:    auditField.Value(),
 			ActionGroups: chosen,

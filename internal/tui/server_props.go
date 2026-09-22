@@ -111,10 +111,10 @@ func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]config
 }
 
 // applyConfigRows writes back every dirty row in intRows/boolRows via
-// ConfigurationOption.SetValueContext. It does not call Reconfigure —
+// ConfigurationOption.SetValue. It does not call Reconfigure —
 // callers combine this with any other sp_configure-backed change (e.g.
 // the Processors page's affinity bitmasks) and call
-// Server.ReconfigureContext once at the end.
+// Server.Reconfigure once at the end.
 func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow, boolRows []configBoolRow) (changed bool, err error) {
 	// sys.configurations comes back once for the whole apply instead of once
 	// per dirty row: it is a single ~80-row read either way, so a page with
@@ -134,7 +134,7 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		if err != nil {
 			return changed, err
 		}
-		if err := opt.SetValueContext(ctx, v); err != nil {
+		if err := opt.SetValue(ctx, v); err != nil {
 			return changed, err
 		}
 		changed = true
@@ -151,7 +151,7 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		if err != nil {
 			return changed, err
 		}
-		if err := opt.SetValueContext(ctx, v); err != nil {
+		if err := opt.SetValue(ctx, v); err != nil {
 			return changed, err
 		}
 		changed = true
@@ -161,12 +161,12 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 
 // configLookup returns a by-name option lookup that reads sys.configurations
 // at most once, on the first call. An unknown name is reported the way
-// Server.ConfigurationByNameContext reports it, so callers see no difference.
+// Server.ConfigurationByName reports it, so callers see no difference.
 func configLookup(sc *db.ServerConn) func(context.Context, string) (*gosmo.ConfigurationOption, error) {
 	var byName map[string]*gosmo.ConfigurationOption
 	return func(ctx context.Context, name string) (*gosmo.ConfigurationOption, error) {
 		if byName == nil {
-			opts, err := sc.Server.ConfigurationsContext(ctx)
+			opts, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -193,7 +193,7 @@ func configApply(sc *db.ServerConn, intRows []configRow, boolRows []configBoolRo
 			return err
 		}
 		if changed {
-			return sc.Server.ReconfigureContext(ctx, false)
+			return sc.Server.Reconfigure(ctx, false)
 		}
 		return nil
 	}

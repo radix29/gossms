@@ -20,11 +20,11 @@ import (
 // prop_page_requires_test.go's pagesThatOnlyRead.
 
 func findMessageType(ctx context.Context, sc *db.ServerConn, dbName, name string) (*gosmo.MessageType, error) {
-	d, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	d, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	return d.MessageTypeByNameContext(ctx, name)
+	return d.MessageTypeByName(ctx, name)
 }
 
 func messageTypePropPages(sc *db.ServerConn, dbName, name string) []propPage {

@@ -125,27 +125,27 @@ func TestScriptSafeLookupsDoNotQueryUnderScriptMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scriptSafeJob under WithScript: %v", err)
 	}
-	if err := j.AttachScheduleContext(ctx, "Nightly"); err != nil {
-		t.Fatalf("AttachScheduleContext on the scripted handle: %v", err)
+	if err := j.AttachSchedule(ctx, "Nightly"); err != nil {
+		t.Fatalf("AttachSchedule on the scripted handle: %v", err)
 	}
 
 	al, err := scriptSafeAlert(ctx, sc, "sev 19")
 	if err != nil {
 		t.Fatalf("scriptSafeAlert under WithScript: %v", err)
 	}
-	if err := al.NotifyContext(ctx, "dba", gosmo.NotifyMethodEmail); err != nil {
-		t.Fatalf("NotifyContext on the scripted handle: %v", err)
+	if err := al.Notify(ctx, "dba", gosmo.NotifyMethodEmail); err != nil {
+		t.Fatalf("Notify on the scripted handle: %v", err)
 	}
 
-	if len(script.Statements) != 2 {
-		t.Fatalf("Statements = %v, want the attach and the notification", script.Statements)
+	if len(script.Statements()) != 2 {
+		t.Fatalf("Statements = %v, want the attach and the notification", script.Statements())
 	}
-	if !strings.Contains(script.Statements[0], "sp_attach_schedule") ||
-		!strings.Contains(script.Statements[0], "N'nightly reindex'") {
-		t.Errorf("Statements[0] = %q, want sp_attach_schedule naming the job", script.Statements[0])
+	if !strings.Contains(script.Statements()[0], "sp_attach_schedule") ||
+		!strings.Contains(script.Statements()[0], "N'nightly reindex'") {
+		t.Errorf("Statements[0] = %q, want sp_attach_schedule naming the job", script.Statements()[0])
 	}
-	if !strings.Contains(script.Statements[1], "sp_add_notification") ||
-		!strings.Contains(script.Statements[1], "N'sev 19'") {
-		t.Errorf("Statements[1] = %q, want sp_add_notification naming the alert", script.Statements[1])
+	if !strings.Contains(script.Statements()[1], "sp_add_notification") ||
+		!strings.Contains(script.Statements()[1], "N'sev 19'") {
+		t.Errorf("Statements[1] = %q, want sp_add_notification naming the alert", script.Statements()[1])
 	}
 }

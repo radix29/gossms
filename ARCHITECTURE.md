@@ -188,7 +188,7 @@ gossms/
 │   ├── activity/            # Activity Monitor collection: DMV queries, cntr_type decode, wait categories, 30-minute store, collector goroutines, and Poller for a feed whose source is already aggregated — no TUI imports
 │   │                        #   proc.go: helper-procedure lookup/install shared by the Block and Sessions tabs; block.go: sp_block; whoisactive.go + whoisactive.sql: the embedded GPL-3.0 sp_WhoIsActive
 │   │                        #   tempdb.go + tempdb_collector.go: tempdb space/file/session usage on its own slower cadence
-│   ├── query/               # SSMS-style script executor: GO batches, result sets, message stream, plan capture
+│   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan). No TUI/DB deps
 │   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export
@@ -203,6 +203,7 @@ gossms/
 │   │   ├── dialogs/                # ModalDialog base (focus trap), Properties/Alert/Confirm/Progress/FileDialog (+ FileSystem: local or remote), FieldGesture (the text-field drag latch)
 │   │   ├── charts/                 # terminal charts from generic series data: off-screen canvas, scales, block glyphs, axis/legend, history/stacked/bar/KPI types
 │   │   ├── controls/                # MenuBar, ContextMenu, Toolbar, TabStrip, TreeView, DataGrid, ListBox, Editor (+SQL/XML highlighters)
+│   │   ├── sqltext/                 # T-SQL text rules shared with internal/query and sqlparse: the "GO" separator line rule, SplitBatches; standard library only
 │   │   └── propsheet/               # PropertySheet — multi-page editable properties dialog framework (rows incl. EditorRow, the embedded multi-line controls.Editor)
 │   │
 │   └── tui/                  # goSSMS application layer (built on tuikit)
@@ -694,7 +695,7 @@ said otherwise until 2026-08-14. gosmo's `enumFileSystemDMF` has since gained
 a `WHERE level = 0` filter, without which
 `sys.dm_os_enumerate_filesystem` walks the whole subtree under the path
 rather than listing one directory. Re-measured live on win10cli through
-`EnumFileSystemContext`, best of three: `C:\Windows\System32` 4551 entries in
+`EnumFileSystem`, best of three: `C:\Windows\System32` 4551 entries in
 **1.2s**, `C:\Windows` 101 in 35ms, `C:\Program Files` 29 in 11ms. `showBusy`
 still earns its place — a second of frozen UI is worth labelling, and the
 call is still synchronous — but do not size anything off the old number. It

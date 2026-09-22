@@ -296,7 +296,7 @@ func TestSymmetricKeyEncryptionScriptsPasswordsAsPlaceholders(t *testing.T) {
 	if err := apply(ctx); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	got := strings.Join(script.Statements, "\n")
+	got := strings.Join(script.Statements(), "\n")
 	if strings.Contains(got, "secret") {
 		t.Errorf("the script carries a password:\n%s", got)
 	}

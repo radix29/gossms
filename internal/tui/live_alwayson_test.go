@@ -98,7 +98,7 @@ func liveAGUnreachablePrimary(t *testing.T) (*db.ServerConn, context.Context, st
 	raw := liveAGSA(t)
 
 	sa, saCtx := liveAGConn(t, *liveSA, *liveSAPass)
-	ag, err := sa.Server.AvailabilityGroupByNameContext(saCtx, *liveAG)
+	ag, err := sa.Server.AvailabilityGroupByName(saCtx, *liveAG)
 	if err != nil {
 		t.Fatalf("read availability group %q from %s: %v", *liveAG, *liveSecondary, err)
 	}
@@ -337,9 +337,9 @@ func TestLiveAGFollowsAReachablePrimary(t *testing.T) {
 	if view.unreachable != "" {
 		t.Fatalf("view.unreachable = %q with working credentials", view.unreachable)
 	}
-	local, err := sc.Server.AvailabilityGroupByNameContext(ctx, *liveAG)
+	local, err := sc.Server.AvailabilityGroupByName(ctx, *liveAG)
 	if err != nil {
-		t.Fatalf("AvailabilityGroupByNameContext: %v", err)
+		t.Fatalf("AvailabilityGroupByName: %v", err)
 	}
 	if !local.IsLocalPrimary() && !view.followed {
 		t.Error("view.followed is false on a secondary; the primary was never followed")

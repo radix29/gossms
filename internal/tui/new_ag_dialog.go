@@ -56,13 +56,13 @@ func (r *newAGReplica) spec() gosmo.AvailabilityReplicaSpec {
 	return gosmo.AvailabilityReplicaSpec{
 		ServerName:                    r.name,
 		EndpointURL:                   r.endpointURL,
-		AvailabilityMode:              r.availabilityMode,
-		FailoverMode:                  r.failoverMode,
-		SeedingMode:                   r.seedingMode,
+		AvailabilityMode:              gosmo.AvailabilityMode(r.availabilityMode),
+		FailoverMode:                  gosmo.FailoverMode(r.failoverMode),
+		SeedingMode:                   gosmo.SeedingMode(r.seedingMode),
 		BackupPriority:                r.backupPriority,
 		SessionTimeout:                r.sessionTimeout,
-		PrimaryRoleAllowConnections:   r.primaryRole,
-		SecondaryRoleAllowConnections: r.secondaryRole,
+		PrimaryRoleAllowConnections:   gosmo.AllowConnections(r.primaryRole),
+		SecondaryRoleAllowConnections: gosmo.AllowConnections(r.secondaryRole),
 	}
 }
 
@@ -176,7 +176,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 		return pf, nil
 	}
 
-	ep, err := sc.Server.DatabaseMirroringEndpointContext(ctx)
+	ep, err := sc.Server.DatabaseMirroringEndpoint(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,14 +190,14 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	}
 	pf.primaryEndpoint = ep.URL()
 
-	groups, err := sc.Server.AvailabilityGroupsContext(ctx)
+	groups, err := sc.Server.AvailabilityGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
 	inGroup := map[string]bool{}
 	for _, g := range groups {
 		pf.existingGroups[strings.ToLower(g.Name)] = true
-		dbs, err := g.DatabasesContext(ctx)
+		dbs, err := g.Databases(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +209,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	// The log backup chain state of every database in one read — CREATE
 	// AVAILABILITY GROUP ... FOR DATABASE enforces the same prerequisite as
 	// ADD DATABASE, so this page applies the same rule.
-	statuses, err := sc.Server.DatabaseRecoveryStatusesContext(ctx)
+	statuses, err := sc.Server.DatabaseRecoveryStatuses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
 	}
 
-	dbs, err := sc.Server.DatabasesContext(ctx)
+	dbs, err := sc.Server.Databases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +240,8 @@ func (d *NewAGDialog) request() (gosmo.CreateAvailabilityGroupRequest, error) {
 	}
 	req := gosmo.CreateAvailabilityGroupRequest{
 		Name:                      strings.TrimSpace(d.groupName),
-		ClusterType:               d.clusterType,
-		AutomatedBackupPreference: d.backupPreference,
+		ClusterType:               gosmo.ClusterType(d.clusterType),
+		AutomatedBackupPreference: gosmo.BackupPreference(d.backupPreference),
 		DBFailover:                d.dbFailover,
 		DTCSupport:                d.dtcSupport,
 		Contained:                 d.contained,
@@ -363,27 +363,30 @@ func (d *NewAGDialog) createGroup(ctx context.Context) error {
 	if err := d.preflightReplicas(ctx); err != nil {
 		return err
 	}
-	if _, err := sc.Server.CreateAvailabilityGroupContext(ctx, req); err != nil {
+	if _, err := sc.Server.CreateAvailabilityGroup(ctx, req); err != nil {
 		return err
 	}
 	for _, r := range d.replicas {
 		if r.isPrimary {
 			continue
 		}
-		target := sc.Server
+		// Under Script Changes nothing connects to the secondary: its JOIN is
+		// scripted through the primary's handle and labelled with the
+		// secondary it belongs to.
+		target, joinCtx := sc.Server, gosmo.WithScriptServer(ctx, r.name)
 		if !gosmo.Scripting(ctx) {
 			peer, err := d.peer(ctx, r.name)
 			if err != nil {
 				return fmt.Errorf("availability group %q was created, but connecting to %s to join it failed: %w", req.Name, r.name, err)
 			}
-			target = peer.Server
+			target, joinCtx = peer.Server, ctx
 		}
 		ag := target.AvailabilityGroupRef(req.Name)
-		if err := ag.JoinContext(ctx, req.ClusterType); err != nil {
+		if err := ag.Join(joinCtx, req.ClusterType); err != nil {
 			return fmt.Errorf("availability group %q was created, but %s could not join it: %w", req.Name, r.name, err)
 		}
 		if strings.EqualFold(r.seedingMode, "AUTOMATIC") {
-			if err := ag.GrantCreateAnyDatabaseContext(ctx); err != nil {
+			if err := ag.GrantCreateAnyDatabase(joinCtx); err != nil {
 				return fmt.Errorf("availability group %q was created and %s joined it, but granting it CREATE ANY DATABASE failed — automatic seeding will silently seed nothing until that is granted: %w", req.Name, r.name, err)
 			}
 		}
@@ -400,38 +403,17 @@ func (d *NewAGDialog) runScript() {
 	scriptCtx, script := gosmo.WithScript(d.ctx)
 	sc := d.sc
 	d.runPipeline(scriptCtx, func() {
-		d.app.openQueryWithText(sc, "", d.annotateScript(script.Statements))
+		d.app.openQueryWithText(sc, "", multiInstanceScript("New Availability Group", script))
 	})
 }
 
-// annotateScript labels each statement with the instance it has to run on.
-func (d *NewAGDialog) annotateScript(statements []string) string {
-	var b strings.Builder
-	b.WriteString("-- New Availability Group: these statements do NOT all run on the same instance.\n")
-
-	// Statement 0 is the CREATE, on the primary. Everything after it is one or
-	// two statements per secondary, in the order createGroup issues them —
-	// which is why a MANUAL-seeding replica, whose GRANT is skipped, shifts
-	// every label after it.
-	var targets []string
-	for _, r := range d.replicas {
-		if r.isPrimary {
-			targets = append(targets, r.name)
-			continue
-		}
-		targets = append(targets, r.name)
-		if strings.EqualFold(r.seedingMode, "AUTOMATIC") {
-			targets = append(targets, r.name)
-		}
-	}
-	for i, stmt := range statements {
-		target := "(unknown instance)"
-		if i < len(targets) {
-			target = targets[i]
-		}
-		fmt.Fprintf(&b, "\n-- on %s\n%s\nGO\n", target, stmt)
-	}
-	return b.String()
+// multiInstanceScript renders a script whose statements run on more than one
+// instance under a warning saying so. The collector labels each statement with
+// its instance ("-- on <server>") from where it was captured — the JOIN and
+// GRANT a secondary runs are captured under gosmo.WithScriptServer — so a
+// label cannot drift from the statement the way one chosen by position did.
+func multiInstanceScript(title string, script *gosmo.ScriptCollector) string {
+	return "-- " + title + ": these statements do NOT all run on the same instance.\n\n" + script.String()
 }
 
 // showNewAGDialog opens New Availability Group — the Object Explorer context

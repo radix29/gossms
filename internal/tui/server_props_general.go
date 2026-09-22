@@ -12,7 +12,7 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
 			info := sc.Server.Info()
-			sec, err := sc.Server.SecurityInfoContext(ctx)
+			sec, err := sc.Server.SecurityInfo(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -20,7 +20,7 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 			// PERFORMANCE STATE, which a db_owner does not have, and failing
 			// the page for it would put every value above out of that login's
 			// reach for the sake of one row.
-			mem, memErr := sc.Server.MemoryStatsContext(ctx)
+			mem, memErr := sc.Server.MemoryStats(ctx)
 			memText := unreadableValue
 			if memErr == nil {
 				// formatMB, not a bare FormatInt: the Object Explorer Details
@@ -28,7 +28,7 @@ func pageServerGeneral(sc *db.ServerConn) propPage {
 				// spellings of one number read as two different readings.
 				memText = formatMB(float64(mem.PhysicalMemoryMB))
 			}
-			configs, err := sc.Server.ConfigurationsContext(ctx)
+			configs, err := sc.Server.Configurations(ctx)
 			if err != nil {
 				return nil, nil, err
 			}

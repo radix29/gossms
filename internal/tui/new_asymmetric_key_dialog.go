@@ -39,11 +39,11 @@ type nasymPrefetch struct {
 }
 
 func fetchNewAsymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*nasymPrefetch, error) {
-	dbObj, err := sc.Server.DatabaseByNameContext(ctx, dbName)
+	dbObj, err := sc.Server.DatabaseByName(ctx, dbName)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := dbObj.AsymmetricKeysContext(ctx)
+	keys, err := dbObj.AsymmetricKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func fetchNewAsymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbNam
 	for _, k := range keys {
 		existing[strings.ToLower(k.Name)] = true
 	}
-	has, err := dbObj.HasMasterKeyContext(ctx)
+	has, err := dbObj.HasMasterKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,13 +142,13 @@ func (d *NewAsymmetricKeyDialog) buildPages(pf *nasymPrefetch) {
 			if p.Disposition == gosmo.ProviderOpenExisting {
 				spec.Algorithm = ""
 			}
-			return dbObj.CreateAsymmetricKeyContext(ctx, spec)
+			return dbObj.CreateAsymmetricKey(ctx, spec)
 		}
 		var err error
 		if spec.EncryptionPassword, err = protection.apply(ctx, dbObj); err != nil {
 			return err
 		}
-		return dbObj.CreateAsymmetricKeyContext(ctx, spec)
+		return dbObj.CreateAsymmetricKey(ctx, spec)
 	}
 }
 

@@ -71,13 +71,13 @@ func (d *DetachDatabaseDialog) show(sc *db.ServerConn, dbName string) {
 // either of the other two, and refusing to open over a missing VIEW SERVER
 // STATE would withhold the action from a db_owner who can perform it.
 func (d *DetachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*detachPrefetch, error) {
-	dbase, err := sc.Server.DatabaseByNameContext(ctx, d.dbName)
+	dbase, err := sc.Server.DatabaseByName(ctx, d.dbName)
 	if err != nil {
 		return nil, err
 	}
 	pf := &detachPrefetch{state: dbase.State, sessions: -1}
 	if pf.state == "ONLINE" {
-		if files, err := dbase.FilesContext(ctx); err == nil {
+		if files, err := dbase.Files(ctx); err == nil {
 			pf.files = sortDatabaseFiles(files)
 		}
 	}
@@ -86,11 +86,11 @@ func (d *DetachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerC
 	// to be detaching from, and the paths are what the detach destroys. The
 	// server catalog answers in any state.
 	if len(pf.files) == 0 {
-		if files, err := sc.Server.DatabaseFilesContext(ctx, d.dbName); err == nil {
+		if files, err := sc.Server.DatabaseFiles(ctx, d.dbName); err == nil {
 			pf.files = sortDatabaseFiles(files)
 		}
 	}
-	if sessions, err := sc.Server.ActiveSessionsContext(ctx, false); err == nil {
+	if sessions, err := sc.Server.ActiveSessions(ctx, false); err == nil {
 		pf.sessions = 0
 		for _, s := range sessions {
 			if s.DatabaseName == d.dbName {
@@ -177,7 +177,7 @@ func (d *DetachDatabaseDialog) buildPages(pf *detachPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		return sc.Server.DetachDatabaseContext(ctx, dbName, gosmo.DetachOptions{
+		return sc.Server.DetachDatabase(ctx, dbName, gosmo.DetachOptions{
 			DropConnections:       dropConns.Checked(),
 			UpdateStatistics:      updateStats.Checked(),
 			DropFullTextIndexFile: dropFullText.Checked(),
