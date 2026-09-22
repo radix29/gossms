@@ -109,6 +109,18 @@ jobs:
               cp LICENSE "${output_dir}/"
             fi
 
+            # The Linux archives carry an XDG share/ tree — the hicolor icons
+            # and a Terminal=true launcher — so the Homebrew formula and the
+            # apt job both install them from the same checksummed archive
+            # rather than from a checkout of this repository. The generator's
+            # .generated marker is not an icon and stays out.
+            if [ "${GOOS}" = "linux" ]; then
+              mkdir -p "${output_dir}/share/icons" "${output_dir}/share/applications"
+              cp -r docs/ico/linux/hicolor "${output_dir}/share/icons/"
+              find "${output_dir}/share/icons" -name .generated -delete
+              cp packaging/linux/gossms.desktop "${output_dir}/share/applications/"
+            fi
+
             if [ "${GOOS}" = "windows" ]; then
               (cd dist && zip -q -r "${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}.zip" "${APP_NAME}_${VERSION}_${GOOS}_${GOARCH}")
             else
@@ -252,6 +264,8 @@ jobs:
 
             def install
               bin.install "gossms"
+              # Launcher and icons; only the Linux archives carry share/.
+              share.install "share/applications", "share/icons" if OS.linux?
             end
 
             test do
@@ -376,6 +390,13 @@ jobs:
 
             install -m 0755 "extract_${arch}/gossms" "${root}/usr/bin/gossms"
             install -m 0644 "extract_${arch}/LICENSE" "${root}/usr/share/doc/gossms/copyright"
+
+            # Menu launcher and hicolor icons. No postinst: hicolor-icon-theme
+            # and desktop-file-utils refresh their caches via dpkg triggers.
+            install -Dm0644 "extract_${arch}/share/applications/gossms.desktop" \
+              "${root}/usr/share/applications/gossms.desktop"
+            cp -r "extract_${arch}/share/icons" "${root}/usr/share/"
+            find "${root}/usr/share/icons" -type f -exec chmod 0644 {} +
 
             # dpkg-deb --root-owner-group fixes ownership but not mode, and the
             # runner's umask leaves directories group-writable, which dpkg

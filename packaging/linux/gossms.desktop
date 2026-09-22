@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=goSSMS
+GenericName=SQL Server Management Studio
+Comment=Terminal reimplementation of SQL Server Management Studio
+Exec=gossms
+Icon=gossms
+Terminal=true
+Categories=Development;Database;
+Keywords=SQL;SQL Server;MSSQL;Database;
