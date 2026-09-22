@@ -303,8 +303,9 @@ func TestEditorCompletionReadOnlyNeverOpens(t *testing.T) {
 }
 
 func TestEditorCompletionCtrlSpaceSingleMatchAutoCommits(t *testing.T) {
-	e := newTestEditor("")
+	e := newTestEditor("Cu")
 	e.SetCompletionProvider(testCompletionProvider("Customers"))
+	e.cursorCol = 2
 
 	e.HandleKey(runeKey(' ', tcell.ModCtrl))
 	if e.CompletionActive() {
@@ -312,6 +313,116 @@ func TestEditorCompletionCtrlSpaceSingleMatchAutoCommits(t *testing.T) {
 	}
 	if got := e.Text(); got != "Customers" {
 		t.Fatalf("Text() = %q, want %q (auto-committed)", got, "Customers")
+	}
+}
+
+// With no word started, Ctrl+Space is a request to see the list: it must open
+// the popup even over a single candidate rather than insert it unseen.
+func TestEditorCompletionCtrlSpaceWithNoWordOpensOverSingleMatch(t *testing.T) {
+	e := newTestEditor("")
+	e.SetCompletionProvider(testCompletionProvider("Customers"))
+
+	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	if !e.CompletionActive() {
+		t.Fatal("expected Ctrl+Space on an empty word to open the popup")
+	}
+	if got := e.Text(); got != "" {
+		t.Fatalf("Text() = %q, want nothing inserted", got)
+	}
+}
+
+// substringCompletionProvider is testCompletionProvider matching anywhere in a
+// candidate, marking a match not at the start Partial — the internal/tui
+// provider's contract.
+func substringCompletionProvider(candidates ...string) CompletionProvider {
+	return func(req CompletionRequest) ([]CompletionItem, int) {
+		line := req.Lines[req.Row]
+		c := core.Clamp(req.Col, 0, len(line))
+		start := c
+		for start > 0 && core.IsWordRune(line[start-1]) {
+			start--
+		}
+		frag := strings.ToLower(string(line[start:c]))
+		var items []CompletionItem
+		for _, cand := range candidates {
+			if i := strings.Index(strings.ToLower(cand), frag); i >= 0 {
+				items = append(items, CompletionItem{Text: cand, Label: cand, Partial: i > 0})
+			}
+		}
+		return items, start
+	}
+}
+
+// A popup holding only partial matches that the user didn't ask for opens with
+// nothing selected, so Enter after a keyword typed in full inserts the newline
+// instead of replacing "by" with CreatedBy.
+func TestEditorCompletionPartialOnlyHasNoSelectionAndEnterFallsThrough(t *testing.T) {
+	e := newTestEditor("")
+	e.SetCompletionProvider(substringCompletionProvider("CreatedBy", "Customers"))
+
+	typeString(e, "by")
+	if !e.CompletionActive() || e.completionSel != -1 {
+		t.Fatalf("open = %v sel = %d, want open with nothing selected", e.CompletionActive(), e.completionSel)
+	}
+	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	if e.CompletionActive() {
+		t.Fatal("expected Enter to close the popup")
+	}
+	if got := e.Text(); got != "by\n" {
+		t.Fatalf("Text() = %q, want %q", got, "by\n")
+	}
+}
+
+func TestEditorCompletionPartialOnlyDownSelectsThenCommits(t *testing.T) {
+	e := newTestEditor("")
+	e.SetCompletionProvider(substringCompletionProvider("CreatedBy", "Customers"))
+
+	typeString(e, "by")
+	e.HandleKey(key(tcell.KeyDown, tcell.ModNone))
+	if e.completionSel != 0 {
+		t.Fatalf("completionSel after Down = %d, want 0", e.completionSel)
+	}
+	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	if got := e.Text(); got != "CreatedBy" {
+		t.Fatalf("Text() = %q, want CreatedBy", got)
+	}
+}
+
+// A prefix match anywhere in the list keeps the usual preselection; typing on
+// until only partial matches remain drops it.
+func TestEditorCompletionSelectionFollowsPrefixMatches(t *testing.T) {
+	e := newTestEditor("")
+	e.SetCompletionProvider(substringCompletionProvider("OrdX", "CustomerOrders"))
+
+	typeString(e, "ord")
+	if e.completionSel != 0 {
+		t.Fatalf("sel after \"ord\" = %d, want 0", e.completionSel)
+	}
+	typeString(e, "e")
+	if !e.CompletionActive() || e.completionSel != -1 {
+		t.Fatalf("\"orde\": open = %v sel = %d, want open with nothing selected", e.CompletionActive(), e.completionSel)
+	}
+}
+
+// Ctrl+Space marks the popup explicit: partial matches keep a selection, both
+// on opening and as typing narrows the list, and a single partial match opens
+// the list rather than committing unseen.
+func TestEditorCompletionExplicitPartialKeepsSelection(t *testing.T) {
+	e := newTestEditor("usto")
+	e.SetCompletionProvider(substringCompletionProvider("CustomerOrders", "OldCustomers"))
+	e.cursorCol = len("usto")
+
+	e.HandleKey(runeKey(' ', tcell.ModCtrl))
+	if !e.CompletionActive() || e.completionSel != 0 {
+		t.Fatalf("open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
+	}
+	typeString(e, "m")
+	if !e.CompletionActive() || e.completionSel != 0 {
+		t.Fatalf("after typing: open = %v sel = %d, want open at 0", e.CompletionActive(), e.completionSel)
+	}
+	e.HandleKey(key(tcell.KeyEnter, tcell.ModNone))
+	if got := e.Text(); got != "CustomerOrders" {
+		t.Fatalf("Text() = %q, want CustomerOrders", got)
 	}
 }
 

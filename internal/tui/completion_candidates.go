@@ -92,7 +92,7 @@ func (p *QueryPanel) memberCandidates(inv, sysInv *completionInventory, rels []r
 // tableCandidates offers every schema (the connected database's own, plus
 // "sys" once its inventory has loaded), every table/view, every visible CTE
 // name and every temp table/table variable the batch declares whose name
-// starts with prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
+// contains prefix — the FROM/JOIN/INTO/UPDATE/DELETE/TRUNCATE TABLE
 // context, and the fallback when a column context has no FROM-scope yet
 // (which passes no CTEs: a CTE name is a relation, not a column).
 // The sys-schema inventory's own objects are not mixed into the unqualified
@@ -102,12 +102,13 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	for _, cte := range ctes {
-		if !strings.HasPrefix(strings.ToLower(cte.Name), pl) {
+		ok, partial := nameMatch(cte.Name, pl)
+		if !ok {
 			continue
 		}
 		items = append(items, controls.CompletionItem{
 			Text: bracketIfNeeded(cte.Name), Label: cte.Name, Detail: "CTE",
-			Icon: p.tableIcon(gosmo.CatalogTable),
+			Icon: p.tableIcon(gosmo.CatalogTable), Partial: partial,
 		})
 	}
 	seenBinding := map[string]bool{}
@@ -116,7 +117,8 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		// is one candidate, and it is the later declaration's.
 		name := bindings[i].Name
 		key := strings.ToLower(name)
-		if seenBinding[key] || !strings.HasPrefix(key, pl) {
+		ok, partial := nameMatch(key, pl)
+		if seenBinding[key] || !ok {
 			continue
 		}
 		seenBinding[key] = true
@@ -128,73 +130,79 @@ func (p *QueryPanel) tableCandidates(inv, sysInv *completionInventory, ctes []sq
 		// and "[#t]" is legal but not what the user typed.
 		items = append(items, controls.CompletionItem{
 			Text: name, Label: name, Detail: detail, Icon: p.tableIcon(gosmo.CatalogTable),
+			Partial: partial,
 		})
 	}
 	for _, schema := range inv.catalog.Schemas {
-		if !strings.HasPrefix(strings.ToLower(schema), pl) {
+		ok, partial := nameMatch(schema, pl)
+		if !ok {
 			continue
 		}
 		items = append(items, controls.CompletionItem{
 			Text: bracketIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
+			Partial: partial,
 		})
 	}
 	if sysInv != nil && sysInv.catalog != nil {
 		for _, schema := range sysInv.catalog.Schemas {
-			if !strings.HasPrefix(strings.ToLower(schema), pl) {
+			ok, partial := nameMatch(schema, pl)
+			if !ok {
 				continue
 			}
 			items = append(items, controls.CompletionItem{
 				Text: bracketIfNeeded(schema), Label: schema, Detail: "schema", Icon: p.schemaIcon(),
+				Partial: partial,
 			})
 		}
 	}
 	for i := range inv.catalog.Objects {
 		obj := &inv.catalog.Objects[i]
-		if strings.HasPrefix(strings.ToLower(obj.Name), pl) {
-			items = append(items, p.objectItem(obj))
+		if ok, partial := nameMatch(obj.Name, pl); ok {
+			items = append(items, p.objectItem(obj, partial))
 		}
 	}
 	sortCompletionItems(items)
 	return items
 }
 
-// objectItems offers every table/view in objs whose name starts with
+// objectItems offers every table/view in objs whose name contains
 // prefix — a schema's member list ("dbo.").
 func (p *QueryPanel) objectItems(objs []*gosmo.CatalogObject, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	for _, obj := range objs {
-		if strings.HasPrefix(strings.ToLower(obj.Name), pl) {
-			items = append(items, p.objectItem(obj))
+		if ok, partial := nameMatch(obj.Name, pl); ok {
+			items = append(items, p.objectItem(obj, partial))
 		}
 	}
 	sortCompletionItems(items)
 	return items
 }
 
-func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject) controls.CompletionItem {
+func (p *QueryPanel) objectItem(obj *gosmo.CatalogObject, partial bool) controls.CompletionItem {
 	detail := "table"
 	if obj.Type == gosmo.CatalogView {
 		detail = "view"
 	}
 	return controls.CompletionItem{
 		Text: bracketIfNeeded(obj.Name), Label: obj.Schema + "." + obj.Name,
-		Detail: detail, Icon: p.tableIcon(obj.Type),
+		Detail: detail, Icon: p.tableIcon(obj.Type), Partial: partial,
 	}
 }
 
-// columnItemsFor offers every column in cols whose name starts with prefix —
+// columnItemsFor offers every column in cols whose name contains prefix —
 // the "alias." / "table." member-lookup result.
 func (p *QueryPanel) columnItemsFor(cols []gosmo.CatalogColumn, prefix string) []controls.CompletionItem {
 	pl := strings.ToLower(prefix)
 	var items []controls.CompletionItem
 	for _, col := range cols {
-		if !strings.HasPrefix(strings.ToLower(col.Name), pl) {
+		ok, partial := nameMatch(col.Name, pl)
+		if !ok {
 			continue
 		}
 		items = append(items, controls.CompletionItem{
 			Text: bracketIfNeeded(col.Name), Label: col.Name,
-			Detail: formatColumnType(col), Icon: p.columnIcon(),
+			Detail: formatColumnType(col), Icon: p.columnIcon(), Partial: partial,
 		})
 	}
 	sortCompletionItems(items)
@@ -214,7 +222,8 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 	for _, rel := range rels {
 		for _, col := range rel.columns() {
 			key := strings.ToLower(col.Name)
-			if seenCol[key] || !strings.HasPrefix(key, pl) {
+			ok, partial := nameMatch(key, pl)
+			if seenCol[key] || !ok {
 				continue
 			}
 			seenCol[key] = true
@@ -224,11 +233,12 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 			}
 			items = append(items, controls.CompletionItem{
 				Text: bracketIfNeeded(col.Name), Label: col.Name,
-				Detail: detail, Icon: p.columnIcon(),
+				Detail: detail, Icon: p.columnIcon(), Partial: partial,
 			})
 		}
 		qkey := strings.ToLower(rel.name)
-		if rel.name == "" || seenRef[qkey] || !strings.HasPrefix(qkey, pl) {
+		ok, partial := nameMatch(qkey, pl)
+		if rel.name == "" || seenRef[qkey] || !ok {
 			continue
 		}
 		seenRef[qkey] = true
@@ -238,14 +248,32 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 		}
 		items = append(items, controls.CompletionItem{
 			Text: bracketIfNeeded(rel.name), Label: rel.name, Detail: "table reference", Icon: p.tableIcon(objType),
+			Partial: partial,
 		})
 	}
 	sortCompletionItems(items)
 	return items
 }
 
+// nameMatch reports whether name contains the lower-cased fragment pl
+// anywhere — "ord" offers OrderLines and CustomerOrders alike — and whether
+// that match is partial, i.e. not at the start. The editor treats a list of
+// nothing but partial matches differently (see controls.CompletionItem.Partial).
+func nameMatch(name, pl string) (ok, partial bool) {
+	i := strings.Index(strings.ToLower(name), pl)
+	return i >= 0, i > 0
+}
+
+// sortCompletionItems lists prefix matches before partial ones, each group
+// alphabetically, so what the user typed the start of stays on top.
 func sortCompletionItems(items []controls.CompletionItem) {
 	slices.SortStableFunc(items, func(a, b controls.CompletionItem) int {
+		if a.Partial != b.Partial {
+			if a.Partial {
+				return 1
+			}
+			return -1
+		}
 		return strings.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label))
 	})
 }

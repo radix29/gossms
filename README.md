@@ -216,7 +216,9 @@ connected SQL Server version or engine edition are hidden or disabled.
   the indent/dedent commands shift by the Options indent size (4 spaces by
   default). Pasted text keeps the indentation it came with. IntelliSense
   completes columns from CTEs, derived tables, sub-SELECTs and `PIVOT`, and
-  from temp tables and table variables declared in the batch.
+  from temp tables and table variables declared in the batch. It matches
+  what you type anywhere in a name (`ord` finds `CustomerOrders`), listing
+  names that start with it first; Ctrl+Space opens it on demand.
 - **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and

@@ -159,9 +159,12 @@ type Editor struct {
 	completionProvider CompletionProvider
 	completionOpen     bool
 	completionItems    []CompletionItem
-	completionSel      int
+	completionSel      int // -1: nothing selected (see CompletionItem.Partial)
 	completionScroll   int
 	completionFrom     int // column where the replaced span starts; valid only while completionOpen
+	// completionExplicit marks a popup opened by Ctrl+Space, which always keeps
+	// a selection; cleared when it closes.
+	completionExplicit bool
 
 	// completionSuppressed, set by Escape, stops the popup reopening at the token
 	// it was just dismissed at; completionSuppressRow/Col pin that token's start.

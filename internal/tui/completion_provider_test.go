@@ -1142,3 +1142,24 @@ func TestSQLCompletionPrefixCacheMatchesUncached(t *testing.T) {
 		}
 	}
 }
+
+// A fragment matches anywhere in a name, prefix matches listed first and the
+// rest marked Partial — the table list and the column list alike.
+func TestSQLCompletionMatchesSubstringPrefixFirst(t *testing.T) {
+	qp := newTestQueryPanelWithInventory(t, "Shop", testCustomersOrders())
+
+	lines, row, col := linesAndCursor(t, "SELECT * FROM cust|")
+	items, _ := qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if got, want := labels(items), []string{"dbo.Customers", "dbo.vActiveCustomers"}; !slices.Equal(got, want) {
+		t.Fatalf("labels = %v, want %v", got, want)
+	}
+	if items[0].Partial || !items[1].Partial {
+		t.Fatalf("Partial = %v, %v; want false, true", items[0].Partial, items[1].Partial)
+	}
+
+	lines, row, col = linesAndCursor(t, "SELECT o.id| FROM Orders o")
+	items, _ = qp.sqlCompletionCandidates(completionReq(lines, row, col))
+	if got, want := labels(items), []string{"Id", "CustomerId"}; !slices.Equal(got, want) {
+		t.Fatalf("column labels = %v, want %v", got, want)
+	}
+}

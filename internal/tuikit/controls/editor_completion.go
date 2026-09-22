@@ -34,6 +34,13 @@ type CompletionItem struct {
 	// Placeholder marks a row shown but not navigable or committable — a
 	// "Loading suggestions..." entry while a provider's data isn't ready.
 	Placeholder bool
+	// Partial marks a candidate that matched the typed text somewhere other
+	// than its start ("ord" in CustomerOrders). A popup the user didn't ask for
+	// with Ctrl+Space, holding only partial matches, opens with nothing
+	// selected: Enter and Tab then keep their plain meaning, so a keyword typed
+	// in full ("BY", "AND") is never swapped for a column that merely contains
+	// it (CreatedBy, BrandName). Up/Down select one as usual.
+	Partial bool
 }
 
 // TextRevision identifies the revision of the text a CompletionRequest
@@ -115,6 +122,7 @@ func (e *Editor) RefreshCompletion() {
 // closeCompletion hides the popup, if open. Safe to call unconditionally.
 func (e *Editor) closeCompletion() {
 	e.completionOpen = false
+	e.completionExplicit = false
 	e.completionItems = nil
 	e.completionSel = 0
 	e.completionScroll = 0
@@ -160,14 +168,29 @@ func (e *Editor) updateCompletion() {
 	}
 	e.completionItems = items
 	e.completionFrom = from
-	if !e.completionOpen {
+	switch {
+	case !e.completionExplicit && !hasPrefixCompletion(items):
+		e.completionSel = -1
+		e.completionScroll = 0
+	case !e.completionOpen || e.completionSel < 0:
 		e.completionSel = e.firstSelectableCompletion(0, 1)
 		e.completionScroll = 0
-	} else {
+	default:
 		e.completionSel = core.Clamp(e.completionSel, 0, len(items)-1)
 	}
 	e.completionOpen = true
 	e.ensureCompletionVisible()
+}
+
+// hasPrefixCompletion reports whether items holds a selectable candidate that
+// matched at its start — see CompletionItem.Partial.
+func hasPrefixCompletion(items []CompletionItem) bool {
+	for _, it := range items {
+		if !it.Placeholder && !it.Partial {
+			return true
+		}
+	}
+	return false
 }
 
 // canAutoOpenCompletion reports whether the text left of the cursor begins a
@@ -219,9 +242,12 @@ func (e *Editor) currentTokenStart() int {
 	return i
 }
 
-// triggerCompletionExplicit is Ctrl+Space: query immediately and, if exactly
-// one real candidate matches, commit it instead of opening the popup — SSMS's
-// "complete word" behaviour.
+// triggerCompletionExplicit is Ctrl+Space: query immediately and, if a word
+// has been started and exactly one real candidate matches it at its start,
+// commit it instead of opening the popup — SSMS's "complete word" behaviour.
+// With nothing typed yet the popup always opens, even over a single candidate:
+// the user asked to see the list, not for a guess. The popup stays explicit
+// until it closes, so partial matches keep a selection while typing narrows it.
 func (e *Editor) triggerCompletionExplicit() {
 	if e.completionProvider == nil || e.readOnly {
 		return
@@ -236,7 +262,7 @@ func (e *Editor) triggerCompletionExplicit() {
 			realIdx = i
 		}
 	}
-	if real == 1 {
+	if real == 1 && from < e.cursorCol && !items[realIdx].Partial {
 		e.pushUndoLocal()
 		e.commitCompletionItem(items[realIdx], from)
 		e.closeCompletion()
@@ -249,6 +275,7 @@ func (e *Editor) triggerCompletionExplicit() {
 	e.completionItems = items
 	e.completionFrom = from
 	e.completionOpen = true
+	e.completionExplicit = true
 	e.completionSel = e.firstSelectableCompletion(0, 1)
 	e.completionScroll = 0
 	e.ensureCompletionVisible()
@@ -350,6 +377,13 @@ func (e *Editor) handleCompletionKey(ev *tcell.EventKey) bool {
 		e.moveCompletionSel(maxCompletionRows)
 		return true
 	case tcell.KeyTab, tcell.KeyEnter:
+		if e.completionSel < 0 {
+			// Nothing selected (see CompletionItem.Partial): the key keeps its
+			// plain meaning, and the popup closes rather than re-anchoring on
+			// the new line.
+			e.closeCompletion()
+			return false
+		}
 		e.commitSelectedCompletion()
 		return true
 	case tcell.KeyEscape:
@@ -382,6 +416,10 @@ func (e *Editor) moveCompletionSel(delta int) {
 }
 
 func (e *Editor) ensureCompletionVisible() {
+	if e.completionSel < 0 {
+		e.completionScroll = 0
+		return
+	}
 	e.completionScroll = min(e.completionScroll,
 		max(0, len(e.completionItems)-maxCompletionRows))
 	if e.completionSel < e.completionScroll {

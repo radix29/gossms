@@ -8,12 +8,8 @@
 
 -------------
 
-intellisense: 
-- open the suggestion with Ctrl+space
-- when you type something with the intellisense window open, search any portion of the object not only if it starts with what you type.
-
 - query editor :
-    - word wrap (display only, line numbers)
+    -  add option to word wrap (display only, line numbers) ALt+Z as shotcut if not already used
 
 - package for winget 
     
