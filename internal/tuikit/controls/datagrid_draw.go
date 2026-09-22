@@ -170,7 +170,7 @@ func (g *DataGrid) drawRow(s tcell.Screen, y int, cells []string, style tcell.St
 }
 
 // nullCellText is the literal string query results use for a SQL NULL (see
-// internal/query's formatValue) — dimmed in drawRow/drawCellSelection so a
+// internal/query's appendValue) — dimmed in drawRow/drawCellSelection so a
 // NULL reads visually distinct from an empty or ordinary string value.
 const nullCellText = "NULL"
 

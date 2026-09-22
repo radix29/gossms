@@ -60,18 +60,6 @@ func (c *menuCascade) levelItems(root []MenuItem, level int) []MenuItem {
 	return items
 }
 
-// levelRect returns where the given level was last drawn; level 0 is the
-// host's own rect, which it passes in.
-func (c *menuCascade) levelRect(rootRect core.Rect, level int) core.Rect {
-	if level == 0 {
-		return rootRect
-	}
-	if level-1 >= len(c.rects) {
-		return core.Rect{}
-	}
-	return c.rects[level-1]
-}
-
 // hoverAt returns the highlighted row within an open submenu level.
 func (c *menuCascade) hoverAt(level int) int {
 	if level-1 < 0 || level-1 >= len(c.hover) {

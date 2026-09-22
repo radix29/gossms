@@ -75,7 +75,7 @@ func TestLiveConnectEncryptModeReachesTheServer(t *testing.T) {
 		config.EncryptOptional: false, config.EncryptMandatory: true,
 	} {
 		opts.Encrypt = mode
-		sc, err := Connect(opts)
+		sc, err := ConnectContext(context.Background(), opts, RoleExplorer)
 		if err != nil {
 			t.Fatalf("%s: %v", mode, err)
 		}
@@ -101,7 +101,7 @@ func TestLiveConnectExtraPropertiesReachTheServer(t *testing.T) {
 	opts := liveConnectOpts(t)
 	opts.Encrypt = config.EncryptOptional
 	opts.ExtraProperties = "packet size=16000"
-	sc, err := Connect(opts)
+	sc, err := ConnectContext(context.Background(), opts, RoleExplorer)
 	if err != nil {
 		t.Fatal(err)
 	}

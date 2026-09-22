@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -385,9 +386,9 @@ func TestExtraPropertiesReachTheDialledDSN(t *testing.T) {
 		} else if strings.Contains(err.Error(), "ConnectionOptions") {
 			t.Errorf("preview with %q: %q speaks gosmo's API, not the dialog's", extra, err)
 		}
-		_, err = Connect(opts)
+		_, err = ConnectContext(context.Background(), opts, RoleExplorer)
 		if _, ok := errors.AsType[*ConnectionError](err); !ok {
-			t.Errorf("Connect with %q: err = %v, want a *ConnectionError before anything is dialled", extra, err)
+			t.Errorf("ConnectContext with %q: err = %v, want a *ConnectionError before anything is dialled", extra, err)
 		}
 	}
 }

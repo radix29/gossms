@@ -298,3 +298,15 @@ func TestMenuBarClickOnSubmenuParentKeepsMenuOpen(t *testing.T) {
 		t.Fatalf("action %q ran from clicking a cascade row; want none", ran)
 	}
 }
+
+// levelRect returns where the given level was last drawn; level 0 is the
+// host's own rect, which it passes in.
+func (c *menuCascade) levelRect(rootRect core.Rect, level int) core.Rect {
+	if level == 0 {
+		return rootRect
+	}
+	if level-1 >= len(c.rects) {
+		return core.Rect{}
+	}
+	return c.rects[level-1]
+}

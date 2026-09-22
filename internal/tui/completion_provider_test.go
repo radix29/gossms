@@ -1163,3 +1163,11 @@ func TestSQLCompletionMatchesSubstringPrefixFirst(t *testing.T) {
 		t.Fatalf("column labels = %v, want %v", got, want)
 	}
 }
+
+// newCompletionInventory builds a fresh entry with the lookup indexes for
+// a freshly loaded catalog.
+func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
+	inv := &completionInventory{}
+	inv.applyCatalog(cat)
+	return inv
+}

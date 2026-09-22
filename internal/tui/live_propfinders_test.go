@@ -57,13 +57,13 @@ func livePropConn(t *testing.T) (*db.ServerConn, context.Context) {
 	// Server field the app connects with.
 	host = strings.ReplaceAll(host, "/", `\`)
 
-	sc, err := db.Connect(config.Connection{
+	sc, err := db.ConnectContext(context.Background(), config.Connection{
 		Server:                 host,
 		AuthMethod:             config.AuthSQLServer,
 		User:                   user,
 		Password:               pass,
 		TrustServerCertificate: true,
-	})
+	}, db.RoleExplorer)
 	if err != nil {
 		t.Fatalf("connect %s: %v", host, err)
 	}

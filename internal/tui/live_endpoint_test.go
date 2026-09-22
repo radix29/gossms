@@ -75,13 +75,13 @@ func liveEPConn(t *testing.T, server string) (*db.ServerConn, context.Context) {
 	if *liveEPServer == "" || *liveEPNamed == "" || *liveEPUser == "" {
 		t.Skip("no -live-ep-server/-live-ep-named/-live-ep-user given")
 	}
-	sc, err := db.Connect(config.Connection{
+	sc, err := db.ConnectContext(context.Background(), config.Connection{
 		Server:                 server,
 		AuthMethod:             config.AuthSQLServer,
 		User:                   *liveEPUser,
 		Password:               *liveEPPass,
 		TrustServerCertificate: true,
-	})
+	}, db.RoleExplorer)
 	if err != nil {
 		t.Fatalf("connect %s: %v", server, err)
 	}

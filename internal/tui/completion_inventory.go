@@ -77,14 +77,6 @@ func evictInventory(m map[string]*completionInventory, key string, inv *completi
 	}
 }
 
-// newCompletionInventory builds a fresh entry with the lookup indexes for
-// a freshly loaded catalog.
-func newCompletionInventory(cat *gosmo.Catalog) *completionInventory {
-	inv := &completionInventory{}
-	inv.applyCatalog(cat)
-	return inv
-}
-
 // applyCatalog installs cat and rebuilds the lookup indexes in place, clearing
 // loading and err, so a reused entry keeps its load identity across reloads.
 func (inv *completionInventory) applyCatalog(cat *gosmo.Catalog) {

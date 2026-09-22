@@ -353,3 +353,15 @@ func TestPrefixStatesIncrementalReplayAfterReplaceRange(t *testing.T) {
 		}
 	}
 }
+
+// blockCommentDepthAt returns how many /* ... */ block comments line idx
+// begins inside, carried over unterminated from earlier lines — found by
+// replaying blockCommentDepthEnd across lines[0:idx]. Zero means the line
+// starts in code.
+func blockCommentDepthAt(lines [][]rune, idx int) int {
+	depth := 0
+	for i := 0; i < idx; i++ {
+		depth = blockCommentDepthEnd(lines[i], depth)
+	}
+	return depth
+}

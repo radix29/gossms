@@ -432,43 +432,6 @@ type PrefixScan struct {
 	GoStart int
 }
 
-// ScanPrefix locates the statement the cursor sits in and tokenizes that
-// statement alone.
-//
-// Two passes, because the whole prefix must be lexed to know where the current
-// statement starts — an unterminated block comment thousands of lines up
-// changes the answer — while only that statement's tokens are read. The first
-// pass lexes with tokens off, the expensive half: materialising an identifier
-// allocates a string, and on a large script the discarded tokens outnumber the
-// kept ones by orders of magnitude.
-//
-// **The completion provider does not call this — it calls PrefixCache.Scan**
-// (prefix_cache.go), which answers the same question incrementally, because
-// this first pass is O(script) on the UI goroutine per keystroke. This stays as
-// the reference implementation the cache is differentially tested against after
-// every edit; removing it would leave prefix_cache_test.go nothing to check.
-func ScanPrefix(lines [][]rune, buf []rune, cursorRow, upTo int) PrefixScan {
-	// Only "GO" lines strictly above the cursor's row separate the statement
-	// the cursor is in — hence the bound at that row's start.
-	r := lexSQL(buf, 0, upTo, false, LexNormal, nil,
-		goScan{lo: 0, hi: OffsetForCursor(lines, cursorRow, 0)}, nil)
-
-	// The statement starts at whichever boundary is later: past the last
-	// top-level ';', or the line after the last real "GO". The second pass
-	// resumes in LexNormal unconditionally because both are normal-state
-	// positions — the lexer recognises either only there, and a separator line
-	// leaves nothing open past it.
-	batchStart := max(r.boundary, r.lastGo)
-	tokens, _, _, _ := TokenizeRangeFrom(buf, batchStart, upTo, false, LexNormal)
-	return PrefixScan{
-		Tokens:     tokens,
-		State:      r.state,
-		BatchStart: batchStart,
-		QuoteStart: r.quoteStart,
-		GoStart:    r.lastGo,
-	}
-}
-
 // BatchEndOffset is where the cursor's GO-delimited batch ends: the start of
 // the next bare "GO" line below the cursor's own row, or len(buf).
 // StatementEndOffset's counterpart for the wider span ScanBindings needs, and

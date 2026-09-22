@@ -107,7 +107,7 @@ func tempdbObjects(s tcell.Screen, r core.Rect, y int, v TempDBView, hits *[]Cha
 
 func tempdbFiles(s tcell.Screen, r core.Rect, y int, v TempDBView) int {
 	body, next := section(s, r, y, tempdbFilesH, "TEMPDB FILES", v.FileKPIs)
-	inner := drawPanelTitle(s, body, "SIZE AND USED SPACE BY FILE (MB)")
+	inner := charts.DrawPanelTitle(s, body, "SIZE AND USED SPACE BY FILE (MB)")
 
 	// The advisory takes the last row when there is something to say. It is
 	// the one thing on this tab that is a recommendation rather than a

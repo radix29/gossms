@@ -40,11 +40,8 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	// same key.
 	key := InstanceKey(server)
 
-	// peerLive, not IsOpen: closePeers writes closed on the UI goroutine
-	// outside peerMu while Peer runs on loader goroutines. The context Close
-	// cancels first is race-free.
 	sc.peerMu.Lock()
-	if p, ok := sc.peers[key]; ok && peerLive(p) {
+	if p, ok := sc.peers[key]; ok && p.IsOpen() {
 		sc.peerMu.Unlock()
 		return p, nil
 	}
@@ -88,7 +85,7 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 		peer.Close()
 		return nil, err
 	}
-	if existing, ok := sc.peers[key]; ok && peerLive(existing) {
+	if existing, ok := sc.peers[key]; ok && existing.IsOpen() {
 		peer.Close()
 		return existing, nil
 	}
@@ -269,10 +266,6 @@ func (sc *ServerConn) isSelf(server string) bool {
 	}
 	return strings.EqualFold(sc.Opts.Server, server)
 }
-
-// peerLive reports whether a cached peer is usable via its context, not the
-// racy closed flag. Not a method; IsOpen is the UI-goroutine answer.
-func peerLive(p *ServerConn) bool { return p != nil && p.Context().Err() == nil }
 
 // closePeers closes and drops every cached peer. Called by Close.
 func (sc *ServerConn) closePeers() {

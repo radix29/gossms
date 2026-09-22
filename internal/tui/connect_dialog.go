@@ -691,20 +691,7 @@ func (d *ConnectDialog) startConnect(opts config.Connection) {
 	// Cancel is the only live control from here, so focus is moved onto it.
 	d.btnFocus = connectBtnCancel
 
-	d.app.safego("animating the connect dialog spinner", func() {
-		ticker := time.NewTicker(connectSpinner.Period)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-attempt:
-				return
-			case <-ticker.C:
-				// A bare wake, the way QueryPanel's elapsed timer does it:
-				// there is no result to post, only a frame to redraw.
-				d.app.wakeEventLoop()
-			}
-		}
-	})
+	d.app.animateUntil("animating the connect dialog spinner", connectSpinner.Period, attempt)
 
 	phase := func(label string) {
 		if d.connectAttempt == attempt {

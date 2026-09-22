@@ -672,11 +672,8 @@ async operation in `internal/tui` at the time.
 A bare `wakeEventLoop()` is legitimate only where there is no callback to
 post, just a frame to redraw on a clock. `App.animateUntil` (`app.go`) is that
 loop, written once: the `QueryPanel` elapsed-time ticker, the create dialog's
-spinner, the properties spinner and the progress dialog all go through it.
-`ConnectDialog`'s connect spinner (`connect_dialog.go`) is the one site that
-still hand-rolls the same ticker instead of calling it — its own comment says
-as much ("A bare wake, the way `QueryPanel`'s elapsed timer does it"), and its
-`attempt` channel is already `animateUntil`'s `done`.
+spinner, the properties spinner, the progress dialog and `ConnectDialog`'s
+connect spinner all go through it.
 
 ### The other direction: FileDialog.showBusy
 

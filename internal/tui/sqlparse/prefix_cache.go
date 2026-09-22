@@ -31,7 +31,8 @@ type boundary struct {
 	isGo bool
 }
 
-// PrefixCache is ScanPrefix with its first pass made incremental.
+// PrefixCache is ScanPrefix with its first pass made incremental. ScanPrefix is
+// the test-only reference implementation (prefix_scan_test.go).
 //
 // ScanPrefix lexes the whole prefix on every keystroke just to locate two
 // boundaries — the offset after the last top-level ';' and the line after the

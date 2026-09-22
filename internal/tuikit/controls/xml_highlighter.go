@@ -218,27 +218,6 @@ func xmlFindClose(line []rune, from int, closer []rune) int {
 	return -1
 }
 
-// xmlOpenBlock returns which block, if any, line idx begins inside: an
-// unterminated <!-- --> comment or <![CDATA[ ]]> section carried over from
-// an earlier line, or xmlNone. Found by replaying every line before it and
-// toggling state on each construct's start/end delimiter — the same role
-// blockCommentDepthAt plays in sql_highlighter.go, over three states rather
-// than two.
-//
-// XMLHighlighter does not call it: it reads prefixStates instead, which
-// answers the same question in O(1) per line. This is the O(idx) reference
-// implementation that cache is required to agree with, and the only caller
-// is TestXMLPrefixStatesMatchFullReplayAcrossEdits, which checks exactly
-// that after each edit. Same role, and same lack of production callers, as
-// blockCommentDepthAt on the SQL side.
-func xmlOpenBlock(lines [][]rune, idx int) xmlBlockState {
-	state := xmlNone
-	for i := 0; i < idx; i++ {
-		state = xmlLineEndState(lines[i], state)
-	}
-	return state
-}
-
 // xmlLineEndState scans one full line, honoring a comment/CDATA section
 // carried in from a previous line via state, and returns the state to carry
 // into the next one.

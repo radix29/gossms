@@ -158,11 +158,12 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	case len(t.node.Warnings) > 0:
 		borderStyle = tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Warning)
 	}
+	// A double-line border is the selected tile's distinct look.
+	box := core.SingleBox
 	if selected {
-		drawDoubleBox(s, screenRect, borderStyle)
-	} else {
-		core.DrawBox(s, screenRect, borderStyle)
+		box = core.DoubleBox
 	}
+	core.DrawBoxWith(s, screenRect, borderStyle, box)
 
 	inner := screenRect.Inner(1)
 	textStyle := tcell.StyleDefault.Background(pal.PanelBg).Foreground(pal.Text)
@@ -201,24 +202,6 @@ func (v *PlanView) drawTile(s tcell.Screen, t tile, pal *theme.Palette) {
 	}
 	if badge != "" {
 		core.DrawText(s, inner.Right()-core.DisplayWidth(badge), inner.Y, badgeStyle, badge)
-	}
-}
-
-// drawDoubleBox draws a double-line box border — the selected tile's
-// distinct look.
-func drawDoubleBox(s tcell.Screen, r core.Rect, style tcell.Style) {
-	x, y, w, h := r.X, r.Y, r.W, r.H
-	s.SetContent(x, y, '╔', nil, style)
-	s.SetContent(x+w-1, y, '╗', nil, style)
-	s.SetContent(x, y+h-1, '╚', nil, style)
-	s.SetContent(x+w-1, y+h-1, '╝', nil, style)
-	for col := x + 1; col < x+w-1; col++ {
-		s.SetContent(col, y, '═', nil, style)
-		s.SetContent(col, y+h-1, '═', nil, style)
-	}
-	for row := y + 1; row < y+h-1; row++ {
-		s.SetContent(x, row, '║', nil, style)
-		s.SetContent(x+w-1, row, '║', nil, style)
 	}
 }
 

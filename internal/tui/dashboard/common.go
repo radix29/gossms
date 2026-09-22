@@ -43,7 +43,6 @@ const (
 	panelGutter         = 1
 	historyHeaderH      = 1
 	sampleHeaderH       = 2
-	panelTitleHeight    = 1
 )
 
 // drawHeader draws the identification strip at the top of a dashboard:
@@ -113,18 +112,6 @@ func drawSectionBar(s tcell.Screen, r core.Rect, title string, kpis []charts.KPI
 		k.Draw(s, core.Rect{X: right - w, Y: r.Y, W: w, H: 1})
 		right -= w + 1
 	}
-}
-
-// drawPanelTitle draws one chart panel's heading and returns the rect left
-// for the chart itself.
-func drawPanelTitle(s tcell.Screen, r core.Rect, title string) core.Rect {
-	if r.W <= 0 || r.H <= 0 {
-		return core.Rect{}
-	}
-	style := theme.StyleChartTitle()
-	core.FillRect(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: panelTitleHeight}, ' ', style)
-	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, style, title)
-	return core.Rect{X: r.X + 1, Y: r.Y + panelTitleHeight, W: r.W - 2, H: r.H - panelTitleHeight}
 }
 
 // splitColumns divides r into n equal-width columns separated by a gutter.

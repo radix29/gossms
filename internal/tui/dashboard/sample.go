@@ -58,7 +58,7 @@ func sampleWaits(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 	if w := loadFactorWidth(len(v.LoadFactor.Bars), body.W); w > 0 {
 		lf := core.Rect{X: body.X, Y: body.Y, W: w, H: body.H}
 		charts.VBarChart{Bars: v.LoadFactor.Bars, Scale: v.LoadFactor.Scale, ShowLabels: true}.
-			Draw(s, drawPanelTitle(s, lf, "Load Factor"))
+			Draw(s, charts.DrawPanelTitle(s, lf, "Load Factor"))
 		waitsBody = core.Rect{X: lf.Right() + panelGutter, Y: body.Y,
 			W: body.Right() - lf.Right() - panelGutter, H: body.H}
 	}
@@ -117,7 +117,7 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]Char
 		Rows:       max(cols[0].H/3, 1),
 		LegendRows: 2,
 		ShowTotal:  true,
-	}.Draw(s, drawPanelTitle(s, cols[0], "MEMORY COMPOSITION"))
+	}.Draw(s, charts.DrawPanelTitle(s, cols[0], "MEMORY COMPOSITION"))
 	addHit(hits, "MEMORY COMPOSITION", bar, core.Rect{}, v.Memory, true)
 
 	if len(cols) > 1 {
@@ -129,7 +129,7 @@ func sampleMemory(s tcell.Screen, r core.Rect, y int, v SampleView, hits *[]Char
 	}
 	if len(cols) > 2 {
 		charts.VBarChart{Bars: v.Pages.Bars, Scale: v.Pages.Scale, ShowLabels: true}.
-			Draw(s, drawPanelTitle(s, cols[2], "PAGES READ / WRITE"))
+			Draw(s, charts.DrawPanelTitle(s, cols[2], "PAGES READ / WRITE"))
 	}
 	return next
 }
@@ -141,7 +141,7 @@ func sampleDatabaseIO(s tcell.Screen, r core.Rect, y int, v SampleView) int {
 		kpi("Lazy Writes", v.LazyWrites),
 	})
 	charts.VBarChart{Bars: v.DatabaseIO.Bars, Scale: v.DatabaseIO.Scale, ShowLabels: true}.
-		Draw(s, drawPanelTitle(s, body, "ms/Read and ms/Write by file"))
+		Draw(s, charts.DrawPanelTitle(s, body, "ms/Read and ms/Write by file"))
 	return next
 }
 
@@ -156,7 +156,7 @@ func drawBarPanel(s tcell.Screen, panel core.Rect, title string, p BarPanel) {
 // chart drawn with LabelWidth -1 has no row labels, so this legend is what
 // identifies its colours.
 func withLegend(s tcell.Screen, panel core.Rect, title string, bars []charts.Bar) core.Rect {
-	r := drawPanelTitle(s, panel, title)
+	r := charts.DrawPanelTitle(s, panel, title)
 	if r.H <= 1 || len(bars) == 0 {
 		return r
 	}

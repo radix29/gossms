@@ -47,7 +47,7 @@ func DrawHistory(s tcell.Screen, r core.Rect, v HistoryView) []ChartHit {
 // drawChart draws one overlaid history panel and records where its plot
 // landed.
 func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryChart, hits *[]ChartHit) {
-	inner := drawPanelTitle(s, panel, title)
+	inner := charts.DrawPanelTitle(s, panel, title)
 	plot, timeRow := c.DrawFrame(s, inner)
 	addHit(hits, title, plot, timeRow, c.Series, false)
 }
@@ -55,7 +55,7 @@ func drawChart(s tcell.Screen, panel core.Rect, title string, c charts.HistoryCh
 // drawStackedChart draws one stacked history panel and records where its
 // plot landed.
 func drawStackedChart(s tcell.Screen, panel core.Rect, title string, c charts.StackedHistoryChart, hits *[]ChartHit) {
-	inner := drawPanelTitle(s, panel, title)
+	inner := charts.DrawPanelTitle(s, panel, title)
 	plot, timeRow := c.DrawFrame(s, inner)
 	addHit(hits, title, plot, timeRow, c.Series, false)
 }

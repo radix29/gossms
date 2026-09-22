@@ -73,13 +73,13 @@ func liveAGSA(t *testing.T) *sql.DB {
 // context, the way a loader runs.
 func liveAGConn(t *testing.T, user, password string) (*db.ServerConn, context.Context) {
 	t.Helper()
-	sc, err := db.Connect(config.Connection{
+	sc, err := db.ConnectContext(context.Background(), config.Connection{
 		Server:                 *liveSecondary,
 		AuthMethod:             config.AuthSQLServer,
 		User:                   user,
 		Password:               password,
 		TrustServerCertificate: true,
-	})
+	}, db.RoleExplorer)
 	if err != nil {
 		t.Fatalf("connect %s as %s: %v", *liveSecondary, user, err)
 	}

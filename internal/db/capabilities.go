@@ -11,15 +11,15 @@ import (
 
 // capabilityProbeTimeout bounds one capability probe (one round trip for the
 // server, two for a database). It's a liveness bound: the server probe runs
-// inside Connect.
+// inside ConnectContext.
 const capabilityProbeTimeout = 10 * time.Second
 
 // capabilityFields is the ServerConn state behind Capabilities and
 // DatabaseCapabilities.
 type capabilityFields struct {
-	// caps is probed in Connect and on every server-node Refresh, after the
-	// connection is shared — hence atomic. Nil until a probe succeeds, which
-	// reads as "unknown".
+	// caps is probed in ConnectContext and on every server-node Refresh, after
+	// the connection is shared — hence atomic. Nil until a probe succeeds,
+	// which reads as "unknown".
 	caps atomic.Pointer[gosmo.Capabilities]
 
 	mu     sync.Mutex
@@ -46,8 +46,8 @@ type dbProbe struct {
 }
 
 // Capabilities reports what the login may do at server scope. Never nil or an
-// error: a failed probe (in Connect or a server Refresh, see ProbeCapabilities)
-// leaves every answer CapabilityUnknown. Fail-open — gate on
+// error: a failed probe (in ConnectContext or a server Refresh, see
+// ProbeCapabilities) leaves every answer CapabilityUnknown. Fail-open — gate on
 // gosmo.Capabilities.Allows, not Has, wherever the answer withholds something.
 func (sc *ServerConn) Capabilities() *gosmo.Capabilities {
 	if sc == nil {

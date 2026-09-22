@@ -55,13 +55,13 @@ func liveLegacyConn(t *testing.T, user, password string) (*db.ServerConn, contex
 	if *liveLegacyServer == "" || *liveLegacySA == "" {
 		t.Skip("no -live-legacy-server/-live-legacy-sa given")
 	}
-	sc, err := db.Connect(config.Connection{
+	sc, err := db.ConnectContext(context.Background(), config.Connection{
 		Server:                 *liveLegacyServer,
 		AuthMethod:             config.AuthSQLServer,
 		User:                   user,
 		Password:               password,
 		TrustServerCertificate: true,
-	})
+	}, db.RoleExplorer)
 	if err != nil {
 		t.Fatalf("connect %s as %s: %v", *liveLegacyServer, user, err)
 	}

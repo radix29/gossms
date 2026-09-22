@@ -258,21 +258,17 @@ func TestFormatFloatSpecials(t *testing.T) {
 	}
 }
 
-// Estimated mode skips the DB_NAME() read: under SHOWPLAN_XML it returns a
-// showplan set, and Result.Database would hold the plan XML.
-func TestReadsCurrentDatabase(t *testing.T) {
-	cases := []struct {
-		capture planCapture
-		want    bool
-	}{
-		{planCaptureNone, true},
-		// STATISTICS XML really runs the batches, so DB_NAME() answers.
-		{planCaptureActual, true},
-		{planCaptureEstimated, false},
-	}
-	for _, c := range cases {
-		if got := c.capture.readsCurrentDatabase(); got != c.want {
-			t.Errorf("planCapture(%d).readsCurrentDatabase() = %v, want %v", c.capture, got, c.want)
-		}
-	}
+// formatGUID is appendGUID's string form.
+func formatGUID(g mssql.NullUniqueIdentifier) string {
+	return string(appendGUID(nil, g))
+}
+
+// formatValue is appendValue's string form.
+func formatValue(v any, isDecimalLike bool, layout string) string {
+	return string(appendValue(nil, v, isDecimalLike, layout))
+}
+
+// formatFloat is appendFloat's string form.
+func formatFloat(f float64, bits int) string {
+	return string(appendFloat(nil, f, bits))
 }

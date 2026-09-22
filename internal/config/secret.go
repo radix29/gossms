@@ -38,7 +38,8 @@ import (
 // It does defend against *write* access being turned into exfiltration.
 // Every password is sealed with additional authenticated data naming the
 // connection it belongs to (see connectionAAD), so a ciphertext is only valid
-// for that server, port, user and auth method, with those transport settings. Without it, the blobs are freely
+// for that server, port, user and auth method, with those transport settings
+// and that Entra tenant and client. Without it, the blobs are freely
 // transplantable: someone able to edit config.json could copy the production
 // password onto an entry pointing at a host they control and have gossms dial
 // out with it, never needing to decrypt anything. GCM verifies the AAD on
@@ -90,11 +91,12 @@ func loadOrCreateKey(dir string) ([]byte, error) {
 }
 
 // aadPrefix marks a stored password sealed with the current connection-binding
-// AAD, aadV3. Values behind aadPrefixV2, or with no prefix at all, are earlier
-// formats and are still readable (see decryptPassword) — Save rewrites them
-// under aadPrefix on the next write.
+// AAD, connectionAAD. Values behind aadPrefixV3 or aadPrefixV2, or with no
+// prefix at all, are earlier formats and are still readable (see
+// decryptPassword) — Save rewrites them under aadPrefix on the next write.
 const (
-	aadPrefix   = "v3:"
+	aadPrefix   = "v4:"
+	aadPrefixV3 = "v3:"
 	aadPrefixV2 = "v2:"
 )
 
@@ -108,7 +110,11 @@ const (
 // Trust-certificate on, for an entry and dialling it with the saved password
 // intact — a downgrade no decryption is needed for. ExtraProperties belongs
 // with them because it reaches the driver: a "protocol" or "failoverpartner"
-// there can redirect the dial.
+// there can redirect the dial. TenantID and ClientID are the destination for
+// the Entra methods that send the secret to Entra rather than to SQL Server
+// (Password, Service Principal): they decide which tenant and application it
+// is presented to. Other methods leave both empty, so binding them for every
+// method costs nothing.
 //
 // Name and Database are deliberately excluded — relabelling a connection or
 // pointing it at a different database on the same server is an ordinary edit
@@ -117,16 +123,28 @@ const (
 // NUL-separated so a value ending where the next begins can't be confused
 // with a different split of the same bytes ("a" + "bc" vs "ab" + "c").
 func connectionAAD(c Connection) []byte {
-	// "" is what an entry built in memory carries and UnmarshalJSON reads back
-	// as Optional; binding the two differently would seal a password the next
-	// Load cannot open.
-	encrypt := c.Encrypt
-	if encrypt == "" {
-		encrypt = EncryptOptional
+	return fmt.Appendf(nil, "gossms-connection-v4\x00%s\x00%d\x00%s\x00%d\x00%s\x00%t\x00%s\x00%s\x00%s\x00%s",
+		c.Server, c.Port, c.User, int(c.AuthMethod),
+		boundEncrypt(c), c.TrustServerCertificate, c.HostNameInCertificate, c.ExtraProperties,
+		c.TenantID, c.ClientID)
+}
+
+// boundEncrypt is c.Encrypt as the AAD binds it. "" is what an entry built in
+// memory carries and UnmarshalJSON reads back as Optional; binding the two
+// differently would seal a password the next Load cannot open.
+func boundEncrypt(c Connection) EncryptMode {
+	if c.Encrypt == "" {
+		return EncryptOptional
 	}
+	return c.Encrypt
+}
+
+// connectionAADv3 is the AAD passwords were sealed with before the Entra
+// tenant and client were bound (aadPrefixV3). Only ever used to open one.
+func connectionAADv3(c Connection) []byte {
 	return fmt.Appendf(nil, "gossms-connection-v3\x00%s\x00%d\x00%s\x00%d\x00%s\x00%t\x00%s\x00%s",
 		c.Server, c.Port, c.User, int(c.AuthMethod),
-		encrypt, c.TrustServerCertificate, c.HostNameInCertificate, c.ExtraProperties)
+		boundEncrypt(c), c.TrustServerCertificate, c.HostNameInCertificate, c.ExtraProperties)
 }
 
 // connectionAADv2 is the AAD passwords were sealed with before transport
@@ -169,16 +187,17 @@ func encryptPassword(key []byte, c Connection) (string, error) {
 // keeps the original bytes for a false (see Connection.sealed) and Save
 // writes them back untouched.
 //
-// A value behind aadPrefixV2 predates transport binding and is opened with
-// the v2 AAD; one with no prefix at all predates connection binding and is
-// opened without AAD. So an existing config keeps working across each upgrade,
+// A value behind aadPrefixV3 predates tenant/client binding and is opened with
+// the v3 AAD, one behind aadPrefixV2 predates transport binding and is opened
+// with the v2 AAD, and one with no prefix at all predates connection binding
+// and is opened without AAD. So an existing config keeps working across each upgrade,
 // and the next Save rewrites it under the current binding. Such a value is
 // exactly what the newer binding defends against, so this fallback is the cost
 // of not silently discarding every saved password once — it narrows as
-// configs get rewritten. The reverse does not hold: a release before v3 reads
-// a "v3:" value as an unprefixed one, fails to open it, and keeps it sealed
-// (see Connection.sealed) — the password is re-entered after a downgrade, and
-// is back once the newer release runs again.
+// configs get rewritten. The reverse does not hold: a release that predates a
+// prefix reads a value behind it as an unprefixed one, fails to open it, and
+// keeps it sealed (see Connection.sealed) — the password is re-entered after a
+// downgrade, and is back once the newer release runs again.
 func decryptPassword(key []byte, c Connection) (string, bool) {
 	encoded := c.Password
 	if encoded == "" {
@@ -187,6 +206,8 @@ func decryptPassword(key []byte, c Connection) (string, bool) {
 	var aad []byte
 	if rest, ok := strings.CutPrefix(encoded, aadPrefix); ok {
 		encoded, aad = rest, connectionAAD(c)
+	} else if rest, ok := strings.CutPrefix(encoded, aadPrefixV3); ok {
+		encoded, aad = rest, connectionAADv3(c)
 	} else if rest, ok := strings.CutPrefix(encoded, aadPrefixV2); ok {
 		encoded, aad = rest, connectionAADv2(c)
 	}

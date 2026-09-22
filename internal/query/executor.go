@@ -142,12 +142,6 @@ const (
 	planCaptureEstimated             // SET SHOWPLAN_XML ON — nothing really runs
 )
 
-// readsCurrentDatabase reports whether execute reads DB_NAME() back for
-// Result.Database. Never under SHOWPLAN_XML: the SET ... OFF hasn't run yet, so
-// the SELECT returns a showplan set and Database would get the plan XML.
-// Estimated mode runs no USE anyway.
-func (c planCapture) readsCurrentDatabase() bool { return c != planCaptureEstimated }
-
 // Progress is a live row counter for a running script: the executor bumps it
 // per scanned row so a caller (the query panel's "Executing..." status) can
 // show progress before Result arrives. Pass it with WithProgress.
@@ -190,11 +184,6 @@ func WithProgress(prog *Progress) Option {
 //
 // Every row is retained in Result.Sets, uncapped; see cellArena.
 func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...Option) *Result {
-	// Plan capture and row sinks are Session-only: both need a connection that
-	// survives the run (a Session's is never returned to the pool), and every
-	// caller of either is a query window, which has one.
-	const capture = planCaptureNone
-
 	start := time.Now()
 	res := newResult(opts)
 
@@ -206,19 +195,19 @@ func Execute(ctx context.Context, db *sql.DB, database, script string, opts ...O
 	}
 	defer conn.Close()
 
-	// The capture-off failure a Session treats as fatal cannot arise here —
-	// nothing is captured — and the pool's reset on next checkout clears any
-	// SET option regardless.
-	if ran, _ := runScript(ctx, conn, script, capture, nil, res); ran {
+	// Plan capture and row sinks are Session-only: both need a connection that
+	// survives the run (a Session's is never returned to the pool), and every
+	// caller of either is a query window, which has one. So the capture-off
+	// failure a Session treats as fatal cannot arise here, and the pool's reset
+	// on next checkout clears any SET option regardless.
+	if ran, _ := runScript(ctx, conn, script, planCaptureNone, nil, res); ran {
 		if ctx.Err() != nil {
 			res.Messages = append(res.Messages, cancelledMessage)
 		} else {
-			if capture.readsCurrentDatabase() {
-				if name, err := currentDatabase(ctx, conn); err == nil {
-					res.Database = name
-				}
+			if name, err := currentDatabase(ctx, conn); err == nil {
+				res.Database = name
 			}
-			if res.shouldReportSuccess(capture) {
+			if res.shouldReportSuccess(planCaptureNone) {
 				res.addNotice("Commands completed successfully.")
 			}
 		}
@@ -622,11 +611,6 @@ func appendGUID(dst []byte, g mssql.NullUniqueIdentifier) []byte {
 	return append(dst, g.UUID.String()...)
 }
 
-// formatGUID is appendGUID's string form, for tests.
-func formatGUID(g mssql.NullUniqueIdentifier) string {
-	return string(appendGUID(nil, g))
-}
-
 // defaultTimeLayout is for a time.Time from a column with no known layout (e.g.
 // sql_variant); matches plain "datetime".
 const defaultTimeLayout = "2006-01-02 15:04:05.000"
@@ -667,16 +651,11 @@ func fracLayout(scale int) string {
 	return "." + strings.Repeat("0", min(scale, 7))
 }
 
-// formatValue renders a cell as SSMS does: NULL for nil, 1/0 for bit, 0x… for
+// appendValue renders a cell as SSMS does: NULL for nil, 1/0 for bit, 0x… for
 // binary, date/time in its column's layout. isDecimalLike marks a []byte
 // holding decoded decimal/money digits (render as text, not hex). layout is
-// empty for non-date/time columns.
-func formatValue(v any, isDecimalLike bool, layout string) string {
-	return string(appendValue(nil, v, isDecimalLike, layout))
-}
-
-// appendValue is formatValue in append form, so cells render through one reused
-// buffer.
+// empty for non-date/time columns. Append form, so cells render through one
+// reused buffer.
 func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 	switch x := v.(type) {
 	case nil:
@@ -728,9 +707,4 @@ func appendFloat(dst []byte, f float64, bits int) []byte {
 		return strconv.AppendFloat(dst, f, 'e', -1, bits)
 	}
 	return strconv.AppendFloat(dst, f, 'f', -1, bits)
-}
-
-// formatFloat is appendFloat's string form, for tests.
-func formatFloat(f float64, bits int) string {
-	return string(appendFloat(nil, f, bits))
 }

@@ -43,7 +43,7 @@ type detailTooltip struct {
 // panel gives it.
 const (
 	detailChartSectionH = 1
-	detailChartTitleH   = 1
+	detailChartTitleH   = charts.PanelTitleHeight
 	detailChartBarH     = 2
 	detailChartLegendH  = 2
 	detailChartsH       = detailChartSectionH + detailChartTitleH + detailChartBarH + detailChartLegendH
@@ -181,7 +181,7 @@ func (db *DetailBrowser) drawCharts(s tcell.Screen) {
 			Rows:       detailChartBarH,
 			LegendRows: detailChartLegendH,
 			ShowTotal:  true,
-		}.Draw(s, drawDetailChartTitle(s, panel, c.Title))
+		}.Draw(s, charts.DrawPanelTitle(s, panel, c.Title))
 	}
 }
 
@@ -204,17 +204,4 @@ func detailChartPanels(body core.Rect, n int) []core.Rect {
 		x += each + detailChartGutter
 	}
 	return out
-}
-
-// drawDetailChartTitle draws one panel's heading and returns what is left
-// for the bar — dashboard.drawPanelTitle's job, which lives in a package
-// that knows nothing about this one.
-func drawDetailChartTitle(s tcell.Screen, r core.Rect, title string) core.Rect {
-	if r.W <= 0 || r.H <= 0 {
-		return core.Rect{}
-	}
-	style := theme.StyleChartTitle()
-	core.FillRect(s, core.Rect{X: r.X, Y: r.Y, W: r.W, H: detailChartTitleH}, ' ', style)
-	core.DrawTextClipped(s, r.X+1, r.Y, r.W-2, style, title)
-	return core.Rect{X: r.X + 1, Y: r.Y + detailChartTitleH, W: r.W - 2, H: r.H - detailChartTitleH}
 }

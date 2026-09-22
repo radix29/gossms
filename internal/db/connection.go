@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	gosmo "github.com/radix29/gosmo"
@@ -75,7 +76,7 @@ type ServerConn struct {
 	Opts   config.Connection
 	Server *gosmo.Server
 
-	// Login is SUSER_NAME(), fetched at Connect: for Windows/Entra auth
+	// Login is SUSER_NAME(), fetched at ConnectContext: for Windows/Entra auth
 	// Opts.User is often empty or a UPN. Empty if the fetch failed; callers
 	// fall back to Opts.User.
 	Login string
@@ -86,10 +87,13 @@ type ServerConn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	closed bool
+	// closed is atomic because Close runs on the UI goroutine while Peer's
+	// cache lookups ask IsOpen from loader goroutines. Atomic rather than
+	// derived from ctx: a bare &ServerConn{} (tests build them) must read open.
+	closed atomic.Bool
 
-	// role is what Connect opened this connection for; peers inherit it, so AG
-	// replica reads report Object Explorer's program_name.
+	// role is what ConnectContext opened this connection for; peers inherit
+	// it, so AG replica reads report Object Explorer's program_name.
 	role Role
 
 	// peerFields caches connections to other instances in the topology (Always
@@ -98,12 +102,6 @@ type ServerConn struct {
 
 	// capabilityFields caches what the login may do; see capabilities.go.
 	capabilityFields
-}
-
-// Connect opens an Object Explorer connection: ConnectContext with
-// context.Background() and RoleExplorer.
-func Connect(opts config.Connection) (*ServerConn, error) {
-	return ConnectContext(context.Background(), opts, RoleExplorer)
 }
 
 // ConnectContext opens a connection for role. Cancelling ctx aborts the attempt
@@ -270,6 +268,8 @@ func ParseExtraProperties(s string) (url.Values, error) {
 // Close disconnects. ctx is cancelled before closing the pool so in-flight
 // background loads release their connections promptly.
 func (sc *ServerConn) Close() {
+	// First, so a concurrent Peer lookup never hands out a peer mid-close.
+	sc.closed.Store(true)
 	if sc.cancel != nil {
 		sc.cancel()
 	}
@@ -277,7 +277,6 @@ func (sc *ServerConn) Close() {
 	if sc.Server != nil {
 		sc.Server.Close()
 	}
-	sc.closed = true
 }
 
 // Context returns the context cancelled by Close. Background loads derive their
@@ -290,9 +289,10 @@ func (sc *ServerConn) Context() context.Context {
 	return sc.ctx
 }
 
-// IsOpen reports whether sc is non-nil and not yet closed.
+// IsOpen reports whether sc is non-nil and not yet closed. Safe from any
+// goroutine.
 func (sc *ServerConn) IsOpen() bool {
-	return sc != nil && !sc.closed
+	return sc != nil && !sc.closed.Load()
 }
 
 // Label builds the Object Explorer root label: "host[\instance or ,port] (user,
@@ -395,10 +395,10 @@ func toGosmoAuth(m config.AuthMethod) gosmo.AuthMethod {
 	}
 }
 
-// BuildConnectionString renders the DSN Connect would dial for opts (Object
-// Explorer role), via the same toGosmoOptions and gosmo builder, with
-// passwords, secrets and tokens masked. Settings Connect would refuse return
-// the same error, which the dialog preview shows.
+// BuildConnectionString renders the DSN ConnectContext would dial for opts
+// (Object Explorer role), via the same toGosmoOptions and gosmo builder, with
+// passwords, secrets and tokens masked. Settings ConnectContext would refuse
+// return the same error, which the dialog preview shows.
 func BuildConnectionString(opts config.Connection) (string, error) {
 	co, err := toGosmoOptions(opts, RoleExplorer)
 	if err != nil {

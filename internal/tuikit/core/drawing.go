@@ -186,20 +186,37 @@ func DrawVLine(s tcell.Screen, x, y, h int, style tcell.Style) {
 	}
 }
 
+// BoxRunes is the rune set a box border is drawn with.
+type BoxRunes struct {
+	TopLeft, TopRight, BottomLeft, BottomRight, Horizontal, Vertical rune
+}
+
+var (
+	// SingleBox is the single-line border DrawBox draws.
+	SingleBox = BoxRunes{'┌', '┐', '└', '┘', '─', '│'}
+	// DoubleBox is a double-line border.
+	DoubleBox = BoxRunes{'╔', '╗', '╚', '╝', '═', '║'}
+)
+
 // DrawBox draws a single-line box border around r.
 func DrawBox(s tcell.Screen, r Rect, style tcell.Style) {
+	DrawBoxWith(s, r, style, SingleBox)
+}
+
+// DrawBoxWith draws a box border around r with the given runes.
+func DrawBoxWith(s tcell.Screen, r Rect, style tcell.Style, b BoxRunes) {
 	x, y, w, h := r.X, r.Y, r.W, r.H
-	s.SetContent(x, y, '┌', nil, style)
-	s.SetContent(x+w-1, y, '┐', nil, style)
-	s.SetContent(x, y+h-1, '└', nil, style)
-	s.SetContent(x+w-1, y+h-1, '┘', nil, style)
+	s.SetContent(x, y, b.TopLeft, nil, style)
+	s.SetContent(x+w-1, y, b.TopRight, nil, style)
+	s.SetContent(x, y+h-1, b.BottomLeft, nil, style)
+	s.SetContent(x+w-1, y+h-1, b.BottomRight, nil, style)
 	for col := x + 1; col < x+w-1; col++ {
-		s.SetContent(col, y, '─', nil, style)
-		s.SetContent(col, y+h-1, '─', nil, style)
+		s.SetContent(col, y, b.Horizontal, nil, style)
+		s.SetContent(col, y+h-1, b.Horizontal, nil, style)
 	}
 	for row := y + 1; row < y+h-1; row++ {
-		s.SetContent(x, row, '│', nil, style)
-		s.SetContent(x+w-1, row, '│', nil, style)
+		s.SetContent(x, row, b.Vertical, nil, style)
+		s.SetContent(x+w-1, row, b.Vertical, nil, style)
 	}
 }
 

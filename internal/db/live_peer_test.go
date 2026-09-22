@@ -42,7 +42,7 @@ func liveParent(t *testing.T) *ServerConn {
 	if *livePrimary == "" || *liveReplica == "" || *liveUser == "" {
 		t.Skip("no -live-primary/-live-replica/-live-user given")
 	}
-	sc, err := Connect(liveOpts(*livePrimary, *liveUser, *livePassword))
+	sc, err := ConnectContext(context.Background(), liveOpts(*livePrimary, *liveUser, *livePassword), RoleExplorer)
 	if err != nil {
 		t.Fatalf("connect to the parent %s: %v", *livePrimary, err)
 	}

@@ -1067,10 +1067,11 @@ Encrypt modes, Custom Properties, the Entra field mapping and IPv6 addresses.
   `8192 database=foo`, which the driver rejects. The dialog's Enter is its
   Connect key, so in practice the separator is `;` or `&`.
 - **A downgrade loses saved passwords until the next upgrade.** A release
-  before v3 sealing reads a `v3:` value as unprefixed, fails to open it and
-  keeps it sealed; it also drops `encrypt_mode` on its next save, so a Strict
-  entry comes back Mandatory — a different AAD, so that password stays
-  unreadable and is re-entered. The `encrypt` boolean is still written so the
+  that predates the current sealing prefix (`v4:` since the Entra tenant and
+  client were bound; `v3:` before that) reads such a value as unprefixed, fails
+  to open it and keeps it sealed. A release before v3 also drops
+  `encrypt_mode` on its next save, so a Strict entry comes back Mandatory — a
+  different AAD, so that password stays unreadable and is re-entered. The `encrypt` boolean is still written so the
   older release can read the file at all.
 
 ## Connect dialog: what the SSMS 21 redesign settled — do not re-raise
@@ -1362,9 +1363,9 @@ re-opened without asking the author.
   pins both with the readings above. Do not re-propose a `prev`-based arm for
   `cntrFraction`.
 
-- **`formatValue`'s `case float32` is unreachable but kept.** go-mssqldb returns
+- **`appendValue`'s `case float32` is unreachable but kept.** go-mssqldb returns
   `float64` for both `REAL` and `FLOAT`. It is correct if the driver ever
-  narrows, and `formatFloat` already takes the bit size.
+  narrows, and `appendFloat` already takes the bit size.
 
 - **Server-scope GRANT/DENY/REVOKE's `USE master;` prefix does not strand the
   pooled connection in master.** gosmo's `"USE master; " + stmt`
@@ -1395,7 +1396,17 @@ re-opened without asking the author.
   reaches it.** `doc.go` advertises `Draw` as the entry point and all six chart
   types implement it. The dashboard uses `DrawFrame` only because it also wants
   the time row. Removing one of six would break the package's one uniform method
-  for four lines.
+  for four lines. Its `Plot` and `TimeRow` stay for the same reason: they mirror
+  `HistoryChart`'s pair.
+
+- **`theme.SetPalette` and `widgets.SpinnerByName` stay in production files,
+  though only tests reach them** (`deadcode ./cmd/gossms`). Both are tuikit
+  API that `internal/tuikit/README.md` documents — reskinning at start-up, and
+  resolving a spinner from a config string — not test helpers; moving either
+  into a `_test.go` file would leave the README describing a feature the
+  package no longer has. Likewise `config.UseTrackedQueries`: it is called by
+  `internal/tui`'s tests, and a `_test.go` file in `config` is invisible to
+  another package's tests.
 
 - **The five `staticcheck` U1000 findings in `clipboard_host_test.go` and
   `dialog_gesture_test.go` are suppressed, not deleted.** The fields are read by

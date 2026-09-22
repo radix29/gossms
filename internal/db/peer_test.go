@@ -17,10 +17,9 @@ func newTestConn(server string) *ServerConn {
 	return &ServerConn{Opts: config.Connection{Server: server}, ctx: ctx, cancel: cancel}
 }
 
-// closePeers writes ServerConn.closed after releasing peerMu, which looks racy
-// against the lookup's IsOpen. It isn't: every IsOpen on a cached peer is under
-// peerMu, and closePeers takes it before closing any peer; afterwards sc.peers
-// is nil.
+// closePeers closes each peer after releasing peerMu, while Peer's lookup asks
+// the cached peer's IsOpen from another goroutine. closed is atomic, so this is
+// race-free by construction.
 //
 // Meaningful only under -race.
 func TestPeerLookupRacesDisconnect(t *testing.T) {

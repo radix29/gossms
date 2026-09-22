@@ -123,6 +123,9 @@ func TestPasswordCiphertextIsBoundToItsConnection(t *testing.T) {
 		{"certificate trusted", func(c Connection) Connection { c.TrustServerCertificate = true; return c }},
 		{"host name in certificate", func(c Connection) Connection { c.HostNameInCertificate = "attacker-host"; return c }},
 		{"extra properties", func(c Connection) Connection { c.ExtraProperties = "failoverpartner=attacker-host"; return c }},
+		// Entra: the secret is presented to this tenant and application.
+		{"different tenant", func(c Connection) Connection { c.TenantID = "attacker-tenant"; return c }},
+		{"different client", func(c Connection) Connection { c.ClientID = "attacker-app"; return c }},
 	} {
 		t.Run(c.label, func(t *testing.T) {
 			moved := c.mutate(orig)
@@ -191,9 +194,50 @@ func TestLegacyUnboundPasswordStillDecrypts(t *testing.T) {
 	}
 }
 
-// A v2 value (bound to server/user/auth method) must open and re-seal as v3. v2
-// didn't bind transport settings; that closes at the next Save.
-func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
+// A v3 value (no tenant/client binding) must open and re-seal as the current
+// format; the gap closes at the next Save.
+func TestV3PasswordStillDecryptsAndResealsAsCurrent(t *testing.T) {
+	key := make([]byte, 32)
+	c := testConn("")
+	c.AuthMethod, c.TenantID, c.ClientID = AuthEntraServicePrincipal, "tenant", "app"
+	sealed, err := sealWithForTest(key, aadPrefixV3, connectionAADv3(c), "v3-s3cr3t")
+	if err != nil {
+		t.Fatalf("sealWithForTest: %v", err)
+	}
+	c.Password = sealed
+	if got, ok := decryptPassword(key, c); !ok || got != "v3-s3cr3t" {
+		t.Fatalf("decryptPassword(v3) = (%q, %v), want (v3-s3cr3t, true)", got, ok)
+	}
+
+	// Still bound to what v3 bound.
+	moved := c
+	moved.Encrypt = EncryptOptional
+	if got, ok := decryptPassword(key, moved); ok || got != "" {
+		t.Errorf("v3 value opened with encryption turned down: (%q, %v)", got, ok)
+	}
+
+	// A v3 ciphertext relabelled as current must not open: the prefix picks
+	// the AAD.
+	relabelled := c
+	relabelled.Password = aadPrefix + strings.TrimPrefix(sealed, aadPrefixV3)
+	if got, ok := decryptPassword(key, relabelled); ok || got != "" {
+		t.Errorf("v3 ciphertext opened as current: (%q, %v)", got, ok)
+	}
+
+	c.Password = "v3-s3cr3t"
+	resealed, err := encryptPassword(key, c)
+	if err != nil {
+		t.Fatalf("encryptPassword: %v", err)
+	}
+	if !strings.HasPrefix(resealed, aadPrefix) {
+		t.Errorf("re-sealed = %q, want the %q prefix", resealed, aadPrefix)
+	}
+}
+
+// A v2 value (bound to server/user/auth method) must open and re-seal as the
+// current format. v2 didn't bind transport settings; that closes at the next
+// Save.
+func TestV2PasswordStillDecryptsAndResealsAsCurrent(t *testing.T) {
 	key := make([]byte, 32)
 	c := testConn("")
 	sealed, err := sealV2ForTest(key, c, "v2-s3cr3t")
@@ -212,11 +256,12 @@ func TestV2PasswordStillDecryptsAndResealsAsV3(t *testing.T) {
 		t.Errorf("v2 value opened under another server: (%q, %v)", got, ok)
 	}
 
-	// A v2 ciphertext relabelled "v3:" must not open: the prefix picks the AAD.
+	// A v2 ciphertext relabelled as current must not open: the prefix picks
+	// the AAD.
 	relabelled := c
 	relabelled.Password = aadPrefix + strings.TrimPrefix(sealed, aadPrefixV2)
 	if got, ok := decryptPassword(key, relabelled); ok || got != "" {
-		t.Errorf("v2 ciphertext opened as v3: (%q, %v)", got, ok)
+		t.Errorf("v2 ciphertext opened as current: (%q, %v)", got, ok)
 	}
 
 	c.Password = "v2-s3cr3t"
@@ -248,6 +293,11 @@ func TestEmptyEncryptModeSealsAsOptional(t *testing.T) {
 // sealV2ForTest produces the v2 format: "v2:" + base64(nonce||ciphertext) with
 // the server/user/auth-method AAD.
 func sealV2ForTest(key []byte, c Connection, plaintext string) (string, error) {
+	return sealWithForTest(key, aadPrefixV2, connectionAADv2(c), plaintext)
+}
+
+// sealWithForTest produces prefix + base64(nonce||ciphertext) sealed under aad.
+func sealWithForTest(key []byte, prefix string, aad []byte, plaintext string) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return "", err
@@ -256,8 +306,8 @@ func sealV2ForTest(key []byte, c Connection, plaintext string) (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), connectionAADv2(c))
-	return aadPrefixV2 + base64.StdEncoding.EncodeToString(sealed), nil
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), aad)
+	return prefix + base64.StdEncoding.EncodeToString(sealed), nil
 }
 
 // sealLegacyForTest produces the pre-binding format: base64(nonce||ciphertext),
