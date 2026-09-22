@@ -68,6 +68,9 @@ type Editor struct {
 	// a line above contains a wide character.
 	desiredCol int
 
+	// wrapGoal is desiredCol's wrap-mode counterpart — see moveVisualRows.
+	wrapGoal wrapGoal
+
 	// OnRightClick, if set, is called with the click position on a Button2 press
 	// inside the content area — the app layer pops up a Cut/Copy/Paste menu. The
 	// editor leaves the cursor and selection untouched, so the menu's Copy/Cut
@@ -92,6 +95,10 @@ type Editor struct {
 	// drawHighlighted once per visible row. Valid only within one
 	// drawHighlighted call — nothing may retain it.
 	styleScratch []tcell.Style
+
+	// segRunScratch is drawWrapped's per-visual-row subset of a logical line's
+	// highlighter runs — see runsInSpan. Valid only within one visual row.
+	segRunScratch []ColorRun
 
 	// vlScratch and segScratch are buildVisualLines' buffers. vlScratch also
 	// *is* its cache: the flattening it holds stays valid until the document
@@ -237,10 +244,14 @@ func (e *Editor) gutterWidth() int {
 // SetWrapMode enables word-wrap rendering: long lines soft-wrap at word
 // boundaries to fit the content width instead of scrolling horizontally, and
 // scrolling becomes vertical-only. Off by default; used by plain multi-line text
-// boxes like the connection-string editor.
+// boxes like the connection-string editor, and toggled at runtime by the query
+// editor's Word Wrap (Alt+Z). Display only: the document's lines are unchanged.
+// The gutter numbers logical lines, on each one's first visual row.
 //
-// KeyUp/KeyDown/PgUp/PgDn move between logical lines (actual newlines), not
-// wrapped visual rows; Left/Right/Home/End/click move within a wrapped line.
+// KeyUp/KeyDown/PgUp/PgDn move by wrapped visual rows, as the eye expects —
+// moving by logical lines skipped every continuation row of a wrapped line.
+// Left/Right/Home/End stay logical, and Move Line (Ctrl+Shift+Up/Down) moves
+// whole logical lines.
 //
 // A Highlighter applies in wrap mode too: drawWrapped fetches runs per logical
 // line and resolves each column through styleAt.
@@ -252,6 +263,10 @@ func (e *Editor) gutterWidth() int {
 // meaningful only outside wrap mode, and scrollRow indexes visual rows in wrap
 // mode and logical lines outside it. Setting the mode it already has is a no-op,
 // so the common construction-time call does not move the cursor.
+//
+// The cursor itself is kept, and once laid out the view scrolls back to it: a
+// runtime toggle deep in a long script would otherwise land on line 1 with the
+// caret off-screen.
 func (e *Editor) SetWrapMode(v bool) {
 	if v == e.wrapMode {
 		return
@@ -259,7 +274,13 @@ func (e *Editor) SetWrapMode(v bool) {
 	e.selecting, e.selBlock, e.mouseDragging = false, false, false
 	e.scrollRow, e.scrollCol = 0, 0
 	e.wrapMode = v
+	if e.rect.H > 0 && e.rect.W > e.gutterWidth() {
+		e.ensureCursorVisible()
+	}
 }
+
+// WrapMode reports whether SetWrapMode is in force.
+func (e *Editor) WrapMode() bool { return e.wrapMode }
 
 // SetReadOnly makes the editor reject every mutating key — typed characters,
 // Enter, Backspace/Delete, Tab/Backtab indent, undo/redo, and the line/case/

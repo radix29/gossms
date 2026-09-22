@@ -1265,7 +1265,9 @@ re-opened without asking the author.
   work proportional to the ~15 visible rows rather than to the value. That scan
   is fine against SQL's few coarse runs and not against a highlighter emitting
   one run per token over a whole XML document. Routing to a panel, which draws
-  unwrapped, sidesteps it.
+  unwrapped, sidesteps it. With Word Wrap (Alt+Z) on the panel draws wrapped
+  too; `drawWrapped` hands `styleAt` only the runs overlapping each visual
+  row (`runsInSpan`), which keeps the scan to the tokens on screen.
 
 - **The Databases folder's one round trip per database is intended.**
   `FILEPROPERTY` reports on the *current* database only, so

@@ -193,6 +193,7 @@ func NewQueryPanel(app *App, title string) *QueryPanel {
 	// controls.SetIndentWidth.
 	p.editor.SetIndentWidth(app.cfg.IndentWidth)
 	p.editor.SetSmartIndent(true)
+	p.editor.SetWrapMode(app.wordWrap)
 	p.messages = controls.NewEditor(p.messagesHighlighter)
 	p.messages.SetReadOnly(true)
 	p.resultsText = controls.NewEditor(nil)

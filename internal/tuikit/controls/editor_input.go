@@ -89,6 +89,8 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if moveLineCombo {
 			e.MoveLinesUp()
 			dropSelection = false
+		} else if e.wrapMode {
+			e.moveVisualRows(-1)
 		} else if e.cursorRow > 0 {
 			e.cursorRow--
 			e.cursorCol = e.colForDesired()
@@ -97,6 +99,8 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		if moveLineCombo {
 			e.MoveLinesDown()
 			dropSelection = false
+		} else if e.wrapMode {
+			e.moveVisualRows(1)
 		} else if e.cursorRow < e.doc.Len()-1 {
 			e.cursorRow++
 			e.cursorCol = e.colForDesired()
@@ -148,9 +152,17 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		e.SelectAll()
 		dropSelection = false
 	case tcell.KeyPgUp:
+		if e.wrapMode {
+			e.moveVisualRows(-e.contentH())
+			break
+		}
 		e.cursorRow = max(0, e.cursorRow-e.contentH())
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyPgDn:
+		if e.wrapMode {
+			e.moveVisualRows(e.contentH())
+			break
+		}
 		e.cursorRow = min(e.doc.Len()-1, e.cursorRow+e.contentH())
 		e.cursorCol = e.colForDesired()
 	case tcell.KeyEnter:
@@ -524,8 +536,13 @@ func (e *Editor) hScrollbarDrag(ev *tcell.EventMouse) bool {
 // callers placing the cursor without synthesizing a mouse event.
 func (e *Editor) SetCursorFromScreen(x, y int) {
 	contentX := e.rect.X + e.gutterWidth()
-	row := core.Clamp(e.scrollRow+min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
-	col := e.runeColAtScreenX(row, x-contentX)
+	var row, col int
+	if e.wrapMode {
+		row, col = e.wrappedPosAt(e.buildVisualLines(e.rect.W-e.gutterWidth()), x, y, contentX)
+	} else {
+		row = core.Clamp(e.scrollRow+min(y-e.rect.Y, e.contentH()-1), 0, e.doc.Len()-1)
+		col = e.runeColAtScreenX(row, x-contentX)
+	}
 	e.cursorRow, e.cursorCol = row, col
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
 	e.desiredCol = core.ColumnOfRune(e.doc.Line(row), col)

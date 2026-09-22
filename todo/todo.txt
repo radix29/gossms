@@ -8,9 +8,6 @@
 
 -------------
 
-- query editor :
-    -  add option to word wrap (display only, line numbers) ALt+Z as shotcut if not already used
-
 - package for winget 
     
 new tab: waits

@@ -534,17 +534,16 @@ func (e *Editor) completionRect() core.Rect {
 	}
 	h := rowCount
 
-	contentX := e.rect.X + e.gutterWidth()
-	x := contentX + (e.completionFrom - e.scrollCol)
+	x, cy := e.cursorLineScreenPos(e.completionFrom)
 	// Keep the popup horizontally inside the editor's rect: a token start
 	// scrolled off to the left, or near the right edge, must not put it over
 	// the gutter or off-screen.
 	x = max(e.rect.X, min(x, e.rect.Right()-w))
-	y := e.cursorRow - e.scrollRow + e.rect.Y + 1
+	y := cy + 1
 
 	// Flip above the cursor line when there isn't room below.
 	if y+h > e.rect.Y+e.rect.H {
-		above := e.cursorRow - e.scrollRow + e.rect.Y - h
+		above := cy - h
 		if above >= 0 {
 			y = above
 		}

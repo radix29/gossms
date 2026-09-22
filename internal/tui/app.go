@@ -84,6 +84,11 @@ type App struct {
 	// query returns, so it needs no snapshot semantics.
 	metaEnabled bool
 
+	// wordWrap is Edit > Word Wrap (Alt+Z), off by default: display-only soft
+	// wrapping of every query editor, applied to open panels on toggle and to
+	// new ones by NewQueryPanel. Per session, like the two toggles above.
+	wordWrap bool
+
 	connectDialog               *ConnectDialog
 	findDialog                  *FindReplaceDialog
 	helpDialog                  *HelpDialog

@@ -32,6 +32,25 @@ func (a *App) toggleActualExecutionPlan() {
 	a.setStatus("Include Actual Execution Plan: " + state)
 }
 
+// toggleWordWrap flips Edit > Word Wrap (Alt+Z) for every open query editor —
+// the setting is app-wide, so panels never disagree about it and a new one
+// inherits it (NewQueryPanel). Display only: the text is not changed, and the
+// gutter keeps numbering logical lines.
+func (a *App) toggleWordWrap() {
+	a.wordWrap = !a.wordWrap
+	for i := range a.panels.Count() {
+		if qp, ok := a.panels.PanelAt(i).(*QueryPanel); ok {
+			qp.editor.SetWrapMode(a.wordWrap)
+		}
+	}
+	a.menuBar.SetMenus(a.buildMenus())
+	state := "off"
+	if a.wordWrap {
+		state = "on"
+	}
+	a.setStatus("Word Wrap: " + state)
+}
+
 // toggleOutputColumnMeta flips "Show Output Column Metadata", which lists each
 // result set's columns and declared types in the Messages tab. Applies to the
 // next execution; results on screen are not re-rendered.

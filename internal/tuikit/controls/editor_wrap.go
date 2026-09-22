@@ -139,6 +139,72 @@ func visualIndexForCursor(vls []visualLine, row, col int) int {
 	return len(vls) - 1
 }
 
+// wrapGoal is the goal x for wrap-mode vertical movement, a display column
+// relative to the start of the visual row, with the cursor position and
+// document version it was left at. It is sticky only while nothing else has
+// moved the cursor: moveVisualRows reuses x when the cursor is still exactly
+// where the last vertical move put it, so no other cursor-moving path has to
+// remember to reset it (desiredCol's approach, with its dozen setters).
+type wrapGoal struct {
+	row, col, x int
+	version     uint64
+	set         bool
+}
+
+// moveVisualRows moves the cursor delta visual rows (negative is up) in wrap
+// mode, aiming for the same on-screen column — Up/Down/PgUp/PgDn's wrap-mode
+// behaviour. Moving by logical lines instead jumped over every continuation row
+// of a wrapped line. The goal column survives a pass over a shorter row (see
+// wrapGoal), as desiredCol does outside wrap mode.
+//
+// A non-final row of a wrapped line never takes the caret at its end: that
+// index belongs to the next row (visualIndexForCursor), so landing there would
+// show the caret one row further than the key moved it.
+func (e *Editor) moveVisualRows(delta int) {
+	vls := e.buildVisualLines(e.rect.W - e.gutterWidth())
+	if len(vls) == 0 {
+		return
+	}
+	vi := visualIndexForCursor(vls, e.cursorRow, e.cursorCol)
+	cur := vls[vi]
+	line := e.doc.Line(cur.row)
+	x := core.ColumnOfRune(line, e.cursorCol) - core.ColumnOfRune(line, cur.start)
+	g := e.wrapGoal
+	if g.set && g.row == e.cursorRow && g.col == e.cursorCol && g.version == e.doc.Version() {
+		x = g.x
+	}
+
+	ti := core.Clamp(vi+delta, 0, len(vls)-1)
+	if ti == vi {
+		// Up on the first row, Down on the last: as outside wrap mode, the
+		// caret stays put rather than snapping to a remembered goal column.
+		return
+	}
+	t := vls[ti]
+	tl := e.doc.Line(t.row)
+	col := t.start + core.RuneIndexAtColumn(tl[t.start:t.end], x)
+	if ti < len(vls)-1 && vls[ti+1].row == t.row {
+		col = min(col, max(t.start, t.end-1))
+	} else {
+		col = min(col, t.end)
+	}
+	e.cursorRow, e.cursorCol = t.row, col
+	e.wrapGoal = wrapGoal{row: t.row, col: col, x: x, version: e.doc.Version(), set: true}
+}
+
+// wrappedPosAt maps screen (mx, my) to the document position under it in wrap
+// mode, where my picks a visual row of vls rather than a logical line. Shared by
+// handleMouseWrapped and SetCursorFromScreen.
+func (e *Editor) wrappedPosAt(vls []visualLine, mx, my, contentX int) (row, col int) {
+	vl := vls[core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)]
+	// The click's x is a terminal column within the segment; converting it
+	// back to a rune index is what stops a wide character earlier in the
+	// segment from putting the caret in the wrong place.
+	line := e.doc.Line(vl.row)
+	col = vl.start + core.RuneIndexAtColumn(line[vl.start:vl.end], max(0, mx-contentX))
+	return vl.row, min(col, vl.end)
+}
+
 // handleMouseWrapped implements HandleMouse's Button1-click/drag and
 // wheel-scroll behavior for word-wrap mode, where scrollRow and the
 // mouse's Y position map to visual rows (vls, from buildVisualLines)
@@ -149,17 +215,7 @@ func visualIndexForCursor(vls []visualLine, row, col int) int {
 // HandleMouse's unwrapped branch.
 func (e *Editor) handleMouseWrapped(ev *tcell.EventMouse, mx, my, contentX int, vls []visualLine) bool {
 	if ev.Buttons() == tcell.Button1 {
-		vi := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)
-		vl := vls[vi]
-		row := vl.row
-		// The click's x is a terminal column within the segment; converting
-		// it back to a rune index is what stops a wide character earlier in
-		// the segment from putting the caret in the wrong place.
-		line := e.doc.Line(row)
-		col := vl.start + core.RuneIndexAtColumn(line[vl.start:vl.end], max(0, mx-contentX))
-		if col > vl.end {
-			col = vl.end
-		}
+		row, col := e.wrappedPosAt(vls, mx, my, contentX)
 		return e.applyMousePress(row, col, ev)
 	}
 	if ev.Buttons() == tcell.WheelUp && e.scrollRow > 0 {

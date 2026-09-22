@@ -81,6 +81,8 @@ func (a *App) buildMenus() []controls.Menu {
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
 			{Label: "Lowercase Selection", Shortcut: "Ctrl+U", Action: func() { a.editorAction(func(e *controls.Editor) { e.LowercaseSelection() }) },
 				Enabled: func() bool { return a.activeQueryPanel() != nil }},
+			{Divider: true},
+			{Label: wordWrapMenuLabel(a.wordWrap), Shortcut: "Alt+Z", Action: func() { a.toggleWordWrap() }},
 		}},
 		{Label: "View", Items: []controls.MenuItem{
 			{Label: "Object Explorer", Action: func() { a.focusExplorer() }},
@@ -171,6 +173,15 @@ func outputColumnMetaMenuLabel(on bool) string {
 		return "Output Column Metadata (ON)"
 	}
 	return "Output Column Metadata (OFF)"
+}
+
+// wordWrapMenuLabel folds Edit > Word Wrap's state into its label, for the
+// same reason as actualExecutionPlanMenuLabel.
+func wordWrapMenuLabel(on bool) string {
+	if on {
+		return "Word Wrap (ON)"
+	}
+	return "Word Wrap (OFF)"
 }
 
 // editorAction runs fn against the active query panel's editor, if any —

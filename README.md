@@ -218,7 +218,9 @@ connected SQL Server version or engine edition are hidden or disabled.
   completes columns from CTEs, derived tables, sub-SELECTs and `PIVOT`, and
   from temp tables and table variables declared in the batch. It matches
   what you type anywhere in a name (`ord` finds `CustomerOrders`), listing
-  names that start with it first; Ctrl+Space opens it on demand.
+  names that start with it first; Ctrl+Space opens it on demand. Edit > Word
+  Wrap (Alt+Z) soft-wraps long lines in every query tab — display only, with
+  line numbers kept on each logical line.
 - **Execution plans** as a graph, operator tree, or XML, with `.sqlplan` file
   support, missing-index details, and plan comparison.
 - **Query Store** reports with plan viewing, comparison, tracking, forcing, and

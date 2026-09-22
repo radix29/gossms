@@ -61,6 +61,7 @@ var helpLines = []string{
 	"  Ctrl+Up     Grow editor / shrink results",
 	"  Ctrl+Down   Shrink editor / grow results",
 	"  Ctrl+PgUp/PgDn  Previous / next result tab (grids and Messages)",
+	"  Alt+Z       Word wrap on/off (display only)",
 	"",
 	"Execution Plan",
 	"  1/2/3       Plan graph / operator tree / raw XML",

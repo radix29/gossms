@@ -180,6 +180,14 @@ func (a *App) handleKey(ev *tcell.EventKey) (quit bool) {
 			return false
 		}
 	case tcell.KeyRune:
+		// Alt+Z toggles Word Wrap, as in VS Code. App-wide, so it works
+		// whatever has focus; Alt+Shift+Z arrives as 'Z' and counts too.
+		if ev.Modifiers()&^tcell.ModShift == tcell.ModAlt {
+			if r := core.EvRune(ev); r == 'z' || r == 'Z' {
+				a.toggleWordWrap()
+				return false
+			}
+		}
 		// Ctrl+0..9 jumps to panel N from the left (Object Explorer Details is
 		// 0), only while a panel has focus.
 		if a.focus == focusOnPanels && ev.Modifiers()&tcell.ModCtrl != 0 {

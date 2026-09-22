@@ -332,9 +332,33 @@ func (e *Editor) drawScrollbarH(s tcell.Screen, p *theme.Palette) {
 // while it is within the visible rect — callers that draw it still bounds-check.
 // Also positions the Cut/Copy/Paste context menu when Ctrl+Space opens it.
 func (e *Editor) cursorScreenPos() (x, y int) {
-	x = e.rect.X + e.gutterWidth() + (e.cursorDisplayCol() - e.scrollCol)
-	y = e.rect.Y + (e.cursorRow - e.scrollRow)
-	return x, y
+	return e.cursorLineScreenPos(e.cursorCol)
+}
+
+// cursorLineScreenPos returns where rune index col of the cursor's line lands
+// on screen, on the cursor's own screen row. The completion popup anchors on
+// its token's start through it, the caret on cursorCol.
+//
+// In wrap mode the row is the cursor's visual row and x is measured from that
+// segment's start, not the logical line's: scrollRow counts visual rows there
+// and scrollCol is always zero, so the unwrapped arithmetic put the popup and
+// the Ctrl+Space menu on the wrong row once any line above had wrapped. A col
+// in an earlier segment (a token that wrapped mid-word) clamps to the
+// segment's first column.
+func (e *Editor) cursorLineScreenPos(col int) (x, y int) {
+	contentX := e.rect.X + e.gutterWidth()
+	line := e.cursorLine()
+	if !e.wrapMode {
+		return contentX + core.ColumnOfRune(line, col) - e.scrollCol, e.rect.Y + e.cursorRow - e.scrollRow
+	}
+	vls := e.buildVisualLines(e.rect.W - e.gutterWidth())
+	vi := visualIndexForCursor(vls, e.cursorRow, e.cursorCol)
+	start := 0
+	if vi < len(vls) {
+		start = vls[vi].start
+	}
+	x = contentX + core.ColumnOfRune(line, max(col, start)) - core.ColumnOfRune(line, start)
+	return x, e.rect.Y + vi - e.scrollRow
 }
 
 // drawWrapped renders the editor in word-wrap mode: each screen row shows one
@@ -403,7 +427,14 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 			// cell viewer, where one logical line can be a whole varchar(max)
 			// document with ~15 rows on screen. Materialising a style per rune
 			// would be work proportional to the cell, not the viewport.
-			spec.runs = runs
+			//
+			// Only the runs overlapping this segment are passed on, since
+			// styleAt scans them all per column: one run per token over a
+			// one-line XML value is tens of thousands of runs, times every
+			// visible column. The query editor's Word Wrap reaches exactly
+			// that — it applies to XML/JSON cell-value panels too.
+			e.segRunScratch = runsInSpan(e.segRunScratch[:0], runs, vl.start, vl.end)
+			spec.runs = e.segRunScratch
 		}
 		drawLineRow(s, spec)
 	}
@@ -421,6 +452,18 @@ func (e *Editor) drawWrapped(s tcell.Screen, contentX, contentW, gw int, gutterS
 			}
 		}
 	}
+}
+
+// runsInSpan appends to dst the runs overlapping rune range [start, end), in
+// their original order so styleAt's later-runs-win rule is unchanged, and
+// returns it.
+func runsInSpan(dst, runs []ColorRun, start, end int) []ColorRun {
+	for _, run := range runs {
+		if run.Start < end && run.Start+run.Len > start {
+			dst = append(dst, run)
+		}
+	}
+	return dst
 }
 
 // styleAt returns the style a highlighter assigned to the rune at index i, or
