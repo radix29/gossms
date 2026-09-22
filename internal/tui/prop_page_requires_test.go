@@ -61,6 +61,10 @@ func propPageSets(sc *db.ServerConn, d *PropDialog) map[string][]propPage {
 		"Plan Guide":                   planGuidePropPages(sc, "HealthClinic", "pg_reports", "dbo", "GetClaims"),
 		"Message Type":                 messageTypePropPages(sc, "HealthClinic", "//claims/Submit"),
 		"Contract":                     contractPropPages(sc, "HealthClinic", "//claims/Contract"),
+		"Certificate":                  certificatePropPages(sc, "HealthClinic", "claims_cert"),
+		"Asymmetric Key":               asymmetricKeyPropPages(sc, "HealthClinic", "claims_key"),
+		"Symmetric Key":                symmetricKeyPropPages(sc, "HealthClinic", "claims_symkey"),
+		"Database Master Key":          masterKeyPropPages(sc, "HealthClinic"),
 		"Queue":                        brokerQueuePropPages(sc, "HealthClinic", "dbo", "ClaimQueue"),
 		"Service":                      brokerServicePropPages(sc, "HealthClinic", "//claims/Service"),
 		"Route":                        routePropPages(sc, "HealthClinic", "ClaimRoute"),
@@ -132,6 +136,9 @@ var pagesThatOnlyRead = []string{
 	// model and no files to add. Its two operations, revert and drop, are
 	// Object Explorer commands — see database_snapshot_props.go.
 	"Database Snapshot/General", "Database Snapshot/Files",
+	// The master key's General page shows it; its writes are on Encryption,
+	// Regenerate and Back Up.
+	"Database Master Key/General",
 }
 
 // allPropPageKeys is every page in every dialog, as "<dialog>/<page>".
@@ -238,6 +245,7 @@ var propPageConstructors = []string{
 	"externalDataSourcePropPages", "externalFileFormatPropPages",
 	"externalLibraryPropPages",
 	"databaseSnapshotPropPages",
+	"certificatePropPages", "asymmetricKeyPropPages", "symmetricKeyPropPages", "masterKeyPropPages",
 }
 
 func TestEveryPropPagesConstructorIsListed(t *testing.T) {

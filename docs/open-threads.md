@@ -43,10 +43,6 @@ method swept.
 
 ## Release workflow: what is still open
 
-**Tag v0.0.12, then re-activate the `replace`.** gosmo v0.0.14 is tagged and
-pushed, `go.mod` requires it and the `replace` is commented out, so a clean
-build resolves. Delete this paragraph once the tag is pushed.
-
 **`brew audit --strict --online` reports "`version …` is redundant with version
 scanned from URL"** (on Linux Homebrew; `brew style` and the `livecheck` block
 are clean). Left as is — the homebrew job's Verify step greps for that `version`
@@ -154,8 +150,8 @@ None outstanding.
   when there is none — so a cursor in the last batch of a large script pays for
   nothing, and one near the top pays for everything below it. It runs once per
   keystroke while the popup is open, on the same UI goroutine.
-  Deliberately out of scope of the prefix-cache work: the boundaries it needs are *ahead*
-  of the cursor, which is exactly the half `PrefixCache` does not record, and
+  Deliberately not in `PrefixCache`: the boundaries it needs are *ahead* of
+  the cursor, which is exactly the half `PrefixCache` does not record, and
   caching them would have to be invalidated by every edit below the cursor
   rather than above it. Not currently measured — the trigger is a benchmark
   showing it matters, with the cursor well above the end.

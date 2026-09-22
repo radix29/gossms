@@ -483,6 +483,48 @@ var objectOps = map[NodeType]objectOp{
 		// and no sp_rename class for one, the same as the server-level
 		// credential.
 	},
+	NodeCertificate: {
+		noun: "Certificate",
+		// Nothing cascades, but whatever the certificate signs or protects
+		// stops working, and a private key that was never backed up is gone
+		// for good — the scripted CREATE brings back the public half only. A
+		// mapped login or user makes the server refuse the drop (Msg 15559),
+		// which is left to its own message rather than pre-checked here.
+		warning: "Logins, users and signed modules mapped to it stop working, and a private key held only here is lost.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).CertificateRef(n.Name).DropContext(ctx)
+		},
+		// No rename: there is no ALTER CERTIFICATE ... WITH NAME and no
+		// sp_rename class for one.
+	},
+	NodeAsymmetricKey: {
+		noun: "Asymmetric Key",
+		// The certificate's case, less the partial undo: the scripted CREATE
+		// makes a new key pair, so nothing signed or encrypted by this one can
+		// be verified or decrypted again. A mapped login or user is Msg 15559,
+		// again left to the server.
+		warning: "Logins, users and signed modules mapped to it stop working, and the key pair cannot be recreated.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).AsymmetricKeyRef(n.Name).DropContext(ctx)
+		},
+		// No rename: no ALTER ASYMMETRIC KEY ... WITH NAME, no sp_rename class.
+	},
+	NodeSymmetricKey: {
+		noun: "Symmetric Key",
+		// The scripted CREATE makes new key material, so what this key
+		// encrypted is lost with it — unless it was made from KEY_SOURCE and
+		// IDENTITY_VALUE, which re-create the same key. A key that encrypts
+		// another symmetric key is refused by the server (Msg 15352), left to
+		// its own message.
+		warning: "Data encrypted with it cannot be decrypted again, unless the key was created with KEY_SOURCE and IDENTITY_VALUE and is re-created from them.",
+		solo:    true,
+		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
+			return dbOf(sc, n).SymmetricKeyRef(n.Name).DropContext(ctx)
+		},
+		// No rename: no ALTER SYMMETRIC KEY ... WITH NAME, no sp_rename class.
+	},
 	NodeAudit: {
 		noun: "Audit",
 		// Dropping the audit takes every specification bound to it with it —

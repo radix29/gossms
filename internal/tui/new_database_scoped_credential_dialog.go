@@ -134,7 +134,7 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 			// the account name and the credential then fails to authenticate
 			// with nothing on the page saying why.
 			Identity: strings.TrimSpace(identityField.Value()),
-			Secret:   passwordField.Value(),
+			Secret:   scriptSafeSecret(ctx, passwordField.Value()),
 		}
 		// DatabaseRef, not DatabaseByName: the CREATE addresses the
 		// database by name, and the by-name read would not work under Script

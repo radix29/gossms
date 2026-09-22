@@ -128,6 +128,30 @@ func TestNewFamiliesSitWhereSSMSPutsThem(t *testing.T) {
 	if dbChildren[ext].data.Type != NodeExternalResources || dbChildren[ext].data.DBName != "appdb" {
 		t.Errorf("the External Resources folder = %+v", dbChildren[ext].data)
 	}
+
+	// The key-management folders follow Schemas in SSMS's order — Asymmetric
+	// Keys, Certificates, Symmetric Keys. Only the three new ones are pinned;
+	// the existing folders keep their order.
+	sec, err := childLoaders[NodeDatabaseSecurity](l,
+		&explorerNode{data: nodeData{Type: NodeDatabaseSecurity, DBName: "appdb", conn: sc}})
+	if err != nil {
+		t.Fatalf("loadDatabaseSecurityChildren: %v", err)
+	}
+	secLabels := labelsOfNodes(sec)
+	schemas := slices.Index(secLabels, "Schemas")
+	for i, w := range []struct {
+		label string
+		typ   NodeType
+	}{
+		{"Asymmetric Keys", NodeAsymmetricKeys},
+		{"Certificates", NodeCertificates},
+		{"Symmetric Keys", NodeSymmetricKeys},
+	} {
+		at := schemas + 1 + i
+		if at >= len(sec) || sec[at].label != w.label || sec[at].data.Type != w.typ || sec[at].data.DBName != "appdb" {
+			t.Errorf("Security = %v; want %q (%v) at %d, after Schemas", secLabels, w.label, w.typ, at)
+		}
+	}
 }
 
 // Types is a folder of folders, and each has to carry the database or its own

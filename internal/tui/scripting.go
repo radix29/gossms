@@ -117,6 +117,15 @@ var (
 	scriptDBScopedCredential scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
 		return s.ScriptDatabaseScopedCredentialContext(ctx, n.Name)
 	}
+	scriptCertificate scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptCertificateContext(ctx, n.Name)
+	}
+	scriptAsymmetricKey scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptAsymmetricKeyContext(ctx, n.Name)
+	}
+	scriptSymmetricKey scriptFn = func(s *gosmo.Scripter, ctx context.Context, n nodeData) (string, error) {
+		return s.ScriptSymmetricKeyContext(ctx, n.Name)
+	}
 
 	// The Programmability families that arrived with the tree's missing
 	// folders. None of them has an ALTER form — see gosmo's
@@ -253,6 +262,20 @@ var scriptables = map[NodeType]scriptable{
 	// The secret is unreadable, so every verb here carries a placeholder in
 	// place of it — see gosmo's buildDatabaseScopedCredentialScript.
 	NodeDatabaseScopedCredential: {"Database Scoped Credential", ddlVerbs(scriptDBScopedCredential, false)},
+	// CREATE is FROM BINARY: the public certificate exactly, the private key
+	// not at all — see gosmo's ScriptCertificateContext. No ALTER: the only
+	// ALTERs are private-key operations, which nothing on screen reproduces.
+	NodeCertificate: {"Certificate", ddlVerbs(scriptCertificate, false)},
+	// CREATE generates a NEW key pair with this one's owner and algorithm — the
+	// key material cannot be read back — and says so in a comment; see gosmo's
+	// ScriptAsymmetricKeyContext. No ALTER, for the certificate's reason.
+	NodeAsymmetricKey: {"Asymmetric Key", ddlVerbs(scriptAsymmetricKey, false)},
+	// CREATE makes a NEW key with this one's algorithm, owner and ENCRYPTION BY
+	// list, passwords as placeholders — the same key only with KEY_SOURCE and
+	// IDENTITY_VALUE, which cannot be read back; see gosmo's
+	// ScriptSymmetricKeyContext. No ALTER: ADD/DROP ENCRYPTION needs the key
+	// open, and is the Encryption page's write, not a script of the object.
+	NodeSymmetricKey: {"Symmetric Key", ddlVerbs(scriptSymmetricKey, false)},
 
 	// Programmability ▸ Types, Assemblies, Rules, Defaults, Plan Guides, and
 	// the External Resources folder beside Views. No ALTER anywhere in this

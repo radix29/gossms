@@ -1,5 +1,3 @@
-**Phase 3 — the tree's missing families (M, ~3–4 weeks)**
-15. Certificates / Symmetric / Asymmetric Keys, Database Audit Specs
 
 **Phase 5 — the big ones (L, open-ended)**
 23. Extended Events + XEvent Profiler viewer
@@ -12,16 +10,10 @@
 
 intellisense: 
 - open the suggestion with Ctrl+space
-- when you type something woth the intellisense window open, search any portion of the object not only if it starts with what you type.
+- when you type something with the intellisense window open, search any portion of the object not only if it starts with what you type.
 
 - query editor :
     - word wrap (display only, line numbers)
-
-- discord
-    - incons
-    - welcome
-    - announcements
-    - screenshots
 
 - package for winget 
     

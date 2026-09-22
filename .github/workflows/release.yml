@@ -58,6 +58,30 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Generate Windows resources (icon, version info)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # go build links any .syso in the main package automatically. The
+          # _windows_amd64 filename suffix is a build constraint, so the
+          # other targets ignore it — no CGO, no build tags. Generated here
+          # only, never committed (.gitignore'd): a stale checked-in .syso
+          # would carry the wrong version string. go-winres wants a dotted
+          # numeric version, hence the stripped "v".
+          go install github.com/tc-hib/go-winres@v0.3.3
+          go-winres simply \
+            --arch amd64 \
+            --out "${MAIN_PACKAGE}/rsrc" \
+            --icon docs/ico/win/gossms.ico \
+            --manifest cli \
+            --product-name goSSMS \
+            --file-description "goSSMS - terminal SQL Server Management Studio" \
+            --original-filename "${APP_NAME}.exe" \
+            --product-version "${VERSION#v}" \
+            --file-version "${VERSION#v}"
+          ls -l "${MAIN_PACKAGE}"/*.syso
+
       - name: Build release binaries
         shell: bash
         run: |

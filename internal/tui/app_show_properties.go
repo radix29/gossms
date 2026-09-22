@@ -443,6 +443,32 @@ func (a *App) showMessageTypePropertiesFor(sc *db.ServerConn, dbName, name strin
 		func() []propPage { return messageTypePropPages(sc, dbName, name) })
 }
 
+// showAsymmetricKeyPropertiesFor opens the read-only Properties for an
+// asymmetric key.
+func (a *App) showAsymmetricKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Asymmetric Key Properties", "Asymmetric key: "+name, "Database: "+dbName,
+		func() []propPage { return asymmetricKeyPropPages(sc, dbName, name) })
+}
+
+// showCertificatePropertiesFor opens the read-only Properties for a
+// certificate.
+func (a *App) showCertificatePropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Certificate Properties", "Certificate: "+name, "Database: "+dbName,
+		func() []propPage { return certificatePropPages(sc, dbName, name) })
+}
+
+// showSymmetricKeyPropertiesFor opens the Properties for a symmetric key.
+func (a *App) showSymmetricKeyPropertiesFor(sc *db.ServerConn, dbName, name string) {
+	a.propDialog.show(sc, dbName, "Symmetric Key Properties", "Symmetric key: "+name, "Database: "+dbName,
+		func() []propPage { return symmetricKeyPropPages(sc, dbName, name) })
+}
+
+// showMasterKeyPropertiesFor opens the Properties for a database master key.
+func (a *App) showMasterKeyPropertiesFor(sc *db.ServerConn, dbName string) {
+	a.propDialog.show(sc, dbName, "Database Master Key Properties", "Database master key", "Database: "+dbName,
+		func() []propPage { return masterKeyPropPages(sc, dbName) })
+}
+
 // showContractPropertiesFor opens the read-only Properties for a service
 // contract.
 func (a *App) showContractPropertiesFor(sc *db.ServerConn, dbName, name string) {

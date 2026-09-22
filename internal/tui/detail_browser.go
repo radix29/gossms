@@ -721,6 +721,23 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 	case NodeDatabaseScopedCredential:
 		return databaseScopedCredentialDetail(ctx, sc, node)
 
+	case NodeAsymmetricKeys:
+		return asymmetricKeysFolderDetail(ctx, sc, node, objs)
+	case NodeAsymmetricKey:
+		return asymmetricKeyDetail(ctx, sc, node)
+
+	case NodeCertificates:
+		return certificatesFolderDetail(ctx, sc, node, objs)
+	case NodeCertificate:
+		return certificateDetail(ctx, sc, node)
+
+	case NodeSymmetricKeys:
+		return symmetricKeysFolderDetail(ctx, sc, node, objs)
+	case NodeSymmetricKey:
+		return symmetricKeyDetail(ctx, sc, node)
+	case NodeMasterKey:
+		return masterKeyDetail(ctx, sc, node)
+
 	case NodeBackupDevices:
 		return backupDevicesFolderDetail(ctx, sc, node, objs)
 	case NodeBackupDevice:
@@ -740,6 +757,9 @@ func fetchNodeDetails(ctx context.Context, sc *dbconn.ServerConn, node *explorer
 		return endpointsFolderDetail(ctx, sc, node, objs)
 	case NodeEndpoint:
 		return endpointDetail(ctx, sc, node)
+
+	case NodeStoredProcedure, NodeFunction, NodeTrigger:
+		return moduleDetail(ctx, sc, node)
 
 	default:
 		if hasChildren(node.data.Type) {

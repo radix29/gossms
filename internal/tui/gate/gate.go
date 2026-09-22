@@ -269,6 +269,29 @@ var (
 	AlterAnyRoute       = Right{Name: "ALTER ANY ROUTE", Role: "db_owner", DB: true}
 	AlterAnyRSB         = Right{Name: "ALTER ANY REMOTE SERVICE BINDING", Role: "db_owner", DB: true}
 
+	// What DROP CERTIFICATE checks at database scope. Probed live 2026-09-22
+	// on majors 13, 14 and 17 and on Managed Instance, identical throughout
+	// (docs/decisions.md § Keys and certificates): the right
+	// alone drops any certificate, CREATE CERTIFICATE alone drops none it does
+	// not own, and db_ddladmin carries it on every one of them while
+	// db_securityadmin carries nothing.
+	AlterAnyCertificate = Right{Name: "ALTER ANY CERTIFICATE", Role: "db_ddladmin", DB: true}
+	// CREATE CERTIFICATE is the narrow right New Certificate needs, and is not
+	// implied by AlterAnyCertificate — the permission hierarchy puts it under
+	// ALTER on the database — so the menu asks for either. Same probe: a
+	// CREATE-only principal creates, and owns what it created.
+	CreateCertificate = Right{Name: "CREATE CERTIFICATE", Role: "db_ddladmin", DB: true}
+
+	// The asymmetric-key pair, the certificate pair's twin: the same probe
+	// found every holder and verb answering identically for the two families.
+	AlterAnyAsymmetricKey = Right{Name: "ALTER ANY ASYMMETRIC KEY", Role: "db_ddladmin", DB: true}
+	CreateAsymmetricKey   = Right{Name: "CREATE ASYMMETRIC KEY", Role: "db_ddladmin", DB: true}
+
+	// The symmetric-key pair, the same again: the probe found CREATE and DROP
+	// answering exactly as for the other two families.
+	AlterAnySymmetricKey = Right{Name: "ALTER ANY SYMMETRIC KEY", Role: "db_ddladmin", DB: true}
+	CreateSymmetricKey   = Right{Name: "CREATE SYMMETRIC KEY", Role: "db_ddladmin", DB: true}
+
 	// A backup device is added and dropped by sp_addumpdevice/sp_dropdevice,
 	// which diskadmin carries and which no server *permission* answers for — so
 	// this is a role membership. CONTROL SERVER would be a knowingly wrong gate:
@@ -304,6 +327,32 @@ var (
 	ControlOnAssembly            = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableAssembly}
 	ControlOnType                = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableType}
 	ControlOnXMLSchemaCollection = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableXMLSchemaCollection}
+
+	// CONTROL on one certificate: what its owner holds implicitly, and so what
+	// lets a CREATE CERTIFICATE-only principal drop the certificate it made.
+	// ALTER on the certificate does not permit the drop (Msg 15151) — the
+	// probe asks CONTROL for that reason. Same probe as
+	// AlterAnyCertificate.
+	ControlOnCertificate = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableCertificate}
+	// ControlOnAsymmetricKey is ControlOnCertificate for an asymmetric key.
+	ControlOnAsymmetricKey = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableAsymmetricKey}
+	// ControlOnSymmetricKey is ControlOnCertificate for a symmetric key.
+	ControlOnSymmetricKey = Right{Name: "CONTROL", DB: true, Securable: gosmo.DatabaseSecurableSymmetricKey}
+	// AlterOnSymmetricKey is the effective ALTER on one symmetric key — the
+	// exact test for ALTER SYMMETRIC KEY ... ADD / DROP ENCRYPTION, probed live
+	// on 13 and 17 (2026-09-22). It folds in ALTER ANY SYMMETRIC KEY, ALTER on
+	// the database and ownership, and reads 0 for CONTROL on the key with ALTER
+	// denied, which the server refuses (Msg 15151) — so it stands alone, and
+	// ControlOnSymmetricKey beside it would over-offer.
+	AlterOnSymmetricKey = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableSymmetricKey}
+	// AlterOnCertificate and AlterOnAsymmetricKey are the effective ALTER on
+	// one certificate or asymmetric key: what ALTER CERTIFICATE / ALTER
+	// ASYMMETRIC KEY ... REMOVE PRIVATE KEY checks. Probed on 13 and 17
+	// (2026-09-22): it goes through for ALTER or CONTROL on the object, ALTER
+	// ANY <family>, ALTER or CONTROL on the database and db_ddladmin, all of
+	// which this reads 1 for, and is refused (Msg 15151) to db_securityadmin.
+	AlterOnCertificate   = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableCertificate}
+	AlterOnAsymmetricKey = Right{Name: "ALTER", DB: true, Securable: gosmo.DatabaseSecurableAsymmetricKey}
 
 	// AlterOnSchema is what SQL Server actually checks for a rename, a
 	// move or a drop of a schema object. No role carries it: it is granted on

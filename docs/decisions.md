@@ -97,22 +97,20 @@ livedb`) is the repeatable part.
 
 ## Deferred scope (repeatedly, deliberately)
 
-- **There is no CI, and that is the decision, not an omission.** The 2026-09-17
-  review proposed a `ci.yml` running build/vet/`gofmt -l`/test/`-race`/
-  `staticcheck` on push and pull request, plus a tag-only `release-guard` that
-  fails on an uncommented `replace github.com/radix29/gosmo`. Declined
-  2026-09-17: this is a spare-time single-author project with no other
-  automation, and the mechanical checks stay local discipline — `CLAUDE.md`
+- **There is no CI, and that is the decision, not an omission.** No `ci.yml`
+  (build/vet/`gofmt -l`/test/`-race`/`staticcheck` on push) and no tag-only
+  `release-guard` against an uncommented `replace github.com/radix29/gosmo`:
+  this is a spare-time single-author project with no other automation, and the
+  mechanical checks stay local discipline — `CLAUDE.md`
   § Build & verify lists them, and `staticcheck` is now zero-output on both
   repos, so running it is one command with a yes/no answer. The one thing CI
   would have caught and nothing else does — gosmo needing a tag before gossms
   can have one — is a release step instead (`CLAUDE.md` § What this is, and
   the `replace` entry under § By design below). Re-raising CI needs a new reason, not the same one.
-- **The 134 `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
+- **The `DatabaseByNameContext` calls in `internal/tui` stay as they are.**
   Most loaders resolve the database with a real `sys.databases` read where
   `Server.DatabaseRef(name)`'s handle would do, costing a round trip per folder
-  expansion. Closed unmeasured 2026-09-17: no timing was ever taken, the
-  saving is one round trip against reads that are themselves round trips, and
+  expansion. Unmeasured: the saving is one round trip against reads that are themselves round trips, and
   the swap is not mechanical — `DatabaseRef(name)` leaves `id` at 0, so
   `IsSystem()` and `IsSnapshot()` answer `false`, which is the quiet failure
   `CLAUDE.md` names. Reopen it only with a measurement from a real expand
@@ -128,9 +126,10 @@ livedb`) is the repeatable part.
   contract (the validation a conversation is measured against, or the queue its
   messages arrive on) rather than a setting; a contract has no ALTER at all; a
   binding's ALTER names a user that must already own the remote service's
-  certificate, which is a key-management step this build has no page for; and a
-  broker priority's write cannot be gated on any right the server publishes —
-  only ALTER on the database, which would show a read-only banner to every
+  certificate, an import this build leaves to a query window (§ Keys and
+  certificates); and a broker priority's write cannot be gated on any right
+  the server publishes — only ALTER on the database, which would show a
+  read-only banner to every
   principal who can in fact perform it. Queue and Route are editable because
   their settings change in operation: a queue taken out of service, a stuck
   activation procedure, a route repointed at a new address.
@@ -395,8 +394,18 @@ withholds it.
 ### The rest
 
 - **No other class is reachable.** Beyond the gated classes above, gossms's
-  `NodeType` list has no certificate, symmetric/asymmetric key or fulltext
-  catalog node. The Service Broker families are gated by their database-wide
+  `NodeType` list has no fulltext catalog node.
+  Certificates (a database's Security > Certificates) are class 25: Delete
+  is gated on `ALTER ANY CERTIFICATE`, `ALTER`/`CONTROL` on the database, or
+  `CONTROL` on the certificate itself from gosmo's per-securable probe — which
+  is what offers it to the owner, a `CREATE CERTIFICATE`-only principal
+  included. Properties' Owner row is gated on `CONTROL` on the object, and
+  Script as is ungated. Asymmetric keys
+  (class 26) are gated the same way on `ALTER ANY ASYMMETRIC KEY` / `CREATE
+  ASYMMETRIC KEY` and `CONTROL` on the key, and symmetric keys (class 24)
+  the same way again, their Encryption page on the Delete set — every holder
+  and verb probed identically for the three (§ Keys and certificates). The
+  Service Broker families are gated by their database-wide
   `ALTER ANY …` rights (`internal/tui/gate/gate.go`), not a class probe, and
   column master/encryption keys, partition functions and schemes have no
   securable class of their own.
@@ -458,22 +467,21 @@ through a database-wide grant.
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
 - **The lookup-free handles carry a `Ref` suffix; the `*ByName` lookups keep
-  their names.** Twenty-two families pair this way
+  their names.** Twenty-five families pair this way
   (`Server.Database` → `Server.DatabaseRef`, `Login`, `Table`, the four Agent
   ones, the audit/credential/trigger/snapshot/plan-guide/backup-device/AG
-  ones). The un-suffixed name was the trap both `CLAUDE.md`s carried a standing
-  gotcha about: `s.Database("x").State()` compiled, issued no query and
-  answered the zero value. **Two alternatives were considered and rejected.**
-  Giving the *lookup* the plain name (`DatabaseByName` → `Database`) would have
-  renamed the 22 paired families' `*ByName` methods and left the library's
-  other 29 suffixed, splitting the convention, and would have turned
-  `DatabaseByNameContext` into `DatabaseContext` — which under gosmo's
-  `FooContext` rule reads as the context variant of the *handle* getter.
-  Giving the handle its own distinct type, with `Load(ctx)` to populate
-  it, is the only form that makes the zero-valued accessors impossible
-  rather than merely visible, and was judged not worth the change to every
-  call site for twenty-two families; reopen it only with a bug the suffix
-  failed to prevent. The lightweight form itself is not removable — it is
+  ones, and `Database.CertificateRef`, `Database.AsymmetricKeyRef` and
+  `Database.SymmetricKeyRef`). An un-suffixed handle compiles, issues no
+  query and answers the zero value, which is the trap the suffix makes visible.
+  **Two alternatives are rejected.** Giving the *lookup* the plain name
+  (`DatabaseByName` → `Database`) would split the convention with the
+  library's other `*ByName` methods, and would turn `DatabaseByNameContext`
+  into `DatabaseContext` — which under gosmo's `FooContext` rule reads as the
+  context variant of the *handle* getter. Giving the handle its own distinct
+  type, with `Load(ctx)` to populate it, is the only form that makes the
+  zero-valued accessors impossible rather than merely visible, and is not worth
+  the change to every call site; reopen it only with a bug the suffix failed
+  to prevent. The lightweight form itself is not removable — it is
   the only one that works when there is nothing to read yet, per
   `~/go/gosmo/CLAUDE.md` § Conventions, the `Ref` bullet, which owns that
   rule — and *not* "under a `WithScript`-derived context", which is
@@ -481,16 +489,13 @@ through a database-wide grant.
 - **`Database`'s catalog state is exported fields, not accessors.** `Name`,
   `ID`, `State`, `RecoveryModel`, `CompatibilityLevel`, `Collation`,
   `IsReadOnly`, `CreateDate` and `SourceDatabaseID` are exported fields,
-  matching the ~112 other gosmo types that do the same; `Database` and
-  `Server` were the only two that ever had `Name()` as a method. `IsSystem()`
+  matching every other gosmo type. `IsSystem()`
   and `IsSnapshot()` stay methods because they are derivations over
   `ID`/`SourceDatabaseID`, and `Server()` stays one because it is a
   back-pointer, as `Table.Database()` is. `Server.Name()` is left alone: it reads `s.info.Name`, not its own storage.
-  The reason is that the *unguessable* shape was the defect — a caller could
-  not tell which form a given type used, and guessing wrong on `Database`
-  interacted with the `Ref` trap, since `DatabaseRef("master").IsSystem()`
-  compiles, issues no query and answers `false`. That trap is unchanged by
-  this, and is now stated on `Server.DatabaseRef` and on the `Database` type
+  One shape across the library is the point: a caller must not have to guess
+  which form a type uses. The `Ref` trap (`DatabaseRef("master").IsSystem()`
+  answers `false`) is stated on `Server.DatabaseRef` and on the `Database` type
   itself.
 - **azidentity has deprecated `UsernamePasswordCredential`** (no MFA), which
   gosmo's `AuthEntraPassword` / ROPC mode uses at `entra.go` — both the options
@@ -849,6 +854,145 @@ they flipped the selector.
   credential is used by an active database file". The page surfaces the
   server's message; there is nothing to gate on beforehand, since the binding
   is not visible from `sys.database_scoped_credentials`.
+
+## Keys and certificates: what the design settled — do not re-raise
+
+A database's Security folder holds Asymmetric Keys, Certificates and Symmetric
+Keys (in that order, after Schemas), on every database, `master` included.
+Every rights and behaviour result below was probed live on 2026-09-22 with
+`WITHOUT LOGIN` users on majors 13, 14 and 17 and on Managed Instance, and was
+identical on all four; the finished UI was then driven on 17 and on MI.
+
+- **Keys are generated, never imported from a file.** Every file import path —
+  `FROM FILE`, `EXECUTABLE FILE`, `ASSEMBLY`, a certificate's `WITH PRIVATE KEY
+  (FILE = …)` — reads the *server's* filesystem, which a client dialog cannot
+  browse or check. Import is a query window's job. This is the standing answer
+  to "why can't I import a key?".
+- **EKM (`FROM PROVIDER`) is offered only where a provider exists.** New
+  Asymmetric Key and New Symmetric Key show an Extensible Key Management
+  section only when the instance has an *enabled* cryptographic provider
+  (`providerKeyFields`, `key_actions.go`); a failed provider read counts as
+  none. It has never run against a real provider — no test instance has one —
+  so the statement follows the documented grammar and the server has the last
+  word.
+- **No Rename and no Move to Schema**: none of the three has a `WITH NAME`
+  form or an `sp_rename` class, and none is schema-scoped.
+- **The owner is the one write on each family's General page**, gated on
+  `CONTROL` on the object (the effective answer folds in `CONTROL` on the
+  database). `ALTER AUTHORIZATION` drops every explicit permission on the
+  object, which the page's note says. Giving ownership to another principal
+  also needs `IMPERSONATE` on them — carried implicitly only by `CONTROL` on
+  the database — and that half is left to the server (Msg 15151 naming the
+  principal). A certificate or asymmetric key cannot be owned by a role (Msg
+  15345), so only the symmetric key's picker lists roles. The current owner is
+  kept in the list even when it is not a user or role there (a
+  certificate-mapped user, an application role).
+- **Nothing else on a certificate or asymmetric key is a Properties row.**
+  Every other `ALTER CERTIFICATE` / `ALTER ASYMMETRIC KEY` is a private-key
+  operation (remove it, re-protect it, back it up) or `ACTIVE FOR
+  BEGIN_DIALOG`; the private-key ones touch the server's filesystem or are
+  irreversible, so they are context-menu actions of their own, and `ACTIVE FOR
+  BEGIN_DIALOG` is left to a scripted ALTER.
+- **Signatures page** (certificate and asymmetric key): `ADD SIGNATURE` needs
+  `CONTROL` on the signer and `ALTER` on the module; `DROP SIGNATURE` needs
+  only `ALTER` on the module. The page is gated on `CONTROL` on the signer or
+  the database-wide rights that carry `ALTER` on every module — either lets
+  part of it work — and the module half is left to the server (Msg 15151).
+  Counter signatures are listed and removable, not addable.
+- **Back Up Certificate is a dialog, and ungated.** The public certificate
+  backs up for anyone who can see it, `db_securityadmin` included; the private
+  key needs `CONTROL` on it (Msg 15247), which the dialog says and the server
+  enforces. Paths are the server's, written by its service account (Msg 15240
+  when it cannot write the directory), the server never overwrites an existing
+  file, and the files come out readable by that account alone. A
+  password-protected private key needs its password typed, which the dialog
+  checks before sending. There is no asymmetric-key backup: SQL Server has no
+  statement for one.
+- **Remove Private Key is a confirmation, not a page,** gated on the effective
+  `ALTER` on the object (`gate.AlterOnCertificate` / `AlterOnAsymmetricKey`,
+  probed per object; refused Msg 15151 to `db_securityadmin`), and withheld
+  with the note "no private key" on a node that has none — `nodeData.HasPrivateKey`,
+  read by the loader. The warning differs by family: only a certificate's key
+  can have been backed up first.
+- **Certificate Script as ▸ CREATE emits `FROM BINARY` on every version**,
+  reproducing the public certificate exactly — it works on 13 and later, so no
+  `WITH SUBJECT` fallback exists. The private key is not scripted (it cannot
+  be read), and the script says so. An asymmetric key's and a symmetric key's
+  CREATE script creates a *new* key and says so: key material cannot be read
+  back, and `KEY_SOURCE` / `IDENTITY_VALUE` are the only way to recreate the
+  same symmetric key.
+- **Expired certificates carry `(Expired)`** in the tree, like `(Disabled)`.
+  SSMS's lack of it is a gap, not a decision.
+- **The database master key is a node, the first child of Symmetric Keys,
+  present only when the key exists and the caller can see it** (`MasterKey`
+  answers nil otherwise). Properties has a read-only General page and an
+  Encryption page that adds and drops the service master key's encryption and
+  password encryptions; Regenerate and Back Up are dialogs. Every write needs
+  `CONTROL` on the database — `ALTER` on it, `ALTER ANY SYMMETRIC KEY` and
+  `CONTROL` on everything else are refused (Msg 15151, "Cannot find the
+  symmetric key 'master key'") — and a master key the service master key no
+  longer encrypts must be opened by password first (Msg 15581), which the page
+  and both dialogs ask for. **No Delete**: `DROP MASTER KEY` is refused while
+  anything is encrypted by it (Msg 15580), and otherwise is rarely wanted — a
+  query window's job. New Certificate / New Asymmetric Key create the master
+  key on demand (`ensureMasterKey`); New Symmetric Key has no master-key
+  section, since a key encrypted by a certificate uses the public half and a
+  password needs none.
+- **New Symmetric Key does not offer encryption by another symmetric key**:
+  that needs the parent open, which is the Encryption page's decryptor
+  section. Create with a password and add it there. `KEY_SOURCE` and
+  `IDENTITY_VALUE` are required together — one alone recreates nothing.
+- **The Encryption page's decryptor is a page section, not a modal**, and
+  symmetric-key chains resolve only when every link opens without a password.
+  A parent reachable only by password is left to a query window rather than
+  prompting per link. Removing a password encryption needs the password typed
+  first (the server finds it by value, Msg 15313). The page's disabled Remove
+  on the last encryption is a convenience; the server refuses it anyway (Msg
+  15558).
+- **Classify a key encryption by `crypt_type_desc` prefix, never by the
+  `crypt_type` code.** The codes differ by major (password `ESKP` on 13,
+  `ESP2` on 14/17; certificate `EPUC` on 13/14, `C256` on 17) and MI shows the
+  13/14 certificate codes while reporting major 12, so a version-keyed mapping
+  would be wrong twice over.
+
+**Rights, per verb** (identical for the three families):
+
+| Holder | CREATE | DROP | Sees others' rows | Sym key ADD/DROP ENCRYPTION |
+|---|---|---|---|---|
+| `CREATE X` | yes | only its own | no | only its own |
+| `ALTER ANY X`, `ALTER`/`CONTROL` on the database, `db_ddladmin` | yes | yes | yes | yes |
+| `db_securityadmin` | no | no | yes | no |
+| `ALTER` on the object | no | **no** | yes | yes |
+| `CONTROL` on the object, or its owner | no | yes | yes | yes |
+| `VIEW DEFINITION` on the object | no | no | yes | no |
+
+- **The gate sets follow the table.** New: `CREATE X`, `ALTER ANY X`, or
+  `ALTER`/`CONTROL` on the database. Delete: `ALTER ANY X`, `ALTER`/`CONTROL`
+  on the database, or `CONTROL` on the object from gosmo's per-securable probe
+  (classes 25 / 26 / 24), which is what offers Delete to an owner holding only
+  `CREATE X`. See `dbScopedOpRights` in `explorer_object_rights.go`.
+- **The symmetric key's Encryption page is gated on the effective `ALTER` on
+  the key, alone** (`gate.AlterOnSymmetricKey`, probed per key beside
+  `CONTROL`). Live on 13 and 17: ADD / DROP ENCRYPTION succeeds exactly when it
+  reads 1, including for an `ALTER`-on-key grantee with no `CONTROL`, and is
+  refused (Msg 15151) for `CONTROL` with `ALTER` denied — so the Delete set is
+  wrong for it in both directions.
+- **The second securable is left to the server.** Creating or adding an
+  encryption by a certificate needs any of `VIEW DEFINITION` / `REFERENCES` /
+  `ALTER` on it; *dropping* that encryption, or opening the key with it, needs
+  `CONTROL`. The pickers cannot know every certificate's rights up front, so
+  the refusal comes back as the server's Msg 15151.
+- **Server refusals passed through, not pre-checked**: Msg 15559 dropping a
+  certificate or asymmetric key a login or user is mapped to; Msg 15352
+  dropping one that encrypts a symmetric key, or a symmetric key that encrypts
+  another; Msg 15581 creating a master-key-protected key with no master key
+  (the New dialogs prevent it). A principal with no right on a key sees no
+  row — an empty listing, not an error.
+- **`HasMasterKey` also reads `sys.databases.is_master_key_encrypted_by_server`**:
+  a `CREATE X`-only principal cannot see the master key's row in
+  `sys.symmetric_keys`, and was asked to create one the database already had.
+  A master key whose service-master-key encryption was dropped is still
+  invisible to such a principal — documented on the method.
 
 ## Database-scope DDL triggers: what the design settled
 
@@ -1306,7 +1450,7 @@ re-opened without asking the author.
   `LogSearchDialog.HandleKey` (`internal/tui/log_search_dialog.go`) share the
   Tab/Backtab `nextFocus`/`prevFocus` + `syncFocus` pair, Escape, Enter →
   `pressButton(btnFocus())` and the trailing `fields()[focusIdx]` dispatch.
-  Reviewed 2026-09-18 and left alone: only the Tab/Backtab half has no
+  Left alone: only the Tab/Backtab half has no
   per-dialog variation, and everything around it genuinely differs — Escape
   hides one and dismisses the other, `FindReplaceDialog` has an extra `F3` arm,
   and the field switch handles several widget types in one dialog and only
@@ -1367,7 +1511,7 @@ the Log File Viewer, Query Store and Activity Monitor runs behind
 ## Details pane: the "Not connected" branch — settled, do not re-raise
 
 `ShowNodeDetails`'s "Not connected" branch (`detail_browser.go`) is **defensive
-and unreachable through the UI as it stands** — audited 2026-09-17, and kept:
+and unreachable through the UI as it stands**, and kept:
 
 - Every tree node's connection is its root's. `explorer_loaders.go`'s `l.node`
   sets `conn: l.sc`, and a peer opened by `resolveAGView`/`alwayson_menu.go` is
@@ -1379,17 +1523,14 @@ and unreachable through the UI as it stands** — audited 2026-09-17, and kept:
   connection. The other `Close` calls are on connections no node references: a
   cancelled connect, a query panel's, Activity Monitor's.
 
-It was driven on screen anyway, against a throwaway build that could stage the
-state: the pane keeps the node title, shows the single `Status | Not connected`
+Staged on screen, the pane keeps the node title, shows the single `Status | Not connected`
 row, and drops the previous node's rows, chart strip, pinned tooltip and its
 context-menu verbs. `TestShowNodeDetailsNotConnectedDropsThePreviousNode`
 asserts exactly that — do not delete the branch as dead code.
 
+## No top-level plan document — do not re-raise
 
-## The old top-level plan document — settled, do not re-raise
-
-Neither repo has a top-level plan file, and one is not to be recreated or used
-as a working file. What it carried lives in the documents that own it: project
-state and package map in `ARCHITECTURE.md`, unfinished work and unfixed bugs in
-`docs/open-threads.md`, what shipped per tag in `CHANGELOG.md`, settled
-questions here.
+Neither repo has a top-level plan file, and one is not to be created as a
+working file. Project state and the package map live in `ARCHITECTURE.md`,
+unfinished work in `docs/open-threads.md`, what shipped per tag in
+`CHANGELOG.md`, settled questions here.

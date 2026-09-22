@@ -113,6 +113,12 @@ type App struct {
 	agAddReplicaDialog          *AGAddReplicaDialog
 	newAGDialog                 *NewAGDialog
 	newEndpointDialog           *NewEndpointDialog
+	newCertificateDialog        *NewCertificateDialog
+	newAsymmetricKeyDialog      *NewAsymmetricKeyDialog
+	newSymmetricKeyDialog       *NewSymmetricKeyDialog
+	backupCertificateDialog     *BackupCertificateDialog
+	backupMasterKeyDialog       *BackupMasterKeyDialog
+	regenerateMasterKeyDialog   *RegenerateMasterKeyDialog
 	detachDatabaseDialog        *DetachDatabaseDialog
 	attachDatabaseDialog        *AttachDatabaseDialog
 	newSnapshotDialog           *NewSnapshotDialog
@@ -492,6 +498,12 @@ func (a *App) buildUI() {
 	a.agAddReplicaDialog = registerDialog(a, NewAGAddReplicaDialog(a))
 	a.newAGDialog = registerDialog(a, NewNewAGDialog(a))
 	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
+	a.newCertificateDialog = registerDialog(a, NewNewCertificateDialog(a))
+	a.newAsymmetricKeyDialog = registerDialog(a, NewNewAsymmetricKeyDialog(a))
+	a.newSymmetricKeyDialog = registerDialog(a, NewNewSymmetricKeyDialog(a))
+	a.backupCertificateDialog = registerDialog(a, NewBackupCertificateDialog(a))
+	a.backupMasterKeyDialog = registerDialog(a, NewBackupMasterKeyDialog(a))
+	a.regenerateMasterKeyDialog = registerDialog(a, NewRegenerateMasterKeyDialog(a))
 	a.detachDatabaseDialog = registerDialog(a, NewDetachDatabaseDialog(a))
 	a.attachDatabaseDialog = registerDialog(a, NewAttachDatabaseDialog(a))
 	a.newSnapshotDialog = registerDialog(a, NewNewSnapshotDialog(a))

@@ -432,6 +432,18 @@ gossms/
 │       ├── database_trigger_props.go # Database Trigger Properties (database-scope DDL): General + Definition
 │       ├── database_audit_specification_props.go # Database Audit Specification Properties: the audit it binds to, its action groups and its per-securable actions
 │       ├── database_credential_props.go # Database Scoped Credential Properties: identity and the secret (write-only, and never blank-alterable — an omitted SECRET sets the stored one to NULL)
+│       ├── certificate_props.go  # Properties for a certificate: General (the owner is its one write) and Signatures
+│       ├── certificate_backup_dialog.go # Back Up Certificate: BACKUP CERTIFICATE to a file on the server, the private key to a second one when named
+│       ├── new_certificate_dialog.go  # New Certificate: a generated certificate, private key under the master key or a password
+│       ├── asymmetric_key_props.go  # Properties for an asymmetric key: General (the owner is its one write) and Signatures
+│       ├── key_actions.go        # what the three key families share: the Owner row (ALTER AUTHORIZATION drops explicit permissions) and Remove Private Key
+│       ├── key_signatures_page.go # the Signatures page of Certificate / Asymmetric Key Properties (ADD / DROP SIGNATURE), and a module's "Signed by" Details rows
+│       ├── new_asymmetric_key_dialog.go  # New Asymmetric Key: a generated RSA_2048/3072/4096 key pair, private key under the master key or a password
+│       ├── symmetric_key_props.go  # Properties for a symmetric key: General (the owner is its one write; algorithm and material are fixed at CREATE), and Encryption — add / remove its encryptions, each opening the key in the same batch
+│       ├── new_symmetric_key_dialog.go  # New Symmetric Key: AES_128/192/256, encrypted by a certificate, an asymmetric key and/or a password, optional KEY_SOURCE / IDENTITY_VALUE (scripted as placeholders)
+│       ├── master_key_props.go   # the database master key's node: Properties (General, and Encryption — the service master key's and password encryptions) and its Details view
+│       ├── master_key_dialogs.go # Back Up Master Key and Regenerate Master Key, opening the key by password when the service master key does not
+│       ├── master_key.go         # ensureMasterKey — the create-the-database-master-key-if-absent step the endpoint and key dialogs share — and keyProtectionFields, the private-key / master-key sections of New Certificate and New Asymmetric Key
 │       ├── database_snapshot_props.go # read-only Properties for a database snapshot: General + Files
 │       ├── assembly_props.go     # read-only Properties for a CLR assembly: General, Files, Routines
 │       ├── type_props.go         # read-only Properties for the four user-type families, system data types and XML schema collections

@@ -20,7 +20,7 @@ import (
 func freshEndpointInstanceResponses() []fakeResponse {
 	return []fakeResponse{
 		{match: "sys.symmetric_keys", cols: 1, rows: [][]driver.Value{{int64(0)}}},
-		{match: "FROM   sys.certificates", cols: 8},
+		{match: "FROM   sys.certificates", cols: 15},
 		{match: "FROM sys.server_principals", cols: 7},
 		{match: "sys.database_mirroring_endpoints", cols: 7},
 	}
@@ -51,6 +51,46 @@ func newEndpointDialogForTest(t *testing.T) (*NewEndpointDialog, *fakeInstance, 
 		return remote.Server, nil
 	}
 	return d, localInst, remoteInst
+}
+
+// The master key password is typed into the dialog, but Script Changes opens a
+// query window that is saved and shared — so the CREATE MASTER KEY each fresh
+// instance gets carries the placeholder, and the header says to replace it.
+func TestEndpointScriptDoesNotCarryTheMasterKeyPassword(t *testing.T) {
+	d, _, _ := newEndpointDialogForTest(t)
+	d.masterKeyPass = "Typed!Secret9"
+
+	scriptCtx, _ := gosmo.WithScript(context.Background())
+	if err := d.configure(scriptCtx); err != nil {
+		t.Fatalf("configure under WithScript: %v", err)
+	}
+	for _, g := range d.scriptedGroups {
+		joined := strings.Join(g.stmts, "\n")
+		if !strings.Contains(joined, "CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'"+scriptedPasswordPlaceholder+"'") {
+			t.Errorf("%s's script has no placeholder CREATE MASTER KEY:\n%s", g.instance, joined)
+		}
+	}
+	out := annotateEndpointScript(d.scriptedGroups)
+	if strings.Contains(out, d.masterKeyPass) {
+		t.Errorf("the typed master key password is in the script:\n%s", out)
+	}
+	if !strings.Contains(out, "replace "+scriptedPasswordPlaceholder) {
+		t.Errorf("the header does not say to replace the placeholder:\n%s", out)
+	}
+}
+
+// A real Apply sends what was typed; only Script Changes gets the placeholder.
+func TestScriptSafePasswordOnlyReplacesUnderScripting(t *testing.T) {
+	if got := scriptSafePassword(context.Background(), "pw"); got != "pw" {
+		t.Errorf("real run: got %q, want the typed password", got)
+	}
+	scriptCtx, _ := gosmo.WithScript(context.Background())
+	if got := scriptSafePassword(scriptCtx, "pw"); got != scriptedPasswordPlaceholder {
+		t.Errorf("scripted run: got %q, want the placeholder", got)
+	}
+	if got := scriptSafePassword(scriptCtx, ""); got != "" {
+		t.Errorf("scripted run, blank: got %q — a blank password must stay blank so gosmo's own check still fires", got)
+	}
 }
 
 // TestEndpointConfigureCollectsPerInstance is the rule the whole rework rests
@@ -276,8 +316,9 @@ func configuredEndpointInstanceResponses(certName string, thumb []byte) []fakeRe
 		// a peer's certificate reads as "already imported and identical" —
 		// which is only true when the thumbprints match, and this scripts the
 		// case where they do.
-		{match: "FROM   sys.certificates", cols: 8, rows: [][]driver.Value{
-			{certName, int64(256), int64(1), "subject", "MASTER KEY", at, at, thumb},
+		{match: "FROM   sys.certificates", cols: 15, rows: [][]driver.Value{
+			{certName, int64(256), int64(1), "subject", "MASTER KEY", at, at, thumb,
+				"dbo", "subject", "01", int64(2048), true, nil, ""},
 		}},
 		{match: "CERTENCODED", cols: 1, rows: [][]driver.Value{{[]byte{0xAB, 0xCD}}}},
 		// No login and no user yet: those are what a second press still has to

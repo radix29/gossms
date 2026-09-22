@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 )
 
@@ -221,5 +222,23 @@ func TestCredentialGeneralRefusesABlankIdentity(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 0 {
 		t.Errorf("a statement was sent anyway:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
+// Script Changes on a password change scripts the placeholder, not what was
+// typed; the real Apply above still sends the typed secret.
+func TestCredentialGeneralScriptsTheSecretAsAPlaceholder(t *testing.T) {
+	_, apply, form := loadCredentialGeneralPage(t)
+
+	editText(t, form, "Password", "hunter2")
+	editText(t, form, "Confirm password", "hunter2")
+
+	ctx, script := gosmo.WithScript(t.Context())
+	if err := apply(ctx); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	want := `ALTER CREDENTIAL [app_cred] WITH IDENTITY = N'DOMAIN\svc_app', SECRET = N'<insert secret here>'`
+	if got := strings.Join(script.Statements, "\n"); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }

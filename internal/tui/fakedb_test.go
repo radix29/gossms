@@ -670,6 +670,12 @@ func withDeniedSchemas(responses []fakeResponse, schemas ...string) []fakeRespon
 // real probe, so a test gating on it should answer every securable it asks
 // about; one it leaves out reads unknown and fails open.
 func withSecurableAnswers(responses []fakeResponse, answers map[string]bool) []fakeResponse {
+	return withSecurablePermAnswers(responses, "CONTROL", answers)
+}
+
+// withSecurablePermAnswers is withSecurableAnswers for a probed permission
+// other than CONTROL.
+func withSecurablePermAnswers(responses []fakeResponse, perm string, answers map[string]bool) []fakeResponse {
 	for i, r := range responses {
 		if r.match != "IS_ROLEMEMBER" {
 			continue
@@ -679,7 +685,7 @@ func withSecurableAnswers(responses []fakeResponse, answers map[string]bool) []f
 			if held {
 				v = 1
 			}
-			r.rows = append(r.rows, []driver.Value{"K:CONTROL", key, v})
+			r.rows = append(r.rows, []driver.Value{"K:" + perm, key, v})
 		}
 		responses[i] = r
 	}

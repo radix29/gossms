@@ -158,9 +158,14 @@ func filterProps(t NodeType) []filterProp {
 		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
 		NodeServerTriggers, NodeDatabaseTriggers:
 		return []filterProp{name, created}
-	case NodeBackupDevices, NodeEndpoints:
-		// No Creation Date: neither sys.backup_devices nor sys.endpoints
-		// records one, so the criterion would reject every row.
+	// sys.symmetric_keys is the one key-management view that records a
+	// creation date.
+	case NodeSymmetricKeys:
+		return []filterProp{name, created}
+	case NodeBackupDevices, NodeEndpoints, NodeCertificates, NodeAsymmetricKeys:
+		// No Creation Date: none of sys.backup_devices, sys.endpoints,
+		// sys.certificates or sys.asymmetric_keys records one, so the
+		// criterion would reject every row.
 		return []filterProp{name}
 	}
 	return nil

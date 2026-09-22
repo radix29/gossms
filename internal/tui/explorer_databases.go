@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"context"
+	"time"
+
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
@@ -258,6 +261,9 @@ func loadDatabaseSecurityChildren(l loaderCtx, node *explorerNode) ([]*explorerN
 		l.node("Users", NodeUsers, "", "", node.data.DBName),
 		l.node("Roles", NodeDatabaseRoles, "", "", node.data.DBName),
 		l.node("Schemas", NodeSchemas, "", "", node.data.DBName),
+		l.node("Asymmetric Keys", NodeAsymmetricKeys, "", "", node.data.DBName),
+		l.node("Certificates", NodeCertificates, "", "", node.data.DBName),
+		l.node("Symmetric Keys", NodeSymmetricKeys, "", "", node.data.DBName),
 		l.node("Database Audit Specifications", NodeDatabaseAuditSpecifications, "", "", node.data.DBName),
 		l.node("Database Scoped Credentials", NodeDatabaseScopedCredentials, "", "", node.data.DBName),
 		l.node("Security Policies", NodeSecurityPolicies, "", "", node.data.DBName),
@@ -307,6 +313,96 @@ func loadDatabaseScopedCredentialsChildren(l loaderCtx, node *explorerNode) ([]*
 			n.data.CreateDate = c.CreateDate
 			return n
 		})
+}
+
+// loadAsymmetricKeysChildren lists a database's asymmetric keys, the ##…##
+// ones SQL Server makes for itself excluded (gosmo's AsymmetricKeys does
+// that). No suffix: an asymmetric key has no expiry or state to flag.
+func loadAsymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	return listChildren(
+		func() ([]*gosmo.AsymmetricKey, error) {
+			return dbObj.AsymmetricKeysContext(l.ctx)
+		},
+		func(k *gosmo.AsymmetricKey) *explorerNode {
+			n := l.node(k.Name, NodeAsymmetricKey, "", k.Name, node.data.DBName)
+			n.data.HasPrivateKey = k.HasPrivateKey()
+			return n
+		})
+}
+
+// loadCertificatesChildren lists a database's certificates, the ##…## ones
+// SQL Server makes for itself excluded (gosmo's Certificates does that). An
+// expired certificate is labelled "(Expired)", the "(Disabled)" precedent: it
+// still serves an endpoint or a signed module, but BEGIN DIALOG and anything
+// else that checks the date refuses it, and nothing else in the row says so.
+func loadCertificatesChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	return listChildren(
+		func() ([]*gosmo.Certificate, error) {
+			return dbObj.CertificatesContext(l.ctx)
+		},
+		func(c *gosmo.Certificate) *explorerNode {
+			n := l.node(certificateLabel(c, now), NodeCertificate, "", c.Name, node.data.DBName)
+			n.data.HasPrivateKey = c.HasPrivateKey()
+			return n
+		})
+}
+
+// loadSymmetricKeysChildren lists a database's symmetric keys, the database
+// master key first when there is one. gosmo's SymmetricKeys leaves out the
+// ##…## keys, the master key among them, so it is read on its own — and only
+// a principal with a right on it sees it (MasterKey answers nil otherwise),
+// which is who could use the node anyway. The one key family with a
+// create_date, carried for the filter.
+func loadSymmetricKeysChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, error) {
+	dbObj, err := l.sc.Server.DatabaseByNameContext(l.ctx, node.data.DBName)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := listChildren(
+		func() ([]*gosmo.SymmetricKey, error) {
+			return dbObj.SymmetricKeysContext(l.ctx)
+		},
+		func(k *gosmo.SymmetricKey) *explorerNode {
+			n := l.node(k.Name, NodeSymmetricKey, "", k.Name, node.data.DBName)
+			n.data.CreateDate = k.CreateDate
+			return n
+		})
+	if err != nil {
+		return nil, err
+	}
+	mk, err := dbObj.MasterKeyContext(l.ctx)
+	if err != nil {
+		return nil, err
+	}
+	if mk == nil {
+		return keys, nil
+	}
+	n := l.node(masterKeyNodeLabel, NodeMasterKey, "", "", node.data.DBName)
+	n.data.CreateDate = mk.CreateDate
+	return append([]*explorerNode{n}, keys...), nil
+}
+
+// certificateLabel is a certificate's tree label: its name, suffixed
+// "(Expired)" once expiry_date is behind now.
+func certificateLabel(c *gosmo.Certificate, now time.Time) string {
+	if certificateExpired(c, now) {
+		return c.Name + " (Expired)"
+	}
+	return c.Name
+}
+
+// certificateExpired reports whether c's expiry_date is behind now.
+func certificateExpired(c *gosmo.Certificate, now time.Time) bool {
+	return !c.ExpiryDate.IsZero() && c.ExpiryDate.Before(now)
 }
 
 // loadSecurityPoliciesChildren lists a database's row-level security
@@ -596,6 +692,104 @@ func databaseScopedCredentialMenuItems(a *App, sc *db.ServerConn, node *explorer
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showDatabaseScopedCredentialPropertiesFor(sc, node.data.DBName, node.data.Name)
 	})
+}
+
+func asymmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.Item(controls.MenuItem{Label: "New Asymmetric Key...",
+			Action: func() { a.showNewAsymmetricKeyDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateAsymmetricKey, gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func asymmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		removePrivateKeyItem(sc, node, gate.AlterOnAsymmetricKey, func() {
+			a.removePrivateKey(sc, node, "asymmetric key", func(ctx context.Context, d *gosmo.Database) error {
+				return d.AsymmetricKeyRef(node.data.Name).RemovePrivateKeyContext(ctx)
+			})
+		}),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showAsymmetricKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
+		}},
+	}
+}
+
+func symmetricKeysMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.Item(controls.MenuItem{Label: "New Symmetric Key...",
+			Action: func() { a.showNewSymmetricKeyDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateSymmetricKey, gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func symmetricKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return propertiesOnlyMenu(newQuery, refresh, func() {
+		a.showSymmetricKeyPropertiesFor(sc, node.data.DBName, node.data.Name)
+	})
+}
+
+// masterKeyMenuItems is the database master key's menu. Delete is left to a
+// query window: DROP MASTER KEY is refused while anything is encrypted by it
+// (Msg 15580), and when nothing is, dropping it is rarely what anyone wants.
+func masterKeyMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.Item(controls.MenuItem{Label: "Regenerate...",
+			Action: func() { a.showRegenerateMasterKeyDialog(sc, node) }},
+			sc, node.data.DBName, masterKeyRights...),
+		gate.Item(controls.MenuItem{Label: "Back Up...",
+			Action: func() { a.showBackupMasterKeyDialog(sc, node) }},
+			sc, node.data.DBName, masterKeyRights...),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() { a.showMasterKeyPropertiesFor(sc, node.data.DBName) }},
+	}
+}
+
+func certificatesMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.Item(controls.MenuItem{Label: "New Certificate...",
+			Action: func() { a.showNewCertificateDialog(sc, node) }},
+			sc, node.data.DBName, gate.CreateCertificate, gate.AlterAnyCertificate, gate.AlterDatabase, gate.ControlDB),
+		{Divider: true},
+		refresh,
+	}
+}
+
+func certificateMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		// Not gated: the public certificate backs up for anyone who can see
+		// it, and the dialog says the private key needs CONTROL.
+		{Label: "Back Up Certificate...", Action: func() { a.showBackupCertificateDialog(sc, node) }},
+		removePrivateKeyItem(sc, node, gate.AlterOnCertificate, func() {
+			a.removePrivateKey(sc, node, "certificate", func(ctx context.Context, d *gosmo.Database) error {
+				return d.CertificateRef(node.data.Name).RemovePrivateKeyContext(ctx)
+			})
+		}),
+		{Divider: true},
+		refresh,
+		{Label: "Properties...", Action: func() {
+			a.showCertificatePropertiesFor(sc, node.data.DBName, node.data.Name)
+		}},
+	}
 }
 
 func databaseTriggerMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {

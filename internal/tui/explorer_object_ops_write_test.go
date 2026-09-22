@@ -283,6 +283,9 @@ func TestDropsThroughDbOfReadNoCatalog(t *testing.T) {
 		{nt: NodeDatabaseScopedCredential,
 			n:    nodeData{Type: NodeDatabaseScopedCredential, DBName: "appdb", Name: "app_cred"},
 			want: "DROP DATABASE SCOPED CREDENTIAL [app_cred]"},
+		{nt: NodeCertificate,
+			n:    nodeData{Type: NodeCertificate, DBName: "appdb", Name: "app_cert"},
+			want: "DROP CERTIFICATE [app_cert]"},
 		{nt: NodeDatabaseAuditSpecification,
 			n: nodeData{Type: NodeDatabaseAuditSpecification, DBName: "appdb", Name: "app_audit_spec"},
 			resp: []fakeResponse{{

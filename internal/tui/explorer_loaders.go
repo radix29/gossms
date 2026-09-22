@@ -56,6 +56,9 @@ var childLoaders = map[NodeType]childLoader{
 
 	NodeDatabaseAuditSpecifications: loadDatabaseAuditSpecificationsChildren,
 	NodeDatabaseScopedCredentials:   loadDatabaseScopedCredentialsChildren,
+	NodeAsymmetricKeys:              loadAsymmetricKeysChildren,
+	NodeCertificates:                loadCertificatesChildren,
+	NodeSymmetricKeys:               loadSymmetricKeysChildren,
 
 	NodeStorage:              loadStorageChildren,
 	NodePartitionFunctions:   loadPartitionFunctionsChildren,
@@ -183,6 +186,13 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeDatabaseAuditSpecification:  databaseAuditSpecificationMenuItems,
 	NodeDatabaseScopedCredentials:   databaseScopedCredentialsMenuItems,
 	NodeDatabaseScopedCredential:    databaseScopedCredentialMenuItems,
+	NodeAsymmetricKeys:              asymmetricKeysMenuItems,
+	NodeAsymmetricKey:               asymmetricKeyMenuItems,
+	NodeCertificates:                certificatesMenuItems,
+	NodeCertificate:                 certificateMenuItems,
+	NodeSymmetricKeys:               symmetricKeysMenuItems,
+	NodeSymmetricKey:                symmetricKeyMenuItems,
+	NodeMasterKey:                   masterKeyMenuItems,
 	NodeColumnMasterKeys:            columnMasterKeysMenuItems,
 	NodeColumnMasterKey:             columnMasterKeyMenuItems,
 	NodeColumnEncryptionKeys:        columnEncryptionKeysMenuItems,

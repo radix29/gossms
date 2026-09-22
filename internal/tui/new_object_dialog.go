@@ -386,6 +386,40 @@ func scriptSafeAlert(ctx context.Context, sc *db.ServerConn, name string) (*gosm
 	return sc.Server.AlertByNameContext(ctx, name)
 }
 
+// The placeholders a typed secret is scripted as. A credential's is the one
+// gosmo's credential scripters already emit for the secret they cannot read,
+// so Script Changes and Script as agree; everything else is a password.
+const (
+	scriptedPasswordPlaceholder = "<insert password here>"
+	scriptedSecretPlaceholder   = "<insert secret here>"
+
+	// A symmetric key's KEY_SOURCE and IDENTITY_VALUE are what re-create it,
+	// so each gets its own placeholder rather than a password's.
+	scriptedKeySourcePlaceholder     = "<insert key source here>"
+	scriptedIdentityValuePlaceholder = "<insert identity value here>"
+)
+
+// scriptSafePassword is password on a real Apply and a placeholder under Script
+// Changes: a query window is saved, pasted and shared in a way a masked field is
+// not, so a password typed into one never appears there in clear. Used by the
+// Properties pages as well as the create dialogs. A blank stays blank, so the
+// write's own "no password" handling still applies.
+func scriptSafePassword(ctx context.Context, password string) string {
+	return scriptSafe(ctx, password, scriptedPasswordPlaceholder)
+}
+
+// scriptSafeSecret is scriptSafePassword for a credential's SECRET.
+func scriptSafeSecret(ctx context.Context, secret string) string {
+	return scriptSafe(ctx, secret, scriptedSecretPlaceholder)
+}
+
+func scriptSafe(ctx context.Context, value, placeholder string) string {
+	if gosmo.Scripting(ctx) && value != "" {
+		return placeholder
+	}
+	return value
+}
+
 // runScript re-runs every page's apply under gosmo.WithScript, opening the
 // statements it collects in a query window instead of executing them — the
 // create-dialog half of PropDialog.runScript.

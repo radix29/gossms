@@ -133,6 +133,13 @@ shipped.
 
 ## T-SQL and filters
 
+- **A typed secret never reaches Script Changes in clear.** Pass every password
+  or credential secret a dialog or Properties page writes through
+  `scriptSafePassword` / `scriptSafeSecret` (`new_object_dialog.go`): the typed
+  value on a real Apply, `<insert password here>` / `<insert secret here>`
+  under `gosmo.WithScript`. A query window is saved and shared in a way a
+  masked field is not. The credential placeholder is the one gosmo's Script as
+  already emits, so the two agree.
 - **Never give a procedure you install outside `master` an `sp_` prefix.** An
   `sp_` name falls back to `master` when the current database has no such
   procedure, corrupting DDL on the very path that installs one: `CREATE OR ALTER

@@ -538,14 +538,8 @@ func endpointScriptGroupsFrom(peers []*endpointPeer) []endpointScriptGroup {
 // ensureCertificate gives one instance a master key and a certificate of its
 // own, and reads the public half back.
 func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPeer) error {
-	has, err := p.master.HasMasterKeyContext(ctx)
-	if err != nil {
+	if err := ensureMasterKey(ctx, p.master, scriptSafePassword(ctx, d.masterKeyPass)); err != nil {
 		return fmt.Errorf("%s: %w", p.inst.name, err)
-	}
-	if !has {
-		if err := p.master.CreateMasterKeyContext(ctx, d.masterKeyPass); err != nil {
-			return fmt.Errorf("%s: %w", p.inst.name, err)
-		}
 	}
 
 	certName := d.certificateName(p.inst.name)
@@ -747,6 +741,16 @@ func annotateEndpointScript(groups []endpointScriptGroup) string {
 	b.WriteString("-- Each login below is created with a random password and is never signed in as:\n")
 	b.WriteString("-- it exists only to own a peer's certificate and to be the grantee of CONNECT on\n")
 	b.WriteString("-- the endpoint. The password is not recorded anywhere, here or in gossms.\n")
+
+	placeholder := slices.ContainsFunc(groups, func(g endpointScriptGroup) bool {
+		return slices.ContainsFunc(g.stmts, func(stmt string) bool {
+			return strings.Contains(stmt, scriptedPasswordPlaceholder)
+		})
+	})
+	if placeholder {
+		b.WriteString("--\n")
+		fmt.Fprintf(&b, "-- The master key password is not scripted: replace %s with it before running.\n", scriptedPasswordPlaceholder)
+	}
 
 	partial := slices.ContainsFunc(groups, func(g endpointScriptGroup) bool {
 		return g.certPending || len(g.certSkipped) > 0

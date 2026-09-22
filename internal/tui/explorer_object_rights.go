@@ -260,6 +260,17 @@ var dbScopedOpRights = map[NodeType][]gate.Right{
 	// already answers 1 for the narrow right. Only half of what the drop
 	// needs — see conjoinedOpRights.
 	NodeSecurityPolicy: {gate.AlterAnySecPolicy},
+	// The assembly's shape: the narrow right, the wider pair, and CONTROL on
+	// the certificate itself, which its owner holds — so a CREATE
+	// CERTIFICATE-only principal is offered Delete on exactly the certificates
+	// it made. Probed 2026-09-22 on 13, 14, 17 and Managed Instance, see
+	// gate.AlterAnyCertificate. A certificate a login or user is mapped to is
+	// refused by the server (Msg 15559), whoever asks.
+	NodeCertificate: {gate.AlterAnyCertificate, gate.AlterDatabase, gate.ControlDB, gate.ControlOnCertificate},
+	// The certificate's shape exactly; the same probe found the two alike.
+	NodeAsymmetricKey: {gate.AlterAnyAsymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnAsymmetricKey},
+	// And again: the probe found all three families alike.
+	NodeSymmetricKey: {gate.AlterAnySymmetricKey, gate.AlterDatabase, gate.ControlDB, gate.ControlOnSymmetricKey},
 }
 
 // serverScopedOpRights is Rename/Delete's right set for the node types that

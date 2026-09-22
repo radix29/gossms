@@ -177,6 +177,13 @@ const (
 	NodeDatabaseAuditSpecification
 	NodeDatabaseScopedCredentials
 	NodeDatabaseScopedCredential
+	NodeAsymmetricKeys
+	NodeAsymmetricKey
+	NodeCertificates
+	NodeCertificate
+	NodeSymmetricKeys
+	NodeSymmetricKey
+	NodeMasterKey
 	NodeSecurityPolicies
 	NodeSecurityPolicy
 	NodeAlwaysEncryptedKeys
@@ -272,6 +279,7 @@ func isContainerNode(t NodeType) bool {
 		NodeExternalLibraries,
 		NodeStorage, NodePartitionFunctions, NodePartitionSchemes,
 		NodeDatabaseAuditSpecifications, NodeDatabaseScopedCredentials,
+		NodeAsymmetricKeys, NodeCertificates, NodeSymmetricKeys,
 		NodeSecurityPolicies, NodeAlwaysEncryptedKeys, NodeQueryStore,
 		NodeColumnMasterKeys, NodeColumnEncryptionKeys,
 		NodeAgentJobsFolder, NodeAgentUserJobs, NodeAgentSystemJobs,
@@ -435,6 +443,14 @@ func objectIconEmoji(t NodeType) rune {
 		return '🗄'
 	case NodeSecurityPolicy:
 		return '🛡'
+	case NodeAsymmetricKey:
+		return '🗝'
+	case NodeCertificate:
+		return '🏅'
+	case NodeSymmetricKey:
+		return '🔏'
+	case NodeMasterKey:
+		return '🔐'
 	case NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return '🔑'
 	case NodeLoading:
@@ -572,6 +588,14 @@ func objectIconSymbols(t NodeType) rune {
 		return '▩'
 	case NodeSecurityPolicy:
 		return '⛨'
+	case NodeAsymmetricKey:
+		return '⚷'
+	case NodeCertificate:
+		return '✪'
+	case NodeSymmetricKey:
+		return '⚵'
+	case NodeMasterKey:
+		return '⚿'
 	case NodeColumnMasterKey, NodeColumnEncryptionKey:
 		return '⚿'
 	case NodeLoading:
@@ -617,6 +641,14 @@ func nodeTypeName(t NodeType) string {
 		return "Credential"
 	case NodeDatabaseScopedCredential:
 		return "Database Scoped Credential"
+	case NodeAsymmetricKey:
+		return "Asymmetric Key"
+	case NodeCertificate:
+		return "Certificate"
+	case NodeSymmetricKey:
+		return "Symmetric Key"
+	case NodeMasterKey:
+		return "Database Master Key"
 	case NodeCryptographicProvider:
 		return "Cryptographic Provider"
 	case NodeAudit:
@@ -704,7 +736,8 @@ func nodeTypeName(t NodeType) string {
 func hasChildren(t NodeType) bool {
 	switch t {
 	case NodeColumn, NodeLogin, NodeUser, NodeServerRole, NodeDatabaseRole,
-		NodeCredential, NodeDatabaseScopedCredential, NodeCryptographicProvider,
+		NodeCredential, NodeDatabaseScopedCredential, NodeCertificate,
+		NodeAsymmetricKey, NodeSymmetricKey, NodeMasterKey, NodeCryptographicProvider,
 		NodeAudit, NodeServerAuditSpecification,
 		NodeDatabaseAuditSpecification,
 		NodeBackupDevice, NodeServerTrigger, NodeDatabaseTrigger, NodeEndpoint,
@@ -767,6 +800,11 @@ type nodeData struct {
 	// "Enable"/"Disable" toggle (see nodeIcon's IsOffline for the same
 	// one-flag-drives-the-presentation idiom).
 	IsEnabled bool
+
+	// HasPrivateKey is whether a NodeCertificate or NodeAsymmetricKey holds its
+	// private key, read at load time: Remove Private Key is withheld without
+	// one, and the label does not say.
+	HasPrivateKey bool
 
 	// SourceDatabase is the database a NodeDatabaseSnapshot was taken of.
 	// Restore-from-snapshot acts on it, and the folder's detail pane shows

@@ -18,10 +18,13 @@ import (
 // skipped by design.
 
 // endpointCertRow is a sys.certificates row as gosmo scans it: name, id,
-// principal, subject, private-key protection, dates, thumbprint.
+// principal, subject, private-key protection, dates, thumbprint, then owner,
+// issuer, serial, key length, BEGIN_DIALOG, last backup (NULL: never) and
+// attested_by.
 func endpointCertRow(name string, thumb []byte, keyType string) []driver.Value {
 	return []driver.Value{name, int64(256), int64(1), name + " subject", keyType,
-		time.Now(), time.Now().Add(24 * time.Hour), thumb}
+		time.Now(), time.Now().Add(24 * time.Hour), thumb,
+		"dbo", name + " subject", "01", int64(2048), true, nil, ""}
 }
 
 // endpointPeerFor builds one peer the way configure does — ensureCertificate
@@ -34,7 +37,7 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 	own := d.certificateName(name)
 	resp := append(extra,
 		fakeResponse{match: "sys.symmetric_keys", cols: 1, rows: [][]driver.Value{{int64(1)}}},
-		fakeResponse{match: "FROM   sys.certificates", arg: own, cols: 8, rows: [][]driver.Value{
+		fakeResponse{match: "FROM   sys.certificates", arg: own, cols: 15, rows: [][]driver.Value{
 			endpointCertRow(own, []byte(name+"-thumb"), "ENCRYPTED_BY_MASTER_KEY"),
 		}},
 		fakeResponse{match: "CERTENCODED", cols: 1, rows: [][]driver.Value{{[]byte(name + "-public-key")}}},
@@ -60,7 +63,7 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 func absentLoginAndUser() []fakeResponse {
 	return []fakeResponse{
 		{match: "FROM sys.server_principals", cols: 7},
-		{match: "sys.database_principals", cols: 9},
+		{match: "FROM   sys.database_principals", cols: 9},
 	}
 }
 
@@ -81,7 +84,7 @@ func newImportDialog(t *testing.T) *NewEndpointDialog {
 func TestImportPeerCertificateInstallsTheOtherInstancesKey(t *testing.T) {
 	d := newImportDialog(t)
 	local, localInst := endpointPeerFor(t, d, "UBUSQL1", append(absentLoginAndUser(),
-		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 8})...)
+		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 15})...)
 	remote, remoteInst := endpointPeerFor(t, d, "UBUSQL2")
 	before := len(remoteInst.Statements())
 
@@ -127,10 +130,10 @@ func TestImportCreatesNeitherLoginNorUserTwice(t *testing.T) {
 		fakeResponse{match: "FROM sys.server_principals", cols: 7, rows: [][]driver.Value{
 			{"UBUSQL2_login", []byte{1, 2}, "SQL_LOGIN", false, "master", time.Now(), time.Now()},
 		}},
-		fakeResponse{match: "sys.database_principals", cols: 9, rows: [][]driver.Value{
+		fakeResponse{match: "FROM   sys.database_principals", cols: 9, rows: [][]driver.Value{
 			{int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE", []byte{1, 2}, "UBUSQL2_login", false},
 		}},
-		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 8})
+		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 15})
 	remote, _ := endpointPeerFor(t, d, "UBUSQL2")
 
 	if err := d.importPeerCertificate(local.ctx, local, remote); err != nil {
@@ -154,7 +157,7 @@ func TestImportCreatesNeitherLoginNorUserTwice(t *testing.T) {
 func TestImportSkipsACertificateAlreadyThere(t *testing.T) {
 	d := newImportDialog(t)
 	local, localInst := endpointPeerFor(t, d, "UBUSQL1", append(absentLoginAndUser(),
-		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 8, rows: [][]driver.Value{
+		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 15, rows: [][]driver.Value{
 			endpointCertRow("UBUSQL2_Cert", []byte("UBUSQL2-thumb"), "NO_PRIVATE_KEY"),
 		}})...)
 	remote, _ := endpointPeerFor(t, d, "UBUSQL2")
@@ -174,7 +177,7 @@ func TestImportSkipsACertificateAlreadyThere(t *testing.T) {
 func TestImportRefusesADifferentCertificateOfTheSameName(t *testing.T) {
 	d := newImportDialog(t)
 	local, localInst := endpointPeerFor(t, d, "UBUSQL1", append(absentLoginAndUser(),
-		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 8, rows: [][]driver.Value{
+		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 15, rows: [][]driver.Value{
 			endpointCertRow("UBUSQL2_Cert", []byte("a-previous-installation"), "NO_PRIVATE_KEY"),
 		}})...)
 	remote, _ := endpointPeerFor(t, d, "UBUSQL2")

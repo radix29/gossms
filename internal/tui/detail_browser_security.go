@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	gosmo "github.com/radix29/gosmo"
 	dbconn "github.com/radix29/gossms/internal/db"
@@ -13,7 +14,8 @@ import (
 // detail_browser_security.go is the Detail Browser's view of the server-level
 // Security families that are not logins — Credentials, Cryptographic
 // Providers, Audits and Server Audit Specifications — plus a database's own
-// Audit Specifications and Scoped Credentials, which share their rendering.
+// Audit Specifications, Scoped Credentials, Certificates and asymmetric and
+// symmetric keys, which share their rendering.
 // The Logins folder has its own progressive loader
 // (detail_browser_logins.go); everything here answers from a single round
 // trip.
@@ -411,4 +413,265 @@ func databaseScopedCredentialDetail(ctx context.Context, sc *dbconn.ServerConn, 
 		"Created", formatSQLDate(c.CreateDate),
 		"Modified", formatSQLDate(c.ModifyDate),
 	)
+}
+
+// -- Certificates --------------------------------------------------------------
+
+// certificatesFolderDetail lists one database's certificates. Expiry is a
+// column rather than a label suffix here, so the "(Expired)" the tree adds is
+// the Expired column instead.
+func certificatesFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	certs, err := dbObj.CertificatesContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	certs = filterObjects(node.data.Filter, certs, func(c *gosmo.Certificate) nodeData {
+		return nodeData{Name: c.Name}
+	})
+
+	now := time.Now()
+	rows := make([][]string, 0, len(certs))
+	out := make([]nodeData, 0, len(certs))
+	for _, c := range certs {
+		rows = append(rows, []string{
+			c.Name, c.Subject, formatSQLDate(c.ExpiryDate),
+			yesNo(certificateExpired(c, now)), privateKeyText(c.PvtKeyEncryptionType),
+		})
+		out = append(out, nodeData{Type: NodeCertificate, DBName: node.data.DBName, Name: c.Name})
+	}
+	*objs = out
+	return []string{"Name", "Subject", "Expiry", "Expired", "Private key"}, rows, nil
+}
+
+// certificateDetail is one certificate's Property/Value view. A certificate
+// dropped since the tree was read is an error from findCertificate, not a nil.
+func certificateDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	c, err := findCertificate(ctx, sc, node.data.DBName, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	backup := formatSQLDate(c.PvtKeyLastBackupDate)
+	if backup == "" {
+		backup = "Never"
+	}
+	return propertyRows(
+		"Name", c.Name,
+		"Database", node.data.DBName,
+		"Owner", c.Owner,
+		"Subject", c.Subject,
+		"Issuer", c.IssuerName,
+		"Serial number", c.SerialNumber,
+		"Valid from", formatSQLDate(c.StartDate),
+		"Expiry", formatSQLDate(c.ExpiryDate),
+		"Expired", yesNo(certificateExpired(c, time.Now())),
+		"Key length", keyLengthText(c.KeyLength),
+		"Thumbprint", hexPreview(c.Thumbprint),
+		"Private key", privateKeyText(c.PvtKeyEncryptionType),
+		"Private key last backed up", backup,
+		"Active for BEGIN_DIALOG", yesNo(c.IsActiveForBeginDialog),
+		"Attested by", c.AttestedBy,
+	)
+}
+
+// privateKeyText renders a certificate's or asymmetric key's
+// pvt_key_encryption_type_desc as a reader would say it. An unrecognised value
+// is shown as the server wrote it.
+func privateKeyText(desc string) string {
+	switch desc {
+	case "NO_PRIVATE_KEY", "":
+		return "None"
+	case "ENCRYPTED_BY_MASTER_KEY":
+		return "Encrypted by master key"
+	case "ENCRYPTED_BY_PASSWORD":
+		return "Encrypted by password"
+	}
+	return desc
+}
+
+// -- Asymmetric Keys -----------------------------------------------------------
+
+// asymmetricKeysFolderDetail lists one database's asymmetric keys.
+func asymmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys, err := dbObj.AsymmetricKeysContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys = filterObjects(node.data.Filter, keys, func(k *gosmo.AsymmetricKey) nodeData {
+		return nodeData{Name: k.Name}
+	})
+
+	rows := make([][]string, 0, len(keys))
+	out := make([]nodeData, 0, len(keys))
+	for _, k := range keys {
+		rows = append(rows, []string{
+			k.Name, k.Algorithm, keyLengthText(k.KeyLength), privateKeyText(k.PvtKeyEncryptionType),
+		})
+		out = append(out, nodeData{Type: NodeAsymmetricKey, DBName: node.data.DBName, Name: k.Name})
+	}
+	*objs = out
+	return []string{"Name", "Algorithm", "Length", "Private key"}, rows, nil
+}
+
+// asymmetricKeyDetail is one asymmetric key's Property/Value view.
+func asymmetricKeyDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	k, err := findAsymmetricKey(ctx, sc, node.data.DBName, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return propertyRows(
+		"Name", k.Name,
+		"Database", node.data.DBName,
+		"Owner", k.Owner,
+		"Algorithm", k.Algorithm,
+		"Key length", keyLengthText(k.KeyLength),
+		"Thumbprint", hexPreview(k.Thumbprint),
+		"Private key", privateKeyText(k.PvtKeyEncryptionType),
+		"Provider", asymmetricKeyProviderText(k),
+		"Attested by", k.AttestedBy,
+	)
+}
+
+// keyLengthText is a key length in bits, or empty when the catalog had none.
+func keyLengthText(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+// asymmetricKeyProviderText says where the key lives: provider_type is set
+// only for a key an EKM provider holds.
+func asymmetricKeyProviderText(k *gosmo.AsymmetricKey) string {
+	if k.ProviderType == "" {
+		return "SQL Server"
+	}
+	return k.ProviderType
+}
+
+// -- Symmetric Keys ------------------------------------------------------------
+
+// symmetricKeysFolderDetail lists one database's symmetric keys, under a first
+// row that says whether the database has a master key. The master key gets no
+// node of its own (a later item), yet it is what every certificate- or
+// asymmetric-key-protected symmetric key rests on, and whether the New
+// dialogs will ask for its password — so its presence is shown here, where
+// the keys it protects are listed. The row is not an object: its rowObjs
+// entry is the zero nodeData, which no object operation claims, so selecting
+// it offers nothing rather than something that acts on the wrong row.
+func symmetricKeysFolderDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode, objs *[]nodeData) ([]string, [][]string, error) {
+	dbObj, err := sc.Server.DatabaseByNameContext(ctx, node.data.DBName)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys, err := dbObj.SymmetricKeysContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys = filterObjects(node.data.Filter, keys, func(k *gosmo.SymmetricKey) nodeData {
+		return nodeData{Name: k.Name, CreateDate: k.CreateDate}
+	})
+
+	rows := make([][]string, 0, len(keys)+1)
+	out := make([]nodeData, 0, len(keys)+1)
+	rows = append(rows, []string{"Database master key: " + masterKeyText(ctx, dbObj), "", "", "", ""})
+	out = append(out, nodeData{})
+	for _, k := range keys {
+		rows = append(rows, []string{
+			k.Name, k.Algorithm, keyLengthText(k.KeyLength), formatSQLDate(k.CreateDate),
+			symmetricKeyEncryptionsText(k.Encryptions),
+		})
+		out = append(out, nodeData{Type: NodeSymmetricKey, DBName: node.data.DBName, Name: k.Name})
+	}
+	*objs = out
+	return []string{"Name", "Algorithm", "Length", "Created", "Encrypted by"}, rows, nil
+}
+
+// masterKeyText is "present" or "absent", or "unknown" when the check itself
+// failed — the key list is still worth showing then. See gosmo's HasMasterKey
+// for the one master key a low-privilege principal still reads as absent.
+func masterKeyText(ctx context.Context, d *gosmo.Database) string {
+	has, err := d.HasMasterKeyContext(ctx)
+	switch {
+	case err != nil:
+		return "unknown"
+	case has:
+		return "present"
+	}
+	return "absent"
+}
+
+// symmetricKeyDetail is one symmetric key's Property/Value view, one
+// "Encrypted by" row per encryption.
+func symmetricKeyDetail(ctx context.Context, sc *dbconn.ServerConn, node *explorerNode) ([]string, [][]string, error) {
+	k, err := findSymmetricKey(ctx, sc, node.data.DBName, node.data.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	kv := []string{
+		"Name", k.Name,
+		"Database", node.data.DBName,
+		"Owner", k.Owner,
+		"Algorithm", k.Algorithm,
+		"Key length", keyLengthText(k.KeyLength),
+		"Key GUID", k.KeyGUID,
+		"Created", formatSQLDate(k.CreateDate),
+		"Modified", formatSQLDate(k.ModifyDate),
+		"Provider", symmetricKeyProviderText(k),
+	}
+	for _, e := range k.Encryptions {
+		kv = append(kv, "Encrypted by", symmetricKeyEncryptionText(e))
+	}
+	return propertyRows(kv...)
+}
+
+// symmetricKeyEncryptionText names one encryption as a reader would say it:
+// "Certificate claims_cert", "Password". An encryptor the caller cannot see
+// has no name to show, and an unrecognised crypt_type_desc is shown as the
+// server wrote it.
+func symmetricKeyEncryptionText(e gosmo.SymmetricKeyEncryption) string {
+	var kind string
+	switch e.Kind {
+	case gosmo.SymmetricKeyByCertificate:
+		kind = "Certificate"
+	case gosmo.SymmetricKeyByAsymmetricKey:
+		kind = "Asymmetric key"
+	case gosmo.SymmetricKeyBySymmetricKey:
+		kind = "Symmetric key"
+	case gosmo.SymmetricKeyByPassword:
+		return "Password"
+	case gosmo.SymmetricKeyByMasterKey:
+		return "Master key"
+	default:
+		return e.CryptTypeDesc
+	}
+	if e.Name == "" {
+		return kind + " (not visible)"
+	}
+	return kind + " " + e.Name
+}
+
+// symmetricKeyEncryptionsText is every encryption of a key on one line, for
+// the folder list.
+func symmetricKeyEncryptionsText(es []gosmo.SymmetricKeyEncryption) string {
+	parts := make([]string, len(es))
+	for i, e := range es {
+		parts[i] = symmetricKeyEncryptionText(e)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// symmetricKeyProviderText is asymmetricKeyProviderText for a symmetric key.
+func symmetricKeyProviderText(k *gosmo.SymmetricKey) string {
+	if k.ProviderType == "" {
+		return "SQL Server"
+	}
+	return k.ProviderType
 }

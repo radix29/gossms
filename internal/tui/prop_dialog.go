@@ -169,6 +169,13 @@ type PropDialog struct {
 	sc       *db.ServerConn
 	database string
 
+	// detailNode is the node the Details pane was showing when the dialog
+	// opened — the object it edits, or the folder listing it when Properties
+	// came from a Details row. A saved change stales that node's cached view,
+	// so staleDetails drops it after a write lands. Nil when there is no
+	// Details pane.
+	detailNode *explorerNode
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -229,6 +236,10 @@ func (d *PropDialog) show(sc *db.ServerConn, database, title, headerLeft, header
 	d.stopPageRuns()
 	d.sc = sc
 	d.database = database
+	d.detailNode = nil
+	if d.app.detailBrowser != nil {
+		d.detailNode = d.app.detailBrowser.currentNode
+	}
 	d.pages = pages()
 	d.applyFn = make(map[int]propApply, len(d.pages))
 
@@ -507,6 +518,9 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 				// standing, and it is the only account of what went wrong.
 				if committed {
 					d.InvalidateAll()
+					if !gosmo.Scripting(runCtx) {
+						d.staleDetails()
+					}
 				}
 				return
 			}
@@ -552,7 +566,23 @@ func (d *PropDialog) runApply(hideOnSuccess bool) {
 	d.runPipeline(d.ctx, hide, func() {
 		d.app.setStatus("Properties saved")
 		d.InvalidateAll()
+		d.staleDetails()
 		hide()
+	})
+}
+
+// staleDetails drops the Details pane's cached view of what this dialog just
+// wrote, so the pane stops showing pre-edit values until ⟳. That is the node the
+// dialog was opened over, its parent folder (whose list may carry the edited
+// columns), and its cached children (the edited object itself, when the dialog
+// was opened from a row of that folder's list). The one on screen refetches.
+func (d *PropDialog) staleDetails() {
+	node := d.detailNode
+	if node == nil {
+		return
+	}
+	d.app.detailBrowser.InvalidateWhere(d.app, func(n *explorerNode) bool {
+		return n == node || (node.parent != nil && n == node.parent) || n.parent == node
 	})
 }
 

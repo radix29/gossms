@@ -124,7 +124,7 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 			// part of the account name and the credential then fails to
 			// authenticate with nothing on the page saying why.
 			Identity: strings.TrimSpace(identityField.Value()),
-			Secret:   passwordField.Value(),
+			Secret:   scriptSafeSecret(ctx, passwordField.Value()),
 		}
 		if providerRow != nil && providerRow.Selected() != 0 {
 			spec.CryptographicProvider = providerRow.Value()

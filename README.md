@@ -194,6 +194,19 @@ connected SQL Server version or engine edition are hidden or disabled.
   runs; the other five are read-only, because what they define is part of the
   application's own schema and belongs in the script that ships it. The folder
   is listed whether or not the broker is enabled on the database.
+- **Certificates, asymmetric keys and symmetric keys** under each database's
+  Security folder, `master` included: a listing and details view, scripting,
+  delete, Properties, and a New dialog for each that creates the database
+  master key first when one is needed. An expired certificate is marked
+  `(Expired)`. A symmetric key's Properties add and remove its encryptions,
+  opening the key in the same batch. A certificate backs up to files on the
+  server's host, its private key optionally with it, and a certificate's or
+  asymmetric key's private key can be removed, after a confirmation — the one
+  irreversible step here. A certificate's or asymmetric key's Properties list
+  the modules it signs and add or remove signatures (`ADD` / `DROP
+  SIGNATURE`), and a procedure's, function's or trigger's details show who
+  signed it. Keys are generated, never imported —
+  importing reads files on the server's host, and is left to a query window.
 - **Query editor** with multiple tabs, IntelliSense, `GO` batches, unlimited
   result rows, messages, and XML/JSON viewers. Each tab holds its own SQL
   Server session, so temp tables, `SET` options, `USE` and open transactions
