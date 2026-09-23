@@ -152,7 +152,7 @@ func (d *NewStatisticsDialog) createStatistic(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.CreateStatisticWithOptions(ctx, d.request())
+	return t.CreateStatistic(ctx, d.request())
 }
 
 // request assembles the CreateStatisticRequest from the form.

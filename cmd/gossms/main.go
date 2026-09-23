@@ -51,8 +51,9 @@ func printVersion() {
 // App.Run's deferred screen.Fini restores the terminal, but the trace goes to
 // stderr while still on the alternate screen and scrolls away with it.
 // Recovering here, after Fini, puts the trace in the log and a short line on
-// the restored screen. Background goroutines use App.safego/recoverPanic
-// instead.
+// the restored screen. Every query panel with unsaved text is then written to
+// config.RecoveredDir by App.EmergencySave, and the files named. Background
+// goroutines use App.safego/recoverPanic instead.
 func run(app *tui.App) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -61,6 +62,15 @@ func run(app *tui.App) (err error) {
 			fmt.Fprintf(os.Stderr, "gossms panicked: %v\n", r)
 			if path, perr := config.LogFilePath(); perr == nil {
 				fmt.Fprintf(os.Stderr, "A stack trace was written to %s\n", path)
+			}
+			saved, failed := app.EmergencySave()
+			for _, path := range saved {
+				log.Printf("unsaved query recovered to %s", path)
+				fmt.Fprintf(os.Stderr, "Unsaved query recovered to %s\n", path)
+			}
+			for _, ferr := range failed {
+				log.Printf("unsaved query not recovered: %v", ferr)
+				fmt.Fprintf(os.Stderr, "Unsaved query NOT recovered: %v\n", ferr)
 			}
 			err = fmt.Errorf("panic: %v", r)
 		}

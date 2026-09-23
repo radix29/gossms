@@ -175,7 +175,7 @@ func (d *RestoreDialog) loadFileList() {
 	app.safego("reading a backup set's file list", func() {
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
-		files, err := srv.BackupFileListForSet(ctx, dev, fileNumber)
+		files, err := srv.BackupFileList(ctx, gosmo.DiskTarget(dev), fileNumber)
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
 				return
@@ -245,13 +245,13 @@ func (d *RestoreDialog) loadBackupInfo(next int) {
 	app.safego("analyzing the backup device", func() {
 		ctx, cancel := context.WithTimeout(d.sc.Context(), childFetchTimeout)
 		defer cancel()
-		headers, err := srv.BackupHeaders(ctx, dev)
+		headers, err := srv.BackupHeaders(ctx, gosmo.DiskTarget(dev))
 		var files []*gosmo.BackupFile
 		if err == nil && len(headers) > 0 {
 			// The view opens on headers[0], so the file list must name that set,
 			// by the same rule selectHeader's reload uses — otherwise the panel
 			// disagrees with itself the moment the user arrows off and back.
-			files, err = srv.BackupFileListForSet(ctx, dev, backupSetNumber(headers, 0))
+			files, err = srv.BackupFileList(ctx, gosmo.DiskTarget(dev), backupSetNumber(headers, 0))
 		}
 		app.postAndWake(func() {
 			if seq != d.loadSeq || !d.Visible() {
@@ -391,7 +391,7 @@ func (d *RestoreDialog) runRestore(ctx context.Context, task *Task, dev, target 
 
 	if verify {
 		app.postProgress(task, -1, "Verifying backup...")
-		if err := srv.VerifyBackup(ctx, dev); err != nil {
+		if err := srv.VerifyBackup(ctx, gosmo.DiskTarget(dev)); err != nil {
 			return err
 		}
 	}
@@ -471,7 +471,7 @@ func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, s
 // database back to MULTI_USER, including after a cancelled restore.
 func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target string, recovery, replace, closeConns bool, fileNumber int, plan relocPlan) (gosmo.RestoreOptions, error) {
 	srv := d.sc.Server
-	headers, err := srv.BackupHeaders(ctx, dev)
+	headers, err := srv.BackupHeaders(ctx, gosmo.DiskTarget(dev))
 	if err != nil {
 		return gosmo.RestoreOptions{}, err
 	}
@@ -495,7 +495,7 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 		// the device without one describes set 1, whose logical file names
 		// belong to a different database whenever backups were appended, and
 		// MOVE clauses naming files the restored set lacks fail the RESTORE.
-		files, err := srv.BackupFileListForSet(ctx, dev, fileNumber)
+		files, err := srv.BackupFileList(ctx, gosmo.DiskTarget(dev), fileNumber)
 		if err != nil {
 			return gosmo.RestoreOptions{}, err
 		}
@@ -505,7 +505,7 @@ func (d *RestoreDialog) buildRestoreOptions(ctx context.Context, dev, target str
 
 	return gosmo.RestoreOptions{
 		Database:      target,
-		Devices:       []string{dev},
+		Devices:       []gosmo.BackupTarget{gosmo.DiskTarget(dev)},
 		FileNumber:    fileNumber,
 		RelocateFiles: relocate,
 		Recovery:      recoveryFor(recovery),

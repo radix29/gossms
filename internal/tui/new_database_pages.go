@@ -137,7 +137,7 @@ func buildNewDatabaseOptionsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName func
 
 	apply := func(ctx context.Context) error {
 		d := sc.Server.DatabaseRef(dbName())
-		if err := applyTrackedOptions(ctx, d, tracked); err != nil {
+		if err := applyTrackedOptions(ctx, d, tracked, gosmo.TerminationNone); err != nil {
 			return err
 		}
 		if err := applyRestrictAccess(ctx, d, userAccessRow); err != nil {
@@ -301,7 +301,7 @@ func buildNewDatabaseFilegroupsPage(sc *db.ServerConn, pf *ndbPrefetch, dbName f
 				}
 			}
 			if e.isReadOnly {
-				if err := d.SetFileGroupReadOnly(ctx, e.name, true); err != nil {
+				if err := d.SetFileGroupReadOnly(ctx, e.name, true, gosmo.TerminationNone); err != nil {
 					return err
 				}
 			}

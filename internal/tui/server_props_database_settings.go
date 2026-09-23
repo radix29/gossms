@@ -62,24 +62,14 @@ func pageServerDatabaseSettings(sc *db.ServerConn) propPage {
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				changed, err := applyConfigRows(ctx, sc, intRows, boolRows)
+				changes, err := configChanges(intRows, boolRows)
 				if err != nil {
 					return err
 				}
 				if filestreamCfg != nil && filestream.Dirty() {
-					opt, err := sc.Server.ConfigurationByName(ctx, "filestream access level")
-					if err != nil {
-						return err
-					}
-					if err := opt.SetValue(ctx, int64(filestream.Selected())); err != nil {
-						return err
-					}
-					changed = true
+					changes = append(changes, gosmo.ConfigChange{Name: "filestream access level", Value: int64(filestream.Selected())})
 				}
-				if changed {
-					return sc.Server.Reconfigure(ctx, false)
-				}
-				return nil
+				return sc.Server.ApplyConfiguration(ctx, changes, gosmo.ConfigApplyOptions{})
 			}
 			return f, apply, nil
 		},

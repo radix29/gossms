@@ -53,7 +53,7 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 		title:   "General",
 		renames: true,
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -69,8 +69,8 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				propsheet.Static("Index type", indexTypeName(idx.Type)),
 				propsheet.Static("Disabled", boolStr(idx.IsDisabled)),
 				propsheet.Section("Table or view"),
-				propsheet.Static("Schema", t.Schema),
-				propsheet.Static("Object", t.Name),
+				propsheet.Static("Schema", idx.Table().Schema),
+				propsheet.Static("Object", idx.Table().Name),
 				propsheet.Static("Object type", "Table"),
 				propsheet.Section("Key columns"),
 				propsheet.NewGridRow(grid, 8),
@@ -81,11 +81,11 @@ func pageKeyGeneral(sc *db.ServerConn, dbName, schema, table string, name *strin
 				if !nameRow.Dirty() {
 					return nil
 				}
-				t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+				idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 				if err != nil {
 					return err
 				}
-				if err := idx.Rename(ctx, t, nameRow.Value()); err != nil {
+				if err := idx.Rename(ctx, nameRow.Value()); err != nil {
 					return err
 				}
 				commitRename(ctx, name, nameRow.Value())
@@ -105,7 +105,7 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 	return propPage{
 		title: "Options",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			_, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -121,16 +121,14 @@ func pageKeyOptions(sc *db.ServerConn, dbName, schema, table string, name *strin
 			f := propsheet.NewForm(append(rows, rebuild.compressionRows()...)...)
 
 			apply := func(ctx context.Context) error {
-				t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+				idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 				if err != nil {
 					return err
 				}
-				if rowLocksRow.Dirty() || pageLocksRow.Dirty() {
-					if err := idx.SetLockOptions(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
-						return err
-					}
+				if err := applySetOptions(ctx, idx, nil, rowLocksRow, pageLocksRow); err != nil {
+					return err
 				}
-				return rebuild.apply(ctx, t, idx)
+				return rebuild.apply(ctx, idx)
 			}
 			return f, apply, nil
 		},

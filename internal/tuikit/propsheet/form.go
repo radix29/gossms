@@ -43,6 +43,10 @@ type Form struct {
 	// the thumb when the pointer drifts back over a focused GridRow. Only a press
 	// on the bar's own column arms it.
 	sbDragging bool
+
+	// applyConfirm is asked before this form's edits are applied for real —
+	// see SetApplyConfirm.
+	applyConfirm func() string
 }
 
 // NewForm creates a Form from an initial set of rows; order is tab order and
@@ -533,6 +537,26 @@ func (f *Form) Validate() error {
 		}
 	}
 	return nil
+}
+
+// SetApplyConfirm registers fn to be asked, while the form is dirty, before
+// its edits are applied for real: a non-empty answer is a warning the user
+// must accept first — an edit whose write has a consequence beyond the value
+// itself, such as disconnecting other sessions. fn reads the form's rows and
+// answers "" when none of the edits it cares about is pending.
+//
+// The sheet only collects the answers (PropertySheet.ApplyConfirmations);
+// asking, and skipping the question for a write that is only scripted, is the
+// host's.
+func (f *Form) SetApplyConfirm(fn func() string) { f.applyConfirm = fn }
+
+// ApplyConfirm is the warning SetApplyConfirm's function gives for the form's
+// current edits, or "" when there is none to give.
+func (f *Form) ApplyConfirm() string {
+	if f.applyConfirm == nil || !f.Dirty() {
+		return ""
+	}
+	return f.applyConfirm()
 }
 
 // CopyText returns the focused row's copyable value, if any.

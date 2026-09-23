@@ -628,10 +628,10 @@ func applyColumnSecurable(ctx context.Context, d *gosmo.Database, verb string, o
 	cols := []string{column}
 	switch verb {
 	case "GRANT":
-		return d.GrantColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.GrantColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	case "DENY":
-		return d.DenyColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.DenyColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	default:
-		return d.RevokeColumnPermissionWithOptions(ctx, s.Schema, s.Name, p, cols, principal, opts)
+		return d.RevokeColumnPermission(ctx, s.Schema, s.Name, p, cols, principal, opts)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/propsheet"
 	"github.com/radix29/gossms/internal/tuikit/widgets"
@@ -172,7 +173,7 @@ func pageDatabaseFilegroups(sc *db.ServerConn, dbName string) propPage {
 						continue
 					}
 					if e.isReadOnly != e.origReadOnly {
-						if err := d.SetFileGroupReadOnly(ctx, e.name, e.isReadOnly); err != nil {
+						if err := d.SetFileGroupReadOnly(ctx, e.name, e.isReadOnly, gosmo.TerminationNone); err != nil {
 							return err
 						}
 					}

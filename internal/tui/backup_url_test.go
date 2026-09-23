@@ -155,9 +155,9 @@ func TestBackupRestingHintDoesNotOverwriteARealMessage(t *testing.T) {
 }
 
 func TestRestoreFromABlobEmitsFromURL(t *testing.T) {
-	stmt, err := gosmo.BuildRestoreStatement(gosmo.RestoreOptions{
+	stmt, err := (&gosmo.Server{}).BuildRestoreStatement(gosmo.RestoreOptions{
 		Database: "AppDB",
-		Devices:  []string{blobDest},
+		Devices:  []gosmo.BackupTarget{gosmo.DiskTarget(blobDest)},
 	})
 	if err != nil {
 		t.Fatalf("BuildRestoreStatement: %v", err)

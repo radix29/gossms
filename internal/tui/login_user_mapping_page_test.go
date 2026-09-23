@@ -38,12 +38,13 @@ func mappingResponses() []fakeResponse {
 			{"salesdb", int64(6), "ONLINE", "FULL", int64(160), "SQL_Latin1_General_CP1_CI_AS", false, time.Now(), int64(0)},
 		}},
 
-		// The login's mapping, per database. appdb answers with a user;
-		// everything else answers empty, which is what "not mapped" is.
-		fakeResponse{match: "dp.sid = @p1", db: "appdb", cols: 3, rows: [][]driver.Value{
-			{"appuser", "sales", "db_datareader"},
+		// The login's mapping, per database — one row per role, grouped by
+		// principal_id. appdb answers with a user; everything else answers
+		// empty, which is what "not mapped" is.
+		fakeResponse{match: "dp.sid = @p1", db: "appdb", cols: 4, rows: [][]driver.Value{
+			{int64(5), "appuser", "sales", "db_datareader"},
 		}},
-		fakeResponse{match: "dp.sid = @p1", cols: 3, rows: nil},
+		fakeResponse{match: "dp.sid = @p1", cols: 4, rows: nil},
 
 		// Database roles, per database. public is present in both because the
 		// page has to exclude it — ALTER ROLE public ADD MEMBER is a syntax

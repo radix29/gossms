@@ -72,8 +72,8 @@ Standing gotchas:
   yet; `DatabaseByName` queries `sys.databases`. `~/go/gosmo/CLAUDE.md` §
   Conventions, the `Ref` bullet, is the authority on when that is — note
   that a `WithScript`-derived context is *not* on its own one of those
-  cases, since `WithScript` intercepts writes only. Twenty-five gosmo families
-  pair this way (`LoginRef`, `TableRef`, `JobRef`, `CertificateRef`, `AsymmetricKeyRef`, `SymmetricKeyRef`, …). Before the 2026-09-17
+  cases, since `WithScript` intercepts writes only. Twenty-six gosmo families
+  pair this way (`LoginRef`, `TableRef`, `JobRef`, `CertificateRef`, `IndexRef`, `AsymmetricKeyRef`, `SymmetricKeyRef`, …). Before the 2026-09-17
   rename the handle had the plain name and picking the wrong one failed
   quietly; the suffix is what makes the choice visible at the call site.
   Both are documented on the methods themselves — `go doc

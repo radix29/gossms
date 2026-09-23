@@ -264,6 +264,28 @@ func TestNewDatabaseOptionsWriteOnlyWhatDivergesFromModel(t *testing.T) {
 	}
 }
 
+// A database this dialog has just created has nobody else in it, so Read
+// committed snapshot needs neither the warning Database Properties asks nor
+// its WITH ROLLBACK IMMEDIATE.
+func TestNewDatabaseReadCommittedSnapshotTerminatesNothing(t *testing.T) {
+	d, inst := newDatabaseDialog(t)
+	general, _ := d.page(t, "General")
+	editText(t, general, "Database name", newDatabaseName)
+
+	form, apply := d.page(t, "Options")
+	editSelect(t, form, "Read committed snapshot", "ON")
+	if w := form.ApplyConfirm(); w != "" {
+		t.Errorf("New Database asks before setting an option on a database nobody else can be in: %q", w)
+	}
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertOneStatement(t, inst, "ALTER DATABASE [AppDB] SET READ_COMMITTED_SNAPSHOT ON")
+	if stmts := inst.Statements(); strings.Contains(stmts[len(stmts)-1], "ROLLBACK") {
+		t.Errorf("New Database terminated sessions of a database it just created: %s", stmts[len(stmts)-1])
+	}
+}
+
 // Restrict access is the one dropdown on this page that is not in the tracked
 // option table, for the same reason as on Database Properties: it must go
 // through SetUserAccess and carry WITH ROLLBACK IMMEDIATE. Moving it into the

@@ -257,7 +257,7 @@ func (d *NewIndexDialog) request() gosmo.CreateIndexRequest {
 		req.DropExisting = r.dropExisting.Checked()
 	}
 	if r.compression != nil && r.compression.Selected() > 0 {
-		req.DataCompression = r.compression.Value()
+		req.DataCompression = gosmo.DataCompression(r.compression.Value())
 	}
 	if r.compressionDelay != nil {
 		req.CompressionDelay = nidxInt(r.compressionDelay)

@@ -151,7 +151,7 @@ func TestBackupBlankDestinationYieldsNoDevice(t *testing.T) {
 	}
 	d := backupForm("AppDB")
 	d.fDest.SetValue(`  C:\backups\AppDB.bak  `)
-	if got := d.currentOptions().Devices; len(got) != 1 || got[0] != `C:\backups\AppDB.bak` {
+	if got := d.currentOptions().Devices; len(got) != 1 || got[0].String() != `C:\backups\AppDB.bak` {
 		t.Errorf("a padded path produced %q, want it trimmed", got)
 	}
 }

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	gosmo "github.com/radix29/gosmo"
@@ -110,34 +109,28 @@ func newConfigBoolEditor(configs []*gosmo.ConfigurationOption, tracked *[]config
 	}
 }
 
-// applyConfigRows writes back every dirty row in intRows/boolRows via
-// ConfigurationOption.SetValue. It does not call Reconfigure —
-// callers combine this with any other sp_configure-backed change (e.g.
-// the Processors page's affinity bitmasks) and call
-// Server.Reconfigure once at the end.
-func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow, boolRows []configBoolRow) (changed bool, err error) {
-	// sys.configurations comes back once for the whole apply instead of once
-	// per dirty row: it is a single ~80-row read either way, so a page with
-	// three dirty options pays one round trip rather than three. Fetched
-	// lazily so an apply with nothing dirty still costs nothing.
-	lookup := configLookup(sc)
-
+// configChanges returns one gosmo.ConfigChange for every dirty row in
+// intRows/boolRows. It writes nothing: callers add any other sp_configure-
+// backed change (the Processors page's affinity bitmasks, Database Settings'
+// FILESTREAM level) and hand the whole set to Server.ApplyConfiguration, so
+// the page issues one batch with one RECONFIGURE.
+//
+// One batch is what makes an advanced option writable at all: a bare
+// sp_configure of max degree of parallelism, max server memory, fill factor
+// … fails Msg 15123 on a server with "show advanced options" at 0, which is
+// how every stock installation ships. ApplyConfiguration turns it on for the
+// batch and puts it back, as SSMS does.
+func configChanges(intRows []configRow, boolRows []configBoolRow) ([]gosmo.ConfigChange, error) {
+	var changes []gosmo.ConfigChange
 	for _, cr := range intRows {
 		if !cr.row.Dirty() {
 			continue
 		}
 		v, err := cr.row.IntValue()
 		if err != nil {
-			return changed, err
+			return nil, err
 		}
-		opt, err := lookup(ctx, cr.name)
-		if err != nil {
-			return changed, err
-		}
-		if err := opt.SetValue(ctx, v); err != nil {
-			return changed, err
-		}
-		changed = true
+		changes = append(changes, gosmo.ConfigChange{Name: cr.name, Value: v})
 	}
 	for _, cr := range boolRows {
 		if !cr.row.Dirty() {
@@ -147,54 +140,21 @@ func applyConfigRows(ctx context.Context, sc *db.ServerConn, intRows []configRow
 		if cr.row.Checked() {
 			v = 1
 		}
-		opt, err := lookup(ctx, cr.name)
-		if err != nil {
-			return changed, err
-		}
-		if err := opt.SetValue(ctx, v); err != nil {
-			return changed, err
-		}
-		changed = true
+		changes = append(changes, gosmo.ConfigChange{Name: cr.name, Value: v})
 	}
-	return changed, nil
-}
-
-// configLookup returns a by-name option lookup that reads sys.configurations
-// at most once, on the first call. An unknown name is reported the way
-// Server.ConfigurationByName reports it, so callers see no difference.
-func configLookup(sc *db.ServerConn) func(context.Context, string) (*gosmo.ConfigurationOption, error) {
-	var byName map[string]*gosmo.ConfigurationOption
-	return func(ctx context.Context, name string) (*gosmo.ConfigurationOption, error) {
-		if byName == nil {
-			opts, err := sc.Server.Configurations(ctx)
-			if err != nil {
-				return nil, err
-			}
-			byName = make(map[string]*gosmo.ConfigurationOption, len(opts))
-			for _, o := range opts {
-				byName[o.Name] = o
-			}
-		}
-		opt, ok := byName[name]
-		if !ok {
-			return nil, fmt.Errorf("gosmo: configuration option %q not found", name)
-		}
-		return opt, nil
-	}
+	return changes, nil
 }
 
 // configApply returns an apply closure for pages whose only edits are
-// plain sp_configure-backed rows: write back every dirty one, then call
-// Reconfigure once if anything changed.
+// plain sp_configure-backed rows. Nothing dirty means nothing sent —
+// ApplyConfiguration of no changes is a no-op, and a RECONFIGURE there would
+// install every *other* pending sp_configure change on the instance.
 func configApply(sc *db.ServerConn, intRows []configRow, boolRows []configBoolRow) propApply {
 	return func(ctx context.Context) error {
-		changed, err := applyConfigRows(ctx, sc, intRows, boolRows)
+		changes, err := configChanges(intRows, boolRows)
 		if err != nil {
 			return err
 		}
-		if changed {
-			return sc.Server.Reconfigure(ctx, false)
-		}
-		return nil
+		return sc.Server.ApplyConfiguration(ctx, changes, gosmo.ConfigApplyOptions{})
 	}
 }

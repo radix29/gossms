@@ -33,7 +33,7 @@ func pageDatabasePermissions(sc *db.ServerConn, dbName string) propPage {
 			for i, p := range perms {
 				entries[i] = permEntry{
 					Principal: p.Principal, PrincipalType: p.PrincipalType,
-					Grantor: p.Grantor, Permission: p.Permission, State: p.State,
+					Grantor: p.Grantor, Permission: string(p.Permission), State: p.State,
 				}
 			}
 

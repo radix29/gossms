@@ -333,14 +333,14 @@ var scriptables = map[NodeType]scriptable{
 // offers below its DDL ones — SSMS's Rebuild/Reorganize/Update Statistics,
 // as a script rather than as an immediate action.
 var indexMaintenanceVerbs = []scriptVerb{
-	{"REBUILD To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.Rebuild(ctx, t, 0)
+	{"REBUILD To", indexMaintenance(func(ctx context.Context, idx *gosmo.Index) error {
+		return idx.Rebuild(ctx, gosmo.IndexRebuildOptions{})
 	})},
-	{"REORGANIZE To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.Reorganize(ctx, t)
+	{"REORGANIZE To", indexMaintenance(func(ctx context.Context, idx *gosmo.Index) error {
+		return idx.Reorganize(ctx)
 	})},
-	{"UPDATE STATISTICS To", indexMaintenance(func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
-		return idx.UpdateStatistics(ctx, t)
+	{"UPDATE STATISTICS To", indexMaintenance(func(ctx context.Context, idx *gosmo.Index) error {
+		return idx.UpdateStatistics(ctx, 0)
 	})},
 }
 
@@ -363,7 +363,7 @@ var statisticUpdateVerb = scriptVerb{"UPDATE STATISTICS To", func(ctx context.Co
 // script generator. The statement is gosmo's own, collected rather than
 // executed, so the script a user reads is the statement gossms would have
 // run — a second copy built here would drift from it.
-func indexMaintenance(f func(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error) scriptGen {
+func indexMaintenance(f func(ctx context.Context, idx *gosmo.Index) error) scriptGen {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) (string, error) {
 		t, err := findTable(ctx, sc, n.DBName, n.Schema, n.TableName)
 		if err != nil {
@@ -373,7 +373,7 @@ func indexMaintenance(f func(ctx context.Context, t *gosmo.Table, idx *gosmo.Ind
 		if err != nil {
 			return "", err
 		}
-		return collectScript(ctx, func(ctx context.Context) error { return f(ctx, t, idx) })
+		return collectScript(ctx, func(ctx context.Context) error { return f(ctx, idx) })
 	}
 }
 

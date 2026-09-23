@@ -472,11 +472,11 @@ through a database-wide grant.
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
 - **The lookup-free handles carry a `Ref` suffix; the `*ByName` lookups keep
-  their names.** Twenty-five families pair this way
+  their names.** Twenty-six families pair this way
   (`Server.Database` → `Server.DatabaseRef`, `Login`, `Table`, the four Agent
   ones, the audit/credential/trigger/snapshot/plan-guide/backup-device/AG
   ones, and `Database.CertificateRef`, `Database.AsymmetricKeyRef` and
-  `Database.SymmetricKeyRef`). An un-suffixed handle compiles, issues no
+  `Database.SymmetricKeyRef`, and `Table.IndexRef` since 2026-09-23). An un-suffixed handle compiles, issues no
   query and answers the zero value, which is the trap the suffix makes visible.
   **Two alternatives are rejected.** Giving the *lookup* the plain name
   (`DatabaseByName` → `Database`) would split the convention with the
@@ -1380,7 +1380,8 @@ re-opened without asking the author.
   grant for nothing.
 
 - **`mssql.ServerError` is fatal-only, so gosmo's `IsRetryable` treating it as
-  retryable is correct.** Both repos require go-mssqldb v1.11.0, where
+  retryable is correct.** Both repos require go-mssqldb v1.11.2 (re-checked
+  2026-09-23; v1.11.1 and v1.11.2 changed only DSN parsing), where
   `ServerError`'s doc comment still reads "returned when the server got a fatal
   error that aborts the process and severs the connection", and the two rows
   loops that route a token error through `Conn.checkBadConn` still discard the
@@ -1476,6 +1477,13 @@ re-opened without asking the author.
   it on the duplication alone. `log_search_dialog.go`'s `HandleMouse` comment
   ("the same shape as `FindReplaceDialog`'s") is the cross-reference that goes
   stale — check it when either file moves.
+
+- **The editor expands every tab to spaces, on purpose.** `Editor.expandTabs`
+  (`internal/tuikit/controls/editor_actions.go`) runs on `SetText`, `Paste`,
+  block insert and Replace, so the buffer never holds a tab — including one
+  inside a string literal, and File > Save writes the spaces back. Raised as a
+  bug by the 2026-09-23 review (S5) and withdrawn: **author's call, as is.**
+  Do not re-propose tab-preserving buffers or tab-stop rendering.
 
 ## Release workflow
 

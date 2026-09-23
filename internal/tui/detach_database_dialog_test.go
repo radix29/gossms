@@ -77,17 +77,20 @@ func TestDetachWithEveryOptionOn(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
+	// One batch: gosmo takes the single-user slot and detaches with no gap
+	// for another session to take it in between.
 	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want the SINGLE_USER alter and the detach, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	if len(stmts) != 1 {
+		t.Fatalf("want the SINGLE_USER alter and the detach in one batch, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
 	}
-	if !strings.Contains(stmts[0], "SET SINGLE_USER WITH ROLLBACK IMMEDIATE") {
+	single := strings.Index(stmts[0], "SET SINGLE_USER WITH ROLLBACK IMMEDIATE")
+	if single < 0 || single > strings.Index(stmts[0], "sp_detach_db") {
 		t.Errorf("Drop connections did not close the sessions first, it ran:\n%s", stmts[0])
 	}
 	// Both flags inverted relative to the box the user ticked.
 	for _, want := range []string{"@skipchecks = 'false'", "@keepfulltextindexfile = 'false'"} {
-		if !strings.Contains(stmts[1], want) {
-			t.Errorf("detached with:\n%s\nwant it to contain %s", stmts[1], want)
+		if !strings.Contains(stmts[0], want) {
+			t.Errorf("detached with:\n%s\nwant it to contain %s", stmts[0], want)
 		}
 	}
 }

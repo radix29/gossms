@@ -160,18 +160,18 @@ var objectOps = map[NodeType]objectOp{
 	NodeIndex: {
 		noun: "Index",
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			t, idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
+			idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
 				return err
 			}
-			return idx.Drop(ctx, t)
+			return idx.Drop(ctx)
 		},
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			t, idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
+			idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
 				return err
 			}
-			return idx.Rename(ctx, t, newName)
+			return idx.Rename(ctx, newName)
 		},
 	},
 	NodeStatistic: {
@@ -197,11 +197,11 @@ var objectOps = map[NodeType]objectOp{
 		// A primary key's or unique constraint's name is its backing index's name
 		// in sys.indexes, so it renames as an index, not as an object.
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			t, idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
+			idx, err := findIndex(ctx, sc, n.DBName, n.Schema, n.TableName, n.Name)
 			if err != nil {
 				return err
 			}
-			return idx.Rename(ctx, t, newName)
+			return idx.Rename(ctx, newName)
 		},
 	},
 	NodeForeignKey: {noun: "Foreign Key", drop: dropConstraint, rename: renameObjectIn},

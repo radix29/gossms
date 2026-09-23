@@ -92,15 +92,46 @@ func databaseOptionRows(o *gosmo.DatabaseOptions) ([]propsheet.Row, []dbOptRow, 
 	return rows, tracked, userAccessRow
 }
 
+// needsExclusiveAccess reports whether setting opt needs the database to
+// itself. Such an ALTER waits, with nothing bounding it, for every other
+// session in the database to leave — a Properties dialog that appears to hang
+// — so the Options page applies it WITH ROLLBACK IMMEDIATE, after asking (see
+// exclusiveOptionWarning).
+func needsExclusiveAccess(opt gosmo.DatabaseOption) bool {
+	return opt == gosmo.DBOptReadCommittedSnapshot
+}
+
+// exclusiveOptionWarning is the Options page's Form.SetApplyConfirm function:
+// the question an Apply must be answered yes to when a pending edit is one
+// needsExclusiveAccess names. Same consequence, same wording, as renaming a
+// database (databaseOps' renameWarning).
+func exclusiveOptionWarning(tracked []dbOptRow) func() string {
+	return func() string {
+		for _, r := range tracked {
+			if needsExclusiveAccess(r.opt) && r.row.Dirty() {
+				return "Changing " + r.row.Label() + " needs exclusive access to the database. " +
+					"Existing connections to it will be closed and their transactions rolled back."
+			}
+		}
+		return ""
+	}
+}
+
 // applyTrackedOptions writes every tracked row the user changed, as one
-// ALTER DATABASE SET each.
-func applyTrackedOptions(ctx context.Context, d *gosmo.Database, tracked []dbOptRow) error {
+// ALTER DATABASE SET each. exclusive is the termination for the options that
+// need exclusive access — TerminationNone where nothing else can be connected,
+// a database this dialog has just created.
+func applyTrackedOptions(ctx context.Context, d *gosmo.Database, tracked []dbOptRow, exclusive gosmo.Termination) error {
 	for _, r := range tracked {
 		if !r.row.Dirty() {
 			continue
 		}
+		term := gosmo.TerminationNone
+		if needsExclusiveAccess(r.opt) {
+			term = exclusive
+		}
 		value := r.items[r.row.Selected()]
-		if err := d.SetDatabaseOption(ctx, r.opt, value); err != nil {
+		if err := d.SetDatabaseOption(ctx, r.opt, value, term); err != nil {
 			return err
 		}
 	}
@@ -138,13 +169,14 @@ func pageDatabaseOptions(sc *db.ServerConn, dbName string) propPage {
 			f := propsheet.NewForm(append(rows,
 				propsheet.Static("Broker enabled", boolStr(o.IsBrokerEnabled)),
 				compatRow)...)
+			f.SetApplyConfirm(exclusiveOptionWarning(tracked))
 
 			apply := func(ctx context.Context) error {
 				d, err := sc.Server.DatabaseByName(ctx, dbName)
 				if err != nil {
 					return err
 				}
-				if err := applyTrackedOptions(ctx, d, tracked); err != nil {
+				if err := applyTrackedOptions(ctx, d, tracked, gosmo.TerminationRollbackImmediate); err != nil {
 					return err
 				}
 				if compatRow.Dirty() {

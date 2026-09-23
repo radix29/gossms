@@ -235,9 +235,25 @@ func pageStatisticDetails(d *PropDialog, sc *db.ServerConn, dbName, schema, tabl
 					d.app.openQueryWithText(sc, dbName, text)
 				})
 			})
+			// statisticUpdateVerb collects the statement Update Statistics
+			// above runs, rather than formatting a second copy that would
+			// drift from gosmo's.
 			scriptUpdateBtn := widgets.NewButton("Script as UPDATE", func() {
-				ddl := fmt.Sprintf("UPDATE STATISTICS %s (%s) WITH FULLSCAN", fqn(schema, table), fqn("", st.Name))
-				d.app.openQueryWithText(sc, dbName, ddl)
+				statusRow.SetValue("Scripting...")
+				var text string
+				d.runPageAction(func(ctx context.Context) error {
+					var err error
+					text, err = statisticUpdateVerb.gen(ctx, sc,
+						nodeData{DBName: dbName, Schema: schema, TableName: table, Name: st.Name})
+					return err
+				}, func(err error) {
+					if err != nil {
+						statusRow.SetValue("Error: " + err.Error())
+						return
+					}
+					statusRow.SetValue("")
+					d.app.openQueryWithText(sc, dbName, text)
+				})
 			})
 
 			f := propsheet.NewForm(

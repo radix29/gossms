@@ -389,7 +389,7 @@ func (d *BackupDialog) currentOptions() gosmo.BackupOptions {
 		Init:     true,
 	}
 	if dest := strings.TrimSpace(d.fDest.Value()); dest != "" {
-		opts.Devices = []string{dest}
+		opts.Devices = []gosmo.BackupTarget{gosmo.DiskTarget(dest)}
 	}
 	if d.cbCompress.Checked() {
 		opts.Compression = new(true) // Go 1.26: new(expr)
@@ -417,7 +417,7 @@ func (d *BackupDialog) startBackup() {
 	d.task = task
 	d.taskDB = opts.Database
 	d.taskType = backupTypeLabel(opts.Action)
-	d.taskDest = dest
+	d.taskDest = dest.String()
 	d.mode = backupModeProgress
 	d.btnFocus = 0
 	d.SetTitle("Backup Database - Progress")

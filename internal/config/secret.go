@@ -60,15 +60,8 @@ const keyFileName = "gossms.key"
 // Load treats that as "no saved passwords" and still loads everything else.
 func loadOrCreateKey(dir string) ([]byte, error) {
 	path := filepath.Join(dir, keyFileName)
-	switch key, err := os.ReadFile(path); {
-	case err == nil && len(key) == 32:
-		return key, nil
-	case err == nil:
-		return nil, fmt.Errorf("config: key file %s is %d bytes, expected 32 — "+
-			"restore it from a backup or delete it to start over (saved passwords will be lost)",
-			path, len(key))
-	case !errors.Is(err, fs.ErrNotExist):
-		return nil, err
+	if key, err := readKey(path); !errors.Is(err, fs.ErrNotExist) {
+		return key, err
 	}
 
 	key := make([]byte, 32)
@@ -82,10 +75,35 @@ func loadOrCreateKey(dir string) ([]byte, error) {
 	// (see fileutil.WriteAtomic) — but with more at stake here. Save creates the
 	// key before it writes the ciphertext that depends on it, so a crash
 	// that leaves config.json durable and gossms.key absent or short-written
-	// hits loadOrCreateKey's "expected 32" refusal above on the next run,
-	// and every saved password is gone for good rather than merely unread.
-	if err := fileutil.WriteAtomic(path, key, 0o600); err != nil {
+	// hits readKey's "expected 32" refusal on the next run, and every saved
+	// password is gone for good rather than merely unread.
+	//
+	// And create-if-absent, not replace: two gossms instances starting on a
+	// fresh profile each get here. With a replacing write the later one's key
+	// wins on disk while the earlier one goes on sealing passwords with its
+	// own, and everything it saves is undecryptable from then on. The loser
+	// adopts the winner's key instead.
+	created, err := fileutil.CreateAtomic(path, key, 0o600)
+	if err != nil {
 		return nil, err
+	}
+	if !created {
+		return readKey(path)
+	}
+	return key, nil
+}
+
+// readKey reads an existing key file; see loadOrCreateKey for why a
+// wrong-sized one is an error.
+func readKey(path string) ([]byte, error) {
+	key, err := os.ReadFile(path)
+	switch {
+	case err != nil:
+		return nil, err
+	case len(key) != 32:
+		return nil, fmt.Errorf("config: key file %s is %d bytes, expected 32 — "+
+			"restore it from a backup or delete it to start over (saved passwords will be lost)",
+			path, len(key))
 	}
 	return key, nil
 }

@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -305,6 +306,9 @@ func (c *Connection) DisplayName() string {
 
 // Config is the root configuration structure.
 type Config struct {
+	// Connections is read freely but changed only through AddOrUpdate and
+	// RemoveConnection: Save writes the operations those record, not this
+	// slice (see ops).
 	Connections   []Connection `json:"connections"`
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
@@ -321,6 +325,27 @@ type Config struct {
 	// so writing back would destroy a likely-intact file. Unexported, so it
 	// neither serialises nor survives a copy.
 	unreadable error
+
+	// ops is this process's own AddOrUpdate/RemoveConnection calls since the
+	// last successful Save, which Save replays onto the file as it is now
+	// rather than writing Connections whole. Two gossms instances each hold
+	// the list they loaded at start, so a whole-list write deletes whatever
+	// the other one saved meanwhile. Connections must therefore only ever be
+	// changed through those two methods.
+	ops []connOp
+
+	// base is the settings as this process last loaded or saved them, nil for
+	// a Config not from Load. Save writes a setting from c only when it
+	// differs from base — i.e. this process changed it — and otherwise keeps
+	// the file's value, which another instance may have changed.
+	base *Config
+}
+
+// connOp is one recorded change to Connections: an AddOrUpdate of add, or a
+// RemoveConnection of remove.
+type connOp struct {
+	add    *Connection
+	remove string
 }
 
 // DefaultMaxCellLength is how many characters a result-grid cell shows before
@@ -355,6 +380,17 @@ func LogFilePath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "gossms.log"), nil
+}
+
+// RecoveredDir returns the directory App.EmergencySave writes unsaved query
+// text to after a panic on the UI goroutine, beside the config file. Creates it
+// if missing, owner-only: query text can hold anything the user typed.
+func RecoveredDir() (string, error) {
+	dir := filepath.Join(filepath.Dir(configPath()), "recovered")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // MaxLogSize is how large gossms.log may grow before OpenLogFile starts a fresh
@@ -397,16 +433,44 @@ func Load() *Config {
 	path := configPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
-		cfg.MaxCellLength = DefaultMaxCellLength
-		cfg.IndentWidth = DefaultIndentWidth
+		cfg := defaultConfig()
 		if !errors.Is(err, fs.ErrNotExist) {
 			log.Printf("config: %s exists but could not be read (%v); "+
 				"starting with no saved settings and refusing to overwrite it", path, err)
 			cfg.unreadable = err
 		}
+		cfg.base = cfg.settingsSnapshot()
 		return cfg
 	}
+	cfg := parseConfig(path, data)
+	cfg.base = cfg.settingsSnapshot()
+
+	key, err := loadOrCreateKey(filepath.Dir(path))
+	if err != nil {
+		// No key: stash every ciphertext in sealed so Save writes it back
+		// instead of encrypting "".
+		log.Printf("config: saved passwords unavailable: %v", err)
+		for i := range cfg.Connections {
+			cfg.Connections[i].sealed = cfg.Connections[i].Password
+			cfg.Connections[i].Password = ""
+		}
+		return cfg
+	}
+	cfg.openPasswords(key, path)
+	return cfg
+}
+
+// defaultConfig is the Config for a missing file.
+func defaultConfig() *Config {
+	cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
+	cfg.MaxCellLength = DefaultMaxCellLength
+	cfg.IndentWidth = DefaultIndentWidth
+	return cfg
+}
+
+// parseConfig decodes config.json's bytes, with every setting clamped, and
+// passwords still sealed.
+func parseConfig(path string, data []byte) *Config {
 	cfg := new(Config)
 	if err := json.Unmarshal(data, cfg); err != nil {
 		// Unparseable (hand-edit or interrupted write). Keep the bytes as
@@ -422,38 +486,69 @@ func Load() *Config {
 	if cfg.IndentWidth < 1 || cfg.IndentWidth > MaxIndentWidth {
 		cfg.IndentWidth = DefaultIndentWidth
 	}
+	return cfg
+}
 
-	key, err := loadOrCreateKey(filepath.Dir(path))
-	if err != nil {
-		// No key: stash every ciphertext in sealed so Save writes it back
-		// instead of encrypting "".
-		log.Printf("config: saved passwords unavailable: %v", err)
-		for i := range cfg.Connections {
-			cfg.Connections[i].sealed = cfg.Connections[i].Password
-			cfg.Connections[i].Password = ""
-		}
-		return cfg
-	}
+// openPasswords decrypts every connection's password in place. One that won't
+// open keeps its ciphertext in sealed, so Save writes it back unchanged.
+func (c *Config) openPasswords(key []byte, path string) {
 	failed := 0
-	for i := range cfg.Connections {
-		plain, ok := decryptPassword(key, cfg.Connections[i])
+	for i := range c.Connections {
+		plain, ok := decryptPassword(key, c.Connections[i])
 		if !ok {
-			cfg.Connections[i].sealed = cfg.Connections[i].Password
+			c.Connections[i].sealed = c.Connections[i].Password
 			failed++
 		}
-		cfg.Connections[i].Password = plain
+		c.Connections[i].Password = plain
 	}
 	if failed > 0 {
 		log.Printf("config: %d saved password(s) could not be decrypted and are "+
 			"preserved as-is in %s; re-enter the password to replace one", failed, path)
 	}
-	return cfg
+}
+
+// settingsSnapshot copies c without its connections or bookkeeping, for base.
+// A whole-struct copy, so a setting added to Config later is covered without
+// being listed anywhere.
+func (c *Config) settingsSnapshot() *Config {
+	snap := *c
+	snap.Connections, snap.ops, snap.base, snap.unreadable = nil, nil, nil, nil
+	return &snap
+}
+
+// mergeSettings copies into dst every setting c changed since base: every
+// exported field but Connections, by reflection for the same reason
+// settingsSnapshot copies whole.
+func (c *Config) mergeSettings(dst *Config) {
+	base := c.base
+	if base == nil {
+		base = new(Config)
+	}
+	cv, bv, dv := reflect.ValueOf(c).Elem(), reflect.ValueOf(base).Elem(), reflect.ValueOf(dst).Elem()
+	t := cv.Type()
+	for i := range t.NumField() {
+		if f := t.Field(i); !f.IsExported() || f.Name == "Connections" {
+			continue
+		}
+		if !reflect.DeepEqual(cv.Field(i).Interface(), bv.Field(i).Interface()) {
+			dv.Field(i).Set(cv.Field(i))
+		}
+	}
 }
 
 // Save writes the config. Passwords are AES-256-GCM encrypted and
 // base64-encoded (see secret.go) on disk only; c keeps plaintext.
 //
-// An entry whose password Load couldn't open keeps its original ciphertext
+// It re-reads the file first and applies this process's own changes to it —
+// the connections added or removed since the last Save, the settings changed
+// since Load — rather than writing c whole: another gossms instance may have
+// saved since this one loaded, and a whole write would silently undo that.
+// Afterwards c.Connections is the merged list, so connections the other
+// instance saved appear here too. Settings in c are not replaced by the
+// file's: a changed setting takes effect when the Options dialog applies it,
+// and adopting one here would show a value that isn't in force.
+//
+// An entry whose password couldn't be opened keeps its original ciphertext
 // (Connection.sealed), so an unrelated save doesn't destroy passwords a
 // restored key file could still open.
 func (c *Config) Save() error {
@@ -475,13 +570,32 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	// Copy c wholesale, then replace Connections, so fields added to Config
-	// later are never dropped.
-	onDisk := *c
-	onDisk.Connections = make([]Connection, len(c.Connections))
-	for i, conn := range c.Connections {
+
+	var merged *Config
+	switch data, err := os.ReadFile(path); {
+	case errors.Is(err, fs.ErrNotExist):
+		merged = defaultConfig()
+	case err != nil:
+		// As at Load: what's there is unknown, so writing would destroy it.
+		return fmt.Errorf("config: not saving over %s — it could not be re-read: %w", path, err)
+	default:
+		merged = parseConfig(path, data)
+		merged.openPasswords(key, path)
+	}
+	c.mergeSettings(merged)
+	for _, op := range c.ops {
+		if op.add != nil {
+			merged.Connections = addOrUpdate(merged.Connections, *op.add)
+		} else {
+			merged.Connections, _ = removeConnection(merged.Connections, op.remove)
+		}
+	}
+
+	onDisk := *merged
+	onDisk.Connections = make([]Connection, len(merged.Connections))
+	for i, conn := range merged.Connections {
 		if conn.Password == "" && conn.sealed != "" {
-			// Load couldn't open this one; write the original bytes back.
+			// Couldn't open this one; write the original bytes back.
 			conn.Password = conn.sealed
 			onDisk.Connections[i] = conn
 			continue
@@ -498,7 +612,13 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return fileutil.WriteAtomic(path, data, 0o600)
+	if err := fileutil.WriteAtomic(path, data, 0o600); err != nil {
+		return err
+	}
+	c.Connections = merged.Connections
+	c.ops = nil
+	c.base = c.settingsSnapshot()
+	return nil
 }
 
 // MaxSavedConnections caps saved recent connections. Connect saves each
@@ -518,16 +638,18 @@ func (c *Config) AddOrUpdate(conn Connection) {
 	if !conn.RememberPassword {
 		conn.Password = ""
 	}
-	for i, existing := range c.Connections {
-		if existing.Name == conn.Name {
-			c.Connections = slices.Delete(c.Connections, i, i+1)
-			break
-		}
+	c.Connections = addOrUpdate(c.Connections, conn)
+	c.ops = append(c.ops, connOp{add: &conn})
+}
+
+// addOrUpdate is AddOrUpdate on a list, for Save to replay onto the file's.
+func addOrUpdate(list []Connection, conn Connection) []Connection {
+	list, _ = removeConnection(list, conn.Name)
+	list = append(list, conn)
+	if len(list) > MaxSavedConnections {
+		list = list[len(list)-MaxSavedConnections:]
 	}
-	c.Connections = append(c.Connections, conn)
-	if len(c.Connections) > MaxSavedConnections {
-		c.Connections = c.Connections[len(c.Connections)-MaxSavedConnections:]
-	}
+	return list
 }
 
 // RemoveConnection deletes the saved connection whose name matches, and reports
@@ -539,13 +661,22 @@ func (c *Config) AddOrUpdate(conn Connection) {
 // one, so the generated name is matched too rather than leaving such an entry
 // undeletable.
 func (c *Config) RemoveConnection(name string) bool {
-	for i, existing := range c.Connections {
+	var found bool
+	c.Connections, found = removeConnection(c.Connections, name)
+	if found {
+		c.ops = append(c.ops, connOp{remove: name})
+	}
+	return found
+}
+
+// removeConnection is RemoveConnection on a list.
+func removeConnection(list []Connection, name string) ([]Connection, bool) {
+	for i, existing := range list {
 		if existing.Name == name || existing.GeneratedName() == name {
-			c.Connections = slices.Delete(c.Connections, i, i+1)
-			return true
+			return slices.Delete(list, i, i+1), true
 		}
 	}
-	return false
+	return list, false
 }
 
 // MatchByServer returns saved connections whose Server has the given

@@ -30,6 +30,12 @@ import (
 //
 // Returns sc itself when server is sc's own instance, so callers can always
 // route through Peer.
+//
+// One dial per instance at a time: a first expansion that asks for the same
+// primary from three folders dials it once, and the other callers wait for
+// that dial, each bounded by its own ctx. Cancelling ctx abandons the caller's
+// wait or, for the dialling caller, the dial itself — a superseded load no
+// longer waits out two 30s connects.
 func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, error) {
 	if sc.isSelf(server) {
 		return sc, nil
@@ -40,21 +46,89 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 	// same key.
 	key := InstanceKey(server)
 
-	sc.peerMu.Lock()
-	if p, ok := sc.peers[key]; ok && p.IsOpen() {
+	for {
+		sc.peerMu.Lock()
+		if p, ok := sc.peers[key]; ok && p.IsOpen() {
+			sc.peerMu.Unlock()
+			return p, nil
+		}
+		if f, ok := sc.peerFails[key]; ok && time.Since(f.at) < peerFailureTTL {
+			sc.peerMu.Unlock()
+			return nil, f.err
+		}
+		d, inFlight := sc.peerDials[key]
+		if !inFlight {
+			d = &peerDial{done: make(chan struct{})}
+			if sc.peerDials == nil {
+				sc.peerDials = map[string]*peerDial{}
+			}
+			sc.peerDials[key] = d
+			sc.peerMu.Unlock()
+			return sc.dialPeer(ctx, server, key, d)
+		}
+		d.waiters++
 		sc.peerMu.Unlock()
-		return p, nil
-	}
-	if f, ok := sc.peerFails[key]; ok && time.Since(f.at) < peerFailureTTL {
-		sc.peerMu.Unlock()
-		return nil, f.err
-	}
-	sc.peerMu.Unlock()
 
-	// Connect outside the lock; holding it across network I/O serialises every
-	// replica behind the slowest.
+		select {
+		case <-d.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if d.peer != nil {
+			return d.peer, nil
+		}
+		// The dialling caller gave up, which says nothing about the instance;
+		// a waiter still wanting an answer dials again as first in line.
+		if d.abandoned && ctx.Err() == nil {
+			continue
+		}
+		return nil, d.err
+	}
+}
+
+// dialPeer runs d's dial, caches the outcome, and releases d's waiters —
+// deferred, so a panic still releases them.
+//
+// Connects outside peerMu; holding it across network I/O serialises every
+// replica behind the slowest.
+func (sc *ServerConn) dialPeer(ctx context.Context, server, key string, d *peerDial) (peer *ServerConn, err error) {
+	// The dial ends with ctx or with sc: a peer of a closed connection would
+	// only be closed again.
+	dctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(sc.Context(), cancel)
+	defer stop()
+
+	defer func() {
+		sc.peerMu.Lock()
+		if sc.peerDials[key] == d {
+			delete(sc.peerDials, key)
+		}
+		switch {
+		case err == nil && sc.Context().Err() != nil:
+			// sc closed while connecting; closePeers has already run.
+			peer.Close()
+			peer, err = nil, sc.Context().Err()
+		case err == nil:
+			if sc.peers == nil {
+				sc.peers = map[string]*ServerConn{}
+			}
+			delete(sc.peerFails, key)
+			sc.peers[key] = peer
+		case ctx.Err() != nil || sc.Context().Err() != nil:
+			// A cancelled dial learnt nothing about the instance; caching
+			// it would refuse the next caller for peerFailureTTL.
+			d.abandoned = true
+		default:
+			sc.recordPeerFailureLocked(key, err)
+		}
+		d.peer, d.err = peer, err
+		sc.peerMu.Unlock()
+		close(d.done)
+	}()
+
 	opts := sc.peerOptions(server)
-	peer, err := ConnectContext(sc.Context(), opts, sc.role)
+	peer, err = connectPeer(dctx, opts, sc.role)
 	if err != nil {
 		// A resolver hit that can't connect (undecryptable password, dropped
 		// login) must not make the instance less reachable than the parent's
@@ -64,38 +138,24 @@ func (sc *ServerConn) Peer(ctx context.Context, server string) (*ServerConn, err
 		// When both fail, report the first error: it names the credentials the
 		// user registered.
 		fallback := sc.parentPeerOptions(server)
-		if fallback == opts {
-			return nil, sc.recordPeerFailure(key, err)
+		if fallback == opts || dctx.Err() != nil {
+			return nil, err
 		}
 		var ferr error
-		if peer, ferr = ConnectContext(sc.Context(), fallback, sc.role); ferr != nil {
-			return nil, sc.recordPeerFailure(key, err)
+		if peer, ferr = connectPeer(dctx, fallback, sc.role); ferr != nil {
+			return nil, err
 		}
 	}
 	// A peer's peers resolve through the same table: Object Explorer follows a
 	// group to its primary and reads on, and stopping at the first hop would
 	// reach a third instance with the primary's login.
 	peer.SetPeerCredentials(sc.peerCredentials())
-
-	sc.peerMu.Lock()
-	defer sc.peerMu.Unlock()
-	// sc closed, or another goroutine won the race, while connecting. Checked
-	// via Context, not the closed flag (written on the UI goroutine).
-	if err := sc.Context().Err(); err != nil {
-		peer.Close()
-		return nil, err
-	}
-	if existing, ok := sc.peers[key]; ok && existing.IsOpen() {
-		peer.Close()
-		return existing, nil
-	}
-	if sc.peers == nil {
-		sc.peers = map[string]*ServerConn{}
-	}
-	delete(sc.peerFails, key)
-	sc.peers[key] = peer
 	return peer, nil
 }
+
+// connectPeer is Peer's dial; a variable so tests can count and hold dials
+// without a server.
+var connectPeer = ConnectContext
 
 // peerFailureTTL is how long a failed connect answers for its instance. Short:
 // it only collapses bursts (three folders of one group asking for the same
@@ -151,6 +211,11 @@ func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) 
 func (sc *ServerConn) recordPeerFailure(key string, err error) error {
 	sc.peerMu.Lock()
 	defer sc.peerMu.Unlock()
+	return sc.recordPeerFailureLocked(key, err)
+}
+
+// recordPeerFailureLocked is recordPeerFailure with peerMu held.
+func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 	if sc.peerFails == nil {
 		sc.peerFails = map[string]peerFailure{}
 	}
@@ -283,6 +348,9 @@ func (sc *ServerConn) closePeers() {
 type peerFields struct {
 	peerMu sync.Mutex
 	peers  map[string]*ServerConn
+	// peerDials is the in-flight dial per instance; later callers wait for
+	// it. Guarded by peerMu.
+	peerDials map[string]*peerDial
 	// peerFails holds each instance's last connect failure so it isn't
 	// re-dialled for peerFailureTTL. Guarded by peerMu.
 	peerFails map[string]peerFailure
@@ -295,4 +363,18 @@ type peerFields struct {
 type peerFailure struct {
 	err error
 	at  time.Time
+}
+
+// peerDial is one in-flight Peer dial. Fields other than done are written
+// before done closes and read after.
+type peerDial struct {
+	done chan struct{}
+	peer *ServerConn // nil if the dial failed
+	err  error
+	// abandoned means the dialling caller's context ended, which says
+	// nothing about the instance; a waiter still wanting an answer dials
+	// again.
+	abandoned bool
+	// waiters counts joined callers; tests read it.
+	waiters int
 }

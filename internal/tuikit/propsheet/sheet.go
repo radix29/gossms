@@ -440,6 +440,21 @@ func (p *PropertySheet) Validate() (page int, err error) {
 	return -1, nil
 }
 
+// ApplyConfirmations collects every dirty page's Form.ApplyConfirm warning, in
+// page order — what the host must have accepted before an Apply or OK writes.
+func (p *PropertySheet) ApplyConfirmations() []string {
+	var out []string
+	for _, slot := range p.pages {
+		if slot.form == nil {
+			continue
+		}
+		if w := slot.form.ApplyConfirm(); w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // SetMessage sets the one-line message shown in place of the hint row; "" clears
 // it back to the hints.
 func (p *PropertySheet) SetMessage(msg string, isErr bool) {

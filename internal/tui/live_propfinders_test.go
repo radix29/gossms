@@ -133,10 +133,11 @@ func TestLivePropFinders(t *testing.T) {
 	})
 
 	t.Run("findIndex", func(t *testing.T) {
-		tbl, idx, err := findIndex(ctx, sc, dbName, "app", "child", "ix_child_note")
+		idx, err := findIndex(ctx, sc, dbName, "app", "child", "ix_child_note")
 		if err != nil {
 			t.Fatalf("findIndex: %v", err)
 		}
+		tbl := idx.Table()
 		if tbl.Name != "child" || tbl.Schema != "app" {
 			t.Errorf("owning table = %s.%s, want app.child", tbl.Schema, tbl.Name)
 		}
@@ -148,7 +149,7 @@ func TestLivePropFinders(t *testing.T) {
 		if len(idx.IncludedColumns) != 1 || idx.IncludedColumns[0].Name != "note" {
 			t.Errorf("included columns = %+v, want [note]", idx.IncludedColumns)
 		}
-		if _, _, err := findIndex(ctx, sc, dbName, "app", "child", "nope"); !errors.Is(err, gosmo.ErrNotFound) {
+		if _, err := findIndex(ctx, sc, dbName, "app", "child", "nope"); !errors.Is(err, gosmo.ErrNotFound) {
 			t.Errorf("missing index: err = %v, want ErrNotFound", err)
 		}
 	})

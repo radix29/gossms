@@ -506,9 +506,9 @@ func buildNewLoginSecurablesPage(sc *db.ServerConn, loginName func() string) (*p
 			var err error
 			switch e.current {
 			case "GRANT":
-				err = sc.Server.GrantServerPermission(ctx, e.permission, name)
+				err = sc.Server.GrantServerPermission(ctx, gosmo.ServerPermission(e.permission), name, gosmo.PermissionOptions{})
 			case "DENY":
-				err = sc.Server.DenyServerPermission(ctx, e.permission, name)
+				err = sc.Server.DenyServerPermission(ctx, gosmo.ServerPermission(e.permission), name, gosmo.PermissionOptions{})
 			}
 			if err != nil {
 				return err
@@ -543,11 +543,11 @@ func buildNewLoginStatusPage(sc *db.ServerConn, loginName func() string) (*props
 		if connectRow.Dirty() {
 			switch connectRow.Selected() {
 			case 0:
-				if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", name); err != nil {
+				if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", name, gosmo.PermissionOptions{}); err != nil {
 					return err
 				}
 			case 1:
-				if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", name); err != nil {
+				if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", name, gosmo.PermissionOptions{}); err != nil {
 					return err
 				}
 			}

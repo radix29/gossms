@@ -209,7 +209,7 @@ func pageLoginGeneral(sc *db.ServerConn, loginName *string) propPage {
 					return err
 				}
 				if isSQLLogin && passwordRow.Value() != "" {
-					if err := l.ChangePasswordWithOptions(ctx, passwordRow.Value(), mustChangeRow.Checked(), unlockRow.Checked()); err != nil {
+					if err := l.ChangePassword(ctx, passwordRow.Value(), gosmo.ChangePasswordOptions{MustChange: mustChangeRow.Checked(), Unlock: unlockRow.Checked()}); err != nil {
 						return err
 					}
 				}
@@ -677,15 +677,15 @@ func pageLoginStatus(sc *db.ServerConn, loginName *string) propPage {
 				if connectRow.Dirty() {
 					switch connectRow.Selected() {
 					case 0:
-						if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.GrantServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
 							return err
 						}
 					case 1:
-						if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.DenyServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
 							return err
 						}
 					case 2:
-						if err := sc.Server.RevokeServerPermission(ctx, "CONNECT SQL", *loginName); err != nil {
+						if err := sc.Server.RevokeServerPermission(ctx, "CONNECT SQL", *loginName, gosmo.PermissionOptions{}); err != nil {
 							return err
 						}
 					}

@@ -165,6 +165,45 @@ func TestSheetDirtyPages(t *testing.T) {
 	}
 }
 
+// An apply warning is asked only of a dirty page, and only answered when the
+// page's own function says the edit it cares about is pending — a clean form
+// must not raise a question for an Apply that writes nothing on it.
+func TestSheetApplyConfirmationsOnlyFromDirtyPages(t *testing.T) {
+	p := newTestSheet("General", "Options")
+	seqs := map[int]int{}
+	p.OnLoadPage = func(page, seq int) { seqs[page] = seq }
+	p.Show()
+	p.SelectPage(1)
+	general := NewForm(Text("Name", "orig", 10))
+	general.SetApplyConfirm(func() string { return "general warns" })
+	risky := Text("Risky", "orig", 10)
+	options := NewForm(Text("Plain", "orig", 10), risky)
+	options.SetApplyConfirm(func() string {
+		if risky.Dirty() {
+			return "risky warns"
+		}
+		return ""
+	})
+	p.SetPageForm(0, seqs[0], general)
+	p.SetPageForm(1, seqs[1], options)
+
+	if got := p.ApplyConfirmations(); len(got) != 0 {
+		t.Fatalf("ApplyConfirmations() with nothing edited = %q, want none", got)
+	}
+	options.rows[0].(*TextRow).field.SetValue("changed")
+	if got := p.ApplyConfirmations(); len(got) != 0 {
+		t.Fatalf("ApplyConfirmations() with only a plain row edited = %q, want none", got)
+	}
+	risky.field.SetValue("changed")
+	if got := p.ApplyConfirmations(); len(got) != 1 || got[0] != "risky warns" {
+		t.Fatalf("ApplyConfirmations() = %q, want [risky warns]", got)
+	}
+	general.rows[0].(*TextRow).field.SetValue("changed")
+	if got := p.ApplyConfirmations(); len(got) != 2 || got[0] != "general warns" {
+		t.Fatalf("ApplyConfirmations() = %q, want both, in page order", got)
+	}
+}
+
 func TestSheetZoneTabCycling(t *testing.T) {
 	p := newTestSheet("General")
 	p.OnLoadPage = func(page, seq int) {}

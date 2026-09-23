@@ -141,13 +141,14 @@ func applyPermEdit(ctx context.Context, apply permApplyFn, e *permEdit, principa
 // databasePermApply adapts a database-scoped permission edit to gosmo.
 func databasePermApply(d *gosmo.Database) permApplyFn {
 	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
+		p := gosmo.DatabasePermission(permission)
 		switch verb {
 		case "GRANT":
-			return d.GrantDatabasePermissionWithOptions(ctx, permission, principal, opts)
+			return d.GrantDatabasePermission(ctx, p, principal, opts)
 		case "DENY":
-			return d.DenyDatabasePermissionWithOptions(ctx, permission, principal, opts)
+			return d.DenyDatabasePermission(ctx, p, principal, opts)
 		default:
-			return d.RevokeDatabasePermissionWithOptions(ctx, permission, principal, opts)
+			return d.RevokeDatabasePermission(ctx, p, principal, opts)
 		}
 	}
 }
@@ -158,11 +159,11 @@ func objectPermApply(d *gosmo.Database, schema, name string) permApplyFn {
 		p := gosmo.ObjectPermission(permission)
 		switch verb {
 		case "GRANT":
-			return d.GrantPermissionWithOptions(ctx, schema, name, p, principal, opts)
+			return d.GrantPermission(ctx, schema, name, p, principal, opts)
 		case "DENY":
-			return d.DenyPermissionWithOptions(ctx, schema, name, p, principal, opts)
+			return d.DenyPermission(ctx, schema, name, p, principal, opts)
 		default:
-			return d.RevokePermissionWithOptions(ctx, schema, name, p, principal, opts)
+			return d.RevokePermission(ctx, schema, name, p, principal, opts)
 		}
 	}
 }
@@ -173,11 +174,11 @@ func schemaPermApply(d *gosmo.Database, schemaName string) permApplyFn {
 		p := gosmo.ObjectPermission(permission)
 		switch verb {
 		case "GRANT":
-			return d.GrantSchemaPermissionWithOptions(ctx, schemaName, p, principal, opts)
+			return d.GrantSchemaPermission(ctx, schemaName, p, principal, opts)
 		case "DENY":
-			return d.DenySchemaPermissionWithOptions(ctx, schemaName, p, principal, opts)
+			return d.DenySchemaPermission(ctx, schemaName, p, principal, opts)
 		default:
-			return d.RevokeSchemaPermissionWithOptions(ctx, schemaName, p, principal, opts)
+			return d.RevokeSchemaPermission(ctx, schemaName, p, principal, opts)
 		}
 	}
 }
@@ -185,13 +186,14 @@ func schemaPermApply(d *gosmo.Database, schemaName string) permApplyFn {
 // serverPermApply adapts a server-scoped permission edit to gosmo.
 func serverPermApply(srv *gosmo.Server) permApplyFn {
 	return func(ctx context.Context, verb string, opts gosmo.PermissionOptions, permission, principal string) error {
+		p := gosmo.ServerPermission(permission)
 		switch verb {
 		case "GRANT":
-			return srv.GrantServerPermissionWithOptions(ctx, permission, principal, opts)
+			return srv.GrantServerPermission(ctx, p, principal, opts)
 		case "DENY":
-			return srv.DenyServerPermissionWithOptions(ctx, permission, principal, opts)
+			return srv.DenyServerPermission(ctx, p, principal, opts)
 		default:
-			return srv.RevokeServerPermissionWithOptions(ctx, permission, principal, opts)
+			return srv.RevokeServerPermission(ctx, p, principal, opts)
 		}
 	}
 }

@@ -55,10 +55,10 @@ func TestEveryDatabaseOptionRowWritesTheOptionItIsLabelled(t *testing.T) {
 		"Numeric round-abort":          "NUMERIC_ROUNDABORT ON",
 		"Quoted identifier":            "QUOTED_IDENTIFIER ON",
 		"Recursive triggers":           "RECURSIVE_TRIGGERS ON",
-		"Read committed snapshot":      "READ_COMMITTED_SNAPSHOT ON",
+		"Read committed snapshot":      "READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE", // needsExclusiveAccess
 		"Allow snapshot isolation":     "ALLOW_SNAPSHOT_ISOLATION ON",
 		"Trustworthy":                  "TRUSTWORTHY ON",
-		"Containment type":             "CONTAINMENT PARTIAL",
+		"Containment type":             "CONTAINMENT = PARTIAL",
 		"Default cursor":               "CURSOR_DEFAULT LOCAL",
 		"Page verify":                  "PAGE_VERIFY NONE",
 	}
@@ -236,5 +236,25 @@ func TestDatabaseOptionsPageWritesOnlyWhatChanged(t *testing.T) {
 	}
 	if stmts := inst.Statements(); len(stmts) != 1 {
 		t.Errorf("one edit wrote %d statements: %q", len(stmts), stmts)
+	}
+}
+
+// Read committed snapshot needs the database to itself, and without a
+// termination clause its ALTER waits for as long as any other session stays —
+// a dialog that appears to hang (review plan S11). So the page applies it WITH
+// ROLLBACK IMMEDIATE, and asks first: the page's apply warning is raised by
+// that row and by no other.
+func TestReadCommittedSnapshotAsksBeforeClosingConnections(t *testing.T) {
+	sc, inst := newFakeConn(t, optionsPageResponses()...)
+	form, _ := loadPage(t, pageDatabaseOptions(sc, "appdb"), inst)
+
+	editSelect(t, form, "Auto shrink", "ON")
+	if w := form.ApplyConfirm(); w != "" {
+		t.Fatalf("an ordinary option raised an apply warning: %q", w)
+	}
+	editSelect(t, form, "Read committed snapshot", "ON")
+	w := form.ApplyConfirm()
+	if !strings.Contains(w, "Read committed snapshot") || !strings.Contains(w, "rolled back") {
+		t.Errorf("apply warning = %q, want it to name the option and the rollback", w)
 	}
 }

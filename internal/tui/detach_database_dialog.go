@@ -144,7 +144,7 @@ func (d *DetachDatabaseDialog) buildPages(pf *detachPrefetch) {
 		propsheet.Static("Sessions", detachSessionsText(pf.sessions)),
 		propsheet.Section("Options"),
 		dropConns,
-		propsheet.Note("Rolls back and closes every other session in the database first. Without it, a database anything else is connected to refuses to detach — and that includes the pooled connections goSSMS itself leaves behind after browsing it."),
+		propsheet.Note("Rolls back and closes every other session in the database first. Without it, a database anything else is connected to refuses to detach — goSSMS's own query windows on it included."),
 		updateStats,
 		propsheet.Note("Rescans every statistics object before detaching, so the statistics survive into whatever attaches the files next. On a large database this is the slow part."),
 		dropFullText,

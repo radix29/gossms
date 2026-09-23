@@ -286,7 +286,7 @@ func pagePrincipalServerPermissions(sc *db.ServerConn, principalName string) pro
 			states := make(map[string]string, len(perms))
 			for _, p := range perms {
 				if p.Principal == principalName {
-					states[p.Permission] = p.State
+					states[string(p.Permission)] = p.State
 				}
 			}
 

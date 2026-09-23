@@ -29,7 +29,7 @@ func pageServerPermissions(sc *db.ServerConn) propPage {
 			for i, p := range perms {
 				entries[i] = permEntry{
 					Principal: p.Principal, PrincipalType: p.PrincipalType,
-					Grantor: p.Grantor, Permission: p.Permission, State: p.State,
+					Grantor: p.Grantor, Permission: string(p.Permission), State: p.State,
 				}
 			}
 			principals := make([]permPrincipal, 0, len(logins)+len(roles))

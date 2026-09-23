@@ -140,6 +140,14 @@ Background work follows one shape:
   Not theoretical: go-mssqldb panics outright on a column type ID it doesn't
   know, and every result set calls `DatabaseTypeName()` on every column.
 
+  A panic on the UI goroutine itself — the event loop, a handler, a draw, a
+  `postAndWake` callback — is not recovered in place: `cmd/gossms/main.go`'s
+  `run` catches it after `Fini`, logs it, and calls **`App.EmergencySave`**
+  (`emergency_save.go`), which writes every dirty query panel's text to
+  `<config dir>/recovered/<time>-<title>.sql` and prints the paths. Resuming
+  the loop instead was rejected: state left mid-mutation is worse than a clean
+  exit with the text saved.
+
 - If a newer request supersedes this one, own the lifecycle with **`latest`**
   (`latest.go`) rather than a hand-rolled token or cancel — see
   § Latest-only loads: latest.
@@ -220,6 +228,7 @@ gossms/
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online task consumer
 │       ├── app_panel_actions.go  # opening panels and files: new query panel, open a .sql or .sqlplan, save a plan back out
 │       ├── app_panel_close.go    # closing a panel and quitting: Disposable release, the open-transaction commit prompt, the unsaved-query prompts quit walks, activeQueryPanel/withQueryPanel
+│       ├── emergency_save.go     # App.EmergencySave: after a UI-goroutine panic, writes every dirty query panel to <config dir>/recovered/
 │       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
 │       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs

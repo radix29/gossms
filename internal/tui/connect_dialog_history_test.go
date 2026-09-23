@@ -14,7 +14,12 @@ func twoPaneConnectDialog(t *testing.T, saved ...config.Connection) *ConnectDial
 	t.Helper()
 	a := newTestApp()
 	a.screen = &fakeSizedScreen{w: 120, h: 40}
-	a.cfg.Connections = saved
+	// Through AddOrUpdate, as a real connect saves them: Config.Save replays
+	// only recorded operations onto the file, so a list assigned directly
+	// would vanish at the first save (a Delete, say).
+	for _, c := range saved {
+		a.cfg.AddOrUpdate(c)
+	}
 	d := NewConnectDialog(a)
 	d.Show()
 	d.layoutFields()

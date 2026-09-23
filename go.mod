@@ -8,7 +8,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/gdamore/tcell/v3 v3.5.0
 	github.com/golang-sql/sqlexp v0.1.0
-	github.com/microsoft/go-mssqldb v1.11.0
+	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/radix29/gosmo v0.0.14
 )

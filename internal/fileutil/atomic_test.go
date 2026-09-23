@@ -383,3 +383,21 @@ func assertOnlyFile2(t *testing.T, dir, a, b string) {
 		t.Errorf("%s contains %v, want exactly %q and %q", dir, got, a, b)
 	}
 }
+
+func TestCreateAtomicNeverReplacesAnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key")
+
+	created, err := CreateAtomic(path, []byte("first"), 0o600)
+	if err != nil || !created {
+		t.Fatalf("first create: created %v, err %v", created, err)
+	}
+	created, err = CreateAtomic(path, []byte("second"), 0o600)
+	if err != nil || created {
+		t.Fatalf("second create: created %v, err %v; want false, nil", created, err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "first" {
+		t.Errorf("contents = %q, want the first writer's", got)
+	}
+	assertOnlyFile(t, dir, "key")
+}

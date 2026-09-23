@@ -74,7 +74,7 @@ type rebuildOptions struct {
 }
 
 func newRebuildOptions(idx *gosmo.Index) rebuildOptions {
-	layout, compression := dataCompressionRow(idx.DataCompression)
+	layout, compression := dataCompressionRow(string(idx.DataCompression))
 	return rebuildOptions{
 		fillFactor:  propsheet.Int("Fill factor", int64(idx.FillFactor), 0, 100, "%"),
 		pad:         propsheet.Check("Pad index", idx.IsPadded),
@@ -95,7 +95,7 @@ func (r rebuildOptions) compressionRows() []propsheet.Row {
 
 // apply rebuilds the index if any of the three changed, and issues nothing
 // otherwise.
-func (r rebuildOptions) apply(ctx context.Context, t *gosmo.Table, idx *gosmo.Index) error {
+func (r rebuildOptions) apply(ctx context.Context, idx *gosmo.Index) error {
 	compressionDirty := r.compression != nil && r.compression.Dirty()
 	if !r.fillFactor.Dirty() && !r.pad.Dirty() && !compressionDirty {
 		return nil
@@ -104,11 +104,35 @@ func (r rebuildOptions) apply(ctx context.Context, t *gosmo.Table, idx *gosmo.In
 	if err != nil {
 		return err
 	}
-	compression := ""
+	var compression gosmo.DataCompression
 	if compressionDirty {
-		compression = r.compression.Value()
+		compression = gosmo.DataCompression(r.compression.Value())
 	}
-	return idx.RebuildWithOptions(ctx, t, int(fillFactor), r.pad.Checked(), compression)
+	return idx.Rebuild(ctx, gosmo.IndexRebuildOptions{
+		FillFactor:      int(fillFactor),
+		PadIndex:        new(r.pad.Checked()),
+		DataCompression: compression,
+	})
+}
+
+// applySetOptions issues one ALTER INDEX ... SET when any of the rows
+// changed, restating every row the page shows at its current value. A nil
+// ignoreDup — the constraint-backing index, whose page has no such row —
+// leaves IGNORE_DUP_KEY off the statement, since SQL Server refuses the
+// option there even unchanged.
+func applySetOptions(ctx context.Context, idx *gosmo.Index, ignoreDup, rowLocks, pageLocks *propsheet.CheckRow) error {
+	dirty := rowLocks.Dirty() || pageLocks.Dirty() || (ignoreDup != nil && ignoreDup.Dirty())
+	if !dirty {
+		return nil
+	}
+	opts := gosmo.IndexSetOptions{
+		AllowRowLocks:  new(rowLocks.Checked()),
+		AllowPageLocks: new(pageLocks.Checked()),
+	}
+	if ignoreDup != nil {
+		opts.IgnoreDupKey = new(ignoreDup.Checked())
+	}
+	return idx.SetOptions(ctx, opts)
 }
 
 // indexPropPages builds the page set for Index Properties. There's no
@@ -136,26 +160,22 @@ func indexPropPages(d *PropDialog, sc *db.ServerConn, dbName, schema, table, nam
 	}
 }
 
-// findIndex resolves dbName/schema/table/name to the owning *gosmo.Table
-// and its *gosmo.Index. Both are needed: the pages script and alter through
-// the table, not the index.
-func findIndex(ctx context.Context, sc *db.ServerConn, dbName, schema, table, name string) (*gosmo.Table, *gosmo.Index, error) {
+// findIndex resolves dbName/schema/table/name to the *gosmo.Index, read in
+// full. The index carries its table (Index.Table), which every write and
+// read on it names itself.
+func findIndex(ctx context.Context, sc *db.ServerConn, dbName, schema, table, name string) (*gosmo.Index, error) {
 	t, err := findTable(ctx, sc, dbName, schema, table)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	idx, err := t.IndexByName(ctx, name)
-	if err != nil {
-		return nil, nil, err
-	}
-	return t, idx, nil
+	return t.IndexByName(ctx, name)
 }
 
 func pageIndexGeneral(sc *db.ServerConn, dbName, schema, table, name string) propPage {
 	return propPage{
 		title: "General",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -178,8 +198,8 @@ func pageIndexGeneral(sc *db.ServerConn, dbName, schema, table, name string) pro
 				propsheet.Static("Unique", boolStr(idx.IsUnique)),
 				propsheet.Static("Disabled", boolStr(idx.IsDisabled)),
 				propsheet.Section("Table or view"),
-				propsheet.Static("Schema", t.Schema),
-				propsheet.Static("Object", t.Name),
+				propsheet.Static("Schema", idx.Table().Schema),
+				propsheet.Static("Object", idx.Table().Name),
 				propsheet.Static("Object type", "Table"),
 				propsheet.Section("Key columns"),
 				propsheet.NewGridRow(grid, 8),
@@ -195,7 +215,7 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 	return propPage{
 		title: "Options",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			_, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -203,10 +223,11 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			// A PK/unique-constraint-backing index rejects IGNORE_DUP_KEY
 			// outright, even to re-set its current value ("Cannot use index
 			// option ignore_dup_key to alter index '...' as it enforces a
-			// primary or unique constraint") — the same restriction
-			// Index.SetLockOptions's doc comment covers, and why Key
-			// Properties' pageKeyGeneral uses SetLockOptions, not
-			// SetOptions.
+			// primary or unique constraint") — the restriction
+			// gosmo.IndexSetOptions's doc comment covers. Such an index
+			// gets no row here, and applySetOptions leaves IgnoreDupKey
+			// nil, so the option is never sent; Key Properties' Options
+			// page does the same.
 			constrained := idx.IsPrimaryKey || idx.IsUniqueConstraint
 
 			rebuild := newRebuildOptions(idx)
@@ -226,20 +247,14 @@ func pageIndexOptions(sc *db.ServerConn, dbName, schema, table, name string) pro
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				t, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+				idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 				if err != nil {
 					return err
 				}
-				if ignoreDupRow != nil && (ignoreDupRow.Dirty() || rowLocksRow.Dirty() || pageLocksRow.Dirty()) {
-					if err := idx.SetOptions(ctx, t, ignoreDupRow.Checked(), rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
-						return err
-					}
-				} else if ignoreDupRow == nil && (rowLocksRow.Dirty() || pageLocksRow.Dirty()) {
-					if err := idx.SetLockOptions(ctx, t, rowLocksRow.Checked(), pageLocksRow.Checked()); err != nil {
-						return err
-					}
+				if err := applySetOptions(ctx, idx, ignoreDupRow, rowLocksRow, pageLocksRow); err != nil {
+					return err
 				}
-				return rebuild.apply(ctx, t, idx)
+				return rebuild.apply(ctx, idx)
 			}
 			return f, apply, nil
 		},
@@ -255,11 +270,11 @@ func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *str
 	return propPage{
 		title: "Storage",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {
 				return nil, nil, err
 			}
-			info, err := idx.StorageInfo(ctx, t)
+			info, err := idx.StorageInfo(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -296,15 +311,27 @@ func pageIndexStorage(sc *db.ServerConn, dbName, schema, table string, name *str
 // index via DROP_EXISTING (see Index.SetIncludedColumns): included columns
 // aren't a plain ALTER, so this is the only correct way to change them on
 // an existing index.
+//
+// Only a rowstore nonclustered index backing no constraint has an INCLUDE
+// list that can change; for any other the page says why and offers nothing,
+// where SSMS greys it out. The page is still listed, since the index type is
+// not known until the load reads it, and an Apply that failed at the server
+// was the only way to find out before.
 func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name string) propPage {
 	return propPage{
 		title: "Included Columns",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 			if err != nil {
 				return nil, nil, err
 			}
-			cols, err := t.Columns(ctx)
+			if err := idx.IncludedColumnsSupported(); err != nil {
+				return propsheet.NewForm(
+					propsheet.Section("Non-key columns included in the index"),
+					propsheet.Note("Included columns can't be changed on this index: "+err.Error()+"."),
+				), nil, nil
+			}
+			cols, err := idx.Table().Columns(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -344,7 +371,7 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 				if !grid.Dirty() {
 					return nil
 				}
-				t, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+				idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 				if err != nil {
 					return err
 				}
@@ -355,7 +382,7 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 						newIncluded = append(newIncluded, c.Name)
 					}
 				}
-				return idx.SetIncludedColumns(ctx, t, newIncluded)
+				return idx.SetIncludedColumns(ctx, newIncluded)
 			}
 			return f, apply, nil
 		},
@@ -370,11 +397,11 @@ func pageIndexFilter(d *PropDialog, sc *db.ServerConn, dbName, schema, table, na
 	return propPage{
 		title: "Filter",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, name)
 			if err != nil {
 				return nil, nil, err
 			}
-			f := buildFilterInfoForm(d, t, idx.FilterDefinition != "", idx.FilterDefinition)
+			f := buildFilterInfoForm(d, idx.Table(), idx.FilterDefinition != "", idx.FilterDefinition)
 			return f, nil, nil
 		},
 	}
@@ -390,11 +417,11 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 	return propPage{
 		title: "Fragmentation",
 		load: func(ctx context.Context) (*propsheet.Form, propApply, error) {
-			t, idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
+			idx, err := findIndex(ctx, sc, dbName, schema, table, *name)
 			if err != nil {
 				return nil, nil, err
 			}
-			frag, err := idx.Fragmentation(ctx, t, "SAMPLED")
+			frag, err := idx.Fragmentation(ctx, gosmo.FragmentationSampled)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -409,19 +436,19 @@ func pageIndexFragmentation(d *PropDialog, sc *db.ServerConn, dbName, schema, ta
 
 			statusRow := propsheet.Static("Last action", "")
 			rebuildBtn := d.asyncStatusButton("Rebuild", statusRow, "Rebuilding...", func(ctx context.Context) (string, error) {
-				if err := idx.Rebuild(ctx, t, 0); err != nil {
+				if err := idx.Rebuild(ctx, gosmo.IndexRebuildOptions{}); err != nil {
 					return "", err
 				}
 				return "Rebuild complete", nil
 			})
 			reorgBtn := d.asyncStatusButton("Reorganize", statusRow, "Reorganizing...", func(ctx context.Context) (string, error) {
-				if err := idx.Reorganize(ctx, t); err != nil {
+				if err := idx.Reorganize(ctx); err != nil {
 					return "", err
 				}
 				return "Reorganize complete", nil
 			})
 			updateStatsBtn := d.asyncStatusButton("Update Statistics", statusRow, "Updating statistics...", func(ctx context.Context) (string, error) {
-				if err := idx.UpdateStatistics(ctx, t); err != nil {
+				if err := idx.UpdateStatistics(ctx, 0); err != nil {
 					return "", err
 				}
 				return "Statistics updated", nil

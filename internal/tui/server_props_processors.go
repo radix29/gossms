@@ -147,7 +147,7 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 			f := propsheet.NewForm(rows...)
 
 			apply := func(ctx context.Context) error {
-				changed, err := applyConfigRows(ctx, sc, intRows, boolRows)
+				changes, err := configChanges(intRows, boolRows)
 				if err != nil {
 					return err
 				}
@@ -162,34 +162,17 @@ func pageServerProcessors(sc *db.ServerConn) propPage {
 						wantAffMask = 0
 					}
 					if wantAffMask != affMask {
-						opt, err := sc.Server.ConfigurationByName(ctx, "affinity mask")
-						if err != nil {
-							return err
-						}
-						if err := opt.SetValue(ctx, wantAffMask); err != nil {
-							return err
-						}
-						changed = true
+						changes = append(changes, gosmo.ConfigChange{Name: "affinity mask", Value: wantAffMask})
 					}
 					wantIOMask := bitsToAffinity(newIOAff)
 					if autoIOAffinity.Checked() {
 						wantIOMask = 0
 					}
 					if wantIOMask != ioMask {
-						opt, err := sc.Server.ConfigurationByName(ctx, "affinity I/O mask")
-						if err != nil {
-							return err
-						}
-						if err := opt.SetValue(ctx, wantIOMask); err != nil {
-							return err
-						}
-						changed = true
+						changes = append(changes, gosmo.ConfigChange{Name: "affinity I/O mask", Value: wantIOMask})
 					}
 				}
-				if changed {
-					return sc.Server.Reconfigure(ctx, false)
-				}
-				return nil
+				return sc.Server.ApplyConfiguration(ctx, changes, gosmo.ConfigApplyOptions{})
 			}
 			return f, apply, nil
 		},

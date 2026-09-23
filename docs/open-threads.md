@@ -121,7 +121,11 @@ None outstanding.
 
 ### Verification gaps
 
-None outstanding.
+- **V1 — `ServerConn.Peer`'s single-flight dial has not run against the AG
+  pair.** Rewritten 2026-09-23 (review plan S22) and covered by unit tests over
+  a held fake dial; ubusql1/ubusql2 were unreachable, so `TestLivePeer*`
+  (`internal/db/live_peer_test.go`) and an Object Explorer expansion of AAG1's
+  folders still need a run. See § Environment for the cluster.
 
 ### Nice to have
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/radix29/gosmo"
@@ -556,7 +557,32 @@ func (d *PropDialog) applyPanicked() {
 // runApply validates and applies every dirty page for real. hideOnSuccess
 // distinguishes Apply (stay open) from OK (close on success); on error neither
 // closes, so the edits and the message stay visible.
+//
+// A page whose edits carry a consequence beyond their value registers a
+// warning (propsheet.Form.SetApplyConfirm), and nothing is written until the
+// user accepts it; a No leaves every edit in place. Script Changes does not
+// ask: it writes nothing, and the script shows the consequence as text.
 func (d *PropDialog) runApply(hideOnSuccess bool) {
+	warnings := d.ApplyConfirmations()
+	if len(warnings) == 0 {
+		d.applyNow(hideOnSuccess)
+		return
+	}
+	// Validation first, so a Yes is never followed by a refusal the user
+	// could have been told about before being asked.
+	if !d.validateDirty() {
+		return
+	}
+	d.app.confirmDialog.ShowConfirm("Apply Changes", strings.Join(warnings, " ")+" Continue?",
+		func(confirmed bool) {
+			if confirmed {
+				d.applyNow(hideOnSuccess)
+			}
+		})
+}
+
+// applyNow is runApply once every warning has been accepted.
+func (d *PropDialog) applyNow(hideOnSuccess bool) {
 	hide := func() {
 		if hideOnSuccess {
 			d.Dismiss()

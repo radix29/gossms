@@ -42,18 +42,19 @@ func idxTableResp() fakeResponse {
 // idxListResp answers Table.indexList with one index. The scan order is
 // sys.indexes' own; see gosmo's table.go.
 func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
-	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 18, rows: [][]driver.Value{{
+	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 20, rows: [][]driver.Value{{
 		name, indexID, opts.typeDesc,
 		opts.unique, opts.primaryKey, opts.uniqueConstraint, false,
 		opts.fillFactor, opts.filter,
 		opts.padded, opts.ignoreDupKey, opts.rowLocks, opts.pageLocks,
 		opts.compression,
 		"PRIMARY", int64(0), true, "",
+		opts.noRecompute, false,
 	}}}
 }
 
 // indexFixture is the index state a test starts from, so each one says which
-// property it is about rather than restating eighteen columns.
+// property it is about rather than restating twenty columns.
 type indexFixture struct {
 	typeDesc         string
 	unique           bool
@@ -66,6 +67,7 @@ type indexFixture struct {
 	rowLocks         bool
 	pageLocks        bool
 	compression      string
+	noRecompute      bool
 }
 
 func plainIndex() indexFixture {
@@ -165,7 +167,7 @@ func TestIndexOptionsCompressionRebuildsWithTheValueChosen(t *testing.T) {
 // rejects IGNORE_DUP_KEY on an index backing a PRIMARY KEY or UNIQUE
 // constraint even when the value is unchanged, so the whole apply fails and
 // the user's lock-option edit is lost with it. The page's answer is to drop
-// the row and take the SetLockOptions path; this is what proves it took it.
+// the row and send IGNORE_DUP_KEY not at all; this is what proves it did.
 func TestIndexOptionsOnAConstraintBackedIndexNeverSendsIgnoreDupKey(t *testing.T) {
 	idx := plainIndex()
 	idx.typeDesc = "CLUSTERED"
@@ -275,9 +277,11 @@ func TestIncludedColumnsAddsTheColumnTheRowIsNamedFor(t *testing.T) {
 	assertOneStatementIn(t, inst, idxDatabase, "INCLUDE ([OrderTotal], [ShipCity])")
 	stmt := inst.StatementsIn(idxDatabase)[0]
 	for _, want := range []string{
-		"CREATE NONCLUSTERED INDEX [IX_Orders_CustomerID] ON [sales].[Orders]",
+		"CREATE NONCLUSTERED INDEX [IX_Orders_CustomerID]\n    ON [sales].[Orders]",
 		"([CustomerID] ASC)",
-		"WITH (DROP_EXISTING = ON)",
+		// DROP_EXISTING builds the index from the statement alone, so the
+		// fixture's fill factor must be restated or the rebuild resets it.
+		"WITH (FILLFACTOR = 80, DROP_EXISTING = ON) ON [PRIMARY]",
 	} {
 		if !strings.Contains(stmt, want) {
 			t.Errorf("wrote:\n%s\nwant it to contain: %s", stmt, want)
@@ -315,4 +319,41 @@ func TestIncludedColumnsWritesNothingWhenUntouched(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	assertNoStatementsIn(t, inst, idxDatabase)
+}
+
+// TestIncludedColumnsOffersNothingForAnIndexThatCannotHaveThem. Only a
+// rowstore nonclustered index backing no constraint has an INCLUDE list
+// CREATE ... DROP_EXISTING can change. For any other the page used to offer
+// the grid and fail at the server on Apply; now it says so and has nothing
+// to apply. Table.Columns is left unscripted: the page must not get that far.
+func TestIncludedColumnsOffersNothingForAnIndexThatCannotHaveThem(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		opts indexFixture
+	}{
+		{"clustered", indexFixture{typeDesc: "CLUSTERED", rowLocks: true, pageLocks: true, compression: "NONE"}},
+		{"primary key", indexFixture{typeDesc: "NONCLUSTERED", primaryKey: true, unique: true, rowLocks: true, pageLocks: true, compression: "NONE"}},
+		{"unique constraint", indexFixture{typeDesc: "NONCLUSTERED", uniqueConstraint: true, unique: true, rowLocks: true, pageLocks: true, compression: "NONE"}},
+		{"xml", indexFixture{typeDesc: "XML", rowLocks: true, pageLocks: true, compression: "NONE"}},
+		{"columnstore", indexFixture{typeDesc: "NONCLUSTERED COLUMNSTORE", compression: "COLUMNSTORE"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sc, inst := newFakeConn(t,
+				dbByNameResp(idxDatabase, 5),
+				idxTableResp(),
+				idxListResp("IX_Orders_CustomerID", 3, c.opts),
+				idxColumnsResp([]driver.Value{int64(3), "CustomerID", false, false}),
+			)
+			form, apply := loadPage(t, pageIndexIncludedColumns(sc, idxDatabase, idxSchema, idxTable, "IX_Orders_CustomerID"), inst)
+			if apply != nil {
+				t.Error("the page has an apply for an index whose INCLUDE list cannot change")
+			}
+			for _, r := range form.Rows() {
+				if _, ok := r.(*propsheet.ToggleGridRow); ok {
+					t.Error("the page offers the column grid for an index whose INCLUDE list cannot change")
+				}
+			}
+			assertNoStatementsIn(t, inst, idxDatabase)
+		})
+	}
 }

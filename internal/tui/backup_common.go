@@ -180,12 +180,10 @@ func yesNo(b bool) string {
 // single quotes — the one escaping rule that matters for a plain
 // identifier-shaped value like a database name.
 //
-// The quoting itself is gosmo.QuoteLiteral, which is the driver's own
-// TSQLQuoter; only the N prefix is added here, since QuoteLiteral deliberately
-// does not emit one. Hand-rolling the doubling would duplicate it across the
-// two repos.
+// It is gosmo.QuoteLiteral, which emits the N prefix itself; hand-rolling the
+// doubling would duplicate it across the two repos.
 func sqlStringLiteral(s string) string {
-	return "N" + gosmo.QuoteLiteral(s)
+	return gosmo.QuoteLiteral(s)
 }
 
 // backupHistoryQuery returns the msdb query behind "View Backup History"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -372,5 +373,180 @@ func TestForgetPeerFailuresReachCachedPeers(t *testing.T) {
 	primary.peerMu.Unlock()
 	if n != 0 {
 		t.Errorf("the peer still holds %d cached failure(s); a chained read stays blackholed", n)
+	}
+}
+
+// holdPeerDials replaces connectPeer with a dial that counts itself and blocks
+// until release is closed or its ctx ends, then answers with a fresh
+// connection. Restored on cleanup.
+func holdPeerDials(t *testing.T) (dials *atomic.Int32, release chan struct{}) {
+	t.Helper()
+	dials = new(atomic.Int32)
+	release = make(chan struct{})
+	orig := connectPeer
+	connectPeer = func(ctx context.Context, opts config.Connection, _ Role) (*ServerConn, error) {
+		dials.Add(1)
+		select {
+		case <-release:
+			return newTestConn(opts.Server), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	t.Cleanup(func() { connectPeer = orig })
+	return dials, release
+}
+
+// waitFor polls cond until it holds, failing the test after 5s rather than
+// letting a broken Peer hang the run.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// waitForPeerWaiters blocks until n callers have joined key's in-flight dial.
+func waitForPeerWaiters(t *testing.T, sc *ServerConn, key string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		sc.peerMu.Lock()
+		d := sc.peerDials[key]
+		joined := d != nil && d.waiters >= n
+		sc.peerMu.Unlock()
+		if joined {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("%d callers never joined the dial to %s", n, key)
+}
+
+// Three folders of one group asking for the same primary at once dial it once
+// and share the connection.
+func TestConcurrentPeerCallersShareOneDial(t *testing.T) {
+	dials, release := holdPeerDials(t)
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	const callers = 3
+	got := make([]*ServerConn, callers)
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			p, err := sc.Peer(context.Background(), "ubusql2")
+			if err != nil {
+				t.Errorf("Peer: %v", err)
+			}
+			got[i] = p
+		})
+	}
+	waitForPeerWaiters(t, sc, "ubusql2", callers-1)
+	close(release)
+	wg.Wait()
+
+	if n := dials.Load(); n != 1 {
+		t.Errorf("%d dials for one instance; concurrent callers must share one", n)
+	}
+	for i, p := range got {
+		if p == nil || p != got[0] {
+			t.Errorf("caller %d got %p, caller 0 got %p; all must share the one connection", i, p, got[0])
+		}
+	}
+}
+
+// A waiter is bounded by its own ctx, not the dial's: a superseded load
+// returns at once rather than waiting out someone else's connect.
+func TestPeerWaiterReturnsWhenItsOwnContextEnds(t *testing.T) {
+	_, release := holdPeerDials(t)
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	var dialler sync.WaitGroup
+	defer dialler.Wait()
+	defer close(release)
+	dialler.Go(func() { sc.Peer(context.Background(), "ubusql2") })
+	waitFor(t, "the first dial", func() bool {
+		sc.peerMu.Lock()
+		defer sc.peerMu.Unlock()
+		_, inFlight := sc.peerDials["ubusql2"]
+		return inFlight
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := sc.Peer(ctx, "ubusql2")
+		done <- err
+	}()
+	waitForPeerWaiters(t, sc, "ubusql2", 1)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Peer = %v; want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter outlived its own context")
+	}
+}
+
+// The dialling caller's ctx bounds the connect itself, and a cancelled dial is
+// not cached as the instance's failure: a waiter still wanting an answer dials
+// again, and succeeds.
+func TestAbandonedPeerDialIsRetriedByAWaiter(t *testing.T) {
+	dials, release := holdPeerDials(t)
+	sc := newTestConn("ubusql1")
+	defer sc.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := sc.Peer(ctx, "ubusql2")
+		first <- err
+	}()
+	waitFor(t, "the first dial", func() bool { return dials.Load() > 0 })
+
+	second := make(chan *ServerConn, 1)
+	go func() {
+		p, err := sc.Peer(context.Background(), "ubusql2")
+		if err != nil {
+			t.Errorf("waiter: %v", err)
+		}
+		second <- p
+	}()
+	waitForPeerWaiters(t, sc, "ubusql2", 1)
+	cancel()
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("dialling caller = %v; want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelling the dialling caller's ctx did not end its connect")
+	}
+	close(release)
+	select {
+	case p := <-second:
+		if p == nil {
+			t.Fatal("the waiter got no connection after the abandoned dial")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter never got an answer after the abandoned dial")
+	}
+	if n := dials.Load(); n != 2 {
+		t.Errorf("%d dials; the waiter must dial once more after the abandoned one", n)
+	}
+
+	sc.peerMu.Lock()
+	_, failed := sc.peerFails["ubusql2"]
+	sc.peerMu.Unlock()
+	if failed {
+		t.Error("the cancelled dial was cached as the instance's failure")
 	}
 }

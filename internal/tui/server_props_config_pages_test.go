@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"database/sql/driver"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -155,6 +157,37 @@ func configResponses() []fakeResponse {
 	}
 }
 
+// spConfigureChange matches one change line of gosmo's ApplyConfiguration
+// batch. The "show advanced options" enable and restore sit indented inside
+// their IF blocks, so the anchor at column 0 leaves them out.
+var spConfigureChange = regexp.MustCompile(`(?m)^EXEC sys\.sp_configure N'((?:[^']|'')*)', (-?\d+);$`)
+
+// configWrites asserts stmts is the single ApplyConfiguration batch a page
+// sends — its changes and one RECONFIGURE together — and returns the changes
+// as "option=value", in batch order.
+func configWrites(t *testing.T, stmts []string) []string {
+	t.Helper()
+	if len(stmts) != 1 {
+		t.Fatalf("want one ApplyConfiguration batch, got %d statements:\n%s", len(stmts), strings.Join(stmts, "\n"))
+	}
+	if !strings.Contains(stmts[0], "\nRECONFIGURE;") {
+		t.Fatalf("the batch has no RECONFIGURE:\n%s", stmts[0])
+	}
+	var out []string
+	for _, m := range spConfigureChange.FindAllStringSubmatch(stmts[0], -1) {
+		out = append(out, strings.ReplaceAll(m[1], "''", "'")+"="+m[2])
+	}
+	return out
+}
+
+// wantConfigWrites fails unless the page sent exactly want.
+func wantConfigWrites(t *testing.T, stmts []string, want ...string) {
+	t.Helper()
+	if got := configWrites(t, stmts); !slices.Equal(got, want) {
+		t.Errorf("sp_configure changes = %q, want %q; batch:\n%s", got, want, stmts[0])
+	}
+}
+
 // TestEverySpConfigureRowWritesTheOptionItIsLabelled walks the whole table,
 // one page load per row, so the single statement that comes out can only have
 // come from the row under test.
@@ -173,26 +206,13 @@ func TestEverySpConfigureRowWritesTheOptionItIsLabelled(t *testing.T) {
 				t.Fatalf("apply: %v", err)
 			}
 
-			stmts := inst.Statements()
-			// Two: the sp_configure for this option, then the single
-			// RECONFIGURE the page issues once anything changed.
-			if len(stmts) != 2 {
-				t.Fatalf("want two statements (the option and RECONFIGURE), got %d:\n%s",
-					len(stmts), strings.Join(stmts, "\n"))
-			}
-			if !strings.Contains(stmts[0], o.option) {
-				t.Errorf("editing %q wrote:\n%s\nwant it to name option %q", o.label, stmts[0], o.option)
-			}
+			// One batch: this option's sp_configure and the single
+			// RECONFIGURE, with nothing else changed.
 			want := "17"
 			if o.isBool {
 				want = "1"
 			}
-			if !strings.Contains(stmts[0], want) {
-				t.Errorf("editing %q wrote:\n%s\nwant it to carry the value %s", o.label, stmts[0], want)
-			}
-			if !strings.Contains(strings.ToUpper(stmts[1]), "RECONFIGURE") {
-				t.Errorf("second statement was %q, want RECONFIGURE", stmts[1])
-			}
+			wantConfigWrites(t, inst.Statements(), o.option+"="+want)
 		})
 	}
 }
@@ -290,17 +310,7 @@ func TestProcessorAffinityBitFollowsTheProcessorItIsLabelled(t *testing.T) {
 			if err := apply(context.Background()); err != nil {
 				t.Fatalf("apply: %v", err)
 			}
-			stmts := inst.Statements()
-			if len(stmts) != 2 {
-				t.Fatalf("want the affinity write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-			}
-			if !strings.Contains(stmts[0], "affinity mask") || strings.Contains(stmts[0], "affinity I/O mask") {
-				t.Fatalf("wrote:\n%s\nwant it to set 'affinity mask'", stmts[0])
-			}
-			want := strconv.FormatInt(1<<uint(cpu), 10)
-			if !strings.Contains(stmts[0], want) {
-				t.Errorf("ticking Processor %d wrote:\n%s\nwant the mask %s", cpu, stmts[0], want)
-			}
+			wantConfigWrites(t, inst.Statements(), "affinity mask="+strconv.FormatInt(1<<uint(cpu), 10))
 		})
 	}
 }
@@ -320,16 +330,7 @@ func TestProcessorIOAffinityIsADifferentColumnAndADifferentOption(t *testing.T) 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 {
-		t.Fatalf("want the I/O affinity write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
-	if !strings.Contains(stmts[0], "affinity I/O mask") {
-		t.Fatalf("wrote:\n%s\nwant it to set 'affinity I/O mask'", stmts[0])
-	}
-	if !strings.Contains(stmts[0], "4") {
-		t.Errorf("ticking Processor 2's I/O column wrote:\n%s\nwant the mask 4", stmts[0])
-	}
+	wantConfigWrites(t, inst.Statements(), "affinity I/O mask=4")
 }
 
 // TestAutomaticProcessorAffinityOverridesTheGrid pins the precedence the two
@@ -422,18 +423,9 @@ func TestProcessorsPageLeavesAffinityAloneWhenTheCPUListIsUnreadable(t *testing.
 		t.Fatalf("apply: %v", err)
 	}
 
-	stmts := inst.Statements()
-	for _, st := range stmts {
-		if strings.Contains(st, "affinity") {
-			t.Fatalf("wrote:\n%s\nwant no affinity write when the CPU list could not be read",
-				strings.Join(stmts, "\n"))
-		}
-	}
-	// The edit that *was* made still has to land, or the assertion above
-	// passes on a page that wrote nothing at all.
-	if len(stmts) != 2 || !strings.Contains(stmts[0], "max degree of parallelism") {
-		t.Fatalf("want the MAXDOP write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
+	// No affinity write — and the edit that *was* made still lands, or "no
+	// affinity" passes on a page that wrote nothing at all.
+	wantConfigWrites(t, inst.Statements(), "max degree of parallelism=4")
 }
 
 // TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable is the other
@@ -447,10 +439,7 @@ func TestProcessorsPageStillEditsAffinityWhenTheCPUListIsReadable(t *testing.T) 
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 || !strings.Contains(stmts[0], "affinity mask") {
-		t.Fatalf("want the affinity write and RECONFIGURE, got %d:\n%s", len(stmts), strings.Join(stmts, "\n"))
-	}
+	wantConfigWrites(t, inst.Statements(), "affinity mask=0")
 }
 
 // FILESTREAM is the one control on these six pages that is not a configRow:
@@ -472,20 +461,7 @@ func TestFilestreamSelectWritesItsLevelNotItsLabel(t *testing.T) {
 				t.Fatalf("apply: %v", err)
 			}
 
-			stmts := inst.Statements()
-			if len(stmts) != 2 {
-				t.Fatalf("want the sp_configure and a RECONFIGURE, got %d:\n%s",
-					len(stmts), strings.Join(stmts, "\n"))
-			}
-			if !strings.Contains(stmts[0], "filestream access level") {
-				t.Errorf("wrote:\n%s\nwant it to name the filestream option", stmts[0])
-			}
-			if !strings.Contains(stmts[0], strconv.Itoa(level)) {
-				t.Errorf("selecting %q wrote:\n%s\nwant level %d", label, stmts[0], level)
-			}
-			if !strings.Contains(strings.ToUpper(stmts[1]), "RECONFIGURE") {
-				t.Errorf("second statement was %q, want RECONFIGURE", stmts[1])
-			}
+			wantConfigWrites(t, inst.Statements(), "filestream access level="+strconv.Itoa(level))
 		})
 	}
 }
@@ -592,8 +568,24 @@ func TestXpCmdshellStaysEditableOnWindows(t *testing.T) {
 	if err := apply(context.Background()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	stmts := inst.Statements()
-	if len(stmts) != 2 || !strings.Contains(stmts[0], "xp_cmdshell") {
-		t.Fatalf("ticking xp_cmdshell on Windows wrote:\n%s", strings.Join(stmts, "\n"))
+	wantConfigWrites(t, inst.Statements(), "xp_cmdshell=1")
+}
+
+// TestSpConfigurePageSendsEveryEditInOneBatch. Two edits on one page are one
+// ApplyConfiguration batch with one RECONFIGURE, not a batch per row: the
+// batch is what turns "show advanced options" on around the changes, and a
+// second one would toggle it — and RECONFIGURE the instance — twice.
+func TestSpConfigurePageSendsEveryEditInOneBatch(t *testing.T) {
+	sc, inst := newFakeConn(t, configResponses()...)
+	form, apply := loadPage(t, pageServerProcessors(sc), inst)
+
+	editText(t, form, "Max degree of parallelism", "4")
+	editText(t, form, "Cost threshold for parallelism", "50")
+	editCheck(t, form, "Automatically set processor affinity mask for all processors", false)
+	toggleByName(t, toggleGrid(t, form), "Processor 1", affinityCol)
+	if err := apply(context.Background()); err != nil {
+		t.Fatalf("apply: %v", err)
 	}
+	wantConfigWrites(t, inst.Statements(),
+		"max degree of parallelism=4", "cost threshold for parallelism=50", "affinity mask=2")
 }
