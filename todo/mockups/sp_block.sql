@@ -48,12 +48,12 @@ begin
         N'' + isnull(replicate (N'|         ', len (level)/4 - 2),'')
             + case when (len(level)/4 - 1) = 0 then '' else '|------  ' end
             + cast (bt.spid as nvarchar (10)) as blktree
-            ,spr.lastwaittype   as [type]
-            ,spr.hostname       as [hostname]
+            ,rtrim(spr.lastwaittype)   as [type]
+            ,rtrim(spr.hostname)       as [hostname]
             ,try_cast('<?query --' + char(13) + char(10) + st.text + char(13) + char(10) + '--?>'  as xml)  as [sql text]
-            ,spr.waitresource   as [wait resource]
-            ,spr.cmd            as [command]
-            ,spr.waittime
+            ,rtrim(spr.waitresource)   as [wait resource]
+            ,rtrim(spr.cmd)            as [command]
+            ,rtrim(spr.waittime)       as [waittime]
             ,blocking_spid
             ,left([level],charindex('#',[level],1)-1) as root
             ,level

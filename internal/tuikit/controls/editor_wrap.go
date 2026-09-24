@@ -182,12 +182,7 @@ func (e *Editor) moveVisualRows(delta int) {
 	}
 	t := vls[ti]
 	tl := e.doc.Line(t.row)
-	col := t.start + core.RuneIndexAtColumn(tl[t.start:t.end], x)
-	if ti < len(vls)-1 && vls[ti+1].row == t.row {
-		col = min(col, max(t.start, t.end-1))
-	} else {
-		col = min(col, t.end)
-	}
+	col := clampToVisualRow(vls, ti, t.start+core.RuneIndexAtColumn(tl[t.start:t.end], x))
 	e.cursorRow, e.cursorCol = t.row, col
 	e.wrapGoal = wrapGoal{row: t.row, col: col, x: x, version: e.doc.Version(), set: true}
 }
@@ -195,14 +190,29 @@ func (e *Editor) moveVisualRows(delta int) {
 // wrappedPosAt maps screen (mx, my) to the document position under it in wrap
 // mode, where my picks a visual row of vls rather than a logical line. Shared by
 // handleMouseWrapped and SetCursorFromScreen.
+//
+// A click past the end of a non-final row stops one short of it, as
+// moveVisualRows does: otherwise the caret showed on the row below the click.
 func (e *Editor) wrappedPosAt(vls []visualLine, mx, my, contentX int) (row, col int) {
-	vl := vls[core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)]
+	vi := core.Clamp(e.scrollRow+(my-e.rect.Y), 0, len(vls)-1)
+	vl := vls[vi]
 	// The click's x is a terminal column within the segment; converting it
 	// back to a rune index is what stops a wide character earlier in the
 	// segment from putting the caret in the wrong place.
 	line := e.doc.Line(vl.row)
 	col = vl.start + core.RuneIndexAtColumn(line[vl.start:vl.end], max(0, mx-contentX))
-	return vl.row, min(col, vl.end)
+	return vl.row, clampToVisualRow(vls, vi, col)
+}
+
+// clampToVisualRow limits col to a caret position that visualIndexForCursor
+// places on vls[i]: at most end on a logical line's last row, end-1 on any
+// other, since end there belongs to the next row.
+func clampToVisualRow(vls []visualLine, i, col int) int {
+	vl := vls[i]
+	if i < len(vls)-1 && vls[i+1].row == vl.row {
+		return min(col, max(vl.start, vl.end-1))
+	}
+	return min(col, vl.end)
 }
 
 // handleMouseWrapped implements HandleMouse's Button1-click/drag and

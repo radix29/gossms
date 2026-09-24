@@ -159,8 +159,8 @@ func pageTableColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 				nullableStatic.SetValue(boolStr(c.IsNullable))
 				identityStatic.SetValue(boolStr(c.IsIdentity))
 				if c.IsIdentity {
-					seedStatic.SetValue(strconv.FormatInt(c.IdentitySeed, 10))
-					incrStatic.SetValue(strconv.FormatInt(c.IdentityIncrement, 10))
+					seedStatic.SetValue(c.IdentitySeed)
+					incrStatic.SetValue(c.IdentityIncrement)
 				} else {
 					seedStatic.SetValue("n/a")
 					incrStatic.SetValue("n/a")

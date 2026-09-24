@@ -21,7 +21,7 @@ import (
 // fetch genuinely finishes afterwards with a good answer — the worst case for
 // the cache, and the one a guard on the error alone would let through.
 
-const loginsListMatch = "FROM sys.server_principals\n\tWHERE type IN ('S','U','G','E','X','C','K')"
+const loginsListMatch = "WHERE sp.type IN ('S','U','G','E','X','C','K')\n\tORDER BY sp.name"
 
 // settleDetails drains the UI queue for a while, for a test waiting on a post
 // that is supposed to change nothing — there is no condition to wait for.

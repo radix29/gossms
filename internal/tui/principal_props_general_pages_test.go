@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql/driver"
 	"strings"
 	"testing"
 
@@ -260,6 +261,42 @@ func TestUserGeneralBuiltInUserHasNoApply(t *testing.T) {
 			t.Errorf("built-in user dbo's %q is editable", label)
 		}
 	}
+}
+
+// A certificate-mapped user has no login to change and refuses DEFAULT_SCHEMA,
+// so both rows are read-only — even though the SID join found a login mapped
+// to the same certificate, which a login picker would have offered to remap.
+func TestUserGeneralCertificateMappedUserHasNoLoginOrSchemaToChange(t *testing.T) {
+	const certUser = "signer_user"
+	responses := append([]fakeResponse{
+		{match: "sp.sid = dp.sid", arg: certUser, cols: 10, rows: [][]driver.Value{
+			{int64(9), "CERTIFICATE_MAPPED_USER", nil, principalEpoch, principalEpoch, "NONE",
+				[]byte{0x01, 0x06}, "##signer_login##", false, "signer_cert"},
+		}},
+	}, userGeneralResponses()...)
+	sc, inst := newFakeConn(t, responses...)
+	name := certUser
+	form, apply := loadPage(t, pageUserGeneral(sc, principalDatabase, &name), inst)
+
+	for _, label := range []string{"Login name", "Default schema"} {
+		if hasEditableRow(form, label) {
+			t.Errorf("%q is editable for a certificate-mapped user", label)
+		}
+	}
+	for label, want := range map[string]string{
+		"User type":      "User mapped to a certificate",
+		"Login name":     "n/a",
+		"Mapped to":      "signer_cert",
+		"Login disabled": "n/a",
+	} {
+		if got := staticValue(t, form, label); got != want {
+			t.Errorf("%s = %q, want %q", label, got, want)
+		}
+	}
+	if err := apply(t.Context()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	assertNoStatementsIn(t, inst, principalDatabase)
 }
 
 // -- Schema > General --------------------------------------------------------

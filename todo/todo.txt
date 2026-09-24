@@ -8,6 +8,8 @@
 
 -------------
 
+max delfault cell length in options is 25
+
 - package for winget 
     
 new tab: waits
@@ -22,10 +24,6 @@ white/light style ? -> options, default dark
 keyboard shortcuts for mac (platform dependednt?
 
 sp_blitz & index with reference built in
-
-- application icons for win, macos, linux.
-    - create the icons
-    - change the build pipeline
 
 --- bugs and optimizations ---------------------------------------------
 

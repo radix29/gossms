@@ -154,8 +154,11 @@ func preservedValue(row *propsheet.SelectRow, unset string) string {
 // original selection; that is a property of how the list is built, three files
 // away from the write, and a page offering a stand-in alongside a real value
 // would send "(unresolved owner)" to the server as a principal name.
+//
+// A nil row is a page that drew the value read-only for this object (User
+// General's login and schema for a certificate-mapped user) and never changes.
 func changedTo(row *propsheet.SelectRow, unset string) (string, bool) {
-	if !row.Dirty() {
+	if row == nil || !row.Dirty() {
 		return "", false
 	}
 	v := preservedValue(row, unset)

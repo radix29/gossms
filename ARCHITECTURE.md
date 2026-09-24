@@ -424,6 +424,7 @@ gossms/
 │       ├── schema_props.go       # Schema Properties page definitions
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── user_props.go         # Database User Properties page definitions
+│       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure), plus Owned Schemas and Membership
 │       ├── server_role_props.go  # Server Role Properties: General/Members/Owned Roles/Securables
 │       ├── role_general_page.go  # the General page both role dialogs share, over a deliberately narrow roleWriter (rename + change owner, nothing else)
 │       ├── statistics_props.go   # Statistics Properties: General/Columns/Filter/Details/Histogram/Density Vector/Extended Properties

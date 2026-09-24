@@ -149,3 +149,34 @@ func TestUnwrappedMousePressStillArmsBlockSelection(t *testing.T) {
 		t.Fatalf("cursor = (%d,%d), want (1,3)", e.cursorRow, e.cursorCol)
 	}
 }
+
+// A click past the end of a non-final wrapped row keeps the caret on that row:
+// its end index belongs to the next row (visualIndexForCursor), so taking it
+// drew the caret one row below the click. The last row of a line has no next
+// row and does take its end.
+func TestWrappedClickPastRowEndStaysOnRow(t *testing.T) {
+	// Width 10 wraps as "hello " [0,6), "world " [6,12), "again" [12,17).
+	for _, tc := range []struct {
+		name                   string
+		y, wantCol, wantVisual int
+	}{
+		{"first row", 0, 5, 0},
+		{"middle row", 1, 11, 1},
+		{"last row", 2, 17, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newWrappedTestEditor("hello world again", 10, 4)
+
+			// x=8 is past the end of every row but short of the scrollbar column.
+			e.HandleMouse(tcell.NewEventMouse(8, tc.y, tcell.Button1, tcell.ModNone))
+
+			if e.cursorRow != 0 || e.cursorCol != tc.wantCol {
+				t.Fatalf("cursor = (%d,%d), want (0,%d)", e.cursorRow, e.cursorCol, tc.wantCol)
+			}
+			vls := e.buildVisualLines(10)
+			if got := visualIndexForCursor(vls, e.cursorRow, e.cursorCol); got != tc.wantVisual {
+				t.Fatalf("caret shows on visual row %d, want the clicked row %d", got, tc.wantVisual)
+			}
+		})
+	}
+}

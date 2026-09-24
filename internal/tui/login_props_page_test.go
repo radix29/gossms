@@ -13,8 +13,8 @@ import (
 // makes, plus the server-role list the Server Roles page needs.
 func loginResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "type IN ('S','U','G','E','X','C','K') AND name", cols: 7, rows: [][]driver.Value{{
-			"appuser", []byte{0x01, 0x02}, "SQL_LOGIN", false, "master", time.Now(), time.Now(),
+		{match: "type IN ('S','U','G','E','X','C','K') AND sp.name", cols: 10, rows: [][]driver.Value{{
+			"appuser", []byte{0x01, 0x02}, "SQL_LOGIN", false, "master", time.Now(), time.Now(), "us_english", true, false,
 		}}},
 		{match: "LOGINPROPERTY(@p1, 'IsLocked')", cols: 12, rows: [][]driver.Value{{
 			int64(0), int64(0), int64(0), true, false,
@@ -160,7 +160,7 @@ func serverRolesResponse() fakeResponse {
 		if len(names) == 0 {
 			return nil
 		}
-		return strings.Join(names, ", ")
+		return jsonNames(names...)
 	}
 	rows := [][]driver.Value{
 		{"bulkadmin", int64(3), true, "sa", member()},

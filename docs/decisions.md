@@ -620,9 +620,9 @@ Rules about peer credentials that are easy to undo:
   `Peer` reaches is server-scoped. The other three `sc.Opts` clones — the query
   panel's and the Activity Monitor's two — target the same instance and keep the
   database on purpose.
-- **The peer failure cache is short on purpose.** `recordPeerFailure` holds the
-  last connect failure per `InstanceKey` for `peerFailureTTL` (30s) so a
-  blackholed primary does not charge the driver's 15s connect timeout to every
+- **The peer failure cache is short on purpose.** `recordPeerFailureLocked`
+  holds the last connect failure per `InstanceKey` for `peerFailureTTL` (30s) so
+  a blackholed primary does not charge the driver's 15s connect timeout to every
   folder expansion. It is invalidated by a successful direct `File > Connect` to
   that instance and by a Refresh anywhere in the Always On subtree, both
   recursing into cached peers because a chained read records its failure on the

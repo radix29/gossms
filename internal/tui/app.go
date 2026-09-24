@@ -119,6 +119,7 @@ type App struct {
 	newAGDialog                 *NewAGDialog
 	newEndpointDialog           *NewEndpointDialog
 	newCertificateDialog        *NewCertificateDialog
+	newUserDialog               *NewUserDialog
 	newAsymmetricKeyDialog      *NewAsymmetricKeyDialog
 	newSymmetricKeyDialog       *NewSymmetricKeyDialog
 	backupCertificateDialog     *BackupCertificateDialog
@@ -504,6 +505,7 @@ func (a *App) buildUI() {
 	a.newAGDialog = registerDialog(a, NewNewAGDialog(a))
 	a.newEndpointDialog = registerDialog(a, NewNewEndpointDialog(a))
 	a.newCertificateDialog = registerDialog(a, NewNewCertificateDialog(a))
+	a.newUserDialog = registerDialog(a, NewNewUserDialog(a))
 	a.newAsymmetricKeyDialog = registerDialog(a, NewNewAsymmetricKeyDialog(a))
 	a.newSymmetricKeyDialog = registerDialog(a, NewNewSymmetricKeyDialog(a))
 	a.backupCertificateDialog = registerDialog(a, NewBackupCertificateDialog(a))

@@ -446,6 +446,70 @@ func TestResultsToTextRendersAlignedTable(t *testing.T) {
 	}
 }
 
+// Results to Text caps every column at Options' "Max characters per column
+// (text)", header included, cutting a longer value with no ellipsis as SSMS
+// does. Uncapped, one huge cell padded every row of its set to its width.
+func TestResultsToTextCapsColumnWidth(t *testing.T) {
+	a := newTestApp()
+	a.cfg.MaxTextColumnLength = 4
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	qp.setResult(&query.Result{Sets: []query.ResultSet{{
+		Columns: []string{"ID", "Description"},
+		Rows: [][]string{
+			{"1", strings.Repeat("x", 1_000_000)},
+			{"22", "ab"},
+		},
+	}}}, false)
+
+	want := "ID Desc\n-- ----\n1  xxxx\n22 ab  "
+	if got := qp.resultsText.Text(); got != want {
+		t.Errorf("resultsText.Text() = %q, want %q", got, want)
+	}
+}
+
+// The text rendering is memoised per result set, and the memo follows the
+// result, the tab and the column cap. The rows are changed behind the panel's
+// back to tell a reused rendering from a fresh one.
+func TestResultsToTextMemo(t *testing.T) {
+	a := newTestApp()
+	a.cfg.MaxTextColumnLength = 10
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	res := &query.Result{Sets: []query.ResultSet{
+		{Columns: []string{"A"}, Rows: [][]string{{"first"}}},
+		{Columns: []string{"B"}, Rows: [][]string{{"second"}}},
+	}}
+	qp.setResult(res, false)
+	res.Sets[0].Rows[0][0] = "changed"
+
+	qp.renderActiveTab()
+	if got := qp.resultsText.Text(); !strings.Contains(got, "first") {
+		t.Fatalf("same set re-rendered: %q, want the memoised text", got)
+	}
+
+	qp.activeTab = 1
+	qp.renderActiveTab()
+	if got := qp.resultsText.Text(); !strings.Contains(got, "second") {
+		t.Fatalf("second tab shows %q, want its own set", got)
+	}
+
+	qp.activeTab = 0
+	qp.renderActiveTab()
+	a.cfg.MaxTextColumnLength = 3 // same result, same tab
+	qp.renderActiveTab()
+	if got, want := qp.resultsText.Text(), "A  \n---\ncha"; got != want {
+		t.Fatalf("after the cap changed: %q, want %q", got, want)
+	}
+
+	qp.setResult(&query.Result{Sets: []query.ResultSet{{Columns: []string{"A"}, Rows: [][]string{{"new"}}}}}, false)
+	if got, want := qp.resultsText.Text(), "A  \n---\nnew"; got != want {
+		t.Fatalf("a new result: %q, want %q", got, want)
+	}
+}
+
 // TestResultsToTextKeysRouteToResultsTextNotGrid confirms that once Results
 // To Text is active, keys handed to the results sub-region land on
 // qp.resultsText, not the (now hidden) qp.results grid — the same rect

@@ -21,7 +21,7 @@ func freshEndpointInstanceResponses() []fakeResponse {
 	return []fakeResponse{
 		{match: "sys.symmetric_keys", cols: 1, rows: [][]driver.Value{{int64(0)}}},
 		{match: "FROM   sys.certificates", cols: 15},
-		{match: "FROM sys.server_principals", cols: 7},
+		{match: "FROM sys.server_principals", cols: 10},
 		{match: "sys.database_mirroring_endpoints", cols: 7},
 	}
 }
@@ -323,8 +323,8 @@ func configuredEndpointInstanceResponses(certName string, thumb []byte) []fakeRe
 		{match: "CERTENCODED", cols: 1, rows: [][]driver.Value{{[]byte{0xAB, 0xCD}}}},
 		// No login and no user yet: those are what a second press still has to
 		// create, and skipping them silently is the failure mode below.
-		{match: "FROM sys.server_principals", cols: 7},
-		{match: "FROM   sys.database_principals", cols: 9},
+		{match: "FROM sys.server_principals", cols: 10},
+		{match: "FROM   sys.database_principals", cols: 10},
 		{match: "sys.database_mirroring_endpoints", cols: 8, rows: [][]driver.Value{
 			{"AGEP", int64(5022), "STARTED", "ALL", true, "AES", "CERTIFICATE", "sa"},
 		}},
@@ -393,8 +393,8 @@ func TestEndpointScriptSkipsAUserThatAlreadyExists(t *testing.T) {
 	a := newTestApp()
 	thumb := []byte{0x01, 0x02}
 	at := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	existingUser := fakeResponse{match: "FROM   sys.database_principals", cols: 9, rows: [][]driver.Value{
-		{int64(5), "SQL_USER", "dbo", at, at, "INSTANCE", []byte{0x09}, "ubusql2_login", false},
+	existingUser := fakeResponse{match: "FROM   sys.database_principals", cols: 10, rows: [][]driver.Value{
+		{int64(5), "SQL_USER", "dbo", at, at, "INSTANCE", []byte{0x09}, "ubusql2_login", false, nil},
 	}}
 	withUser := func(name string) []fakeResponse {
 		out := []fakeResponse{existingUser}

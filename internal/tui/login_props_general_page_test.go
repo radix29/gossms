@@ -34,8 +34,8 @@ func ptr(s string) *string { return &s }
 // its details, the database list, the language list and the credentials.
 func loginGeneralResponses(name, loginType string) []fakeResponse {
 	return []fakeResponse{
-		{match: "FROM sys.server_principals", arg: name, cols: 7, rows: [][]driver.Value{
-			{name, []byte{0x01, 0x02}, loginType, false, "master", time.Now(), time.Now()},
+		{match: "FROM sys.server_principals", arg: name, cols: 10, rows: [][]driver.Value{
+			{name, []byte{0x01, 0x02}, loginType, false, "master", time.Now(), time.Now(), "us_english", true, false},
 		}},
 		{match: "LOGINPROPERTY", cols: 12, rows: [][]driver.Value{{
 			int64(0), int64(0), int64(0), true, true,

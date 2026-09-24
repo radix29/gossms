@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/gdamore/tcell/v3/color"
+	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/query"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 	"github.com/radix29/gossms/internal/tuikit/core"
@@ -189,7 +190,7 @@ func (p *QueryPanel) renderActiveTab() {
 		return
 	}
 	if p.resultsMode == ResultsModeText {
-		p.resultsText.SetText(formatResultsAsText(set))
+		p.resultsText.SetText(p.resultsAsText(set))
 		return
 	}
 	p.results.SetData(set.Columns, set.Rows)
@@ -215,17 +216,36 @@ func (p *QueryPanel) setMessages(msgs []query.Message) {
 	p.messages.SetText(strings.Join(textLines, "\n"))
 }
 
+// resultsAsText is formatResultsAsText for the active tab's set, memoised in
+// textMemo.
+func (p *QueryPanel) resultsAsText(set query.ResultSet) string {
+	m := &p.textMemo
+	maxW := p.app.cfg.MaxTextColumnLength
+	if maxW <= 0 { // a Config not from config.Load
+		maxW = config.DefaultMaxTextColumnLength
+	}
+	if m.result != p.result || m.tab != p.activeTab || m.max != maxW {
+		m.result, m.tab, m.max = p.result, p.activeTab, maxW
+		m.text = formatResultsAsText(set, maxW)
+	}
+	return m.text
+}
+
 // formatResultsAsText renders set as SSMS's Results To Text look: a header
 // row, a dashed separator, then one line per data row, each column padded
 // to its widest value so columns visually line up like a real table.
-func formatResultsAsText(set query.ResultSet) string {
+//
+// No column is wider than maxW, and a longer value or header is cut to it with
+// no ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row
+// of its result to a megabyte, all built on the UI goroutine.
+func formatResultsAsText(set query.ResultSet, maxW int) string {
 	widths := make([]int, len(set.Columns))
 	for i, c := range set.Columns {
-		widths[i] = core.DisplayWidth(c)
+		widths[i] = core.DisplayWidthAtMost(c, maxW)
 	}
 	for _, row := range set.Rows {
 		for i, cell := range row {
-			if w := core.DisplayWidth(cell); w > widths[i] {
+			if w := core.DisplayWidthAtMost(cell, maxW); w > widths[i] {
 				widths[i] = w
 			}
 		}

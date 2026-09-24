@@ -62,8 +62,8 @@ func endpointPeerFor(t *testing.T, d *NewEndpointDialog, name string, extra ...f
 // user — the fresh case, where both are created.
 func absentLoginAndUser() []fakeResponse {
 	return []fakeResponse{
-		{match: "FROM sys.server_principals", cols: 7},
-		{match: "FROM   sys.database_principals", cols: 9},
+		{match: "FROM sys.server_principals", cols: 10},
+		{match: "FROM   sys.database_principals", cols: 10},
 	}
 }
 
@@ -127,11 +127,11 @@ func TestImportPeerCertificateInstallsTheOtherInstancesKey(t *testing.T) {
 func TestImportCreatesNeitherLoginNorUserTwice(t *testing.T) {
 	d := newImportDialog(t)
 	local, localInst := endpointPeerFor(t, d, "UBUSQL1",
-		fakeResponse{match: "FROM sys.server_principals", cols: 7, rows: [][]driver.Value{
-			{"UBUSQL2_login", []byte{1, 2}, "SQL_LOGIN", false, "master", time.Now(), time.Now()},
+		fakeResponse{match: "FROM sys.server_principals", cols: 10, rows: [][]driver.Value{
+			{"UBUSQL2_login", []byte{1, 2}, "SQL_LOGIN", false, "master", time.Now(), time.Now(), "us_english", true, false},
 		}},
-		fakeResponse{match: "FROM   sys.database_principals", cols: 9, rows: [][]driver.Value{
-			{int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE", []byte{1, 2}, "UBUSQL2_login", false},
+		fakeResponse{match: "FROM   sys.database_principals", cols: 10, rows: [][]driver.Value{
+			{int64(5), "SQL_USER", "dbo", time.Now(), time.Now(), "INSTANCE", []byte{1, 2}, "UBUSQL2_login", false, nil},
 		}},
 		fakeResponse{match: "FROM   sys.certificates", arg: "UBUSQL2_Cert", cols: 15})
 	remote, _ := endpointPeerFor(t, d, "UBUSQL2")

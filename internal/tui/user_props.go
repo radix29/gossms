@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -18,7 +19,6 @@ import (
 // Membership, Securables, and Extended Properties are always editable, and
 // Effective Permissions is a read-only listing by design (see
 // effectivePermsNote).
-// Contained/password users and external Microsoft Entra users aren't built.
 //
 // userName is boxed in a *string shared by every page below: renaming a user
 // changes the identity every other page's lookup depends on. The
@@ -111,26 +111,14 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 				distinctSecurables[securable{e.SecurableType, e.Schema, e.Name}.key()] = true
 			}
 
-			var userType string
-			switch u.AuthType {
-			case "INSTANCE":
-				if u.LoginName != "" {
-					userType = "SQL user with login"
-				} else {
-					// A genuine CREATE USER ... WITHOUT LOGIN reports
-					// authentication_type_desc = NONE, not INSTANCE:
-					// INSTANCE with no matching login only happens when a
-					// FOR LOGIN user's login was dropped out from under
-					// it, i.e. orphaned.
-					userType = "SQL user with login (not found)"
-				}
-			case "DATABASE":
-				userType = "SQL user with password"
-			case "EXTERNAL":
-				userType = "External user or group"
-			default:
-				userType = "SQL user without login"
-			}
+			userType := userTypeLabel(u)
+			// A certificate- or key-mapped user and an Entra one have no
+			// login to change: ALTER USER ... WITH LOGIN is refused for the
+			// first two, and a LoginName the SID join found is a login mapped
+			// to the same certificate, not this user's. A mapped user refuses
+			// DEFAULT_SCHEMA as well.
+			mapped := isMappedUser(u)
+			fixedLogin := mapped || isExternalUser(u)
 
 			builtin := isSystemUser(u.Name)
 
@@ -146,26 +134,32 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 				)
 			} else {
 				nameRow = propsheet.Text("User name", u.Name, 24)
+				rows = append(rows, nameRow, propsheet.Static("User type", userType))
 
-				loginNames := make([]string, len(logins))
-				for i, l := range logins {
-					loginNames[i] = l.Name
+				if fixedLogin {
+					rows = append(rows, propsheet.Static("Login name", "n/a"))
+				} else {
+					loginNames := make([]string, len(logins))
+					for i, l := range logins {
+						loginNames[i] = l.Name
+					}
+					loginItems := append([]string{noneItem}, loginNames...)
+					loginRow = selectPreserving("Login name", loginItems, u.LoginName, noneItem)
+					rows = append(rows, loginRow)
 				}
-				loginItems := append([]string{noneItem}, loginNames...)
-				loginRow = selectPreserving("Login name", loginItems, u.LoginName, noneItem)
 
-				schemaNames := make([]string, len(schemas))
-				for i, s := range schemas {
-					schemaNames[i] = s.Name
+				if mapped {
+					rows = append(rows,
+						propsheet.Static("Mapped to", orDefault(u.MappedObject, "(not found)")),
+						propsheet.Static("Default schema", "n/a"))
+				} else {
+					schemaNames := make([]string, len(schemas))
+					for i, s := range schemas {
+						schemaNames[i] = s.Name
+					}
+					schemaRow = selectPreserving("Default schema", schemaNames, u.DefaultSchema, unsetItem)
+					rows = append(rows, schemaRow)
 				}
-				schemaRow = selectPreserving("Default schema", schemaNames, u.DefaultSchema, unsetItem)
-
-				rows = append(rows,
-					nameRow,
-					propsheet.Static("User type", userType),
-					loginRow,
-					schemaRow,
-				)
 			}
 			rows = append(rows,
 				propsheet.Static("Authentication type", u.AuthType),
@@ -221,11 +215,54 @@ func pageUserGeneral(sc *db.ServerConn, dbName string, userName *string) propPag
 	}
 }
 
+// userTypeLabel is the General page's "User type" — SSMS's names for the
+// CREATE USER forms. The mapped and Windows kinds are told apart by type_desc;
+// the SQL ones only by authentication_type_desc.
+func userTypeLabel(u *gosmo.User) string {
+	switch u.UserType {
+	case "CERTIFICATE_MAPPED_USER":
+		return "User mapped to a certificate"
+	case "ASYMMETRIC_KEY_MAPPED_USER":
+		return "User mapped to an asymmetric key"
+	case "WINDOWS_USER":
+		return "Windows user"
+	case "WINDOWS_GROUP":
+		return "Windows group"
+	}
+	switch u.AuthType {
+	case "INSTANCE":
+		if u.LoginName != "" {
+			return "SQL user with login"
+		}
+		// A genuine CREATE USER ... WITHOUT LOGIN reports
+		// authentication_type_desc = NONE, not INSTANCE: INSTANCE with no
+		// matching login only happens when a FOR LOGIN user's login was
+		// dropped out from under it, i.e. orphaned.
+		return "SQL user with login (not found)"
+	case "DATABASE":
+		return "SQL user with password"
+	case "EXTERNAL":
+		return "External user or group"
+	}
+	return "SQL user without login"
+}
+
+// isMappedUser reports a certificate- or asymmetric-key-mapped user.
+func isMappedUser(u *gosmo.User) bool {
+	return u.UserType == "CERTIFICATE_MAPPED_USER" || u.UserType == "ASYMMETRIC_KEY_MAPPED_USER"
+}
+
+// isExternalUser reports a Microsoft Entra user or group.
+func isExternalUser(u *gosmo.User) bool {
+	return u.AuthType == "EXTERNAL" || strings.HasPrefix(u.UserType, "EXTERNAL_")
+}
+
 // loginDisabledStr renders a user's mapped-login disabled state, or
 // "n/a" when no login is mapped (WITHOUT LOGIN, or the login no longer
-// exists — SQL Server's catalog metadata can't tell those apart).
+// exists — SQL Server's catalog metadata can't tell those apart) or the user
+// is of a kind that has none.
 func loginDisabledStr(u *gosmo.User) string {
-	if u.LoginName == "" {
+	if u.LoginName == "" || isMappedUser(u) || isExternalUser(u) {
 		return "n/a"
 	}
 	return boolStr(u.LoginDisabled)

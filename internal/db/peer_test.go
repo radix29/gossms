@@ -18,6 +18,14 @@ func newTestConn(server string) *ServerConn {
 	return &ServerConn{Opts: config.Connection{Server: server}, ctx: ctx, cancel: cancel}
 }
 
+// recordPeerFailure is recordPeerFailureLocked taking peerMu itself, for tests
+// that seed the failure cache directly.
+func (sc *ServerConn) recordPeerFailure(key string, err error) error {
+	sc.peerMu.Lock()
+	defer sc.peerMu.Unlock()
+	return sc.recordPeerFailureLocked(key, err)
+}
+
 // closePeers closes each peer after releasing peerMu, while Peer's lookup asks
 // the cached peer's IsOpen from another goroutine. closed is atomic, so this is
 // race-free by construction.

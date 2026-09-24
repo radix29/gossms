@@ -101,9 +101,9 @@ func serverTriggerRows() fakeResponse {
 		match: "FROM   sys.server_triggers",
 		cols:  6,
 		rows: [][]driver.Value{
-			{"aaa_first", false, when, when, "CREATE_DATABASE", "CREATE TRIGGER [aaa_first] ON ALL SERVER ..."},
-			{"ddl_audit", true, when, when, "CREATE_DATABASE,ALTER_DATABASE", "CREATE TRIGGER [ddl_audit] ON ALL SERVER ..."},
-			{"logon_guard", false, when, when, "LOGON", nil},
+			{"aaa_first", false, when, when, jsonNames("CREATE_DATABASE"), "CREATE TRIGGER [aaa_first] ON ALL SERVER ..."},
+			{"ddl_audit", true, when, when, jsonNames("CREATE_DATABASE", "ALTER_DATABASE"), "CREATE TRIGGER [ddl_audit] ON ALL SERVER ..."},
+			{"logon_guard", false, when, when, jsonNames("LOGON"), nil},
 		},
 	}
 }

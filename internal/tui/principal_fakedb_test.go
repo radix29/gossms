@@ -29,7 +29,7 @@ var principalEpoch = time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
 // databaseUsersResponse is the 7-column user list every page on these dialogs
 // draws its principal picker from.
 func databaseUsersResponse() fakeResponse {
-	return fakeResponse{match: "FROM   sys.database_principals\nWHERE  type IN ('S','U','G')", cols: 7, rows: [][]driver.Value{
+	return fakeResponse{match: "FROM   sys.database_principals\nWHERE  type IN ('S','U','G','E','X','C','K')", cols: 7, rows: [][]driver.Value{
 		{principalUser, int64(5), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
 		{"dbo", int64(1), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
 		{"reporting", int64(6), "SQL_USER", "dbo", principalEpoch, principalEpoch, "INSTANCE"},
@@ -39,8 +39,8 @@ func databaseUsersResponse() fakeResponse {
 // userByNameResponse answers the by-name user read, which carries the SID and
 // the mapped login the list read leaves out.
 func userByNameResponse(name, defaultSchema, login string) fakeResponse {
-	return fakeResponse{match: "sp.sid = dp.sid", arg: name, cols: 9, rows: [][]driver.Value{
-		{int64(5), "SQL_USER", defaultSchema, principalEpoch, principalEpoch, "INSTANCE", []byte{0x01, 0x02}, login, false},
+	return fakeResponse{match: "sp.sid = dp.sid", arg: name, cols: 10, rows: [][]driver.Value{
+		{int64(5), "SQL_USER", defaultSchema, principalEpoch, principalEpoch, "INSTANCE", []byte{0x01, 0x02}, login, false, nil},
 	}}
 }
 
@@ -52,18 +52,18 @@ func userByNameResponse(name, defaultSchema, login string) fakeResponse {
 // is not but is equally unwritable, so both must come back read-only.
 func databaseRoleResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "WHERE  r.type = 'R' AND r.name = @p1", arg: principalRole, cols: 7, rows: [][]driver.Value{
-			{int64(11), false, "dbo", []byte{0x0A}, principalEpoch, principalEpoch, principalUser},
+		{match: "WHERE  r.type = 'R' AND r.name = @p1", arg: principalRole, cols: 8, rows: [][]driver.Value{
+			{principalRole, int64(11), false, "dbo", []byte{0x0A}, principalEpoch, principalEpoch, jsonNames(principalUser)},
 		}},
-		{match: "WHERE  r.type = 'R' AND r.name = @p1", arg: "db_owner", cols: 7, rows: [][]driver.Value{
-			{int64(16384), true, "dbo", []byte{0x0B}, principalEpoch, principalEpoch, nil},
+		{match: "WHERE  r.type = 'R' AND r.name = @p1", arg: "db_owner", cols: 8, rows: [][]driver.Value{
+			{"db_owner", int64(16384), true, "dbo", []byte{0x0B}, principalEpoch, principalEpoch, nil},
 		}},
 		{match: "FROM   sys.database_principals r", cols: 5, rows: [][]driver.Value{
-			{principalRole, int64(11), false, "dbo", principalUser},
+			{principalRole, int64(11), false, "dbo", jsonNames(principalUser)},
 			{"audit_reader", int64(12), false, principalRole, nil},
 			{"db_owner", int64(16384), true, "dbo", nil},
 			{"public", int64(0), false, "dbo", nil},
-			{"report_reader", int64(13), false, principalRole, "reporting"},
+			{"report_reader", int64(13), false, principalRole, jsonNames("reporting")},
 		}},
 	}
 }
@@ -119,13 +119,13 @@ func schemaObjectCountResponses() []fakeResponse {
 func serverRoleResponses() []fakeResponse {
 	return []fakeResponse{
 		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: principalSrvRole, cols: 7, rows: [][]driver.Value{
-			{int64(20), false, "sa", []byte{0x0C}, principalEpoch, principalEpoch, "appuser"},
+			{int64(20), false, "sa", []byte{0x0C}, principalEpoch, principalEpoch, jsonNames("appuser")},
 		}},
 		{match: "\tWHERE r.type = 'R' AND r.name = @p1", arg: "sysadmin", cols: 7, rows: [][]driver.Value{
 			{int64(3), true, "sa", []byte{0x0D}, principalEpoch, principalEpoch, nil},
 		}},
 		{match: "FROM sys.server_principals r", cols: 5, rows: [][]driver.Value{
-			{principalSrvRole, int64(20), false, "sa", "appuser"},
+			{principalSrvRole, int64(20), false, "sa", jsonNames("appuser")},
 			{"app_readers", int64(21), false, principalSrvRole, nil},
 			{"app_writers", int64(22), false, principalSrvRole, nil},
 			{"sysadmin", int64(3), true, "sa", nil},

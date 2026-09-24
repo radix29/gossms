@@ -312,6 +312,10 @@ type Config struct {
 	Connections   []Connection `json:"connections"`
 	IconStyle     IconStyle    `json:"icon_style"`
 	MaxCellLength int          `json:"max_cell_length"`
+	// MaxTextColumnLength is how many characters Results to Text shows of each
+	// column, SSMS's "Maximum number of characters displayed in each column".
+	// Zero or negative means DefaultMaxTextColumnLength.
+	MaxTextColumnLength int `json:"max_text_column_length"`
 	// IntelliSenseDisabled turns off editor autocomplete. Inverted so the zero
 	// value keeps it on.
 	IntelliSenseDisabled bool `json:"intellisense_disabled"`
@@ -352,6 +356,11 @@ type connOp struct {
 // truncating, absent an Options override; a column dragged wider shows more.
 // Load applies it to a zero MaxCellLength.
 const DefaultMaxCellLength = 24
+
+// DefaultMaxTextColumnLength is SSMS's default for the same cap in Results to
+// Text. It is the only cap there: a text column is as wide as its widest value,
+// so without one a single megabyte cell padded every row to a megabyte.
+const DefaultMaxTextColumnLength = 256
 
 // DefaultIndentWidth is how many spaces the query editor indents by absent an
 // Options override, and MaxIndentWidth the sanity ceiling Load and the Options
@@ -464,6 +473,7 @@ func Load() *Config {
 func defaultConfig() *Config {
 	cfg := new(Config) // Go 1.26: new(expr) — zero-value Config
 	cfg.MaxCellLength = DefaultMaxCellLength
+	cfg.MaxTextColumnLength = DefaultMaxTextColumnLength
 	cfg.IndentWidth = DefaultIndentWidth
 	return cfg
 }
@@ -482,6 +492,9 @@ func parseConfig(path string, data []byte) *Config {
 	}
 	if cfg.MaxCellLength <= 0 {
 		cfg.MaxCellLength = DefaultMaxCellLength
+	}
+	if cfg.MaxTextColumnLength <= 0 {
+		cfg.MaxTextColumnLength = DefaultMaxTextColumnLength
 	}
 	if cfg.IndentWidth < 1 || cfg.IndentWidth > MaxIndentWidth {
 		cfg.IndentWidth = DefaultIndentWidth

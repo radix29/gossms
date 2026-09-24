@@ -8,7 +8,7 @@ that gets answered moves there rather than staying here as history.
 ## Version support: the policy, and how it is held
 
 The target is **SQL Server 2016 SP1 and later**. SP1 rather than RTM because
-`procedure.go`, `scripter.go` and gossms's `internal/activity/block.go` emit
+`procedure.go`, `scripter_module.go` and gossms's `internal/activity/block.go` emit
 `CREATE OR ALTER`.
 
 Three real on-premises instances exist — majors **13** (`win10cli\SQL2016`,

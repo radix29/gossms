@@ -137,9 +137,9 @@ func specRows() fakeResponse {
 		cols:  8,
 		rows: [][]driver.Value{
 			{int64(65536), "AppSpec", "11111111-1111-1111-1111-111111111111", "AppLogAudit",
-				true, auditCreated, auditCreated, "BACKUP_RESTORE_GROUP"},
+				true, auditCreated, auditCreated, jsonNames("BACKUP_RESTORE_GROUP")},
 			{int64(65537), "HIPAA_spec", "22222222-2222-2222-2222-222222222222", "HIPAA",
-				false, auditCreated, auditCreated, "DATABASE_CHANGE_GROUP,LOGIN_CHANGE_PASSWORD_GROUP"},
+				false, auditCreated, auditCreated, jsonNames("DATABASE_CHANGE_GROUP", "LOGIN_CHANGE_PASSWORD_GROUP")},
 			// An orphan: SQL Server allows an audit to be dropped out from
 			// under a specification, which leaves the join returning NULL.
 			{int64(65538), "Orphan", "44444444-4444-4444-4444-444444444444", nil,

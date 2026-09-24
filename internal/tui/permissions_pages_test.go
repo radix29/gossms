@@ -31,7 +31,7 @@ const permDatabase = "appdb"
 // entirely would pass against a one-principal fake.
 func permPrincipalResponses() []fakeResponse {
 	return []fakeResponse{
-		{match: "WHERE  type IN ('S','U','G')", db: permDatabase, cols: 7, rows: [][]driver.Value{
+		{match: "WHERE  type IN ('S','U','G','E','X','C','K')", db: permDatabase, cols: 7, rows: [][]driver.Value{
 			{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
 			{"appwriter", int64(6), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
 		}},
@@ -226,9 +226,9 @@ func TestPermissionsMatrixWritesNothingWhenUntouched(t *testing.T) {
 // principal lists. Two of each again, and the login acted on is neither first
 // nor last.
 func loginListResponse() fakeResponse {
-	return fakeResponse{match: "FROM sys.server_principals\n\tWHERE type IN ('S','U','G','E','X','C','K')", cols: 7, rows: [][]driver.Value{
-		{"appuser", []byte{0x01}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}},
-		{"otheruser", []byte{0x02}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}},
+	return fakeResponse{match: "WHERE sp.type IN ('S','U','G','E','X','C','K')\n\tORDER BY sp.name", cols: 10, rows: [][]driver.Value{
+		{"appuser", []byte{0x01}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}, "us_english", true, false},
+		{"otheruser", []byte{0x02}, "SQL_LOGIN", false, "master", time.Time{}, time.Time{}, "us_english", true, false},
 	}}
 }
 

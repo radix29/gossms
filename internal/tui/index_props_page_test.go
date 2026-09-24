@@ -42,7 +42,7 @@ func idxTableResp() fakeResponse {
 // idxListResp answers Table.indexList with one index. The scan order is
 // sys.indexes' own; see gosmo's table.go.
 func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
-	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 20, rows: [][]driver.Value{{
+	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 21, rows: [][]driver.Value{{
 		name, indexID, opts.typeDesc,
 		opts.unique, opts.primaryKey, opts.uniqueConstraint, false,
 		opts.fillFactor, opts.filter,
@@ -50,6 +50,7 @@ func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
 		opts.compression,
 		"PRIMARY", int64(0), true, "",
 		opts.noRecompute, false,
+		int64(0),
 	}}}
 }
 
@@ -218,10 +219,11 @@ func idxColumnResp(names ...string) fakeResponse {
 			false, false,
 			false, false,
 			"",
-			int64(0), false,
+			int64(0), false, false,
+			int64(0),
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 26, rows: rows}
+	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 28, rows: rows}
 }
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on

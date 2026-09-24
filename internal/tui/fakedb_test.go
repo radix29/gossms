@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -1269,4 +1270,19 @@ func newFakeDialog(t *testing.T) (*PropDialog, *App) {
 func drainDialog(t *testing.T, app *App, cond func() bool, what string) {
 	t.Helper()
 	drainUntil(t, app, cond, what)
+}
+
+// jsonNames is a list column as gosmo's jsonList reads it back — the FOR JSON
+// array [{"v":…},…] — or nil for no names, since the server returns NULL over
+// zero rows.
+func jsonNames(names ...string) driver.Value {
+	if len(names) == 0 {
+		return nil
+	}
+	parts := make([]string, len(names))
+	for i, n := range names {
+		b, _ := json.Marshal(n)
+		parts[i] = `{"v":` + string(b) + `}`
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }

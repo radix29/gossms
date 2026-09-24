@@ -30,9 +30,9 @@ func membershipResponses() []fakeResponse {
 		// sys.database_role_members subquery, so behind the members answer it
 		// is served two columns for a five-column scan.
 		{match: "r.type = 'R'", db: "appdb", cols: 5, rows: [][]driver.Value{
-			{"public", int64(0), false, "dbo", "alice"},
+			{"public", int64(0), false, "dbo", jsonNames("alice")},
 			{"db_owner", int64(1), true, "dbo", nil},
-			{"salesrole", int64(2), false, "dbo", "alice, bob"},
+			{"salesrole", int64(2), false, "dbo", jsonNames("alice", "bob")},
 			// A non-member role that is not the first row of the grid: a page
 			// that ticked the *first* role whatever row was clicked would
 			// still look right if every test used the first one.
@@ -51,16 +51,16 @@ func membershipResponses() []fakeResponse {
 		// ordering rule as the database half above.
 		{match: "FROM sys.server_principals r", cols: 5, rows: [][]driver.Value{
 			{"public", int64(0), true, "sa", nil},
-			{"sysadmin", int64(1), true, "sa", "appuser, svcuser"},
+			{"sysadmin", int64(1), true, "sa", jsonNames("appuser", "svcuser")},
 			{"securityadmin", int64(2), true, "sa", nil},
 		}},
 		{match: "FROM   sys.server_role_members rm", cols: 2, rows: [][]driver.Value{
 			{"appuser", "SQL_LOGIN"}, {"svcuser", "SQL_LOGIN"},
 		}},
-		{match: "name, sid, type_desc, is_disabled", cols: 7, rows: [][]driver.Value{
-			{"appuser", []byte{1}, "SQL_LOGIN", false, "master", time.Now(), time.Now()},
-			{"svcuser", []byte{2}, "SQL_LOGIN", false, "master", time.Now(), time.Now()},
-			{"newlogin", []byte{3}, "SQL_LOGIN", false, "master", time.Now(), time.Now()},
+		{match: "sp.name, sp.sid, sp.type_desc, sp.is_disabled", cols: 10, rows: [][]driver.Value{
+			{"appuser", []byte{1}, "SQL_LOGIN", false, "master", time.Now(), time.Now(), "us_english", true, false},
+			{"svcuser", []byte{2}, "SQL_LOGIN", false, "master", time.Now(), time.Now(), "us_english", true, false},
+			{"newlogin", []byte{3}, "SQL_LOGIN", false, "master", time.Now(), time.Now(), "us_english", true, false},
 		}},
 	}
 }

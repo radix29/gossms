@@ -202,19 +202,12 @@ func (sc *ServerConn) forgetPeerFailures(key string, seen map[*ServerConn]bool) 
 	}
 }
 
-// recordPeerFailure caches err for key and returns it, for `return nil,
-// sc.recordPeerFailure(...)`.
+// recordPeerFailureLocked caches err for key and returns it, for `return nil,
+// sc.recordPeerFailureLocked(...)`. peerMu must be held.
 //
 // Without it, a primary that drops packets costs the full connect timeout (15s,
 // 30s with a fallback) on every call: expanding an AG's three folders stalled
 // 45s, then Properties another 15s.
-func (sc *ServerConn) recordPeerFailure(key string, err error) error {
-	sc.peerMu.Lock()
-	defer sc.peerMu.Unlock()
-	return sc.recordPeerFailureLocked(key, err)
-}
-
-// recordPeerFailureLocked is recordPeerFailure with peerMu held.
 func (sc *ServerConn) recordPeerFailureLocked(key string, err error) error {
 	if sc.peerFails == nil {
 		sc.peerFails = map[string]peerFailure{}

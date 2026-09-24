@@ -52,7 +52,7 @@ func mappingResponses() []fakeResponse {
 		// database's list it was read from.
 		fakeResponse{match: "r.type = 'R'", db: "appdb", cols: 5, rows: [][]driver.Value{
 			{"public", int64(0), false, "dbo", nil},
-			{"db_datareader", int64(1), true, "dbo", "appuser"},
+			{"db_datareader", int64(1), true, "dbo", jsonNames("appuser")},
 			{"db_owner", int64(2), true, "dbo", nil},
 		}},
 		fakeResponse{match: "r.type = 'R'", cols: 5, rows: [][]driver.Value{
@@ -62,8 +62,8 @@ func mappingResponses() []fakeResponse {
 		}},
 
 		// The by-name user read apply makes before a schema change.
-		fakeResponse{match: "sp.sid = dp.sid", cols: 9, rows: [][]driver.Value{
-			{int64(7), "SQL_USER", "sales", time.Now(), time.Now(), "INSTANCE", []byte{0x01, 0x02}, "appuser", false},
+		fakeResponse{match: "sp.sid = dp.sid", cols: 10, rows: [][]driver.Value{
+			{int64(7), "SQL_USER", "sales", time.Now(), time.Now(), "INSTANCE", []byte{0x01, 0x02}, "appuser", false, nil},
 		}},
 	)
 }

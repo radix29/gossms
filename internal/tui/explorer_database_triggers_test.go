@@ -118,9 +118,9 @@ func dbTriggerRows() fakeResponse {
 		match: "tr.parent_class = 0",
 		cols:  6,
 		rows: [][]driver.Value{
-			{"aaa_first", false, when, when, "CREATE_TABLE", "CREATE TRIGGER [aaa_first] ON DATABASE ..."},
-			{"ddl_audit", true, when, when, "CREATE_TABLE,ALTER_TABLE", "CREATE TRIGGER [ddl_audit] ON DATABASE ..."},
-			{"clr_guard", false, when, when, "DROP_TABLE", nil},
+			{"aaa_first", false, when, when, jsonNames("CREATE_TABLE"), "CREATE TRIGGER [aaa_first] ON DATABASE ..."},
+			{"ddl_audit", true, when, when, jsonNames("CREATE_TABLE", "ALTER_TABLE"), "CREATE TRIGGER [ddl_audit] ON DATABASE ..."},
+			{"clr_guard", false, when, when, jsonNames("DROP_TABLE"), nil},
 		},
 	}
 }
@@ -237,7 +237,7 @@ func TestTheTwoTriggerFamiliesReadDifferentRows(t *testing.T) {
 		match: "tr.parent_class = 1",
 		cols:  6,
 		rows: [][]driver.Value{
-			{"tr_Patient", "Patient", "dbo", false, "INSERT", "CREATE TRIGGER dbo.tr_Patient ..."},
+			{"tr_Patient", "Patient", "dbo", false, jsonNames("INSERT"), "CREATE TRIGGER dbo.tr_Patient ..."},
 		},
 	}
 	sc, _ := dbTriggerConn(t, dml)

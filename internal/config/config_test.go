@@ -217,6 +217,37 @@ func TestLoadMissingFileReturnsEmptyConfig(t *testing.T) {
 	if cfg.MaxCellLength != DefaultMaxCellLength {
 		t.Errorf("MaxCellLength = %d, want default %d", cfg.MaxCellLength, DefaultMaxCellLength)
 	}
+	if cfg.MaxTextColumnLength != DefaultMaxTextColumnLength {
+		t.Errorf("MaxTextColumnLength = %d, want default %d", cfg.MaxTextColumnLength, DefaultMaxTextColumnLength)
+	}
+}
+
+// A config.json from before the text-column cap existed, or with a
+// non-positive one, loads with SSMS's default rather than a zero cap that
+// would render every text column empty.
+func TestLoadDefaultsMaxTextColumnLength(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want int
+	}{
+		{`{}`, DefaultMaxTextColumnLength},
+		{`{"max_text_column_length": 0}`, DefaultMaxTextColumnLength},
+		{`{"max_text_column_length": -5}`, DefaultMaxTextColumnLength},
+		{`{"max_text_column_length": 8192}`, 8192},
+	} {
+		dir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		cfgDir := filepath.Join(dir, "gossms")
+		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(tc.data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := Load().MaxTextColumnLength; got != tc.want {
+			t.Errorf("%s: MaxTextColumnLength = %d, want %d", tc.data, got, tc.want)
+		}
+	}
 }
 
 // A config.json with the removed Max Result Rows key must still load.
@@ -439,6 +470,7 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 	cfg := &Config{
 		IconStyle:            IconStylePortable,
 		MaxCellLength:        123,
+		MaxTextColumnLength:  512,
 		IntelliSenseDisabled: true,
 		IndentWidth:          2,
 	}
@@ -446,7 +478,7 @@ func TestSaveCarriesUnnamedFields(t *testing.T) {
 		t.Fatalf("Save() = %v", err)
 	}
 	got := Load()
-	if got.IconStyle != IconStylePortable || got.MaxCellLength != 123 ||
+	if got.IconStyle != IconStylePortable || got.MaxCellLength != 123 || got.MaxTextColumnLength != 512 ||
 		!got.IntelliSenseDisabled || got.IndentWidth != 2 {
 		t.Errorf("round-tripped config = %+v, want every field preserved", got)
 	}

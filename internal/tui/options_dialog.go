@@ -18,6 +18,7 @@ type optionsZone int
 const (
 	zoneIconStyle optionsZone = iota
 	zoneMaxCellLen
+	zoneMaxTextLen
 	zoneIndentWidth
 	zoneIntelliSense
 	zoneOptButtons
@@ -31,13 +32,14 @@ type OptionsDialog struct {
 
 	rbIconStyle    *widgets.RadioBox
 	fMaxCellLen    *widgets.InputField
+	fMaxTextLen    *widgets.InputField
 	fIndentWidth   *widgets.InputField
 	cbIntelliSense *widgets.CheckBox
 
-	// drag owns the text-selection gesture a press in one of the two input
+	// drag owns the text-selection gesture a press in one of the input
 	// fields starts — see dialogs.FieldGesture for why the three calls it
 	// drives have to sit where they do in HandleMouse. One value suffices for
-	// both fields: the gesture is per-target, holding whichever field claimed
+	// every field: the gesture is per-target, holding whichever field claimed
 	// the press.
 	drag dialogs.FieldGesture
 
@@ -48,7 +50,7 @@ type OptionsDialog struct {
 // NewOptionsDialog creates the Options dialog.
 func NewOptionsDialog(app *App) *OptionsDialog {
 	d := &OptionsDialog{app: app}
-	d.InitModal(app.screen, "Options", 60, 17)
+	d.InitModal(app.screen, "Options", 60, 19)
 
 	styles := config.AllIconStyles()
 	labels := make([]string, len(styles))
@@ -58,6 +60,7 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.rbIconStyle = widgets.NewRadioBox("Object Explorer Icons:", labels)
 
 	d.fMaxCellLen = widgets.NewInputField("Max default cell length:", 5, false)
+	d.fMaxTextLen = widgets.NewInputField("Max characters per column (text):", 5, false)
 	d.fIndentWidth = widgets.NewInputField("Indent size (spaces):", 5, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
 	return d
@@ -74,6 +77,7 @@ func (d *OptionsDialog) Show() {
 		}
 	}
 	d.fMaxCellLen.SetValue(strconv.Itoa(d.app.cfg.MaxCellLength))
+	d.fMaxTextLen.SetValue(strconv.Itoa(d.app.cfg.MaxTextColumnLength))
 	d.fIndentWidth.SetValue(strconv.Itoa(d.app.cfg.IndentWidth))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
 	d.setZone(zoneIconStyle)
@@ -87,6 +91,7 @@ func (d *OptionsDialog) setZone(z optionsZone) {
 	d.zone = z
 	d.rbIconStyle.Focus(z == zoneIconStyle)
 	d.fMaxCellLen.Focus(z == zoneMaxCellLen)
+	d.fMaxTextLen.Focus(z == zoneMaxTextLen)
 	d.fIndentWidth.Focus(z == zoneIndentWidth)
 	d.cbIntelliSense.Focus(z == zoneIntelliSense)
 }
@@ -104,10 +109,13 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
 	d.fMaxCellLen.Draw(s)
 
-	d.fIndentWidth.SetBounds(inner.X+1, inner.Y+8)
+	d.fMaxTextLen.SetBounds(inner.X+1, inner.Y+8)
+	d.fMaxTextLen.Draw(s)
+
+	d.fIndentWidth.SetBounds(inner.X+1, inner.Y+10)
 	d.fIndentWidth.Draw(s)
 
-	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+10)
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+12)
 	d.cbIntelliSense.Draw(s)
 
 	d.DrawSeparator(s)
@@ -134,9 +142,24 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		}
 		switch ev.Key() {
 		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneIndentWidth)
+			d.setZone(zoneMaxTextLen)
 		case tcell.KeyBacktab, tcell.KeyUp:
 			d.setZone(zoneIconStyle)
+		case tcell.KeyEnter:
+			d.doButton()
+		default:
+			return false
+		}
+		return true
+	case zoneMaxTextLen:
+		if d.fMaxTextLen.HandleKey(ev) {
+			return true
+		}
+		switch ev.Key() {
+		case tcell.KeyTab, tcell.KeyDown:
+			d.setZone(zoneIndentWidth)
+		case tcell.KeyBacktab, tcell.KeyUp:
+			d.setZone(zoneMaxCellLen)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -151,7 +174,7 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		case tcell.KeyTab, tcell.KeyDown:
 			d.setZone(zoneIntelliSense)
 		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxCellLen)
+			d.setZone(zoneMaxTextLen)
 		case tcell.KeyEnter:
 			d.doButton()
 		default:
@@ -243,6 +266,11 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		d.drag.Claim(d.fMaxCellLen, ev)
 		return true
 	}
+	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fMaxTextLen.HitTest(mx, my) {
+		d.setZone(zoneMaxTextLen)
+		d.drag.Claim(d.fMaxTextLen, ev)
+		return true
+	}
 	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fIndentWidth.HitTest(mx, my) {
 		d.setZone(zoneIndentWidth)
 		d.drag.Claim(d.fIndentWidth, ev)
@@ -275,12 +303,12 @@ func (d *OptionsDialog) doButton() {
 // dialogs, since which sheets host a writable EditorRow changes with the pages.
 type editorIndentHost interface{ SetEditorIndentWidth(n int) }
 
-// apply commits all four settings — icon style, max cell length, indent size
-// and whether IntelliSense is enabled — to the config, persists it, and
+// apply commits all five settings — icon style, max cell length, max text
+// column length, indent size and whether IntelliSense is enabled — to the config, persists it, and
 // rebuilds the Object Explorer so the icon change is visible immediately.
 //
-// The indent size needs one step the others don't: MaxCellLength and
-// IntelliSenseDisabled are read from cfg where they are used, but the width
+// The indent size needs one step the others don't: MaxCellLength,
+// MaxTextColumnLength and IntelliSenseDisabled are read from cfg where they are used, but the width
 // lives in each Editor, so it has to be pushed into the open query panels and
 // property sheets (and into the default new editors are seeded from) here.
 func (d *OptionsDialog) apply() {
@@ -292,6 +320,11 @@ func (d *OptionsDialog) apply() {
 		d.app.cfg.MaxCellLength = n
 	} else {
 		d.app.cfg.MaxCellLength = config.DefaultMaxCellLength
+	}
+	if n, err := strconv.Atoi(d.fMaxTextLen.Value()); err == nil && n > 0 {
+		d.app.cfg.MaxTextColumnLength = n
+	} else {
+		d.app.cfg.MaxTextColumnLength = config.DefaultMaxTextColumnLength
 	}
 	n := config.DefaultIndentWidth
 	if v, err := strconv.Atoi(d.fIndentWidth.Value()); err == nil && v >= 1 && v <= config.MaxIndentWidth {
@@ -321,13 +354,15 @@ func (d *OptionsDialog) apply() {
 	d.app.explorer.rebuild()
 }
 
-// FocusedClipboardTarget implements core.ClipboardHost: whichever of the two
+// FocusedClipboardTarget implements core.ClipboardHost: whichever of the
 // input fields has focus. The radio box, the checkbox and the button row
 // answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
 	switch d.zone {
 	case zoneMaxCellLen:
 		return d.fMaxCellLen
+	case zoneMaxTextLen:
+		return d.fMaxTextLen
 	case zoneIndentWidth:
 		return d.fIndentWidth
 	}

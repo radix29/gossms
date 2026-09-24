@@ -638,7 +638,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	case err == nil:
 		// Already there; nothing to create.
 	case errors.Is(err, gosmo.ErrNotFound):
-		if err := p.master.CreateUser(ctx, user, login, ""); err != nil && !isAlreadyExists(err) {
+		if err := p.master.CreateUser(ctx, gosmo.CreateUserRequest{Name: user, Login: login}); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
 		}
 	default:

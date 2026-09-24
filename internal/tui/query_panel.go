@@ -88,6 +88,16 @@ type QueryPanel struct {
 	activeTab int           // 0..len(result.Sets)-1 = result grids; len(result.Sets) = Messages
 	tabRect   core.Rect     // results tab bar row; zero rect while hidden
 
+	// textMemo is the last Results to Text rendering and what it was rendered
+	// from, so a tab switch back to a set already seen reuses it: formatting is
+	// a pass over every cell. A result's sets never change once setResult has
+	// installed it, so the pointer, the tab and the column cap are the whole key.
+	textMemo struct {
+		result   *query.Result
+		tab, max int
+		text     string
+	}
+
 	// statusRect is the results area's bottom row, where drawResultsStatus
 	// paints the execution status for every tab the DataGrid isn't drawing —
 	// the grid renders the same line inside its own rect. Zero when the results

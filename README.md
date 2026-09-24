@@ -267,6 +267,7 @@ Connections are saved automatically, with the 30 most recent listed first in
 the Connect dialog's History pane. A password is saved only when **Remember
 Password** is ticked.
 Tools > Options controls the tree icon style, default results-grid cell width,
+the characters shown per column in Results to Text (default 256, as in SSMS),
 query-editor indent size (spaces per indent level, default 4) and IntelliSense.
 
 Configuration is stored at:

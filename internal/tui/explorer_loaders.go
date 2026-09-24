@@ -176,6 +176,7 @@ var nodeMenus = map[NodeType]menuBuilder{
 	NodeDatabaseSnapshot:  databaseSnapshotMenuItems,
 	NodeQueryStore:        queryStoreMenuItems,
 	NodeQueryStoreReport:  queryStoreReportMenuItems,
+	NodeUsers:             usersMenuItems,
 	NodeUser:              userMenuItems,
 	NodeDatabaseRole:      databaseRoleMenuItems,
 	NodeSchema:            schemaMenuItems,

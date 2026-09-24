@@ -113,3 +113,34 @@ func TestOptionsApplyPushesIndentWidthToOpenSheetEditors(t *testing.T) {
 		t.Errorf("open job-step editor IndentWidth() = %d, want 2 — apply must reach the open sheets", got)
 	}
 }
+
+// Options pre-fills the text-column cap and applies it, falling back to SSMS's
+// default for anything that is not a positive number.
+func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Cleanup(func() { controls.SetDefaultIndentWidth(controls.DefaultIndentWidth) })
+
+	for _, tc := range []struct {
+		in   string
+		want int
+	}{
+		{"1024", 1024},
+		{"", config.DefaultMaxTextColumnLength},
+		{"0", config.DefaultMaxTextColumnLength},
+		{"-3", config.DefaultMaxTextColumnLength},
+		{"wide", config.DefaultMaxTextColumnLength},
+	} {
+		a := newTestApp()
+		a.cfg.MaxTextColumnLength = 300
+		d := NewOptionsDialog(a)
+		d.Show()
+		if got := d.fMaxTextLen.Value(); got != "300" {
+			t.Fatalf("Show() pre-filled %q, want \"300\"", got)
+		}
+		d.fMaxTextLen.SetValue(tc.in)
+		d.apply()
+		if got := a.cfg.MaxTextColumnLength; got != tc.want {
+			t.Errorf("apply(%q): MaxTextColumnLength = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}

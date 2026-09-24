@@ -40,7 +40,7 @@ func databaseGeneralResponses(owner string) []fakeResponse {
 			false, false,
 			false, false, false,
 		}}},
-		{match: "WHERE  type IN ('S','U','G')", db: genDatabase, cols: 7, rows: [][]driver.Value{
+		{match: "WHERE  type IN ('S','U','G','E','X','C','K')", db: genDatabase, cols: 7, rows: [][]driver.Value{
 			{"appreader", int64(5), "SQL_USER", "dbo", time.Time{}, time.Time{}, "INSTANCE"},
 		}},
 		{match: "msdb.dbo.backupset", cols: 12, rows: nil},

@@ -643,6 +643,21 @@ func queryStoreReportMenuItems(a *App, sc *db.ServerConn, node *explorerNode, ne
 	}
 }
 
+// usersMenuItems is the Users folder's menu. New User takes the right set a
+// user's own writes do (explorerObjectRights' NodeUser entry): CREATE USER
+// needs ALTER ANY USER, which ALTER and CONTROL on the database both imply.
+func usersMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
+	return []controls.MenuItem{
+		newQuery,
+		{Divider: true},
+		gate.Item(controls.MenuItem{Label: "New User...",
+			Action: func() { a.showNewUserDialog(sc, node) }},
+			sc, node.data.DBName, gate.AlterAnyUser, gate.AlterDatabase, gate.ControlDB),
+		{Divider: true},
+		refresh,
+	}
+}
+
 func userMenuItems(a *App, sc *db.ServerConn, node *explorerNode, newQuery, refresh controls.MenuItem) []controls.MenuItem {
 	return propertiesOnlyMenu(newQuery, refresh, func() {
 		a.showUserPropertiesFor(sc, node.data.DBName, node.data.Name)
