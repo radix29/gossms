@@ -27,7 +27,7 @@ func newUserTestDialog(t *testing.T, pf *nuserPrefetch, responses ...fakeRespons
 	d.forms = make([]*propsheet.Form, 3)
 	d.applyFns = make([]propApply, 3)
 	if pf.existingNames == nil {
-		pf.existingNames = map[string]bool{"alice": true, "db_owner": true}
+		pf.existingNames = newNameSet("", "alice", "db_owner")
 	}
 	if pf.logins == nil {
 		pf.logins = []string{"applogin", `CONTOSO\bob`, "svclogin"}
@@ -160,7 +160,7 @@ func TestNewUserKinds(t *testing.T) {
 				editSelect(t, f, "Login name", `CONTOSO\bob`)
 			},
 			want: `CREATE USER [CONTOSO\bob] FOR LOGIN [CONTOSO\bob]`},
-		{name: "Entra", pf: nuserPrefetch{azure: true},
+		{name: "Entra", pf: nuserPrefetch{entra: true},
 			edit: func(t *testing.T, f *propsheet.Form) {
 				editText(t, f, "User name", "a@contoso.com")
 				editRadio(t, f, "User type", "External user or group")
@@ -209,10 +209,10 @@ func TestNewUserKinds(t *testing.T) {
 	}
 }
 
-// Entra is offered only where an engine edition takes it.
-func TestNewUserOffersEntraOnlyOnAzure(t *testing.T) {
-	for _, azure := range []bool{false, true} {
-		d := newUserTestDialog(t, &nuserPrefetch{azure: azure})
+// Entra is offered only where the prefetch says the server takes it.
+func TestNewUserOffersEntraOnlyWhereTheServerTakesIt(t *testing.T) {
+	for _, entra := range []bool{false, true} {
+		d := newUserTestDialog(t, &nuserPrefetch{entra: entra})
 		var kind *propsheet.RadioRow
 		for _, r := range d.forms[0].Rows() {
 			if rr, ok := r.(*propsheet.RadioRow); ok && rr.Label() == "User type" {
@@ -226,8 +226,8 @@ func TestNewUserOffersEntraOnlyOnAzure(t *testing.T) {
 		for _, o := range kind.Options() {
 			has = has || o == "External user or group"
 		}
-		if has != azure {
-			t.Errorf("azure=%v: Entra offered = %v", azure, has)
+		if has != entra {
+			t.Errorf("entra=%v: Entra offered = %v", entra, has)
 		}
 	}
 }

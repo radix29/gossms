@@ -40,9 +40,9 @@ const nuserDefaultSchema = "(Default)"
 
 // nuserPrefetch is everything the dialog reads before it opens.
 type nuserPrefetch struct {
-	// existingNames holds every database principal's name, lowered: a user
-	// cannot share one with a role either.
-	existingNames map[string]bool
+	// existingNames holds every database principal's name: a user cannot
+	// share one with a role either.
+	existingNames *nameSet
 	logins        []string
 	windowsLogins []string
 	schemas       []*gosmo.Schema
@@ -53,10 +53,10 @@ type nuserPrefetch struct {
 	// containment is the database's CONTAINMENT, or "" when it could not be
 	// read — then gosmo's own check is the one that refuses.
 	containment string
-	// azure offers the Entra kind; everyContained skips the containment
+	// entra offers the Entra kind; everyContained skips the containment
 	// preflight on Azure SQL Database, where every database takes contained
 	// users while reporting CONTAINMENT = NONE.
-	azure          bool
+	entra          bool
 	everyContained bool
 }
 
@@ -65,7 +65,7 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 	if err != nil {
 		return nil, err
 	}
-	pf := &nuserPrefetch{existingNames: map[string]bool{}, azure: serverIsAzure(sc)}
+	pf := &nuserPrefetch{existingNames: newNameSet(databaseCollation(d)), entra: entraPrincipalsOffered(sc.Server.Info())}
 	if info := sc.Server.Info(); info != nil {
 		pf.everyContained = gosmo.EngineEdition(info.EngineEdition) == gosmo.EngineAzureSQLDatabase
 	}
@@ -75,14 +75,14 @@ func fetchNewUserPrefetch(ctx context.Context, sc *db.ServerConn, dbName string)
 		return nil, err
 	}
 	for _, u := range users {
-		pf.existingNames[strings.ToLower(u.Name)] = true
+		pf.existingNames.Add(u.Name)
 	}
 	roles, err := d.DatabaseRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range roles {
-		pf.existingNames[strings.ToLower(r.Name)] = true
+		pf.existingNames.Add(r.Name)
 		// public's membership is implicit and ALTER ROLE public ADD MEMBER
 		// is a syntax error — the exclusion every membership page makes.
 		if r.Name != "public" {
@@ -188,11 +188,11 @@ type nuserGeneral struct {
 }
 
 // nuserKindsFor is the User type options on this server: Entra is left off
-// where no engine edition takes it.
+// where entraPrincipalsOffered says the server refuses it.
 func nuserKindsFor(pf *nuserPrefetch) []gosmo.UserKind {
 	var out []gosmo.UserKind
 	for _, k := range nuserKinds {
-		if k.kind == gosmo.UserFromExternalProvider && !pf.azure {
+		if k.kind == gosmo.UserFromExternalProvider && !pf.entra {
 			continue
 		}
 		out = append(out, k.kind)
@@ -302,7 +302,8 @@ func buildNewUserGeneralPage(sc *db.ServerConn, dbName string, pf *nuserPrefetch
 		// DatabaseRef, not DatabaseByName: the statement addresses the
 		// database by name, and the by-name read would not work under Script
 		// Changes.
-		return sc.Server.DatabaseRef(dbName).CreateUser(ctx, req)
+		_, err := sc.Server.DatabaseRef(dbName).CreateUser(ctx, req)
+		return err
 	}
 	return g
 }
@@ -357,7 +358,7 @@ func validateNewUser(in nuserInput, pf *nuserPrefetch) error {
 	if r.Name == "" {
 		return fmt.Errorf("user name is required")
 	}
-	if pf.existingNames[strings.ToLower(r.Name)] {
+	if pf.existingNames.Has(r.Name) {
 		return fmt.Errorf("a user or role named %q already exists", r.Name)
 	}
 	switch r.Kind {

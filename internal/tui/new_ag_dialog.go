@@ -95,7 +95,7 @@ type newAGPrefetch struct {
 	// error, because the reason is the useful part.
 	blocker string
 
-	existingGroups map[string]bool
+	existingGroups *nameSet
 
 	databases []newAGDatabase
 	excluded  []string
@@ -169,7 +169,7 @@ func (d *NewAGDialog) show(sc *db.ServerConn, node *explorerNode) {
 }
 
 func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*newAGPrefetch, error) {
-	pf := &newAGPrefetch{primaryName: sc.Server.Name(), existingGroups: map[string]bool{}}
+	pf := &newAGPrefetch{primaryName: sc.Server.Name(), existingGroups: newNameSet(serverCollation(sc))}
 
 	if info := sc.Server.Info(); info != nil && !info.IsHADREnabled {
 		pf.blocker = fmt.Sprintf("Always On availability groups are not enabled on %s. Enable the feature and restart the instance first — on Linux, `mssql-conf set hadr.hadrenabled 1`.", sc.Opts.Server)
@@ -196,7 +196,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	}
 	inGroup := map[string]bool{}
 	for _, g := range groups {
-		pf.existingGroups[strings.ToLower(g.Name)] = true
+		pf.existingGroups.Add(g.Name)
 		dbs, err := g.Databases(ctx)
 		if err != nil {
 			return nil, err

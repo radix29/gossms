@@ -199,8 +199,8 @@ func TestOptionsDialogDragOutOfTheFieldKeepsExtending(t *testing.T) {
 	if got := dragOutOf(t, d, d.fMaxCellLen, ix+8, y+2); got != "2000" {
 		t.Errorf("SelectedText() = %q, want %q — the drag stopped at the box edge", got, "2000")
 	}
-	if d.zone != zoneMaxCellLen {
-		t.Errorf("zone = %d, want zoneMaxCellLen — a widget below stole a gesture the field owned", d.zone)
+	if d.focusable[d.focusIdx] != d.fMaxCellLen {
+		t.Errorf("focus = %d, want fMaxCellLen — a widget below stole a gesture the field owned", d.focusIdx)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestOptionsDialogShowClearsTheDragLatch(t *testing.T) {
 	}
 	// And the widget's own latch is no longer consulted: a press well clear of
 	// the field must land on whatever is actually there.
-	if d.HandleMouse(tcell.NewEventMouse(ix+40, y+2, tcell.Button1, tcell.ModNone)); d.zone == zoneMaxCellLen {
+	if d.HandleMouse(tcell.NewEventMouse(ix+40, y+2, tcell.Button1, tcell.ModNone)); d.focusable[d.focusIdx] == d.fMaxCellLen {
 		t.Error("a press outside the field was routed to it by a latch from the previous showing")
 	}
 }

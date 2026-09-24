@@ -9,11 +9,12 @@ import (
 	"github.com/gdamore/tcell/v3"
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tuikit/core"
+	"github.com/radix29/gossms/internal/tuikit/theme"
 )
 
 // backup_common.go holds the small helpers the Backup and Restore dialogs
 // (backup_dialog.go, restore_dialog.go) share: server-side path handling,
-// progress-bar drawing, and display formatting for backup metadata.
+// the progress view and its bar, and display formatting for backup metadata.
 
 // wrapMessage lays text out over at most maxLines lines of w columns,
 // clipping the last one with "…" when even that isn't enough.
@@ -109,6 +110,72 @@ func drawProgressBar(s tcell.Screen, x, y, w, pct int, st tcell.Style) {
 	}
 	if pct >= 0 {
 		core.DrawText(s, x+barW+1, y, st, strconv.Itoa(pct)+"%")
+	}
+}
+
+// taskProgressView is what the Backup and Restore progress views differ in:
+// their header rows, whether a "Progress:" label sits above the bar, and the
+// operation's name in the final message.
+type taskProgressView struct {
+	header        []string // "Database : x", …, one row each from inner.Y+1
+	progressLabel bool     // Backup's "Progress:" row, a blank row above the bar
+	verb          string   // "Backup" / "Restore"
+	task          *Task
+}
+
+// drawTaskProgress draws a progress view into inner, stopping above bottom
+// (the separator row): the header rows, then — once there is a task — the bar,
+// elapsed and remaining times, and the task's message wrapped over every row
+// left.
+func drawTaskProgress(s tcell.Screen, inner core.Rect, bottom int, v taskProgressView) {
+	p := theme.Active()
+	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
+	lx := inner.X + 1
+	w := inner.W - 2
+
+	for i, h := range v.header {
+		core.DrawTextClipped(s, lx, inner.Y+1+i, w, labelStyle, h)
+	}
+	t := v.task
+	if t == nil {
+		return
+	}
+	y := inner.Y + len(v.header) + 2
+	if v.progressLabel {
+		core.DrawText(s, lx, y, labelStyle, "Progress:")
+		y += 2
+	}
+	pct := t.Progress
+	if t.Done && t.Err == nil {
+		pct = 100
+	}
+	drawProgressBar(s, lx, y, w, pct, labelStyle)
+
+	elapsed, remaining, haveRemaining := taskTimes(t)
+	core.DrawText(s, lx, y+2, labelStyle, "Elapsed  : "+formatHMS(elapsed))
+	rem := "--:--:--"
+	if haveRemaining {
+		rem = formatHMS(remaining)
+	}
+	core.DrawText(s, lx, y+3, labelStyle, "Remaining: "+rem)
+
+	msg := t.Message
+	msgStyle := labelStyle
+	switch {
+	case t.Done && t.Err != nil:
+		msg = "Failed: " + t.Err.Error()
+		msgStyle = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
+	case t.Done:
+		msg = v.verb + " completed successfully."
+	case msg == "":
+		msg = "Starting " + strings.ToLower(v.verb) + "..."
+	}
+	// Last, and given every remaining row down to the separator: a failed
+	// backup or restore reports SQL Server's own message, which is far longer
+	// than one line and is the only thing on this screen the user still needs.
+	msgY := y + 5
+	for i, ln := range wrapMessage(msg, w, bottom-msgY) {
+		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
 	}
 }
 

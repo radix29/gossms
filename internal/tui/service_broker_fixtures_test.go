@@ -97,13 +97,14 @@ func serviceContractResp() fakeResponse {
 }
 
 // routeResp is AutoCreatedLocal — which sits at route_id 65536, inside the
-// user range, in every database — and a TCP route with a lifetime.
+// user range, in every database — and a TCP route with a lifetime. The last
+// column is the server's own count of milliseconds left.
 func routeResp() fakeResponse {
-	return fakeResponse{match: "FROM   sys.routes r", cols: 8, rows: [][]driver.Value{
-		{int64(65536), "AutoCreatedLocal", "dbo", "", "", "LOCAL", "", nil},
+	return fakeResponse{match: "FROM   sys.routes r", cols: 9, rows: [][]driver.Value{
+		{int64(65536), "AutoCreatedLocal", "dbo", "", "", "LOCAL", "", nil, nil},
 		{int64(65537), "ClaimRoute", "dbo", "//claims/Service", "",
 			"TCP://remote:4022", "TCP://mirror:4022",
-			time.Now().UTC().Add(2 * time.Hour)},
+			time.Now().UTC().Add(2 * time.Hour), int64(2 * time.Hour / time.Millisecond)},
 	}}
 }
 

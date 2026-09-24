@@ -51,7 +51,7 @@ var newIndexKinds = []newIndexKind{
 // Storage page).
 type nidxPrefetch struct {
 	columns          []*gosmo.Column
-	existingNames    map[string]bool
+	existingNames    *nameSet
 	primaryXMLNames  []string
 	fileGroups       []string
 	partitionSchemes []string
@@ -141,9 +141,9 @@ func (d *NewIndexDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (
 	if err != nil {
 		return nil, err
 	}
-	pf := &nidxPrefetch{columns: cols, existingNames: make(map[string]bool, len(indexes))}
+	pf := &nidxPrefetch{columns: cols, existingNames: newNameSet(databaseCollation(t.Database()))}
 	for _, idx := range indexes {
-		pf.existingNames[strings.ToLower(idx.Name)] = true
+		pf.existingNames.Add(idx.Name)
 	}
 	if d.kind.typ == gosmo.IndexTypeXML {
 		// A secondary XML index is built over a primary one, which the
@@ -213,7 +213,8 @@ func (d *NewIndexDialog) createIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.CreateIndex(ctx, d.request())
+	_, err = t.CreateIndex(ctx, d.request())
+	return err
 }
 
 // request assembles the CreateIndexRequest from whichever rows this type's
@@ -307,7 +308,7 @@ func (d *NewIndexDialog) checkRequest(pf *nidxPrefetch) error {
 	if name == "" {
 		return fmt.Errorf("index name is required")
 	}
-	if pf.existingNames[strings.ToLower(name)] && (d.rows.dropExisting == nil || !d.rows.dropExisting.Checked()) {
+	if pf.existingNames.Has(name) && (d.rows.dropExisting == nil || !d.rows.dropExisting.Checked()) {
 		return fmt.Errorf("an index named %q already exists on %s — tick Drop existing index to replace it", name, fqn(d.schema, d.table))
 	}
 	if nidxNeedsOneColumn(d.kind.typ) && d.rows.singleColumn == nil {

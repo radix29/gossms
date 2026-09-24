@@ -74,7 +74,9 @@ var readTimeoutSites = map[string]int{
 	"alwayson_menu.go":     2,
 	"app_connections.go":   1,
 	"app_explorer_data.go": 3,
-	"backup_dialog.go":     1,
+	// 2: the database list, and the default backup directory the
+	// destination is generated in — see BackupDialog.loadDefaultPaths.
+	"backup_dialog.go": 2,
 	// 2: the node-detail fetch, and re-reading a Query Store query's text for
 	// "Show Value" — see DetailBrowser.showQueryStoreValue.
 	"detail_browser.go":          2,
@@ -87,8 +89,10 @@ var readTimeoutSites = map[string]int{
 	"detail_browser_tables.go":    1,
 	"explorer_object_actions.go":  1,
 	"properties_dialog.go":        1,
-	"restore_dialog_ops.go":       6,
-	"scripting.go":                1,
+	// The default data and log directories — RestoreDialog.loadDefaultPaths.
+	"restore_dialog_files.go": 1,
+	"restore_dialog_ops.go":   6,
+	"scripting.go":            1,
 }
 
 // TestOnlyReadsUseTheReadTimeout pins readTimeoutSites against the package.

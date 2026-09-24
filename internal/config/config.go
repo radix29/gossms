@@ -584,6 +584,13 @@ func (c *Config) Save() error {
 		return err
 	}
 
+	// Locked from the re-read to the write: the merge is only sound if no
+	// other instance writes in between.
+	return fileutil.WithLock(path, func() error { return c.mergeAndWrite(path, key) })
+}
+
+// mergeAndWrite is Save's re-read, merge and write, run under the file lock.
+func (c *Config) mergeAndWrite(path string, key []byte) error {
 	var merged *Config
 	switch data, err := os.ReadFile(path); {
 	case errors.Is(err, fs.ErrNotExist):

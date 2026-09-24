@@ -158,3 +158,14 @@ None outstanding.
   caching them would have to be invalidated by every edit below the cursor
   rather than above it. Not currently measured — the trigger is a benchmark
   showing it matters, with the cursor well above the end.
+
+- **N4 — Wrap mode re-segments the whole document on every keystroke.**
+  `Editor.buildVisualLines` (`internal/tuikit/controls/editor_wrap.go`)
+  memoises on the document version, which every edit bumps, so each keystroke
+  in wrap mode re-wraps every line; `visualIndexForCursor` then scans every
+  visual row. Measured 2026-09-24 on a 20 k-line script: typing plus a Draw
+  costs 6.5 ms per keystroke wrapped, against 0.45 ms unwrapped — inside a
+  frame, so not acted on. The fix, when it is needed, is to re-wrap only the
+  edited logical lines and keep a per-line visual-row prefix sum for the
+  cursor lookup. The trigger is a measurement past a frame (~16 ms): a larger
+  script, or a slower machine.

@@ -310,15 +310,11 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	d.app.safegoRepair("creating the object", d.applyPanicked, func() {
 		defer close(done)
 		defer stop()
-		_, runErr := runApplySteps(runCtx, fns)
+		progress, runErr := runApplySteps(runCtx, fns)
 		d.post(func() {
 			d.SetApplying(false)
-			if runErr != nil && d.run.cancelled {
-				d.createCancelled(runCtx)
-				return
-			}
 			if runErr != nil {
-				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
+				d.createFailed(runCtx, runErr, progress)
 				return
 			}
 			onSuccess()
@@ -326,18 +322,58 @@ func (d *newObjectDialog[P]) runPipeline(runCtx context.Context, onSuccess func(
 	})
 }
 
-// createCancelled reports a run the user cancelled. A create is several
+// createFailed reports a run that stopped at runErr. A create is several
 // statements more often than not — the CREATE, then a page's options, members
-// or schedules — and the cancel may land after the CREATE committed, so the
-// object may exist half-configured. The folder it would appear in is
-// refreshed, so Object Explorer is where the user can see which.
-func (d *newObjectDialog[P]) createCancelled(runCtx context.Context) {
+// or schedules — so a failure, or a cancel, can land after the CREATE
+// committed and leave the object existing half-configured.
+//
+// Once the first page ran to the end the object exists: the dialog counts as
+// created, so a second Apply doesn't re-send the CREATE into "already exists",
+// the folder is refreshed so Object Explorer shows it, and the message says so
+// and names the page that did not land. A first page that failed after some of
+// its statements ran leaves it unknown whether the object exists, so the dialog
+// stays uncreated and the message points at Object Explorer instead.
+func (d *newObjectDialog[P]) createFailed(runCtx context.Context, runErr error, progress applyProgress) {
 	if gosmo.Scripting(runCtx) {
-		d.SetMessage("Script Changes cancelled.", false)
+		if d.run.cancelled {
+			d.SetMessage("Script Changes cancelled.", false)
+			return
+		}
+		d.SetMessage(withPermissionAdvice(runErr).Error(), true)
 		return
 	}
-	d.refresh(d.sc)
-	d.SetMessage("Create cancelled. Part of it may already have run — check Object Explorer before trying again.", false)
+	created := progress.completed > 0
+	if created {
+		d.created = true
+	}
+	if d.run.cancelled || progress.anyCommitted() {
+		d.refresh(d.sc)
+	}
+	what := fmt.Sprintf("%s %q was %s", d.noun, d.objectName(), orDefault(d.verb, "created"))
+	switch {
+	case d.run.cancelled && created:
+		d.SetMessage("Create cancelled after "+what+" — open its Properties to finish.", false)
+	case d.run.cancelled:
+		d.SetMessage("Create cancelled. Part of it may already have run — check Object Explorer before trying again.", false)
+	case created:
+		// The note leads: the message line hard-clips, and SQL Server's own
+		// reason is long enough to push anything appended off the end.
+		d.SetMessage(fmt.Sprintf("%s, but %s failed — open its Properties to finish: %v",
+			what, d.stepName(progress.stopped), withPermissionAdvice(runErr)), true)
+	case progress.wrote:
+		d.SetMessage("Part of it ran before it failed — check Object Explorer before trying again: "+
+			withPermissionAdvice(runErr).Error(), true)
+	default:
+		d.SetMessage(withPermissionAdvice(runErr).Error(), true)
+	}
+}
+
+// stepName names applyFns[i]'s page for a message.
+func (d *newObjectDialog[P]) stepName(i int) string {
+	if i >= 0 && i < len(d.pages) {
+		return d.pages[i]
+	}
+	return "a later page"
 }
 
 func (d *newObjectDialog[P]) runApply(hideOnSuccess bool) {

@@ -25,7 +25,7 @@ func nidxTestPrefetch() *nidxPrefetch {
 			{Name: "Where", DataType: gosmo.DataType("geometry")},
 			{Name: "Notes", DataType: gosmo.DataType("ntext")},
 		},
-		existingNames:    map[string]bool{"ix_orders_existing": true},
+		existingNames:    newNameSet("", "ix_orders_existing"),
 		primaryXMLNames:  []string{"PXML_Orders"},
 		fileGroups:       []string{"PRIMARY", "FG_Archive"},
 		partitionSchemes: []string{"ps_year"},

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/radix29/gosmo"
@@ -87,12 +88,19 @@ func commitRename(ctx context.Context, namePtr *string, newName string) {
 }
 
 // committedApplyError marks an apply failure that changed the server anyway, so
-// the sheet reloads before the message is shown. A failed apply otherwise keeps
-// every page exactly as it was — right when the write never landed, and a lie
-// when it partly did. Audit Properties is the case: its ALTER runs inside a
-// disable window, and a window that cannot re-enable the audit reports the
-// restore's error with the ALTER committed and auditing stopped, leaving the
-// page's State row claiming Enabled for an audit the server has switched off.
+// the whole sheet reloads before the message is shown. A failed apply otherwise
+// keeps every page whose statements never reached the server exactly as it was,
+// and reloads the ones that did — see applyProgress.
+//
+// That per-page account comes from gosmo's statement observer, which cannot see
+// one case: a disable window whose closing re-enable is refused. The window's
+// own brackets are not reported (they normally leave the server as it was), so
+// an ALTER that was refused inside it counts as nothing having landed — while
+// the audit has in fact been left switched off. Audit Properties is the case:
+// switching an enabled audit to SECURITY LOG where the service account may not
+// write it, the restore is refused and the page's State row went on claiming
+// Enabled for an audit the server has switched off. The page re-reads the state
+// and marks the failure itself (auditApplyFailure).
 //
 // Reloading discards the page's edits, which is why only a *committed* failure
 // is marked: the edits are already on the server, and what the user needs to
@@ -134,24 +142,66 @@ func (r *applyRun) cancel() {
 	}
 }
 
+// applyProgress is how far runApplySteps got, and which steps reached the
+// server. A step is committed once one of its statements has executed — a
+// failure after that leaves the server changed, and a page that keeps its
+// edits then re-sends them: harmless for an ALTER, and a duplicate for an ADD
+// FILE, a job step or a schedule attach. A failed New-object dialog is the
+// same shape one level up: the CREATE landed and a later page did not.
+type applyProgress struct {
+	// completed counts the steps that ran to the end; nil steps don't count.
+	completed int
+	// stopped is the index in fns of the step that failed, or that a cancel
+	// kept from starting; len(fns) when every step ran.
+	stopped int
+	// wrote reports that the step at stopped executed at least one statement
+	// before it failed.
+	wrote bool
+	// scripted is a Script Changes run, where a completed step only collected
+	// its statements and nothing reached the server.
+	scripted bool
+}
+
+// committed reports whether fns[i] reached the server.
+func (p applyProgress) committed(i int) bool {
+	return !p.scripted && (i < p.stopped || i == p.stopped && p.wrote)
+}
+
+// anyCommitted reports whether any step reached the server.
+func (p applyProgress) anyCommitted() bool {
+	return !p.scripted && (p.completed > 0 || p.wrote)
+}
+
 // runApplySteps runs fns in order against ctx, stopping at the first error, and
-// reports how many completed. ctx is checked before every step as well as
-// handed to it: a step whose writes don't all take the context would otherwise
-// run to the end of the pipeline after a cancel.
-func runApplySteps(ctx context.Context, fns []propApply) (completed int, err error) {
-	for _, fn := range fns {
+// reports how far it got. ctx is checked before every step as well as handed
+// to it: a step whose writes don't all take the context would otherwise run to
+// the end of the pipeline after a cancel.
+//
+// Which steps reached the server comes from gosmo's statement observer, so it
+// is only as complete as the step's use of ctx: a write issued on some other
+// context is invisible to it. Under Script Changes nothing executes, and no
+// step ever counts as committed.
+func runApplySteps(ctx context.Context, fns []propApply) (applyProgress, error) {
+	var wrote atomic.Bool
+	ctx = gosmo.WithStatementObserver(ctx, func(gosmo.ScriptEntry) { wrote.Store(true) })
+	p := applyProgress{scripted: gosmo.Scripting(ctx)}
+	for i, fn := range fns {
 		if fn == nil {
 			continue
 		}
+		p.stopped = i
 		if err := ctx.Err(); err != nil {
-			return completed, err
+			return p, err
 		}
+		wrote.Store(false)
 		if err := fn(ctx); err != nil {
-			return completed, err
+			p.wrote = wrote.Load()
+			return p, err
 		}
-		completed++
+		p.completed++
 	}
-	return completed, nil
+	p.stopped = len(fns)
+	return p, nil
 }
 
 // PropDialog is the app-layer orchestrator for propsheet.PropertySheet: it owns
@@ -456,22 +506,22 @@ func (d *PropDialog) validateDirty() bool {
 
 // dirtyApplyFns returns the apply closures for every dirty page in page order,
 // except that a renaming page's apply moves to the end — see propPage.renames.
-func (d *PropDialog) dirtyApplyFns() []propApply {
-	dirty := d.DirtyPages()
-	fns := make([]propApply, 0, len(dirty))
+// pages[i] is the page fns[i] belongs to.
+func (d *PropDialog) dirtyApplyFns() (pages []int, fns []propApply) {
+	var lastPages []int
 	var last []propApply
-	for _, page := range dirty {
+	for _, page := range d.DirtyPages() {
 		fn := d.applyFn[page]
 		if fn == nil {
 			continue
 		}
 		if page < len(d.pages) && d.pages[page].renames {
-			last = append(last, fn)
+			lastPages, last = append(lastPages, page), append(last, fn)
 			continue
 		}
-		fns = append(fns, fn)
+		pages, fns = append(pages, page), append(fns, fn)
 	}
-	return append(fns, last...)
+	return append(pages, lastPages...), append(fns, last...)
 }
 
 // runPipeline is the shared shape behind runApply and runScript: validate every
@@ -485,7 +535,7 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	if !d.validateDirty() {
 		return
 	}
-	fns := d.dirtyApplyFns()
+	pages, fns := d.dirtyApplyFns()
 	if len(fns) == 0 {
 		noChanges()
 		return
@@ -501,32 +551,51 @@ func (d *PropDialog) runPipeline(runCtx context.Context, noChanges, onSuccess fu
 	d.app.safegoRepair("applying property changes", d.applyPanicked, func() {
 		defer close(done)
 		defer stop()
-		completed, runErr := runApplySteps(runCtx, fns)
+		progress, runErr := runApplySteps(runCtx, fns)
 		d.post(func() {
 			d.SetApplying(false)
 			if runErr != nil {
-				// A committed failure outranks the cancel that may have led to
-				// it: it says what the server was left in, which the cancel
-				// message cannot.
-				_, committed := errors.AsType[committedApplyError](runErr)
-				if d.run.cancelled && !committed {
-					d.SetMessage(propCancelledMessage(runCtx, completed, len(fns)), false)
-					return
-				}
-				d.SetMessage(withPermissionAdvice(runErr).Error(), true)
-				// After the message, not before: the reload leaves it
-				// standing, and it is the only account of what went wrong.
-				if committed {
-					d.InvalidateAll()
-					if !gosmo.Scripting(runCtx) {
-						d.staleDetails()
-					}
-				}
+				d.applyFailed(runCtx, runErr, progress, pages)
 				return
 			}
 			onSuccess()
 		})
 	})
+}
+
+// applyFailed reports a pipeline that stopped at runErr, and reloads every page
+// whose statements reached the server — pages[i] is fns[i]'s page. Those pages'
+// edits are on the server now, and keeping them would re-send them on the next
+// Apply; every other page keeps its edits, so the user can correct the one that
+// failed and try again.
+func (d *PropDialog) applyFailed(runCtx context.Context, runErr error, progress applyProgress, pages []int) {
+	// A committed failure outranks the cancel that may have led to it: it
+	// says what the server was left in, which the cancel message cannot.
+	_, marked := errors.AsType[committedApplyError](runErr)
+	if d.run.cancelled && !marked {
+		d.SetMessage(propCancelledMessage(runCtx, progress.completed, len(pages)), false)
+	} else {
+		d.SetMessage(withPermissionAdvice(runErr).Error(), true)
+	}
+	var landed []int
+	for i, page := range pages {
+		if progress.committed(i) {
+			landed = append(landed, page)
+		}
+	}
+	// After the message, not before: the reload leaves it standing, and it is
+	// the only account of what went wrong.
+	switch {
+	case marked:
+		d.InvalidateAll()
+	case len(landed) > 0:
+		d.InvalidatePages(landed)
+	default:
+		return
+	}
+	if !gosmo.Scripting(runCtx) {
+		d.staleDetails()
+	}
 }
 
 // propCancelledMessage is what the message line says once a run the user

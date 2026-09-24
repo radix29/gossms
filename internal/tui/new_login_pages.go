@@ -21,15 +21,34 @@ const serverDefaultLangItem = "(Server default)"
 // the order they appear on the radio group. The labels match loginAuthLabel's
 // wording (login_props.go), so a login created here and then reopened in Login
 // Properties describes itself the same way.
-var nloginSources = []struct {
+type nloginSource struct {
 	label  string
 	source gosmo.LoginSource
-}{
+}
+
+var nloginSources = []nloginSource{
 	{"SQL Server Authentication", gosmo.LoginSourceSQL},
 	{"Windows Authentication", gosmo.LoginSourceWindows},
 	{"Microsoft Entra Authentication", gosmo.LoginSourceExternalProvider},
 	{"Mapped to a certificate", gosmo.LoginSourceCertificate},
 	{"Mapped to an asymmetric key", gosmo.LoginSourceAsymmetricKey},
+}
+
+// nloginSourcesFor is nloginSources on this server: Entra is left off where
+// entraPrincipalsOffered says the server refuses it.
+func nloginSourcesFor(sc *db.ServerConn) []nloginSource {
+	var info *gosmo.ServerInfo
+	if sc != nil && sc.Server != nil {
+		info = sc.Server.Info()
+	}
+	var out []nloginSource
+	for _, src := range nloginSources {
+		if src.source == gosmo.LoginSourceExternalProvider && !entraPrincipalsOffered(info) {
+			continue
+		}
+		out = append(out, src)
+	}
+	return out
 }
 
 // nloginNoMappable is the Mapped-object picker's content for a source that
@@ -51,12 +70,13 @@ const nloginNoMappable = "(None)"
 // dialog being honest about what it will send, not the only check.
 func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet.Form, propApply, *propsheet.TextRow) {
 	nameField := propsheet.Text("Login name", "", 30)
-	labels := make([]string, len(nloginSources))
-	for i, src := range nloginSources {
+	sources := nloginSourcesFor(sc)
+	labels := make([]string, len(sources))
+	for i, src := range sources {
 		labels[i] = src.label
 	}
 	authRow := propsheet.Radio("Authentication", labels, 0)
-	source := func() gosmo.LoginSource { return nloginSources[authRow.Selected()].source }
+	source := func() gosmo.LoginSource { return sources[authRow.Selected()].source }
 
 	// The object id is optional even for an Entra login: with none, SQL Server
 	// resolves the login name against the directory itself, which is the
@@ -146,7 +166,7 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 				return fmt.Errorf("a password is required for SQL Server Authentication")
 			}
 		}
-		opts := &gosmo.CreateLoginOptions{Source: src, MustChange: isSQL && mustChangeRow.Checked()}
+		opts := &gosmo.CreateLoginRequest{Name: name, Password: password, Source: src, MustChange: isSQL && mustChangeRow.Checked()}
 		if src == gosmo.LoginSourceExternalProvider {
 			opts.ObjectID = strings.TrimSpace(objectIDRow.Value())
 		}
@@ -169,7 +189,7 @@ func buildNewLoginGeneralPage(sc *db.ServerConn, pf *nloginPrefetch) (*propsheet
 		if !mapped && defaultDBRow.Dirty() {
 			opts.DefaultDatabase = defaultDBRow.Value()
 		}
-		if err := sc.Server.CreateLogin(ctx, name, password, opts); err != nil {
+		if _, err := sc.Server.CreateLogin(ctx, *opts); err != nil {
 			return err
 		}
 		if isSQL && (policyRow.Dirty() || expirationRow.Dirty()) {

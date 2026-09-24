@@ -19,7 +19,7 @@ import (
 // agent_job_props_alerts.go), which has the job list to pick from.
 
 type nalertPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	dbNames       []string
 	categories    []string
 	operatorNames []string
@@ -30,9 +30,9 @@ func fetchNewAlertPrefetch(ctx context.Context, sc *db.ServerConn) (*nalertPrefe
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(alerts))
+	existing := newNameSet(msdbCollation(ctx, sc))
 	for _, a := range alerts {
-		existing[strings.ToLower(a.Name)] = true
+		existing.Add(a.Name)
 	}
 	dbNames, err := databaseNames(ctx, sc)
 	if err != nil {
@@ -166,7 +166,7 @@ func (d *NewAlertDialog) buildPages(pf *nalertPrefetch) {
 		if name == "" {
 			return fmt.Errorf("alert name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("an alert named %q already exists", name)
 		}
 		if triggerRow.Selected() == 0 && intRowValue0(errorField.IntValue()) == 0 {

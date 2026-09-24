@@ -36,7 +36,7 @@ var cmkProviders = []string{
 // ncmkPrefetch holds the one read this dialog needs: the existing key names,
 // for the name-uniqueness preflight.
 type ncmkPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 }
 
 // NewColumnMasterKeyDialog is the New Column Master Key creation dialog.
@@ -84,9 +84,9 @@ func (d *NewColumnMasterKeyDialog) fetchPrefetch(ctx context.Context, sc *db.Ser
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(keys))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, k := range keys {
-		existing[strings.ToLower(k.Name)] = true
+		existing.Add(k.Name)
 	}
 	return &ncmkPrefetch{existingNames: existing}, nil
 }
@@ -129,7 +129,7 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		if name == "" {
 			return fmt.Errorf("column master key name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a column master key named %q already exists in %s", name, dbName)
 		}
 		if strings.TrimSpace(providerField.Value()) == "" {
@@ -166,13 +166,20 @@ func (d *NewColumnMasterKeyDialog) buildPages(pf *ncmkPrefetch) {
 		name := d.objectName()
 		provider := strings.TrimSpace(providerField.Value())
 		path := strings.TrimSpace(pathField.Value())
-		if !hasEnclaves || !enclaveRow.Checked() {
-			return dbObj.CreateColumnMasterKey(ctx, name, provider, path, false)
+		req := gosmo.CreateColumnMasterKeyRequest{Name: name, KeyStoreProvider: provider, KeyPath: path}
+		if hasEnclaves && enclaveRow.Checked() {
+			sig, err := parseHexBytes(strings.TrimSpace(signatureField.Value()))
+			if err != nil {
+				return fmt.Errorf("signature: %w", err)
+			}
+			if len(sig) == 0 {
+				// The request reads an empty signature as "no enclave
+				// computations"; a checked box asked for them.
+				return fmt.Errorf("signature is empty")
+			}
+			req.Signature = sig
 		}
-		sig, err := parseHexBytes(strings.TrimSpace(signatureField.Value()))
-		if err != nil {
-			return fmt.Errorf("signature: %w", err)
-		}
-		return dbObj.CreateColumnMasterKeyWithSignature(ctx, name, provider, path, sig)
+		_, err := dbObj.CreateColumnMasterKey(ctx, req)
+		return err
 	}
 }

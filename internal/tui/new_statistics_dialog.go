@@ -34,7 +34,7 @@ var nstatSamplingItems = []string{"Server default", "Full scan", "Sample percent
 // the picker, and its existing statistic names for the uniqueness preflight.
 type nstatPrefetch struct {
 	columns       []*gosmo.Column
-	existingNames map[string]bool
+	existingNames *nameSet
 }
 
 // NewStatisticsDialog is the New Statistics creation dialog.
@@ -96,9 +96,9 @@ func (d *NewStatisticsDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(stats))
+	existing := newNameSet(databaseCollation(t.Database()))
 	for _, st := range stats {
-		existing[strings.ToLower(st.Name)] = true
+		existing.Add(st.Name)
 	}
 	return &nstatPrefetch{columns: cols, existingNames: existing}, nil
 }
@@ -137,7 +137,7 @@ func (d *NewStatisticsDialog) buildPages(pf *nstatPrefetch) {
 		if name == "" {
 			return fmt.Errorf("statistics name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a statistics object named %q already exists on %s", name, fqn(d.schema, d.table))
 		}
 		if len(d.columns) == 0 {
@@ -152,7 +152,8 @@ func (d *NewStatisticsDialog) createStatistic(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return t.CreateStatistic(ctx, d.request())
+	_, err = t.CreateStatistic(ctx, d.request())
+	return err
 }
 
 // request assembles the CreateStatisticRequest from the form.

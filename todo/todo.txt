@@ -8,8 +8,6 @@
 
 -------------
 
-max delfault cell length in options is 25
-
 - package for winget 
     
 new tab: waits

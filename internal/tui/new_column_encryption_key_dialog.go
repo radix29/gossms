@@ -29,7 +29,7 @@ const cekAlgorithm = "RSA_OAEP"
 // choose from, and the existing key names for the uniqueness preflight.
 type ncekPrefetch struct {
 	masterKeys    []string
-	existingNames map[string]bool
+	existingNames *nameSet
 }
 
 // NewColumnEncryptionKeyDialog is the New Column Encryption Key creation
@@ -81,9 +81,9 @@ func (d *NewColumnEncryptionKeyDialog) fetchPrefetch(ctx context.Context, sc *db
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(keys))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, k := range keys {
-		existing[strings.ToLower(k.Name)] = true
+		existing.Add(k.Name)
 	}
 	return &ncekPrefetch{masterKeys: names, existingNames: existing}, nil
 }
@@ -119,7 +119,7 @@ func (d *NewColumnEncryptionKeyDialog) buildPages(pf *ncekPrefetch) {
 		if name == "" {
 			return fmt.Errorf("column encryption key name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a column encryption key named %q already exists in %s", name, dbName)
 		}
 		if len(pf.masterKeys) == 0 {
@@ -140,11 +140,14 @@ func (d *NewColumnEncryptionKeyDialog) buildPages(pf *ncekPrefetch) {
 			return fmt.Errorf("encrypted value: %w", err)
 		}
 		// DatabaseRef, not DatabaseByName — see New Column Master Key.
-		return sc.Server.DatabaseRef(dbName).CreateColumnEncryptionKey(ctx, d.objectName(),
-			[]gosmo.ColumnEncryptionKeyValue{{
+		_, err = sc.Server.DatabaseRef(dbName).CreateColumnEncryptionKey(ctx, gosmo.CreateColumnEncryptionKeyRequest{
+			Name: d.objectName(),
+			Values: []gosmo.ColumnEncryptionKeyValue{{
 				MasterKeyName:       masterRow.Value(),
 				EncryptionAlgorithm: cekAlgorithm,
 				EncryptedValue:      value,
-			}})
+			}},
+		})
+		return err
 	}
 }

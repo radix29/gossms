@@ -24,7 +24,7 @@ import (
 // the server audits to bind to, and the two pick lists, both read from the
 // server rather than hard-coded so they stay right across versions.
 type ndbAuditSpecPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	auditNames    []string
 	actionGroups  []string
 	actionNames   []string
@@ -36,15 +36,16 @@ type ndbAuditSpecPrefetch struct {
 // a second is Msg 33230, "An audit specification for audit 'x' already
 // exists", verified live on major 17. Offering a taken audit would make OK
 // the only way to find that out, so the dropdown lists what can actually be
-// chosen.
-func freeAuditNames(auditNames []string, specs []*gosmo.DatabaseAuditSpecification) []string {
-	taken := make(map[string]bool, len(specs))
+// chosen. Audits are server objects, so serverCollation decides which names
+// are the same one.
+func freeAuditNames(serverCollation string, auditNames []string, specs []*gosmo.DatabaseAuditSpecification) []string {
+	taken := newNameSet(serverCollation)
 	for _, s := range specs {
-		taken[strings.ToLower(s.AuditName)] = true
+		taken.Add(s.AuditName)
 	}
 	out := make([]string, 0, len(auditNames))
 	for _, n := range auditNames {
-		if !taken[strings.ToLower(n)] {
+		if !taken.Has(n) {
 			out = append(out, n)
 		}
 	}
@@ -72,16 +73,16 @@ func fetchNewDBAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(specs))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, s := range specs {
-		existing[strings.ToLower(s.Name)] = true
+		existing.Add(s.Name)
 	}
 	names := make([]string, len(audits))
 	for i, a := range audits {
 		names[i] = a.Name
 	}
 	return &ndbAuditSpecPrefetch{
-		existingNames: existing, auditNames: freeAuditNames(names, specs),
+		existingNames: existing, auditNames: freeAuditNames(serverCollation(sc), names, specs),
 		actionGroups: groups, actionNames: actions,
 	}, nil
 }
@@ -152,15 +153,8 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		rows = append(rows, auditField)
 	}
 
-	grid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 12)
 	groups := slices.Clone(pf.actionGroups)
-	text := make([][]string, len(groups))
-	values := make([][]bool, len(groups))
-	for i, g := range groups {
-		text[i] = []string{g}
-		values[i] = []bool{false}
-	}
-	grid.SetRows(text, values)
+	grid := auditGroupGrid(groups, nil, 12)
 
 	actionField := propsheet.Select("Action", append([]string{noAuditAction}, pf.actionNames...), 0)
 	classField := propsheet.Select("Securable class", auditSecurableClassNames, 0)
@@ -182,7 +176,7 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		if name == "" {
 			return fmt.Errorf("specification name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a database audit specification named %q already exists in %s", name, dbName)
 		}
 		if auditField == nil {
@@ -194,12 +188,7 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		var chosen []string
-		for i, g := range groups {
-			if grid.Values()[i][0] {
-				chosen = append(chosen, g)
-			}
-		}
+		chosen := tickedAuditGroups(grid, groups)
 		var actions []gosmo.DatabaseAuditAction
 		if actionField.Value() != noAuditAction {
 			a, err := auditActionFromFields(actionField.Value(), classField.Value(),
@@ -213,7 +202,7 @@ func (d *NewDatabaseAuditSpecificationDialog) buildPages(pf *ndbAuditSpecPrefetc
 		// nothing off sys.databases, and this is the form that also works
 		// under the script context Script-To uses.
 		_, err := sc.Server.DatabaseRef(dbName).CreateDatabaseAuditSpecification(ctx,
-			gosmo.DatabaseAuditSpecificationSpec{
+			gosmo.CreateDatabaseAuditSpecificationRequest{
 				Name:         d.objectName(),
 				AuditName:    auditField.Value(),
 				ActionGroups: chosen,

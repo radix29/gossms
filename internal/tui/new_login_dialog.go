@@ -32,7 +32,7 @@ type nloginDBRoles struct {
 // fetch, build every page synchronously from it" shape
 // (new_database_dialog.go).
 type nloginPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	dbNames       []string
 	langNames     []string
 	serverRoles   []*gosmo.ServerRole
@@ -51,9 +51,9 @@ func fetchNewLoginPrefetch(ctx context.Context, sc *db.ServerConn) (*nloginPrefe
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(logins))
+	existing := newNameSet(serverCollation(sc))
 	for _, l := range logins {
-		existing[strings.ToLower(l.Name)] = true
+		existing.Add(l.Name)
 	}
 
 	dbs, err := sc.Server.Databases(ctx)
@@ -188,7 +188,7 @@ func (d *NewLoginDialog) buildPages(pf *nloginPrefetch) {
 		if name == "" {
 			return fmt.Errorf("login name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a login named %q already exists", name)
 		}
 		return nil

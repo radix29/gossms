@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tui/gate"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -153,5 +154,60 @@ func TestAnOnPremDatabaseMenuKeepsEverything(t *testing.T) {
 
 	if _, off := gatedLabels(a.contextMenuItemsForNode(node)); len(off) != 0 {
 		t.Errorf("items withheld on an on-premises instance: %v", off)
+	}
+}
+
+// New Login and New User offer an Entra principal on the same servers: every
+// Azure edition, whatever version it reports, and SQL Server 2022 or later.
+func TestEntraPrincipalsOffered(t *testing.T) {
+	tests := []struct {
+		name    string
+		info    *gosmo.ServerInfo
+		offered bool
+	}{
+		{"no server info", nil, true},
+		{"2016", &gosmo.ServerInfo{VersionMajor: 13, EngineEdition: 3}, false},
+		{"2017", &gosmo.ServerInfo{VersionMajor: 14, EngineEdition: 2}, false},
+		{"2019", &gosmo.ServerInfo{VersionMajor: 15, EngineEdition: 3}, false},
+		{"2022", &gosmo.ServerInfo{VersionMajor: 16, EngineEdition: 3}, true},
+		{"2025", &gosmo.ServerInfo{VersionMajor: 17, EngineEdition: 3}, true},
+		{"Managed Instance reports 12", &gosmo.ServerInfo{VersionMajor: 12, EngineEdition: 8}, true},
+		{"Azure SQL Database reports 12", &gosmo.ServerInfo{VersionMajor: 12, EngineEdition: 5}, true},
+	}
+	for _, tt := range tests {
+		if got := entraPrincipalsOffered(tt.info); got != tt.offered {
+			t.Errorf("%s: entraPrincipalsOffered = %v, want %v", tt.name, got, tt.offered)
+		}
+	}
+}
+
+// New Login's Authentication group follows entraPrincipalsOffered: gone on
+// 2016, there on 2022 and on a Managed Instance.
+func TestNewLoginOffersEntraOnlyWhereTheServerTakesIt(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		conn    func(*testing.T, ...fakeResponse) (*db.ServerConn, *fakeInstance)
+		offered bool
+	}{
+		{"2016", func(t *testing.T, r ...fakeResponse) (*db.ServerConn, *fakeInstance) {
+			return newFakeConnAtVersion(t, "13.0.6300.2", r...)
+		}, false},
+		{"2022", newFakeConn, true},
+		{"Managed Instance", newFakeConnOnAzureMI, true},
+	} {
+		sc, _ := tt.conn(t)
+		form, _, _ := buildNewLoginGeneralPage(sc, &nloginPrefetch{existingNames: newNameSet(""), dbNames: []string{"master"}})
+		var auth *propsheet.RadioRow
+		for _, r := range form.Rows() {
+			if rr, ok := r.(*propsheet.RadioRow); ok && rr.Label() == "Authentication" {
+				auth = rr
+			}
+		}
+		if auth == nil {
+			t.Fatalf("%s: no Authentication row", tt.name)
+		}
+		if got := slices.Contains(auth.Options(), "Microsoft Entra Authentication"); got != tt.offered {
+			t.Errorf("%s: Entra offered = %v, want %v", tt.name, got, tt.offered)
+		}
 	}
 }

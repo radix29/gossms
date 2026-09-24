@@ -33,20 +33,20 @@ func agentServerDetail(ctx context.Context, sc *db.ServerConn) ([]string, [][]st
 		}
 	}
 
-	jobs, jErr := sc.Server.Jobs(ctx)
-	schedules, schErr := sc.Server.Schedules(ctx)
-	alerts, aErr := sc.Server.EventAlerts(ctx)
-	operators, oErr := sc.Server.Operators(ctx)
+	// One aggregate read, not four full listings (plus Jobs' Agent state
+	// call) to take len() of. A failure dashes all four and keeps the status.
+	counts, cErr := sc.Server.AgentCounts(ctx)
+	if counts == nil {
+		counts = &gosmo.AgentCounts{}
+	}
 
 	rows := [][]string{
 		{"Status", statusText},
 		{"Last startup", lastStartup},
-		{"Surface", "SQL-only"},
-		{"Source", "msdb"},
-		{"Jobs", countOrDash(len(jobs), jErr)},
-		{"Schedules", countOrDash(len(schedules), schErr)},
-		{"Event alerts", countOrDash(len(alerts), aErr)},
-		{"Operators", countOrDash(len(operators), oErr)},
+		{"Jobs", countOrDash(counts.Jobs, cErr)},
+		{"Schedules", countOrDash(counts.Schedules, cErr)},
+		{"Event alerts", countOrDash(counts.EventAlerts, cErr)},
+		{"Operators", countOrDash(counts.Operators, cErr)},
 	}
 	return propertyValueColumns, rows, nil
 }

@@ -24,7 +24,7 @@ import (
 // the action-group pick list, which is read from the server rather than
 // hard-coded so it stays right across versions.
 type nauditSpecPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	auditNames    []string
 	actionGroups  []string
 }
@@ -42,9 +42,9 @@ func fetchNewAuditSpecPrefetch(ctx context.Context, sc *db.ServerConn) (*nauditS
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(specs))
+	existing := newNameSet(serverCollation(sc))
 	for _, s := range specs {
-		existing[strings.ToLower(s.Name)] = true
+		existing.Add(s.Name)
 	}
 	names := make([]string, len(audits))
 	for i, a := range audits {
@@ -96,15 +96,8 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 		rows = append(rows, auditField)
 	}
 
-	grid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 14)
 	groups := slices.Clone(pf.actionGroups)
-	text := make([][]string, len(groups))
-	values := make([][]bool, len(groups))
-	for i, g := range groups {
-		text[i] = []string{g}
-		values[i] = []bool{false}
-	}
-	grid.SetRows(text, values)
+	grid := auditGroupGrid(groups, nil, 14)
 
 	rows = append(rows,
 		propsheet.Section("Audit action groups"),
@@ -119,7 +112,7 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 		if name == "" {
 			return fmt.Errorf("specification name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a server audit specification named %q already exists", name)
 		}
 		if auditField == nil {
@@ -128,13 +121,8 @@ func (d *NewAuditSpecificationDialog) buildPages(pf *nauditSpecPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		var chosen []string
-		for i, g := range groups {
-			if grid.Values()[i][0] {
-				chosen = append(chosen, g)
-			}
-		}
-		_, err := sc.Server.CreateServerAuditSpecification(ctx, gosmo.ServerAuditSpecificationSpec{
+		chosen := tickedAuditGroups(grid, groups)
+		_, err := sc.Server.CreateServerAuditSpecification(ctx, gosmo.CreateServerAuditSpecificationRequest{
 			Name:         d.objectName(),
 			AuditName:    auditField.Value(),
 			ActionGroups: chosen,

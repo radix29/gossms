@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -18,7 +17,7 @@ import (
 // page is specific to creation: Jobs to attach at creation time.
 
 type nschedulePrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	jobNames      []string
 }
 
@@ -27,9 +26,9 @@ func fetchNewSchedulePrefetch(ctx context.Context, sc *db.ServerConn) (*nschedul
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(scheds))
+	existing := newNameSet(msdbCollation(ctx, sc))
 	for _, sch := range scheds {
-		existing[strings.ToLower(sch.Name)] = true
+		existing.Add(sch.Name)
 	}
 	jobs, err := sc.Server.Jobs(ctx)
 	if err != nil {
@@ -126,7 +125,7 @@ func (d *NewScheduleDialog) buildPages(pf *nschedulePrefetch) {
 		if name == "" {
 			return fmt.Errorf("schedule name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a schedule named %q already exists", name)
 		}
 		return nil

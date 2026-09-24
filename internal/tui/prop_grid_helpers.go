@@ -564,3 +564,32 @@ func unionSorted(list, extra []string) []string {
 	slices.Sort(list)
 	return list
 }
+
+// auditGroupGrid builds the "Record / Audit Action Group" toggle grid both
+// audit-specification dialogs and both Properties pages show: one row per
+// group, ticked when recorded holds it. A New dialog passes nil. The grid is
+// read back positionally, so groups must be the slice the caller reads it
+// against.
+func auditGroupGrid(groups, recorded []string, height int) *propsheet.ToggleGridRow {
+	grid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, height)
+	text := make([][]string, len(groups))
+	values := make([][]bool, len(groups))
+	for i, g := range groups {
+		text[i] = []string{g}
+		values[i] = []bool{slices.Contains(recorded, g)}
+	}
+	grid.SetRows(text, values)
+	return grid
+}
+
+// tickedAuditGroups returns the groups whose Record box is ticked in a grid
+// auditGroupGrid built from groups.
+func tickedAuditGroups(grid *propsheet.ToggleGridRow, groups []string) []string {
+	var ticked []string
+	for i, g := range groups {
+		if grid.Values()[i][0] {
+			ticked = append(ticked, g)
+		}
+	}
+	return ticked
+}

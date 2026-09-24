@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
+	"time"
 
 	gosmoversion "github.com/radix29/gosmo/version"
 
@@ -31,9 +34,31 @@ func main() {
 	}
 
 	app := tui.NewApp()
+	watchTermSignals(app)
 	if err := run(app); err != nil {
 		log.Fatalf("gossms error: %v", err)
 	}
+}
+
+// watchTermSignals saves every unsaved query panel when the terminal is closed,
+// an ssh session drops (SIGHUP) or the process is killed (SIGTERM), rather than
+// dying with the default action. Both constants exist on every GOOS; on
+// Windows they are simply never delivered.
+//
+// App.SaveOnSignal quits once it has saved, so Run returns and main exits
+// normally. If Run is wedged and never does, the exit below ends the process
+// anyway: the text is on disk by then, and a hung process on a closed terminal
+// is worse than an unrestored one.
+func watchTermSignals(app *tui.App) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		app.SaveOnSignal(sig, 2*time.Second)
+		time.Sleep(2 * time.Second)
+		log.Printf("exiting on %v: the event loop did not return", sig)
+		os.Exit(1)
+	}()
 }
 
 // printVersion writes the build metadata Help > About shows. Keep in step with

@@ -26,7 +26,7 @@ func newCertificateTestDialog(t *testing.T, hasMasterKey bool) *NewCertificateDi
 	d.pages = []string{"General"}
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
-	d.buildPages(&ncertPrefetch{existingNames: map[string]bool{"taken": true}, hasMasterKey: hasMasterKey})
+	d.buildPages(&ncertPrefetch{existingNames: newNameSet("", "taken"), hasMasterKey: hasMasterKey})
 	return d
 }
 
@@ -97,7 +97,7 @@ func TestValidateNewCertificate(t *testing.T) {
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	ok := newCertificateInput{name: "c", subject: "s",
 		keyProtectionInput: keyProtectionInput{hasMasterKey: true, dbName: "d"},
-		existingNames:      map[string]bool{"taken": true}}
+		existingNames:      newNameSet("", "taken")}
 	cases := []struct {
 		name string
 		edit func(*newCertificateInput)

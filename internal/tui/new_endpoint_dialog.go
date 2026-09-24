@@ -30,7 +30,7 @@ import (
 //
 // It takes the other one: each instance keeps its own key pair and gets its
 // peers' *public* certificates, moved as bytes over the two connections gossms
-// already has (gosmo's Certificate.Encoded and CertificateSpec.FromBinary). No
+// already has (gosmo's Certificate.Encoded and CreateCertificateRequest.FromBinary). No
 // private key is read, transmitted or written anywhere — which is also why the
 // certificates are per-instance rather than one shared certificate, as the file
 // recipe produces: sharing one requires moving its private key.
@@ -560,8 +560,8 @@ func (d *NewEndpointDialog) ensureCertificate(ctx context.Context, p *endpointPe
 		return fmt.Errorf("%s: %w", p.inst.name, err)
 	}
 	if cert == nil {
-		spec := gosmo.CertificateSpec{Name: certName, Subject: p.inst.name + " database mirroring endpoint"}
-		if err := p.master.CreateCertificate(ctx, spec); err != nil {
+		spec := gosmo.CreateCertificateRequest{Name: certName, Subject: p.inst.name + " database mirroring endpoint"}
+		if _, err := p.master.CreateCertificate(ctx, spec); err != nil {
 			return fmt.Errorf("%s: %w", p.inst.name, err)
 		}
 		if cert, err = findCertificateIfAny(ctx, p.master, certName); err != nil {
@@ -622,7 +622,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		// hides a principal the caller lacks VIEW ANY DEFINITION on by returning
 		// no rows, not an error, so the lookup above cannot tell the two apart.
 		// Tolerate the collision, as the CreateUser call below does.
-		if err := p.server.CreateLogin(ctx, login, password, nil); err != nil && !isAlreadyExists(err) {
+		if _, err := p.server.CreateLogin(ctx, gosmo.CreateLoginRequest{Name: login, Password: password}); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create login %s: %w", p.inst.name, login, err)
 		}
 	default:
@@ -638,7 +638,7 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 	case err == nil:
 		// Already there; nothing to create.
 	case errors.Is(err, gosmo.ErrNotFound):
-		if err := p.master.CreateUser(ctx, gosmo.CreateUserRequest{Name: user, Login: login}); err != nil && !isAlreadyExists(err) {
+		if _, err := p.master.CreateUser(ctx, gosmo.CreateUserRequest{Name: user, Login: login}); err != nil && !isAlreadyExists(err) {
 			return fmt.Errorf("%s: create user %s: %w", p.inst.name, user, err)
 		}
 	default:
@@ -667,8 +667,8 @@ func (d *NewEndpointDialog) importPeerCertificate(ctx context.Context, p, other 
 		}
 		return nil
 	}
-	spec := gosmo.CertificateSpec{Name: certName, Authorization: user, FromBinary: other.encoded}
-	if err := p.master.CreateCertificate(ctx, spec); err != nil {
+	spec := gosmo.CreateCertificateRequest{Name: certName, Authorization: user, FromBinary: other.encoded}
+	if _, err := p.master.CreateCertificate(ctx, spec); err != nil {
 		return fmt.Errorf("%s: import %s's certificate: %w", p.inst.name, other.inst.name, err)
 	}
 	return nil
@@ -685,7 +685,7 @@ func (d *NewEndpointDialog) ensureEndpoint(ctx context.Context, p *endpointPeer,
 		// gosmo passes the AUTHENTICATION clause through verbatim — it is a
 		// small grammar, not one keyword — so the certificate name inside it
 		// is quoted here.
-		spec := gosmo.EndpointSpec{
+		spec := gosmo.CreateDatabaseMirroringEndpointRequest{
 			Name:                d.endpointName,
 			Port:                d.port,
 			Role:                "ALL",

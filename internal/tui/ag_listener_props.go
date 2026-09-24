@@ -141,6 +141,10 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 				propsheet.Note("An address cannot be removed and the listener cannot be renamed — ALTER AVAILABILITY GROUP has no statement for either. Remove the listener and add it back to change those."),
 			)
 
+			// apply leaves pending alone: it runs off the UI goroutine, and under
+			// Script Changes too, where clearing it left the grid showing "To be
+			// added" rows on a page no longer dirty — the next Apply sent
+			// nothing. A real Apply reloads the page, which empties it anyway.
 			apply := func(ctx context.Context) error {
 				ag, err := agOnPrimary(ctx, sc, agName)
 				if err != nil {
@@ -163,7 +167,6 @@ func pageAGListenerGeneral(sc *db.ServerConn, agName, dnsName string) propPage {
 						return err
 					}
 				}
-				pending = nil
 				return nil
 			}
 			return form, apply, nil

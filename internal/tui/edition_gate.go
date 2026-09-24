@@ -3,6 +3,7 @@ package tui
 import (
 	"slices"
 
+	"github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
 	"github.com/radix29/gossms/internal/tuikit/controls"
 )
@@ -93,4 +94,19 @@ func gateAzure(item controls.MenuItem, sc *db.ServerConn) controls.MenuItem {
 	item.Note = editionNote(sc)
 	item.NoteWhen = func() bool { return true }
 	return item
+}
+
+// entraPrincipalsOffered reports whether New Login and New User offer a
+// Microsoft Entra principal (CREATE LOGIN/USER … FROM EXTERNAL PROVIDER). Both
+// dialogs ask this one question so they cannot disagree again: New User used
+// to offer it only on Azure, and New Login on every server.
+//
+// An Azure edition takes both. On a boxed instance the syntax arrived in SQL
+// Server 2022 (major 16), for an instance Entra has been configured on through
+// Azure Arc; 2016-2019 refuse it outright, so offering it there only lets the
+// user fill the page in to be refused. The Azure test comes first because an
+// Azure edition's VersionMajor (12 on a Managed Instance) is not its feature
+// level. No server info answers yes, per gate.AllowsOn's fail-open rule.
+func entraPrincipalsOffered(info *gosmo.ServerInfo) bool {
+	return info == nil || info.IsAzure() || info.VersionMajor >= 16
 }

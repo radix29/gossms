@@ -23,7 +23,7 @@ import (
 // existing device names for the uniqueness preflight, and the server's default
 // backup directory to seed the path with.
 type nbackupDevicePrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	defaultDir    string
 }
 
@@ -32,9 +32,9 @@ func fetchNewBackupDevicePrefetch(ctx context.Context, sc *db.ServerConn) (*nbac
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(devices))
+	existing := newNameSet(serverCollation(sc))
 	for _, d := range devices {
-		existing[strings.ToLower(d.Name)] = true
+		existing.Add(d.Name)
 	}
 	return &nbackupDevicePrefetch{
 		existingNames: existing,
@@ -94,7 +94,7 @@ func (d *NewBackupDeviceDialog) buildPages(pf *nbackupDevicePrefetch) {
 		if name == "" {
 			return fmt.Errorf("device name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a backup device named %q already exists", name)
 		}
 		if strings.TrimSpace(fileField.Value()) == "" {
@@ -103,8 +103,9 @@ func (d *NewBackupDeviceDialog) buildPages(pf *nbackupDevicePrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		_, err := sc.Server.CreateBackupDevice(ctx, d.objectName(),
-			gosmo.BackupDeviceDisk, strings.TrimSpace(fileField.Value()))
+		_, err := sc.Server.CreateBackupDevice(ctx, gosmo.CreateBackupDeviceRequest{
+			Name: d.objectName(), Type: gosmo.BackupDeviceDisk, PhysicalName: strings.TrimSpace(fileField.Value()),
+		})
 		return err
 	}
 }

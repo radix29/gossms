@@ -2,9 +2,11 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -186,5 +188,77 @@ func TestTrackedSaveKeepsAnotherInstancesPins(t *testing.T) {
 	}
 	if got := LoadTrackedQueriesFrom(path).IDs("srv", "db"); !slices.Equal(got, []int64{2, 3}) {
 		t.Errorf("tracked on disk = %v, want [2 3]", got)
+	}
+}
+
+// U9: two instances saving at the same instant. Each keeps re-saving its own
+// connection with a new ExtraProperties (outside the dedup name); after every save its latest value must be
+// on disk. Without the file lock the other instance's re-read can predate
+// this write and its own write then drops it.
+func TestConcurrentSavesDoNotLoseEachOther(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const rounds = 200
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for g := range 2 {
+		wg.Go(func() {
+			c := Load()
+			server := fmt.Sprintf("inst%d", g)
+			for i := range rounds {
+				c.AddOrUpdate(Connection{Server: server, ExtraProperties: strconv.Itoa(i)})
+				if err := c.Save(); err != nil {
+					errs[g] = err
+					return
+				}
+				if got := extraOf(Load().Connections, server); got != strconv.Itoa(i) {
+					errs[g] = fmt.Errorf("%s round %d: on disk ExtraProperties = %q, want %d — a concurrent save dropped it", server, i, got, i)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func extraOf(conns []Connection, server string) string {
+	for _, c := range conns {
+		if c.Server == server {
+			return c.ExtraProperties
+		}
+	}
+	return "<missing>"
+}
+
+// U9 for tracked_queries.json: each instance pins its own ids; every pin
+// must survive.
+func TestConcurrentTrackedSavesDoNotLoseEachOther(t *testing.T) {
+	path := trackedPath(t)
+	const rounds = 200
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for g := range 2 {
+		wg.Go(func() {
+			tq := LoadTrackedQueriesFrom(path)
+			for i := range rounds {
+				if _, err := tq.Toggle("srv", "db", int64(g*rounds+i)); err != nil {
+					errs[g] = err
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(LoadTrackedQueriesFrom(path).IDs("srv", "db")); got != 2*rounds {
+		t.Errorf("%d pins on disk, want %d — a concurrent save dropped some", got, 2*rounds)
 	}
 }

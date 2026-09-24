@@ -148,6 +148,13 @@ Background work follows one shape:
   the loop instead was rejected: state left mid-mutation is worse than a clean
   exit with the text saved.
 
+  SIGHUP (terminal closed, ssh dropped) and SIGTERM take the same save through
+  **`App.SaveOnSignal`**, relayed by `cmd/gossms`'s `watchTermSignals`: the
+  save runs as a `postAndWake` callback that then quits. If the loop does not
+  answer within 2 s, the signal goroutine saves anyway (a racy read beats
+  losing the text), and main exits if `Run` never returns. Everything is logged
+  and nothing is printed, since after a SIGHUP there is no terminal to print to.
+
 - If a newer request supersedes this one, own the lifecycle with **`latest`**
   (`latest.go`) rather than a hand-rolled token or cancel — see
   § Latest-only loads: latest.
@@ -199,7 +206,7 @@ gossms/
 │   ├── query/               # SSMS-style script executor: GO batches (split by tuikit/sqltext, the editor's own rule), result sets, message stream, plan capture
 │   │                        #   arena.go: chunk-packed cell storage for a retained result set; coltype.go: SSMS-style declared type names
 │   ├── showplan/            # parses ShowPlanXML (estimated/actual) into a navigable operator tree; compare.go pairs two plans of one query (Compare Showplan). No TUI/DB deps
-│   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export
+│   ├── fileutil/            # WriteAtomic: temp file + Sync + rename + syncDir, behind config.json, gossms.key, saved .sql scripts and the log export; WithLock: the lock file around config.json's and tracked_queries.json's read-merge-write
 │   │                        #   keeps an existing file's narrower mode (perm is a ceiling) and writes through a symlink, dangling or not
 │   ├── version/             # gossms's own version metadata (mirrors gosmo/version); overridable via -ldflags -X
 │   │
@@ -228,7 +235,7 @@ gossms/
 │       ├── app_explorer_data.go  # background fetch orchestration, context-menu assembly (nodeMenuItems + insertBeforeRefresh), Script object, View Dependencies, Take Offline/Bring Online task consumer
 │       ├── app_panel_actions.go  # opening panels and files: new query panel, open a .sql or .sqlplan, save a plan back out
 │       ├── app_panel_close.go    # closing a panel and quitting: Disposable release, the open-transaction commit prompt, the unsaved-query prompts quit walks, activeQueryPanel/withQueryPanel
-│       ├── emergency_save.go     # App.EmergencySave: after a UI-goroutine panic, writes every dirty query panel to <config dir>/recovered/
+│       ├── emergency_save.go     # App.EmergencySave / SaveOnSignal: after a UI-goroutine panic or on SIGHUP/SIGTERM, writes every dirty query panel to <config dir>/recovered/
 │       ├── app_query_actions.go  # what the toolbar and Query menu do to the active query panel: execute/cancel, estimated + actual plan, reconnect, results mode, save its text
 │       ├── app_show_panels.go    # opens the non-query panels: Object Explorer Details, query list, Activity Monitor, Log Viewer, Query Store — reusing one already open for the same target
 │       ├── app_show_properties.go # one entry point per Properties and per New dialog, taking the connection and the names its page needs
@@ -378,6 +385,7 @@ gossms/
 │       │  ── Properties dialogs (propsheet-based) ──
 │       ├── prop_dialog.go        # PropDialog — app orchestration for propsheet.PropertySheet on an existing object (lazy per-page loads, dirty-diff Apply)
 │       ├── new_object_dialog.go  # newObjectDialog — the shell behind the New <object> dialogs (one prefetch, all pages built at once, ordered create pipeline, Script Changes)
+│       ├── name_set.go           # nameSet: the New-object dialogs' "already exists" check, folding case only when the scope's collation (server, database or msdb) does
 │       ├── prop_grid_helpers.go  # small cross-cutting helpers (boolStr, indexOf, orDefault, credNames, buildFilterInfoForm)
 │       ├── extended_properties_form.go # generic extended-properties add/edit/delete grid + the shared Extended Properties page every in-database object uses
 │       ├── role_descriptions.go  # fixed descriptive text for built-in database/server roles
@@ -424,7 +432,7 @@ gossms/
 │       ├── schema_props.go       # Schema Properties page definitions
 │       ├── role_props.go         # Database Role Properties page definitions
 │       ├── user_props.go         # Database User Properties page definitions
-│       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure), plus Owned Schemas and Membership
+│       ├── new_user_dialog.go    # New User: every CREATE USER form (for login, with password, without login, Windows, certificate / asymmetric key, Entra on Azure and 2022+), plus Owned Schemas and Membership
 │       ├── server_role_props.go  # Server Role Properties: General/Members/Owned Roles/Securables
 │       ├── role_general_page.go  # the General page both role dialogs share, over a deliberately narrow roleWriter (rename + change owner, nothing else)
 │       ├── statistics_props.go   # Statistics Properties: General/Columns/Filter/Details/Histogram/Density Vector/Extended Properties

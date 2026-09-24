@@ -34,9 +34,9 @@ type snapshotPrefetch struct {
 	// snapshots — a snapshot of a snapshot is refused by the server, and an
 	// offline database cannot be read at all.
 	sources []string
-	// existing is every database name on the instance, lower-cased, snapshots
+	// existing is every database name on the instance under its collation, snapshots
 	// included: the new snapshot is a database and collides with all of them.
-	existing map[string]bool
+	existing *nameSet
 }
 
 // NewSnapshotDialog is the New Database Snapshot dialog.
@@ -88,9 +88,9 @@ func (d *NewSnapshotDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn
 	if err != nil {
 		return nil, err
 	}
-	pf := &snapshotPrefetch{existing: make(map[string]bool, len(dbs))}
+	pf := &snapshotPrefetch{existing: newNameSet(serverCollation(sc))}
 	for _, dbObj := range dbs {
-		pf.existing[strings.ToLower(dbObj.Name)] = true
+		pf.existing.Add(dbObj.Name)
 		if dbObj.IsSystem() || dbObj.IsSnapshot() || dbObj.State != "ONLINE" {
 			continue
 		}
@@ -228,7 +228,7 @@ func (d *NewSnapshotDialog) buildPages(pf *snapshotPrefetch) {
 		if name == "" {
 			return fmt.Errorf("a name for the snapshot is required")
 		}
-		if pf.existing[strings.ToLower(name)] {
+		if pf.existing.Has(name) {
 			return fmt.Errorf("this instance already has a database called %q — a snapshot is a database and needs a free name", name)
 		}
 		return nil

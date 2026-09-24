@@ -224,21 +224,24 @@ func (t *TrackedQueries) Save() error {
 	if err := os.MkdirAll(filepath.Dir(t.path), 0o700); err != nil {
 		return err
 	}
-	sets, err := readTrackedFile(t.path)
-	if err != nil {
-		return fmt.Errorf("tracked queries: not saving over %s — it could not be re-read: %w", t.path, err)
-	}
-	for _, op := range t.pending {
-		op.apply(sets)
-	}
-	data, err := json.MarshalIndent(trackedFile{Tracked: sets}, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := fileutil.WriteAtomic(t.path, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	t.sets = sets
-	t.pending = nil
-	return nil
+	// Locked from the re-read to the write, as Config.Save.
+	return fileutil.WithLock(t.path, func() error {
+		sets, err := readTrackedFile(t.path)
+		if err != nil {
+			return fmt.Errorf("tracked queries: not saving over %s — it could not be re-read: %w", t.path, err)
+		}
+		for _, op := range t.pending {
+			op.apply(sets)
+		}
+		data, err := json.MarshalIndent(trackedFile{Tracked: sets}, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := fileutil.WriteAtomic(t.path, append(data, '\n'), 0o600); err != nil {
+			return err
+		}
+		t.sets = sets
+		t.pending = nil
+		return nil
+	})
 }

@@ -100,7 +100,8 @@ func TestDirtyApplyFnsRunsRenamingPageLast(t *testing.T) {
 	}
 
 	d := newSheetDialog(t, pages, applies, nil)
-	for _, fn := range d.dirtyApplyFns() {
+	pageOf, fns := d.dirtyApplyFns()
+	for _, fn := range fns {
 		if err := fn(context.Background()); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
@@ -109,6 +110,15 @@ func TestDirtyApplyFnsRunsRenamingPageLast(t *testing.T) {
 	want := []string{"Server Roles", "Securables", "General"}
 	if fmt.Sprint(order) != fmt.Sprint(want) {
 		t.Errorf("applies ran %v, want %v", order, want)
+	}
+	// A partly failed Apply reloads pages by these indices, so each must name
+	// the page whose closure sits beside it — the rename moves both.
+	titles := make([]string, len(pageOf))
+	for i, page := range pageOf {
+		titles[i] = pages[page].title
+	}
+	if fmt.Sprint(titles) != fmt.Sprint(want) {
+		t.Errorf("pages = %v, want %v", titles, want)
 	}
 }
 
@@ -171,7 +181,8 @@ func TestScriptedRenameLeavesSiblingPagesResolvable(t *testing.T) {
 	newName := renameRow.Value()
 
 	ctx, _ := gosmo.WithScript(context.Background())
-	for _, fn := range d.dirtyApplyFns() {
+	_, fns := d.dirtyApplyFns()
+	for _, fn := range fns {
 		if err := fn(ctx); err != nil {
 			t.Fatalf("scripted apply failed: %v", err)
 		}

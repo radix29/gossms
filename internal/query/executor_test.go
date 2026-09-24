@@ -27,6 +27,16 @@ func TestFormatValue(t *testing.T) {
 		{[]byte("0.070312"), true, "", "0.070312"},
 		{"plain", false, "", "plain"},
 		{int64(42), false, "", "42"},
+		// tinyint..bigint all arrive as int64; the extremes of each.
+		{int64(0), false, "", "0"},
+		{int64(255), false, "", "255"},
+		{int64(math.MinInt16), false, "", "-32768"},
+		{int64(math.MaxInt32), false, "", "2147483647"},
+		{int64(math.MinInt64), false, "", "-9223372036854775808"},
+		{int64(math.MaxInt64), false, "", "9223372036854775807"},
+		// Other integer kinds (not from the driver) still render via default.
+		{int32(-7), false, "", "-7"},
+		{uint8(200), false, "", "200"},
 		{3.14, false, "", "3.14"},
 		// No layout still renders as datetime, not an empty format.
 		{ts, false, "", "2024-01-05 13:45:30.123"},
@@ -271,4 +281,18 @@ func formatValue(v any, isDecimalLike bool, layout string) string {
 // formatFloat is appendFloat's string form.
 func formatFloat(f float64, bits int) string {
 	return string(appendFloat(nil, f, bits))
+}
+
+func BenchmarkAppendValueInt64(b *testing.B) {
+	// Boxed up front, as the driver hands cells over: boxing in the loop
+	// would dominate the measurement.
+	vals := make([]any, 1024)
+	for i := range vals {
+		vals[i] = int64(i) * 7919
+	}
+	var buf []byte
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		buf = appendValue(buf[:0], vals[i%len(vals)], false, "")
+	}
 }

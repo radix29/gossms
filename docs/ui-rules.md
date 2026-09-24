@@ -330,6 +330,32 @@ leaves the result queued and invisible until an unrelated keypress drains it
 result delivery: postAndWake. `QueryPanel`'s elapsed-timer tick is the one
 legitimate bare `wakeEventLoop()` caller: it has no callback to post, only a redraw.
 
+**An apply closure never writes page state.** A page's `propApply` runs on the
+pipeline's goroutine while the page's own callbacks (`DirtyFn`, a grid's rows,
+a button) read the same variables on the UI goroutine — and it runs under
+Script Changes too, where nothing reached the server. It only issues
+statements; a real Apply reloads the page afterwards (`InvalidateAll`), so there
+is nothing to clean up. AG Listener Properties cleared its pending addresses at
+the end of its apply: after Script Changes the grid still listed them "To be
+added" on a page no longer dirty, and the next Apply sent nothing.
+`TestApplyClosuresDoNotWritePageState` fails on any `func(ctx context.Context)
+error` literal that assigns a captured variable; the work closure passed to
+`runPageAction`/`runPageActionOnce` is exempt, since handing its result to the
+UI-goroutine completion through a variable declared beside the call is the
+point of it.
+
+**An apply closure writes on the context it is handed, and only through
+gosmo.** `runApplySteps` wraps that context in `gosmo.WithStatementObserver`, and
+the observer is how a failed Apply knows which pages reached the server: those
+reload, the rest keep their edits, and a New-object dialog whose first page ran
+to the end counts as created. A write issued on `d.ctx`, `sc.Context()` or a
+fresh `context.Background()` — or straight through `database/sql` — is invisible
+to it, so a page that fails after such a write keeps its edits and re-sends the
+statement on the next Apply. Deriving from the handed context (`WithTimeout`,
+`WithoutCancel`) keeps the observer. The one case the observer cannot see is a
+gosmo disable window whose closing re-enable is refused; a page that can reach
+that re-reads and marks the failure `applyCommitted` (Audit Properties).
+
 **A load that a newer one replaces uses `latest` (`internal/tui/latest.go`),
 never a hand-rolled token or cancel.** `Begin`/`BeginTimeout` supersede the run
 in flight *and* cancel it; `Done` reports whether the result is still wanted and

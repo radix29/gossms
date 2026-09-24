@@ -76,6 +76,20 @@ func newServerFS(sc *db.ServerConn) (dialogs.FileSystem, bool) {
 	return fs, true
 }
 
+// currentDefaultPaths reads the server's default data, log and backup
+// directories now (gosmo's Server.DefaultPaths), for a dialog about to place
+// files there. Info's connect-time copy is the fallback when the read fails:
+// it is what these dialogs used before, and it beats refusing to open.
+func currentDefaultPaths(ctx context.Context, sc *db.ServerConn) gosmo.DefaultPaths {
+	if p, err := sc.Server.DefaultPaths(ctx); err == nil {
+		return p
+	}
+	if info := sc.Server.Info(); info != nil {
+		return gosmo.DefaultPaths{Data: info.DefaultDataPath, Log: info.DefaultLogPath, Backup: info.DefaultBackupPath}
+	}
+	return gosmo.DefaultPaths{}
+}
+
 // serverIsWindows decides which path convention the server host uses.
 // ServerInfo.Platform is the direct answer; the default backup path is the
 // fallback for an instance that didn't report one, and a Windows path is

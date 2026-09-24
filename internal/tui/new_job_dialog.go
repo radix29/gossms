@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/db"
@@ -19,7 +18,7 @@ import (
 
 // njobPrefetch holds the one fetch every New Job page is built from.
 type njobPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	loginNames    []string
 	categories    []string
 	dbNames       []string
@@ -33,9 +32,9 @@ func fetchNewJobPrefetch(ctx context.Context, sc *db.ServerConn) (*njobPrefetch,
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(jobs))
+	existing := newNameSet(msdbCollation(ctx, sc))
 	for _, j := range jobs {
-		existing[strings.ToLower(j.Name)] = true
+		existing.Add(j.Name)
 	}
 	logins, err := sc.Server.Logins(ctx)
 	if err != nil {
@@ -115,7 +114,7 @@ func (d *NewJobDialog) buildPages(pf *njobPrefetch) {
 		if name == "" {
 			return fmt.Errorf("job name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a job named %q already exists", name)
 		}
 		if enabled() && stepCount() == 0 {

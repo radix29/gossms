@@ -115,11 +115,11 @@ func (d *NewAGDialog) buildGeneralPage(pf *newAGPrefetch) {
 // The two cluster-type rules are the ones worth catching here rather than
 // letting CREATE fail: both are consequences of what the cluster type *means*,
 // and the server's own errors name neither the replica nor the reason.
-func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing map[string]bool) error {
+func validateNewAG(name, clusterType string, replicas []*newAGReplica, existing *nameSet) error {
 	if name == "" {
 		return fmt.Errorf("availability group name is required")
 	}
-	if existing[strings.ToLower(name)] {
+	if existing.Has(name) {
 		return fmt.Errorf("an availability group named %q already exists on this instance", name)
 	}
 	if len(replicas) < 2 {

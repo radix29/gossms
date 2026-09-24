@@ -33,7 +33,7 @@ var asymKeyAlgorithms = []gosmo.AsymmetricKeyAlgorithm{
 
 // nasymPrefetch is what the dialog reads before it opens.
 type nasymPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	hasMasterKey  bool
 	providers     []*gosmo.CryptographicProvider
 }
@@ -47,9 +47,9 @@ func fetchNewAsymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbNam
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(keys))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, k := range keys {
-		existing[strings.ToLower(k.Name)] = true
+		existing.Add(k.Name)
 	}
 	has, err := dbObj.HasMasterKey(ctx)
 	if err != nil {
@@ -131,7 +131,7 @@ func (d *NewAsymmetricKeyDialog) buildPages(pf *nasymPrefetch) {
 		// database by name, and the by-name read would not work under Script
 		// Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
-		spec := gosmo.AsymmetricKeySpec{
+		spec := gosmo.CreateAsymmetricKeyRequest{
 			Name:      d.objectName(),
 			Algorithm: asymKeyAlgorithms[algRow.Selected()],
 		}
@@ -142,19 +142,21 @@ func (d *NewAsymmetricKeyDialog) buildPages(pf *nasymPrefetch) {
 			if p.Disposition == gosmo.ProviderOpenExisting {
 				spec.Algorithm = ""
 			}
-			return dbObj.CreateAsymmetricKey(ctx, spec)
+			_, err := dbObj.CreateAsymmetricKey(ctx, spec)
+			return err
 		}
 		var err error
 		if spec.EncryptionPassword, err = protection.apply(ctx, dbObj); err != nil {
 			return err
 		}
-		return dbObj.CreateAsymmetricKey(ctx, spec)
+		_, err = dbObj.CreateAsymmetricKey(ctx, spec)
+		return err
 	}
 }
 
 // validateNewAsymmetricKey refuses a missing or taken name before the
 // protection's own checks.
-func validateNewAsymmetricKey(name string, existingNames map[string]bool, protection keyProtectionInput) error {
+func validateNewAsymmetricKey(name string, existingNames *nameSet, protection keyProtectionInput) error {
 	if err := validateNewAsymmetricKeyName(name, existingNames, protection.dbName); err != nil {
 		return err
 	}
@@ -163,11 +165,11 @@ func validateNewAsymmetricKey(name string, existingNames map[string]bool, protec
 
 // validateNewAsymmetricKeyName is the name half of validateNewAsymmetricKey,
 // all a provider key needs.
-func validateNewAsymmetricKeyName(name string, existingNames map[string]bool, dbName string) error {
+func validateNewAsymmetricKeyName(name string, existingNames *nameSet, dbName string) error {
 	if name == "" {
 		return fmt.Errorf("key name is required")
 	}
-	if existingNames[strings.ToLower(name)] {
+	if existingNames.Has(name) {
 		return fmt.Errorf("an asymmetric key named %q already exists in %s", name, dbName)
 	}
 	return nil

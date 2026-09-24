@@ -30,7 +30,7 @@ func nstatTestPrefetch() *nstatPrefetch {
 			{Name: "Customer", DataType: gosmo.DataType("nvarchar")},
 			{Name: "Placed", DataType: gosmo.DataType("datetime2")},
 		},
-		existingNames: map[string]bool{"st_orders_existing": true},
+		existingNames: newNameSet("", "st_orders_existing"),
 	}
 }
 

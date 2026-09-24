@@ -226,13 +226,19 @@ func (c counterSet) value(prev counterSet, object, counter, instance string, ela
 // base finds counter's PERF_LARGE_RAW_BASE row: same object and instance, name
 // + " base". Matched case-insensitively because SQL Server spells it
 // inconsistently ("Buffer cache hit ratio base", "Cache Hit Ratio Base").
+//
+// A trailing " (ms)" unit is dropped from some base names and kept in others:
+// "Average Wait Time (ms)" has "Average Wait Time Base", while "Avg Disk Read
+// IO (ms)" has "Avg Disk Read IO (ms) Base" (both read off a 2025 instance).
+// Either spelling is accepted, or an average like the first reads 0 forever.
 func (c counterSet) base(object, counter, instance string) (int64, bool) {
 	want := strings.ToLower(counter + " base")
+	unitless := strings.ToLower(strings.TrimSuffix(counter, " (ms)") + " base")
 	for k, v := range c {
 		if v.typ != cntrBase || k.object != object || k.instance != instance {
 			continue
 		}
-		if strings.ToLower(k.counter) == want {
+		if name := strings.ToLower(k.counter); name == want || name == unitless {
 			return v.value, true
 		}
 	}

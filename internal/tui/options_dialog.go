@@ -11,19 +11,6 @@ import (
 	"github.com/radix29/gossms/internal/tuikit/widgets"
 )
 
-// optionsZone is which control on the Options dialog currently has
-// keyboard focus.
-type optionsZone int
-
-const (
-	zoneIconStyle optionsZone = iota
-	zoneMaxCellLen
-	zoneMaxTextLen
-	zoneIndentWidth
-	zoneIntelliSense
-	zoneOptButtons
-)
-
 // OptionsDialog is the application's Options/Settings dialog, reachable
 // from Tools > Options.
 type OptionsDialog struct {
@@ -43,8 +30,13 @@ type OptionsDialog struct {
 	// the press.
 	drag dialogs.FieldGesture
 
-	zone     optionsZone
-	btnFocus int // 0=OK 1=Cancel
+	// focusable is the Tab order, top to bottom; Tab/Backtab, hit-testing
+	// and the clipboard target are all derived from it, so a new control is
+	// one entry here plus its Draw position. focusIdx == len(focusable) is
+	// the button row, which is not a widget.
+	focusable []focusable
+	focusIdx  int
+	btnFocus  int // 0=OK 1=Cancel
 }
 
 // NewOptionsDialog creates the Options dialog.
@@ -63,6 +55,7 @@ func NewOptionsDialog(app *App) *OptionsDialog {
 	d.fMaxTextLen = widgets.NewInputField("Max characters per column (text):", 5, false)
 	d.fIndentWidth = widgets.NewInputField("Indent size (spaces):", 5, false)
 	d.cbIntelliSense = widgets.NewCheckBox("Enable IntelliSense (autocomplete) in Query editor")
+	d.focusable = []focusable{d.rbIconStyle, d.fMaxCellLen, d.fMaxTextLen, d.fIndentWidth, d.cbIntelliSense}
 	return d
 }
 
@@ -80,21 +73,23 @@ func (d *OptionsDialog) Show() {
 	d.fMaxTextLen.SetValue(strconv.Itoa(d.app.cfg.MaxTextColumnLength))
 	d.fIndentWidth.SetValue(strconv.Itoa(d.app.cfg.IndentWidth))
 	d.cbIntelliSense.SetChecked(!d.app.cfg.IntelliSenseDisabled)
-	d.setZone(zoneIconStyle)
+	d.setFocus(0)
 	d.ModalDialog.Show()
 	// A latch must not survive into the next showing: a dialog dismissed
 	// mid-drag would reopen still routing every click to that field.
 	d.drag.Clear()
 }
 
-func (d *OptionsDialog) setZone(z optionsZone) {
-	d.zone = z
-	d.rbIconStyle.Focus(z == zoneIconStyle)
-	d.fMaxCellLen.Focus(z == zoneMaxCellLen)
-	d.fMaxTextLen.Focus(z == zoneMaxTextLen)
-	d.fIndentWidth.Focus(z == zoneIndentWidth)
-	d.cbIntelliSense.Focus(z == zoneIntelliSense)
+// setFocus focuses focusable[i], or the button row at len(focusable).
+func (d *OptionsDialog) setFocus(i int) {
+	for j, f := range d.focusable {
+		f.Focus(j == i)
+	}
+	d.focusIdx = i
 }
+
+// onButtons reports whether the button row has focus.
+func (d *OptionsDialog) onButtons() bool { return d.focusIdx == len(d.focusable) }
 
 // Draw renders the dialog.
 func (d *OptionsDialog) Draw(s tcell.Screen) {
@@ -120,7 +115,7 @@ func (d *OptionsDialog) Draw(s tcell.Screen) {
 
 	d.DrawSeparator(s)
 	activeIdx := -1
-	if d.zone == zoneOptButtons {
+	if d.onButtons() {
 		activeIdx = d.btnFocus
 	}
 	d.DrawButtons(s, []string{"OK", "Cancel"}, activeIdx)
@@ -135,68 +130,8 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 		d.Hide()
 		return true
 	}
-	switch d.zone {
-	case zoneMaxCellLen:
-		if d.fMaxCellLen.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneMaxTextLen)
-		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneIconStyle)
-		case tcell.KeyEnter:
-			d.doButton()
-		default:
-			return false
-		}
-		return true
-	case zoneMaxTextLen:
-		if d.fMaxTextLen.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneIndentWidth)
-		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxCellLen)
-		case tcell.KeyEnter:
-			d.doButton()
-		default:
-			return false
-		}
-		return true
-	case zoneIndentWidth:
-		if d.fIndentWidth.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneIntelliSense)
-		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneMaxTextLen)
-		case tcell.KeyEnter:
-			d.doButton()
-		default:
-			return false
-		}
-		return true
-	case zoneIntelliSense:
-		if d.cbIntelliSense.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneOptButtons)
-		case tcell.KeyBacktab, tcell.KeyUp:
-			d.setZone(zoneIndentWidth)
-		case tcell.KeyEnter:
-			d.doButton()
-		default:
-			return false
-		}
-		return true
-	case zoneOptButtons:
+	if d.onButtons() {
+		last := len(d.focusable) - 1
 		switch ev.Key() {
 		case tcell.KeyTab, tcell.KeyRight:
 			d.btnFocus = (d.btnFocus + 1) % 2
@@ -204,26 +139,36 @@ func (d *OptionsDialog) HandleKey(ev *tcell.EventKey) bool {
 			if d.btnFocus > 0 {
 				d.btnFocus--
 			} else {
-				d.setZone(zoneIntelliSense)
+				d.setFocus(last)
 			}
 		case tcell.KeyUp:
-			d.setZone(zoneIntelliSense)
-		case tcell.KeyEnter:
-			d.doButton()
-		}
-		return true
-	default: // zoneIconStyle
-		if d.rbIconStyle.HandleKey(ev) {
-			return true
-		}
-		switch ev.Key() {
-		case tcell.KeyTab, tcell.KeyDown:
-			d.setZone(zoneMaxCellLen)
+			d.setFocus(last)
 		case tcell.KeyEnter:
 			d.doButton()
 		}
 		return true
 	}
+	if h, ok := d.focusable[d.focusIdx].(interface {
+		HandleKey(*tcell.EventKey) bool
+	}); ok && h.HandleKey(ev) {
+		return true
+	}
+	switch ev.Key() {
+	case tcell.KeyTab, tcell.KeyDown:
+		d.setFocus(d.focusIdx + 1)
+	case tcell.KeyBacktab, tcell.KeyUp:
+		// The first control has nowhere to go back to; Backtab does not wrap.
+		if d.focusIdx > 0 {
+			d.setFocus(d.focusIdx - 1)
+		}
+	case tcell.KeyEnter:
+		d.doButton()
+	default:
+		// The icon-style radio box has always swallowed the keys it does not
+		// use; the fields and the checkbox pass them on.
+		return d.focusIdx == 0
+	}
+	return true
 }
 
 // HandleMouse processes mouse events.
@@ -239,8 +184,11 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 	// drag.Release does the same for the input fields, and must likewise come
 	// before ConsumeOutsideClick.
 	if ev.Buttons() == tcell.ButtonNone {
-		d.rbIconStyle.HandleMouse(ev)
-		d.cbIntelliSense.HandleMouse(ev)
+		for _, f := range d.focusable {
+			if w, ok := optionsMouseTarget(f); ok {
+				w.HandleMouse(ev)
+			}
+		}
 		d.drag.Release(ev)
 	}
 	if d.ConsumeOutsideClick(ev) {
@@ -254,37 +202,49 @@ func (d *OptionsDialog) HandleMouse(ev *tcell.EventMouse) bool {
 		return true
 	}
 	if i := d.ButtonClicked(ev, []string{"OK", "Cancel"}); i >= 0 {
-		d.setZone(zoneOptButtons)
+		d.setFocus(len(d.focusable))
 		d.btnFocus = i
 		d.doButton()
 		return true
 	}
-	// Hit-tested here rather than left to InputField.HandleMouse's own
-	// bounds check, which a latch left over from a previous showing skips.
-	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fMaxCellLen.HitTest(mx, my) {
-		d.setZone(zoneMaxCellLen)
-		d.drag.Claim(d.fMaxCellLen, ev)
-		return true
+	// The fields first, hit-tested here rather than left to
+	// InputField.HandleMouse's own bounds check, which a latch left over from
+	// a previous showing skips.
+	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 {
+		if i, fld := d.fieldAt(mx, my); fld != nil {
+			d.setFocus(i)
+			d.drag.Claim(fld, ev)
+			return true
+		}
 	}
-	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fMaxTextLen.HitTest(mx, my) {
-		d.setZone(zoneMaxTextLen)
-		d.drag.Claim(d.fMaxTextLen, ev)
-		return true
-	}
-	if mx, my := ev.Position(); ev.Buttons() == tcell.Button1 && d.fIndentWidth.HitTest(mx, my) {
-		d.setZone(zoneIndentWidth)
-		d.drag.Claim(d.fIndentWidth, ev)
-		return true
-	}
-	if d.rbIconStyle.HandleMouse(ev) {
-		d.setZone(zoneIconStyle)
-		return true
-	}
-	if d.cbIntelliSense.HandleMouse(ev) {
-		d.setZone(zoneIntelliSense)
-		return true
+	for i, f := range d.focusable {
+		if w, ok := optionsMouseTarget(f); ok && w.HandleMouse(ev) {
+			d.setFocus(i)
+			return true
+		}
 	}
 	return true
+}
+
+// fieldAt returns the input field under (x, y) and its focus index, or nil.
+func (d *OptionsDialog) fieldAt(x, y int) (int, *widgets.InputField) {
+	for i, f := range d.focusable {
+		if fld, ok := f.(*widgets.InputField); ok && fld.HitTest(x, y) {
+			return i, fld
+		}
+	}
+	return -1, nil
+}
+
+// optionsMouseTarget answers the controls that take a press themselves — the
+// radio box and the checkbox. An input field is excluded: its press goes
+// through d.drag, and its own HandleMouse would honour a stale latch.
+func optionsMouseTarget(f focusable) (interface{ HandleMouse(*tcell.EventMouse) bool }, bool) {
+	if _, isField := f.(*widgets.InputField); isField {
+		return nil, false
+	}
+	w, ok := f.(interface{ HandleMouse(*tcell.EventMouse) bool })
+	return w, ok
 }
 
 func (d *OptionsDialog) doButton() {
@@ -358,13 +318,5 @@ func (d *OptionsDialog) apply() {
 // input fields has focus. The radio box, the checkbox and the button row
 // answer nil.
 func (d *OptionsDialog) FocusedClipboardTarget() core.ClipboardTarget {
-	switch d.zone {
-	case zoneMaxCellLen:
-		return d.fMaxCellLen
-	case zoneMaxTextLen:
-		return d.fMaxTextLen
-	case zoneIndentWidth:
-		return d.fIndentWidth
-	}
-	return nil
+	return focusedClipboardTarget(d.focusable, d.focusIdx)
 }

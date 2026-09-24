@@ -83,29 +83,22 @@ func pageDatabaseAuditSpecificationGeneral(sc *db.ServerConn, dbName, specName s
 			if err != nil {
 				return nil, nil, err
 			}
-			taken := map[string]bool{}
+			taken := newNameSet(serverCollation(sc))
 			for _, other := range all {
-				if !strings.EqualFold(other.Name, specName) {
-					taken[strings.ToLower(other.AuditName)] = true
+				if other.Name != spec.Name {
+					taken.Add(other.AuditName)
 				}
 			}
 			auditNames := make([]string, 0, len(audits))
 			for _, a := range audits {
-				if !taken[strings.ToLower(a.Name)] {
+				if !taken.Has(a.Name) {
 					auditNames = append(auditNames, a.Name)
 				}
 			}
 			auditRow := auditSelectRow(auditNames, spec.AuditName)
 			groups = unionSorted(groups, spec.ActionGroups)
 
-			groupGrid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 12)
-			gText := make([][]string, len(groups))
-			gValues := make([][]bool, len(groups))
-			for i, g := range groups {
-				gText[i] = []string{g}
-				gValues[i] = []bool{slices.Contains(spec.ActionGroups, g)}
-			}
-			groupGrid.SetRows(gText, gValues)
+			groupGrid := auditGroupGrid(groups, spec.ActionGroups, 12)
 
 			rows := []propsheet.Row{
 				propsheet.Section("Specification"),

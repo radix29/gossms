@@ -91,54 +91,19 @@ func (d *BackupDialog) drawStatus(s tcell.Screen) {
 
 // drawProgress renders the progress view from the running/finished task.
 func (d *BackupDialog) drawProgress(s tcell.Screen) {
-	p := theme.Active()
-	labelStyle := tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Text)
-	inner := d.InnerRect()
-	lx := inner.X + 1
-	w := inner.W - 2
-
-	core.DrawTextClipped(s, lx, inner.Y+1, w, labelStyle, "Database : "+d.taskDB)
-	core.DrawTextClipped(s, lx, inner.Y+2, w, labelStyle, "Type     : "+d.taskType)
-	core.DrawTextClipped(s, lx, inner.Y+3, w, labelStyle, "Target   : "+d.taskDest)
-
-	t := d.task
-	if t == nil {
+	drawTaskProgress(s, d.InnerRect(), d.ButtonRowY()-1, taskProgressView{
+		header: []string{
+			"Database : " + d.taskDB,
+			"Type     : " + d.taskType,
+			"Target   : " + d.taskDest,
+		},
+		progressLabel: true,
+		verb:          "Backup",
+		task:          d.task,
+	})
+	if d.task == nil {
 		return
 	}
-	core.DrawText(s, lx, inner.Y+5, labelStyle, "Progress:")
-	pct := t.Progress
-	if t.Done && t.Err == nil {
-		pct = 100
-	}
-	drawProgressBar(s, lx, inner.Y+7, w, pct, labelStyle)
-
-	elapsed, remaining, haveRemaining := taskTimes(t)
-	core.DrawText(s, lx, inner.Y+9, labelStyle, "Elapsed  : "+formatHMS(elapsed))
-	rem := "--:--:--"
-	if haveRemaining {
-		rem = formatHMS(remaining)
-	}
-	core.DrawText(s, lx, inner.Y+10, labelStyle, "Remaining: "+rem)
-
-	msg := t.Message
-	msgStyle := labelStyle
-	switch {
-	case t.Done && t.Err != nil:
-		msg = "Failed: " + t.Err.Error()
-		msgStyle = tcell.StyleDefault.Background(p.DialogBg).Foreground(p.Error)
-	case t.Done:
-		msg = "Backup completed successfully."
-	case msg == "":
-		msg = "Starting backup..."
-	}
-	// Last, and given every remaining row down to the separator: a failed
-	// backup reports SQL Server's own message, which is far longer than one
-	// line and is the only thing on this screen the user still needs.
-	msgY := inner.Y + 12
-	for i, ln := range wrapMessage(msg, w, d.ButtonRowY()-1-msgY) {
-		core.DrawTextClipped(s, lx, msgY+i, w, msgStyle, ln)
-	}
-
 	d.DrawSeparator(s)
 	labels := d.progressButtons()
 	d.DrawButtons(s, labels, min(d.btnFocus, len(labels)-1))

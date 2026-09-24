@@ -72,6 +72,14 @@ type BackupDialog struct {
 	// has been re-shown.
 	loadSeq int
 
+	// backupDir is the server's default backup directory as read when the
+	// dialog opened (Server.DefaultPaths), nil until that read lands —
+	// autoDest uses the connect-time snapshot until then. The snapshot alone
+	// went stale: a default moved since connect put the backup in the old
+	// directory.
+	backupDir *string
+	defPaths  latest
+
 	// drag is the text-selection gesture a click in one of the dialog's text
 	// fields starts — see dialogs.FieldGesture for the ordering its three calls
 	// depend on.
@@ -121,6 +129,7 @@ func (d *BackupDialog) show(sc *db.ServerConn, dbName string) {
 
 	d.prevDB = d.ddDatabase.Value()
 	d.prevType = 0
+	d.backupDir = nil
 	d.lastAutoDest = d.autoDest()
 	d.fDest.SetValue(d.lastAutoDest)
 	d.applyDeviceRules()
@@ -132,6 +141,7 @@ func (d *BackupDialog) show(sc *db.ServerConn, dbName string) {
 	d.drag.Clear()
 	d.setFocus(0)
 	d.loadDatabases()
+	d.loadDefaultPaths()
 }
 
 // destFieldWidth computes the destination input's content width so the
@@ -190,10 +200,38 @@ func (d *BackupDialog) autoDest() string {
 		suffix = "_log.trn"
 	}
 	dir := ""
-	if d.sc != nil && d.sc.Server != nil {
+	if d.backupDir != nil {
+		dir = *d.backupDir
+	} else if d.sc != nil && d.sc.Server != nil {
 		dir = d.sc.Server.Info().DefaultBackupPath
 	}
 	return joinServerPath(dir, dbName+suffix)
+}
+
+// loadDefaultPaths reads the server's current default backup directory and,
+// if the destination is still the one the dialog generated, regenerates it
+// there. A failed read leaves the snapshot's directory in place.
+func (d *BackupDialog) loadDefaultPaths() {
+	app, sc := d.app, d.sc
+	if app == nil || sc == nil || sc.Server == nil {
+		return
+	}
+	ctx, tok := d.defPaths.BeginTimeout(sc.Context(), childFetchTimeout)
+	app.safego("reading the default backup location", func() {
+		p, err := sc.Server.DefaultPaths(ctx)
+		app.postAndWake(func() {
+			if !d.defPaths.Done(tok) || !d.Visible() || err != nil || d.mode != backupModeForm {
+				return
+			}
+			d.backupDir = &p.Backup
+			if d.fDest.Value() == d.lastAutoDest {
+				d.lastAutoDest = d.autoDest()
+				d.fDest.SetValue(d.lastAutoDest)
+				d.applyDeviceRules()
+				d.refreshRestingStatus()
+			}
+		})
+	})
 }
 
 // syncAutoDest regenerates the destination field after a database/type

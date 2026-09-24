@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -34,6 +36,50 @@ func (a *App) EmergencySave() (paths []string, errs []error) {
 		return nil, []error{fmt.Errorf("recovered-query directory: %w", err)}
 	}
 	return a.emergencySaveTo(dir, time.Now())
+}
+
+// SaveOnSignal is the SIGHUP/SIGTERM counterpart of EmergencySave: closing the
+// terminal window, a dropped ssh session or a kill would otherwise end the
+// process with the default action and take every unsaved query with it. tcell
+// registers only SIGWINCH, so cmd/gossms's main relays the signal here.
+//
+// The save runs on the UI goroutine, which owns the panels, and that callback
+// then quits so Run returns. If the loop has not answered within wait — it may
+// be the thing that is stuck — the save runs here instead: a racy read of the
+// panel text beats losing it. It runs once either way, so a loop that wakes up
+// late only quits. The caller still has to exit if Run never returns.
+//
+// Everything goes to the log and nothing to the terminal, which after a SIGHUP
+// is gone.
+func (a *App) SaveOnSignal(sig os.Signal, wait time.Duration) (paths []string, errs []error) {
+	return a.saveOnSignal(sig, wait, a.EmergencySave)
+}
+
+// saveOnSignal is SaveOnSignal with the save injected, so a test can aim it at
+// a temporary directory.
+func (a *App) saveOnSignal(sig os.Signal, wait time.Duration, save func() ([]string, []error)) (paths []string, errs []error) {
+	log.Printf("received %v: saving unsaved queries and quitting", sig)
+	var once sync.Once
+	saveOnce := func() { once.Do(func() { paths, errs = save() }) }
+	done := make(chan struct{})
+	a.postAndWake(func() {
+		saveOnce()
+		close(done)
+		a.quit()
+	})
+	select {
+	case <-done:
+	case <-time.After(wait):
+		log.Printf("event loop did not answer %v within %v; saving from the signal goroutine", sig, wait)
+		saveOnce()
+	}
+	for _, path := range paths {
+		log.Printf("unsaved query recovered to %s", path)
+	}
+	for _, err := range errs {
+		log.Printf("unsaved query not recovered: %v", err)
+	}
+	return paths, errs
 }
 
 // emergencySaveTo is EmergencySave writing into dir, stamped with now.

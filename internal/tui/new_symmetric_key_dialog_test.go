@@ -14,14 +14,16 @@ import (
 // that ignored the selection and took the first object would fail.
 func newSymmetricKeyTestDialog(t *testing.T) (*NewSymmetricKeyDialog, *fakeInstance) {
 	t.Helper()
-	sc, rec := newFakeConn(t)
+	// CreateSymmetricKey reads the key back; no rows is gosmo's "created but
+	// not visible" case, answered with the handle — see newLoginGeneral.
+	sc, rec := newFakeConn(t, fakeResponse{match: "FROM   sys.symmetric_keys k", cols: 13})
 	d := &NewSymmetricKeyDialog{dbName: "keydb"}
 	d.sc = sc
 	d.pages = []string{"General"}
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
 	d.buildPages(&nsymPrefetch{
-		existingNames:  map[string]bool{"taken": true},
+		existingNames:  newNameSet("", "taken"),
 		certificates:   []string{"cert_a", "cert_b"},
 		asymmetricKeys: []string{"asym_a", "asym_b"},
 	})
@@ -116,7 +118,7 @@ func TestNewSymmetricKeyOffersOnlyAES(t *testing.T) {
 }
 
 func TestValidateNewSymmetricKey(t *testing.T) {
-	ok := newSymmetricKeyInput{name: "k", certificate: "c", existingNames: map[string]bool{"taken": true}, dbName: "d"}
+	ok := newSymmetricKeyInput{name: "k", certificate: "c", existingNames: newNameSet("", "taken"), dbName: "d"}
 	if err := validateNewSymmetricKey(ok); err != nil {
 		t.Fatalf("valid input refused: %v", err)
 	}

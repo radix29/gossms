@@ -45,7 +45,7 @@ func attachTestDialog(t *testing.T, sc *db.ServerConn, files []*gosmo.DetachedFi
 	d.applyFns = make([]propApply, 1)
 	d.buildPages(&attachPrefetch{
 		dataPath: `C:\Data\`,
-		existing: map[string]bool{"master": true, "healthclinic": true},
+		existing: newNameSet("", "master", "healthclinic"),
 	})
 	return d
 }

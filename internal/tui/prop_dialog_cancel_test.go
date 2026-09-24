@@ -70,8 +70,9 @@ func TestRunApplyStepsStopsBetweenStepsAfterACancel(t *testing.T) {
 		nil,
 		func(context.Context) error { ran = append(ran, 2); return nil },
 	}
-	completed, err := runApplySteps(ctx, fns)
-	if err == nil || completed != 1 || len(ran) != 1 {
-		t.Errorf("completed=%d err=%v ran=%v, want 1, context.Canceled, [0]", completed, err, ran)
+	progress, err := runApplySteps(ctx, fns)
+	if err == nil || progress.completed != 1 || progress.stopped != 2 || len(ran) != 1 {
+		t.Errorf("completed=%d stopped=%d err=%v ran=%v, want 1, 2, context.Canceled, [0]",
+			progress.completed, progress.stopped, err, ran)
 	}
 }

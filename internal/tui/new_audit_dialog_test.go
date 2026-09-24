@@ -69,7 +69,7 @@ func TestNewAuditQueueDelayRefusesSubSecondDelays(t *testing.T) {
 	// the test does that one line itself and then builds the pages directly.
 	d.forms = make([]*propsheet.Form, len(d.pages))
 	d.applyFns = make([]propApply, len(d.pages))
-	d.buildPages(&nauditPrefetch{existingNames: map[string]bool{}, defaultDir: `C:\Backup\`})
+	d.buildPages(&nauditPrefetch{existingNames: newNameSet(""), defaultDir: `C:\Backup\`})
 
 	row := textRow(t, d.forms[0], "Queue delay")
 	if row.Value() != "1000" {

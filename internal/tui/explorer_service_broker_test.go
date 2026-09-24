@@ -223,10 +223,10 @@ func TestBrokerServicesLoaderMarksByIDRange(t *testing.T) {
 // and a user may legitimately drop it.
 func TestRoutesLoaderMarksNothingSystem(t *testing.T) {
 	sc := newFamilyConn(t, fakeResponse{
-		match: "FROM   sys.routes r", cols: 8,
+		match: "FROM   sys.routes r", cols: 9,
 		rows: [][]driver.Value{
-			{int64(65536), "AutoCreatedLocal", "", "", "", "LOCAL", "", nil},
-			{int64(65537), "OrderRoute", "dbo", "//app/Orders", "", "TCP://svc:4022", "", nil},
+			{int64(65536), "AutoCreatedLocal", "", "", "", "LOCAL", "", nil, nil},
+			{int64(65537), "OrderRoute", "dbo", "//app/Orders", "", "TCP://svc:4022", "", nil, nil},
 		}})
 	children := loadFamily(t, sc, NodeRoutes)
 	want := []string{"AutoCreatedLocal (LOCAL)", "OrderRoute (TCP://svc:4022)"}

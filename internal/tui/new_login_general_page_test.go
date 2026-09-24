@@ -22,9 +22,12 @@ type formAndApply struct {
 // pass.
 func newLoginGeneral(t *testing.T) (*fakeInstance, *formAndApply) {
 	t.Helper()
-	sc, inst := newFakeConn(t)
+	// CreateLogin reads the new login back. No rows is the answer gosmo
+	// takes as "created but not visible" and returns its handle for, which
+	// is all these tests need: they assert on the statements.
+	sc, inst := newFakeConn(t, fakeResponse{match: "FROM sys.server_principals sp", cols: 10})
 	pf := &nloginPrefetch{
-		existingNames: map[string]bool{},
+		existingNames: newNameSet(""),
 		dbNames:       []string{"master", "sales", "warehouse"},
 		langNames:     []string{"us_english", "British"},
 		certNames:     []string{"AuditCert", "SigningCert"},
@@ -175,7 +178,7 @@ func TestNewLoginMappedWithNothingPickedIsRefused(t *testing.T) {
 	// which is also what a login without permission on master sees.
 	sc, inst := newFakeConn(t)
 	form, apply, _ := buildNewLoginGeneralPage(sc, &nloginPrefetch{
-		existingNames: map[string]bool{}, dbNames: []string{"master"},
+		existingNames: newNameSet(""), dbNames: []string{"master"},
 	})
 	p := &formAndApply{form: form, apply: apply}
 	editText(t, p.form, "Login name", "signer_login")

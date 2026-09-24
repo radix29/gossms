@@ -48,14 +48,7 @@ func pageServerAuditSpecificationGeneral(sc *db.ServerConn, specName string) pro
 			auditRow := auditSelectRow(auditNames, spec.AuditName)
 			groups = unionSorted(groups, spec.ActionGroups)
 
-			grid := propsheet.NewToggleGrid([]string{"Record", "Audit Action Group"}, []int{0}, 14)
-			text := make([][]string, len(groups))
-			values := make([][]bool, len(groups))
-			for i, g := range groups {
-				text[i] = []string{g}
-				values[i] = []bool{slices.Contains(spec.ActionGroups, g)}
-			}
-			grid.SetRows(text, values)
+			grid := auditGroupGrid(groups, spec.ActionGroups, 14)
 
 			f := propsheet.NewForm(
 				propsheet.Section("Specification"),

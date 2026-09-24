@@ -24,7 +24,7 @@ func newAsymmetricKeyTestDialog(t *testing.T, hasMasterKey bool) *NewAsymmetricK
 	d.pages = []string{"General"}
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
-	d.buildPages(&nasymPrefetch{existingNames: map[string]bool{"taken": true}, hasMasterKey: hasMasterKey})
+	d.buildPages(&nasymPrefetch{existingNames: newNameSet("", "taken"), hasMasterKey: hasMasterKey})
 	return d
 }
 
@@ -96,7 +96,7 @@ func TestNewAsymmetricKeyOffersNoWeakAlgorithm(t *testing.T) {
 }
 
 func TestValidateNewAsymmetricKey(t *testing.T) {
-	taken := map[string]bool{"taken": true}
+	taken := newNameSet("", "taken")
 	ok := keyProtectionInput{hasMasterKey: true, dbName: "d"}
 	if err := validateNewAsymmetricKey("k", taken, ok); err != nil {
 		t.Errorf("valid input refused: %v", err)

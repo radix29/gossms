@@ -96,7 +96,8 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 
 	apply := func(ctx context.Context) error {
 		name := strings.TrimSpace(nameField.Value())
-		opts := &gosmo.CreateDatabaseOptions{
+		opts := &gosmo.CreateDatabaseRequest{
+			Name:        name,
 			Collation:   strings.TrimSpace(collationField.Value()),
 			PrimaryFile: buildFileSpec(dataNameField, dataPathField, dataSizeField, dataGrowthField, name, pf.defaultDataPath, ".mdf"),
 			LogFile:     buildFileSpec(logNameField, logPathField, logSizeField, logGrowthField, name+"_log", pf.defaultLogPath, ".ldf"),
@@ -113,7 +114,7 @@ func buildNewDatabaseGeneralPage(sc *db.ServerConn, pf *ndbPrefetch) (*propsheet
 			compatN, _ := strconv.Atoi(compatItems[compatRow.Selected()])
 			opts.CompatLevel = gosmo.CompatibilityLevel(compatN)
 		}
-		if err := sc.Server.CreateDatabase(ctx, name, opts); err != nil {
+		if _, err := sc.Server.CreateDatabase(ctx, *opts); err != nil {
 			return err
 		}
 		if ownerRow.Dirty() {

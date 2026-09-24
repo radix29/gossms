@@ -66,6 +66,11 @@ const (
 // dropdown lists (most recent first) — its open list doesn't scroll.
 const maxHistorySets = 10
 
+// histSetWidth is the Backup Set dropdown's width: as wide as the form leaves
+// room for, since the device name is the last thing on each entry and the
+// first thing clipped.
+const histSetWidth = 53
+
 // Button rows. The form's labels are kept short deliberately: five buttons
 // at "Analyze Backup" width don't fit inside restoreDialogW. The inspect
 // row has room to spell "File Locations" out, but says "Files" like the form
@@ -144,15 +149,25 @@ type RestoreDialog struct {
 	// analysis) after the dialog re-shows or the inputs change.
 	loadSeq int
 
+	// defDirs is the server's default data and log directories as read when
+	// the dialog opened (Server.DefaultPaths), nil until that read lands —
+	// defaultDirs falls back to the connect-time snapshot until then. The
+	// snapshot alone went stale: a default moved in SSMS since connect sent a
+	// relocated restore's files to the old directory.
+	defDirs  *gosmo.DefaultPaths
+	defPaths latest
+
 	// drag is the text-selection gesture a click in one of the dialog's text
 	// fields starts — see dialogs.FieldGesture for the ordering its three calls
 	// depend on.
 	drag dialogs.FieldGesture
 
-	// Inspection data (restoreModeInspect), from Analyze Backup.
-	headers    []*gosmo.BackupHeader
-	files      []*gosmo.BackupFile
-	inspectDev string
+	// Inspection data (restoreModeInspect), from Analyze Backup. inspectDevs
+	// is the device list headers and files were read from — one path, or
+	// every stripe of a striped set.
+	headers     []*gosmo.BackupHeader
+	files       []*gosmo.BackupFile
+	inspectDevs []string
 
 	// headerIdx is which of headers the inspect view shows and the restore
 	// targets — carried into RestoreOptions.FileNumber. A device written
@@ -181,7 +196,7 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.mode = restoreModeForm
 	d.btnFocus = 0
 	d.task = nil
-	d.headers, d.files = nil, nil
+	d.headers, d.files, d.inspectDevs = nil, nil, nil
 	d.headerIdx = 0
 	d.history = nil
 	d.histLoaded = false
@@ -200,7 +215,7 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 		histItems = []string{dbName}
 	}
 	d.ddHistDB = widgets.NewDropDown("Database:   ", histItems, 40)
-	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, 48)
+	d.ddHistSet = widgets.NewDropDown("Backup Set: ", nil, histSetWidth)
 	d.fTarget = widgets.NewInputField("", d.fileFieldWidth()+3+d.btnBrowse.Width(), false)
 	d.rbRecovery = widgets.NewRadioBox("Recovery Options:", []string{"WITH RECOVERY", "WITH NORECOVERY"})
 	d.cbReplace = widgets.NewCheckBox("Replace existing database (WITH REPLACE)")
@@ -220,7 +235,9 @@ func (d *RestoreDialog) show(sc *db.ServerConn, dbName string) {
 	d.filesFocus = 0
 	// Pre-filled so the Relocate option is usable the moment it's picked;
 	// Default Location puts these same values back after an edit.
+	d.defDirs = nil
 	d.fillDefaultLocation()
+	d.loadDefaultPaths()
 
 	d.prevSource = 0
 	d.prevHistDB = d.ddHistDB.Value()

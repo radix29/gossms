@@ -26,10 +26,10 @@ import (
 type attachPrefetch struct {
 	// dataPath is the instance's default data directory, where Browse starts.
 	dataPath string
-	// existing is every database name already on the instance, lower-cased. A
+	// existing is every database name already on the instance. A
 	// collision is rejected here rather than by CREATE DATABASE, which reports
 	// it after the file list has been typed out.
-	existing map[string]bool
+	existing *nameSet
 }
 
 // AttachDatabaseDialog is the Attach Database dialog.
@@ -76,13 +76,11 @@ func (d *AttachDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerC
 	if err != nil {
 		return nil, err
 	}
-	pf := &attachPrefetch{existing: make(map[string]bool, len(dbs))}
+	pf := &attachPrefetch{existing: newNameSet(serverCollation(sc))}
 	for _, db := range dbs {
-		pf.existing[strings.ToLower(db.Name)] = true
+		pf.existing.Add(db.Name)
 	}
-	if info := sc.Server.Info(); info != nil {
-		pf.dataPath = info.DefaultDataPath
-	}
+	pf.dataPath = currentDefaultPaths(ctx, sc).Data
 	return pf, nil
 }
 
@@ -217,7 +215,7 @@ func (d *AttachDatabaseDialog) buildPages(pf *attachPrefetch) {
 		if name == "" {
 			return fmt.Errorf("a name to attach the database as is required")
 		}
-		if pf.existing[strings.ToLower(name)] {
+		if pf.existing.Has(name) {
 			return fmt.Errorf("this instance already has a database called %q — attach it under another name", name)
 		}
 		return nil

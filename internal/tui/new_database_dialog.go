@@ -20,7 +20,7 @@ import (
 // database too, see new_database_pages.go), and the server's default
 // data/log paths (for file Path fields left blank).
 type ndbPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	loginNames    []string
 	modelOptions  *gosmo.DatabaseOptions
 	modelRecovery gosmo.RecoveryModel
@@ -36,9 +36,9 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(dbs))
+	existing := newNameSet(serverCollation(sc))
 	for _, d := range dbs {
-		existing[strings.ToLower(d.Name)] = true
+		existing.Add(d.Name)
 	}
 
 	logins, err := sc.Server.Logins(ctx)
@@ -60,15 +60,15 @@ func fetchNewDatabasePrefetch(ctx context.Context, sc *db.ServerConn) (*ndbPrefe
 		return nil, err
 	}
 
-	info := sc.Server.Info()
+	paths := currentDefaultPaths(ctx, sc)
 	return &ndbPrefetch{
 		existingNames:   existing,
 		loginNames:      loginNames,
 		modelOptions:    modelOpts,
 		modelRecovery:   model.RecoveryModel,
 		modelCompat:     model.CompatibilityLevel,
-		defaultDataPath: info.DefaultDataPath,
-		defaultLogPath:  info.DefaultLogPath,
+		defaultDataPath: paths.Data,
+		defaultLogPath:  paths.Log,
 		defaultOwner:    sc.Opts.User,
 	}, nil
 }
@@ -115,7 +115,7 @@ func (d *NewDatabaseDialog) buildPages(pf *ndbPrefetch) {
 		if name == "" {
 			return fmt.Errorf("database name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a database named %q already exists", name)
 		}
 		return nil

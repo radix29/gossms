@@ -32,7 +32,7 @@ const certDateLayout = "2006-01-02"
 
 // ncertPrefetch is what the dialog reads before it opens.
 type ncertPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	hasMasterKey  bool
 }
 
@@ -45,9 +45,9 @@ func fetchNewCertificatePrefetch(ctx context.Context, sc *db.ServerConn, dbName 
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(certs))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, c := range certs {
-		existing[strings.ToLower(c.Name)] = true
+		existing.Add(c.Name)
 	}
 	has, err := dbObj.HasMasterKey(ctx)
 	if err != nil {
@@ -130,7 +130,7 @@ func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {
 		// database by name, and the by-name read would not work under Script
 		// Changes.
 		dbObj := sc.Server.DatabaseRef(dbName)
-		spec := gosmo.CertificateSpec{
+		spec := gosmo.CreateCertificateRequest{
 			Name:    d.objectName(),
 			Subject: strings.TrimSpace(subjectField.Value()),
 		}
@@ -142,7 +142,8 @@ func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {
 		if spec.EncryptionPassword, err = protection.apply(ctx, dbObj); err != nil {
 			return err
 		}
-		return dbObj.CreateCertificate(ctx, spec)
+		_, err = dbObj.CreateCertificate(ctx, spec)
+		return err
 	}
 }
 
@@ -150,7 +151,7 @@ func (d *NewCertificateDialog) buildPages(pf *ncertPrefetch) {
 type newCertificateInput struct {
 	name, subject, start, expiry string
 	keyProtectionInput
-	existingNames map[string]bool
+	existingNames *nameSet
 }
 
 // validateNewCertificate refuses what the server would, with a message that
@@ -160,7 +161,7 @@ func validateNewCertificate(in newCertificateInput, now time.Time) error {
 	if in.name == "" {
 		return fmt.Errorf("certificate name is required")
 	}
-	if in.existingNames[strings.ToLower(in.name)] {
+	if in.existingNames.Has(in.name) {
 		return fmt.Errorf("a certificate named %q already exists in %s", in.name, in.dbName)
 	}
 	if strings.TrimSpace(in.subject) == "" {

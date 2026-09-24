@@ -22,7 +22,7 @@ import (
 // ndbScopedCredPrefetch holds what the dialog needs before it opens: the
 // existing credential names in this database, for the uniqueness preflight.
 type ndbScopedCredPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 }
 
 func fetchNewDBScopedCredPrefetch(ctx context.Context, sc *db.ServerConn, dbName string) (*ndbScopedCredPrefetch, error) {
@@ -34,9 +34,9 @@ func fetchNewDBScopedCredPrefetch(ctx context.Context, sc *db.ServerConn, dbName
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(creds))
+	existing := newNameSet(databaseCollation(dbObj))
 	for _, c := range creds {
-		existing[strings.ToLower(c.Name)] = true
+		existing.Add(c.Name)
 	}
 	return &ndbScopedCredPrefetch{existingNames: existing}, nil
 }
@@ -112,7 +112,7 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 		if name == "" {
 			return fmt.Errorf("credential name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a database scoped credential named %q already exists in %s", name, dbName)
 		}
 		// CREATE DATABASE SCOPED CREDENTIAL has no form without IDENTITY, and
@@ -127,7 +127,7 @@ func (d *NewDatabaseScopedCredentialDialog) buildPages(pf *ndbScopedCredPrefetch
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		spec := gosmo.DatabaseScopedCredentialSpec{
+		spec := gosmo.CreateDatabaseScopedCredentialRequest{
 			Name: d.objectName(),
 			// Trimmed to match what the preflight validated: SQL Server stores
 			// IDENTITY verbatim, so a pasted trailing space becomes part of

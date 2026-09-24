@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/gdamore/tcell/v3"
 
 	"github.com/radix29/gossms/internal/config"
 	"github.com/radix29/gossms/internal/tuikit/controls"
@@ -141,6 +145,109 @@ func TestOptionsApplyMaxTextColumnLength(t *testing.T) {
 		d.apply()
 		if got := a.cfg.MaxTextColumnLength; got != tc.want {
 			t.Errorf("apply(%q): MaxTextColumnLength = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// optionsFocusName names what has keyboard focus on the Options dialog.
+func optionsFocusName(d *OptionsDialog) string {
+	if d.onButtons() {
+		return fmt.Sprintf("button%d", d.btnFocus)
+	}
+	switch d.focusable[d.focusIdx] {
+	case d.rbIconStyle:
+		return "icons"
+	case d.fMaxCellLen:
+		return "cell"
+	case d.fMaxTextLen:
+		return "text"
+	case d.fIndentWidth:
+		return "indent"
+	case d.cbIntelliSense:
+		return "intellisense"
+	}
+	return "?"
+}
+
+// The keyboard walk through the Options dialog, recorded from the per-zone
+// switch the focus slice replaced: after each key, what has focus, whether
+// the dialog consumed the key, and whether Copy/Paste has a target. Pins the
+// quirks as well as the order — Backtab does not wrap off the first control,
+// the radio box swallows the keys it does not use while the fields pass them
+// on, Down moves the radio selection before it moves focus, and Up from
+// either button returns to the checkbox.
+func TestOptionsDialogKeyboardWalk(t *testing.T) {
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	d := NewOptionsDialog(a)
+	d.Show()
+	keys := []struct {
+		n string
+		k tcell.Key
+	}{
+		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
+		{"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab}, {"Tab", tcell.KeyTab},
+		{"Right", tcell.KeyRight}, {"Left", tcell.KeyLeft}, {"Left", tcell.KeyLeft},
+		{"Tab", tcell.KeyTab}, {"Up", tcell.KeyUp},
+		{"Backtab", tcell.KeyBacktab}, {"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
+		{"Up", tcell.KeyUp}, {"Backtab", tcell.KeyBacktab},
+		{"Down", tcell.KeyDown}, {"Up", tcell.KeyUp}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown},
+		{"Down", tcell.KeyDown}, {"Down", tcell.KeyDown}, {"Down", tcell.KeyDown},
+		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"F5", tcell.KeyF5}, {"Up", tcell.KeyUp},
+		{"F5", tcell.KeyF5}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp}, {"Up", tcell.KeyUp},
+		{"F5", tcell.KeyF5},
+	}
+	var b strings.Builder
+	b.WriteString(optionsFocusName(d))
+	for _, k := range keys {
+		ok := d.HandleKey(tcell.NewEventKey(k.k, "", tcell.ModNone))
+		fmt.Fprintf(&b, " %s>%s(%v,%v)", k.n, optionsFocusName(d), ok, d.FocusedClipboardTarget() != nil)
+	}
+	const want = "icons Tab>cell(true,true) Tab>text(true,true) Tab>indent(true,true) " +
+		"Tab>intellisense(true,false) Tab>button0(true,false) Tab>button1(true,false) " +
+		"Tab>button0(true,false) Right>button1(true,false) Left>button0(true,false) " +
+		"Left>intellisense(true,false) Tab>button0(true,false) Up>intellisense(true,false) " +
+		"Backtab>indent(true,true) Up>text(true,true) Backtab>cell(true,true) Up>icons(true,false) " +
+		"Backtab>icons(true,false) Down>icons(true,false) Up>icons(true,false) Down>icons(true,false) " +
+		"Down>icons(true,false) Down>icons(true,false) Down>cell(true,true) Down>text(true,true) " +
+		"F5>text(false,true) Up>cell(true,true) F5>cell(false,true) Up>icons(true,false) " +
+		"F5>icons(true,false) Up>icons(true,false) Up>icons(true,false) Up>icons(true,false) " +
+		"F5>icons(true,false)"
+	if got := b.String(); got != want {
+		t.Errorf("keyboard walk:\n got %s\nwant %s", got, want)
+	}
+}
+
+// A press focuses whatever it lands on, found through the focus slice: each
+// input field, and the checkbox, which takes the press itself.
+func TestOptionsDialogPressFocusesTheControlUnderIt(t *testing.T) {
+	a := newTestApp()
+	a.screen = &fakeSizedScreen{w: 100, h: 40}
+	d := NewOptionsDialog(a)
+	d.Show()
+	// Draw's positions, which only Draw applies.
+	inner := d.InnerRect()
+	d.fMaxCellLen.SetBounds(inner.X+1, inner.Y+6)
+	d.fMaxTextLen.SetBounds(inner.X+1, inner.Y+8)
+	d.fIndentWidth.SetBounds(inner.X+1, inner.Y+10)
+	d.cbIntelliSense.SetBounds(inner.X+1, inner.Y+12)
+
+	press := func(x, y int) {
+		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.Button1, tcell.ModNone))
+		d.HandleMouse(tcell.NewEventMouse(x, y, tcell.ButtonNone, tcell.ModNone))
+	}
+	for _, tc := range []struct {
+		name string
+		x, y int
+	}{
+		{"indent", d.fIndentWidth.InputX() + 1, d.fIndentWidth.RectY()},
+		{"text", d.fMaxTextLen.InputX() + 1, d.fMaxTextLen.RectY()},
+		{"intellisense", inner.X + 2, inner.Y + 12},
+		{"cell", d.fMaxCellLen.InputX() + 1, d.fMaxCellLen.RectY()},
+	} {
+		press(tc.x, tc.y)
+		if got := optionsFocusName(d); got != tc.name {
+			t.Errorf("a press on %s focused %s", tc.name, got)
 		}
 	}
 }

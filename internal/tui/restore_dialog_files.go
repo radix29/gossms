@@ -23,9 +23,14 @@ func (d *RestoreDialog) dirFieldWidth() int {
 	return restoreDialogW - 2 /*border*/ - 2 /*margins*/ - 13 /*label + gap*/ - 2 /*brackets*/
 }
 
-// defaultDirs returns the server's default data and log directories, empty
-// when the dialog has no live connection (unit tests).
+// defaultDirs returns the server's default data and log directories: the
+// ones read when the dialog opened, or the connect-time snapshot until that
+// read lands (and if it failed). Empty when the dialog has no live connection
+// (unit tests).
 func (d *RestoreDialog) defaultDirs() (dataDir, logDir string) {
+	if d.defDirs != nil {
+		return d.defDirs.Data, d.defDirs.Log
+	}
 	if d.sc == nil || d.sc.Server == nil {
 		return "", ""
 	}
@@ -33,6 +38,35 @@ func (d *RestoreDialog) defaultDirs() (dataDir, logDir string) {
 		return info.DefaultDataPath, info.DefaultLogPath
 	}
 	return "", ""
+}
+
+// loadDefaultPaths reads the server's current default directories, and moves
+// each folder field still showing the snapshot's value onto the fresh one. A
+// field the user has already edited is left alone. A failed read leaves the
+// snapshot in place: it is what the dialog showed before this read existed,
+// and a restore is not worth refusing over it.
+func (d *RestoreDialog) loadDefaultPaths() {
+	app, sc := d.app, d.sc
+	if app == nil || sc == nil || sc.Server == nil {
+		return
+	}
+	ctx, tok := d.defPaths.BeginTimeout(sc.Context(), childFetchTimeout)
+	app.safego("reading the default file locations", func() {
+		p, err := sc.Server.DefaultPaths(ctx)
+		app.postAndWake(func() {
+			if !d.defPaths.Done(tok) || !d.Visible() || err != nil {
+				return
+			}
+			oldData, oldLog := d.defaultDirs()
+			d.defDirs = &p
+			if strings.TrimSpace(d.fDataDir.Value()) == oldData {
+				d.fDataDir.SetValue(p.Data)
+			}
+			if strings.TrimSpace(d.fLogDir.Value()) == oldLog {
+				d.fLogDir.SetValue(p.Log)
+			}
+		})
+	})
 }
 
 // fillDefaultLocation puts the server's own default data/log directories
@@ -59,12 +93,12 @@ func (d *RestoreDialog) relocation() relocPlan {
 // analyzed for this form has it, anything else re-reads the header and file
 // list exactly as Analyze does.
 func (d *RestoreDialog) showFileLocations() {
-	dev := d.deviceForRestore()
-	if dev == "" {
+	src := d.sourceForRestore()
+	if len(src.devices) == 0 {
 		d.setStatusMsg("Select a backup file or history entry first.", true)
 		return
 	}
-	if dev == d.inspectDev && len(d.headers) > 0 {
+	if slices.Equal(src.devices, d.inspectDevs) && len(d.headers) > 0 {
 		d.enterFilesMode()
 		return
 	}

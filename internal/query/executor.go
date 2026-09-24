@@ -681,6 +681,10 @@ func appendValue(dst []byte, v any, isDecimalLike bool, layout string) []byte {
 		return appendFloat(dst, float64(x), 32)
 	case string:
 		return append(dst, x...)
+	case int64:
+		// go-mssqldb returns every integer type as int64, the commonest cell;
+		// strconv is ~4x faster than %v.
+		return strconv.AppendInt(dst, x, 10)
 	default:
 		return fmt.Appendf(dst, "%v", x)
 	}

@@ -36,7 +36,8 @@ func ensureMasterKey(ctx context.Context, d *gosmo.Database, password string) er
 	if has {
 		return nil
 	}
-	return d.CreateMasterKey(ctx, password)
+	_, err = d.CreateMasterKey(ctx, gosmo.CreateMasterKeyRequest{Password: password})
+	return err
 }
 
 // Private-key protection choices, in the order keyProtectionFields' radio

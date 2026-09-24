@@ -78,7 +78,14 @@ func pageBrokerQueueGeneral(sc *db.ServerConn, dbName, schema, name string) prop
 			poison := propsheet.Check("Poison message handling", q.IsPoisonMessageHandlingEnabled)
 
 			activation := propsheet.Check("Activation enabled", q.IsActivationEnabled)
-			procSchema := propsheet.Text("Activation procedure schema", q.ActivationProcedureSchema, 30)
+			// A queue with no activation has no procedure schema to show.
+			// gosmo refuses an empty one rather than guessing, so the row
+			// offers dbo — visibly, where it can be changed — instead.
+			procSchemaValue := q.ActivationProcedureSchema
+			if procSchemaValue == "" {
+				procSchemaValue = "dbo"
+			}
+			procSchema := propsheet.Text("Activation procedure schema", procSchemaValue, 30)
 			procName := propsheet.Text("Activation procedure", q.ActivationProcedureName, 30)
 			readers := propsheet.Int("Max queue readers", int64(q.MaxReaders), 0, 32767, "")
 			executeAs := propsheet.Text("Activation execute as", q.ActivationExecuteAs, 30)

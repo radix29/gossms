@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -105,4 +106,87 @@ func TestRecoveredFileStem(t *testing.T) {
 			t.Errorf("recoveredFileStem(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+// U6: SIGHUP/SIGTERM runs the save on the UI goroutine, which then quits.
+// newTestApp has no screen, so the "event loop" is this test draining pending.
+func TestSaveOnSignalSavesOnTheUIGoroutineAndQuits(t *testing.T) {
+	a := newTestApp()
+	dirtyPanel(a, "Query 1", "SELECT 1")
+	dirtyPanel(a, "Query 2", "SELECT 2")
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	saves := 0
+	save := func() ([]string, []error) { saves++; return a.emergencySaveTo(dir, now) }
+
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		for !a.hasPending() {
+			time.Sleep(time.Millisecond)
+		}
+		a.drainPending()
+	}()
+	paths, errs := a.saveOnSignal(syscall.SIGHUP, 10*time.Second, save)
+	<-loopDone // the callback quits after it signals the save is done
+
+	assertRecovered(t, dir, paths, errs)
+	if saves != 1 {
+		t.Errorf("saved %d times, want 1", saves)
+	}
+	if !a.quitting {
+		t.Error("the UI callback did not quit, so Run would not return")
+	}
+}
+
+// A wedged event loop must not cost the text: after the wait the signal
+// goroutine saves itself, and a loop that wakes up later only quits.
+func TestSaveOnSignalSavesWhenTheEventLoopIsStuck(t *testing.T) {
+	a := newTestApp()
+	dirtyPanel(a, "Query 1", "SELECT 1")
+	dirtyPanel(a, "Query 2", "SELECT 2")
+	dir := t.TempDir()
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	saves := 0
+	save := func() ([]string, []error) { saves++; return a.emergencySaveTo(dir, now) }
+
+	paths, errs := a.saveOnSignal(syscall.SIGTERM, 20*time.Millisecond, save)
+	assertRecovered(t, dir, paths, errs)
+
+	a.drainPending() // the loop comes back
+	if saves != 1 {
+		t.Errorf("saved %d times, want 1 — a late loop must not save again", saves)
+	}
+	if !a.quitting {
+		t.Error("the late UI callback did not quit")
+	}
+}
+
+func assertRecovered(t *testing.T, dir string, paths []string, errs []error) {
+	t.Helper()
+	if len(errs) != 0 {
+		t.Fatalf("save errors: %v", errs)
+	}
+	want := map[string]string{
+		filepath.Join(dir, "20260924-100000-Query_1.sql"): "SELECT 1",
+		filepath.Join(dir, "20260924-100000-Query_2.sql"): "SELECT 2",
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("saved %v, want both dirty panels", paths)
+	}
+	for path, text := range want {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != text {
+			t.Errorf("%s = %q, want %q", path, got, text)
+		}
+	}
+}
+
+func (a *App) hasPending() bool {
+	a.pendingMu.Lock()
+	defer a.pendingMu.Unlock()
+	return len(a.pending) > 0
 }

@@ -405,6 +405,22 @@ func (p *PropertySheet) InvalidateAll() {
 	}
 }
 
+// InvalidatePages is InvalidateAll for the listed pages only — an Apply that
+// failed part-way, where the pages whose edits reached the server reload and
+// every other page keeps its edits. An index out of range is ignored.
+func (p *PropertySheet) InvalidatePages(pages []int) {
+	for _, i := range pages {
+		if i < 0 || i >= len(p.pages) {
+			continue
+		}
+		p.pages[i].state = PageNotLoaded
+		p.pages[i].form = nil
+		if i == p.current {
+			p.startLoad(i)
+		}
+	}
+}
+
 // Dirty reports whether any loaded page has unsaved edits.
 func (p *PropertySheet) Dirty() bool {
 	for _, slot := range p.pages {

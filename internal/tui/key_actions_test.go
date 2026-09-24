@@ -34,7 +34,7 @@ func TestProviderKeyFields(t *testing.T) {
 // A provider symmetric key takes no encryption and no key material, and needs
 // none of the encryptions an ordinary key must have.
 func TestValidateNewSymmetricKeyWithProvider(t *testing.T) {
-	base := newSymmetricKeyInput{name: "k", provider: true, existingNames: map[string]bool{}}
+	base := newSymmetricKeyInput{name: "k", provider: true, existingNames: newNameSet("")}
 	if err := validateNewSymmetricKey(base); err != nil {
 		t.Errorf("a provider key with no encryption was refused: %v", err)
 	}

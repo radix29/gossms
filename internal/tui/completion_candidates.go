@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	gosmo "github.com/radix29/gosmo"
 	"github.com/radix29/gossms/internal/tui/sqlparse"
@@ -259,9 +260,45 @@ func (p *QueryPanel) scopedColumnCandidates(rels []relation, prefix string) []co
 // anywhere — "ord" offers OrderLines and CustomerOrders alike — and whether
 // that match is partial, i.e. not at the start. The editor treats a list of
 // nothing but partial matches differently (see controls.CompletionItem.Partial).
+//
+// It runs over every catalog name on every keystroke, so an ASCII name — nearly
+// all of them — is searched in place: lower-casing each one first cost 15 ms
+// and 50,000 allocations per keystroke against a 50k-object catalog.
 func nameMatch(name, pl string) (ok, partial bool) {
-	i := strings.Index(strings.ToLower(name), pl)
+	i, ascii := indexLowerASCII(name, pl)
+	if !ascii {
+		i = strings.Index(strings.ToLower(name), pl)
+	}
 	return i >= 0, i > 0
+}
+
+// indexLowerASCII is strings.Index(strings.ToLower(name), pl) for an ASCII
+// name, without building the lowered copy. It reports ascii false, and no
+// index, for a name holding any other byte, whose lowering can change its
+// length.
+func indexLowerASCII(name, pl string) (i int, ascii bool) {
+	for k := 0; k < len(name); k++ {
+		if name[k] >= utf8.RuneSelf {
+			return -1, false
+		}
+	}
+	n := len(pl)
+	for i = 0; i+n <= len(name); i++ {
+		j := 0
+		for ; j < n; j++ {
+			c := name[i+j]
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != pl[j] {
+				break
+			}
+		}
+		if j == n {
+			return i, true
+		}
+	}
+	return -1, true
 }
 
 // sortCompletionItems lists prefix matches before partial ones, each group

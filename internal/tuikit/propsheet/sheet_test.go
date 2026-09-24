@@ -165,6 +165,34 @@ func TestSheetDirtyPages(t *testing.T) {
 	}
 }
 
+// InvalidatePages drops only the listed pages: the current one reloads at once,
+// another waits until selected, and an unlisted dirty page keeps its edits.
+func TestSheetInvalidatePagesLeavesTheOthers(t *testing.T) {
+	p := newTestSheet("General", "Files", "Options")
+	seqs := map[int]int{}
+	loads := map[int]int{}
+	p.OnLoadPage = func(page, seq int) { seqs[page] = seq; loads[page]++ }
+	p.Show()
+	p.SelectPage(1)
+	p.SelectPage(2)
+	for i := range 3 {
+		p.SetPageForm(i, seqs[i], NewForm(Text("Name", "orig", 10)))
+		p.PageForm(i).rows[0].(*TextRow).field.SetValue("changed")
+	}
+
+	p.InvalidatePages([]int{0, 2, 7})
+
+	if got := p.PageState(0); got != PageNotLoaded {
+		t.Errorf("page 0 = %v, want PageNotLoaded", got)
+	}
+	if got := p.PageState(2); got != PageLoading || loads[2] != 2 {
+		t.Errorf("current page 2 = %v after %d loads, want it reloading", got, loads[2])
+	}
+	if got := p.DirtyPages(); len(got) != 1 || got[0] != 1 {
+		t.Errorf("DirtyPages() = %v, want [1]", got)
+	}
+}
+
 // An apply warning is asked only of a dirty page, and only answered when the
 // page's own function says the edit it cares about is pending — a clean form
 // must not raise a question for an Apply that writes nothing on it.

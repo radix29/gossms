@@ -44,7 +44,7 @@ const symKeyNoEncryptor = "(none)"
 
 // nsymPrefetch is what the dialog reads before it opens.
 type nsymPrefetch struct {
-	existingNames  map[string]bool
+	existingNames  *nameSet
 	certificates   []string
 	asymmetricKeys []string
 	providers      []*gosmo.CryptographicProvider
@@ -59,9 +59,9 @@ func fetchNewSymmetricKeyPrefetch(ctx context.Context, sc *db.ServerConn, dbName
 	if err != nil {
 		return nil, err
 	}
-	pf := &nsymPrefetch{existingNames: make(map[string]bool, len(keys))}
+	pf := &nsymPrefetch{existingNames: newNameSet(databaseCollation(dbObj))}
 	for _, k := range keys {
-		pf.existingNames[strings.ToLower(k.Name)] = true
+		pf.existingNames.Add(k.Name)
 	}
 	certs, err := dbObj.Certificates(ctx)
 	if err != nil {
@@ -193,13 +193,14 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 		// by name, and the by-name read would not work under Script Changes.
 		in := input()
 		if p := provider.spec(); p != nil {
-			spec := gosmo.SymmetricKeySpec{Name: in.name, Algorithm: symKeyAlgorithms[algRow.Selected()], FromProvider: p}
+			spec := gosmo.CreateSymmetricKeyRequest{Name: in.name, Algorithm: symKeyAlgorithms[algRow.Selected()], FromProvider: p}
 			if p.Disposition == gosmo.ProviderOpenExisting {
 				spec.Algorithm = ""
 			}
-			return sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
+			_, err := sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
+			return err
 		}
-		spec := gosmo.SymmetricKeySpec{
+		spec := gosmo.CreateSymmetricKeyRequest{
 			Name:          in.name,
 			Algorithm:     symKeyAlgorithms[algRow.Selected()],
 			KeySource:     scriptSafe(ctx, in.keySource, scriptedKeySourcePlaceholder),
@@ -216,7 +217,8 @@ func (d *NewSymmetricKeyDialog) buildPages(pf *nsymPrefetch) {
 		if in.asymmetricKey != "" {
 			spec.Encryptions = append(spec.Encryptions, gosmo.SymmetricKeyEncryptor{Kind: gosmo.SymmetricKeyByAsymmetricKey, Name: in.asymmetricKey})
 		}
-		return sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
+		_, err := sc.Server.DatabaseRef(dbName).CreateSymmetricKey(ctx, spec)
+		return err
 	}
 }
 
@@ -228,7 +230,7 @@ type newSymmetricKeyInput struct {
 	password, passwordConfirm      string
 	keySource, sourceConfirm       string
 	identityValue, identityConfirm string
-	existingNames                  map[string]bool
+	existingNames                  *nameSet
 	dbName                         string
 	// provider is set when an EKM provider is to hold the key, which then
 	// takes no encryption and no key material.
@@ -253,7 +255,7 @@ func validateNewSymmetricKey(in newSymmetricKeyInput) error {
 	if strings.HasPrefix(in.name, "#") {
 		return fmt.Errorf("a name beginning with # makes a temporary key, gone when its session ends — create one from a query window")
 	}
-	if in.existingNames[strings.ToLower(in.name)] {
+	if in.existingNames.Has(in.name) {
 		return fmt.Errorf("a symmetric key named %q already exists in %s", in.name, in.dbName)
 	}
 	if in.provider {

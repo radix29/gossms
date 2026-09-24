@@ -22,7 +22,7 @@ import (
 // directory, which is the only server-side path goSSMS knows and so the least
 // wrong place to point the file browser at first.
 type nauditPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	defaultDir    string
 }
 
@@ -31,9 +31,9 @@ func fetchNewAuditPrefetch(ctx context.Context, sc *db.ServerConn) (*nauditPrefe
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(audits))
+	existing := newNameSet(serverCollation(sc))
 	for _, a := range audits {
-		existing[strings.ToLower(a.Name)] = true
+		existing.Add(a.Name)
 	}
 	return &nauditPrefetch{existingNames: existing, defaultDir: sc.Server.Info().DefaultBackupPath}, nil
 }
@@ -107,7 +107,7 @@ func (d *NewAuditDialog) buildPages(pf *nauditPrefetch) {
 		if name == "" {
 			return fmt.Errorf("audit name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("an audit named %q already exists", name)
 		}
 		if auditDestinationValues[destField.Selected()] == gosmo.AuditToFile &&

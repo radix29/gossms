@@ -20,7 +20,7 @@ import (
 // existing operator names (name-uniqueness preflight) and operator categories
 // (Category dropdown).
 type noperatorPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	categories    []string
 }
 
@@ -29,9 +29,9 @@ func fetchNewOperatorPrefetch(ctx context.Context, sc *db.ServerConn) (*noperato
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(ops))
+	existing := newNameSet(msdbCollation(ctx, sc))
 	for _, o := range ops {
-		existing[strings.ToLower(o.Name)] = true
+		existing.Add(o.Name)
 	}
 	cats, err := sc.Server.Categories(ctx, gosmo.CategoryClassOperator)
 	if err != nil {
@@ -89,7 +89,7 @@ func (d *NewOperatorDialog) buildPages(pf *noperatorPrefetch) {
 		if name == "" {
 			return fmt.Errorf("operator name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("an operator named %q already exists", name)
 		}
 		return nil

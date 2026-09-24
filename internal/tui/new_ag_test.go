@@ -23,7 +23,7 @@ func newAGReplicaPair() []*newAGReplica {
 }
 
 func TestValidateNewAG(t *testing.T) {
-	existing := map[string]bool{"aag1": true}
+	existing := newNameSet("", "aag1")
 	tests := []struct {
 		name        string
 		groupName   string

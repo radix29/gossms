@@ -19,7 +19,7 @@ import (
 // credential names for the uniqueness preflight, and the EKM providers
 // installed on the server for the "Use Encryption Provider" dropdown.
 type ncredentialPrefetch struct {
-	existingNames map[string]bool
+	existingNames *nameSet
 	providers     []string
 }
 
@@ -28,9 +28,9 @@ func fetchNewCredentialPrefetch(ctx context.Context, sc *db.ServerConn) (*ncrede
 	if err != nil {
 		return nil, err
 	}
-	existing := make(map[string]bool, len(creds))
+	existing := newNameSet(serverCollation(sc))
 	for _, c := range creds {
-		existing[strings.ToLower(c.Name)] = true
+		existing.Add(c.Name)
 	}
 	// A server with no EKM provider configured is the ordinary case, and the
 	// read needs rights this dialog does not otherwise require — so a failure
@@ -103,7 +103,7 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 		if name == "" {
 			return fmt.Errorf("credential name is required")
 		}
-		if pf.existingNames[strings.ToLower(name)] {
+		if pf.existingNames.Has(name) {
 			return fmt.Errorf("a credential named %q already exists", name)
 		}
 		// CREATE CREDENTIAL has no form without IDENTITY, and the server's own
@@ -117,7 +117,7 @@ func (d *NewCredentialDialog) buildPages(pf *ncredentialPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		spec := gosmo.CredentialSpec{
+		spec := gosmo.CreateCredentialRequest{
 			Name: d.objectName(),
 			// Trimmed to match what the preflight validated: SQL Server
 			// stores IDENTITY verbatim, so a pasted trailing space becomes

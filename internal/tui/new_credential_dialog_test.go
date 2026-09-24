@@ -20,7 +20,7 @@ func newCredentialTestDialog(t *testing.T) *NewCredentialDialog {
 	d.pages = []string{"General"}
 	d.forms = make([]*propsheet.Form, 1)
 	d.applyFns = make([]propApply, 1)
-	d.buildPages(&ncredentialPrefetch{existingNames: map[string]bool{"existing_cred": true}})
+	d.buildPages(&ncredentialPrefetch{existingNames: newNameSet("", "existing_cred")})
 	return d
 }
 
@@ -98,7 +98,7 @@ func TestNewCredentialDialogsScriptTheSecretAsAPlaceholder(t *testing.T) {
 		d.pages = []string{"General"}
 		d.forms = make([]*propsheet.Form, 1)
 		d.applyFns = make([]propApply, 1)
-		d.buildPages(&ndbScopedCredPrefetch{existingNames: map[string]bool{}})
+		d.buildPages(&ndbScopedCredPrefetch{existingNames: newNameSet("")})
 		check(t, d.forms[0], d.preflight, d.applyFns[0])
 	})
 }

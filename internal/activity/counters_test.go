@@ -134,6 +134,28 @@ func TestBaseCounterMatchIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// An "(ms)" average's base drops the unit in some names ("Average Wait Time
+// (ms)" / "Average Wait Time Base") and keeps it in others ("Avg Disk Read IO
+// (ms)" / "Avg Disk Read IO (ms) Base"); both must be found.
+func TestAverageBulkFindsItsBaseWithOrWithoutTheUnit(t *testing.T) {
+	for _, tc := range []struct{ counter, base string }{
+		{"Average Wait Time (ms)", "Average Wait Time Base"},
+		{"Avg Disk Read IO (ms)", "Avg Disk Read IO (ms) Base"},
+	} {
+		prev := set(
+			counterRow{objDatabases, tc.counter, totalInstance, 100, cntrAverageBulk},
+			counterRow{objDatabases, tc.base, totalInstance, 10, cntrBase},
+		)
+		cur := set(
+			counterRow{objDatabases, tc.counter, totalInstance, 160, cntrAverageBulk},
+			counterRow{objDatabases, tc.base, totalInstance, 20, cntrBase},
+		)
+		if got := cur.value(prev, objDatabases, tc.counter, totalInstance, 4); got != 6 {
+			t.Errorf("%s with base %q = %v, want 60/10 = 6", tc.counter, tc.base, got)
+		}
+	}
+}
+
 // A service restart resets counters to zero; reading the difference straight
 // through gives a huge negative rate or a spike that rescales every chart.
 func TestCounterValueIgnoresCountersThatWentBackwards(t *testing.T) {
