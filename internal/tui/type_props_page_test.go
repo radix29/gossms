@@ -96,11 +96,11 @@ func tableTypeResponses() []fakeResponse {
 		{match: "FROM   sys.table_types tt", cols: 5, rows: [][]driver.Value{
 			{"IdList", "dbo", int64(258), int64(9999), false},
 		}},
-		{match: "FROM   sys.columns c", cols: 28, rows: [][]driver.Value{
+		{match: "FROM   sys.columns c", cols: 32, rows: [][]driver.Value{
 			{"Id", int64(1), "int", int64(4), int64(10), int64(0),
-				false, false, false, nil, nil, nil, false, nil, nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0)},
+				false, false, false, nil, nil, nil, false, nil, nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", ""},
 			{"Label", int64(2), "nvarchar", int64(100), int64(0), int64(0),
-				true, false, false, nil, nil, nil, false, "SQL_Latin1_General_CP1_CI_AS", nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0)},
+				true, false, false, nil, nil, nil, false, "SQL_Latin1_General_CP1_CI_AS", nil, nil, false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", ""},
 		}},
 	}
 }

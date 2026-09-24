@@ -43,10 +43,13 @@ method swept.
 
 ## Release workflow: what is still open
 
-**`brew audit --strict --online` reports "`version …` is redundant with version
-scanned from URL"** (on Linux Homebrew; `brew style` and the `livecheck` block
-are clean). Left as is — the homebrew job's Verify step greps for that `version`
-line, so dropping it means changing the verify step too.
+**The homebrew job's new Verify step has not run in CI yet.** The formula lost
+its `version` line on 2026-09-24, and Verify now checks the archive URLs'
+tag. It was dry-run locally against a fake remote: it passes on a correct
+formula and fails on a missing one, a stale one, and one half on the old
+tag. `brew audit --strict --online` is clean on the staged v0.0.12 formula,
+and `brew info` scans `0.0.12`. Its first real run is the next tag. Check
+that job's log, then delete this entry.
 
 The shape those two jobs have to keep, and why the formula is binary, are
 settled: `docs/decisions.md` § Release workflow.
@@ -121,11 +124,7 @@ None outstanding.
 
 ### Verification gaps
 
-- **V1 — `ServerConn.Peer`'s single-flight dial has not run against the AG
-  pair.** Rewritten 2026-09-23 (review plan S22) and covered by unit tests over
-  a held fake dial; ubusql1/ubusql2 were unreachable, so `TestLivePeer*`
-  (`internal/db/live_peer_test.go`) and an Object Explorer expansion of AAG1's
-  folders still need a run. See § Environment for the cluster.
+None outstanding.
 
 ### Nice to have
 

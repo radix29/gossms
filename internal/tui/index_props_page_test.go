@@ -42,15 +42,18 @@ func idxTableResp() fakeResponse {
 // idxListResp answers Table.indexList with one index. The scan order is
 // sys.indexes' own; see gosmo's table.go.
 func idxListResp(name string, indexID int64, opts indexFixture) fakeResponse {
-	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 21, rows: [][]driver.Value{{
+	return fakeResponse{match: "FROM   sys.indexes i", db: idxDatabase, cols: 35, rows: [][]driver.Value{{
 		name, indexID, opts.typeDesc,
 		opts.unique, opts.primaryKey, opts.uniqueConstraint, false,
 		opts.fillFactor, opts.filter,
 		opts.padded, opts.ignoreDupKey, opts.rowLocks, opts.pageLocks,
-		opts.compression,
+		// Per-partition compression, a FOR JSON list; one partition here.
+		`[{"n":1,"c":"` + opts.compression + `"}]`,
 		"PRIMARY", int64(0), true, "",
 		opts.noRecompute, false,
-		int64(0),
+		int64(0), int64(0),
+		// The XML form and spatial tessellation columns, all zero.
+		false, "", "", "", nil, nil, nil, nil, "", "", "", "", int64(0),
 	}}}
 }
 
@@ -220,10 +223,11 @@ func idxColumnResp(names ...string) fakeResponse {
 			false, false,
 			"",
 			int64(0), false, false,
-			int64(0),
+			int64(0), false,
+			"", "", "",
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 28, rows: rows}
+	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 32, rows: rows}
 }
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on

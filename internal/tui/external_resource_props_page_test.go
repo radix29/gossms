@@ -15,9 +15,15 @@ import (
 // off when the instance cannot express the setting at all.
 
 func externalDataSourceResponse(connOptions string, pushdown bool) fakeResponse {
+	// The catalog's pushdown is nvarchar, "ON"/"OFF", and gosmo reads "" where
+	// the column does not exist.
+	pd := ""
+	if pushdown {
+		pd = "ON"
+	}
 	return fakeResponse{match: "FROM   sys.external_data_sources s", cols: 10, rows: [][]driver.Value{{
 		"HadoopCluster", int64(65536), "hdfs://nn:8020", "HADOOP",
-		"nn:8050", "HadoopCred", "", "", connOptions, pushdown,
+		"nn:8050", "HadoopCred", "", "", connOptions, pd,
 	}}}
 }
 

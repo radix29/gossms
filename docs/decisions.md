@@ -1492,8 +1492,8 @@ having pushed nothing: the `homebrew` job stages first and compares against the
 index (`git diff --quiet` reports no diff for a path git has never tracked),
 which is what the `apt` job already did. Each ends in a **Verify** step that
 fetches the *remote* back and fails unless it carries this tag — the tap's
-requires `origin/<branch>:Formula/gossms.rb` to declare `version "<tag without
-v>"`, and the apt job's requires both `.deb`s in `pool/`, a `Version:` line in
+requires every archive URL in `origin/<branch>:Formula/gossms.rb` to be on
+`releases/download/<tag>/`, and the apt job's requires both `.deb`s in `pool/`, a `Version:` line in
 each architecture's `Packages`, and all three of `Release`, `InRelease` and
 `Release.gpg`. Two things about those steps a plausible simplification undoes:
 
@@ -1505,6 +1505,11 @@ each architecture's `Packages`, and all three of `Release`, `InRelease` and
   push step's guard legitimately `exit 0`s when there is nothing to do; that
   ends the *step*, so a verify folded into it would be skipped by the very case
   it exists to catch.
+
+The formula carries **no `version` line**. Homebrew scans the version from the
+release URL, and `brew audit --strict` flags an explicit line as redundant. So
+the tap's Verify step checks that all four archive URLs are on this tag, and
+does not grep for a `version` line.
 
 The formula is deliberately **binary**, not build-from-source: `go.mod`'s active
 `replace` makes any source build from a release tarball fail, and

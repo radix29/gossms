@@ -214,9 +214,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Homebrew's version has no leading "v"; the release URLs and the
-          # archive names do, so both spellings are needed below.
-          VERSION="${TAG#v}"
+          # No `version` line in the formula: Homebrew scans it from the URL
+          # (…/download/v0.0.12/gossms_v0.0.12_…), and `brew audit --strict`
+          # flags an explicit one as redundant.
           BASE="https://github.com/radix29/gossms/releases/download/${TAG}"
 
           # The release job published checksums.txt alongside the archives.
@@ -256,7 +256,6 @@ jobs:
           class Gossms < Formula
             desc "Terminal reimplementation of SQL Server Management Studio"
             homepage "https://github.com/radix29/gossms"
-            version "${VERSION}"
             license "GPL-3.0-or-later"
 
             livecheck do
@@ -354,14 +353,21 @@ jobs:
             exit 1
           fi
 
-          if ! grep -q "version \"${VERSION}\"" <<<"${published}"; then
-            echo "Error: origin/${branch} Formula/gossms.rb does not declare version ${VERSION}." >&2
+          # The formula has no `version` line — Homebrew scans the version from
+          # the URL — so the URLs are what carry the tag. Require all four
+          # archives, and every url line, to point at this tag's release: a
+          # count alone would pass a formula still half on the previous one.
+          base="https://github.com/radix29/gossms/releases/download/${TAG}/"
+          total="$(grep -cE '^[[:space:]]*url "' <<<"${published}" || true)"
+          current="$(grep -cF "url \"${base}gossms_${TAG}_" <<<"${published}" || true)"
+          if [ "${total}" -ne 4 ] || [ "${current}" -ne 4 ]; then
+            echo "Error: origin/${branch} Formula/gossms.rb has ${current} of ${total} archive URLs on ${TAG}; expected 4 of 4." >&2
             echo "--- what the tap actually holds ---" >&2
             printf '%s\n' "${published}" >&2
             exit 1
           fi
 
-          echo "Tap verified: origin/${branch} Formula/gossms.rb declares version ${VERSION}."
+          echo "Tap verified: origin/${branch} Formula/gossms.rb points all four archives at ${TAG} (version ${VERSION})."
 
   apt:
     name: Publish the apt repository
