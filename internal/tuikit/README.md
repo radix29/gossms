@@ -1,91 +1,66 @@
 # tuikit
 
-`tuikit` is the embeddable, application-agnostic TUI library that powers
-goSSMS. It knows nothing about SQL Server, gosmo, or goSSMS — it only knows
-how to draw and drive terminal widgets on a `tcell.Screen`. It could be
-vendored into any other tcell-based console application.
+The embeddable, application-agnostic TUI library behind goSSMS. It knows
+nothing about SQL Server, gosmo or goSSMS — only how to draw and drive widgets
+on a `tcell.Screen` — and could be vendored into any tcell application.
 
 ## Package map
 
 ```
 tuikit/
-├── theme/      Colour palette + derived tcell.Style helpers
-│             — palette.go, styles.go
-├── core/       Geometry (Rect), drawing primitives, string/int helpers
+├── theme/      Colour palette + derived tcell.Style helpers — palette.go, styles.go
+├── core/       Rect geometry, drawing primitives, string/int helpers
 │             — geometry.go, screen.go, drawing.go, strutil.go, mathutil.go,
-│               runecol.go (rune index ↔ display column), wordutil.go
-│               (word boundaries, shared by Editor and InputField)
-├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file per widget
-├── layout/     Panel interface, PanelManager (tabs), Splitter (resizable)
-│             — panel.go, panel_manager.go, splitter.go
-├── dialogs/    ModalDialog base (focus trap), PropertiesDialog, AlertDialog, ConfirmDialog, TypedConfirmDialog, PromptDialog, ProgressDialog, FileDialog
-│             — modal.go, properties_dialog.go, alert_dialog.go, confirm_dialog.go,
-│               typed_confirm_dialog.go (retype-to-confirm), prompt_dialog.go (one-line
-│               text input, e.g. a new name); FileDialog (browse/
-│               save-as, list+path entry, used for every file path prompt in
-│               internal/tui) is split across file_dialog.go (state), file_dialog_draw.go,
-│               file_dialog_input.go, file_dialog_complete.go (path completion), and
-│               file_system.go (the FileSystem it browses through — LocalFileSystem
-│               by default, plus Windows/Posix path rules a host app builds a
-│               remote FileSystem on; see ShowOpenOn/ShowSaveOn, and
-│               BlockingFileSystem for the "Listing ..." repaint a networked one gets)
-├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor (+ SQL/XML highlighters, statement select)
-│             — one file per group: menu_bar.go/context_menu.go (+ shared MenuItem/Menu
-│               types in menu_item.go, and menu_cascade.go's menuCascade, which
-│               both hosts use to draw, hit-test and key-navigate the submenu
-│               chain hanging off a MenuItem.Sub), toolbar.go, treeview.go,
-│               listbox.go, tabstrip.go;
-│               DataGrid is split across datagrid.go (state/data source/column
-│               widths), datagrid_draw.go, datagrid_input.go, and
-│               datagrid_overlay.go (right-click menu, "Show Value" popup);
-│               Editor's buffer is document.go — the single chokepoint for
-│               mutating text, holding a version counter that keys the syntax/
-│               wrap/width caches so per-document work happens once per edit
-│               rather than once per Draw; line_buffer.go's LineBuffer builds a
-│               document (lines + measured widths) off the UI goroutine for
-│               Editor.SetLineBuffer to install in O(1);
-│               Editor itself is split across editor.go (state/options),
-│               editor_undo.go (per-edit span deltas, capped in steps and
-│               bytes), editor_search.go (the one regexp engine behind Find,
-│               Replace and Replace All), editor_block.go (block/column
-│               selection editing and its rectangular clipboard),
-│               editor_selection.go, editor_draw.go, editor_wrap.go,
-│               editor_input.go, editor_actions.go, editor_completion.go
-│               (generic completion/IntelliSense popup), sql_highlighter.go,
-│               sql_statement.go (T-SQL statement/batch boundary detection),
-│               xml_highlighter.go (used by planview's XML tab),
-│               json_highlighter.go (used when a JSON result cell is opened
-│               in its own panel — needs no cross-line state, since no JSON
-│               token can span a line)
-├── charts/     Terminal charts from generic series data — no SQL Server or
-│             application knowledge, same as the rest of tuikit
-│             — canvas.go (off-screen cell buffer satisfying the drawing half
-│               of tcell.Screen, so a dashboard larger than the terminal can be
-│               rendered once and then blitted/scrolled), scale.go (nice-number
-│               linear scales, ticks, value formatting), glyph.go (eighth-block
-│               ramps), axis.go, legend.go, common.go (Series and the stacked-run
-│               composition every stacked chart shares), history.go,
-│               stacked_history.go, barchart.go, stacked_bar.go, vbar.go, kpi.go
-├── sqltext/    T-SQL text rules shared outside tuikit too — the "GO" separator
-│             line rule and SplitBatches, the executor's GO-batch splitter;
-│             standard library only, so internal/query and sqlparse use it
-│             without importing anything that draws
+│               runecol.go (rune index ↔ display column), wordutil.go (word
+│               boundaries for Editor and InputField)
+├── widgets/    InputField, DropDown, CheckBox, Button, RadioBox, Spinner — one file each
+├── layout/     Panel interface, PanelManager (tabs), Splitter — panel.go,
+│               panel_manager.go, splitter.go
+├── dialogs/    ModalDialog (focus trap), Properties/Alert/Confirm/TypedConfirm
+│             (retype-to-confirm)/Prompt (one-line input)/Progress/FileDialog
+│             — FileDialog (every file-path prompt) is file_dialog.go (state),
+│               _draw, _input, _complete (path completion), and file_system.go:
+│               the FileSystem it browses (LocalFileSystem by default; Windows/
+│               Posix path rules for a remote one — see ShowOpenOn/ShowSaveOn,
+│               and BlockingFileSystem for the "Listing ..." repaint)
+├── controls/   MenuBar+ContextMenu, Toolbar, TreeView, DataGrid, ListBox, TabStrip, Editor
+│             — menu_bar.go, context_menu.go, menu_item.go (shared types),
+│               menu_cascade.go (submenu chain draw/hit-test/keys for both hosts),
+│               toolbar.go, treeview.go, listbox.go, tabstrip.go;
+│               DataGrid: datagrid.go (state/source/widths), _draw, _input,
+│               _overlay (right-click menu, "Show Value" popup);
+│               Editor: document.go (the one text-mutation chokepoint; its
+│               version counter keys the syntax/wrap/width caches),
+│               line_buffer.go (builds a document off the UI goroutine for an
+│               O(1) SetLineBuffer), editor.go (state/options), editor_undo.go
+│               (span deltas, capped by steps and bytes), editor_search.go (the
+│               one regexp engine for Find/Replace/Replace All), editor_block.go
+│               (column selection + rectangular clipboard), editor_selection.go,
+│               _draw, _wrap, _input, _actions, editor_completion.go (popup);
+│               sql_highlighter.go, sql_statement.go (statement/batch bounds),
+│               xml_highlighter.go (planview XML tab), json_highlighter.go (JSON
+│               cell panel; stateless per line)
+├── charts/     Terminal charts from generic series data
+│             — canvas.go (off-screen buffer satisfying tcell.Screen's drawing
+│               half, rendered once then blitted/scrolled), scale.go (nice-number
+│               scales, ticks, formatting), glyph.go (eighth-block ramps),
+│               axis.go, legend.go, common.go (Series, stacked-run composition),
+│               history.go, stacked_history.go, barchart.go, stacked_bar.go,
+│               vbar.go, kpi.go
+├── sqltext/    T-SQL text rules — the "GO" separator line rule and SplitBatches;
+│             stdlib only, so internal/query and sqlparse can use it
 │             — doc.go, go_separator.go, split.go
 └── propsheet/  PropertySheet — multi-page editable properties dialog framework
               — doc.go, common.go, rows.go, gridrow.go, editorrow.go,
-                togglegrid.go, form.go;
-                PropertySheet itself is split across sheet.go (state/page list),
-                sheet_draw.go, sheet_input.go, and sheet_clipboard.go
+                togglegrid.go, form.go; sheet.go (state/pages), sheet_draw.go,
+                sheet_input.go, sheet_clipboard.go
 ```
 
-Every tuikit sub-package follows the same convention: one file per type or
-tightly-related group of types, plus a `doc.go` holding the package doc
-comment.
+Every sub-package: one file per type or tight group, plus `doc.go`.
 
 ## Dependency direction
 
-Strict, one-way dependency graph — no package below ever imports a package
-above it, and nothing in `tuikit` imports the `tui` (application) package:
+One-way; nothing imports upward, nothing imports `tui`:
 
 ```
 theme  ◄── core ◄── widgets ◄── layout ◄── dialogs ◄── propsheet
@@ -93,168 +68,102 @@ theme  ◄── core ◄── widgets ◄── layout ◄── dialogs ◄�
                        └──────── controls ─────┴────────────┘
 ```
 
-- **theme** has zero internal dependencies (only `tcell`).
-- **sqltext** sits outside the graph above: it imports only the standard
-  library, not even `tcell`. `controls` uses it, and so do `internal/query`
-  and `internal/tui/sqlparse`, which is why it must stay free of anything
-  that draws.
-- **core** depends on `theme` for `Init()`'s default style.
-- **widgets**, **layout**, **dialogs**, and **controls** depend on `core` and `theme`.
-- **dialogs** and **controls** are the only packages aware of higher-level
-  composition (a `DataGrid` inside a `Panel`, a `ModalDialog` hosting buttons).
-- **propsheet** sits at the top: it composes `dialogs.ModalDialog`,
-  `controls.DataGrid`/`ListBox`, and `widgets` into `PropertySheet`, the
-  multi-page editable-properties framework. Nothing below it imports it.
+- **theme** depends only on `tcell`; **core** on `theme` (for `Init()`'s
+  default style); **widgets**, **layout**, **dialogs**, **controls** on `core`
+  and `theme`.
+- **propsheet** is the top, composing `dialogs.ModalDialog`,
+  `controls.DataGrid`/`ListBox` and `widgets`.
+- **sqltext** is outside the graph: stdlib only, not even `tcell`. `controls`,
+  `internal/query` and `internal/tui/sqlparse` use it, so it must never draw.
 
 ## Design principles
 
-**No upward calls.** Every control communicates outward via plain Go
-callbacks (`OnExpand`, `OnSelect`, `OnClick`, `OnConfirm`, …), never by
-importing or calling into application code. The `tui` package wires these
-callbacks; `tuikit` never imports `tui`.
+**No upward calls.** Controls talk outward only via callbacks (`OnExpand`,
+`OnSelect`, `OnClick`, `OnConfirm`, …) that `tui` wires.
 
-**Geometry via `core.Rect`.** Every widget stores its position/size as a
-`core.Rect` and exposes `SetBounds(x, y, w, h)`. Layout containers
-(`PanelManager`, `Splitter`) compute child rectangles and hand them down —
-children never reach upward to ask "how much space do I have?".
+**Geometry via `core.Rect`.** Widgets store a `core.Rect` and expose
+`SetBounds(x, y, w, h)`; containers (`PanelManager`, `Splitter`) compute child
+rects and hand them down.
 
-**Self-contained state.** Widgets hold their own value/selection/scroll
-state and expose it through getters (`Value()`, `Checked()`, `Selected()`).
-The application reads state when it needs it; it does not push state into
-private fields.
+**Self-contained state**, read through getters (`Value()`, `Checked()`,
+`Selected()`); the app never pushes into private fields.
 
-**An animation is a function of elapsed time, not a timer.**
-`widgets.Spinner` (the busy-indicator catalogue — `SpinnerBraille`,
-`SpinnerCodex`, `SpinnerDots3`, … , walkable via `widgets.Spinners` and
-resolvable from a config string with `SpinnerByName`) holds no start time and
-starts no goroutine: `Frame(elapsed)`/`FrameSince(start)` answer which frame
-shows, and the host drives the redraw from a clock it already has. Every frame
-of one Spinner is the same display width, so a repaint overwrites the previous
-frame exactly — a narrower frame leaves the tail of the last one on screen,
-which no static frame listing shows and only animation reveals
-(`TestSpinnerFramesAreUniformWidth`). `cmd/spindemo` renders the whole
-catalogue side by side for picking one by eye.
+**An animation is a function of elapsed time, not a timer.** `widgets.Spinner`
+(catalogue: `SpinnerBraille`, `SpinnerCodex`, …; `widgets.Spinners`,
+`SpinnerByName`) has no start time or goroutine: `Frame(elapsed)`/
+`FrameSince(start)`, redrawn from the host's clock. All frames of a Spinner
+share one display width, or a narrower frame leaves the previous one's tail
+(`TestSpinnerFramesAreUniformWidth`). `cmd/spindemo` shows them all.
 
-**Optional capability interfaces.** `layout.Panel` only requires the five
-methods every panel needs (`SetBounds`, `Draw`, `HandleKey`, `HandleMouse`,
-`Title`). Panels that care about gaining/losing focus implement the optional
-`layout.Activatable` interface (`SetActive(bool)`); `PanelManager` detects
-this via a type assertion and calls it automatically on every switch — no
-panel is forced to implement focus tracking it doesn't need. Panels that own
-something to release on close — an in-flight read, a connection — implement
-`layout.Disposable` (`Close()`); the host calls it before `RemovePanel`.
+**Optional capability interfaces.** `layout.Panel` requires only `SetBounds`,
+`Draw`, `HandleKey`, `HandleMouse`, `Title`. `layout.Activatable`
+(`SetActive(bool)`) is called by `PanelManager` on every switch if
+implemented; `layout.Disposable` (`Close()`) is called by the host before
+`RemovePanel` for panels owning a read or connection.
 
-**Row data behind an interface, not a concrete slice.** `controls.DataGrid`
-takes any `RowSource` (`Len() int`, `Row(i int) []string`) rather than
-requiring a `[][]string` in hand. `SetData` is a thin convenience wrapper
-over `SetSource` for the common already-in-memory case (`SliceRowSource`);
-a future paged or streamed result set can implement `RowSource` directly
-without `DataGrid` itself changing. Column widths are sized by sampling
-only the first `colWidthSampleRows` rows, not every row, so this scales to
-sources holding far more than that.
+**Row data behind an interface.** `controls.DataGrid` takes a `RowSource`
+(`Len()`, `Row(i)`); `SetData` wraps `SetSource` with a `SliceRowSource`.
+Column widths sample only the first `colWidthSampleRows`, so large or streamed
+sources scale.
 
-**Display width, not byte length or rune count.** Terminal columns are not
-the same as Go string length. `core.DisplayWidth(s string) int` (backed by
-`github.com/clipperhouse/displaywidth`, already a transitive dependency of
-`tcell` v3.4+) is the single source of truth for "how many columns does
-this text occupy" — it accounts for wide CJK glyphs and multi-rune
-grapheme clusters. `core.DrawText`, `core.DrawTextClipped`,
-`core.DrawTextRight`, `core.Truncate`, and `core.PadRight` are all built on
-it. Any new code that positions something *after* a label (a button after
-its text, an input box after its label, a hit-test region after a tab) must
-use `core.DisplayWidth(label)`, never `len(label)` — `len()` returns bytes,
-which is wrong for any non-ASCII text and will desync drawing from mouse
-hit-testing.
+**Display width, not bytes or runes.** `core.DisplayWidth(s)` (via
+`clipperhouse/displaywidth`) is the one answer to "how many columns", handling
+wide CJK and grapheme clusters; `core.DrawText`, `DrawTextClipped`,
+`DrawTextRight`, `Truncate`, `PadRight` build on it. Anything positioned after
+a label uses `core.DisplayWidth(label)`, never `len(label)`, or drawing and
+hit-testing desync. Rune-indexed text (`Editor`, `InputField` cursors,
+selections, wrap segments) converts via `core/runecol.go` only — `RuneWidth`,
+`RunesWidth`, `ColumnOfRune`, `RuneIndexAtColumn`. Until 2026-08-02 both
+widgets treated rune index as column, and a CJK/emoji character shifted the
+rest of its line.
 
-Text that is *indexed by rune* — `Editor` and `InputField`, whose cursor,
-selection and wrap segments are rune positions — needs the rune-level
-counterparts in `core/runecol.go`: `RuneWidth`, `RunesWidth`,
-`ColumnOfRune` (index → column) and `RuneIndexAtColumn` (column → index).
-Those four are the entire conversion between the two coordinate systems.
-Both widgets treated a rune index as a column until 2026-08-02, so a CJK or
-emoji character shifted the rest of its line one column left of where it
-rendered and swallowed its neighbour; anything new that maps between a
-caret position and an x coordinate goes through these rather than
-re-deriving it.
+**Async state as data, not goroutines — `propsheet.PropertySheet`.** A
+multi-page dialog (page list, a `Form` of `Row`s, OK/Cancel/Apply/Script
+Changes) whose pages load lazily. It never spawns a goroutine: it calls
+`OnLoadPage(page, seq)`; the host fetches and replies with
+`SetPageForm(page, seq, form)`/`SetPageError(page, seq, err)`. `seq` is
+sheet-wide, monotonic, never reset by `SetPages`; a stale `seq` is ignored
+(`SetPageForm` returns false). **Both must be called on the UI goroutine** —
+no locking. Rows share a small `Row` interface plus optional capabilities
+(`Editable`, `Copyable`, `KeyHandler`, … — `propsheet/common.go`), so a new
+row kind never touches `Form`. **A row that draws a control also implements
+`ReadOnlyDrawer`**: under `Form.SetReadOnly`, a row still drawing `[value]` or
+`[ ]` looks like a field refusing input.
 
-**Async state as data, not goroutines — `propsheet.PropertySheet`.**
-`PropertySheet` is a multi-page dialog (page list on the left, a `Form` of
-`Row`s on the right, OK/Cancel/Apply/Script Changes below) where each
-page's data loads
-lazily and asynchronously. Like every other tuikit control it never spawns
-a goroutine or imports the application layer: when a page needs loading it
-calls `OnLoadPage(page, seq)` and waits. The caller (`internal/tui`) does
-the actual fetch — typically on a background goroutine — and reports the
-result via `SetPageForm(page, seq, form)` or `SetPageError(page, seq,
-err)`. `seq` is a sheet-wide monotonic counter that `SetPages` never
-resets; a call with a stale `seq` (the page was refreshed again, the sheet
-was hidden, or it was reopened with a new page set, before the result
-arrived) is silently ignored, and `SetPageForm` returns false. **`SetPageForm`/`SetPageError` must only be
-called from the UI goroutine** — `PropertySheet` does no locking of its
-own, the same contract `App.postEvent` already provides for every other
-background-to-UI handoff in `internal/tui`. A `Form`'s rows unify under a
-small `Row` interface plus optional capability interfaces (`Editable`,
-`Copyable`, `KeyHandler`, …) — see `propsheet/common.go` — so adding a new
-row kind never requires touching `Form` itself. **A row that draws a control
-implements `ReadOnlyDrawer` too**: `Form.SetReadOnly` already makes a gated
-page impossible to edit, and a row that keeps drawing its `[value]` box or its
-`[ ]` reads as a field the terminal is refusing to type into.
+**Overlays are drawn last and get first refusal of input.** A widget whose open
+state floats outside its rect — `DropDown`'s list, `DataGrid`'s menu/"Show
+Value" popup, `Editor`'s completion popup (`CompletionActive()`/`DrawOverlay`)
+— exposes `DrawOverlay(s)`, which the host calls after everything sharing that
+space, and checks it first in its own `HandleKey`/`HandleMouse` (see
+`DataGrid.OverlayActive()` and `QueryPanel`), or input goes to whatever sits
+underneath.
 
-**Overlays are drawn last and get first refusal of input.** A widget whose
-open state floats independently of its own `SetBounds` rect — `DropDown`'s
-open list, `DataGrid`'s right-click menu/"Show Value" popup, `Editor`'s
-completion popup (`CompletionActive()`/`DrawOverlay`, `editor_completion.go`)
-— exposes a `DrawOverlay(s tcell.Screen)` that the host must call *after*
-every other widget sharing that screen space has drawn, so nothing paints
-over it. The same widget must also get exclusive first refusal of every
-key/mouse event while that state is open, checked at the top of the host's
-own `HandleKey`/`HandleMouse` (see `DataGrid.OverlayActive()` and
-`QueryPanel.HandleKey`/`HandleMouse` in `internal/tui`) — otherwise a click
-or keypress meant for the floating overlay gets routed by position/focus to
-whatever widget normally owns those screen coordinates instead.
-
-**Theming is global but swappable.** `theme.Active()` returns the live
-palette; call `theme.SetPalette(p)` once at start-up to reskin every widget
-in the library without touching draw code.
+**Theming is global but swappable**: `theme.Active()`; `theme.SetPalette(p)`
+once at startup reskins everything.
 
 ## How the application layer uses it
 
-`internal/tui` (the goSSMS application) is a thin layer that:
-
-1. Defines SQL-Server-specific domain types (`NodeType`, `explorerNode`, `nodeData`).
-2. Wires `tuikit` controls together with callbacks that load data via `gosmo`.
-3. Embeds `dialogs.ModalDialog` in its own dialogs (`ConnectDialog`,
-   `HelpDialog`) to add domain-specific fields and behaviour on top of the
-   generic focus-trap/overlay/button-row machinery.
-4. Implements `layout.Panel` for `QueryPanel` and `DetailBrowser` so they can
-   be hosted side-by-side in a `layout.PanelManager`.
-
-Example — the Object Explorer is `internal/tui/object_explorer.go`'s
-`ObjectExplorer`, which owns the SQL Server tree model (`explorerNode`) and
-projects it into a flat `[]controls.TreeNode` for `controls.TreeView` to
-render and navigate. `ObjectExplorer` never duplicates tree-walking,
-scrolling, or expand/collapse logic — all of that lives once, in
+`internal/tui` defines domain types (`NodeType`, `explorerNode`, `nodeData`),
+wires controls with callbacks that load via `gosmo`, embeds
+`dialogs.ModalDialog` in its dialogs, and implements `layout.Panel` for
+`QueryPanel`, `DetailBrowser`, etc. Example: `ObjectExplorer`
+(`object_explorer.go`) owns the tree model and projects it into a flat
+`[]controls.TreeNode`; all walking, scrolling and expand/collapse lives once in
 `controls.TreeView`.
 
 ## Adding a new control
 
-1. Decide which package it belongs in (a leaf input → `widgets`; a layout
-   primitive → `layout`; a self-contained modal → `dialogs`; anything bigger
-   with internal state/scrolling → `controls`).
-2. Take only `core` and `theme` as dependencies unless you're building on
-   top of another `tuikit` package.
-3. Expose `SetBounds`, `Draw(tcell.Screen)`, `HandleKey`, `HandleMouse` for
-   anything interactive; expose plain getters for any value state.
-4. If it can be switched off, name the pair `SetEnabled(bool)`/`Enabled() bool`
-   and hold `InputField`'s contract, which `Button`, `CheckBox` and `RadioBox`
-   now share: a disabled control draws greyed (`theme.StyleControlDisabled`,
-   or `StyleButtonDisabled` for a button, which keeps its own ground) **and**
-   refuses keys and clicks — one that only stopped accepting input looks like
-   a live control ignoring the user. It keeps its place in the caller's focus
-   ring, so Tab order does not shift under the user when a page switches it
-   off, and the page's own setters (`SetChecked`, `SetSelected`, `SetValue`)
-   keep working: pinning a control to the one value the server accepts is the
-   usual reason to disable it.
+1. Pick the package: leaf input → `widgets`; layout primitive → `layout`;
+   self-contained modal → `dialogs`; bigger stateful/scrolling → `controls`.
+2. Depend only on `core` and `theme` unless building on another tuikit package.
+3. Interactive controls expose `SetBounds`, `Draw(tcell.Screen)`, `HandleKey`,
+   `HandleMouse`, plus plain getters.
+4. If it can be switched off: `SetEnabled(bool)`/`Enabled() bool` with
+   `InputField`'s contract (shared by `Button`, `CheckBox`, `RadioBox`) —
+   draws greyed (`theme.StyleControlDisabled`; `StyleButtonDisabled` for
+   buttons) **and** refuses input, keeps its focus-ring slot, and its own
+   setters still work (pinning a value the server requires is the usual reason
+   to disable).
 5. Never import `internal/tui`.
 
 ## Adding a new dialog in the application
@@ -289,11 +198,7 @@ func (d *MyDialog) HandleMouse(ev *tcell.EventMouse) bool {
 }
 ```
 
-This is exactly the pattern `ConnectDialog` and `HelpDialog` follow in
-`internal/tui`; `dialogs.FileDialog` (any file path prompt — Open, Save,
-Save As, Results To File) is the same idea one level down, built directly
-in `tuikit/dialogs` rather than `internal/tui` since it needs no SQL Server
-domain knowledge at all. It reaches the filesystem only through its
-`FileSystem` interface, never `os`/`path/filepath` directly, which is what
-lets `internal/tui` point Backup's and Restore's Browse at the *server's*
-disks (`serverFS`, backed by gosmo) while every other caller stays local.
+`ConnectDialog` and `HelpDialog` follow this. `dialogs.FileDialog` is the same
+pattern inside tuikit (it needs no domain knowledge); it reaches disk only via
+its `FileSystem` interface, which lets Backup/Restore's Browse show the
+*server's* disks (`serverFS`, over gosmo) while other callers stay local.

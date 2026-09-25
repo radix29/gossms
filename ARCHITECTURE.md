@@ -1,190 +1,137 @@
 # Architecture
 
-goSSMS is split into an embeddable, application-agnostic TUI library
-(`internal/tuikit`) and a thin application layer (`internal/tui`) that wires
-it together with SQL Server domain logic via `gosmo`. See
-[`internal/tuikit/README.md`](internal/tuikit/README.md) for the library's
-design principles and dependency rules.
+goSSMS is an application-agnostic TUI library (`internal/tuikit`, see
+[`internal/tuikit/README.md`](internal/tuikit/README.md)) plus a thin
+application layer (`internal/tui`) that wires it to SQL Server via `gosmo`.
 
 ## Why split this way
 
-`tuikit` contains every piece of rendering, focus, scrolling, and
-drag/resize logic exactly once. None of it knows what a "database" or
-"stored procedure" is — it operates on generic `Rect`s, `TreeNode`s with an
-`any` `Tag` field, and string/string row data. The `tui` package never
-re-implements widget mechanics; it only supplies SQL-Server-specific data
-and callbacks (`OnExpand`, `OnSelect`, button `Action`s). `tuikit` could
-therefore be extracted into its own module and reused by a different tcell
-application unmodified.
+`tuikit` holds all rendering, focus, scrolling and drag/resize logic exactly
+once, over generic `Rect`s, `TreeNode`s with an `any` `Tag`, and string rows —
+it knows nothing of databases. `tui` never re-implements widget mechanics; it
+supplies data and callbacks (`OnExpand`, `OnSelect`, button `Action`s).
 
-**That is an invariant, not an observation: `internal/tuikit` must not
-import `internal/tui` or `gosmo`.** Its only permitted external dependencies
-are `tcell` and `displaywidth`. Check it with:
+**Invariant: `internal/tuikit` must not import `internal/tui` or `gosmo`.** Its
+only external dependencies are tcell and displaywidth:
 
 ```bash
 go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/tuikit/... |
   grep '\.' | grep -v gossms | sort -u    # non-stdlib, non-repo imports
 ```
 
-That must print exactly three lines — `github.com/gdamore/tcell/v3`,
+must print exactly `github.com/gdamore/tcell/v3`,
 `github.com/gdamore/tcell/v3/color`, `github.com/clipperhouse/displaywidth`.
-Anything else is a layering violation.
 
 ## Which document owns what
 
-The same rule stated twice will eventually be stated two different ways.
-Before adding to any of them:
+A rule stated twice drifts. State it once, in its owner; elsewhere summarize in
+a sentence and link.
 
 | Document | Authoritative for |
 |---|---|
-| `CLAUDE.md` | Agent-facing working rules that apply to every task: conventions, hygiene, and where to read next. Kept short — it loads every session |
-| `docs/ui-rules.md` | The short enforceable form of every `internal/tui`/`internal/tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse and async |
-| `docs/db-rules.md` | Permission gating, the T-SQL a page emits, Object Explorer filters, query execution |
-| `docs/testing.md` | What counts as verification: the tmux and live-server harnesses, and the `fakedb_test.go` rules |
-| `ARCHITECTURE.md` | This file: package map, layering, data flow, threading, and the long-form *why* behind each idiom |
-| `internal/tuikit/README.md` | Everything inside `internal/tuikit` — its package map, dependency direction, widget design rules |
-| `docs/open-threads.md` | Work knowingly left undone: unfixed bugs, deferred scope, release blockers |
-| `docs/decisions.md` | Settled decisions and deliberate exclusions — the "do not re-raise" record |
+| `CLAUDE.md` | Working rules for every task, and where to read next. Short — loads every session |
+| `docs/ui-rules.md` | The enforceable form of every `internal/tui`/`tuikit` idiom: widgets, grids, dialogs, clipboard, toolbars, mouse, async |
+| `docs/db-rules.md` | Permission gating, emitted T-SQL, Object Explorer filters, query execution |
+| `docs/testing.md` | What counts as verification: tmux and live-server harnesses, `fakedb_test.go` rules |
+| `ARCHITECTURE.md` | Package map, layering, data flow, threading, and the long-form *why* behind each idiom |
+| `internal/tuikit/README.md` | Everything inside `internal/tuikit` |
+| `docs/open-threads.md` | Work knowingly left undone: bugs, deferred scope, release blockers |
+| `docs/decisions.md` | Settled decisions and exclusions — the "do not re-raise" record |
 
-`README.md` is user-facing and owns features. The keyboard reference is the
-F1 help dialog (`internal/tui/help_dialog.go`) — a key binding change updates
-it. When a rule needs to appear in two places, the second one summarizes in a
-sentence and links here — it does not restate the reasoning.
+`README.md` is user-facing and owns features; the F1 help dialog
+(`internal/tui/help_dialog.go`) is the keyboard reference.
 
 ## How a query runs
 
-The path from keystroke to result grid, which touches four packages:
+1. **`internal/db`** (`connection.go`) owns connection *lifetime*.
+   `ConnectContext(ctx, opts, role)` maps `config.Connection` onto
+   `gosmo.ConnectionOptions` in `toGosmoOptions` — the Connect dialog's masked
+   preview (`BuildConnectionString`) goes through it too, so the preview is the
+   DSN dialled — and returns a `ServerConn` wrapping a `gosmo.Server`. `Role`
+   sets `program_name` (`goSSMS`, `goSSMS - Query`, `goSSMS - Activity
+   Monitor`). `ServerConn.Context()`, cancelled by `Close()`, is the parent of
+   every background load on that connection: closing the `*sql.DB` does not
+   cancel an in-flight query, so a load rooted at `context.Background()` keeps
+   a server session alive after disconnect.
+2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A query
+   window runs on a **`Session`**: one `*sql.Conn` from `gosmo.AcquireConn` (up
+   to 3 attempts on transient liveness failures, linear backoff) held for the
+   panel's lifetime, so temp tables, SET options, `USE` and open transactions
+   persist between runs, as in SSMS. Package-level `Execute`/`ExecuteWithPlan`
+   check out a pooled connection per call — which database/sql resets on next
+   checkout — so they suit one-shot callers only (Activity Monitor's procedure
+   tab). Both share `runScript`: optional `SET STATISTICS XML`/`SHOWPLAN_XML`,
+   `GO`-splitting via `sqltext.SplitBatches`
+   (`internal/tuikit/sqltext/split.go`), `runBatch` per batch, all into one
+   `Result` (result sets, messages, plan XML; for a Session also `DB_NAME()`,
+   `@@TRANCOUNT` — read even after a cancel — and whether the session was
+   lost). `Session.Close` *discards* the connection: pooled, an open
+   transaction would sit idle holding locks.
+3. **The message stream** (`sqlexp`): result sets and messages interleave on
+   one connection and `runBatch` walks them together. A speculative extra
+   `rows.Next()` consumes the return message and the grid comes up empty —
+   verify against a live server.
+4. **`internal/showplan`** only *parses* (no TUI, no DB — testable from a
+   file): `ParseAll` builds one navigable `Plan`, rendered by
+   `internal/tui/planview` as Plan/Tree/XML tabs.
 
-1. **`internal/db`** (`connection.go`) owns a connection's *lifetime*.
-   `ConnectContext(ctx, opts, role)` maps a `config.Connection` onto
-   `gosmo.ConnectionOptions` in one place, `toGosmoOptions` — which the
-   Connect dialog's preview (`BuildConnectionString`, a masked
-   `ConnectionOptions.ConnectionString`) goes through too, so the preview is
-   the DSN dialled — and returns a `ServerConn` wrapping a `gosmo.Server`.
-   The `Role` names the session in `program_name` (`goSSMS`, `goSSMS -
-   Query`, `goSSMS - Activity Monitor`); cancelling `ctx` aborts the dial. Its `ctx`, exposed by
-   `Context()` and cancelled by `Close()`, is the parent every background
-   load scoped to that connection must derive from — closing the underlying
-   `*sql.DB` alone does not cancel a query already in flight, so a load
-   rooted at `context.Background()` keeps a real SQL Server session alive
-   after disconnect.
-2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A
-   query window runs on a **`Session`**: one `*sql.Conn` taken out of the
-   panel's pool by `Open` (via `gosmo.AcquireConn`, which makes up to 3
-   attempts — 2 retries — on a transient liveness failure, with linear
-   backoff, on gosmo's own read-retry budget) and held for the panel's lifetime, so temp tables, SET options,
-   `USE` and open transactions survive from one Execute to the next, as in
-   SSMS. The package-level `Execute` / `ExecuteWithPlan` / … take a `*sql.DB`
-   and check a connection out per call instead — database/sql resets a
-   returned connection (the TDS reset-connection bit) on its next checkout, so
-   they suit one-shot callers only (the Activity Monitor's procedure tab). Both
-   share `runScript`: optionally wrap the run in `SET STATISTICS XML ON` /
-   `SET SHOWPLAN_XML ON`, then split the script on `GO` with
-   `sqltext.SplitBatches` (`internal/tuikit/sqltext/split.go`) and run each batch through `runBatch`. One `Result`
-   accumulates every result set, every message, and the captured plan XML
-   across all batches; a Session run adds the state it left
-   (`DB_NAME()`, `@@TRANCOUNT`, read even after a cancel) and whether the
-   session was lost. `Session.Close` *discards* the connection rather than
-   pooling it: pooled, a session with an open transaction sits idle holding
-   its locks.
-3. **The message stream** is where `sqlexp` matters: result sets and
-   informational messages interleave on one connection, and `runBatch`
-   walks them together. A speculative extra `rows.Next()` here consumes the
-   return message and the grid comes up empty — verify against a live
-   server, not just a unit test.
-4. **`internal/showplan`** owns *parsing*, and nothing else — no TUI and no
-   database imports, so it is testable from a file. `ParseAll` turns the
-   captured ShowPlanXML documents into one navigable `Plan` of operator
-   nodes, which `internal/tui/planview` renders as the Plan/Tree/XML tabs.
-
-`query_panel_exec.go` is the Session's only caller: `QueryPanel.launch` is
-the one run-start path (Execute, Results To File, estimated plan) — it runs
-the executor on a background goroutine and reports the `Result` back with
-`postAndWake`. IntelliSense and catalog reads use the panel's `ServerConn`
-pool, never the session, so they never queue behind a running query. A lost
-session closes the panel's connection (Query > Reconnect opens a new one);
-closing, reconnecting or quitting with `@@TRANCOUNT > 0` asks to commit first
-(`confirmOpenTransactions`).
+`QueryPanel.launch` (`query_panel_exec.go`) is the Session's only caller and
+the one run-start path (Execute, Results To File, estimated plan): executor on
+a background goroutine, `Result` back via `postAndWake`. IntelliSense and
+catalog reads use the `ServerConn` pool, never the session, so they never
+queue behind a query. A lost session closes the panel's connection (Query >
+Reconnect opens a new one); closing, reconnecting or quitting with
+`@@TRANCOUNT > 0` asks to commit first (`confirmOpenTransactions`).
 
 ## Threading model
 
-**All UI and widget state belongs to the UI goroutine** — the one running
-`App.Run()`. `tuikit` does no locking anywhere (see
-`internal/tuikit/README.md`), so touching a widget from any other goroutine
-is a data race, not merely bad style.
+**All UI and widget state belongs to the UI goroutine** (the one in
+`App.Run()`). `tuikit` does no locking, so touching a widget off it is a data
+race. Background work has one shape:
 
-Background work follows one shape:
+- **Context**: derive from `ServerConn.Context()`, never
+  `context.Background()` — including a dial that clones an existing connection
+  (`connectForQueryPanel`, `connectForActivityMonitor`, `amProcTab.activate`),
+  so disconnect cancels a reconnect in flight. The Connect dialog's first dial
+  is the one exception (no `ServerConn` yet; `connect_dialog.go` says so). For
+  cancellable user-visible work use `App.startTask(parent, label)`: a `*Task`
+  plus derived context, listed in Background Tasks with a Cancel button.
+- **Work** off-thread, touching nothing the UI owns.
+- **Report** with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
+  `postProgress`/`postTaskDone` wrap it.
+- **Start** with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`).
+  An unrecovered background panic kills the process before `screen.Fini()`
+  restores the terminal — trace and unsaved query text lost. go-mssqldb
+  panics outright on an unknown column type ID, so this is not theoretical.
+- **Supersede** with **`latest`** (`latest.go`) when a newer request replaces
+  this one — § Latest-only loads: latest.
 
-- Derive a context from `ServerConn.Context()`, never `context.Background()`
-  — see the lifetime rule above. That includes a *dial* that clones an
-  existing connection (`connectForQueryPanel`, `connectForActivityMonitor`,
-  `amProcTab.activate`): `ConnectContext`'s ctx covers only the attempt, so
-  scoping it to the parent cancels a reconnect in flight on disconnect
-  without shortening the new connection's own life. The Connect dialog's
-  first dial is the one documented exception — there is no `ServerConn` yet
-  to derive from, and `connect_dialog.go` says so at the call. For
-  cancellable, user-visible work use
-  `App.startTask(parent, label)`, which returns a `*Task` and a derived
-  context, registers it for the Background Tasks dialog, and gives the user
-  a Cancel button.
-- Do the work off-thread. Touch nothing the UI owns.
-- Report back with **`App.postAndWake(fn)`** — `fn` runs on the UI goroutine.
-  `postProgress` and `postTaskDone` are the task-registry wrappers around it
-  and follow the identical rule.
-- Start it with **`App.safego(what, fn)`** (or `defer a.recoverPanic(what)`
-  for a goroutine that isn't a bare `func()`). The UI goroutine can't
-  recover a background panic, so without this the process dies before
-  `Run`'s `defer screen.Fini()` restores the terminal — the trace lands on
-  the alternate screen and vanishes with it, along with unsaved query text.
-  `safego` turns it into a status message plus a stack trace in the log.
-  Not theoretical: go-mssqldb panics outright on a column type ID it doesn't
-  know, and every result set calls `DatabaseTypeName()` on every column.
+A panic on the UI goroutine itself is not recovered in place: `cmd/gossms/main.go`'s
+`run` catches it after `Fini`, logs it, and calls **`App.EmergencySave`**
+(`emergency_save.go`), writing every dirty query panel to
+`<config dir>/recovered/<time>-<title>.sql` and printing the paths. Resuming
+the loop was rejected — half-mutated state is worse than a clean exit with the
+text saved. SIGHUP/SIGTERM take the same save via **`App.SaveOnSignal`**
+(relayed by `cmd/gossms`'s `watchTermSignals`) as a `postAndWake` callback that
+then quits; if the loop doesn't answer within 2 s the signal goroutine saves
+anyway (a racy read beats losing text). Logged, never printed — after SIGHUP
+there is no terminal.
 
-  A panic on the UI goroutine itself — the event loop, a handler, a draw, a
-  `postAndWake` callback — is not recovered in place: `cmd/gossms/main.go`'s
-  `run` catches it after `Fini`, logs it, and calls **`App.EmergencySave`**
-  (`emergency_save.go`), which writes every dirty query panel's text to
-  `<config dir>/recovered/<time>-<title>.sql` and prints the paths. Resuming
-  the loop instead was rejected: state left mid-mutation is worse than a clean
-  exit with the text saved.
-
-  SIGHUP (terminal closed, ssh dropped) and SIGTERM take the same save through
-  **`App.SaveOnSignal`**, relayed by `cmd/gossms`'s `watchTermSignals`: the
-  save runs as a `postAndWake` callback that then quits. If the loop does not
-  answer within 2 s, the signal goroutine saves anyway (a racy read beats
-  losing the text), and main exits if `Run` never returns. Everything is logged
-  and nothing is printed, since after a SIGHUP there is no terminal to print to.
-
-- If a newer request supersedes this one, own the lifecycle with **`latest`**
-  (`latest.go`) rather than a hand-rolled token or cancel — see
-  § Latest-only loads: latest.
-
-`Run()`'s loop clears `wakePending`, drains queued callbacks, syncs the
-dialog stack, handles one event, then re-syncs and draws. The two idioms
-below follow from that: `postAndWake` is how work crosses back onto the UI
-goroutine, and the `mouseDragging`/gesture rules govern how one input event
-is routed once it is already there.
+`Run()`'s loop: clear `wakePending`, drain queued callbacks, sync the dialog
+stack, handle one event, re-sync, draw.
 
 ## Package map
 
-`internal/tui` is a flat package, so every file is listed individually with
-its purpose; `internal/tuikit`, `internal/tui/planview`,
-`internal/tui/sqlparse`, `internal/tui/dashboard` and `internal/tui/gate` are
-summarized by directory and documented in their own README and `doc.go`. A file
-absent from a summarized directory has not been omitted — look there directly.
+`internal/tui` is a flat package, so every file is listed. `internal/tuikit`,
+`planview`, `sqlparse`, `dashboard` and `gate` are summarized by directory —
+see their README/`doc.go`.
 
-`planview`, `sqlparse` and `dashboard` are leaves: they depend on `tuikit` and
-the standard library, never on `tui` itself. That is what makes each
-extractable. `dashboard` exists for a second reason: `cmd/amdemo` has to draw
-the same dashboards the panel draws without dragging in the whole application.
-
-`gate` is the fourth sub-package and the one that is not a leaf: it imports
-`internal/db`, `gosmo` and `internal/tuikit/controls` — `internal/db` and
-`gosmo` because the question it answers is "what has this connection been
-probed to allow", and `controls` because `gate.Item` wraps a
-`controls.MenuItem` in the answer. It knows nothing about `App` — that is what
-made it extractable — and the one-way rule it keeps is the same one: `gate`
-never imports `tui`. See § Why the permission gate is its own package.
+`planview`, `sqlparse` and `dashboard` are leaves (only `tuikit` + stdlib,
+never `tui`); `dashboard` also lets `cmd/amdemo` draw the panel's dashboards
+without the whole app. `gate` is not a leaf — it imports `internal/db` and
+`gosmo` (it answers "what has this connection been probed to allow") and
+`tuikit/controls` (`gate.Item` wraps a `controls.MenuItem`) — but never `tui`
+or `App`. See § Why the permission gate is its own package.
 
 ```
 gossms/
@@ -512,382 +459,237 @@ gossms/
 
 ### Why the permission gate is its own package
 
-`internal/tui/gate` is the one piece carved out of the flat package, and the
-measurement behind it is the reason nothing else is. The 2026-09-17 review
-asked whether `internal/tui`'s size costs anything real: 228 non-test files and
-62 374 LOC, with 132 of them — 47 % — never mentioning `*App` at all. The gate
-was the pilot, chosen because it is the largest App-free cluster with a clean
-seam.
+`internal/tui/gate` is the one package carved out of the flat `tui`, as a pilot
+for the 2026-09-17 question of whether `tui`'s size (228 files, 62 374 LOC,
+47 % never touching `*App`) costs anything. Only `permission_gate.go` (1 127
+LOC) and its names test moved; the other gate tests drive
+`App.objectOpsMenuItems`/`explorerNode`/`propPage` and stayed, as did
+`withRequires`/`withRequiresOn` (`prop_page_gate.go`, they take a `propPage`).
 
-What actually moved is smaller than it looks. `permission_gate.go` (1 127 LOC)
-and its names test (316 LOC) are App-free and moved whole; the other seven gate
-test files — 3 200 LOC — drive `App.objectOpsMenuItems`, `explorerNode` and
-`propPage`, so they are menu tests, not gate tests, and stayed. `withRequires`
-and `withRequiresOn` stayed too, in `prop_page_gate.go`: they take a `propPage`.
-
-The number, `touch internal/tui/app.go` → `go test -c ./internal/tui/`, eight
-interleaved pairs on one machine:
-
-| | median | mean | range |
-|---|---|---|---|
-| Before | 3.9 s | 3.90 s | 3.08 – 4.56 s |
-| After | 3.4 s | 3.51 s | 2.56 – 4.66 s |
-
-The run-to-run spread is larger than the difference, and 1 127 LOC is 1.8 % of
-the package, so there is nothing here to extrapolate from: **splitting
-`internal/tui` does not buy back compile time.** The remaining clusters
-(`new_*`, `agent_*`, `detail_*`, `database_*`) are not worth the same treatment
-on that argument, and the flat package stands. Do not re-open it on a
-build-speed premise without a new measurement.
-
-What the extraction did buy is a boundary the compiler enforces: `gate` cannot
-reach `App`, so the fail-open rule cannot quietly acquire a dependency on
-application state. That, not the clock, is why it stayed split.
+`touch internal/tui/app.go` → `go test -c ./internal/tui/`, eight interleaved
+pairs: median 3.9 s before, 3.4 s after, ranges 3.08–4.56 s vs 2.56–4.66 s.
+Spread exceeds the difference: **splitting `internal/tui` does not buy compile
+time**, so the flat package stands. Don't re-open it on build speed without a
+new measurement. The split stayed for the compiler-enforced boundary: `gate`
+cannot reach `App`, so the fail-open rule cannot acquire a dependency on app
+state.
 
 ## Common tasks
 
 ### Adding a new dialog
 
-Give `App` a typed field for it, construct it in `App.buildUI`, and append
-it to `a.allDialogs` — those three are the whole App-level change.
-`dialog_stack.go`'s `syncDialogStack` notices it the moment its own `Show()`
-(or `Prompt()`/`ShowXxx()`) flips it visible, pushes it to the top of the
-z-order, and routes it all input until it closes itself; draw order, key
-routing, and mouse routing all follow from the stack without touching
-`app.go` or `app_events.go` again. For the widget itself, follow the
-`ModalDialog` skeleton in `internal/tuikit/README.md`.
+Give `App` a typed field, construct it in `App.buildUI`, append it to
+`a.allDialogs`. `syncDialogStack` (`dialog_stack.go`) pushes it on top when
+its `Show()` flips it visible and routes it all input until it closes; draw
+order and key/mouse routing follow. For the widget, follow the `ModalDialog`
+skeleton in `internal/tuikit/README.md`.
 
 ### Adding a Properties page
 
-A `PropDialog` is a `[]propPage` (`prop_dialog.go`): each entry is a title
-plus a `load` func that builds the page's rows and closes over pointers to
-them, so Apply can diff what changed. Pages load lazily on first visit. Add
-a builder alongside the object's existing `*_props*.go` files and register
-it in that object's page slice — `server_props.go`'s page registration is
-the clearest example, and every `*_props*.go` file follows it. A page
-that renames its object marks `propPage.renames` so its apply runs last, and
-must thread the name as a `*string` shared across pages, or every later page
-uses the stale one.
+A `PropDialog` is a `[]propPage` (`prop_dialog.go`): a title plus a `load` that
+builds rows and closes over pointers to them so Apply can diff. Pages load
+lazily. Add the builder beside the object's `*_props*.go` files and register it
+in its page slice (`server_props.go` is the clearest example). A page that
+renames its object sets `propPage.renames` so its apply runs last, and threads
+the name as a `*string` shared across pages, or later pages use the stale one.
 
 ### Adding an Object Explorer node type
 
-Add the `NodeType` and its icon/name in `tree_node.go`, then register a
-`childLoader` for it in `explorer_loaders.go`'s `childLoaders` map. The
-loader receives a `loaderCtx` and the node, and returns child nodes; it runs
-off the UI goroutine, so it obeys the threading model above. Group the
-loader itself with its peers (`explorer_databases.go`, `explorer_objects.go`,
-`explorer_security.go`, `explorer_management.go`, `explorer_alwayson.go`).
-Its context menu is a `menuBuilder` registered in the same file's `nodeMenus`
-map and written beside the loader; a type with no entry gets New Query and
-Refresh, and a leaf whose only command is Properties uses
-`propertiesOnlyMenu`. Script as, Rename/Delete and Filter are not part of the
-builder — `contextMenuItemsForNode` adds them from their own tables.
+Add the `NodeType` and icon/name in `tree_node.go`; register a `childLoader` in
+`explorer_loaders.go`'s `childLoaders` (it gets a `loaderCtx` and the node, runs
+off the UI goroutine) and put the loader with its peers (`explorer_*.go`). Its
+context menu is a `menuBuilder` in the same file's `nodeMenus`, written beside
+the loader; no entry gives New Query + Refresh, and a Properties-only leaf uses
+`propertiesOnlyMenu`. Script as, Rename/Delete and Filter come from their own
+tables via `contextMenuItemsForNode`.
 
 ### Adding a menu or toolbar item
 
-Both are built in `menu.go` / `toolbar.go` and both gate on an `Enabled`
-predicate — `Enabled: func() bool { return a.selectedServerConn() != nil }`
-is the common shape. An item that can be invoked when its action is
-impossible must be gated, not left to no-op silently.
+`menu.go`/`toolbar.go` items gate on `Enabled: func() bool { return
+a.selectedServerConn() != nil }`-style predicates. An item that can be invoked
+when its action is impossible must be gated, never a silent no-op.
 
 ## The mouseDragging idiom
 
-tcell's all-motion mouse tracking resends the held button on every motion
-event, not just on an actual click — so any widget that fires an action on
-`Button1` (a toolbar button, a menu label, a tree-node toggle) needs a latch
-(conventionally named `mouseDragging`) that's set on the triggering press
-and cleared on the matching `ButtonNone` release, or the same action refires
-on every motion event while the button stays down. This latch is per-widget:
-it only guards a resend that stays over the widget that armed it.
+tcell's all-motion tracking resends the held button on every motion event, so
+any widget acting on `Button1` (toolbar button, menu label, tree toggle) needs a
+per-widget latch — `mouseDragging` — set on the press and cleared on the
+matching `ButtonNone`, or the action refires on every motion while held. It
+guards only a resend over the widget that armed it.
 
-A router that dispatches by screen position (`App.handleMouse`) sees every
-event regardless of where the gesture started, so a drag that begins
-elsewhere and drifts across a latch-owning widget's row arrives as a
-fresh-looking `Button1` — the per-widget latch was never armed for *this*
-gesture. Routers need a gesture-wide flag (`App.mouseButtonDown`,
-set/cleared from the raw event above all positional branching) to tell a
-fresh press from a continuation.
-
-That only says a press isn't fresh, not where the continuation goes. So
-every positional router records the region that claimed the fresh press and
-replays to it until the release, and a gesture can't change owner halfway
-through. Three, all the same shape — `App.gestureOwner` (`app_events.go`),
-`QueryPanel.dragZone` (`query_panel.go`), `propsheet.PropertySheet.dragZone`
-(`sheet_input.go`) — each an `armGesture`/`armDrag` at every branch that
-claims a press plus a `routeGesture`/`routeDrag` that replays held events.
-Regions that already acted (a toolbar button, a tab switch) swallow the
-repeats. `Splitter` is the per-widget half: it starts a resize only from a
-press landing on its bar, so a selection drag crossing it doesn't grab it.
+A positional router (`App.handleMouse`) sees a drag that began elsewhere drift
+onto a latch-owning widget as a fresh-looking `Button1`. So routers keep a
+gesture-wide flag (`App.mouseButtonDown`, set/cleared from the raw event before
+positional branching) to tell fresh from continuation — and, since that doesn't
+say where the continuation goes, **a press claims the gesture**: the router
+records the claiming region and replays to it until release. Three routers,
+one shape — `App.gestureOwner` (`app_events.go`), `QueryPanel.dragZone`
+(`query_panel.go`), `propsheet.PropertySheet.dragZone` (`sheet_input.go`) —
+each `armGesture`/`armDrag` at every claiming branch plus `routeGesture`/
+`routeDrag`. Regions that already acted swallow repeats. `Splitter` starts a
+resize only from a press on its bar, so a selection drag crossing it doesn't
+grab it.
 
 `App` also snapshots the modal layer per gesture
-(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` events across
-a change. A dialog sees no events until shown, so the first `Button1`
-reaching it reads as a press to `ModalDialog.ButtonClicked` — without the
-snapshot, clicking a context-menu item that opens a dialog and twitching
-before release fires whichever button the pointer landed on.
+(`gestureOverlay`/`overlaySnapshot`) and drops held `Button1` across a change:
+otherwise clicking a context-menu item that opens a dialog and twitching before
+release fires whatever dialog button is under the pointer.
 
-The mirror image is a latch outliving its gesture. A dialog button closes
-its dialog on the *press*, so the release never reaches
-`ConsumeOutsideClick`'s reset — `HandleMouse` returns early on `!visible`
-and `syncDialogStack` has already popped the dialog, so `App` routes the
-release elsewhere. `mouseDragging` then survived into the next showing and
-`ButtonClicked` refused its first click: the dialog looked frozen.
-`ModalDialog.Show()` clears both latches for that reason.
+The mirror image is a latch outliving its gesture: a dialog button closes the
+dialog on the *press*, so the release never reaches its reset (`HandleMouse`
+returns on `!visible`, the dialog is already popped) and the next showing
+refused its first click — looked frozen. `ModalDialog.Show()` clears both
+latches.
 
-Two consequences: an overlay-owning widget drawn last (see
-`internal/tuikit/README.md`'s "overlays drawn last") gets first refusal of
-every key/mouse event while open; and a host with an early `return` in
-`HandleMouse` must forward `ButtonNone` to any latch-bearing child before
-returning, or a drag ending outside its bounds leaves the child's latch
-stuck and silently swallowing its next press.
+Consequences: an overlay drawn last (tuikit README, "overlays drawn last") gets
+first refusal of every event while open; and a host with an early `return` in
+`HandleMouse` must forward `ButtonNone` to latch-bearing children first, or a
+drag ending outside leaves a child latched and swallowing its next press.
 
 ### dialogs.FieldGesture
 
-A dialog with a text field is the second half of that last consequence, and
-it is common enough to have a type. A click inside a `widgets.InputField`
-starts a text-selection drag, and the dialog must (1) end it on the release
-*wherever the pointer landed*, (2) replay motion to the owning field without
-hit-testing, and (3) drop the latch on `Show`. Each of the three has a
-placement that is not local to the call:
+A click in a `widgets.InputField` starts a selection drag, and the dialog must
+end it on release *wherever* the pointer lands, replay motion to the field
+without hit-testing, and drop the latch on `Show`. Each call's placement is
+non-local:
 
-- `Release` goes at the very top of `HandleMouse`, **before**
-  `ConsumeOutsideClick` and before any early return for a dialog mode. Both
-  return without looking at the latch, and a release outside the dialog — or
-  one arriving after the dialog switched to a progress view — is precisely
-  the event that strands it.
-- `Replay` goes after `ConsumeOutsideClick` and before any hit-testing.
-  Hit-testing a motion event ends the selection the moment the pointer leaves
-  the field's rect; letting it reach `ButtonClicked` fires a button the moment
-  a selection drag wanders over the button row.
-- `Clear` goes in `Show`, per invariant 4 above. It drops the field's own
-  `mouseDragging` too: Connect, Options, Find/Replace and Log Search build
-  their fields once, so a dialog dismissed mid-drag hands back a field still
-  latched, and its first press after the reopen took the continued-drag branch
-  and armed no anchor.
+- `Release` at the very top of `HandleMouse`, **before** `ConsumeOutsideClick`
+  and any mode early-return — both return without looking at the latch, and a
+  release outside the dialog or after it switched to a progress view is exactly
+  what strands it.
+- `Replay` after `ConsumeOutsideClick`, before any hit-testing — hit-testing
+  motion ends the selection when the pointer leaves the field, and lets a drag
+  over the button row fire a button.
+- `Clear` in `Show`, also dropping the field's own `mouseDragging`: Connect,
+  Options, Find/Replace and Log Search reuse their fields, so a dialog dismissed
+  mid-drag handed back a latched field whose next press armed no anchor.
 
-Seven dialogs had hand-rolled this, each with a comment restating a different
-part of the reasoning; `dialogs.FieldGesture` now holds it once and each
-dialog keeps only its own hit-testing and focus handling, which is where they
-legitimately differ. `TestFileDialogDragOutOfPathFieldKeepsExtending` and the
-five in `internal/tui/dialog_drag_test.go` are the coverage — a mutation to
-any of the three methods fails all of them.
+Seven dialogs hand-rolled this; `FieldGesture` holds it once.
+`TestFileDialogDragOutOfPathFieldKeepsExtending` and the five tests in
+`internal/tui/dialog_drag_test.go` fail on a mutation of any of the three.
 
 ## Async result delivery: postAndWake
 
-A background goroutine reports its result with `App.postAndWake(fn)`, which
-queues `fn` for the UI goroutine and wakes the event loop to run it — never
-its two halves (`postEvent` then `wakeEventLoop`) by hand.
+A background goroutine reports with `App.postAndWake(fn)` — never `postEvent`
+then `wakeEventLoop` by hand. The wakeup must be sent *outside* the posted
+closure, from the background goroutine: `Run()` drains callbacks only when it
+wakes for an `EventQ()` event, so a wakeup nested in the closure waiting to be
+drained never fires, and the result sits until an unrelated keypress. Shipped
+bug: Object Explorer nodes stuck on "Loading...", in every async path at the
+time.
 
-It is one helper because the wakeup must be sent **outside** the `postEvent`
-closure, right after the `postEvent(...)` call, still on the background
-goroutine. `Run()`'s loop only drains queued callbacks when it wakes for an
-event on `EventQ()`; nest the wakeup inside the very closure waiting to be
-drained and nothing ever wakes the loop to drain it — the result sits
-queued and invisible until an unrelated keypress drains it as a side
-effect. Shipped bug: Object Explorer nodes stuck on "Loading...", in every
-async operation in `internal/tui` at the time.
-
-A bare `wakeEventLoop()` is legitimate only where there is no callback to
-post, just a frame to redraw on a clock. `App.animateUntil` (`app.go`) is that
-loop, written once: the `QueryPanel` elapsed-time ticker, the create dialog's
-spinner, the properties spinner, the progress dialog and `ConnectDialog`'s
-connect spinner all go through it.
+A bare `wakeEventLoop()` is legitimate only for a clock-driven redraw with no
+callback. `App.animateUntil` (`app.go`) is that loop, written once: the
+`QueryPanel` elapsed-time ticker, create/properties spinners, the progress
+dialog and `ConnectDialog`'s connect spinner.
 
 ### The other direction: FileDialog.showBusy
 
-`dialogs.FileDialog` is the one place that paints *outside* the app's draw
-cycle, and it is not an exception to the rule above so much as the absence of
-one: `dialogs.FileSystem` is synchronous, so a remote implementation
-(`internal/tui/serverFS`) spends a network round trip inside the event
-handler and the loop cannot post anything until it returns. `showBusy` draws
-the dialog with a "Listing ..." line and calls `Screen.Show()` before the
-call, so the wait is legible instead of looking like a hang — a listing of
-`C:\Windows\System32` over the wire used to sit there for ten seconds with
-the *previous* directory still on screen.
+`dialogs.FileDialog` is the one place painting outside the draw cycle:
+`dialogs.FileSystem` is synchronous, so a remote one (`internal/tui/serverFS`)
+blocks the event handler for a round trip. `showBusy` draws a "Listing ..."
+line and calls `Screen.Show()` before the call so the wait doesn't look like a
+hang. It repaints only for a `dialogs.BlockingFileSystem` (`serverFS`, not
+`LocalFileSystem` — locally it would just flicker). Don't fold it into the
+normal draw cycle: there is no frame between keypress and blocked call. An
+async `FileSystem` was deliberately not built — it turns Tab completion and
+the overwrite check into callback chains for a wait the indicator explains.
 
-**That ten seconds is history, not a current figure**, and this paragraph
-said otherwise until 2026-08-14. gosmo's `enumFileSystemDMF` has since gained
-a `WHERE level = 0` filter, without which
-`sys.dm_os_enumerate_filesystem` walks the whole subtree under the path
-rather than listing one directory. Re-measured live on win10cli through
-`EnumFileSystem`, best of three: `C:\Windows\System32` 4551 entries in
-**1.2s**, `C:\Windows` 101 in 35ms, `C:\Program Files` 29 in 11ms. `showBusy`
-still earns its place — a second of frozen UI is worth labelling, and the
-call is still synchronous — but do not size anything off the old number. It
-was cited in a review as evidence that `serverFileSystemTimeout` needed
-raising, which the real timings do not support.
-
-It repaints only for a `dialogs.BlockingFileSystem`, which `serverFS`
-implements and `LocalFileSystem` does not: on the local disk the extra frame
-would only flicker. Do not "simplify" this into the normal draw cycle — there
-is no frame between the keypress and the blocked call for the normal cycle to
-run in. The real fix is an asynchronous `FileSystem`, deliberately not built:
-it turns Tab completion and the save-overwrite check into callback chains for
-a wait the indicator already explains.
+Timings: the old "ten seconds for `C:\Windows\System32`" is history, fixed by
+gosmo's `enumFileSystemDMF` `WHERE level = 0` filter (without it
+`sys.dm_os_enumerate_filesystem` walks the subtree). Measured 2026-08-14 on
+win10cli: System32 4551 entries 1.2 s, `C:\Windows` 35 ms, `C:\Program Files`
+11 ms. Don't size `serverFileSystemTimeout` off the old number.
 
 ### Starting the goroutine: safego
 
-Start it with **`App.safego("what this was doing", fn)`**, never a bare
-`go func()`. `safego` is the goroutine plus the `defer recoverPanic(what)`
-that keeps a background panic from taking the process down; `what` names it
-in the report. Writing the halves by hand works right up until one is
-written without the `defer` — a panic nothing catches.
+Start with **`App.safego("what", fn)`**, never a bare `go func()` — it is the
+goroutine plus `defer recoverPanic(what)`, and hand-written halves eventually
+miss the `defer`.
 
-The one exception is the bounded worker pool, **`App.fanOut(n, what, work,
-onPanic)`** (`safego.go`), which the Detail Browser's per-row backfill and the
-Log File Viewer's per-file reads both run on. It spawns with a bare `go` and
-takes the label and the recover by hand, recovering each item on its own so a
-panic costs that item and not the rest of its worker's queue; `onPanic` runs
-*before* `fanOut` returns, which is how the backfill gets `markFailed` queued
-ahead of the caller caching its rows.
+The one exception is the bounded pool **`App.fanOut(n, what, work, onPanic)`**
+(`safego.go`; Detail Browser backfill, Log File Viewer per-file reads). It
+recovers each item separately, so a panic costs that item, not its worker's
+queue; `onPanic` runs *before* `fanOut` returns, which is how backfill queues
+`markFailed` ahead of the caller caching its rows.
 
 ### When the goroutine latched UI state first: safegoRepair
 
-`safego` alone reports the panic and stops there, which is not enough for the
-common shape where the *caller* latched something on the UI goroutine before
-the `go` — a busy flag, a `SetApplying(true)`, a `"Loading..."` placeholder, a
-toolbar the flag dims. The release is a plain statement inside the goroutine
-body, or lives in the callback it posts when it finishes, and a panic unwinds
-straight past both. The latch then survives for the object's lifetime.
+When the *caller* latched UI state before the `go` — a busy flag,
+`SetApplying(true)`, a `"Loading..."` placeholder — the release lives in the
+goroutine body or its posted callback, and a panic skips both: the latch lives
+forever (Execute disabled for the panel's lifetime, a Properties dialog inert
+to its Cancel button, a task counted as running forever). Use
+**`App.safegoRepair(what, repair, fn)`**: `safego` plus `repair` queued on the
+UI goroutine only when `fn` panics, before the panic is reported (so the panic
+is the status bar's last word). `repair` already runs on the UI goroutine —
+call the UI directly, no second `postAndWake` (`App.markTaskDone` is
+`postTaskDone`'s body split out for this).
 
-Use **`App.safegoRepair(what, repair, fn)`**: identical to `safego`, plus it
-queues `repair` on the UI goroutine when — and only when — `fn` panics, before
-`recoverPanic` reports it, so the panic stays the status bar's last word.
-`repair` runs on the main goroutine already, so it calls the UI directly and
-must not add a second `postAndWake` hop of its own (`App.markTaskDone` is
-`postTaskDone`'s body split out for exactly that reason).
+A resource the same panic would leak — a `CancelFunc`, a channel a ticker
+selects on — is released by `defer` *inside* `fn`, not by `repair`.
+`QueryPanel.startRun` is the example: `defer cancel()` and `defer close(done)`
+on entry, else `tickExecuting` wakes the loop every second forever.
 
-Two passes over this codebase (2026-08-13, 2026-08-14) converted sixteen
-sites: query execution and the estimated plan, both `runPipeline`s and
-`New …`'s page loader, the Activity Monitor's two collectors, the backup and
-restore tasks, the AG dashboard, the update check, dependencies, and the log
-viewer, completion inventory and property-page actions before them. The
-symptoms were all the same shape — Execute disabled for the panel's lifetime,
-a Properties dialog inert down to its Cancel button, a task the status bar
-counts as running forever.
-
-A goroutine that also owns a resource the same panic would leak — a
-`context.CancelFunc`, a channel a ticker is selecting on — releases it with
-`defer` *inside* `fn`, not from `repair`. `QueryPanel.startRun` is the worked
-example: `defer cancel()` and `defer close(done)` on entry, because a panic
-past `close(done)` leaves `tickExecuting` waking the event loop once a second
-for the rest of the process's life.
-
-Cover a new one the way `TestPageActionLatchClearsWhenTheActionPanics` does:
-panic the action, then assert the *next* one still runs. A test that only
-checks the flag flipped passes on a latch nothing can use again.
+Test like `TestPageActionLatchClearsWhenTheActionPanics`: panic the action,
+then assert the *next* one still runs — a flag check passes on a dead latch.
 
 ## Latest-only loads: latest
 
-`internal/tui/latest.go` is the "start a load, cancel the one it replaces,
-drop stale results" lifecycle, owned once. Nearly every asynchronous read in
-the application is latest-only — the newest request is the only one whose
-result anyone wants — and each of these owns a `latest` rather than its own
-copy: an Object Explorer node's children (`object_explorer.go`), the
-completion inventory's catalog, the Query Store panel's report, plan pane and
-series, the Log File Viewer's read, a `newObjectDialog`'s prefetch, the
-Detail Browser's fetch, and Results to Text's formatting of a large set
-(`QueryPanel.showResultsText`) — CPU work, not a read, but superseded the
-same way by a tab switch or a new run.
+`internal/tui/latest.go` owns "start a load, cancel the one it replaces, drop
+stale results". Almost every async read is latest-only, and each of these owns
+a `latest`: an Object Explorer node's children (`object_explorer.go`), the
+completion inventory, the Query Store panel's report/plan pane/series, the Log
+File Viewer's read, a `newObjectDialog` prefetch, the Detail Browser fetch, and
+Results to Text formatting of a large set (`QueryPanel.showResultsText` — CPU,
+not a read, but superseded the same way).
 
-`PropDialog`'s page loads are the one site that keeps the two halves apart,
-because the sheet already owns one of them: `propsheet.PropertySheet` numbers
-every page load with its own `seq` and drops a result that no longer matches
-it, so a `latest` per page would carry a second counter shadowing it. What the
-framework cannot own is the cancel — `tuikit` knows nothing about
-`context`-scoped fetches, and must not learn — so `PropDialog` holds it in
-`pageRuns`, a `context.CancelFunc` per page index, cancelled and re-armed by
-`onLoadPage` and drained by `show`/`onClose`. `PropertySheet.Refresh` is the
-other half of the same rule: it refuses to dispatch a second load for a page
-that is still loading, since the host it would dispatch to was never told the
-first one was superseded.
+**Both halves matter.** The token drops a superseded result, so a slow fetch
+can't overwrite a fresher one; the cancel stops its queries so they release
+their connection now, not at timeout — else holding Down through a folder
+queues the final row behind one read per row passed. Three shipped bugs
+brought this here: Refresh left replaced nodes' loads running, a Properties
+dialog's page loads reached its next showing, and the Detail Browser never
+cancelled fetches it moved past.
 
-**Both halves matter, and a copy with only the first is a bug.** The token
-discards a superseded result, so a slow fetch cannot overwrite the fresher one
-that replaced it. The cancel stops the superseded fetch's queries, so they
-release their pool connection now rather than at their timeout — without it,
-holding Down through a folder starts one read per row and the row the user
-stops on queues behind all of them. Three shipped bugs are the ones that
-brought this here: Refresh left every replaced node's load running, the
-Properties dialog let a previous showing's page loads reach the next one, and
-the Detail Browser never cancelled a fetch it had moved past.
+- **`Begin(parent)`** derives from `parent` — the connection's `Context()`,
+  never `context.Background()`. **`BeginTimeout(parent, d)`** adds its own
+  deadline (node fetch `childFetchTimeout`, property pages `propFetchTimeout`,
+  completion inventory).
+- **`Done(token)`** reports whether `token` is current and, if so, releases the
+  run's context — cancelled, not dropped, or it stays registered on its parent
+  (timer armed, for `BeginTimeout`) for every run ever started.
+- **`Cancel`** stops the run **without** superseding it — a result already in
+  flight still lands (a panel's `Close`; `Begin` does it before starting the
+  replacement). **`Abandon`** supersedes too — for a result with nowhere to go
+  (node left the tree, selection cleared). Using `Cancel` for `Abandon` is the
+  easy mistake: the run stops but its `Done` still reports current.
+- **`seq` is never reset.** A per-showing counter restarting at 0 lets the
+  previous showing's first result pass the next showing's guard (the R5 bug).
+  The zero value is usable; clear with `Abandon`, never re-zero.
 
-The surface, and what each member is for:
+All methods run on the UI goroutine; no locking.
 
-- **`Begin(parent)`** derives from `parent` — the owning connection's
-  `Context()`, never `context.Background()`, so disconnecting cancels the run.
-  **`BeginTimeout(parent, d)`** is the same with a deadline of its own, for a
-  run that must not outlive its own timeout even while the connection stays up;
-  it is what the node fetch (`childFetchTimeout`), the property pages
-  (`propFetchTimeout`) and the completion inventory use.
-- **`Done(token)`** is the completion path: it reports whether `token` is still
-  current and, on true, releases the finished run's context. The cancel is
-  called rather than dropped — the result is in hand, but the context stays
-  registered on its parent, with its timer still armed for `BeginTimeout`, for
-  every run ever started, until something cancels it.
-- **`Cancel`** stops the run **without** superseding it: the token stays
-  current, so a result already on its way still lands. That is what a panel's
-  `Close` wants, and it is what `Begin` does before starting the replacement.
-  **`Abandon`** is the one that supersedes — for a run whose result now has
-  nowhere to go, a tree node leaving the tree or a selection that cleared
-  without starting a new read. Reaching for `Cancel` where `Abandon` is meant
-  is the easy mistake: the run stops, and its eventual `Done` still reports it
-  current.
-- **`seq` is never reset.** A per-showing counter that restarts at 0 lets the
-  previous showing's first result pass the next showing's first guard — the
-  R5 bug, and the reason `latest`'s zero value is usable but a `latest` is
-  never re-zeroed to "clear" it. `Abandon` is how you clear one.
+`PropDialog` is the one site keeping the halves apart: `propsheet.PropertySheet`
+already numbers page loads with its own `seq`, so a `latest` per page would
+shadow it. The cancel, which `tuikit` must not learn about, is `PropDialog`'s
+`pageRuns` (a `CancelFunc` per page index; re-armed by `onLoadPage`, drained by
+`show`/`onClose`). `PropertySheet.Refresh` refuses to re-dispatch a page still
+loading, since the host was never told the first load was superseded.
 
-Every method runs on the UI goroutine, like all other widget state
-(§ Threading model); `latest` does no locking.
-
-**A site needing more bookkeeping wraps it rather than growing it.**
-`DetailBrowser`'s `detailRuns` (`detail_browser.go`) embeds a `latest` and adds
-the node each run is for plus the per-node `pending` map a cancel has to evict,
-and its own `stop`/`supersede` shadow the embedded `Cancel`/`Abandon` so a
-caller cannot stop a run and leave its pending entry behind. Adding those two
-fields to `latest` itself would put Detail-Browser-shaped state in the other
-sites that do not want it.
-
-## Building & testing
-
-The toolchain commands and the automatic version resolution are in
-`CLAUDE.md` ("Build & verify") — plain `go`, no Makefile, nothing
-hand-edited before a release.
-
-**`go test ./...` passing is not verification.** The test suite is worth
-keeping green, but nearly every real bug in this project was caught by
-driving the built binary against a real SQL Server, not by a test.
-`docs/testing.md` is authoritative for how to do that — the tmux harness
-for TUI behavior, disposable objects for database behavior, A/B against a
-pre-fix binary for anything subtle.
+**A site needing more bookkeeping wraps `latest`.** `detailRuns`
+(`detail_browser.go`) embeds one and adds the run's node and the per-node
+`pending` map; its `stop`/`supersede` shadow `Cancel`/`Abandon` so a caller
+can't stop a run and leave its pending entry behind.
 
 ## Developing against a local gosmo checkout
 
-`gosmo` is a separate repository
-([github.com/radix29/gosmo](https://github.com/radix29/gosmo)) that goSSMS
-depends on as a tagged module, but the two are developed together, so
-`go.mod` normally has
-
-```
-replace github.com/radix29/gosmo => ../gosmo
-```
-
-**active** — the intended state during development, not an oversight.
-Builds resolve gosmo from the `../gosmo` sibling checkout, and `require` is
-only a floor: `HEAD` of gossms routinely calls gosmo code that isn't tagged
-yet, so a clone without the sibling checkout may not build.
-
-- A gossms behavior that looks wrong may be coming from uncommitted or
-  untagged gosmo code. Check `git -C ../gosmo status`/`log` before
-  blaming the pinned release.
-- Build and test inside `gosmo` itself before relying on a change from
-  gossms — a gossms-side build only compiles the packages it imports.
-
-Only at release time does the pair get commented back out: tag and push
-gosmo, bump `go.mod`'s `require` to the new tag, comment out
-`replace`, and confirm gossms builds and tests clean against the
-tagged module before tagging gossms itself.
+The `dev-with-local-gosmo` skill and `CLAUDE.md` own this. In short: `go.mod`'s
+`replace github.com/radix29/gosmo => ../gosmo` is **active** in development and
+`require` is only a floor, so a clone without the sibling may not build, and
+odd behaviour may come from uncommitted or untagged gosmo code (`git -C ../gosmo
+status`/`log`). At release: tag and push gosmo, bump `require`, comment out
+`replace`, build and test clean, then tag gossms.
 
 ## Dependencies
 
@@ -895,9 +697,9 @@ All six direct requires in `go.mod`:
 
 | Package | Purpose |
 |---------|---------|
-| [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal UI rendering, keyboard & mouse events |
-| [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects (databases, tables, scripts…) |
-| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver itself, plus `batch` for `GO` splitting — `internal/query` |
+| [github.com/gdamore/tcell/v3](https://github.com/gdamore/tcell) | Terminal rendering, keyboard & mouse events |
+| [github.com/radix29/gosmo](https://github.com/radix29/gosmo) | SQL Server management objects |
+| [github.com/microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb) | The SQL Server driver, plus `batch` for `GO` splitting — `internal/query` |
 | [github.com/golang-sql/sqlexp](https://github.com/golang-sql/sqlexp) | Interleaved result-set/message stream, so PRINT and errors arrive in order — `internal/query` |
-| [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of only two external modules `tuikit` imports |
-| [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Microsoft Entra sign-in page in the user's browser. Its `Stdout`/`Stderr` are redirected to `io.Discard` in `installEntraSignIn` — anything it writes would land on the terminal tcell is drawing on |
+| [github.com/clipperhouse/displaywidth](https://github.com/clipperhouse/displaywidth) | Terminal column width behind `core.DisplayWidth` — one of `tuikit`'s two external modules |
+| [github.com/pkg/browser](https://github.com/pkg/browser) | Opens the Entra sign-in page. `installEntraSignIn` sends its `Stdout`/`Stderr` to `io.Discard` — output would land on tcell's terminal |

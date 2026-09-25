@@ -1,93 +1,75 @@
 # Verifying a change in goSSMS
 
-How to prove a change works. Loaded when writing or running tests, and before
-calling anything done. `CLAUDE.md` § Build & verify has the commands.
+Read when writing or running tests, and before calling anything done.
+Commands: `CLAUDE.md` § Build & verify.
 
+`go test ./...` passing is not "the change works" — nearly every real bug was
+caught by driving the built binary. For TUI or database changes, run it:
 
-`go test ./...` passing means the unit tests pass, not that the change works.
-Nearly every real bug in this project's history was caught by driving the built
-binary. For anything touching the TUI or the database layer, verify by running it:
-
-- **TUI behavior** — drive the binary headlessly under tmux:
-  `tmux new-session -d -s t -x 100 -y 30 <binary>`, `tmux send-keys -t t ...`,
-  then `tmux capture-pane -t t -p` (plain) or `-p -e` (SGR codes, to tell focused
-  from merely selected). Send `Escape` in its **own** `send-keys` call — batched
-  with a following key, tcell reads `\x1b<key>` as Alt+key. Verify focus against a
-  capture after each keystroke instead of counting `Tab`s, and capture the full
-  pane height before concluding a dialog closed.
-- **Database behavior** — a real SQL Server instance, not a mock. Connection
-  details are deliberately not in the repo; ask for them. Create throwaway
-  databases/logins, exercise the real write path, then drop them — never mutate
+- **TUI** — headless tmux: `tmux new-session -d -s t -x 100 -y 30 <binary>`,
+  `tmux send-keys -t t ...`, `tmux capture-pane -t t -p` (`-p -e` for SGR
+  codes, to tell focused from selected). Send `Escape` in its **own**
+  `send-keys` — batched, tcell reads `\x1b<key>` as Alt+key. Check focus by
+  capture after each key rather than counting `Tab`s; capture full pane height
+  before concluding a dialog closed.
+- **Database** — a real SQL Server, not a mock (details not in the repo; ask).
+  Create throwaway objects, exercise the real write, drop them — never mutate
   pre-existing ones.
-- When a fix is subtle, A/B it: keep a pre-fix binary, show the old behavior
-  reproducing and the new one not.
+- **Subtle fix** — A/B against a kept pre-fix binary: old reproduces, new
+  doesn't.
 
-Tests must assert an outcome, not that nothing panicked. Check a new test by
-mutating the code it covers and confirming it fails.
+Tests assert an outcome, not "nothing panicked". Mutate the covered code and
+confirm the new test fails.
 
-**A `-race` failure that a plain `go test` does not show can be a stale build
-cache entry, not a real one.** After a mutation check that edited a source file
-and put it back, `go test -race` kept failing a test that `go test` passed on
-byte-identical source, and inserting any statement into the function made it
-pass — the race-mode archive compiled from the mutated file was being reused.
-`go test -race -count=1 -a ./...` (or `go clean -cache`) rebuilds it; do that
-before believing a `-race`-only failure, and prefer copying the file aside and
-back over editing it in place when A/B-ing a fix.
+**A `-race`-only failure can be a stale build cache.** After a mutation check
+edited and restored a file, `go test -race` kept failing on byte-identical
+source (the race archive from the mutated file was reused). Run `go test -race
+-count=1 -a ./...` (or `go clean -cache`) before believing it, and A/B by
+copying files aside rather than editing in place.
 
-**A round-trip test proves two functions are inverses, never that either is
-right.** Where a load half and a write half share parallel label/code tables
-(schedule dropdowns, permission-state tables, any `items[]`/`values[]` pair), a
-fault in the shared table cancels out: swap two entries in `weekdayBits` and the
-checkbox labelled Monday sets Tuesday's bit while `populate`/`readFrequency` still
-agree. Pin such a pair by *naming* it (`"Monday"` -> `gosmo.WeekdayMonday`) and by
-asserting both slices are the same length; add a page test that pins the value
-reaching the server (`agent_schedule_props_page_test.go` pins `@freq_interval`).
+**A round-trip test proves two functions are inverses, not that either is
+right.** Where load and write share parallel label/code tables (schedule
+dropdowns, permission states, any `items[]`/`values[]` pair) a fault cancels
+out — swap two `weekdayBits` entries and Monday sets Tuesday's bit while
+`populate`/`readFrequency` still agree. Pin by *name* (`"Monday"` ->
+`gosmo.WeekdayMonday`), assert equal slice lengths, and pin the value reaching
+the server (`agent_schedule_props_page_test.go` pins `@freq_interval`).
 
-**A DSN test asserts what the driver parses, not only what gosmo writes.** A
-connection string that looks right can still be refused: four gosmo Entra methods
-shipped unable to connect because every test checked the query string gosmo built
-and none handed it to go-mssqldb — an Entra auth plan's G1–G4, all four found
-only once a connector was built in a test. Build the
-connector — for an Entra method that runs the driver's own parser and validator
-without dialling — and assert on `msdsn.Parse(dsn).Parameters`. gossms's
-auth-mapping tests (`toGosmoOptions`) are held to the same rule through
-`ConnectionString` → `azuread.NewConnector`.
+**A DSN test asserts what the driver parses**, not what gosmo writes — four
+Entra methods shipped unable to connect because no test handed the string to
+go-mssqldb. Build the connector (for Entra, the driver's parser and validator,
+no dial) and assert on `msdsn.Parse(dsn).Parameters`. gossms's `toGosmoOptions`
+tests go through `ConnectionString` → `azuread.NewConnector`.
 
-**A Properties page can be driven end to end from a test — use
-`internal/tui/fakedb_test.go`.** `gosmo.NewServer` takes a caller-supplied
-`*sql.DB`; the harness gives `newFakeConn` (a `*db.ServerConn` over a scripted
-driver that records every statement), `loadPage`, and `textRow` for addressing a
-form by label. `database_props_files_page_test.go` is the worked example. The
-`gosmo.WithScript` harness the New-X dialogs use does *not* work here — a
-Properties page's `load` and `apply` both open with a by-name read, and
-`WithScript` intercepts writes only. Rules, each learned from a test that passed
-for the wrong reason:
+**Drive a Properties page end to end with `internal/tui/fakedb_test.go`.**
+`gosmo.NewServer` takes a caller `*sql.DB`; the harness gives `newFakeConn` (a
+`*db.ServerConn` over a scripted driver recording every statement), `loadPage`,
+and `textRow` (address a form by label). Example:
+`database_props_files_page_test.go`. The `gosmo.WithScript` harness doesn't
+work here — `load` and `apply` start with a by-name read, and `WithScript`
+intercepts writes only. Rules, each from a test that passed for the wrong
+reason:
 
-- **Drive a row with `Edit`, never `SetValue`/`SetSelected`** — the latter move the
-  dirty baseline with the value, so apply skips the row and a "nothing was written"
-  assertion passes wrongly. Use `editText`/`editSelect`/`editRadio`/`toggleByName`.
-- **Address rows and grid cells by name, never by index** — these pages read their
-  grid back positionally, so an index-based test agrees with a misaligned page.
-- Where a page keeps a filtered or pending-removal subset alongside the full list,
-  exercise *two* edits: the lists only diverge after the first.
-- **Act on an object that is not first in its list** — a page that ignores the
-  selection still passes when the test picks row 0.
-- **Scope a `fakeResponse` with `db:`** when the page reads the same query in
-  several databases, or every database returns the identical answer and the
-  misalignment the test exists to catch is unreachable.
-- **Scope one with `arg:` for a by-name read, placed *before* the list read** —
-  responses match by substring in order, and `DatabaseByName`'s query also contains
-  `FROM sys.databases`, so otherwise every object resolves to whichever row sorts
-  first.
-- **Assert with `StatementsIn(db)`, not `Statements()`, for anything
-  database-scoped** — the bare `USE` is stripped as plumbing, and with it the only
-  record of where the write landed; pair it with `assertNoStatementsIn`.
-- `eachDatabase` (`db_scan.go`) and gosmo's `userMappingsIn` drop a database whose
-  read fails rather than failing the page, so an under-scripted fake yields an
-  empty grid and an apply that writes nothing. Assert the rows loaded first.
+- **Drive rows with `Edit`** (`editText`/`editSelect`/`editRadio`/
+  `toggleByName`), never `SetValue`/`SetSelected` — those move the dirty
+  baseline, so apply skips the row.
+- **Address rows and cells by name, never index** — pages read grids back
+  positionally, so an index test agrees with a misaligned page.
+- With a filtered or pending-removal subset beside the full list, make *two*
+  edits — they diverge only after the first.
+- **Act on an object that isn't first in its list** — a page ignoring the
+  selection passes on row 0.
+- **Scope a `fakeResponse` with `db:`** when a query runs in several databases,
+  or all answer alike and misalignment is invisible.
+- **Scope by-name reads with `arg:`, placed *before* the list read** —
+  responses match by substring in order, and `DatabaseByName`'s query also
+  contains `FROM sys.databases`.
+- **Assert with `StatementsIn(db)`, not `Statements()`,** for database-scoped
+  writes (the bare `USE` is stripped); pair with `assertNoStatementsIn`.
+- `eachDatabase` (`db_scan.go`) and gosmo's `userMappingsIn` skip a database
+  whose read fails, so an under-scripted fake gives an empty grid and a no-op
+  apply. Assert rows loaded first.
 
-The harness is bounded: queries match by substring and are answered with whatever
-the test scripted, so it shows the page asked for the right things and built the
-right request — never that the T-SQL is valid. Statement text is gosmo's own
-tests; acceptance is a live run.
-
+The harness shows the page asked the right things and built the right request —
+never that the T-SQL is valid. Statement text is gosmo's tests; acceptance is a
+live run.
