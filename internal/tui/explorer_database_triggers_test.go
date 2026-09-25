@@ -85,9 +85,9 @@ func TestDatabaseTriggerScriptsAndDrops(t *testing.T) {
 	}
 }
 
-// The drop must be the ON DATABASE form. Database.DropTrigger's
-// schema-qualified statement is the plausible reuse here and it addresses a
-// different object entirely.
+// The drop must be the ON DATABASE form. gosmo's Trigger.Drop, whose
+// statement is schema-qualified, is the plausible reuse here and it addresses
+// a different object entirely.
 func TestDatabaseTriggerDropStatement(t *testing.T) {
 	sc, inst := newFakeConn(t)
 	err := objectOps[NodeDatabaseTrigger].drop(t.Context(), sc,

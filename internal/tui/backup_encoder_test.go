@@ -226,8 +226,8 @@ func TestTaskTimes(t *testing.T) {
 // backupHistoryQuery interpolates a database name into T-SQL that is then
 // opened in a query window and run. It is the only place in this file that
 // builds SQL from a value the user did not type, and msdb will happily run
-// whatever comes out — so the quoting is the whole test. sqlStringLiteral is
-// the guard: N'...' with embedded quotes doubled.
+// whatever comes out — so the quoting is the whole test. gosmo.QuoteLiteral
+// is the guard: N'...' with embedded quotes doubled.
 func TestBackupHistoryQueryQuotesTheDatabaseName(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"AppDB", "N'AppDB'"},
@@ -238,8 +238,8 @@ func TestBackupHistoryQueryQuotesTheDatabaseName(t *testing.T) {
 		// appending a statement. Doubling the quote keeps it one literal.
 		{"x'; DROP TABLE t--", "N'x''; DROP TABLE t--'"},
 	} {
-		if got := sqlStringLiteral(tc.in); got != tc.want {
-			t.Errorf("sqlStringLiteral(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := gosmo.QuoteLiteral(tc.in); got != tc.want {
+			t.Errorf("gosmo.QuoteLiteral(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 		q := backupHistoryQuery(tc.in)
 		if !strings.Contains(q, "WHERE  bs.database_name = "+tc.want) {

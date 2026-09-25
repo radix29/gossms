@@ -85,6 +85,8 @@ func (d *RestoreDialog) relocation() relocPlan {
 		mode:    d.rbReloc.Selected(),
 		dataDir: strings.TrimSpace(d.fDataDir.Value()),
 		logDir:  strings.TrimSpace(d.fLogDir.Value()),
+
+		collation: serverCollation(d.sc),
 	}
 }
 

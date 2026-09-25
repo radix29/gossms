@@ -171,11 +171,13 @@ func databaseIOBars(s activity.Sample) []charts.Bar {
 // readable.
 const maxIOBars = 3
 
-// topDatabases picks the n busiest rows by throughput.
+// topDatabases picks the n busiest rows by throughput. Ties break by name: on
+// an idle server every row is 0 MB/sec, and an unstable sort on throughput
+// alone named three different databases on every refresh.
 func topDatabases(all []activity.FileIO, n int) []activity.FileIO {
 	busiest := slices.Clone(all)
 	slices.SortFunc(busiest, func(a, b activity.FileIO) int {
-		return cmp.Compare(throughput(b), throughput(a))
+		return cmp.Or(cmp.Compare(throughput(b), throughput(a)), activity.CompareFileIOByName(a, b))
 	})
 	if len(busiest) > n {
 		busiest = busiest[:n]

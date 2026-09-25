@@ -194,7 +194,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	if err != nil {
 		return nil, err
 	}
-	inGroup := map[string]bool{}
+	inGroup := newNameSet(serverCollation(sc))
 	for _, g := range groups {
 		pf.existingGroups.Add(g.Name)
 		dbs, err := g.Databases(ctx)
@@ -202,7 +202,7 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 			return nil, err
 		}
 		for _, adb := range dbs {
-			inGroup[strings.ToLower(adb.DatabaseName)] = true
+			inGroup.Add(adb.DatabaseName)
 		}
 	}
 
@@ -213,9 +213,9 @@ func (d *NewAGDialog) fetchPrefetch(ctx context.Context, sc *db.ServerConn) (*ne
 	if err != nil {
 		return nil, err
 	}
-	logChain := map[string]bool{}
+	logChain := newNameMap[bool](serverCollation(sc))
 	for _, st := range statuses {
-		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
+		logChain.Set(st.DatabaseName, st.LogBackupChainStarted)
 	}
 
 	dbs, err := sc.Server.Databases(ctx)

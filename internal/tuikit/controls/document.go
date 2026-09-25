@@ -24,7 +24,8 @@ import (
 // That only works if the version can never be stale, which is why the
 // buffer is reachable for writing through exactly three methods — setLine,
 // edit and replaceRange — and nothing else. Each ends in a version bump and
-// a cache invalidation of its own; setLines is edit's whole-buffer form. A
+// a cache invalidation of its own; setLines is edit's whole-buffer form, and
+// setMeasuredLines is setLines with the width cache seeded. A
 // new mutator belongs alongside them and must do the same. A mutation that
 // reaches the lines any other way
 // leaves every cache above rendering the *previous* document: stale colours,
@@ -120,6 +121,19 @@ func (d *Document) setLine(i int, line []rune) {
 func (d *Document) setLines(lines [][]rune) {
 	d.lines = lines
 	d.touch(0)
+}
+
+// setMeasuredLines is setLines for a buffer whose line widths are already
+// known (LineBuffer), seeding the width cache instead of leaving it to the
+// next Draw to rebuild. lineW is copied, not shared: touch truncates the
+// cache in place and maxDisplayWidth appends into the same array, so a later
+// mutation would otherwise overwrite the buffer's widths (clipping the slice
+// does not help — the truncation keeps its capacity). A copy of a million
+// ints is a few milliseconds; the measuring it replaces was 370.
+func (d *Document) setMeasuredLines(lines [][]rune, lineW []int, maxW int) {
+	d.setLines(lines)
+	d.lineW = slices.Clone(lineW)
+	d.maxWidth, d.maxWidthValid = maxW, true
 }
 
 // edit hands fn the buffer, installs whatever it returns, and bumps the

@@ -172,6 +172,17 @@ func TestRelocateFilesAuto(t *testing.T) {
 		t.Errorf("case-different name relocated files: %+v, want none", got)
 	}
 
+	// On a case-sensitive instance it is a different database, which needs
+	// its own files: without MOVE clauses the restore collides with AppDB's.
+	cs := relocPlan{mode: relocAuto, collation: "Latin1_General_CS_AS"}
+	assertRelocations(t, relocateFiles(backupSetFiles(), cs, defData, defLog, "AppDB", "appdb"), []gosmo.RelocateFile{
+		{LogicalName: "AppDB", PhysicalName: `C:\Data\appdb_AppDB.mdf`},
+		{LogicalName: "AppDB_log", PhysicalName: `C:\Log\appdb_AppDB_log.ldf`},
+	})
+	if !cs.needsFileList("AppDB", "appdb") {
+		t.Error("needsFileList skipped the file list for a case-only rename on a CS instance")
+	}
+
 	got := relocateFiles(backupSetFiles(), plan, defData, defLog, "AppDB", "AppDB_Copy")
 	want := []gosmo.RelocateFile{
 		{LogicalName: "AppDB", PhysicalName: `C:\Data\AppDB_Copy_AppDB.mdf`},

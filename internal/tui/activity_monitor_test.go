@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -975,5 +977,36 @@ func TestTheActivityMonitorOverflowMenuMarksTheRateInForce(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("the rate in force is not in the More menu; it holds %v", am.app.contextMenu.Items())
+	}
+}
+
+// On an idle server every database file is 0 MB/sec; the I/O panel must name
+// the same three on every refresh, whatever order the sample arrived in.
+func TestTopDatabasesIsStableOnTiedThroughput(t *testing.T) {
+	idle := []activity.FileIO{
+		{Database: "tempdb"}, {Database: "master", IsLog: true}, {Database: "msdb"},
+		{Database: "model", IsLog: true}, {Database: "master"}, {Database: "tempdb", IsLog: true},
+		{Database: "model"}, {Database: "msdb", IsLog: true},
+	}
+	want := []string{"master", "master (log)", "model"}
+	for i := range 20 {
+		shuffled := slices.Clone(idle)
+		rand.New(rand.NewPCG(uint64(i), 0)).Shuffle(len(shuffled), func(a, b int) {
+			shuffled[a], shuffled[b] = shuffled[b], shuffled[a]
+		})
+		var got []string
+		for _, io := range topDatabases(shuffled, maxIOBars) {
+			got = append(got, io.Label())
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("shuffle %d: top databases = %v, want %v", i, got, want)
+		}
+	}
+
+	// Throughput still ranks first.
+	busy := slices.Clone(idle)
+	busy[2].WriteMBSec = 5 // msdb
+	if got := topDatabases(busy, maxIOBars)[0].Label(); got != "msdb" {
+		t.Errorf("busiest = %q, want msdb", got)
 	}
 }

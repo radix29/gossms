@@ -383,7 +383,7 @@ func (a *App) moveObjectToSchema(node *explorerNode) {
 			var schemas []*gosmo.Schema
 			if schemas, err = d.Schemas(ctx); err == nil {
 				for _, s := range schemas {
-					if !strings.EqualFold(s.Name, data.Schema) {
+					if !sameName(databaseCollation(d), s.Name, data.Schema) {
 						names = append(names, s.Name)
 					}
 				}

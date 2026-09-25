@@ -576,7 +576,7 @@ func relocateFiles(files []*gosmo.BackupFile, plan relocPlan, defData, defLog, s
 			logDir = plan.logDir
 		}
 	}
-	renamed := !strings.EqualFold(source, target)
+	renamed := !sameName(plan.collation, source, target)
 
 	var relocate []gosmo.RelocateFile
 	for _, f := range files {

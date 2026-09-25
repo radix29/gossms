@@ -207,8 +207,8 @@ func pageServerRoleOwnedRoles(sc *db.ServerConn, roleName *string) propPage {
 				GridSection: "Roles owned by this role",
 				ItemSection: "Selected role",
 				Note:        "Ownership is not the same as role membership. Transfer ownership carefully for security-administration roles.",
-				ChangeOwner: func(ctx context.Context, r *gosmo.ServerRole, newOwner string) error {
-					return r.ChangeOwner(ctx, newOwner)
+				SetOwner: func(ctx context.Context, r *gosmo.ServerRole, newOwner string) error {
+					return r.SetOwner(ctx, newOwner)
 				},
 			})
 			return f, apply, nil

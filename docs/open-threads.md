@@ -88,17 +88,6 @@ settled: `docs/decisions.md` § Release workflow.
 - **`TestLiveAvailabilityGroupOperations` deliberately skips Drop and
   RemoveReplica** against AAG1; only add/remove database, suspend/resume, the
   listener round trip and the failover refusal run there.
-- **A named-instance connection to `win10cli\sql2017` fails on the *second*
-  concurrent connection.** Connecting by name and then doing anything that
-  needs a second pooled connection while the first is pinned — a listing whose
-  rows are still open when a per-row read runs, `SecurityPolicies` being
-  the one the sweep hits — fails with `acquire connection: no instance matching
-  'sql2017' returned from host 'win10cli.fritz.box'`. It is the SQL Browser
-  declining the second resolution, not a gosmo defect: the identical run
-  against `win10cli.fritz.box:55253` is clean, and `sql2016`, whose Browser
-  answers reliably, is clean by name. **Connect to 2017 by port for anything
-  multi-connection**, and do not chase it as a query-compatibility finding — it
-  names no column and no version.
 
 ## Fix order
 

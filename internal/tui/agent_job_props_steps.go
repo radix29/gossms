@@ -430,7 +430,7 @@ func pageJobSteps(d *PropDialog, sc *db.ServerConn, jobName *string) propPage {
 					if err != nil {
 						return err
 					}
-					if err := step.Update(ctx, e.request()); err != nil {
+					if err := step.Alter(ctx, e.request()); err != nil {
 						return err
 					}
 				}

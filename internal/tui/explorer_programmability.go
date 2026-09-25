@@ -59,7 +59,7 @@ func loadUserDefinedDataTypesChildren(l loaderCtx, node *explorerNode) ([]*explo
 			if !t.IsNullable {
 				nullWord = "not null"
 			}
-			base := formatDataTypeLen(t.BaseType, t.MaxLength, t.Precision, t.Scale)
+			base := t.BaseTypeString()
 			label := t.Schema + "." + t.Name + " (" + base + ", " + nullWord + ")"
 			return l.node(label, NodeUserDefinedDataType, t.Schema, t.Name, node.data.DBName)
 		})

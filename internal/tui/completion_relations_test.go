@@ -229,17 +229,18 @@ func TestResolveTempTableFromCreateTable(t *testing.T) {
 }
 
 // A declared type has to render the way the catalog's own would — nvarchar's
-// max_length is bytes there, and formatDataTypeLen halves it on the way out,
+// max_length is bytes there, and gosmo.TypeString halves it on the way out,
 // so a declared character count that isn't doubled prints at half its size.
+// A bare datetime2 is scale 7, and datetime2(0) must keep its (0).
 func TestResolveTempTableColumnTypesRenderLikeTheCatalog(t *testing.T) {
 	rels := resolveTestSQL(t,
-		"CREATE TABLE #t (Name nvarchar(50), Note varchar(MAX), Amount decimal(18, 2) NOT NULL, Code char(2))\nSELECT | FROM #t",
+		"CREATE TABLE #t (Name nvarchar(50), Note varchar(MAX), Amount decimal(18, 2) NOT NULL, Code char(2), At datetime2, Day datetime2(0))\nSELECT | FROM #t",
 		testCustomersOrders())
-	got := make([]string, 0, 4)
+	got := make([]string, 0, 6)
 	for _, c := range oneRelation(t, rels, "#t").columns() {
 		got = append(got, formatColumnType(c))
 	}
-	want := []string{"nvarchar(50)", "varchar(MAX)", "decimal(18,2), not null", "char(2)"}
+	want := []string{"nvarchar(50)", "varchar(MAX)", "decimal(18,2), not null", "char(2)", "datetime2(7)", "datetime2(0)"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("types = %v, want %v", got, want)
 	}

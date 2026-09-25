@@ -151,7 +151,7 @@ func pageSchemaGeneral(sc *db.ServerConn, dbName, schemaName string) propPage {
 					if err != nil {
 						return err
 					}
-					return s.ChangeOwner(ctx, owner)
+					return s.SetOwner(ctx, owner)
 				}
 			}
 			return f, apply, nil

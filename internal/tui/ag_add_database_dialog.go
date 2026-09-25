@@ -47,16 +47,17 @@ type agDBCandidate struct {
 }
 
 // agCandidatesFrom pairs each database with its log chain state, keyed by
-// lowercased name.
-func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCandidate {
+// name under the server's collation.
+func agCandidatesFrom(dbs []*gosmo.Database, logChain *nameMap[bool]) []agDBCandidate {
 	out := make([]agDBCandidate, 0, len(dbs))
 	for _, d := range dbs {
+		started, _ := logChain.Get(d.Name)
 		out = append(out, agDBCandidate{
 			Name:            d.Name,
 			RecoveryModel:   string(d.RecoveryModel),
 			State:           d.State,
 			IsSystem:        d.IsSystem(),
-			LogChainStarted: logChain[strings.ToLower(d.Name)],
+			LogChainStarted: started,
 		})
 	}
 	return out
@@ -70,12 +71,12 @@ func agCandidatesFrom(dbs []*gosmo.Database, logChain map[string]bool) []agDBCan
 // LogBackupChainStarted), not msdb backup history, which is wrong both ways
 // (verified live): purged history still joins, and a backup before a SIMPLE
 // round trip fails with Msg 1475.
-func agEligibleDatabases(dbs []agDBCandidate, inGroup map[string]bool) (eligible, excluded []string) {
+func agEligibleDatabases(dbs []agDBCandidate, inGroup *nameSet) (eligible, excluded []string) {
 	for _, d := range dbs {
 		switch {
 		case d.IsSystem:
 			// Silent: nobody expects master here.
-		case inGroup[strings.ToLower(d.Name)]:
+		case inGroup.Has(d.Name):
 			excluded = append(excluded, d.Name+" — already in an availability group")
 		case !strings.EqualFold(d.RecoveryModel, string(gosmo.RecoveryModelFull)):
 			excluded = append(excluded, fmt.Sprintf("%s — recovery model is %s, must be FULL", d.Name, d.RecoveryModel))
@@ -136,14 +137,15 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	if err != nil {
 		return nil, err
 	}
-	inGroup := map[string]bool{}
+	collation := instanceCollation(primary)
+	inGroup := newNameSet(collation)
 	for _, g := range groups {
 		dbs, err := g.Databases(ctx)
 		if err != nil {
 			return nil, err
 		}
 		for _, adb := range dbs {
-			inGroup[strings.ToLower(adb.DatabaseName)] = true
+			inGroup.Add(adb.DatabaseName)
 		}
 	}
 
@@ -152,9 +154,9 @@ func (d *AGAddDatabaseDialog) fetchPrefetch(ctx context.Context, sc *db.ServerCo
 	if err != nil {
 		return nil, err
 	}
-	logChain := map[string]bool{}
+	logChain := newNameMap[bool](collation)
 	for _, st := range statuses {
-		logChain[strings.ToLower(st.DatabaseName)] = st.LogBackupChainStarted
+		logChain.Set(st.DatabaseName, st.LogBackupChainStarted)
 	}
 
 	dbs, err := primary.Databases(ctx)

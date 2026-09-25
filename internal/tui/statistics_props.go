@@ -144,7 +144,7 @@ func pageStatisticColumns(sc *db.ServerConn, dbName, schema, table, name string)
 				if !ok {
 					return
 				}
-				dataTypeStatic.SetValue(gosmo.ColumnTypeString(c))
+				dataTypeStatic.SetValue(c.TypeString())
 				nullableStatic.SetValue(boolStr(c.IsNullable))
 				computedStatic.SetValue(boolStr(c.IsComputed))
 				collationStatic.SetValue(orDefault(c.Collation, "n/a"))

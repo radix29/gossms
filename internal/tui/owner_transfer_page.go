@@ -46,8 +46,8 @@ type ownerTransferSpec[T any] struct {
 	ItemSection string
 	Note        string
 
-	// ChangeOwner issues the ownership change for one object.
-	ChangeOwner func(ctx context.Context, obj T, newOwner string) error
+	// SetOwner issues the ownership change for one object.
+	SetOwner func(ctx context.Context, obj T, newOwner string) error
 }
 
 // newOwnerTransferPage builds the form and apply function for an
@@ -186,7 +186,7 @@ func newOwnerTransferPage[T any](items []*ownerTransferItem[T], ownerNames []str
 			if it.newOwner == it.origOwner {
 				continue
 			}
-			if err := spec.ChangeOwner(ctx, it.obj, it.newOwner); err != nil {
+			if err := spec.SetOwner(ctx, it.obj, it.newOwner); err != nil {
 				return err
 			}
 		}
@@ -258,8 +258,8 @@ func pagePrincipalOwnedSchemas(sc *db.ServerConn, dbName string, principalName *
 				GridSection: "Schemas owned by this " + principalKind,
 				ItemSection: "Selected schema",
 				Note:        "Changing schema ownership can affect permission chaining and deployment scripts.",
-				ChangeOwner: func(ctx context.Context, o ownedSchema, newOwner string) error {
-					return o.schema.ChangeOwner(ctx, newOwner)
+				SetOwner: func(ctx context.Context, o ownedSchema, newOwner string) error {
+					return o.schema.SetOwner(ctx, newOwner)
 				},
 			})
 			return f, apply, nil

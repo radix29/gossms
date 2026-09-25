@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -335,40 +334,6 @@ func (p *QueryPanel) schemaIcon() rune {
 	return nodeIcon(nodeData{Type: NodeSchema}, p.app.cfg.IconStyle, false)
 }
 
-// formatDataTypeLen renders a data type the way SQL Server itself would
-// print it: length for the (n)(var)char/binary family (nvarchar/nchar's
-// maxLength is stored in bytes, so it's halved back to characters),
-// precision/scale for decimal/numeric, and scale alone for the fractional-
-// seconds types — MAX for a -1 maxLength either way.
-func formatDataTypeLen(dataType string, maxLength, precision, scale int) string {
-	t := strings.ToLower(dataType)
-	switch t {
-	case "varchar", "char", "varbinary", "binary":
-		switch {
-		case maxLength == -1:
-			t += "(MAX)"
-		case maxLength > 0:
-			t += fmt.Sprintf("(%d)", maxLength)
-		}
-	case "nvarchar", "nchar":
-		switch {
-		case maxLength == -1:
-			t += "(MAX)"
-		case maxLength > 0:
-			t += fmt.Sprintf("(%d)", maxLength/2)
-		}
-	case "decimal", "numeric":
-		if precision > 0 {
-			t += fmt.Sprintf("(%d,%d)", precision, scale)
-		}
-	case "datetime2", "time", "datetimeoffset":
-		if scale > 0 {
-			t += fmt.Sprintf("(%d)", scale)
-		}
-	}
-	return t
-}
-
 // formatColumnType renders a CatalogColumn's type plus, when it's not
 // nullable, a ", not null" suffix — used by IntelliSense's completion detail
 // text, where a nullable column's detail stays bare to save popup width.
@@ -382,7 +347,7 @@ func formatColumnType(col gosmo.CatalogColumn) string {
 	if col.DataType == "" {
 		return "column"
 	}
-	t := formatDataTypeLen(string(col.DataType), col.MaxLength, col.Precision, col.Scale)
+	t := gosmo.TypeString(col.DataType, col.MaxLength, col.Precision, col.Scale)
 	if !col.IsNullable {
 		t += ", not null"
 	}

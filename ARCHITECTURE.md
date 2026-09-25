@@ -70,9 +70,9 @@ The path from keystroke to result grid, which touches four packages:
    after disconnect.
 2. **`internal/query`** (`executor.go`, `session.go`) owns *execution*. A
    query window runs on a **`Session`**: one `*sql.Conn` taken out of the
-   panel's pool by `Open` (via `gosmo.AcquireConn`, which retries a transient
-   liveness failure 3 times with linear backoff, on gosmo's own read-retry
-   budget) and held for the panel's lifetime, so temp tables, SET options,
+   panel's pool by `Open` (via `gosmo.AcquireConn`, which makes up to 3
+   attempts — 2 retries — on a transient liveness failure, with linear
+   backoff, on gosmo's own read-retry budget) and held for the panel's lifetime, so temp tables, SET options,
    `USE` and open transactions survive from one Execute to the next, as in
    SSMS. The package-level `Execute` / `ExecuteWithPlan` / … take a `*sql.DB`
    and check a connection out per call instead — database/sql resets a
@@ -80,7 +80,7 @@ The path from keystroke to result grid, which touches four packages:
    they suit one-shot callers only (the Activity Monitor's procedure tab). Both
    share `runScript`: optionally wrap the run in `SET STATISTICS XML ON` /
    `SET SHOWPLAN_XML ON`, then split the script on `GO` with
-   `go-mssqldb/batch` and run each batch through `runBatch`. One `Result`
+   `sqltext.SplitBatches` (`internal/tuikit/sqltext/split.go`) and run each batch through `runBatch`. One `Result`
    accumulates every result set, every message, and the captured plan XML
    across all batches; a Session run adds the state it left
    (`DB_NAME()`, `@@TRANCOUNT`, read even after a cancel) and whether the
@@ -785,8 +785,10 @@ the application is latest-only — the newest request is the only one whose
 result anyone wants — and each of these owns a `latest` rather than its own
 copy: an Object Explorer node's children (`object_explorer.go`), the
 completion inventory's catalog, the Query Store panel's report, plan pane and
-series, the Log File Viewer's read, a `newObjectDialog`'s prefetch, and the
-Detail Browser's fetch.
+series, the Log File Viewer's read, a `newObjectDialog`'s prefetch, the
+Detail Browser's fetch, and Results to Text's formatting of a large set
+(`QueryPanel.showResultsText`) — CPU work, not a read, but superseded the
+same way by a tab switch or a new run.
 
 `PropDialog`'s page loads are the one site that keeps the two halves apart,
 because the sheet already owns one of them: `propsheet.PropertySheet` numbers
@@ -844,7 +846,7 @@ Every method runs on the UI goroutine, like all other widget state
 the node each run is for plus the per-node `pending` map a cancel has to evict,
 and its own `stop`/`supersede` shadow the embedded `Cancel`/`Abandon` so a
 caller cannot stop a run and leave its pending entry behind. Adding those two
-fields to `latest` itself would put Detail-Browser-shaped state in the eight
+fields to `latest` itself would put Detail-Browser-shaped state in the other
 sites that do not want it.
 
 ## Building & testing

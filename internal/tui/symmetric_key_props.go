@@ -60,7 +60,7 @@ func symmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				keyOwnerNote("symmetric key"),
 			)
 			return f, keyOwnerApply(sc, dbName, owner, func(ctx context.Context, d *gosmo.Database, o string) error {
-				return d.SymmetricKeyRef(name).ChangeOwner(ctx, o)
+				return d.SymmetricKeyRef(name).SetOwner(ctx, o)
 			}), nil
 		},
 	}

@@ -213,5 +213,5 @@ FROM   msdb.dbo.sysjobhistory h
 JOIN   msdb.dbo.sysjobs j ON j.job_id = h.job_id
 WHERE  j.name = %s
 ORDER  BY h.run_date DESC, h.run_time DESC;
-`, sqlStringLiteral(jobName))
+`, gosmo.QuoteLiteral(jobName))
 }

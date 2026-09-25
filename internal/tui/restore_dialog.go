@@ -41,6 +41,11 @@ type relocPlan struct {
 	mode    int
 	dataDir string
 	logDir  string
+
+	// collation is the server's, which decides whether restoring Sales as
+	// sales is a rename: on a case-sensitive instance it is, and without MOVE
+	// clauses the restore collides with the source database's files.
+	collation string
 }
 
 // needsFileList reports whether the plan actually moves anything, and so
@@ -53,7 +58,7 @@ func (p relocPlan) needsFileList(source, target string) bool {
 	case relocOriginal:
 		return false
 	default:
-		return !strings.EqualFold(source, target)
+		return !sameName(p.collation, source, target)
 	}
 }
 

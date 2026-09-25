@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -190,7 +191,7 @@ func (p *QueryPanel) renderActiveTab() {
 		return
 	}
 	if p.resultsMode == ResultsModeText {
-		p.resultsText.SetText(p.resultsAsText(set))
+		p.showResultsText(set)
 		return
 	}
 	p.results.SetData(set.Columns, set.Rows)
@@ -216,20 +217,82 @@ func (p *QueryPanel) setMessages(msgs []query.Message) {
 	p.messages.SetText(strings.Join(textLines, "\n"))
 }
 
-// resultsAsText is formatResultsAsText for the active tab's set, memoised in
-// textMemo.
-func (p *QueryPanel) resultsAsText(set query.ResultSet) string {
-	m := &p.textMemo
+// textKey is what one Results to Text rendering depends on: the set (a result
+// and a tab in it), the column cap, and the tab width a cell's own tabs expand
+// to.
+type textKey struct {
+	result         *query.Result
+	tab, max, tabW int
+}
+
+// textKeyNow is the key of the rendering the active tab wants now.
+func (p *QueryPanel) textKeyNow() textKey {
 	maxW := p.app.cfg.MaxTextColumnLength
 	if maxW <= 0 { // a Config not from config.Load
 		maxW = config.DefaultMaxTextColumnLength
 	}
-	if m.result != p.result || m.tab != p.activeTab || m.max != maxW {
-		m.result, m.tab, m.max = p.result, p.activeTab, maxW
-		m.text = formatResultsAsText(set, maxW)
-	}
-	return m.text
+	return textKey{result: p.result, tab: p.activeTab, max: maxW, tabW: p.resultsText.IndentWidth()}
 }
+
+// textSyncCells is the largest set, in cells, that Results to Text formats on
+// the UI goroutine. A million rows of eight columns took 2.1 s to format, 1.1 s
+// to install through SetText and 370 ms more in the first Draw, all with input
+// frozen; below this the whole of it is a few tens of milliseconds, and a
+// "Formatting..." flash would cost more than it saves.
+const textSyncCells = 100_000
+
+// showResultsText puts set into the resultsText editor: from the memo when it
+// was the last one rendered, formatted in place when it is small, and
+// otherwise formatted off the UI goroutine behind a placeholder, installed
+// when it lands if the tab still wants it. A run for the same rendering
+// already in flight is left to finish rather than restarted, so switching
+// away and back mid-format does not throw the work away.
+func (p *QueryPanel) showResultsText(set query.ResultSet) {
+	key := p.textKeyNow()
+	if m := &p.textMemo; m.lines != nil && m.key == key {
+		p.resultsText.SetLineBuffer(m.lines)
+		return
+	}
+	if len(set.Rows)*max(len(set.Columns), 1) <= textSyncCells {
+		lines, _ := formatResultsAsText(context.Background(), set, key.max, key.tabW)
+		p.textMemo.key, p.textMemo.lines = key, lines
+		p.resultsText.SetLineBuffer(lines)
+		return
+	}
+	p.resultsText.SetText(fmt.Sprintf("Formatting %d rows as text...", len(set.Rows)))
+	if p.textFormatting() {
+		return
+	}
+	// Rooted at Background because formatting reads no connection: the rows
+	// are already in memory, and a disconnect leaves them worth showing. The
+	// latest still cancels it — on a newer rendering, a new run, a close.
+	ctx, token := p.textRun.Begin(context.Background())
+	p.textRunKey = key
+	repair := func() { p.textRun.Done(token) }
+	p.app.safegoRepair("formatting results as text", repair, func() {
+		lines, err := formatResultsAsText(ctx, set, key.max, key.tabW)
+		p.app.postAndWake(func() {
+			if !p.textRun.Done(token) || err != nil {
+				return
+			}
+			p.textMemo.key, p.textMemo.lines = key, lines
+			if p.textTabActive() && p.textKeyNow() == key {
+				p.resultsText.SetLineBuffer(lines)
+			}
+		})
+	})
+}
+
+// textFormatting reports whether the rendering the active tab wants is being
+// formatted off the UI goroutine right now.
+func (p *QueryPanel) textFormatting() bool {
+	return !p.textRun.Idle() && p.textRunKey == p.textKeyNow()
+}
+
+// textCancelEvery is how many rows formatResultsAsText formats between checks
+// of its context: often enough that a superseded run stops within a few
+// milliseconds, rarely enough that the check costs nothing.
+const textCancelEvery = 4096
 
 // formatResultsAsText renders set as SSMS's Results To Text look: a header
 // row, a dashed separator, then one line per data row, each column padded
@@ -237,28 +300,37 @@ func (p *QueryPanel) resultsAsText(set query.ResultSet) string {
 //
 // No column is wider than maxW, and a longer value or header is cut to it with
 // no ellipsis, as SSMS does. Uncapped, one megabyte-long cell padded every row
-// of its result to a megabyte, all built on the UI goroutine.
-func formatResultsAsText(set query.ResultSet, maxW int) string {
+// of its result to a megabyte.
+//
+// It builds a LineBuffer rather than a string so that a large set can be
+// formatted, split and measured entirely off the UI goroutine (see
+// showResultsText). A cancelled ctx stops it with ctx's error.
+func formatResultsAsText(ctx context.Context, set query.ResultSet, maxW, tabW int) (*controls.LineBuffer, error) {
 	widths := make([]int, len(set.Columns))
 	for i, c := range set.Columns {
 		widths[i] = core.DisplayWidthAtMost(c, maxW)
 	}
-	for _, row := range set.Rows {
+	for r, row := range set.Rows {
+		if r%textCancelEvery == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		for i, cell := range row {
 			if w := core.DisplayWidthAtMost(cell, maxW); w > widths[i] {
 				widths[i] = w
 			}
 		}
 	}
+	lines := controls.NewLineBuffer(tabW)
 	var sb strings.Builder
 	writeRow := func(cells []string) {
+		sb.Reset()
 		for i, cell := range cells {
 			if i > 0 {
 				sb.WriteByte(' ')
 			}
 			sb.WriteString(core.PadRight(cell, widths[i]))
 		}
-		sb.WriteByte('\n')
+		lines.AppendText(sb.String())
 	}
 	writeRow(set.Columns)
 	seps := make([]string, len(widths))
@@ -266,8 +338,11 @@ func formatResultsAsText(set query.ResultSet, maxW int) string {
 		seps[i] = strings.Repeat("-", w)
 	}
 	writeRow(seps)
-	for _, row := range set.Rows {
+	for r, row := range set.Rows {
+		if r%textCancelEvery == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		writeRow(row)
 	}
-	return strings.TrimSuffix(sb.String(), "\n")
+	return lines, nil
 }

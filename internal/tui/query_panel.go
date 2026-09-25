@@ -91,12 +91,16 @@ type QueryPanel struct {
 	// textMemo is the last Results to Text rendering and what it was rendered
 	// from, so a tab switch back to a set already seen reuses it: formatting is
 	// a pass over every cell. A result's sets never change once setResult has
-	// installed it, so the pointer, the tab and the column cap are the whole key.
+	// installed it, so textKey is the whole key.
 	textMemo struct {
-		result   *query.Result
-		tab, max int
-		text     string
+		key   textKey
+		lines *controls.LineBuffer
 	}
+
+	// textRun formats a set too large to format on the UI goroutine, and
+	// textRunKey is the rendering it is producing — see showResultsText.
+	textRun    latest
+	textRunKey textKey
 
 	// statusRect is the results area's bottom row, where drawResultsStatus
 	// paints the execution status for every tab the DataGrid isn't drawing —

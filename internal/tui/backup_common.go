@@ -243,16 +243,6 @@ func yesNo(b bool) string {
 	return "No"
 }
 
-// sqlStringLiteral renders s as a T-SQL N'...' literal, doubling embedded
-// single quotes — the one escaping rule that matters for a plain
-// identifier-shaped value like a database name.
-//
-// It is gosmo.QuoteLiteral, which emits the N prefix itself; hand-rolling the
-// doubling would duplicate it across the two repos.
-func sqlStringLiteral(s string) string {
-	return gosmo.QuoteLiteral(s)
-}
-
 // backupHistoryQuery returns the msdb query behind "View Backup History"
 // (Object Explorer, database node) — the same backupset/backupmediafamily
 // join gosmo.Server.BackupHistory runs, but as literal T-SQL opened
@@ -276,5 +266,5 @@ FROM   msdb.dbo.backupset bs
 JOIN   msdb.dbo.backupmediafamily bmf ON bmf.media_set_id = bs.media_set_id
 WHERE  bs.database_name = %s
 ORDER  BY bs.backup_finish_date DESC;
-`, sqlStringLiteral(dbName))
+`, gosmo.QuoteLiteral(dbName))
 }

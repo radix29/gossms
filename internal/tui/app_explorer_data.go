@@ -317,7 +317,11 @@ func (a *App) toggleAudit(sc *db.ServerConn, node *explorerNode) {
 		"Disable Audit",
 		fmt.Sprintf("Disable %s? The instance stops recording anything through it.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAuditRef(name).SetState(ctx, on)
+			au := sc.Server.ServerAuditRef(name)
+			if on {
+				return au.Enable(ctx)
+			}
+			return au.Disable(ctx)
 		})
 }
 
@@ -328,7 +332,11 @@ func (a *App) toggleServerAuditSpecification(sc *db.ServerConn, node *explorerNo
 		"Disable Server Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.ServerAuditSpecificationRef(name).SetState(ctx, on)
+			spec := sc.Server.ServerAuditSpecificationRef(name)
+			if on {
+				return spec.Enable(ctx)
+			}
+			return spec.Disable(ctx)
 		})
 }
 
@@ -340,7 +348,11 @@ func (a *App) toggleDatabaseAuditSpecification(sc *db.ServerConn, node *explorer
 		"Disable Database Audit Specification",
 		fmt.Sprintf("Disable %s? The action groups and actions it names stop being recorded.", name),
 		func(ctx context.Context, name string, on bool) error {
-			return sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name).SetState(ctx, on)
+			spec := sc.Server.DatabaseRef(dbName).DatabaseAuditSpecificationRef(name)
+			if on {
+				return spec.Enable(ctx)
+			}
+			return spec.Disable(ctx)
 		})
 }
 

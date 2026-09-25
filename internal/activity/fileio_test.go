@@ -1,6 +1,9 @@
 package activity
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func files(rows ...fileRow) fileSet {
 	set := make(fileSet, len(rows))
@@ -119,5 +122,25 @@ func TestFileDeltasTotalCoversEveryDatabase(t *testing.T) {
 	}
 	if total.Database != "Total" {
 		t.Errorf("total row is named %q, want %q", total.Database, "Total")
+	}
+}
+
+// perDB comes out in name order, data before log, not in map-iteration order.
+func TestFileDeltasOrderByName(t *testing.T) {
+	rows := []fileRow{
+		{database: "tempdb"}, {database: "tempdb", isLog: true},
+		{database: "master"}, {database: "master", isLog: true},
+		{database: "msdb"}, {database: "msdb", isLog: true},
+	}
+	want := []string{"master", "master (log)", "msdb", "msdb (log)", "tempdb", "tempdb (log)"}
+	for range 20 {
+		perDB, _ := fileDeltas(files(rows...), files(rows...), 1)
+		var got []string
+		for _, io := range perDB {
+			got = append(got, io.Label())
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("per-database order = %v, want %v", got, want)
+		}
 	}
 }

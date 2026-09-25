@@ -170,7 +170,7 @@ func loadColumnsChildren(l loaderCtx, node *explorerNode) ([]*explorerNode, erro
 		if !c.IsNullable {
 			nullWord = "not null"
 		}
-		typ := formatDataTypeLen(string(c.DataType), c.MaxLength, c.Precision, c.Scale)
+		typ := c.TypeString()
 		label := fmt.Sprintf("%s (%s, %s)", c.Name, typ, nullWord)
 		n := l.node(label, NodeColumn, node.data.Schema, c.Name, node.data.DBName)
 		// The owning table, the way the Keys and Indexes loaders carry it:

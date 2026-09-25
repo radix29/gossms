@@ -350,6 +350,24 @@ func (e *Editor) SetText(text string) {
 		lines[i] = []rune(p)
 	}
 	e.doc.setLines(lines)
+	e.resetForNewText()
+}
+
+// SetLineBuffer is SetText for a document built off the UI goroutine: it
+// installs b's lines and their measured widths as they are, in O(1). See
+// LineBuffer for what that saves and for the sharing it implies. An empty
+// buffer installs one empty line, as SetText("") does.
+func (e *Editor) SetLineBuffer(b *LineBuffer) {
+	if b.Len() == 0 {
+		e.doc.setLines([][]rune{{}})
+	} else {
+		e.doc.setMeasuredLines(b.lines, b.lineW, b.maxW)
+	}
+	e.resetForNewText()
+}
+
+// resetForNewText drops everything that referred to the previous document.
+func (e *Editor) resetForNewText() {
 	e.cursorRow, e.cursorCol, e.scrollRow, e.scrollCol = 0, 0, 0, 0
 	e.selecting, e.selBlock, e.mouseDragging, e.sbDragging, e.sbDraggingX = false, false, false, false, false
 	e.undoStack, e.redoStack, e.undoBytes, e.stepOpen = nil, nil, 0, false

@@ -258,14 +258,14 @@ func TestAvailabilityGroupNodeOffersDashboard(t *testing.T) {
 }
 
 func TestAGLabelForDatabase(t *testing.T) {
-	states := map[string]agDatabaseSummary{
-		"testdb_1": {Name: "testdb_1", States: []string{"SYNCHRONIZED"}},
-		"testdb_2": {Name: "testdb_2", States: []string{"NOT SYNCHRONIZING"}, Suspended: true},
-	}
+	states := newNameMap[agDatabaseSummary]("SQL_Latin1_General_CP1_CI_AS")
+	states.Set("testdb_1", agDatabaseSummary{Name: "testdb_1", States: []string{"SYNCHRONIZED"}})
+	states.Set("testdb_2", agDatabaseSummary{Name: "testdb_2", States: []string{"NOT SYNCHRONIZING"}, Suspended: true})
 	if got, want := agLabelForDatabase("testdb_1", states), "testdb_1 (Synchronized)"; got != want {
 		t.Errorf("agLabelForDatabase = %q, want %q", got, want)
 	}
-	// Case-insensitive: sys.databases and the AG views can disagree on case.
+	// Case-insensitive under a CI collation: sys.databases and the AG views
+	// can disagree on case.
 	if got, want := agLabelForDatabase("TESTDB_1", states), "TESTDB_1 (Synchronized)"; got != want {
 		t.Errorf("agLabelForDatabase with different case = %q, want %q", got, want)
 	}

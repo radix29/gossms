@@ -418,9 +418,9 @@ func buildNewUserOwnedSchemasPage(pf *nuserPrefetch, userName func() string) (*p
 			if !v[0] {
 				continue
 			}
-			// The prefetched schema is enough: ChangeOwner addresses it by
+			// The prefetched schema is enough: SetOwner addresses it by
 			// name, which is what keeps this page scriptable.
-			if err := schemas[i].ChangeOwner(ctx, userName()); err != nil {
+			if err := schemas[i].SetOwner(ctx, userName()); err != nil {
 				return err
 			}
 		}

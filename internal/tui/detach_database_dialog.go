@@ -177,7 +177,7 @@ func (d *DetachDatabaseDialog) buildPages(pf *detachPrefetch) {
 		return nil
 	}
 	d.applyFns[0] = func(ctx context.Context) error {
-		return sc.Server.DetachDatabase(ctx, dbName, gosmo.DetachOptions{
+		return sc.Server.DatabaseRef(dbName).Detach(ctx, gosmo.DetachOptions{
 			DropConnections:       dropConns.Checked(),
 			UpdateStatistics:      updateStats.Checked(),
 			DropFullTextIndexFile: dropFullText.Checked(),

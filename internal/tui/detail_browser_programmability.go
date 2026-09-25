@@ -59,7 +59,7 @@ func programmabilityFolderDetail(ctx context.Context, sc *dbconn.ServerConn, nod
 		rows := make([][]string, 0, len(types))
 		for _, t := range types {
 			rows = append(rows, []string{dottedName(t.Schema, t.Name),
-				formatDataTypeLen(t.BaseType, t.MaxLength, t.Precision, t.Scale),
+				t.BaseTypeString(),
 				boolStr(t.IsNullable), t.Rule, t.Default})
 			*objs = append(*objs, nodeData{Type: NodeUserDefinedDataType, DBName: n.DBName, Schema: t.Schema, Name: t.Name})
 		}
@@ -214,7 +214,7 @@ func programmabilityDetail(ctx context.Context, sc *dbconn.ServerConn, node *exp
 		}
 		return propertyRows(
 			"Name", dottedName(t.Schema, t.Name),
-			"Base type", formatDataTypeLen(t.BaseType, t.MaxLength, t.Precision, t.Scale),
+			"Base type", t.BaseTypeString(),
 			"Nullable", boolStr(t.IsNullable),
 			"Collation", t.Collation,
 			"Bound rule", t.Rule,
@@ -360,7 +360,7 @@ func typeLengthText(maxLength int) string {
 // tableTypeColumnText renders one table-type column the way a CREATE TYPE ...
 // AS TABLE body declares it.
 func tableTypeColumnText(c *gosmo.Column) string {
-	s := c.Name + " " + formatDataTypeLen(string(c.DataType), c.MaxLength, c.Precision, c.Scale)
+	s := c.Name + " " + c.TypeString()
 	if c.IsNullable {
 		return s + ", null"
 	}

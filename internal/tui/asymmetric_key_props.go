@@ -57,7 +57,7 @@ func asymmetricKeyPropPages(sc *db.ServerConn, dbName, name string) []propPage {
 				keyOwnerNote("asymmetric key"),
 			)
 			return f, keyOwnerApply(sc, dbName, owner, func(ctx context.Context, d *gosmo.Database, o string) error {
-				return d.AsymmetricKeyRef(name).ChangeOwner(ctx, o)
+				return d.AsymmetricKeyRef(name).SetOwner(ctx, o)
 			}), nil
 		},
 	}

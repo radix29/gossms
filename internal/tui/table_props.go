@@ -131,7 +131,7 @@ func pageTableColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 				if c.IsPrimaryKey {
 					key = "PK"
 				}
-				rows[i] = []string{c.Name, gosmo.ColumnTypeString(c), nullable, key}
+				rows[i] = []string{c.Name, c.TypeString(), nullable, key}
 			}
 			grid := controls.NewDataGrid()
 			grid.SetData([]string{"Column", "Type", "Null", "Key"}, rows)
@@ -155,7 +155,7 @@ func pageTableColumns(sc *db.ServerConn, dbName, schema, name string) propPage {
 				}
 				c := cols[i]
 				nameStatic.SetValue(c.Name)
-				typeStatic.SetValue(gosmo.ColumnTypeString(c))
+				typeStatic.SetValue(c.TypeString())
 				nullableStatic.SetValue(boolStr(c.IsNullable))
 				identityStatic.SetValue(boolStr(c.IsIdentity))
 				if c.IsIdentity {

@@ -241,10 +241,12 @@ func bindingColumns(rc resolveCtx, b sqlparse.Binding) []gosmo.CatalogColumn {
 
 // bindingColumn turns one declared column into the catalog shape the rest of
 // completion works in, filling the same length/precision/scale fields
-// formatDataTypeLen reads back — so a declared "nvarchar(50)" renders exactly
+// gosmo.TypeString reads back — so a declared "nvarchar(50)" renders exactly
 // as the catalog's own nvarchar(50) would. That means doubling the declared
 // character count: sys.columns stores an nvarchar's max_length in bytes, and
-// formatDataTypeLen halves it again on the way out.
+// gosmo.TypeString halves it again on the way out. Likewise a fractional-
+// seconds type declared with no scale gets the 7 the server gives it, since
+// gosmo.TypeString renders a zero scale as the (0) it is in the catalog.
 func bindingColumn(c sqlparse.BindingColumn) gosmo.CatalogColumn {
 	t := strings.ToLower(c.Type)
 	col := gosmo.CatalogColumn{Name: c.Name, DataType: gosmo.DataType(t), IsNullable: c.Nullable}
@@ -261,14 +263,18 @@ func bindingColumn(c sqlparse.BindingColumn) gosmo.CatalogColumn {
 		col.Precision, _ = typeArgInt(c.TypeArgs, 0)
 		col.Scale, _ = typeArgInt(c.TypeArgs, 1)
 	case "datetime2", "time", "datetimeoffset":
-		col.Scale, _ = typeArgInt(c.TypeArgs, 0)
+		if n, ok := typeArgInt(c.TypeArgs, 0); ok {
+			col.Scale = n
+		} else {
+			col.Scale = 7
+		}
 	}
 	return col
 }
 
 // typeArgInt reads one type argument as a number, with MAX as the -1 the
 // catalog stores for it. Anything else leaves the field zero, which
-// formatDataTypeLen renders as the bare type name rather than a length read
+// gosmo.TypeString renders as the bare type name rather than a length read
 // out of a fragment.
 func typeArgInt(args []string, i int) (int, bool) {
 	if i >= len(args) {

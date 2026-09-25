@@ -465,19 +465,21 @@ through a database-wide grant.
   returning **zero rows, not an error**, so an existing login reads as absent;
   pinned by `TestLiveNotFoundCannotSeePastMetadataVisibility`. The answer is
   idempotence at the write, not a better sentinel. Note `isAlreadyExists`
-  matches by substring; its `15023` arm is the *user* code, and logins raise
-  15025.
+  matches error numbers first — 15025 (logins) and 15023 (users), on the
+  error and on every entry of its `All` — and falls back to an "already
+  exists" substring only for an error that is not a SQL Server error.
 - **`JobState` follows Agent's real encoding**, from `xp_sqlagent_enum_jobs`:
   1 Executing, 2 WaitingForWorker, 3 BetweenRetries, 4 Idle, 5 Suspended,
   6 WaitingForStepToFinish, 7 PerformingCompletionActions, 0 meaning a job
   Agent does not run itself. There is no Cancelling or Running state.
 - **The lookup-free handles carry a `Ref` suffix; the `*ByName` lookups keep
-  their names.** Fifty-one families pair this way
+  their names.** Fifty-five families pair this way
   (`Server.Database` → `Server.DatabaseRef`, `Login`, `Table`, the four Agent
   ones, the audit/credential/trigger/snapshot/plan-guide/backup-device/AG
   ones, and `Database.CertificateRef`, `Database.AsymmetricKeyRef` and
-  `Database.SymmetricKeyRef`, `Table.IndexRef` since 2026-09-23, and 25 more
-  on 2026-09-24 — see `~/go/gosmo/CLAUDE.md`'s `Ref` bullet). An un-suffixed handle compiles, issues no
+  `Database.SymmetricKeyRef`, `Table.IndexRef` since 2026-09-23, 25 more
+  on 2026-09-24, and the view, procedure, function and DML-trigger handles on
+  2026-09-25 — see `~/go/gosmo/CLAUDE.md`'s `Ref` bullet). An un-suffixed handle compiles, issues no
   query and answers the zero value, which is the trap the suffix makes visible.
   **Two alternatives are rejected.** Giving the *lookup* the plain name
   (`DatabaseByName` → `Database`) would split the convention with the

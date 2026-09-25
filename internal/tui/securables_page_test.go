@@ -119,10 +119,10 @@ func TestSecurablesRevokeCarriesTheObjectItWasGrantedOn(t *testing.T) {
 func TestSecurablesColumnGrantNamesTheColumnAndItsObject(t *testing.T) {
 	sc, inst := newFakeConn(t, append(securableResponses(),
 		// ObjectColumns, not Table.Columns — the editor works on views too.
-		fakeResponse{match: "OBJECT_ID(@p1)", db: secDatabase, cols: 32, rows: [][]driver.Value{
-			{"OrderID", int64(1), "int", int64(4), int64(10), int64(0), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", ""},
-			{"CustomerID", int64(2), "int", int64(4), int64(10), int64(0), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", ""},
-			{"Total", int64(3), "money", int64(8), int64(19), int64(4), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", ""},
+		fakeResponse{match: "OBJECT_ID(@p1)", db: secDatabase, cols: 37, rows: [][]driver.Value{
+			{"OrderID", int64(1), "int", int64(4), int64(10), int64(0), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", "", "", "", false, int64(0), ""},
+			{"CustomerID", int64(2), "int", int64(4), int64(10), int64(0), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", "", "", "", false, int64(0), ""},
+			{"Total", int64(3), "money", int64(8), int64(19), int64(4), false, false, false, "", "", "", false, "", int64(0), int64(0), false, "sys", false, false, false, false, false, "", int64(0), false, false, int64(0), false, "", "", "", "", "", false, int64(0), ""},
 		}},
 	)...)
 	d, app := newFakeDialog(t)

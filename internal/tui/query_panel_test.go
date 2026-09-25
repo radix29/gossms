@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/csv"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -508,6 +509,86 @@ func TestResultsToTextMemo(t *testing.T) {
 	if got, want := qp.resultsText.Text(), "A  \n---\nnew"; got != want {
 		t.Fatalf("a new result: %q, want %q", got, want)
 	}
+}
+
+// largeTextResult is a result whose sets are each just over textSyncCells, so
+// Results to Text formats them off the UI goroutine. Set i's rows read
+// "<i>-<row>".
+func largeTextResult(sets int) *query.Result {
+	res := &query.Result{}
+	for i := range sets {
+		set := query.ResultSet{Columns: []string{"V"}}
+		for r := range textSyncCells + 1 {
+			set.Rows = append(set.Rows, []string{fmt.Sprintf("%d-%d", i, r)})
+		}
+		res.Sets = append(res.Sets, set)
+	}
+	return res
+}
+
+// A set too large to format on the UI goroutine shows a placeholder and a
+// status that says so, then the whole rendering once the run lands.
+func TestResultsToTextFormatsALargeSetOffTheUIGoroutine(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	qp.setResult(largeTextResult(1), false)
+
+	if got := qp.resultsText.Text(); !strings.HasPrefix(got, "Formatting ") {
+		t.Fatalf("resultsText while formatting = %q, want the placeholder", got)
+	}
+	if got := qp.resultsStatusText(); !strings.Contains(got, "Formatting as text") {
+		t.Errorf("status while formatting = %q, want it to say so", got)
+	}
+	drainUntil(t, a, func() bool { return !qp.textFormatting() }, "the text rendering")
+
+	doc := qp.resultsText.Document()
+	if got, want := doc.Len(), textSyncCells+3; got != want {
+		t.Fatalf("rendered %d lines, want header + separator + %d rows", got, textSyncCells+1)
+	}
+	if got := string(doc.Line(doc.Len() - 1)); strings.TrimSpace(got) != fmt.Sprintf("0-%d", textSyncCells) {
+		t.Errorf("last line = %q, want the last row", got)
+	}
+	if got := qp.resultsStatusText(); strings.Contains(got, "Formatting") {
+		t.Errorf("status after the rendering landed = %q, still formatting", got)
+	}
+}
+
+// Switching tabs mid-format supersedes the run: the first set's rendering,
+// arriving late, must not replace the second's.
+func TestResultsToTextDropsASupersededRendering(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	qp.setResult(largeTextResult(2), false)
+	qp.setActiveTab(1)
+	drainUntil(t, a, func() bool { return !qp.textFormatting() }, "the second set's rendering")
+	a.drainPending()
+
+	doc := qp.resultsText.Document()
+	if got := strings.TrimSpace(string(doc.Line(2))); got != "1-0" {
+		t.Errorf("first row shown = %q, want the second set's", got)
+	}
+	if qp.textMemo.key.tab != 1 {
+		t.Errorf("memo holds tab %d's rendering, want tab 1's", qp.textMemo.key.tab)
+	}
+}
+
+// The run latches the placeholder and the status; a panic in it must still
+// release them, or the tab reads "Formatting as text..." for the panel's life.
+// A row wider than its columns is what panics here.
+func TestResultsToTextRunReleasesItsLatchOnAPanic(t *testing.T) {
+	a := newTestApp()
+	qp := NewQueryPanel(a, "Query 1")
+	qp.SetBounds(0, 0, 80, 24)
+	qp.resultsMode = ResultsModeText
+	res := largeTextResult(1)
+	res.Sets[0].Rows[5] = []string{"x", "a column the set does not have"}
+	qp.setResult(res, false)
+
+	drainUntil(t, a, func() bool { return !qp.textFormatting() }, "the latch to clear after the panic")
 }
 
 // TestResultsToTextKeysRouteToResultsTextNotGrid confirms that once Results

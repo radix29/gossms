@@ -157,7 +157,7 @@ func TestAGEligibleDatabases(t *testing.T) {
 		{Name: "fresh", RecoveryModel: "FULL", State: "ONLINE"},
 		{Name: "master", RecoveryModel: "SIMPLE", State: "ONLINE", IsSystem: true},
 	}
-	eligible, excluded := agEligibleDatabases(dbs, map[string]bool{"testdb_1": true})
+	eligible, excluded := agEligibleDatabases(dbs, newNameSet("", "testdb_1"))
 
 	if want := []string{"payroll"}; !slices.Equal(eligible, want) {
 		t.Errorf("eligible = %v, want %v", eligible, want)

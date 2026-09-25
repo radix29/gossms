@@ -231,7 +231,7 @@ func loadAvailabilityDatabasesChildren(l loaderCtx, node *explorerNode) ([]*expl
 		n.data.AGName = node.data.AGName
 		n.data.AGSuspended = s.Suspended
 		n.data.AGLocalSecondary = localSecondary
-		n.data.AGLocalJoined = joined[strings.ToLower(s.Name)]
+		n.data.AGLocalJoined, _ = joined.Get(s.Name)
 		out = append(out, n)
 	}
 	return view.appendNote(l, out), nil
@@ -250,7 +250,7 @@ func loadAvailabilityDatabasesChildren(l loaderCtx, node *explorerNode) ([]*expl
 //
 // Both return values are the safe-and-silent ones on failure: a nil map gates
 // Join and Unjoin off.
-func agLocalDatabaseJoinState(l loaderCtx, view agView, dbs []*gosmo.AvailabilityDatabase, agName string) (localSecondary bool, joined map[string]bool) {
+func agLocalDatabaseJoinState(l loaderCtx, view agView, dbs []*gosmo.AvailabilityDatabase, agName string) (localSecondary bool, joined *nameMap[bool]) {
 	local := dbs
 	if view.followed {
 		// dbs came from the primary's connection, whose rows describe the
@@ -269,22 +269,23 @@ func agLocalDatabaseJoinState(l loaderCtx, view agView, dbs []*gosmo.Availabilit
 		return false, nil
 	}
 
-	return true, agJoinedCopies(local, l.sc.Server.Name())
+	return true, agJoinedCopies(local, l.sc.Server.Name(), serverCollation(l.sc))
 }
 
-// agJoinedCopies maps a lower-cased database name to whether localName's own copy
-// has joined the group.
+// agJoinedCopies maps a database name, under collation, to whether localName's
+// own copy has joined the group. The replica name is a host name and compares
+// case-insensitively whatever the collation.
 //
 // The test is having a synchronization state at all.
 // AvailabilityGroup.Databases cross-joins the cluster-wide database list with
 // the replica list, so a database the local copy hasn't joined still produces a
 // row, with every sys.dm_hadr_database_replica_states column empty. An empty
 // state is therefore "not joined here", not "unknown".
-func agJoinedCopies(dbs []*gosmo.AvailabilityDatabase, localName string) map[string]bool {
-	joined := map[string]bool{}
+func agJoinedCopies(dbs []*gosmo.AvailabilityDatabase, localName, collation string) *nameMap[bool] {
+	joined := newNameMap[bool](collation)
 	for _, d := range dbs {
 		if strings.EqualFold(d.ReplicaServerName, localName) {
-			joined[strings.ToLower(d.DatabaseName)] = d.SynchronizationState != ""
+			joined.Set(d.DatabaseName, d.SynchronizationState != "")
 		}
 	}
 	return joined
@@ -359,7 +360,7 @@ func slicesContains(ss []string, s string) bool {
 	return false
 }
 
-// agLocalDatabaseStates maps a lower-cased database name to the availability
+// agLocalDatabaseStates maps a database name, under the server's collation, to the availability
 // state of the copy *this* instance holds, for the Databases folder's labels.
 //
 // Local-only on purpose: the Availability Databases folder summarises a database
@@ -370,7 +371,7 @@ func slicesContains(ss []string, s string) bool {
 // Returns nil rather than an error on failure: this decorates a list that has to
 // render with or without Always On, so a disabled instance, a group mid-failover
 // and a failed query all leave the labels bare.
-func agLocalDatabaseStates(l loaderCtx) map[string]agDatabaseSummary {
+func agLocalDatabaseStates(l loaderCtx) *nameMap[agDatabaseSummary] {
 	if info := l.sc.Server.Info(); info == nil || !info.IsHADREnabled {
 		return nil
 	}
@@ -378,7 +379,7 @@ func agLocalDatabaseStates(l loaderCtx) map[string]agDatabaseSummary {
 	if err != nil || len(groups) == 0 {
 		return nil
 	}
-	out := map[string]agDatabaseSummary{}
+	out := newNameMap[agDatabaseSummary](serverCollation(l.sc))
 	for _, ag := range groups {
 		dbs, err := ag.Databases(l.ctx)
 		if err != nil {
@@ -391,7 +392,7 @@ func agLocalDatabaseStates(l loaderCtx) map[string]agDatabaseSummary {
 			}
 		}
 		for _, s := range summarizeAGDatabases(local) {
-			out[strings.ToLower(s.Name)] = s
+			out.Set(s.Name, s)
 		}
 	}
 	return out
@@ -400,8 +401,8 @@ func agLocalDatabaseStates(l loaderCtx) map[string]agDatabaseSummary {
 // agLabelForDatabase renders a Databases-folder label: the plain name, or the
 // availability-group form when states has an entry for it. The fallback keeps it
 // safe on an instance with no Always On, where states is nil.
-func agLabelForDatabase(name string, states map[string]agDatabaseSummary) string {
-	s, ok := states[strings.ToLower(name)]
+func agLabelForDatabase(name string, states *nameMap[agDatabaseSummary]) string {
+	s, ok := states.Get(name)
 	if !ok {
 		return name
 	}

@@ -210,14 +210,14 @@ func TestAGJoinedCopiesReadsTheLocalRowsOnly(t *testing.T) {
 		{ReplicaServerName: "ubusql1", DatabaseName: "testdb_2", SynchronizationState: "SYNCHRONIZED"},
 		{ReplicaServerName: "ubusql2", DatabaseName: "testdb_2", SynchronizationState: ""},
 	}
-	joined := agJoinedCopies(dbs, "ubusql2")
-	if !joined["testdb_1"] {
+	joined := agJoinedCopies(dbs, "ubusql2", "")
+	if j, _ := joined.Get("testdb_1"); !j {
 		t.Error("testdb_1 reads as not joined on ubusql2")
 	}
-	if joined["testdb_2"] {
+	if j, _ := joined.Get("testdb_2"); j {
 		t.Error("testdb_2 has no state row on ubusql2 but reads as joined")
 	}
-	if len(joined) != 2 {
+	if joined.Len() != 2 {
 		t.Errorf("joined = %v, want only ubusql2's two rows", joined)
 	}
 }
@@ -229,9 +229,9 @@ func TestAGJoinedCopiesMatchesTheReplicaNameCaseInsensitively(t *testing.T) {
 	dbs := []*gosmo.AvailabilityDatabase{
 		{ReplicaServerName: "UBUSQL2", DatabaseName: "TestDB_1", SynchronizationState: "SYNCHRONIZED"},
 	}
-	joined := agJoinedCopies(dbs, "ubusql2")
-	if !joined["testdb_1"] {
-		t.Errorf("joined = %v, want testdb_1 keyed lower-case and matched", joined)
+	joined := agJoinedCopies(dbs, "ubusql2", "")
+	if j, _ := joined.Get("testdb_1"); !j {
+		t.Errorf("joined = %v, want TestDB_1 matched as testdb_1", joined.m)
 	}
 }
 

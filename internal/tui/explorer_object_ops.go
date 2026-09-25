@@ -79,24 +79,25 @@ func tableOf(sc *db.ServerConn, n nodeData) *gosmo.Table {
 	return sc.Server.DatabaseRef(n.DBName).TableRef(n.Schema, n.TableName)
 }
 
-// objectOps is the per-type table. Every rename going through
-// Database.RenameObject is sp_rename's 'OBJECT' class — view, procedure,
-// function, sequence, synonym, trigger, constraint. Indexes and statistics have
-// their own sp_rename object types and gosmo methods.
+// objectOps is the per-type table. Every entry calls a method on the gosmo
+// handle for its object — Drop, Rename, Transfer — and gosmo picks the
+// statement and its class there: sp_rename's 'OBJECT' for most families,
+// 'USERDATATYPE' for an alias type, TRANSFER's TYPE:: and XML SCHEMA
+// COLLECTION:: prefixes.
 var objectOps = map[NodeType]objectOp{
 	NodeDatabase: {
 		noun:    "Database",
 		warning: "Existing connections to it will be closed.",
 		typed:   true,
 		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return sc.Server.DropDatabase(ctx, n.Name, true)
+			return dbOf(sc, n).Drop(ctx, true)
 		},
 		// MODIFY NAME needs exclusive access, which the tree's own metadata
 		// connections deny — so the rename always closes connections, and always
 		// asks first.
 		renameWarning: "Renaming a database needs exclusive access to it. Existing connections will be closed and their transactions rolled back. Continue?",
 		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return sc.Server.RenameDatabase(ctx, n.Name, newName, true)
+			return dbOf(sc, n).Rename(ctx, newName, true)
 		},
 	},
 	// A snapshot's drop deletes its sparse files and leaves the source
@@ -121,21 +122,19 @@ var objectOps = map[NodeType]objectOp{
 		// decision and not a retry.
 		dropOption: "Also drop the foreign keys that reference it",
 		dropWithOption: func(ctx context.Context, sc *db.ServerConn, n nodeData, cascade bool) error {
-			return dbOf(sc, n).DropTable(ctx, n.Schema, n.Name, cascade)
+			return dbOf(sc, n).TableRef(n.Schema, n.Name).Drop(ctx, cascade)
 		},
-		transfer: transferObjectIn,
-		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return dbOf(sc, n).RenameTable(ctx, n.Schema, n.Name, newName)
-		},
+		rename:   renameIn((*gosmo.Database).TableRef),
+		transfer: transferIn((*gosmo.Database).TableRef),
 	},
-	NodeView:            {noun: "View", drop: dropIn((*gosmo.Database).DropView), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeStoredProcedure: {noun: "Stored Procedure", drop: dropIn((*gosmo.Database).DropStoredProcedure), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeFunction:        {noun: "Function", drop: dropIn((*gosmo.Database).DropFunction), rename: renameObjectIn, transfer: transferObjectIn},
+	NodeView:            schemaObjectOp("View", (*gosmo.Database).ViewRef),
+	NodeStoredProcedure: schemaObjectOp("Stored Procedure", (*gosmo.Database).StoredProcedureRef),
+	NodeFunction:        schemaObjectOp("Function", (*gosmo.Database).UserDefinedFunctionRef),
 	// A trigger belongs to its table and moves with it; ALTER SCHEMA TRANSFER
-	// refuses one.
-	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).DropTrigger), rename: renameObjectIn},
-	NodeSequence: {noun: "Sequence", drop: dropRefIn((*gosmo.Database).SequenceRef), rename: renameObjectIn, transfer: transferObjectIn},
-	NodeSynonym:  {noun: "Synonym", drop: dropRefIn((*gosmo.Database).SynonymRef), rename: renameObjectIn, transfer: transferObjectIn},
+	// refuses one, so gosmo's Trigger has no Transfer.
+	NodeTrigger:  {noun: "Trigger", drop: dropIn((*gosmo.Database).TriggerRef), rename: renameIn((*gosmo.Database).TriggerRef)},
+	NodeSequence: schemaObjectOp("Sequence", (*gosmo.Database).SequenceRef),
+	NodeSynonym:  schemaObjectOp("Synonym", (*gosmo.Database).SynonymRef),
 
 	NodeColumn: {
 		noun: "Column",
@@ -204,8 +203,8 @@ var objectOps = map[NodeType]objectOp{
 			return idx.Rename(ctx, newName)
 		},
 	},
-	NodeForeignKey: {noun: "Foreign Key", drop: dropConstraint, rename: renameObjectIn},
-	NodeCheck:      {noun: "Constraint", drop: dropConstraint, rename: renameObjectIn},
+	NodeForeignKey: {noun: "Foreign Key", drop: dropConstraint, rename: renameConstraint},
+	NodeCheck:      {noun: "Constraint", drop: dropConstraint, rename: renameConstraint},
 
 	NodePartitionFunction: {
 		noun:    "Partition Function",
@@ -277,40 +276,34 @@ var objectOps = map[NodeType]objectOp{
 	NodeUserDefinedDataType: {
 		noun:    "User-Defined Data Type",
 		warning: typeInUseWarning,
-		drop:    dropRefIn((*gosmo.Database).UserDefinedDataTypeRef),
+		drop:    dropIn((*gosmo.Database).UserDefinedDataTypeRef),
 		// sp_rename's USERDATATYPE class covers alias types and nothing else
-		// in sys.types — see gosmo's RenameUserDefinedDataType, which is why
+		// in sys.types — see gosmo's UserDefinedDataType.Rename, which is why
 		// the table and CLR types below have no rename.
-		rename: func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-			return dbOf(sc, n).RenameUserDefinedDataType(ctx, n.Schema, n.Name, newName)
-		},
-		transfer: transferTypeIn,
+		rename:   renameIn((*gosmo.Database).UserDefinedDataTypeRef),
+		transfer: transferIn((*gosmo.Database).UserDefinedDataTypeRef),
 	},
 	NodeUserDefinedTableType: {
 		noun:     "User-Defined Table Type",
 		warning:  typeInUseWarning,
-		drop:     dropRefIn((*gosmo.Database).UserDefinedTableTypeRef),
-		transfer: transferTypeIn,
+		drop:     dropIn((*gosmo.Database).UserDefinedTableTypeRef),
+		transfer: transferIn((*gosmo.Database).UserDefinedTableTypeRef),
 	},
 	NodeUserDefinedType: {
 		noun:     "User-Defined Type",
 		warning:  typeInUseWarning,
-		drop:     dropRefIn((*gosmo.Database).ClrTypeRef),
-		transfer: transferTypeIn,
+		drop:     dropIn((*gosmo.Database).ClrTypeRef),
+		transfer: transferIn((*gosmo.Database).ClrTypeRef),
 	},
 	NodeXMLSchemaCollection: {
 		noun: "XML Schema Collection",
 		// Same shape as a type's: the server refuses the drop while a column,
 		// parameter or variable is bound to the collection, and names it.
 		warning: "The drop is refused while a column, parameter or variable is typed on it — the server's error names what blocks it.",
-		drop: func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-			return dbOf(sc, n).XMLSchemaCollectionRef(n.Schema, n.Name).Drop(ctx)
-		},
+		drop:    dropIn((*gosmo.Database).XMLSchemaCollectionRef),
 		// ALTER SCHEMA TRANSFER needs the XML SCHEMA COLLECTION:: class here,
-		// not the default OBJECT one.
-		transfer: func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-			return dbOf(sc, n).TransferXMLSchemaCollection(ctx, targetSchema, n.Schema, n.Name)
-		},
+		// not the default OBJECT one; gosmo's Transfer on the handle adds it.
+		transfer: transferIn((*gosmo.Database).XMLSchemaCollectionRef),
 	},
 	// Rules and defaults are ordinary sys.objects rows, so sp_rename's OBJECT
 	// class and ALTER SCHEMA TRANSFER's default class both serve.
@@ -319,16 +312,16 @@ var objectOps = map[NodeType]objectOp{
 		// The column or type keeps its values but stops being checked, which
 		// is not something the object's absence from the tree makes visible.
 		warning:  "Columns and types still bound to it stop being validated, and the drop is refused until sp_unbindrule releases them.",
-		drop:     dropRefIn((*gosmo.Database).RuleRef),
-		rename:   renameObjectIn,
-		transfer: transferObjectIn,
+		drop:     dropIn((*gosmo.Database).RuleRef),
+		rename:   renameIn((*gosmo.Database).RuleRef),
+		transfer: transferIn((*gosmo.Database).RuleRef),
 	},
 	NodeDefault: {
 		noun:     "Default",
 		warning:  "Columns and types still bound to it stop getting a default value, and the drop is refused until sp_unbindefault releases them.",
-		drop:     dropRefIn((*gosmo.Database).DefaultRef),
-		rename:   renameObjectIn,
-		transfer: transferObjectIn,
+		drop:     dropIn((*gosmo.Database).DefaultRef),
+		rename:   renameIn((*gosmo.Database).DefaultRef),
+		transfer: transferIn((*gosmo.Database).DefaultRef),
 	},
 	NodeAssembly: {
 		noun: "Assembly",
@@ -406,11 +399,11 @@ var objectOps = map[NodeType]objectOp{
 		// The one drop in this set that destroys data: messages still sitting
 		// in the queue go with it, and nothing on screen holds them.
 		warning: "Messages still in the queue are deleted with it, and the drop is refused while a service is bound to it.",
-		drop:    dropRefIn((*gosmo.Database).BrokerQueueRef),
+		drop:    dropIn((*gosmo.Database).BrokerQueueRef),
 		// The one schema-scoped family here, so the only one with a Move to
 		// Schema — and its right is neither of the queue's other two: see
 		// gate.ClassOneTransferRights.
-		transfer: transferObjectIn,
+		transfer: transferIn((*gosmo.Database).BrokerQueueRef),
 	},
 	NodeBrokerService: {
 		noun:    "Service",
@@ -719,28 +712,48 @@ var objectOps = map[NodeType]objectOp{
 	},
 }
 
-// dropIn adapts one of gosmo's Database.DropXxx(ctx, schema, name) methods
-// into a drop function — the schema-scoped kinds gosmo has no handle type for
-// (views, procedures, functions, triggers).
-func dropIn(fn func(*gosmo.Database, context.Context, string, string) error) func(context.Context, *db.ServerConn, nodeData) error {
-	return func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
-		return fn(dbOf(sc, n), ctx, n.Schema, n.Name)
-	}
+// schemaObjectHandle is a gosmo handle for a schema-scoped object that can be
+// dropped, renamed and moved to another schema.
+type schemaObjectHandle interface {
+	Drop(context.Context) error
+	Rename(context.Context, string) error
+	Transfer(context.Context, string) error
 }
 
-// dropRefIn adapts one of gosmo's schema-scoped Database.XxxRef(schema, name)
+// schemaObjectOp is the whole op for a family whose handle has all three —
+// view, procedure, function, sequence, synonym.
+func schemaObjectOp[T schemaObjectHandle](noun string, ref func(*gosmo.Database, string, string) T) objectOp {
+	return objectOp{noun: noun, drop: dropIn(ref), rename: renameIn(ref), transfer: transferIn(ref)}
+}
+
+// dropIn adapts one of gosmo's schema-scoped Database.XxxRef(schema, name)
 // handles into a drop function: the handle is lookup-free, and its Drop
 // addresses the object by the two names alone.
-func dropRefIn[T interface{ Drop(context.Context) error }](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData) error {
+func dropIn[T interface{ Drop(context.Context) error }](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData) error {
 	return func(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 		return ref(dbOf(sc, n), n.Schema, n.Name).Drop(ctx)
 	}
 }
 
-// renameObjectIn is sp_rename's 'OBJECT' class, shared by every schema-scoped
-// object that isn't a table, index, or statistic.
-func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
-	return dbOf(sc, n).RenameObject(ctx, n.Schema, n.Name, newName)
+// renameIn is dropIn for a rename.
+func renameIn[T interface {
+	Rename(context.Context, string) error
+}](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData, string) error {
+	return func(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
+		return ref(dbOf(sc, n), n.Schema, n.Name).Rename(ctx, newName)
+	}
+}
+
+// transferIn is dropIn for a move to another schema (ALTER SCHEMA ...
+// TRANSFER). The handle's Transfer picks the securable class — TYPE:: for
+// the type families, XML SCHEMA COLLECTION:: for that one — so the choice
+// is not repeated here.
+func transferIn[T interface {
+	Transfer(context.Context, string) error
+}](ref func(*gosmo.Database, string, string) T) func(context.Context, *db.ServerConn, nodeData, string) error {
+	return func(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
+		return ref(dbOf(sc, n), n.Schema, n.Name).Transfer(ctx, targetSchema)
+	}
 }
 
 // typeInUseWarning is the delete warning the three type families share. Like
@@ -748,23 +761,17 @@ func renameObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, newName 
 // blocker to the server, which names it in the error.
 const typeInUseWarning = "The drop is refused while a column, parameter, variable or routine is typed on it — the server's error names what blocks it."
 
-// transferTypeIn moves an alias, table or CLR type into another schema.
-// ALTER SCHEMA ... TRANSFER needs the TYPE:: class here: a type is not in
-// sys.objects, so the default class transferObjectIn uses finds nothing.
-func transferTypeIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-	return dbOf(sc, n).TransferType(ctx, targetSchema, n.Schema, n.Name)
-}
-
-// transferObjectIn moves a schema-scoped object into another schema. Shared
-// by every family ALTER SCHEMA ... TRANSFER's default OBJECT class covers.
-func transferObjectIn(ctx context.Context, sc *db.ServerConn, n nodeData, targetSchema string) error {
-	return dbOf(sc, n).TransferObject(ctx, targetSchema, n.Schema, n.Name)
-}
-
 // dropConstraint removes a primary key, unique constraint, foreign key, or
 // CHECK constraint — one ALTER TABLE ... DROP CONSTRAINT for all four.
 func dropConstraint(ctx context.Context, sc *db.ServerConn, n nodeData) error {
 	return tableOf(sc, n).DropConstraint(ctx, n.Name)
+}
+
+// renameConstraint renames a foreign key or CHECK constraint. A primary key
+// or unique constraint renames through its backing index instead — see
+// NodeKey.
+func renameConstraint(ctx context.Context, sc *db.ServerConn, n nodeData, newName string) error {
+	return tableOf(sc, n).RenameConstraint(ctx, n.Name, newName)
 }
 
 // objectOpFor returns the Delete/Rename behaviour for a node type, or nil

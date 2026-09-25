@@ -57,7 +57,7 @@ func newTestTransferPage(items []*ownerTransferItem[ownedThing], owners []string
 		GridSection: "Owned things",
 		ItemSection: "Selected thing",
 		Note:        "note",
-		ChangeOwner: func(_ context.Context, o ownedThing, newOwner string) error {
+		SetOwner: func(_ context.Context, o ownedThing, newOwner string) error {
 			*changed = append(*changed, [2]string{o.name, newOwner})
 			return nil
 		},
@@ -97,10 +97,10 @@ func TestOwnerTransferPageAppliesOnlyChangedRows(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	if len(changed) != 1 {
-		t.Fatalf("ChangeOwner calls = %v, want exactly one (sales -> carol)", changed)
+		t.Fatalf("SetOwner calls = %v, want exactly one (sales -> carol)", changed)
 	}
 	if changed[0] != [2]string{"sales", "carol"} {
-		t.Errorf("ChangeOwner called with %v, want {sales carol}", changed[0])
+		t.Errorf("SetOwner called with %v, want {sales carol}", changed[0])
 	}
 }
 
@@ -118,7 +118,7 @@ func TestOwnerTransferPageAppliesTheUncommittedCurrentRow(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	if len(changed) != 1 || changed[0] != [2]string{"sales", "bob"} {
-		t.Errorf("ChangeOwner calls = %v, want one {sales bob} — the in-progress edit was dropped", changed)
+		t.Errorf("SetOwner calls = %v, want one {sales bob} — the in-progress edit was dropped", changed)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestOwnerTransferPageKeepsAnOwnerMissingFromTheList(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 	if len(changed) != 0 {
-		t.Errorf("ChangeOwner calls = %v, want none — opening the page applied an ownership change on its own", changed)
+		t.Errorf("SetOwner calls = %v, want none — opening the page applied an ownership change on its own", changed)
 	}
 
 	// The unknown owner is offered alongside the real principals, so a genuine

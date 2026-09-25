@@ -1,8 +1,11 @@
 package activity
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
+	"slices"
+	"strings"
 )
 
 // fileKey identifies a database file across samples.
@@ -87,7 +90,8 @@ func collectFileIO(ctx context.Context, db *sql.DB) (fileSet, error) {
 
 // fileDeltas turns two cumulative samples into throughput and latency per
 // database and file kind, plus totals. Latency is stall delta / operation-count
-// delta; no operations reads 0.
+// delta; no operations reads 0. perDB is in name order, data before log, so
+// consumers never inherit map-iteration order.
 func fileDeltas(prev, cur fileSet, elapsed float64) (perDB []FileIO, total FileIO) {
 	total.Database = "Total"
 	if elapsed <= 0 {
@@ -103,7 +107,6 @@ func fileDeltas(prev, cur fileSet, elapsed float64) (perDB []FileIO, total FileI
 		isLog    bool
 	}
 	byDB := map[groupKey]*acc{}
-	order := []groupKey{}
 	var all acc
 
 	for k, c := range cur {
@@ -127,7 +130,6 @@ func fileDeltas(prev, cur fileSet, elapsed float64) (perDB []FileIO, total FileI
 		if !ok {
 			a = &acc{}
 			byDB[g] = a
-			order = append(order, g)
 		}
 		a.bytesRead += d.bytesRead
 		a.bytesWrit += d.bytesWrit
@@ -159,10 +161,27 @@ func fileDeltas(prev, cur fileSet, elapsed float64) (perDB []FileIO, total FileI
 		}
 		return io
 	}
-	for _, g := range order {
-		perDB = append(perDB, toIO(g, *byDB[g]))
+	for g, a := range byDB {
+		perDB = append(perDB, toIO(g, *a))
 	}
+	slices.SortFunc(perDB, CompareFileIOByName)
 	return perDB, toIO(groupKey{database: "Total"}, all)
+}
+
+// CompareFileIOByName orders by database name, then the data row before the
+// log row: a total order over fileDeltas's rows, for a stable display.
+func CompareFileIOByName(a, b FileIO) int {
+	return cmp.Or(strings.Compare(a.Database, b.Database), compareBool(a.IsLog, b.IsLog))
+}
+
+func compareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case !a:
+		return -1
+	}
+	return 1
 }
 
 // bytesPerMB converts the DMV's byte counts for display.

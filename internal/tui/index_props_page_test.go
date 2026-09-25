@@ -79,14 +79,18 @@ func plainIndex() indexFixture {
 }
 
 // idxColumnsResp answers Table.indexColumns: index_id, column name,
-// descending, included.
+// descending, included, columnstore order ordinal. Each row is given as the
+// first four; the ordinal is appended as 0.
 //
 // Matched on its ORDER BY rather than on its FROM: the table's own column
 // query joins sys.index_columns too (aliased ic2, to find the primary key),
 // so "sys.index_columns ic" is a substring of both and this four-column answer
 // was served to a scan wanting seventeen.
 func idxColumnsResp(rows ...[]driver.Value) fakeResponse {
-	return fakeResponse{match: "ic.key_ordinal", db: idxDatabase, cols: 4, rows: rows}
+	for i, r := range rows {
+		rows[i] = append(r, int64(0))
+	}
+	return fakeResponse{match: "ic.key_ordinal", db: idxDatabase, cols: 5, rows: rows}
 }
 
 // loadIndexOptions loads the Options page for index IX_Orders_CustomerID over
@@ -205,7 +209,7 @@ func TestIndexOptionsWritesNothingWhenUntouched(t *testing.T) {
 // -- Included Columns --------------------------------------------------------
 
 // idxColumnResp answers Table.Columns. Only the name and the type
-// matter to this page; the rest of columnSelect's twenty-six values are what
+// matter to this page; the rest of columnSelect's values are what
 // the scan needs to get that far.
 func idxColumnResp(names ...string) fakeResponse {
 	rows := make([][]driver.Value, len(names))
@@ -225,9 +229,10 @@ func idxColumnResp(names ...string) fakeResponse {
 			int64(0), false, false,
 			int64(0), false,
 			"", "", "",
+			"", "", false, int64(0), "",
 		}
 	}
-	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 32, rows: rows}
+	return fakeResponse{match: "FROM   sys.columns c", db: idxDatabase, cols: 37, rows: rows}
 }
 
 // loadIncludedColumns loads the Included Columns page for an index keyed on

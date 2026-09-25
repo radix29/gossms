@@ -96,7 +96,7 @@ func userDefinedDataTypePropPages(sc *db.ServerConn, dbName, schema, name string
 				propsheet.Static("Name", t.Name),
 				propsheet.Static("Schema", t.Schema),
 				propsheet.Section("Data type"),
-				propsheet.Static("Base type", formatDataTypeLen(t.BaseType, t.MaxLength, t.Precision, t.Scale)),
+				propsheet.Static("Base type", t.BaseTypeString()),
 				propsheet.Static("Length (bytes)", typeLengthText(t.MaxLength)),
 				propsheet.Static("Precision", strconv.Itoa(t.Precision)),
 				propsheet.Static("Scale", strconv.Itoa(t.Scale)),
@@ -167,7 +167,7 @@ func pageTableTypeColumns(sc *db.ServerConn, dbName, schema, name string) propPa
 			rows := make([][]string, len(cols))
 			for i, c := range cols {
 				rows[i] = []string{strconv.Itoa(c.OrdinalPosition), c.Name,
-					formatDataTypeLen(string(c.DataType), c.MaxLength, c.Precision, c.Scale),
+					c.TypeString(),
 					boolStr(c.IsNullable), c.Collation}
 			}
 			grid := controls.NewDataGrid()

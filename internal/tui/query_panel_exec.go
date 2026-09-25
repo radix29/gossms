@@ -94,6 +94,7 @@ func (p *QueryPanel) Close() {
 	if p.executing && p.cancel != nil {
 		p.cancel()
 	}
+	p.textRun.Cancel()
 	p.closeConnection()
 }
 
@@ -166,6 +167,11 @@ func (p *QueryPanel) clearResults() {
 	p.activeTab = 0
 	p.results.SetData(nil, nil)
 	p.resultsText.SetText("")
+	// The previous result's text rendering is dead weight from here — a
+	// million-row one is hundreds of megabytes of runes — and so is any run
+	// still formatting it.
+	p.textRun.Abandon()
+	p.textMemo.key, p.textMemo.lines = textKey{}, nil
 	p.messages.SetText("")
 	p.messageErrorLines = nil
 	p.layoutChildren() // the tab bar's row goes back to the results area

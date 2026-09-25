@@ -49,12 +49,24 @@ func collationFoldsCase(collation string) bool {
 	return true
 }
 
-func (s *nameSet) key(name string) string {
-	if s.fold {
+// sameName reports whether a and b name the same object under collation —
+// the one-off form of a nameSet lookup, for a comparison against a single
+// name rather than a set of them.
+func sameName(collation, a, b string) bool {
+	if collationFoldsCase(collation) {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func foldName(fold bool, name string) string {
+	if fold {
 		return strings.ToLower(name)
 	}
 	return name
 }
+
+func (s *nameSet) key(name string) string { return foldName(s.fold, name) }
 
 // Add puts name in the set.
 func (s *nameSet) Add(name string) { s.m[s.key(name)] = struct{}{} }
@@ -68,14 +80,58 @@ func (s *nameSet) Has(name string) bool {
 	return ok
 }
 
+// nameMap is nameSet with a value per name: a map keyed by server-supplied
+// names, where which keys are the same one is the collation's call. A nil
+// *nameMap is an empty one.
+type nameMap[V any] struct {
+	fold bool
+	m    map[string]V
+}
+
+// newNameMap returns an empty map comparing names the way collation does.
+func newNameMap[V any](collation string) *nameMap[V] {
+	return &nameMap[V]{fold: collationFoldsCase(collation), m: map[string]V{}}
+}
+
+// Set stores v under name.
+func (m *nameMap[V]) Set(name string, v V) { m.m[foldName(m.fold, name)] = v }
+
+// Get returns the value stored under name under the map's collation.
+func (m *nameMap[V]) Get(name string) (V, bool) {
+	if m == nil {
+		var zero V
+		return zero, false
+	}
+	v, ok := m.m[foldName(m.fold, name)]
+	return v, ok
+}
+
+// Len is the number of distinct names in the map.
+func (m *nameMap[V]) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.m)
+}
+
 // serverCollation is the instance's default collation, which governs
 // server-scoped names (logins, databases, credentials, audits, endpoints,
 // availability groups), or "" when there is no server info.
 func serverCollation(sc *db.ServerConn) string {
-	if sc == nil || sc.Server == nil || sc.Server.Info() == nil {
+	if sc == nil {
 		return ""
 	}
-	return sc.Server.Info().Collation
+	return instanceCollation(sc.Server)
+}
+
+// instanceCollation is serverCollation for a server handle that is not the
+// connection's own — an availability group's primary, reached through a
+// follow.
+func instanceCollation(s *gosmo.Server) string {
+	if s == nil || s.Info() == nil {
+		return ""
+	}
+	return s.Info().Collation
 }
 
 // msdbCollation is msdb's collation, which governs the Agent's object names

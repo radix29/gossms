@@ -37,6 +37,50 @@ func TestNameSetFollowsCollation(t *testing.T) {
 	}
 }
 
+// sameName and nameMap are nameSet's one-off and keyed forms, and must fold
+// exactly when it does.
+func TestSameNameAndNameMapFollowCollation(t *testing.T) {
+	for _, tt := range []struct {
+		collation string
+		fold      bool
+	}{{"", true}, {"SQL_Latin1_General_CP1_CI_AS", true}, {"Latin1_General_CS_AS", false}, {"Latin1_General_BIN2", false}} {
+		if got := sameName(tt.collation, "Sales", "sales"); got != tt.fold {
+			t.Errorf("%q: sameName(Sales, sales) = %v, want %v", tt.collation, got, tt.fold)
+		}
+		if !sameName(tt.collation, "Sales", "Sales") {
+			t.Errorf("%q: sameName of identical names is false", tt.collation)
+		}
+		m := newNameMap[int](tt.collation)
+		m.Set("Sales", 1)
+		m.Set("sales", 2)
+		if want := map[bool]int{true: 1, false: 2}[tt.fold]; m.Len() != want {
+			t.Errorf("%q: Sales and sales make %d keys, want %d", tt.collation, m.Len(), want)
+		}
+		if v, ok := m.Get("Sales"); !ok || v != map[bool]int{true: 2, false: 1}[tt.fold] {
+			t.Errorf("%q: Get(Sales) = %d, %v", tt.collation, v, ok)
+		}
+	}
+	var none *nameMap[int]
+	if _, ok := none.Get("x"); ok || none.Len() != 0 {
+		t.Error("a nil map claims a name")
+	}
+}
+
+// On a case-sensitive instance, a database differing only in case from one
+// already in a group is a different database, and is offered.
+func TestAGEligibleDatabasesFollowsServerCollation(t *testing.T) {
+	dbs := []agDBCandidate{{Name: "Sales", RecoveryModel: "FULL", State: "ONLINE", LogChainStarted: true}}
+	for _, tt := range []struct {
+		collation string
+		eligible  bool
+	}{{"SQL_Latin1_General_CP1_CI_AS", false}, {"Latin1_General_CS_AS", true}} {
+		eligible, _ := agEligibleDatabases(dbs, newNameSet(tt.collation, "sales"))
+		if got := len(eligible) == 1; got != tt.eligible {
+			t.Errorf("%q: Sales beside grouped sales eligible = %v, want %v", tt.collation, got, tt.eligible)
+		}
+	}
+}
+
 // csDatabaseRow answers DatabaseByName(name) with a case-sensitive collation.
 func csDatabaseRow(name string) fakeResponse {
 	return fakeResponse{match: "compatibility_level, collation_name", arg: name, cols: 9, rows: [][]driver.Value{{

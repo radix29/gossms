@@ -150,6 +150,9 @@ func (p *QueryPanel) resultsStatusText() string {
 		return elapsed
 	}
 	if p.textTabActive() {
+		if p.textFormatting() {
+			return fmt.Sprintf("%s | %d rows | Formatting as text...", elapsed, len(set.Rows))
+		}
 		return fmt.Sprintf("%s | %d rows", elapsed, len(set.Rows))
 	}
 	row, col := 0, 0

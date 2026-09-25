@@ -41,7 +41,9 @@ tuikit/
 │               Editor's buffer is document.go — the single chokepoint for
 │               mutating text, holding a version counter that keys the syntax/
 │               wrap/width caches so per-document work happens once per edit
-│               rather than once per Draw;
+│               rather than once per Draw; line_buffer.go's LineBuffer builds a
+│               document (lines + measured widths) off the UI goroutine for
+│               Editor.SetLineBuffer to install in O(1);
 │               Editor itself is split across editor.go (state/options),
 │               editor_undo.go (per-edit span deltas, capped in steps and
 │               bytes), editor_search.go (the one regexp engine behind Find,

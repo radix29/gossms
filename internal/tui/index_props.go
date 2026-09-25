@@ -355,7 +355,7 @@ func pageIndexIncludedColumns(sc *db.ServerConn, dbName, schema, table, name str
 			text := make([][]string, len(eligible))
 			values := make([][]bool, len(eligible))
 			for i, c := range eligible {
-				text[i] = []string{c.Name, gosmo.ColumnTypeString(c)}
+				text[i] = []string{c.Name, c.TypeString()}
 				values[i] = []bool{includedSet[c.Name]}
 			}
 			grid := propsheet.NewToggleGrid([]string{"Inc", "Column name", "Data type"}, []int{0}, 10)
