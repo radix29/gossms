@@ -26,7 +26,7 @@ sp_blitz & index with reference built in
 --- bugs and optimizations ---------------------------------------------
 
 /effort
-review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. think hard, take your time, be honest. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them
+review both projects and check for bugs, inconsistencies, optimizations, simplifications , architecture and refractoring. you can change gosmo and break back compatibility if it helps. plan only, ask before implementing to switch models. do not commit to git. create a plan file in docs/ to fix them
 
 show me the top 20 know bugs,issues etc if thre are any in both projects. show only issues that can be fixed. create a plan file in docs/ to fix them
 
@@ -37,14 +37,15 @@ go over the source files code comments and compact them. make them concise. thro
 
 --- prepare for release -------------------------------------------------
 
+check for go.mod updates
 commit before both projects
 
-prepare gosmo for release v0.0.14 . Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gosmo for release v0.0.15 . Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 
 fix go.mod before, reference the new :
 
-prepare gossms for release v0.0.12. Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
+prepare gossms for release v0.0.13. Update readme.md, release.md, changelog.md, and all other documentations and diagramms. the release document should contain only the changes from the last release, delete the old release information. they should be summarized as bullet points and splitted in three cantegories. New, Fixes and Changes. The texts should be short an concise, the long explanation is in the changelog.md
 do not commit or tag anything to git. 
 make the text in the RELEASE.md shorter and conciser. the long explanation is in CHANGELOG.md
 update the docs/dicord.md file for this release. it should be below 2000 characters.

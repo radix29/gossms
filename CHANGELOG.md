@@ -6,6 +6,141 @@ entries start with v0.0.2 onward.
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-09-29
+
+### Added
+
+- **Certificates, asymmetric keys and symmetric keys** under each database's
+  Security folder, `master` included: listing, Object Explorer Details,
+  Script as CREATE/DROP, Delete, Properties and a **New** dialog for each.
+  New Certificate and New Asymmetric Key generate the key (RSA 2048/3072/4096
+  for the latter) with the private key under the master key or a password;
+  New Symmetric Key takes AES 128/192/256, encrypted by a certificate, an
+  asymmetric key and/or a password, with optional `KEY_SOURCE` /
+  `IDENTITY_VALUE`. Each creates the database master key first when one is
+  needed (`master_key.go`). An expired certificate is labelled `(Expired)`.
+  Keys are generated, never imported — importing reads files on the server's
+  host and is left to a query window.
+  - **Symmetric Key Properties** adds and removes the key's encryptions, each
+    opening the key in the same batch (`symmetric_key_props.go`).
+  - **Certificate backup** (`certificate_backup_dialog.go`) writes `BACKUP
+    CERTIFICATE` to files on the server's host, the private key optionally
+    with it. **Remove Private Key** on a certificate or asymmetric key asks
+    first — the one irreversible step here.
+  - **Module signatures.** Certificate and Asymmetric Key Properties gain a
+    Signatures page listing the modules the key signs, with `ADD` / `DROP
+    SIGNATURE`; a procedure's, function's or trigger's Details show who
+    signed it (`key_signatures_page.go`).
+  - **Database Master Key** node: Properties (General, and Encryption — the
+    service master key's and password encryptions), **Back Up** and
+    **Regenerate** (`master_key_props.go`, `master_key_dialogs.go`).
+  - Owner changes on all three go through `ALTER AUTHORIZATION`
+    (`key_actions.go`).
+- **New User dialog** (`new_user_dialog.go`) covering every `CREATE USER`
+  form — for a login, with a password (contained database), without login,
+  Windows, mapped to a certificate or asymmetric key, and Microsoft Entra on
+  Azure and SQL Server 2022+ — plus Owned Schemas and Membership pages.
+- **Word wrap in the query editor.** Edit > Word Wrap (Alt+Z) soft-wraps long
+  lines in every query tab. Display only: the text is unchanged, and line
+  numbers stay on each logical line.
+- **IntelliSense matches anywhere in a name** — `ord` finds `CustomerOrders`.
+  Names that start with the typed text are listed first; a list of only
+  mid-name matches opens with nothing selected (Down picks). Ctrl+Space with
+  nothing typed always shows the list.
+- **Results to Text column width** in Tools > Options (`Max characters per
+  column`, default 256 as in SSMS).
+- **Unsaved queries survive a crash or a closed terminal.** A panic on the UI
+  goroutine, `SIGHUP` (terminal closed, ssh dropped) or `SIGTERM` writes every
+  unsaved query tab to `<config dir>/recovered/` before exiting
+  (`emergency_save.go`); nothing is overwritten, and every path is logged.
+- **`GO n` repeats a batch**, as in SSMS, adding `Batch execution completed n
+  times.` to Messages. `GO 0` runs the batch no times.
+- **Read Committed Snapshot asks how to get exclusive access.** Database
+  Properties > Options confirms before applying it with `ROLLBACK IMMEDIATE`,
+  which rolls back other sessions' open transactions.
+- Server addresses in the Azure Portal's `tcp:host,port` form are accepted;
+  `np:`, `lpc:` and `admin:` are refused by name.
+
+### Changed
+
+- `gosmo` v0.0.14 → v0.0.15 — the key, signature and master-key families,
+  table scripting fidelity, `ApplyConfiguration`, `ReleaseIdleConnections`,
+  `WithStatementObserver`, and a breaking API pass (one context-taking form
+  per method, `Create*Request` types, writes as methods on `Ref` handles,
+  typed mode constants). `go-mssqldb` v1.11.2, `azcore` v1.23.2, MSAL for Go
+  v1.10.1.
+- **Large Results to Text sets format off the UI goroutine.** Above a size
+  threshold the text is built in the background behind a `Formatting...`
+  status and installed when it lands (a million rows of eight columns froze
+  input for ~3.5 s before); `controls.LineBuffer` avoids building one huge
+  string. Switching tabs mid-format keeps the work.
+- **Server Properties sends one batch per page.** The six `sp_configure`
+  pages (Memory, Processors, Security, Connections, Database Settings,
+  Advanced) apply every change in one statement batch.
+- **A failed Apply keeps what did not reach the server.** Pages whose
+  statements executed reload; the others keep their edits, and a New-object
+  dialog whose first page ran counts as created.
+- **Backup and Restore re-read the server's default directories** when the
+  dialog opens, instead of using the value read at connect. The progress view
+  gives a failure's full SQL Server message every row left.
+- **Two gossms instances no longer overwrite each other's saved connections.**
+  `config.json` and `tracked_queries.json` are re-read and merged on save,
+  under a lock file (`fileutil.WithLock`).
+- New-object dialogs' "already exists" check follows the scope's collation
+  (`name_set.go`): case-insensitive only where the server, database or `msdb`
+  is.
+- New Login offers Microsoft Entra only where the server accepts it (Azure,
+  or SQL Server 2022+), as New User does.
+- Nested block comments (`/* /* */ GO */`) are handled alike by the batch
+  splitter, Ctrl+Enter, IntelliSense and the syntax highlighter.
+- IntelliSense filtering no longer allocates per catalog name — 15 ms and
+  50,000 allocations per keystroke against a 50k-object catalog before.
+- Results cells of integer type format ~4x faster.
+
+### Fixed
+
+- **`GO -- step 2` ran the batch twice.** The executor used go-mssqldb's
+  `batch.Split`, which read a digit in a trailing comment as a repeat count,
+  and ran `GO 5` at the end of a script once. Scripts now split by the
+  editor's own rule (`internal/tuikit/sqltext`); `GO;` and `GO/*x*/` are not
+  separators.
+- **Script Table as CREATE silently changed the table**: `datetime2(0)`,
+  `time(0)`, `datetimeoffset(0)` lost their scale, CHECK constraints,
+  `PERSISTED`, `ROWGUIDCOL` and an alias type's schema were dropped, index
+  `STATISTICS_NORECOMPUTE` / `OPTIMIZE_FOR_SEQUENTIAL_KEY` were missing, and a
+  nonclustered columnstore index scripted with no columns (gosmo).
+- A scripted `CREATE SCHEMA` or `CREATE PROCEDURE` failed with Msg 111; module
+  scripts dropped `SET ANSI_NULLS` / `SET QUOTED_IDENTIFIER`.
+- Statistics Properties' Script as CREATE lost the filter and options.
+- **Changing a database's containment** was a syntax error (`SET CONTAINMENT
+  = …`).
+- **Server Properties could not set an advanced option** on a server with
+  `show advanced options` off (Msg 15123).
+- **Index Properties > Included Columns** rebuilt the index with different
+  options and filegroup; the page now keeps every option and applies only to
+  a rowstore nonclustered index. Index Properties > Storage counted rows ×3 on
+  tables with LOB columns.
+- **Delete Table with "Also drop the foreign keys"** could drop the keys and
+  keep the table; both now go in one atomic batch.
+- **Detach, rename, forced drop and Restore's "Close existing connections"**
+  raced for the single-user slot, could be blocked by gossms's own idle
+  pooled sessions, and could leave a database single-user after a failure.
+  Restore's variant also failed on Managed Instance (Msg 5008).
+- **Non-ASCII file paths and names** were mangled — literals are now `N'…'`.
+- **Renaming an enabled server audit** could leave auditing off; Audit
+  Properties now reports it when the re-enable is refused.
+- Restore and the Availability Group views compared database names without
+  regard to the server's collation; they now match under it.
+- AG Listener Properties: after Script Changes the grid still listed "To be
+  added" addresses on a page no longer dirty, and the next Apply sent nothing.
+- Queue Properties with no activation showed an empty procedure schema that
+  gosmo refused; it offers `dbo`.
+- Activity Monitor averages whose base counter keeps the `(ms)` suffix read 0.
+- A superseded Always On peer connect waited out up to two 30 s timeouts, and
+  one expansion could dial the same primary several times.
+- Backup History listed a striped backup once per stripe; Restore's Analyze
+  Backup reads every stripe.
+
 ## [0.0.12] - 2026-09-22
 
 ### Added

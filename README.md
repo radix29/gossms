@@ -207,8 +207,14 @@ connected SQL Server version or engine edition are hidden or disabled.
   SIGNATURE`), and a procedure's, function's or trigger's details show who
   signed it. Keys are generated, never imported —
   importing reads files on the server's host, and is left to a query window.
-- **Query editor** with multiple tabs, IntelliSense, `GO` batches, unlimited
-  result rows, messages, and XML/JSON viewers. Each tab holds its own SQL
+  The **Database Master Key** has its own node: Properties, Back Up and
+  Regenerate.
+- **New User** covers every `CREATE USER` form — for a login, with a password,
+  without login, Windows, certificate or asymmetric key, and Microsoft Entra
+  on Azure and SQL Server 2022+ — with Owned Schemas and Membership.
+- **Query editor** with multiple tabs, IntelliSense, `GO` batches (`GO n`
+  repeats one), unlimited result rows, messages, and XML/JSON viewers. Each
+  tab holds its own SQL
   Server session, so temp tables, `SET` options, `USE` and open transactions
   survive between runs; the bar above the editor shows the SPID and any open
   transaction. Enter keeps the current line's indentation, adding one level
@@ -274,6 +280,11 @@ Configuration is stored at:
 
 - Linux/macOS: `~/.config/gossms/config.json`
 - Windows: `%APPDATA%\gossms\config.json`
+
+If gossms crashes, or the terminal is closed with queries unsaved, each
+unsaved query tab is written to the `recovered` folder next to
+`config.json`. Two gossms instances can run at once; each merges its
+connection changes into `config.json` rather than overwriting the other's.
 
 Saved passwords are encrypted with AES-256-GCM using `gossms.key`, stored next to
 the configuration file. Delete both files to reset saved connections. Each

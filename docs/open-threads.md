@@ -29,6 +29,10 @@ support); this section covers only the environment.
 
 ## Release workflow: what is still open
 
+**Tag v0.0.13, then re-activate the `replace`.** gosmo v0.0.15 is tagged and
+pushed, `go.mod` requires it and the `replace` is commented out, so a clean
+build resolves. Delete this paragraph once the tag is pushed.
+
 **The homebrew job's Verify step hasn't run in CI.** The formula lost its
 `version` line on 2026-09-24 and Verify now checks the archive URLs' tag.
 Dry-run locally against a fake remote: passes a correct formula, fails

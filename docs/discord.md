@@ -1,27 +1,28 @@
-# **🚀 goSSMS v0.0.12**
-Service Broker arrives in Object Explorer, along with a redesigned Connect dialog and smarter IntelliSense.
+# **🚀 goSSMS v0.0.13**
+Encryption keys arrive in Object Explorer, plus word wrap, a New User dialog and a round of scripting fixes.
 
-## 📨 Service Broker
-Message types, contracts, queues, services, routes, remote service bindings and broker priorities: listing, details, Properties, scripting and Delete. Queue and Route Properties are editable, and the Queues listing shows message counts.
+## 🔐 Keys and certificates
+- Certificates, asymmetric and symmetric keys: listing, details, scripting, Delete, Properties and New
+- Certificate backup, Remove Private Key, module signatures
+- Database Master Key: Properties, Back Up, Regenerate
 
-## 🔌 New Connect dialog
-- History pane with your saved connections, most recent first
-- Connection Properties and Connection String tabs
-- **Reset** and **Delete** buttons
-- **Remember Password**, off by default for new connections
-
-## ✨ Also in this release
-- IntelliSense completes columns from CTEs, derived tables, sub-SELECTs, `UNION` and `PIVOT`, plus temp tables and table variables; `#` and `@` open the list
-- Configurable indent size (Tools > Options) and smart indentation
-- Linux desktop launcher and icons, installed by Homebrew and APT
-- SQL Server Agent Properties save in one statement
-- IntelliSense stays fast in long scripts
+## ✨ Also new
+- **New User** dialog for every `CREATE USER` form
+- Word wrap in the query editor (Alt+Z)
+- IntelliSense matches anywhere in a name
+- Unsaved queries are saved if gossms crashes or the terminal closes
+- `GO n` repeats a batch
 
 ## 🔧 Fixes
-- Move to Schema now asks for the permission the server actually checks (`CONTROL`)
-- Deleting a database-scoped credential or audit specification could fail with "database not found"
-- A scripted sequence over an alias type lost the type's schema
-- Refreshing a Properties page that was still loading left the old load running
+- `GO -- step 2` ran the batch twice
+- Script Table as CREATE dropped scales, CHECK constraints and index options
+- Included Columns rebuilt the index with different options
+- Detach, rename and Restore raced for single-user access
+- Non-ASCII file paths were mangled
+
+## ⚡ Changes
+- Large Results to Text sets format in the background
+- Two running instances no longer overwrite each other's connections
 
 ## 📦 Install or upgrade
 ```
@@ -31,4 +32,4 @@ APT, direct downloads and checksums: <https://github.com/radix29/gossms#installa
 
 ## Links
 📋 Release notes — <https://github.com/radix29/gossms/blob/main/RELEASE.md>
-⬇️ Downloads — <https://github.com/radix29/gossms/releases/tag/v0.0.12>
+⬇️ Downloads — <https://github.com/radix29/gossms/releases/tag/v0.0.13>
